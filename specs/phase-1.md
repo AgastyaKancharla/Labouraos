@@ -73,7 +73,7 @@ only — no business logic.
 
 ---
 
-### [ ] Task 4 — Money helpers
+### [x] Task 4 — Money helpers
 
 A single module every other module must use for money. Nothing anywhere else
 does money arithmetic.
