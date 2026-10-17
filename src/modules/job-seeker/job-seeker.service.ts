@@ -14,6 +14,10 @@ import {
   validateCallWindow,
   validateSalaryRange,
 } from './job-seeker.validator';
+import {
+  refundGuaranteeDeadline,
+  isWithinRefundGuarantee,
+} from '../../common/money/money';
 
 import { PaymentService } from '../payment/payment.service';
 
@@ -104,7 +108,7 @@ export class JobSeekerService {
     });
   }
 
-  async findById(id: string) {
+  async findById(id: string, now: Date = new Date()) {
     const jobSeeker = await this.prisma.jobSeeker.findUnique({
       where: { id },
       include: {
@@ -115,7 +119,19 @@ export class JobSeekerService {
     if (!jobSeeker) {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }
-    return jobSeeker;
+
+    const deadline = jobSeeker.paymentReceivedAt
+      ? refundGuaranteeDeadline(jobSeeker.paymentReceivedAt)
+      : null;
+    const isWithinGuarantee = jobSeeker.paymentReceivedAt
+      ? isWithinRefundGuarantee(jobSeeker.paymentReceivedAt, now)
+      : false;
+
+    return {
+      ...jobSeeker,
+      refundGuaranteeDeadline: deadline,
+      isWithinRefundGuarantee: isWithinGuarantee,
+    };
   }
 
   async createActivationPayment(jobSeekerId: string) {

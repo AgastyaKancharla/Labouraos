@@ -98,3 +98,35 @@ export function calculateRefund(amountPaise: number, daysElapsed: number): numbe
   assertInteger(result, 'result');
   return result;
 }
+
+/**
+ * Calculates the 30-day refund guarantee deadline from payment receipt date.
+ * deadline = paymentReceivedAt + 30 days
+ */
+export function refundGuaranteeDeadline(paymentReceivedAt: Date): Date {
+  if (!(paymentReceivedAt instanceof Date) || isNaN(paymentReceivedAt.getTime())) {
+    throw new TypeError('paymentReceivedAt must be a valid Date');
+  }
+  const msIn30Days = 30 * 24 * 60 * 60 * 1000;
+  return new Date(paymentReceivedAt.getTime() + msIn30Days);
+}
+
+/**
+ * Checks whether the given 'now' date is within the 30-day refund guarantee window.
+ * Returns true if now <= refundGuaranteeDeadline(paymentReceivedAt).
+ * Uses injectable time (now), never inline new Date() per AGENTS.md §9.
+ */
+export function isWithinRefundGuarantee(
+  paymentReceivedAt: Date,
+  now: Date,
+): boolean {
+  if (!(paymentReceivedAt instanceof Date) || isNaN(paymentReceivedAt.getTime())) {
+    throw new TypeError('paymentReceivedAt must be a valid Date');
+  }
+  if (!(now instanceof Date) || isNaN(now.getTime())) {
+    throw new TypeError('now must be a valid Date');
+  }
+  const deadline = refundGuaranteeDeadline(paymentReceivedAt);
+  return now.getTime() <= deadline.getTime();
+}
+

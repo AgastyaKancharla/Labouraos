@@ -71,7 +71,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 6 — 30-day refund-guarantee clock
+### [x] Task 6 — 30-day refund-guarantee clock
 
 **Acceptance:**
 - A money-module function `refundGuaranteeDeadline(paymentReceivedAt)` → `paymentReceivedAt + 30 days`, using injectable time (never `new Date()` inline, per AGENTS.md §9)

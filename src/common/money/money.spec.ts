@@ -5,6 +5,8 @@ import {
   calculateGst,
   calculatePlacementFee,
   calculateRefund,
+  refundGuaranteeDeadline,
+  isWithinRefundGuarantee,
 } from './money';
 
 describe('Money Module', () => {
@@ -131,6 +133,42 @@ describe('Money Module', () => {
       expect(Number.isInteger(calculateRefund(100000, 20))).toBe(true);
       expect(Number.isInteger(calculateRefund(100000, 35))).toBe(true);
       expect(Number.isInteger(calculateRefund(100000, 50))).toBe(true);
+    });
+  });
+
+  describe('30-day Refund Guarantee Clock (Phase 2 Task 6)', () => {
+    const baseDate = new Date('2026-05-01T12:00:00.000Z');
+
+    it('computes refundGuaranteeDeadline as paymentReceivedAt + 30 days', () => {
+      const deadline = refundGuaranteeDeadline(baseDate);
+      expect(deadline).toBeInstanceOf(Date);
+      const expectedTime = baseDate.getTime() + 30 * 24 * 60 * 60 * 1000;
+      expect(deadline.getTime()).toBe(expectedTime);
+      expect(deadline.toISOString()).toBe('2026-05-31T12:00:00.000Z');
+    });
+
+    it('asserts boundaries at day 29, day 30, and day 31 using injectable time', () => {
+      // Day 29: within guarantee
+      const day29 = new Date(baseDate.getTime() + 29 * 24 * 60 * 60 * 1000);
+      expect(isWithinRefundGuarantee(baseDate, day29)).toBe(true);
+
+      // Day 30 (exact deadline): within guarantee
+      const day30 = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000);
+      expect(isWithinRefundGuarantee(baseDate, day30)).toBe(true);
+
+      // Day 30 + 1 second: past guarantee
+      const day30Plus1Sec = new Date(baseDate.getTime() + 30 * 24 * 60 * 60 * 1000 + 1000);
+      expect(isWithinRefundGuarantee(baseDate, day30Plus1Sec)).toBe(false);
+
+      // Day 31: past guarantee
+      const day31 = new Date(baseDate.getTime() + 31 * 24 * 60 * 60 * 1000);
+      expect(isWithinRefundGuarantee(baseDate, day31)).toBe(false);
+    });
+
+    it('rejects non-Date parameters with TypeError', () => {
+      expect(() => refundGuaranteeDeadline('not-a-date' as unknown as Date)).toThrow(TypeError);
+      expect(() => isWithinRefundGuarantee('invalid' as unknown as Date, baseDate)).toThrow(TypeError);
+      expect(() => isWithinRefundGuarantee(baseDate, 'invalid' as unknown as Date)).toThrow(TypeError);
     });
   });
 });

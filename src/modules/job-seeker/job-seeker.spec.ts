@@ -332,4 +332,50 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('Aadhaar');
   });
+
+  it('GET /job-seekers/:id returns refund guarantee deadline and eligibility', async () => {
+    // 1. Pending seeker without payment
+    const phone1 = `98${timestamp.toString().slice(-8)}`;
+    const otpRequestId1 = await getVerifiedOtp(phone1);
+
+    const createRes = await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Pending Seeker',
+        phone: phone1,
+        otpRequestId: otpRequestId1,
+        tradeSkill: 'Electrician',
+        minSalary: 2000000,
+        maxSalary: 2500000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+      });
+    const pendingId = createRes.body.id;
+
+    const getPendingRes = await request(app.getHttpServer())
+      .get(`/job-seekers/${pendingId}`)
+      .set('Authorization', `Bearer ${callAgentToken}`);
+
+    expect(getPendingRes.status).toBe(200);
+    expect(getPendingRes.body.refundGuaranteeDeadline).toBeNull();
+    expect(getPendingRes.body.isWithinRefundGuarantee).toBe(false);
+
+    // 2. Active seeker with payment received
+    const paymentTime = new Date('2026-06-01T10:00:00.000Z');
+    await prisma.jobSeeker.update({
+      where: { id: pendingId },
+      data: {
+        status: 'active',
+        paymentReceivedAt: paymentTime,
+      },
+    });
+
+    const getActiveRes = await request(app.getHttpServer())
+      .get(`/job-seekers/${pendingId}`)
+      .set('Authorization', `Bearer ${callAgentToken}`);
+
+    expect(getActiveRes.status).toBe(200);
+    expect(getActiveRes.body.refundGuaranteeDeadline).toBe('2026-07-01T10:00:00.000Z');
+  });
 });
