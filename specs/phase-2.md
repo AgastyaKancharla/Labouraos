@@ -91,7 +91,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 8 — RBAC, masking and seed data for this phase
+### [x] Task 8 — RBAC, masking and seed data for this phase
 
 **Acceptance:**
 - Finance's read of a job seeker shows the `JS-` code and payment amounts, never the phone number or KYC reference (reuses the Phase 1 masking layer)

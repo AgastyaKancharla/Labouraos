@@ -182,7 +182,25 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    // 3. Job Seekers (different cities and areas)
+    // 3. Referral Partners
+    const referral = await prisma.referral.upsert({
+      where: { phone: '+919800000001' },
+      update: {
+        name: 'Rajesh Sharma',
+        type: 'individual',
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'RF-00001',
+        name: 'Rajesh Sharma',
+        phone: '+919800000001',
+        phoneVerified: true,
+        type: 'individual',
+        city: 'Bengaluru',
+      },
+    });
+
+    // 4. Job Seekers (different cities and statuses: active, pending_payment)
     await prisma.jobSeeker.upsert({
       where: { phone: '+919900000001' },
       update: {
@@ -190,6 +208,9 @@ export async function seed(prismaClient?: PrismaClient) {
         tradeSkill: 'Electrician',
         minSalary: 1800000,
         maxSalary: 2500000,
+        status: 'active',
+        paymentReceivedAt: new Date('2026-06-01T10:00:00.000Z'),
+        referredById: referral.id,
         city: 'Bengaluru',
       },
       create: {
@@ -203,9 +224,11 @@ export async function seed(prismaClient?: PrismaClient) {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         status: 'active',
+        paymentReceivedAt: new Date('2026-06-01T10:00:00.000Z'),
         hitCount: 0,
         kycStatus: 'verified',
         kycReference: 'KYC-VENDOR-REF-001',
+        referredById: referral.id,
         city: 'Bengaluru',
       },
     });
@@ -217,6 +240,8 @@ export async function seed(prismaClient?: PrismaClient) {
         tradeSkill: 'Plumber',
         minSalary: 1600000,
         maxSalary: 2200000,
+        status: 'pending_payment',
+        paymentReceivedAt: null,
         city: 'Bengaluru',
       },
       create: {
@@ -229,7 +254,8 @@ export async function seed(prismaClient?: PrismaClient) {
         maxSalary: 2200000,
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '19:00',
-        status: 'pending_activation',
+        status: 'pending_payment',
+        paymentReceivedAt: null,
         hitCount: 0,
         kycStatus: 'pending',
         city: 'Bengaluru',
@@ -243,6 +269,8 @@ export async function seed(prismaClient?: PrismaClient) {
         tradeSkill: 'Driver',
         minSalary: 1500000,
         maxSalary: 2000000,
+        status: 'active',
+        paymentReceivedAt: new Date('2026-06-05T10:00:00.000Z'),
         city: 'Mysuru',
       },
       create: {
@@ -256,6 +284,7 @@ export async function seed(prismaClient?: PrismaClient) {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '20:00',
         status: 'active',
+        paymentReceivedAt: new Date('2026-06-05T10:00:00.000Z'),
         hitCount: 0,
         kycStatus: 'verified',
         kycReference: 'KYC-VENDOR-REF-003',

@@ -35,12 +35,14 @@ export class JobSeekerController {
   }
 
   @Get()
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance')
   @RequirePermission('job_seeker', 'read')
   async findAll() {
     return this.jobSeekerService.findAll();
   }
 
   @Get(':id')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance')
   @RequirePermission('job_seeker', 'read')
   async findById(@Param('id') id: string) {
     return this.jobSeekerService.findById(id);

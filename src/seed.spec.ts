@@ -40,7 +40,7 @@ describe('Seed Data Script', () => {
     expect(businessCities.size).toBeGreaterThanOrEqual(2); // Bengaluru, Mysuru
     expect(businessAreas.size).toBeGreaterThanOrEqual(3); // Koramangala, Indiranagar, Hebbal
 
-    // Assert job seekers in different cities
+    // Assert job seekers in different cities and statuses
     const jobSeekers = await prisma.jobSeeker.findMany({
       where: {
         code: { in: ['JS-00001', 'JS-00002', 'JS-00003'] },
@@ -50,6 +50,17 @@ describe('Seed Data Script', () => {
 
     const jsCities = new Set(jobSeekers.map((j) => j.city));
     expect(jsCities.size).toBeGreaterThanOrEqual(2); // Bengaluru, Mysuru
+
+    const jsStatuses = new Set(jobSeekers.map((j) => j.status));
+    expect(jsStatuses.has('pending_payment')).toBe(true);
+    expect(jsStatuses.has('active')).toBe(true);
+
+    // Assert at least one referral is seeded
+    const referral = await prisma.referral.findUnique({
+      where: { code: 'RF-00001' },
+    });
+    expect(referral).toBeDefined();
+    expect(referral?.type).toBe('individual');
   });
 
   it('is safe to run repeatedly without duplicating or erroring (idempotency)', async () => {
@@ -63,10 +74,12 @@ describe('Seed Data Script', () => {
     ];
     const seededBusinessCodes = ['BZ-00001', 'BZ-00002', 'BZ-00003'];
     const seededJobSeekerCodes = ['JS-00001', 'JS-00002', 'JS-00003'];
+    const seededReferralCodes = ['RF-00001'];
 
     const staffBefore = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessBefore = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
     const jsBefore = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
+    const refBefore = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
 
     // Run seed again
     await seed(prisma);
@@ -74,13 +87,16 @@ describe('Seed Data Script', () => {
     const staffAfter = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessAfter = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
     const jsAfter = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
+    const refAfter = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
 
     expect(staffAfter).toBe(staffBefore);
     expect(businessAfter).toBe(businessBefore);
     expect(jsAfter).toBe(jsBefore);
+    expect(refAfter).toBe(refBefore);
     expect(staffAfter).toBe(6);
     expect(businessAfter).toBe(3);
     expect(jsAfter).toBe(3);
+    expect(refAfter).toBe(1);
   });
 
   it('refuses to run if NODE_ENV=production', async () => {

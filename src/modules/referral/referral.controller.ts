@@ -35,12 +35,14 @@ export class ReferralController {
   }
 
   @Get()
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance')
   @RequirePermission('referral', 'read')
   async findAll() {
     return this.referralService.findAll();
   }
 
   @Get(':id')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance')
   @RequirePermission('referral', 'read')
   async findById(@Param('id') id: string) {
     return this.referralService.findById(id);
