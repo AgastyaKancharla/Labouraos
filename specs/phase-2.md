@@ -37,7 +37,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 3 — Referral registration
+### [x] Task 3 — Referral registration
 
 **Acceptance:**
 - `POST /referrals` (call_agent, manager, ceo) — name, mobile number, type (individual/business)
