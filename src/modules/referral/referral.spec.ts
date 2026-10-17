@@ -100,12 +100,12 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       });
       await prisma.jobSeeker.deleteMany({
         where: {
-          phone: { contains: `${timestamp}` },
+          phone: { contains: `${timestamp.toString().slice(-8)}` },
         },
       });
       await prisma.referral.deleteMany({
         where: {
-          phone: { contains: `${timestamp}` },
+          phone: { contains: `${timestamp.toString().slice(-8)}` },
         },
       });
       await prisma.staff.deleteMany({

@@ -48,6 +48,7 @@ export class IdService implements OnModuleInit {
     for (const prefix of prefixes) {
       await this.ensureSequenceExists(prefix);
     }
+    await this.syncAllSequences();
   }
 
   async ensureSequenceExists(prefix: string): Promise<void> {
@@ -55,6 +56,42 @@ export class IdService implements OnModuleInit {
     await this.prisma.$executeRawUnsafe(
       `CREATE SEQUENCE IF NOT EXISTS "${seqName}" START WITH 1;`
     );
+  }
+
+  async syncAllSequences(): Promise<void> {
+    const mapping: Record<string, string> = {
+      BZ: 'Business',
+      JS: 'JobSeeker',
+      RF: 'Referral',
+      VC: 'Vacancy',
+      PL: 'Placement',
+      PAY: 'Payment',
+      AUD: 'AuditLog',
+    };
+
+    for (const [prefix, tableName] of Object.entries(mapping)) {
+      try {
+        const seqName = this.getSequenceName(prefix);
+        await this.ensureSequenceExists(prefix);
+        await this.prisma.$executeRawUnsafe(`
+          DO $$
+          DECLARE
+            max_val integer;
+          BEGIN
+            SELECT COALESCE(MAX(SUBSTRING(code FROM ${prefix.length + 2})::int), 0)
+            INTO max_val
+            FROM "${tableName}"
+            WHERE code ~ '^${prefix}-[0-9]+$';
+
+            IF max_val > 0 THEN
+              PERFORM setval('"${seqName}"', max_val, true);
+            END IF;
+          END $$;
+        `);
+      } catch {
+        // Table or column might not exist during initialization
+      }
+    }
   }
 
   /**

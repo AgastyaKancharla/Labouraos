@@ -108,7 +108,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       // Delete test job seekers created during this suite
       await prisma.jobSeeker.deleteMany({
         where: {
-          phone: { contains: `${timestamp}` },
+          phone: { contains: `${timestamp.toString().slice(-8)}` },
         },
       });
       // Delete test staff

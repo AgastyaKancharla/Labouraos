@@ -184,9 +184,10 @@ export async function seed(prismaClient?: PrismaClient) {
 
     // 3. Referral Partners
     const referral = await prisma.referral.upsert({
-      where: { phone: '+919800000001' },
+      where: { code: 'RF-00001' },
       update: {
         name: 'Rajesh Sharma',
+        phone: '+919800000001',
         type: 'individual',
         city: 'Bengaluru',
       },
@@ -291,6 +292,40 @@ export async function seed(prismaClient?: PrismaClient) {
         city: 'Mysuru',
       },
     });
+
+    // 5. Synchronize sequences past seeded codes so IdService will never collide
+    const mapping: Record<string, string> = {
+      BZ: 'Business',
+      JS: 'JobSeeker',
+      RF: 'Referral',
+      VC: 'Vacancy',
+      PL: 'Placement',
+      PAY: 'Payment',
+      AUD: 'AuditLog',
+    };
+
+    for (const [prefix, tableName] of Object.entries(mapping)) {
+      const clean = prefix.toLowerCase().replace(/[^a-z0-9]/g, '_');
+      const seqName = `seq_id_${clean}`;
+      await prisma.$executeRawUnsafe(
+        `CREATE SEQUENCE IF NOT EXISTS "${seqName}" START WITH 1;`
+      );
+      await prisma.$executeRawUnsafe(`
+        DO $$
+        DECLARE
+          max_val integer;
+        BEGIN
+          SELECT COALESCE(MAX(SUBSTRING(code FROM ${prefix.length + 2})::int), 0)
+          INTO max_val
+          FROM "${tableName}"
+          WHERE code ~ '^${prefix}-[0-9]+$';
+
+          IF max_val > 0 THEN
+            PERFORM setval('"${seqName}"', max_val, true);
+          END IF;
+        END $$;
+      `);
+    }
 
     return { success: true };
   } finally {
