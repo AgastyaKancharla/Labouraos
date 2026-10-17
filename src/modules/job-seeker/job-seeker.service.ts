@@ -177,4 +177,45 @@ export class JobSeekerService {
       status: payment.status,
     };
   }
+
+  async updateKyc(jobSeekerId: string, body: Record<string, unknown>, actorId: string) {
+    assertNoRawAadhaar(body);
+
+    const jobSeeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const kycStatus = String(body.kycStatus || body.status || 'verified');
+    if (kycStatus !== 'verified' && kycStatus !== 'failed') {
+      throw new BadRequestException("kycStatus must be 'verified' or 'failed'");
+    }
+
+    const kycReference = String(body.kycReference || body.vendorReference || '');
+    if (!kycReference) {
+      throw new BadRequestException('kycReference (vendor reference) is required');
+    }
+
+    const updated = await this.prisma.jobSeeker.update({
+      where: { id: jobSeeker.id },
+      data: {
+        kycStatus,
+        kycReference,
+      },
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.kyc',
+      entityType: 'job_seeker',
+      entityCode: updated.code,
+      before: { kycStatus: jobSeeker.kycStatus, kycReference: jobSeeker.kycReference },
+      after: { kycStatus: updated.kycStatus, kycReference: updated.kycReference },
+      city: updated.city,
+    });
+
+    return updated;
+  }
 }

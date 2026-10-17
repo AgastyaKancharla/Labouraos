@@ -6,6 +6,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { RbacModule } from './common/rbac/rbac.module';
 import { AuditModule } from './common/audit/audit.module';
 import { OtpModule } from './common/otp/otp.module';
+import { KycModule } from './common/kyc/kyc.module';
 import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { PaymentModule } from './modules/payment/payment.module';
@@ -18,6 +19,7 @@ import { PaymentModule } from './modules/payment/payment.module';
     RbacModule,
     AuditModule,
     OtpModule,
+    KycModule,
     JobSeekerModule,
     ReferralModule,
     PaymentModule,

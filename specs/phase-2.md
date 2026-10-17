@@ -81,7 +81,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 7 — Offline Aadhaar e-KYC stub
+### [x] Task 7 — Offline Aadhaar e-KYC stub
 
 **Acceptance:**
 - `POST /job-seekers/:id/kyc` accepts a KYC vendor reference and result (`verified` / `failed`), sets `kycStatus` and `kycReference`

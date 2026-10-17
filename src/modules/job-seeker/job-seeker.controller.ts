@@ -52,4 +52,15 @@ export class JobSeekerController {
   async createActivationPayment(@Param('id') id: string) {
     return this.jobSeekerService.createActivationPayment(id);
   }
+
+  @Post(':id/kyc')
+  @RequireRoles('call_agent', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'write')
+  async submitKyc(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.updateKyc(id, body, req.user.sub);
+  }
 }
