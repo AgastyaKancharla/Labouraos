@@ -12,7 +12,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — OTP provider interface and mock implementation
+### [x] Task 1 — OTP provider interface and mock implementation
 
 A pluggable interface so the real SMS/OTP vendor can be swapped in later without touching calling code.
 
