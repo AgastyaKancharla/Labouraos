@@ -158,7 +158,7 @@ One complete path through every layer, proving the stack works together.
 
 ---
 
-### [ ] Task 10 — Seed data
+### [x] Task 10 — Seed data
 
 Repeatable seed script for development and tests.
 
