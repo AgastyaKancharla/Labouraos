@@ -147,7 +147,7 @@ Every sensitive write records who did what, when, and what changed.
 
 ---
 
-### [ ] Task 9 — End-to-end walking skeleton
+### [x] Task 9 — End-to-end walking skeleton
 
 One complete path through every layer, proving the stack works together.
 

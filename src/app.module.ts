@@ -5,6 +5,8 @@ import { IdModule } from './common/id/id.module';
 import { AuthModule } from './common/auth/auth.module';
 import { RbacModule } from './common/rbac/rbac.module';
 import { AuditModule } from './common/audit/audit.module';
+import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
+import { PaymentModule } from './modules/payment/payment.module';
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { AuditModule } from './common/audit/audit.module';
     AuthModule,
     RbacModule,
     AuditModule,
+    JobSeekerModule,
+    PaymentModule,
     HealthModule,
   ],
 })
