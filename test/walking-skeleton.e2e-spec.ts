@@ -42,6 +42,10 @@ describe('End-to-End Walking Skeleton (e2e)', () => {
     await prisma.jobSeeker.deleteMany({});
   });
 
+  beforeEach(async () => {
+    await prisma.jobSeeker.deleteMany({});
+  });
+
   afterAll(async () => {
     if (callAgentId) {
       await prisma.staff.delete({ where: { id: callAgentId } });

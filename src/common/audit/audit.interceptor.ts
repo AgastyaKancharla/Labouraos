@@ -6,7 +6,7 @@ import {
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Observable } from 'rxjs';
-import { tap } from 'rxjs/operators';
+import { mergeMap } from 'rxjs/operators';
 import { Request } from 'express';
 import { AUDIT_METADATA_KEY, AuditMetadata } from './audit.constants';
 import { AuditService } from './audit.service';
@@ -34,7 +34,7 @@ export class AuditInterceptor implements NestInterceptor {
     const before = request.auditBefore ?? (request.body?.before as Record<string, unknown> | undefined) ?? null;
 
     return next.handle().pipe(
-      tap(async (response: unknown) => {
+      mergeMap(async (response: unknown) => {
         try {
           const resObj = (typeof response === 'object' && response !== null) ? (response as Record<string, unknown>) : {};
           const field = metadata.entityCodeField ?? 'code';
@@ -58,6 +58,7 @@ export class AuditInterceptor implements NestInterceptor {
           // Log audit failure to console, never crash the primary write request
           console.error('Failed to write audit log in AuditInterceptor:', err);
         }
+        return response;
       }),
     );
   }

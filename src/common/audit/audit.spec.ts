@@ -85,6 +85,7 @@ describe('Audit Logging', () => {
 
   afterAll(async () => {
     if (actorId) {
+      await prisma.auditLog.deleteMany({ where: { actorId } });
       await prisma.staff.delete({ where: { id: actorId } });
     }
     if (app) {

@@ -53,20 +53,34 @@ describe('Seed Data Script', () => {
   });
 
   it('is safe to run repeatedly without duplicating or erroring (idempotency)', async () => {
-    const staffCountBefore = await prisma.staff.count();
-    const businessCountBefore = await prisma.business.count();
-    const jobSeekerCountBefore = await prisma.jobSeeker.count();
+    const seededStaffEmails = [
+      'ceo@laboura.local',
+      'manager@laboura.local',
+      'lead.koramangala@laboura.local',
+      'call.agent@laboura.local',
+      'field.agent@laboura.local',
+      'finance@laboura.local',
+    ];
+    const seededBusinessCodes = ['BZ-00001', 'BZ-00002', 'BZ-00003'];
+    const seededJobSeekerCodes = ['JS-00001', 'JS-00002', 'JS-00003'];
+
+    const staffBefore = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
+    const businessBefore = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
+    const jsBefore = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
 
     // Run seed again
     await seed(prisma);
 
-    const staffCountAfter = await prisma.staff.count();
-    const businessCountAfter = await prisma.business.count();
-    const jobSeekerCountAfter = await prisma.jobSeeker.count();
+    const staffAfter = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
+    const businessAfter = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
+    const jsAfter = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
 
-    expect(staffCountAfter).toBe(staffCountBefore);
-    expect(businessCountAfter).toBe(businessCountBefore);
-    expect(jobSeekerCountAfter).toBe(jobSeekerCountBefore);
+    expect(staffAfter).toBe(staffBefore);
+    expect(businessAfter).toBe(businessBefore);
+    expect(jsAfter).toBe(jsBefore);
+    expect(staffAfter).toBe(6);
+    expect(businessAfter).toBe(3);
+    expect(jsAfter).toBe(3);
   });
 
   it('refuses to run if NODE_ENV=production', async () => {
