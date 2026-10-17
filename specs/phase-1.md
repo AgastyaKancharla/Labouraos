@@ -115,7 +115,7 @@ Login for staff only. Job seekers and businesses never log in.
 
 ---
 
-### [ ] Task 7 — RBAC guard
+### [x] Task 7 — RBAC guard
 
 One reusable guard enforcing the §7 matrix. Not per-endpoint hand-written checks.
 
