@@ -58,16 +58,16 @@ whether tests pass.
 
 | Layer | Choice | Notes |
 | --- | --- | --- |
-| Runtime | Node.js 24 LTS | Pin exact version in `.nvmrc` |
-| Language | TypeScript, `strict: true` | `strict` is mandatory, never disable it |
-| Framework | NestJS 11+ | Pin exact version at install, record it here |
+| Runtime | Node.js 24.21.0 | Pinned in `.nvmrc` |
+| Language | TypeScript 5.7.3, `strict: true` | `strict` is mandatory, never disable it |
+| Framework | NestJS 11.2.7 | Pinned in `package.json` |
 | Database | PostgreSQL 17+ | Managed (Supabase / Neon / cloud provider) |
 | ORM | Prisma | `schema.prisma` is the single source of truth for the data model |
-| Tests | Jest (NestJS default) | |
+| Tests | Jest 29.7.0 (NestJS default) | Pinned in `package.json` |
 | CI | GitHub Actions | `.github/workflows/test.yml` |
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
 
-**When you install, pin the exact versions and update the table above.**
+**Exact versions pinned above.**
 Do not leave version ranges like `^11.0.0` in this file.
 
 ---

@@ -19,7 +19,7 @@ the admin dashboard. They are later phases.
 
 ## Tasks
 
-### [ ] Task 1 — Project skeleton
+### [x] Task 1 — Project skeleton
 
 Set up the NestJS + TypeScript project.
 
