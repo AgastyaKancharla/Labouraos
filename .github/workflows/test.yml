@@ -38,6 +38,11 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Deploy database migrations
+        env:
+          DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
+        run: npx prisma migrate deploy
+
       - name: Run linter
         run: npm run lint
 

@@ -1,0 +1,185 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model JobSeeker {
+  id                        String      @id @default(uuid())
+  code                      String      @unique
+  city                      String      @default("Bengaluru")
+  name                      String
+  phone                     String      @unique
+  phoneVerified             Boolean     @default(false)
+  tradeSkill                String
+  minSalary                 Int         // paise
+  maxSalary                 Int         // paise
+  preferredCallWindowStart  String      // "09:00" IST
+  preferredCallWindowEnd    String      // "21:00" IST
+  status                    String      @default("pending_activation") // pending_activation, active, deactivated, placed
+  hitCount                  Int         @default(0)
+  kycStatus                 String      @default("pending") // pending, verified, failed
+  kycReference              String?     // vendor reference ID only. NEVER raw national ID numbers.
+  referredById              String?
+  referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
+  placements                Placement[]
+  payments                  Payment[]
+  createdAt                 DateTime    @default(now())
+  updatedAt                 DateTime    @updatedAt
+
+  @@index([city])
+  @@index([tradeSkill])
+  @@index([status])
+}
+
+model Referral {
+  id            String      @id @default(uuid())
+  code          String      @unique
+  city          String      @default("Bengaluru")
+  name          String
+  phone         String      @unique
+  phoneVerified Boolean     @default(false)
+  type          String      @default("individual") // individual, business
+  jobSeekers    JobSeeker[]
+  payments      Payment[]
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([city])
+}
+
+model Business {
+  id          String      @id @default(uuid())
+  code        String      @unique
+  city        String      @default("Bengaluru")
+  name        String
+  contactName String?
+  phone       String      @unique
+  area        String
+  vacancies   Vacancy[]
+  placements  Placement[]
+  payments    Payment[]
+  createdAt   DateTime    @default(now())
+  updatedAt   DateTime    @updatedAt
+
+  @@index([city, area])
+}
+
+model Vacancy {
+  id                  String      @id @default(uuid())
+  code                String      @unique
+  city                String      @default("Bengaluru")
+  businessId          String
+  business            Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  capturedByStaffId   String?
+  capturedBy          Staff?      @relation(fields: [capturedByStaffId], references: [id], onDelete: SetNull)
+  tradeSkill          String
+  offeredSalary       Int         // paise
+  status              String      @default("open") // open, filled, cancelled
+  placements          Placement[]
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([city])
+  @@index([businessId])
+  @@index([tradeSkill])
+  @@index([status])
+}
+
+model Placement {
+  id                         String      @id @default(uuid())
+  code                       String      @unique
+  city                       String      @default("Bengaluru")
+  vacancyId                  String
+  vacancy                    Vacancy     @relation(fields: [vacancyId], references: [id], onDelete: Restrict)
+  jobSeekerId                String
+  jobSeeker                  JobSeeker   @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
+  businessId                 String
+  business                   Business    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  placementFee               Int         // paise
+  gstAmount                  Int         // paise
+  joinedDate                 DateTime?
+  status                     String      @default("pending") // pending, active, dropped_out, replaced, completed
+  replacementRejectionCount  Int         @default(0)
+  payments                   Payment[]
+  createdAt                  DateTime    @default(now())
+  updatedAt                  DateTime    @updatedAt
+
+  @@index([city])
+  @@index([vacancyId])
+  @@index([jobSeekerId])
+  @@index([businessId])
+  @@index([status])
+}
+
+model Staff {
+  id                String      @id @default(uuid())
+  code              String      @unique
+  city              String      @default("Bengaluru")
+  name              String
+  email             String      @unique
+  passwordHash      String
+  role              String      // ceo, manager, team_lead, call_agent, field_agent, finance
+  teamLeadId        String?
+  teamLead          Staff?      @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
+  teamMembers       Staff[]     @relation("TeamHierarchy")
+  area              String?
+  capturedVacancies Vacancy[]
+  auditLogs         AuditLog[]
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([city])
+  @@index([role])
+  @@index([teamLeadId])
+}
+
+model Payment {
+  id                String      @id @default(uuid())
+  code              String      @unique
+  city              String      @default("Bengaluru")
+  type              String      // activation, placement_fee, referral_payout, refund
+  amount            Int         // paise
+  status            String      @default("pending") // pending, completed, failed, refunded
+  gatewayReference  String      @unique
+  subjectType       String      // job_seeker, business, referral, placement
+  subjectId         String
+  jobSeekerId       String?
+  jobSeeker         JobSeeker?  @relation(fields: [jobSeekerId], references: [id], onDelete: SetNull)
+  businessId        String?
+  business          Business?   @relation(fields: [businessId], references: [id], onDelete: SetNull)
+  referralId        String?
+  referral          Referral?   @relation(fields: [referralId], references: [id], onDelete: SetNull)
+  placementId       String?
+  placement         Placement?  @relation(fields: [placementId], references: [id], onDelete: SetNull)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  @@index([city])
+  @@index([type])
+  @@index([status])
+  @@index([subjectType, subjectId])
+}
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  code        String    @unique
+  city        String    @default("Bengaluru")
+  actorId     String
+  actor       Staff?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action      String
+  entityType  String
+  entityCode  String
+  before      Json?
+  after       Json?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([city])
+  @@index([actorId])
+  @@index([entityType, entityCode])
+  @@index([createdAt])
+}

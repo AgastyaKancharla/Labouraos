@@ -50,7 +50,7 @@ A GitHub Action that runs on every push and pull request.
 
 ---
 
-### [ ] Task 3 — Data model
+### [x] Task 3 — Data model
 
 Write `prisma/schema.prisma` covering all core entities. Tables and relationships
 only — no business logic.

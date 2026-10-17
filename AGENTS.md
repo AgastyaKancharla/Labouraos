@@ -62,7 +62,7 @@ whether tests pass.
 | Language | TypeScript 5.7.3, `strict: true` | `strict` is mandatory, never disable it |
 | Framework | NestJS 11.2.7 | Pinned in `package.json` |
 | Database | PostgreSQL 17+ | Managed (Supabase / Neon / cloud provider) |
-| ORM | Prisma | `schema.prisma` is the single source of truth for the data model |
+| ORM | Prisma 6.19.3 | `schema.prisma` is the single source of truth for the data model |
 | Tests | Jest 29.7.0 (NestJS default) | Pinned in `package.json` |
 | CI | GitHub Actions | `.github/workflows/test.yml` |
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
