@@ -34,7 +34,7 @@ Set up the NestJS + TypeScript project.
 
 ---
 
-### [ ] Task 2 — CI pipeline
+### [x] Task 2 — CI pipeline
 
 A GitHub Action that runs on every push and pull request.
 
