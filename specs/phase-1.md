@@ -89,7 +89,7 @@ does money arithmetic.
 
 ---
 
-### [ ] Task 5 — Unique ID generation
+### [x] Task 5 — Unique ID generation
 
 Generate the human-readable codes (`JS-00001`, `BZ-00042`, …).
 
