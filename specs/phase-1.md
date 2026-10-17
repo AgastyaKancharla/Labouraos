@@ -134,7 +134,7 @@ One reusable guard enforcing the §7 matrix. Not per-endpoint hand-written check
 
 ---
 
-### [ ] Task 8 — Audit logging
+### [x] Task 8 — Audit logging
 
 Every sensitive write records who did what, when, and what changed.
 
