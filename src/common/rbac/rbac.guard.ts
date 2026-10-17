@@ -18,6 +18,7 @@ import {
   PERMISSION_METADATA_KEY,
   RequiredPermission,
 } from './permissions.decorator';
+import { ROLES_METADATA_KEY } from './roles.decorator';
 
 @Injectable()
 export class RbacGuard implements CanActivate {
@@ -33,7 +34,13 @@ export class RbacGuard implements CanActivate {
         [context.getHandler(), context.getClass()],
       );
 
-    if (!requiredPermission) {
+    const requiredRoles =
+      this.reflector.getAllAndOverride<Role[]>(
+        ROLES_METADATA_KEY,
+        [context.getHandler(), context.getClass()],
+      );
+
+    if (!requiredPermission && !requiredRoles) {
       return true;
     }
 
@@ -42,6 +49,18 @@ export class RbacGuard implements CanActivate {
 
     if (!user || !user.role) {
       throw new UnauthorizedException('Authentication required');
+    }
+
+    if (requiredRoles && requiredRoles.length > 0) {
+      if (!requiredRoles.includes(user.role as Role)) {
+        throw new ForbiddenException(
+          `Role '${user.role}' is not permitted to perform this action`,
+        );
+      }
+    }
+
+    if (!requiredPermission) {
+      return true;
     }
 
     const method = request.method.toUpperCase();

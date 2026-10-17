@@ -24,7 +24,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 2 — Job seeker registration
+### [x] Task 2 — Job seeker registration
 
 **Acceptance:**
 - `POST /job-seekers` (call_agent, manager, ceo only) accepts: mobile number, trade/skill, minSalary, maxSalary, preferredCallWindowStart/End, city
