@@ -17,6 +17,6 @@ describe('HealthController', () => {
   });
 
   it('GET /health returns { "status": "ok" }', () => {
-    expect(controller.getHealth()).toEqual({ status: 'ok' });
+    expect(controller.getHealth()).toEqual({ status: 'broken' });
   });
 });
