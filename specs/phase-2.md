@@ -102,13 +102,13 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ## Phase 2 Gate
 
-- [ ] A call agent can register a job seeker, verify OTP, and the activation payment webhook (simulated) activates them — proven end to end by an automated test
-- [ ] The exact-same webhook fired twice produces exactly one `Payment` row and one activation, by test
-- [ ] `preferredCallWindowStart/End` outside 09:00–21:00 IST is rejected, by test
-- [ ] No raw Aadhaar number can be stored under any field name, by test
-- [ ] Refund-guarantee deadline is correct at day 29/30/31, by test
-- [ ] Finance's view of a job seeker never includes phone or KYC reference, by test
-- [ ] All Phase 1 gate items still pass (no regressions)
-- [ ] `LESSONS.md` updated with anything non-obvious
+- [x] A call agent can register a job seeker, verify OTP, and the activation payment webhook (simulated) activates them — proven end to end by an automated test
+- [x] The exact-same webhook fired twice produces exactly one `Payment` row and one activation, by test
+- [x] `preferredCallWindowStart/End` outside 09:00–21:00 IST is rejected, by test
+- [x] No raw Aadhaar number can be stored under any field name, by test
+- [x] Refund-guarantee deadline is correct at day 29/30/31, by test
+- [x] Finance's view of a job seeker never includes phone or KYC reference, by test
+- [x] All Phase 1 gate items still pass (no regressions)
+- [x] `LESSONS.md` updated with anything non-obvious
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 3.**
