@@ -175,18 +175,18 @@ Repeatable seed script for development and tests.
 Every item must be objectively true. If any one fails, Phase 1 is not done —
 fix it rather than proceeding.
 
-- [ ] CI is green on `main`
-- [ ] `npm test` passes locally from a clean `npm install`
-- [ ] A deliberately failing test has been proven to turn CI **red**
-- [ ] A call agent token is **denied** (`403`) on finance endpoints, by automated test
-- [ ] A field agent is **denied** another area's data, by automated test
-- [ ] Refund ladder returns 100/50/25/0% correctly at the day boundaries, by test
-- [ ] Every money value in the schema is an integer; `grep` for `Float` in `schema.prisma` returns nothing
-- [ ] `grep -ri "aadhaar" prisma/` shows no field storing the number itself
-- [ ] A sensitive write produces exactly one audit row, by test
-- [ ] Login → list → `403` path works end to end in CI
-- [ ] `AGENTS.md` stack table lists exact installed versions
-- [ ] `LESSONS.md` exists (may be empty if nothing was learned)
+- [x] CI is green on `main`
+- [x] `npm test` passes locally from a clean `npm install`
+- [x] A deliberately failing test has been proven to turn CI **red**
+- [x] A call agent token is **denied** (`403`) on finance endpoints, by automated test
+- [x] A field agent is **denied** another area's data, by automated test
+- [x] Refund ladder returns 100/50/25/0% correctly at the day boundaries, by test
+- [x] Every money value in the schema is an integer; `grep` for `Float` in `schema.prisma` returns nothing
+- [x] `grep -ri "aadhaar" prisma/` shows no field storing the number itself
+- [x] A sensitive write produces exactly one audit row, by test
+- [x] Login → list → `403` path works end to end in CI
+- [x] `AGENTS.md` stack table lists exact installed versions
+- [x] `LESSONS.md` exists (may be empty if nothing was learned)
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 2.**
 Phase 2's spec will be written once this gate is confirmed.
