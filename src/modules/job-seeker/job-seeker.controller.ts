@@ -45,4 +45,11 @@ export class JobSeekerController {
   async findById(@Param('id') id: string) {
     return this.jobSeekerService.findById(id);
   }
+
+  @Post(':id/activation-payment')
+  @RequireRoles('call_agent', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'write')
+  async createActivationPayment(@Param('id') id: string) {
+    return this.jobSeekerService.createActivationPayment(id);
+  }
 }

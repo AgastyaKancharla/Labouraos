@@ -57,7 +57,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 5 — ₹499 activation payment and webhook
+### [x] Task 5 — ₹499 activation payment and webhook
 
 **Acceptance:**
 - `POST /job-seekers/:id/activation-payment` creates a `Payment` row (`type: activation`, `amount: 49900`, `status: pending`) and returns the payment link

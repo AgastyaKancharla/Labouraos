@@ -15,6 +15,8 @@ import {
   validateSalaryRange,
 } from './job-seeker.validator';
 
+import { PaymentService } from '../payment/payment.service';
+
 @Injectable()
 export class JobSeekerService {
   constructor(
@@ -22,6 +24,7 @@ export class JobSeekerService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   async create(dto: CreateJobSeekerDto, actorId: string) {
@@ -113,5 +116,49 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }
     return jobSeeker;
+  }
+
+  async createActivationPayment(jobSeekerId: string) {
+    const jobSeeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    if (jobSeeker.status === 'active') {
+      throw new BadRequestException('Job seeker is already active');
+    }
+
+    const charge = await this.paymentService.createCharge(
+      49900,
+      'job_seeker',
+      jobSeeker.id,
+    );
+
+    const code = await this.idService.generateCode('payment');
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        code,
+        city: jobSeeker.city,
+        type: 'activation',
+        amount: 49900,
+        status: 'pending',
+        gatewayReference: charge.gatewayReference,
+        subjectType: 'job_seeker',
+        subjectId: jobSeeker.id,
+        jobSeekerId: jobSeeker.id,
+      },
+    });
+
+    return {
+      paymentId: payment.id,
+      paymentCode: payment.code,
+      paymentLink: charge.paymentLink,
+      gatewayReference: charge.gatewayReference,
+      amount: payment.amount,
+      status: payment.status,
+    };
   }
 }
