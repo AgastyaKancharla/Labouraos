@@ -101,7 +101,7 @@ Generate the human-readable codes (`JS-00001`, `BZ-00042`, …).
 
 ---
 
-### [ ] Task 6 — Staff authentication
+### [x] Task 6 — Staff authentication
 
 Login for staff only. Job seekers and businesses never log in.
 
