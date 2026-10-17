@@ -47,7 +47,7 @@ A pluggable interface so the real SMS/OTP vendor can be swapped in later without
 
 ---
 
-### [ ] Task 4 — Payment provider interface and mock implementation
+### [x] Task 4 — Payment provider interface and mock implementation
 
 **Acceptance:**
 - A `PaymentProvider` interface: `createCharge(amountPaise, subjectType, subjectId): Promise<{paymentLink, gatewayReference}>` and a webhook verification method
