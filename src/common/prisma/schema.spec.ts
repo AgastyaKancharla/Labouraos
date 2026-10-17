@@ -59,6 +59,7 @@ describe('Data Model Relationships', () => {
     });
 
     // 4. Create JobSeeker linked to Referral
+    const paymentDate = new Date();
     const jobSeeker = await prisma.jobSeeker.create({
       data: {
         code: `JS-${timestamp}`,
@@ -75,6 +76,7 @@ describe('Data Model Relationships', () => {
         kycStatus: 'verified',
         kycReference: `KYC-REF-${timestamp}`,
         referredById: referral.id,
+        paymentReceivedAt: paymentDate,
         city: 'Bengaluru',
       },
       include: {
@@ -84,6 +86,8 @@ describe('Data Model Relationships', () => {
 
     expect(jobSeeker.referredBy).toBeDefined();
     expect(jobSeeker.referredBy?.id).toBe(referral.id);
+    expect(jobSeeker.paymentReceivedAt).toBeDefined();
+    expect(jobSeeker.paymentReceivedAt?.toISOString()).toBe(paymentDate.toISOString());
     expect(Number.isInteger(jobSeeker.minSalary)).toBe(true);
     expect(Number.isInteger(jobSeeker.maxSalary)).toBe(true);
 
@@ -147,6 +151,26 @@ describe('Data Model Relationships', () => {
     expect(Number.isInteger(placement.placementFee)).toBe(true);
     expect(Number.isInteger(placement.gstAmount)).toBe(true);
 
+    // 7b. Create a replacement Vacancy linked to Placement
+    const replacementVacancy = await prisma.vacancy.create({
+      data: {
+        code: `VC-REP-${timestamp}`,
+        businessId: business.id,
+        capturedByStaffId: agent.id,
+        replacementForPlacementId: placement.id,
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        status: 'open',
+        city: 'Bengaluru',
+      },
+      include: {
+        replacementForPlacement: true,
+      },
+    });
+
+    expect(replacementVacancy.replacementForPlacementId).toBe(placement.id);
+    expect(replacementVacancy.replacementForPlacement?.id).toBe(placement.id);
+
     // 8. Create Payment linking to Placement, JobSeeker, Business
     const payment = await prisma.payment.create({
       data: {
@@ -197,6 +221,7 @@ describe('Data Model Relationships', () => {
     // Cleanup created test records
     await prisma.auditLog.delete({ where: { id: auditLog.id } });
     await prisma.payment.delete({ where: { id: payment.id } });
+    await prisma.vacancy.delete({ where: { id: replacementVacancy.id } });
     await prisma.placement.delete({ where: { id: placement.id } });
     await prisma.vacancy.delete({ where: { id: vacancy.id } });
     await prisma.business.delete({ where: { id: business.id } });

@@ -25,6 +25,7 @@ model JobSeeker {
   kycReference              String?     // vendor reference ID only. NEVER raw national ID numbers.
   referredById              String?
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
+  paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   placements                Placement[]
   payments                  Payment[]
   createdAt                 DateTime    @default(now())
@@ -69,22 +70,25 @@ model Business {
 }
 
 model Vacancy {
-  id                  String      @id @default(uuid())
-  code                String      @unique
-  city                String      @default("Bengaluru")
-  businessId          String
-  business            Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  capturedByStaffId   String?
-  capturedBy          Staff?      @relation(fields: [capturedByStaffId], references: [id], onDelete: SetNull)
-  tradeSkill          String
-  offeredSalary       Int         // paise
-  status              String      @default("open") // open, filled, cancelled
-  placements          Placement[]
-  createdAt           DateTime    @default(now())
-  updatedAt           DateTime    @updatedAt
+  id                          String      @id @default(uuid())
+  code                        String      @unique
+  city                        String      @default("Bengaluru")
+  businessId                  String
+  business                    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  capturedByStaffId           String?
+  capturedBy                  Staff?      @relation(fields: [capturedByStaffId], references: [id], onDelete: SetNull)
+  replacementForPlacementId   String?     // null for fresh vacancies; links to dropped-out placement if replacement
+  replacementForPlacement     Placement?  @relation("ReplacementPlacementVacancies", fields: [replacementForPlacementId], references: [id], onDelete: SetNull)
+  tradeSkill                  String
+  offeredSalary               Int         // paise
+  status                      String      @default("open") // open, filled, cancelled
+  placements                  Placement[]
+  createdAt                   DateTime    @default(now())
+  updatedAt                   DateTime    @updatedAt
 
   @@index([city])
   @@index([businessId])
+  @@index([replacementForPlacementId])
   @@index([tradeSkill])
   @@index([status])
 }
@@ -104,6 +108,7 @@ model Placement {
   joinedDate                 DateTime?
   status                     String      @default("pending") // pending, active, dropped_out, replaced, completed
   replacementRejectionCount  Int         @default(0)
+  replacementVacancies       Vacancy[]   @relation("ReplacementPlacementVacancies")
   payments                   Payment[]
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
