@@ -88,18 +88,21 @@ export class PaymentService {
       data: { status: 'succeeded' },
     });
 
-    // If linked to a job seeker, activate them and set paymentReceivedAt
+    // If linked to a job seeker, activate or reactivate them and set paymentReceivedAt
     if (payment.jobSeekerId) {
       const beforeSeeker = payment.jobSeeker;
+      const isReactivation = Boolean(payment.reactivation);
+
       const updatedJobSeeker = await this.prisma.jobSeeker.update({
         where: { id: payment.jobSeekerId },
         data: {
           status: 'active',
           paymentReceivedAt: nowUtc,
+          hitCount: isReactivation ? 0 : (beforeSeeker?.hitCount ?? 0),
         },
       });
 
-      // Audit log the activation
+      // Audit log the activation or reactivation
       const staffActor =
         (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
         (await this.prisma.staff.findFirst());
@@ -107,11 +110,22 @@ export class PaymentService {
       if (staffActor) {
         await this.auditService.log({
           actorId: staffActor.id,
-          action: 'job_seeker.activated',
+          action: isReactivation ? 'job_seeker.reactivated' : 'job_seeker.activated',
           entityType: 'job_seeker',
           entityCode: updatedJobSeeker.code,
-          before: beforeSeeker ? (beforeSeeker as unknown as Record<string, unknown>) : null,
-          after: updatedJobSeeker as unknown as Record<string, unknown>,
+          before: beforeSeeker
+            ? {
+                status: beforeSeeker.status,
+                hitCount: beforeSeeker.hitCount,
+                paymentReceivedAt: beforeSeeker.paymentReceivedAt,
+              }
+            : null,
+          after: {
+            status: updatedJobSeeker.status,
+            hitCount: updatedJobSeeker.hitCount,
+            paymentReceivedAt: updatedJobSeeker.paymentReceivedAt,
+            reactivation: isReactivation,
+          },
           city: updatedJobSeeker.city,
         });
       }

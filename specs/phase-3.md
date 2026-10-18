@@ -50,7 +50,7 @@
 
 ---
 
-### [ ] Task 5 — Reactivation
+### [x] Task 5 — Reactivation
 
 **Acceptance:**
 - `POST /job-seekers/:id/reactivate` (call_agent, manager, ceo) only valid on a `deactivated` job seeker — triggers a fresh ₹499 activation payment (reuses Phase 2 Task 5's flow with a `reactivation: true` flag on the Payment)

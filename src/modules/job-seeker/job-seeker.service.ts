@@ -150,6 +150,12 @@ export class JobSeekerService {
       throw new BadRequestException('Job seeker is already active');
     }
 
+    if (jobSeeker.status === 'deactivated') {
+      throw new BadRequestException(
+        'Job seeker is deactivated. Use /job-seekers/:id/reactivate to reactivate',
+      );
+    }
+
     const charge = await this.paymentService.createCharge(
       49900,
       'job_seeker',
@@ -179,6 +185,68 @@ export class JobSeekerService {
       gatewayReference: charge.gatewayReference,
       amount: payment.amount,
       status: payment.status,
+    };
+  }
+
+  async reactivate(jobSeekerId: string, actorId: string) {
+    const jobSeeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    if (jobSeeker.status !== 'deactivated') {
+      throw new BadRequestException(
+        `Job seeker must be deactivated to be reactivated. Current status: '${jobSeeker.status}'`,
+      );
+    }
+
+    const charge = await this.paymentService.createCharge(
+      49900,
+      'job_seeker',
+      jobSeeker.id,
+    );
+
+    const code = await this.idService.generateCode('payment');
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        code,
+        city: jobSeeker.city,
+        type: 'activation',
+        amount: 49900,
+        status: 'pending',
+        gatewayReference: charge.gatewayReference,
+        subjectType: 'job_seeker',
+        subjectId: jobSeeker.id,
+        jobSeekerId: jobSeeker.id,
+        reactivation: true,
+      },
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.reactivation_initiated',
+      entityType: 'job_seeker',
+      entityCode: jobSeeker.code,
+      after: {
+        paymentId: payment.id,
+        paymentCode: payment.code,
+        amount: payment.amount,
+        reactivation: true,
+      },
+      city: jobSeeker.city,
+    });
+
+    return {
+      paymentId: payment.id,
+      paymentCode: payment.code,
+      paymentLink: charge.paymentLink,
+      gatewayReference: charge.gatewayReference,
+      amount: payment.amount,
+      status: payment.status,
+      reactivation: true,
     };
   }
 

@@ -94,6 +94,16 @@ export class JobSeekerController {
       req.user.sub,
     );
   }
+
+  @Post(':id/reactivate')
+  @RequireRoles('call_agent', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'write')
+  async reactivate(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.reactivate(id, req.user.sub);
+  }
 }
 
 
