@@ -70,12 +70,12 @@
 
 ## Phase 3 Gate
 
-- [ ] A job seeker with the right logged attempts gets an automatic no-pickup hit from the scheduled job, by test
-- [ ] Running the scheduled job twice never double-records a hit, by test
-- [ ] The 3rd hit deactivates and zeroes out refund eligibility in the same transaction, by test
-- [ ] Reactivation resets hit count to 0 and restarts the 30-day clock from the new payment, by test
-- [ ] A 2-hit job seeker is still refund-eligible (if otherwise within 30 days); a deactivated one never is, by test
-- [ ] All Phase 1 and Phase 2 gate items still pass
-- [ ] `LESSONS.md` updated
+- [x] A job seeker with the right logged attempts gets an automatic no-pickup hit from the scheduled job, by test
+- [x] Running the scheduled job twice never double-records a hit, by test
+- [x] The 3rd hit deactivates and zeroes out refund eligibility in the same transaction, by test
+- [x] Reactivation resets hit count to 0 and restarts the 30-day clock from the new payment, by test
+- [x] A 2-hit job seeker is still refund-eligible (if otherwise within 30 days); a deactivated one never is, by test
+- [x] All Phase 1 and Phase 2 gate items still pass
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 4.**
