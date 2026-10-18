@@ -55,6 +55,46 @@ describe('Seed Data Script', () => {
     expect(jsStatuses.has('pending_payment')).toBe(true);
     expect(jsStatuses.has('active')).toBe(true);
 
+    // Assert Phase 3 seeded job seekers: 1 hit, 2 hits, deactivated, reactivated
+    const js1Hit = await prisma.jobSeeker.findUnique({
+      where: { code: 'JS-00004' },
+      include: { hits: true },
+    });
+    expect(js1Hit).toBeDefined();
+    expect(js1Hit?.hitCount).toBe(1);
+    expect(js1Hit?.status).toBe('active');
+    expect(js1Hit?.hits).toHaveLength(1);
+
+    const js2Hits = await prisma.jobSeeker.findUnique({
+      where: { code: 'JS-00005' },
+      include: { hits: true },
+    });
+    expect(js2Hits).toBeDefined();
+    expect(js2Hits?.hitCount).toBe(2);
+    expect(js2Hits?.status).toBe('active');
+    expect(js2Hits?.hits).toHaveLength(2);
+
+    const jsDeactivated = await prisma.jobSeeker.findUnique({
+      where: { code: 'JS-00006' },
+      include: { hits: true },
+    });
+    expect(jsDeactivated).toBeDefined();
+    expect(jsDeactivated?.hitCount).toBe(3);
+    expect(jsDeactivated?.status).toBe('deactivated');
+    expect(jsDeactivated?.hits).toHaveLength(3);
+
+    const jsReactivated = await prisma.jobSeeker.findUnique({
+      where: { code: 'JS-00007' },
+      include: { payments: true },
+    });
+    expect(jsReactivated).toBeDefined();
+    expect(jsReactivated?.hitCount).toBe(0);
+    expect(jsReactivated?.status).toBe('active');
+    const reactPayment = jsReactivated?.payments.find((p) => p.reactivation);
+    expect(reactPayment).toBeDefined();
+    expect(reactPayment?.status).toBe('succeeded');
+    expect(reactPayment?.amount).toBe(49900);
+
     // Assert at least one referral is seeded
     const referral = await prisma.referral.findUnique({
       where: { code: 'RF-00001' },
@@ -73,7 +113,15 @@ describe('Seed Data Script', () => {
       'finance@laboura.local',
     ];
     const seededBusinessCodes = ['BZ-00001', 'BZ-00002', 'BZ-00003'];
-    const seededJobSeekerCodes = ['JS-00001', 'JS-00002', 'JS-00003'];
+    const seededJobSeekerCodes = [
+      'JS-00001',
+      'JS-00002',
+      'JS-00003',
+      'JS-00004',
+      'JS-00005',
+      'JS-00006',
+      'JS-00007',
+    ];
     const seededReferralCodes = ['RF-00001'];
 
     const staffBefore = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
@@ -95,7 +143,7 @@ describe('Seed Data Script', () => {
     expect(refAfter).toBe(refBefore);
     expect(staffAfter).toBe(6);
     expect(businessAfter).toBe(3);
-    expect(jsAfter).toBe(3);
+    expect(jsAfter).toBe(7);
     expect(refAfter).toBe(1);
   });
 

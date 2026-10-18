@@ -293,6 +293,209 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
+    // 4b. Phase 3 Seed Data: 1 hit, 2 hits, deactivated (3 hits), reactivated
+    const js4 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000004' },
+      update: {
+        name: 'Kavitha M',
+        tradeSkill: 'Tailor',
+        minSalary: 1400000,
+        maxSalary: 1800000,
+        status: 'active',
+        hitCount: 1,
+        paymentReceivedAt: new Date('2026-06-10T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00004',
+        name: 'Kavitha M',
+        phone: '+919900000004',
+        phoneVerified: true,
+        tradeSkill: 'Tailor',
+        minSalary: 1400000,
+        maxSalary: 1800000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'active',
+        hitCount: 1,
+        paymentReceivedAt: new Date('2026-06-10T10:00:00.000Z'),
+        kycStatus: 'verified',
+        kycReference: 'KYC-VENDOR-REF-004',
+        city: 'Bengaluru',
+      },
+    });
+
+    const js5 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000005' },
+      update: {
+        name: 'Deepak V',
+        tradeSkill: 'Carpenter',
+        minSalary: 1600000,
+        maxSalary: 2200000,
+        status: 'active',
+        hitCount: 2,
+        paymentReceivedAt: new Date('2026-06-10T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00005',
+        name: 'Deepak V',
+        phone: '+919900000005',
+        phoneVerified: true,
+        tradeSkill: 'Carpenter',
+        minSalary: 1600000,
+        maxSalary: 2200000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'active',
+        hitCount: 2,
+        paymentReceivedAt: new Date('2026-06-10T10:00:00.000Z'),
+        kycStatus: 'verified',
+        kycReference: 'KYC-VENDOR-REF-005',
+        city: 'Bengaluru',
+      },
+    });
+
+    const js6 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000006' },
+      update: {
+        name: 'Ravi Shankar',
+        tradeSkill: 'Mason',
+        minSalary: 1500000,
+        maxSalary: 2000000,
+        status: 'deactivated',
+        hitCount: 3,
+        paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00006',
+        name: 'Ravi Shankar',
+        phone: '+919900000006',
+        phoneVerified: true,
+        tradeSkill: 'Mason',
+        minSalary: 1500000,
+        maxSalary: 2000000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'deactivated',
+        hitCount: 3,
+        paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
+        kycStatus: 'verified',
+        kycReference: 'KYC-VENDOR-REF-006',
+        city: 'Bengaluru',
+      },
+    });
+
+    const js7 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000007' },
+      update: {
+        name: 'Lakshmi Bai',
+        tradeSkill: 'Housekeeper',
+        minSalary: 1200000,
+        maxSalary: 1600000,
+        status: 'active',
+        hitCount: 0,
+        paymentReceivedAt: new Date('2026-06-15T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00007',
+        name: 'Lakshmi Bai',
+        phone: '+919900000007',
+        phoneVerified: true,
+        tradeSkill: 'Housekeeper',
+        minSalary: 1200000,
+        maxSalary: 1600000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'active',
+        hitCount: 0,
+        paymentReceivedAt: new Date('2026-06-15T10:00:00.000Z'),
+        kycStatus: 'verified',
+        kycReference: 'KYC-VENDOR-REF-007',
+        city: 'Bengaluru',
+      },
+    });
+
+    // Idempotent seeding of hits for JS4, JS5, JS6
+    await prisma.jobSeekerHit.deleteMany({
+      where: { jobSeekerId: { in: [js4.id, js5.id, js6.id] } },
+    });
+
+    await prisma.jobSeekerHit.createMany({
+      data: [
+        // JS4: 1 hit
+        {
+          jobSeekerId: js4.id,
+          reason: 'offer_rejected',
+          note: 'Candidate rejected first offer',
+          recordedBy: ceo.id,
+          recordedAt: new Date('2026-06-12T11:00:00.000Z'),
+        },
+        // JS5: 2 hits
+        {
+          jobSeekerId: js5.id,
+          reason: 'no_pickup',
+          note: 'No pickup AM+PM+SMS',
+          recordedBy: 'system',
+          recordedAt: new Date('2026-06-11T18:00:00.000Z'),
+        },
+        {
+          jobSeekerId: js5.id,
+          reason: 'offer_rejected',
+          note: 'Candidate rejected second offer',
+          recordedBy: ceo.id,
+          recordedAt: new Date('2026-06-12T14:00:00.000Z'),
+        },
+        // JS6: 3 hits
+        {
+          jobSeekerId: js6.id,
+          reason: 'no_pickup',
+          note: 'No pickup AM+PM+SMS',
+          recordedBy: 'system',
+          recordedAt: new Date('2026-05-18T18:00:00.000Z'),
+        },
+        {
+          jobSeekerId: js6.id,
+          reason: 'interview_no_show',
+          note: 'No show for interview',
+          recordedBy: ceo.id,
+          recordedAt: new Date('2026-05-20T11:00:00.000Z'),
+        },
+        {
+          jobSeekerId: js6.id,
+          reason: 'offer_rejected',
+          note: 'Candidate rejected suitable offer',
+          recordedBy: ceo.id,
+          recordedAt: new Date('2026-05-22T16:00:00.000Z'),
+        },
+      ],
+    });
+
+    // Seed reactivation payment for JS7
+    await prisma.payment.upsert({
+      where: { gatewayReference: 'gw_seed_reactivation_js00007' },
+      update: {
+        status: 'succeeded',
+        amount: 49900,
+        reactivation: true,
+        jobSeekerId: js7.id,
+      },
+      create: {
+        code: 'PAY-00001',
+        city: 'Bengaluru',
+        type: 'activation',
+        amount: 49900,
+        status: 'succeeded',
+        gatewayReference: 'gw_seed_reactivation_js00007',
+        subjectType: 'job_seeker',
+        subjectId: js7.id,
+        jobSeekerId: js7.id,
+        reactivation: true,
+      },
+    });
+
     // 5. Synchronize sequences past seeded codes so IdService will never collide
     const mapping: Record<string, string> = {
       BZ: 'Business',

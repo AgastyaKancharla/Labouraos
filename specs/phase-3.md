@@ -60,7 +60,7 @@
 
 ---
 
-### [ ] Task 6 — RBAC and seed data
+### [x] Task 6 — RBAC and seed data
 
 **Acceptance:**
 - Field agent access to contact attempts and hits is scoped the same way as Phase 2 Task 8's note on job seeker access
