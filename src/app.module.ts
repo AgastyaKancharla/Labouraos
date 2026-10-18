@@ -13,6 +13,7 @@ import { PaymentModule } from './modules/payment/payment.module';
 import { JobsModule } from './jobs/jobs.module';
 import { BusinessModule } from './modules/business/business.module';
 import { VacancyModule } from './modules/vacancy/vacancy.module';
+import { FieldAgentModule } from './modules/field-agent/field-agent.module';
 
 @Module({
   imports: [
@@ -29,7 +30,9 @@ import { VacancyModule } from './modules/vacancy/vacancy.module';
     JobsModule,
     BusinessModule,
     VacancyModule,
+    FieldAgentModule,
     HealthModule,
   ],
 })
 export class AppModule {}
+

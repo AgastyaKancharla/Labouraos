@@ -52,7 +52,7 @@
 
 ---
 
-### [ ] Task 5 — Priority Dashboard API
+### [x] Task 5 — Priority Dashboard API
 
 **Acceptance:**
 - `GET /field-agent/priority-dashboard` (field_agent, call_agent, manager, ceo) returns matching opportunities for open vacancies
