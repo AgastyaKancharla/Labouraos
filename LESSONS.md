@@ -31,3 +31,13 @@ Format:
 **Symptom:** Tests expecting payment human-readable codes to match `/^PM-\d{5}$/` fail with `PAY-00001` or similar.
 **Cause:** In `src/common/id/id.service.ts`, `ENTITY_PREFIXES.payment` is mapped to `'PAY'`, not `'PM'`.
 **Fix:** Always use prefix `'PAY'` when asserting or checking human-readable payment codes (e.g. `/^PAY-\d{5}$/`).
+
+## Target identification in integration tests on shared DB state
+**Symptom:** In `seed.spec.ts`, `findFirst({ where: { geofenceFlag: true } })` returned a business from an earlier test (`BZ-00005`) instead of the seeded business (`BZ-00003`).
+**Cause:** Previous test suites create test fixtures with matching flags that remain in the local database.
+**Fix:** Always query by unique code (e.g. `findUnique({ where: { code: 'BZ-00003' } })`) when asserting on seeded or fixture-specific records.
+
+## Priority dashboard matching requires mutual trade and salary coverage
+**Symptom:** A vacancy created in tests for an area did not appear in the dashboard opportunities.
+**Cause:** Priority dashboard returns *matching opportunities* between open vacancies and active candidates. If no test candidate has a stated salary range covering the vacancy's `offeredSalary`, 0 opportunities are produced for that vacancy.
+**Fix:** Ensure test vacancies specify an `offeredSalary` within the range of at least one active test candidate with matching `tradeSkill`.

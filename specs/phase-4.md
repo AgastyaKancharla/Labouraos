@@ -73,13 +73,13 @@
 
 ## Phase 4 Gate
 
-- [ ] A field agent can create a business and vacancy only within their own area, by test
-- [ ] A call agent can create them anywhere, by test
-- [ ] The candidate shortlist filters correctly on trade and salary range and never ranks, by test
-- [ ] A geofence mismatch flags rather than blocks, by test
-- [ ] A reused selfie image across businesses is caught, by test
-- [ ] Priority dashboard sorts by refund-clock deadline first with fee value tiebreak, area-scoped vacancies and city-wide candidates, by test
-- [ ] All Phase 1–3 gate items still pass
-- [ ] `LESSONS.md` updated
+- [x] A field agent can create a business and vacancy only within their own area, by test
+- [x] A call agent can create them anywhere, by test
+- [x] The candidate shortlist filters correctly on trade and salary range and never ranks, by test
+- [x] A geofence mismatch flags rather than blocks, by test
+- [x] A reused selfie image across businesses is caught, by test
+- [x] Priority dashboard sorts by refund-clock deadline first with fee value tiebreak, area-scoped vacancies and city-wide candidates, by test
+- [x] All Phase 1–3 gate items still pass
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 5.**
