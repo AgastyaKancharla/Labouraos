@@ -25,6 +25,16 @@ jobs:
           --health-timeout 5s
           --health-retries 5
 
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -50,4 +60,6 @@ jobs:
         env:
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
           JWT_SECRET: "ci_jwt_secret_testing_only_32_characters_minimum"
+          REDIS_HOST: "localhost"
+          REDIS_PORT: "6379"
         run: npm test

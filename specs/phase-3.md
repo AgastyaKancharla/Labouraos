@@ -31,7 +31,7 @@
 
 ---
 
-### [ ] Task 3 — Scheduled no-pickup evaluation job
+### [x] Task 3 — Scheduled no-pickup evaluation job
 
 **Acceptance:**
 - A BullMQ job, run daily, that scans active job seekers: for any with a qualifying AM+PM no-pickup pattern plus WhatsApp/SMS logged (per Task 2's rule) that hasn't already been converted into a hit, calls `recordHit(..., 'no_pickup')` automatically

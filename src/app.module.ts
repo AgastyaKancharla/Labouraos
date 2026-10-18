@@ -10,6 +10,7 @@ import { KycModule } from './common/kyc/kyc.module';
 import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { PaymentModule } from './modules/payment/payment.module';
+import { JobsModule } from './jobs/jobs.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { PaymentModule } from './modules/payment/payment.module';
     JobSeekerModule,
     ReferralModule,
     PaymentModule,
+    JobsModule,
     HealthModule,
   ],
 })
