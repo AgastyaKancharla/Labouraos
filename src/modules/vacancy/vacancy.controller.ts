@@ -32,6 +32,16 @@ export class VacancyController {
     return this.vacancyService.findAll(req.user.sub, status);
   }
 
+  @Get(':id/candidates')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequirePermission('vacancy', 'read')
+  async getCandidates(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.vacancyService.getCandidates(id, req.user.sub);
+  }
+
   @Get(':id')
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
   @RequirePermission('vacancy', 'read')
@@ -42,3 +52,4 @@ export class VacancyController {
     return this.vacancyService.findById(id, req.user.sub);
   }
 }
+

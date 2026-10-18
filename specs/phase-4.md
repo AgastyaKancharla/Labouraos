@@ -32,7 +32,7 @@
 
 ---
 
-### [ ] Task 3 — Candidate shortlist (read-only matching list)
+### [x] Task 3 — Candidate shortlist (read-only matching list)
 
 **Acceptance:**
 - `GET /vacancies/:id/candidates` returns active job seekers whose trade/skill matches the vacancy AND whose stated salary range includes the vacancy's offered salary — this is a **filter, not a ranking**: return the matching list in a stable order (e.g. by registration date), do not score or rank candidates (per AGENTS.md §1 — this software is not a matching engine)

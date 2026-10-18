@@ -158,4 +158,39 @@ export class VacancyService {
       orderBy: { createdAt: 'desc' },
     });
   }
+
+  async getCandidates(vacancyId: string, actorId: string) {
+    const vacancy = await this.prisma.vacancy.findFirst({
+      where: vacancyId.startsWith('VC-') ? { code: vacancyId } : { id: vacancyId },
+      include: { business: true },
+    });
+    if (!vacancy) {
+      throw new NotFoundException(`Vacancy '${vacancyId}' not found`);
+    }
+
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!staff) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    if (staff.role === 'field_agent' && vacancy.business.area !== staff.area) {
+      throw new ForbiddenException(
+        `Access denied: vacancy business is in area '${vacancy.business.area}', not your area '${staff.area}'`,
+      );
+    }
+
+    return this.prisma.jobSeeker.findMany({
+      where: {
+        city: vacancy.city,
+        status: 'active',
+        tradeSkill: { equals: vacancy.tradeSkill, mode: 'insensitive' },
+        minSalary: { lte: vacancy.offeredSalary },
+        maxSalary: { gte: vacancy.offeredSalary },
+      },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    });
+  }
 }
+
