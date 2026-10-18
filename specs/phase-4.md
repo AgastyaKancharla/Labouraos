@@ -40,7 +40,7 @@
 
 ---
 
-### [ ] Task 4 — Anti-fraud controls on business visits
+### [x] Task 4 — Anti-fraud controls on business visits
 
 **Acceptance:**
 - Business creation (Task 1) can optionally carry a visit record: GPS coordinates + timestamp, and a selfie image reference

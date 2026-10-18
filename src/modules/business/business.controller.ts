@@ -11,7 +11,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { BusinessService } from './business.service';
-import { CreateBusinessDto } from './dto/create-business.dto';
+import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -81,4 +81,16 @@ export class BusinessController {
   ) {
     return this.vacancyService.findByBusiness(businessId, req.user.sub);
   }
+
+  @Post(':id/visits')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  async recordVisit(
+    @Param('id') businessId: string,
+    @Body() body: RecordVisitDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.businessService.recordVisit(businessId, body, req.user.sub);
+  }
 }
+

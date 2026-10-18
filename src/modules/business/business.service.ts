@@ -10,7 +10,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
-import { CreateBusinessDto } from './dto/create-business.dto';
+import {
+  calculateHaversineDistanceMeters,
+  DEFAULT_GEOFENCE_RADIUS_METERS,
+} from '../../common/geo/geo.util';
+import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
 
 @Injectable()
@@ -78,6 +82,50 @@ export class BusinessService {
       }
     }
 
+    const selfieHash = dto.visit?.selfieHash?.trim() || dto.selfieHash?.trim() || null;
+    const selfieUrl = dto.visit?.selfieUrl?.trim() || dto.selfieUrl?.trim() || null;
+
+    if (selfieHash) {
+      const duplicateInBusiness = await this.prisma.business.findFirst({
+        where: { selfieHash },
+      });
+      const duplicateInVisit = await this.prisma.businessVisit.findFirst({
+        where: { selfieHash },
+      });
+      if (duplicateInBusiness || duplicateInVisit) {
+        throw new BadRequestException(
+          'Duplicate selfie detected: image hash already used for another business record',
+        );
+      }
+    }
+
+    const businessLat = dto.businessLatitude ?? (dto.visit || dto.visitLatitude !== undefined ? dto.latitude : dto.latitude);
+    const businessLon = dto.businessLongitude ?? (dto.visit || dto.visitLongitude !== undefined ? dto.longitude : dto.longitude);
+
+    const visitLat = dto.visit?.latitude ?? dto.visitLatitude ?? (dto.businessLatitude !== undefined ? dto.latitude : undefined);
+    const visitLon = dto.visit?.longitude ?? dto.visitLongitude ?? (dto.businessLongitude !== undefined ? dto.longitude : undefined);
+
+    let geofenceFlag = false;
+    const radiusMeters =
+      Number(process.env.GEOFENCE_RADIUS_METERS) || DEFAULT_GEOFENCE_RADIUS_METERS;
+
+    if (
+      typeof businessLat === 'number' &&
+      typeof businessLon === 'number' &&
+      typeof visitLat === 'number' &&
+      typeof visitLon === 'number'
+    ) {
+      const distance = calculateHaversineDistanceMeters(
+        businessLat,
+        businessLon,
+        visitLat,
+        visitLon,
+      );
+      if (distance > radiusMeters) {
+        geofenceFlag = true;
+      }
+    }
+
     const code = await this.idService.generateCode('business');
     const contactName = (dto.contactPerson ?? dto.contactName)?.trim() ?? null;
     const city = dto.city?.trim() ?? staff.city ?? 'Bengaluru';
@@ -93,17 +141,45 @@ export class BusinessService {
         area,
         city,
         gstNumber: dto.gstNumber?.trim() ?? null,
-        latitude: typeof dto.latitude === 'number' ? dto.latitude : null,
-        longitude: typeof dto.longitude === 'number' ? dto.longitude : null,
+        latitude: typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null),
+        longitude: typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null),
+        geofenceFlag,
+        selfieUrl,
+        selfieHash,
       },
     });
+
+    if (
+      (visitLat !== undefined && visitLon !== undefined) ||
+      selfieUrl ||
+      selfieHash ||
+      dto.visit
+    ) {
+      await this.prisma.businessVisit.create({
+        data: {
+          businessId: business.id,
+          staffId: staff.id,
+          latitude: typeof visitLat === 'number' ? visitLat : (business.latitude ?? 0),
+          longitude: typeof visitLon === 'number' ? visitLon : (business.longitude ?? 0),
+          selfieUrl,
+          selfieHash,
+          geofenceFlag,
+          visitedAt: dto.visit?.visitedAt
+            ? new Date(dto.visit.visitedAt)
+            : (dto.visitedAt ? new Date(dto.visitedAt) : new Date()),
+        },
+      });
+    }
 
     await this.auditService.log({
       actorId: staff.id,
       action: 'business.created',
       entityType: 'business',
       entityCode: business.code,
-      after: business as unknown as Record<string, unknown>,
+      after: {
+        ...business,
+        ...(geofenceFlag ? { flags: ['GEOFENCE_MISMATCH'] } : {}),
+      } as unknown as Record<string, unknown>,
       city: business.city,
     });
 
@@ -136,7 +212,7 @@ export class BusinessService {
   async findById(id: string, actorId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id },
-      include: { vacancies: true },
+      include: { vacancies: true, visits: true },
     });
     if (!business) {
       throw new NotFoundException(`Business '${id}' not found`);
@@ -153,4 +229,107 @@ export class BusinessService {
 
     return business;
   }
+
+  async recordVisit(businessId: string, dto: RecordVisitDto, actorId: string) {
+    if (typeof dto.latitude !== 'number' || typeof dto.longitude !== 'number') {
+      throw new BadRequestException('latitude and longitude are required for visit record');
+    }
+
+    const business = await this.prisma.business.findUnique({
+      where: { id: businessId },
+    });
+    if (!business) {
+      throw new NotFoundException(`Business '${businessId}' not found`);
+    }
+
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!staff) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    if (staff.role === 'field_agent' && business.area !== staff.area) {
+      throw new ForbiddenException(
+        `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
+      );
+    }
+
+    const selfieHash = dto.selfieHash?.trim() || null;
+    const selfieUrl = dto.selfieUrl?.trim() || null;
+
+    if (selfieHash) {
+      const duplicateInBusiness = await this.prisma.business.findFirst({
+        where: {
+          selfieHash,
+          id: { not: business.id },
+        },
+      });
+      const duplicateInVisit = await this.prisma.businessVisit.findFirst({
+        where: {
+          selfieHash,
+          businessId: { not: business.id },
+        },
+      });
+      if (duplicateInBusiness || duplicateInVisit) {
+        throw new BadRequestException(
+          'Duplicate selfie detected: image hash already used for another business record',
+        );
+      }
+    }
+
+    let geofenceFlag = false;
+    const radiusMeters =
+      Number(process.env.GEOFENCE_RADIUS_METERS) || DEFAULT_GEOFENCE_RADIUS_METERS;
+
+    if (
+      typeof business.latitude === 'number' &&
+      typeof business.longitude === 'number'
+    ) {
+      const distance = calculateHaversineDistanceMeters(
+        business.latitude,
+        business.longitude,
+        dto.latitude,
+        dto.longitude,
+      );
+      if (distance > radiusMeters) {
+        geofenceFlag = true;
+      }
+    }
+
+    const visit = await this.prisma.businessVisit.create({
+      data: {
+        businessId: business.id,
+        staffId: staff.id,
+        latitude: dto.latitude,
+        longitude: dto.longitude,
+        selfieUrl,
+        selfieHash,
+        geofenceFlag,
+        visitedAt: dto.visitedAt ? new Date(dto.visitedAt) : new Date(),
+      },
+    });
+
+    if (geofenceFlag && !business.geofenceFlag) {
+      await this.prisma.business.update({
+        where: { id: business.id },
+        data: { geofenceFlag: true },
+      });
+    }
+
+    await this.auditService.log({
+      actorId: staff.id,
+      action: 'business.visit_recorded',
+      entityType: 'business_visit',
+      entityCode: visit.id,
+      after: {
+        ...visit,
+        ...(geofenceFlag ? { flags: ['GEOFENCE_MISMATCH'] } : {}),
+      } as unknown as Record<string, unknown>,
+      city: business.city,
+    });
+
+    return visit;
+  }
 }
+
