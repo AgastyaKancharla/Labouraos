@@ -28,6 +28,8 @@ model JobSeeker {
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   placements                Placement[]
   payments                  Payment[]
+  contactAttempts           ContactAttempt[]
+  hits                      JobSeekerHit[]
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
 
@@ -134,6 +136,7 @@ model Staff {
   area              String?
   capturedVacancies Vacancy[]
   auditLogs         AuditLog[]
+  contactAttempts   ContactAttempt[]
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -160,6 +163,7 @@ model Payment {
   referral          Referral?   @relation(fields: [referralId], references: [id], onDelete: SetNull)
   placementId       String?
   placement         Placement?  @relation(fields: [placementId], references: [id], onDelete: SetNull)
+  reactivation      Boolean     @default(false)
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -188,3 +192,40 @@ model AuditLog {
   @@index([entityType, entityCode])
   @@index([createdAt])
 }
+
+model ContactAttempt {
+  id           String        @id @default(uuid())
+  jobSeekerId  String
+  jobSeeker    JobSeeker     @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  channel      String        // call, whatsapp, sms
+  outcome      String        // picked_up, no_pickup
+  attemptedAt  DateTime      // stored in UTC
+  timeOfDay    String        // am, pm
+  hitId        String?
+  hit          JobSeekerHit? @relation(fields: [hitId], references: [id], onDelete: SetNull)
+  staffId      String?
+  staff        Staff?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([jobSeekerId])
+  @@index([hitId])
+  @@index([attemptedAt])
+}
+
+model JobSeekerHit {
+  id              String           @id @default(uuid())
+  jobSeekerId     String
+  jobSeeker       JobSeeker        @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  reason          String           // no_pickup, offer_rejected, interview_no_show
+  note            String?
+  recordedBy      String           // staffId or "system"
+  recordedAt      DateTime         @default(now())
+  contactAttempts ContactAttempt[]
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  @@index([jobSeekerId])
+  @@index([recordedAt])
+}
+

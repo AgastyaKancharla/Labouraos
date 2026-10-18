@@ -12,7 +12,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Contact-attempt logging
+### [x] Task 1 — Contact-attempt logging
 
 **Acceptance:**
 - `POST /job-seekers/:id/contact-attempts` (call_agent, manager, ceo) — records `channel` (call/whatsapp/sms), `outcome` (picked_up/no_pickup), `attemptedAt`, `timeOfDay` (am/pm)

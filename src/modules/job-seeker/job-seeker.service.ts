@@ -9,6 +9,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
+import { CreateContactAttemptDto } from './dto/create-contact-attempt.dto';
 import {
   assertNoRawAadhaar,
   validateCallWindow,
@@ -114,6 +115,8 @@ export class JobSeekerService {
       include: {
         referredBy: true,
         payments: true,
+        contactAttempts: { orderBy: { attemptedAt: 'desc' } },
+        hits: { orderBy: { recordedAt: 'desc' } },
       },
     });
     if (!jobSeeker) {
@@ -218,4 +221,71 @@ export class JobSeekerService {
 
     return updated;
   }
+
+  async recordContactAttempt(
+    jobSeekerId: string,
+    dto: CreateContactAttemptDto,
+    actorId: string,
+  ) {
+    const jobSeeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const channel = dto.channel?.toLowerCase() as 'call' | 'whatsapp' | 'sms';
+    if (!['call', 'whatsapp', 'sms'].includes(channel)) {
+      throw new BadRequestException(
+        `Invalid channel '${dto.channel}'. Allowed channels: call, whatsapp, sms`,
+      );
+    }
+
+    const outcome = dto.outcome?.toLowerCase() as 'picked_up' | 'no_pickup';
+    if (!['picked_up', 'no_pickup'].includes(outcome)) {
+      throw new BadRequestException(
+        `Invalid outcome '${dto.outcome}'. Allowed outcomes: picked_up, no_pickup`,
+      );
+    }
+
+    const timeOfDay = dto.timeOfDay?.toLowerCase() as 'am' | 'pm';
+    if (!['am', 'pm'].includes(timeOfDay)) {
+      throw new BadRequestException(
+        `Invalid timeOfDay '${dto.timeOfDay}'. Allowed: am, pm`,
+      );
+    }
+
+    let attemptedAtDate: Date;
+    if (dto.attemptedAt) {
+      attemptedAtDate = new Date(dto.attemptedAt);
+      if (isNaN(attemptedAtDate.getTime())) {
+        throw new BadRequestException('attemptedAt must be a valid ISO date');
+      }
+    } else {
+      attemptedAtDate = new Date();
+    }
+
+    const attempt = await this.prisma.contactAttempt.create({
+      data: {
+        jobSeekerId: jobSeeker.id,
+        channel,
+        outcome,
+        timeOfDay,
+        attemptedAt: attemptedAtDate,
+        staffId: actorId,
+      },
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.contact_attempt',
+      entityType: 'job_seeker',
+      entityCode: jobSeeker.code,
+      after: attempt as unknown as Record<string, unknown>,
+      city: jobSeeker.city,
+    });
+
+    return attempt;
+  }
 }
+
