@@ -40,7 +40,7 @@
 
 ---
 
-### [ ] Task 4 — 3-hit deactivation
+### [x] Task 4 — 3-hit deactivation
 
 **Acceptance:**
 - On the 3rd hit, `recordHit` transitions the job seeker's `status` to `deactivated` in the same transaction

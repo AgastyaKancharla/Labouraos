@@ -420,7 +420,7 @@ export class JobSeekerService {
       if (auditActorId) {
         await this.auditService.log({
           actorId: auditActorId,
-          action: isNowDeactivated ? 'job_seeker.deactivated' : 'job_seeker.hit',
+          action: 'job_seeker.hit',
           entityType: 'job_seeker',
           entityCode: jobSeeker.code,
           before: {
@@ -436,6 +436,25 @@ export class JobSeekerService {
           },
           city: jobSeeker.city,
         });
+
+        if (isNowDeactivated) {
+          await this.auditService.log({
+            actorId: auditActorId,
+            action: 'job_seeker.deactivated',
+            entityType: 'job_seeker',
+            entityCode: jobSeeker.code,
+            before: {
+              status: jobSeeker.status,
+              hitCount: jobSeeker.hitCount,
+            },
+            after: {
+              status: updatedJobSeeker.status,
+              hitCount: updatedJobSeeker.hitCount,
+              reason: '3_hits_accumulated',
+            },
+            city: jobSeeker.city,
+          });
+        }
       }
 
       return {

@@ -165,6 +165,12 @@ describe('Money Module', () => {
       expect(isWithinRefundGuarantee(baseDate, day31)).toBe(false);
     });
 
+    it('returns false for deactivated status regardless of elapsed days', () => {
+      const day5 = new Date(baseDate.getTime() + 5 * 24 * 60 * 60 * 1000);
+      expect(isWithinRefundGuarantee(baseDate, day5, 'active')).toBe(true);
+      expect(isWithinRefundGuarantee(baseDate, day5, 'deactivated')).toBe(false);
+    });
+
     it('rejects non-Date parameters with TypeError', () => {
       expect(() => refundGuaranteeDeadline('not-a-date' as unknown as Date)).toThrow(TypeError);
       expect(() => isWithinRefundGuarantee('invalid' as unknown as Date, baseDate)).toThrow(TypeError);
