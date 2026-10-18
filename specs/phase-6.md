@@ -63,6 +63,11 @@
 **Acceptance:**
 - Covers: business onboarding with camera-only selfie capture (no gallery picker exposed — this completes what Phase 4 Task 4 left to the client), vacancy capture, candidate shortlist, interview arrangement
 - Area-scoping is enforced server-side already (Phase 4); the app simply shouldn't offer UI for areas the logged-in agent can't act on
+- **Priority Dashboard screen** — this is a field agent's daily-use screen, not a nice-to-have (per the Playbook, every unplaced candidate and every unfilled replacement vacancy is a clock running down). Three views calling Phase 4's `/priority/*` endpoints directly, with no client-side scoring or re-sorting of what the API returns:
+  - Candidate urgency list (city-wide, per Phase 4 Task 5) — shows the urgency band and flags any 2-hit candidate clearly
+  - Vacancy priority list (own area) — in-window replacement vacancies visibly distinguished at the top
+  - Trade supply/demand board (own area) — surplus-candidate trades vs surplus-vacancy trades, at a glance
+- Nothing on this screen is cached stale across a day boundary — it re-fetches rather than reusing yesterday's sort
 
 ---
 
@@ -80,6 +85,7 @@
 - [ ] A job seeker with no referral triggers no payout, by test
 - [ ] Finance's ledger view never exposes PII, by test
 - [ ] All three interfaces are reachable, authenticate against Phase 1's auth, and each role sees only what §7 allows — spot-checked manually and noted in the report
+- [ ] The Field Agent app's Priority Dashboard screen shows live data from `/priority/*` (candidate urgency city-wide, vacancy priority and trade board area-scoped) and reflects a change correctly after a re-fetch — spot-checked manually and noted in the report
 - [ ] All Phase 1–5 gate items still pass
 - [ ] `LESSONS.md` updated
 

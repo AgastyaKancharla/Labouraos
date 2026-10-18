@@ -52,11 +52,26 @@
 
 ---
 
-### [ ] Task 5 — RBAC and seed data
+### [ ] Task 5 — Priority Dashboard API (read-only, calculated fresh)
+
+**Acceptance:**
+- Three read-only `GET` endpoints, accessible to field_agent, call_agent, manager, ceo:
+  - `GET /priority/candidates` — active job seekers sorted by days remaining on their 30-day refund clock, soonest first, computed fresh from `paymentReceivedAt` on every request — **never stored as a column**. Within the same urgency band, tiebreak by stated salary range descending (higher expected salary = bigger fee value = sorts first). Each row includes `band` (`critical` ≤7 days, `high` 8–15, `medium` 16–23, `normal` 24+) and a `twoHitFlag` (true when `hitCount === 2`, regardless of band — one more hit loses the candidate entirely).
+  - `GET /priority/vacancies` — open vacancies, with replacement vacancies (`replacementForPlacementId` not null) still inside their 15-day window sorted to the top, then by days-open descending, then by headcount × offered salary descending (same fee-value tiebreak principle).
+  - `GET /priority/trades` — per trade/skill: count of active candidates vs sum of open vacancy headcount, so a field agent can see which trades are candidate-surplus (go find vacancies) vs vacancy-surplus (go find candidates).
+- **`/priority/candidates` is city-wide for every field agent** — this is the one deliberate exception to this phase's area-scoping rule (Tasks 1–2). `/priority/vacancies` and `/priority/trades` stay area-scoped for field agents exactly like Tasks 1–2; call_agent/manager/ceo see all areas everywhere, as elsewhere.
+- This is **urgency sorting on known dates, not a ranking/matching algorithm** — see `AGENTS.md` §1. The sort rules above are the whole feature; do not add scoring, weighting, or anything that estimates fit.
+- Pure read model over existing tables — no new write paths, no new columns, nothing persisted.
+- Test: a candidate's position in `/priority/candidates` changes correctly as the injectable clock (§9) advances past a day boundary; a field agent sees candidates registered in a different field agent's area; a field agent does **not** see a vacancy from outside their own area via `/priority/vacancies`.
+
+---
+
+### [ ] Task 6 — RBAC and seed data
 
 **Acceptance:**
 - Finance's read of a business/vacancy is masked the same way as job seekers (no contact person phone number)
-- `npm run seed` extended: 2–3 businesses in different areas, each with 1–2 vacancies, at least one flagged for geofence mismatch
+- Finance is denied all `/priority/*` endpoints (403) — not a finance concern
+- `npm run seed` extended: 2–3 businesses in different areas, each with 1–2 vacancies, at least one flagged for geofence mismatch; at least one replacement vacancy inside its 15-day window and one outside it; job seekers spread across refund-clock days remaining (some ≤7, some >24) with at least one sitting on exactly 2 hits — enough spread to exercise every Priority Dashboard sort rule
 
 ---
 
@@ -67,6 +82,10 @@
 - [ ] The candidate shortlist filters correctly on trade and salary range and never ranks, by test
 - [ ] A geofence mismatch flags rather than blocks, by test
 - [ ] A reused selfie image across businesses is caught, by test
+- [ ] `/priority/candidates` is visible to a field agent city-wide, sorted soonest-refund-deadline first with the fee-value tiebreak, and flags 2-hit candidates, by test
+- [ ] `/priority/vacancies` puts an in-window replacement vacancy at the top, by test
+- [ ] `/priority/trades` correctly reports candidate/vacancy counts per trade, by test
+- [ ] Finance is denied `/priority/*`, by test
 - [ ] All Phase 1–3 gate items still pass
 - [ ] `LESSONS.md` updated
 
