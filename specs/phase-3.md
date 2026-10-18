@@ -21,7 +21,7 @@
 
 ---
 
-### [ ] Task 2 — Hit recording
+### [x] Task 2 — Hit recording
 
 **Acceptance:**
 - A service function `recordHit(jobSeekerId, reason, note?)` where `reason` is one of: `no_pickup` (requires AM + PM `no_pickup` contact attempts logged for the same day, plus a WhatsApp/SMS attempt — the function verifies these exist before accepting the hit; reject with a clear error if the prerequisite attempts aren't there), `offer_rejected`, `interview_no_show`

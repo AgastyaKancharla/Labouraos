@@ -18,6 +18,7 @@ import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import { CreateContactAttemptDto } from './dto/create-contact-attempt.dto';
+import { RecordHitDto } from './dto/record-hit.dto';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -77,5 +78,22 @@ export class JobSeekerController {
   ) {
     return this.jobSeekerService.recordContactAttempt(id, body, req.user.sub);
   }
+
+  @Post(':id/hits')
+  @RequireRoles('call_agent', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'write')
+  async recordHit(
+    @Param('id') id: string,
+    @Body() body: RecordHitDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.recordHit(
+      id,
+      body.reason,
+      body.note,
+      req.user.sub,
+    );
+  }
 }
+
 

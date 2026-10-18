@@ -10,6 +10,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import { CreateContactAttemptDto } from './dto/create-contact-attempt.dto';
+import { HitReason } from './dto/record-hit.dto';
 import {
   assertNoRawAadhaar,
   validateCallWindow,
@@ -127,7 +128,7 @@ export class JobSeekerService {
       ? refundGuaranteeDeadline(jobSeeker.paymentReceivedAt)
       : null;
     const isWithinGuarantee = jobSeeker.paymentReceivedAt
-      ? isWithinRefundGuarantee(jobSeeker.paymentReceivedAt, now)
+      ? isWithinRefundGuarantee(jobSeeker.paymentReceivedAt, now, jobSeeker.status)
       : false;
 
     return {
@@ -286,6 +287,164 @@ export class JobSeekerService {
     });
 
     return attempt;
+  }
+
+  async recordHit(
+    jobSeekerId: string,
+    reason: string,
+    note?: string,
+    actorId?: string,
+  ) {
+    const validReasons: HitReason[] = [
+      'no_pickup',
+      'offer_rejected',
+      'interview_no_show',
+    ];
+    if (!validReasons.includes(reason as HitReason)) {
+      throw new BadRequestException(
+        `Invalid hit reason '${reason}'. Allowed reasons: ${validReasons.join(', ')}`,
+      );
+    }
+
+    return await this.prisma.$transaction(async (tx) => {
+      const jobSeeker = await tx.jobSeeker.findUnique({
+        where: { id: jobSeekerId },
+      });
+      if (!jobSeeker) {
+        throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+      }
+
+      if (jobSeeker.status === 'deactivated') {
+        throw new BadRequestException('Job seeker is already deactivated');
+      }
+
+      let qualifyingAttemptIds: string[] = [];
+
+      if (reason === 'no_pickup') {
+        const attempts = await tx.contactAttempt.findMany({
+          where: {
+            jobSeekerId,
+            hitId: null,
+          },
+          orderBy: { attemptedAt: 'asc' },
+        });
+
+        const byDay: Record<string, typeof attempts> = {};
+        for (const att of attempts) {
+          const dateKey = new Date(att.attemptedAt).toLocaleDateString('en-CA', {
+            timeZone: 'Asia/Kolkata',
+          });
+          if (!byDay[dateKey]) {
+            byDay[dateKey] = [];
+          }
+          byDay[dateKey].push(att);
+        }
+
+        let foundDayKey: string | null = null;
+        let selectedIds: string[] = [];
+
+        for (const [dayKey, dayAttempts] of Object.entries(byDay)) {
+          const amNoPickupCall = dayAttempts.find(
+            (a) =>
+              a.channel === 'call' &&
+              a.timeOfDay === 'am' &&
+              a.outcome === 'no_pickup',
+          );
+          const pmNoPickupCall = dayAttempts.find(
+            (a) =>
+              a.channel === 'call' &&
+              a.timeOfDay === 'pm' &&
+              a.outcome === 'no_pickup',
+          );
+          const msgAttempt = dayAttempts.find(
+            (a) => a.channel === 'whatsapp' || a.channel === 'sms',
+          );
+
+          if (amNoPickupCall && pmNoPickupCall && msgAttempt) {
+            foundDayKey = dayKey;
+            selectedIds = [amNoPickupCall.id, pmNoPickupCall.id, msgAttempt.id];
+            break;
+          }
+        }
+
+        if (!foundDayKey) {
+          throw new BadRequestException(
+            'Cannot record no_pickup hit: job seeker does not have required AM no-pickup call, PM no-pickup call, and WhatsApp/SMS attempt logged for the same day',
+          );
+        }
+
+        qualifyingAttemptIds = selectedIds;
+      }
+
+      const recordedBy = actorId && actorId !== 'system' ? actorId : 'system';
+      const now = new Date();
+
+      const hit = await tx.jobSeekerHit.create({
+        data: {
+          jobSeekerId: jobSeeker.id,
+          reason,
+          note: note ?? null,
+          recordedBy,
+          recordedAt: now,
+        },
+      });
+
+      if (qualifyingAttemptIds.length > 0) {
+        await tx.contactAttempt.updateMany({
+          where: { id: { in: qualifyingAttemptIds } },
+          data: { hitId: hit.id },
+        });
+      }
+
+      const newHitCount = jobSeeker.hitCount + 1;
+      const isNowDeactivated = newHitCount >= 3;
+      const newStatus = isNowDeactivated ? 'deactivated' : jobSeeker.status;
+
+      const updatedJobSeeker = await tx.jobSeeker.update({
+        where: { id: jobSeeker.id },
+        data: {
+          hitCount: newHitCount,
+          status: newStatus,
+        },
+      });
+
+      let auditActorId = actorId && actorId !== 'system' ? actorId : null;
+      if (!auditActorId) {
+        const ceo = await tx.staff.findFirst({ where: { role: 'ceo' } });
+        const firstStaff = ceo ?? (await tx.staff.findFirst());
+        if (firstStaff) {
+          auditActorId = firstStaff.id;
+        }
+      }
+
+      if (auditActorId) {
+        await this.auditService.log({
+          actorId: auditActorId,
+          action: isNowDeactivated ? 'job_seeker.deactivated' : 'job_seeker.hit',
+          entityType: 'job_seeker',
+          entityCode: jobSeeker.code,
+          before: {
+            hitCount: jobSeeker.hitCount,
+            status: jobSeeker.status,
+          },
+          after: {
+            hitCount: updatedJobSeeker.hitCount,
+            status: updatedJobSeeker.status,
+            hitReason: reason,
+            hitId: hit.id,
+            recordedBy,
+          },
+          city: jobSeeker.city,
+        });
+      }
+
+      return {
+        ...hit,
+        hitCount: updatedJobSeeker.hitCount,
+        status: updatedJobSeeker.status,
+        jobSeeker: updatedJobSeeker,
+      };
+    });
   }
 }
 

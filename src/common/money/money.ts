@@ -119,7 +119,11 @@ export function refundGuaranteeDeadline(paymentReceivedAt: Date): Date {
 export function isWithinRefundGuarantee(
   paymentReceivedAt: Date,
   now: Date,
+  status?: string,
 ): boolean {
+  if (status === 'deactivated') {
+    return false;
+  }
   if (!(paymentReceivedAt instanceof Date) || isNaN(paymentReceivedAt.getTime())) {
     throw new TypeError('paymentReceivedAt must be a valid Date');
   }
@@ -129,4 +133,5 @@ export function isWithinRefundGuarantee(
   const deadline = refundGuaranteeDeadline(paymentReceivedAt);
   return now.getTime() <= deadline.getTime();
 }
+
 
