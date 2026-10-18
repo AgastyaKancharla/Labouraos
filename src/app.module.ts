@@ -11,6 +11,7 @@ import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { PaymentModule } from './modules/payment/payment.module';
 import { JobsModule } from './jobs/jobs.module';
+import { BusinessModule } from './modules/business/business.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { JobsModule } from './jobs/jobs.module';
     ReferralModule,
     PaymentModule,
     JobsModule,
+    BusinessModule,
     HealthModule,
   ],
 })

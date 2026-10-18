@@ -55,18 +55,27 @@ model Referral {
 }
 
 model Business {
-  id          String      @id @default(uuid())
-  code        String      @unique
-  city        String      @default("Bengaluru")
-  name        String
-  contactName String?
-  phone       String      @unique
-  area        String
-  vacancies   Vacancy[]
-  placements  Placement[]
-  payments    Payment[]
-  createdAt   DateTime    @default(now())
-  updatedAt   DateTime    @updatedAt
+  id            String          @id @default(uuid())
+  code          String          @unique
+  city          String          @default("Bengaluru")
+  name          String
+  address       String?
+  contactName   String?
+  phone         String          @unique
+  phoneVerified Boolean         @default(false)
+  area          String
+  gstNumber     String?
+  latitude      Float?
+  longitude     Float?
+  geofenceFlag  Boolean         @default(false)
+  selfieUrl     String?
+  selfieHash    String?
+  vacancies     Vacancy[]
+  placements    Placement[]
+  payments      Payment[]
+  visits        BusinessVisit[]
+  createdAt     DateTime        @default(now())
+  updatedAt     DateTime        @updatedAt
 
   @@index([city, area])
 }
@@ -83,6 +92,8 @@ model Vacancy {
   replacementForPlacement     Placement?  @relation("ReplacementPlacementVacancies", fields: [replacementForPlacementId], references: [id], onDelete: SetNull)
   tradeSkill                  String
   offeredSalary               Int         // paise
+  headcount                   Int         @default(1)
+  description                 String?
   status                      String      @default("open") // open, filled, cancelled
   placements                  Placement[]
   createdAt                   DateTime    @default(now())
@@ -123,22 +134,23 @@ model Placement {
 }
 
 model Staff {
-  id                String      @id @default(uuid())
-  code              String      @unique
-  city              String      @default("Bengaluru")
+  id                String           @id @default(uuid())
+  code              String           @unique
+  city              String           @default("Bengaluru")
   name              String
-  email             String      @unique
+  email             String           @unique
   passwordHash      String
-  role              String      // ceo, manager, team_lead, call_agent, field_agent, finance
+  role              String           // ceo, manager, team_lead, call_agent, field_agent, finance
   teamLeadId        String?
-  teamLead          Staff?      @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
-  teamMembers       Staff[]     @relation("TeamHierarchy")
+  teamLead          Staff?           @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
+  teamMembers       Staff[]          @relation("TeamHierarchy")
   area              String?
   capturedVacancies Vacancy[]
+  businessVisits    BusinessVisit[]
   auditLogs         AuditLog[]
   contactAttempts   ContactAttempt[]
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([city])
   @@index([role])
@@ -227,5 +239,23 @@ model JobSeekerHit {
 
   @@index([jobSeekerId])
   @@index([recordedAt])
+}
+
+model BusinessVisit {
+  id           String    @id @default(uuid())
+  businessId   String
+  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  staffId      String?
+  staff        Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  latitude     Float
+  longitude    Float
+  selfieUrl    String?
+  selfieHash   String?
+  geofenceFlag Boolean   @default(false)
+  visitedAt    DateTime  @default(now())
+  createdAt    DateTime  @default(now())
+
+  @@index([businessId])
+  @@index([selfieHash])
 }
 

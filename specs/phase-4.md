@@ -12,7 +12,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Business onboarding
+### [x] Task 1 — Business onboarding
 
 **Acceptance:**
 - `POST /businesses` (field_agent, call_agent, manager, ceo) — name, address, `area`, contact person, mobile (OTP-verified, same pattern as job seekers/referrals), GST number (optional)
@@ -52,7 +52,18 @@
 
 ---
 
-### [ ] Task 5 — RBAC and seed data
+### [ ] Task 5 — Priority Dashboard API
+
+**Acceptance:**
+- `GET /field-agent/priority-dashboard` (field_agent, call_agent, manager, ceo) returns matching opportunities for open vacancies
+- Specific sort rules: refund-clock deadline first (candidates closest to their 30-day refund guarantee expiration come first), potential fee value as tiebreak (higher fee value first)
+- Deliberate exception to area-scoping: candidate visibility is city-wide for field agents (candidates anywhere in the city are eligible), while vacancies and businesses remain strictly area-scoped to the field agent's assigned area
+- Computed fresh on every request from existing data — nothing stored in database
+- Tests: sort ordering by refund deadline first, fee value tiebreak, area-scoping on vacancies, and city-wide inclusion of candidates
+
+---
+
+### [ ] Task 6 — RBAC and seed data
 
 **Acceptance:**
 - Finance's read of a business/vacancy is masked the same way as job seekers (no contact person phone number)
@@ -67,6 +78,7 @@
 - [ ] The candidate shortlist filters correctly on trade and salary range and never ranks, by test
 - [ ] A geofence mismatch flags rather than blocks, by test
 - [ ] A reused selfie image across businesses is caught, by test
+- [ ] Priority dashboard sorts by refund-clock deadline first with fee value tiebreak, area-scoped vacancies and city-wide candidates, by test
 - [ ] All Phase 1–3 gate items still pass
 - [ ] `LESSONS.md` updated
 
