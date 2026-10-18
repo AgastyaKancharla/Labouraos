@@ -22,7 +22,7 @@
 
 ---
 
-### [ ] Task 2 — Vacancy capture
+### [x] Task 2 — Vacancy capture
 
 **Acceptance:**
 - `POST /businesses/:id/vacancies` — trade/skill required, headcount, offered salary (paise), description
