@@ -19,6 +19,15 @@ rules correctly. Do not build ranking algorithms, ML matching, or
 recommendation engines. A filtered list an agent reads is correct and
 sufficient.
 
+**Exception — not a contradiction:** the Priority Dashboard (API in Phase 4,
+field agent screen in Phase 6) sorts candidates and vacancies by dates the
+system already knows — a refund-guarantee deadline, a replacement-window
+deadline — with a fixed, stated tiebreak rule. Sorting by a known date is not
+the same as estimating how good a match is, so it does not violate the rule
+above. Do not extend it into scoring, weighting, or anything that estimates
+fit between a candidate and a vacancy — that would cross back into "matching
+engine" territory and is still off-limits.
+
 Four kinds of people use it:
 - **Call agents** — onboard job seekers, referrals and businesses by phone
 - **Field agents** — visit businesses in person, capture vacancies, arrange interviews
