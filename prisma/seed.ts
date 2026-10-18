@@ -69,7 +69,7 @@ export async function seed(prismaClient?: PrismaClient) {
     });
 
     // 1d. Call Agent (under Team Lead)
-    await prisma.staff.upsert({
+    const callAgent = await prisma.staff.upsert({
       where: { email: 'call.agent@laboura.local' },
       update: {
         name: 'Deepa Nair',
@@ -91,7 +91,7 @@ export async function seed(prismaClient?: PrismaClient) {
     });
 
     // 1e. Field Agent (under Team Lead)
-    await prisma.staff.upsert({
+    const fieldAgent = await prisma.staff.upsert({
       where: { email: 'field.agent@laboura.local' },
       update: {
         name: 'Kiran Kumar',
@@ -131,54 +131,179 @@ export async function seed(prismaClient?: PrismaClient) {
     });
 
     // 2. Businesses (different cities and areas)
-    await prisma.business.upsert({
+    const bz1 = await prisma.business.upsert({
       where: { phone: '+918011110001' },
       update: {
         name: 'Metro Facility Solutions',
         area: 'Koramangala',
         city: 'Bengaluru',
+        phoneVerified: true,
+        latitude: 12.9352,
+        longitude: 77.6245,
+        geofenceFlag: false,
       },
       create: {
         code: 'BZ-00001',
         name: 'Metro Facility Solutions',
         contactName: 'Sunil Verma',
         phone: '+918011110001',
+        phoneVerified: true,
         area: 'Koramangala',
         city: 'Bengaluru',
+        latitude: 12.9352,
+        longitude: 77.6245,
+        geofenceFlag: false,
       },
     });
 
-    await prisma.business.upsert({
+    const bz2 = await prisma.business.upsert({
       where: { phone: '+918011110002' },
       update: {
         name: 'Indira Retail Mart',
         area: 'Indiranagar',
         city: 'Bengaluru',
+        phoneVerified: true,
+        latitude: 12.9784,
+        longitude: 77.6408,
+        geofenceFlag: false,
       },
       create: {
         code: 'BZ-00002',
         name: 'Indira Retail Mart',
         contactName: 'Rohit Shenoy',
         phone: '+918011110002',
+        phoneVerified: true,
         area: 'Indiranagar',
         city: 'Bengaluru',
+        latitude: 12.9784,
+        longitude: 77.6408,
+        geofenceFlag: false,
       },
     });
 
-    await prisma.business.upsert({
+    const bz3 = await prisma.business.upsert({
       where: { phone: '+918211110003' },
       update: {
         name: 'Mysuru Industrial Fabrications',
         area: 'Hebbal Industrial',
         city: 'Mysuru',
+        phoneVerified: true,
+        latitude: 12.3051,
+        longitude: 76.6551,
+        geofenceFlag: true,
+        selfieUrl: 'https://storage.laboura.local/selfies/seed_bz3.jpg',
+        selfieHash: 'hash_seed_bz3_geofence',
       },
       create: {
         code: 'BZ-00003',
         name: 'Mysuru Industrial Fabrications',
         contactName: 'Raghavendra K',
         phone: '+918211110003',
+        phoneVerified: true,
         area: 'Hebbal Industrial',
         city: 'Mysuru',
+        latitude: 12.3051,
+        longitude: 76.6551,
+        geofenceFlag: true,
+        selfieUrl: 'https://storage.laboura.local/selfies/seed_bz3.jpg',
+        selfieHash: 'hash_seed_bz3_geofence',
+      },
+    });
+
+    // BusinessVisit for bz3 to record geofence mismatch
+    await prisma.businessVisit.deleteMany({
+      where: { businessId: bz3.id },
+    });
+    await prisma.businessVisit.create({
+      data: {
+        businessId: bz3.id,
+        staffId: fieldAgent.id,
+        latitude: 12.9352, // 140km away from Mysuru registered address
+        longitude: 77.6245,
+        selfieUrl: 'https://storage.laboura.local/selfies/seed_bz3.jpg',
+        selfieHash: 'hash_seed_bz3_geofence',
+        geofenceFlag: true,
+      },
+    });
+
+    // 2b. Vacancies (1-2 per business)
+    await prisma.vacancy.upsert({
+      where: { code: 'VC-00001' },
+      update: {
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        headcount: 2,
+        status: 'open',
+      },
+      create: {
+        code: 'VC-00001',
+        city: bz1.city,
+        businessId: bz1.id,
+        capturedByStaffId: fieldAgent.id,
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        headcount: 2,
+        status: 'open',
+      },
+    });
+
+    await prisma.vacancy.upsert({
+      where: { code: 'VC-00002' },
+      update: {
+        tradeSkill: 'Plumber',
+        offeredSalary: 2000000,
+        headcount: 1,
+        status: 'open',
+      },
+      create: {
+        code: 'VC-00002',
+        city: bz1.city,
+        businessId: bz1.id,
+        capturedByStaffId: fieldAgent.id,
+        tradeSkill: 'Plumber',
+        offeredSalary: 2000000,
+        headcount: 1,
+        status: 'open',
+      },
+    });
+
+    await prisma.vacancy.upsert({
+      where: { code: 'VC-00003' },
+      update: {
+        tradeSkill: 'Painter',
+        offeredSalary: 1800000,
+        headcount: 1,
+        status: 'open',
+      },
+      create: {
+        code: 'VC-00003',
+        city: bz2.city,
+        businessId: bz2.id,
+        capturedByStaffId: callAgent.id,
+        tradeSkill: 'Painter',
+        offeredSalary: 1800000,
+        headcount: 1,
+        status: 'open',
+      },
+    });
+
+    await prisma.vacancy.upsert({
+      where: { code: 'VC-00004' },
+      update: {
+        tradeSkill: 'Welder',
+        offeredSalary: 2400000,
+        headcount: 1,
+        status: 'open',
+      },
+      create: {
+        code: 'VC-00004',
+        city: bz3.city,
+        businessId: bz3.id,
+        capturedByStaffId: fieldAgent.id,
+        tradeSkill: 'Welder',
+        offeredSalary: 2400000,
+        headcount: 1,
+        status: 'open',
       },
     });
 

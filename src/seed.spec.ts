@@ -101,6 +101,28 @@ describe('Seed Data Script', () => {
     });
     expect(referral).toBeDefined();
     expect(referral?.type).toBe('individual');
+
+    // Assert Phase 4 seeded businesses have vacancies (1-2 each) and geofenceFlag
+    const seededVacancies = await prisma.vacancy.findMany({
+      where: {
+        code: { in: ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004'] },
+      },
+    });
+    expect(seededVacancies.length).toBe(4);
+    for (const v of seededVacancies) {
+      expect(v.status).toBe('open');
+      expect(typeof v.offeredSalary).toBe('number');
+      expect(v.offeredSalary).toBeGreaterThan(0);
+    }
+
+    // At least one business is flagged for geofence mismatch
+    const flaggedBiz = await prisma.business.findUnique({
+      where: { code: 'BZ-00003' },
+      include: { visits: true },
+    });
+    expect(flaggedBiz).toBeDefined();
+    expect(flaggedBiz?.geofenceFlag).toBe(true);
+    expect(flaggedBiz?.visits.some((v) => v.geofenceFlag)).toBe(true);
   });
 
   it('is safe to run repeatedly without duplicating or erroring (idempotency)', async () => {
@@ -113,6 +135,7 @@ describe('Seed Data Script', () => {
       'finance@laboura.local',
     ];
     const seededBusinessCodes = ['BZ-00001', 'BZ-00002', 'BZ-00003'];
+    const seededVacancyCodes = ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004'];
     const seededJobSeekerCodes = [
       'JS-00001',
       'JS-00002',
@@ -126,6 +149,7 @@ describe('Seed Data Script', () => {
 
     const staffBefore = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessBefore = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
+    const vacancyBefore = await prisma.vacancy.count({ where: { code: { in: seededVacancyCodes } } });
     const jsBefore = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
     const refBefore = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
 
@@ -134,15 +158,18 @@ describe('Seed Data Script', () => {
 
     const staffAfter = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessAfter = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
+    const vacancyAfter = await prisma.vacancy.count({ where: { code: { in: seededVacancyCodes } } });
     const jsAfter = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
     const refAfter = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
 
     expect(staffAfter).toBe(staffBefore);
     expect(businessAfter).toBe(businessBefore);
+    expect(vacancyAfter).toBe(vacancyBefore);
     expect(jsAfter).toBe(jsBefore);
     expect(refAfter).toBe(refBefore);
     expect(staffAfter).toBe(6);
     expect(businessAfter).toBe(3);
+    expect(vacancyAfter).toBe(4);
     expect(jsAfter).toBe(7);
     expect(refAfter).toBe(1);
   });

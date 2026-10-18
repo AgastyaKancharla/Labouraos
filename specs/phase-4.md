@@ -63,7 +63,7 @@
 
 ---
 
-### [ ] Task 6 — RBAC and seed data
+### [x] Task 6 — RBAC and seed data
 
 **Acceptance:**
 - Finance's read of a business/vacancy is masked the same way as job seekers (no contact person phone number)
