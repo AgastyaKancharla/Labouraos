@@ -30,6 +30,7 @@ model JobSeeker {
   payments                  Payment[]
   contactAttempts           ContactAttempt[]
   hits                      JobSeekerHit[]
+  replacementCandidateOffers ReplacementCandidate[]
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
 
@@ -116,12 +117,18 @@ model Placement {
   jobSeeker                  JobSeeker   @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
   businessId                 String
   business                   Business    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  agreedSalary               Int         @default(0) // paise
   placementFee               Int         // paise
   gstAmount                  Int         // paise
   joinedDate                 DateTime?
-  status                     String      @default("pending") // pending, active, dropped_out, replaced, completed
+  dropoutReportedAt          DateTime?
+  eligibility                String?     // employee_left, business_breach
+  clockPaused                Boolean     @default(false)
+  clockPausedAt              DateTime?
+  status                     String      @default("offered") // offered, confirmed, rejected, active, dropped_out, replaced, completed
   replacementRejectionCount  Int         @default(0)
   replacementVacancies       Vacancy[]   @relation("ReplacementPlacementVacancies")
+  replacementCandidates      ReplacementCandidate[]
   payments                   Payment[]
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
@@ -131,6 +138,23 @@ model Placement {
   @@index([jobSeekerId])
   @@index([businessId])
   @@index([status])
+}
+
+model ReplacementCandidate {
+  id              String     @id @default(uuid())
+  placementId     String
+  placement       Placement  @relation(fields: [placementId], references: [id], onDelete: Cascade)
+  jobSeekerId     String
+  jobSeeker       JobSeeker  @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
+  status          String     @default("offered") // offered, rejected, accepted
+  rejectionReason String?
+  offeredAt       DateTime   @default(now())
+  rejectedAt      DateTime?
+  createdAt       DateTime   @default(now())
+  updatedAt       DateTime   @updatedAt
+
+  @@index([placementId])
+  @@index([jobSeekerId])
 }
 
 model Staff {
