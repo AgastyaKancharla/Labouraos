@@ -33,7 +33,7 @@
 
 ---
 
-### [ ] Task 3 — Placement fee and GST
+### [x] Task 3 — Placement fee and GST
 
 **Acceptance:**
 - Money-module functions from Phase 1 Task 4 (`calculatePlacementFee`, `calculateGst`) are used here, not reimplemented
