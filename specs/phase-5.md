@@ -73,12 +73,14 @@
 
 ### [ ] Task 7 — Refund ladder and refund approval (business side)
 
-**Acceptance:**
+**STOP before writing `calculateRefund`'s ladder bands. There is an unresolved contradiction in the stated rule, flagged in the Playbook since 2026-10-17 and still not answered by the client (Sanket) as of this phase starting: a cash refund only becomes available once 15 days have passed with no replacement found, but the ladder as written pays 100% only within days 0–15 — a band that can never fire under that gate, making the real maximum refund 50%. Do not guess which reading is intended. Implement Task 1–6 and the rest of this phase, write `calculateRefund`'s band boundaries as a clearly-isolated, easily-changed table (e.g. a single array of `{maxDays, percent}`), and report back to Agastya with this specific question before marking Task 7 or the Phase 5 Gate complete. Two readings on the table for Agastya to pick from when asked: (a) the 15-day wait is real and the 100% row should simply be deleted (max refund is 50% at day 30, tapering to nil at 60); (b) the 15 days is a maximum *search* window — if Laboura concedes before day 15 elapses, the clock stops there and 100% applies, and the ladder's later bands only apply to the rarer case where the search runs past day 15. Do not pick one yourself.**
+
+**Acceptance (once the ladder bands are confirmed):**
 - Uses the Phase 1 Task 4 `calculateRefund(amountPaise, daysElapsed)` function — not reimplemented
 - `daysElapsed` is computed from `dropoutReportedAt` to now (or to the pause point if `clockPaused`), using injectable time
 - Refund only payable if no replacement was found within 15 days of the dropout report AND `eligibility === 'employee_left'`
 - `POST /placements/:id/refund` (ceo, manager approve only, per RBAC §7) — creates a `Payment` (`type: refund`) for the ladder-calculated amount, audit logged
-- Tests assert the ladder amount is correct at days 0, 15, 16, 30, 31, 45, 46, 61 relative to `dropoutReportedAt`
+- Tests assert the ladder amount is correct at days 0, 15, 16, 30, 31, 45, 46, 61 relative to `dropoutReportedAt`, using whichever reading Agastya confirms
 
 ---
 
@@ -86,8 +88,9 @@
 
 **Acceptance:**
 - This closes the loop opened in Phase 2 Task 6 and extended in Phase 3 Task 4: `isWithinRefundGuarantee` is now also checked against `status !== 'placed'` (a job seeker with a confirmed placement is not refund-eligible even within 30 days, since a suitable offer clearly existed)
-- `POST /job-seekers/:id/refund` (ceo, manager approve only) — valid only when the 30 days have elapsed with no placement and no deactivation; creates a `Payment` (`type: refund`, `amount: 49900`), audit logged
-- Test: a job seeker placed on day 10 cannot claim the 30-day refund on day 31; one never placed and never deactivated can
+- **Also close this gap, flagged in the Playbook's known-build-gaps list:** a job seeker who **rejected** a suitable offer (Phase 5 Task 2's `offer_rejected` hit) is not refund-eligible either, even if they never reach the 3-hit deactivation threshold and are still `status: active`. The rule is "no *suitable offer* within 30 days," not "never placed" — a rejected offer is still an offer that was made. Extend `isWithinRefundGuarantee` (or the check around it) to also return `false` when the job seeker has any `Hit` with `reason: 'offer_rejected'`, querying the existing `hits` relation — do not add a new column for this, the data already exists.
+- `POST /job-seekers/:id/refund` (ceo, manager approve only) — valid only when the 30 days have elapsed with no placement, no rejected-offer hit, and no deactivation; creates a `Payment` (`type: refund`, `amount: 49900`), audit logged
+- Test: a job seeker placed on day 10 cannot claim the 30-day refund on day 31; a job seeker who rejected a suitable offer on day 5 (one hit, still `active`, never reaching 3) cannot claim it on day 31 either; one never placed, never offered-and-rejected, and never deactivated can
 
 ---
 
@@ -103,7 +106,7 @@
 
 - [ ] Placement fee and GST are calculated correctly and billed to the business, never deducted from the job seeker, by test
 - [ ] Rejecting an offer records a hit through the same path Phase 3 built, by test
-- [ ] The refund ladder returns the correct amount at every day boundary (0/15/16/30/31/45/46/61), by test
+- [ ] The refund ladder's band boundaries were confirmed with Agastya (not guessed) before being finalized, and return the correct amount at every day boundary (0/15/16/30/31/45/46/61), by test
 - [ ] A `business_breach` dropout is correctly denied any guarantee remedy, by test
 - [ ] The 3rd replacement rejection pauses the clock, and elapsed-day math respects the pause, by test
 - [ ] A job seeker's 30-day refund is correctly blocked once they're placed, by test
