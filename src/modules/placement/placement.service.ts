@@ -13,6 +13,7 @@ import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
 import { RecordJoinedDto } from './dto/record-joined.dto';
+import { RecordDropoutDto } from './dto/record-dropout.dto';
 
 @Injectable()
 export class PlacementService {
@@ -354,5 +355,99 @@ export class PlacementService {
 
     return updated;
   }
+
+  async recordDropout(id: string, dto: RecordDropoutDto, actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    if (placement.status !== 'active') {
+      throw new BadRequestException(
+        `Placement must be in 'active' status to report a dropout. Current status: '${placement.status}'`,
+      );
+    }
+
+    if (
+      !dto.eligibility ||
+      (dto.eligibility !== 'employee_left' && dto.eligibility !== 'business_breach')
+    ) {
+      throw new BadRequestException(
+        "eligibility must be either 'employee_left' or 'business_breach'",
+      );
+    }
+
+    let dropoutReportedAt: Date;
+    if (dto.dropoutReportedAt) {
+      dropoutReportedAt = new Date(dto.dropoutReportedAt);
+      if (isNaN(dropoutReportedAt.getTime())) {
+        throw new BadRequestException('dropoutReportedAt must be a valid date string');
+      }
+    } else {
+      dropoutReportedAt = new Date();
+    }
+
+    const before = {
+      status: placement.status,
+      dropoutReportedAt: placement.dropoutReportedAt,
+      eligibility: placement.eligibility,
+    };
+
+    const updated = await this.prisma.placement.update({
+      where: { id: placement.id },
+      data: {
+        status: 'dropped_out',
+        dropoutReportedAt,
+        eligibility: dto.eligibility,
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+      },
+    });
+
+    await this.auditService.log({
+      action: 'placement_dropout',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      before,
+      after: {
+        status: updated.status,
+        dropoutReportedAt: updated.dropoutReportedAt,
+        eligibility: updated.eligibility,
+        reason: dto.reason,
+      },
+    });
+
+    return updated;
+  }
 }
+
 
