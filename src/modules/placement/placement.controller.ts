@@ -18,6 +18,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
 import { RecordJoinedDto } from './dto/record-joined.dto';
+import { RecordDropoutDto } from './dto/record-dropout.dto';
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -64,5 +65,17 @@ export class PlacementController {
   ) {
     return this.placementService.recordJoined(id, dto, req.user.sub);
   }
+
+  @Post(':id/dropout')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async recordDropout(
+    @Param('id') id: string,
+    @Body() dto: RecordDropoutDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.recordDropout(id, dto, req.user.sub);
+  }
 }
+
 

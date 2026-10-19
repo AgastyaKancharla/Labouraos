@@ -52,7 +52,7 @@
 
 ---
 
-### [ ] Task 5 — Dropout reporting and the 60-day replacement clock
+### [x] Task 5 — Dropout reporting and the 60-day replacement clock
 
 **Acceptance:**
 - `POST /placements/:id/dropout` — only valid on an `active` placement, records `dropoutReportedAt` (this is the clock start, per AGENTS.md §6 — measured from the report date, not the actual leave date), and an `eligibility` field: `employee_left` or `business_breach`

@@ -196,6 +196,8 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             `JS-P5ODD-${timestamp}`,
             `JS-P5WH-${timestamp}`,
             `JS-P5JOIN-${timestamp}`,
+            `JS-P5DROP1-${timestamp}`,
+            `JS-P5DROP2-${timestamp}`,
           ],
         },
       },
@@ -710,5 +712,164 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .expect(400);
     });
   });
+
+  describe('Task 5: Dropout reporting and the 60-day replacement clock', () => {
+    it('records employee_left dropout on active placement with dropoutReportedAt and audit log', async () => {
+      // Create candidate, placement, accept, and join
+      const candidate = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5DROP1-${timestamp}`,
+          name: 'Dropout Candidate 1',
+          phone: `96${timestamp.toString().slice(-8)}5`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ jobSeekerId: candidate.id, agreedSalary: 2000000 })
+        .expect(201);
+
+      const placementId = placeRes.body.id;
+
+      // Cannot report dropout on 'offered' placement
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(400);
+
+      // Confirm and join
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/respond`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      // Cannot report dropout on 'confirmed' placement
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(400);
+
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({})
+        .expect(201);
+
+      // Reject invalid eligibility
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ eligibility: 'invalid_reason' })
+        .expect(400);
+
+      // Area-scoping: FA from Indiranagar cannot report dropout on Koramangala business placement
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${faIndiToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(403);
+
+      // Successfully report dropout
+      const reportDate = '2026-11-01T10:00:00.000Z';
+      const dropRes = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({
+          eligibility: 'employee_left',
+          dropoutReportedAt: reportDate,
+          reason: 'Worker left for family emergency',
+        })
+        .expect(201);
+
+      expect(dropRes.body.id).toBe(placementId);
+      expect(dropRes.body.status).toBe('dropped_out');
+      expect(dropRes.body.eligibility).toBe('employee_left');
+      expect(new Date(dropRes.body.dropoutReportedAt).toISOString()).toBe(reportDate);
+
+      // Check DB state
+      const dbPlacement = await prisma.placement.findUnique({
+        where: { id: placementId },
+      });
+      expect(dbPlacement?.status).toBe('dropped_out');
+      expect(dbPlacement?.eligibility).toBe('employee_left');
+      expect(dbPlacement?.dropoutReportedAt?.toISOString()).toBe(reportDate);
+
+      // Audit log entry
+      const audit = await prisma.auditLog.findFirst({
+        where: {
+          entityCode: placeRes.body.code,
+          action: 'placement_dropout',
+        },
+      });
+      expect(audit).toBeDefined();
+      expect(audit?.action).toBe('placement_dropout');
+    });
+
+    it('records business_breach dropout marking placement ineligible for remedy', async () => {
+      const candidate = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5DROP2-${timestamp}`,
+          name: 'Dropout Candidate 2',
+          phone: `97${timestamp.toString().slice(-8)}6`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ jobSeekerId: candidate.id, agreedSalary: 2000000 })
+        .expect(201);
+
+      const placementId = placeRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/respond`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({})
+        .expect(201);
+
+      const dropRes = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          eligibility: 'business_breach',
+          reason: 'Business changed work role and underpaid worker',
+        })
+        .expect(201);
+
+      expect(dropRes.body.status).toBe('dropped_out');
+      expect(dropRes.body.eligibility).toBe('business_breach');
+      expect(dropRes.body.dropoutReportedAt).toBeDefined();
+
+      const dbPlacement = await prisma.placement.findUnique({
+        where: { id: placementId },
+      });
+      expect(dbPlacement?.status).toBe('dropped_out');
+      expect(dbPlacement?.eligibility).toBe('business_breach');
+    });
+  });
 });
+
 
