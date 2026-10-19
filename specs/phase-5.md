@@ -71,16 +71,16 @@
 
 ---
 
-### [ ] Task 7 — Refund ladder and refund approval (business side)
+### [ ] Task 7 — Refund approval (business side)
 
-**STOP before writing `calculateRefund`'s ladder bands. There is an unresolved contradiction in the stated rule, flagged in the Playbook since 2026-10-17 and still not answered by the client (Sanket) as of this phase starting: a cash refund only becomes available once 15 days have passed with no replacement found, but the ladder as written pays 100% only within days 0–15 — a band that can never fire under that gate, making the real maximum refund 50%. Do not guess which reading is intended. Implement Task 1–6 and the rest of this phase, write `calculateRefund`'s band boundaries as a clearly-isolated, easily-changed table (e.g. a single array of `{maxDays, percent}`), and report back to Agastya with this specific question before marking Task 7 or the Phase 5 Gate complete. Two readings on the table for Agastya to pick from when asked: (a) the 15-day wait is real and the 100% row should simply be deleted (max refund is 50% at day 30, tapering to nil at 60); (b) the 15 days is a maximum *search* window — if Laboura concedes before day 15 elapses, the clock stops there and 100% applies, and the ladder's later bands only apply to the rarer case where the search runs past day 15. Do not pick one yourself.**
+**Resolved 2026-10-20 — the earlier tapered ladder is gone, replaced with a flat rule.** `AGENTS.md` §6 Business side now reads: before day 15, no cash refund is payable (Laboura is still searching for a free replacement); from day 15 onward with no replacement found, the refund is a **flat 100%** of the placement fee, no 50%/25% tapering. Update `calculateRefund(amountPaise, daysElapsed)` (Phase 1 Task 4, in `src/common/money/money.ts`) to implement this flat rule exactly, and update its existing tests in `money.spec.ts` (which currently assert the old tapered ladder at days 0/15/16/30/31/45/46/61) to assert the new flat rule at the same boundaries instead — this supersedes those tests, it isn't a regression.
 
-**Acceptance (once the ladder bands are confirmed):**
-- Uses the Phase 1 Task 4 `calculateRefund(amountPaise, daysElapsed)` function — not reimplemented
+**Acceptance:**
+- `calculateRefund` returns `0` (or the caller treats it as not-yet-eligible — your call on which, but be consistent) for `daysElapsed < 15`, and the full `amountPaise` for `daysElapsed >= 15`
 - `daysElapsed` is computed from `dropoutReportedAt` to now (or to the pause point if `clockPaused`), using injectable time
 - Refund only payable if no replacement was found within 15 days of the dropout report AND `eligibility === 'employee_left'`
-- `POST /placements/:id/refund` (ceo, manager approve only, per RBAC §7) — creates a `Payment` (`type: refund`) for the ladder-calculated amount, audit logged
-- Tests assert the ladder amount is correct at days 0, 15, 16, 30, 31, 45, 46, 61 relative to `dropoutReportedAt`, using whichever reading Agastya confirms
+- `POST /placements/:id/refund` (ceo, manager approve only, per RBAC §7) — creates a `Payment` (`type: refund`) for the full placement-fee amount once eligible, audit logged
+- Tests assert: no refund payable at days 0, 10, 14; full refund payable at days 15, 16, 30, 45, 61 (the flat rule, once triggered, doesn't taper off with more elapsed time)
 
 ---
 
@@ -106,7 +106,7 @@
 
 - [ ] Placement fee and GST are calculated correctly and billed to the business, never deducted from the job seeker, by test
 - [ ] Rejecting an offer records a hit through the same path Phase 3 built, by test
-- [ ] The refund ladder's band boundaries were confirmed with Agastya (not guessed) before being finalized, and return the correct amount at every day boundary (0/15/16/30/31/45/46/61), by test
+- [ ] The flat refund rule (0% before day 15, 100% from day 15 onward, no tapering) is correct at every day boundary tested, by test
 - [ ] A `business_breach` dropout is correctly denied any guarantee remedy, by test
 - [ ] The 3rd replacement rejection pauses the clock, and elapsed-day math respects the pause, by test
 - [ ] A job seeker's 30-day refund is correctly blocked once they're placed, by test

@@ -145,14 +145,7 @@ npx prisma studio    # browse the database visually
 ### Business side
 - Placement fee: **50% of the placed candidate's first month salary**, plus **18% GST** on top. Never deducted from the employee's salary.
 - **60-day replacement guarantee.** Free replacement is the default remedy. Cash refund only if no replacement is found within **15 days of the dropout being reported**.
-- **Refund ladder**, measured from the dropout report date:
-
-  | Days elapsed | Refund |
-  | --- | --- |
-  | 0–15 | 100% |
-  | 16–30 | 50% |
-  | 31–45 | 25% |
-  | 46–60 | 0% |
+- **Refund amount (simplified, LOCKED 2026-10-20 — supersedes any earlier tapered ladder):** flat. Before day 15, no cash refund is payable at all (Laboura is still searching for a free replacement). From day 15 onward with no replacement found, the refund is a **flat 100%** of the placement fee — no 50%/25%/tapering. This is a deliberate simplification pending real-world data; it may be revisited later, but until it is, `calculateRefund(amountPaise, daysElapsed)` must implement exactly this: `daysElapsed < 15` → not yet eligible (the caller rejects the request rather than returning a partial amount), `daysElapsed >= 15` → full `amountPaise`.
 
 - **Eligibility**: applies only when the **employee leaves**. A business-side breach (didn't pay, changed the role, mistreated the worker) does **not** qualify.
 - A business may reject up to **2 replacement candidates**; from the 3rd rejection the guarantee clock **pauses** as unreasonable.
