@@ -39,10 +39,12 @@ describe('End-to-End Walking Skeleton', () => {
     callAgentId = agent.id;
 
     // Ensure job seeker table is clear for this test
+    await prisma.placement.deleteMany({});
     await prisma.jobSeeker.deleteMany({});
   });
 
   beforeEach(async () => {
+    await prisma.placement.deleteMany({});
     await prisma.jobSeeker.deleteMany({});
   });
 
@@ -50,6 +52,8 @@ describe('End-to-End Walking Skeleton', () => {
     if (callAgentId) {
       await prisma.staff.delete({ where: { id: callAgentId } });
     }
+    const { seed } = await import('../prisma/seed');
+    await seed(prisma);
     if (app) {
       await app.close();
     }

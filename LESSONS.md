@@ -41,3 +41,8 @@ Format:
 **Symptom:** A vacancy created in tests for an area did not appear in the dashboard opportunities.
 **Cause:** Priority dashboard returns *matching opportunities* between open vacancies and active candidates. If no test candidate has a stated salary range covering the vacancy's `offeredSalary`, 0 opportunities are produced for that vacancy.
 **Fix:** Ensure test vacancies specify an `offeredSalary` within the range of at least one active test candidate with matching `tradeSkill`.
+
+## Foreign key constraints when clearing or tearing down JobSeeker and Placement records
+**Symptom:** In `walking-skeleton.spec.ts` or test teardown, `prisma.jobSeeker.deleteMany({})` failed with `Foreign key constraint violated on the constraint: Placement_jobSeekerId_fkey` or `Placement_vacancyId_fkey`.
+**Cause:** `Placement` has `onDelete: Restrict` relationships with `JobSeeker` and `Vacancy`, while `Vacancy.replacementForPlacementId` references `Placement`. Deleting `JobSeeker` or `Vacancy` while `Placement` rows exist violates foreign key constraints.
+**Fix:** Before deleting `JobSeeker`, delete or clear dependent `Placement` rows (or unlink `replacementForPlacementId` first, then delete `Placement`, then `Vacancy` and `JobSeeker`). When clearing tables in `walking-skeleton.spec.ts`, delete `Placement` before `JobSeeker`, and re-run `await seed(prisma)` in `afterAll` so seeded state remains intact for subsequent suites.

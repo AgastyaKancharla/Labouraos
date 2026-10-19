@@ -105,15 +105,47 @@ describe('Seed Data Script', () => {
     // Assert Phase 4 seeded businesses have vacancies (1-2 each) and geofenceFlag
     const seededVacancies = await prisma.vacancy.findMany({
       where: {
-        code: { in: ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004'] },
+        code: { in: ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004', 'VC-00005', 'VC-00006'] },
       },
     });
-    expect(seededVacancies.length).toBe(4);
+    expect(seededVacancies.length).toBe(6);
     for (const v of seededVacancies) {
       expect(v.status).toBe('open');
       expect(typeof v.offeredSalary).toBe('number');
       expect(v.offeredSalary).toBeGreaterThan(0);
     }
+
+    // Assert replacement vacancies: at least one inside 15-day window and one outside it
+    const fixedNow = new Date('2026-07-01T10:00:00.000Z');
+    const inWindowRepl = seededVacancies.find((v) => v.code === 'VC-00005');
+    const outWindowRepl = seededVacancies.find((v) => v.code === 'VC-00006');
+    expect(inWindowRepl).toBeDefined();
+    expect(outWindowRepl).toBeDefined();
+    expect(inWindowRepl?.replacementForPlacementId).not.toBeNull();
+    expect(outWindowRepl?.replacementForPlacementId).not.toBeNull();
+
+    const daysOpenIn = Math.floor((fixedNow.getTime() - inWindowRepl!.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    const daysOpenOut = Math.floor((fixedNow.getTime() - outWindowRepl!.createdAt.getTime()) / (1000 * 60 * 60 * 24));
+    expect(daysOpenIn).toBeLessThanOrEqual(15);
+    expect(daysOpenOut).toBeGreaterThan(15);
+
+    // Assert job seekers spread across refund-clock days remaining (some ≤7, some >24)
+    const allActive = await prisma.jobSeeker.findMany({
+      where: {
+        code: { in: ['JS-00001', 'JS-00003', 'JS-00004', 'JS-00005', 'JS-00007'] },
+      },
+    });
+    const daysRemainingList = allActive
+      .filter((j) => j.paymentReceivedAt)
+      .map((j) => {
+        const deadline = new Date(j.paymentReceivedAt!.getTime() + 30 * 24 * 60 * 60 * 1000);
+        return Math.ceil((deadline.getTime() - fixedNow.getTime()) / (1000 * 60 * 60 * 24));
+      });
+    expect(daysRemainingList.some((d) => d <= 7)).toBe(true);
+    expect(daysRemainingList.some((d) => d > 24)).toBe(true);
+
+    // Assert at least one candidate sitting on exactly 2 hits
+    expect(allActive.some((j) => j.hitCount === 2)).toBe(true);
 
     // At least one business is flagged for geofence mismatch
     const flaggedBiz = await prisma.business.findUnique({
@@ -135,7 +167,8 @@ describe('Seed Data Script', () => {
       'finance@laboura.local',
     ];
     const seededBusinessCodes = ['BZ-00001', 'BZ-00002', 'BZ-00003'];
-    const seededVacancyCodes = ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004'];
+    const seededVacancyCodes = ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004', 'VC-00005', 'VC-00006'];
+    const seededPlacementCodes = ['PL-00001'];
     const seededJobSeekerCodes = [
       'JS-00001',
       'JS-00002',
@@ -150,6 +183,7 @@ describe('Seed Data Script', () => {
     const staffBefore = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessBefore = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
     const vacancyBefore = await prisma.vacancy.count({ where: { code: { in: seededVacancyCodes } } });
+    const placementBefore = await prisma.placement.count({ where: { code: { in: seededPlacementCodes } } });
     const jsBefore = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
     const refBefore = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
 
@@ -159,17 +193,20 @@ describe('Seed Data Script', () => {
     const staffAfter = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessAfter = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
     const vacancyAfter = await prisma.vacancy.count({ where: { code: { in: seededVacancyCodes } } });
+    const placementAfter = await prisma.placement.count({ where: { code: { in: seededPlacementCodes } } });
     const jsAfter = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
     const refAfter = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
 
     expect(staffAfter).toBe(staffBefore);
     expect(businessAfter).toBe(businessBefore);
     expect(vacancyAfter).toBe(vacancyBefore);
+    expect(placementAfter).toBe(placementBefore);
     expect(jsAfter).toBe(jsBefore);
     expect(refAfter).toBe(refBefore);
     expect(staffAfter).toBe(6);
     expect(businessAfter).toBe(3);
-    expect(vacancyAfter).toBe(4);
+    expect(vacancyAfter).toBe(6);
+    expect(placementAfter).toBe(1);
     expect(jsAfter).toBe(7);
     expect(refAfter).toBe(1);
   });

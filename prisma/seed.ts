@@ -227,7 +227,7 @@ export async function seed(prismaClient?: PrismaClient) {
     });
 
     // 2b. Vacancies (1-2 per business)
-    await prisma.vacancy.upsert({
+    const vc1 = await prisma.vacancy.upsert({
       where: { code: 'VC-00001' },
       update: {
         tradeSkill: 'Electrician',
@@ -327,7 +327,7 @@ export async function seed(prismaClient?: PrismaClient) {
     });
 
     // 4. Job Seekers (different cities and statuses: active, pending_payment)
-    await prisma.jobSeeker.upsert({
+    const js1 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000001' },
       update: {
         name: 'Suresh Gowda',
@@ -521,7 +521,7 @@ export async function seed(prismaClient?: PrismaClient) {
         maxSalary: 1600000,
         status: 'active',
         hitCount: 0,
-        paymentReceivedAt: new Date('2026-06-15T10:00:00.000Z'),
+        paymentReceivedAt: new Date('2026-06-28T10:00:00.000Z'),
         city: 'Bengaluru',
       },
       create: {
@@ -536,7 +536,7 @@ export async function seed(prismaClient?: PrismaClient) {
         preferredCallWindowEnd: '18:00',
         status: 'active',
         hitCount: 0,
-        paymentReceivedAt: new Date('2026-06-15T10:00:00.000Z'),
+        paymentReceivedAt: new Date('2026-06-28T10:00:00.000Z'),
         kycStatus: 'verified',
         kycReference: 'KYC-VENDOR-REF-007',
         city: 'Bengaluru',
@@ -618,6 +618,74 @@ export async function seed(prismaClient?: PrismaClient) {
         subjectId: js7.id,
         jobSeekerId: js7.id,
         reactivation: true,
+      },
+    });
+
+    // Seed dropped-out placement for replacement vacancy testing
+    const pl1 = await prisma.placement.upsert({
+      where: { code: 'PL-00001' },
+      update: {
+        status: 'dropped_out',
+      },
+      create: {
+        code: 'PL-00001',
+        city: 'Bengaluru',
+        vacancyId: vc1.id,
+        jobSeekerId: js1.id,
+        businessId: bz1.id,
+        placementFee: 1100000,
+        gstAmount: 198000,
+        status: 'dropped_out',
+      },
+    });
+
+    // VC-00005: Replacement vacancy inside 15-day window (created 4 days ago relative to 2026-07-01)
+    await prisma.vacancy.upsert({
+      where: { code: 'VC-00005' },
+      update: {
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        headcount: 1,
+        status: 'open',
+        replacementForPlacementId: pl1.id,
+        createdAt: new Date('2026-06-27T10:00:00.000Z'),
+      },
+      create: {
+        code: 'VC-00005',
+        city: bz1.city,
+        businessId: bz1.id,
+        capturedByStaffId: fieldAgent.id,
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        headcount: 1,
+        status: 'open',
+        replacementForPlacementId: pl1.id,
+        createdAt: new Date('2026-06-27T10:00:00.000Z'),
+      },
+    });
+
+    // VC-00006: Replacement vacancy outside 15-day window (created 26 days ago relative to 2026-07-01)
+    await prisma.vacancy.upsert({
+      where: { code: 'VC-00006' },
+      update: {
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        headcount: 1,
+        status: 'open',
+        replacementForPlacementId: pl1.id,
+        createdAt: new Date('2026-06-05T10:00:00.000Z'),
+      },
+      create: {
+        code: 'VC-00006',
+        city: bz1.city,
+        businessId: bz1.id,
+        capturedByStaffId: fieldAgent.id,
+        tradeSkill: 'Electrician',
+        offeredSalary: 2200000,
+        headcount: 1,
+        status: 'open',
+        replacementForPlacementId: pl1.id,
+        createdAt: new Date('2026-06-05T10:00:00.000Z'),
       },
     });
 

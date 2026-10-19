@@ -52,7 +52,7 @@
 
 ---
 
-### [ ] Task 5 — Priority Dashboard API (read-only, calculated fresh)
+### [x] Task 5 — Priority Dashboard API (read-only, calculated fresh)
 
 **Acceptance:**
 - Three read-only `GET` endpoints, accessible to field_agent, call_agent, manager, ceo:
@@ -66,7 +66,7 @@
 
 ---
 
-### [ ] Task 6 — RBAC and seed data
+### [x] Task 6 — RBAC and seed data
 
 **Acceptance:**
 - Finance's read of a business/vacancy is masked the same way as job seekers (no contact person phone number)
@@ -77,16 +77,16 @@
 
 ## Phase 4 Gate
 
-- [ ] A field agent can create a business and vacancy only within their own area, by test
-- [ ] A call agent can create them anywhere, by test
-- [ ] The candidate shortlist filters correctly on trade and salary range and never ranks, by test
-- [ ] A geofence mismatch flags rather than blocks, by test
-- [ ] A reused selfie image across businesses is caught, by test
-- [ ] `/priority/candidates` is visible to a field agent city-wide, sorted soonest-refund-deadline first with the fee-value tiebreak, and flags 2-hit candidates, by test
-- [ ] `/priority/vacancies` puts an in-window replacement vacancy at the top, by test
-- [ ] `/priority/trades` correctly reports candidate/vacancy counts per trade, by test
-- [ ] Finance is denied `/priority/*`, by test
-- [ ] All Phase 1–3 gate items still pass
-- [ ] `LESSONS.md` updated
+- [x] A field agent can create a business and vacancy only within their own area, by test
+- [x] A call agent can create them anywhere, by test
+- [x] The candidate shortlist filters correctly on trade and salary range and never ranks, by test
+- [x] A geofence mismatch flags rather than blocks, by test
+- [x] A reused selfie image across businesses is caught, by test
+- [x] `/priority/candidates` is visible to a field agent city-wide, sorted soonest-refund-deadline first with the fee-value tiebreak, and flags 2-hit candidates, by test
+- [x] `/priority/vacancies` puts an in-window replacement vacancy at the top, by test
+- [x] `/priority/trades` correctly reports candidate/vacancy counts per trade, by test
+- [x] Finance is denied `/priority/*`, by test
+- [x] All Phase 1–3 gate items still pass
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 5.**
