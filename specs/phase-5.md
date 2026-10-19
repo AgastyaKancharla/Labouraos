@@ -61,7 +61,7 @@
 
 ---
 
-### [ ] Task 6 — Replacement flow and the 2-rejection pause
+### [x] Task 6 — Replacement flow and the 2-rejection pause
 
 **Acceptance:**
 - `POST /placements/:id/replacement-candidates` offers a new candidate against the same dropped vacancy

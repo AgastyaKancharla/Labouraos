@@ -14,6 +14,19 @@ import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
 import { RecordJoinedDto } from './dto/record-joined.dto';
 import { RecordDropoutDto } from './dto/record-dropout.dto';
+import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
+import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
+
+export function calculateDaysElapsed(
+  startDate: Date,
+  isPaused: boolean,
+  pausedAt?: Date | null,
+  asOf: Date = new Date(),
+): number {
+  const effectiveEnd = isPaused && pausedAt ? pausedAt : asOf;
+  const diffMs = Math.max(0, effectiveEnd.getTime() - startDate.getTime());
+  return Math.floor(diffMs / (1000 * 60 * 60 * 24));
+}
 
 @Injectable()
 export class PlacementService {
@@ -448,6 +461,342 @@ export class PlacementService {
 
     return updated;
   }
+
+  async offerReplacementCandidate(
+    id: string,
+    dto: CreateReplacementCandidateDto,
+    actorId: string,
+  ) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+        replacementCandidates: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    if (placement.status !== 'dropped_out') {
+      throw new BadRequestException(
+        `Placement must be in 'dropped_out' status to offer a replacement candidate. Current status: '${placement.status}'`,
+      );
+    }
+
+    if (placement.eligibility === 'business_breach') {
+      throw new BadRequestException(
+        "Placement with eligibility 'business_breach' is ineligible for replacement guarantee remedy",
+      );
+    }
+
+    if (!dto.jobSeekerId || typeof dto.jobSeekerId !== 'string') {
+      throw new BadRequestException('jobSeekerId is required');
+    }
+
+    const jobSeeker = await this.prisma.jobSeeker.findFirst({
+      where: {
+        OR: [{ id: dto.jobSeekerId }, { code: dto.jobSeekerId }],
+      },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${dto.jobSeekerId}' not found`);
+    }
+
+    if (jobSeeker.status === 'placed') {
+      throw new BadRequestException(
+        `Job seeker '${jobSeeker.code}' is already placed and cannot be offered as a replacement`,
+      );
+    }
+
+    if (jobSeeker.status === 'deactivated') {
+      throw new BadRequestException(
+        `Job seeker '${jobSeeker.code}' is deactivated and cannot be offered as a replacement`,
+      );
+    }
+
+    if (jobSeeker.id === placement.jobSeekerId) {
+      throw new BadRequestException(
+        'Cannot offer the original dropped-out candidate as their own replacement',
+      );
+    }
+
+    const existingOffered = placement.replacementCandidates.find(
+      (rc) => rc.jobSeekerId === jobSeeker.id && rc.status === 'offered',
+    );
+    if (existingOffered) {
+      throw new BadRequestException(
+        `Candidate '${jobSeeker.code}' is already currently offered as a replacement candidate`,
+      );
+    }
+
+    const candidate = await this.prisma.replacementCandidate.create({
+      data: {
+        placementId: placement.id,
+        jobSeekerId: jobSeeker.id,
+        status: 'offered',
+      },
+      include: {
+        jobSeeker: true,
+      },
+    });
+
+    await this.auditService.log({
+      action: 'replacement_candidate_offered',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      after: {
+        replacementCandidateId: candidate.id,
+        jobSeekerId: jobSeeker.id,
+        jobSeekerCode: jobSeeker.code,
+      },
+    });
+
+    return candidate;
+  }
+
+  async rejectReplacementCandidate(
+    placementId: string,
+    candidateId: string,
+    dto: RejectReplacementCandidateDto,
+    actorId: string,
+  ) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id: placementId }, { code: placementId }],
+      },
+      include: {
+        business: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${placementId}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    const candidate = await this.prisma.replacementCandidate.findFirst({
+      where: {
+        id: candidateId,
+        placementId: placement.id,
+      },
+    });
+    if (!candidate) {
+      throw new NotFoundException(
+        `Replacement candidate '${candidateId}' not found for placement '${placement.code}'`,
+      );
+    }
+
+    if (candidate.status !== 'offered') {
+      throw new BadRequestException(
+        `Replacement candidate must be in 'offered' status to reject. Current status: '${candidate.status}'`,
+      );
+    }
+
+    let rejectedAt: Date;
+    if (dto?.rejectedAt) {
+      rejectedAt = new Date(dto.rejectedAt);
+      if (isNaN(rejectedAt.getTime())) {
+        throw new BadRequestException('rejectedAt must be a valid date string');
+      }
+    } else {
+      rejectedAt = new Date();
+    }
+
+    const reason = dto?.rejectionReason ?? dto?.reason ?? 'Rejected by business';
+    const newRejectionCount = placement.replacementRejectionCount + 1;
+    const shouldPause = newRejectionCount >= 3;
+
+    const [updatedCandidate, updatedPlacement] = await this.prisma.$transaction([
+      this.prisma.replacementCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: 'rejected',
+          rejectedAt,
+          rejectionReason: reason,
+        },
+      }),
+      this.prisma.placement.update({
+        where: { id: placement.id },
+        data: {
+          replacementRejectionCount: newRejectionCount,
+          clockPaused: shouldPause ? true : placement.clockPaused,
+          clockPausedAt: shouldPause
+            ? placement.clockPausedAt ?? rejectedAt
+            : placement.clockPausedAt,
+        },
+      }),
+    ]);
+
+    await this.auditService.log({
+      action: 'replacement_candidate_rejected',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      before: {
+        replacementRejectionCount: placement.replacementRejectionCount,
+        clockPaused: placement.clockPaused,
+      },
+      after: {
+        replacementCandidateId: candidate.id,
+        rejectionReason: reason,
+        replacementRejectionCount: newRejectionCount,
+        clockPaused: updatedPlacement.clockPaused,
+        clockPausedAt: updatedPlacement.clockPausedAt,
+      },
+    });
+
+    return {
+      candidate: updatedCandidate,
+      placement: updatedPlacement,
+    };
+  }
+
+  async acceptReplacementCandidate(
+    placementId: string,
+    candidateId: string,
+    actorId: string,
+  ) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id: placementId }, { code: placementId }],
+      },
+      include: {
+        business: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${placementId}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    const candidate = await this.prisma.replacementCandidate.findFirst({
+      where: {
+        id: candidateId,
+        placementId: placement.id,
+      },
+    });
+    if (!candidate) {
+      throw new NotFoundException(
+        `Replacement candidate '${candidateId}' not found for placement '${placement.code}'`,
+      );
+    }
+
+    if (candidate.status !== 'offered') {
+      throw new BadRequestException(
+        `Replacement candidate must be in 'offered' status to accept. Current status: '${candidate.status}'`,
+      );
+    }
+
+    const [updatedCandidate, updatedPlacement] = await this.prisma.$transaction([
+      this.prisma.replacementCandidate.update({
+        where: { id: candidate.id },
+        data: {
+          status: 'accepted',
+        },
+      }),
+      this.prisma.placement.update({
+        where: { id: placement.id },
+        data: {
+          status: 'replaced',
+        },
+      }),
+      this.prisma.jobSeeker.update({
+        where: { id: candidate.jobSeekerId },
+        data: {
+          status: 'placed',
+        },
+      }),
+    ]);
+
+    await this.auditService.log({
+      action: 'replacement_candidate_accepted',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      after: {
+        replacementCandidateId: candidate.id,
+        placementStatus: 'replaced',
+        jobSeekerId: candidate.jobSeekerId,
+      },
+    });
+
+    return {
+      candidate: updatedCandidate,
+      placement: updatedPlacement,
+    };
+  }
+
+  async getPlacementDaysElapsed(placementId: string, asOf?: Date): Promise<number> {
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id: placementId }, { code: placementId }],
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${placementId}' not found`);
+    }
+    if (!placement.dropoutReportedAt) {
+      return 0;
+    }
+    return calculateDaysElapsed(
+      placement.dropoutReportedAt,
+      placement.clockPaused,
+      placement.clockPausedAt,
+      asOf,
+    );
+  }
 }
+
 
 
