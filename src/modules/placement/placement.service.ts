@@ -9,6 +9,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { calculatePlacementFee, calculateGst } from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
+import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
 
@@ -19,6 +20,7 @@ export class PlacementService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly jobSeekerService: JobSeekerService,
+    private readonly paymentService: PaymentService,
   ) {}
 
   async create(vacancyId: string, dto: CreatePlacementDto, actorId: string) {
@@ -193,12 +195,45 @@ export class PlacementService {
     }
 
     // dto.response === 'accepted'
-    // Update placement to confirmed and job seeker to placed
-    const [updated] = await this.prisma.$transaction([
+    // Calculate 50% placement fee and 18% GST using money module helpers
+    const placementFee = calculatePlacementFee(placement.agreedSalary);
+    const gstAmount = calculateGst(placementFee);
+    const totalAmount = placementFee + gstAmount;
+
+    // Create payment charge via provider
+    const charge = await this.paymentService.createCharge(
+      totalAmount,
+      'placement',
+      placement.id,
+    );
+    const paymentCode = await this.idService.generateCode('payment');
+
+    // Update placement to confirmed, job seeker to placed, and create payment in transaction
+    const [updated, payment] = await this.prisma.$transaction([
       this.prisma.placement.update({
         where: { id: placement.id },
-        data: { status: 'confirmed' },
-        include: { business: true, jobSeeker: true, vacancy: true },
+        data: {
+          status: 'confirmed',
+          placementFee,
+          gstAmount,
+        },
+        include: { business: true, jobSeeker: true, vacancy: true, payments: true },
+      }),
+      this.prisma.payment.create({
+        data: {
+          code: paymentCode,
+          city: placement.city,
+          type: 'placement_fee',
+          amount: totalAmount,
+          status: 'pending',
+          gatewayReference: charge.gatewayReference,
+          subjectType: 'placement',
+          subjectId: placement.id,
+          businessId: placement.businessId,
+          placementId: placement.id,
+          // Never billed to or deducted from the job seeker
+          jobSeekerId: null,
+        },
       }),
       this.prisma.jobSeeker.update({
         where: { id: placement.jobSeekerId },
@@ -213,9 +248,29 @@ export class PlacementService {
       actorId: actor.id,
       city: placement.city,
       before,
-      after: { status: updated.status, jobSeekerStatus: 'placed' },
+      after: {
+        status: updated.status,
+        jobSeekerStatus: 'placed',
+        paymentId: payment.id,
+        paymentCode: payment.code,
+        placementFee,
+        gstAmount,
+        totalAmount,
+      },
     });
 
-    return updated;
+    return {
+      ...updated,
+      payment: {
+        id: payment.id,
+        code: payment.code,
+        amount: payment.amount,
+        placementFee,
+        gstAmount,
+        status: payment.status,
+        paymentLink: charge.paymentLink,
+        gatewayReference: charge.gatewayReference,
+      },
+    };
   }
 }

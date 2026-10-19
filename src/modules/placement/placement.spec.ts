@@ -163,6 +163,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
   afterAll(async () => {
     // Teardown in correct FK dependency order
+    await prisma.payment.deleteMany({
+      where: {
+        placement: {
+          vacancy: {
+            code: { in: [`VC-P5K-${timestamp}`, `VC-P5I-${timestamp}`] },
+          },
+        },
+      },
+    });
     await prisma.placement.deleteMany({
       where: {
         vacancy: {
@@ -183,6 +192,9 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             `JS-P5PLC-${timestamp}`,
             `JS-P5ACC-${timestamp}`,
             `JS-P5REJ-${timestamp}`,
+            `JS-P5FEE-${timestamp}`,
+            `JS-P5ODD-${timestamp}`,
+            `JS-P5WH-${timestamp}`,
           ],
         },
       },
@@ -433,6 +445,181 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({ response: 'accepted' });
 
       expect(res.status).toBe(403);
+    });
+  });
+
+  describe('Phase 5 Task 3: Placement Fee and GST', () => {
+    let feeCandidateId: string;
+    let oddSalaryCandidateId: string;
+
+    beforeAll(async () => {
+      const jsFee = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5FEE-${timestamp}`,
+          name: 'Fee Candidate',
+          phone: `94${timestamp.toString().slice(-8)}1`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+      feeCandidateId = jsFee.id;
+
+      const jsOdd = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5ODD-${timestamp}`,
+          name: 'Odd Salary Candidate',
+          phone: `94${timestamp.toString().slice(-8)}2`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2500000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+      oddSalaryCandidateId = jsOdd.id;
+    });
+
+    it('creates Payment row for 50% placement fee + 18% GST billed to business, not job seeker', async () => {
+      // 1. Create placement with agreed salary ₹20,000 = 2000000 paise
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({
+          jobSeekerId: feeCandidateId,
+          agreedSalary: 2000000,
+        })
+        .expect(201);
+
+      const placementId = placeRes.body.id;
+
+      // 2. Accept placement
+      const acceptRes = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/respond`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      expect(acceptRes.body.status).toBe('confirmed');
+      expect(acceptRes.body.payment).toBeDefined();
+
+      // Check returned payment info
+      const { payment } = acceptRes.body;
+      expect(payment.placementFee).toBe(1000000); // 50% of 2000000
+      expect(payment.gstAmount).toBe(180000); // 18% of 1000000
+      expect(payment.amount).toBe(1180000); // 1000000 + 180000
+      expect(payment.status).toBe('pending');
+      expect(payment.code).toMatch(/^PAY-\d{5}$/);
+
+      // Verify Payment record in DB
+      const dbPayment = await prisma.payment.findUnique({
+        where: { id: payment.id },
+      });
+      expect(dbPayment).toBeDefined();
+      expect(dbPayment?.type).toBe('placement_fee');
+      expect(dbPayment?.amount).toBe(1180000);
+      expect(dbPayment?.placementId).toBe(placementId);
+      expect(dbPayment?.businessId).toBeDefined();
+      // Billed to the business, never deducted from or assigned to the job seeker
+      expect(dbPayment?.jobSeekerId).toBeNull();
+    });
+
+    it('calculates fee and GST correctly for salary that does not divide evenly (rounding check)', async () => {
+      // Agreed salary: 2,345,677 paise (~₹23,456.77)
+      // 50% fee = Math.round(2345677 * 0.5) = Math.round(1172838.5) = 1172839 paise
+      // 18% GST = Math.round(1172839 * 0.18) = Math.round(211111.02) = 211111 paise
+      // Total = 1172839 + 211111 = 1383950 paise
+      const agreedSalary = 2345677;
+
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({
+          jobSeekerId: oddSalaryCandidateId,
+          agreedSalary,
+        })
+        .expect(201);
+
+      const acceptRes = await request(app.getHttpServer())
+        .post(`/placements/${placeRes.body.id}/respond`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      const { payment } = acceptRes.body;
+      expect(payment.placementFee).toBe(1172839);
+      expect(payment.gstAmount).toBe(211111);
+      expect(payment.amount).toBe(1383950);
+      expect(Number.isInteger(payment.amount)).toBe(true);
+      expect(Number.isInteger(payment.placementFee)).toBe(true);
+      expect(Number.isInteger(payment.gstAmount)).toBe(true);
+    });
+
+    it('processes payment webhook for placement fee and ensures idempotent duplicate handling', async () => {
+      // Create and confirm a placement
+      const freshJs = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5WH-${timestamp}`,
+          name: 'Webhook Candidate',
+          phone: `94${timestamp.toString().slice(-8)}3`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          jobSeekerId: freshJs.id,
+          agreedSalary: 2000000,
+        })
+        .expect(201);
+
+      const acceptRes = await request(app.getHttpServer())
+        .post(`/placements/${placeRes.body.id}/respond`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      const { gatewayReference, id: paymentId } = acceptRes.body.payment;
+
+      // 1. Deliver webhook first time
+      const webhookRes1 = await request(app.getHttpServer())
+        .post('/payments/webhook')
+        .send({
+          gatewayReference,
+          status: 'succeeded',
+        })
+        .expect(201);
+
+      expect(webhookRes1.body.received).toBe(true);
+      expect(webhookRes1.body.status).toBe('succeeded');
+
+      const paymentAfter1 = await prisma.payment.findUnique({
+        where: { id: paymentId },
+      });
+      expect(paymentAfter1?.status).toBe('succeeded');
+
+      // 2. Deliver duplicate webhook (same payload) -> must be idempotent no-op
+      const webhookRes2 = await request(app.getHttpServer())
+        .post('/payments/webhook')
+        .send({
+          gatewayReference,
+          status: 'succeeded',
+        })
+        .expect(201);
+
+      expect(webhookRes2.body.received).toBe(true);
+      expect(webhookRes2.body.alreadyProcessed).toBe(true);
     });
   });
 });

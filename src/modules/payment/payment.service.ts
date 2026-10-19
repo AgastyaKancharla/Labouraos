@@ -131,6 +131,31 @@ export class PaymentService {
       }
     }
 
+    if (payment.placementId) {
+      const placement = await this.prisma.placement.findUnique({
+        where: { id: payment.placementId },
+      });
+      if (placement) {
+        const staffActor =
+          (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
+          (await this.prisma.staff.findFirst());
+        if (staffActor) {
+          await this.auditService.log({
+            actorId: staffActor.id,
+            action: 'payment.placement_fee_paid',
+            entityType: 'placement',
+            entityCode: placement.code,
+            after: {
+              paymentId: updatedPayment.id,
+              status: 'succeeded',
+              amount: updatedPayment.amount,
+            },
+            city: placement.city,
+          });
+        }
+      }
+    }
+
     return {
       received: true,
       status: 'succeeded',
