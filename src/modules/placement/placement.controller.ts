@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   Param,
   Post,
   Req,
@@ -112,7 +113,25 @@ export class PlacementController {
   ) {
     return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub);
   }
+
+  @Get()
+  @RequireRoles('ceo', 'manager', 'finance', 'call_agent', 'field_agent')
+  @RequirePermission('placement', 'read')
+  async findAll(@Req() req: Request & { user: JwtPayload }) {
+    return this.placementService.findAll(req.user.sub);
+  }
+
+  @Get(':id')
+  @RequireRoles('ceo', 'manager', 'finance', 'call_agent', 'field_agent')
+  @RequirePermission('placement', 'read')
+  async findById(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.findById(id, req.user.sub);
+  }
 }
+
 
 
 

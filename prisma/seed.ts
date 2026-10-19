@@ -247,7 +247,7 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    await prisma.vacancy.upsert({
+    const vc2 = await prisma.vacancy.upsert({
       where: { code: 'VC-00002' },
       update: {
         tradeSkill: 'Plumber',
@@ -267,7 +267,7 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    await prisma.vacancy.upsert({
+    const vc3 = await prisma.vacancy.upsert({
       where: { code: 'VC-00003' },
       update: {
         tradeSkill: 'Painter',
@@ -287,7 +287,7 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    await prisma.vacancy.upsert({
+    const vc4 = await prisma.vacancy.upsert({
       where: { code: 'VC-00004' },
       update: {
         tradeSkill: 'Welder',
@@ -388,7 +388,7 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    await prisma.jobSeeker.upsert({
+    const js3 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000003' },
       update: {
         name: 'Manjunath R',
@@ -621,11 +621,19 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    // Seed dropped-out placement for replacement vacancy testing
+    // Seed dropped-out placement for replacement vacancy testing (inside 15-day window)
     const pl1 = await prisma.placement.upsert({
       where: { code: 'PL-00001' },
       update: {
         status: 'dropped_out',
+        eligibility: 'employee_left',
+        joinedDate: new Date('2026-06-10T10:00:00.000Z'),
+        dropoutReportedAt: new Date('2026-06-25T10:00:00.000Z'), // 6 days before 2026-07-01 (<= 15 days)
+        agreedSalary: 2200000,
+        placementFee: 1100000,
+        gstAmount: 198000,
+        replacementRejectionCount: 0,
+        clockPaused: false,
       },
       create: {
         code: 'PL-00001',
@@ -633,9 +641,15 @@ export async function seed(prismaClient?: PrismaClient) {
         vacancyId: vc1.id,
         jobSeekerId: js1.id,
         businessId: bz1.id,
+        agreedSalary: 2200000,
         placementFee: 1100000,
         gstAmount: 198000,
         status: 'dropped_out',
+        eligibility: 'employee_left',
+        joinedDate: new Date('2026-06-10T10:00:00.000Z'),
+        dropoutReportedAt: new Date('2026-06-25T10:00:00.000Z'),
+        replacementRejectionCount: 0,
+        clockPaused: false,
       },
     });
 
@@ -664,6 +678,118 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
+    // Seed PL-00002: Confirmed + joined placement
+    const js8 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000008' },
+      update: {
+        name: 'Ramesh Placed',
+        tradeSkill: 'Plumber',
+        minSalary: 1800000,
+        maxSalary: 2200000,
+        status: 'placed',
+        paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00008',
+        name: 'Ramesh Placed',
+        phone: '+919900000008',
+        phoneVerified: true,
+        tradeSkill: 'Plumber',
+        minSalary: 1800000,
+        maxSalary: 2200000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'placed',
+        paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+    });
+
+    await prisma.placement.upsert({
+      where: { code: 'PL-00002' },
+      update: {
+        status: 'active',
+        joinedDate: new Date('2026-06-15T10:00:00.000Z'),
+        agreedSalary: 2000000,
+        placementFee: 1000000,
+        gstAmount: 180000,
+        clockPaused: false,
+      },
+      create: {
+        code: 'PL-00002',
+        city: 'Bengaluru',
+        vacancyId: vc2.id,
+        jobSeekerId: js8.id,
+        businessId: bz1.id,
+        agreedSalary: 2000000,
+        placementFee: 1000000,
+        gstAmount: 180000,
+        status: 'active',
+        joinedDate: new Date('2026-06-15T10:00:00.000Z'),
+        clockPaused: false,
+      },
+    });
+
+    // Seed PL-00003: Dropped placement past day 60
+    const js9 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000009' },
+      update: {
+        name: 'Anand PastSixty',
+        tradeSkill: 'Painter',
+        minSalary: 1600000,
+        maxSalary: 2000000,
+        status: 'active',
+        paymentReceivedAt: new Date('2026-03-01T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00009',
+        name: 'Anand PastSixty',
+        phone: '+919900000009',
+        phoneVerified: true,
+        tradeSkill: 'Painter',
+        minSalary: 1600000,
+        maxSalary: 2000000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'active',
+        paymentReceivedAt: new Date('2026-03-01T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+    });
+
+    const pl3 = await prisma.placement.upsert({
+      where: { code: 'PL-00003' },
+      update: {
+        status: 'dropped_out',
+        eligibility: 'employee_left',
+        joinedDate: new Date('2026-03-10T10:00:00.000Z'),
+        dropoutReportedAt: new Date('2026-04-10T10:00:00.000Z'), // 82 days before 2026-07-01 (>60 days)
+        agreedSalary: 1800000,
+        placementFee: 900000,
+        gstAmount: 162000,
+        replacementRejectionCount: 0,
+        clockPaused: false,
+      },
+      create: {
+        code: 'PL-00003',
+        city: 'Bengaluru',
+        vacancyId: vc3.id,
+        jobSeekerId: js9.id,
+        businessId: bz2.id,
+        agreedSalary: 1800000,
+        placementFee: 900000,
+        gstAmount: 162000,
+        status: 'dropped_out',
+        eligibility: 'employee_left',
+        joinedDate: new Date('2026-03-10T10:00:00.000Z'),
+        dropoutReportedAt: new Date('2026-04-10T10:00:00.000Z'),
+        replacementRejectionCount: 0,
+        clockPaused: false,
+      },
+    });
+
     // VC-00006: Replacement vacancy outside 15-day window (created 26 days ago relative to 2026-07-01)
     await prisma.vacancy.upsert({
       where: { code: 'VC-00006' },
@@ -687,6 +813,97 @@ export async function seed(prismaClient?: PrismaClient) {
         replacementForPlacementId: pl1.id,
         createdAt: new Date('2026-06-05T10:00:00.000Z'),
       },
+    });
+
+    // Seed PL-00004: Dropped placement with 3 replacement rejections (clock paused)
+    const js10 = await prisma.jobSeeker.upsert({
+      where: { phone: '+919900000010' },
+      update: {
+        name: 'Karthik Paused',
+        tradeSkill: 'Welder',
+        minSalary: 2200000,
+        maxSalary: 2600000,
+        status: 'active',
+        paymentReceivedAt: new Date('2026-04-20T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'JS-00010',
+        name: 'Karthik Paused',
+        phone: '+919900000010',
+        phoneVerified: true,
+        tradeSkill: 'Welder',
+        minSalary: 2200000,
+        maxSalary: 2600000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'active',
+        paymentReceivedAt: new Date('2026-04-20T10:00:00.000Z'),
+        city: 'Bengaluru',
+      },
+    });
+
+    const pl4 = await prisma.placement.upsert({
+      where: { code: 'PL-00004' },
+      update: {
+        status: 'dropped_out',
+        eligibility: 'employee_left',
+        joinedDate: new Date('2026-05-01T10:00:00.000Z'),
+        dropoutReportedAt: new Date('2026-05-15T10:00:00.000Z'),
+        replacementRejectionCount: 3,
+        clockPaused: true,
+        clockPausedAt: new Date('2026-05-25T10:00:00.000Z'),
+        agreedSalary: 2400000,
+        placementFee: 1200000,
+        gstAmount: 216000,
+      },
+      create: {
+        code: 'PL-00004',
+        city: 'Bengaluru',
+        vacancyId: vc4.id,
+        jobSeekerId: js10.id,
+        businessId: bz3.id,
+        agreedSalary: 2400000,
+        placementFee: 1200000,
+        gstAmount: 216000,
+        status: 'dropped_out',
+        eligibility: 'employee_left',
+        joinedDate: new Date('2026-05-01T10:00:00.000Z'),
+        dropoutReportedAt: new Date('2026-05-15T10:00:00.000Z'),
+        replacementRejectionCount: 3,
+        clockPaused: true,
+        clockPausedAt: new Date('2026-05-25T10:00:00.000Z'),
+      },
+    });
+
+    // Idempotent 3 rejected replacement candidates for PL-00004
+    await prisma.replacementCandidate.deleteMany({
+      where: { placementId: pl4.id },
+    });
+    await prisma.replacementCandidate.createMany({
+      data: [
+        {
+          placementId: pl4.id,
+          jobSeekerId: js1.id,
+          status: 'rejected',
+          rejectionReason: 'Not available immediately',
+          rejectedAt: new Date('2026-05-18T10:00:00.000Z'),
+        },
+        {
+          placementId: pl4.id,
+          jobSeekerId: js3.id,
+          status: 'rejected',
+          rejectionReason: 'Shift timing conflict',
+          rejectedAt: new Date('2026-05-21T10:00:00.000Z'),
+        },
+        {
+          placementId: pl4.id,
+          jobSeekerId: js4.id,
+          status: 'rejected',
+          rejectionReason: 'Third rejection - paused clock',
+          rejectedAt: new Date('2026-05-25T10:00:00.000Z'),
+        },
+      ],
     });
 
     // 5. Synchronize sequences past seeded codes so IdService will never collide

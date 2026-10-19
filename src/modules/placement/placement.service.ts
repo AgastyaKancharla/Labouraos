@@ -796,7 +796,75 @@ export class PlacementService {
       asOf,
     );
   }
+
+  async findAll(actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const where: Record<string, unknown> = {};
+    if (actor.role === 'field_agent') {
+      where.business = { area: actor.area ?? undefined };
+    }
+
+    return this.prisma.placement.findMany({
+      where,
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+        replacementCandidates: {
+          include: {
+            jobSeeker: true,
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async findById(id: string, actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+        replacementCandidates: {
+          include: {
+            jobSeeker: true,
+          },
+        },
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only access placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    return placement;
+  }
 }
+
 
 
 
