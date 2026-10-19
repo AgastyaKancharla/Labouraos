@@ -155,6 +155,28 @@ describe('Seed Data Script', () => {
     expect(flaggedBiz).toBeDefined();
     expect(flaggedBiz?.geofenceFlag).toBe(true);
     expect(flaggedBiz?.visits.some((v) => v.geofenceFlag)).toBe(true);
+    // Assert Phase 5 seeded placements
+    const pl1 = await prisma.placement.findUnique({ where: { code: 'PL-00001' } });
+    expect(pl1?.status).toBe('dropped_out');
+    expect(pl1?.dropoutReportedAt).toBeDefined();
+
+    const pl2 = await prisma.placement.findUnique({ where: { code: 'PL-00002' } });
+    expect(pl2?.status).toBe('active');
+    expect(pl2?.joinedDate).toBeDefined();
+
+    const pl3 = await prisma.placement.findUnique({ where: { code: 'PL-00003' } });
+    expect(pl3?.status).toBe('dropped_out');
+    const pl3Days = Math.floor((fixedNow.getTime() - pl3!.dropoutReportedAt!.getTime()) / (1000 * 60 * 60 * 24));
+    expect(pl3Days).toBeGreaterThan(60);
+
+    const pl4 = await prisma.placement.findUnique({
+      where: { code: 'PL-00004' },
+      include: { replacementCandidates: true },
+    });
+    expect(pl4?.status).toBe('dropped_out');
+    expect(pl4?.replacementRejectionCount).toBe(3);
+    expect(pl4?.clockPaused).toBe(true);
+    expect(pl4?.replacementCandidates).toHaveLength(3);
   });
 
   it('is safe to run repeatedly without duplicating or erroring (idempotency)', async () => {
@@ -168,7 +190,7 @@ describe('Seed Data Script', () => {
     ];
     const seededBusinessCodes = ['BZ-00001', 'BZ-00002', 'BZ-00003'];
     const seededVacancyCodes = ['VC-00001', 'VC-00002', 'VC-00003', 'VC-00004', 'VC-00005', 'VC-00006'];
-    const seededPlacementCodes = ['PL-00001'];
+    const seededPlacementCodes = ['PL-00001', 'PL-00002', 'PL-00003', 'PL-00004'];
     const seededJobSeekerCodes = [
       'JS-00001',
       'JS-00002',
@@ -177,6 +199,9 @@ describe('Seed Data Script', () => {
       'JS-00005',
       'JS-00006',
       'JS-00007',
+      'JS-00008',
+      'JS-00009',
+      'JS-00010',
     ];
     const seededReferralCodes = ['RF-00001'];
 
@@ -206,8 +231,8 @@ describe('Seed Data Script', () => {
     expect(staffAfter).toBe(6);
     expect(businessAfter).toBe(3);
     expect(vacancyAfter).toBe(6);
-    expect(placementAfter).toBe(1);
-    expect(jsAfter).toBe(7);
+    expect(placementAfter).toBe(4);
+    expect(jsAfter).toBe(10);
     expect(refAfter).toBe(1);
   });
 

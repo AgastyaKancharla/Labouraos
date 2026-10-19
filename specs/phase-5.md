@@ -91,7 +91,7 @@
 
 ---
 
-### [ ] Task 9 — RBAC and seed data
+### [x] Task 9 — RBAC and seed data
 
 **Acceptance:**
 - Finance can read placements and the payment ledger (masked PII) but cannot approve refunds (approval stays CEO/Manager only, per §7)

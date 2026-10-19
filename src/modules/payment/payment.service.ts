@@ -165,6 +165,11 @@ export class PaymentService {
 
   async findAll() {
     return this.prisma.payment.findMany({
+      include: {
+        jobSeeker: true,
+        business: true,
+        placement: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -172,6 +177,11 @@ export class PaymentService {
   async findById(id: string) {
     const payment = await this.prisma.payment.findUnique({
       where: { id },
+      include: {
+        jobSeeker: true,
+        business: true,
+        placement: true,
+      },
     });
     if (!payment) {
       throw new NotFoundException(`Payment '${id}' not found`);
