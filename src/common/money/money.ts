@@ -121,7 +121,7 @@ export function isWithinRefundGuarantee(
   now: Date,
   status?: string,
 ): boolean {
-  if (status === 'deactivated') {
+  if (status === 'deactivated' || status === 'placed') {
     return false;
   }
   if (!(paymentReceivedAt instanceof Date) || isNaN(paymentReceivedAt.getTime())) {

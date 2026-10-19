@@ -82,7 +82,7 @@
 
 ---
 
-### [ ] Task 8 — Job seeker 30-day refund approval (finalized)
+### [x] Task 8 — Job seeker 30-day refund approval (finalized)
 
 **Acceptance:**
 - This closes the loop opened in Phase 2 Task 6 and extended in Phase 3 Task 4: `isWithinRefundGuarantee` is now also checked against `status !== 'placed'` (a job seeker with a confirmed placement is not refund-eligible even within 30 days, since a suitable offer clearly existed)
