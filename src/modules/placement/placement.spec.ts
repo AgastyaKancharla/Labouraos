@@ -195,6 +195,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             `JS-P5FEE-${timestamp}`,
             `JS-P5ODD-${timestamp}`,
             `JS-P5WH-${timestamp}`,
+            `JS-P5JOIN-${timestamp}`,
           ],
         },
       },
@@ -622,4 +623,92 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(webhookRes2.body.alreadyProcessed).toBe(true);
     });
   });
+
+  describe('Task 4: Candidate joining', () => {
+    it('sets joinedDate and moves placement to active status, audit logging the event', async () => {
+      // 1. Create a job seeker, placement, and confirm it
+      const candidate = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5JOIN-${timestamp}`,
+          name: 'Joining Candidate',
+          phone: `95${timestamp.toString().slice(-8)}4`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          jobSeekerId: candidate.id,
+          agreedSalary: 2100000,
+        })
+        .expect(201);
+
+      const placementId = placeRes.body.id;
+
+      // Cannot mark joined if placement is still in 'offered' status
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({})
+        .expect(400);
+
+      // Confirm placement
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/respond`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      // Area-scoping: FA from Indiranagar cannot record joined for Koramangala business
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${faIndiToken}`)
+        .send({})
+        .expect(403);
+
+      // Successfully record joined with explicit joinedDate
+      const explicitDate = '2026-10-20T08:00:00.000Z';
+      const joinRes = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ joinedDate: explicitDate })
+        .expect(201);
+
+      expect(joinRes.body.id).toBe(placementId);
+      expect(joinRes.body.status).toBe('active');
+      expect(new Date(joinRes.body.joinedDate).toISOString()).toBe(explicitDate);
+
+      // Placement in DB has status active and joinedDate
+      const dbPlacement = await prisma.placement.findUnique({
+        where: { id: placementId },
+      });
+      expect(dbPlacement?.status).toBe('active');
+      expect(dbPlacement?.joinedDate?.toISOString()).toBe(explicitDate);
+
+      // Audit log entry created
+      const audit = await prisma.auditLog.findFirst({
+        where: {
+          entityCode: placeRes.body.code,
+          action: 'placement_joined',
+        },
+      });
+      expect(audit).toBeDefined();
+      expect(audit?.action).toBe('placement_joined');
+
+      // Calling /joined again on already active placement returns 400
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({})
+        .expect(400);
+    });
+  });
 });
+

@@ -12,6 +12,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
+import { RecordJoinedDto } from './dto/record-joined.dto';
 
 @Injectable()
 export class PlacementService {
@@ -273,4 +274,85 @@ export class PlacementService {
       },
     };
   }
+
+  async recordJoined(id: string, dto: RecordJoinedDto, actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    if (placement.status !== 'confirmed') {
+      throw new BadRequestException(
+        `Placement must be in 'confirmed' status to record joining. Current status: '${placement.status}'`,
+      );
+    }
+
+    let joinedDate: Date;
+    if (dto?.joinedDate) {
+      joinedDate = new Date(dto.joinedDate);
+      if (isNaN(joinedDate.getTime())) {
+        throw new BadRequestException('joinedDate must be a valid date string');
+      }
+    } else {
+      joinedDate = new Date();
+    }
+
+    const before = {
+      status: placement.status,
+      joinedDate: placement.joinedDate,
+    };
+
+    const updated = await this.prisma.placement.update({
+      where: { id: placement.id },
+      data: {
+        status: 'active',
+        joinedDate,
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+      },
+    });
+
+    await this.auditService.log({
+      action: 'placement_joined',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      before,
+      after: {
+        status: updated.status,
+        joinedDate: updated.joinedDate,
+      },
+    });
+
+    return updated;
+  }
 }
+
