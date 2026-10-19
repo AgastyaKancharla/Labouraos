@@ -12,7 +12,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Placement creation
+### [x] Task 1 — Placement creation
 
 **Acceptance:**
 - `POST /vacancies/:id/placements` — links a job seeker to the vacancy, captures the agreed monthly salary
