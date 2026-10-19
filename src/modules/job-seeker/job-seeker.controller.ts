@@ -19,6 +19,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import { CreateContactAttemptDto } from './dto/create-contact-attempt.dto';
 import { RecordHitDto } from './dto/record-hit.dto';
+import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -104,6 +105,18 @@ export class JobSeekerController {
   ) {
     return this.jobSeekerService.reactivate(id, req.user.sub);
   }
+
+  @Post(':id/refund')
+  @RequireRoles('ceo', 'manager')
+  @RequirePermission('payment', 'write')
+  async approveRefund(
+    @Param('id') id: string,
+    @Body() body: ApproveJobSeekerRefundDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.approveRefund(id, body, req.user.sub);
+  }
 }
+
 
 

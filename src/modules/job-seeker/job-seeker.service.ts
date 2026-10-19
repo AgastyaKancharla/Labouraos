@@ -22,6 +22,7 @@ import {
 } from '../../common/money/money';
 
 import { PaymentService } from '../payment/payment.service';
+import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 
 @Injectable()
 export class JobSeekerService {
@@ -533,5 +534,108 @@ export class JobSeekerService {
       };
     });
   }
+
+  async approveRefund(
+    id: string,
+    dto: ApproveJobSeekerRefundDto,
+    actorId: string,
+  ) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const jobSeeker = await this.prisma.jobSeeker.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${id}' not found`);
+    }
+
+    if (!jobSeeker.paymentReceivedAt) {
+      throw new BadRequestException(
+        `Job seeker '${jobSeeker.code}' has not paid the activation fee and is not eligible for refund`,
+      );
+    }
+
+    if (jobSeeker.status === 'placed') {
+      throw new BadRequestException(
+        `Job seeker '${jobSeeker.code}' has a confirmed placement and is not eligible for refund`,
+      );
+    }
+
+    if (jobSeeker.status === 'deactivated') {
+      throw new BadRequestException(
+        `Job seeker '${jobSeeker.code}' is deactivated and carries no refund entitlement`,
+      );
+    }
+
+    let now: Date;
+    if (dto?.asOf) {
+      now = new Date(dto.asOf);
+      if (isNaN(now.getTime())) {
+        throw new BadRequestException('asOf must be a valid date string');
+      }
+    } else {
+      now = new Date();
+    }
+
+    const deadline = refundGuaranteeDeadline(jobSeeker.paymentReceivedAt);
+    if (now.getTime() <= deadline.getTime()) {
+      throw new BadRequestException(
+        `Refund can only be approved after 30 days have elapsed from payment receipt (${deadline.toISOString()})`,
+      );
+    }
+
+    const existingRefund = await this.prisma.payment.findFirst({
+      where: {
+        jobSeekerId: jobSeeker.id,
+        type: 'refund',
+        status: { in: ['pending', 'completed', 'succeeded'] },
+      },
+    });
+    if (existingRefund) {
+      throw new BadRequestException(
+        `A refund has already been issued for job seeker '${jobSeeker.code}'`,
+      );
+    }
+
+    const paymentCode = await this.idService.generateCode('payment');
+    const payment = await this.prisma.payment.create({
+      data: {
+        code: paymentCode,
+        city: jobSeeker.city,
+        type: 'refund',
+        amount: 49900,
+        status: 'completed',
+        gatewayReference: `ref_js_${jobSeeker.code}_${Date.now()}`,
+        subjectType: 'job_seeker',
+        subjectId: jobSeeker.id,
+        jobSeekerId: jobSeeker.id,
+      },
+    });
+
+    await this.auditService.log({
+      action: 'refund_approved',
+      entityType: 'JobSeeker',
+      entityCode: jobSeeker.code,
+      actorId: actor.id,
+      city: jobSeeker.city,
+      after: {
+        paymentId: payment.id,
+        paymentCode: payment.code,
+        amount: payment.amount,
+        type: 'refund',
+        reason: dto?.reason ?? '30-day no-offer guarantee refund',
+      },
+    });
+
+    return payment;
+  }
 }
+
 
