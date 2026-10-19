@@ -177,7 +177,14 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     });
     await prisma.jobSeeker.deleteMany({
       where: {
-        code: { in: [`JS-P5ACT-${timestamp}`, `JS-P5PLC-${timestamp}`] },
+        code: {
+          in: [
+            `JS-P5ACT-${timestamp}`,
+            `JS-P5PLC-${timestamp}`,
+            `JS-P5ACC-${timestamp}`,
+            `JS-P5REJ-${timestamp}`,
+          ],
+        },
       },
     });
     await prisma.business.deleteMany({
@@ -282,5 +289,150 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('already placed');
+  });
+
+  describe('Phase 5 Task 2: Offer Response and Confirmation', () => {
+    let testPlacementId: string;
+    let candidateToAcceptId: string;
+    let candidateToRejectId: string;
+
+    beforeAll(async () => {
+      // Create fresh candidates for accept & reject tests
+      const jsAccept = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5ACC-${timestamp}`,
+          name: 'Accept Candidate',
+          phone: `93${timestamp.toString().slice(-8)}1`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+          hitCount: 0,
+        },
+      });
+      candidateToAcceptId = jsAccept.id;
+
+      const jsReject = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REJ-${timestamp}`,
+          name: 'Reject Candidate',
+          phone: `93${timestamp.toString().slice(-8)}2`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+          hitCount: 0,
+        },
+      });
+      candidateToRejectId = jsReject.id;
+    });
+
+    it('accepting an offer moves placement to confirmed and job seeker to placed', async () => {
+      // 1. Create offered placement
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({
+          jobSeekerId: candidateToAcceptId,
+          agreedSalary: 2000000,
+        })
+        .expect(201);
+
+      testPlacementId = placeRes.body.id;
+      expect(placeRes.body.status).toBe('offered');
+
+      // 2. Respond accepted
+      const respondRes = await request(app.getHttpServer())
+        .post(`/placements/${testPlacementId}/respond`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      expect(respondRes.body.status).toBe('confirmed');
+
+      // Job seeker status must now be 'placed'
+      const js = await prisma.jobSeeker.findUnique({ where: { id: candidateToAcceptId } });
+      expect(js?.status).toBe('placed');
+
+      // Audit logged
+      const audit = await prisma.auditLog.findFirst({
+        where: { entityCode: placeRes.body.code, action: 'placement_confirmed' },
+      });
+      expect(audit).toBeDefined();
+    });
+
+    it('rejecting an offer records a hit through the hit cycle and sets placement status to rejected', async () => {
+      // 1. Create offered placement
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          jobSeekerId: candidateToRejectId,
+          agreedSalary: 2000000,
+        })
+        .expect(201);
+
+      const placementId = placeRes.body.id;
+
+      // 2. Respond rejected
+      const respondRes = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/respond`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          response: 'rejected',
+          rejectionReason: 'Candidate declined: commute too far',
+        })
+        .expect(201);
+
+      expect(respondRes.body.status).toBe('rejected');
+
+      // Job seeker hitCount must have incremented to 1
+      const js = await prisma.jobSeeker.findUnique({ where: { id: candidateToRejectId } });
+      expect(js?.hitCount).toBe(1);
+      expect(js?.status).toBe('active'); // Still active at 1 hit
+
+      // Hit record must exist with reason 'offer_rejected'
+      const hit = await prisma.jobSeekerHit.findFirst({
+        where: { jobSeekerId: candidateToRejectId },
+      });
+      expect(hit).toBeDefined();
+      expect(hit?.reason).toBe('offer_rejected');
+      expect(hit?.note).toContain('commute too far');
+    });
+
+    it('rejects response if placement is not in offered status (400)', async () => {
+      // testPlacementId was already confirmed above
+      const res = await request(app.getHttpServer())
+        .post(`/placements/${testPlacementId}/respond`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ response: 'rejected' });
+
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('offered');
+    });
+
+    it('enforces area scoping when responding to a placement (403 for other area)', async () => {
+      // Create placement in Koramangala
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          jobSeekerId: candidateToRejectId,
+          agreedSalary: 2000000,
+        })
+        .expect(201);
+
+      // faIndi tries to respond to a Koramangala placement
+      const res = await request(app.getHttpServer())
+        .post(`/placements/${placeRes.body.id}/respond`)
+        .set('Authorization', `Bearer ${faIndiToken}`)
+        .send({ response: 'accepted' });
+
+      expect(res.status).toBe(403);
+    });
   });
 });

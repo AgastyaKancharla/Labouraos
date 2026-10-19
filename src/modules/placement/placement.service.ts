@@ -8,7 +8,9 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { calculatePlacementFee, calculateGst } from '../../common/money/money';
+import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
+import { RespondPlacementDto } from './dto/respond-placement.dto';
 
 @Injectable()
 export class PlacementService {
@@ -16,6 +18,7 @@ export class PlacementService {
     private readonly prisma: PrismaService,
     private readonly idService: IdService,
     private readonly auditService: AuditService,
+    private readonly jobSeekerService: JobSeekerService,
   ) {}
 
   async create(vacancyId: string, dto: CreatePlacementDto, actorId: string) {
@@ -116,5 +119,103 @@ export class PlacementService {
     });
 
     return placement;
+  }
+
+  async respond(id: string, dto: RespondPlacementDto, actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    if (actor.role === 'field_agent') {
+      if (!actor.area || placement.business.area !== actor.area) {
+        throw new ForbiddenException(
+          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
+        );
+      }
+    }
+
+    if (placement.status !== 'offered') {
+      throw new BadRequestException(
+        `Placement must be in 'offered' status to respond. Current status: '${placement.status}'`,
+      );
+    }
+
+    if (dto.response !== 'accepted' && dto.response !== 'rejected') {
+      throw new BadRequestException("response must be either 'accepted' or 'rejected'");
+    }
+
+    const before = { status: placement.status };
+
+    if (dto.response === 'rejected') {
+      const note = dto.rejectionReason ?? dto.note ?? 'Offer rejected';
+      // Record hit on job seeker (Phase 3 hit cycle: 3 hits deactivate)
+      await this.jobSeekerService.recordHit(
+        placement.jobSeekerId,
+        'offer_rejected',
+        note,
+        actor.id,
+      );
+
+      const updated = await this.prisma.placement.update({
+        where: { id: placement.id },
+        data: { status: 'rejected' },
+        include: { business: true, jobSeeker: true, vacancy: true },
+      });
+
+      await this.auditService.log({
+        action: 'placement_rejected',
+        entityType: 'Placement',
+        entityCode: placement.code,
+        actorId: actor.id,
+        city: placement.city,
+        before,
+        after: { status: updated.status, rejectionReason: note },
+      });
+
+      return updated;
+    }
+
+    // dto.response === 'accepted'
+    // Update placement to confirmed and job seeker to placed
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.placement.update({
+        where: { id: placement.id },
+        data: { status: 'confirmed' },
+        include: { business: true, jobSeeker: true, vacancy: true },
+      }),
+      this.prisma.jobSeeker.update({
+        where: { id: placement.jobSeekerId },
+        data: { status: 'placed' },
+      }),
+    ]);
+
+    await this.auditService.log({
+      action: 'placement_confirmed',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      before,
+      after: { status: updated.status, jobSeekerStatus: 'placed' },
+    });
+
+    return updated;
   }
 }

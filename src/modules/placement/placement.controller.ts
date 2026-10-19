@@ -16,6 +16,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreatePlacementDto } from './dto/create-placement.dto';
+import { RespondPlacementDto } from './dto/respond-placement.dto';
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -40,4 +41,15 @@ export class VacancyPlacementController {
 @UseInterceptors(PiiMaskingInterceptor)
 export class PlacementController {
   constructor(private readonly placementService: PlacementService) {}
+
+  @Post(':id/respond')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async respond(
+    @Param('id') id: string,
+    @Body() dto: RespondPlacementDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.respond(id, dto, req.user.sub);
+  }
 }
