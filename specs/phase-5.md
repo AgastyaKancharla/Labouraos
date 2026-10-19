@@ -22,7 +22,7 @@
 
 ---
 
-### [ ] Task 2 — Offer response and confirmation
+### [x] Task 2 — Offer response and confirmation
 
 **Acceptance:**
 - `POST /placements/:id/respond` — `accepted` or `rejected`, by or on behalf of the job seeker
