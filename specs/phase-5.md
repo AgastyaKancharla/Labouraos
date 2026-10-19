@@ -43,7 +43,7 @@
 
 ---
 
-### [ ] Task 4 — Candidate joining
+### [x] Task 4 — Candidate joining
 
 **Acceptance:**
 - `POST /placements/:id/joined` — sets `joinedDate` (the date the candidate actually started), Placement `status: active`

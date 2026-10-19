@@ -17,6 +17,7 @@ import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
+import { RecordJoinedDto } from './dto/record-joined.dto';
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -52,4 +53,16 @@ export class PlacementController {
   ) {
     return this.placementService.respond(id, dto, req.user.sub);
   }
+
+  @Post(':id/joined')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async recordJoined(
+    @Param('id') id: string,
+    @Body() dto: RecordJoinedDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.recordJoined(id, dto, req.user.sub);
+  }
 }
+
