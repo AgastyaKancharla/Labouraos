@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PlacementService } from './placement.service';
 
 describe('Phase 5 Task 1: Placement Creation', () => {
   let app: INestApplication;
@@ -172,6 +173,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       },
     });
+    await prisma.replacementCandidate.deleteMany({
+      where: {
+        placement: {
+          vacancy: {
+            code: { in: [`VC-P5K-${timestamp}`, `VC-P5I-${timestamp}`] },
+          },
+        },
+      },
+    });
     await prisma.placement.deleteMany({
       where: {
         vacancy: {
@@ -198,6 +208,10 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             `JS-P5JOIN-${timestamp}`,
             `JS-P5DROP1-${timestamp}`,
             `JS-P5DROP2-${timestamp}`,
+            `JS-P5RCDROP-${timestamp}`,
+            `JS-P5RC1-${timestamp}`,
+            `JS-P5RC2-${timestamp}`,
+            `JS-P5RC3-${timestamp}`,
           ],
         },
       },
@@ -870,6 +884,184 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(dbPlacement?.eligibility).toBe('business_breach');
     });
   });
+
+  describe('Task 6: Replacement flow and the 2-rejection pause', () => {
+    it('allows offering replacement candidates and pauses clock on 3rd rejection, freezing elapsed days', async () => {
+      // 1. Create original candidate, placement, confirm, join, and dropout (employee_left)
+      const originalCandidate = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5RCDROP-${timestamp}`,
+          name: 'Original Dropped Candidate',
+          phone: `98${timestamp.toString().slice(-8)}7`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const placeRes = await request(app.getHttpServer())
+        .post(`/vacancies/${koraVacancyId}/placements`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ jobSeekerId: originalCandidate.id, agreedSalary: 2000000 })
+        .expect(201);
+
+      const placementId = placeRes.body.id;
+
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/respond`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ response: 'accepted' })
+        .expect(201);
+
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/joined`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({})
+        .expect(201);
+
+      const dropoutReportedAt = '2026-11-01T00:00:00.000Z';
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          eligibility: 'employee_left',
+          dropoutReportedAt,
+        })
+        .expect(201);
+
+      // Create 3 replacement candidates
+      const rc1 = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5RC1-${timestamp}`,
+          name: 'Replacement Candidate 1',
+          phone: `98${timestamp.toString().slice(-8)}8`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const rc2 = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5RC2-${timestamp}`,
+          name: 'Replacement Candidate 2',
+          phone: `98${timestamp.toString().slice(-8)}9`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const rc3 = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5RC3-${timestamp}`,
+          name: 'Replacement Candidate 3',
+          phone: `99${timestamp.toString().slice(-8)}0`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      // Area-scoping: Indiranagar FA cannot offer replacement on Koramangala placement
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates`)
+        .set('Authorization', `Bearer ${faIndiToken}`)
+        .send({ jobSeekerId: rc1.id })
+        .expect(403);
+
+      // Offer Candidate 1
+      const offerRes1 = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ jobSeekerId: rc1.id })
+        .expect(201);
+
+      expect(offerRes1.body.status).toBe('offered');
+      const rc1Id = offerRes1.body.id;
+
+      // 1st Rejection
+      const rejRes1 = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates/${rc1Id}/reject`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({
+          reason: 'Lacks required tools',
+          rejectedAt: '2026-11-03T00:00:00.000Z',
+        })
+        .expect(201);
+
+      expect(rejRes1.body.placement.replacementRejectionCount).toBe(1);
+      expect(rejRes1.body.placement.clockPaused).toBe(false);
+
+      // Offer Candidate 2
+      const offerRes2 = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ jobSeekerId: rc2.id })
+        .expect(201);
+
+      const rc2Id = offerRes2.body.id;
+
+      // 2nd Rejection: Still does not pause clock
+      const rejRes2 = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates/${rc2Id}/reject`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          reason: 'Salary expectation gap',
+          rejectedAt: '2026-11-06T00:00:00.000Z',
+        })
+        .expect(201);
+
+      expect(rejRes2.body.placement.replacementRejectionCount).toBe(2);
+      expect(rejRes2.body.placement.clockPaused).toBe(false);
+
+      // Offer Candidate 3
+      const offerRes3 = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({ jobSeekerId: rc3.id })
+        .expect(201);
+
+      const rc3Id = offerRes3.body.id;
+
+      // 3rd Rejection: Pauses the guarantee clock!
+      const pauseDate = '2026-11-11T00:00:00.000Z'; // exactly 10 days after dropout report
+      const rejRes3 = await request(app.getHttpServer())
+        .post(`/placements/${placementId}/replacement-candidates/${rc3Id}/reject`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({
+          reason: 'Did not match culture fit',
+          rejectedAt: pauseDate,
+        })
+        .expect(201);
+
+      expect(rejRes3.body.placement.replacementRejectionCount).toBe(3);
+      expect(rejRes3.body.placement.clockPaused).toBe(true);
+      expect(new Date(rejRes3.body.placement.clockPausedAt).toISOString()).toBe(pauseDate);
+
+      // Verify elapsed-day calculation freeze:
+      // Even 40 days later (2026-12-11), elapsed days remain frozen at 10 days
+      const placementService = app.get(PlacementService);
+      const elapsedDaysFuture = await placementService.getPlacementDaysElapsed(
+        placementId,
+        new Date('2026-12-11T00:00:00.000Z'),
+      );
+      expect(elapsedDaysFuture).toBe(10);
+    });
+  });
 });
+
 
 

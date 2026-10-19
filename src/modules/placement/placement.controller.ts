@@ -19,6 +19,8 @@ import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
 import { RecordJoinedDto } from './dto/record-joined.dto';
 import { RecordDropoutDto } from './dto/record-dropout.dto';
+import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
+import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -76,6 +78,41 @@ export class PlacementController {
   ) {
     return this.placementService.recordDropout(id, dto, req.user.sub);
   }
+
+  @Post(':id/replacement-candidates')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async offerReplacementCandidate(
+    @Param('id') id: string,
+    @Body() dto: CreateReplacementCandidateDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.offerReplacementCandidate(id, dto, req.user.sub);
+  }
+
+  @Post(':id/replacement-candidates/:candidateId/reject')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async rejectReplacementCandidate(
+    @Param('id') id: string,
+    @Param('candidateId') candidateId: string,
+    @Body() dto: RejectReplacementCandidateDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.rejectReplacementCandidate(id, candidateId, dto, req.user.sub);
+  }
+
+  @Post(':id/replacement-candidates/:candidateId/accept')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async acceptReplacementCandidate(
+    @Param('id') id: string,
+    @Param('candidateId') candidateId: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub);
+  }
 }
+
 
 
