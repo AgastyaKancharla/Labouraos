@@ -114,8 +114,16 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
               `JS-P5R-PL-${timestamp}`,
               `JS-P5R-ACT-${timestamp}`,
               `JS-P5R-DEACT-${timestamp}`,
+              `JS-P5R-REJ-${timestamp}`,
             ],
           },
+        },
+      },
+    });
+    await prisma.jobSeekerHit.deleteMany({
+      where: {
+        jobSeeker: {
+          code: `JS-P5R-REJ-${timestamp}`,
         },
       },
     });
@@ -126,6 +134,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
             `JS-P5R-PL-${timestamp}`,
             `JS-P5R-ACT-${timestamp}`,
             `JS-P5R-DEACT-${timestamp}`,
+            `JS-P5R-REJ-${timestamp}`,
           ],
         },
       },
@@ -154,6 +163,8 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
       expect(isWithinRefundGuarantee(paymentDate, day10, 'active')).toBe(true);
       // Deactivated candidate on day 10
       expect(isWithinRefundGuarantee(paymentDate, day10, 'deactivated')).toBe(false);
+      // Candidate with offer_rejected hit on day 10
+      expect(isWithinRefundGuarantee(paymentDate, day10, 'active', true)).toBe(false);
     });
   });
 
@@ -249,6 +260,41 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
         .expect(400);
 
       expect(res.body.message).toContain('deactivated');
+    });
+
+    it('denies refund to a candidate who rejected a suitable offer on day 5 (1 hit, active) when claimed on day 31', async () => {
+      const paymentDate = new Date('2026-10-01T00:00:00.000Z');
+      const rejCandidate = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5R-REJ-${timestamp}`,
+          name: 'Offer Rejected Candidate',
+          phone: `93${timestamp.toString().slice(-8)}4`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+          hitCount: 1,
+          paymentReceivedAt: paymentDate,
+          hits: {
+            create: {
+              reason: 'offer_rejected',
+              note: 'Rejected a suitable offer on day 5',
+              recordedBy: 'system',
+            },
+          },
+        },
+      });
+
+      const day31 = '2026-11-01T12:00:00.000Z';
+      const res = await request(app.getHttpServer())
+        .post(`/job-seekers/${rejCandidate.id}/refund`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ asOf: day31 })
+        .expect(400);
+
+      expect(res.body.message).toContain('rejected a suitable offer');
     });
 
     it('allows 30-day refund for active candidate never placed after 30 days, creating Payment and audit log', async () => {

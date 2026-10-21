@@ -71,7 +71,7 @@
 
 ---
 
-### [ ] Task 7 — Refund approval (business side)
+### [x] Task 7 — Refund approval (business side)
 
 **Resolved 2026-10-20 — the earlier tapered ladder is gone, replaced with a flat rule.** `AGENTS.md` §6 Business side now reads: before day 15, no cash refund is payable (Laboura is still searching for a free replacement); from day 15 onward with no replacement found, the refund is a **flat 100%** of the placement fee, no 50%/25% tapering. Update `calculateRefund(amountPaise, daysElapsed)` (Phase 1 Task 4, in `src/common/money/money.ts`) to implement this flat rule exactly, and update its existing tests in `money.spec.ts` (which currently assert the old tapered ladder at days 0/15/16/30/31/45/46/61) to assert the new flat rule at the same boundaries instead — this supersedes those tests, it isn't a regression.
 

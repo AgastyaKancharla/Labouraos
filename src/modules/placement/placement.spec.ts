@@ -13,6 +13,9 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   let faKoraToken: string;
   let faIndiToken: string;
   let caToken: string;
+  let ceoToken: string;
+  let mgrToken: string;
+  let financeToken: string;
 
   let koraVacancyId: string;
   let indiVacancyId: string;
@@ -72,7 +75,40 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
 
-    staffIds = [faKora.id, faIndi.id, ca.id];
+    const ceo = await prisma.staff.create({
+      data: {
+        code: `CEO-P5-${timestamp}`,
+        name: 'CEO P5',
+        email: `ceo_p5_${timestamp}@laboura.local`,
+        passwordHash,
+        role: 'ceo',
+        city: 'Bengaluru',
+      },
+    });
+
+    const mgr = await prisma.staff.create({
+      data: {
+        code: `MGR-P5-${timestamp}`,
+        name: 'Manager P5',
+        email: `mgr_p5_${timestamp}@laboura.local`,
+        passwordHash,
+        role: 'manager',
+        city: 'Bengaluru',
+      },
+    });
+
+    const finance = await prisma.staff.create({
+      data: {
+        code: `FI-P5-${timestamp}`,
+        name: 'Finance P5',
+        email: `fi_p5_${timestamp}@laboura.local`,
+        passwordHash,
+        role: 'finance',
+        city: 'Bengaluru',
+      },
+    });
+
+    staffIds = [faKora.id, faIndi.id, ca.id, ceo.id, mgr.id, finance.id];
 
     const server = app.getHttpServer();
     const login = async (email: string) => {
@@ -83,6 +119,9 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     faKoraToken = await login(faKora.email);
     faIndiToken = await login(faIndi.email);
     caToken = await login(ca.email);
+    ceoToken = await login(ceo.email);
+    mgrToken = await login(mgr.email);
+    financeToken = await login(finance.email);
 
     // Businesses in respective areas
     const koraBiz = await prisma.business.create({
@@ -212,6 +251,16 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             `JS-P5RC1-${timestamp}`,
             `JS-P5RC2-${timestamp}`,
             `JS-P5RC3-${timestamp}`,
+            `JS-P5REF1-${timestamp}`,
+            `JS-P5REF2-${timestamp}`,
+            `JS-P5REF3-${timestamp}`,
+            `JS-P5REF4-${timestamp}`,
+            `JS-P5REF5-${timestamp}`,
+            `JS-P5REF6-${timestamp}`,
+            `JS-P5REF7-${timestamp}`,
+            `JS-P5REF8-${timestamp}`,
+            `JS-P5REF9-${timestamp}`,
+            `JS-P5REFPAUSE-${timestamp}`,
           ],
         },
       },
@@ -1059,6 +1108,351 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         new Date('2026-12-11T00:00:00.000Z'),
       );
       expect(elapsedDaysFuture).toBe(10);
+    });
+  });
+
+  describe('Phase 5 Task 7: Refund approval (business side)', () => {
+    it('denies non-CEO/non-Manager staff (403)', async () => {
+      const js = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REF1-${timestamp}`,
+          name: 'Refund Candidate 1',
+          phone: `92${timestamp.toString().slice(-8)}8`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const placement = await prisma.placement.create({
+        data: {
+          code: `PL-P5REF1-${timestamp}`,
+          vacancyId: koraVacancyId,
+          jobSeekerId: js.id,
+          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+          agreedSalary: 2000000,
+          placementFee: 1000000,
+          gstAmount: 180000,
+          status: 'dropped_out',
+          eligibility: 'employee_left',
+          dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
+        },
+      });
+
+      // Call agent gets 403
+      await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${caToken}`)
+        .send({})
+        .expect(403);
+
+      // Field agent gets 403
+      await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({})
+        .expect(403);
+
+      // Finance gets 403 (approval stays CEO/Manager only, per §7)
+      await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${financeToken}`)
+        .send({})
+        .expect(403);
+    });
+
+    it('denies refund when eligibility is business_breach (no remedy)', async () => {
+      const js = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REF2-${timestamp}`,
+          name: 'Refund Candidate 2',
+          phone: `92${timestamp.toString().slice(-8)}9`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const placement = await prisma.placement.create({
+        data: {
+          code: `PL-P5REF2-${timestamp}`,
+          vacancyId: koraVacancyId,
+          jobSeekerId: js.id,
+          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+          agreedSalary: 2000000,
+          placementFee: 1000000,
+          gstAmount: 180000,
+          status: 'dropped_out',
+          eligibility: 'business_breach',
+          dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-11-01T00:00:00.000Z' }) // day 31
+        .expect(400);
+
+      expect(res.body.message).toContain('business_breach');
+    });
+
+    it('denies refund when a replacement candidate has been accepted', async () => {
+      const js = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REF3-${timestamp}`,
+          name: 'Refund Candidate 3',
+          phone: `92${timestamp.toString().slice(-8)}0`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const replJs = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REF4-${timestamp}`,
+          name: 'Replacement Candidate 4',
+          phone: `92${timestamp.toString().slice(-8)}3`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const placement = await prisma.placement.create({
+        data: {
+          code: `PL-P5REF3-${timestamp}`,
+          vacancyId: koraVacancyId,
+          jobSeekerId: js.id,
+          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+          agreedSalary: 2000000,
+          placementFee: 1000000,
+          gstAmount: 180000,
+          status: 'dropped_out',
+          eligibility: 'employee_left',
+          dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
+          replacementCandidates: {
+            create: {
+              jobSeekerId: replJs.id,
+              status: 'accepted',
+            },
+          },
+        },
+      });
+
+      const res = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${mgrToken}`)
+        .send({ asOf: '2026-11-01T00:00:00.000Z' }) // day 31
+        .expect(400);
+
+      expect(res.body.message).toContain('replacement candidate has been accepted');
+    });
+
+    it('asserts flat refund rule boundaries: no refund at days 0, 10, 14; full refund at day 15', async () => {
+      const js = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REF5-${timestamp}`,
+          name: 'Refund Candidate 5',
+          phone: `92${timestamp.toString().slice(-8)}4`,
+          tradeSkill: 'Electrician',
+          minSalary: 2400000,
+          maxSalary: 3000000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const startDate = new Date('2026-10-01T00:00:00.000Z');
+      const placementFee = 1200000; // 50% of ₹24,000 in paise
+
+      const placement = await prisma.placement.create({
+        data: {
+          code: `PL-P5REF5-${timestamp}`,
+          vacancyId: koraVacancyId,
+          jobSeekerId: js.id,
+          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+          agreedSalary: 2400000,
+          placementFee,
+          gstAmount: 216000,
+          status: 'dropped_out',
+          eligibility: 'employee_left',
+          dropoutReportedAt: startDate,
+        },
+      });
+
+      // Day 0: 2026-10-01T00:00:00.000Z -> 400
+      const resDay0 = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-10-01T00:00:00.000Z' })
+        .expect(400);
+      expect(resDay0.body.message).toContain('not payable before 15 days');
+
+      // Day 10: 2026-10-11T00:00:00.000Z -> 400
+      const resDay10 = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-10-11T00:00:00.000Z' })
+        .expect(400);
+      expect(resDay10.body.message).toContain('not payable before 15 days');
+
+      // Day 14: 2026-10-15T12:00:00.000Z -> 400
+      const resDay14 = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-10-15T12:00:00.000Z' })
+        .expect(400);
+      expect(resDay14.body.message).toContain('not payable before 15 days');
+
+      // Day 15: 2026-10-16T00:00:00.000Z -> 201 Created, full refund (100% placement fee)
+      const resDay15 = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-10-16T00:00:00.000Z' })
+        .expect(201);
+
+      expect(resDay15.body.type).toBe('refund');
+      expect(resDay15.body.amount).toBe(placementFee); // full 100% placement fee
+      expect(resDay15.body.code).toMatch(/^PAY-\d{5}$/);
+      expect(resDay15.body.status).toBe('completed');
+      expect(resDay15.body.placementId).toBe(placement.id);
+
+      // DB check
+      const dbPayment = await prisma.payment.findUnique({
+        where: { id: resDay15.body.id },
+      });
+      expect(dbPayment?.amount).toBe(placementFee);
+      expect(dbPayment?.type).toBe('refund');
+
+      // Audit log check
+      const audit = await prisma.auditLog.findFirst({
+        where: {
+          entityCode: placement.code,
+          action: 'refund_approved',
+        },
+      });
+      expect(audit).toBeDefined();
+      expect(audit?.action).toBe('refund_approved');
+
+      // Duplicate refund check: repeat call fails with 400
+      await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-10-16T00:00:00.000Z' })
+        .expect(400);
+    });
+
+    it('asserts flat 100% refund at days 16, 30, 45, 61 (does not taper with more elapsed time)', async () => {
+      // Test the boundaries across different placements to verify flat 100% refund rule
+      const testCases = [
+        { days: 16, asOf: '2026-10-17T00:00:00.000Z', suffix: '6' },
+        { days: 30, asOf: '2026-10-31T00:00:00.000Z', suffix: '7' },
+        { days: 45, asOf: '2026-11-15T00:00:00.000Z', suffix: '8' },
+        { days: 61, asOf: '2026-12-01T00:00:00.000Z', suffix: '9' },
+      ];
+
+      for (const tc of testCases) {
+        const js = await prisma.jobSeeker.create({
+          data: {
+            code: `JS-P5REF${tc.suffix}-${timestamp}`,
+            name: `Refund Candidate ${tc.suffix}`,
+            phone: `81${timestamp.toString().slice(-8)}${tc.suffix}`,
+            tradeSkill: 'Electrician',
+            minSalary: 2000000,
+            maxSalary: 2600000,
+            preferredCallWindowStart: '10:00',
+            preferredCallWindowEnd: '18:00',
+            status: 'placed',
+          },
+        });
+
+        const placementFee = 1000000;
+        const placement = await prisma.placement.create({
+          data: {
+            code: `PL-P5REF${tc.suffix}-${timestamp}`,
+            vacancyId: koraVacancyId,
+            jobSeekerId: js.id,
+            businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+            agreedSalary: 2000000,
+            placementFee,
+            gstAmount: 180000,
+            status: 'dropped_out',
+            eligibility: 'employee_left',
+            dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
+          },
+        });
+
+        const res = await request(app.getHttpServer())
+          .post(`/placements/${placement.id}/refund`)
+          .set('Authorization', `Bearer ${mgrToken}`)
+          .send({ asOf: tc.asOf })
+          .expect(201);
+
+        expect(res.body.amount).toBe(placementFee);
+        expect(res.body.type).toBe('refund');
+      }
+    });
+
+    it('freezes refund eligibility when clock is paused at day 10', async () => {
+      const js = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-P5REFPAUSE-${timestamp}`,
+          name: 'Paused Candidate',
+          phone: `92${timestamp.toString().slice(-8)}5`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const dropoutReportedAt = new Date('2026-10-01T00:00:00.000Z');
+      const clockPausedAt = new Date('2026-10-11T00:00:00.000Z'); // 10 days after report
+
+      const placement = await prisma.placement.create({
+        data: {
+          code: `PL-P5REFPAUSE-${timestamp}`,
+          vacancyId: koraVacancyId,
+          jobSeekerId: js.id,
+          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+          agreedSalary: 2000000,
+          placementFee: 1000000,
+          gstAmount: 180000,
+          status: 'dropped_out',
+          eligibility: 'employee_left',
+          dropoutReportedAt,
+          clockPaused: true,
+          clockPausedAt,
+          replacementRejectionCount: 3,
+        },
+      });
+
+      // Even at day 35 (2026-11-05), elapsed days are frozen at 10 (< 15)
+      const res = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: '2026-11-05T00:00:00.000Z' })
+        .expect(400);
+
+      expect(res.body.message).toContain('not payable before 15 days');
+      expect(res.body.message).toContain('days elapsed: 10');
     });
   });
 });
