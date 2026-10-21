@@ -78,26 +78,22 @@ describe('Money Module', () => {
     });
   });
 
-  describe('calculateRefund ladder (§6)', () => {
+  describe('calculateRefund (§6 flat rule, locked 2026-10-20)', () => {
     const fee = 100000; // ₹1,000 = 100,000 paise
 
-    it('asserts the refund ladder at days 0, 15, 16, 30, 31, 45, 46, 61', () => {
-      // 0–15 days: 100%
-      expect(calculateRefund(fee, 0)).toBe(100000);
+    it('asserts no refund payable at days 0, 10, 14 and full refund payable at days 15, 16, 30, 45, 61', () => {
+      // Days < 15: 0 (not yet eligible, searching for replacement)
+      expect(calculateRefund(fee, 0)).toBe(0);
+      expect(calculateRefund(fee, 10)).toBe(0);
+      expect(calculateRefund(fee, 14)).toBe(0);
+
+      // Days >= 15: 100% flat refund (no tapering)
       expect(calculateRefund(fee, 15)).toBe(100000);
-
-      // 16–30 days: 50%
-      expect(calculateRefund(fee, 16)).toBe(50000);
-      expect(calculateRefund(fee, 30)).toBe(50000);
-
-      // 31–45 days: 25%
-      expect(calculateRefund(fee, 31)).toBe(25000);
-      expect(calculateRefund(fee, 45)).toBe(25000);
-
-      // 46–60 days and beyond: 0%
-      expect(calculateRefund(fee, 46)).toBe(0);
-      expect(calculateRefund(fee, 60)).toBe(0);
-      expect(calculateRefund(fee, 61)).toBe(0);
+      expect(calculateRefund(fee, 16)).toBe(100000);
+      expect(calculateRefund(fee, 30)).toBe(100000);
+      expect(calculateRefund(fee, 45)).toBe(100000);
+      expect(calculateRefund(fee, 60)).toBe(100000);
+      expect(calculateRefund(fee, 61)).toBe(100000);
     });
 
     it('rejects negative days elapsed', () => {

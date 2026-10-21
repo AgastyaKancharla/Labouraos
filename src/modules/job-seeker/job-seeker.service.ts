@@ -574,6 +574,18 @@ export class JobSeekerService {
       );
     }
 
+    const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
+      where: {
+        jobSeekerId: jobSeeker.id,
+        reason: 'offer_rejected',
+      },
+    });
+    if (hasOfferRejected) {
+      throw new BadRequestException(
+        `Job seeker '${jobSeeker.code}' rejected a suitable offer and is not eligible for refund`,
+      );
+    }
+
     let now: Date;
     if (dto?.asOf) {
       now = new Date(dto.asOf);

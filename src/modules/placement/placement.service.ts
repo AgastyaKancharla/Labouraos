@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
-import { calculatePlacementFee, calculateGst } from '../../common/money/money';
+import { calculatePlacementFee, calculateGst, calculateRefund } from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
@@ -16,6 +16,7 @@ import { RecordJoinedDto } from './dto/record-joined.dto';
 import { RecordDropoutDto } from './dto/record-dropout.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
+import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 
 export function calculateDaysElapsed(
   startDate: Date,
@@ -862,6 +863,141 @@ export class PlacementService {
     }
 
     return placement;
+  }
+
+  async approveRefund(
+    id: string,
+    dto: ApprovePlacementRefundDto,
+    actorId: string,
+  ) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id }, { code: id }],
+      },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+        replacementCandidates: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    if (placement.status !== 'dropped_out') {
+      throw new BadRequestException(
+        `Placement must be in 'dropped_out' status to approve a refund. Current status: '${placement.status}'`,
+      );
+    }
+
+    if (placement.eligibility === 'business_breach') {
+      throw new BadRequestException(
+        "Placement with eligibility 'business_breach' is ineligible for refund guarantee remedy",
+      );
+    }
+
+    if (placement.eligibility !== 'employee_left') {
+      throw new BadRequestException(
+        `Placement eligibility must be 'employee_left' to qualify for refund. Current: '${placement.eligibility}'`,
+      );
+    }
+
+    const hasAcceptedReplacement = placement.replacementCandidates.some(
+      (rc) => rc.status === 'accepted',
+    );
+    if (hasAcceptedReplacement) {
+      throw new BadRequestException(
+        'Cannot approve refund when a replacement candidate has been accepted',
+      );
+    }
+
+    if (!placement.dropoutReportedAt) {
+      throw new BadRequestException(
+        `Dropout report date is missing for placement '${placement.code}'`,
+      );
+    }
+
+    let now: Date;
+    if (dto?.asOf) {
+      now = new Date(dto.asOf);
+      if (isNaN(now.getTime())) {
+        throw new BadRequestException('asOf must be a valid date string');
+      }
+    } else {
+      now = new Date();
+    }
+
+    const daysElapsed = calculateDaysElapsed(
+      placement.dropoutReportedAt,
+      placement.clockPaused,
+      placement.clockPausedAt,
+      now,
+    );
+
+    const refundAmount = calculateRefund(placement.placementFee, daysElapsed);
+    if (daysElapsed < 15 || refundAmount <= 0) {
+      throw new BadRequestException(
+        `Refund is not payable before 15 days have elapsed from dropout report (days elapsed: ${daysElapsed})`,
+      );
+    }
+
+    const existingRefund = await this.prisma.payment.findFirst({
+      where: {
+        placementId: placement.id,
+        type: 'refund',
+        status: { in: ['pending', 'completed', 'succeeded'] },
+      },
+    });
+    if (existingRefund) {
+      throw new BadRequestException(
+        `A refund has already been issued for placement '${placement.code}'`,
+      );
+    }
+
+    const paymentCode = await this.idService.generateCode('payment');
+    const payment = await this.prisma.payment.create({
+      data: {
+        code: paymentCode,
+        city: placement.city,
+        type: 'refund',
+        amount: refundAmount,
+        status: 'completed',
+        gatewayReference: `ref_pl_${placement.code}_${Date.now()}`,
+        subjectType: 'placement',
+        subjectId: placement.id,
+        placementId: placement.id,
+        businessId: placement.businessId,
+      },
+    });
+
+    await this.auditService.log({
+      action: 'refund_approved',
+      entityType: 'Placement',
+      entityCode: placement.code,
+      actorId: actor.id,
+      city: placement.city,
+      before: {
+        status: placement.status,
+      },
+      after: {
+        paymentId: payment.id,
+        paymentCode: payment.code,
+        amount: payment.amount,
+        type: 'refund',
+        reason: dto?.reason ?? '60-day replacement guarantee cash refund',
+        daysElapsed,
+      },
+    });
+
+    return payment;
   }
 }
 

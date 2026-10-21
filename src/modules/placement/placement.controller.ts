@@ -22,6 +22,7 @@ import { RecordJoinedDto } from './dto/record-joined.dto';
 import { RecordDropoutDto } from './dto/record-dropout.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
+import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -112,6 +113,17 @@ export class PlacementController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub);
+  }
+
+  @Post(':id/refund')
+  @RequireRoles('ceo', 'manager')
+  @RequirePermission('payment', 'write')
+  async approveRefund(
+    @Param('id') id: string,
+    @Body() dto: ApprovePlacementRefundDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.approveRefund(id, dto, req.user.sub);
   }
 
   @Get()

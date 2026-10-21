@@ -72,11 +72,9 @@ export function calculatePlacementFee(monthlySalaryPaise: number): number {
 }
 
 /**
- * Calculates refund amount according to §6 ladder:
- * Days 0-15: 100%
- * Days 16-30: 50%
- * Days 31-45: 25%
- * Days 46+: 0%
+ * Calculates refund amount according to §6 flat rule (locked 2026-10-20):
+ * Days < 15: 0 (not yet eligible, Laboura is still searching for a replacement)
+ * Days >= 15: full amountPaise (100% flat refund, no tapering)
  */
 export function calculateRefund(amountPaise: number, daysElapsed: number): number {
   assertInteger(amountPaise, 'amountPaise');
@@ -85,14 +83,10 @@ export function calculateRefund(amountPaise: number, daysElapsed: number): numbe
   assertNonNegative(daysElapsed, 'daysElapsed');
 
   let result = 0;
-  if (daysElapsed <= 15) {
-    result = amountPaise;
-  } else if (daysElapsed <= 30) {
-    result = Math.round((amountPaise * 50) / 100);
-  } else if (daysElapsed <= 45) {
-    result = Math.round((amountPaise * 25) / 100);
-  } else {
+  if (daysElapsed < 15) {
     result = 0;
+  } else {
+    result = amountPaise;
   }
 
   assertInteger(result, 'result');
@@ -120,8 +114,9 @@ export function isWithinRefundGuarantee(
   paymentReceivedAt: Date,
   now: Date,
   status?: string,
+  hasOfferRejectedHit: boolean = false,
 ): boolean {
-  if (status === 'deactivated' || status === 'placed') {
+  if (status === 'deactivated' || status === 'placed' || hasOfferRejectedHit) {
     return false;
   }
   if (!(paymentReceivedAt instanceof Date) || isNaN(paymentReceivedAt.getTime())) {
