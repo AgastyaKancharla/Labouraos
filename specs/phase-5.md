@@ -104,14 +104,14 @@
 
 ## Phase 5 Gate
 
-- [ ] Placement fee and GST are calculated correctly and billed to the business, never deducted from the job seeker, by test
-- [ ] Rejecting an offer records a hit through the same path Phase 3 built, by test
-- [ ] The flat refund rule (0% before day 15, 100% from day 15 onward, no tapering) is correct at every day boundary tested, by test
-- [ ] A `business_breach` dropout is correctly denied any guarantee remedy, by test
-- [ ] The 3rd replacement rejection pauses the clock, and elapsed-day math respects the pause, by test
-- [ ] A job seeker's 30-day refund is correctly blocked once they're placed, by test
-- [ ] Only CEO/Manager tokens can approve either refund type; all others get 403, by test
-- [ ] All Phase 1–4 gate items still pass
-- [ ] `LESSONS.md` updated
+- [x] Placement fee and GST are calculated correctly and billed to the business, never deducted from the job seeker, by test
+- [x] Rejecting an offer records a hit through the same path Phase 3 built, by test
+- [x] The flat refund rule (0% before day 15, 100% from day 15 onward, no tapering) is correct at every day boundary tested, by test
+- [x] A `business_breach` dropout is correctly denied any guarantee remedy, by test
+- [x] The 3rd replacement rejection pauses the clock, and elapsed-day math respects the pause, by test
+- [x] A job seeker's 30-day refund is correctly blocked once they're placed, by test
+- [x] Only CEO/Manager tokens can approve either refund type; all others get 403, by test
+- [x] All Phase 1–4 gate items still pass
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 6.**
