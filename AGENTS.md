@@ -153,6 +153,7 @@ npx prisma studio    # browse the database visually
 ### Referral side
 - Any individual or business can be a referral partner. OTP-verified number required.
 - **Referral payout fires when the referred candidate JOINS THE JOB** — i.e. on the Placement's `joined_date`. It does **not** fire on receipt of the ₹499. This is deliberate anti-fraud; do not "fix" it.
+- **Payout amount (LOCKED 2026-10-24):** flat **₹200** (`20000` paise) per placement, same figure regardless of trade, salary, or placement fee size.
 
 ### Identity
 - Aadhaar verification is **offline e-KYC via a licensed vendor only**. Store the result and the vendor reference. **Never the Aadhaar number itself.** PAN is the fallback.
