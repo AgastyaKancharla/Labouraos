@@ -15,8 +15,7 @@
 ### [x] Task 1 — Referral payout trigger
 
 **Acceptance:**
-- A scheduled job (or a hook on Phase 5 Task 4's `joined` event — either is fine, but tests must prove it fires) creates a `Payment` (`type: referral_payout`) for a job seeker's `referredById`, the moment `joinedDate` is set — **not** on ₹499 receipt
-- **The exact payout amount isn't locked anywhere in `AGENTS.md` or the Playbook as of Phase 1–5. Stop and ask Agastya for the figure before hardcoding anything** — per AGENTS.md §2 rule 6 and §14, guessing this is worse than not building it yet
+- A scheduled job (or a hook on Phase 5 Task 4's `joined` event — either is fine, but tests must prove it fires) creates a `Payment` (`type: referral_payout`, `amount: 20000` — ₹200 flat per placement, confirmed and locked in AGENTS.md §6 Referral side) for a job seeker's `referredById`, the moment `joinedDate` is set — **not** on ₹499 receipt
 - Idempotent: a job seeker whose `joined` event somehow fires twice (defensive test) never produces two payouts
 - Audit logged
 - Test: a job seeker with no `referredById` triggers no payout; one with it does, exactly once, exactly on joining
