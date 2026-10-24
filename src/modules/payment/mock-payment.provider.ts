@@ -2,6 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   PaymentProvider,
   WebhookVerificationResult,
+  DisbursePayoutResult,
 } from './payment-provider.interface';
 
 @Injectable()
@@ -25,6 +26,29 @@ export class MockPaymentProvider implements PaymentProvider {
     return {
       paymentLink,
       gatewayReference,
+    };
+  }
+
+  async disbursePayout(
+    amountPaise: number,
+    subjectType: string,
+    subjectId: string,
+    metadata?: Record<string, unknown>,
+  ): Promise<DisbursePayoutResult> {
+    const timestamp = Date.now();
+    const randomHex = Math.random().toString(36).substring(2, 8);
+    const gatewayReference = `mock_payout_gw_${subjectType}_${timestamp}_${randomHex}`;
+    const shouldFail = metadata?.simulateFailure === true;
+
+    this.logger.log(
+      `[MOCK PAYOUT] Disbursing payout of ${amountPaise} paise to ${subjectType}:${subjectId}. Status: ${shouldFail ? 'failed' : 'succeeded'}. Reference: ${gatewayReference}`,
+    );
+
+    return {
+      success: !shouldFail,
+      gatewayReference,
+      status: shouldFail ? 'failed' : 'succeeded',
+      failureReason: shouldFail ? 'Simulated disbursement failure' : undefined,
     };
   }
 

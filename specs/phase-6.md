@@ -23,7 +23,7 @@
 
 ---
 
-### [ ] Task 2 — Payout disbursement
+### [x] Task 2 — Payout disbursement
 
 **Acceptance:**
 - Reuses the `PaymentProvider` pattern (Phase 2 Task 4), but for an outbound payout rather than an inbound charge — if the provider interface doesn't yet support payouts, extend it with a `disbursePayout` method on the same mock-then-real pattern
