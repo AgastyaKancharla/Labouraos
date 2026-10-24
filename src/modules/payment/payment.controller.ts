@@ -5,12 +5,14 @@ import {
   Headers,
   Param,
   Post,
+  Query,
   Req,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
 import { Request } from 'express';
 import { PaymentService } from './payment.service';
+import { PaymentFilterDto } from './dto/payment-filter.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -26,13 +28,15 @@ export class PaymentController {
   @Get()
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'read')
-  async findAll() {
-    return this.paymentService.findAll();
+  @RequireRoles('ceo', 'manager', 'finance')
+  async findAll(@Query() query: PaymentFilterDto) {
+    return this.paymentService.findAll(query);
   }
 
   @Get(':id')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'manager', 'finance')
   async findById(@Param('id') id: string) {
     return this.paymentService.findById(id);
   }
