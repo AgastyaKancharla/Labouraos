@@ -259,6 +259,82 @@ export class PaymentService {
     return payment;
   }
 
+  async disbursePayout(
+    paymentId: string,
+    actorId?: string,
+    options?: { simulateFailure?: boolean },
+  ) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
+
+    if (!payment) {
+      throw new NotFoundException(`Payment '${paymentId}' not found`);
+    }
+
+    if (payment.status !== 'pending') {
+      throw new BadRequestException(
+        `Only pending payments can be disbursed. Current status: '${payment.status}'`,
+      );
+    }
+
+    const before = {
+      status: payment.status,
+      gatewayReference: payment.gatewayReference,
+    };
+
+    const result = await this.provider.disbursePayout(
+      payment.amount,
+      payment.subjectType,
+      payment.subjectId,
+      options,
+    );
+
+    const updatedPayment = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: result.status,
+        gatewayReference: result.gatewayReference || payment.gatewayReference,
+      },
+      include: {
+        jobSeeker: true,
+        business: true,
+        placement: true,
+        referral: true,
+      },
+    });
+
+    let actor = actorId
+      ? await this.prisma.staff.findUnique({ where: { id: actorId } })
+      : null;
+    if (!actor) {
+      actor =
+        (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
+        (await this.prisma.staff.findFirst());
+    }
+
+    if (actor) {
+      await this.auditService.log({
+        actorId: actor.id,
+        action: 'payout_release',
+        entityType: 'Payment',
+        entityCode: updatedPayment.code,
+        before,
+        after: {
+          id: updatedPayment.id,
+          code: updatedPayment.code,
+          status: updatedPayment.status,
+          amount: updatedPayment.amount,
+          gatewayReference: updatedPayment.gatewayReference,
+          failureReason: result.failureReason,
+        },
+        city: updatedPayment.city,
+      });
+    }
+
+    return updatedPayment;
+  }
+
   async findAll() {
     return this.prisma.payment.findMany({
       include: {
