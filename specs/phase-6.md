@@ -41,7 +41,7 @@
 
 ---
 
-### [ ] Task 4 — Admin Dashboard (CEO/management)
+### [x] Task 4 — Admin Dashboard (CEO/management)
 
 **Acceptance:**
 - A web frontend (framework choice is yours — document it in `AGENTS.md` §3 once chosen) covering: job seeker/referral/business/vacancy/placement lists and detail views, the payment ledger, refund approval actions (calling Phase 5 Tasks 7/8), pricing/policy controls (CEO-only, per §7)
