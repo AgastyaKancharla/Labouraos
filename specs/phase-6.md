@@ -32,7 +32,7 @@
 
 ---
 
-### [ ] Task 3 — Finance ledger view
+### [x] Task 3 — Finance ledger view
 
 **Acceptance:**
 - `GET /payments` (finance, ceo, manager) — filterable by type, status, date range

@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
 import { REFERRAL_PAYOUT_AMOUNT_PAISE } from '../../common/money/money';
+import { PaymentFilterDto } from './dto/payment-filter.dto';
 import {
   PAYMENT_PROVIDER,
   PaymentProvider,
@@ -335,8 +336,32 @@ export class PaymentService {
     return updatedPayment;
   }
 
-  async findAll() {
+  async findAll(filters?: PaymentFilterDto) {
+    const where: any = {};
+
+    if (filters?.type) {
+      where.type = filters.type;
+    }
+
+    if (filters?.status) {
+      where.status = filters.status;
+    }
+
+    const from = filters?.fromDate ?? filters?.startDate;
+    const to = filters?.toDate ?? filters?.endDate;
+
+    if (from || to) {
+      where.createdAt = {};
+      if (from) {
+        where.createdAt.gte = new Date(from);
+      }
+      if (to) {
+        where.createdAt.lte = new Date(to);
+      }
+    }
+
     return this.prisma.payment.findMany({
+      where,
       include: {
         jobSeeker: true,
         business: true,
