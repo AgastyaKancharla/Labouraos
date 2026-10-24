@@ -7,6 +7,7 @@ import {
   calculateRefund,
   refundGuaranteeDeadline,
   isWithinRefundGuarantee,
+  REFERRAL_PAYOUT_AMOUNT_PAISE,
 } from './money';
 
 describe('Money Module', () => {
@@ -75,6 +76,13 @@ describe('Money Module', () => {
       expect(calculatePlacementFee(2000000)).toBe(1000000); // ₹20,000 -> ₹10,000
       expect(calculatePlacementFee(2500000)).toBe(1250000); // ₹25,000 -> ₹12,500
       expect(calculatePlacementFee(101)).toBe(51); // 101 / 2 = 50.5 -> rounds to 51
+    });
+  });
+
+  describe('REFERRAL_PAYOUT_AMOUNT_PAISE (§6 locked amount)', () => {
+    it('is locked at flat 20000 paise (₹200) per placement', () => {
+      expect(REFERRAL_PAYOUT_AMOUNT_PAISE).toBe(20000);
+      expect(toRupees(REFERRAL_PAYOUT_AMOUNT_PAISE)).toBe(200);
     });
   });
 

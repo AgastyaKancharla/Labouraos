@@ -1,3 +1,9 @@
+/**
+ * Referral payout amount in paise: flat ₹200 (20000 paise) per placement.
+ * Locked per AGENTS.md §6 and specs/phase-6.md Task 1.
+ */
+export const REFERRAL_PAYOUT_AMOUNT_PAISE = 20000;
+
 function assertInteger(val: number, name: string): void {
   if (typeof val !== 'number' || !Number.isInteger(val)) {
     throw new TypeError(`${name} must be an integer; got ${val}`);

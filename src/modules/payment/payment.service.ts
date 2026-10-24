@@ -7,6 +7,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { IdService } from '../../common/id/id.service';
+import { REFERRAL_PAYOUT_AMOUNT_PAISE } from '../../common/money/money';
 import {
   PAYMENT_PROVIDER,
   PaymentProvider,
@@ -20,6 +22,7 @@ export class PaymentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly idService: IdService,
     @Inject(PAYMENT_PROVIDER)
     private readonly provider: PaymentProvider,
   ) {}
@@ -163,12 +166,106 @@ export class PaymentService {
     };
   }
 
+  async createReferralPayout(
+    placementId: string,
+    actorId?: string,
+  ) {
+    const placement = await this.prisma.placement.findUnique({
+      where: { id: placementId },
+      include: {
+        jobSeeker: true,
+      },
+    });
+
+    if (!placement) {
+      throw new NotFoundException(`Placement '${placementId}' not found`);
+    }
+
+    if (!placement.jobSeeker?.referredById) {
+      return null;
+    }
+
+    // Idempotency: a job seeker whose joined event somehow fires twice never produces two payouts
+    const existing = await this.prisma.payment.findFirst({
+      where: {
+        type: 'referral_payout',
+        placementId: placement.id,
+      },
+    });
+
+    if (existing) {
+      this.logger.log(
+        `Referral payout already exists for placement ${placement.id} (payment: ${existing.id}). Idempotent no-op.`,
+      );
+      return existing;
+    }
+
+    const code = await this.idService.generateCode('payment');
+    const timestamp = Date.now();
+    const randomHex = Math.random().toString(36).substring(2, 8);
+    const gatewayReference = `mock_payout_ref_${placement.id}_${timestamp}_${randomHex}`;
+
+    const payment = await this.prisma.payment.create({
+      data: {
+        code,
+        city: placement.city,
+        type: 'referral_payout',
+        amount: REFERRAL_PAYOUT_AMOUNT_PAISE,
+        status: 'pending',
+        gatewayReference,
+        subjectType: 'referral',
+        subjectId: placement.jobSeeker.referredById,
+        referralId: placement.jobSeeker.referredById,
+        placementId: placement.id,
+        jobSeekerId: placement.jobSeekerId,
+        businessId: placement.businessId,
+      },
+      include: {
+        referral: true,
+        jobSeeker: true,
+        placement: true,
+      },
+    });
+
+    let actor = actorId
+      ? await this.prisma.staff.findUnique({ where: { id: actorId } })
+      : null;
+    if (!actor) {
+      actor =
+        (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
+        (await this.prisma.staff.findFirst());
+    }
+
+    if (actor) {
+      await this.auditService.log({
+        actorId: actor.id,
+        action: 'referral_payout.created',
+        entityType: 'Payment',
+        entityCode: payment.code,
+        after: {
+          id: payment.id,
+          code: payment.code,
+          type: payment.type,
+          amount: payment.amount,
+          referralId: payment.referralId,
+          placementId: payment.placementId,
+          jobSeekerId: payment.jobSeekerId,
+          status: payment.status,
+        },
+        city: payment.city,
+      });
+    }
+
+    return payment;
+  }
+
   async findAll() {
     return this.prisma.payment.findMany({
       include: {
         jobSeeker: true,
         business: true,
         placement: true,
+        referral: true,
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -181,6 +278,7 @@ export class PaymentService {
         jobSeeker: true,
         business: true,
         placement: true,
+        referral: true,
       },
     });
     if (!payment) {
