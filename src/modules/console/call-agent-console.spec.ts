@@ -12,7 +12,6 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
   let prisma: PrismaService;
   let otpService: OtpService;
   let caToken: string;
-  let caStaffId: string;
 
   const timestamp = Date.now();
   const password = 'Password123!';
@@ -40,7 +39,6 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
         city: 'Bengaluru',
       },
     });
-    caStaffId = ca.id;
 
     const caLogin = await request(app.getHttpServer())
       .post('/auth/login')

@@ -1,9 +1,16 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
+import { Business, JobSeeker, Payment, Referral } from '@prisma/client';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { seed } from '../../../prisma/seed';
+
+type PaymentRecord = Payment & {
+  jobSeeker?: JobSeeker | null;
+  business?: Business | null;
+  referral?: Referral | null;
+};
 
 describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
   let app: INestApplication;
@@ -146,8 +153,8 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
         .expect(403);
     });
 
-    it('Call Agent, Field Agent, and Finance are denied access to pricing (403)', async () => {
-      for (const token of [callAgentToken, fieldAgentToken, financeToken]) {
+    it('Team Lead, Call Agent, Field Agent, and Finance are denied access to pricing (403)', async () => {
+      for (const token of [teamLeadToken, callAgentToken, fieldAgentToken, financeToken]) {
         await request(app.getHttpServer())
           .get('/pricing')
           .set('Authorization', `Bearer ${token}`)
@@ -201,27 +208,24 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
         .set('Authorization', `Bearer ${managerToken}`)
         .expect(200);
 
-      const pmtCeo = resCeo.body.find((p: any) => p.jobSeeker?.phone);
+      const pmtCeo = resCeo.body.find((p: PaymentRecord) => p.jobSeeker?.phone);
       if (pmtCeo) {
-        expect(pmtCeo.jobSeeker.phone).not.toBe('********');
+        expect(pmtCeo.jobSeeker?.phone).not.toBe('********');
       }
 
-      const pmtMgr = resMgr.body.find((p: any) => p.jobSeeker?.phone);
+      const pmtMgr = resMgr.body.find((p: PaymentRecord) => p.jobSeeker?.phone);
       if (pmtMgr) {
-        expect(pmtMgr.jobSeeker.phone).not.toBe('********');
+        expect(pmtMgr.jobSeeker?.phone).not.toBe('********');
       }
     });
 
-    it('Call Agent and Field Agent are denied access to payments ledger (403)', async () => {
-      await request(app.getHttpServer())
-        .get('/payments')
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .expect(403);
-
-      await request(app.getHttpServer())
-        .get('/payments')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(403);
+    it('Team Lead, Call Agent, and Field Agent are denied access to payments ledger (403)', async () => {
+      for (const token of [teamLeadToken, callAgentToken, fieldAgentToken]) {
+        await request(app.getHttpServer())
+          .get('/payments')
+          .set('Authorization', `Bearer ${token}`)
+          .expect(403);
+      }
     });
   });
 

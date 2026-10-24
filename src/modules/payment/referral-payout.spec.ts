@@ -15,7 +15,6 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
   let paymentService: PaymentService;
   let caStaffId: string;
   let caToken: string;
-  let ceoToken: string;
 
   const timestamp = Date.now();
   const password = 'Password123!';
@@ -45,7 +44,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       },
     });
 
-    const ceo = await prisma.staff.create({
+    await prisma.staff.create({
       data: {
         code: `ST-CEO-${timestamp}`,
         name: 'CEO P6',
@@ -62,12 +61,6 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       .expect(200);
     caToken = caLogin.body.accessToken;
     caStaffId = ca.id;
-
-    const ceoLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ceo.email, password })
-      .expect(200);
-    ceoToken = ceoLogin.body.accessToken;
   });
 
   afterAll(async () => {
@@ -122,6 +115,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
         city: 'Bengaluru',
       },
     });
+    expect(actPayment.status).toBe('pending');
 
     // 4. Simulate payment webhook completion (₹499 received)
     await request(app.getHttpServer())

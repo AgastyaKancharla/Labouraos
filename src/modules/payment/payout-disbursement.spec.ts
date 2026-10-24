@@ -5,15 +5,12 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
-import { PaymentService } from './payment.service';
 import { MockPaymentProvider } from './mock-payment.provider';
-import { PAYMENT_PROVIDER } from './payment-provider.interface';
 
 describe('Phase 6 Task 2: Payout Disbursement', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let idService: IdService;
-  let paymentService: PaymentService;
   let provider: MockPaymentProvider;
 
   let financeToken: string;
@@ -37,7 +34,6 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
 
     prisma = app.get<PrismaService>(PrismaService);
     idService = app.get<IdService>(IdService);
-    paymentService = app.get<PaymentService>(PaymentService);
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -342,6 +338,27 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
       await request(app.getHttpServer())
         .post(`/payments/${payment.id}/disburse`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .send({})
+        .expect(201);
+
+      // CEO allowed on pending payout
+      const paymentCeo = await prisma.payment.create({
+        data: {
+          code: await idService.generateCode('payment'),
+          type: 'referral_payout',
+          amount: 20000,
+          status: 'pending',
+          gatewayReference: `gw_payout_ceo_${timestamp}`,
+          subjectType: 'referral',
+          subjectId: referral.id,
+          referralId: referral.id,
+          city: 'Bengaluru',
+        },
+      });
+
+      await request(app.getHttpServer())
+        .post(`/payments/${paymentCeo.id}/disburse`)
+        .set('Authorization', `Bearer ${ceoToken}`)
         .send({})
         .expect(201);
     });

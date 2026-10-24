@@ -2,9 +2,16 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
+import { Business, JobSeeker, Payment, Referral } from '@prisma/client';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
+
+type PaymentWithDetails = Payment & {
+  jobSeeker: JobSeeker;
+  business?: Business | null;
+  referral?: Referral | null;
+};
 
 describe('Phase 6 Task 3: Finance Ledger View', () => {
   let app: INestApplication;
@@ -18,9 +25,6 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
   let faToken: string;
   let tlToken: string;
 
-  let testCandidateId: string;
-  let testBusinessId: string;
-  let testReferralId: string;
   let testPaymentId: string;
 
   const timestamp = Date.now();
@@ -153,7 +157,6 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         city: 'Bengaluru',
       },
     });
-    testReferralId = referral.id;
 
     const candidate = await prisma.jobSeeker.create({
       data: {
@@ -172,7 +175,6 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         city: 'Bengaluru',
       },
     });
-    testCandidateId = candidate.id;
 
     const business = await prisma.business.create({
       data: {
@@ -184,7 +186,6 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         city: 'Bengaluru',
       },
     });
-    testBusinessId = business.id;
 
     const code1 = await idService.generateCode('payment');
     const payment1 = await prisma.payment.create({
@@ -252,7 +253,7 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
       expect(Array.isArray(res.body)).toBe(true);
       expect(res.body.length).toBeGreaterThanOrEqual(3);
 
-      const activationPmt = res.body.find((p: any) => p.id === testPaymentId);
+      const activationPmt = res.body.find((p: PaymentWithDetails) => p.id === testPaymentId);
       expect(activationPmt).toBeDefined();
 
       // Unique IDs and amounts must be visible in plain text

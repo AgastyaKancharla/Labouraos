@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { PriorityCandidateRow } from '../field-agent/priority.types';
 
 describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
   let app: INestApplication;
@@ -13,7 +14,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
   let otpService: OtpService;
 
   let faKoraToken: string;
-  let faKoraStaffId: string;
   const koraArea = 'Koramangala';
 
   let faIndiToken: string;
@@ -46,7 +46,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         city: 'Bengaluru',
       },
     });
-    faKoraStaffId = faKora.id;
 
     const faIndi = await prisma.staff.create({
       data: {
@@ -172,7 +171,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       .set('Authorization', `Bearer ${faKoraToken}`)
       .expect(200);
 
-    const found = reFetchedCandidates.body.find((c: any) => c.id === candidate.id);
+    const found = reFetchedCandidates.body.find((c: PriorityCandidateRow) => c.id === candidate.id);
     expect(found).toBeDefined();
     expect(found.twoHitFlag).toBe(true);
     expect(found.band).toBeDefined();

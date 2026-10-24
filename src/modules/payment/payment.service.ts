@@ -5,6 +5,7 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
@@ -337,7 +338,7 @@ export class PaymentService {
   }
 
   async findAll(filters?: PaymentFilterDto) {
-    const where: any = {};
+    const where: Prisma.PaymentWhereInput = {};
 
     if (filters?.type) {
       where.type = filters.type;
@@ -351,13 +352,14 @@ export class PaymentService {
     const to = filters?.toDate ?? filters?.endDate;
 
     if (from || to) {
-      where.createdAt = {};
+      const createdAt: Prisma.DateTimeFilter = {};
       if (from) {
-        where.createdAt.gte = new Date(from);
+        createdAt.gte = new Date(from);
       }
       if (to) {
-        where.createdAt.lte = new Date(to);
+        createdAt.lte = new Date(to);
       }
+      where.createdAt = createdAt;
     }
 
     return this.prisma.payment.findMany({
