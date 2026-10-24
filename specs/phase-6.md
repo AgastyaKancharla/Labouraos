@@ -50,7 +50,7 @@
 
 ---
 
-### [ ] Task 5 — Call Agent console
+### [x] Task 5 — Call Agent console
 
 **Acceptance:**
 - Covers: job seeker/referral/business onboarding forms, OTP verification flow, payment link generation, vacancy capture, candidate shortlist view (Phase 4 Task 3), contact-attempt logging, hit recording, placement offer/response flow
