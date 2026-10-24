@@ -15,6 +15,8 @@ import { BusinessModule } from './modules/business/business.module';
 import { VacancyModule } from './modules/vacancy/vacancy.module';
 import { FieldAgentModule } from './modules/field-agent/field-agent.module';
 import { PlacementModule } from './modules/placement/placement.module';
+import { PricingModule } from './modules/pricing/pricing.module';
+import { ConsoleModule } from './modules/console/console.module';
 
 @Module({
   imports: [
@@ -33,6 +35,8 @@ import { PlacementModule } from './modules/placement/placement.module';
     VacancyModule,
     FieldAgentModule,
     PlacementModule,
+    PricingModule,
+    ConsoleModule,
     HealthModule,
   ],
 })

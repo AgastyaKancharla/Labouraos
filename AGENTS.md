@@ -75,6 +75,7 @@ whether tests pass.
 | Tests | Jest 29.7.0 (NestJS default) | Pinned in `package.json` |
 | CI | GitHub Actions | `.github/workflows/test.yml` |
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
+| Frontend Consoles | HTML5 / Vanilla TS / CSS SPAs | Admin Dashboard, Call Agent console, Field Agent app served via NestJS |
 
 **Exact versions pinned above.**
 Do not leave version ranges like `^11.0.0` in this file.
