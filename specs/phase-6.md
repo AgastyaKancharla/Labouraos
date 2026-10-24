@@ -81,12 +81,12 @@
 
 ## Phase 6 Gate
 
-- [ ] Referral payout fires exactly once, exactly on `joinedDate`, never on ₹499 receipt, by test
-- [ ] A job seeker with no referral triggers no payout, by test
-- [ ] Finance's ledger view never exposes PII, by test
-- [ ] All three interfaces are reachable, authenticate against Phase 1's auth, and each role sees only what §7 allows — spot-checked manually and noted in the report
-- [ ] The Field Agent app's Priority Dashboard screen shows live data from `/priority/*` (candidate urgency city-wide, vacancy priority and trade board area-scoped) and reflects a change correctly after a re-fetch — spot-checked manually and noted in the report
-- [ ] All Phase 1–5 gate items still pass
-- [ ] `LESSONS.md` updated
+- [x] Referral payout fires exactly once, exactly on `joinedDate`, never on ₹499 receipt, by test
+- [x] A job seeker with no referral triggers no payout, by test
+- [x] Finance's ledger view never exposes PII, by test
+- [x] All three interfaces are reachable, authenticate against Phase 1's auth, and each role sees only what §7 allows — spot-checked manually and noted in the report
+- [x] The Field Agent app's Priority Dashboard screen shows live data from `/priority/*` (candidate urgency city-wide, vacancy priority and trade board area-scoped) and reflects a change correctly after a re-fetch — spot-checked manually and noted in the report
+- [x] All Phase 1–5 gate items still pass
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 7.**
