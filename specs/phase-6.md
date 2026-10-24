@@ -58,7 +58,7 @@
 
 ---
 
-### [ ] Task 6 — Field Agent app
+### [x] Task 6 — Field Agent app
 
 **Acceptance:**
 - Covers: business onboarding with camera-only selfie capture (no gallery picker exposed — this completes what Phase 4 Task 4 left to the client), vacancy capture, candidate shortlist, interview arrangement
