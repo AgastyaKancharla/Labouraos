@@ -56,3 +56,13 @@ Format:
 **Symptom:** Ambiguity between a 4-tier tapered refund ladder (100%/50%/25%/0%) and the locked business rule for placement replacement guarantee.
 **Cause:** Initial drafts had conflicting specifications between a tapered ladder and a flat search window.
 **Fix:** Business refund rule locked on 2026-10-20: Before day 15 (`daysElapsed < 15`), 0 cash refund is payable (searching for free replacement). From day 15 onward (`daysElapsed >= 15`), flat 100% refund of placement fee is payable with no tapering.
+
+## Shared DB payment code format validation across test suites
+**Symptom:** `phase-5-rbac-seed.spec.ts` failed asserting `expect(payment.code).toMatch(/^PAY-\d{5}$/)` when payments were created in previous tests using arbitrary test prefixes like `PAY-TEST-...` or `PAY-ACT-...`.
+**Cause:** `phase-5-rbac-seed.spec.ts` iterates across all payments in the database (via `GET /payments`) and verifies that every payment has a valid human-readable code matching `^PAY-\d{5}$`.
+**Fix:** Always generate payment codes in integration tests and services using `idService.generateCode('payment')` or seed with sequential zero-padded codes (`PAY-00001`, `PAY-00002`).
+
+## Prisma schema relation naming between Referral and JobSeeker
+**Symptom:** In TypeScript compilation for seed assertions, accessing `referral.candidates` failed with `TS2353: Object literal may only specify known properties, and 'candidates' does not exist in type 'ReferralInclude<DefaultArgs>'`.
+**Cause:** In `prisma/schema.prisma`, the relation from `Referral` to `JobSeeker` is named `jobSeekers`, while on `JobSeeker` the relation back is `referredBy`.
+**Fix:** Use `referral.jobSeekers` (and include `jobSeekers: true`) when querying candidates referred by a referral partner.
