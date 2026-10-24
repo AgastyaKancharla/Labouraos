@@ -177,6 +177,39 @@ describe('Seed Data Script', () => {
     expect(pl4?.replacementRejectionCount).toBe(3);
     expect(pl4?.clockPaused).toBe(true);
     expect(pl4?.replacementCandidates).toHaveLength(3);
+
+    // Assert Phase 6 seeded referral with completed, joined, paid-out placement
+    const paidReferral = await prisma.referral.findUnique({
+      where: { code: 'RF-00001' },
+      include: {
+        jobSeekers: {
+          include: {
+            placements: true,
+          },
+        },
+        payments: true,
+      },
+    });
+    expect(paidReferral).toBeDefined();
+    const candidatePlaced = paidReferral?.jobSeekers.find((c) => c.code === 'JS-00008');
+    expect(candidatePlaced).toBeDefined();
+    expect(candidatePlaced?.status).toBe('placed');
+
+    const placementJoined = candidatePlaced?.placements.find((p) => p.code === 'PL-00002');
+    expect(placementJoined).toBeDefined();
+    expect(placementJoined?.status).toBe('active');
+    expect(placementJoined?.joinedDate).toBeDefined();
+
+    const payoutPayment = await prisma.payment.findUnique({
+      where: { gatewayReference: 'gw_seed_payout_pl00002' },
+    });
+    expect(payoutPayment).toBeDefined();
+    expect(payoutPayment?.code).toBe('PAY-00002');
+    expect(payoutPayment?.type).toBe('referral_payout');
+    expect(payoutPayment?.amount).toBe(20000);
+    expect(payoutPayment?.status).toBe('succeeded');
+    expect(payoutPayment?.referralId).toBe(paidReferral?.id);
+    expect(payoutPayment?.placementId).toBe(placementJoined?.id);
   });
 
   it('is safe to run repeatedly without duplicating or erroring (idempotency)', async () => {
@@ -204,6 +237,7 @@ describe('Seed Data Script', () => {
       'JS-00010',
     ];
     const seededReferralCodes = ['RF-00001'];
+    const seededPaymentCodes = ['PAY-00001', 'PAY-00002'];
 
     const staffBefore = await prisma.staff.count({ where: { email: { in: seededStaffEmails } } });
     const businessBefore = await prisma.business.count({ where: { code: { in: seededBusinessCodes } } });
@@ -211,6 +245,7 @@ describe('Seed Data Script', () => {
     const placementBefore = await prisma.placement.count({ where: { code: { in: seededPlacementCodes } } });
     const jsBefore = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
     const refBefore = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
+    const paymentBefore = await prisma.payment.count({ where: { code: { in: seededPaymentCodes } } });
 
     // Run seed again
     await seed(prisma);
@@ -221,6 +256,7 @@ describe('Seed Data Script', () => {
     const placementAfter = await prisma.placement.count({ where: { code: { in: seededPlacementCodes } } });
     const jsAfter = await prisma.jobSeeker.count({ where: { code: { in: seededJobSeekerCodes } } });
     const refAfter = await prisma.referral.count({ where: { code: { in: seededReferralCodes } } });
+    const paymentAfter = await prisma.payment.count({ where: { code: { in: seededPaymentCodes } } });
 
     expect(staffAfter).toBe(staffBefore);
     expect(businessAfter).toBe(businessBefore);
@@ -228,12 +264,14 @@ describe('Seed Data Script', () => {
     expect(placementAfter).toBe(placementBefore);
     expect(jsAfter).toBe(jsBefore);
     expect(refAfter).toBe(refBefore);
+    expect(paymentAfter).toBe(paymentBefore);
     expect(staffAfter).toBe(6);
     expect(businessAfter).toBe(3);
     expect(vacancyAfter).toBe(6);
     expect(placementAfter).toBe(4);
     expect(jsAfter).toBe(10);
     expect(refAfter).toBe(1);
+    expect(paymentAfter).toBe(2);
   });
 
   it('refuses to run if NODE_ENV=production', async () => {
