@@ -12,7 +12,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Referral payout trigger
+### [x] Task 1 — Referral payout trigger
 
 **Acceptance:**
 - A scheduled job (or a hook on Phase 5 Task 4's `joined` event — either is fine, but tests must prove it fires) creates a `Payment` (`type: referral_payout`) for a job seeker's `referredById`, the moment `joinedDate` is set — **not** on ₹499 receipt

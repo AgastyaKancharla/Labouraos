@@ -367,7 +367,16 @@ export class PlacementService {
       },
     });
 
+    // Phase 6 Task 1: Trigger referral payout if candidate was referred (flat ₹200 on joining)
+    if (updated.jobSeeker?.referredById) {
+      await this.paymentService.createReferralPayout(updated.id, actor.id);
+    }
+
     return updated;
+  }
+
+  async triggerReferralPayout(placementId: string, actorId?: string) {
+    return this.paymentService.createReferralPayout(placementId, actorId);
   }
 
   async recordDropout(id: string, dto: RecordDropoutDto, actorId: string) {
