@@ -688,6 +688,7 @@ export async function seed(prismaClient?: PrismaClient) {
         maxSalary: 2200000,
         status: 'placed',
         paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
+        referredById: referral.id,
         city: 'Bengaluru',
       },
       create: {
@@ -702,11 +703,12 @@ export async function seed(prismaClient?: PrismaClient) {
         preferredCallWindowEnd: '18:00',
         status: 'placed',
         paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
+        referredById: referral.id,
         city: 'Bengaluru',
       },
     });
 
-    await prisma.placement.upsert({
+    const pl2 = await prisma.placement.upsert({
       where: { code: 'PL-00002' },
       update: {
         status: 'active',
@@ -728,6 +730,36 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'active',
         joinedDate: new Date('2026-06-15T10:00:00.000Z'),
         clockPaused: false,
+      },
+    });
+
+    // Seed referral payout payment for PL-00002 (completed, joined, paid-out placement)
+    await prisma.payment.upsert({
+      where: { gatewayReference: 'gw_seed_payout_pl00002' },
+      update: {
+        status: 'succeeded',
+        amount: 20000,
+        type: 'referral_payout',
+        subjectType: 'referral',
+        subjectId: referral.id,
+        referralId: referral.id,
+        placementId: pl2.id,
+        jobSeekerId: js8.id,
+        businessId: bz1.id,
+      },
+      create: {
+        code: 'PAY-00002',
+        city: 'Bengaluru',
+        type: 'referral_payout',
+        amount: 20000,
+        status: 'succeeded',
+        gatewayReference: 'gw_seed_payout_pl00002',
+        subjectType: 'referral',
+        subjectId: referral.id,
+        referralId: referral.id,
+        placementId: pl2.id,
+        jobSeekerId: js8.id,
+        businessId: bz1.id,
       },
     });
 

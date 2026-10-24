@@ -71,7 +71,7 @@
 
 ---
 
-### [ ] Task 7 — RBAC, masking and seed data for this phase
+### [x] Task 7 — RBAC, masking and seed data for this phase
 
 **Acceptance:**
 - Every console/app enforces login (Phase 1 Task 6) and reflects only what its role is permitted to see or do
