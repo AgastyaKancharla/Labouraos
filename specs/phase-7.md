@@ -12,7 +12,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Real OTP/SMS vendor integration
+### [x] Task 1 — Real OTP/SMS vendor integration
 
 **Acceptance:**
 - `OtpProvider` (Phase 2 Task 1) gets a real implementation against the chosen vendor, behind the same interface — no calling code changes
