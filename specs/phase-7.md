@@ -155,7 +155,7 @@ vendor.
 
 ---
 
-### [ ] Task 6 — Real payment gateway (collection)
+### [x] Task 6 — Real payment gateway (collection)
 
 **Acceptance:**
 - A second implementation of the existing `PaymentProvider` interface
@@ -172,7 +172,7 @@ vendor.
 
 ---
 
-### [ ] Task 7 — Real payout API (referral disbursement)
+### [x] Task 7 — Real payout API (referral disbursement)
 
 **Acceptance:**
 - A second implementation of `PaymentProvider.disbursePayout` (added in Phase
@@ -187,7 +187,7 @@ vendor.
 
 ---
 
-### [ ] Task 8 — Real Aadhaar e-KYC vendor
+### [x] Task 8 — Real Aadhaar e-KYC vendor
 
 **Acceptance:**
 - `KycProvider` (Phase 2 Task 7) gets a real implementation against the
@@ -205,7 +205,7 @@ vendor.
 
 ---
 
-### [ ] Task 9 — RBAC and seed data for this phase
+### [x] Task 9 — RBAC and seed data for this phase
 
 **Acceptance:**
 - No RBAC surface changes in this phase (no new roles, no new permission
@@ -220,22 +220,22 @@ vendor.
 
 ## Phase 7 Gate
 
-- [ ] Every provider introduced in this phase defaults to its mock
+- [x] Every provider introduced in this phase defaults to its mock
   implementation when the mode env var is unset, by test
-- [ ] Switching a provider's mode env var to `real` changes which concrete
+- [x] Switching a provider's mode env var to `real` changes which concrete
   class is injected, by test (without requiring live credentials to prove the
   wiring itself)
-- [ ] A duplicate inbound telephony webhook is a no-op, by test
-- [ ] A call recording is retained only when consent was logged, by test
-- [ ] A duplicate payment-collection webhook does not double-charge, by test
-- [ ] A duplicate payout webhook does not double-pay, by test
-- [ ] The real KYC vendor's response is stored without ever persisting a raw
+- [x] A duplicate inbound telephony webhook is a no-op, by test
+- [x] A call recording is retained only when consent was logged, by test
+- [x] A duplicate payment-collection webhook does not double-charge, by test
+- [x] A duplicate payout webhook does not double-pay, by test
+- [x] The real KYC vendor's response is stored without ever persisting a raw
   Aadhaar number, by test
-- [ ] The telephony vendor's concurrent-line capacity for 40 agents is
+- [x] The telephony vendor's concurrent-line capacity for 40 agents is
   confirmed — either verified in code or explicitly noted as a manual
   sign-off in the report
-- [ ] No vendor secret or API key appears anywhere in the committed code — spot-checked and noted in the report
-- [ ] All Phase 1–6 gate items still pass
-- [ ] `LESSONS.md` updated
+- [x] No vendor secret or API key appears anywhere in the committed code — spot-checked and noted in the report
+- [x] All Phase 1–6 gate items still pass
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 8.**

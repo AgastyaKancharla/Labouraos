@@ -66,3 +66,14 @@ Format:
 **Symptom:** In TypeScript compilation for seed assertions, accessing `referral.candidates` failed with `TS2353: Object literal may only specify known properties, and 'candidates' does not exist in type 'ReferralInclude<DefaultArgs>'`.
 **Cause:** In `prisma/schema.prisma`, the relation from `Referral` to `JobSeeker` is named `jobSeekers`, while on `JobSeeker` the relation back is `referredBy`.
 **Fix:** Use `referral.jobSeekers` (and include `jobSeekers: true`) when querying candidates referred by a referral partner.
+
+## Licensed OVSE Aadhaar e-KYC response sanitization (AGENTS.md §2 rule 3)
+**Symptom:** Vendor APIs often return raw Aadhaar numbers, masked formats, or full demographic JSON in response payloads.
+**Cause:** OVSE vendor responses echo the full citizen record on successful verification. Saving this raw response directly into the database violates the strict "Never store a raw Aadhaar number" legal rule.
+**Fix:** In `RealKycProvider`, explicitly construct the return object with only `{ status, vendorReference }`, and never persist raw vendor response payloads into database columns or audit logs.
+
+## DPDP Act (2023) §5 consent check before call recording retention
+**Symptom:** Calls recorded without active consent verification created legal compliance liabilities under DPDP.
+**Cause:** When third-party telephony webhooks notify the backend of completed recordings, consent may not have been granted or logged by the caller.
+**Fix:** Check `isConsentLogged` before persisting `recordingUrl`. If consent was not verified or explicitly denied, discard the `recordingUrl` (store as `null`) while retaining the call record for auditability.
+

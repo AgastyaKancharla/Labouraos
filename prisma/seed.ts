@@ -938,6 +938,165 @@ export async function seed(prismaClient?: PrismaClient) {
       ],
     });
 
+    // 4.5. Phase 7 Mock Provider Records
+    // Seeded examples of each provider's records: OTP, WhatsApp, Telephony, DPDP Consent, KYC
+    await prisma.callbackTask.upsert({
+      where: { callId: 'call_seed_tollfree_00001' },
+      update: {},
+      create: {
+        callId: 'call_seed_tollfree_00001',
+        phone: '+919876543210',
+        callerName: 'Sunita Rao (Seeded)',
+        jobSeekerId: js1.id,
+        virtualNumber: '18001234567',
+        status: 'completed',
+        recordingUrl:
+          'https://telephony-storage.laboura.in/recordings/call_seed_tollfree_00001.mp3',
+        recordingConsent: true,
+        assignedToStaffId: callAgent.id,
+      },
+    });
+
+    await prisma.auditLog.upsert({
+      where: { code: 'AUD-00070' },
+      update: {
+        actorId: ceo.id,
+        action: 'dpdp_consent.recorded',
+        entityType: 'telephony_call',
+        entityCode: 'call_seed_tollfree_00001',
+        after: {
+          consented: true,
+          noticeGiven: true,
+          announcement:
+            'This call is recorded for quality, training and compliance under the Digital Personal Data Protection Act. By continuing, you consent to this recording.',
+          recordingUrl:
+            'https://telephony-storage.laboura.in/recordings/call_seed_tollfree_00001.mp3',
+          callerPhone: '+919876543210',
+          virtualNumber: '18001234567',
+          timestamp: new Date('2026-06-01T10:00:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'AUD-00070',
+        actorId: ceo.id,
+        action: 'dpdp_consent.recorded',
+        entityType: 'telephony_call',
+        entityCode: 'call_seed_tollfree_00001',
+        after: {
+          consented: true,
+          noticeGiven: true,
+          announcement:
+            'This call is recorded for quality, training and compliance under the Digital Personal Data Protection Act. By continuing, you consent to this recording.',
+          recordingUrl:
+            'https://telephony-storage.laboura.in/recordings/call_seed_tollfree_00001.mp3',
+          callerPhone: '+919876543210',
+          virtualNumber: '18001234567',
+          timestamp: new Date('2026-06-01T10:00:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+    });
+
+    await prisma.auditLog.upsert({
+      where: { code: 'AUD-00071' },
+      update: {
+        actorId: callAgent.id,
+        action: 'whatsapp.send_attempt',
+        entityType: 'whatsapp_message',
+        entityCode: 'wamid_seed_00001',
+        after: {
+          phone: '+919876543210',
+          templateName: 'call_attempt_notice',
+          status: 'sent',
+          timestamp: new Date('2026-06-01T10:05:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'AUD-00071',
+        actorId: callAgent.id,
+        action: 'whatsapp.send_attempt',
+        entityType: 'whatsapp_message',
+        entityCode: 'wamid_seed_00001',
+        after: {
+          phone: '+919876543210',
+          templateName: 'call_attempt_notice',
+          status: 'sent',
+          timestamp: new Date('2026-06-01T10:05:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+    });
+
+    await prisma.auditLog.upsert({
+      where: { code: 'AUD-00072' },
+      update: {
+        actorId: callAgent.id,
+        action: 'otp.send_attempt',
+        entityType: 'otp_request',
+        entityCode: 'otp_seed_req_00001',
+        after: {
+          phone: '+919876543210',
+          requestId: 'otp_seed_req_00001',
+          timestamp: new Date('2026-06-01T09:30:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'AUD-00072',
+        actorId: callAgent.id,
+        action: 'otp.send_attempt',
+        entityType: 'otp_request',
+        entityCode: 'otp_seed_req_00001',
+        after: {
+          phone: '+919876543210',
+          requestId: 'otp_seed_req_00001',
+          timestamp: new Date('2026-06-01T09:30:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+    });
+
+    await prisma.jobSeeker.update({
+      where: { id: js1.id },
+      data: {
+        kycStatus: 'verified',
+        kycReference: 'ovse_seed_kyc_ref_998877',
+      },
+    });
+
+    await prisma.auditLog.upsert({
+      where: { code: 'AUD-00073' },
+      update: {
+        actorId: ceo.id,
+        action: 'kyc.verified',
+        entityType: 'job_seeker',
+        entityCode: js1.code,
+        after: {
+          status: 'verified',
+          vendorReference: 'ovse_seed_kyc_ref_998877',
+          vendor: 'surepass-ovse',
+          timestamp: new Date('2026-06-01T09:35:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+      create: {
+        code: 'AUD-00073',
+        actorId: ceo.id,
+        action: 'kyc.verified',
+        entityType: 'job_seeker',
+        entityCode: js1.code,
+        after: {
+          status: 'verified',
+          vendorReference: 'ovse_seed_kyc_ref_998877',
+          vendor: 'surepass-ovse',
+          timestamp: new Date('2026-06-01T09:35:00.000Z'),
+        },
+        city: 'Bengaluru',
+      },
+    });
+
     // 5. Synchronize sequences past seeded codes so IdService will never collide
     const mapping: Record<string, string> = {
       BZ: 'Business',

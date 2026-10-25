@@ -274,6 +274,47 @@ describe('Seed Data Script', () => {
     expect(paymentAfter).toBe(2);
   });
 
+  it('seeds Phase 7 mock provider records (telephony, consent, whatsapp, otp, kyc)', async () => {
+    await seed(prisma);
+
+    // 1. Inbound telephony task & recording
+    const callbackTask = await prisma.callbackTask.findUnique({
+      where: { callId: 'call_seed_tollfree_00001' },
+    });
+    expect(callbackTask).toBeDefined();
+    expect(callbackTask?.status).toBe('completed');
+    expect(callbackTask?.recordingConsent).toBe(true);
+    expect(callbackTask?.recordingUrl).toContain('call_seed_tollfree_00001.mp3');
+
+    // 2. DPDP Consent audit log
+    const consentAudit = await prisma.auditLog.findUnique({
+      where: { code: 'AUD-00070' },
+    });
+    expect(consentAudit).toBeDefined();
+    expect(consentAudit?.action).toBe('dpdp_consent.recorded');
+
+    // 3. WhatsApp template send audit log
+    const waAudit = await prisma.auditLog.findUnique({
+      where: { code: 'AUD-00071' },
+    });
+    expect(waAudit).toBeDefined();
+    expect(waAudit?.action).toBe('whatsapp.send_attempt');
+
+    // 4. OTP send audit log
+    const otpAudit = await prisma.auditLog.findUnique({
+      where: { code: 'AUD-00072' },
+    });
+    expect(otpAudit).toBeDefined();
+    expect(otpAudit?.action).toBe('otp.send_attempt');
+
+    // 5. KYC verification record
+    const js1 = await prisma.jobSeeker.findUnique({
+      where: { code: 'JS-00001' },
+    });
+    expect(js1?.kycStatus).toBe('verified');
+    expect(js1?.kycReference).toBe('ovse_seed_kyc_ref_998877');
+  });
+
   it('refuses to run if NODE_ENV=production', async () => {
     const originalEnv = process.env.NODE_ENV;
     try {
