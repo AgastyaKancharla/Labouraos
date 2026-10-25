@@ -56,8 +56,11 @@ export class PaymentController {
   @Post('webhook')
   async webhook(
     @Body() body: Record<string, unknown>,
-    @Headers('x-signature') signature?: string,
+    @Headers('x-signature') xSig?: string,
+    @Headers('x-razorpay-signature') rzpSig?: string,
+    @Headers('x-webhook-signature') webhookSig?: string,
   ) {
+    const signature = xSig || rzpSig || webhookSig;
     return this.paymentService.handleWebhook(body, signature);
   }
 
