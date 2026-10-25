@@ -1,103 +1,205 @@
-# Phase 7 — Telephony, Scale & Launch Hardening
+# Phase 7 — Real Telephony, Messaging & Payment Integration
 
-**Goal:** swap every mocked external integration for the real thing, prove the system holds up at the 40-agent target headcount, and close out the Go-Live Checklist's technical items. This is the last phase before Laboura is live with real money moving.
+**Goal:** swap every provider that has been running on a mock since earlier phases
+(OTP/SMS, WhatsApp, telephony, payment collection, referral payout disbursement)
+for a real vendor integration, behind the same provider-interface pattern already
+established — and close the consent-capture gap that real call recording makes
+unavoidable.
 
-**Why this is last:** every mock provider built from Phase 2 onward (OTP, payment, KYC, payout) exists specifically so this phase can swap in real vendor credentials without touching business logic. Scale and security work comes last because it only makes sense to load-test and harden a system whose behavior is already correct and fully tested.
+**Why this is next:** everything through Phase 6 is a complete, correctly-RBAC'd,
+correctly-tested system of record — but every "send a message," "make a call," or
+"move money" action in it is still a mock. Agastya's company registration, GST,
+payment gateway and telephony vendor are all expected to be finalized within
+about two weeks of this phase starting. This phase makes the swap a config change
+plus a round of integration testing, not a redesign — if real credentials land
+mid-phase, nothing here should need to be rebuilt to use them.
 
-**Out of scope for Phase 7:** new business features. If something here reveals a business-logic bug from an earlier phase, fix it in that phase's module and re-run that phase's gate — don't bolt a fix onto Phase 7's scope.
+**Out of scope for Phase 7 — do not build these:** load/concurrency testing for
+40 agents, GST invoice generation, data retention/erasure, the placement-data
+export for the draft Placement Agency Bill (all Phase 8). Any new business rule —
+if a real vendor's behavior conflicts with a rule in `AGENTS.md` §6, stop and ask;
+do not quietly adjust the rule to fit the vendor.
 
-> Read `AGENTS.md`, the Playbook's Go-Live Checklist (§8), and Tech/Vendor Status (§7) before starting. Read `LESSONS.md` first.
+> Read `AGENTS.md` §1, §2 (especially rule 7 — idempotency — and rule 8 — no
+> secrets in code), and §6 before writing this phase. Read `LESSONS.md` first.
+> Read the existing `OtpProvider` (`src/common/otp/otp.interface.ts`,
+> `src/common/otp/mock-otp.provider.ts`) and `PaymentProvider`
+> (`src/modules/payment/payment-provider.interface.ts`) — every task in this
+> phase follows that exact mock-then-real, dependency-injected pattern. Do not
+> invent a different pattern for telephony or WhatsApp.
 
 ---
 
 ## Tasks
 
-### [ ] Task 1 — Real OTP/SMS vendor integration
+### [ ] Task 1 — Provider switching, config and secrets
 
 **Acceptance:**
-- `OtpProvider` (Phase 2 Task 1) gets a real implementation against the chosen vendor, behind the same interface — no calling code changes
-- DLT-registered sender ID used for all SMS, per Playbook §5/§7 TRAI compliance
-- Commercial/OTP messages respect the 09:00–21:00 window already enforced at the data layer (Phase 2 Task 2)
+- A single, documented mechanism (environment variable per provider, e.g.
+  `OTP_PROVIDER_MODE=mock|real`, `PAYMENT_PROVIDER_MODE=mock|real`,
+  `TELEPHONY_PROVIDER_MODE=mock|real`, `WHATSAPP_PROVIDER_MODE=mock|real`)
+  selects which implementation NestJS's DI container binds to each provider
+  token (`OTP_PROVIDER`, the payment provider token, and the two new ones this
+  phase introduces — name them consistently with the existing ones)
+- Defaults to `mock` everywhere if the env var is unset, so existing tests and
+  local dev keep working untouched
+- Real vendor API keys/secrets are read only from environment variables, never
+  committed — per `AGENTS.md` §2 rule 8. Add the new variable names (not
+  values) to `.env.example`
+- Document the switch mechanism in `AGENTS.md` §3 or a new short section, so a
+  future agent doesn't reinvent it
+- Test: with the mode env var unset or set to `mock`, the mock provider is
+  injected; this is testable by checking which concrete class the DI token
+  resolves to, without needing real credentials
 
 ---
 
-### [ ] Task 2 — Real payment gateway and payout API
+### [ ] Task 2 — Real SMS/OTP provider (DLT-compliant)
 
 **Acceptance:**
-- `PaymentProvider` (Phase 2 Task 4) and the payout extension (Phase 6 Task 2) get real implementations
-- Webhook signature verification uses the real vendor's actual verification method — re-run the Phase 2 Task 5 idempotency test against the real webhook shape
-- Sandboxed/test-mode credentials used until go-live; switching to live credentials is an environment-variable change only
+- A second implementation of `OtpProvider` wired to a real DLT-registered SMS
+  vendor's API, selected by Task 1's switch
+- Reuses the existing `OtpProvider` interface and `OTP_PROVIDER` DI token
+  exactly as-is — do not change the interface's shape to fit the vendor; adapt
+  the vendor's API to the interface
+- Commercial-message timing (`AGENTS.md` §6 — 09:00–21:00 IST) is enforced the
+  same way regardless of which provider is active
+- If real credentials aren't available yet when this task is built, implement
+  against the vendor's documented API and write tests against a stubbed HTTP
+  layer (mock the HTTP call, not the provider) — don't block the task on
+  having live credentials in hand
+- Audit logged (send attempts, not OTP codes themselves)
+- Test: a failed/undeliverable send surfaces as a clear error, not a silent
+  swallow
 
 ---
 
-### [ ] Task 3 — Real Aadhaar e-KYC vendor
+### [ ] Task 3 — WhatsApp Business API provider
 
 **Acceptance:**
-- `KycProvider` (Phase 2 Task 7) gets a real implementation against the licensed OVSE vendor
-- Re-run the Phase 2 Task 7 "no raw Aadhaar number stored" test against the real vendor's response shape — vendor responses sometimes echo more than expected; verify nothing is persisted beyond the result and reference
+- New `WhatsAppProvider` interface (`sendTemplateMessage(phone, templateName,
+  params)` at minimum) with a `MockWhatsAppProvider` (records the attempt,
+  same style as `MockOtpProvider`) and a real implementation using the
+  WhatsApp Business API with pre-approved templates, switched per Task 1
+- This is the "whatsapp" leg already referenced in
+  `src/modules/job-seeker/job-seeker.service.ts`'s contact-attempt recording
+  and `src/jobs/no-pickup-evaluation.job.ts`'s 3-hit evaluation — wire the
+  no-pickup job's WhatsApp leg to actually call this provider (currently that
+  leg is only ever manually logged by a call agent through the console; this
+  task makes it real for the automated path, without changing the manual
+  logging path call/field agents already use)
+- Only pre-approved template messages are sent — no free-form text (WhatsApp
+  Business API policy)
+- Audit logged
+- Test: template send success/failure is recorded; a job seeker's automated
+  WhatsApp leg of the 3-hit cycle fires through this provider, not a direct
+  HTTP call buried in the job
 
 ---
 
-### [ ] Task 4 — Telephony integration (toll-free line)
+### [ ] Task 4 — Telephony provider (toll-free calling)
 
 **Acceptance:**
-- Inbound missed-call-to-toll-free triggers a call agent callback queue entry
-- Call recording, where enabled, triggers the DPDP-required consent announcement and logs consent (Playbook §5) as an auditable record, not just a recorded call
-- Confirm with the vendor contract that concurrent-line capacity covers 40 agents calling at once (Playbook §7) — if this can't be verified in code, document the confirmation as a manual sign-off item in the gate below rather than skipping it silently
+- New `TelephonyProvider` interface covering, at minimum: receiving an
+  inbound-call/missed-call webhook event, and initiating a click-to-call
+  outbound call for a call agent — with a `MockTelephonyProvider` and a real
+  implementation against the chosen vendor's API, switched per Task 1
+- Inbound missed-call webhook creates (or surfaces to) a call agent's dial
+  queue — reuse the existing job-seeker/referral/business onboarding entry
+  points rather than inventing a new one; this is the production version of
+  the "missed call to toll-free" step already described in the Playbook's
+  core flows
+- Idempotent per `AGENTS.md` §2 rule 7 — the same webhook delivered twice must
+  not create two queue entries or two onboarding attempts
+- Webhook signature/auth verification against the vendor's spec
+- Audit logged
+- Test: a duplicate webhook delivery is a no-op; an inbound call with no
+  matching existing record creates exactly one new dial-queue entry
 
 ---
 
-### [ ] Task 5 — Load and concurrency testing
+### [ ] Task 5 — Call recording and consent capture (closes a known gap)
 
 **Acceptance:**
-- A load test simulates 40 concurrent staff sessions performing realistic mixed traffic (onboarding, payments, vacancy capture, placement actions) against a staging environment
-- No RBAC check, money calculation, or audit log entry is dropped or corrupted under concurrent load — specifically re-test concurrent webhook delivery and concurrent unique-ID generation (Phase 1 Task 5) at higher volume
-- Document actual results (response times, error rate) — this is a measurement task, not a guess
+- This closes the Playbook's flagged gap: consent capture was never built in
+  Phase 2 despite being required by DPDP and part of the stated onboarding
+  flow. Real call recording (this phase) is what makes it non-optional, so it
+  belongs here rather than being retrofitted later.
+- When a call is recorded (per Playbook §4/§5 — legal when a participant
+  records, DPDP requires a consent announcement), log: that a consent
+  announcement was played/stated, a timestamp, and the call/record it's
+  attached to. Store this as its own auditable record, not a free-text note.
+- `isConsentLogged` (or equivalent) is checked before a recorded call's
+  reference is retained; if consent wasn't logged, the recording reference
+  itself is not persisted (only the fact that the call happened)
+- Retention: a fixed, documented retention period for call recordings (ask
+  Agastya for the number if it isn't already in `AGENTS.md` §6 — do not
+  invent one, this is exactly the kind of business rule §2 rule 6 forbids
+  guessing)
+- Audit logged
+- Test: a call recorded without logged consent does not retain the recording
+  reference; one with logged consent does, and is retrievable by the
+  call/placement it's attached to
 
 ---
 
-### [ ] Task 6 — Observability
+### [ ] Task 6 — Real payment gateway (collection)
 
 **Acceptance:**
-- Structured logging across all modules (not `console.log`), with request IDs traceable through a call
-- Error tracking/alerting wired to something the team actually monitors
-- A basic uptime/health dashboard beyond the Phase 1 `/health` endpoint
+- A second implementation of the existing `PaymentProvider` interface
+  (`src/modules/payment/payment-provider.interface.ts`) wired to the real
+  collection gateway, switched per Task 1 — covers the ₹499 activation payment
+  (Phase 2 Task 5) and the placement-fee-plus-GST payment (Phase 5 Task 3)
+- Webhook idempotency (already required by `AGENTS.md` §2 rule 7 and already
+  tested against the mock in earlier phases) is re-verified against the real
+  gateway's actual webhook delivery semantics — vendors differ on retry
+  behavior, so don't assume the mock's tests fully cover the real one
+- No change to the interface shape; adapt the vendor to it
+- Test: a real-gateway webhook retried twice does not double-charge or
+  double-record
 
 ---
 
-### [ ] Task 7 — Security hardening
+### [ ] Task 7 — Real payout API (referral disbursement)
 
 **Acceptance:**
-- Dependency vulnerability scan clean (or documented exceptions)
-- Rate limiting on auth and OTP endpoints (brute-force protection)
-- Secrets audit: confirm nothing in Tasks 1–3's real-vendor work leaked a key into logs, error messages, or version control
-- `.env` and all credentials confirmed never committed (re-check git history, not just the current state)
+- A second implementation of `PaymentProvider.disbursePayout` (added in Phase
+  6 Task 2) wired to a real payout API (e.g. RazorpayX/Cashfree payouts, per
+  the Playbook — confirm which with Agastya if not already decided), switched
+  per Task 1
+- This is a separate vendor/product from Task 6's collection gateway per the
+  Playbook — do not assume one vendor does both unless Agastya confirms it
+- Same idempotency and audit requirements as Phase 6 Task 2
+- Test: a disbursement retried against the real provider's webhook does not
+  pay out twice
 
 ---
 
-### [ ] Task 8 — Backup and disaster recovery
+### [ ] Task 8 — RBAC and seed data for this phase
 
 **Acceptance:**
-- Automated database backups on a defined schedule, with a documented, tested restore procedure — actually restore once into a scratch environment and confirm it works, don't just assume a succeeding backup job means it's restorable
-
----
-
-### [ ] Task 9 — Go-Live Checklist close-out
-
-**Acceptance:**
-- Walk the Playbook's §8 Go-Live Checklist line by line; for every technical item, confirm it's done and link the evidence (a passing test, a config, a signed-off manual check); for every non-technical item (company registration, legal review, contracts), confirm its status is accurately reflected and flag anything still blocking go-live
+- No RBAC surface changes in this phase (no new roles, no new permission
+  shapes) — this task is about proving the existing RBAC still holds with
+  real providers wired in, and about seed data for manual QA
+- `npm run seed` extended: at least one of each provider's mock-mode record
+  (OTP send, WhatsApp template send, inbound telephony webhook, consent-logged
+  recording) so a reviewer can see the shapes without needing live credentials
 
 ---
 
 ## Phase 7 Gate
 
-- [ ] Every mocked provider (OTP, payment, payout, KYC) has a real implementation passing the same tests its mock passed
-- [ ] The idempotency tests from Phases 2, 5 and 6 all still pass against the real webhook shapes
-- [ ] Load test completed at 40-concurrent-agent volume with documented results and no data-integrity failures
-- [ ] Security scan clean or exceptions documented and accepted
-- [ ] A real backup has been restored successfully at least once
-- [ ] Every item on the Playbook's Go-Live Checklist is either done-with-evidence or explicitly flagged as a remaining blocker
+- [ ] Every provider introduced in this phase defaults to its mock
+  implementation when the mode env var is unset, by test
+- [ ] Switching a provider's mode env var to `real` changes which concrete
+  class is injected, by test (without requiring live credentials to prove the
+  wiring itself)
+- [ ] A duplicate inbound telephony webhook is a no-op, by test
+- [ ] A call recording is retained only when consent was logged, by test
+- [ ] A duplicate payment-collection webhook does not double-charge, by test
+- [ ] A duplicate payout webhook does not double-pay, by test
+- [ ] No vendor secret or API key appears anywhere in the committed code — spot-checked and noted in the report
 - [ ] All Phase 1–6 gate items still pass
 - [ ] `LESSONS.md` updated
 
-**This is the last gate. When it passes: stop. Report to Agastya — Laboura is ready for a go/no-go call, not an automatic launch.**
+**When the gate passes: stop. Report to Agastya. Do not start Phase 8.**

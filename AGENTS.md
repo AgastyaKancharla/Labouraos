@@ -80,6 +80,16 @@ whether tests pass.
 **Exact versions pinned above.**
 Do not leave version ranges like `^11.0.0` in this file.
 
+**Provider switching (mock vs real, from Phase 7 onward):** every external
+integration (OTP/SMS, WhatsApp, telephony, payment collection, payout
+disbursement) is bound through NestJS DI to an interface — `OtpProvider`,
+`PaymentProvider`, and Phase 7's new `WhatsAppProvider`/`TelephonyProvider` —
+with a mock implementation and a real one. Which one gets injected is
+controlled by a per-provider environment variable (`OTP_PROVIDER_MODE`,
+`PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`),
+each defaulting to `mock` when unset. Never add a second way to pick a
+provider implementation — extend this one.
+
 ---
 
 ## 4. Project structure
