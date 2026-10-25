@@ -38,7 +38,7 @@
 
 ---
 
-### [ ] Task 4 — Telephony integration (toll-free line)
+### [x] Task 4 — Telephony integration (toll-free line)
 
 **Acceptance:**
 - Inbound missed-call-to-toll-free triggers a call agent callback queue entry
