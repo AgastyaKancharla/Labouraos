@@ -77,25 +77,31 @@ Enterprise vertical.
 
 ---
 
-### [ ] Task 3 — Data retention and erasure (closes a known gap)
+### [ ] Task 3 — Manual DPDP erasure endpoint (closes a known gap)
 
 **Acceptance:**
-- This closes the Playbook's flagged gap: data retention/erasure was never
-  built despite being a DPDP requirement
-- A documented retention period per entity type that can carry PII (job
-  seeker, referral, business contact, staff) — ask Agastya for the actual
-  numbers if they aren't already in `AGENTS.md`; do not invent them, per §2
-  rule 6's spirit (this is a compliance rule, not a money rule, but the same
-  "stop and ask rather than guess" logic applies)
-- A scheduled job (BullMQ, same pattern as other scheduled jobs in
-  `/src/jobs/`) that identifies records past their retention window and either
-  anonymizes or deletes them per the documented policy — audit logged
-  regardless of which
-- A manual erasure endpoint (ceo/manager only) for a DPDP data-subject
-  erasure request, separate from the automatic retention job
-- Test: a record past its retention window is caught by the job; one within
-  the window is not touched; a manual erasure request is audit logged and
-  actually removes/anonymizes the targeted record
+- This closes the Playbook's flagged gap, but **not with an automatic
+  retention job** — per `AGENTS.md` §6 Data retention (LOCKED 2026-10-25),
+  Agastya's explicit call is that nothing is ever automatically deleted or
+  anonymized. Every record (job seeker, referral, business, vacancy,
+  placement, payment, hit history, call recording) is kept indefinitely by
+  default. **Do not build a scheduled retention-expiry job. There is no
+  retention period to configure per entity type — this is intentional, not
+  a missing number to chase down.**
+- Build only the manual side: a CEO/Manager-only endpoint
+  (`POST /<entity>/:id/erase` or equivalent, scoped per entity type that
+  carries PII) for a DPDP data-subject erasure request. It anonymizes only
+  the directly-identifying PII fields (name, phone, Aadhaar reference, exact
+  address) on the one targeted record — the record itself, and every
+  number/history/relationship tied to it (payments, placements, hit counts),
+  is kept exactly as before, just with the personal-identity link severed
+- Always one specific record on one specific explicit request — never bulk,
+  never scheduled, never triggered by age or dormancy
+- Audit logged
+- Test: an erasure request anonymizes only the PII fields on the targeted
+  record, leaves every other field and every related record untouched, and
+  is audit logged; a second erasure request on an already-erased record is a
+  safe no-op, not an error
 
 ---
 
@@ -193,10 +199,11 @@ Enterprise vertical.
   documented in `LESSONS.md`
 - [ ] GST invoice total exactly matches `calculatePlacementFee` +
   `calculateGst`, by test
-- [ ] A record past its retention window is caught by the scheduled job and a
-  record within the window is not, by test
-- [ ] A manual DPDP erasure request is audit logged and actually
-  removes/anonymizes the record, by test
+- [ ] A manual DPDP erasure request anonymizes only the targeted record's PII
+  fields, leaves everything else (including related records) untouched, and
+  is audit logged, by test
+- [ ] No automatic retention-expiry job exists anywhere in `/src/jobs/` —
+  confirmed by the agent in the report, not just by omission
 - [ ] The placement-data export excludes unmasked PII beyond what Finance
   already sees elsewhere, by test
 - [ ] A request ID is traceable across every log line for a single request,

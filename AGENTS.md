@@ -169,6 +169,29 @@ npx prisma studio    # browse the database visually
 ### Identity
 - Aadhaar verification is **offline e-KYC via a licensed vendor only**. Store the result and the vendor reference. **Never the Aadhaar number itself.** PAN is the fallback.
 
+### Data retention (LOCKED 2026-10-25)
+- **No record is ever automatically deleted or anonymized.** Business records
+  (job seekers, referrals, businesses, vacancies, placements, payments, hit
+  history, call recordings) are kept indefinitely by default — there is no
+  retention-expiry scheduled job anywhere in this system, and none should be
+  added. Agastya's explicit call: "nothing should be deleted, everything
+  should be retrievable" — this is a deliberate choice, not an oversight.
+- The one exception is an **explicit DPDP erasure request from a specific
+  person** (or a specific call recording's retention being invoked, same
+  mechanism). That is handled by a manual, CEO/Manager-only endpoint that
+  anonymizes only the directly-identifying PII fields (name, phone, Aadhaar
+  reference, exact address) on the targeted record — the record itself, and
+  every number/history/relationship tied to it, is kept exactly as before,
+  just with the personal-identity link severed. Audit logged. Never a bulk
+  or scheduled operation — always one specific record, on one specific
+  request.
+- Call recordings follow the same rule: kept indefinitely, no automatic
+  expiry, anonymized/erasure-handled only on an explicit request through the
+  same mechanism.
+- Do not build an automatic retention job "to be safe" or because a draft of
+  this spec once asked for one — this section supersedes any earlier mention
+  of a retention period or scheduled erasure job in `/specs/`.
+
 ---
 
 ## 7. Access control (RBAC)

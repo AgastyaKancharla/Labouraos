@@ -141,10 +141,13 @@ vendor.
 - `isConsentLogged` (or equivalent) is checked before a recorded call's
   reference is retained; if consent wasn't logged, the recording reference
   itself is not persisted (only the fact that the call happened)
-- Retention: a fixed, documented retention period for call recordings (ask
-  Agastya for the number if it isn't already in `AGENTS.md` §6 — do not
-  invent one, this is exactly the kind of business rule §2 rule 6 forbids
-  guessing)
+- **Retention (LOCKED in `AGENTS.md` §6 — resolved 2026-10-25):** no automatic
+  expiry. Call recordings are kept indefinitely by default, same as every
+  other record in this system. Do not build a scheduled deletion/expiry job
+  for recordings. The only way a recording's PII gets touched is the manual,
+  explicit erasure mechanism (same one as Phase 8 Task 3) invoked for a
+  specific record on a specific request — never automatically, never in
+  bulk.
 - Audit logged
 - Test: a call recorded without logged consent does not retain the recording
   reference; one with logged consent does, and is retrievable by the
