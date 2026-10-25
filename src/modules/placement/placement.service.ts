@@ -7,7 +7,8 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
-import { calculatePlacementFee, calculateGst, calculateRefund, formatINR } from '../../common/money/money';
+import { Prisma } from '@prisma/client';
+import { calculatePlacementFee, calculateGst, calculateRefund, formatINR, toRupees } from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
@@ -23,6 +24,7 @@ import {
   InvoicePlacementInfo,
   InvoiceSupplier,
 } from './dto/gst-invoice.dto';
+import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/export-placements.dto';
 
 export function calculateDaysElapsed(
   startDate: Date,
@@ -1140,6 +1142,63 @@ export class PlacementService {
         amountInWords: formatINR(totalAmountPaise),
       },
     };
+  }
+
+  async exportPlacements(
+    query: ExportPlacementsQueryDto,
+    actorId: string,
+  ): Promise<RegulatoryPlacementExportRow[]> {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const where: Prisma.PlacementWhereInput = {};
+
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    if (query.area) {
+      where.business = { area: query.area };
+    }
+
+    if (query.from || query.to) {
+      where.joinedDate = {};
+      if (query.from) {
+        where.joinedDate.gte = new Date(query.from);
+      }
+      if (query.to) {
+        where.joinedDate.lte = new Date(query.to);
+      }
+    }
+
+    const placements = await this.prisma.placement.findMany({
+      where,
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return placements.map((p) => ({
+      placementCode: p.code,
+      joinedDate: p.joinedDate ? p.joinedDate.toISOString().split('T')[0] : '',
+      dropoutDate: p.dropoutReportedAt ? p.dropoutReportedAt.toISOString().split('T')[0] : '',
+      tradeSkill: p.vacancy?.tradeSkill ?? '',
+      candidateCode: p.jobSeeker.code,
+      employerCode: p.business.code,
+      employerName: p.business.name,
+      monthlySalaryINR: toRupees(p.agreedSalary),
+      placementFeeINR: toRupees(p.placementFee),
+      status: p.status,
+      area: p.business.area,
+      city: p.city,
+    }));
   }
 }
 

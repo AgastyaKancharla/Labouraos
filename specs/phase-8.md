@@ -114,7 +114,7 @@ Enterprise vertical.
 
 ---
 
-### [ ] Task 4 — Placement-data export (closes a known gap)
+### [x] Task 4 — Placement-data export (closes a known gap)
 
 **Acceptance:**
 - This closes the Playbook's flagged gap: the Private Placement Agency

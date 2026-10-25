@@ -17,22 +17,32 @@ const PII_KEYS = new Set([
   'candidatePhone',
 ]);
 
-export function maskPii<T>(data: T): T {
+export function maskPii<T>(data: T, seen = new WeakSet<object>()): T {
   if (data === null || data === undefined) {
     return data;
   }
 
-  if (Array.isArray(data)) {
-    return data.map((item) => maskPii(item)) as unknown as T;
+  if (typeof data === 'object') {
+    if (data instanceof Date) {
+      return data;
+    }
+    if (seen.has(data)) {
+      return data;
+    }
+    seen.add(data);
   }
 
-  if (typeof data === 'object' && !(data instanceof Date)) {
+  if (Array.isArray(data)) {
+    return data.map((item) => maskPii(item, seen)) as unknown as T;
+  }
+
+  if (typeof data === 'object') {
     const masked: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(data)) {
       if (PII_KEYS.has(key) && value !== null && value !== undefined) {
         masked[key] = '********';
       } else if (typeof value === 'object' && value !== null) {
-        masked[key] = maskPii(value);
+        masked[key] = maskPii(value, seen);
       } else {
         masked[key] = value;
       }

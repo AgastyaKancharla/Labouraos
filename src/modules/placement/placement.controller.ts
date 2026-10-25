@@ -4,11 +4,13 @@ import {
   Get,
   Param,
   Post,
+  Query,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { PlacementService } from './placement.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
@@ -23,6 +25,7 @@ import { RecordDropoutDto } from './dto/record-dropout.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
+import { ExportPlacementsQueryDto, formatPlacementsCsv } from './dto/export-placements.dto';
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -131,6 +134,32 @@ export class PlacementController {
   @RequirePermission('placement', 'read')
   async findAll(@Req() req: Request & { user: JwtPayload }) {
     return this.placementService.findAll(req.user.sub);
+  }
+
+  @Get('export')
+  @RequireRoles('ceo', 'manager', 'finance')
+  @RequirePermission('placement', 'read')
+  async exportPlacements(
+    @Query() query: ExportPlacementsQueryDto,
+    @Req() req: Request & { user: JwtPayload },
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const rows = await this.placementService.exportPlacements(query, req.user.sub);
+
+    const acceptHeader = req.headers['accept'] || '';
+    if (acceptHeader.includes('application/json')) {
+      res.setHeader('Content-Type', 'application/json');
+      return rows;
+    }
+
+    const csvData = formatPlacementsCsv(rows);
+    const dateStr = new Date().toISOString().split('T')[0];
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader(
+      'Content-Disposition',
+      `attachment; filename="placements-export-${dateStr}.csv"`,
+    );
+    return csvData;
   }
 
   @Get(':id')
