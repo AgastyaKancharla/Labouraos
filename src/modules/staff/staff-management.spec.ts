@@ -5,6 +5,8 @@ import * as bcrypt from 'bcrypt';
 import { createHash } from 'node:crypto';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { formatCode } from '../../common/id/id.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -36,8 +38,8 @@ describe('Phase 8 Task 9: Staff account management', () => {
   let finance: Actor;
   const tokens: Record<string, string> = {};
 
-  // Each accept-invite call gets its own client IP so the endpoint's per-IP
-  // throttle (5/min) does not couple unrelated tests together.
+  // Each call comes from its own simulated client IP (as reported by the one
+  // trusted proxy) so the per-IP throttle (5/min) does not couple tests together.
   const freshIp = () => `10.9.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
   async function mkStaff(
@@ -132,6 +134,9 @@ describe('Phase 8 Task 9: Staff account management', () => {
       imports: [AppModule],
     }).compile();
     app = moduleRef.createNestApplication();
+    // Behave as if behind one real proxy: the X-Forwarded-For entry it appends
+    // is trusted, so each simulated client IP gets its own throttle bucket.
+    applyTrustProxy(app, '1');
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -547,7 +552,11 @@ describe('Phase 8 Task 9: Staff account management', () => {
     async function activeHireWithSession() {
       const h = await hire('call_agent');
       await accept(h.inviteToken);
-      const loggedIn = await login(h.email, goodPassword);
+      // Enrolled, as a real employee would be, so the token is not scope-limited.
+      const loggedIn = await enrolledLogin(app.getHttpServer(), {
+        email: h.email,
+        password: goodPassword,
+      });
       expect(loggedIn.status).toBe(200);
       return { ...h, accessToken: loggedIn.body.accessToken as string };
     }

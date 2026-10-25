@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 6 Task 5: Call Agent Console', () => {
   let app: INestApplication;
@@ -40,9 +41,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       },
     });
 
-    const caLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ca.email, password })
+    const caLogin = await enrolledLogin(app.getHttpServer(), { email: ca.email, password })
       .expect(200);
     caToken = caLogin.body.accessToken;
   });

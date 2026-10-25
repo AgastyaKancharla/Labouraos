@@ -5,6 +5,7 @@ import { Business, JobSeeker, Payment, Referral } from '@prisma/client';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { seed } from '../../../prisma/seed';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 type PaymentRecord = Payment & {
   jobSeeker?: JobSeeker | null;
@@ -39,9 +40,7 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
     await seed(prisma);
 
     const loginAs = async (email: string) => {
-      const res = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email, password: defaultPassword })
+      const res = await enrolledLogin(app.getHttpServer(), { email, password: defaultPassword })
         .expect(200);
       return res.body.accessToken;
     };
@@ -107,14 +106,10 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
     });
 
     it('POST /auth/login rejects invalid credentials with 401', async () => {
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email: 'ceo@laboura.local', password: 'wrongpassword' })
+      await enrolledLogin(app.getHttpServer(), { email: 'ceo@laboura.local', password: 'wrongpassword' })
         .expect(401);
 
-      await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email: 'nonexistent@laboura.local', password: defaultPassword })
+      await enrolledLogin(app.getHttpServer(), { email: 'nonexistent@laboura.local', password: defaultPassword })
         .expect(401);
     });
   });

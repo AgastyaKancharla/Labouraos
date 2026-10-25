@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { PriorityCandidateRow } from '../field-agent/priority.types';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
   let app: INestApplication;
@@ -59,15 +60,11 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       },
     });
 
-    const koraLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: faKora.email, password })
+    const koraLogin = await enrolledLogin(app.getHttpServer(), { email: faKora.email, password })
       .expect(200);
     faKoraToken = koraLogin.body.accessToken;
 
-    const indiLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: faIndi.email, password })
+    const indiLogin = await enrolledLogin(app.getHttpServer(), { email: faIndi.email, password })
       .expect(200);
     faIndiToken = indiLogin.body.accessToken;
   });

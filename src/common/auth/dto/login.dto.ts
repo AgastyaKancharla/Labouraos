@@ -9,6 +9,8 @@ export class LoginDto {
 export class LoginResponseDto {
   accessToken!: string;
   sessionId?: string;
+  /** True when the token is limited to TOTP enrolment (account not enrolled yet). */
+  totpEnrollmentRequired?: boolean;
   staff!: {
     id: string;
     code: string;

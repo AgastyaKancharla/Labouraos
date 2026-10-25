@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 5 Task 9: RBAC and Seed Data', () => {
   let app: INestApplication;
@@ -64,9 +65,7 @@ describe('Phase 5 Task 9: RBAC and Seed Data', () => {
     staffIds = [ceo.id, manager.id, finance.id];
 
     const getTok = async (email: string) => {
-      const res = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email, password })
+      const res = await enrolledLogin(app.getHttpServer(), { email, password })
         .expect(200);
       return res.body.accessToken;
     };

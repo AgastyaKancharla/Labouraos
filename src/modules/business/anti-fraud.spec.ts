@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
   let app: INestApplication;
@@ -68,7 +69,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
 
     const server = app.getHttpServer();
     const login = async (email: string) => {
-      const res = await request(server).post('/auth/login').send({ email, password });
+      const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };
 

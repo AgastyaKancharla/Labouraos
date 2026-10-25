@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { PaymentService } from './payment.service';
 import { REFERRAL_PAYOUT_AMOUNT_PAISE } from '../../common/money/money';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 6 Task 1: Referral Payout Trigger', () => {
   let app: INestApplication;
@@ -55,9 +56,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       },
     });
 
-    const caLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ca.email, password })
+    const caLogin = await enrolledLogin(app.getHttpServer(), { email: ca.email, password })
       .expect(200);
     caToken = caLogin.body.accessToken;
     caStaffId = ca.id;

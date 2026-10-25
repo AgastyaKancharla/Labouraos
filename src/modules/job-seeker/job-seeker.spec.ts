@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   let app: INestApplication;
@@ -79,21 +80,15 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const server = app.getHttpServer();
 
     // Login Call Agent
-    const caRes = await request(server)
-      .post('/auth/login')
-      .send({ email: callAgent.email, password });
+    const caRes = await enrolledLogin(server, { email: callAgent.email, password });
     callAgentToken = caRes.body.accessToken;
 
     // Login Field Agent
-    const faRes = await request(server)
-      .post('/auth/login')
-      .send({ email: fieldAgent.email, password });
+    const faRes = await enrolledLogin(server, { email: fieldAgent.email, password });
     fieldAgentToken = faRes.body.accessToken;
 
     // Login Finance
-    const fiRes = await request(server)
-      .post('/auth/login')
-      .send({ email: finance.email, password });
+    const fiRes = await enrolledLogin(server, { email: finance.email, password });
     financeToken = fiRes.body.accessToken;
   });
 
