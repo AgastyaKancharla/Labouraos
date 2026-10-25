@@ -21,7 +21,7 @@
 
 ---
 
-### [ ] Task 2 — Real payment gateway and payout API
+### [x] Task 2 — Real payment gateway and payout API
 
 **Acceptance:**
 - `PaymentProvider` (Phase 2 Task 4) and the payout extension (Phase 6 Task 2) get real implementations
