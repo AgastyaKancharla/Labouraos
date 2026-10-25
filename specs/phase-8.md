@@ -53,7 +53,7 @@ Enterprise vertical.
 
 ---
 
-### [ ] Task 2 — GST invoice generation (closes a known gap)
+### [x] Task 2 — GST invoice generation (closes a known gap)
 
 **Acceptance:**
 - This closes the Playbook's flagged gap: GST invoice generation has no home

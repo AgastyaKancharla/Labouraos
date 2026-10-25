@@ -7,7 +7,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
-import { calculatePlacementFee, calculateGst, calculateRefund } from '../../common/money/money';
+import { calculatePlacementFee, calculateGst, calculateRefund, formatINR } from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
@@ -17,6 +17,12 @@ import { RecordDropoutDto } from './dto/record-dropout.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
+import {
+  GstInvoiceResponse,
+  InvoiceCustomer,
+  InvoicePlacementInfo,
+  InvoiceSupplier,
+} from './dto/gst-invoice.dto';
 
 export function calculateDaysElapsed(
   startDate: Date,
@@ -1007,6 +1013,133 @@ export class PlacementService {
     });
 
     return payment;
+  }
+
+  async getInvoice(id: string, actorId: string): Promise<GstInvoiceResponse> {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const placement = await this.prisma.placement.findFirst({
+      where: { id },
+      include: {
+        business: true,
+        jobSeeker: true,
+        vacancy: true,
+        payments: true,
+      },
+    });
+
+    if (!placement) {
+      throw new NotFoundException(`Placement '${id}' not found`);
+    }
+
+    const eligibleStatuses = ['confirmed', 'active', 'completed', 'dropped_out', 'replaced'];
+    if (!eligibleStatuses.includes(placement.status)) {
+      throw new BadRequestException(
+        `Invoice can only be generated for confirmed or active placements (current status: ${placement.status})`,
+      );
+    }
+
+    // Determine sequential invoice number
+    let invoiceNumber = placement.invoiceCode;
+    if (!invoiceNumber) {
+      invoiceNumber = await this.idService.generateCode('invoice');
+      await this.prisma.placement.update({
+        where: { id: placement.id },
+        data: { invoiceCode: invoiceNumber },
+      });
+
+      await this.auditService.log({
+        action: 'placement.invoice_generated',
+        entityType: 'placement',
+        entityCode: placement.code,
+        actorId: actor.id,
+        city: placement.city,
+        after: {
+          invoiceCode: invoiceNumber,
+          placementId: placement.id,
+        },
+      });
+    }
+
+    // Re-use calculatePlacementFee and calculateGst from money module
+    const baseAmountPaise = calculatePlacementFee(placement.agreedSalary);
+    const totalTaxPaise = calculateGst(baseAmountPaise);
+    const totalAmountPaise = baseAmountPaise + totalTaxPaise;
+
+    // 18% GST split into 9% CGST and 9% SGST for intra-state supply
+    const cgstAmountPaise = Math.floor(totalTaxPaise / 2);
+    const sgstAmountPaise = totalTaxPaise - cgstAmountPaise;
+
+    const supplier: InvoiceSupplier = {
+      legalName: process.env.COMPANY_LEGAL_NAME || 'Laboura Blue-Collar Technologies Pvt Ltd',
+      gstin: process.env.COMPANY_GSTIN || 'GSTIN_PENDING_REGISTRATION',
+      address: process.env.COMPANY_ADDRESS || 'Bengaluru, Karnataka, India',
+      state: 'Karnataka',
+      stateCode: '29',
+    };
+
+    const customer: InvoiceCustomer = {
+      businessId: placement.business.id,
+      businessCode: placement.business.code,
+      businessName: placement.business.name,
+      contactName: placement.business.contactName ?? null,
+      contactPhone: placement.business.phone,
+      gstin: placement.business.gstNumber ?? null,
+      address: placement.business.address,
+      area: placement.business.area,
+      city: placement.business.city,
+      state: 'Karnataka',
+      stateCode: '29',
+    };
+
+    const placementInfo: InvoicePlacementInfo = {
+      placementId: placement.id,
+      placementCode: placement.code,
+      candidateCode: placement.jobSeeker.code,
+      candidateName: placement.jobSeeker.name,
+      candidatePhone: placement.jobSeeker.phone,
+      tradeSkill: placement.vacancy.tradeSkill,
+      monthlySalaryPaise: placement.agreedSalary,
+      joinedDate: placement.joinedDate ? placement.joinedDate.toISOString() : null,
+    };
+
+    const invoiceDate = (placement.joinedDate ?? placement.updatedAt ?? new Date()).toISOString();
+
+    return {
+      invoiceNumber,
+      invoiceDate,
+      supplier,
+      customer,
+      placement: placementInfo,
+      lineItems: [
+        {
+          itemNumber: 1,
+          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (50% of monthly salary)`,
+          sacCode: '9985',
+          baseAmountPaise,
+          taxRatePercent: 18,
+          cgstRatePercent: 9,
+          cgstAmountPaise,
+          sgstRatePercent: 9,
+          sgstAmountPaise,
+          igstRatePercent: 0,
+          igstAmountPaise: 0,
+          totalAmountPaise,
+        },
+      ],
+      summary: {
+        subtotalPaise: baseAmountPaise,
+        totalTaxPaise,
+        totalAmountPaise,
+        currency: 'INR',
+        amountInWords: formatINR(totalAmountPaise),
+      },
+    };
   }
 }
 

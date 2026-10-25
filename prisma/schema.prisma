@@ -121,6 +121,7 @@ model Placement {
   agreedSalary               Int         @default(0) // paise
   placementFee               Int         // paise
   gstAmount                  Int         // paise
+  invoiceCode                String?     @unique
   joinedDate                 DateTime?
   dropoutReportedAt          DateTime?
   eligibility                String?     // employee_left, business_breach

@@ -9,7 +9,13 @@ import { map } from 'rxjs/operators';
 import { Request } from 'express';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 
-const PII_KEYS = new Set(['phone', 'kycReference', 'kycDetails', 'contactPhone']);
+const PII_KEYS = new Set([
+  'phone',
+  'kycReference',
+  'kycDetails',
+  'contactPhone',
+  'candidatePhone',
+]);
 
 export function maskPii<T>(data: T): T {
   if (data === null || data === undefined) {

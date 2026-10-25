@@ -11,7 +11,8 @@ export type EntityType =
   | 'call_agent'
   | 'staff'
   | 'payment'
-  | 'audit_log';
+  | 'audit_log'
+  | 'invoice';
 
 export const ENTITY_PREFIXES: Record<EntityType, string> = {
   job_seeker: 'JS',
@@ -24,6 +25,7 @@ export const ENTITY_PREFIXES: Record<EntityType, string> = {
   staff: 'ST',
   payment: 'PAY',
   audit_log: 'AUD',
+  invoice: 'INV',
 };
 
 export function formatCode(prefix: string, seq: number): string {
@@ -91,6 +93,29 @@ export class IdService implements OnModuleInit {
       } catch {
         // Table or column might not exist during initialization
       }
+    }
+
+    // Sync invoice sequence from Placement.invoiceCode
+    try {
+      const invSeqName = this.getSequenceName('INV');
+      await this.ensureSequenceExists('INV');
+      await this.prisma.$executeRawUnsafe(`
+        DO $$
+        DECLARE
+          max_val integer;
+        BEGIN
+          SELECT COALESCE(MAX(SUBSTRING("invoiceCode" FROM 5)::int), 0)
+          INTO max_val
+          FROM "Placement"
+          WHERE "invoiceCode" ~ '^INV-[0-9]+$';
+
+          IF max_val > 0 THEN
+            PERFORM setval('"${invSeqName}"', max_val, true);
+          END IF;
+        END $$;
+      `);
+    } catch {
+      // Ignore if table or column does not exist yet
     }
   }
 

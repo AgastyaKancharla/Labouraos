@@ -142,6 +142,16 @@ export class PlacementController {
   ) {
     return this.placementService.findById(id, req.user.sub);
   }
+
+  @Get(':id/invoice')
+  @RequireRoles('ceo', 'manager', 'finance')
+  @RequirePermission('placement', 'read')
+  async getInvoice(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.getInvoice(id, req.user.sub);
+  }
 }
 
 
