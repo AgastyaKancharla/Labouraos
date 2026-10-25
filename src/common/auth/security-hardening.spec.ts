@@ -14,6 +14,19 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
   const timestamp = Date.now();
   const testPassword = 'SecurePassword123!';
 
+  // TOTP codes are only valid for their 30s step and login does a bcrypt
+  // compare between generation and verification. A code minted in the last
+  // moments of a step can expire mid-request, so wait for a fresh step first.
+  const TOTP_STEP_MS = 30_000;
+  const TOTP_SAFE_MARGIN_MS = 5_000;
+  const stableTotp = async (secret: string): Promise<string> => {
+    const remaining = TOTP_STEP_MS - (Date.now() % TOTP_STEP_MS);
+    if (remaining < TOTP_SAFE_MARGIN_MS) {
+      await new Promise((resolve) => setTimeout(resolve, remaining + 50));
+    }
+    return totpService.generateToken(secret);
+  };
+
   let ceoStaff: { id: string; email: string; totpSecret: string; code: string };
   let managerStaff: { id: string; email: string; totpSecret: string; code: string };
   let callAgentStaff: { id: string; email: string; totpSecret: string; code: string };
@@ -110,7 +123,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       const testCases = [ceoStaff, managerStaff, callAgentStaff, fieldAgentStaff];
 
       for (const account of testCases) {
-        const validCode = totpService.generateToken(account.totpSecret);
+        const validCode = await stableTotp(account.totpSecret);
         const res = await request(app.getHttpServer())
           .post('/auth/login')
           .send({
@@ -128,7 +141,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
 
   describe('2. Device Binding and Step-Up TOTP for Field Agent App', () => {
     it('first login registers the primary deviceId for the field agent', async () => {
-      const validCode = totpService.generateToken(fieldAgentStaff.totpSecret);
+      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -147,7 +160,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
 
     it('login with recognized registered device succeeds without step-up code', async () => {
-      const validCode = totpService.generateToken(fieldAgentStaff.totpSecret);
+      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -162,7 +175,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
 
     it('login from a new, unrecognized device on a Field Agent account REQUIRES step-up TOTP code', async () => {
-      const validCode = totpService.generateToken(fieldAgentStaff.totpSecret);
+      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -177,8 +190,8 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
 
     it('login from unrecognized device SUCCEEDS when valid step-up TOTP code is provided', async () => {
-      const validCode = totpService.generateToken(fieldAgentStaff.totpSecret);
-      const validStepUpCode = totpService.generateToken(fieldAgentStaff.totpSecret);
+      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
+      const validStepUpCode = await stableTotp(fieldAgentStaff.totpSecret);
 
       const res = await request(app.getHttpServer())
         .post('/auth/login')
@@ -197,7 +210,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
 
   describe('3. Short-Lived Access Tokens & Revocable Session Control', () => {
     it('creates active session record on login and lists sessions via GET /staff/sessions', async () => {
-      const validCode = totpService.generateToken(ceoStaff.totpSecret);
+      const validCode = await stableTotp(ceoStaff.totpSecret);
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -222,7 +235,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
 
     it('revoking a session via POST /staff/sessions/:id/revoke immediately invalidates token on next request', async () => {
-      const validCode = totpService.generateToken(callAgentStaff.totpSecret);
+      const validCode = await stableTotp(callAgentStaff.totpSecret);
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
@@ -231,6 +244,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
           totpCode: validCode,
         });
 
+      expect(loginRes.status).toBe(200);
       const token = loginRes.body.accessToken;
       const sessionId = loginRes.body.sessionId;
 
@@ -265,7 +279,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       });
 
       // Call Agent tries to revoke CEO's session
-      const validCode = totpService.generateToken(callAgentStaff.totpSecret);
+      const validCode = await stableTotp(callAgentStaff.totpSecret);
       const caLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
