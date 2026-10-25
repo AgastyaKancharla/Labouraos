@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from '../src/app.module';
 import { PrismaService } from '../src/common/prisma/prisma.service';
+import { enrolledLogin } from '../src/test-support/enrolled-login-spec';
 
 describe('End-to-End Walking Skeleton (e2e)', () => {
   let app: INestApplication;
@@ -59,9 +60,7 @@ describe('End-to-End Walking Skeleton (e2e)', () => {
     const server = app.getHttpServer();
 
     // 1. Seeded call agent logs in via POST /auth/login
-    const loginRes = await request(server)
-      .post('/auth/login')
-      .send({
+    const loginRes = await enrolledLogin(server, {
         email: agentEmail,
         password: plainPassword,
       });

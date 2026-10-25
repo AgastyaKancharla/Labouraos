@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
   let app: INestApplication;
@@ -91,7 +92,7 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
     // Login tokens
     const server = app.getHttpServer();
     const login = async (email: string) => {
-      const res = await request(server).post('/auth/login').send({ email, password });
+      const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };
 

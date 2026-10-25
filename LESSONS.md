@@ -109,3 +109,13 @@ Format:
 **Symptom:** `prisma migrate dev` reported "applied to the database but missing from the local migrations directory" and offered `migrate reset`.
 **Cause:** An earlier, never-pushed attempt at the same task had applied its own migration (with a plaintext `inviteToken` column) to the local dev database; the branch was then rebuilt from `main` without it.
 **Fix:** Did not reset the database. Dropped only the four columns that attempt added and deleted its `_prisma_migrations` row inside one transaction, then generated the new migration with `prisma migrate diff --from-migrations ... --shadow-database-url <throwaway db> --script` (migrate dev needs a TTY) and applied it with `migrate deploy`.
+
+## "Mandatory 2FA" was only enforced for accounts that had already enrolled
+**Symptom:** A freshly invited staff member could log in with just a password and use the whole API until they got around to enrolling in TOTP.
+**Cause:** `login` only demanded a code when `totpEnabled && totpSecret`; an unenrolled account has no secret, so it could not simply be required to send one, and the code path silently issued a normal token instead.
+**Fix:** An unenrolled account still logs in with the password, but the token carries `scope: 'totp_setup'` and `JwtAuthGuard` (the one guard every authenticated route uses) rejects it with 403 unless the route is marked `@AllowTotpSetupScope()` (only `POST /staff/2fa/setup` and `/enable`). `totpEnabled` without a secret counts as unenrolled. `setupTotp` now refuses (409) on an enrolled account, otherwise a stolen session could re-run setup and turn 2FA off. Specs that need a full token log in via `enrolledLogin` (enrol + real code) and undo the enrolment afterwards so seeded dev accounts are not left with unknown secrets.
+
+## Rate limiter keyed on a client-controlled X-Forwarded-For
+**Symptom:** Sending a different fake `X-Forwarded-For` on each login/OTP request gave a fresh throttle bucket every time.
+**Cause:** `AuthThrottlerGuard` (and the login controller, for the session IP) read the raw header ahead of `req.ip`. Render's proxy appends to a client-supplied header rather than replacing it, so everything left of the proxy's own entry is attacker-controlled.
+**Fix:** Both use `req.ip` only. `TRUST_PROXY_HOPS` (default 0 = ignore the header) sets Express's `trust proxy` hop count at startup, so `req.ip` is the address the Nth trusted proxy saw. Invalid values fail startup. The hop count must match the real Render/Cloudflare path per environment; Render's docs do not state it, so verify it on the deployed service by logging raw headers once.

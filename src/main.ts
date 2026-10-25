@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { StructuredLogger } from './common/observability/structured-logger.service';
 import { GlobalExceptionFilter } from './common/observability/global-exception.filter';
 import { AlertService } from './common/observability/alert.service';
+import { applyTrustProxy } from './common/http/trust-proxy';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
@@ -10,6 +11,7 @@ async function bootstrap() {
   });
   const logger = app.get(StructuredLogger);
   app.useLogger(logger);
+  applyTrustProxy(app);
   const alertService = app.get(AlertService);
   app.useGlobalFilters(new GlobalExceptionFilter(alertService));
 

@@ -4,6 +4,7 @@ import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
   let app: INestApplication;
@@ -60,21 +61,15 @@ describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
       },
     });
 
-    const ceoLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ceo.email, password })
+    const ceoLogin = await enrolledLogin(app.getHttpServer(), { email: ceo.email, password })
       .expect(200);
     ceoToken = ceoLogin.body.accessToken;
 
-    const mgrLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: manager.email, password })
+    const mgrLogin = await enrolledLogin(app.getHttpServer(), { email: manager.email, password })
       .expect(200);
     managerToken = mgrLogin.body.accessToken;
 
-    const caLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ca.email, password })
+    const caLogin = await enrolledLogin(app.getHttpServer(), { email: ca.email, password })
       .expect(200);
     caToken = caLogin.body.accessToken;
   });

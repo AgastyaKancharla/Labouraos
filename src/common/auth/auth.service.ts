@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -70,14 +71,19 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
-    // 1. Mandatory 2FA via TOTP (RFC 6238) for all staff roles when configured
-    if (staff.totpEnabled && staff.totpSecret) {
+    // 1. Mandatory 2FA via TOTP (RFC 6238) for all staff roles. An enrolled
+    // account must present a valid code. An account that has not enrolled yet
+    // cannot be asked for one (it has no secret), so it gets a token limited to
+    // the TOTP setup/enable endpoints until enrolment completes.
+    const enrolledSecret = staff.totpEnabled ? staff.totpSecret : null;
+    const totpEnrolled = !!enrolledSecret;
+    if (enrolledSecret) {
       if (!loginDto.totpCode) {
         throw new UnauthorizedException('TOTP 2FA code is required');
       }
       const isTotpValid = this.totpService.verify(
         loginDto.totpCode,
-        staff.totpSecret,
+        enrolledSecret,
       );
       if (!isTotpValid) {
         throw new UnauthorizedException('Invalid TOTP code');
@@ -140,6 +146,7 @@ export class AuthService {
       area: staff.area,
       teamLeadId: staff.teamLeadId,
       sid: session.id,
+      ...(totpEnrolled ? {} : { scope: 'totp_setup' as const }),
     };
 
     const accessToken = await this.jwtService.signAsync(payload, {
@@ -149,6 +156,7 @@ export class AuthService {
     return {
       accessToken,
       sessionId: session.id,
+      ...(totpEnrolled ? {} : { totpEnrollmentRequired: true }),
       staff: {
         id: staff.id,
         code: staff.code,
@@ -178,6 +186,12 @@ export class AuthService {
     });
     if (!staff) {
       throw new NotFoundException('Staff account not found');
+    }
+
+    // Re-running setup on an enrolled account would switch 2FA off (the new
+    // secret starts disabled), so a stolen session could silently downgrade it.
+    if (staff.totpEnabled) {
+      throw new ConflictException('TOTP is already enabled for this account');
     }
 
     const { secret, otpauthUrl } = this.totpService.generateSetup(staff.email);

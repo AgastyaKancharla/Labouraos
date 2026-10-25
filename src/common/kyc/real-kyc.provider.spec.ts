@@ -7,6 +7,7 @@ import { KYC_PROVIDER, KycProvider } from './kyc.interface';
 import { KycModule } from './kyc.module';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
   describe('RealKycProvider Unit Tests', () => {
@@ -138,9 +139,7 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
         },
       });
 
-      const loginRes = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email: callAgent.email, password });
+      const loginRes = await enrolledLogin(app.getHttpServer(), { email: callAgent.email, password });
       callAgentToken = loginRes.body.accessToken;
     });
 

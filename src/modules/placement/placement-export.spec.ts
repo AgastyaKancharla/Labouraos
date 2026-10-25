@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { RegulatoryPlacementExportRow } from './dto/export-placements.dto';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
   let app: INestApplication;
@@ -103,9 +104,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
     staffIds.push(fa.id);
 
     const login = async (email: string) => {
-      const res = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email, password });
+      const res = await enrolledLogin(app.getHttpServer(), { email, password });
       return (res.body.accessToken || res.body.token) as string;
     };
 

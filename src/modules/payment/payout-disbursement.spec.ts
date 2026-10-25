@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { MockPaymentProvider } from './mock-payment.provider';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 6 Task 2: Payout Disbursement', () => {
   let app: INestApplication;
@@ -93,33 +94,23 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
       },
     });
 
-    const finLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: finance.email, password })
+    const finLogin = await enrolledLogin(app.getHttpServer(), { email: finance.email, password })
       .expect(200);
     financeToken = finLogin.body.accessToken;
 
-    const ceoLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ceo.email, password })
+    const ceoLogin = await enrolledLogin(app.getHttpServer(), { email: ceo.email, password })
       .expect(200);
     ceoToken = ceoLogin.body.accessToken;
 
-    const mgrLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: manager.email, password })
+    const mgrLogin = await enrolledLogin(app.getHttpServer(), { email: manager.email, password })
       .expect(200);
     managerToken = mgrLogin.body.accessToken;
 
-    const caLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: ca.email, password })
+    const caLogin = await enrolledLogin(app.getHttpServer(), { email: ca.email, password })
       .expect(200);
     caToken = caLogin.body.accessToken;
 
-    const faLogin = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({ email: fa.email, password })
+    const faLogin = await enrolledLogin(app.getHttpServer(), { email: fa.email, password })
       .expect(200);
     faToken = faLogin.body.accessToken;
   });

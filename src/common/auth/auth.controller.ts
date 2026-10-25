@@ -25,10 +25,7 @@ export class AuthController {
     @Body() loginDto: LoginDto,
     @Req() req: Request,
   ): Promise<LoginResponseDto> {
-    const ip =
-      (req.headers['x-forwarded-for'] as string) ||
-      req.ip ||
-      req.socket.remoteAddress;
+    const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.authService.login(loginDto, { ip, userAgent });
   }

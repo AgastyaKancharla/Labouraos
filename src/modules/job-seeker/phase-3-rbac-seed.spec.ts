@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { seed } from '../../../prisma/seed';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 3 Task 6: RBAC and Seed Data', () => {
   let app: INestApplication;
@@ -94,7 +95,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
 
     const server = app.getHttpServer();
     const login = async (email: string) => {
-      const res = await request(server).post('/auth/login').send({ email, password });
+      const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };
 

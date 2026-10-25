@@ -9,6 +9,7 @@ import { MockOtpProvider } from '../otp/mock-otp.provider';
 import { KYC_PROVIDER, KycProvider } from './kyc.interface';
 import { MockKycProvider } from './mock-kyc.provider';
 import { KycModule } from './kyc.module';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
   let app: INestApplication;
@@ -48,9 +49,7 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
     callAgentId = callAgent.id;
 
     const server = app.getHttpServer();
-    const loginRes = await request(server)
-      .post('/auth/login')
-      .send({ email: callAgent.email, password });
+    const loginRes = await enrolledLogin(server, { email: callAgent.email, password });
     callAgentToken = loginRes.body.accessToken;
   });
 

@@ -15,6 +15,7 @@ import { Request } from 'express';
 import { AuthService, StaffSessionView } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtPayload } from './jwt-payload.interface';
+import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
 
 interface AuthenticatedRequest extends Request {
   user: JwtPayload;
@@ -51,6 +52,7 @@ export class StaffSessionController {
   }
 
   @Post('2fa/setup')
+  @AllowTotpSetupScope()
   @HttpCode(HttpStatus.OK)
   async setup2fa(
     @Req() req: AuthenticatedRequest,
@@ -59,6 +61,7 @@ export class StaffSessionController {
   }
 
   @Post('2fa/enable')
+  @AllowTotpSetupScope()
   @HttpCode(HttpStatus.OK)
   async enable2fa(
     @Req() req: AuthenticatedRequest,

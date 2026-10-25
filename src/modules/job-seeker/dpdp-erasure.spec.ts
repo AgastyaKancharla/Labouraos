@@ -6,6 +6,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
   let app: INestApplication;
@@ -106,9 +107,7 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     staffIds.push(fin.id);
 
     const login = async (email: string) => {
-      const res = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ email, password });
+      const res = await enrolledLogin(app.getHttpServer(), { email, password });
       return (res.body.accessToken || res.body.token) as string;
     };
 

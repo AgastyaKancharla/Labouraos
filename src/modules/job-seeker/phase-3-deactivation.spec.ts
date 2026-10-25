@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JobSeekerService } from './job-seeker.service';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 3 Task 4: 3-Hit Deactivation and Refund Entitlement', () => {
   let app: INestApplication;
@@ -44,9 +45,7 @@ describe('Phase 3 Task 4: 3-Hit Deactivation and Refund Entitlement', () => {
     callAgentId = callAgent.id;
 
     const server = app.getHttpServer();
-    const loginRes = await request(server)
-      .post('/auth/login')
-      .send({ email: callAgent.email, password });
+    const loginRes = await enrolledLogin(server, { email: callAgent.email, password });
     callAgentToken = loginRes.body.accessToken;
 
     // Create active job seeker who paid 5 days ago (well within 30-day guarantee)

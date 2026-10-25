@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   let app: INestApplication;
@@ -45,9 +46,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     callAgentId = callAgent.id;
 
     const server = app.getHttpServer();
-    const loginRes = await request(server)
-      .post('/auth/login')
-      .send({ email: callAgent.email, password });
+    const loginRes = await enrolledLogin(server, { email: callAgent.email, password });
     callAgentToken = loginRes.body.accessToken;
   });
 
