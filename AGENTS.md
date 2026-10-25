@@ -213,6 +213,37 @@ amounts, never the phone number or KYC details.
 **Audit-logged writes**: refund approval, deactivation, reactivation, payout
 release, pricing change, placement creation, any role change.
 
+### Login and session hardening (LOCKED 2026-10-25 — Phase 8 Task 6, do not
+redesign or ask again)
+
+This is about *getting into the system in the first place*, separate from
+the role permissions above.
+
+- **Mandatory 2FA on every staff login, all four roles, via TOTP
+  (RFC 6238)** — an authenticator app (Google Authenticator, Microsoft
+  Authenticator, Authy, etc.), set up once per staff account. Deliberately
+  not the SMS-based `OtpProvider` (Phase 2/7) — that stays reserved for
+  job-seeker/referral/business-facing flows where no app install can be
+  assumed. No SIM-swap exposure, no per-message cost, at this staff scale.
+- **Short-lived access tokens + a visible, revocable session list**
+  (`GET /staff/sessions`, `POST /staff/sessions/:id/revoke`) — solves a
+  different problem than 2FA (how long a token stays valid afterward, and
+  letting a manager cut access immediately), not a substitute for it. Both
+  are required.
+- **Field Agent app (Play Store distribution, no device control
+  possible):** first login registers the device; an unrecognized device on
+  an account that already has one requires a step-up TOTP code before a
+  token is issued.
+- **Admin Dashboard and Call Agent console (browser-based office consoles
+  only):** gated by Cloudflare Access in front of them — identity-gated
+  (no valid company login, no reach to the login page at all), not
+  device-gated. Pre-approved new external service for this phase — do not
+  ask again.
+- **Explicitly not built anywhere:** MDM/Android Enterprise managed-device
+  enrollment, IP allowlisting.
+
+Full detail and acceptance tests: `specs/phase-8.md` Task 6.
+
 ---
 
 ## 8. Unique IDs
