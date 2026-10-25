@@ -116,6 +116,16 @@ export class JobSeekerController {
   ) {
     return this.jobSeekerService.approveRefund(id, body, req.user.sub);
   }
+
+  @Post(':id/erase')
+  @RequireRoles('ceo', 'manager')
+  @RequirePermission('job_seeker', 'write')
+  async erase(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.erase(id, req.user.sub);
+  }
 }
 
 

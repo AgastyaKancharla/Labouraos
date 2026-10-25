@@ -86,7 +86,7 @@ Enterprise vertical.
 
 ---
 
-### [ ] Task 3 — Manual DPDP erasure endpoint (closes a known gap)
+### [x] Task 3 — Manual DPDP erasure endpoint (closes a known gap)
 
 **Acceptance:**
 - This closes the Playbook's flagged gap, but **not with an automatic

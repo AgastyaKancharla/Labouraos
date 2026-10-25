@@ -648,6 +648,65 @@ export class JobSeekerService {
 
     return payment;
   }
+
+  async erase(id: string, actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const jobSeeker = await this.prisma.jobSeeker.findUnique({
+      where: { id },
+    });
+    if (!jobSeeker) {
+      throw new NotFoundException(`Job seeker '${id}' not found`);
+    }
+
+    // Idempotent: safe no-op if already erased
+    if (jobSeeker.erasedAt) {
+      return {
+        message: 'Job seeker already erased',
+        id: jobSeeker.id,
+        code: jobSeeker.code,
+        erasedAt: jobSeeker.erasedAt,
+      };
+    }
+
+    const beforeState = {
+      name: jobSeeker.name,
+      phone: jobSeeker.phone,
+      kycReference: jobSeeker.kycReference,
+    };
+
+    const updated = await this.prisma.jobSeeker.update({
+      where: { id: jobSeeker.id },
+      data: {
+        name: 'ANONYMIZED_CANDIDATE',
+        phone: `ERASED-${jobSeeker.code}`,
+        kycReference: null,
+        erasedAt: new Date(),
+      },
+    });
+
+    await this.auditService.log({
+      action: 'dpdp.erasure_requested',
+      entityType: 'job_seeker',
+      entityCode: jobSeeker.code,
+      actorId: actor.id,
+      city: jobSeeker.city,
+      before: beforeState,
+      after: {
+        name: updated.name,
+        phone: updated.phone,
+        kycReference: updated.kycReference,
+        erasedAt: updated.erasedAt,
+      },
+    });
+
+    return updated;
+  }
 }
 
 

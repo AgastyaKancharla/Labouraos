@@ -92,5 +92,15 @@ export class BusinessController {
   ) {
     return this.businessService.recordVisit(businessId, body, req.user.sub);
   }
+
+  @Post(':id/erase')
+  @RequireRoles('ceo', 'manager')
+  @RequirePermission('business', 'write')
+  async erase(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.businessService.erase(id, req.user.sub);
+  }
 }
 

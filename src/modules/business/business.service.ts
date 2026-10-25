@@ -331,5 +331,72 @@ export class BusinessService {
 
     return visit;
   }
+
+  async erase(id: string, actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const business = await this.prisma.business.findUnique({
+      where: { id },
+    });
+    if (!business) {
+      throw new NotFoundException(`Business '${id}' not found`);
+    }
+
+    // Idempotent: safe no-op if already erased
+    if (business.erasedAt) {
+      return {
+        message: 'Business already erased',
+        id: business.id,
+        code: business.code,
+        erasedAt: business.erasedAt,
+      };
+    }
+
+    const beforeState = {
+      name: business.name,
+      phone: business.phone,
+      contactName: business.contactName,
+      address: business.address,
+      gstNumber: business.gstNumber,
+    };
+
+    const updated = await this.prisma.business.update({
+      where: { id: business.id },
+      data: {
+        name: 'ANONYMIZED_BUSINESS',
+        phone: `ERASED-${business.code}`,
+        contactName: 'Anonymized Contact',
+        address: 'Anonymized Address',
+        gstNumber: null,
+        selfieUrl: null,
+        selfieHash: null,
+        erasedAt: new Date(),
+      },
+    });
+
+    await this.auditService.log({
+      action: 'dpdp.erasure_requested',
+      entityType: 'business',
+      entityCode: business.code,
+      actorId: actor.id,
+      city: business.city,
+      before: beforeState,
+      after: {
+        name: updated.name,
+        phone: updated.phone,
+        contactName: updated.contactName,
+        address: updated.address,
+        gstNumber: updated.gstNumber,
+        erasedAt: updated.erasedAt,
+      },
+    });
+
+    return updated;
+  }
 }
 

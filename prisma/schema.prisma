@@ -32,6 +32,7 @@ model JobSeeker {
   hits                      JobSeekerHit[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
+  erasedAt                  DateTime?
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
 
@@ -76,6 +77,7 @@ model Business {
   placements    Placement[]
   payments      Payment[]
   visits        BusinessVisit[]
+  erasedAt      DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
