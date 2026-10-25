@@ -71,6 +71,15 @@ Enterprise vertical.
 - Invoice numbering is sequential and auditable, same spirit as the existing
   `JS-`/`PAY-` prefixed codes (§8) — do not reuse the Payment's own code as
   the invoice number if they need to diverge for GST-filing reasons
+- **Company GSTIN (LOCKED 2026-10-25 — build now, don't wait):** AgastyaOne's
+  company registration/GST filing for Laboura is still in progress. Read the
+  company's GSTIN, legal name and registered address from environment
+  variables (e.g. `COMPANY_GSTIN`, `COMPANY_LEGAL_NAME`,
+  `COMPANY_ADDRESS`), same mock-then-real spirit as the Phase 7 providers —
+  use a clearly-fake placeholder value (e.g. `GSTIN_PENDING_REGISTRATION`)
+  when unset, so the invoice still renders correctly end-to-end and the real
+  values drop in later as a config change, not a rebuild. Do not block this
+  task on registration completing.
 - Test: invoice total matches `calculatePlacementFee` + `calculateGst` exactly
   for a salary that doesn't divide evenly (same rounding-edge-case spirit as
   Phase 5 Task 3)
