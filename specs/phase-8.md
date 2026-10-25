@@ -289,6 +289,15 @@ redesign or ask again, the approach is decided):**
 - Test: a newly created staff account cannot log in until the invite is
   accepted; a deactivated staff account's valid credentials are rejected at
   login; a non-CEO/Manager role gets 403 on all of these endpoints
+- **Confirmed decisions (LOCKED 2026-10-25, raised during the build):**
+  - Only a CEO (not a Manager) may create or deactivate a `ceo` or `manager`
+    account — otherwise a Manager could create a CEO account. Correct as
+    built; do not relax this.
+  - Invite tokens expire after **72 hours**.
+  - New passwords set via accept-invite must be **at least 12 characters**.
+  - Invite token is stored only as a SHA-256 hash (`inviteTokenHash`), never
+    in plaintext — the one-time token itself is returned/logged exactly
+    once, at creation, and never again.
 
 ---
 
