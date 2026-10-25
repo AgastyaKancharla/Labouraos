@@ -69,6 +69,13 @@ export class IdService implements OnModuleInit {
       PL: 'Placement',
       PAY: 'Payment',
       AUD: 'AuditLog',
+      // Staff codes are role-prefixed (see STAFF_CODE_PREFIX in staff.service)
+      CEO: 'Staff',
+      MGR: 'Staff',
+      TL: 'Staff',
+      CA: 'Staff',
+      FA: 'Staff',
+      FIN: 'Staff',
     };
 
     for (const [prefix, tableName] of Object.entries(mapping)) {

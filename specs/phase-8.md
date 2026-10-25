@@ -262,7 +262,7 @@ redesign or ask again, the approach is decided):**
 
 ---
 
-### [ ] Task 9 — Staff account management (closes a real gap)
+### [x] Task 9 — Staff account management (closes a real gap)
 
 **Acceptance:**
 - This closes a gap found while reviewing Phase 7: there is currently no way
