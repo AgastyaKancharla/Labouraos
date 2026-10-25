@@ -1,32 +1,36 @@
-# Phase 7 — Real Telephony, Messaging & Payment Integration
+# Phase 7 — Real Telephony, Messaging, Payment & KYC Integration
 
 **Goal:** swap every provider that has been running on a mock since earlier phases
-(OTP/SMS, WhatsApp, telephony, payment collection, referral payout disbursement)
-for a real vendor integration, behind the same provider-interface pattern already
-established — and close the consent-capture gap that real call recording makes
-unavoidable.
+(OTP/SMS, WhatsApp, telephony, payment collection, referral payout disbursement,
+Aadhaar e-KYC) for a real vendor integration, behind the same provider-interface
+pattern already established — and close the consent-capture gap that real call
+recording makes unavoidable.
 
 **Why this is next:** everything through Phase 6 is a complete, correctly-RBAC'd,
-correctly-tested system of record — but every "send a message," "make a call," or
-"move money" action in it is still a mock. Agastya's company registration, GST,
-payment gateway and telephony vendor are all expected to be finalized within
-about two weeks of this phase starting. This phase makes the swap a config change
-plus a round of integration testing, not a redesign — if real credentials land
-mid-phase, nothing here should need to be rebuilt to use them.
+correctly-tested system of record — but every "send a message," "make a call,"
+"move money," or "verify an identity" action in it is still a mock. Agastya's
+company registration, GST, payment gateway and telephony vendor are all expected
+to be finalized within about two weeks of this phase starting. This phase makes
+the swap a config change plus a round of integration testing, not a redesign —
+if real credentials land mid-phase, nothing here should need to be rebuilt to
+use them.
 
 **Out of scope for Phase 7 — do not build these:** load/concurrency testing for
-40 agents, GST invoice generation, data retention/erasure, the placement-data
-export for the draft Placement Agency Bill (all Phase 8). Any new business rule —
-if a real vendor's behavior conflicts with a rule in `AGENTS.md` §6, stop and ask;
-do not quietly adjust the rule to fit the vendor.
+40 agents, observability, security hardening, backup/disaster recovery, GST
+invoice generation, data retention/erasure, the placement-data export for the
+draft Placement Agency Bill, and the final Go-Live Checklist close-out (all
+Phase 8). Any new business rule — if a real vendor's behavior conflicts with a
+rule in `AGENTS.md` §6, stop and ask; do not quietly adjust the rule to fit the
+vendor.
 
 > Read `AGENTS.md` §1, §2 (especially rule 7 — idempotency — and rule 8 — no
 > secrets in code), and §6 before writing this phase. Read `LESSONS.md` first.
 > Read the existing `OtpProvider` (`src/common/otp/otp.interface.ts`,
-> `src/common/otp/mock-otp.provider.ts`) and `PaymentProvider`
-> (`src/modules/payment/payment-provider.interface.ts`) — every task in this
-> phase follows that exact mock-then-real, dependency-injected pattern. Do not
-> invent a different pattern for telephony or WhatsApp.
+> `src/common/otp/mock-otp.provider.ts`), `PaymentProvider`
+> (`src/modules/payment/payment-provider.interface.ts`), and `KycProvider`
+> (Phase 2 Task 7) — every task in this phase follows that exact
+> mock-then-real, dependency-injected pattern. Do not invent a different
+> pattern for telephony or WhatsApp.
 
 ---
 
@@ -37,17 +41,18 @@ do not quietly adjust the rule to fit the vendor.
 **Acceptance:**
 - A single, documented mechanism (environment variable per provider, e.g.
   `OTP_PROVIDER_MODE=mock|real`, `PAYMENT_PROVIDER_MODE=mock|real`,
-  `TELEPHONY_PROVIDER_MODE=mock|real`, `WHATSAPP_PROVIDER_MODE=mock|real`)
-  selects which implementation NestJS's DI container binds to each provider
-  token (`OTP_PROVIDER`, the payment provider token, and the two new ones this
-  phase introduces — name them consistently with the existing ones)
+  `TELEPHONY_PROVIDER_MODE=mock|real`, `WHATSAPP_PROVIDER_MODE=mock|real`,
+  `KYC_PROVIDER_MODE=mock|real`) selects which implementation NestJS's DI
+  container binds to each provider token (`OTP_PROVIDER`, the payment provider
+  token, the existing KYC provider token, and the two new ones this phase
+  introduces — name them consistently with the existing ones)
 - Defaults to `mock` everywhere if the env var is unset, so existing tests and
   local dev keep working untouched
 - Real vendor API keys/secrets are read only from environment variables, never
   committed — per `AGENTS.md` §2 rule 8. Add the new variable names (not
   values) to `.env.example`
-- Document the switch mechanism in `AGENTS.md` §3 or a new short section, so a
-  future agent doesn't reinvent it
+- Document the switch mechanism in `AGENTS.md` §3 (already noted there as of
+  this spec being written — confirm it still matches what you actually build)
 - Test: with the mode env var unset or set to `mock`, the mock provider is
   injected; this is testable by checking which concrete class the DI token
   resolves to, without needing real credentials
@@ -112,6 +117,10 @@ do not quietly adjust the rule to fit the vendor.
 - Idempotent per `AGENTS.md` §2 rule 7 — the same webhook delivered twice must
   not create two queue entries or two onboarding attempts
 - Webhook signature/auth verification against the vendor's spec
+- Confirm with the vendor contract that concurrent-line capacity covers 40
+  agents calling at once (Playbook §7) — if this can't be verified in code,
+  document the confirmation as a manual sign-off item in the gate below
+  rather than skipping it silently
 - Audit logged
 - Test: a duplicate webhook delivery is a no-op; an inbound call with no
   matching existing record creates exactly one new dial-queue entry
@@ -175,7 +184,25 @@ do not quietly adjust the rule to fit the vendor.
 
 ---
 
-### [ ] Task 8 — RBAC and seed data for this phase
+### [ ] Task 8 — Real Aadhaar e-KYC vendor
+
+**Acceptance:**
+- `KycProvider` (Phase 2 Task 7) gets a real implementation against the
+  licensed OVSE vendor Agastya has chosen (Surepass / Signzy / HyperVerge per
+  the Playbook's Tech/Vendor Status), switched per Task 1
+- Re-run the Phase 2 Task 7 "no raw Aadhaar number stored" test
+  (`AGENTS.md` §2 rule 3, §6 Identity) against the real vendor's actual
+  response shape — vendor responses sometimes echo more fields than
+  expected; verify nothing beyond the verification result and vendor
+  reference is ever persisted
+- No change to the `KycProvider` interface shape; adapt the vendor to it
+- Test: a real-vendor KYC response is stored with only the result and
+  reference ID, never a raw Aadhaar number, even if the vendor's raw
+  response includes one
+
+---
+
+### [ ] Task 9 — RBAC and seed data for this phase
 
 **Acceptance:**
 - No RBAC surface changes in this phase (no new roles, no new permission
@@ -183,7 +210,8 @@ do not quietly adjust the rule to fit the vendor.
   real providers wired in, and about seed data for manual QA
 - `npm run seed` extended: at least one of each provider's mock-mode record
   (OTP send, WhatsApp template send, inbound telephony webhook, consent-logged
-  recording) so a reviewer can see the shapes without needing live credentials
+  recording, KYC verification) so a reviewer can see the shapes without
+  needing live credentials
 
 ---
 
@@ -198,6 +226,11 @@ do not quietly adjust the rule to fit the vendor.
 - [ ] A call recording is retained only when consent was logged, by test
 - [ ] A duplicate payment-collection webhook does not double-charge, by test
 - [ ] A duplicate payout webhook does not double-pay, by test
+- [ ] The real KYC vendor's response is stored without ever persisting a raw
+  Aadhaar number, by test
+- [ ] The telephony vendor's concurrent-line capacity for 40 agents is
+  confirmed — either verified in code or explicitly noted as a manual
+  sign-off in the report
 - [ ] No vendor secret or API key appears anywhere in the committed code — spot-checked and noted in the report
 - [ ] All Phase 1–6 gate items still pass
 - [ ] `LESSONS.md` updated
