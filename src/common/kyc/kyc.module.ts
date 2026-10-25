@@ -1,6 +1,7 @@
 import { Global, Module } from '@nestjs/common';
 import { KYC_PROVIDER } from './kyc.interface';
 import { MockKycProvider } from './mock-kyc.provider';
+import { RealKycProvider } from './real-kyc.provider';
 import { KycService } from './kyc.service';
 
 @Global()
@@ -14,6 +15,13 @@ import { KycService } from './kyc.service';
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {
           return new MockKycProvider();
+        }
+        if (
+          providerName === 'real' ||
+          providerName === 'surepass' ||
+          providerName === 'idfy'
+        ) {
+          return new RealKycProvider();
         }
         throw new Error(`Unsupported KYC provider: ${providerName}`);
       },
