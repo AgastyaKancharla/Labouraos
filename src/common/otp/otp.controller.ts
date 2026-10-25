@@ -1,6 +1,8 @@
-import { Body, Controller, Post, UseGuards, BadRequestException } from '@nestjs/common';
+import { Body, Controller, Post, Req, UseGuards, BadRequestException } from '@nestjs/common';
+import { Request } from 'express';
 import { OtpService } from './otp.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { JwtPayload } from '../auth/jwt-payload.interface';
 
 @Controller('otp')
 @UseGuards(JwtAuthGuard)
@@ -8,11 +10,14 @@ export class OtpController {
   constructor(private readonly otpService: OtpService) {}
 
   @Post('send')
-  async sendOtp(@Body() body: { phone: string }) {
+  async sendOtp(
+    @Body() body: { phone: string },
+    @Req() req?: Request & { user?: JwtPayload },
+  ) {
     if (!body || !body.phone) {
       throw new BadRequestException('Phone number is required');
     }
-    const result = await this.otpService.sendOtp(body.phone);
+    const result = await this.otpService.sendOtp(body.phone, req?.user?.sub);
     return {
       success: true,
       requestId: result.requestId,

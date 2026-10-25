@@ -4,9 +4,11 @@ import { MockOtpProvider } from './mock-otp.provider';
 import { RealOtpProvider } from './real-otp.provider';
 import { OtpService } from './otp.service';
 import { OtpController } from './otp.controller';
+import { AuditModule } from '../audit/audit.module';
 
 @Global()
 @Module({
+  imports: [AuditModule],
   controllers: [OtpController],
   providers: [
     {

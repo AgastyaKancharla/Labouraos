@@ -59,7 +59,7 @@ vendor.
 
 ---
 
-### [ ] Task 2 — Real SMS/OTP provider (DLT-compliant)
+### [x] Task 2 — Real SMS/OTP provider (DLT-compliant)
 
 **Acceptance:**
 - A second implementation of `OtpProvider` wired to a real DLT-registered SMS
