@@ -1,6 +1,17 @@
-import { Body, Controller, HttpCode, HttpStatus, Post } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  HttpCode,
+  HttpStatus,
+  Post,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
+import { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, LoginResponseDto } from './dto/login.dto';
+import { AuthThrottlerGuard } from './auth-throttler.guard';
 
 @Controller('auth')
 export class AuthController {
@@ -8,7 +19,17 @@ export class AuthController {
 
   @Post('login')
   @HttpCode(HttpStatus.OK)
-  async login(@Body() loginDto: LoginDto): Promise<LoginResponseDto> {
-    return this.authService.login(loginDto);
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async login(
+    @Body() loginDto: LoginDto,
+    @Req() req: Request,
+  ): Promise<LoginResponseDto> {
+    const ip =
+      (req.headers['x-forwarded-for'] as string) ||
+      req.ip ||
+      req.socket.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.authService.login(loginDto, { ip, userAgent });
   }
 }

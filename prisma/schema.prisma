@@ -178,6 +178,10 @@ model Staff {
   auditLogs         AuditLog[]
   contactAttempts   ContactAttempt[]
   callbackTasks     CallbackTask[]
+  totpSecret        String?
+  totpEnabled       Boolean          @default(false)
+  registeredDeviceId String?
+  sessions          StaffSession[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -308,5 +312,23 @@ model CallbackTask {
   @@index([status])
   @@index([createdAt])
 }
+
+model StaffSession {
+  id          String    @id @default(uuid())
+  staffId     String
+  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tokenHash   String?
+  deviceId    String?
+  ipAddress   String?
+  userAgent   String?
+  revokedAt   DateTime?
+  expiresAt   DateTime
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([staffId])
+  @@index([revokedAt])
+}
+
 
 

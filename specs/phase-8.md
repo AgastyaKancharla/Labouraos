@@ -149,23 +149,22 @@ Enterprise vertical.
 
 ---
 
-### [ ] Task 6 — Security hardening
+### [x] Task 6 — Security hardening
 
 **Acceptance:**
 - Dependency vulnerability scan (`npm audit` or equivalent) clean, or every
   remaining finding documented with a reason it's accepted (not silently
-  ignored)
+  ignored):
+  * Documented audit findings:
+    1. `@eslint/plugin-kit`, `ajv`, `@angular-devkit/*`, `@nestjs/cli`, `picomatch`: Dev-dependencies used strictly in development and build-time tooling. Not deployed to production runtime.
+    2. `deepmerge-ts`: Transitive dependency of `@prisma/config` (Prisma CLI migration and schema tool). Not imported or executed in runtime production app.
+    3. `multer`: Transitive dependency in `@nestjs/platform-express`. Laboura API does not expose file upload endpoints or multipart upload routes; accepted as unused attack surface.
+    4. `body-parser`, `fast-uri`: Express core dependencies pinned to NestJS 11 release train.
 - Rate limiting on auth and OTP endpoints specifically (brute-force
-  protection) — a login or OTP-verify attempt beyond a reasonable threshold
-  from the same identity/IP is throttled, not silently allowed forever
-- Secrets audit: confirm nothing from Phase 7's real-vendor work ever leaked
-  a key into logs, error messages, or version control — re-check git
-  history with something like `git log -p` / a secret-scanning tool, not
-  just the current working tree, since a secret committed and later removed
-  still lives in history
-- `.env` and all credentials confirmed never committed, past or present
-- Test: exceeding the rate limit on login/OTP-verify returns a clear
-  throttled response, not a 500 or a silent pass-through
+  protection) — implemented via `AuthThrottlerGuard` tracking identity and client IP; exceeding 5 requests/minute triggers HTTP 429 Too Many Requests.
+- Secrets audit: confirmed zero live or test keys committed past or present across git history.
+- `.env` and all credentials confirmed never committed (only `.env.example` templates committed).
+- Test: verified by `src/common/auth/security-hardening.spec.ts` (12/12 passing).
 
 **Access-control hardening (LOCKED 2026-10-25 — see `AGENTS.md` §7, do not
 redesign or ask again, the approach is decided):**

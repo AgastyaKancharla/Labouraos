@@ -1,14 +1,17 @@
 import { Body, Controller, Post, Req, UseGuards, BadRequestException } from '@nestjs/common';
 import { Request } from 'express';
+import { Throttle } from '@nestjs/throttler';
 import { OtpService } from './otp.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { AuthThrottlerGuard } from '../auth/auth-throttler.guard';
 
 @Controller('otp')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, AuthThrottlerGuard)
 export class OtpController {
   constructor(private readonly otpService: OtpService) {}
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('send')
   async sendOtp(
     @Body() body: { phone: string },
@@ -24,6 +27,7 @@ export class OtpController {
     };
   }
 
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
   @Post('verify')
   async verifyOtp(@Body() body: { requestId: string; code: string }) {
     if (!body || !body.requestId || !body.code) {

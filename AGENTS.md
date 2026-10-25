@@ -77,6 +77,7 @@ whether tests pass.
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
 | Frontend Consoles | HTML5 / Vanilla TS / CSS SPAs | Admin Dashboard, Call Agent console, Field Agent app served via NestJS |
 | Hosting | Render (LOCKED 2026-10-25) | Web service (API + consoles) + a separate Background Worker service for BullMQ + managed Postgres + managed Redis. Chosen over Vercel because Vercel's serverless model doesn't support BullMQ's always-on worker process. Domain DNS managed via Cloudflare (also fronts Admin Dashboard / Call Agent console with Cloudflare Access, per §7). |
+| Cloudflare Access Gating | Identity-gated office consoles | Gated routes: Admin Dashboard (`/admin`, `/console/admin`) and Call Agent console (`/call-agent`, `/console/call-agent`). Field Agent app (`/field-agent`, `/console/field-agent`) and API routes are explicitly exempt. |
 | Load Testing | Node.js Concurrency Harness / Artillery | Simulates ~40 concurrent staff sessions (20 call agents, 20 field agents) performing realistic mixed traffic |
 
 **Exact versions pinned above.**

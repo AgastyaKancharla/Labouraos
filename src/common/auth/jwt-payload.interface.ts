@@ -5,4 +5,5 @@ export interface JwtPayload {
   code: string;
   area?: string | null;
   teamLeadId?: string | null;
+  sid?: string; // staff session id
 }
