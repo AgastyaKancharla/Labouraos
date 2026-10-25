@@ -64,11 +64,10 @@ export class RealTelephonyProvider implements TelephonyProvider {
     }
 
     // 2. DPDP Act (2023) Mandatory Recording Consent Notice (Phase 7 Task 5)
-    // isConsentLogged is checked before a recorded call's reference is retained;
-    // if consent wasn't logged, the recording reference itself is not persisted (only the fact that the call happened).
-    const isConsentLogged =
-      event.recordingConsent !== false &&
-      Boolean(event.recordingEnabled || event.recordingUrl);
+    // Default is NOT consented. Retention requires an explicit, affirmative consent signal (event.recordingConsent === true).
+    // The mere presence of a recordingUrl does NOT imply consent.
+    // If consent is not affirmatively verified, the recording reference is discarded (null) per DPDP Act §5.
+    const isConsentLogged = event.recordingConsent === true;
 
     let retainedRecordingUrl: string | null = null;
     let consentAuditCode: string | undefined;
@@ -76,7 +75,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
     if (isConsentLogged) {
       retainedRecordingUrl = event.recordingUrl ?? null;
       this.logger.log(
-        `[DPDP NOTICE] Triggered mandatory recording consent announcement for call ${event.callId}`,
+        `[DPDP NOTICE] Affirmative recording consent verified for call ${event.callId}`,
       );
 
       // System or actor logging the DPDP consent
@@ -108,7 +107,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
       }
     } else if (event.recordingUrl) {
       this.logger.warn(
-        `[DPDP ENFORCEMENT] Call ${event.callId} had recordingUrl but consent was not logged. Discarding recording reference per DPDP Act §5.`,
+        `[DPDP ENFORCEMENT] Call ${event.callId} has recordingUrl but affirmative consent was not verified/logged. Discarding recording reference per DPDP Act §5.`,
       );
     }
 

@@ -189,8 +189,8 @@ describe('Telephony Module (Task 4)', () => {
   });
 
   describe('Call Recording & DPDP Act (2023) Consent Notice', () => {
-    it('announces DPDP consent and logs audit event when recording is enabled', async () => {
-      const callId = `call_rec_${Date.now()}`;
+    it('discards recording reference when webhook arrives with recording but no affirmative consent signal', async () => {
+      const callId = `call_no_signal_${Date.now()}`;
       const phone = `+9193333${Date.now().toString().slice(-5)}`;
       const recordingUrl = `https://telephony-storage.laboura.in/recordings/${callId}.mp3`;
 
@@ -201,6 +201,36 @@ describe('Telephony Module (Task 4)', () => {
           From: phone,
           RecordingUrl: recordingUrl,
           recordingEnabled: true,
+          // Note: NO affirmative consent signal provided in webhook payload
+        })
+        .expect(201);
+
+      // Bare recording must NOT be treated as consent
+      expect(res.body.consentAnnounced).toBe(false);
+      expect(res.body.consentAuditLogId).toBeUndefined();
+
+      // Verify CallbackTask: recording reference is discarded (null) per DPDP Act §5
+      const task = await prisma.callbackTask.findUnique({
+        where: { callId },
+      });
+      expect(task).toBeDefined();
+      expect(task?.recordingUrl).toBeNull();
+      expect(task?.recordingConsent).toBe(false);
+    });
+
+    it('retains recording reference and logs DPDP consent only when an affirmative consent signal is present', async () => {
+      const callId = `call_consented_${Date.now()}`;
+      const phone = `+9193334${Date.now().toString().slice(-5)}`;
+      const recordingUrl = `https://telephony-storage.laboura.in/recordings/${callId}.mp3`;
+
+      const res = await request(app.getHttpServer())
+        .post('/telephony/inbound')
+        .send({
+          CallSid: callId,
+          From: phone,
+          RecordingUrl: recordingUrl,
+          recordingEnabled: true,
+          recordingConsent: true, // Affirmative consent-confirmed signal
         })
         .expect(201);
 
@@ -218,7 +248,7 @@ describe('Telephony Module (Task 4)', () => {
       expect(details.recordingUrl).toBe(recordingUrl);
       expect(details.consented).toBe(true);
 
-      // Verify recording retention rule: no expiry date column or automatic deletion scheduled
+      // Verify CallbackTask retains recordingUrl
       const task = await prisma.callbackTask.findUnique({
         where: { callId },
       });
@@ -228,7 +258,7 @@ describe('Telephony Module (Task 4)', () => {
 
     it('discards recording reference if consent was explicitly not logged (DPDP Act §5 enforcement)', async () => {
       const callId = `call_no_consent_${Date.now()}`;
-      const phone = `+9193334${Date.now().toString().slice(-5)}`;
+      const phone = `+9193335${Date.now().toString().slice(-5)}`;
       const recordingUrl = `https://telephony-storage.laboura.in/recordings/${callId}.mp3`;
 
       const telephonyProvider = app.get(TELEPHONY_PROVIDER);

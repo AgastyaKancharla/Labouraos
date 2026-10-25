@@ -231,9 +231,8 @@ vendor.
 - [x] A duplicate payout webhook does not double-pay, by test
 - [x] The real KYC vendor's response is stored without ever persisting a raw
   Aadhaar number, by test
-- [x] The telephony vendor's concurrent-line capacity for 40 agents is
-  confirmed — either verified in code or explicitly noted as a manual
-  sign-off in the report
+- [ ] The telephony vendor's concurrent-line capacity for 40 agents is
+  UNVERIFIED / PENDING a real vendor contract (manual sign-off required once vendor contract is finalized)
 - [x] No vendor secret or API key appears anywhere in the committed code — spot-checked and noted in the report
 - [x] All Phase 1–6 gate items still pass
 - [x] `LESSONS.md` updated

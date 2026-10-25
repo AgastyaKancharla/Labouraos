@@ -31,9 +31,10 @@ export class MockTelephonyProvider implements TelephonyProvider {
       };
     }
 
-    const consentAnnounced = Boolean(
-      event.recordingEnabled || event.recordingUrl,
-    );
+    const isConsentLogged = event.recordingConsent === true;
+    const retainedRecordingUrl = isConsentLogged
+      ? (event.recordingUrl ?? null)
+      : null;
 
     // Look up caller in JobSeeker pool by phone
     const candidate = await this.prisma.jobSeeker.findFirst({
@@ -53,8 +54,8 @@ export class MockTelephonyProvider implements TelephonyProvider {
         jobSeekerId: candidate?.id ?? null,
         virtualNumber: event.virtualNumber ?? '18001234567',
         status: 'pending',
-        recordingUrl: event.recordingUrl ?? null,
-        recordingConsent: consentAnnounced,
+        recordingUrl: retainedRecordingUrl,
+        recordingConsent: isConsentLogged,
       },
     });
 
@@ -65,7 +66,7 @@ export class MockTelephonyProvider implements TelephonyProvider {
     return {
       callbackTaskId: task.id,
       isDuplicate: false,
-      consentAnnounced,
+      consentAnnounced: isConsentLogged,
     };
   }
 

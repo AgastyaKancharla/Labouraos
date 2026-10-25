@@ -73,7 +73,7 @@ Format:
 **Fix:** In `RealKycProvider`, explicitly construct the return object with only `{ status, vendorReference }`, and never persist raw vendor response payloads into database columns or audit logs.
 
 ## DPDP Act (2023) §5 consent check before call recording retention
-**Symptom:** Calls recorded without active consent verification created legal compliance liabilities under DPDP.
-**Cause:** When third-party telephony webhooks notify the backend of completed recordings, consent may not have been granted or logged by the caller.
-**Fix:** Check `isConsentLogged` before persisting `recordingUrl`. If consent was not verified or explicitly denied, discard the `recordingUrl` (store as `null`) while retaining the call record for auditability.
+**Symptom:** Inbound calls with recordings were automatically granted consent and retained even when no affirmative consent was recorded.
+**Cause:** Checking `event.recordingConsent !== false` inverted the legal default. In real vendor webhooks, `recordingConsent` is absent/undefined; treating absence as non-denial allowed bare recordings to manufacture `dpdp_consent.recorded` audit logs and retain recordings without consent.
+**Fix:** Enforce an affirmative verification rule: `const isConsentLogged = event.recordingConsent === true`. Default is strictly unconsented. Discard `recordingUrl` (store as `null`) whenever an affirmative consent-confirmed signal is absent, and only retain recording URLs when explicit consent is present.
 

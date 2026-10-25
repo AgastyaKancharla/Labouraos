@@ -56,6 +56,11 @@ export class TelephonyService {
       payload.record === 'true' ||
       Boolean(recordingUrl);
 
+    const recordingConsent =
+      payload.recordingConsent === true ||
+      payload.consent_confirmed === true ||
+      payload.consent === 'true';
+
     const event: InboundCallEvent = {
       callId,
       callerPhone,
@@ -63,6 +68,7 @@ export class TelephonyService {
       timestamp: new Date(),
       recordingUrl,
       recordingEnabled,
+      recordingConsent,
     };
 
     return this.provider.handleInboundCall(event);
