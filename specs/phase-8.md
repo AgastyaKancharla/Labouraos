@@ -193,6 +193,36 @@ Enterprise vertical.
 
 ---
 
+### [ ] Task 9 — Staff account management (closes a real gap)
+
+**Acceptance:**
+- This closes a gap found while reviewing Phase 7: there is currently no way
+  through the running API to create a staff account — every `Staff` record
+  that exists was created by `npm run seed`. If Laboura hires a new call
+  agent or field agent today, nobody can actually add them without hand-
+  editing the database.
+- `POST /staff` (ceo, manager only) creates a new staff account: name, email,
+  role, area (for field agents), teamLeadId (where applicable). Password is
+  set via a one-time invite flow, not sent in plaintext in the request/
+  response — generate a one-time setup token, return/log it (not the
+  password), and build a `POST /staff/accept-invite` (or similar) endpoint
+  that lets the new staff member set their own password using that token
+  before they can log in. Do not have the CEO/Manager set the new hire's
+  password directly.
+- `GET /staff` (ceo, manager) lists staff, filterable by role/area/team —
+  reuse existing masking conventions, no new PII exposure beyond what the
+  RBAC table in `AGENTS.md` §7 already allows CEO/Manager to see
+- A way to deactivate a staff account (ceo, manager only) so an exited
+  employee can no longer log in — this does not delete the `Staff` record
+  (per `AGENTS.md` §6 Data retention) and does not affect any of their past
+  audit-logged actions or attributed work
+- Audit logged: staff creation, invite acceptance, deactivation
+- Test: a newly created staff account cannot log in until the invite is
+  accepted; a deactivated staff account's valid credentials are rejected at
+  login; a non-CEO/Manager role gets 403 on all of these endpoints
+
+---
+
 ## Phase 8 Gate
 
 - [ ] Load test report exists and is reviewed; any fixed bottleneck is
@@ -216,6 +246,8 @@ Enterprise vertical.
 - [ ] Every item on the Playbook's §8 Go-Live Checklist is either
   done-with-evidence or explicitly flagged as a remaining blocker, in the
   report
+- [ ] A new staff account cannot log in before accepting its invite, and a
+  deactivated staff account's credentials are rejected at login, by test
 - [ ] All Phase 1–7 gate items still pass, confirmed in one pass on current
   `main`
 - [ ] `LESSONS.md` updated
