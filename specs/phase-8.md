@@ -158,6 +158,67 @@ Enterprise vertical.
 - Test: exceeding the rate limit on login/OTP-verify returns a clear
   throttled response, not a 500 or a silent pass-through
 
+**Access-control hardening (LOCKED 2026-10-25 — see `AGENTS.md` §7, do not
+redesign or ask again, the approach is decided):**
+- **Mandatory 2FA on every staff login, all four roles — via TOTP
+  (RFC 6238), not SMS OTP.** Staff set up an authenticator app (Google
+  Authenticator, Microsoft Authenticator, Authy, or similar) once, by
+  scanning a QR code / entering a secret generated at account
+  creation/first login. From then on, login requires password + the
+  current 6-digit code from that app before a token is issued. This is a
+  deliberately separate mechanism from the existing SMS-based
+  `OtpProvider` (Phase 2/7) — that one stays as-is for job-seeker/referral/
+  business-facing flows (no app to install, no setup friction expected of
+  them). Do not reuse `OtpProvider` for staff 2FA and do not route staff
+  codes through SMS — TOTP has no SIM-swap exposure and no per-message
+  vendor cost, which matters at a ~40-person staff scale. Use a standard,
+  audited TOTP library (e.g. `otplib`) rather than a hand-rolled
+  implementation; store only the TOTP secret, never OTP codes themselves.
+- **Short-lived access tokens with a visible, revocable session list.**
+  `GET /staff/sessions` (self, plus ceo/manager can see any staff member's)
+  lists active sessions with device/login metadata; `POST /staff/sessions/
+  :id/revoke` (self, or ceo/manager for anyone) immediately invalidates that
+  session's token. This is the mechanism Task 9's staff deactivation should
+  also call when a staff member is deactivated — don't build two separate
+  "kick someone out" paths. TOTP (above) and this session control solve
+  different problems and are both required, not alternatives: TOTP proves
+  who is logging in; short sessions + revocation limit how long a token
+  stays valid afterward and let a manager cut access off immediately.
+- **Device binding for the Field Agent app specifically.** The Field Agent
+  app is distributed via the Play Store — there is no way to control or
+  enroll the physical device (confirmed with Agastya; do not attempt an
+  MDM/managed-device approach for it). Instead: the first successful login
+  from a device registers that device's identifier against the staff
+  account. A login attempt from an *unrecognized* device for an account that
+  already has a registered device requires a step-up TOTP code (same
+  authenticator app, re-entered) before a token is issued — this limits the
+  damage of a leaked password without needing any control over the device
+  itself. Admin Dashboard and Call Agent console logins (browser-based, no
+  stable device identifier) are exempt from device binding — they're
+  covered by the Cloudflare Access gateway below instead.
+- **Cloudflare Access in front of the Admin Dashboard and Call Agent
+  console only** (not the Field Agent app's API routes, which must stay
+  reachable from field agents' own phones on any network). This gates by
+  *identity* — a request with no valid company login never reaches the
+  app's own login page at all — not by device or browser; a device-posture
+  check would require Cloudflare's WARP client on every machine, which is
+  the managed-device approach already ruled out below. Free tier covers up
+  to 50 users, sufficient for this staff size. This is the one new external
+  service this phase is explicitly pre-approved to add — per `AGENTS.md`
+  §11's "ask first" rule for new external services, Agastya has already
+  approved this one, do not ask again. Document the specific routes gated
+  in `AGENTS.md` §3.
+- **Explicitly out of scope — do not build:** MDM/Android Enterprise
+  managed-device enrollment (ruled out for the Field Agent app — Play
+  Store distribution means no control over the physical device, confirmed
+  with Agastya); IP allowlisting (field agents need access from anywhere).
+- Test: a login from a new, unrecognized device on a Field Agent account
+  requires a step-up TOTP code before issuing a token; revoking a session
+  via either endpoint above immediately invalidates that token on the very
+  next request; 2FA via TOTP is enforced for all four roles, by test; a
+  correct password with an incorrect/missing TOTP code does not issue a
+  token, by test
+
 ---
 
 ### [ ] Task 7 — Backup and disaster recovery
@@ -193,6 +254,36 @@ Enterprise vertical.
 
 ---
 
+### [ ] Task 9 — Staff account management (closes a real gap)
+
+**Acceptance:**
+- This closes a gap found while reviewing Phase 7: there is currently no way
+  through the running API to create a staff account — every `Staff` record
+  that exists was created by `npm run seed`. If Laboura hires a new call
+  agent or field agent today, nobody can actually add them without hand-
+  editing the database.
+- `POST /staff` (ceo, manager only) creates a new staff account: name, email,
+  role, area (for field agents), teamLeadId (where applicable). Password is
+  set via a one-time invite flow, not sent in plaintext in the request/
+  response — generate a one-time setup token, return/log it (not the
+  password), and build a `POST /staff/accept-invite` (or similar) endpoint
+  that lets the new staff member set their own password using that token
+  before they can log in. Do not have the CEO/Manager set the new hire's
+  password directly.
+- `GET /staff` (ceo, manager) lists staff, filterable by role/area/team —
+  reuse existing masking conventions, no new PII exposure beyond what the
+  RBAC table in `AGENTS.md` §7 already allows CEO/Manager to see
+- A way to deactivate a staff account (ceo, manager only) so an exited
+  employee can no longer log in — this does not delete the `Staff` record
+  (per `AGENTS.md` §6 Data retention) and does not affect any of their past
+  audit-logged actions or attributed work
+- Audit logged: staff creation, invite acceptance, deactivation
+- Test: a newly created staff account cannot log in until the invite is
+  accepted; a deactivated staff account's valid credentials are rejected at
+  login; a non-CEO/Manager role gets 403 on all of these endpoints
+
+---
+
 ## Phase 8 Gate
 
 - [ ] Load test report exists and is reviewed; any fixed bottleneck is
@@ -211,11 +302,24 @@ Enterprise vertical.
 - [ ] Dependency vulnerability scan is clean or every exception is
   documented and accepted
 - [ ] Exceeding the login/OTP rate limit is throttled cleanly, by test
+- [ ] 2FA via TOTP (not SMS OTP) is enforced on login for all four staff
+  roles, by test
+- [ ] A login from an unrecognized device on a Field Agent account requires
+  a step-up TOTP code before issuing a token, by test
+- [ ] Revoking a session immediately invalidates that session's token on
+  the next request, by test
+- [ ] Cloudflare Access gates the Admin Dashboard and Call Agent console
+  specifically, and the Field Agent app's routes remain reachable without
+  it, confirmed and noted in the report
+- [ ] No MDM/managed-device enrollment and no IP allowlisting were built
+  anywhere in this phase, confirmed in the report
 - [ ] A real backup has been restored successfully at least once, with a
   documented sanity check, noted in the report
 - [ ] Every item on the Playbook's §8 Go-Live Checklist is either
   done-with-evidence or explicitly flagged as a remaining blocker, in the
   report
+- [ ] A new staff account cannot log in before accepting its invite, and a
+  deactivated staff account's credentials are rejected at login, by test
 - [ ] All Phase 1–7 gate items still pass, confirmed in one pass on current
   `main`
 - [ ] `LESSONS.md` updated
