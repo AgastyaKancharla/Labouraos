@@ -63,6 +63,13 @@ export class AuthService {
       throw new UnauthorizedException('Invalid email or password');
     }
 
+    // Checked after the password so account state is never revealed to someone
+    // who does not hold valid credentials. A pending invite cannot reach here:
+    // its placeholder password hash is unguessable.
+    if (staff.status !== 'active') {
+      throw new UnauthorizedException('Account is not active');
+    }
+
     // 1. Mandatory 2FA via TOTP (RFC 6238) for all staff roles when configured
     if (staff.totpEnabled && staff.totpSecret) {
       if (!loginDto.totpCode) {
@@ -249,6 +256,19 @@ export class AuthService {
       expiresAt: s.expiresAt,
       isCurrent: s.id === currentSessionId,
     }));
+  }
+
+  /**
+   * Immediately invalidates every live session of a staff member. Uses the same
+   * `revokedAt` mechanism that JwtStrategy checks on every request, so staff
+   * deactivation and manual session revocation share one "kick out" path.
+   */
+  async revokeAllSessionsForStaff(staffId: string): Promise<number> {
+    const result = await this.prisma.staffSession.updateMany({
+      where: { staffId, revokedAt: null },
+      data: { revokedAt: new Date() },
+    });
+    return result.count;
   }
 
   async revokeSession(

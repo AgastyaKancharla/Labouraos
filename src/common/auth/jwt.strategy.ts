@@ -24,6 +24,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (payload.sid) {
       const session = await this.prisma.staffSession.findUnique({
         where: { id: payload.sid },
+        include: { staff: { select: { status: true } } },
       });
 
       if (!session) {
@@ -32,6 +33,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
       if (session.revokedAt) {
         throw new UnauthorizedException('Session has been revoked');
+      }
+
+      // Deactivation also revokes sessions; this closes the window where a
+      // session was created just as the account was being deactivated.
+      if (session.staff.status !== 'active') {
+        throw new UnauthorizedException('Account is not active');
       }
 
       if (session.expiresAt && session.expiresAt < new Date()) {

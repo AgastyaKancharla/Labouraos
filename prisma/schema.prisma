@@ -181,6 +181,10 @@ model Staff {
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   registeredDeviceId String?
+  status            String           @default("active") // pending_invite, active, deactivated
+  inviteTokenHash   String?          @unique // SHA-256 of the one-time invite token; the raw token is never stored
+  inviteExpiresAt   DateTime?
+  deactivatedAt     DateTime?
   sessions          StaffSession[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt

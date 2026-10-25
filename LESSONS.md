@@ -99,3 +99,13 @@ Format:
 **Symptom:** `revoking a session ... invalidates token` failed once in CI with 401 on the first authenticated probe; the same commit passed on re-run and always passed locally.
 **Cause:** Most likely a TOTP step-boundary race: `authenticator.check` has a zero-step window and login does a bcrypt compare between the spec generating a code and the server verifying it, so a code minted at the very end of a 30s step can expire mid-request. The spec also never asserted the login status, so the failure surfaced one call later as a confusing 401.
 **Fix:** The spec's `stableTotp` helper waits for a fresh step when fewer than 5s remain, and the revoke test now asserts the login returned 200. Production TOTP verification is unchanged (still strict, no drift window).
+
+## Staff creation would collide with seeded codes and mask itself as "duplicate email"
+**Symptom:** The first `POST /staff` for a call/field agent would have been handed `CA-00001`/`FA-00001`, which the seed already owns, and the resulting Prisma `P2002` is easy to misreport as a duplicate email.
+**Cause:** Staff codes come from per-prefix sequences, but `IdService.syncAllSequences` only advanced sequences for Business/JobSeeker/etc., not Staff, and other writers (seed, specs) insert hand-picked codes ahead of the sequence.
+**Fix:** `syncAllSequences` now advances the CEO/MGR/TL/CA/FA/FIN sequences past existing `Staff.code` values, and `StaffService` retries with a fresh code only when the `P2002` target is `code` (a `email` target is a real 409; anything else is rethrown). A spec pre-occupies the next sequence value to cover it.
+
+## prisma migrate dev refused to run: local DB had a migration this branch did not
+**Symptom:** `prisma migrate dev` reported "applied to the database but missing from the local migrations directory" and offered `migrate reset`.
+**Cause:** An earlier, never-pushed attempt at the same task had applied its own migration (with a plaintext `inviteToken` column) to the local dev database; the branch was then rebuilt from `main` without it.
+**Fix:** Did not reset the database. Dropped only the four columns that attempt added and deleted its `_prisma_migrations` row inside one transaction, then generated the new migration with `prisma migrate diff --from-migrations ... --shadow-database-url <throwaway db> --script` (migrate dev needs a TTY) and applied it with `migrate deploy`.
