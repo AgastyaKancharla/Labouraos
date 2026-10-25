@@ -2,6 +2,7 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { MockOtpProvider } from './mock-otp.provider';
 import { OTP_PROVIDER, OtpProvider } from './otp.interface';
 import { OtpModule } from './otp.module';
+import { AuthModule } from '../auth/auth.module';
 import { OtpService } from './otp.service';
 
 describe('OTP Provider and Mock Implementation', () => {
@@ -104,7 +105,7 @@ describe('OTP Provider and Mock Implementation', () => {
       delete process.env.OTP_PROVIDER;
 
       const moduleRef: TestingModule = await Test.createTestingModule({
-        imports: [OtpModule],
+        imports: [AuthModule, OtpModule],
       }).compile();
 
       const provider = moduleRef.get<OtpProvider>(OTP_PROVIDER);
@@ -118,7 +119,7 @@ describe('OTP Provider and Mock Implementation', () => {
       process.env.OTP_PROVIDER = 'mock';
 
       const moduleRef: TestingModule = await Test.createTestingModule({
-        imports: [OtpModule],
+        imports: [AuthModule, OtpModule],
       }).compile();
 
       const provider = moduleRef.get<OtpProvider>(OTP_PROVIDER);
@@ -130,7 +131,7 @@ describe('OTP Provider and Mock Implementation', () => {
 
       await expect(
         Test.createTestingModule({
-          imports: [OtpModule],
+          imports: [AuthModule, OtpModule],
         }).compile(),
       ).rejects.toThrow('Unsupported OTP provider: unknown_provider');
     });

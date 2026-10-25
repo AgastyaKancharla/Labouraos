@@ -3,6 +3,7 @@ import { JwtModule, JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
 import { AuthService } from './auth.service';
+import { TotpService } from './totp.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from './jwt-payload.interface';
 
@@ -27,6 +28,7 @@ describe('Staff Authentication', () => {
       ],
       providers: [
         AuthService,
+        TotpService,
         {
           provide: PrismaService,
           useValue: prisma,

@@ -3,6 +3,7 @@ import { OTP_PROVIDER } from './otp/otp.interface';
 import { MockOtpProvider } from './otp/mock-otp.provider';
 import { RealOtpProvider } from './otp/real-otp.provider';
 import { OtpModule } from './otp/otp.module';
+import { AuthModule } from './auth/auth.module';
 
 import { PAYMENT_PROVIDER } from '../modules/payment/payment-provider.interface';
 import { MockPaymentProvider } from '../modules/payment/mock-payment.provider';
@@ -57,6 +58,7 @@ describe('Provider Switching and Config (Task 1)', () => {
           PrismaModule,
           AuditModule,
           IdModule,
+          AuthModule,
           OtpModule,
           PaymentModule,
           KycModule,
@@ -111,6 +113,7 @@ describe('Provider Switching and Config (Task 1)', () => {
           PrismaModule,
           AuditModule,
           IdModule,
+          AuthModule,
           OtpModule,
           PaymentModule,
           KycModule,

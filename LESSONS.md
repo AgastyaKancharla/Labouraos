@@ -89,3 +89,8 @@ Format:
 
 
 
+
+## CI red on main after adding global throttling, TOTP and backup script
+**Symptom:** `npm test` passed locally but CI failed 20 tests across 5 suites: "Nest can't resolve dependencies of the AuthThrottlerGuard (?, ...THROTTLER:MODULE_OPTIONS...)", "Nest can't resolve dependencies of the AuthService (PrismaService, JwtService, ?, AuditService)", and `pg_dump: database "laboura_dev" does not exist`.
+**Cause:** (1) `OtpModule`'s controller uses `AuthThrottlerGuard`, whose `ThrottlerModule` lives in the `@Global()` `AuthModule`; specs that built `OtpModule` alone had no throttler options. (2) `AuthService` gained a `TotpService` dependency that `auth.spec.ts` did not provide. (3) `scripts/backup.sh` hardcoded `laboura_dev`, which exists locally but not in CI (`laboura_test`); the CI runner's default `pg_dump` is also older than the `postgres:17` service.
+**Fix:** Import `AuthModule` in the specs that build `OtpModule`; provide `TotpService` in `auth.spec.ts`; `backup.sh` derives the database name from `DATABASE_URL` when `DB_NAME` is unset; the workflow installs the PostgreSQL 17 client.

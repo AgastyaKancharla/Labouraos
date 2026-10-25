@@ -7,6 +7,12 @@ set -euo pipefail
 # ==============================================================================
 
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
+# DB_NAME wins; otherwise take the database from DATABASE_URL (so CI's
+# laboura_test is backed up, not a hardcoded dev name); finally laboura_dev.
+if [ -z "${DB_NAME:-}" ] && [ -n "${DATABASE_URL:-}" ]; then
+  DB_NAME="${DATABASE_URL##*/}"
+  DB_NAME="${DB_NAME%%\?*}"
+fi
 DB_NAME="${DB_NAME:-laboura_dev}"
 DB_USER="${DB_USER:-postgres}"
 DB_HOST="${DB_HOST:-localhost}"

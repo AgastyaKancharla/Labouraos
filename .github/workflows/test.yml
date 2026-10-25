@@ -48,6 +48,15 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # backup-restore.spec.ts shells out to pg_dump/psql; the client must be
+      # at least as new as the postgres:17 service or pg_dump refuses to run.
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
+          echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
+
       - name: Deploy database migrations
         env:
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
