@@ -29,7 +29,7 @@ Enterprise vertical.
 
 ## Tasks
 
-### [ ] Task 1 — Load and concurrency testing at target headcount
+### [x] Task 1 — Load and concurrency testing at target headcount
 
 **Acceptance:**
 - A load-test script (k6, Artillery, or similar — document the choice in

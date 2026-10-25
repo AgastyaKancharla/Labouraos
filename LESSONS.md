@@ -77,3 +77,9 @@ Format:
 **Cause:** Checking `event.recordingConsent !== false` inverted the legal default. In real vendor webhooks, `recordingConsent` is absent/undefined; treating absence as non-denial allowed bare recordings to manufacture `dpdp_consent.recorded` audit logs and retain recordings without consent.
 **Fix:** Enforce an affirmative verification rule: `const isConsentLogged = event.recordingConsent === true`. Default is strictly unconsented. Discard `recordingUrl` (store as `null`) whenever an affirmative consent-confirmed signal is absent, and only retain recording URLs when explicit consent is present.
 
+## Concurrent load testing harness teardown & connection pool sizing
+**Symptom:** Running 40 concurrent staff sessions caused `ECONNRESET` or high query queue latencies (>10s), while subsequent test suites failed on un-isolated payment codes (`PAY-LOAD-XXXXX`) or stale audit logs.
+**Cause:** 1) On 2-core hosts, Prisma's connection pool defaults to 5 connections (`num_cpus * 2 + 1`), creating severe queueing under 40 simultaneous sessions. 2) Supertest against in-memory HTTP servers without bound TCP sockets resets under burst socket exhaustion. 3) Deleting parent entities in `afterAll` does not delete `AuditLog` rows whose `actorId` is an unconstrained string, leaving stale audit logs that cause subsequent tests without `orderBy: { createdAt: 'desc' }` to inspect outdated records.
+**Fix:** 1) Set `connection_limit=30` in `DATABASE_URL`. 2) Bind application to ephemeral port (`app.listen(0)`) and target real TCP socket (`request(baseUrl)`). 3) In load test teardowns, explicitly delete created `AuditLog` rows (`where: { actorId: { in: createdStaffIds } }`) alongside payments and staff, and use `idService.generateCode('payment')` for test payments.
+
+

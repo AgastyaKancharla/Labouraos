@@ -76,6 +76,7 @@ whether tests pass.
 | CI | GitHub Actions | `.github/workflows/test.yml` |
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
 | Frontend Consoles | HTML5 / Vanilla TS / CSS SPAs | Admin Dashboard, Call Agent console, Field Agent app served via NestJS |
+| Load Testing | Node.js Concurrency Harness / Artillery | Simulates ~40 concurrent staff sessions (20 call agents, 20 field agents) performing realistic mixed traffic |
 
 **Exact versions pinned above.**
 Do not leave version ranges like `^11.0.0` in this file.

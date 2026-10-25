@@ -201,6 +201,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         entityCode: res.body.code,
         action: 'vacancy.created',
       },
+      orderBy: { createdAt: 'desc' },
     });
     expect(audit).toBeDefined();
     expect(audit?.actorId).toBe(faKoramangalaId);
