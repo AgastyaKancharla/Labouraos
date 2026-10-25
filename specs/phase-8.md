@@ -229,7 +229,7 @@ redesign or ask again, the approach is decided):**
 
 ---
 
-### [ ] Task 7 — Backup and disaster recovery
+### [x] Task 7 — Backup and disaster recovery
 
 **Acceptance:**
 - Automated database backups on a defined, documented schedule

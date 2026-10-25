@@ -28,3 +28,6 @@ Thumbs.db
 
 # Scratch / temp
 /scratch
+/backups
+*.sql.gz
+*.sql.gz.sha256
