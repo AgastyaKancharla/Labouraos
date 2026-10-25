@@ -19,9 +19,11 @@ import { PricingModule } from './modules/pricing/pricing.module';
 import { ConsoleModule } from './modules/console/console.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { WhatsAppModule } from './common/whatsapp/whatsapp.module';
+import { ObservabilityModule } from './common/observability/observability.module';
 
 @Module({
   imports: [
+    ObservabilityModule,
     PrismaModule,
     IdModule,
     AuthModule,

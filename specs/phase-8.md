@@ -133,7 +133,7 @@ Enterprise vertical.
 
 ---
 
-### [ ] Task 5 — Observability
+### [x] Task 5 — Observability
 
 **Acceptance:**
 - Structured logging (not `console.log`) across all modules, with a request

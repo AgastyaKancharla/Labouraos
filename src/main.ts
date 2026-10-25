@@ -1,8 +1,18 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
+import { StructuredLogger } from './common/observability/structured-logger.service';
+import { GlobalExceptionFilter } from './common/observability/global-exception.filter';
+import { AlertService } from './common/observability/alert.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, {
+    bufferLogs: true,
+  });
+  const logger = app.get(StructuredLogger);
+  app.useLogger(logger);
+  const alertService = app.get(AlertService);
+  app.useGlobalFilters(new GlobalExceptionFilter(alertService));
+
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
 }

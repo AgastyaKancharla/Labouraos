@@ -14,6 +14,11 @@ import {
   WhatsAppProvider,
 } from '../common/whatsapp/whatsapp.interface';
 import { AuditService } from '../common/audit/audit.service';
+import {
+  getRequestId,
+  runWithRequestId,
+} from '../common/observability/request-context';
+import { StructuredLogger } from '../common/observability/structured-logger.service';
 
 export const NO_PICKUP_EVALUATION_QUEUE = 'no-pickup-evaluation';
 export const NO_PICKUP_EVALUATION_JOB = 'daily-no-pickup-evaluation';
@@ -27,6 +32,7 @@ export interface EvaluationResult {
 @Injectable()
 export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(NoPickupEvaluationJob.name);
+  private readonly structuredLogger = new StructuredLogger(NoPickupEvaluationJob.name);
   private queue: Queue | null = null;
   private worker: Worker | null = null;
 
@@ -74,7 +80,17 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         NO_PICKUP_EVALUATION_QUEUE,
-        async () => {
+        async (job) => {
+          const jobRequestId = (job.data?.requestId as string) || undefined;
+          if (jobRequestId) {
+            return await runWithRequestId(jobRequestId, async () => {
+              this.structuredLogger.log(
+                `BullMQ processing job ${job.name} (id=${job.id})`,
+                NoPickupEvaluationJob.name,
+              );
+              return await this.evaluateNoPickups();
+            });
+          }
           return await this.evaluateNoPickups();
         },
         {
@@ -100,9 +116,12 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async triggerJob(): Promise<void> {
+  async triggerJob(requestId?: string): Promise<void> {
     const queue = this.getQueue();
-    await queue.add(NO_PICKUP_EVALUATION_JOB, {});
+    const effectiveRequestId = requestId || getRequestId();
+    await queue.add(NO_PICKUP_EVALUATION_JOB, {
+      requestId: effectiveRequestId,
+    });
   }
 
   /**
@@ -115,6 +134,11 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
    * because qualifying contact attempts are linked to hitId upon recording.
    */
   async evaluateNoPickups(): Promise<EvaluationResult> {
+    this.structuredLogger.log(
+      'Executing evaluateNoPickups sweep',
+      NoPickupEvaluationJob.name,
+    );
+
     const activeJobSeekers = await this.prisma.jobSeeker.findMany({
       where: { status: 'active' },
       select: {
