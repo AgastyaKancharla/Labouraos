@@ -12,7 +12,8 @@ import { OtpController } from './otp.controller';
     {
       provide: OTP_PROVIDER,
       useFactory: () => {
-        const rawProvider = process.env.OTP_PROVIDER;
+        const rawProvider =
+          process.env.OTP_PROVIDER_MODE || process.env.OTP_PROVIDER;
         const providerName =
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {

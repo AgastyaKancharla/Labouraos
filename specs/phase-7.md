@@ -36,7 +36,7 @@ vendor.
 
 ## Tasks
 
-### [ ] Task 1 — Provider switching, config and secrets
+### [x] Task 1 — Provider switching, config and secrets
 
 **Acceptance:**
 - A single, documented mechanism (environment variable per provider, e.g.

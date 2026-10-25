@@ -15,7 +15,8 @@ import { IdModule } from '../../common/id/id.module';
     {
       provide: PAYMENT_PROVIDER,
       useFactory: () => {
-        const rawProvider = process.env.PAYMENT_PROVIDER;
+        const rawProvider =
+          process.env.PAYMENT_PROVIDER_MODE || process.env.PAYMENT_PROVIDER;
         const providerName =
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {

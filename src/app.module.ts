@@ -18,6 +18,7 @@ import { PlacementModule } from './modules/placement/placement.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { ConsoleModule } from './modules/console/console.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
+import { WhatsAppModule } from './common/whatsapp/whatsapp.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { TelephonyModule } from './modules/telephony/telephony.module';
     AuditModule,
     OtpModule,
     KycModule,
+    WhatsAppModule,
     JobSeekerModule,
     ReferralModule,
     PaymentModule,
