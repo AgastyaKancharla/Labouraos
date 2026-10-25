@@ -1,12 +1,19 @@
 import {
+  Inject,
   Injectable,
   Logger,
   OnModuleDestroy,
   OnModuleInit,
+  Optional,
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
+import {
+  WHATSAPP_PROVIDER,
+  WhatsAppProvider,
+} from '../common/whatsapp/whatsapp.interface';
+import { AuditService } from '../common/audit/audit.service';
 
 export const NO_PICKUP_EVALUATION_QUEUE = 'no-pickup-evaluation';
 export const NO_PICKUP_EVALUATION_JOB = 'daily-no-pickup-evaluation';
@@ -26,6 +33,11 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jobSeekerService: JobSeekerService,
+    @Optional()
+    @Inject(WHATSAPP_PROVIDER)
+    private readonly whatsAppProvider?: WhatsAppProvider,
+    @Optional()
+    private readonly auditService?: AuditService,
   ) {}
 
   get redisConnection() {
@@ -105,7 +117,13 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
   async evaluateNoPickups(): Promise<EvaluationResult> {
     const activeJobSeekers = await this.prisma.jobSeeker.findMany({
       where: { status: 'active' },
-      select: { id: true, code: true },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        phone: true,
+        tradeSkill: true,
+      },
       orderBy: { createdAt: 'asc' },
     });
 
@@ -113,6 +131,91 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     const hitJobSeekerIds: string[] = [];
 
     for (const js of activeJobSeekers) {
+      // If candidate has AM and PM no-pickup calls on a day but missing the WhatsApp leg,
+      // dispatch automated WhatsApp message through WhatsAppProvider
+      if (this.whatsAppProvider) {
+        const attempts = await this.prisma.contactAttempt.findMany({
+          where: { jobSeekerId: js.id, hitId: null },
+          orderBy: { attemptedAt: 'asc' },
+        });
+
+        const byDay: Record<string, typeof attempts> = {};
+        for (const att of attempts) {
+          const dateKey = new Date(att.attemptedAt).toLocaleDateString('en-CA', {
+            timeZone: 'Asia/Kolkata',
+          });
+          if (!byDay[dateKey]) {
+            byDay[dateKey] = [];
+          }
+          byDay[dateKey].push(att);
+        }
+
+        for (const [, dayAttempts] of Object.entries(byDay)) {
+          const amCall = dayAttempts.find(
+            (a) =>
+              a.channel === 'call' &&
+              a.timeOfDay === 'am' &&
+              a.outcome === 'no_pickup',
+          );
+          const pmCall = dayAttempts.find(
+            (a) =>
+              a.channel === 'call' &&
+              a.timeOfDay === 'pm' &&
+              a.outcome === 'no_pickup',
+          );
+          const msgAttempt = dayAttempts.find(
+            (a) => a.channel === 'whatsapp' || a.channel === 'sms',
+          );
+
+          if (amCall && pmCall && !msgAttempt) {
+            const sendRes = await this.whatsAppProvider.sendTemplateMessage(
+              js.phone,
+              'call_attempt_notice',
+              {
+                candidateName: js.name,
+                trade: js.tradeSkill,
+              },
+            );
+
+            if (sendRes.status === 'sent') {
+              await this.prisma.contactAttempt.create({
+                data: {
+                  jobSeekerId: js.id,
+                  channel: 'whatsapp',
+                  outcome: 'no_pickup',
+                  timeOfDay: 'pm',
+                  attemptedAt: new Date(),
+                },
+              });
+
+              if (this.auditService) {
+                let actor = await this.prisma.staff.findFirst({
+                  where: { role: 'ceo' },
+                });
+                if (!actor) {
+                  actor = await this.prisma.staff.findFirst();
+                }
+                if (actor) {
+                  await this.auditService.log({
+                    actorId: actor.id,
+                    action: 'whatsapp.automated_attempt_sent',
+                    entityType: 'job_seeker',
+                    entityCode: js.code,
+                    after: {
+                      phone: js.phone,
+                      template: 'call_attempt_notice',
+                      messageId: sendRes.messageId,
+                    },
+                    city: 'Bengaluru',
+                  });
+                }
+              }
+            }
+            break;
+          }
+        }
+      }
+
       try {
         const result = await this.jobSeekerService.recordHit(
           js.id,

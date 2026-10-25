@@ -79,7 +79,7 @@ vendor.
 
 ---
 
-### [ ] Task 3 — WhatsApp Business API provider
+### [x] Task 3 — WhatsApp Business API provider
 
 **Acceptance:**
 - New `WhatsAppProvider` interface (`sendTemplateMessage(phone, templateName,
