@@ -225,6 +225,47 @@ describe('Telephony Module (Task 4)', () => {
       expect(task?.recordingUrl).toBe(recordingUrl);
       expect(task?.recordingConsent).toBe(true);
     });
+
+    it('discards recording reference if consent was explicitly not logged (DPDP Act §5 enforcement)', async () => {
+      const callId = `call_no_consent_${Date.now()}`;
+      const phone = `+9193334${Date.now().toString().slice(-5)}`;
+      const recordingUrl = `https://telephony-storage.laboura.in/recordings/${callId}.mp3`;
+
+      const telephonyProvider = app.get(TELEPHONY_PROVIDER);
+      const res = await telephonyProvider.handleInboundCall({
+        callId,
+        callerPhone: phone,
+        recordingUrl,
+        recordingEnabled: true,
+        recordingConsent: false, // Consent NOT logged / refused
+      });
+
+      expect(res.consentAnnounced).toBe(false);
+
+      const task = await prisma.callbackTask.findUnique({
+        where: { callId },
+      });
+      expect(task).toBeDefined();
+      expect(task?.recordingUrl).toBeNull(); // Recording reference discarded!
+      expect(task?.recordingConsent).toBe(false);
+    });
+
+    it('initiates click-to-call outbound call with DPDP consent notice', async () => {
+      const res = await request(app.getHttpServer())
+        .post('/telephony/outbound/click-to-call')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({
+          agentPhone: '+919900100000',
+          customerPhone: '+919876500000',
+          recordCall: true,
+        })
+        .expect(201);
+
+      expect(res.body.status).toBe('initiated');
+      expect(res.body.callId).toBeDefined();
+      expect(res.body.recordingEnabled).toBe(true);
+      expect(res.body.consentAnnounced).toBe(true);
+    });
   });
 
   describe('Capacity Verification', () => {

@@ -57,6 +57,25 @@ export class TelephonyController {
     return this.telephonyService.completeCallback(id);
   }
 
+  @Post('outbound/click-to-call')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('job_seeker', 'write')
+  @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
+  async initiateClickToCall(
+    @Body()
+    body: {
+      agentPhone: string;
+      customerPhone: string;
+      recordCall?: boolean;
+    },
+  ) {
+    return this.telephonyService.initiateOutboundCall(
+      body.agentPhone,
+      body.customerPhone,
+      body.recordCall,
+    );
+  }
+
   @Get('capacity')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('job_seeker', 'read')

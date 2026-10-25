@@ -7,6 +7,7 @@ export interface InboundCallEvent {
   timestamp?: Date;
   recordingUrl?: string;
   recordingEnabled?: boolean;
+  recordingConsent?: boolean;
 }
 
 export interface InboundCallResult {
@@ -22,7 +23,23 @@ export interface TelephonyCapacity {
   vendor: string;
 }
 
+export interface OutboundCallParams {
+  agentPhone: string;
+  customerPhone: string;
+  recordCall?: boolean;
+  metadata?: Record<string, string>;
+}
+
+export interface OutboundCallResult {
+  callId: string;
+  status: 'initiated' | 'queued' | 'failed';
+  recordingEnabled: boolean;
+  consentAnnounced: boolean;
+  error?: string;
+}
+
 export interface TelephonyProvider {
   handleInboundCall(event: InboundCallEvent): Promise<InboundCallResult>;
+  initiateOutboundCall(params: OutboundCallParams): Promise<OutboundCallResult>;
   getCapacity(): TelephonyCapacity;
 }

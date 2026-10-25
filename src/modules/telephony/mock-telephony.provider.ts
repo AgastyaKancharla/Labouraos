@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   InboundCallEvent,
   InboundCallResult,
+  OutboundCallParams,
+  OutboundCallResult,
   TelephonyCapacity,
   TelephonyProvider,
 } from './telephony.interface';
@@ -64,6 +66,24 @@ export class MockTelephonyProvider implements TelephonyProvider {
       callbackTaskId: task.id,
       isDuplicate: false,
       consentAnnounced,
+    };
+  }
+
+  async initiateOutboundCall(
+    params: OutboundCallParams,
+  ): Promise<OutboundCallResult> {
+    const callId = `outbound_call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const recordingEnabled = Boolean(params.recordCall);
+
+    this.logger.log(
+      `[MOCK TELEPHONY] Outbound click-to-call initiated from agent ${params.agentPhone} to customer ${params.customerPhone} (callId: ${callId}, recording: ${recordingEnabled})`,
+    );
+
+    return {
+      callId,
+      status: 'initiated',
+      recordingEnabled,
+      consentAnnounced: recordingEnabled,
     };
   }
 

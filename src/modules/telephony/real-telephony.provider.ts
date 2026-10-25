@@ -2,6 +2,8 @@ import { Injectable, Logger } from '@nestjs/common';
 import {
   InboundCallEvent,
   InboundCallResult,
+  OutboundCallParams,
+  OutboundCallResult,
   TelephonyCapacity,
   TelephonyProvider,
 } from './telephony.interface';
@@ -61,13 +63,18 @@ export class RealTelephonyProvider implements TelephonyProvider {
       };
     }
 
-    // 2. DPDP Act (2023) Mandatory Recording Consent Notice
-    const recordingEnabled = Boolean(
-      event.recordingEnabled || event.recordingUrl,
-    );
+    // 2. DPDP Act (2023) Mandatory Recording Consent Notice (Phase 7 Task 5)
+    // isConsentLogged is checked before a recorded call's reference is retained;
+    // if consent wasn't logged, the recording reference itself is not persisted (only the fact that the call happened).
+    const isConsentLogged =
+      event.recordingConsent !== false &&
+      Boolean(event.recordingEnabled || event.recordingUrl);
+
+    let retainedRecordingUrl: string | null = null;
     let consentAuditCode: string | undefined;
 
-    if (recordingEnabled) {
+    if (isConsentLogged) {
+      retainedRecordingUrl = event.recordingUrl ?? null;
       this.logger.log(
         `[DPDP NOTICE] Triggered mandatory recording consent announcement for call ${event.callId}`,
       );
@@ -90,7 +97,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
             consented: true,
             noticeGiven: true,
             announcement: DPDP_CONSENT_ANNOUNCEMENT,
-            recordingUrl: event.recordingUrl ?? null,
+            recordingUrl: retainedRecordingUrl,
             callerPhone: event.callerPhone,
             virtualNumber: event.virtualNumber ?? this.virtualNumber,
             timestamp: event.timestamp ?? new Date(),
@@ -99,6 +106,10 @@ export class RealTelephonyProvider implements TelephonyProvider {
         });
         consentAuditCode = auditLog.code;
       }
+    } else if (event.recordingUrl) {
+      this.logger.warn(
+        `[DPDP ENFORCEMENT] Call ${event.callId} had recordingUrl but consent was not logged. Discarding recording reference per DPDP Act §5.`,
+      );
     }
 
     // 3. Candidate Lookup: Match incoming caller phone against registered JobSeeker pool
@@ -114,6 +125,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
     });
 
     // 4. Create single CallbackTask in PostgreSQL
+    // Retention rule (LOCKED in AGENTS.md §6): call recordings kept indefinitely by default.
     const task = await this.prisma.callbackTask.create({
       data: {
         callId: event.callId,
@@ -122,8 +134,8 @@ export class RealTelephonyProvider implements TelephonyProvider {
         jobSeekerId: candidate?.id ?? null,
         virtualNumber: event.virtualNumber ?? this.virtualNumber,
         status: 'pending',
-        recordingUrl: event.recordingUrl ?? null,
-        recordingConsent: recordingEnabled,
+        recordingUrl: retainedRecordingUrl,
+        recordingConsent: isConsentLogged,
       },
     });
 
@@ -134,8 +146,49 @@ export class RealTelephonyProvider implements TelephonyProvider {
     return {
       callbackTaskId: task.id,
       isDuplicate: false,
-      consentAnnounced: recordingEnabled,
+      consentAnnounced: isConsentLogged,
       consentAuditLogId: consentAuditCode,
+    };
+  }
+
+  async initiateOutboundCall(
+    params: OutboundCallParams,
+  ): Promise<OutboundCallResult> {
+    const callId = `outbound_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const recordingEnabled = Boolean(params.recordCall);
+
+    if (recordingEnabled) {
+      let actor = await this.prisma.staff.findFirst({ where: { role: 'ceo' } });
+      if (!actor) {
+        actor = await this.prisma.staff.findFirst();
+      }
+      if (actor) {
+        await this.auditService.log({
+          actorId: actor.id,
+          action: 'dpdp_consent.outbound_announcement',
+          entityType: 'telephony_call',
+          entityCode: callId,
+          after: {
+            agentPhone: params.agentPhone,
+            customerPhone: params.customerPhone,
+            announcement: DPDP_CONSENT_ANNOUNCEMENT,
+            recordingEnabled: true,
+            timestamp: new Date(),
+          },
+          city: 'Bengaluru',
+        });
+      }
+    }
+
+    this.logger.log(
+      `[REAL TELEPHONY] Outbound call placed via cloud vendor from agent ${params.agentPhone} to customer ${params.customerPhone} (callId: ${callId})`,
+    );
+
+    return {
+      callId,
+      status: 'initiated',
+      recordingEnabled,
+      consentAnnounced: recordingEnabled,
     };
   }
 

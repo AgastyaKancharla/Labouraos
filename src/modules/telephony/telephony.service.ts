@@ -2,6 +2,7 @@ import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import {
   InboundCallEvent,
   InboundCallResult,
+  OutboundCallResult,
   TELEPHONY_PROVIDER,
   TelephonyCapacity,
   TelephonyProvider,
@@ -116,6 +117,18 @@ export class TelephonyService {
       data: {
         status: 'completed',
       },
+    });
+  }
+
+  async initiateOutboundCall(
+    agentPhone: string,
+    customerPhone: string,
+    recordCall = true,
+  ): Promise<OutboundCallResult> {
+    return this.provider.initiateOutboundCall({
+      agentPhone,
+      customerPhone,
+      recordCall,
     });
   }
 

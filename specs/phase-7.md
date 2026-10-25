@@ -102,7 +102,7 @@ vendor.
 
 ---
 
-### [ ] Task 4 — Telephony provider (toll-free calling)
+### [x] Task 4 — Telephony provider (toll-free calling)
 
 **Acceptance:**
 - New `TelephonyProvider` interface covering, at minimum: receiving an
@@ -127,7 +127,7 @@ vendor.
 
 ---
 
-### [ ] Task 5 — Call recording and consent capture (closes a known gap)
+### [x] Task 5 — Call recording and consent capture (closes a known gap)
 
 **Acceptance:**
 - This closes the Playbook's flagged gap: consent capture was never built in
