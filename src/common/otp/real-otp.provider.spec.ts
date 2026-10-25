@@ -2,6 +2,7 @@ import { BadRequestException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { RealOtpProvider, isWithinTraiWindow } from './real-otp.provider';
 import { OtpModule } from './otp.module';
+import { AuthModule } from '../auth/auth.module';
 import { OTP_PROVIDER, OtpProvider } from './otp.interface';
 
 describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', () => {
@@ -179,7 +180,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       process.env.OTP_PROVIDER = 'real';
 
       const moduleRef: TestingModule = await Test.createTestingModule({
-        imports: [OtpModule],
+        imports: [AuthModule, OtpModule],
       }).compile();
 
       const provider = moduleRef.get<OtpProvider>(OTP_PROVIDER);
@@ -187,7 +188,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
 
       process.env.OTP_PROVIDER = 'msg91';
       const moduleRefMsg91 = await Test.createTestingModule({
-        imports: [OtpModule],
+        imports: [AuthModule, OtpModule],
       }).compile();
       expect(moduleRefMsg91.get<OtpProvider>(OTP_PROVIDER)).toBeInstanceOf(
         RealOtpProvider,
