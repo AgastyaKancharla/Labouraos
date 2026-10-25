@@ -30,7 +30,7 @@
 
 ---
 
-### [ ] Task 3 — Real Aadhaar e-KYC vendor
+### [x] Task 3 — Real Aadhaar e-KYC vendor
 
 **Acceptance:**
 - `KycProvider` (Phase 2 Task 7) gets a real implementation against the licensed OVSE vendor
