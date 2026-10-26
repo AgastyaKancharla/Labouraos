@@ -271,6 +271,14 @@ export class PaymentService {
         : null) ??
       (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
       (await this.prisma.staff.findFirst());
+    if (!actor) {
+      // AuditLog.actorId is a foreign key to Staff, so there is nobody to
+      // attribute this to. The money state change has already happened and must
+      // stand, but a missing audit entry must never pass unnoticed.
+      this.logger.error(
+        'No staff account exists to attribute an audit entry to; the audit entry was NOT written',
+      );
+    }
     return actor?.id ?? null;
   }
 

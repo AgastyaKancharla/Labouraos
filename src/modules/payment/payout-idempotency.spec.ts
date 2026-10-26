@@ -13,6 +13,7 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
   let service: PaymentService;
   let provider: PaymentProvider;
   const timestamp = Date.now();
+  let ceoStaffId: string;
   const createdPaymentIds: string[] = [];
   const createdReferralIds: string[] = [];
   let seq = 0;
@@ -53,6 +54,18 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
     await app.init();
     prisma = app.get(PrismaService);
     idService = app.get(IdService);
+    // audit entries need a staff row to attribute to; don't rely on other suites leaving one behind
+    const ceo = await prisma.staff.create({
+      data: {
+        code: `CEO-IDEM-${timestamp}`,
+        name: 'Audit actor',
+        email: `ceo_idem_${timestamp}@laboura.local`,
+        passwordHash: 'not-a-real-hash',
+        role: 'ceo',
+        city: 'Bengaluru',
+      },
+    });
+    ceoStaffId = ceo.id;
     service = app.get(PaymentService);
     provider = app.get<PaymentProvider>(PAYMENT_PROVIDER);
   });
@@ -70,6 +83,8 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
       where: { entityCode: { in: payments.map((p) => p.code) } },
     });
     await prisma.payment.deleteMany({ where: { id: { in: createdPaymentIds } } });
+    await prisma.auditLog.deleteMany({ where: { actorId: ceoStaffId } });
+    await prisma.staff.deleteMany({ where: { id: ceoStaffId } });
     await prisma.referral.deleteMany({ where: { id: { in: createdReferralIds } } });
     await moduleRef.close();
   });

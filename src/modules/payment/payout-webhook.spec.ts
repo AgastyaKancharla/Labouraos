@@ -16,6 +16,7 @@ describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhoo
   let prisma: PrismaService;
   let idService: IdService;
   const timestamp = Date.now();
+  let ceoStaffId: string;
   let seq = 0;
   const paymentIds: string[] = [];
   const referralIds: string[] = [];
@@ -32,6 +33,18 @@ describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhoo
     await app.init();
     prisma = app.get(PrismaService);
     idService = app.get(IdService);
+    // audit entries need a staff row to attribute to; don't rely on other suites leaving one behind
+    const ceo = await prisma.staff.create({
+      data: {
+        code: `CEO-PW-${timestamp}`,
+        name: 'Audit actor',
+        email: `ceo_pw_${timestamp}@laboura.local`,
+        passwordHash: 'not-a-real-hash',
+        role: 'ceo',
+        city: 'Bengaluru',
+      },
+    });
+    ceoStaffId = ceo.id;
   });
 
   afterAll(async () => {
@@ -44,6 +57,8 @@ describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhoo
     });
     await prisma.payoutWebhookEvent.deleteMany({ where: { paymentId: { in: paymentIds } } });
     await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
+    await prisma.auditLog.deleteMany({ where: { actorId: ceoStaffId } });
+    await prisma.staff.deleteMany({ where: { id: ceoStaffId } });
     await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
     await app.close();
   });
