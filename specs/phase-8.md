@@ -305,41 +305,41 @@ redesign or ask again, the approach is decided):**
 
 - [ ] Load test report exists and is reviewed; any fixed bottleneck is
   documented in `LESSONS.md`
-- [ ] GST invoice total exactly matches `calculatePlacementFee` +
+- [x] GST invoice total exactly matches `calculatePlacementFee` +
   `calculateGst`, by test
-- [ ] A manual DPDP erasure request anonymizes only the targeted record's PII
+- [x] A manual DPDP erasure request anonymizes only the targeted record's PII
   fields, leaves everything else (including related records) untouched, and
   is audit logged, by test
-- [ ] No automatic retention-expiry job exists anywhere in `/src/jobs/` —
+- [x] No automatic retention-expiry job exists anywhere in `/src/jobs/` —
   confirmed by the agent in the report, not just by omission
-- [ ] The placement-data export excludes unmasked PII beyond what Finance
+- [x] The placement-data export excludes unmasked PII beyond what Finance
   already sees elsewhere, by test
-- [ ] A request ID is traceable across every log line for a single request,
+- [x] A request ID is traceable across every log line for a single request,
   including inside a job it triggers, by test
 - [ ] Dependency vulnerability scan is clean or every exception is
   documented and accepted
-- [ ] Exceeding the login/OTP rate limit is throttled cleanly, by test
-- [ ] 2FA via TOTP (not SMS OTP) is enforced on login for all four staff
+- [x] Exceeding the login/OTP rate limit is throttled cleanly, by test
+- [x] 2FA via TOTP (not SMS OTP) is enforced on login for all four staff
   roles, by test
-- [ ] A login from an unrecognized device on a Field Agent account requires
+- [x] A login from an unrecognized device on a Field Agent account requires
   a step-up TOTP code before issuing a token, by test
-- [ ] Revoking a session immediately invalidates that session's token on
+- [x] Revoking a session immediately invalidates that session's token on
   the next request, by test
-- [ ] Cloudflare Access gates the Admin Dashboard and Call Agent console
+- [x] Cloudflare Access gates the Admin Dashboard and Call Agent console
   specifically, and the Field Agent app's routes remain reachable without
   it, confirmed and noted in the report
-- [ ] No MDM/managed-device enrollment and no IP allowlisting were built
+- [x] No MDM/managed-device enrollment and no IP allowlisting were built
   anywhere in this phase, confirmed in the report
-- [ ] A real backup has been restored successfully at least once, with a
+- [x] A real backup has been restored successfully at least once, with a
   documented sanity check, noted in the report
 - [ ] Every item on the Playbook's §8 Go-Live Checklist is either
   done-with-evidence or explicitly flagged as a remaining blocker, in the
   report
-- [ ] A new staff account cannot log in before accepting its invite, and a
+- [x] A new staff account cannot log in before accepting its invite, and a
   deactivated staff account's credentials are rejected at login, by test
 - [ ] All Phase 1–7 gate items still pass, confirmed in one pass on current
   `main`
-- [ ] `LESSONS.md` updated
+- [x] `LESSONS.md` updated
 
 **This is the last build-phase gate. When it passes: stop. Report to
 Agastya — Laboura is ready for a go/no-go call, not an automatic launch.**

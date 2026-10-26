@@ -321,6 +321,36 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
   });
 
+  describe('4b. Cloudflare Access gates the Call Agent console, not the Field Agent app or API', () => {
+    afterEach(() => {
+      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'false';
+    });
+
+    it('rejects /call-agent without a Cloudflare identity and serves it with one', async () => {
+      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
+
+      const denied = await request(app.getHttpServer()).get('/call-agent');
+      expect(denied.status).toBe(403);
+
+      const allowed = await request(app.getHttpServer())
+        .get('/call-agent')
+        .set('cf-access-authenticated-user-email', 'agent@laboura.local');
+      expect(allowed.status).toBe(200);
+    });
+
+    it('leaves the Field Agent app and the API reachable without Cloudflare headers', async () => {
+      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
+
+      const fieldApp = await request(app.getHttpServer()).get('/field-agent');
+      expect(fieldApp.status).toBe(200);
+
+      // API routes are never behind Cloudflare Access: an unauthenticated API
+      // call must fail on its own auth (401), not on the Cloudflare gate (403).
+      const api = await request(app.getHttpServer()).get('/staff/sessions');
+      expect(api.status).toBe(401);
+    });
+  });
+
   describe('5. Rate Limiting on Auth & OTP Endpoints', () => {
     it('exceeding rate limit on login returns HTTP 429 Too Many Requests', async () => {
       const attempts: number[] = [];

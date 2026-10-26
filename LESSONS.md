@@ -87,9 +87,6 @@ Format:
 **Cause:** When a controller method injects `@Res() res` and calls `return res.send(...)`, Express returns the `ServerResponse` instance. Because Express `Response` objects have circular references (`res.req`, `res.socket`), any recursive payload traverser (like PII masking interceptors) enters an infinite recursion loop.
 **Fix:** 1) Add circular reference protection via `seen = new WeakSet<object>()` in any deep payload-transforming interceptor. 2) Use `@Res({ passthrough: true }) res: Response` in NestJS controllers so that method return values flow as standard response bodies rather than passing the circular Express response object through the interceptor pipeline.
 
-
-
-
 ## CI red on main after adding global throttling, TOTP and backup script
 **Symptom:** `npm test` passed locally but CI failed 20 tests across 5 suites: "Nest can't resolve dependencies of the AuthThrottlerGuard (?, ...THROTTLER:MODULE_OPTIONS...)", "Nest can't resolve dependencies of the AuthService (PrismaService, JwtService, ?, AuditService)", and `pg_dump: database "laboura_dev" does not exist`.
 **Cause:** (1) `OtpModule`'s controller uses `AuthThrottlerGuard`, whose `ThrottlerModule` lives in the `@Global()` `AuthModule`; specs that built `OtpModule` alone had no throttler options. (2) `AuthService` gained a `TotpService` dependency that `auth.spec.ts` did not provide. (3) `scripts/backup.sh` hardcoded `laboura_dev`, which exists locally but not in CI (`laboura_test`); the CI runner's default `pg_dump` is also older than the `postgres:17` service.
@@ -119,3 +116,8 @@ Format:
 **Symptom:** Sending a different fake `X-Forwarded-For` on each login/OTP request gave a fresh throttle bucket every time.
 **Cause:** `AuthThrottlerGuard` (and the login controller, for the session IP) read the raw header ahead of `req.ip`. Render's proxy appends to a client-supplied header rather than replacing it, so everything left of the proxy's own entry is attacker-controlled.
 **Fix:** Both use `req.ip` only. `TRUST_PROXY_HOPS` (default 0 = ignore the header) sets Express's `trust proxy` hop count at startup, so `req.ip` is the address the Nth trusted proxy saw. Invalid values fail startup. The hop count must match the real Render/Cloudflare path per environment; Render's docs do not state it, so verify it on the deployed service by logging raw headers once.
+
+## 51 suites failed with P1001 after a host restart
+**Symptom:** `npm test` went from 4 failing suites to 51 failing suites (332 tests) with no code change; `prisma migrate status` reported `P1001: Can't reach database server at localhost:5432`.
+**Cause:** The `laboura-postgres` and `laboura-redis` containers had exited (code 255) when the host restarted; nothing restarts them. Almost every suite is DB-backed, so the whole suite fails at once, which looks like a regression but is an environment fault.
+**Fix:** `docker start laboura-postgres laboura-redis` (data survives; do not recreate them). Check `npx prisma migrate status` before concluding a mass failure is a code problem, and read the exit code of `npm test` itself (a trailing `echo` or pipe hides it).
