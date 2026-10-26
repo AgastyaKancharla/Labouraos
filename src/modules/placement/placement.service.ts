@@ -970,7 +970,7 @@ export class PlacementService {
       where: {
         placementId: placement.id,
         type: 'refund',
-        status: { in: ['pending', 'completed', 'succeeded'] },
+        status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
       },
     });
     if (existingRefund) {

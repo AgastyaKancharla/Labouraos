@@ -200,7 +200,7 @@ model Payment {
   city              String      @default("Bengaluru")
   type              String      // activation, placement_fee, referral_payout, refund
   amount            Int         // paise
-  status            String      @default("pending") // pending, completed, failed, refunded
+  status            String      @default("pending") // pending, processing, succeeded, completed, failed, reversed, refunded
   gatewayReference  String      @unique
   subjectType       String      // job_seeker, business, referral, placement
   subjectId         String
@@ -213,6 +213,9 @@ model Payment {
   placementId       String?
   placement         Placement?  @relation(fields: [placementId], references: [id], onDelete: SetNull)
   reactivation      Boolean     @default(false)
+  // How many times a payout has been sent to the gateway. Each attempt after the
+  // first gets its own idempotency key; attempt 1 uses the payment id alone.
+  payoutAttempts    Int         @default(0)
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -220,6 +223,20 @@ model Payment {
   @@index([type])
   @@index([status])
   @@index([subjectType, subjectId])
+}
+
+// One row per payout-status webhook event already applied (AGENTS.md §2 rule 7).
+// `eventId` is the gateway's x-razorpay-event-id, so a redelivery is a no-op.
+model PayoutWebhookEvent {
+  id          String   @id @default(uuid())
+  eventId     String   @unique
+  event       String
+  outcome     String
+  paymentId   String?
+  applied     Boolean  @default(false)
+  createdAt   DateTime @default(now())
+
+  @@index([paymentId])
 }
 
 model AuditLog {

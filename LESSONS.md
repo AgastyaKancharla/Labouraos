@@ -136,3 +136,23 @@ Format:
 **Symptom:** After giving `CloudflareAccessGuard` a constructor dependency, every suite that imports `AppModule` failed with "Nest can't resolve dependencies of the CloudflareAccessGuard (?) ... CloudflareAccessVerifier ... in the ConsoleModule module", i.e. the app would not boot.
 **Cause:** `@UseGuards(SomeGuard)` makes Nest instantiate the guard inside the module of the controller using it (`ConsoleModule`), so its dependencies must be visible there. The verifier was only in `AuthModule`'s `providers`.
 **Fix:** Add it to `AuthModule`'s `exports` (the module is `@Global()`), next to the guard.
+
+## Retry idempotency keys longer than RazorpayX's 36-character limit
+**Symptom:** None yet, caught in review before any real payout: the retry key `<payment uuid>-r1` is 39 characters.
+**Cause:** RazorpayX `X-Payout-Idempotency` keys must be 4-36 characters (letters, digits, hyphen, underscore, space). A 36-char UUID alone fits, so the first attempt worked and the bug would only have appeared on the first retry, as a gateway 4xx. The limit I had assumed (40, on `reference_id`) was not the binding one.
+**Fix:** Attempt 1 is the payment id as is; later attempts are the id without hyphens (32 chars) plus `-r<n>` (35 max). `paymentIdFromReference` accepts both forms so webhooks for retried attempts still find their payment. Per RazorpayX docs a payout that comes back `failed` fails for every request with that key, so a retry must use a new key, whereas a payout still `processing` must NOT get a new key (it would create a duplicate), which is why `processing` is never retryable.
+
+## Counting "processing" as paid, and a timeout as "failed"
+**Symptom:** (Found in review before real mode went live.) A gateway reply of `processing` was stored as `succeeded`, and a network error as `failed`.
+**Cause:** RazorpayX payouts are asynchronous: `processing` can last up to T+3 working days and end as `processed` or `reversed`, and a `processed` payout can still be reversed later. A timeout says nothing about whether the gateway created the payout. Recording the first as paid hides later failures; recording the second as failed invites a second payout.
+**Fix:** Only `processed` is `succeeded`. In-flight and ambiguous outcomes stay `processing` until the signed payout webhook or a CEO/Manager manual resolution settles them. Only a definitive refusal (4xx, or a rejected/failed/cancelled status) is `failed`, and only that is retryable. Transitions live in one pure, exhaustively tested table (`payout-state.ts`).
+
+## Prisma interactive transaction aborts after a caught unique violation
+**Symptom:** Designing webhook de-duplication: inserting the event id inside a transaction and catching `P2002` would have poisoned the rest of the transaction.
+**Cause:** In PostgreSQL a failed statement aborts the surrounding transaction; catching the error in JS does not un-abort it.
+**Fix:** Insert with `createMany({ skipDuplicates: true })` (`ON CONFLICT DO NOTHING`) and check the inserted count. A concurrent twin blocks on the unique index until the first commits, then inserts 0 rows.
+
+## Concurrency and race tests that cannot fail
+**Symptom:** Mutation checks (deliberately removing `FOR UPDATE`, and a conditional-write guard) did not fail the tests meant to protect them, twice.
+**Cause:** (1) supertest requests are lazy: nothing is sent until the request is awaited or `.then()` is called, so a "fire the request, then hold the lock" test sent it after the lock was released. (2) A race test that only produced an ambiguous result never reached the guarded write. (3) Timing-based races from outside the process are too narrow to hit reliably.
+**Fix:** Start requests eagerly with `.then(r => r)` when ordering matters; make the lost-update test deterministic by holding the row lock in the test's own transaction; add a case that actually reaches the guarded statement (a stale `succeeded` over a webhook's `reversed`). Rule of thumb: after writing a concurrency test, remove the guard and watch it fail.

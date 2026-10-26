@@ -124,8 +124,8 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
           (call.options?.headers as Record<string, string>)['X-Payout-Idempotency'],
         ).toBe(paymentId);
       }
-      // gateway limit on reference_id is 40 chars
-      expect(paymentId.length).toBeLessThanOrEqual(40);
+      // RazorpayX idempotency keys are 4-36 characters
+      expect(paymentId.length).toBeLessThanOrEqual(36);
     });
 
     it('refuses to disburse without a paymentId rather than inventing a non-idempotent reference', async () => {

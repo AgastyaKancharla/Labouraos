@@ -3,10 +3,12 @@
 Branch `phase-8/task-8-golive-closeout`, built on `main` @ `0d6d781`, 2026-10-26.
 Everything below was re-run in this pass, not recalled from earlier gates.
 
-**Verdict: not ready for a go decision yet, and not because of the code.** Both
-code-level blockers found in the first pass are fixed (section 3). What remains is
-business/vendor/legal setup (section 4, which is Agastya's), a few deployment and ops
-gaps (section 5), and one real-money residual on payouts (R1). Task 8 stays unticked.
+**Verdict: not ready for a go decision yet, and not because of the payout or access code.**
+Both code-level blockers found in the first pass are fixed, and the two payout gaps left
+over from that fix (R1) are now closed too (section 3). What remains is business/vendor/legal
+setup (section 4, which is Agastya's), a few deployment and ops gaps, and one new item
+found while doing the webhook work: the existing collection webhook verifies a
+re-serialised body (section 5). Task 8 stays unticked.
 
 ---
 
@@ -14,7 +16,7 @@ gaps (section 5), and one real-money residual on payouts (R1). Task 8 stays unti
 
 | Check | Result |
 | --- | --- |
-| `npm test` | **exit 0: 58/58 suites, 421/421 tests, 0 skipped/pending** |
+| `npm test` | **exit 0: 62/62 suites, 552/552 tests, 0 skipped/pending** |
 | `npm run lint` | exit 0 |
 | `tsc --noEmit` | exit 0 |
 | CI on `main` (`gh run list`) | latest runs green; the run before them (`e88eb88`) was red and was repaired by `62f148b` |
@@ -59,38 +61,81 @@ Gate text that no longer matches reality (not rewritten, per the history rule):
 
 ## 3. Blockers from the first pass: fixed
 
-### B1 — Payout double-pay: fixed (scope as authorised); one residual remains (R1)
-Reproduced first (two concurrent `disbursePayout` calls called the provider twice, both
-succeeded), then fixed:
+### B1 — Payout double-pay: fixed, and the follow-up gaps (R1) are closed
+Reproduced first (two concurrent `disburse` calls called the provider twice, both succeeded),
+then fixed in two rounds.
 
-- `PaymentService.disbursePayout` now claims the payment with a single conditional
-  `updateMany` (`pending` to `processing`) and requires `count === 1` **before** calling the
-  provider. Losers get a `BadRequestException` and never reach the gateway.
-- `RealPaymentProvider.disbursePayout` derives `reference_id` from `payment.id` alone (36-char
-  UUID, within the gateway's 40-char limit) and sends the same value as RazorpayX's
-  `X-Payout-Idempotency` header. The header is what RazorpayX actually dedupes on, so it was
-  added alongside the reference; a missing `paymentId` now throws instead of silently falling
-  back to a non-idempotent key.
-- If the provider throws, whether money moved is unknown, so the payment is left in
-  `processing` for a human to reconcile; it is never released back to `pending`.
-- Tests (`payout-idempotency.spec.ts`, `real-payment.provider.spec.ts`): two concurrent
-  disbursements make exactly one provider call; a burst of 10 makes one call and one audit row;
-  the provider receives the payment id; a thrown provider call cannot be retried; the real
-  provider sends an identical reference and header on a retry and refuses to run without a
-  `paymentId`. Verified to fail without the service fix (4 of 5 fail) and pass with it.
+**Round 1: atomic claim + deterministic key**
 
-**R1 — not covered by the authorised fix, still open before `PAYMENT_PROVIDER_MODE=real`
-pays anyone:**
-1. There is still **no payout status webhook**. `processing` from the gateway is recorded as
-   `succeeded`, and a later failure or reversal is never reconciled. The Phase 7 gate item
-   "duplicate payout webhook does not double-pay" therefore holds only vacuously.
-2. A network error or timeout is recorded as `failed` even though the gateway may have
-   accepted the payout; a `failed` payment cannot be retried through the API, so it needs
-   manual reconciliation against the RazorpayX dashboard.
+- `PaymentService` claims a payment with a single conditional `updateMany`
+  (`pending` to `processing`, also incrementing `payoutAttempts`) and requires
+  `count === 1` **before** calling the provider. Losers get a 400 and never reach the gateway.
+- `RealPaymentProvider` derives its key from `payment.id` alone (no clock, no random input),
+  sends it as `reference_id` and as RazorpayX's `X-Payout-Idempotency` header, and refuses to
+  run without a `paymentId`.
 
-Recommended: add a verified payout-status webhook (idempotent, with a double-delivery test) and
-record `processing` as non-final until it arrives. Left alone because it is a new feature in
-Phase 7 scope and touches money flow.
+**Round 2 (R1): what the gateway actually said, a webhook, and a way out**
+
+1. **`processing` is no longer recorded as `succeeded`, and a timeout is no longer `failed`.**
+   Only gateway status `processed` is final success. In-flight statuses and an unrecognised
+   status stay `processing`. A 4xx or a rejected/cancelled/failed/reversed status is a definitive
+   `failed`. A 5xx, a timeout or a dropped connection is *ambiguous*: the payment stays
+   `processing` (reference untouched) because the gateway may have paid.
+2. **Payout-status webhook** `POST /payments/payout-webhook` (public, authenticated by
+   `X-Razorpay-Signature`, HMAC-SHA256 over the **raw bytes**; `rawBody: true` is now set in
+   `main.ts` and the endpoint fails closed with 400 if it is missing). It updates the payment
+   to `succeeded` / `failed` / `reversed` from the gateway's outcome. Payment is located by
+   payout id, then `reference_id`, then `notes.paymentId` (echoed from our request), because
+   RazorpayX's own samples show `reference_id` as null and the ambiguous case is exactly when
+   we never learned the payout id. The webhook secret is `RAZORPAYX_WEBHOOK_SECRET`
+   (falls back to `RAZORPAY_WEBHOOK_SECRET`).
+3. **Idempotent per rule 7, three layers:** an event-id table (`PayoutWebhookEvent`, unique
+   `x-razorpay-event-id`, inserted with `ON CONFLICT DO NOTHING` in the same transaction as the
+   update; a content hash stands in if the header is absent); a pure state table
+   (`payout-state.ts`) so the same outcome under a new event id is still a no-op; and a
+   `FOR UPDATE` row lock so different events for one payout serialise. Events arriving out of
+   order cannot walk a settled payout backwards; `processed` then `reversed` is applied (the
+   documented T+3 failure); `reversed` is terminal; a gateway `processed` corrects a payout we
+   had recorded as `failed`. Amount mismatches and events for payments never sent as payouts
+   are acknowledged and ignored. The final write after a provider call is conditional on the
+   payment still being `processing`, so a webhook that lands before our own response is not
+   overwritten by it.
+4. **`POST /payments/:id/retry-payout`** (CEO/Manager only). Allowed only from `failed` or
+   `reversed`, and only for a payment that was actually dispatched. Same atomic claim, but a
+   **new idempotency key per attempt**, because RazorpayX says every request with a key that
+   returned `failed` fails again. A `processing` payout is deliberately *not* retryable: a fresh
+   key while the first attempt is in flight creates a duplicate payout. Capped at 9 dispatches
+   per payment (a limit I chose, not the gateway's) so a payout that keeps failing goes to a person.
+5. **`POST /payments/:id/resolve-payout`** (CEO/Manager only). Settles a payout stuck in
+   `processing` after someone has checked the gateway's own records. Body: `outcome`
+   (`succeeded` | `failed`), `note` (required, what was checked), and `gatewayReference` (the
+   gateway's payout id; required for `succeeded`). Atomic, audit-logged with actor and note.
+   Resolving as `failed` makes the payout retryable; resolving as `succeeded` leaves later
+   webhooks (e.g. `reversed`) free to overrule it.
+6. **Bug fixed in passing:** the two refund duplicate-checks only counted
+   `pending/completed/succeeded`, so a refund payout in flight (`processing`) looked "not
+   issued". Both now include `processing`, with tests.
+
+Verification: every guarantee above has a test that was confirmed to fail when the guard is
+removed (atomic claim, stale-write guard, resolve claim, event-id dedupe, row lock, refund
+duplicate checks); two of my first attempts were vacuous and were rewritten (LESSONS.md). Retry
+idempotency keys are 35 characters at most, within RazorpayX's 4-36 limit; my first version of
+the retry key was 39 characters and would have been rejected by the gateway on the first retry.
+
+Design is built to RazorpayX's documented webhook shape (events `payout.pending / rejected /
+queued / initiated / processed / updated / reversed / failed`; statuses `pending, queued,
+scheduled, processing, processed, reversed, cancelled, rejected, failed`), read from the docs
+during this pass rather than recalled. **Not verifiable without the live account:** that the
+production payload matches the samples (the docs' own samples have JSON errors and null
+`reference_id`); how long RazorpayX honours an idempotency key; and the behaviour of the
+registered webhook in practice. To go live: register
+`https://<host>/payments/payout-webhook` in RazorpayX, subscribe at least to `payout.initiated,
+processed, updated, reversed, rejected, failed`, put the secret in `RAZORPAYX_WEBHOOK_SECRET`,
+and run one real small payout in test mode before enabling `PAYMENT_PROVIDER_MODE=real`.
+
+Audit attribution: webhook-driven changes are logged against the CEO account (the `AuditLog`
+`actorId` must be a real staff row; same convention as the existing activation webhook), with
+`source: razorpayx_webhook` and the event id in the record.
 
 ### B2 — Cloudflare Access guard: fixed to verify the JWT; live verification outstanding
 `CloudflareAccessGuard` no longer trusts header presence. A new `CloudflareAccessVerifier`:
@@ -137,7 +182,7 @@ until you tell me otherwise.
 | 4 | GST registration | OPEN | Invoice generator reads GSTIN / legal name / address from env with placeholder defaults (Phase 8 Task 2, tested), so the build is not blocked. The real GSTIN must be set before the first real invoice. |
 | 5 | Karnataka Shops & Establishments | OPEN | Agastya. |
 | 6 | Payment gateway activation | OPEN (CODE READY) | `RealPaymentProvider`: HMAC-verified, idempotent webhooks, integer paise (`real-payment.provider.spec.ts`). Needs the live Razorpay account and `PAYMENT_PROVIDER_MODE=real` plus keys in Render. |
-| 7 | Payout API setup | OPEN (CODE READY, see R1) | Disbursement now atomic and idempotent (section 3). **R1 must be closed before real payouts**: no payout status webhook, and ambiguous network failures need manual reconciliation. Also needs the RazorpayX account number. |
+| 7 | Payout API setup | OPEN (CODE READY) | Disbursement is atomic and idempotent, processing/ambiguous outcomes are no longer misrecorded, a signed payout-status webhook settles them, and CEO/Manager can retry a failed payout or resolve a stuck one (section 3). Needs the RazorpayX account number, webhook registration and one real test payout. |
 | 8 | DLT registration (needs PAN) | OPEN (CODE READY) | `RealOtpProvider` with DLT sender/template/entity env vars (`real-otp.provider.spec.ts`). Blocked on #2. |
 | 9 | WhatsApp Business API setup | OPEN (CODE READY) | `WhatsAppProvider` real implementation wired behind `WHATSAPP_PROVIDER_MODE`; needs the Meta account, phone number id and token. |
 | 10 | Toll-free number + routing (concurrent-line capacity for up to 40 agents) | OPEN / **UNVERIFIED** | Webhook idempotency and consent-gated recording are tested. Capacity cannot be verified in code and is pending the vendor contract; Phase 7 gate item stays unticked (manual sign-off). |
@@ -164,6 +209,16 @@ proposed as accepted exceptions:
 | `prisma`, `@prisma/config`, `deepmerge-ts` | stack exhaustion merging recursive objects (GHSA-ggr8-5vv4-36mx) | CLI/config tooling, not a request path; fix is Prisma 7 (major) and AGENTS locks 6.19.3, so ask-first |
 
 Dev-only findings (10 more, e.g. `picomatch`) are not shipped to production.
+
+### The existing collection webhook verifies a re-serialised body (not changed here)
+`POST /payments/webhook` (₹499 activation and placement-fee payments) computes its HMAC over
+`JSON.stringify(parsedBody)`, not the raw bytes the gateway signed. If Razorpay's serialisation
+differs from a JS round trip in any way (escaped `/` in URLs, unicode escapes, number
+formatting), every real signature fails and payments would never be recorded. It passes today
+only because the tests sign the same re-serialised string. The new payout webhook does this
+correctly and `rawBody` is now enabled app-wide, so the fix is small (verify the raw body, as
+`verifyPayoutWebhook` does). Left alone because it is outside this change and touches the
+activation flow; **recommended before real mode, and worth confirming with one live test payment.**
 
 ### Backups: platform side unverified, offsite script unscheduled
 - `scripts/backup.sh` is not invoked by any scheduler in the repo (no cron, no job, no

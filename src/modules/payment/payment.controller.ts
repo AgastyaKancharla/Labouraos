@@ -3,6 +3,8 @@ import {
   Controller,
   Get,
   Headers,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
   Query,
@@ -51,6 +53,45 @@ export class PaymentController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.paymentService.disbursePayout(id, req.user.sub, body);
+  }
+
+  @Post(':id/retry-payout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'manager')
+  async retryPayout(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.retryPayout(id, req.user.sub);
+  }
+
+  @Post(':id/resolve-payout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'manager')
+  async resolvePayout(
+    @Param('id') id: string,
+    @Body() body: { outcome?: unknown; gatewayReference?: unknown; note?: unknown },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.resolvePayout(id, req.user.sub, body);
+  }
+
+  /**
+   * RazorpayX payout-status callback. Not behind JWT: it is authenticated by the
+   * HMAC signature over the raw body. Requires `rawBody: true` at app creation.
+   */
+  @Post('payout-webhook')
+  @HttpCode(HttpStatus.OK)
+  async payoutWebhook(
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('x-razorpay-signature') signature?: string,
+    @Headers('x-razorpay-event-id') eventId?: string,
+  ) {
+    return this.paymentService.handlePayoutWebhook(req.rawBody, signature, eventId);
   }
 
   @Post('webhook')

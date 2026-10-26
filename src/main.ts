@@ -8,6 +8,8 @@ import { applyTrustProxy } from './common/http/trust-proxy';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
+    // Webhook signatures are computed over the exact bytes the gateway sent
+    rawBody: true,
   });
   const logger = app.get(StructuredLogger);
   app.useLogger(logger);
