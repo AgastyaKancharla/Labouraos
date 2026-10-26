@@ -136,8 +136,17 @@ export class RealPaymentProvider implements PaymentProvider {
       throw new Error(`Amount must be an integer in paise, received: ${amountPaise}`);
     }
 
-    const timestamp = Date.now();
-    const referenceId = `pout_${subjectType}_${subjectId}_${timestamp}`;
+    // The reference is derived from the payment's own id and nothing else, so a
+    // retry of the same payout reuses it and the gateway can dedupe (AGENTS.md §2
+    // rule 7). No clock or random input here, ever. 36-char UUID fits the
+    // gateway's 40-char reference_id limit, which a prefix would not.
+    const paymentId = metadata?.paymentId;
+    if (typeof paymentId !== 'string' || paymentId.length === 0) {
+      throw new Error(
+        'disbursePayout requires metadata.paymentId to derive an idempotent reference',
+      );
+    }
+    const referenceId = paymentId;
 
     const payload = {
       account_number: this.accountNumber,
@@ -162,6 +171,8 @@ export class RealPaymentProvider implements PaymentProvider {
         headers: {
           'Content-Type': 'application/json',
           Authorization: this.getAuthHeader(),
+          // RazorpayX dedupes a repeated request on this header
+          'X-Payout-Idempotency': referenceId,
         },
         body: JSON.stringify(payload),
       });

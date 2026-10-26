@@ -5,6 +5,16 @@ import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { TotpService } from './totp.service';
+import {
+  AccessKeypair,
+  jwksBody,
+  makeAccessKeypair,
+  mockJwksEndpoint,
+  signAccessJwt,
+  TEST_AUD,
+  TEST_TEAM_DOMAIN,
+  unsignedAccessJwt,
+} from '../../test-support/cloudflare-access-test-keys';
 
 describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => {
   let app: INestApplication;
@@ -298,49 +308,89 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
   });
 
-  describe('4. Cloudflare Access Gating on Consoles', () => {
-    it('gates Admin Dashboard when CLOUDFLARE_ACCESS_ENFORCED is active', async () => {
-      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
+  describe('4. Cloudflare Access Gating on Consoles (verified JWT, not header presence)', () => {
+    const savedEnv = {
+      enforced: process.env.CLOUDFLARE_ACCESS_ENFORCED,
+      team: process.env.CLOUDFLARE_ACCESS_TEAM_DOMAIN,
+      aud: process.env.CLOUDFLARE_ACCESS_AUD,
+    };
+    const restoreEnv = (k: string, v: string | undefined) => {
+      if (v === undefined) delete process.env[k];
+      else process.env[k] = v;
+    };
+    let real: AccessKeypair;
+    let attacker: AccessKeypair;
 
-      // 1. Request without Cloudflare headers -> 403 Forbidden
-      const denied = await request(app.getHttpServer()).get('/admin');
+    beforeAll(() => {
+      real = makeAccessKeypair('kid-console');
+      attacker = makeAccessKeypair('kid-console');
+    });
+
+    beforeEach(() => {
+      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
+      process.env.CLOUDFLARE_ACCESS_TEAM_DOMAIN = TEST_TEAM_DOMAIN;
+      process.env.CLOUDFLARE_ACCESS_AUD = TEST_AUD;
+      mockJwksEndpoint(() => ({ body: jwksBody(real) }));
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+      restoreEnv('CLOUDFLARE_ACCESS_ENFORCED', savedEnv.enforced ?? 'false');
+      restoreEnv('CLOUDFLARE_ACCESS_TEAM_DOMAIN', savedEnv.team);
+      restoreEnv('CLOUDFLARE_ACCESS_AUD', savedEnv.aud);
+    });
+
+    it.each(['/admin', '/call-agent'])('serves %s only with a genuinely signed Cloudflare Access JWT', async (route) => {
+      const denied = await request(app.getHttpServer()).get(route);
       expect(denied.status).toBe(403);
       expect(denied.body.message).toContain('Cloudflare Access identity verification required');
 
-      // 2. Request with cf-access-authenticated-user-email header -> 200 OK
       const allowed = await request(app.getHttpServer())
-        .get('/admin')
+        .get(route)
+        .set('cf-access-jwt-assertion', signAccessJwt(real));
+      expect(allowed.status).toBe(200);
+    });
+
+    it.each(['/admin', '/call-agent'])('rejects forged, unsigned and header-only identities on %s', async (route) => {
+      const forged = signAccessJwt(attacker); // right kid, wrong private key
+      const unsigned = unsignedAccessJwt('kid-console');
+      const wrongAudience = signAccessJwt(real, { aud: ['another-application'] });
+
+      for (const assertion of [forged, unsigned, wrongAudience, 'garbage']) {
+        const res = await request(app.getHttpServer()).get(route).set('cf-access-jwt-assertion', assertion);
+        expect(res.status).toBe(403);
+      }
+
+      // The old bypass: presence of these headers used to be enough.
+      const emailOnly = await request(app.getHttpServer())
+        .get(route)
         .set('cf-access-authenticated-user-email', 'admin@laboura.local');
-      expect(allowed.status).toBe(200);
+      expect(emailOnly.status).toBe(403);
 
-      // 3. Field Agent app route is NOT gated and passes freely
-      const faApp = await request(app.getHttpServer()).get('/field-agent');
-      expect(faApp.status).toBe(200);
+      const junkAssertion = await request(app.getHttpServer())
+        .get(route)
+        .set('cf-access-jwt-assertion', 'x')
+        .set('cf-access-authenticated-user-email', 'admin@laboura.local');
+      expect(junkAssertion.status).toBe(403);
+    });
 
+    it('fails closed (403) when enforcement is on but Cloudflare config is missing', async () => {
+      delete process.env.CLOUDFLARE_ACCESS_AUD;
+
+      const res = await request(app.getHttpServer())
+        .get('/admin')
+        .set('cf-access-jwt-assertion', signAccessJwt(real));
+      expect(res.status).toBe(403);
+    });
+
+    it('does nothing when enforcement is off (local dev and tests)', async () => {
       process.env.CLOUDFLARE_ACCESS_ENFORCED = 'false';
-    });
-  });
 
-  describe('4b. Cloudflare Access gates the Call Agent console, not the Field Agent app or API', () => {
-    afterEach(() => {
-      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'false';
+      expect((await request(app.getHttpServer()).get('/admin')).status).toBe(200);
+      expect((await request(app.getHttpServer()).get('/call-agent')).status).toBe(200);
     });
 
-    it('rejects /call-agent without a Cloudflare identity and serves it with one', async () => {
-      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
-
-      const denied = await request(app.getHttpServer()).get('/call-agent');
-      expect(denied.status).toBe(403);
-
-      const allowed = await request(app.getHttpServer())
-        .get('/call-agent')
-        .set('cf-access-authenticated-user-email', 'agent@laboura.local');
-      expect(allowed.status).toBe(200);
-    });
-
-    it('leaves the Field Agent app and the API reachable without Cloudflare headers', async () => {
-      process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
-
+    it('leaves the Field Agent app and the API reachable without Cloudflare credentials', async () => {
       const fieldApp = await request(app.getHttpServer()).get('/field-agent');
       expect(fieldApp.status).toBe(200);
 

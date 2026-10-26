@@ -22,6 +22,10 @@ export interface PaymentProvider {
     subjectId: string,
   ): Promise<{ paymentLink: string; gatewayReference: string }>;
 
+  /**
+   * `metadata.paymentId` is the id of the Payment being paid out. Real providers
+   * derive their idempotency key from it so a retry cannot pay twice.
+   */
   disbursePayout(
     amountPaise: number,
     subjectType: string,

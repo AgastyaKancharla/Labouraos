@@ -93,10 +93,56 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
         fetchFn: mockFetch,
       });
 
-      const res = await provider.disbursePayout(20000, 'referral', 'RF-001');
+      const paymentId = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
+      const res = await provider.disbursePayout(20000, 'referral', 'RF-001', {
+        paymentId,
+      });
       expect(res.success).toBe(true);
       expect(res.status).toBe('succeeded');
       expect(res.gatewayReference).toBe('pout_real_789012');
+    });
+
+    it('derives reference_id and the idempotency header from payment.id alone, identically on a retry', async () => {
+      const provider = new RealPaymentProvider({
+        keyId,
+        keySecret,
+        webhookSecret,
+        fetchFn: mockFetch,
+      });
+      const paymentId = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
+
+      await provider.disbursePayout(20000, 'referral', 'RF-001', { paymentId });
+      // a retry later, and with different non-id inputs, must not change the key
+      await new Promise((r) => setTimeout(r, 5));
+      await provider.disbursePayout(20000, 'referral', 'RF-OTHER', { paymentId });
+
+      const payoutCalls = capturedRequests.filter((r) => r.url.includes('/payouts'));
+      expect(payoutCalls).toHaveLength(2);
+      for (const call of payoutCalls) {
+        expect(JSON.parse(call.options?.body as string).reference_id).toBe(paymentId);
+        expect(
+          (call.options?.headers as Record<string, string>)['X-Payout-Idempotency'],
+        ).toBe(paymentId);
+      }
+      // gateway limit on reference_id is 40 chars
+      expect(paymentId.length).toBeLessThanOrEqual(40);
+    });
+
+    it('refuses to disburse without a paymentId rather than inventing a non-idempotent reference', async () => {
+      const provider = new RealPaymentProvider({
+        keyId,
+        keySecret,
+        webhookSecret,
+        fetchFn: mockFetch,
+      });
+
+      await expect(
+        provider.disbursePayout(20000, 'referral', 'RF-001'),
+      ).rejects.toThrow('metadata.paymentId');
+      await expect(
+        provider.disbursePayout(20000, 'referral', 'RF-001', { paymentId: '' }),
+      ).rejects.toThrow('metadata.paymentId');
+      expect(capturedRequests.filter((r) => r.url.includes('/payouts'))).toHaveLength(0);
     });
 
     it('verifies HMAC-SHA256 signature on real Razorpay webhook payload and rejects forged signatures', async () => {

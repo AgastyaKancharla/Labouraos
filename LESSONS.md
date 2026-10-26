@@ -121,3 +121,18 @@ Format:
 **Symptom:** `npm test` went from 4 failing suites to 51 failing suites (332 tests) with no code change; `prisma migrate status` reported `P1001: Can't reach database server at localhost:5432`.
 **Cause:** The `laboura-postgres` and `laboura-redis` containers had exited (code 255) when the host restarted; nothing restarts them. Almost every suite is DB-backed, so the whole suite fails at once, which looks like a regression but is an environment fault.
 **Fix:** `docker start laboura-postgres laboura-redis` (data survives; do not recreate them). Check `npx prisma migrate status` before concluding a mass failure is a code problem, and read the exit code of `npm test` itself (a trailing `echo` or pipe hides it).
+
+## Payout disbursement: check-then-act let two concurrent requests both reach the gateway
+**Symptom:** Two simultaneous `disbursePayout` calls on one `pending` payment both called the provider and both succeeded (found by a throwaway probe during the go-live review; the existing tests were all sequential).
+**Cause:** The service read `status === 'pending'`, called the provider, then wrote the result, with nothing claiming the row in between. The real provider also built `reference_id` from `Date.now()`, so the gateway could not dedupe the two attempts either.
+**Fix:** Claim first with one conditional `updateMany` (`pending` → `processing`) and require `count === 1` before the provider call. `reference_id` and the `X-Payout-Idempotency` header are the payment's id and nothing else. If the provider throws, the payment stays in `processing` for a human to reconcile; it is never released to `pending`. The concurrency tests use a provider stub that sleeps so the race window is real, and were confirmed to fail without the fix.
+
+## @nestjs/jwt ignores a per-call publicKey when the module has a secret
+**Symptom:** Verifying a Cloudflare Access (RS256) token with `jwtService.verifyAsync(token, { publicKey, algorithms: ['RS256'] })` passed in a unit test using `new JwtService()` but failed for every genuine token inside the app.
+**Cause:** `JwtService.getSecretKey` resolves `options.secret || this.options.secret || options.publicKey`. The app's `JwtModule` is registered with an HS256 `secret`, so that secret silently outranks the `publicKey` passed per call and Cloudflare's tokens were being checked against our own signing secret.
+**Fix:** `CloudflareAccessVerifier` owns a bare `new JwtService()` (no module options) instead of injecting the app's. Unit tests must construct the verifier the way production does, and the HTTP-level test with a genuinely signed token is what caught it.
+
+## A guard used via @UseGuards() needs its dependencies exported, not just provided
+**Symptom:** After giving `CloudflareAccessGuard` a constructor dependency, every suite that imports `AppModule` failed with "Nest can't resolve dependencies of the CloudflareAccessGuard (?) ... CloudflareAccessVerifier ... in the ConsoleModule module", i.e. the app would not boot.
+**Cause:** `@UseGuards(SomeGuard)` makes Nest instantiate the guard inside the module of the controller using it (`ConsoleModule`), so its dependencies must be visible there. The verifier was only in `AuthModule`'s `providers`.
+**Fix:** Add it to `AuthModule`'s `exports` (the module is `@Global()`), next to the guard.

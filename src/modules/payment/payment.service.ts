@@ -285,11 +285,28 @@ export class PaymentService {
       gatewayReference: payment.gatewayReference,
     };
 
+    // Claim the payout atomically BEFORE calling the provider. The read above is
+    // only a fast path for a clear error: two concurrent requests can both pass
+    // it, so the conditional update (checked by affected-row count) is what
+    // guarantees exactly one caller reaches the gateway (AGENTS.md §2 rule 7).
+    const claim = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: 'pending' },
+      data: { status: 'processing' },
+    });
+    if (claim.count !== 1) {
+      throw new BadRequestException(
+        'Payout is already being processed or is no longer pending',
+      );
+    }
+
+    // If the provider throws, whether the gateway moved money is unknown, so the
+    // payment is deliberately left in 'processing' (not released back to
+    // 'pending') for a human to reconcile rather than risk a second payout.
     const result = await this.provider.disbursePayout(
       payment.amount,
       payment.subjectType,
       payment.subjectId,
-      options,
+      { ...options, paymentId: payment.id },
     );
 
     const updatedPayment = await this.prisma.payment.update({
