@@ -6,9 +6,9 @@ Everything below was re-run in this pass, not recalled from earlier gates.
 **Verdict: not ready for a go decision yet, and not because of the payout or access code.**
 Both code-level blockers found in the first pass are fixed, and the two payout gaps left
 over from that fix (R1) are now closed too (section 3). What remains is business/vendor/legal
-setup (section 4, which is Agastya's), a few deployment and ops gaps, and one new item
-found while doing the webhook work: the existing collection webhook verifies a
-re-serialised body (section 5). Task 8 stays unticked.
+setup (section 4, which is Agastya's) and a few deployment and ops gaps (section 5). The
+collection webhook, which was verifying a re-serialised copy of the body, is fixed too
+(section 3, B3). Task 8 stays unticked.
 
 ---
 
@@ -16,7 +16,7 @@ re-serialised body (section 5). Task 8 stays unticked.
 
 | Check | Result |
 | --- | --- |
-| `npm test` | **exit 0: 62/62 suites, 552/552 tests, 0 skipped/pending** |
+| `npm test` | **exit 0: 63/63 suites, 566/566 tests, 0 skipped/pending**; also green on a freshly migrated empty database, which is how CI runs it |
 | `npm run lint` | exit 0 |
 | `tsc --noEmit` | exit 0 |
 | CI on `main` (`gh run list`) | latest runs green; the run before them (`e88eb88`) was red and was repaired by `62f148b` |
@@ -166,6 +166,29 @@ and that `CLOUDFLARE_ACCESS_ENFORCED=true` is set in production. Forged headers 
 access even if the origin is reachable directly. Note this only protects the HTML console
 shells; data was already behind JWT + RBAC + TOTP.
 
+### B3 — Collection webhook verified a re-serialised body: fixed
+`POST /payments/webhook` (₹499 activation and placement-fee payments) computed its HMAC over
+`JSON.stringify(parsedBody)`, not the bytes the gateway signed. JSON does not round-trip
+byte-for-byte (key order, whitespace, escaped slashes such as `\/` in URLs, unicode escapes,
+number formatting), so a genuine event could fail verification and the payment would never be
+recorded. The old tests could not catch it because they signed the same re-serialised string.
+
+- The controller passes `req.rawBody` to the provider, which verifies the HMAC over those bytes
+  and parses the body **from the same bytes**, so what is verified is what is acted on. A parsed
+  object with no raw bytes is never verified, and the endpoint answers 400 if `rawBody` is not
+  enabled (it is, in `main.ts`).
+- Tests (`collection-webhook-raw-body.spec.ts`, 14): a Razorpay-shaped body built to differ from
+  its own re-serialisation (reordered keys, irregular whitespace, `\/`, `\u20b9`) verifies and
+  activates the candidate, and the test asserts that property so it cannot quietly stop being true;
+  a tampered amount, a swapped payment id, one extra whitespace byte, a signature computed over the
+  re-serialised copy, and a missing / empty / wrong-secret signature are all rejected with no state
+  change; a missing `rawBody` fails closed. Three mutants (HMAC over a re-serialised copy,
+  controller not passing the raw body, acting on a parsed copy) each fail a test.
+- The two existing tests that signed a re-serialised body were corrected to sign the raw bytes.
+
+Still needs one live check: that a real Razorpay payment-link event verifies end to end. Do it
+with one real test payment before enabling `PAYMENT_PROVIDER_MODE=real`.
+
 ## 4. Playbook §8 Go-Live Checklist, walked line by line
 
 Status key: **OPEN** = not done and not mine to mark done; **CODE READY** = the software side
@@ -209,16 +232,6 @@ proposed as accepted exceptions:
 | `prisma`, `@prisma/config`, `deepmerge-ts` | stack exhaustion merging recursive objects (GHSA-ggr8-5vv4-36mx) | CLI/config tooling, not a request path; fix is Prisma 7 (major) and AGENTS locks 6.19.3, so ask-first |
 
 Dev-only findings (10 more, e.g. `picomatch`) are not shipped to production.
-
-### The existing collection webhook verifies a re-serialised body (not changed here)
-`POST /payments/webhook` (₹499 activation and placement-fee payments) computes its HMAC over
-`JSON.stringify(parsedBody)`, not the raw bytes the gateway signed. If Razorpay's serialisation
-differs from a JS round trip in any way (escaped `/` in URLs, unicode escapes, number
-formatting), every real signature fails and payments would never be recorded. It passes today
-only because the tests sign the same re-serialised string. The new payout webhook does this
-correctly and `rawBody` is now enabled app-wide, so the fix is small (verify the raw body, as
-`verifyPayoutWebhook` does). Left alone because it is outside this change and touches the
-activation flow; **recommended before real mode, and worth confirming with one live test payment.**
 
 ### Backups: platform side unverified, offsite script unscheduled
 - `scripts/backup.sh` is not invoked by any scheduler in the repo (no cron, no job, no

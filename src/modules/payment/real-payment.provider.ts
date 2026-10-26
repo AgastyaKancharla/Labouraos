@@ -294,32 +294,42 @@ export class RealPaymentProvider implements PaymentProvider {
     return parsed ? { isValid: true, ...parsed } : invalid;
   }
 
+  /**
+   * `rawBody` must be the exact bytes the gateway sent. The HMAC is computed over
+   * those bytes, never over a parsed-then-re-serialised copy: JSON does not
+   * round-trip byte-for-byte (key order, whitespace, escaped slashes and
+   * unicode, number formatting), so a re-serialised body can fail to verify for
+   * a genuine event, or, worse, verify something other than what was sent.
+   * The body that is then acted on is parsed from those same bytes.
+   */
   async verifyWebhook(
     payload: unknown,
     signature?: string,
+    rawBody?: Buffer | string,
   ): Promise<WebhookVerificationResult> {
-    if (!payload || typeof payload !== 'object') {
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
-    }
+    const invalid: WebhookVerificationResult = {
+      isValid: false,
+      gatewayReference: '',
+      status: 'failed',
+    };
 
     if (!signature) {
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
+      return invalid;
     }
 
-    // HMAC-SHA256 signature verification
-    const payloadStr =
-      typeof payload === 'string' ? payload : JSON.stringify(payload);
+    // A string payload IS raw bytes; an already-parsed object is not.
+    const raw = rawBody ?? (typeof payload === 'string' ? payload : undefined);
+    if (raw === undefined) {
+      this.logger.warn(
+        'Webhook rejected: no raw request body to verify the signature against',
+      );
+      return invalid;
+    }
+
+    // HMAC-SHA256 signature verification over the raw bytes
     const expectedSignature = crypto
       .createHmac('sha256', this.webhookSecret)
-      .update(payloadStr)
+      .update(raw)
       .digest('hex');
 
     const signatureBuffer = Buffer.from(signature, 'utf8');
@@ -331,14 +341,19 @@ export class RealPaymentProvider implements PaymentProvider {
 
     if (!isValidSignature) {
       this.logger.warn('Webhook signature mismatch in RealPaymentProvider');
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
+      return invalid;
     }
 
-    const data = payload as Record<string, unknown>;
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8'));
+    } catch {
+      return invalid;
+    }
+    if (!parsedBody || typeof parsedBody !== 'object') {
+      return invalid;
+    }
+    const data = parsedBody as Record<string, unknown>;
 
     // Parse real vendor webhook payload structure (e.g. Razorpay event webhook)
     let gatewayReference = '';

@@ -46,12 +46,17 @@ export class PaymentService {
   async verifyWebhook(
     payload: unknown,
     signature?: string,
+    rawBody?: Buffer | string,
   ): Promise<WebhookVerificationResult> {
-    return this.provider.verifyWebhook(payload, signature);
+    return this.provider.verifyWebhook(payload, signature, rawBody);
   }
 
-  async handleWebhook(payload: unknown, signature?: string) {
-    const verification = await this.verifyWebhook(payload, signature);
+  async handleWebhook(
+    payload: unknown,
+    signature?: string,
+    rawBody?: Buffer | string,
+  ) {
+    const verification = await this.verifyWebhook(payload, signature, rawBody);
     if (!verification.isValid) {
       throw new BadRequestException('Invalid webhook signature or payload');
     }

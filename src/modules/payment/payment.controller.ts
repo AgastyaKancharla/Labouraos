@@ -94,15 +94,21 @@ export class PaymentController {
     return this.paymentService.handlePayoutWebhook(req.rawBody, signature, eventId);
   }
 
+  /**
+   * Collection webhook (activation and placement-fee payments). The signature is
+   * verified over `req.rawBody`, the bytes the gateway sent, which requires
+   * `rawBody: true` at app creation (see main.ts).
+   */
   @Post('webhook')
   async webhook(
     @Body() body: Record<string, unknown>,
+    @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-signature') xSig?: string,
     @Headers('x-razorpay-signature') rzpSig?: string,
     @Headers('x-webhook-signature') webhookSig?: string,
   ) {
     const signature = xSig || rzpSig || webhookSig;
-    return this.paymentService.handleWebhook(body, signature);
+    return this.paymentService.handleWebhook(body, signature, req.rawBody);
   }
 
   @Post('mock/simulate-webhook')

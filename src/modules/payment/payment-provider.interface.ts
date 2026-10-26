@@ -51,9 +51,14 @@ export interface PaymentProvider {
     metadata?: Record<string, unknown>,
   ): Promise<DisbursePayoutResult>;
 
+  /**
+   * `rawBody` is the exact bytes received. Providers that verify a signature must
+   * do so over it, not over `payload` (a parsed copy that need not round-trip).
+   */
   verifyWebhook(
     payload: unknown,
     signature?: string,
+    rawBody?: Buffer | string,
   ): Promise<WebhookVerificationResult>;
 
   /**
