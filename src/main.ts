@@ -11,7 +11,11 @@ async function bootstrap() {
     // Webhook signatures are computed over the exact bytes the gateway sent
     rawBody: true,
   });
-  const logger = app.get(StructuredLogger);
+  // StructuredLogger is transient-scoped, so it must be resolved per
+  // request-context instance via resolve(), not fetched as a shared
+  // singleton via get() — get() throws InvalidClassScopeException for
+  // request/transient-scoped providers.
+  const logger = await app.resolve(StructuredLogger);
   app.useLogger(logger);
   applyTrustProxy(app);
   const alertService = app.get(AlertService);
