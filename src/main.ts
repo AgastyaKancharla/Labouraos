@@ -11,11 +11,13 @@ async function bootstrap() {
     // Webhook signatures are computed over the exact bytes the gateway sent
     rawBody: true,
   });
-  // StructuredLogger is transient-scoped, so it must be resolved per
-  // request-context instance via resolve(), not fetched as a shared
-  // singleton via get() — get() throws InvalidClassScopeException for
-  // request/transient-scoped providers.
-  const logger = await app.resolve(StructuredLogger);
+  // StructuredLogger is never actually DI-resolved anywhere else in this
+  // codebase (every call site, including its own tests, does
+  // `new StructuredLogger(name)` directly) — its constructor takes a plain
+  // `context?: string`, which isn't a valid DI token, so asking Nest's
+  // container to build one (via get() or resolve()) always fails. Construct
+  // it directly here too, consistent with the rest of the app.
+  const logger = new StructuredLogger('Bootstrap');
   app.useLogger(logger);
   applyTrustProxy(app);
   const alertService = app.get(AlertService);
