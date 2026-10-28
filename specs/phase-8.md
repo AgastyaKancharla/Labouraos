@@ -301,7 +301,7 @@ redesign or ask again, the approach is decided):**
 
 ---
 
-### [ ] Task 10 — First-admin bootstrap and 2FA login UI (closes a real gap, found during the first real deploy)
+### [x] Task 10 — First-admin bootstrap and 2FA login UI (closes a real gap, found during the first real deploy)
 
 **Why this task exists:** today's first real deploy (Render) surfaced two
 gaps that no amount of local testing had caught, because nobody had ever

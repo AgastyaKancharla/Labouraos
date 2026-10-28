@@ -172,15 +172,38 @@ export function renderAdminDashboardHtml(): string {
     <div class="modal">
       <h2 style="margin-bottom: 16px; font-size: 1.25rem;">Admin Login</h2>
       <div id="login-error" class="alert alert-danger hidden"></div>
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="login-email" style="width: 100%;" placeholder="ceo@laboura.local">
+      <div id="login-info" class="alert alert-success hidden"></div>
+      <div id="login-form-fields">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="login-email" style="width: 100%;" placeholder="ceo@laboura.local">
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="login-password" style="width: 100%;" placeholder="••••••••">
+        </div>
+        <div class="form-group">
+          <label>Authenticator Code (6 digits)</label>
+          <input type="text" id="login-totp" maxlength="6" pattern="[0-9]{6}" style="width: 100%; letter-spacing: 2px;" placeholder="123456" autocomplete="one-time-code">
+          <small style="color: var(--text-muted); font-size: 0.75rem;">Leave blank if logging in for the first time to enroll 2FA.</small>
+        </div>
+        <button id="btn-login" style="width: 100%; margin-top: 8px;">Log In</button>
       </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="login-password" style="width: 100%;" placeholder="••••••••">
+
+      <!-- Inline TOTP Enrollment Step -->
+      <div id="totp-enroll-section" class="hidden" style="margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 12px;">
+        <h3 style="font-size: 1rem; margin-bottom: 8px;">2FA Enrollment Required</h3>
+        <p style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 8px;">
+          Enter this secret key manually into your authenticator app (Google Authenticator, Microsoft Authenticator, Authy):
+        </p>
+        <div style="background: #111827; padding: 8px 12px; border-radius: 4px; font-family: monospace; font-size: 0.9rem; word-break: break-all; margin-bottom: 12px; border: 1px dashed var(--card-border);" id="totp-setup-secret">
+        </div>
+        <div class="form-group">
+          <label>Enter 6-digit code from app</label>
+          <input type="text" id="totp-enroll-code" maxlength="6" pattern="[0-9]{6}" style="width: 100%; letter-spacing: 2px;" placeholder="123456">
+        </div>
+        <button id="btn-enable-totp" style="width: 100%; margin-top: 8px; background: #2563eb; color: #fff;">Verify &amp; Enable 2FA</button>
       </div>
-      <button id="btn-login" style="width: 100%; margin-top: 8px;">Log In</button>
     </div>
   </div>
 
@@ -527,7 +550,13 @@ export function renderAdminDashboardHtml(): string {
       return res.json().catch(() => ({}));
     }
 
+    let setupScopedToken = null;
+
     function showLoginModal() {
+      const enrollSec = document.getElementById('totp-enroll-section');
+      const formFields = document.getElementById('login-form-fields');
+      if (enrollSec) enrollSec.classList.add('hidden');
+      if (formFields) formFields.classList.remove('hidden');
       document.getElementById('auth-modal').classList.remove('hidden');
     }
 
@@ -538,23 +567,88 @@ export function renderAdminDashboardHtml(): string {
     document.getElementById('btn-login').addEventListener('click', async () => {
       const email = document.getElementById('login-email').value;
       const password = document.getElementById('login-password').value;
+      const totpCode = document.getElementById('login-totp').value.trim();
       const errEl = document.getElementById('login-error');
+      const infoEl = document.getElementById('login-info');
       try {
         errEl.classList.add('hidden');
+        if (infoEl) infoEl.classList.add('hidden');
+        const payload = { email, password };
+        if (totpCode) {
+          payload.totpCode = totpCode;
+        }
         const res = await fetch('/auth/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email, password })
+          body: JSON.stringify(payload)
         });
         if (!res.ok) {
           const err = await res.json().catch(() => ({ message: 'Login failed' }));
           throw new Error(err.message || 'Invalid credentials');
         }
         const data = await res.json();
+        if (data.totpEnrollmentRequired) {
+          // Account requires TOTP 2FA setup
+          setupScopedToken = data.accessToken;
+          const setupRes = await fetch('/staff/2fa/setup', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer ' + setupScopedToken
+            }
+          });
+          if (!setupRes.ok) {
+            const err = await setupRes.json().catch(() => ({ message: 'Failed to start 2FA setup' }));
+            throw new Error(err.message || 'Failed to start 2FA setup');
+          }
+          const setupData = await setupRes.json();
+          document.getElementById('totp-setup-secret').textContent = setupData.secret;
+          document.getElementById('login-form-fields').classList.add('hidden');
+          document.getElementById('totp-enroll-section').classList.remove('hidden');
+          return;
+        }
+
         token = data.accessToken;
         sessionStorage.setItem('laboura_token', token);
         hideLoginModal();
         await initUser();
+      } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+      }
+    });
+
+    document.getElementById('btn-enable-totp').addEventListener('click', async () => {
+      const errEl = document.getElementById('login-error');
+      const infoEl = document.getElementById('login-info');
+      const code = document.getElementById('totp-enroll-code').value.trim();
+      try {
+        errEl.classList.add('hidden');
+        if (infoEl) infoEl.classList.add('hidden');
+        if (!code || code.length !== 6) {
+          throw new Error('Please enter the 6-digit code from your authenticator app');
+        }
+        const res = await fetch('/staff/2fa/enable', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': 'Bearer ' + setupScopedToken
+          },
+          body: JSON.stringify({ totpCode: code })
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({ message: 'Verification failed' }));
+          throw new Error(err.message || 'Verification failed');
+        }
+        // Successfully enabled: reset modal back to login form and prompt re-login
+        document.getElementById('totp-enroll-section').classList.add('hidden');
+        document.getElementById('login-form-fields').classList.remove('hidden');
+        document.getElementById('login-totp').value = code;
+        setupScopedToken = null;
+        if (infoEl) {
+          infoEl.textContent = '2FA enabled successfully! Please enter your password to complete login.';
+          infoEl.classList.remove('hidden');
+        }
       } catch (e) {
         errEl.textContent = e.message;
         errEl.classList.remove('hidden');
