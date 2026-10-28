@@ -6,16 +6,18 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthService } from '../../common/auth/auth.service';
+import { TotpService } from '../../common/auth/totp.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Role } from '../../common/rbac/rbac.types';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
+import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -84,6 +86,14 @@ export interface CreateStaffResult {
   inviteExpiresAt: Date;
 }
 
+export interface BootstrapResult {
+  staff: StaffView;
+  totpSecret: string;
+  secret: string;
+  otpauthUrl: string;
+  otpauthUri: string;
+}
+
 export function hashInviteToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
@@ -100,7 +110,105 @@ export class StaffService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly authService: AuthService,
+    private readonly totpService: TotpService,
   ) {}
+
+  async bootstrapStaff(
+    dto: BootstrapStaffDto,
+    now: Date = new Date(),
+  ): Promise<BootstrapResult> {
+    const name = typeof dto?.name === 'string' ? dto.name.trim() : '';
+    const email =
+      typeof dto?.email === 'string' ? dto.email.trim().toLowerCase() : '';
+    const password = typeof dto?.password === 'string' ? dto.password : '';
+
+    if (!name) {
+      throw new BadRequestException('name is required');
+    }
+    if (!EMAIL_PATTERN.test(email)) {
+      throw new BadRequestException('A valid email is required');
+    }
+    if (password.length < MIN_PASSWORD_LENGTH) {
+      throw new BadRequestException(
+        `password must be at least ${MIN_PASSWORD_LENGTH} characters`,
+      );
+    }
+    if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) {
+      throw new BadRequestException(
+        `password must be at most ${MAX_PASSWORD_BYTES} bytes`,
+      );
+    }
+
+    const preCount = await this.prisma.staff.count();
+    if (preCount !== 0) {
+      throw new ForbiddenException(
+        'Staff bootstrap is only allowed when no staff accounts exist',
+      );
+    }
+
+    const { secret, otpauthUrl } = this.totpService.generateSetup(email);
+    const passwordHash = await this.authService.hashPassword(password);
+    const code = await this.idService.generateCode(STAFF_CODE_PREFIX.ceo);
+    const id = randomUUID();
+
+    const createdStaff = await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw`LOCK TABLE "Staff" IN EXCLUSIVE MODE`;
+
+      const inTxCount = await tx.staff.count();
+      if (inTxCount !== 0) {
+        throw new ForbiddenException(
+          'Staff bootstrap is only allowed when no staff accounts exist',
+        );
+      }
+
+      const rowsAffected = await tx.$executeRaw`
+        INSERT INTO "Staff" (
+          "id", "code", "city", "name", "email", "passwordHash", "role",
+          "totpSecret", "totpEnabled", "status", "createdAt", "updatedAt"
+        )
+        SELECT
+          ${id}, ${code}, 'Bengaluru', ${name}, ${email}, ${passwordHash}, 'ceo',
+          ${secret}, true, 'active', ${now}, ${now}
+        WHERE (SELECT COUNT(*) FROM "Staff") = 0
+      `;
+
+      if (rowsAffected !== 1) {
+        throw new ForbiddenException(
+          'Staff bootstrap is only allowed when no staff accounts exist',
+        );
+      }
+
+      return tx.staff.findUniqueOrThrow({
+        where: { id },
+        select: STAFF_VIEW_SELECT,
+      });
+    });
+
+    await this.auditService.log({
+      actorId: 'bootstrap',
+      action: 'staff.created',
+      entityType: 'staff',
+      entityCode: createdStaff.code,
+      before: null,
+      after: {
+        code: createdStaff.code,
+        name: createdStaff.name,
+        email: createdStaff.email,
+        role: createdStaff.role,
+        area: createdStaff.area,
+        teamLeadId: createdStaff.teamLeadId,
+        status: createdStaff.status,
+      },
+    });
+
+    return {
+      staff: createdStaff,
+      totpSecret: secret,
+      secret,
+      otpauthUrl,
+      otpauthUri: otpauthUrl,
+    };
+  }
 
   async createStaff(
     dto: CreateStaffDto,

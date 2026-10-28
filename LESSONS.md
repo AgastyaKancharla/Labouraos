@@ -171,3 +171,9 @@ Format:
 **Symptom:** Two suites (`phase-5-rbac-seed`, and the real-webhook integration test) failed on an empty database but passed on the dev one, and passed in a full run until an unrelated change reordered the run.
 **Cause:** Locally Jest runs previously-failed files first (its cache remembers them), so a few failing experiments are enough to move a suite ahead of the ones that created the data or staff rows it silently relied on. CI has no cache and orders by file size, so the dependency stays hidden until a new file shifts the order.
 **Fix:** Each suite creates or seeds what it needs (`seed(prisma)` is idempotent; a CEO staff row for audit attribution). To check a change the way CI will see it: scratch database, `prisma migrate deploy`, run each suspect suite alone, then the full suite, both with the default cache and with `--cacheDirectory=<empty dir>`.
+
+## Foreign key on AuditLog.actorId blocked bootstrap/system sentinel attribution
+**Symptom:** Inserting an audit log with `actorId: 'bootstrap'` failed with PostgreSQL error `insert or update on table "AuditLog" violates foreign key constraint "AuditLog_actorId_fkey": Key (actorId)=(bootstrap) is not present in table "Staff"`.
+**Cause:** `AuditLog.actorId` was constrained by a foreign key to `Staff.id` generated in the initial migration. When the database is unpopulated or actions are executed before a staff row exists (like the first-admin bootstrap endpoint), no staff row exists to satisfy the foreign key.
+**Fix:** Added migration `20261028140000_allow_sentinel_audit_actor` that drops the `AuditLog_actorId_fkey` constraint while preserving the Prisma relation. Standard staff audit logs continue to store staff UUIDs and populate `actor` via LEFT JOIN, while bootstrap/system audit logs safely record `'bootstrap'` or `'system'` without failing.
+

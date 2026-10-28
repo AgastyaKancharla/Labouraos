@@ -24,6 +24,7 @@ import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
+import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -38,6 +39,17 @@ export class StaffController {
   @RequireRoles('ceo', 'manager')
   create(@Body() dto: CreateStaffDto, @Req() req: AuthenticatedRequest) {
     return this.staffService.createStaff(dto, req.user);
+  }
+
+  /**
+   * Public by design: creates the very first staff account (CEO) on an empty
+   * database. Permanently safe because it requires staff.count() === 0.
+   */
+  @Post('bootstrap')
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  bootstrap(@Body() dto: BootstrapStaffDto) {
+    return this.staffService.bootstrapStaff(dto);
   }
 
   @Get()
