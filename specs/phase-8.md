@@ -301,6 +301,106 @@ redesign or ask again, the approach is decided):**
 
 ---
 
+### [ ] Task 10 — First-admin bootstrap and 2FA login UI (closes a real gap, found during the first real deploy)
+
+**Why this task exists:** today's first real deploy (Render) surfaced two
+gaps that no amount of local testing had caught, because nobody had ever
+actually tried to log in to a freshly-created, empty production database
+before:
+
+1. There is currently **no way, through the running API, to create the
+   very first staff account on a server with zero staff rows.**
+   `npm run seed` refuses to run when `NODE_ENV=production` (correct —
+   never relax that), and `POST /staff` (Task 9) requires an existing
+   CEO/Manager token to call it. That's a correct, intentional chicken-
+   and-egg lock for every account *after* the first — but nothing unlocks
+   the very first one. Right now a freshly deployed Laboura has no path
+   to its first login, ever, without hand-editing the database.
+2. The three console login screens (`admin-dashboard.html.ts`,
+   `call-agent-console.html.ts`, `field-agent-app.html.ts`, all from
+   Phase 6) were built before Task 6 (mandatory TOTP 2FA) existed, and
+   were never updated. Their login forms only collect email + password —
+   there is no field for a TOTP code, and no UI path for the one-time
+   "scan this into your authenticator app" enrollment step
+   (`POST /staff/2fa/setup` / `POST /staff/2fa/enable`) that an
+   unenrolled account's login response (`totpEnrollmentRequired: true`)
+   is supposed to trigger. Right now, logging in silently breaks the
+   moment 2FA is involved — which, per Task 6, is always.
+
+Both are genuine product gaps, not edge cases to skip. Fix both.
+
+**Acceptance — Part A: first-admin bootstrap**
+- `POST /staff/bootstrap`, public (no auth guard) — but only ever usable
+  once, enforced by data state, not a flag: inside the same transaction
+  that creates the row, check `prisma.staff.count()`; if it is not `0`,
+  reject with 403 and create nothing. There is no other way to call this
+  successfully once any staff row exists, ever — not even another CEO.
+  Do not gate this with an environment variable or a secret token instead
+  of the row-count check; the row-count check is what makes it safe to
+  leave in the code permanently, and is the whole point of this design.
+- Request body: `name`, `email`, `password` (same password rules as
+  Task 9's accept-invite: minimum 12 characters) — the real first CEO
+  sets their own real credentials, this is not a fixed demo login.
+- On success: creates one `Staff` row with `role: 'ceo'`, `status:
+  'active'`, generates a TOTP secret and sets `totpEnabled: true`
+  immediately (this account is not exempt from mandatory 2FA just
+  because it was bootstrapped). Returns the TOTP secret as both the
+  base32 string and a `otpauth://` URI, exactly once, in this response
+  only — never retrievable again afterward, same one-time-reveal
+  principle as Task 9's invite token.
+- Throttle it (reuse `AuthThrottlerGuard`, same limits as
+  `/auth/login`) — it's unauthenticated, so it needs the same
+  brute-force protection as login even though it can only ever succeed
+  once.
+- Audit-logged the same as any staff creation (Task 9), with the actor
+  recorded as a literal `'bootstrap'` sentinel (there is no real actor —
+  nobody was logged in), never a null or forged staff id.
+- Test: calling it when the table is empty succeeds once; calling it
+  again immediately after (table now has 1 row) returns 403 and creates
+  nothing; two concurrent calls on an empty table — only one may
+  succeed (use the same atomic-claim pattern already established in
+  `payment.service.ts` for this, a conditional write checked by
+  affected-row count, not a separate read-then-write check).
+
+**Acceptance — Part B: 2FA in the login UI**
+- Add a TOTP code field to all three console login forms, sent as
+  `totpCode` in the existing `POST /auth/login` body alongside email/
+  password (the field already exists on `LoginDto`; the UI just never
+  sent it).
+- When a login response comes back with `totpEnrollmentRequired: true`
+  (the account has no TOTP yet — this will not happen for a
+  bootstrapped account, but will for every account created normally via
+  Task 9's invite flow), show an enrollment step using the
+  setup-scoped token already returned: call `POST /staff/2fa/setup` to
+  get a secret, display it as a plain manual-entry key (base32 text is
+  sufficient — do not add a QR-code image library for this), let the
+  person enter the 6-digit code their authenticator app now shows, call
+  `POST /staff/2fa/enable` with it, then prompt them to log in again
+  (this time `totpEnrollmentRequired` will be gone and the TOTP field
+  applies). Keep this as a small inline step in the existing login
+  modal — do not build a separate page for it.
+- Mirror the same two changes (TOTP field + enrollment step) across all
+  three templates; they currently duplicate this kind of logic rather
+  than sharing it, which is fine — stay consistent with that existing
+  pattern, don't refactor it into a shared module as part of this task.
+- Test: covered by existing `auth.service.spec.ts`/e2e coverage for the
+  API side (no new backend behavior here, Part B is UI-only); for the
+  UI, a lightweight check is acceptable — this stack has no existing
+  frontend test harness for the vanilla-JS consoles, so don't add one
+  just for this; manual verification against the acceptance steps above
+  is sufficient and should be described in the task's commit message.
+
+**Confirmed decisions:**
+- The bootstrap endpoint is **permanent**, not a one-time script to run
+  and delete — its safety comes entirely from the row-count check, which
+  holds forever. Do not wrap it in an env var, and do not remove it
+  after first use.
+- Do not loosen `npm run seed`'s `NODE_ENV=production` refusal to solve
+  this instead — that refusal stays exactly as-is; this task is the
+  correct, permanent fix for the gap it (correctly) exposes.
+
+---
+
 ## Phase 8 Gate
 
 - [ ] Load test report exists and is reviewed; any fixed bottleneck is
