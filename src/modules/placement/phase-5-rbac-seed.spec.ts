@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { seed } from '../../../prisma/seed';
 
 describe('Phase 5 Task 9: RBAC and Seed Data', () => {
   let app: INestApplication;
@@ -27,6 +28,8 @@ describe('Phase 5 Task 9: RBAC and Seed Data', () => {
     await app.init();
 
     prisma = app.get<PrismaService>(PrismaService);
+    // This suite reads seeded placements; don't rely on an earlier suite having seeded them
+    await seed(prisma);
     const passwordHash = await bcrypt.hash(password, 10);
 
     const ceo = await prisma.staff.create({

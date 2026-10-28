@@ -607,7 +607,7 @@ export class JobSeekerService {
       where: {
         jobSeekerId: jobSeeker.id,
         type: 'refund',
-        status: { in: ['pending', 'completed', 'succeeded'] },
+        status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
       },
     });
     if (existingRefund) {

@@ -93,10 +93,56 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
         fetchFn: mockFetch,
       });
 
-      const res = await provider.disbursePayout(20000, 'referral', 'RF-001');
+      const paymentId = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
+      const res = await provider.disbursePayout(20000, 'referral', 'RF-001', {
+        paymentId,
+      });
       expect(res.success).toBe(true);
       expect(res.status).toBe('succeeded');
       expect(res.gatewayReference).toBe('pout_real_789012');
+    });
+
+    it('derives reference_id and the idempotency header from payment.id alone, identically on a retry', async () => {
+      const provider = new RealPaymentProvider({
+        keyId,
+        keySecret,
+        webhookSecret,
+        fetchFn: mockFetch,
+      });
+      const paymentId = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
+
+      await provider.disbursePayout(20000, 'referral', 'RF-001', { paymentId });
+      // a retry later, and with different non-id inputs, must not change the key
+      await new Promise((r) => setTimeout(r, 5));
+      await provider.disbursePayout(20000, 'referral', 'RF-OTHER', { paymentId });
+
+      const payoutCalls = capturedRequests.filter((r) => r.url.includes('/payouts'));
+      expect(payoutCalls).toHaveLength(2);
+      for (const call of payoutCalls) {
+        expect(JSON.parse(call.options?.body as string).reference_id).toBe(paymentId);
+        expect(
+          (call.options?.headers as Record<string, string>)['X-Payout-Idempotency'],
+        ).toBe(paymentId);
+      }
+      // RazorpayX idempotency keys are 4-36 characters
+      expect(paymentId.length).toBeLessThanOrEqual(36);
+    });
+
+    it('refuses to disburse without a paymentId rather than inventing a non-idempotent reference', async () => {
+      const provider = new RealPaymentProvider({
+        keyId,
+        keySecret,
+        webhookSecret,
+        fetchFn: mockFetch,
+      });
+
+      await expect(
+        provider.disbursePayout(20000, 'referral', 'RF-001'),
+      ).rejects.toThrow('metadata.paymentId');
+      await expect(
+        provider.disbursePayout(20000, 'referral', 'RF-001', { paymentId: '' }),
+      ).rejects.toThrow('metadata.paymentId');
+      expect(capturedRequests.filter((r) => r.url.includes('/payouts'))).toHaveLength(0);
     });
 
     it('verifies HMAC-SHA256 signature on real Razorpay webhook payload and rejects forged signatures', async () => {
@@ -127,8 +173,8 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
         .update(payloadStr)
         .digest('hex');
 
-      // Valid signature
-      const validResult = await provider.verifyWebhook(realPayload, validSignature);
+      // Valid signature, verified over the raw bytes
+      const validResult = await provider.verifyWebhook(realPayload, validSignature, payloadStr);
       expect(validResult.isValid).toBe(true);
       expect(validResult.gatewayReference).toBe('plink_real_999888');
       expect(validResult.status).toBe('succeeded');
@@ -138,12 +184,18 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       const invalidResult = await provider.verifyWebhook(
         realPayload,
         'forged_invalid_signature_hex_123',
+        payloadStr,
       );
       expect(invalidResult.isValid).toBe(false);
 
       // Missing signature
-      const missingResult = await provider.verifyWebhook(realPayload, undefined);
+      const missingResult = await provider.verifyWebhook(realPayload, undefined, payloadStr);
       expect(missingResult.isValid).toBe(false);
+
+      // A parsed object with no raw bytes is never verified: a re-serialised copy is
+      // not what the gateway signed, even when it happens to hash the same
+      const objectOnly = await provider.verifyWebhook(realPayload, validSignature);
+      expect(objectOnly.isValid).toBe(false);
     });
   });
 
@@ -153,6 +205,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
     let idService: IdService;
     const timestamp = Date.now();
     const testWebhookSecret = 'test_hmac_secret_phase7_task2';
+    let ceoStaffId: string;
 
     beforeAll(async () => {
       process.env.PAYMENT_PROVIDER = 'real';
@@ -162,17 +215,33 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
         imports: [AppModule],
       }).compile();
 
-      app = moduleRef.createNestApplication();
+      // rawBody mirrors main.ts: the signature is over the bytes the gateway sent
+      app = moduleRef.createNestApplication({ rawBody: true });
       await app.init();
 
       prisma = app.get<PrismaService>(PrismaService);
       idService = app.get<IdService>(IdService);
+      // The activation audit entry needs a staff row to attribute to; don't rely on
+      // other suites leaving one behind (a fresh CI database has none)
+      const ceo = await prisma.staff.create({
+        data: {
+          code: `CEO-RWH-${timestamp}`,
+          name: 'Audit actor',
+          email: `ceo_rwh_${timestamp}@laboura.local`,
+          passwordHash: 'not-a-real-hash',
+          role: 'ceo',
+          city: 'Bengaluru',
+        },
+      });
+      ceoStaffId = ceo.id;
     });
 
     afterAll(async () => {
       delete process.env.PAYMENT_PROVIDER;
       delete process.env.RAZORPAY_WEBHOOK_SECRET;
       if (app) {
+        await prisma.auditLog.deleteMany({ where: { actorId: ceoStaffId } });
+        await prisma.staff.deleteMany({ where: { id: ceoStaffId } });
         await app.close();
       }
     });
@@ -238,8 +307,9 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       // 4. First webhook delivery
       const firstRes = await request(app.getHttpServer())
         .post('/payments/webhook')
+        .set('Content-Type', 'application/json')
         .set('x-razorpay-signature', signature)
-        .send(realRazorpayPayload);
+        .send(payloadStr);
 
       expect(firstRes.status).toBe(201);
       expect(firstRes.body.status).toBe('succeeded');
@@ -269,8 +339,9 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       // 5. Second webhook delivery (repeat delivery - idempotency)
       const secondRes = await request(app.getHttpServer())
         .post('/payments/webhook')
+        .set('Content-Type', 'application/json')
         .set('x-razorpay-signature', signature)
-        .send(realRazorpayPayload);
+        .send(payloadStr);
 
       expect(secondRes.status).toBe(201);
       expect(secondRes.body.received).toBe(true);
@@ -288,8 +359,9 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       // 6. Webhook with invalid signature is rejected with 400
       await request(app.getHttpServer())
         .post('/payments/webhook')
+        .set('Content-Type', 'application/json')
         .set('x-razorpay-signature', 'forged_tampered_signature')
-        .send(realRazorpayPayload)
+        .send(payloadStr)
         .expect(400);
     });
   });

@@ -3,13 +3,22 @@ import * as crypto from 'crypto';
 import {
   DisbursePayoutResult,
   PaymentProvider,
+  PayoutWebhookResult,
   WebhookVerificationResult,
 } from './payment-provider.interface';
+import {
+  MAX_PAYOUT_ATTEMPTS,
+  mapGatewayPayoutStatus,
+  payoutIdempotencyKey,
+} from './payout-state';
+import { parsePayoutWebhookBody } from './payout-webhook-parser';
 
 export interface RealPaymentProviderOptions {
   keyId?: string;
   keySecret?: string;
   webhookSecret?: string;
+  /** RazorpayX webhooks have their own secret; falls back to `webhookSecret`. */
+  payoutWebhookSecret?: string;
   accountNumber?: string;
   baseUrl?: string;
   fetchFn?: typeof fetch;
@@ -21,6 +30,7 @@ export class RealPaymentProvider implements PaymentProvider {
   private readonly keyId: string;
   private readonly keySecret: string;
   private readonly webhookSecret: string;
+  private readonly payoutWebhookSecret: string;
   private readonly accountNumber: string;
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
@@ -41,6 +51,10 @@ export class RealPaymentProvider implements PaymentProvider {
       process.env.RAZORPAY_WEBHOOK_SECRET ??
       process.env.PAYMENT_WEBHOOK_SECRET ??
       'dummy_webhook_secret_for_hmac';
+    this.payoutWebhookSecret =
+      options?.payoutWebhookSecret ??
+      process.env.RAZORPAYX_WEBHOOK_SECRET ??
+      this.webhookSecret;
     this.accountNumber =
       options?.accountNumber ??
       process.env.RAZORPAYX_ACCOUNT_NUMBER ??
@@ -136,8 +150,21 @@ export class RealPaymentProvider implements PaymentProvider {
       throw new Error(`Amount must be an integer in paise, received: ${amountPaise}`);
     }
 
-    const timestamp = Date.now();
-    const referenceId = `pout_${subjectType}_${subjectId}_${timestamp}`;
+    // The key is derived from the payment's own id (plus the attempt number for
+    // a deliberate retry) and nothing else, so repeating an attempt reuses it and
+    // the gateway can dedupe (AGENTS.md §2 rule 7). No clock or random input here,
+    // ever. Keys are at most 36 chars, the gateway's limit for X-Payout-Idempotency.
+    const paymentId = metadata?.paymentId;
+    if (typeof paymentId !== 'string' || paymentId.length === 0) {
+      throw new Error(
+        'disbursePayout requires metadata.paymentId to derive an idempotent reference',
+      );
+    }
+    const attempt = typeof metadata?.attempt === 'number' ? metadata.attempt : 1;
+    if (!Number.isInteger(attempt) || attempt < 1 || attempt > MAX_PAYOUT_ATTEMPTS) {
+      throw new Error(`Payout attempt must be between 1 and ${MAX_PAYOUT_ATTEMPTS}`);
+    }
+    const referenceId = payoutIdempotencyKey(paymentId, attempt);
 
     const payload = {
       account_number: this.accountNumber,
@@ -150,9 +177,12 @@ export class RealPaymentProvider implements PaymentProvider {
       purpose: 'payout',
       queue_if_low_balance: true,
       reference_id: referenceId,
+      // Echoed back on every webhook; the way to find the payment if we never
+      // received the payout id (timeout after the gateway accepted it).
       notes: {
         subjectType,
         subjectId,
+        paymentId,
       },
     };
 
@@ -162,6 +192,9 @@ export class RealPaymentProvider implements PaymentProvider {
         headers: {
           'Content-Type': 'application/json',
           Authorization: this.getAuthHeader(),
+          // RazorpayX returns the existing payout's latest state when it sees
+          // this key again, instead of creating a second payout
+          'X-Payout-Idempotency': referenceId,
         },
         body: JSON.stringify(payload),
       });
@@ -171,69 +204,132 @@ export class RealPaymentProvider implements PaymentProvider {
         this.logger.error(
           `Payout API disbursement failed with status ${response.status}: ${errorText}`,
         );
+        if (response.status >= 500) {
+          // Server-side error: the gateway may or may not have created the payout.
+          return {
+            success: true,
+            gatewayReference: '',
+            status: 'processing',
+            ambiguous: true,
+            failureReason: `Gateway error ${response.status}: ${errorText}`,
+          };
+        }
+        // 4xx: the request was refused, so no payout exists.
         return {
           success: false,
-          gatewayReference: referenceId,
+          gatewayReference: '',
           status: 'failed',
           failureReason: errorText,
         };
       }
 
       const data = (await response.json()) as {
-        id: string;
-        status: string;
+        id?: string;
+        status?: string;
         failure_reason?: string;
       };
 
-      const isSucceeded =
-        data.status === 'processed' ||
-        data.status === 'processing' ||
-        data.status === 'succeeded';
-
+      const outcome = mapGatewayPayoutStatus(data.status ?? '');
+      if (outcome === 'failed' || outcome === 'reversed') {
+        return {
+          success: false,
+          gatewayReference: data.id ?? '',
+          status: 'failed',
+          failureReason: data.failure_reason ?? `Gateway status: ${data.status}`,
+        };
+      }
+      // Only `processed` is final success. Anything else (queued, processing,
+      // an unrecognised status) is not yet known to have paid out.
       return {
-        success: isSucceeded,
-        gatewayReference: data.id || referenceId,
-        status: isSucceeded ? 'succeeded' : 'failed',
-        failureReason: isSucceeded ? undefined : data.failure_reason,
+        success: true,
+        gatewayReference: data.id ?? '',
+        status: outcome === 'succeeded' ? 'succeeded' : 'processing',
       };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       this.logger.error(`Network error calling payout API: ${msg}`);
+      // Timeout or dropped connection: the gateway may have accepted the payout.
+      // Recording this as "failed" would invite a second payment.
       return {
-        success: false,
-        gatewayReference: referenceId,
-        status: 'failed',
+        success: true,
+        gatewayReference: '',
+        status: 'processing',
+        ambiguous: true,
         failureReason: msg,
       };
     }
   }
 
+  async verifyPayoutWebhook(
+    rawBody: Buffer | string,
+    signature?: string,
+  ): Promise<PayoutWebhookResult> {
+    const invalid: PayoutWebhookResult = {
+      isValid: false,
+      event: '',
+      payoutId: '',
+      referenceId: null,
+      paymentIdHint: null,
+      gatewayStatus: '',
+      outcome: 'unknown',
+    };
+
+    if (!(typeof rawBody === 'string' || Buffer.isBuffer(rawBody)) || !signature) {
+      return invalid;
+    }
+
+    // HMAC-SHA256 of the RAW body, as the gateway signs it
+    const expected = crypto
+      .createHmac('sha256', this.payoutWebhookSecret)
+      .update(rawBody)
+      .digest('hex');
+    const got = Buffer.from(signature, 'utf8');
+    const want = Buffer.from(expected, 'utf8');
+    if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) {
+      this.logger.warn('Payout webhook signature mismatch in RealPaymentProvider');
+      return invalid;
+    }
+
+    const parsed = parsePayoutWebhookBody(rawBody.toString('utf8'));
+    return parsed ? { isValid: true, ...parsed } : invalid;
+  }
+
+  /**
+   * `rawBody` must be the exact bytes the gateway sent. The HMAC is computed over
+   * those bytes, never over a parsed-then-re-serialised copy: JSON does not
+   * round-trip byte-for-byte (key order, whitespace, escaped slashes and
+   * unicode, number formatting), so a re-serialised body can fail to verify for
+   * a genuine event, or, worse, verify something other than what was sent.
+   * The body that is then acted on is parsed from those same bytes.
+   */
   async verifyWebhook(
     payload: unknown,
     signature?: string,
+    rawBody?: Buffer | string,
   ): Promise<WebhookVerificationResult> {
-    if (!payload || typeof payload !== 'object') {
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
-    }
+    const invalid: WebhookVerificationResult = {
+      isValid: false,
+      gatewayReference: '',
+      status: 'failed',
+    };
 
     if (!signature) {
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
+      return invalid;
     }
 
-    // HMAC-SHA256 signature verification
-    const payloadStr =
-      typeof payload === 'string' ? payload : JSON.stringify(payload);
+    // A string payload IS raw bytes; an already-parsed object is not.
+    const raw = rawBody ?? (typeof payload === 'string' ? payload : undefined);
+    if (raw === undefined) {
+      this.logger.warn(
+        'Webhook rejected: no raw request body to verify the signature against',
+      );
+      return invalid;
+    }
+
+    // HMAC-SHA256 signature verification over the raw bytes
     const expectedSignature = crypto
       .createHmac('sha256', this.webhookSecret)
-      .update(payloadStr)
+      .update(raw)
       .digest('hex');
 
     const signatureBuffer = Buffer.from(signature, 'utf8');
@@ -245,14 +341,19 @@ export class RealPaymentProvider implements PaymentProvider {
 
     if (!isValidSignature) {
       this.logger.warn('Webhook signature mismatch in RealPaymentProvider');
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
+      return invalid;
     }
 
-    const data = payload as Record<string, unknown>;
+    let parsedBody: unknown;
+    try {
+      parsedBody = JSON.parse(typeof raw === 'string' ? raw : raw.toString('utf8'));
+    } catch {
+      return invalid;
+    }
+    if (!parsedBody || typeof parsedBody !== 'object') {
+      return invalid;
+    }
+    const data = parsedBody as Record<string, unknown>;
 
     // Parse real vendor webhook payload structure (e.g. Razorpay event webhook)
     let gatewayReference = '';

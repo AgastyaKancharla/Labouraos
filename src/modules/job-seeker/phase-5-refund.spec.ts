@@ -347,5 +347,24 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
         .send({ asOf: day31 })
         .expect(400);
     });
+
+    it('treats a refund payout still in flight (processing) as already issued, so it cannot be refunded twice', async () => {
+      const candidate = await prisma.jobSeeker.findUnique({
+        where: { code: `JS-P5R-ACT-${timestamp}` },
+      });
+      const refund = await prisma.payment.findFirstOrThrow({
+        where: { jobSeekerId: candidate!.id, type: 'refund' },
+      });
+      await prisma.payment.update({ where: { id: refund.id }, data: { status: 'processing' } });
+
+      const day31 = new Date(candidate!.paymentReceivedAt!.getTime() + 31 * 24 * 60 * 60 * 1000).toISOString();
+      await request(app.getHttpServer())
+        .post(`/job-seekers/${candidate!.id}/refund`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ asOf: day31 })
+        .expect(400);
+
+      expect(await prisma.payment.count({ where: { jobSeekerId: candidate!.id, type: 'refund' } })).toBe(1);
+    });
   });
 });

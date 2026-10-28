@@ -87,9 +87,6 @@ Format:
 **Cause:** When a controller method injects `@Res() res` and calls `return res.send(...)`, Express returns the `ServerResponse` instance. Because Express `Response` objects have circular references (`res.req`, `res.socket`), any recursive payload traverser (like PII masking interceptors) enters an infinite recursion loop.
 **Fix:** 1) Add circular reference protection via `seen = new WeakSet<object>()` in any deep payload-transforming interceptor. 2) Use `@Res({ passthrough: true }) res: Response` in NestJS controllers so that method return values flow as standard response bodies rather than passing the circular Express response object through the interceptor pipeline.
 
-
-
-
 ## CI red on main after adding global throttling, TOTP and backup script
 **Symptom:** `npm test` passed locally but CI failed 20 tests across 5 suites: "Nest can't resolve dependencies of the AuthThrottlerGuard (?, ...THROTTLER:MODULE_OPTIONS...)", "Nest can't resolve dependencies of the AuthService (PrismaService, JwtService, ?, AuditService)", and `pg_dump: database "laboura_dev" does not exist`.
 **Cause:** (1) `OtpModule`'s controller uses `AuthThrottlerGuard`, whose `ThrottlerModule` lives in the `@Global()` `AuthModule`; specs that built `OtpModule` alone had no throttler options. (2) `AuthService` gained a `TotpService` dependency that `auth.spec.ts` did not provide. (3) `scripts/backup.sh` hardcoded `laboura_dev`, which exists locally but not in CI (`laboura_test`); the CI runner's default `pg_dump` is also older than the `postgres:17` service.
@@ -119,3 +116,58 @@ Format:
 **Symptom:** Sending a different fake `X-Forwarded-For` on each login/OTP request gave a fresh throttle bucket every time.
 **Cause:** `AuthThrottlerGuard` (and the login controller, for the session IP) read the raw header ahead of `req.ip`. Render's proxy appends to a client-supplied header rather than replacing it, so everything left of the proxy's own entry is attacker-controlled.
 **Fix:** Both use `req.ip` only. `TRUST_PROXY_HOPS` (default 0 = ignore the header) sets Express's `trust proxy` hop count at startup, so `req.ip` is the address the Nth trusted proxy saw. Invalid values fail startup. The hop count must match the real Render/Cloudflare path per environment; Render's docs do not state it, so verify it on the deployed service by logging raw headers once.
+
+## 51 suites failed with P1001 after a host restart
+**Symptom:** `npm test` went from 4 failing suites to 51 failing suites (332 tests) with no code change; `prisma migrate status` reported `P1001: Can't reach database server at localhost:5432`.
+**Cause:** The `laboura-postgres` and `laboura-redis` containers had exited (code 255) when the host restarted; nothing restarts them. Almost every suite is DB-backed, so the whole suite fails at once, which looks like a regression but is an environment fault.
+**Fix:** `docker start laboura-postgres laboura-redis` (data survives; do not recreate them). Check `npx prisma migrate status` before concluding a mass failure is a code problem, and read the exit code of `npm test` itself (a trailing `echo` or pipe hides it).
+
+## Payout disbursement: check-then-act let two concurrent requests both reach the gateway
+**Symptom:** Two simultaneous `disbursePayout` calls on one `pending` payment both called the provider and both succeeded (found by a throwaway probe during the go-live review; the existing tests were all sequential).
+**Cause:** The service read `status === 'pending'`, called the provider, then wrote the result, with nothing claiming the row in between. The real provider also built `reference_id` from `Date.now()`, so the gateway could not dedupe the two attempts either.
+**Fix:** Claim first with one conditional `updateMany` (`pending` → `processing`) and require `count === 1` before the provider call. `reference_id` and the `X-Payout-Idempotency` header are the payment's id and nothing else. If the provider throws, the payment stays in `processing` for a human to reconcile; it is never released to `pending`. The concurrency tests use a provider stub that sleeps so the race window is real, and were confirmed to fail without the fix.
+
+## @nestjs/jwt ignores a per-call publicKey when the module has a secret
+**Symptom:** Verifying a Cloudflare Access (RS256) token with `jwtService.verifyAsync(token, { publicKey, algorithms: ['RS256'] })` passed in a unit test using `new JwtService()` but failed for every genuine token inside the app.
+**Cause:** `JwtService.getSecretKey` resolves `options.secret || this.options.secret || options.publicKey`. The app's `JwtModule` is registered with an HS256 `secret`, so that secret silently outranks the `publicKey` passed per call and Cloudflare's tokens were being checked against our own signing secret.
+**Fix:** `CloudflareAccessVerifier` owns a bare `new JwtService()` (no module options) instead of injecting the app's. Unit tests must construct the verifier the way production does, and the HTTP-level test with a genuinely signed token is what caught it.
+
+## A guard used via @UseGuards() needs its dependencies exported, not just provided
+**Symptom:** After giving `CloudflareAccessGuard` a constructor dependency, every suite that imports `AppModule` failed with "Nest can't resolve dependencies of the CloudflareAccessGuard (?) ... CloudflareAccessVerifier ... in the ConsoleModule module", i.e. the app would not boot.
+**Cause:** `@UseGuards(SomeGuard)` makes Nest instantiate the guard inside the module of the controller using it (`ConsoleModule`), so its dependencies must be visible there. The verifier was only in `AuthModule`'s `providers`.
+**Fix:** Add it to `AuthModule`'s `exports` (the module is `@Global()`), next to the guard.
+
+## Retry idempotency keys longer than RazorpayX's 36-character limit
+**Symptom:** None yet, caught in review before any real payout: the retry key `<payment uuid>-r1` is 39 characters.
+**Cause:** RazorpayX `X-Payout-Idempotency` keys must be 4-36 characters (letters, digits, hyphen, underscore, space). A 36-char UUID alone fits, so the first attempt worked and the bug would only have appeared on the first retry, as a gateway 4xx. The limit I had assumed (40, on `reference_id`) was not the binding one.
+**Fix:** Attempt 1 is the payment id as is; later attempts are the id without hyphens (32 chars) plus `-r<n>` (35 max). `paymentIdFromReference` accepts both forms so webhooks for retried attempts still find their payment. Per RazorpayX docs a payout that comes back `failed` fails for every request with that key, so a retry must use a new key, whereas a payout still `processing` must NOT get a new key (it would create a duplicate), which is why `processing` is never retryable.
+
+## Counting "processing" as paid, and a timeout as "failed"
+**Symptom:** (Found in review before real mode went live.) A gateway reply of `processing` was stored as `succeeded`, and a network error as `failed`.
+**Cause:** RazorpayX payouts are asynchronous: `processing` can last up to T+3 working days and end as `processed` or `reversed`, and a `processed` payout can still be reversed later. A timeout says nothing about whether the gateway created the payout. Recording the first as paid hides later failures; recording the second as failed invites a second payout.
+**Fix:** Only `processed` is `succeeded`. In-flight and ambiguous outcomes stay `processing` until the signed payout webhook or a CEO/Manager manual resolution settles them. Only a definitive refusal (4xx, or a rejected/failed/cancelled status) is `failed`, and only that is retryable. Transitions live in one pure, exhaustively tested table (`payout-state.ts`).
+
+## Prisma interactive transaction aborts after a caught unique violation
+**Symptom:** Designing webhook de-duplication: inserting the event id inside a transaction and catching `P2002` would have poisoned the rest of the transaction.
+**Cause:** In PostgreSQL a failed statement aborts the surrounding transaction; catching the error in JS does not un-abort it.
+**Fix:** Insert with `createMany({ skipDuplicates: true })` (`ON CONFLICT DO NOTHING`) and check the inserted count. A concurrent twin blocks on the unique index until the first commits, then inserts 0 rows.
+
+## Concurrency and race tests that cannot fail
+**Symptom:** Mutation checks (deliberately removing `FOR UPDATE`, and a conditional-write guard) did not fail the tests meant to protect them, twice.
+**Cause:** (1) supertest requests are lazy: nothing is sent until the request is awaited or `.then()` is called, so a "fire the request, then hold the lock" test sent it after the lock was released. (2) A race test that only produced an ambiguous result never reached the guarded write. (3) Timing-based races from outside the process are too narrow to hit reliably.
+**Fix:** Start requests eagerly with `.then(r => r)` when ordering matters; make the lost-update test deterministic by holding the row lock in the test's own transaction; add a case that actually reaches the guarded statement (a stale `succeeded` over a webhook's `reversed`). Rule of thumb: after writing a concurrency test, remove the guard and watch it fail.
+
+## New specs pass locally but fail in CI: they relied on staff rows left behind by other suites
+**Symptom:** 6 tests in `payout-webhook.spec.ts` failed in CI (state changes correct, audit rows missing) while 552/552 passed locally.
+**Cause:** System-driven audit entries (webhooks) are attributed to the CEO, or any staff row, because `AuditLog.actorId` is a foreign key to `Staff`. The spec created no staff. The local dev database is full of staff from earlier runs; CI's database is freshly migrated and empty, so no actor was found and the audit entry was silently skipped. A sibling spec (`payout-idempotency.spec.ts`) only passed in CI because suites earlier in the same run happened to leave a staff row behind.
+**Fix:** Each spec creates the staff row it needs and removes it afterwards. `PaymentService` now logs an error when no actor can be found instead of skipping the audit entry silently. To reproduce CI before pushing: create a scratch database, `prisma migrate deploy` it, and run `npm test` with `DATABASE_URL` pointing at it (the old spec fails the same 6 tests there).
+
+## Webhook signature verified over JSON.stringify(parsedBody) instead of the raw bytes
+**Symptom:** None observed (found in review before real mode): the collection webhook (`POST /payments/webhook`, ₹499 activation and placement-fee payments) passed all tests, but those tests signed the same re-serialised string the code verified.
+**Cause:** `RealPaymentProvider.verifyWebhook` computed its HMAC over `JSON.stringify(payload)` where `payload` was the already-parsed body. JSON does not round-trip byte-for-byte: key order, whitespace, escaped slashes (`\/`, as PHP's `json_encode` writes URLs, and Razorpay payment-link events contain URLs), unicode escapes and number formatting can all differ. A genuine event could fail verification and the payment would never be recorded. The tests could not catch it because the test and the code shared the same wrong assumption.
+**Fix:** The controller passes `req.rawBody` (enabled in `main.ts`) down to the provider, which verifies the HMAC over those bytes and parses the body from the same bytes, so what is verified is what is acted on. A parsed object with no raw bytes is never verified, and the endpoint fails closed (400) when `rawBody` is missing. Tests use a body built to differ from its own re-serialisation (reordered keys, odd whitespace, `\/`, `₹`) and assert that property, so they cannot quietly stop being meaningful; three mutants (HMAC over a re-serialised copy, controller not passing the raw body, acting on a parsed copy) each fail a test.
+
+## Suites that pass only after other suites have populated the database
+**Symptom:** Two suites (`phase-5-rbac-seed`, and the real-webhook integration test) failed on an empty database but passed on the dev one, and passed in a full run until an unrelated change reordered the run.
+**Cause:** Locally Jest runs previously-failed files first (its cache remembers them), so a few failing experiments are enough to move a suite ahead of the ones that created the data or staff rows it silently relied on. CI has no cache and orders by file size, so the dependency stays hidden until a new file shifts the order.
+**Fix:** Each suite creates or seeds what it needs (`seed(prisma)` is idempotent; a CEO staff row for audit attribution). To check a change the way CI will see it: scratch database, `prisma migrate deploy`, run each suspect suite alone, then the full suite, both with the default cache and with `--cacheDirectory=<empty dir>`.

@@ -1409,6 +1409,24 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       }
     });
 
+    it('treats a business refund payout still in flight (processing) as already issued', async () => {
+      const placement = await prisma.placement.findUniqueOrThrow({
+        where: { code: `PL-P5REF9-${timestamp}` },
+      });
+      const refund = await prisma.payment.findFirstOrThrow({
+        where: { placementId: placement.id, type: 'refund' },
+      });
+      await prisma.payment.update({ where: { id: refund.id }, data: { status: 'processing' } });
+
+      await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${mgrToken}`)
+        .send({ asOf: '2026-12-01T00:00:00.000Z' })
+        .expect(400);
+
+      expect(await prisma.payment.count({ where: { placementId: placement.id, type: 'refund' } })).toBe(1);
+    });
+
     it('freezes refund eligibility when clock is paused at day 10', async () => {
       const js = await prisma.jobSeeker.create({
         data: {
