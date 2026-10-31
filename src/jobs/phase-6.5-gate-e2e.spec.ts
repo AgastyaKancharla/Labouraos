@@ -29,7 +29,6 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
 
   let jobSeekerId: string;
   let jobSeekerCode: string;
-  let paymentId: string;
   let paymentCode: string;
 
   const timestamp = Date.now();
@@ -177,11 +176,8 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
         city: 'Bengaluru',
       },
     });
-    paymentId = payment.id;
 
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 1 OUTPUT] Job Seeker Created & ₹499 Recorded:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({
       jobSeekerId: js.id,
       code: js.code,
@@ -238,10 +234,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
       where: { jobSeekerId: js.id },
       orderBy: { attemptedAt: 'asc' },
     });
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 2 OUTPUT] Day 1 Qualifying Contact Attempts Logged:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(
       day1Attempts.map((a) => ({
         id: a.id,
@@ -273,10 +266,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
     const job1 = await queue.getJob(jobId1);
     expect(job1).toBeDefined();
     const sweep1Result = await job1!.waitUntilFinished(queueEvents, 10000);
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 3 OUTPUT] POST /jobs/no-pickup-evaluation/run Sweep 1 Completed:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({
       httpStatus: sweep1Response.status,
       jobId: jobId1,
@@ -297,10 +287,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
     const day1AttemptsAfterSweep1 = await prisma.contactAttempt.findMany({
       where: { jobSeekerId: js.id },
     });
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 4 OUTPUT] Confirm Exactly 1 Hit Recorded:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({
       jobSeekerStatus: jsAfterSweep1?.status,
       hitCount: jsAfterSweep1?.hitCount,
@@ -335,10 +322,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
     const hitsAfterSweep2 = await prisma.jobSeekerHit.findMany({
       where: { jobSeekerId: js.id },
     });
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 5 OUTPUT] Repeat Sweep on Same Day Data (Idempotency Guard):');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({
       httpStatus: sweep2Response.status,
       jobId: jobId2,
@@ -408,10 +392,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
 
     const jsAfterSweep4 = await prisma.jobSeeker.findUnique({ where: { id: js.id } });
     const hitsAfterSweep4 = await prisma.jobSeekerHit.findMany({ where: { jobSeekerId: js.id } });
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 6 OUTPUT] Driven to 3 Hits & Automatic Deactivation:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({
       hitCount: jsAfterSweep4?.hitCount,
       status: jsAfterSweep4?.status,
@@ -454,10 +435,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
     const matchInRefundsDue = (refundsDueRes.body as Array<{ code: string }>).filter(
       (item) => item.code === js.code,
     );
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 7 OUTPUT] Refund Entitlement Eliminated & Excluded from /refunds/due:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify({
       jobSeekerApiRefundGuaranteeFlag: jsDetailRes.body.isWithinRefundGuarantee,
       domainEvaluatorEligible: evalResult.eligible,
@@ -479,10 +457,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
       orderBy: { startedAt: 'desc' },
       take: 4,
     });
-
-    // eslint-disable-next-line no-console
     console.log('\n[E2E STEP 8 OUTPUT] JobRun Rows Written For Each Sweep:');
-    // eslint-disable-next-line no-console
     console.log(JSON.stringify(
       jobRuns.map((r) => ({
         id: r.id,
