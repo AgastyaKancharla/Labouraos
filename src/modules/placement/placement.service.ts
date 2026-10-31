@@ -8,7 +8,16 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { Prisma } from '@prisma/client';
-import { calculatePlacementFee, calculateGst, calculateRefund, formatINR, toRupees } from '../../common/money/money';
+import {
+  calculatePlacementFee,
+  calculateGst,
+  calculateRefund,
+  formatINR,
+  toRupees,
+  isWithinReplacementGuarantee,
+  replacementGuaranteeDeadline,
+  REPLACEMENT_GUARANTEE_WINDOW_DAYS,
+} from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
@@ -440,6 +449,64 @@ export class PlacementService {
       }
     } else {
       dropoutReportedAt = new Date();
+    }
+
+    if (dto.eligibility === 'employee_left') {
+      // 1. joinedDate must not be null
+      if (!placement.joinedDate) {
+        await this.auditService.log({
+          action: 'placement_dropout_refused',
+          entityType: 'Placement',
+          entityCode: placement.code,
+          actorId: actor.id,
+          city: placement.city,
+          before: {
+            status: placement.status,
+            dropoutReportedAt: placement.dropoutReportedAt,
+            eligibility: placement.eligibility,
+          },
+          after: {
+            refusalReason: 'MISSING_JOINED_DATE',
+            message: `Placement '${placement.code}' has no joinedDate recorded; cannot evaluate 60-day replacement guarantee window`,
+            eligibility: dto.eligibility,
+            dropoutReportedAt,
+          },
+        });
+        throw new BadRequestException(
+          `Placement '${placement.code}' has no joinedDate recorded; cannot evaluate 60-day replacement guarantee window`,
+        );
+      }
+
+      // 2. 60-day replacement guarantee window check
+      // NOTE: Placement.clockPaused and clockPausedAt govern the 15-day replacement search window
+      // AFTER a dropout is reported (when a business rejects 2 replacement candidates).
+      // Clock pause does NOT extend this initial 60-day guarantee window, which runs strictly from joinedDate.
+      if (!isWithinReplacementGuarantee(placement.joinedDate, dropoutReportedAt)) {
+        const deadline = replacementGuaranteeDeadline(placement.joinedDate);
+        const refusalMessage = `Replacement guarantee expired on ${deadline.toISOString()} (${REPLACEMENT_GUARANTEE_WINDOW_DAYS} days from joinedDate ${placement.joinedDate.toISOString()}). Dropout reported at ${dropoutReportedAt.toISOString()} is outside the replacement guarantee window.`;
+
+        await this.auditService.log({
+          action: 'placement_dropout_refused',
+          entityType: 'Placement',
+          entityCode: placement.code,
+          actorId: actor.id,
+          city: placement.city,
+          before: {
+            status: placement.status,
+            dropoutReportedAt: placement.dropoutReportedAt,
+            eligibility: placement.eligibility,
+          },
+          after: {
+            refusalReason: 'REPLACEMENT_GUARANTEE_EXPIRED',
+            guaranteeExpiryDate: deadline.toISOString(),
+            message: refusalMessage,
+            eligibility: dto.eligibility,
+            dropoutReportedAt,
+          },
+        });
+
+        throw new BadRequestException(refusalMessage);
+      }
     }
 
     const before = {

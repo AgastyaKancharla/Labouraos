@@ -89,7 +89,7 @@
 
 ---
 
-### [ ] Task 7 — Enforce the 60-day replacement guarantee
+### [x] Task 7 — Enforce the 60-day replacement guarantee
 
 **Acceptance:**
 - `recordDropout` refuses a dropout whose `dropoutReportedAt` is more than 60 days after the placement's `joinedDate`, with a message naming the guarantee expiry date

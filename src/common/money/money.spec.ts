@@ -7,6 +7,10 @@ import {
   calculateRefund,
   refundGuaranteeDeadline,
   isWithinRefundGuarantee,
+  replacementGuaranteeDeadline,
+  isWithinReplacementGuarantee,
+  REPLACEMENT_GUARANTEE_WINDOW_DAYS,
+  REPLACEMENT_GUARANTEE_WINDOW_MS,
   REFERRAL_PAYOUT_AMOUNT_PAISE,
 } from './money';
 
@@ -179,6 +183,58 @@ describe('Money Module', () => {
       expect(() => refundGuaranteeDeadline('not-a-date' as unknown as Date)).toThrow(TypeError);
       expect(() => isWithinRefundGuarantee('invalid' as unknown as Date, baseDate)).toThrow(TypeError);
       expect(() => isWithinRefundGuarantee(baseDate, 'invalid' as unknown as Date)).toThrow(TypeError);
+    });
+  });
+
+  describe('60-day Replacement Guarantee Window (Phase 6.5 Task 7)', () => {
+    const joinedDate = new Date('2026-06-01T10:00:00.000Z');
+
+    it('computes replacementGuaranteeDeadline as joinedDate + 60 days using millisecond arithmetic', () => {
+      const deadline = replacementGuaranteeDeadline(joinedDate);
+      expect(deadline).toBeInstanceOf(Date);
+      const expectedTime = joinedDate.getTime() + 60 * 24 * 60 * 60 * 1000;
+      expect(deadline.getTime()).toBe(expectedTime);
+      expect(deadline.toISOString()).toBe('2026-07-31T10:00:00.000Z');
+      expect(REPLACEMENT_GUARANTEE_WINDOW_DAYS).toBe(60);
+      expect(REPLACEMENT_GUARANTEE_WINDOW_MS).toBe(60 * 24 * 60 * 60 * 1000);
+    });
+
+    it('day 10 dropout is accepted within 60-day replacement guarantee window', () => {
+      const day10 = new Date(joinedDate.getTime() + 10 * 24 * 60 * 60 * 1000);
+      expect(isWithinReplacementGuarantee(joinedDate, day10)).toBe(true);
+    });
+
+    it('day 60 exactly is accepted (boundary stated explicitly)', () => {
+      const day60 = new Date(joinedDate.getTime() + 60 * 24 * 60 * 60 * 1000);
+      expect(isWithinReplacementGuarantee(joinedDate, day60)).toBe(true);
+    });
+
+    it('day 60 plus 1 second is refused outside replacement guarantee window', () => {
+      const day60Plus1Sec = new Date(joinedDate.getTime() + 60 * 24 * 60 * 60 * 1000 + 1000);
+      expect(isWithinReplacementGuarantee(joinedDate, day60Plus1Sec)).toBe(false);
+    });
+
+    it('day 61 is refused outside 60-day replacement guarantee window', () => {
+      const day61 = new Date(joinedDate.getTime() + 61 * 24 * 60 * 60 * 1000);
+      expect(isWithinReplacementGuarantee(joinedDate, day61)).toBe(false);
+    });
+
+    it('day 70 dropout is refused outside 60-day replacement guarantee window', () => {
+      const day70 = new Date(joinedDate.getTime() + 70 * 24 * 60 * 60 * 1000);
+      expect(isWithinReplacementGuarantee(joinedDate, day70)).toBe(false);
+    });
+
+    it('proves a paused clock does not extend the 60-day replacement guarantee window', () => {
+      // Placement clockPaused applies to the 15-day candidate search window after dropout,
+      // never extending the initial 60-day guarantee from joinedDate.
+      const day61WithPriorPause = new Date(joinedDate.getTime() + 61 * 24 * 60 * 60 * 1000);
+      expect(isWithinReplacementGuarantee(joinedDate, day61WithPriorPause)).toBe(false);
+    });
+
+    it('rejects non-Date parameters with TypeError', () => {
+      expect(() => replacementGuaranteeDeadline('not-a-date' as unknown as Date)).toThrow(TypeError);
+      expect(() => isWithinReplacementGuarantee('invalid' as unknown as Date, joinedDate)).toThrow(TypeError);
+      expect(() => isWithinReplacementGuarantee(joinedDate, 'invalid' as unknown as Date)).toThrow(TypeError);
     });
   });
 });
