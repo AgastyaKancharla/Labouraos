@@ -176,11 +176,12 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
   });
 
   describe('4. Documentation (DEPLOY.md)', () => {
-    it('configures registered company legal name as Laboura Private Limited', () => {
+    it('declares company legal name with sync: false allowing runtime configuration without redeploy', () => {
       const webService = blueprint.services.find((s) => s.type === 'web');
       const companyNameVar = webService?.envVars?.find((v) => v.key === 'COMPANY_LEGAL_NAME');
       expect(companyNameVar).toBeDefined();
-      expect(companyNameVar?.value).toBe('Laboura Private Limited');
+      expect(companyNameVar?.sync).toBe(false);
+      expect(companyNameVar?.value).toBeUndefined();
     });
 
     it('provides clear dashboard-based instructions without requiring terminal or command line', () => {

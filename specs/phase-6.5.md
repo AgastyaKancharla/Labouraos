@@ -78,7 +78,7 @@
 
 ---
 
-### [ ] Task 6 — Alert when the sweep does not run
+### [x] Task 6 — Alert when the sweep does not run
 
 **Acceptance:**
 - The completion of each sweep is recorded (timestamp and outcome) so a gap is detectable

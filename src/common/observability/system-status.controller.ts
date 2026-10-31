@@ -79,6 +79,35 @@ export class SystemStatusController {
       });
     }
 
+    // 3. Background Sweep Check (36h threshold)
+    try {
+      if (this.prisma.jobRun) {
+        const latestSweep = await this.prisma.jobRun.findFirst({
+          where: {
+            jobName: 'daily-no-pickup-evaluation',
+            outcome: 'success',
+            finishedAt: { not: null },
+          },
+          orderBy: { finishedAt: 'desc' },
+        });
+
+        if (latestSweep?.finishedAt) {
+          const gapMs = Date.now() - latestSweep.finishedAt.getTime();
+          const hoursElapsed = Math.floor(gapMs / (1000 * 60 * 60));
+          const isStale = gapMs > 36 * 60 * 60 * 1000;
+          components.push({
+            name: 'No-Pickup Sweep (36h Threshold)',
+            status: isStale ? 'degraded' : 'healthy',
+            message: isStale
+              ? `Sweep stale: last completed ${hoursElapsed}h ago (threshold: 36h)`
+              : `Sweep healthy: last completed ${hoursElapsed}h ago`,
+          });
+        }
+      }
+    } catch {
+      // Diagnostic check is non-fatal
+    }
+
     // Determine overall status
     const hasUnhealthy = components.some((c) => c.status === 'unhealthy');
     const hasDegraded = components.some((c) => c.status === 'degraded');

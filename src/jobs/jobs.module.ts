@@ -4,13 +4,14 @@ import { JobSeekerModule } from '../modules/job-seeker/job-seeker.module';
 import { AuthModule } from '../common/auth/auth.module';
 import { AuditModule } from '../common/audit/audit.module';
 import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
+import { SweepMonitoringService } from './sweep-monitoring.service';
 import { JobsController } from './jobs.controller';
 
 @Module({
   imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule],
   controllers: [JobsController],
-  providers: [NoPickupEvaluationJob],
-  exports: [NoPickupEvaluationJob],
+  providers: [NoPickupEvaluationJob, SweepMonitoringService],
+  exports: [NoPickupEvaluationJob, SweepMonitoringService],
 })
 export class JobsModule {}
 

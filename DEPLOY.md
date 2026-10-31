@@ -127,6 +127,8 @@ Follow these steps in exact sequential order:
 | `WHATSAPP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until WhatsApp API is active |
 | `TELEPHONY_PROVIDER_MODE` | `mock` | Default mock mode (§3) until telephony vendor is active |
 | `KYC_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SurePass keys are active |
+| `COMPANY_LEGAL_NAME` | *e.g. Laboura Private Limited* | Registered company entity name used on GST invoices |
+| `COMPANY_GSTIN` | *e.g. 29AABCL1234F1ZQ* | 15-digit GSTIN used on tax invoices |
 | `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing) / `true` (live) | **Security boundary:** Enforces Cloudflare Access on office consoles |
 | `CLOUDFLARE_ACCESS_TEAM_DOMAIN` | *e.g. your-team.cloudflareaccess.com* | Cloudflare Zero Trust team domain |
 | `CLOUDFLARE_ACCESS_AUD` | *Audience Tag from Cloudflare Access* | Access Application AUD tag |

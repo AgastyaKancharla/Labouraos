@@ -351,5 +351,30 @@ model StaffSession {
   @@index([revokedAt])
 }
 
+model JobRun {
+  id           String    @id @default(uuid())
+  jobName      String
+  startedAt    DateTime
+  finishedAt   DateTime?
+  outcome      String
+  evaluated    Int       @default(0)
+  hitsRecorded Int       @default(0)
+  details      Json?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([jobName, outcome, finishedAt])
+  @@index([createdAt])
+}
+
+model JobAlertState {
+  jobName         String    @id
+  isStale         Boolean   @default(false)
+  lastAlertedAt   DateTime?
+  lastRecoveredAt DateTime?
+  updatedAt       DateTime  @updatedAt
+}
+
+
 
 
