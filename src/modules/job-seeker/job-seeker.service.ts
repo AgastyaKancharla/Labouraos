@@ -20,6 +20,7 @@ import {
   refundGuaranteeDeadline,
   isWithinRefundGuarantee,
 } from '../../common/money/money';
+import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
 
 import { PaymentService } from '../payment/payment.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
@@ -556,36 +557,6 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }
 
-    if (!jobSeeker.paymentReceivedAt) {
-      throw new BadRequestException(
-        `Job seeker '${jobSeeker.code}' has not paid the activation fee and is not eligible for refund`,
-      );
-    }
-
-    if (jobSeeker.status === 'placed') {
-      throw new BadRequestException(
-        `Job seeker '${jobSeeker.code}' has a confirmed placement and is not eligible for refund`,
-      );
-    }
-
-    if (jobSeeker.status === 'deactivated') {
-      throw new BadRequestException(
-        `Job seeker '${jobSeeker.code}' is deactivated and carries no refund entitlement`,
-      );
-    }
-
-    const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
-      where: {
-        jobSeekerId: jobSeeker.id,
-        reason: 'offer_rejected',
-      },
-    });
-    if (hasOfferRejected) {
-      throw new BadRequestException(
-        `Job seeker '${jobSeeker.code}' rejected a suitable offer and is not eligible for refund`,
-      );
-    }
-
     let now: Date;
     if (dto?.asOf) {
       now = new Date(dto.asOf);
@@ -596,12 +567,12 @@ export class JobSeekerService {
       now = new Date();
     }
 
-    const deadline = refundGuaranteeDeadline(jobSeeker.paymentReceivedAt);
-    if (now.getTime() <= deadline.getTime()) {
-      throw new BadRequestException(
-        `Refund can only be approved after 30 days have elapsed from payment receipt (${deadline.toISOString()})`,
-      );
-    }
+    const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
+      where: {
+        jobSeekerId: jobSeeker.id,
+        reason: 'offer_rejected',
+      },
+    });
 
     const existingRefund = await this.prisma.payment.findFirst({
       where: {
@@ -610,10 +581,20 @@ export class JobSeekerService {
         status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
       },
     });
-    if (existingRefund) {
-      throw new BadRequestException(
-        `A refund has already been issued for job seeker '${jobSeeker.code}'`,
-      );
+
+    const eligibilityResult = evaluateJobSeekerRefundEligibility(
+      {
+        code: jobSeeker.code,
+        paymentReceivedAt: jobSeeker.paymentReceivedAt,
+        status: jobSeeker.status,
+        hasOfferRejectedHit: Boolean(hasOfferRejected),
+        hasExistingRefund: Boolean(existingRefund),
+      },
+      now,
+    );
+
+    if (!eligibilityResult.eligible) {
+      throw new BadRequestException(eligibilityResult.ineligibleReason!);
     }
 
     const paymentCode = await this.idService.generateCode('payment');

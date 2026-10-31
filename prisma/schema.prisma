@@ -39,6 +39,7 @@ model JobSeeker {
   @@index([city])
   @@index([tradeSkill])
   @@index([status])
+  @@index([status, paymentReceivedAt])
 }
 
 model Referral {
@@ -143,6 +144,7 @@ model Placement {
   @@index([jobSeekerId])
   @@index([businessId])
   @@index([status])
+  @@index([status, eligibility])
 }
 
 model ReplacementCandidate {
@@ -224,6 +226,8 @@ model Payment {
   @@index([type])
   @@index([status])
   @@index([subjectType, subjectId])
+  @@index([jobSeekerId, type])
+  @@index([placementId, type])
 }
 
 // One row per payout-status webhook event already applied (AGENTS.md §2 rule 7).
@@ -294,6 +298,7 @@ model JobSeekerHit {
 
   @@index([jobSeekerId])
   @@index([recordedAt])
+  @@index([jobSeekerId, reason])
 }
 
 model BusinessVisit {

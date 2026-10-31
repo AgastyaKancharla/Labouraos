@@ -111,7 +111,7 @@
 
 ---
 
-### [ ] Task 9 — Refund-due listing
+### [x] Task 9 — Refund-due listing
 
 **Acceptance:**
 - `GET /refunds/due` (finance, ceo, manager) returns both kinds in one response, each clearly typed:

@@ -11,7 +11,6 @@ import { Prisma } from '@prisma/client';
 import {
   calculatePlacementFee,
   calculateGst,
-  calculateRefund,
   formatINR,
   toRupees,
   isWithinReplacementGuarantee,
@@ -27,6 +26,7 @@ import { RecordDropoutDto } from './dto/record-dropout.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
+import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
 import {
   GstInvoiceResponse,
   InvoiceCustomer,
@@ -1063,39 +1063,6 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    if (placement.status !== 'dropped_out') {
-      throw new BadRequestException(
-        `Placement must be in 'dropped_out' status to approve a refund. Current status: '${placement.status}'`,
-      );
-    }
-
-    if (placement.eligibility === 'business_breach') {
-      throw new BadRequestException(
-        "Placement with eligibility 'business_breach' is ineligible for refund guarantee remedy",
-      );
-    }
-
-    if (placement.eligibility !== 'employee_left') {
-      throw new BadRequestException(
-        `Placement eligibility must be 'employee_left' to qualify for refund. Current: '${placement.eligibility}'`,
-      );
-    }
-
-    const hasAcceptedReplacement = placement.replacementCandidates.some(
-      (rc) => rc.status === 'accepted',
-    );
-    if (hasAcceptedReplacement) {
-      throw new BadRequestException(
-        'Cannot approve refund when a replacement candidate has been accepted',
-      );
-    }
-
-    if (!placement.dropoutReportedAt) {
-      throw new BadRequestException(
-        `Dropout report date is missing for placement '${placement.code}'`,
-      );
-    }
-
     let now: Date;
     if (dto?.asOf) {
       now = new Date(dto.asOf);
@@ -1106,19 +1073,9 @@ export class PlacementService {
       now = new Date();
     }
 
-    const daysElapsed = calculateDaysElapsed(
-      placement.dropoutReportedAt,
-      placement.clockPaused,
-      placement.clockPausedAt,
-      now,
+    const hasAcceptedReplacement = placement.replacementCandidates.some(
+      (rc) => rc.status === 'accepted',
     );
-
-    const refundAmount = calculateRefund(placement.placementFee, daysElapsed);
-    if (daysElapsed < 15 || refundAmount <= 0) {
-      throw new BadRequestException(
-        `Refund is not payable before 15 days have elapsed from dropout report (days elapsed: ${daysElapsed})`,
-      );
-    }
 
     const existingRefund = await this.prisma.payment.findFirst({
       where: {
@@ -1127,11 +1084,28 @@ export class PlacementService {
         status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
       },
     });
-    if (existingRefund) {
-      throw new BadRequestException(
-        `A refund has already been issued for placement '${placement.code}'`,
-      );
+
+    const eligibilityResult = evaluatePlacementRefundEligibility(
+      {
+        code: placement.code,
+        status: placement.status,
+        eligibility: placement.eligibility,
+        hasAcceptedReplacement,
+        dropoutReportedAt: placement.dropoutReportedAt,
+        clockPaused: placement.clockPaused,
+        clockPausedAt: placement.clockPausedAt,
+        placementFee: placement.placementFee,
+        hasExistingRefund: Boolean(existingRefund),
+      },
+      now,
+    );
+
+    if (!eligibilityResult.eligible) {
+      throw new BadRequestException(eligibilityResult.ineligibleReason!);
     }
+
+    const refundAmount = eligibilityResult.amountPaise;
+    const daysElapsed = eligibilityResult.daysElapsed;
 
     const paymentCode = await this.idService.generateCode('payment');
     const payment = await this.prisma.payment.create({
