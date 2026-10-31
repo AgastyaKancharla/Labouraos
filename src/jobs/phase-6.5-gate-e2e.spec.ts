@@ -168,11 +168,13 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
     const payment = await prisma.payment.create({
       data: {
         code: paymentCode,
-        jobSeekerId: js.id,
         amount: 49900, // ₹499 in integer paise
-        paymentType: 'activation',
+        type: 'activation',
         status: 'completed',
-        receivedAt: thirtyFiveDaysAgo,
+        gatewayReference: `gw_gate_${timestamp}`,
+        subjectType: 'job_seeker',
+        subjectId: js.id,
+        jobSeekerId: js.id,
         city: 'Bengaluru',
       },
     });
