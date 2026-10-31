@@ -213,24 +213,34 @@ describe('Phase 3 Task 3: Scheduled No-Pickup Evaluation Job', () => {
   });
 
   it('executes the scheduled job through BullMQ queue and worker', async () => {
-    const queueEvents = new QueueEvents(NO_PICKUP_EVALUATION_QUEUE, {
-      connection: jobService.redisConnection,
-    });
-    await queueEvents.waitUntilReady();
+    const prevRole = process.env.PROCESS_ROLE;
+    process.env.PROCESS_ROLE = 'worker';
+    try {
+      const queueEvents = new QueueEvents(NO_PICKUP_EVALUATION_QUEUE, {
+        connection: jobService.redisConnection,
+      });
+      await queueEvents.waitUntilReady();
 
-    const queue = jobService.getQueue();
-    const worker = jobService.getWorker();
-    expect(worker).toBeDefined();
+      const queue = jobService.getQueue();
+      const worker = jobService.getWorker();
+      expect(worker).toBeDefined();
 
-    const job = await queue.add(NO_PICKUP_EVALUATION_JOB, {});
-    const result = await job.waitUntilFinished(queueEvents, 10000);
+      const job = await queue.add(NO_PICKUP_EVALUATION_JOB, {});
+      const result = await job.waitUntilFinished(queueEvents, 10000);
 
-    expect(result).toBeDefined();
-    expect(result).toHaveProperty('evaluated');
-    expect(result).toHaveProperty('hitsRecorded');
-    expect(typeof result.hitsRecorded).toBe('number');
+      expect(result).toBeDefined();
+      expect(result).toHaveProperty('evaluated');
+      expect(result).toHaveProperty('hitsRecorded');
+      expect(typeof result.hitsRecorded).toBe('number');
 
-    await queueEvents.close();
+      await queueEvents.close();
+    } finally {
+      if (prevRole === undefined) {
+        delete process.env.PROCESS_ROLE;
+      } else {
+        process.env.PROCESS_ROLE = prevRole;
+      }
+    }
   });
 });
 

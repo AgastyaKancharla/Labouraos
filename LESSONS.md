@@ -192,5 +192,11 @@ Format:
 **Cause:** BullMQ's `worker.close(force = false)` defaults to waiting for running jobs (`whenCurrentJobsFinished(false)`). However, `NoPickupEvaluationJob.close(force = true)` defaulted `force` to `true`, and `onModuleDestroy()` called `await this.close()` without arguments, immediately forcing the worker offline instead of letting active sweeps conclude.
 **Fix:** Changed `close(force = false)` default parameter to `false` and explicitly passed `false` in `onModuleDestroy()`, reserving `force = true` only for startup connection failure bailouts.
 
+## Prisma schema migrations in dual-service Render blueprint
+**Symptom:** Deploying to Render without schema migration produces a live API running against an empty database with zero tables.
+**Cause:** Render does not run database migrations automatically. If migrations are run in the container startup script of both the web service and the background worker, concurrent deploys race on migration advisory locks.
+**Fix:** Declared `preDeployCommand: npx prisma migrate deploy` on the `type: web` service only in `render.yaml`. Render executes this once per deploy in the runtime network before routing web traffic, halting deployment on failure, while the worker service omits `preDeployCommand` to eliminate race conditions.
+
+
 
 

@@ -114,37 +114,47 @@ describe('Phase 8 Task 5: Observability, Structured Logging & Status Dashboard',
 
   describe('3. BullMQ Job Request ID Threading', () => {
     it('threads the originating request ID into the BullMQ job and its worker log lines', async () => {
-      const queueEvents = new QueueEvents(NO_PICKUP_EVALUATION_QUEUE, {
-        connection: jobService.redisConnection,
-      });
-      await queueEvents.waitUntilReady();
+      const prevRole = process.env.PROCESS_ROLE;
+      process.env.PROCESS_ROLE = 'worker';
+      try {
+        const queueEvents = new QueueEvents(NO_PICKUP_EVALUATION_QUEUE, {
+          connection: jobService.redisConnection,
+        });
+        await queueEvents.waitUntilReady();
 
-      const queue = jobService.getQueue();
-      jobService.getWorker();
+        const queue = jobService.getQueue();
+        jobService.getWorker();
 
-      const originatingRequestId = 'job-trace-bullmq-88990';
-      const capturedLogs: StructuredLogEntry[] = [];
-      const removeListener = StructuredLogger.addListener((entry) => {
-        if (entry.requestId === originatingRequestId) {
-          capturedLogs.push(entry);
+        const originatingRequestId = 'job-trace-bullmq-88990';
+        const capturedLogs: StructuredLogEntry[] = [];
+        const removeListener = StructuredLogger.addListener((entry) => {
+          if (entry.requestId === originatingRequestId) {
+            capturedLogs.push(entry);
+          }
+        });
+
+        // Enqueue job with explicit requestId attached
+        const job = await queue.add(NO_PICKUP_EVALUATION_JOB, {
+          requestId: originatingRequestId,
+        });
+
+        await job.waitUntilFinished(queueEvents, 10000);
+        removeListener();
+        await queueEvents.close();
+
+        expect(capturedLogs.length).toBeGreaterThanOrEqual(1);
+        const workerLog = capturedLogs.find((l) =>
+          l.message.includes(`BullMQ processing job ${NO_PICKUP_EVALUATION_JOB}`),
+        );
+        expect(workerLog).toBeDefined();
+        expect(workerLog?.requestId).toBe(originatingRequestId);
+      } finally {
+        if (prevRole === undefined) {
+          delete process.env.PROCESS_ROLE;
+        } else {
+          process.env.PROCESS_ROLE = prevRole;
         }
-      });
-
-      // Enqueue job with explicit requestId attached
-      const job = await queue.add(NO_PICKUP_EVALUATION_JOB, {
-        requestId: originatingRequestId,
-      });
-
-      await job.waitUntilFinished(queueEvents, 10000);
-      removeListener();
-      await queueEvents.close();
-
-      expect(capturedLogs.length).toBeGreaterThanOrEqual(1);
-      const workerLog = capturedLogs.find((l) =>
-        l.message.includes(`BullMQ processing job ${NO_PICKUP_EVALUATION_JOB}`),
-      );
-      expect(workerLog).toBeDefined();
-      expect(workerLog?.requestId).toBe(originatingRequestId);
+      }
     });
   });
 
