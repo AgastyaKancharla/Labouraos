@@ -76,7 +76,7 @@ services:
       - key: ALERT_WEBHOOK_URL
         sync: false
       - key: COMPANY_LEGAL_NAME
-        value: "Laboura Workforce Technologies Pvt Ltd"
+        value: "Laboura Private Limited"
       - key: COMPANY_GSTIN
         sync: false
       - key: COMPANY_ADDRESS

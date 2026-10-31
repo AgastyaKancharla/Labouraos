@@ -127,6 +127,28 @@ Follow these steps in exact sequential order:
 | `WHATSAPP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until WhatsApp API is active |
 | `TELEPHONY_PROVIDER_MODE` | `mock` | Default mock mode (§3) until telephony vendor is active |
 | `KYC_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SurePass keys are active |
+| `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing) / `true` (live) | **Security boundary:** Enforces Cloudflare Access on office consoles |
+| `CLOUDFLARE_ACCESS_TEAM_DOMAIN` | *e.g. your-team.cloudflareaccess.com* | Cloudflare Zero Trust team domain |
+| `CLOUDFLARE_ACCESS_AUD` | *Audience Tag from Cloudflare Access* | Access Application AUD tag |
+
+> [!WARNING]
+> **CRITICAL SECURITY REQUIREMENT: CLOUDFLARE ACCESS BEFORE GO-LIVE**
+>
+> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is set to `"false"`. This setting is **only acceptable for initial testing with synthetic / fake test data**.
+>
+> **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker, or business data is entered into this system.**
+>
+> When set to `"false"`, the browser office consoles (`/admin`, `/console/admin`, `/call-agent`, `/console/call-agent`) are not gated by Cloudflare Zero Trust. To enforce identity-gating before real data enters:
+>
+> 1. In **Cloudflare Zero Trust** (`dash.teams.cloudflare.com`), navigate to **Access** > **Applications**.
+> 2. Create an **Access Application** for your domain covering the console paths (`/admin*`, `/console/admin*`, `/call-agent*`, `/console/call-agent*`).
+> 3. Define an Access Policy restricting login to your company's identity provider or authorized staff email domain.
+> 4. Copy the **Audience Tag (AUD)** from Application Settings.
+> 5. In the **Render Dashboard** -> **`laboura-api`** -> **Environment**:
+>    - Set `CLOUDFLARE_ACCESS_ENFORCED` to `true`.
+>    - Set `CLOUDFLARE_ACCESS_TEAM_DOMAIN` to your Cloudflare team domain (e.g. `your-team.cloudflareaccess.com`).
+>    - Set `CLOUDFLARE_ACCESS_AUD` to the Audience Tag copied from step 4.
+> 6. Click **Save Changes**. The server will immediately reject requests to office consoles that lack a cryptographically valid `Cf-Access-Jwt-Assertion` token.
 
 4. Click **Save Changes** at the bottom of the Environment page.
 5. In the Render Dashboard, navigate to the **`laboura-worker`** service.

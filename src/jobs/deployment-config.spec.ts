@@ -176,6 +176,13 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
   });
 
   describe('4. Documentation (DEPLOY.md)', () => {
+    it('configures registered company legal name as Laboura Private Limited', () => {
+      const webService = blueprint.services.find((s) => s.type === 'web');
+      const companyNameVar = webService?.envVars?.find((v) => v.key === 'COMPANY_LEGAL_NAME');
+      expect(companyNameVar).toBeDefined();
+      expect(companyNameVar?.value).toBe('Laboura Private Limited');
+    });
+
     it('provides clear dashboard-based instructions without requiring terminal or command line', () => {
       const content = fs.readFileSync(deployMdPath, 'utf8');
 
@@ -193,6 +200,11 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
 
       // Explicitly written for non-terminal operators
       expect(content).toContain('No command line or terminal is required');
+
+      // Prominent warning on Cloudflare Access enforcement before real data entry
+      expect(content).toContain('CLOUDFLARE_ACCESS_ENFORCED');
+      expect(content).toContain('MUST be set to');
+      expect(content).toContain('before any real candidate');
     });
   });
 });

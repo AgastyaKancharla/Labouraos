@@ -392,7 +392,7 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
 
     try {
       process.env.COMPANY_GSTIN = '29AABCL1234F1ZQ';
-      process.env.COMPANY_LEGAL_NAME = 'Laboura Workforce Technologies Pvt Ltd';
+      process.env.COMPANY_LEGAL_NAME = 'Laboura Private Limited';
       process.env.COMPANY_ADDRESS = '42 MG Road, Bengaluru, Karnataka 560001';
 
       const res = await request(app.getHttpServer())
@@ -401,7 +401,7 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
 
       expect(res.status).toBe(200);
       expect(res.body.supplier.gstin).toBe('29AABCL1234F1ZQ');
-      expect(res.body.supplier.legalName).toBe('Laboura Workforce Technologies Pvt Ltd');
+      expect(res.body.supplier.legalName).toBe('Laboura Private Limited');
       expect(res.body.supplier.address).toBe('42 MG Road, Bengaluru, Karnataka 560001');
     } finally {
       if (originalGstin === undefined) delete process.env.COMPANY_GSTIN;

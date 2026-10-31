@@ -197,6 +197,12 @@ Format:
 **Cause:** Render does not run database migrations automatically. If migrations are run in the container startup script of both the web service and the background worker, concurrent deploys race on migration advisory locks.
 **Fix:** Declared `preDeployCommand: npx prisma migrate deploy` on the `type: web` service only in `render.yaml`. Render executes this once per deploy in the runtime network before routing web traffic, halting deployment on failure, while the worker service omits `preDeployCommand` to eliminate race conditions.
 
+## Coupling container health check (liveness) to external dependency reachability
+**Symptom:** Deployments failed or containers entered restart loops when a transient external dependency (Postgres or Redis) was slow or temporarily unavailable during deployment.
+**Cause:** Single `/health` endpoint checking both process liveness and external databases/queues. Orchestrators like Render kill containers when their health check fails, preventing pre-deploy migrations or worker contexts from recovering gracefully.
+**Fix:** Split into two distinct endpoints: `GET /health` (cheap liveness returning static `{ status: 'ok' }` without checking dependencies, used by Render deploy/container probes) and `GET /health/ready` (fast readiness check testing Postgres and Redis with a 2-second timeout, returning 503 naming failed dependencies, used by monitoring and alerting).
+
+
 
 
 
