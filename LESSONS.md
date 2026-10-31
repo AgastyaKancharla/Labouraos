@@ -207,6 +207,12 @@ Format:
 **Cause:** Scheduling the staleness check inside the same background worker that is being monitored. When the worker process dies, the watchdog dies with it.
 **Fix:** Separated staleness evaluation into the always-on web service (`SweepMonitoringService`, gated on `PROCESS_ROLE !== 'worker'`), persisting sweep completions into a dedicated `JobRun` table and alert deduplication/recovery state into a `JobAlertState` table. If the sweep gap exceeds 36 hours, the web service dispatches a critical alert via `AlertService` with a 6-hour throttle, and sends a recovery notification once the sweep resumes.
 
+## Replacement guarantee window evaluation and nullable placement joinedDate
+**Symptom:** Evaluating a 60-day replacement guarantee window when `placement.joinedDate` is null could either throw a TypeError or silently permit out-of-guarantee dropout requests.
+**Cause:** In `schema.prisma`, `Placement.joinedDate` is nullable (`DateTime?`). While active placements should have a recorded join date, legacy or inconsistent data records may omit it. Furthermore, confusing the candidate search clock pause (`clockPaused`) with the guarantee eligibility window risked incorrectly extending the 60-day replacement guarantee.
+**Fix:** Checked `joinedDate` explicitly in `recordDropout`: if null, refused the dropout with a clear error message and recorded a `placement_dropout_refused` audit log. Positioned `replacementGuaranteeDeadline` and `isWithinReplacementGuarantee` alongside `refundGuaranteeDeadline` in `src/common/money/money.ts` using identical millisecond arithmetic (`60 * 24 * 60 * 60 * 1000`). Enforced strict boundary conditions (day 60 accepted, day 61 refused), proved clock pauses do not extend the guarantee, and preserved exemption for `business_breach`.
+
+
 
 
 

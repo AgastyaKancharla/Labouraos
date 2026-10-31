@@ -135,4 +135,46 @@ export function isWithinRefundGuarantee(
   return now.getTime() <= deadline.getTime();
 }
 
+/**
+ * Replacement guarantee window: 60 days for business clients per AGENTS.md §6.
+ */
+export const REPLACEMENT_GUARANTEE_WINDOW_DAYS = 60;
+export const REPLACEMENT_GUARANTEE_WINDOW_MS =
+  REPLACEMENT_GUARANTEE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+/**
+ * Calculates the 60-day replacement guarantee deadline from the employee's joined date.
+ * deadline = joinedDate + 60 days (using millisecond arithmetic consistent with refundGuaranteeDeadline).
+ */
+export function replacementGuaranteeDeadline(joinedDate: Date): Date {
+  if (!(joinedDate instanceof Date) || isNaN(joinedDate.getTime())) {
+    throw new TypeError('joinedDate must be a valid Date');
+  }
+  return new Date(joinedDate.getTime() + REPLACEMENT_GUARANTEE_WINDOW_MS);
+}
+
+/**
+ * Checks whether dropoutReportedAt falls within the 60-day replacement guarantee window.
+ * Returns true if dropoutReportedAt <= replacementGuaranteeDeadline(joinedDate).
+ * Uses injectable time, never new Date() inline per AGENTS.md §9.
+ *
+ * NOTE on Clock Pause: Placement.clockPaused and Placement.clockPausedAt govern the
+ * 15-day free replacement search window AFTER a dropout is reported (upon 3rd candidate rejection).
+ * Clock pause does NOT extend this initial 60-day guarantee window, which runs strictly from joinedDate.
+ */
+export function isWithinReplacementGuarantee(
+  joinedDate: Date,
+  dropoutReportedAt: Date,
+): boolean {
+  if (!(joinedDate instanceof Date) || isNaN(joinedDate.getTime())) {
+    throw new TypeError('joinedDate must be a valid Date');
+  }
+  if (!(dropoutReportedAt instanceof Date) || isNaN(dropoutReportedAt.getTime())) {
+    throw new TypeError('dropoutReportedAt must be a valid Date');
+  }
+  const deadline = replacementGuaranteeDeadline(joinedDate);
+  return dropoutReportedAt.getTime() <= deadline.getTime();
+}
+
+
 
