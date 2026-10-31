@@ -20,6 +20,7 @@ import { ConsoleModule } from './modules/console/console.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { WhatsAppModule } from './common/whatsapp/whatsapp.module';
 import { StaffModule } from './modules/staff/staff.module';
+import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
 
 @Module({
@@ -41,6 +42,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     VacancyModule,
     FieldAgentModule,
     PlacementModule,
+    RefundModule,
     PricingModule,
     ConsoleModule,
     TelephonyModule,

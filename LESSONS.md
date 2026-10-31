@@ -217,6 +217,11 @@ Format:
 **Cause:** `RecordDropoutDto.dropoutReportedAt` was accepted directly without verifying temporal ordering or origin. Backdating by 15 days immediately made cash refunds payable, creating a financial vulnerability. Furthermore, without recording whether the date was caller-supplied or server-defaulted, approvers could not verify whether a refund clock was started by manual input.
 **Fix:** Treated `dropoutReportedAt` validation as an anti-fraud control: strictly refused future dates relative to server clock with zero tolerance (no grace period backdoor), refused dates earlier than `joinedDate` ("employee cannot leave before they started"), and cleanly composed messages so "before you started" (`DROPOUT_BEFORE_JOINED_DATE`), "guarantee expired" (`REPLACEMENT_GUARANTEE_EXPIRED`), and "future date" (`FUTURE_DROPOUT_DATE`) are unmistakably distinct. Added a `dropoutDateCallerSupplied` Boolean column on `Placement` via Prisma migration, recorded the flag on dropout and in audit logs, and surfaced it during refund review and approval (`approveRefund` response and audit trail).
 
+## Shared refund eligibility logic vs duplicate listing implementations
+**Symptom:** Listing due refunds separately from the approval endpoints risked diverging rules: a listing could present a candidate that approval would reject (wasted effort / customer conflict), or omit a candidate that approval would allow (missed refund guarantee liability).
+**Cause:** Re-implementing multi-step domain rules (30-day window, offer_rejected hit, placement status, 15-day search window, replacement acceptance) in a listing service query separately from approval controllers.
+**Fix:** Extracted pure domain evaluators (`evaluateJobSeekerRefundEligibility` and `evaluatePlacementRefundEligibility`) that enforce locked domain rules in lockstep for both approval endpoints and the `GET /refunds/due` listing. Executed queries set-based in bulk (resolving candidate hits, existing refund payments, and replacement candidate states in single queries rather than 2N loops), indexed `(status, paymentReceivedAt)` on `JobSeeker`, `(jobSeekerId, reason)` on `JobSeekerHit`, and `(status, eligibility)` on `Placement`. Computed values fresh on every request without cached flags, and ordered results longest-owed first.
+
 
 
 
