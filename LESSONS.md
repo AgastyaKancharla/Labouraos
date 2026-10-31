@@ -182,3 +182,9 @@ Format:
 **Cause:** BullMQ's default connection configuration disables retries per request (`maxRetriesPerRequest: null`) and queues commands offline while awaiting connection. Calling `await queue.upsertJobScheduler(...)` without connection timeout guards blocked the application bootstrap indefinitely. Furthermore, unhandled `'error'` events on the `Queue` instance emitted uncaught Node errors.
 **Fix:** Added an `'error'` event listener to `getQueue()`, wrapped startup scheduler registration in `Promise.race` with a startup timeout (`REDIS_STARTUP_TIMEOUT_MS`, defaulting to 2000ms), and cleared the timeout in `.finally()` to prevent lingering timers in libuv. Added configurable `connectTimeout` and capped `retryStrategy` on Redis connections to ensure clean shutdown when Redis is unreachable.
 
+## Passport JWTStrategy secret mismatch with JwtModule when process.env.JWT_SECRET is unset
+**Symptom:** In unit/integration tests for protected endpoints, authenticated requests with validly signed JWTs failed with `401 Unauthorized`.
+**Cause:** `JwtStrategy` reads its verification secret from `process.env.JWT_SECRET || 'dev_secret_key_change_in_production_min_32_chars'`. When a test registers `JwtModule.register({ secret: 'custom-secret' })` without setting `process.env.JWT_SECRET`, the token is signed with the custom secret but verified by Passport with the default fallback secret, causing silent authentication failure.
+**Fix:** In isolated test suites mocking auth or testing guards, set `process.env.JWT_SECRET = customSecret` in `beforeAll` and restore it in `afterAll`, or sign test tokens using `process.env.JWT_SECRET || 'dev_secret_key_change_in_production_min_32_chars'`.
+
+

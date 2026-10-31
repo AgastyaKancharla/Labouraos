@@ -157,12 +157,13 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     return queue.removeJobScheduler(id);
   }
 
-  async triggerJob(requestId?: string): Promise<void> {
+  async triggerJob(requestId?: string): Promise<string | undefined> {
     const queue = this.getQueue();
     const effectiveRequestId = requestId || getRequestId();
-    await queue.add(NO_PICKUP_EVALUATION_JOB, {
+    const job = await queue.add(NO_PICKUP_EVALUATION_JOB, {
       requestId: effectiveRequestId,
     });
+    return job.id;
   }
 
   /**
