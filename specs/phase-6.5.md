@@ -40,7 +40,7 @@
 
 ---
 
-### [ ] Task 3 — Separate worker entrypoint, and stop the API constructing a worker
+### [x] Task 3 — Separate worker entrypoint, and stop the API constructing a worker
 
 **Acceptance:**
 - A new entrypoint `src/worker.ts` boots the Nest application context **without** an HTTP listener (`NestFactory.createApplicationContext`), and runs the jobs

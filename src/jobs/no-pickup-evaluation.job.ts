@@ -305,39 +305,37 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async close(force = true): Promise<void> {
+  hasWorker(): boolean {
+    return this.worker !== null;
+  }
+
+  hasQueue(): boolean {
+    return this.queue !== null;
+  }
+
+  async close(force = false): Promise<void> {
     if (this.worker) {
-      const w = this.worker;
-      this.worker = null;
       try {
-        await w.close(force);
+        await this.worker.close(force);
       } catch {
         // ignore error on close
-      }
-      try {
-        await w.disconnect();
-      } catch {
-        // ignore
+      } finally {
+        this.worker = null;
       }
     }
     if (this.queue) {
-      const q = this.queue;
-      this.queue = null;
       try {
-        await q.close();
+        await this.queue.close();
       } catch {
         // ignore
-      }
-      try {
-        await q.disconnect();
-      } catch {
-        // ignore
+      } finally {
+        this.queue = null;
       }
     }
   }
 
   async onModuleDestroy() {
-    await this.close();
+    await this.close(false);
   }
 }
 
