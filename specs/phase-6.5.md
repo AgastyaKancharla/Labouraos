@@ -53,13 +53,14 @@
 
 ---
 
-### [ ] Task 4 — Deployment configuration in the repo
+### [x] Task 4 — Deployment configuration in the repo
 
 **Acceptance:**
 - `render.yaml` at the repo root declares two services from this one codebase: a web service running `start:prod`, and a background worker running `start:worker`
-- Every environment variable each service needs is declared, including the Redis connection, the database URL, the mock/real provider switches (§3), the new `PROCESS_ROLE`, and the bootstrap secret added in a later batch — secrets declared as unset placeholders, never with values committed
+- Database schema migration: `prisma migrate deploy` is configured on the web service's pre-deploy step (`preDeployCommand: npx prisma migrate deploy`), guaranteeing migrations run automatically on every deploy before traffic is served, without running concurrently from the worker service
+- Every environment variable each service needs is declared, including the Redis connection, the database URL, the mock/real provider switches (§3), the new `PROCESS_ROLE` (`web` for the web service, `worker` for the worker service), and the bootstrap secret added in a later batch — secrets declared as unset placeholders (`sync: false`), never with values committed
 - The web service's health check path points at `/health`
-- A short `DEPLOY.md` records what has to be set by hand in the Render dashboard and in what order, written for someone who does not use a terminal
+- A clear `DEPLOY.md` records what has to be set by hand in the Render dashboard, Supabase, and Upstash, in what order, written for someone who does not use a terminal and assumes no command line
 - No secrets, keys or connection strings are committed anywhere in this task
 
 ---

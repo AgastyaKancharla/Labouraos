@@ -57,6 +57,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
       password: process.env.REDIS_PASSWORD || undefined,
       maxRetriesPerRequest: null,
       connectTimeout,
+      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
       retryStrategy: (times: number) => {
         if (
           process.env.REDIS_MAX_RETRIES !== undefined &&
@@ -108,6 +109,11 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
   }
 
   getWorker(): Worker {
+    if (process.env.PROCESS_ROLE !== 'worker') {
+      throw new Error(
+        'BullMQ Worker can only be constructed in a worker process (PROCESS_ROLE === "worker")',
+      );
+    }
     if (!this.worker) {
       this.worker = new Worker(
         NO_PICKUP_EVALUATION_QUEUE,

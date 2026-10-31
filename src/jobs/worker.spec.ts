@@ -111,6 +111,19 @@ describe('Phase 6.5 Task 3: Separate Worker Entrypoint & Worker Lifecycle', () =
       await job.close(true);
     });
 
+    it('throws when getWorker() is called directly and PROCESS_ROLE is not "worker"', () => {
+      delete process.env.PROCESS_ROLE;
+
+      const job = new NoPickupEvaluationJob(
+        mockPrisma as unknown as PrismaService,
+        mockJobSeekerService as unknown as JobSeekerService,
+      );
+
+      expect(() => job.getWorker()).toThrow(
+        'BullMQ Worker can only be constructed in a worker process (PROCESS_ROLE === "worker")',
+      );
+    });
+
     it('allows HTTP process to construct Queue on demand for enqueueing while constructing zero Worker instances', async () => {
       delete process.env.PROCESS_ROLE;
 
