@@ -269,6 +269,12 @@ describe('Phase 3 Task 2: Hit Recording', () => {
   });
 
   it('field_agent can record witnessed hits (201), is denied no_pickup (403), while finance is denied (403)', async () => {
+    // Reset test candidate to active for hit recording assertion
+    await prisma.jobSeeker.update({
+      where: { id: testJobSeekerId },
+      data: { status: 'active', hitCount: 0 },
+    });
+
     const faWitnessRes = await request(app.getHttpServer())
       .post(`/job-seekers/${testJobSeekerId}/hits`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)

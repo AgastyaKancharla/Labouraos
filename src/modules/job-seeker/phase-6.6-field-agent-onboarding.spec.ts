@@ -284,7 +284,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         .post(`/job-seekers/${createdSeekerId}/kyc`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
         .send({
-          aadhaarRef: `EKYC-REF-${timestamp}`,
+          kycReference: `EKYC-REF-${timestamp}`,
           status: 'verified',
         });
 
@@ -298,14 +298,15 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         .set('Authorization', `Bearer ${fieldAgentToken}`)
         .send({
           channel: 'call',
-          outcome: 'connected',
+          outcome: 'picked_up',
+          timeOfDay: 'am',
           notes: 'Field agent pre-interview call attempt',
         });
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBeDefined();
       expect(res.body.channel).toBe('call');
-      expect(res.body.outcome).toBe('connected');
+      expect(res.body.outcome).toBe('picked_up');
     });
   });
 
