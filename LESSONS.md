@@ -177,3 +177,8 @@ Format:
 **Cause:** `AuditLog.actorId` was constrained by a foreign key to `Staff.id` generated in the initial migration. When the database is unpopulated or actions are executed before a staff row exists (like the first-admin bootstrap endpoint), no staff row exists to satisfy the foreign key.
 **Fix:** Added migration `20261028140000_allow_sentinel_audit_actor` that drops the `AuditLog_actorId_fkey` constraint while preserving the Prisma relation. Standard staff audit logs continue to store staff UUIDs and populate `actor` via LEFT JOIN, while bootstrap/system audit logs safely record `'bootstrap'` or `'system'` without failing.
 
+## BullMQ scheduler registration hung process when Redis was unreachable
+**Symptom:** Worker startup hung indefinitely when attempting to register a scheduled job against an offline or unreachable Redis instance.
+**Cause:** BullMQ's default connection configuration disables retries per request (`maxRetriesPerRequest: null`) and queues commands offline while awaiting connection. Calling `await queue.upsertJobScheduler(...)` without connection timeout guards blocked the application bootstrap indefinitely. Furthermore, unhandled `'error'` events on the `Queue` instance emitted uncaught Node errors.
+**Fix:** Added an `'error'` event listener to `getQueue()`, wrapped startup scheduler registration in `Promise.race` with a startup timeout (`REDIS_STARTUP_TIMEOUT_MS`, defaulting to 2000ms), and cleared the timeout in `.finally()` to prevent lingering timers in libuv. Added configurable `connectTimeout` and capped `retryStrategy` on Redis connections to ensure clean shutdown when Redis is unreachable.
+

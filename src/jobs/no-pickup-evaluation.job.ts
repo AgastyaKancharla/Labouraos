@@ -47,23 +47,51 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   get redisConnection() {
+    const connectTimeout = process.env.REDIS_CONNECT_TIMEOUT_MS
+      ? Number(process.env.REDIS_CONNECT_TIMEOUT_MS)
+      : 5000;
+
     return {
       host: process.env.REDIS_HOST || 'localhost',
       port: Number(process.env.REDIS_PORT) || 6379,
       password: process.env.REDIS_PASSWORD || undefined,
       maxRetriesPerRequest: null,
+      connectTimeout,
+      retryStrategy: (times: number) => {
+        if (
+          process.env.REDIS_MAX_RETRIES !== undefined &&
+          times > Number(process.env.REDIS_MAX_RETRIES)
+        ) {
+          return null;
+        }
+        return Math.min(times * 100, 2000);
+      },
     };
   }
 
   async onModuleInit() {
-    // Queue and Worker can be initialized if Redis is reachable,
-    // but we don't crash app bootstrap if Redis is not running.
-    try {
-      this.getQueue();
-      this.getWorker();
-    } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
-      this.logger.warn(`Could not connect BullMQ queue to Redis: ${msg}`);
+    // Only worker process initializes worker and registers scheduler (Phase 6.5 Task 1)
+    if (process.env.PROCESS_ROLE === 'worker') {
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        const timeoutMs = Number(process.env.REDIS_STARTUP_TIMEOUT_MS) || 2000;
+        await Promise.race([
+          this.scheduleDailyJob(),
+          new Promise((_, reject) => {
+            timer = setTimeout(
+              () => reject(new Error('Redis connection timed out')),
+              timeoutMs,
+            );
+          }),
+        ]).finally(() => {
+          if (timer) clearTimeout(timer);
+        });
+        this.getWorker();
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.warn(`Could not connect BullMQ queue to Redis: ${msg}`);
+        await this.close(true);
+      }
     }
   }
 
@@ -71,6 +99,9 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     if (!this.queue) {
       this.queue = new Queue(NO_PICKUP_EVALUATION_QUEUE, {
         connection: this.redisConnection,
+      });
+      this.queue.on('error', (err) => {
+        this.logger.warn(`BullMQ queue error: ${err.message}`);
       });
     }
     return this.queue;
@@ -114,6 +145,16 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
         name: NO_PICKUP_EVALUATION_JOB,
       },
     );
+  }
+
+  async getJobSchedulers() {
+    const queue = this.getQueue();
+    return queue.getJobSchedulers();
+  }
+
+  async removeJobScheduler(id = 'daily-no-pickup-evaluation-scheduler') {
+    const queue = this.getQueue();
+    return queue.removeJobScheduler(id);
   }
 
   async triggerJob(requestId?: string): Promise<void> {
@@ -263,14 +304,34 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     };
   }
 
-  async close(): Promise<void> {
+  async close(force = true): Promise<void> {
     if (this.worker) {
-      await this.worker.close();
+      const w = this.worker;
       this.worker = null;
+      try {
+        await w.close(force);
+      } catch {
+        // ignore error on close
+      }
+      try {
+        await w.disconnect();
+      } catch {
+        // ignore
+      }
     }
     if (this.queue) {
-      await this.queue.close();
+      const q = this.queue;
       this.queue = null;
+      try {
+        await q.close();
+      } catch {
+        // ignore
+      }
+      try {
+        await q.disconnect();
+      } catch {
+        // ignore
+      }
     }
   }
 

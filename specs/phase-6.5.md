@@ -14,7 +14,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Schedule the no-pickup sweep so it actually runs
+### [x] Task 1 — Schedule the no-pickup sweep so it actually runs
 
 **Acceptance:**
 - `scheduleDailyJob()` is called exactly once during worker application-context initialisation when `PROCESS_ROLE === 'worker'`, so the recurring BullMQ job scheduler is registered against Redis
