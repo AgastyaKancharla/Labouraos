@@ -227,6 +227,11 @@ Format:
 **Cause:** Block-list instead of allow-list for destructive/administrative operations. Furthermore, running tests in CI without setting `NODE_ENV=test` relied on Jest defaults, and local `npm run seed` did not set `NODE_ENV=development`, causing fail-closed guards to block developers locally unless the npm script sets the environment variable.
 **Fix:** Refactored `prisma/seed.ts` to enforce a strict allow-list: `assertSeedAllowed` refuses unless `NODE_ENV` is explicitly `'development'` or `'test'`, stating the exact value found in the error message. Updated `package.json` scripts (`"seed": "NODE_ENV=development ts-node prisma/seed.ts"` and `"prisma": { "seed": "NODE_ENV=development ts-node prisma/seed.ts" }`) and explicitly set `NODE_ENV: test` under CI's test workflow step.
 
+## Prisma Payment model schema fields and test data consistency
+**Symptom:** Integration specs creating activation payment records failed TypeScript compilation with `error TS2353: Object literal may only specify known properties, and 'paymentType' does not exist in type 'PaymentCreateInput'`.
+**Cause:** In `prisma/schema.prisma`, the payment discriminator field is named `type` (not `paymentType`), and requires `gatewayReference`, `subjectType`, and `subjectId` relations.
+**Fix:** Consistently populated `Payment` rows with `type: 'activation'`, unique `gatewayReference`, `subjectType: 'job_seeker'`, and `subjectId` (matching `jobSeekerId`), ensuring strict type checking and DB constraints pass cleanly across all test suites.
+
 
 
 
