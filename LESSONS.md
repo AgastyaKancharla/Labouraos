@@ -222,6 +222,11 @@ Format:
 **Cause:** Re-implementing multi-step domain rules (30-day window, offer_rejected hit, placement status, 15-day search window, replacement acceptance) in a listing service query separately from approval controllers.
 **Fix:** Extracted pure domain evaluators (`evaluateJobSeekerRefundEligibility` and `evaluatePlacementRefundEligibility`) that enforce locked domain rules in lockstep for both approval endpoints and the `GET /refunds/due` listing. Executed queries set-based in bulk (resolving candidate hits, existing refund payments, and replacement candidate states in single queries rather than 2N loops), indexed `(status, paymentReceivedAt)` on `JobSeeker`, `(jobSeekerId, reason)` on `JobSeekerHit`, and `(status, eligibility)` on `Placement`. Computed values fresh on every request without cached flags, and ordered results longest-owed first.
 
+## Fail-closed database seed guards and execution environment defaults
+**Symptom:** The database seed script checked only `if (NODE_ENV === 'production')`, meaning any other environment string (such as `staging`, `prod`, or unset `undefined`) was allowed to run, risking seeding default public credentials and permanently disabling the CEO bootstrap endpoint.
+**Cause:** Block-list instead of allow-list for destructive/administrative operations. Furthermore, running tests in CI without setting `NODE_ENV=test` relied on Jest defaults, and local `npm run seed` did not set `NODE_ENV=development`, causing fail-closed guards to block developers locally unless the npm script sets the environment variable.
+**Fix:** Refactored `prisma/seed.ts` to enforce a strict allow-list: `assertSeedAllowed` refuses unless `NODE_ENV` is explicitly `'development'` or `'test'`, stating the exact value found in the error message. Updated `package.json` scripts (`"seed": "NODE_ENV=development ts-node prisma/seed.ts"` and `"prisma": { "seed": "NODE_ENV=development ts-node prisma/seed.ts" }`) and explicitly set `NODE_ENV: test` under CI's test workflow step.
+
 
 
 

@@ -125,7 +125,7 @@
 
 ---
 
-### [ ] Task 10 — Tighten the seed guard
+### [x] Task 10 — Tighten the seed guard
 
 **Acceptance:**
 - `prisma/seed.ts` refuses to run unless `NODE_ENV` is explicitly `development` or `test` — an allow-list, replacing the current check that only blocks the exact string `production`

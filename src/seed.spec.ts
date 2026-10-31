@@ -315,15 +315,53 @@ describe('Seed Data Script', () => {
     expect(js1?.kycReference).toBe('ovse_seed_kyc_ref_998877');
   });
 
-  it('refuses to run if NODE_ENV=production', async () => {
-    const originalEnv = process.env.NODE_ENV;
-    try {
-      process.env.NODE_ENV = 'production';
-      await expect(seed(prisma)).rejects.toThrow(
-        /Refusing to seed database when NODE_ENV is "production"!/,
-      );
-    } finally {
-      process.env.NODE_ENV = originalEnv;
-    }
+  describe('Seed environment allow-list guard (Phase 6.5 Task 10)', () => {
+    it('refuses to run if NODE_ENV is unset', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        delete process.env.NODE_ENV;
+        await expect(seed(prisma)).rejects.toThrow(
+          /Refusing to seed database: NODE_ENV must be explicitly 'development' or 'test', but found undefined \(unset\)/,
+        );
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+      }
+    });
+
+    it('refuses to run if NODE_ENV=staging', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'staging';
+        await expect(seed(prisma)).rejects.toThrow(
+          /Refusing to seed database: NODE_ENV must be explicitly 'development' or 'test', but found "staging"/,
+        );
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+      }
+    });
+
+    it('refuses to run if NODE_ENV=prod', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'prod';
+        await expect(seed(prisma)).rejects.toThrow(
+          /Refusing to seed database: NODE_ENV must be explicitly 'development' or 'test', but found "prod"/,
+        );
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+      }
+    });
+
+    it('refuses to run if NODE_ENV=production', async () => {
+      const originalEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = 'production';
+        await expect(seed(prisma)).rejects.toThrow(
+          /Refusing to seed database: NODE_ENV must be explicitly 'development' or 'test', but found "production"/,
+        );
+      } finally {
+        process.env.NODE_ENV = originalEnv;
+      }
+    });
   });
 });

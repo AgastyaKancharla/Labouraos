@@ -1,10 +1,30 @@
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
-export async function seed(prismaClient?: PrismaClient) {
-  if (process.env.NODE_ENV === 'production') {
-    throw new Error('Refusing to seed database when NODE_ENV is "production"!');
+const ALLOWED_ENVIRONMENTS = new Set(['development', 'test']);
+
+/**
+ * Validates that database seeding is permitted in the current environment.
+ *
+ * RATIONALE (Phase 6.5 Task 10):
+ * The script creates admin accounts whose addresses are published in a public repository,
+ * and because the CEO bootstrap endpoint refuses to run once any staff row exists,
+ * seeding a live database would permanently disable the bootstrap path.
+ *
+ * Fails closed unless NODE_ENV is explicitly 'development' or 'test'.
+ */
+export function assertSeedAllowed(env?: string): void {
+  const actualEnv = arguments.length === 0 ? process.env.NODE_ENV : env;
+  if (!actualEnv || !ALLOWED_ENVIRONMENTS.has(actualEnv)) {
+    const foundValue = actualEnv === undefined ? 'undefined (unset)' : `"${actualEnv}"`;
+    throw new Error(
+      `Refusing to seed database: NODE_ENV must be explicitly 'development' or 'test', but found ${foundValue}. Seeding live or staging databases is prohibited.`,
+    );
   }
+}
+
+export async function seed(prismaClient?: PrismaClient) {
+  assertSeedAllowed();
 
   const prisma = prismaClient ?? new PrismaClient();
   const defaultPassword = 'Password123!Secure';
