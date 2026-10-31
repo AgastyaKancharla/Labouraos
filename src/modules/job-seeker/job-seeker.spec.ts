@@ -166,7 +166,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     expect(auditLogs[0].actorId).toBe(callAgentId);
   });
 
-  it('denies a field_agent token from creating a job seeker (403)', async () => {
+  it('allows a field_agent token to create a job seeker (201)', async () => {
     const phone = `92${timestamp.toString().slice(-8)}`;
     const otpRequestId = await getVerifiedOtp(phone);
 
@@ -183,7 +183,8 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         preferredCallWindowEnd: '17:00',
       });
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(201);
+    expect(res.body.id).toBeDefined();
   });
 
   it('denies a finance token from creating a job seeker (403)', async () => {

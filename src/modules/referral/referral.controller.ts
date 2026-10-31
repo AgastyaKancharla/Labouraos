@@ -25,7 +25,7 @@ export class ReferralController {
   constructor(private readonly referralService: ReferralService) {}
 
   @Post()
-  @RequireRoles('call_agent', 'manager', 'ceo')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
   @RequirePermission('referral', 'write')
   async create(
     @Body() body: CreateReferralDto,
@@ -35,14 +35,14 @@ export class ReferralController {
   }
 
   @Get()
-  @RequireRoles('call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent')
   @RequirePermission('referral', 'read')
   async findAll() {
     return this.referralService.findAll();
   }
 
   @Get(':id')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent')
   @RequirePermission('referral', 'read')
   async findById(@Param('id') id: string) {
     return this.referralService.findById(id);

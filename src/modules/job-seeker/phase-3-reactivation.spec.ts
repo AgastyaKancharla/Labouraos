@@ -147,16 +147,16 @@ describe('Phase 3 Task 5: Reactivation', () => {
     expect(res.body.message).toContain('must be deactivated to be reactivated');
   });
 
-  it('field_agent and finance roles are denied POST /job-seekers/:id/reactivate with 403 Forbidden', async () => {
-    const faRes = await request(app.getHttpServer())
-      .post(`/job-seekers/${deactivatedJobSeekerId}/reactivate`)
-      .set('Authorization', `Bearer ${fieldAgentToken}`);
-    expect(faRes.status).toBe(403);
-
+  it('field_agent can reactivate (201) while finance is denied (403)', async () => {
     const fiRes = await request(app.getHttpServer())
       .post(`/job-seekers/${deactivatedJobSeekerId}/reactivate`)
       .set('Authorization', `Bearer ${financeToken}`);
     expect(fiRes.status).toBe(403);
+
+    const faRes = await request(app.getHttpServer())
+      .post(`/job-seekers/${deactivatedJobSeekerId}/reactivate`)
+      .set('Authorization', `Bearer ${fieldAgentToken}`);
+    expect(faRes.status).toBe(201);
   });
 
   it('triggers a fresh ₹499 activation payment with reactivation: true for a deactivated job seeker', async () => {

@@ -191,29 +191,33 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(res.body.message).toContain('type');
   });
 
-  it('denies field_agent and finance from creating a referral (403)', async () => {
-    const phone = `84${timestamp.toString().slice(-8)}`;
-    const otpRequestId = await getVerifiedOtp(phone);
+  it('allows field_agent to create a referral (201) while finance is denied (403)', async () => {
+    const phoneFa = `84${timestamp.toString().slice(-8)}`;
+    const otpRequestIdFa = await getVerifiedOtp(phoneFa);
 
     const faRes = await request(app.getHttpServer())
       .post('/referrals')
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .send({
         name: 'FA Referral',
-        phone,
+        phone: phoneFa,
         type: 'individual',
-        otpRequestId,
+        otpRequestId: otpRequestIdFa,
       });
-    expect(faRes.status).toBe(403);
+    expect(faRes.status).toBe(201);
+    expect(faRes.body.id).toBeDefined();
+
+    const phoneFi = `89${timestamp.toString().slice(-8)}`;
+    const otpRequestIdFi = await getVerifiedOtp(phoneFi);
 
     const fiRes = await request(app.getHttpServer())
       .post('/referrals')
       .set('Authorization', `Bearer ${financeToken}`)
       .send({
         name: 'Finance Referral',
-        phone,
+        phone: phoneFi,
         type: 'individual',
-        otpRequestId,
+        otpRequestId: otpRequestIdFi,
       });
     expect(fiRes.status).toBe(403);
   });

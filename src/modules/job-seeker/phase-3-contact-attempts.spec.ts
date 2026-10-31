@@ -274,7 +274,7 @@ describe('Phase 3 Task 1: Contact-Attempt Logging', () => {
     expect(res.status).toBe(404);
   });
 
-  it('field_agent and finance are denied POST /job-seekers/:id/contact-attempts (403)', async () => {
+  it('field_agent can log contact attempts (201) while finance is denied (403)', async () => {
     const faRes = await request(app.getHttpServer())
       .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -283,7 +283,7 @@ describe('Phase 3 Task 1: Contact-Attempt Logging', () => {
         outcome: 'no_pickup',
         timeOfDay: 'am',
       });
-    expect(faRes.status).toBe(403);
+    expect(faRes.status).toBe(201);
 
     const fiRes = await request(app.getHttpServer())
       .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)

@@ -181,7 +181,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
   });
 
   describe('Field Agent and Finance Access Denial', () => {
-    it('Field agent is denied POST contact attempts, hits, and reactivate (403)', async () => {
+    it('Field agent can log contact attempts and witnessed hits, but is denied no_pickup (403)', async () => {
       const attRes = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -190,20 +190,28 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
           outcome: 'no_pickup',
           timeOfDay: 'am',
         });
-      expect(attRes.status).toBe(403);
+      expect(attRes.status).toBe(201);
 
-      const hitRes = await request(app.getHttpServer())
+      const hitWitnessRes = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/hits`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
         .send({
           reason: 'offer_rejected',
         });
-      expect(hitRes.status).toBe(403);
+      expect(hitWitnessRes.status).toBe(201);
+
+      const hitNoPickupRes = await request(app.getHttpServer())
+        .post(`/job-seekers/${testJobSeekerId}/hits`)
+        .set('Authorization', `Bearer ${fieldAgentToken}`)
+        .send({
+          reason: 'no_pickup',
+        });
+      expect(hitNoPickupRes.status).toBe(403);
 
       const reactRes = await request(app.getHttpServer())
         .post(`/job-seekers/${deactivatedJobSeekerId}/reactivate`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
-      expect(reactRes.status).toBe(403);
+      expect(reactRes.status).toBe(201);
     });
 
     it('Finance is denied POST contact attempts, hits, and reactivate (403)', async () => {

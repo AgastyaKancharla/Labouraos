@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -364,6 +365,7 @@ export class JobSeekerService {
     reason: string,
     note?: string,
     actorId?: string,
+    actorRole?: string,
   ) {
     const validReasons: HitReason[] = [
       'no_pickup',
@@ -374,6 +376,51 @@ export class JobSeekerService {
       throw new BadRequestException(
         `Invalid hit reason '${reason}'. Allowed reasons: ${validReasons.join(', ')}`,
       );
+    }
+
+    let resolvedRole = actorRole;
+    if (!resolvedRole && actorId && actorId !== 'system') {
+      const actorStaff = await this.prisma.staff.findUnique({
+        where: { id: actorId },
+        select: { role: true },
+      });
+      resolvedRole = actorStaff?.role;
+    }
+
+    if (resolvedRole === 'field_agent' && reason === 'no_pickup') {
+      const refusalMessage =
+        "Field agents may only record 'offer_rejected' or 'interview_no_show' hits. Recording 'no_pickup' hits is restricted to call agents and the automated sweep.";
+
+      const jobSeeker = await this.prisma.jobSeeker.findUnique({
+        where: { id: jobSeekerId },
+        select: { code: true, city: true, hitCount: true, status: true },
+      });
+      if (!jobSeeker) {
+        throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+      }
+
+      if (actorId && actorId !== 'system') {
+        await this.auditService.log({
+          action: 'job_seeker.hit_refused',
+          entityType: 'job_seeker',
+          entityCode: jobSeeker.code,
+          actorId,
+          city: jobSeeker.city,
+          before: {
+            hitCount: jobSeeker.hitCount,
+            status: jobSeeker.status,
+          },
+          after: {
+            refusalReason: 'UNAUTHORIZED_HIT_REASON_FOR_ROLE',
+            attemptedReason: reason,
+            role: resolvedRole,
+            allowedReasons: ['offer_rejected', 'interview_no_show'],
+            message: refusalMessage,
+          },
+        });
+      }
+
+      throw new ForbiddenException(refusalMessage);
     }
 
     return await this.prisma.$transaction(async (tx) => {

@@ -72,8 +72,8 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     target: { read: { allowed: true, scope: 'own_only' }, write: { allowed: false, scope: 'none' } },
   },
   field_agent: {
-    job_seeker: { read: { allowed: true, scope: 'own_area' }, write: { allowed: true, scope: 'own_area' } },
-    referral: { read: { allowed: true, scope: 'own_area' }, write: { allowed: true, scope: 'own_area' } },
+    job_seeker: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
+    referral: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     business: { read: { allowed: true, scope: 'own_area' }, write: { allowed: true, scope: 'own_area' } },
     vacancy: { read: { allowed: true, scope: 'own_area' }, write: { allowed: true, scope: 'own_area' } },
     placement: { read: { allowed: true, scope: 'own_area' }, write: { allowed: true, scope: 'own_area' } },

@@ -201,14 +201,16 @@ npx prisma studio    # browse the database visually
 
 Enforced server-side on every request. Build this as a guard, not as per-endpoint hand-written checks.
 
-| Role | Job Seeker / Referral / Business | Vacancy / Placement | Payment ledger | Pricing & policy | Targets |
-| --- | --- | --- | --- | --- | --- |
-| CEO | full read/write | full read/write | full read, approve refunds | **sole write access** | all |
-| Manager | full read/write | full read/write | full read, approve refunds | read-only | all |
-| Team Lead | own team's only | own team's only | none | none | own team |
-| Call Agent | full create/edit | own captured vacancies | none | none | own only |
-| Field Agent | own area only | own area only | none | none | own only |
-| Finance | read-only, **PII masked** | read-only | full read/write | none | none |
+| Role | Job Seeker / Referral | Business | Vacancy / Placement | Payment ledger | Pricing & policy | Targets |
+| --- | --- | --- | --- | --- | --- | --- |
+| CEO | full read/write | full read/write | full read/write | full read, approve refunds | **sole write access** | all |
+| Manager | full read/write | full read/write | full read/write | full read, approve refunds | read-only | all |
+| Team Lead | own team's only | own team's only | own team's only | none | none | own team |
+| Call Agent | full create/edit | full create/edit | own captured vacancies | none | none | own only |
+| Field Agent | city-wide onboarding* | own area only | own area only | none | none | own only |
+| Finance | read-only, **PII masked** | read-only, **PII masked** | read-only | full read/write | none | none |
+
+\* **Field Agent city-wide onboarding**: Field agents onboard job seekers and referrals city-wide (neither model has an area column, only city). Field agents can create, read, process activation payments, submit KYC, log contact attempts, reactivate, and record witnessed hits (`offer_rejected`, `interview_no_show`). Field agents may **not** record `no_pickup` hits (reserved for call team and automated sweep). Business, vacancy and placement remain strictly area-scoped.
 
 **PII masking for Finance** means: Finance sees the unique ID (`JS-04821`) and
 amounts, never the phone number or KYC details.

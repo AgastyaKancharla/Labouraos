@@ -268,14 +268,22 @@ describe('Phase 3 Task 2: Hit Recording', () => {
     ).rejects.toThrow('Invalid hit reason');
   });
 
-  it('field_agent and finance are denied POST /job-seekers/:id/hits (403)', async () => {
-    const faRes = await request(app.getHttpServer())
+  it('field_agent can record witnessed hits (201), is denied no_pickup (403), while finance is denied (403)', async () => {
+    const faWitnessRes = await request(app.getHttpServer())
       .post(`/job-seekers/${testJobSeekerId}/hits`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .send({
         reason: 'offer_rejected',
       });
-    expect(faRes.status).toBe(403);
+    expect(faWitnessRes.status).toBe(201);
+
+    const faNoPickupRes = await request(app.getHttpServer())
+      .post(`/job-seekers/${testJobSeekerId}/hits`)
+      .set('Authorization', `Bearer ${fieldAgentToken}`)
+      .send({
+        reason: 'no_pickup',
+      });
+    expect(faNoPickupRes.status).toBe(403);
 
     const fiRes = await request(app.getHttpServer())
       .post(`/job-seekers/${testJobSeekerId}/hits`)

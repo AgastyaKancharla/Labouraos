@@ -219,11 +219,11 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
     });
   });
 
-  describe('Field Agent Access Denial', () => {
-    it('Field agent is denied POST /job-seekers (403)', async () => {
+  describe('Field Agent and Finance RBAC Controls', () => {
+    it('Finance is denied POST /job-seekers (403)', async () => {
       const res = await request(app.getHttpServer())
         .post('/job-seekers')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({
           name: 'Seeker',
           phone: `91${timestamp.toString().slice(-8)}`,
@@ -238,22 +238,23 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
       expect(res.status).toBe(403);
     });
 
-    it('Field agent is denied GET /job-seekers and GET /job-seekers/:id (403)', async () => {
+    it('Field agent CAN read GET /job-seekers and GET /job-seekers/:id (200)', async () => {
       const listRes = await request(app.getHttpServer())
         .get('/job-seekers')
         .set('Authorization', `Bearer ${fieldAgentToken}`);
-      expect(listRes.status).toBe(403);
+      expect(listRes.status).toBe(200);
 
       const itemRes = await request(app.getHttpServer())
         .get(`/job-seekers/${testJobSeekerId}`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
-      expect(itemRes.status).toBe(403);
+      expect(itemRes.status).toBe(200);
+      expect(itemRes.body.phone).toBe(testPhone);
     });
 
-    it('Field agent is denied POST /referrals and GET /referrals (403)', async () => {
+    it('Finance is denied POST /referrals (403) while Field Agent can GET /referrals (200)', async () => {
       const postRes = await request(app.getHttpServer())
         .post('/referrals')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({
           name: 'Partner',
           phone: `92${timestamp.toString().slice(-8)}`,
@@ -264,7 +265,7 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
       const getRes = await request(app.getHttpServer())
         .get('/referrals')
         .set('Authorization', `Bearer ${fieldAgentToken}`);
-      expect(getRes.status).toBe(403);
+      expect(getRes.status).toBe(200);
     });
   });
 });
