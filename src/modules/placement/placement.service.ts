@@ -396,7 +396,31 @@ export class PlacementService {
     return this.paymentService.createReferralPayout(placementId, actorId);
   }
 
-  async recordDropout(id: string, dto: RecordDropoutDto, actorId: string) {
+  /**
+   * Reports a candidate dropout on an active placement.
+   *
+   * ANTI-FRAUD CONTROL (Phase 6.5 Task 8):
+   * The 15-day cash-refund clock runs from dropoutReportedAt. An unbounded or fraudulent
+   * caller-supplied date is a direct money-affecting input: backdating it by 15 days makes
+   * a cash refund immediately payable. This belongs with the §4 anti-fraud controls,
+   * not with ordinary validation.
+   *
+   * Validations enforced:
+   * 1. Refuse future dropoutReportedAt (strictly > server time now, no grace period/tolerance).
+   * 2. Refuse dropoutReportedAt earlier than joinedDate (employee cannot leave before they started).
+   * 3. For 'employee_left', refuse if joinedDate is missing or if dropoutReportedAt is outside
+   *    the 60-day replacement guarantee window.
+   *
+   * Origin tracking:
+   * Sets `dropoutDateCallerSupplied: true` if dropoutReportedAt was provided in the DTO,
+   * or `false` if defaulted to the server clock.
+   */
+  async recordDropout(
+    id: string,
+    dto: RecordDropoutDto,
+    actorId: string,
+    now: Date = new Date(),
+  ) {
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
     });
@@ -441,18 +465,74 @@ export class PlacementService {
       );
     }
 
+    const callerSupplied = dto.dropoutReportedAt !== undefined && dto.dropoutReportedAt !== null;
     let dropoutReportedAt: Date;
-    if (dto.dropoutReportedAt) {
-      dropoutReportedAt = new Date(dto.dropoutReportedAt);
+    if (callerSupplied) {
+      dropoutReportedAt = new Date(dto.dropoutReportedAt!);
       if (isNaN(dropoutReportedAt.getTime())) {
         throw new BadRequestException('dropoutReportedAt must be a valid date string');
       }
     } else {
-      dropoutReportedAt = new Date();
+      dropoutReportedAt = new Date(now.getTime());
     }
 
+    // 1. Future date check (Strict server time; no tolerance window / clock skew backdoor)
+    if (dropoutReportedAt.getTime() > now.getTime()) {
+      const refusalMessage = `dropoutReportedAt ${dropoutReportedAt.toISOString()} cannot be in the future (server time is ${now.toISOString()})`;
+      await this.auditService.log({
+        action: 'placement_dropout_refused',
+        entityType: 'Placement',
+        entityCode: placement.code,
+        actorId: actor.id,
+        city: placement.city,
+        before: {
+          status: placement.status,
+          dropoutReportedAt: placement.dropoutReportedAt,
+          dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
+          eligibility: placement.eligibility,
+        },
+        after: {
+          refusalReason: 'FUTURE_DROPOUT_DATE',
+          message: refusalMessage,
+          eligibility: dto.eligibility,
+          dropoutReportedAt,
+          serverTime: now.toISOString(),
+          callerSupplied,
+        },
+      });
+      throw new BadRequestException(refusalMessage);
+    }
+
+    // 2. Cannot report dropout before joinedDate (employee cannot leave before they started)
+    if (placement.joinedDate && dropoutReportedAt.getTime() < placement.joinedDate.getTime()) {
+      const refusalMessage = `dropoutReportedAt ${dropoutReportedAt.toISOString()} cannot be earlier than joinedDate ${placement.joinedDate.toISOString()} (employee cannot leave before they started)`;
+      await this.auditService.log({
+        action: 'placement_dropout_refused',
+        entityType: 'Placement',
+        entityCode: placement.code,
+        actorId: actor.id,
+        city: placement.city,
+        before: {
+          status: placement.status,
+          dropoutReportedAt: placement.dropoutReportedAt,
+          dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
+          eligibility: placement.eligibility,
+        },
+        after: {
+          refusalReason: 'DROPOUT_BEFORE_JOINED_DATE',
+          message: refusalMessage,
+          eligibility: dto.eligibility,
+          dropoutReportedAt,
+          joinedDate: placement.joinedDate.toISOString(),
+          callerSupplied,
+        },
+      });
+      throw new BadRequestException(refusalMessage);
+    }
+
+    // 3. Employee_left eligibility checks:
     if (dto.eligibility === 'employee_left') {
-      // 1. joinedDate must not be null
+      // 3a. joinedDate must not be null
       if (!placement.joinedDate) {
         await this.auditService.log({
           action: 'placement_dropout_refused',
@@ -463,6 +543,7 @@ export class PlacementService {
           before: {
             status: placement.status,
             dropoutReportedAt: placement.dropoutReportedAt,
+            dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
             eligibility: placement.eligibility,
           },
           after: {
@@ -470,6 +551,7 @@ export class PlacementService {
             message: `Placement '${placement.code}' has no joinedDate recorded; cannot evaluate 60-day replacement guarantee window`,
             eligibility: dto.eligibility,
             dropoutReportedAt,
+            callerSupplied,
           },
         });
         throw new BadRequestException(
@@ -477,7 +559,7 @@ export class PlacementService {
         );
       }
 
-      // 2. 60-day replacement guarantee window check
+      // 3b. 60-day replacement guarantee window check
       // NOTE: Placement.clockPaused and clockPausedAt govern the 15-day replacement search window
       // AFTER a dropout is reported (when a business rejects 2 replacement candidates).
       // Clock pause does NOT extend this initial 60-day guarantee window, which runs strictly from joinedDate.
@@ -494,6 +576,7 @@ export class PlacementService {
           before: {
             status: placement.status,
             dropoutReportedAt: placement.dropoutReportedAt,
+            dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
             eligibility: placement.eligibility,
           },
           after: {
@@ -502,6 +585,7 @@ export class PlacementService {
             message: refusalMessage,
             eligibility: dto.eligibility,
             dropoutReportedAt,
+            callerSupplied,
           },
         });
 
@@ -512,6 +596,7 @@ export class PlacementService {
     const before = {
       status: placement.status,
       dropoutReportedAt: placement.dropoutReportedAt,
+      dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
       eligibility: placement.eligibility,
     };
 
@@ -520,6 +605,7 @@ export class PlacementService {
       data: {
         status: 'dropped_out',
         dropoutReportedAt,
+        dropoutDateCallerSupplied: callerSupplied,
         eligibility: dto.eligibility,
       },
       include: {
@@ -539,6 +625,7 @@ export class PlacementService {
       after: {
         status: updated.status,
         dropoutReportedAt: updated.dropoutReportedAt,
+        dropoutDateCallerSupplied: updated.dropoutDateCallerSupplied,
         eligibility: updated.eligibility,
         reason: dto.reason,
       },
@@ -1078,10 +1165,14 @@ export class PlacementService {
         type: 'refund',
         reason: dto?.reason ?? '60-day replacement guarantee cash refund',
         daysElapsed,
+        dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
       },
     });
 
-    return payment;
+    return {
+      ...payment,
+      dropoutDateCallerSupplied: placement.dropoutDateCallerSupplied,
+    };
   }
 
   async getInvoice(id: string, actorId: string): Promise<GstInvoiceResponse> {

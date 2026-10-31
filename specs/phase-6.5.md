@@ -100,7 +100,7 @@
 
 ---
 
-### [ ] Task 8 — Validate the caller-supplied dropout date and track origin
+### [x] Task 8 — Validate the caller-supplied dropout date and track origin
 
 **Acceptance:**
 - `recordDropout` refuses a `dropoutReportedAt` that is in the future, or earlier than the placement's `joinedDate`
