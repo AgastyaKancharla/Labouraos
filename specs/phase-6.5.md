@@ -28,7 +28,7 @@
 
 ---
 
-### [ ] Task 2 — Manual trigger endpoint for the sweep
+### [x] Task 2 — Manual trigger endpoint for the sweep
 
 **Acceptance:**
 - `POST /jobs/no-pickup-evaluation/run` (ceo only, protected by `@RequireRoles('ceo')` and `@RequirePermission('job_seeker', 'write')` per §7 — do NOT add a 'job' resource to the RBAC matrix) enqueues one immediate run by calling `triggerJob()`, and returns the enqueued job id
