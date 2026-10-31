@@ -187,4 +187,10 @@ Format:
 **Cause:** `JwtStrategy` reads its verification secret from `process.env.JWT_SECRET || 'dev_secret_key_change_in_production_min_32_chars'`. When a test registers `JwtModule.register({ secret: 'custom-secret' })` without setting `process.env.JWT_SECRET`, the token is signed with the custom secret but verified by Passport with the default fallback secret, causing silent authentication failure.
 **Fix:** In isolated test suites mocking auth or testing guards, set `process.env.JWT_SECRET = customSecret` in `beforeAll` and restore it in `afterAll`, or sign test tokens using `process.env.JWT_SECRET || 'dev_secret_key_change_in_production_min_32_chars'`.
 
+## BullMQ worker.close(force) default aborts in-flight jobs on SIGTERM
+**Symptom:** When shutting down the worker service on deploy (Render SIGTERM), active background sweep jobs were abruptly killed mid-execution.
+**Cause:** BullMQ's `worker.close(force = false)` defaults to waiting for running jobs (`whenCurrentJobsFinished(false)`). However, `NoPickupEvaluationJob.close(force = true)` defaulted `force` to `true`, and `onModuleDestroy()` called `await this.close()` without arguments, immediately forcing the worker offline instead of letting active sweeps conclude.
+**Fix:** Changed `close(force = false)` default parameter to `false` and explicitly passed `false` in `onModuleDestroy()`, reserving `force = true` only for startup connection failure bailouts.
+
+
 
