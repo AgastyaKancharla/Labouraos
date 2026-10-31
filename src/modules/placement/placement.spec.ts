@@ -844,7 +844,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .expect(403);
 
       // Successfully report dropout
-      const reportDate = '2026-11-01T10:00:00.000Z';
+      const reportDate = new Date().toISOString();
       const dropRes = await request(app.getHttpServer())
         .post(`/placements/${placementId}/dropout`)
         .set('Authorization', `Bearer ${faKoraToken}`)
@@ -859,6 +859,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(dropRes.body.status).toBe('dropped_out');
       expect(dropRes.body.eligibility).toBe('employee_left');
       expect(new Date(dropRes.body.dropoutReportedAt).toISOString()).toBe(reportDate);
+      expect(dropRes.body.dropoutDateCallerSupplied).toBe(true);
 
       // Check DB state
       const dbPlacement = await prisma.placement.findUnique({
@@ -867,6 +868,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(dbPlacement?.status).toBe('dropped_out');
       expect(dbPlacement?.eligibility).toBe('employee_left');
       expect(dbPlacement?.dropoutReportedAt?.toISOString()).toBe(reportDate);
+      expect(dbPlacement?.dropoutDateCallerSupplied).toBe(true);
 
       // Audit log entry
       const audit = await prisma.auditLog.findFirst({
@@ -926,12 +928,14 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(dropRes.body.status).toBe('dropped_out');
       expect(dropRes.body.eligibility).toBe('business_breach');
       expect(dropRes.body.dropoutReportedAt).toBeDefined();
+      expect(dropRes.body.dropoutDateCallerSupplied).toBe(false);
 
       const dbPlacement = await prisma.placement.findUnique({
         where: { id: placementId },
       });
       expect(dbPlacement?.status).toBe('dropped_out');
       expect(dbPlacement?.eligibility).toBe('business_breach');
+      expect(dbPlacement?.dropoutDateCallerSupplied).toBe(false);
     });
   });
 
@@ -972,7 +976,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({})
         .expect(201);
 
-      const dropoutReportedAt = '2026-11-01T00:00:00.000Z';
+      const dropoutReportedAt = new Date().toISOString();
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/dropout`)
         .set('Authorization', `Bearer ${caToken}`)

@@ -126,6 +126,7 @@ model Placement {
   invoiceCode                String?     @unique
   joinedDate                 DateTime?
   dropoutReportedAt          DateTime?
+  dropoutDateCallerSupplied  Boolean     @default(false)
   eligibility                String?     // employee_left, business_breach
   clockPaused                Boolean     @default(false)
   clockPausedAt              DateTime?

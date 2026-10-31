@@ -212,6 +212,11 @@ Format:
 **Cause:** In `schema.prisma`, `Placement.joinedDate` is nullable (`DateTime?`). While active placements should have a recorded join date, legacy or inconsistent data records may omit it. Furthermore, confusing the candidate search clock pause (`clockPaused`) with the guarantee eligibility window risked incorrectly extending the 60-day replacement guarantee.
 **Fix:** Checked `joinedDate` explicitly in `recordDropout`: if null, refused the dropout with a clear error message and recorded a `placement_dropout_refused` audit log. Positioned `replacementGuaranteeDeadline` and `isWithinReplacementGuarantee` alongside `refundGuaranteeDeadline` in `src/common/money/money.ts` using identical millisecond arithmetic (`60 * 24 * 60 * 60 * 1000`). Enforced strict boundary conditions (day 60 accepted, day 61 refused), proved clock pauses do not extend the guarantee, and preserved exemption for `business_breach`.
 
+## Unbounded caller-supplied dropout dates and money-affecting refund triggers
+**Symptom:** Call agents or field agents could supply arbitrary past or future dates for `dropoutReportedAt` on placement dropouts, which starts the 15-day cash-refund countdown.
+**Cause:** `RecordDropoutDto.dropoutReportedAt` was accepted directly without verifying temporal ordering or origin. Backdating by 15 days immediately made cash refunds payable, creating a financial vulnerability. Furthermore, without recording whether the date was caller-supplied or server-defaulted, approvers could not verify whether a refund clock was started by manual input.
+**Fix:** Treated `dropoutReportedAt` validation as an anti-fraud control: strictly refused future dates relative to server clock with zero tolerance (no grace period backdoor), refused dates earlier than `joinedDate` ("employee cannot leave before they started"), and cleanly composed messages so "before you started" (`DROPOUT_BEFORE_JOINED_DATE`), "guarantee expired" (`REPLACEMENT_GUARANTEE_EXPIRED`), and "future date" (`FUTURE_DROPOUT_DATE`) are unmistakably distinct. Added a `dropoutDateCallerSupplied` Boolean column on `Placement` via Prisma migration, recorded the flag on dropout and in audit logs, and surfaced it during refund review and approval (`approveRefund` response and audit trail).
+
 
 
 
