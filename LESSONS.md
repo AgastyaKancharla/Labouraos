@@ -202,6 +202,12 @@ Format:
 **Cause:** Single `/health` endpoint checking both process liveness and external databases/queues. Orchestrators like Render kill containers when their health check fails, preventing pre-deploy migrations or worker contexts from recovering gracefully.
 **Fix:** Split into two distinct endpoints: `GET /health` (cheap liveness returning static `{ status: 'ok' }` without checking dependencies, used by Render deploy/container probes) and `GET /health/ready` (fast readiness check testing Postgres and Redis with a 2-second timeout, returning 503 naming failed dependencies, used by monitoring and alerting).
 
+## Circular staleness monitoring inside background worker processes
+**Symptom:** A background worker process failure, OOM crash, or Redis disconnection resulted in complete silence rather than an alert, making a stalled job indistinguishable from a healthy system.
+**Cause:** Scheduling the staleness check inside the same background worker that is being monitored. When the worker process dies, the watchdog dies with it.
+**Fix:** Separated staleness evaluation into the always-on web service (`SweepMonitoringService`, gated on `PROCESS_ROLE !== 'worker'`), persisting sweep completions into a dedicated `JobRun` table and alert deduplication/recovery state into a `JobAlertState` table. If the sweep gap exceeds 36 hours, the web service dispatches a critical alert via `AlertService` with a 6-hour throttle, and sends a recovery notification once the sweep resumes.
+
+
 
 
 

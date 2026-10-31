@@ -17,9 +17,15 @@ export class HealthController {
     status: string;
     postgres: string;
     redis: string;
+    sweep?: {
+      status: 'healthy' | 'stale';
+      hoursElapsed: number | null;
+      lastCompletedAt: string | null;
+    };
   }> {
     // Quick readiness probe checking PostgreSQL and Redis with a 2-second timeout.
     // Pointed to by monitoring and alert systems; returns 503 naming which dependency failed.
+    // Note: Sweep staleness is reported in body as informational and never forces a 503.
     const result = await this.healthService.checkReadiness();
     if (!result.ready) {
       throw new HttpException(
@@ -37,6 +43,7 @@ export class HealthController {
       status: 'ready',
       postgres: 'ok',
       redis: 'ok',
+      ...(result.sweep ? { sweep: result.sweep } : {}),
     };
   }
 }

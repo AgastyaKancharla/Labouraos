@@ -4,7 +4,7 @@ import { getRequestId } from './request-context';
 export interface AlertPayload {
   title: string;
   message: string;
-  severity?: 'critical' | 'error' | 'warning';
+  severity?: 'critical' | 'error' | 'warning' | 'info';
   requestId?: string;
   timestamp?: string;
   error?: string;
@@ -57,11 +57,12 @@ export class AlertService {
     }
 
     try {
+      const icon = severity === 'info' ? '✅' : severity === 'warning' ? '⚠️' : '🚨';
       const response = await fetch(this.webhookUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          text: `🚨 *[${severity.toUpperCase()}] ${alert.title}*\n${alert.message}\n_Request ID_: \`${alert.requestId || 'none'}\`\n_Timestamp_: ${alert.timestamp}`,
+          text: `${icon} *[${severity.toUpperCase()}] ${alert.title}*\n${alert.message}\n_Request ID_: \`${alert.requestId || 'none'}\`\n_Timestamp_: ${alert.timestamp}`,
           alert,
         }),
       });

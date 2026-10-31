@@ -76,7 +76,7 @@ services:
       - key: ALERT_WEBHOOK_URL
         sync: false
       - key: COMPANY_LEGAL_NAME
-        value: "Laboura Private Limited"
+        sync: false
       - key: COMPANY_GSTIN
         sync: false
       - key: COMPANY_ADDRESS

@@ -182,12 +182,14 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
    * because qualifying contact attempts are linked to hitId upon recording.
    */
   async evaluateNoPickups(): Promise<EvaluationResult> {
+    const startedAt = new Date();
     this.structuredLogger.log(
       'Executing evaluateNoPickups sweep',
       NoPickupEvaluationJob.name,
     );
 
-    const activeJobSeekers = await this.prisma.jobSeeker.findMany({
+    try {
+      const activeJobSeekers = await this.prisma.jobSeeker.findMany({
       where: { status: 'active' },
       select: {
         id: true,
@@ -302,13 +304,57 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
         // or is already deactivated
         continue;
       }
-    }
+      }
 
-    return {
-      evaluated: activeJobSeekers.length,
-      hitsRecorded,
-      hitJobSeekerIds,
-    };
+      const finishedAt = new Date();
+      try {
+        if (this.prisma.jobRun) {
+          await this.prisma.jobRun.create({
+            data: {
+              jobName: NO_PICKUP_EVALUATION_JOB,
+              startedAt,
+              finishedAt,
+              outcome: 'success',
+              evaluated: activeJobSeekers.length,
+              hitsRecorded,
+              details: {
+                hitJobSeekerIds,
+              },
+            },
+          });
+        }
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : String(err);
+        this.logger.error(`Failed to record JobRun for sweep: ${msg}`);
+      }
+
+      return {
+        evaluated: activeJobSeekers.length,
+        hitsRecorded,
+        hitJobSeekerIds,
+      };
+    } catch (err: unknown) {
+      try {
+        if (this.prisma.jobRun) {
+          await this.prisma.jobRun.create({
+            data: {
+              jobName: NO_PICKUP_EVALUATION_JOB,
+              startedAt,
+              finishedAt: new Date(),
+              outcome: 'failed',
+              evaluated: 0,
+              hitsRecorded: 0,
+              details: {
+                error: err instanceof Error ? err.message : String(err),
+              },
+            },
+          });
+        }
+      } catch {
+        // ignore logging failure
+      }
+      throw err;
+    }
   }
 
   hasWorker(): boolean {

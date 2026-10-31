@@ -7,6 +7,11 @@ export interface ReadinessCheckResult {
   ready: boolean;
   failed: string[];
   errors: Record<string, string>;
+  sweep?: {
+    status: 'healthy' | 'stale';
+    hoursElapsed: number | null;
+    lastCompletedAt: string | null;
+  };
 }
 
 @Injectable()
@@ -19,9 +24,10 @@ export class HealthService {
     const failed: string[] = [];
     const errors: Record<string, string> = {};
 
-    const [dbResult, redisResult] = await Promise.all([
+    const [dbResult, redisResult, sweep] = await Promise.all([
       this.checkDatabase(timeoutMs),
       this.checkRedis(timeoutMs),
+      this.checkSweepInfo(),
     ]);
 
     if (!dbResult.healthy) {
@@ -38,7 +44,37 @@ export class HealthService {
       ready: failed.length === 0,
       failed,
       errors,
+      sweep,
     };
+  }
+
+  async checkSweepInfo(): Promise<
+    | { status: 'healthy' | 'stale'; hoursElapsed: number | null; lastCompletedAt: string | null }
+    | undefined
+  > {
+    try {
+      if (!this.prisma.jobRun) return undefined;
+      const latest = await this.prisma.jobRun.findFirst({
+        where: {
+          jobName: 'daily-no-pickup-evaluation',
+          outcome: 'success',
+          finishedAt: { not: null },
+        },
+        orderBy: { finishedAt: 'desc' },
+      });
+      if (!latest || !latest.finishedAt) {
+        return undefined;
+      }
+      const gapMs = Date.now() - latest.finishedAt.getTime();
+      const hoursElapsed = Math.floor(gapMs / (1000 * 60 * 60));
+      return {
+        status: gapMs > 36 * 60 * 60 * 1000 ? 'stale' : 'healthy',
+        hoursElapsed,
+        lastCompletedAt: latest.finishedAt.toISOString(),
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   async checkDatabase(timeoutMs = 2000): Promise<{ healthy: boolean; error?: string }> {
