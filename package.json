@@ -19,10 +19,10 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:load": "jest src/load-test.spec.ts --runInBand",
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "NODE_ENV=development ts-node prisma/seed.ts"
   },
   "prisma": {
-    "seed": "ts-node prisma/seed.ts"
+    "seed": "NODE_ENV=development ts-node prisma/seed.ts"
   },
   "dependencies": {
     "@nestjs/common": "11.2.7",
