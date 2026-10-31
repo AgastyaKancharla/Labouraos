@@ -137,22 +137,22 @@
 
 ## Phase 6.5 Gate
 
-- [ ] `scheduleDailyJob()` is called at startup in the worker process when `PROCESS_ROLE === 'worker'`, and a test proves a scheduler entry exists afterwards
-- [ ] With Redis unreachable, the worker still starts and logs a warning, by test
-- [ ] A CEO can trigger a sweep manually via `POST /jobs/no-pickup-evaluation/run`; a non-CEO cannot; both by test
-- [ ] The HTTP process constructs no BullMQ `Worker`, by test
-- [ ] With `PROCESS_ROLE` unset, neither a worker nor a scheduler is created, by test
-- [ ] `render.yaml` declares both services with no committed secrets, and `DEPLOY.md` exists
-- [ ] `/health` returns 200 without dependency checks, and `/health/ready` returns 503 when a dependency is unreachable, by test
-- [ ] A sweep gap older than 36 hours raises an alert, by test
-- [ ] A dropout at day 70 is refused and a dropout at day 60 is accepted, by test
-- [ ] A future or pre-`joinedDate` dropout date is refused, and the caller-supplied origin flag on `Placement` is recorded via migration, by test
-- [ ] `GET /refunds/due` returns both kinds, excludes every ineligible case the approval endpoints exclude, and shares its eligibility logic with them rather than duplicating it — by test
-- [ ] Seeding is refused with `NODE_ENV` unset and with `staging`, by test
-- [ ] **End-to-end proof, recorded in the report:** a job seeker is driven to three hits using only the manual trigger endpoint and logged contact attempts, is deactivated automatically, and correctly carries no refund entitlement. Running the sweep twice on the same day's data records no second hit.
-- [ ] All Phase 1–8 gate items still pass
-- [ ] CI green on `main` — confirmed by checking the GitHub Actions run, not by a local test run
-- [ ] `LESSONS.md` updated
+- [x] `scheduleDailyJob()` is called at startup in the worker process when `PROCESS_ROLE === 'worker'`, and a test proves a scheduler entry exists afterwards
+- [x] With Redis unreachable, the worker still starts and logs a warning, by test
+- [x] A CEO can trigger a sweep manually via `POST /jobs/no-pickup-evaluation/run`; a non-CEO cannot; both by test
+- [x] The HTTP process constructs no BullMQ `Worker`, by test
+- [x] With `PROCESS_ROLE` unset, neither a worker nor a scheduler is created, by test
+- [x] `render.yaml` declares both services with no committed secrets, and `DEPLOY.md` exists
+- [x] `/health` returns 200 without dependency checks, and `/health/ready` returns 503 when a dependency is unreachable, by test
+- [x] A sweep gap older than 36 hours raises an alert, by test
+- [x] A dropout at day 70 is refused and a dropout at day 60 is accepted, by test
+- [x] A future or pre-`joinedDate` dropout date is refused, and the caller-supplied origin flag on `Placement` is recorded via migration, by test
+- [x] `GET /refunds/due` returns both kinds, excludes every ineligible case the approval endpoints exclude, and shares its eligibility logic with them rather than duplicating it — by test
+- [x] Seeding is refused with `NODE_ENV` unset and with `staging`, by test
+- [x] **End-to-end proof, recorded in the report:** a job seeker is driven to three hits using only the manual trigger endpoint and logged contact attempts, is deactivated automatically, and correctly carries no refund entitlement. Running the sweep twice on the same day's data records no second hit.
+- [x] All Phase 1–8 gate items still pass
+- [x] CI green on `main` — confirmed by checking the GitHub Actions run, not by a local test run
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start the targets module or the native app.**
 
