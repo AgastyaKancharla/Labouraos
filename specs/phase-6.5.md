@@ -65,7 +65,7 @@
 
 ---
 
-### [ ] Task 5 — Honest health check and separate readiness probe
+### [x] Task 5 — Honest health check and separate readiness probe
 
 **Acceptance:**
 - Split into two distinct endpoints:
