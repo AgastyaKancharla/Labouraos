@@ -94,7 +94,7 @@
 
 ---
 
-### [ ] Task 5 — Decide the `/field-agent` console guard
+### [x] Task 5 — Decide the `/field-agent` console guard
 
 **Acceptance:**
 - `/admin` and `/call-agent` sit behind `CloudflareAccessGuard`; `/field-agent` does not, which `AGENTS.md` §3/§7 records as a deliberate exemption because field agents reach it from phones outside the Cloudflare Access perimeter
@@ -118,7 +118,7 @@
 - [x] Bootstrap refuses with no secret, a wrong secret, and an unset environment variable, by test
 - [x] Bootstrap with the correct secret creates a CEO with `totpEnabled: false`, whose first login returns the `totp_setup` scope and can reach nothing else, by test
 - [ ] **End-to-end proof, recorded in the report:** bootstrap a CEO with the secret, enrol 2FA on first login, create a Team Lead and two agents under them, log in as the Team Lead and confirm they see their own team and are refused another's, then re-issue the Team Lead's invite and confirm their old credentials stop working and the new invite restores access.
-- [ ] `AGENTS.md` records the `/field-agent` exemption's expiry condition
+- [x] `AGENTS.md` records the `/field-agent` exemption's expiry condition
 - [ ] All Phase 1–6.5 gate items still pass
 - [ ] CI green on `main` — confirmed on GitHub Actions, not locally
 - [ ] `LESSONS.md` updated

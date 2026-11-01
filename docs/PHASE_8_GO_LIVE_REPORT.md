@@ -218,6 +218,7 @@ until you tell me otherwise.
 | 17 | Grievance / refund SOP | OPEN | Human process. The system side (flat refund rule, CEO/Manager-only approval, audit trail) is tested; the written SOP is not in the repo. |
 | 18 | Data retention policy (nothing auto-deleted, manual erasure only) | **Technical: DONE. Written policy: confirm** | No retention job exists (`src/jobs/` grep, section 2); CEO/Manager-only manual erasure anonymizes only PII and is audit-logged (`dpdp-erasure.spec.ts`). AGENTS.md §6 is the engineering rule, not a customer-facing policy document; whether a separate written policy is required and exists is for Agastya to confirm. |
 | 19 | Accounting / GST-filing setup | OPEN (CODE READY) | GST invoices (SAC 9985, fee + 18% GST, integer paise) and placement export exist and are tested. The accountant's filing process is not software. Blocked on #4. |
+| 20 | Field Agent console (`/field-agent`) Cloudflare Access exemption expiry | OPEN (REVISIT ON NATIVE APP SHIP) | Exemption exists because field agents reach the web console from phones outside the Cloudflare Access perimeter. Expiry condition: once native Field Agent app ships, revisit and either retire `/field-agent` or place it behind identity gating (`AGENTS.md` §3/§7). |
 
 ## 5. Remaining risks and gaps
 

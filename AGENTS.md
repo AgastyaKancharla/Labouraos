@@ -77,7 +77,7 @@ whether tests pass.
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
 | Frontend Consoles | HTML5 / Vanilla TS / CSS SPAs | Admin Dashboard, Call Agent console, Field Agent app served via NestJS |
 | Hosting | Render (LOCKED 2026-10-25) | Web service (API + consoles) + a separate Background Worker service for BullMQ + managed Postgres + managed Redis. Chosen over Vercel because Vercel's serverless model doesn't support BullMQ's always-on worker process. Domain DNS managed via Cloudflare (also fronts Admin Dashboard / Call Agent console with Cloudflare Access, per §7). |
-| Cloudflare Access Gating | Identity-gated office consoles | Gated routes: Admin Dashboard (`/admin`, `/console/admin`) and Call Agent console (`/call-agent`, `/console/call-agent`). Field Agent app (`/field-agent`, `/console/field-agent`) and API routes are explicitly exempt. |
+| Cloudflare Access Gating | Identity-gated office consoles | Gated routes: Admin Dashboard (`/admin`, `/console/admin`) and Call Agent console (`/call-agent`, `/console/call-agent`). Field Agent app (`/field-agent`, `/console/field-agent`) and API routes are explicitly exempt. **Expiry condition for `/field-agent` exemption:** The exemption exists strictly because field agents reach the browser console from mobile phones outside the Cloudflare Access perimeter; that reason disappears the moment the native Field Agent app ships. When the native app ships, this exemption expires and `/field-agent` must either be retired or gated behind Cloudflare Access; future maintainers must revisit this rather than blindly inheriting it. |
 | Load Testing | Node.js Concurrency Harness / Artillery | Simulates ~40 concurrent staff sessions (20 call agents, 20 field agents) performing realistic mixed traffic |
 
 **Exact versions pinned above.**
@@ -244,6 +244,13 @@ the role permissions above.
   (no valid company login, no reach to the login page at all), not
   device-gated. Pre-approved new external service for this phase — do not
   ask again.
+- **Field Agent browser console (`/field-agent`, `/console/field-agent`) temporary exemption & expiry condition:**
+  Exempt from Cloudflare Access because field agents access the web console
+  from phones outside the Cloudflare Access perimeter.
+  **Expiry condition:** That reason disappears the moment the native Field Agent
+  app ships. When the native app ships, this exemption expires and `/field-agent`
+  must either be retired or placed behind Cloudflare Access; future maintainers
+  must revisit this rather than blindly inheriting it.
 - **Explicitly not built anywhere:** MDM/Android Enterprise managed-device
   enrollment, IP allowlisting.
 
