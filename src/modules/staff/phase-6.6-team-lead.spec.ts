@@ -534,7 +534,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
       } as unknown as ExecutionContext;
 
       const reflector = app.get<Reflector>(Reflector);
-      jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((metadataKey: string) => {
+      jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((metadataKey: unknown) => {
         if (metadataKey === 'rbac:permission') {
           return { resource: 'target', action: 'write' };
         }

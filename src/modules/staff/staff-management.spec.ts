@@ -738,7 +738,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       ['finance', finance],
     ] as const;
 
-    it.each(['team_lead', 'call_agent', 'field_agent', 'finance'])(
+    it.each(['call_agent', 'field_agent', 'finance'])(
       '%s gets 403 on POST /staff, GET /staff and POST /staff/:id/deactivate',
       async (roleName) => {
         const actor = denied().find(([name]) => name === roleName)![1];
@@ -767,6 +767,32 @@ describe('Phase 8 Task 9: Staff account management', () => {
         ).toBe(0);
       },
     );
+
+    it('team_lead gets 403 on POST /staff and POST /staff/:id/deactivate, and 200 on GET /staff', async () => {
+      const actor = teamLead;
+      const target = await mkStaff('call_agent');
+
+      const attempted = newHire('call_agent');
+      const create = await createViaApi(actor, attempted);
+      const list = await request(app.getHttpServer())
+        .get('/staff')
+        .set('Authorization', auth(actor));
+      const deactivate = await request(app.getHttpServer())
+        .post(`/staff/${target.id}/deactivate`)
+        .set('Authorization', auth(actor));
+
+      expect([create.status, list.status, deactivate.status]).toEqual([
+        403, 200, 403,
+      ]);
+
+      const row = await prisma.staff.findUniqueOrThrow({
+        where: { id: target.id },
+      });
+      expect(row.status).toBe('active');
+      expect(
+        await prisma.staff.count({ where: { email: attempted.email } }),
+      ).toBe(0);
+    });
 
     it('unauthenticated requests get 401 on the protected endpoints', async () => {
       const server = app.getHttpServer();
