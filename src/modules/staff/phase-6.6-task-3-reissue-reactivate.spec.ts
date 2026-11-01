@@ -34,6 +34,8 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
   let fieldAgentToken: string;
   let financeToken: string;
 
+  // Each call gets its own simulated client IP (via the trusted proxy) so the
+  // per-IP throttle (5 req/min) does not couple unrelated tests together.
   const freshIp = () => `10.66.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
   async function mkStaff(
@@ -123,6 +125,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // Verify that valid login with old credentials works before reissue
       const preCheck = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({
           email: hire.email,
           password: goodPassword,
@@ -134,6 +137,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const reissueRes = await request(app.getHttpServer())
         .post(`/staff/${hire.id}/reissue-invite`)
         .set('Authorization', `Bearer ${ceoToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(reissueRes.status).toBe(200);
@@ -157,6 +161,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const freshOldTotp = await stableTotpCode(oldSecret);
       const oldPassLogin = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({
           email: hire.email,
           password: goodPassword,
@@ -203,6 +208,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const reissueRes = await request(app.getHttpServer())
         .post(`/staff/${hire.id}/reissue-invite`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
       expect(reissueRes.status).toBe(200);
       const newInviteToken = reissueRes.body.inviteToken as string;
@@ -211,6 +217,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const newPassword = 'New-Secret-Password-123';
       const acceptRes = await request(app.getHttpServer())
         .post('/staff/accept-invite')
+        .set('X-Forwarded-For', freshIp())
         .send({
           token: newInviteToken,
           password: newPassword,
@@ -226,6 +233,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // 4. First login with new password: forces 2FA enrolment
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({
           email: hire.email,
           password: newPassword,
@@ -239,7 +247,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         .get('/staff')
         .set('Authorization', `Bearer ${setupToken}`);
       expect(probeRes.status).toBe(403);
-      expect(probeRes.body.message).toContain('2FA enrolment');
+      expect(probeRes.body.message).toContain('enrolment required');
 
       // 5. Complete 2FA enrolment
       const setup2faRes = await request(app.getHttpServer())
@@ -261,6 +269,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const stableCode = await stableTotpCode(secret);
       const fullLoginRes = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({
           email: hire.email,
           password: newPassword,
@@ -282,6 +291,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const res = await request(app.getHttpServer())
         .post(`/staff/${ceo.id}/reissue-invite`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(403);
@@ -293,6 +303,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const res = await request(app.getHttpServer())
         .post(`/staff/${otherManager.id}/reissue-invite`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(403);
@@ -309,6 +320,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const res = await request(app.getHttpServer())
         .post(`/staff/${hire.id}/reissue-invite`)
         .set('Authorization', `Bearer ${ceoToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(400);
@@ -324,6 +336,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         const res = await request(app.getHttpServer())
           .post(`/staff/${target.id}/reissue-invite`)
           .set('Authorization', `Bearer ${token}`)
+          .set('X-Forwarded-For', freshIp())
           .send();
         expect(res.status).toBe(403);
       }
@@ -367,6 +380,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // Verify login fails while deactivated
       const deactLogin = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({ email: hire.email, password: goodPassword });
       expect(deactLogin.status).toBe(401);
 
@@ -374,6 +388,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const reactivateRes = await request(app.getHttpServer())
         .post(`/staff/${hire.id}/reactivate`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(reactivateRes.status).toBe(200);
@@ -391,6 +406,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // 5. Verify the reactivated account CANNOT log in with old password
       const oldPassLogin = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({ email: hire.email, password: goodPassword });
       expect(oldPassLogin.status).toBe(401);
       expect(oldPassLogin.body.message).toBe('Invalid email or password');
@@ -411,6 +427,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const reissueRes = await request(app.getHttpServer())
         .post(`/staff/${hire.id}/reissue-invite`)
         .set('Authorization', `Bearer ${ceoToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
       expect(reissueRes.status).toBe(200);
       const freshToken = reissueRes.body.inviteToken as string;
@@ -419,6 +436,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const freshPassword = 'Fresh-Password-After-Reactivation-456';
       const acceptRes = await request(app.getHttpServer())
         .post('/staff/accept-invite')
+        .set('X-Forwarded-For', freshIp())
         .send({
           token: freshToken,
           password: freshPassword,
@@ -428,6 +446,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // 9. Login now succeeds, requiring 2FA enrolment
       const freshLogin = await request(app.getHttpServer())
         .post('/auth/login')
+        .set('X-Forwarded-For', freshIp())
         .send({
           email: hire.email,
           password: freshPassword,
@@ -446,6 +465,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const res = await request(app.getHttpServer())
         .post(`/staff/${ceo.id}/reactivate`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(403);
@@ -463,6 +483,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const res = await request(app.getHttpServer())
         .post(`/staff/${activeStaff.id}/reactivate`)
         .set('Authorization', `Bearer ${ceoToken}`)
+        .set('X-Forwarded-For', freshIp())
         .send();
 
       expect(res.status).toBe(400);
@@ -476,6 +497,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         const res = await request(app.getHttpServer())
           .post(`/staff/${target.id}/reactivate`)
           .set('Authorization', `Bearer ${token}`)
+          .set('X-Forwarded-For', freshIp())
           .send();
         expect(res.status).toBe(403);
       }
