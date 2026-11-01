@@ -36,6 +36,11 @@ export class JobSeekerService {
     private readonly paymentService: PaymentService,
   ) {}
 
+  /**
+   * ANTI-FRAUD NOTE: Candidate onboarding already carries mobile-number OTP verification,
+   * which is the control that makes field-agent candidate capture safe.
+   * Do not remove or weaken it, and do not add a bypass for field agents.
+   */
   async create(dto: CreateJobSeekerDto, actorId: string) {
     assertNoRawAadhaar(dto);
 

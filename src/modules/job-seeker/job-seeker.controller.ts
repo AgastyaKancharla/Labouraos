@@ -27,6 +27,11 @@ import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 export class JobSeekerController {
   constructor(private readonly jobSeekerService: JobSeekerService) {}
 
+  /**
+   * ANTI-FRAUD NOTE: Candidate onboarding already carries mobile-number OTP verification,
+   * which is the control that makes field-agent candidate capture safe.
+   * Do not remove or weaken it, and do not add a bypass for field agents.
+   */
   @Post()
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
   @RequirePermission('job_seeker', 'write')

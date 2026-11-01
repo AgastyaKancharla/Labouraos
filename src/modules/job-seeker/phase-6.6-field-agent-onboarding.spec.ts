@@ -17,6 +17,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
   let fieldAgentId: string;
   let callAgentToken: string;
   let callAgentId: string;
+  let managerToken: string;
   let ceoToken: string;
   let financeToken: string;
 
@@ -92,6 +93,18 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
     fieldAgentId = fieldAgent.id;
     cleanStaffIds.push(fieldAgent.id);
 
+    const manager = await prisma.staff.create({
+      data: {
+        code: `MGR-P66-${timestamp}`,
+        name: 'Manager P66',
+        email: `mgr_p66_${timestamp}@laboura.local`,
+        passwordHash,
+        role: 'manager',
+        city: 'Bengaluru',
+      },
+    });
+    cleanStaffIds.push(manager.id);
+
     const finance = await prisma.staff.create({
       data: {
         code: `FI-P66-${timestamp}`,
@@ -111,6 +124,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
     };
 
     ceoToken = await login(ceo.email);
+    managerToken = await login(manager.email);
     callAgentToken = await login(callAgent.email);
     fieldAgentToken = await login(fieldAgent.email);
     financeToken = await login(finance.email);
@@ -450,6 +464,153 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       expect(res.body.reactivation).toBe(true);
       expect(res.body.amount).toBe(49900);
       expect(res.body.status).toBe('pending');
+    });
+
+    describe('Explicit Reason vs Role Matrix Tests', () => {
+      const createActiveCandidateWithQualifyingAttempts = async (suffix: string) => {
+        const phone = `91${(timestamp + Math.floor(Math.random() * 100000)).toString().slice(-8)}`;
+        const seeker = await prisma.jobSeeker.create({
+          data: {
+            code: `JS-MTRX-${suffix}-${Date.now().toString().slice(-5)}`,
+            name: `Matrix Candidate ${suffix}`,
+            phone,
+            phoneVerified: true,
+            tradeSkill: 'Painter',
+            minSalary: 1400000,
+            maxSalary: 2100000,
+            preferredCallWindowStart: '09:00',
+            preferredCallWindowEnd: '18:00',
+            status: 'active',
+            city: 'Bengaluru',
+          },
+        });
+        cleanJobSeekerIds.push(seeker.id);
+
+        const now = new Date();
+        await prisma.contactAttempt.createMany({
+          data: [
+            {
+              jobSeekerId: seeker.id,
+              channel: 'call',
+              outcome: 'no_pickup',
+              timeOfDay: 'am',
+              staffId: callAgentId,
+              attemptedAt: now,
+            },
+            {
+              jobSeekerId: seeker.id,
+              channel: 'call',
+              outcome: 'no_pickup',
+              timeOfDay: 'pm',
+              staffId: callAgentId,
+              attemptedAt: now,
+            },
+            {
+              jobSeekerId: seeker.id,
+              channel: 'whatsapp',
+              outcome: 'sent',
+              timeOfDay: 'pm',
+              staffId: callAgentId,
+              attemptedAt: now,
+            },
+          ],
+        });
+
+        return seeker;
+      };
+
+      it('call_agent can record all 3 reasons: offer_rejected, interview_no_show, no_pickup', async () => {
+        const s1 = await createActiveCandidateWithQualifyingAttempts('CA-OFFER');
+        const resOffer = await request(app.getHttpServer())
+          .post(`/job-seekers/${s1.id}/hits`)
+          .set('Authorization', `Bearer ${callAgentToken}`)
+          .send({ reason: 'offer_rejected', note: 'CA recorded offer_rejected' });
+        expect(resOffer.status).toBe(201);
+
+        const s2 = await createActiveCandidateWithQualifyingAttempts('CA-SHOW');
+        const resShow = await request(app.getHttpServer())
+          .post(`/job-seekers/${s2.id}/hits`)
+          .set('Authorization', `Bearer ${callAgentToken}`)
+          .send({ reason: 'interview_no_show', note: 'CA recorded interview_no_show' });
+        expect(resShow.status).toBe(201);
+
+        const s3 = await createActiveCandidateWithQualifyingAttempts('CA-NOPICK');
+        const resNoPick = await request(app.getHttpServer())
+          .post(`/job-seekers/${s3.id}/hits`)
+          .set('Authorization', `Bearer ${callAgentToken}`)
+          .send({ reason: 'no_pickup', note: 'CA recorded no_pickup' });
+        expect(resNoPick.status).toBe(201);
+      });
+
+      it('manager can record all 3 reasons: offer_rejected, interview_no_show, no_pickup', async () => {
+        const s1 = await createActiveCandidateWithQualifyingAttempts('MGR-OFFER');
+        const resOffer = await request(app.getHttpServer())
+          .post(`/job-seekers/${s1.id}/hits`)
+          .set('Authorization', `Bearer ${managerToken}`)
+          .send({ reason: 'offer_rejected', note: 'MGR recorded offer_rejected' });
+        expect(resOffer.status).toBe(201);
+
+        const s2 = await createActiveCandidateWithQualifyingAttempts('MGR-SHOW');
+        const resShow = await request(app.getHttpServer())
+          .post(`/job-seekers/${s2.id}/hits`)
+          .set('Authorization', `Bearer ${managerToken}`)
+          .send({ reason: 'interview_no_show', note: 'MGR recorded interview_no_show' });
+        expect(resShow.status).toBe(201);
+
+        const s3 = await createActiveCandidateWithQualifyingAttempts('MGR-NOPICK');
+        const resNoPick = await request(app.getHttpServer())
+          .post(`/job-seekers/${s3.id}/hits`)
+          .set('Authorization', `Bearer ${managerToken}`)
+          .send({ reason: 'no_pickup', note: 'MGR recorded no_pickup' });
+        expect(resNoPick.status).toBe(201);
+      });
+
+      it('ceo can record all 3 reasons: offer_rejected, interview_no_show, no_pickup', async () => {
+        const s1 = await createActiveCandidateWithQualifyingAttempts('CEO-OFFER');
+        const resOffer = await request(app.getHttpServer())
+          .post(`/job-seekers/${s1.id}/hits`)
+          .set('Authorization', `Bearer ${ceoToken}`)
+          .send({ reason: 'offer_rejected', note: 'CEO recorded offer_rejected' });
+        expect(resOffer.status).toBe(201);
+
+        const s2 = await createActiveCandidateWithQualifyingAttempts('CEO-SHOW');
+        const resShow = await request(app.getHttpServer())
+          .post(`/job-seekers/${s2.id}/hits`)
+          .set('Authorization', `Bearer ${ceoToken}`)
+          .send({ reason: 'interview_no_show', note: 'CEO recorded interview_no_show' });
+        expect(resShow.status).toBe(201);
+
+        const s3 = await createActiveCandidateWithQualifyingAttempts('CEO-NOPICK');
+        const resNoPick = await request(app.getHttpServer())
+          .post(`/job-seekers/${s3.id}/hits`)
+          .set('Authorization', `Bearer ${ceoToken}`)
+          .send({ reason: 'no_pickup', note: 'CEO recorded no_pickup' });
+        expect(resNoPick.status).toBe(201);
+      });
+
+      it('field_agent can record witnessed reasons (offer_rejected, interview_no_show) but is refused no_pickup', async () => {
+        const s1 = await createActiveCandidateWithQualifyingAttempts('FA-OFFER');
+        const resOffer = await request(app.getHttpServer())
+          .post(`/job-seekers/${s1.id}/hits`)
+          .set('Authorization', `Bearer ${fieldAgentToken}`)
+          .send({ reason: 'offer_rejected', note: 'FA recorded offer_rejected' });
+        expect(resOffer.status).toBe(201);
+
+        const s2 = await createActiveCandidateWithQualifyingAttempts('FA-SHOW');
+        const resShow = await request(app.getHttpServer())
+          .post(`/job-seekers/${s2.id}/hits`)
+          .set('Authorization', `Bearer ${fieldAgentToken}`)
+          .send({ reason: 'interview_no_show', note: 'FA recorded interview_no_show' });
+        expect(resShow.status).toBe(201);
+
+        const s3 = await createActiveCandidateWithQualifyingAttempts('FA-NOPICK');
+        const resNoPick = await request(app.getHttpServer())
+          .post(`/job-seekers/${s3.id}/hits`)
+          .set('Authorization', `Bearer ${fieldAgentToken}`)
+          .send({ reason: 'no_pickup', note: 'FA recorded no_pickup' });
+        expect(resNoPick.status).toBe(403);
+        expect(resNoPick.body.message).toContain('Field agents may only record');
+      });
     });
   });
 

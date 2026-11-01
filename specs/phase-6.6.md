@@ -47,13 +47,15 @@
 - **Scope:**
   - Job seekers and referrals are **city-wide** (neither has an area column, only city)
   - Businesses and vacancies remain **area-scoped** for Field Agents
+- **Anti-Fraud Note (Doc Comment):**
+  - Candidate onboarding already carries mobile-number OTP verification, which is the control that makes field-agent candidate capture safe. Do not remove or weaken it, and do not add a bypass for field agents.
 - Tests:
   - Field agent can create a job seeker, activate payment, submit KYC, log contact attempt, and reactivate
   - Field agent can create and read referrals
   - Field agent can read candidates outside their assigned business area (city-wide)
   - Field agent can record `'offer_rejected'` and `'interview_no_show'` hits
   - Field agent is refused (403) recording `'no_pickup'` hit, and the refusal is audited
-  - Call agents/managers/CEO can record all three reasons
+  - Test each reason (`offer_rejected`, `interview_no_show`, `no_pickup`) against each role (`field_agent`, `call_agent`, `manager`, `ceo`) explicitly
   - Field agent is still refused a business outside their area, proving area scoping remains intact on businesses
 
 ---
@@ -106,9 +108,9 @@
 
 - [ ] A Team Lead can list their own team and read a candidate their agent owns, by test
 - [ ] A Team Lead is refused another team's data, staff creation, staff deactivation and target writes, by test
-- [ ] A Field Agent can create, read, activate, submit KYC, log contact attempts, reactivate job seekers and create/read referrals city-wide, by test
-- [ ] A Field Agent can record 'offer_rejected' and 'interview_no_show' hits, but is refused recording a 'no_pickup' hit (refusal audited), by test
-- [ ] A Field Agent is still refused a business outside their area, by test
+- [x] A Field Agent can create, read, activate, submit KYC, log contact attempts, reactivate job seekers and create/read referrals city-wide, by test
+- [x] A Field Agent can record 'offer_rejected' and 'interview_no_show' hits, but is refused recording a 'no_pickup' hit (refusal audited), and each reason is explicitly tested against each role, by test
+- [x] A Field Agent is still refused a business outside their area, by test
 - [ ] After an invite re-issue, the old password and the old TOTP code both fail, by test
 - [ ] After an invite re-issue, the new token activates the account and forces 2FA enrolment, by test
 - [ ] A Manager is refused re-issuing an invite to a CEO, by test
