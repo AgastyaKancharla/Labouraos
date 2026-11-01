@@ -232,6 +232,17 @@ Format:
 **Cause:** In `prisma/schema.prisma`, the payment discriminator field is named `type` (not `paymentType`), and requires `gatewayReference`, `subjectType`, and `subjectId` relations.
 **Fix:** Consistently populated `Payment` rows with `type: 'activation'`, unique `gatewayReference`, `subjectType: 'job_seeker'`, and `subjectId` (matching `jobSeekerId`), ensuring strict type checking and DB constraints pass cleanly across all test suites.
 
+## applyTrustProxy expects INestApplication instance, not Express instance
+**Symptom:** In test suite `beforeAll`, calling `applyTrustProxy(app.getHttpAdapter().getInstance())` threw `TypeError: app.getHttpAdapter is not a function`.
+**Cause:** `applyTrustProxy`'s first argument is typed as `INestApplication` and internally invokes `app.getHttpAdapter().getInstance()`. Passing the Express instance directly resulted in `getInstance().getHttpAdapter()` being called.
+**Fix:** Pass `app` directly with the desired hop count string: `applyTrustProxy(app, '1')`.
+
+## Rate limiter bucket coupling across test suites on auth-adjacent endpoints
+**Symptom:** Calling throttled endpoints (`POST /staff/:id/reissue-invite` or `POST /staff/:id/reactivate`) in integration tests intermittently failed with `429 Too Many Requests` (`Received: 429, Expected: 200`).
+**Cause:** `AuthThrottlerGuard` buckets requests by client IP (derived from `req.ip` via trusted proxy). When multiple tests or assertions hit throttled endpoints without setting distinct `X-Forwarded-For` client IPs, they share the `127.0.0.1` bucket and exhaust the 5 requests/minute quota.
+**Fix:** In test suites exercising throttled endpoints, enable trust proxy with `applyTrustProxy(app, '1')` and supply a unique simulated IP on each request via `.set('X-Forwarded-For', freshIp())`.
+
+
 
 
 

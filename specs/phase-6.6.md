@@ -60,7 +60,7 @@
 
 ---
 
-### [ ] Task 3 — Re-issue invite, and reactivate
+### [x] Task 3 — Re-issue invite, and reactivate
 
 **Acceptance:**
 - `POST /staff/:id/reissue-invite` (ceo, manager — and CEO-only when the target is a `ceo` or `manager`, matching the existing creation rule) voids any existing invite and issues a fresh one-time token with the standard 72-hour TTL, returned exactly once
@@ -111,10 +111,10 @@
 - [x] A Field Agent can create, read, activate, submit KYC, log contact attempts, reactivate job seekers and create/read referrals city-wide, by test
 - [x] A Field Agent can record 'offer_rejected' and 'interview_no_show' hits, but is refused recording a 'no_pickup' hit (refusal audited), and each reason is explicitly tested against each role, by test
 - [x] A Field Agent is still refused a business outside their area, by test
-- [ ] After an invite re-issue, the old password and the old TOTP code both fail, by test
-- [ ] After an invite re-issue, the new token activates the account and forces 2FA enrolment, by test
-- [ ] A Manager is refused re-issuing an invite to a CEO, by test
-- [ ] A reactivated account cannot log in until a fresh invite is accepted, by test
+- [x] After an invite re-issue, the old password and the old TOTP code both fail, by test
+- [x] After an invite re-issue, the new token activates the account and forces 2FA enrolment, by test
+- [x] A Manager is refused re-issuing an invite to a CEO, by test
+- [x] A reactivated account cannot log in until a fresh invite is accepted, by test
 - [ ] Bootstrap refuses with no secret, a wrong secret, and an unset environment variable, by test
 - [ ] Bootstrap with the correct secret creates a CEO with `totpEnabled: false`, whose first login returns the `totp_setup` scope and can reach nothing else, by test
 - [ ] **End-to-end proof, recorded in the report:** bootstrap a CEO with the secret, enrol 2FA on first login, create a Team Lead and two agents under them, log in as the Team Lead and confirm they see their own team and are refused another's, then re-issue the Team Lead's invite and confirm their old credentials stop working and the new invite restores access.
