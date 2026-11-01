@@ -10,6 +10,7 @@ import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { Reflector } from '@nestjs/core';
+import { PERMISSION_METADATA_KEY } from '../../common/rbac/permissions.decorator';
 
 describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
   let app: INestApplication;
@@ -534,16 +535,19 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
       } as unknown as ExecutionContext;
 
       const reflector = app.get<Reflector>(Reflector);
-      jest.spyOn(reflector, 'getAllAndOverride').mockImplementation((metadataKey: unknown) => {
-        if (metadataKey === 'rbac:permission') {
-          return { resource: 'target', action: 'write' };
-        }
-        return undefined;
-      });
+      const spy = jest
+        .spyOn(reflector, 'getAllAndOverride')
+        .mockImplementation((metadataKey: unknown) => {
+          if (metadataKey === PERMISSION_METADATA_KEY) {
+            return { resource: 'target', action: 'write' };
+          }
+          return undefined;
+        });
 
       await expect(rbacGuard.canActivate(mockExecutionContext)).rejects.toThrow(
         "Role 'team_lead' is not permitted to perform 'write' on 'target'",
       );
+      spy.mockRestore();
     });
   });
 });
