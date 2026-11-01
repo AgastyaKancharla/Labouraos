@@ -13,6 +13,7 @@ import {
 import { Request } from 'express';
 import { TargetService } from './target.service';
 import { CallAgentMetricsService } from './call-agent-metrics.service';
+import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -29,6 +30,7 @@ export class TargetController {
   constructor(
     private readonly targetService: TargetService,
     private readonly callAgentMetricsService: CallAgentMetricsService,
+    private readonly fieldAgentMetricsService: FieldAgentMetricsService,
   ) {}
 
   @Get('metrics/call-agent/:staffId')
@@ -41,6 +43,23 @@ export class TargetController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.callAgentMetricsService.getCallAgentMetrics(
+      staffId,
+      year ? parseInt(year, 10) : undefined,
+      month ? parseInt(month, 10) : undefined,
+      req.user,
+    );
+  }
+
+  @Get('metrics/field-agent/:staffId')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'field_agent')
+  @RequirePermission('target', 'read')
+  async getFieldAgentMetrics(
+    @Param('staffId') staffId: string,
+    @Query('year') year: string | undefined,
+    @Query('month') month: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.fieldAgentMetricsService.getFieldAgentMetrics(
       staffId,
       year ? parseInt(year, 10) : undefined,
       month ? parseInt(month, 10) : undefined,
