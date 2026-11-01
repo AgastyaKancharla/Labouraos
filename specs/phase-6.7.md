@@ -70,7 +70,7 @@ Three metrics, computed from existing records, **nothing self-reported**:
 
 ---
 
-### [ ] Task 4 — Field Agent metrics
+### [x] Task 4 — Field Agent metrics
 
 **Acceptance:**
 Three metrics, same rules:
