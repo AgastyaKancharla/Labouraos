@@ -263,6 +263,17 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
       });
     expect(createTl2Res.status).toBe(201);
     const tl2Id = createTl2Res.body.staff.id;
+    const tl2InviteToken = createTl2Res.body.inviteToken;
+
+    // TL2 accepts invite to become active so an agent can reference them as team lead
+    const acceptTl2Res = await request(app.getHttpServer())
+      .post('/staff/accept-invite')
+      .set('X-Forwarded-For', freshIp())
+      .send({
+        token: tl2InviteToken,
+        password: 'Lead2Password2026!',
+      });
+    expect(acceptTl2Res.status).toBe(200);
 
     const createAgent3Res = await request(app.getHttpServer())
       .post('/staff')
