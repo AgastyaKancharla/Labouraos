@@ -130,6 +130,17 @@ export class RbacGuard implements CanActivate {
               `Access denied: staff '${targetStaffId}' is not part of your team`,
             );
           }
+        } else if (requiredPermission.resource === 'target') {
+          const target = await this.prisma.target.findUnique({
+            where: { id: targetStaffId },
+            include: { staff: { select: { teamLeadId: true } } },
+          });
+
+          if (!target || target.staff.teamLeadId !== user.sub) {
+            throw new ForbiddenException(
+              `Access denied: staff is not part of your team`,
+            );
+          }
         }
       }
     }
@@ -137,7 +148,20 @@ export class RbacGuard implements CanActivate {
     if (roleRule.scope === 'own_only') {
       const targetId = request.params?.id as string | undefined;
       if (targetId && targetId !== user.sub) {
-        throw new ForbiddenException('Access denied: can only access your own profile');
+        if (requiredPermission.resource === 'staff') {
+          throw new ForbiddenException('Access denied: can only access your own profile');
+        } else if (requiredPermission.resource === 'target') {
+          const target = await this.prisma.target.findUnique({
+            where: { id: targetId },
+            select: { staffId: true },
+          });
+
+          if (!target || target.staffId !== user.sub) {
+            throw new ForbiddenException('Access denied: can only access your own targets');
+          }
+        } else {
+          throw new ForbiddenException('Access denied: can only access your own profile');
+        }
       }
     }
 

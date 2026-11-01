@@ -252,6 +252,12 @@ Format:
 **Cause:** Historical RBAC declaration declared a phantom scope that was never enforced. Call agents require city-wide visibility over vacancies and placements to match candidates across Bengaluru, and existing test suites already asserted that call agents can read vacancies in any area.
 **Fix:** Updated `RBAC_MATRIX` to set `scope: 'all'` for call agent vacancy and placement read/write operations, and removed `own_captured` from `AccessScope`. This documents existing behavior rather than widening access, as the guard previously fell through to true.
 
+## Mid-month joiner target pro-rating, floor-to-zero semantics, and rate metric exemption
+**Symptom:** Setting targets for mid-month joiners naively scaled all metrics (including rate ceilings like refund rates) or rounded to zero without distinguishing between an unmeasured period and a zero-expectation target.
+**Cause:** Volume metrics (candidate activations, placements) scale with active days, but rate ceilings (refund rate) define quality ratios that become unreasonably strict if scaled down. Furthermore, rounding down fractional targets (via Math.floor) for late-month joiners can yield 0, which incorrectly reads in dashboards as expecting 0 performance rather than representing an unmeasured period.
+**Fix:** Pro-rate volume targets using inclusive days worked: `factor = (daysInMonth - creationDay + 1) / daysInMonth`. Round with `Math.floor`, and if the resulting target is 0, return explicit state `status: 'not_measured'` with `isMeasured: false` and `effectiveTarget: null`. Rate ceiling metrics (`refundRate`) are explicitly marked `proRateable: false` and preserved unscaled.
+
+
 
 
 
