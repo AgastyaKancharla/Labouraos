@@ -267,6 +267,17 @@ Format:
 **Cause:** Placement closing is a dual-event milestone requiring both candidate joining and business placement fee collection. For replacement vacancies, AGENTS.md §6 mandates a flat 100% fee refund if no replacement is found within 15 days of dropout report; filling a replacement on day 16 provides zero margin protection against the cash refund.
 **Fix:** In `FieldAgentMetricsService`, evaluated `placementsClosed` using the dual-event timestamp `max(joinedDate, paymentDate)` within the period boundary, strictly requiring both `joinedDate != null` and a completed/succeeded `placement_fee` payment. Enforced strict 15-calendar-day boundary (`diffMs <= REPLACEMENT_SEARCH_WINDOW_MS = 15 * 24 * 3600 * 1000`) from `dropoutReportedAt` for replacement vacancies filled inside 15 days. Deduplicated `repeatBusinesses` by returning distinct business codes where the business had an earlier joined placement (`priorPlacement.joinedDate < thisPlacement.joinedDate`).
 
+## Replacement candidate acceptance timestamp for margin protection metrics
+**Symptom:** A field agent who secured an accepted replacement candidate on day 10 received no metric credit if the candidate served notice and joined on day 18.
+**Cause:** The original metric specification required the replacement placement to reach `joined` status within 15 days of `dropoutReportedAt`. However, under AGENTS.md §6 and `placement-refund-eligibility.ts`, the business's 100% refund guarantee is cancelled immediately when a replacement candidate is *accepted* (`status === 'accepted'`), protecting the placement margin. Notice periods frequently push candidate start dates past day 15. Furthermore, `ReplacementCandidate` lacked an `acceptedAt` timestamp column.
+**Fix:** Added `acceptedAt DateTime?` to `ReplacementCandidate` via a migration, populated with `now` in `acceptReplacementCandidate`. Re-keyed the metric ("replacements secured inside 15 days") on `acceptedAt` falling within the 15-day search window from `dropoutReportedAt` (evaluated using shared `calculateDaysElapsed`, respecting `clockPaused` freeze). Historical rows with null `acceptedAt` are excluded under the honest-null rule.
+
+## Money at risk approaching-only window filtering and duplication prevention
+**Symptom:** If money-at-risk calculations naively included expired guarantee deadlines, the CEO would see the same rupee counted twice across management dashboards: once as "money at risk" and once on `GET /refunds/due`.
+**Cause:** Money past deadline (candidate past 30 days, business replacement past 15 days) is already lost money owed to the customer, belonging strictly to refund settlement workflows.
+**Fix:** In `MoneyAtRiskService`, strictly enforce `daysRemaining > 0` (`now < deadline`). Candidates are included only when active, eligible, and within the approaching window (`0 < daysRemaining <= CANDIDATE_AT_RISK_WINDOW_DAYS = 7`). Dropped-out placements with open replacement vacancies are included only when within their replacement window (`0 < daysRemaining <= PLACEMENT_AT_RISK_WINDOW_DAYS = 5`). Disqualified candidates (placed, 3 hits, deactivated) and non-refundable placements (clock paused >2 rejects, replacement already accepted, breach) are excluded via shared eligibility logic. Stored in integer paise throughout and never persisted in database columns.
+
+
 
 
 

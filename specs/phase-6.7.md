@@ -89,7 +89,7 @@ Three metrics, same rules:
 
 ---
 
-### [ ] Task 5 — Money at risk
+### [x] Task 5 — Money at risk
 
 **Acceptance:**
 - One rupee figure: `(₹499 × active candidates approaching their day-30 deadline) + (placement fee × open replacement vacancies approaching their day-15 deadline)`
