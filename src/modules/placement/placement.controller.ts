@@ -34,7 +34,7 @@ export class VacancyPlacementController {
   constructor(private readonly placementService: PlacementService) {}
 
   @Post()
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('placement', 'write')
   async create(
     @Param('id') vacancyId: string,
@@ -52,7 +52,7 @@ export class PlacementController {
   constructor(private readonly placementService: PlacementService) {}
 
   @Post(':id/respond')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('placement', 'write')
   async respond(
     @Param('id') id: string,
@@ -130,7 +130,7 @@ export class PlacementController {
   }
 
   @Get()
-  @RequireRoles('ceo', 'manager', 'finance', 'call_agent', 'field_agent')
+  @RequireRoles('ceo', 'manager', 'finance', 'call_agent', 'field_agent', 'team_lead')
   @RequirePermission('placement', 'read')
   async findAll(@Req() req: Request & { user: JwtPayload }) {
     return this.placementService.findAll(req.user.sub);
@@ -163,7 +163,7 @@ export class PlacementController {
   }
 
   @Get(':id')
-  @RequireRoles('ceo', 'manager', 'finance', 'call_agent', 'field_agent')
+  @RequireRoles('ceo', 'manager', 'finance', 'call_agent', 'field_agent', 'team_lead')
   @RequirePermission('placement', 'read')
   async findById(
     @Param('id') id: string,

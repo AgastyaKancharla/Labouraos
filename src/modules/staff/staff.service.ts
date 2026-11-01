@@ -316,7 +316,10 @@ export class StaffService {
     return { staff, inviteToken, inviteExpiresAt };
   }
 
-  async listStaff(query: QueryStaffDto): Promise<StaffView[]> {
+  async listStaff(
+    query: QueryStaffDto,
+    actor?: JwtPayload,
+  ): Promise<StaffView[]> {
     if (query.role && !ROLES.includes(query.role as Role)) {
       throw new BadRequestException(`role must be one of: ${ROLES.join(', ')}`);
     }
@@ -327,16 +330,38 @@ export class StaffService {
       );
     }
 
+    if (actor?.role === 'team_lead') {
+      if (query.teamLeadId && query.teamLeadId !== actor.sub) {
+        throw new ForbiddenException(
+          `Access denied: cannot view staff of another team lead`,
+        );
+      }
+    }
+
+    const effectiveTeamLeadId =
+      actor?.role === 'team_lead' ? actor.sub : query.teamLeadId;
+
     return this.prisma.staff.findMany({
       where: {
         ...(query.role ? { role: query.role } : {}),
         ...(query.area ? { area: query.area } : {}),
-        ...(query.teamLeadId ? { teamLeadId: query.teamLeadId } : {}),
+        ...(effectiveTeamLeadId ? { teamLeadId: effectiveTeamLeadId } : {}),
         ...(query.status ? { status: query.status } : {}),
       },
       select: STAFF_VIEW_SELECT,
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  async getStaffById(id: string) {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id },
+      select: STAFF_VIEW_SELECT,
+    });
+    if (!staff) {
+      throw new NotFoundException(`Staff '${id}' not found`);
+    }
+    return staff;
   }
 
   async acceptInvite(

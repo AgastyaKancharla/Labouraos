@@ -45,8 +45,10 @@ export class TelephonyController {
   async assignCallback(
     @Param('id') id: string,
     @Req() req: Request & { user: JwtPayload },
+    @Body() body?: { staffId?: string },
   ) {
-    return this.telephonyService.assignCallback(id, req.user.sub);
+    const targetStaffId = body?.staffId || req.user.sub;
+    return this.telephonyService.assignCallback(id, targetStaffId, req.user);
   }
 
   @Post('callbacks/:id/complete')

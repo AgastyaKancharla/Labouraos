@@ -27,7 +27,7 @@ export class VacancyController {
   constructor(private readonly vacancyService: VacancyService) {}
 
   @Post()
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'write')
   async createVacancy(
     @Body() body: CreateVacancyDto & { businessId: string },
@@ -40,7 +40,7 @@ export class VacancyController {
   }
 
   @Get()
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async findAll(
     @Req() req: Request & { user: JwtPayload },
@@ -50,7 +50,7 @@ export class VacancyController {
   }
 
   @Get(':id/candidates')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async getCandidates(
     @Param('id') id: string,
@@ -60,7 +60,7 @@ export class VacancyController {
   }
 
   @Get(':id/shortlist')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async getShortlist(
     @Param('id') id: string,
@@ -70,7 +70,7 @@ export class VacancyController {
   }
 
   @Get(':id')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async findById(
     @Param('id') id: string,

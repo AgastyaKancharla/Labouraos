@@ -32,7 +32,7 @@ export class BusinessController {
   ) {}
 
   @Post()
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('business', 'write')
   async create(
     @Body() body: CreateBusinessDto,
@@ -42,7 +42,7 @@ export class BusinessController {
   }
 
   @Get()
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('business', 'read')
   async findAll(
     @Req() req: Request & { user: JwtPayload },
@@ -52,7 +52,7 @@ export class BusinessController {
   }
 
   @Get(':id')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('business', 'read')
   async findById(
     @Param('id') id: string,
@@ -62,7 +62,7 @@ export class BusinessController {
   }
 
   @Post(':id/vacancies')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'write')
   async createVacancy(
     @Param('id') businessId: string,
@@ -73,7 +73,7 @@ export class BusinessController {
   }
 
   @Get(':id/vacancies')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async findVacanciesByBusiness(
     @Param('id') businessId: string,
@@ -83,7 +83,7 @@ export class BusinessController {
   }
 
   @Post(':id/visits')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('business', 'write')
   async recordVisit(
     @Param('id') businessId: string,

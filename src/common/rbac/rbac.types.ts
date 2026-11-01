@@ -58,7 +58,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     payment: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     staff: { read: { allowed: true, scope: 'own_team' }, write: { allowed: true, scope: 'own_team' } },
-    target: { read: { allowed: true, scope: 'own_team' }, write: { allowed: true, scope: 'own_team' } },
+    target: { read: { allowed: true, scope: 'own_team' }, write: { allowed: false, scope: 'none' } },
   },
   call_agent: {
     job_seeker: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },

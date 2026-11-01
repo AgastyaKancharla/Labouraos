@@ -22,7 +22,7 @@ export class PriorityController {
   constructor(private readonly priorityService: PriorityService) {}
 
   @Get('candidates')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async getCandidates(
     @Req() req: Request & { user: JwtPayload },
@@ -33,7 +33,7 @@ export class PriorityController {
   }
 
   @Get('vacancies')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async getVacancies(
     @Req() req: Request & { user: JwtPayload },
@@ -44,7 +44,7 @@ export class PriorityController {
   }
 
   @Get('trades')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async getTrades(@Req() req: Request & { user: JwtPayload }) {
     return this.priorityService.getPriorityTrades(req.user.sub);

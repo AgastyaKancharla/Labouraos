@@ -14,7 +14,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Open up the Team Lead role
+### [x] Task 1 — Open up the Team Lead role
 
 **Acceptance:**
 - `team_lead` is added to the permitted roles on the endpoints serving job seekers, referrals, businesses, vacancies, the priority dashboard, and the staff list
@@ -106,8 +106,8 @@
 
 ## Phase 6.6 Gate
 
-- [ ] A Team Lead can list their own team and read a candidate their agent owns, by test
-- [ ] A Team Lead is refused another team's data, staff creation, staff deactivation and target writes, by test
+- [x] A Team Lead can list their own team and read a candidate their agent owns, by test
+- [x] A Team Lead is refused another team's data, staff creation, staff deactivation and target writes, by test
 - [x] A Field Agent can create, read, activate, submit KYC, log contact attempts, reactivate job seekers and create/read referrals city-wide, by test
 - [x] A Field Agent can record 'offer_rejected' and 'interview_no_show' hits, but is refused recording a 'no_pickup' hit (refusal audited), and each reason is explicitly tested against each role, by test
 - [x] A Field Agent is still refused a business outside their area, by test

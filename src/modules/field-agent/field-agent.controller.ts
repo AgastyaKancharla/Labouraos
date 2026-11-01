@@ -22,7 +22,7 @@ export class FieldAgentController {
   constructor(private readonly fieldAgentService: FieldAgentService) {}
 
   @Get('priority-dashboard')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'read')
   async getPriorityDashboard(
     @Req() req: Request & { user: JwtPayload },

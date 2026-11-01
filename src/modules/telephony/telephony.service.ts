@@ -1,4 +1,9 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Inject,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import {
   InboundCallEvent,
   InboundCallResult,
@@ -8,6 +13,7 @@ import {
   TelephonyProvider,
 } from './telephony.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 
 @Injectable()
 export class TelephonyService {
@@ -90,12 +96,24 @@ export class TelephonyService {
     });
   }
 
-  async assignCallback(id: string, staffId: string) {
+  async assignCallback(id: string, staffId: string, actor?: JwtPayload) {
     const existing = await this.prisma.callbackTask.findUnique({
       where: { id },
     });
     if (!existing) {
       throw new NotFoundException(`Callback task '${id}' not found`);
+    }
+
+    if (actor?.role === 'team_lead' && staffId !== actor.sub) {
+      const targetStaff = await this.prisma.staff.findUnique({
+        where: { id: staffId },
+        select: { teamLeadId: true },
+      });
+      if (!targetStaff || targetStaff.teamLeadId !== actor.sub) {
+        throw new ForbiddenException(
+          `Access denied: staff '${staffId}' is not part of your team`,
+        );
+      }
     }
 
     return this.prisma.callbackTask.update({

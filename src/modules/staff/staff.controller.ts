@@ -55,9 +55,17 @@ export class StaffController {
   @Get()
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'read')
-  @RequireRoles('ceo', 'manager')
-  list(@Query() query: QueryStaffDto) {
-    return this.staffService.listStaff(query);
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  list(@Query() query: QueryStaffDto, @Req() req: AuthenticatedRequest) {
+    return this.staffService.listStaff(query, req.user);
+  }
+
+  @Get(':id')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'read')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  getById(@Param('id') id: string) {
+    return this.staffService.getStaffById(id);
   }
 
   /**

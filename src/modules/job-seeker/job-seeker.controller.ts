@@ -33,7 +33,7 @@ export class JobSeekerController {
    * Do not remove or weaken it, and do not add a bypass for field agents.
    */
   @Post()
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
   async create(
     @Body() body: CreateJobSeekerDto,
@@ -43,28 +43,28 @@ export class JobSeekerController {
   }
 
   @Get()
-  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'read')
   async findAll() {
     return this.jobSeekerService.findAll();
   }
 
   @Get(':id')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'read')
   async findById(@Param('id') id: string) {
     return this.jobSeekerService.findById(id);
   }
 
   @Post(':id/activation-payment')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
   async createActivationPayment(@Param('id') id: string) {
     return this.jobSeekerService.createActivationPayment(id);
   }
 
   @Post(':id/kyc')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
   async submitKyc(
     @Param('id') id: string,
@@ -75,7 +75,7 @@ export class JobSeekerController {
   }
 
   @Post(':id/contact-attempts')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
   async recordContactAttempt(
     @Param('id') id: string,
@@ -86,7 +86,7 @@ export class JobSeekerController {
   }
 
   @Post(':id/hits')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
   async recordHit(
     @Param('id') id: string,
@@ -103,7 +103,7 @@ export class JobSeekerController {
   }
 
   @Post(':id/reactivate')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
   async reactivate(
     @Param('id') id: string,
