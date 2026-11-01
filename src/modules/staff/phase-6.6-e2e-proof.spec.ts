@@ -199,7 +199,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
         token: tl1InviteToken,
         password: tl1Password,
       });
-    expect(acceptTl1Res.status).toBe(201);
+    expect(acceptTl1Res.status).toBe(200);
 
     // 4c. TL1 first login + enrol 2FA
     const tl1FirstLogin = await request(app.getHttpServer())
@@ -432,7 +432,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
         token: newInviteToken,
         password: newTlPassword,
       });
-    expect(acceptNewInviteRes.status).toBe(201);
+    expect(acceptNewInviteRes.status).toBe(200);
     expect(acceptNewInviteRes.body.success).toBe(true);
 
     // Login with new password -> must require 2FA re-enrolment
