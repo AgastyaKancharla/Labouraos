@@ -10,6 +10,7 @@ import {
   getCalendarPartsInTimezone,
   getPeriodBoundaries,
 } from '../../common/time/period-boundary';
+import { REFUND_GUARANTEE_WINDOW_MS } from '../../common/money/money';
 
 export interface CallAgentMetricsResult {
   staffId: string;
@@ -170,42 +171,64 @@ export class CallAgentMetricsService {
     });
 
     // 6. Metric 3: Refund Rate on Own Registrations
-    // Of job seekers this agent registered whose 30-day deadline has passed, the share that were refunded.
-    // Denominator: only candidates whose 30-day deadline has actually passed as of the evaluation date.
-    // Evaluation date is 'now' if querying current or future period, or end of month if querying a past period.
-    const evaluationDate = now.getTime() < endUtc.getTime() ? now : endUtc;
-    const msIn30Days = 30 * 24 * 60 * 60 * 1000;
-    const maxPaymentDate = new Date(evaluationDate.getTime() - msIn30Days);
+    //
+    // PERIOD-SCOPING & 30-DAY LAG (CRITICAL ARCHITECTURAL DESIGN):
+    // The denominator is scoped strictly to candidates whose 30-day refund guarantee
+    // deadline fell within the evaluation period. Because a candidate's 30-day guarantee
+    // deadline is computed as paymentReceivedAt + 30 days (REFUND_GUARANTEE_WINDOW_MS),
+    // candidates maturing in the period had their payment received between:
+    //   startPaymentDate = period.startUtc - 30 days
+    //   endPaymentDate = period.endUtc - 30 days
+    //
+    // DOCUMENTED LAG: This window intentionally lags candidate onboarding by 30 days,
+    // so an agent's November refund rate reflects their October registrations whose guarantee
+    // matured during November. This is correct and intended: an agent's performance is measured
+    // against the monthly cohort of candidates completing their guarantee window, avoiding lifetime
+    // cumulative dilution where historical refunds remain in the denominator forever.
+    //
+    // ZERO-DENOMINATOR RULE: If zero candidates matured (e.g. new agent with no registrations
+    // 30 days prior), refundRate returns null rather than 0% (which would read as perfect performance).
+    const startPaymentDate = new Date(startUtc.getTime() - REFUND_GUARANTEE_WINDOW_MS);
+    const endPaymentDate = new Date(endUtc.getTime() - REFUND_GUARANTEE_WINDOW_MS);
+    const nowPaymentDate = new Date(now.getTime() - REFUND_GUARANTEE_WINDOW_MS);
 
-    const maturedCandidates = await this.prisma.jobSeeker.findMany({
-      where: {
-        registeredByStaffId: effectiveStaffId,
-        paymentReceivedAt: {
-          not: null,
-          lte: maxPaymentDate,
-        },
-      },
-      select: { id: true },
-    });
+    // If querying mid-month, a candidate's deadline must have also actually passed as of 'now'
+    const maxPaymentDate = now.getTime() < endUtc.getTime() ? nowPaymentDate : endPaymentDate;
 
-    const maturedCount = maturedCandidates.length;
+    let maturedCount = 0;
     let refundedCount = 0;
     let refundRate: number | null = null;
 
-    if (maturedCount > 0) {
-      const maturedIds = maturedCandidates.map((c) => c.id);
-      const refundedPayments = await this.prisma.payment.findMany({
+    if (maxPaymentDate.getTime() >= startPaymentDate.getTime()) {
+      const maturedCandidates = await this.prisma.jobSeeker.findMany({
         where: {
-          jobSeekerId: { in: maturedIds },
-          type: 'refund',
-          status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+          registeredByStaffId: effectiveStaffId,
+          paymentReceivedAt: {
+            not: null,
+            gte: startPaymentDate,
+            lte: maxPaymentDate,
+          },
         },
-        select: { jobSeekerId: true },
-        distinct: ['jobSeekerId'],
+        select: { id: true },
       });
 
-      refundedCount = refundedPayments.length;
-      refundRate = refundedCount / maturedCount;
+      maturedCount = maturedCandidates.length;
+
+      if (maturedCount > 0) {
+        const maturedIds = maturedCandidates.map((c) => c.id);
+        const refundedPayments = await this.prisma.payment.findMany({
+          where: {
+            jobSeekerId: { in: maturedIds },
+            type: 'refund',
+            status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+          },
+          select: { jobSeekerId: true },
+          distinct: ['jobSeekerId'],
+        });
+
+        refundedCount = refundedPayments.length;
+        refundRate = refundedCount / maturedCount;
+      }
     }
 
     return {

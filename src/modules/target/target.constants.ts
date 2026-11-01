@@ -83,6 +83,13 @@ export const ALL_METRIC_KEYS: TargetMetricKey[] = [
 export const ALLOWED_TARGET_ROLES = ['call_agent', 'field_agent'] as const;
 
 /**
+ * Minimum matured registrations denominator required before flagging a refund rate breach.
+ * Prevents small-sample noise from triggering performance flags (e.g. 1 refund out of 2 or 3
+ * is noise, not a statistically valid breach signal).
+ */
+export const MIN_REFUND_RATE_DENOMINATOR = 5;
+
+/**
  * Returns total days in a given calendar month (UTC).
  * Month is 1-indexed (1 = January, 12 = December).
  */

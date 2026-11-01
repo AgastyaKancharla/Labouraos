@@ -100,6 +100,13 @@ export function calculateRefund(amountPaise: number, daysElapsed: number): numbe
 }
 
 /**
+ * Refund guarantee window: 30 days for job seekers per AGENTS.md §6.
+ */
+export const REFUND_GUARANTEE_WINDOW_DAYS = 30;
+export const REFUND_GUARANTEE_WINDOW_MS =
+  REFUND_GUARANTEE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+/**
  * Calculates the 30-day refund guarantee deadline from payment receipt date.
  * deadline = paymentReceivedAt + 30 days
  */
@@ -107,8 +114,7 @@ export function refundGuaranteeDeadline(paymentReceivedAt: Date): Date {
   if (!(paymentReceivedAt instanceof Date) || isNaN(paymentReceivedAt.getTime())) {
     throw new TypeError('paymentReceivedAt must be a valid Date');
   }
-  const msIn30Days = 30 * 24 * 60 * 60 * 1000;
-  return new Date(paymentReceivedAt.getTime() + msIn30Days);
+  return new Date(paymentReceivedAt.getTime() + REFUND_GUARANTEE_WINDOW_MS);
 }
 
 /**
@@ -175,6 +181,16 @@ export function isWithinReplacementGuarantee(
   const deadline = replacementGuaranteeDeadline(joinedDate);
   return dropoutReportedAt.getTime() <= deadline.getTime();
 }
+
+/**
+ * Free replacement search window: 15 days from dropout report date per AGENTS.md §6.
+ * Filling a replacement vacancy inside this 15-day window protects platform margin
+ * by preventing a 100% placement-fee refund.
+ */
+export const REPLACEMENT_SEARCH_WINDOW_DAYS = 15;
+export const REPLACEMENT_SEARCH_WINDOW_MS =
+  REPLACEMENT_SEARCH_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
 
 
 

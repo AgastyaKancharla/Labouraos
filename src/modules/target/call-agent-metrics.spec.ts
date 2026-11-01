@@ -177,12 +177,15 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
 
   describe('Metric 2: Refund Rate on Own Registrations', () => {
     const fixedNow = new Date('2026-11-15T12:00:00.000Z');
-    // For fixedNow (Nov 15), 30 days prior is Oct 16 12:00:00 UTC
+    // November 2026 startUtc: 2026-10-31T18:30:00.000Z
+    // startPaymentDate = startUtc - 30 days = 2026-10-01T18:30:00.000Z
+    const startPaymentDate = new Date(new Date('2026-10-31T18:30:00.000Z').getTime() - 30 * 24 * 60 * 60 * 1000);
+    // For fixedNow (Nov 15 12:00:00 UTC), maxPaymentDate = fixedNow - 30 days = 2026-10-16T12:00:00.000Z
     const thirtyDaysAgo = new Date(fixedNow.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-    it('returns null refundRate when denominator is zero (no matured registrations)', async () => {
+    it('returns null refundRate when denominator is zero (no matured registrations in period cohort)', async () => {
       // Agent has registrations, but all are recent (e.g. registered 3 days ago)
-      // No candidate has passed their 30-day deadline yet
+      // No candidate has passed their 30-day deadline yet in this period cohort
       prismaMock.jobSeeker.findMany.mockResolvedValue([]);
 
       const result = await service.getCallAgentMetrics(
@@ -203,6 +206,7 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
           registeredByStaffId: mockAgentId,
           paymentReceivedAt: {
             not: null,
+            gte: startPaymentDate,
             lte: thirtyDaysAgo,
           },
         },
@@ -210,6 +214,37 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
       });
       // Should not query payments if matured count is 0
       expect(prismaMock.payment.findMany).not.toHaveBeenCalled();
+    });
+
+    it('scopes denominator strictly to candidates whose 30-day deadline matured this month (excluding last month)', async () => {
+      // Candidate 1: paid Sept 15 -> deadline Oct 15 (matured LAST month -> excluded by gte: startPaymentDate)
+      // Candidate 2: paid Oct 10 -> deadline Nov 9 (matured THIS month -> included in denominator)
+      // Candidate 3: paid Nov 12 -> deadline Dec 12 (matures NEXT month -> excluded by lte: maxPaymentDate)
+      prismaMock.jobSeeker.findMany.mockResolvedValue([
+        { id: 'js-oct10-matured-nov9' },
+      ]);
+      prismaMock.payment.findMany.mockResolvedValue([]);
+
+      const result = await service.getCallAgentMetrics(
+        mockAgentId,
+        2026,
+        11,
+        managerUser,
+        fixedNow,
+      );
+
+      expect(result.details.refundRate.maturedCount).toBe(1);
+      expect(prismaMock.jobSeeker.findMany).toHaveBeenCalledWith({
+        where: {
+          registeredByStaffId: mockAgentId,
+          paymentReceivedAt: {
+            not: null,
+            gte: startPaymentDate,
+            lte: thirtyDaysAgo,
+          },
+        },
+        select: { id: true },
+      });
     });
 
     it('computes refund rate as 0.0 when denominator is non-zero and refunds are zero', async () => {
