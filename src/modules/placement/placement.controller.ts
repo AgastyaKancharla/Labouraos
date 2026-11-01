@@ -113,9 +113,11 @@ export class PlacementController {
   async acceptReplacementCandidate(
     @Param('id') id: string,
     @Param('candidateId') candidateId: string,
+    @Body() dto: { asOf?: string; acceptedAt?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub);
+    const now = dto?.acceptedAt || dto?.asOf ? new Date(dto.acceptedAt || dto.asOf!) : new Date();
+    return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub, now);
   }
 
   @Post(':id/refund')

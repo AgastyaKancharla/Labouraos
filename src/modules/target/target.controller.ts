@@ -14,6 +14,7 @@ import { Request } from 'express';
 import { TargetService } from './target.service';
 import { CallAgentMetricsService } from './call-agent-metrics.service';
 import { FieldAgentMetricsService } from './field-agent-metrics.service';
+import { MoneyAtRiskService } from './money-at-risk.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -31,7 +32,18 @@ export class TargetController {
     private readonly targetService: TargetService,
     private readonly callAgentMetricsService: CallAgentMetricsService,
     private readonly fieldAgentMetricsService: FieldAgentMetricsService,
+    private readonly moneyAtRiskService: MoneyAtRiskService,
   ) {}
+
+  @Get('money-at-risk')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  @RequirePermission('target', 'read')
+  async getMoneyAtRisk(
+    @Query('staffId') staffId: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.moneyAtRiskService.getMoneyAtRisk(staffId, req.user);
+  }
 
   @Get('metrics/call-agent/:staffId')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent')

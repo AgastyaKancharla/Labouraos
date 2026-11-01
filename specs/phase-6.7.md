@@ -78,13 +78,14 @@ Three metrics, same rules:
 | Metric | Definition |
 |---|---|
 | Placements closed | Placements with `createdByStaffId` = this agent where the candidate joined **and** the business paid, within the period |
-| Replacement vacancies filled inside 15 days | Replacement vacancies (those with `replacementForPlacementId` set) filled by a placement that reached joined, within 15 days of the parent placement's `dropoutReportedAt`. Attributed to the agent who created the replacement placement |
+| Replacements secured inside 15 days | Replacement candidates (`ReplacementCandidate` with status `'accepted'`) accepted within 15 days of parent placement's `dropoutReportedAt` (using the same days-elapsed calculation as refund eligibility, including `clockPaused`). Attributed to the agent who created the placement |
 | Repeat businesses | Businesses where this agent closed a placement and the business already had an earlier joined placement |
 
 - "Placements closed" must require **both** joined and paid — a candidate who joined but whose business never paid earned Laboura nothing, so counting it would reward work that produced no revenue
-- The 15-day replacement metric is margin protection, not volume: filling one of these prevents a 100% placement-fee refund. It is deliberately a separate number from placements closed
+- "Replacements secured inside 15 days" measures candidate **acceptance** within the 15-day window, because acceptance is what blocks the refund in `placement-refund-eligibility.ts` and saves the company margin. Period-scoped on `acceptedAt`. Unbackfilled rows with null `acceptedAt` are excluded (honest-null rule)
+- Reuses `calculateDaysElapsed` from placement service (including `clockPaused` freeze) so the metric and refund eligibility never disagree
 - Computed fresh on every request
-- Test each metric, including a placement that joined but was not paid (must not count) and a replacement filled on day 16 (must not count)
+- Test each metric, including a placement that joined but was not paid (must not count), a replacement accepted on day 10 and joined on day 18 (must count), a replacement accepted on day 16 (must not count), and clockPaused extending the window
 
 ---
 
