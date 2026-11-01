@@ -86,6 +86,17 @@ export interface CreateStaffResult {
   inviteExpiresAt: Date;
 }
 
+export interface ReissueInviteResult {
+  staff: StaffView;
+  /** Shown exactly once; only its SHA-256 hash is stored. */
+  inviteToken: string;
+  inviteExpiresAt: Date;
+}
+
+export interface ReactivateStaffResult {
+  staff: StaffView;
+}
+
 export interface BootstrapResult {
   staff: StaffView;
   totpSecret: string;
@@ -486,6 +497,136 @@ export class StaffService {
     });
 
     return { staff, sessionsRevoked };
+  }
+
+  async reissueInvite(
+    staffId: string,
+    actor: JwtPayload,
+    now: Date = new Date(),
+  ): Promise<ReissueInviteResult> {
+    const target = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+    if (CEO_ONLY_ROLES.includes(target.role) && actor.role !== 'ceo') {
+      throw new ForbiddenException(
+        `Only a CEO can re-issue invites for '${target.role}' accounts`,
+      );
+    }
+    if (target.status === STAFF_STATUS.DEACTIVATED) {
+      throw new BadRequestException(
+        'Cannot re-issue invite for a deactivated account. Reactivate the account first.',
+      );
+    }
+
+    const placeholderHash = await this.authService.hashPassword(
+      randomBytes(32).toString('hex'),
+    );
+    const inviteToken = randomBytes(32).toString('hex');
+    const inviteExpiresAt = new Date(now.getTime() + INVITE_TTL_MS);
+
+    const updatedStaff = await this.prisma.staff.update({
+      where: { id: staffId },
+      data: {
+        passwordHash: placeholderHash,
+        status: STAFF_STATUS.PENDING_INVITE,
+        inviteTokenHash: hashInviteToken(inviteToken),
+        inviteExpiresAt,
+        totpSecret: null,
+        totpEnabled: false,
+        registeredDeviceId: null,
+      },
+      select: STAFF_VIEW_SELECT,
+    });
+
+    await this.authService.revokeAllSessionsForStaff(staffId);
+
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.invite_reissued',
+      entityType: 'staff',
+      entityCode: updatedStaff.code,
+      before: {
+        status: target.status,
+        totpEnabled: target.totpEnabled,
+        inviteExpiresAt: target.inviteExpiresAt
+          ? target.inviteExpiresAt.toISOString()
+          : null,
+      },
+      after: {
+        status: updatedStaff.status,
+        totpEnabled: false,
+        inviteExpiresAt: inviteExpiresAt.toISOString(),
+      },
+    });
+
+    return {
+      staff: updatedStaff,
+      inviteToken,
+      inviteExpiresAt,
+    };
+  }
+
+  async reactivateStaff(
+    staffId: string,
+    actor: JwtPayload,
+  ): Promise<ReactivateStaffResult> {
+    const target = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+    });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+    if (CEO_ONLY_ROLES.includes(target.role) && actor.role !== 'ceo') {
+      throw new ForbiddenException(
+        `Only a CEO can reactivate '${target.role}' accounts`,
+      );
+    }
+    if (target.status !== STAFF_STATUS.DEACTIVATED) {
+      throw new BadRequestException(
+        `Staff account is not deactivated (current status: '${target.status}')`,
+      );
+    }
+
+    const placeholderHash = await this.authService.hashPassword(
+      randomBytes(32).toString('hex'),
+    );
+
+    const staff = await this.prisma.staff.update({
+      where: { id: staffId },
+      data: {
+        status: STAFF_STATUS.ACTIVE,
+        deactivatedAt: null,
+        passwordHash: placeholderHash,
+        totpSecret: null,
+        totpEnabled: false,
+        registeredDeviceId: null,
+        inviteTokenHash: null,
+        inviteExpiresAt: null,
+      },
+      select: STAFF_VIEW_SELECT,
+    });
+
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.reactivated',
+      entityType: 'staff',
+      entityCode: staff.code,
+      before: {
+        status: target.status,
+        deactivatedAt: target.deactivatedAt
+          ? target.deactivatedAt.toISOString()
+          : null,
+      },
+      after: {
+        status: STAFF_STATUS.ACTIVE,
+        deactivatedAt: null,
+      },
+    });
+
+    return { staff };
   }
 
   /**

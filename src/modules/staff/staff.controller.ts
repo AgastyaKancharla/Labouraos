@@ -88,4 +88,24 @@ export class StaffController {
   deactivate(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.staffService.deactivateStaff(id, req.user);
   }
+
+  @Post(':id/reissue-invite')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo', 'manager')
+  reissueInvite(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.reissueInvite(id, req.user);
+  }
+
+  @Post(':id/reactivate')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo', 'manager')
+  reactivate(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.reactivateStaff(id, req.user);
+  }
 }
