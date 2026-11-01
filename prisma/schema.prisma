@@ -25,6 +25,8 @@ model JobSeeker {
   kycReference              String?     // vendor reference ID only. NEVER raw national ID numbers.
   referredById              String?
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
+  registeredByStaffId       String?
+  registeredBy              Staff?      @relation("JobSeekerRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   placements                Placement[]
   payments                  Payment[]
@@ -40,6 +42,7 @@ model JobSeeker {
   @@index([tradeSkill])
   @@index([status])
   @@index([status, paymentReceivedAt])
+  @@index([registeredByStaffId])
 }
 
 model Referral {
@@ -121,6 +124,8 @@ model Placement {
   jobSeeker                  JobSeeker   @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
   businessId                 String
   business                   Business    @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  createdByStaffId           String?
+  createdBy                  Staff?      @relation("PlacementCreatedBy", fields: [createdByStaffId], references: [id], onDelete: SetNull)
   agreedSalary               Int         @default(0) // paise
   placementFee               Int         // paise
   gstAmount                  Int         // paise
@@ -145,6 +150,7 @@ model Placement {
   @@index([businessId])
   @@index([status])
   @@index([status, eligibility])
+  @@index([createdByStaffId])
 }
 
 model ReplacementCandidate {
@@ -177,6 +183,8 @@ model Staff {
   teamMembers       Staff[]          @relation("TeamHierarchy")
   area              String?
   capturedVacancies Vacancy[]
+  registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
+  createdPlacements    Placement[]      @relation("PlacementCreatedBy")
   businessVisits    BusinessVisit[]
   auditLogs         AuditLog[]
   contactAttempts   ContactAttempt[]

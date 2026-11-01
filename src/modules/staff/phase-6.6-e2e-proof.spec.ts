@@ -29,6 +29,8 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     await prisma.businessVisit.deleteMany({});
     await prisma.contactAttempt.deleteMany({});
     await prisma.callbackTask.deleteMany({});
+    await prisma.jobSeeker.updateMany({ data: { registeredByStaffId: null } });
+    await prisma.placement.updateMany({ data: { createdByStaffId: null } });
     await prisma.vacancy.updateMany({ data: { capturedByStaffId: null } });
     await prisma.staff.updateMany({ data: { teamLeadId: null } });
     await prisma.auditLog.deleteMany({});

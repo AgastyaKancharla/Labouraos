@@ -19,7 +19,7 @@ export type Resource =
 
 export type Action = 'read' | 'write';
 
-export type AccessScope = 'all' | 'own_area' | 'own_team' | 'own_captured' | 'own_only' | 'none';
+export type AccessScope = 'all' | 'own_area' | 'own_team' | 'own_only' | 'none';
 
 export interface PermissionRule {
   allowed: boolean;
@@ -64,8 +64,10 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     job_seeker: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     referral: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     business: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
-    vacancy: { read: { allowed: true, scope: 'own_captured' }, write: { allowed: true, scope: 'own_captured' } },
-    placement: { read: { allowed: true, scope: 'own_captured' }, write: { allowed: true, scope: 'own_captured' } },
+    // Call agents need city-wide access to vacancies and placements to match candidates across Bengaluru.
+    // Setting scope to 'all' documents existing behaviour (the guard never enforced 'own_captured').
+    vacancy: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
+    placement: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     payment: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     staff: { read: { allowed: true, scope: 'own_only' }, write: { allowed: false, scope: 'none' } },

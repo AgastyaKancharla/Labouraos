@@ -83,6 +83,14 @@ export class JobSeekerService {
 
     const code = await this.idService.generateCode('job_seeker');
 
+    /**
+     * RATIONALE FOR AGENT ATTRIBUTION (Phase 6.7 Task 1):
+     * registeredByStaffId records which staff member onboarded this candidate.
+     * These columns are what make per-agent measurement possible at all, and they
+     * are what makes the §4 anti-fraud controls investigable — a geofence flag or
+     * a duplicate-selfie detection is only actionable if the record names who created it.
+     * They are NOT for pay: agents are salaried, there is no commission.
+     */
     const jobSeeker = await this.prisma.jobSeeker.create({
       data: {
         code,
@@ -97,6 +105,7 @@ export class JobSeekerService {
         city: dto.city ?? 'Bengaluru',
         status: 'pending_payment',
         referredById: dto.referredById ?? null,
+        registeredByStaffId: actorId ?? null,
       },
     });
 

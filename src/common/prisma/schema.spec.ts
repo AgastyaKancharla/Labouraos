@@ -76,16 +76,20 @@ describe('Data Model Relationships', () => {
         kycStatus: 'verified',
         kycReference: `KYC-REF-${timestamp}`,
         referredById: referral.id,
+        registeredByStaffId: agent.id,
         paymentReceivedAt: paymentDate,
         city: 'Bengaluru',
       },
       include: {
         referredBy: true,
+        registeredBy: true,
       },
     });
 
     expect(jobSeeker.referredBy).toBeDefined();
     expect(jobSeeker.referredBy?.id).toBe(referral.id);
+    expect(jobSeeker.registeredBy).toBeDefined();
+    expect(jobSeeker.registeredBy?.id).toBe(agent.id);
     expect(jobSeeker.paymentReceivedAt).toBeDefined();
     expect(jobSeeker.paymentReceivedAt?.toISOString()).toBe(paymentDate.toISOString());
     expect(Number.isInteger(jobSeeker.minSalary)).toBe(true);
@@ -131,6 +135,7 @@ describe('Data Model Relationships', () => {
         vacancyId: vacancy.id,
         jobSeekerId: jobSeeker.id,
         businessId: business.id,
+        createdByStaffId: agent.id,
         placementFee: 1100000, // 50% of 2200000
         gstAmount: 198000, // 18% of 1100000
         joinedDate: new Date(),
@@ -142,12 +147,15 @@ describe('Data Model Relationships', () => {
         vacancy: true,
         jobSeeker: true,
         business: true,
+        createdBy: true,
       },
     });
 
     expect(placement.vacancy.id).toBe(vacancy.id);
     expect(placement.jobSeeker.id).toBe(jobSeeker.id);
     expect(placement.business.id).toBe(business.id);
+    expect(placement.createdBy).toBeDefined();
+    expect(placement.createdBy?.id).toBe(agent.id);
     expect(Number.isInteger(placement.placementFee)).toBe(true);
     expect(Number.isInteger(placement.gstAmount)).toBe(true);
 
