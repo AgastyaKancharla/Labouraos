@@ -247,6 +247,12 @@ Format:
 **Cause:** `timingSafeEqual` is strictly designed for fixed-length message authentication codes or pre-sized hashes; invoking it on arbitrary user strings requires equal byte length buffers.
 **Fix:** Hash both candidate strings using SHA-256 (`createHash('sha256').update(s).digest()`) before invoking `timingSafeEqual(hashA, hashB)`. Both digests are fixed 32-byte buffers, eliminating the length constraint while preserving constant-time comparison without leaking length information.
 
+## Call agent vacancy and placement scope alignment in RBAC_MATRIX
+**Symptom:** In `src/common/rbac/rbac.types.ts`, `call_agent.vacancy` and `call_agent.placement` had `scope: 'own_captured'`, but `rbac.guard.ts` had no implementation for `'own_captured'` and silently evaluated it as allowed.
+**Cause:** Historical RBAC declaration declared a phantom scope that was never enforced. Call agents require city-wide visibility over vacancies and placements to match candidates across Bengaluru, and existing test suites already asserted that call agents can read vacancies in any area.
+**Fix:** Updated `RBAC_MATRIX` to set `scope: 'all'` for call agent vacancy and placement read/write operations, and removed `own_captured` from `AccessScope`. This documents existing behavior rather than widening access, as the guard previously fell through to true.
+
+
 
 
 

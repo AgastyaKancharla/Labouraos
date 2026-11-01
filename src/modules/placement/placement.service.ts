@@ -117,6 +117,14 @@ export class PlacementService {
     const gstAmount = calculateGst(placementFee);
     const code = await this.idService.generateCode('placement');
 
+    /**
+     * RATIONALE FOR AGENT ATTRIBUTION (Phase 6.7 Task 1):
+     * createdByStaffId records which staff member created this placement.
+     * These columns are what make per-agent measurement possible at all, and they
+     * are what makes the §4 anti-fraud controls investigable — a geofence flag or
+     * a duplicate-selfie detection is only actionable if the record names who created it.
+     * They are NOT for pay: agents are salaried, there is no commission.
+     */
     const placement = await this.prisma.placement.create({
       data: {
         code,
@@ -124,6 +132,7 @@ export class PlacementService {
         vacancyId: vacancy.id,
         jobSeekerId: jobSeeker.id,
         businessId: vacancy.businessId,
+        createdByStaffId: actor.id,
         agreedSalary,
         placementFee,
         gstAmount,
