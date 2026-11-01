@@ -61,7 +61,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
     }).compile();
 
     app = moduleRef.createNestApplication();
-    applyTrustProxy(app.getHttpAdapter().getInstance());
+    applyTrustProxy(app, '1');
     await app.init();
     prisma = app.get<PrismaService>(PrismaService);
 
