@@ -49,14 +49,15 @@ export class TargetService {
    * A zero target and an absent target are fundamentally different. Setting a target where
    * ALL metric fields are null is an empty record and is refused.
    */
-  private assertAtLeastOneMetric(dto: Partial<Record<TargetMetricKey, number | null>>): void {
+  private assertAtLeastOneMetric(
+    dto: Partial<Record<TargetMetricKey, number | null>>,
+    errorMessage = 'At least one metric target must be provided. An empty target with all null values is not permitted.',
+  ): void {
     const hasAtLeastOne = ALL_METRIC_KEYS.some(
       (key) => dto[key] !== undefined && dto[key] !== null,
     );
     if (!hasAtLeastOne) {
-      throw new BadRequestException(
-        'At least one metric target must be provided. An empty target with all null values is not permitted.',
-      );
+      throw new BadRequestException(errorMessage);
     }
   }
 
@@ -227,7 +228,10 @@ export class TargetService {
     };
 
     this.validateMetricValues(dto);
-    this.assertAtLeastOneMetric(mergedMetrics);
+    this.assertAtLeastOneMetric(
+      mergedMetrics,
+      'At least one metric target must remain set. An empty target with all null values is not permitted.',
+    );
 
     const beforeState = {
       candidatesActivated: existing.candidatesActivated,
