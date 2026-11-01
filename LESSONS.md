@@ -242,6 +242,12 @@ Format:
 **Cause:** `AuthThrottlerGuard` buckets requests by client IP (derived from `req.ip` via trusted proxy). When multiple tests or assertions hit throttled endpoints without setting distinct `X-Forwarded-For` client IPs, they share the `127.0.0.1` bucket and exhaust the 5 requests/minute quota.
 **Fix:** In test suites exercising throttled endpoints, enable trust proxy with `applyTrustProxy(app, '1')` and supply a unique simulated IP on each request via `.set('X-Forwarded-For', freshIp())`.
 
+## Constant-time comparison of arbitrary-length secrets via SHA-256 digests
+**Symptom:** Passing caller-supplied bootstrap secrets of varying lengths directly into `crypto.timingSafeEqual(bufA, bufB)` throws a `RangeError: Input buffers must have the same length` when lengths differ, leaking length metadata or crashing the request handler.
+**Cause:** `timingSafeEqual` is strictly designed for fixed-length message authentication codes or pre-sized hashes; invoking it on arbitrary user strings requires equal byte length buffers.
+**Fix:** Hash both candidate strings using SHA-256 (`createHash('sha256').update(s).digest()`) before invoking `timingSafeEqual(hashA, hashB)`. Both digests are fixed 32-byte buffers, eliminating the length constraint while preserving constant-time comparison without leaking length information.
+
+
 
 
 

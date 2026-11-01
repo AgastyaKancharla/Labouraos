@@ -77,7 +77,7 @@
 
 ---
 
-### [ ] Task 4 — Harden the CEO bootstrap
+### [x] Task 4 — Harden the CEO bootstrap
 
 **Acceptance:**
 - `POST /staff/bootstrap` requires a `STAFF_BOOTSTRAP_SECRET` supplied in the request and compared against the environment variable of the same name, which `render.yaml` already declares with `generateValue: true`
@@ -115,8 +115,8 @@
 - [x] After an invite re-issue, the new token activates the account and forces 2FA enrolment, by test
 - [x] A Manager is refused re-issuing an invite to a CEO, by test
 - [x] A reactivated account cannot log in until a fresh invite is accepted, by test
-- [ ] Bootstrap refuses with no secret, a wrong secret, and an unset environment variable, by test
-- [ ] Bootstrap with the correct secret creates a CEO with `totpEnabled: false`, whose first login returns the `totp_setup` scope and can reach nothing else, by test
+- [x] Bootstrap refuses with no secret, a wrong secret, and an unset environment variable, by test
+- [x] Bootstrap with the correct secret creates a CEO with `totpEnabled: false`, whose first login returns the `totp_setup` scope and can reach nothing else, by test
 - [ ] **End-to-end proof, recorded in the report:** bootstrap a CEO with the secret, enrol 2FA on first login, create a Team Lead and two agents under them, log in as the Team Lead and confirm they see their own team and are refused another's, then re-issue the Team Lead's invite and confirm their old credentials stop working and the new invite restores access.
 - [ ] `AGENTS.md` records the `/field-agent` exemption's expiry condition
 - [ ] All Phase 1–6.5 gate items still pass
