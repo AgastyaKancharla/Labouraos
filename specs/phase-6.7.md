@@ -18,7 +18,7 @@
 
 ## Tasks
 
-### [ ] Task 1 — Agent attribution, and the unimplemented `own_captured` scope
+### [x] Task 1 — Agent attribution, and the unimplemented `own_captured` scope
 
 **Acceptance:**
 - Migration adds `registeredByStaffId` (nullable, `SetNull` on delete, indexed) to `JobSeeker`, set to the acting staff member on creation
