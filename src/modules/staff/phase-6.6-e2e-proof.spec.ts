@@ -320,9 +320,8 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     expect(tl1StaffList.status).toBe(200);
     const tl1StaffBody = tl1StaffList.body as StaffListItem[];
     const returnedStaffIds = tl1StaffBody.map((s) => s.id);
-    expect(returnedStaffIds).toContain(tl1Id);
-    expect(returnedStaffIds).toContain(agent1Id);
-    expect(returnedStaffIds).toContain(agent2Id);
+    expect(returnedStaffIds).toEqual(expect.arrayContaining([agent1Id, agent2Id]));
+    expect(returnedStaffIds).toHaveLength(2);
     expect(returnedStaffIds).not.toContain(tl2Id);
     expect(returnedStaffIds).not.toContain(agent3Id);
 
@@ -495,9 +494,10 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     expect(restoredStaffList.status).toBe(200);
     const restoredStaffBody = restoredStaffList.body as StaffListItem[];
     const restoredStaffIds = restoredStaffBody.map((s) => s.id);
-    expect(restoredStaffIds).toContain(tl1Id);
-    expect(restoredStaffIds).toContain(agent1Id);
-    expect(restoredStaffIds).toContain(agent2Id);
+    expect(restoredStaffIds).toEqual(expect.arrayContaining([agent1Id, agent2Id]));
+    expect(restoredStaffIds).toHaveLength(2);
+    expect(restoredStaffIds).not.toContain(tl2Id);
+    expect(restoredStaffIds).not.toContain(agent3Id);
 
     console.log('Step 9 Output: 2FA Re-enrolled and Full Access Restored:');
     console.log(JSON.stringify({
