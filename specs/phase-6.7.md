@@ -51,7 +51,7 @@
 
 ---
 
-### [ ] Task 3 — Call Agent metrics
+### [x] Task 3 — Call Agent metrics
 
 **Acceptance:**
 Three metrics, computed from existing records, **nothing self-reported**:
