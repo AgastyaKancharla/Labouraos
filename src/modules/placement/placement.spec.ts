@@ -976,7 +976,8 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({})
         .expect(201);
 
-      const dropoutReportedAt = new Date().toISOString();
+      const dropoutDate = new Date();
+      const dropoutReportedAt = dropoutDate.toISOString();
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/dropout`)
         .set('Authorization', `Bearer ${caToken}`)
@@ -1052,7 +1053,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .set('Authorization', `Bearer ${faKoraToken}`)
         .send({
           reason: 'Lacks required tools',
-          rejectedAt: '2026-11-03T00:00:00.000Z',
+          rejectedAt: new Date(dropoutDate.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
         })
         .expect(201);
 
@@ -1074,7 +1075,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .set('Authorization', `Bearer ${caToken}`)
         .send({
           reason: 'Salary expectation gap',
-          rejectedAt: '2026-11-06T00:00:00.000Z',
+          rejectedAt: new Date(dropoutDate.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
         })
         .expect(201);
 
@@ -1091,7 +1092,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       const rc3Id = offerRes3.body.id;
 
       // 3rd Rejection: Pauses the guarantee clock!
-      const pauseDate = '2026-11-11T00:00:00.000Z'; // exactly 10 days after dropout report
+      const pauseDate = new Date(dropoutDate.getTime() + 10 * 24 * 60 * 60 * 1000).toISOString(); // exactly 10 days after dropout report
       const rejRes3 = await request(app.getHttpServer())
         .post(`/placements/${placementId}/replacement-candidates/${rc3Id}/reject`)
         .set('Authorization', `Bearer ${caToken}`)
@@ -1106,11 +1107,11 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(new Date(rejRes3.body.placement.clockPausedAt).toISOString()).toBe(pauseDate);
 
       // Verify elapsed-day calculation freeze:
-      // Even 40 days later (2026-12-11), elapsed days remain frozen at 10 days
+      // Even 40 days later, elapsed days remain frozen at 10 days
       const placementService = app.get(PlacementService);
       const elapsedDaysFuture = await placementService.getPlacementDaysElapsed(
         placementId,
-        new Date('2026-12-11T00:00:00.000Z'),
+        new Date(dropoutDate.getTime() + 40 * 24 * 60 * 60 * 1000),
       );
       expect(elapsedDaysFuture).toBe(10);
     });
