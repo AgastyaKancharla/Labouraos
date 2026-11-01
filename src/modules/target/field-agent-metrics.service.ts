@@ -10,7 +10,8 @@ import {
   getCalendarPartsInTimezone,
   getPeriodBoundaries,
 } from '../../common/time/period-boundary';
-import { REPLACEMENT_SEARCH_WINDOW_MS } from '../../common/money/money';
+import { REPLACEMENT_SEARCH_WINDOW_DAYS } from '../../common/money/money';
+import { calculateDaysElapsed } from '../placement/placement.service';
 
 export interface FieldAgentMetricsResult {
   staffId: string;
@@ -32,12 +33,18 @@ export interface FieldAgentMetricsResult {
   };
   metrics: {
     placementsClosed: number;
-    replacementsIn15Days: number;
+    replacementsSecuredInside15Days: number;
+    replacementsIn15Days: number; // alias
     repeatBusinesses: number;
   };
   details: {
     placementsClosed: {
       count: number;
+      placementCodes: string[];
+    };
+    replacementsSecuredInside15Days: {
+      count: number;
+      replacementCandidateIds: string[];
       placementCodes: string[];
     };
     replacementsIn15Days: {
@@ -201,51 +208,75 @@ export class FieldAgentMetricsService {
     const placementsClosedCount = closedPlacements.length;
     const closedPlacementCodes = closedPlacements.map((p) => p.code);
 
-    // 5. Metric 2: Replacement Vacancies Filled Inside 15 Days
-    // Replacement vacancies (those with replacementForPlacementId set) filled by a placement
-    // that reached joined, within 15 days of the parent placement's dropoutReportedAt.
-    // Attributed to the agent who created the replacement placement.
-    // Period timestamp: replacementPlacement.joinedDate in [startUtc, endUtc].
-    const candidateReplacements = await this.prisma.placement.findMany({
+    // 5. Metric 2: Replacements Secured Inside 15 Days
+    //
+    // CRITICAL ARCHITECTURAL REFACTOR (Phase 6.7 Task 4 Correction):
+    // Measures replacement candidates (ReplacementCandidate with status 'accepted') accepted within 15 days
+    // of parent placement's dropoutReportedAt.
+    //
+    // RATIONALE FOR MEASURING ACCEPTANCE OVER JOINING:
+    // placement-refund-eligibility.ts blocks the refund when a replacement candidate is ACCEPTED,
+    // not when they join. An agent who gets a replacement accepted on day 10 saves the full placement fee
+    // for Laboura even if the worker serves notice and joins on day 18. The metric exists to reward
+    // margin protection, so it must measure the milestone that legally and operationally saves the margin.
+    //
+    // SHARED DAYS-ELAPSED LOGIC:
+    // Reuses calculateDaysElapsed() from placement.service.ts, which correctly freezes elapsed time
+    // when clockPaused is true (after 2 replacement rejections by the business).
+    //
+    // PERIOD TIMESTAMP: Scoped by replacementCandidate.acceptedAt falling within [startUtc, endUtc].
+    // Null acceptedAt values are honest-null and excluded from metrics.
+    const acceptedReplacements = await this.prisma.replacementCandidate.findMany({
       where: {
-        createdByStaffId: effectiveStaffId,
-        joinedDate: {
+        status: 'accepted',
+        acceptedAt: {
           not: null,
           gte: startUtc,
           lte: endUtc,
         },
-        vacancy: {
-          replacementForPlacementId: { not: null },
+        placement: {
+          createdByStaffId: effectiveStaffId,
         },
       },
       include: {
-        vacancy: {
-          include: {
-            replacementForPlacement: {
-              select: { id: true, dropoutReportedAt: true },
-            },
+        placement: {
+          select: {
+            id: true,
+            code: true,
+            dropoutReportedAt: true,
+            clockPaused: true,
+            clockPausedAt: true,
+            createdByStaffId: true,
           },
         },
       },
     });
 
-    const eligible15DayReplacements: typeof candidateReplacements = [];
+    const eligibleSecuredReplacements: typeof acceptedReplacements = [];
 
-    for (const rPl of candidateReplacements) {
-      const parentPlacement = rPl.vacancy.replacementForPlacement;
-      if (!parentPlacement || !parentPlacement.dropoutReportedAt || !rPl.joinedDate) {
+    for (const rc of acceptedReplacements) {
+      const placement = rc.placement;
+      if (!placement || !placement.dropoutReportedAt || !rc.acceptedAt) {
         continue;
       }
 
-      const diffMs = rPl.joinedDate.getTime() - parentPlacement.dropoutReportedAt.getTime();
-      // Must be filled within 15 days of dropout report date (diffMs >= 0 and <= 15 days)
-      if (diffMs >= 0 && diffMs <= REPLACEMENT_SEARCH_WINDOW_MS) {
-        eligible15DayReplacements.push(rPl);
+      // calculateDaysElapsed uses effectiveEnd = clockPaused && clockPausedAt ? clockPausedAt : asOf
+      const daysElapsed = calculateDaysElapsed(
+        placement.dropoutReportedAt,
+        placement.clockPaused,
+        placement.clockPausedAt,
+        rc.acceptedAt,
+      );
+
+      // Within 15-day search window
+      if (daysElapsed <= REPLACEMENT_SEARCH_WINDOW_DAYS) {
+        eligibleSecuredReplacements.push(rc);
       }
     }
 
-    const replacementsIn15DaysCount = eligible15DayReplacements.length;
-    const replacementPlacementCodes = eligible15DayReplacements.map((p) => p.code);
+    const replacementsSecuredCount = eligibleSecuredReplacements.length;
+    const replacementCandidateIds = eligibleSecuredReplacements.map((rc) => rc.id);
+    const replacementPlacementCodes = eligibleSecuredReplacements.map((rc) => rc.placement.code);
 
     // 6. Metric 3: Repeat Businesses
     // Businesses where this agent closed a placement within the period and the business already
@@ -296,7 +327,8 @@ export class FieldAgentMetricsService {
       },
       metrics: {
         placementsClosed: placementsClosedCount,
-        replacementsIn15Days: replacementsIn15DaysCount,
+        replacementsSecuredInside15Days: replacementsSecuredCount,
+        replacementsIn15Days: replacementsSecuredCount,
         repeatBusinesses: repeatBusinessesCount,
       },
       details: {
@@ -304,8 +336,13 @@ export class FieldAgentMetricsService {
           count: placementsClosedCount,
           placementCodes: closedPlacementCodes,
         },
+        replacementsSecuredInside15Days: {
+          count: replacementsSecuredCount,
+          replacementCandidateIds,
+          placementCodes: replacementPlacementCodes,
+        },
         replacementsIn15Days: {
-          count: replacementsIn15DaysCount,
+          count: replacementsSecuredCount,
           replacementPlacementCodes,
         },
         repeatBusinesses: {

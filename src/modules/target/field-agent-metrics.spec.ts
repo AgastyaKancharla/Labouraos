@@ -7,12 +7,12 @@ import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { getPeriodBoundaries } from '../../common/time/period-boundary';
-import { REPLACEMENT_SEARCH_WINDOW_MS } from '../../common/money/money';
 
 describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
   type MockPrismaService = {
     staff: { findUnique: jest.Mock };
     placement: { findMany: jest.Mock; findFirst: jest.Mock };
+    replacementCandidate: { findMany: jest.Mock };
   };
 
   let service: FieldAgentMetricsService;
@@ -119,6 +119,9 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      replacementCandidate: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
 
     service = new FieldAgentMetricsService(prismaMock as unknown as PrismaService);
@@ -148,11 +151,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         ],
       };
 
-      // Mock first findMany (placements with joinedDate and payments)
-      // and second findMany (replacement vacancies)
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([placement1]) // joinedPlacements
-        .mockResolvedValueOnce([]); // candidateReplacements
+      prismaMock.placement.findMany.mockResolvedValueOnce([placement1]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -206,9 +205,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         ],
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([placementJoinedEarlier, placementPaidEarlier])
-        .mockResolvedValueOnce([]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([placementJoinedEarlier, placementPaidEarlier]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -234,9 +231,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         payments: [], // no completed/succeeded placement_fee payment
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([joinedUnpaid])
-        .mockResolvedValueOnce([]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([joinedUnpaid]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -270,9 +265,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         ],
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([octoberPlacement])
-        .mockResolvedValueOnce([]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([octoberPlacement]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -287,9 +280,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
 
     it('excludes placements with null attribution or created by other agents', async () => {
       // prisma.placement.findMany enforces createdByStaffId = effectiveStaffId in the query
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -310,31 +301,33 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     });
   });
 
-  describe('Metric 2: Replacement Vacancies Filled Inside 15 Days', () => {
+  describe('Metric 2: Replacements Secured Inside 15 Days', () => {
     const fixedNow = new Date('2026-11-15T12:00:00.000Z');
 
-    it('counts replacement vacancy filled by replacement placement reaching joined on day 10 (inside 15 days)', async () => {
+    it('counts replacement accepted on day 10 even when joined on day 18 (acceptance saves margin)', async () => {
       const dropoutReportedAt = new Date('2026-11-01T10:00:00.000Z');
-      const replacementJoined = new Date('2026-11-11T10:00:00.000Z'); // exactly 10 days later
+      const acceptedAt = new Date('2026-11-11T10:00:00.000Z'); // day 10 (inside 15-day window)
+      const joinedDate = new Date('2026-11-19T10:00:00.000Z'); // day 18 (notice period served)
 
-      const eligibleReplacement = {
-        id: 'pl-rep-1',
-        code: 'PL-REP-01',
-        createdByStaffId: mockAgentId,
-        joinedDate: replacementJoined,
-        vacancy: {
-          id: 'vc-rep-1',
-          replacementForPlacementId: 'pl-orig-1',
-          replacementForPlacement: {
-            id: 'pl-orig-1',
-            dropoutReportedAt,
-          },
+      const securedReplacement = {
+        id: 'rc-sec-1',
+        placementId: 'pl-orig-1',
+        jobSeekerId: 'js-rep-1',
+        status: 'accepted',
+        acceptedAt,
+        placement: {
+          id: 'pl-orig-1',
+          code: 'PL-ORIG-01',
+          dropoutReportedAt,
+          clockPaused: false,
+          clockPausedAt: null,
+          createdByStaffId: mockAgentId,
+          joinedDate, // candidate joins later on day 18
         },
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([]) // joinedPlacements
-        .mockResolvedValueOnce([eligibleReplacement]); // candidateReplacements
+      prismaMock.placement.findMany.mockResolvedValueOnce([]); // joinedPlacements
+      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([securedReplacement]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -344,33 +337,34 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         fixedNow,
       );
 
+      expect(result.metrics.replacementsSecuredInside15Days).toBe(1);
       expect(result.metrics.replacementsIn15Days).toBe(1);
-      expect(result.details.replacementsIn15Days.count).toBe(1);
-      expect(result.details.replacementsIn15Days.replacementPlacementCodes).toEqual(['PL-REP-01']);
+      expect(result.details.replacementsSecuredInside15Days.count).toBe(1);
+      expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual(['PL-ORIG-01']);
     });
 
-    it('counts replacement vacancy filled on day 15 exact boundary', async () => {
+    it('counts replacement accepted on day 15 exact boundary', async () => {
       const dropoutReportedAt = new Date('2026-11-01T10:00:00.000Z');
-      const replacementJoined = new Date(dropoutReportedAt.getTime() + REPLACEMENT_SEARCH_WINDOW_MS); // exactly 15 days
+      const acceptedAt = new Date('2026-11-16T10:00:00.000Z'); // exactly 15 days later
 
       const boundaryReplacement = {
-        id: 'pl-rep-boundary',
-        code: 'PL-REP-15',
-        createdByStaffId: mockAgentId,
-        joinedDate: replacementJoined,
-        vacancy: {
-          id: 'vc-rep-boundary',
-          replacementForPlacementId: 'pl-orig-boundary',
-          replacementForPlacement: {
-            id: 'pl-orig-boundary',
-            dropoutReportedAt,
-          },
+        id: 'rc-sec-boundary',
+        placementId: 'pl-orig-boundary',
+        jobSeekerId: 'js-rep-boundary',
+        status: 'accepted',
+        acceptedAt,
+        placement: {
+          id: 'pl-orig-boundary',
+          code: 'PL-ORIG-15',
+          dropoutReportedAt,
+          clockPaused: false,
+          clockPausedAt: null,
+          createdByStaffId: mockAgentId,
         },
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([boundaryReplacement]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([]);
+      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([boundaryReplacement]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -380,33 +374,32 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         fixedNow,
       );
 
-      expect(result.metrics.replacementsIn15Days).toBe(1);
-      expect(result.details.replacementsIn15Days.replacementPlacementCodes).toEqual(['PL-REP-15']);
+      expect(result.metrics.replacementsSecuredInside15Days).toBe(1);
+      expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual(['PL-ORIG-15']);
     });
 
-    it('rejects replacement filled on day 16 (margin protection window expired)', async () => {
+    it('rejects replacement accepted on day 16 (margin protection window expired)', async () => {
       const dropoutReportedAt = new Date('2026-11-01T10:00:00.000Z');
-      // 15 days + 1 millisecond -> day 16 (fails margin protection rule)
-      const day16Joined = new Date(dropoutReportedAt.getTime() + REPLACEMENT_SEARCH_WINDOW_MS + 1000);
+      const day16Accepted = new Date('2026-11-17T10:00:00.000Z'); // 16 days later
 
       const lateReplacement = {
-        id: 'pl-rep-late',
-        code: 'PL-REP-16',
-        createdByStaffId: mockAgentId,
-        joinedDate: day16Joined,
-        vacancy: {
-          id: 'vc-rep-late',
-          replacementForPlacementId: 'pl-orig-late',
-          replacementForPlacement: {
-            id: 'pl-orig-late',
-            dropoutReportedAt,
-          },
+        id: 'rc-sec-late',
+        placementId: 'pl-orig-late',
+        jobSeekerId: 'js-rep-late',
+        status: 'accepted',
+        acceptedAt: day16Accepted,
+        placement: {
+          id: 'pl-orig-late',
+          code: 'PL-ORIG-16',
+          dropoutReportedAt,
+          clockPaused: false,
+          clockPausedAt: null,
+          createdByStaffId: mockAgentId,
         },
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([lateReplacement]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([]);
+      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([lateReplacement]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -416,29 +409,35 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         fixedNow,
       );
 
-      expect(result.metrics.replacementsIn15Days).toBe(0);
-      expect(result.details.replacementsIn15Days.replacementPlacementCodes).toEqual([]);
+      expect(result.metrics.replacementsSecuredInside15Days).toBe(0);
+      expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual([]);
     });
 
-    it('ignores placements where parent dropoutReportedAt or joinedDate is missing', async () => {
-      const invalidReplacement = {
-        id: 'pl-rep-invalid',
-        code: 'PL-REP-INV',
-        createdByStaffId: mockAgentId,
-        joinedDate: new Date('2026-11-10T10:00:00.000Z'),
-        vacancy: {
-          id: 'vc-rep-inv',
-          replacementForPlacementId: 'pl-orig-inv',
-          replacementForPlacement: {
-            id: 'pl-orig-inv',
-            dropoutReportedAt: null, // missing dropout date
-          },
+    it('extends the search window when clock is paused on 3rd rejection', async () => {
+      const dropoutReportedAt = new Date('2026-11-01T10:00:00.000Z');
+      const clockPausedAt = new Date('2026-11-11T10:00:00.000Z'); // paused on day 10
+      const acceptedAt = new Date('2026-11-25T10:00:00.000Z'); // accepted on day 24 chronologically
+
+      // Because clock was paused on day 10, calculateDaysElapsed calculates elapsed days against clockPausedAt,
+      // yielding 10 days (<= 15 days), so this save COUNTS!
+      const pausedReplacement = {
+        id: 'rc-sec-paused',
+        placementId: 'pl-orig-paused',
+        jobSeekerId: 'js-rep-paused',
+        status: 'accepted',
+        acceptedAt,
+        placement: {
+          id: 'pl-orig-paused',
+          code: 'PL-ORIG-PAUSED',
+          dropoutReportedAt,
+          clockPaused: true,
+          clockPausedAt,
+          createdByStaffId: mockAgentId,
         },
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([])
-        .mockResolvedValueOnce([invalidReplacement]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([]);
+      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([pausedReplacement]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -448,7 +447,34 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         fixedNow,
       );
 
-      expect(result.metrics.replacementsIn15Days).toBe(0);
+      expect(result.metrics.replacementsSecuredInside15Days).toBe(1);
+      expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual(['PL-ORIG-PAUSED']);
+    });
+
+    it('excludes rows with null acceptedAt (honest-null rule)', async () => {
+      // Prisma query filters acceptedAt: { not: null }
+      prismaMock.placement.findMany.mockResolvedValueOnce([]);
+      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([]);
+
+      const result = await service.getFieldAgentMetrics(
+        mockAgentId,
+        2026,
+        11,
+        managerUser,
+        fixedNow,
+      );
+
+      expect(result.metrics.replacementsSecuredInside15Days).toBe(0);
+      expect(prismaMock.replacementCandidate.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            status: 'accepted',
+            acceptedAt: expect.objectContaining({
+              not: null,
+            }),
+          }),
+        }),
+      );
     });
   });
 
@@ -474,9 +500,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         ],
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([closedPlacement]) // joinedPlacements
-        .mockResolvedValueOnce([]); // candidateReplacements
+      prismaMock.placement.findMany.mockResolvedValueOnce([closedPlacement]);
 
       // prisma.placement.findFirst finds an earlier joined placement for biz-loyal
       prismaMock.placement.findFirst.mockResolvedValueOnce({
@@ -526,9 +550,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         ],
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([closedPlacement])
-        .mockResolvedValueOnce([]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([closedPlacement]);
 
       // No prior joined placement
       prismaMock.placement.findFirst.mockResolvedValueOnce(null);
@@ -582,9 +604,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
         ],
       };
 
-      prismaMock.placement.findMany
-        .mockResolvedValueOnce([closedPl1, closedPl2])
-        .mockResolvedValueOnce([]);
+      prismaMock.placement.findMany.mockResolvedValueOnce([closedPl1, closedPl2]);
 
       prismaMock.placement.findFirst
         .mockResolvedValueOnce({ id: 'prior-october-placement' })

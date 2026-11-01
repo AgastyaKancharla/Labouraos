@@ -872,6 +872,7 @@ export class PlacementService {
     placementId: string,
     candidateId: string,
     actorId: string,
+    now: Date = new Date(),
   ) {
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
@@ -923,6 +924,7 @@ export class PlacementService {
         where: { id: candidate.id },
         data: {
           status: 'accepted',
+          acceptedAt: now,
         },
       }),
       this.prisma.placement.update({
@@ -949,6 +951,7 @@ export class PlacementService {
         replacementCandidateId: candidate.id,
         placementStatus: 'replaced',
         jobSeekerId: candidate.jobSeekerId,
+        acceptedAt: now.toISOString(),
       },
     });
 

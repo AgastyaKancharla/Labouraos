@@ -1115,6 +1115,76 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       );
       expect(elapsedDaysFuture).toBe(10);
     });
+
+    it('records acceptedAt when replacement candidate is accepted', async () => {
+      const timestamp = Date.now();
+      const jsDropped = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-REPAC1-${timestamp}`,
+          name: 'Dropped Seeker',
+          phone: `91${timestamp.toString().slice(-8)}1`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'placed',
+        },
+      });
+
+      const jsReplacement = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-REPAC2-${timestamp}`,
+          name: 'Replacement Seeker',
+          phone: `91${timestamp.toString().slice(-8)}2`,
+          tradeSkill: 'Electrician',
+          minSalary: 1800000,
+          maxSalary: 2400000,
+          preferredCallWindowStart: '10:00',
+          preferredCallWindowEnd: '18:00',
+          status: 'active',
+        },
+      });
+
+      const placement = await prisma.placement.create({
+        data: {
+          code: `PL-REPAC-${timestamp}`,
+          vacancyId: koraVacancyId,
+          jobSeekerId: jsDropped.id,
+          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
+          agreedSalary: 2000000,
+          placementFee: 1000000,
+          gstAmount: 180000,
+          status: 'dropped_out',
+          eligibility: 'employee_left',
+          dropoutReportedAt: new Date(),
+        },
+      });
+
+      const offerRes = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/replacement-candidates`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ jobSeekerId: jsReplacement.id })
+        .expect(201);
+
+      const candidateId = offerRes.body.id;
+      const acceptTime = new Date('2026-11-10T12:00:00.000Z');
+
+      const acceptRes = await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/replacement-candidates/${candidateId}/accept`)
+        .set('Authorization', `Bearer ${faKoraToken}`)
+        .send({ acceptedAt: acceptTime.toISOString() })
+        .expect(201);
+
+      expect(acceptRes.body.candidate.status).toBe('accepted');
+      expect(new Date(acceptRes.body.candidate.acceptedAt).toISOString()).toBe(acceptTime.toISOString());
+
+      const dbCandidate = await prisma.replacementCandidate.findUnique({
+        where: { id: candidateId },
+      });
+      expect(dbCandidate?.status).toBe('accepted');
+      expect(dbCandidate?.acceptedAt?.toISOString()).toBe(acceptTime.toISOString());
+    });
   });
 
   describe('Phase 5 Task 7: Refund approval (business side)', () => {

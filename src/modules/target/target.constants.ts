@@ -45,7 +45,7 @@ export const TARGET_METRICS = {
   },
   replacementsInside15Days: {
     key: 'replacementsInside15Days',
-    label: 'Replacement vacancies filled inside 15 days',
+    label: 'Replacements secured inside 15 days',
     direction: 'higher_is_better',
     isRate: false,
     proRateable: true,
@@ -88,6 +88,18 @@ export const ALLOWED_TARGET_ROLES = ['call_agent', 'field_agent'] as const;
  * is noise, not a statistically valid breach signal).
  */
 export const MIN_REFUND_RATE_DENOMINATOR = 5;
+
+/**
+ * Window in days for job seeker candidates approaching their 30-day refund deadline.
+ * A candidate whose guarantee matures within 7 days is approaching deadline and at risk.
+ */
+export const CANDIDATE_AT_RISK_WINDOW_DAYS = 7;
+
+/**
+ * Window in days for dropped-out placements approaching their 15-day replacement deadline.
+ * A replacement vacancy whose 15-day window matures within 5 days is approaching deadline and at risk.
+ */
+export const PLACEMENT_AT_RISK_WINDOW_DAYS = 5;
 
 /**
  * Returns total days in a given calendar month (UTC).
