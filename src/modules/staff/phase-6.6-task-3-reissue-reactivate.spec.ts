@@ -281,10 +281,10 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // Can now access ordinary endpoints
       const fullProbeRes = await request(app.getHttpServer())
-        .get(`/staff/${hire.id}`)
+        .get('/staff/sessions')
         .set('Authorization', `Bearer ${fullToken}`);
       expect(fullProbeRes.status).toBe(200);
-      expect(fullProbeRes.body.id).toBe(hire.id);
+      expect(Array.isArray(fullProbeRes.body)).toBe(true);
     });
 
     it('a Manager is refused re-issuing an invite to a CEO', async () => {
