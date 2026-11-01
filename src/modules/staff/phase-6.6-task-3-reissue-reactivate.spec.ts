@@ -122,7 +122,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // Verify that valid login with old credentials works before reissue
       const preCheck = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({
           email: hire.email,
           password: goodPassword,
@@ -156,7 +156,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       // 4. Verify old password fails at login (401 Unauthorized)
       const freshOldTotp = await stableTotpCode(oldSecret);
       const oldPassLogin = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({
           email: hire.email,
           password: goodPassword,
@@ -225,7 +225,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // 4. First login with new password: forces 2FA enrolment
       const loginRes = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({
           email: hire.email,
           password: newPassword,
@@ -253,14 +253,14 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const enable2faRes = await request(app.getHttpServer())
         .post('/staff/2fa/enable')
         .set('Authorization', `Bearer ${setupToken}`)
-        .send({ code: totpCode });
+        .send({ totpCode });
       expect(enable2faRes.status).toBe(200);
       expect(enable2faRes.body.success).toBe(true);
 
       // 6. Next login with password + TOTP provides full token
       const stableCode = await stableTotpCode(secret);
       const fullLoginRes = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({
           email: hire.email,
           password: newPassword,
@@ -366,7 +366,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // Verify login fails while deactivated
       const deactLogin = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({ email: hire.email, password: goodPassword });
       expect(deactLogin.status).toBe(401);
 
@@ -390,7 +390,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // 5. Verify the reactivated account CANNOT log in with old password
       const oldPassLogin = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({ email: hire.email, password: goodPassword });
       expect(oldPassLogin.status).toBe(401);
       expect(oldPassLogin.body.message).toBe('Invalid email or password');
@@ -427,7 +427,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
       // 9. Login now succeeds, requiring 2FA enrolment
       const freshLogin = await request(app.getHttpServer())
-        .post('/staff/login')
+        .post('/auth/login')
         .send({
           email: hire.email,
           password: freshPassword,
