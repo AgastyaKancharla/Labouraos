@@ -20,6 +20,7 @@ import { ConsoleModule } from './modules/console/console.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
 import { WhatsAppModule } from './common/whatsapp/whatsapp.module';
 import { StaffModule } from './modules/staff/staff.module';
+import { TargetModule } from './modules/target/target.module';
 import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
 
@@ -47,6 +48,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     ConsoleModule,
     TelephonyModule,
     StaffModule,
+    TargetModule,
     HealthModule,
   ],
 })

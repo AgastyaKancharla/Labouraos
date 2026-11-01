@@ -226,7 +226,29 @@ describe('Data Model Relationships', () => {
     expect(auditLog.actor?.id).toBe(agent.id);
     expect(auditLog.entityCode).toBe(placement.code);
 
+    // 10. Create Target linked to Staff (agent) and Creator (teamLead)
+    const target = await prisma.target.create({
+      data: {
+        staffId: agent.id,
+        year: 2026,
+        month: 11,
+        candidatesActivated: 25,
+        refundRate: 0.05,
+        vacanciesCaptured: 10,
+        createdById: teamLead.id,
+      },
+      include: {
+        staff: true,
+        createdBy: true,
+      },
+    });
+
+    expect(target.staff.id).toBe(agent.id);
+    expect(target.createdBy.id).toBe(teamLead.id);
+    expect(target.candidatesActivated).toBe(25);
+
     // Cleanup created test records
+    await prisma.target.delete({ where: { id: target.id } });
     await prisma.auditLog.delete({ where: { id: auditLog.id } });
     await prisma.payment.delete({ where: { id: payment.id } });
     await prisma.vacancy.delete({ where: { id: replacementVacancy.id } });

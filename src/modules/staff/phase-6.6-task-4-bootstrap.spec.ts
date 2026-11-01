@@ -21,6 +21,7 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
     await prisma.businessVisit.deleteMany({});
     await prisma.contactAttempt.deleteMany({});
     await prisma.callbackTask.deleteMany({});
+    await prisma.target.deleteMany({});
     await prisma.jobSeeker.updateMany({ data: { registeredByStaffId: null } });
     await prisma.placement.updateMany({ data: { createdByStaffId: null } });
     await prisma.vacancy.updateMany({ data: { capturedByStaffId: null } });

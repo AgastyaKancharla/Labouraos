@@ -21,6 +21,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
     await prisma.businessVisit.deleteMany({});
     await prisma.contactAttempt.deleteMany({});
     await prisma.callbackTask.deleteMany({});
+    await prisma.target.deleteMany({});
     await prisma.jobSeeker.updateMany({ data: { registeredByStaffId: null } });
     await prisma.placement.updateMany({ data: { createdByStaffId: null } });
     await prisma.vacancy.updateMany({ data: { capturedByStaffId: null } });

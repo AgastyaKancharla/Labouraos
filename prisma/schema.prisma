@@ -189,6 +189,9 @@ model Staff {
   auditLogs         AuditLog[]
   contactAttempts   ContactAttempt[]
   callbackTasks     CallbackTask[]
+  targets           Target[]         @relation("StaffTargets")
+  createdTargets    Target[]         @relation("CreatedTargets")
+  updatedTargets    Target[]         @relation("UpdatedTargets")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   registeredDeviceId String?
@@ -388,6 +391,33 @@ model JobAlertState {
   lastRecoveredAt DateTime?
   updatedAt       DateTime  @updatedAt
 }
+
+model Target {
+  id                         String    @id @default(uuid())
+  staffId                    String
+  staff                      Staff     @relation("StaffTargets", fields: [staffId], references: [id], onDelete: Cascade)
+  year                       Int
+  month                      Int       // 1 - 12
+  // Call Agent metrics (Task 3)
+  candidatesActivated        Int?      // count floor
+  refundRate                 Float?    // ratio ceiling (e.g. 0.05 for 5%)
+  vacanciesCaptured          Int?      // count floor
+  // Field Agent metrics (Task 4)
+  placementsClosed           Int?      // count floor
+  replacementsInside15Days   Int?      // count floor
+  repeatBusinesses           Int?      // count floor
+  createdById                String
+  createdBy                  Staff     @relation("CreatedTargets", fields: [createdById], references: [id], onDelete: Restrict)
+  updatedById                String?
+  updatedBy                  Staff?    @relation("UpdatedTargets", fields: [updatedById], references: [id], onDelete: SetNull)
+  createdAt                  DateTime  @default(now())
+  updatedAt                  DateTime  @updatedAt
+
+  @@unique([staffId, year, month])
+  @@index([staffId])
+  @@index([year, month])
+}
+
 
 
 
