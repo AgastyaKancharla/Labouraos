@@ -257,6 +257,12 @@ Format:
 **Cause:** Volume metrics (candidate activations, placements) scale with active days, but rate ceilings (refund rate) define quality ratios that become unreasonably strict if scaled down. Furthermore, rounding down fractional targets (via Math.floor) for late-month joiners can yield 0, which incorrectly reads in dashboards as expecting 0 performance rather than representing an unmeasured period.
 **Fix:** Pro-rate volume targets using inclusive days worked: `factor = (daysInMonth - creationDay + 1) / daysInMonth`. Round with `Math.floor`, and if the resulting target is 0, return explicit state `status: 'not_measured'` with `isMeasured: false` and `effectiveTarget: null`. Rate ceiling metrics (`refundRate`) are explicitly marked `proRateable: false` and preserved unscaled.
 
+## Month bucketing in business timezone vs UTC storage and matured refund rate denominators
+**Symptom:** Querying monthly performance metrics or setting targets using raw UTC dates caused events occurring in the early morning of the 1st of a month (e.g. 00:30 IST) to be attributed to the previous month, and created a 5.5-hour window on the 1st of each month where a Manager could set targets for a month that had already ended locally. Additionally, evaluating refund rates on recently registered candidates without checking maturation produced false failures or 0% readings.
+**Cause:** Timestamps are stored in UTC, but business months operate from 00:00 to 23:59:59.999 in local business time (Asia/Kolkata, UTC+5:30). Furthermore, candidate refund guarantees run for 30 days from payment receipt; evaluating candidates registered < 30 days ago penalizes agents before an offer can even be accepted.
+**Fix:** Introduced shared `PeriodBoundary` and timezone helper (`src/common/time/period-boundary.ts`) mapping cities to IANA timezones (defaulting to `DEFAULT_BUSINESS_TIMEZONE = 'Asia/Kolkata'`) and computing exact UTC boundaries for local calendar months. Updated `assertNotPastPeriod` to enforce past-period restrictions against local calendar time. In `CallAgentMetricsService`, strictly evaluated refund rates against candidates whose 30-day deadline has passed (`paymentReceivedAt <= evaluationDate - 30 days`), returning `null` when the denominator is zero so un-matured cohorts are not falsely marked as 0% (perfect). Calls dialled and calls connected are strictly prohibited as performance metrics to prevent gaming.
+
+
 
 
 

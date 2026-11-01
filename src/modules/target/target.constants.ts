@@ -61,6 +61,8 @@ export const TARGET_METRICS = {
   },
 } as const satisfies Record<string, MetricDefinition>;
 
+import { getCalendarPartsInTimezone, DEFAULT_BUSINESS_TIMEZONE } from '../../common/time/period-boundary';
+
 export type TargetMetricKey =
   | 'candidatesActivated'
   | 'refundRate'
@@ -106,11 +108,13 @@ export function calculateProRatingFactor(
   staffCreatedAt: Date,
   targetYear: number,
   targetMonth: number,
+  timezoneOrCity: string = DEFAULT_BUSINESS_TIMEZONE,
 ): { factor: number; isMidMonthJoiner: boolean; daysPresent: number; daysInMonth: number } {
   const daysInMonth = getDaysInMonth(targetYear, targetMonth);
-  const createdYear = staffCreatedAt.getUTCFullYear();
-  const createdMonth = staffCreatedAt.getUTCMonth() + 1;
-  const createdDay = staffCreatedAt.getUTCDate();
+  const parts = getCalendarPartsInTimezone(staffCreatedAt, timezoneOrCity);
+  const createdYear = parts.year;
+  const createdMonth = parts.month;
+  const createdDay = parts.day;
 
   // If staff account was created during the target month:
   if (createdYear === targetYear && createdMonth === targetMonth) {

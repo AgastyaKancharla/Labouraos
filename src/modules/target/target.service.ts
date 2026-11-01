@@ -19,6 +19,7 @@ import {
   evaluateMetricTarget,
   MetricEvaluationResult,
 } from './target.constants';
+import { isPastPeriod } from '../../common/time/period-boundary';
 
 @Injectable()
 export class TargetService {
@@ -85,14 +86,13 @@ export class TargetService {
    * an integrity risk. Editing the current month or future months is permitted and audited.
    * Uses injectable time (`now`) to enable deterministic time-based testing.
    */
-  private assertNotPastPeriod(year: number, month: number, now: Date): void {
-    const currentYear = now.getUTCFullYear();
-    const currentMonth = now.getUTCMonth() + 1; // 1-12
-
-    const isPast =
-      year < currentYear || (year === currentYear && month < currentMonth);
-
-    if (isPast) {
+  private assertNotPastPeriod(
+    year: number,
+    month: number,
+    now: Date,
+    cityOrTimezone?: string,
+  ): void {
+    if (isPastPeriod(year, month, now, cityOrTimezone)) {
       throw new BadRequestException(
         `Cannot set or update target for past period ${year}-${String(month).padStart(2, '0')}. The period has already ended.`,
       );
@@ -123,7 +123,7 @@ export class TargetService {
     if (!Number.isInteger(dto.month) || dto.month < 1 || dto.month > 12) {
       throw new BadRequestException('month must be an integer between 1 and 12');
     }
-    this.assertNotPastPeriod(dto.year, dto.month, now);
+    this.assertNotPastPeriod(dto.year, dto.month, now, staff.city);
 
     // 4. Assert unique target for (staffId, year, month)
     const existing = await this.prisma.target.findUnique({
@@ -199,7 +199,7 @@ export class TargetService {
     }
 
     // Assert period not in the past (Decision 3)
-    this.assertNotPastPeriod(existing.year, existing.month, now);
+    this.assertNotPastPeriod(existing.year, existing.month, now, existing.staff.city);
 
     // Merge metrics and assert at least one non-null metric remains (Decision 2)
     const mergedMetrics: Record<TargetMetricKey, number | null> = {
@@ -349,6 +349,7 @@ export class TargetService {
       staff.createdAt,
       target.year,
       target.month,
+      staff.city,
     );
 
     const metricsRecord = {} as Record<TargetMetricKey, MetricEvaluationResult>;

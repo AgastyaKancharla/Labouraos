@@ -131,33 +131,52 @@ export class RbacGuard implements CanActivate {
             );
           }
         } else if (requiredPermission.resource === 'target') {
-          const target = await this.prisma.target.findUnique({
-            where: { id: targetStaffId },
-            include: { staff: { select: { teamLeadId: true } } },
-          });
+          const staffIdParam = request.params?.staffId as string | undefined;
+          if (staffIdParam) {
+            const targetStaff = await this.prisma.staff.findUnique({
+              where: { id: staffIdParam },
+              select: { teamLeadId: true },
+            });
+            if (!targetStaff || targetStaff.teamLeadId !== user.sub) {
+              throw new ForbiddenException(`Access denied: staff is not part of your team`);
+            }
+          } else {
+            const target = await this.prisma.target.findUnique({
+              where: { id: targetStaffId },
+              include: { staff: { select: { teamLeadId: true } } },
+            });
 
-          if (!target || target.staff.teamLeadId !== user.sub) {
-            throw new ForbiddenException(
-              `Access denied: staff is not part of your team`,
-            );
+            if (!target || target.staff.teamLeadId !== user.sub) {
+              throw new ForbiddenException(
+                `Access denied: staff is not part of your team`,
+              );
+            }
           }
         }
       }
     }
 
     if (roleRule.scope === 'own_only') {
-      const targetId = request.params?.id as string | undefined;
+      const targetId =
+        (request.params?.staffId as string | undefined) ??
+        (request.params?.id as string | undefined);
       if (targetId && targetId !== user.sub) {
         if (requiredPermission.resource === 'staff') {
           throw new ForbiddenException('Access denied: can only access your own profile');
         } else if (requiredPermission.resource === 'target') {
-          const target = await this.prisma.target.findUnique({
-            where: { id: targetId },
-            select: { staffId: true },
-          });
+          if (request.params?.staffId) {
+            if (request.params.staffId !== user.sub) {
+              throw new ForbiddenException('Access denied: can only access your own targets');
+            }
+          } else {
+            const target = await this.prisma.target.findUnique({
+              where: { id: targetId },
+              select: { staffId: true },
+            });
 
-          if (!target || target.staffId !== user.sub) {
-            throw new ForbiddenException('Access denied: can only access your own targets');
+            if (!target || target.staffId !== user.sub) {
+              throw new ForbiddenException('Access denied: can only access your own targets');
+            }
           }
         } else {
           throw new ForbiddenException('Access denied: can only access your own profile');

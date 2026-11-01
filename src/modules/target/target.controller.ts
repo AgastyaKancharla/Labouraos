@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { TargetService } from './target.service';
+import { CallAgentMetricsService } from './call-agent-metrics.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -25,7 +26,27 @@ import { UpdateTargetDto } from './dto/update-target.dto';
 @UseGuards(JwtAuthGuard, RbacGuard)
 @UseInterceptors(PiiMaskingInterceptor)
 export class TargetController {
-  constructor(private readonly targetService: TargetService) {}
+  constructor(
+    private readonly targetService: TargetService,
+    private readonly callAgentMetricsService: CallAgentMetricsService,
+  ) {}
+
+  @Get('metrics/call-agent/:staffId')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent')
+  @RequirePermission('target', 'read')
+  async getCallAgentMetrics(
+    @Param('staffId') staffId: string,
+    @Query('year') year: string | undefined,
+    @Query('month') month: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.callAgentMetricsService.getCallAgentMetrics(
+      staffId,
+      year ? parseInt(year, 10) : undefined,
+      month ? parseInt(month, 10) : undefined,
+      req.user,
+    );
+  }
 
   @Post()
   @RequireRoles('ceo', 'manager')
