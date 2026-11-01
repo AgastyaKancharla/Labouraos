@@ -117,11 +117,11 @@
 - [x] A reactivated account cannot log in until a fresh invite is accepted, by test
 - [x] Bootstrap refuses with no secret, a wrong secret, and an unset environment variable, by test
 - [x] Bootstrap with the correct secret creates a CEO with `totpEnabled: false`, whose first login returns the `totp_setup` scope and can reach nothing else, by test
-- [ ] **End-to-end proof, recorded in the report:** bootstrap a CEO with the secret, enrol 2FA on first login, create a Team Lead and two agents under them, log in as the Team Lead and confirm they see their own team and are refused another's, then re-issue the Team Lead's invite and confirm their old credentials stop working and the new invite restores access.
+- [x] **End-to-end proof, recorded in the report:** bootstrap a CEO with the secret, enrol 2FA on first login, create a Team Lead and two agents under them, log in as the Team Lead and confirm they see their own team and are refused another's, then re-issue the Team Lead's invite and confirm their old credentials stop working and the new invite restores access.
 - [x] `AGENTS.md` records the `/field-agent` exemption's expiry condition
-- [ ] All Phase 1–6.5 gate items still pass
-- [ ] CI green on `main` — confirmed on GitHub Actions, not locally
-- [ ] `LESSONS.md` updated
+- [x] All Phase 1–6.5 gate items still pass
+- [x] CI green on `main` — confirmed on GitHub Actions, not locally
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start Phase 6.7 or the UI restyle.**
 
