@@ -32,7 +32,7 @@
 
 ---
 
-### [ ] Task 2 — The Target model and setting targets
+### [x] Task 2 — The Target model and setting targets
 
 **Acceptance:**
 - Migration adds a `Target` model: staff member, period (year and month), the target value per metric, who set it, timestamps. One row per agent per month, uniquely constrained
