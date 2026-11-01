@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   HttpCode,
   HttpStatus,
   Param,
@@ -43,13 +44,35 @@ export class StaffController {
 
   /**
    * Public by design: creates the very first staff account (CEO) on an empty
-   * database. Permanently safe because it requires staff.count() === 0.
+   * database.
+   *
+   * Rationale for hardening (Phase 6.6 Task 4):
+   * The repository is public, so this endpoint and its behaviour are documented
+   * to anyone. Between initial deployment and the real bootstrap call, whoever
+   * reached it first became CEO. Furthermore, issuing the TOTP secret once at
+   * creation meant losing that single response bricked the account with no
+   * recovery path.
+   *
+   * Hardened controls:
+   * 1. Requires STAFF_BOOTSTRAP_SECRET supplied either in the `x-bootstrap-secret`
+   *    header or the request body (`secret` / `bootstrapSecret`), compared in
+   *    constant-time against the environment variable.
+   * 2. 2FA moves to first-login enrolment: bootstrap creates the CEO with
+   *    `totpEnabled: false` and issues no TOTP secret. The CEO logs in with
+   *    their password, receives the restricted `totp_setup` scope, and enrols
+   *    their authenticator device before accessing any operational endpoints.
+   * 3. Table lock, conditional insert, staff.count() === 0, rate limiting, and
+   *    audit logging with the sentinel 'bootstrap' actor remain intact.
    */
   @Post('bootstrap')
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
-  bootstrap(@Body() dto: BootstrapStaffDto) {
-    return this.staffService.bootstrapStaff(dto);
+  bootstrap(
+    @Body() dto: BootstrapStaffDto,
+    @Headers('x-bootstrap-secret') headerSecret?: string,
+  ) {
+    const suppliedSecret = headerSecret || dto?.secret || dto?.bootstrapSecret;
+    return this.staffService.bootstrapStaff(dto, suppliedSecret);
   }
 
   @Get()

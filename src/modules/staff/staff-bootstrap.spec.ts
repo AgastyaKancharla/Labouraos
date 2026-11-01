@@ -12,6 +12,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
   let prisma: PrismaService;
   let totpService: TotpService;
 
+  const BOOTSTRAP_SECRET = 'ci_bootstrap_secret_testing_only_32_characters';
   let ipCounter = 1;
   const freshIp = () => `10.98.${Math.floor(ipCounter / 250)}.${(ipCounter++ % 250) + 1}`;
 
@@ -27,6 +28,8 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
   }
 
   beforeAll(async () => {
+    process.env.STAFF_BOOTSTRAP_SECRET = BOOTSTRAP_SECRET;
+
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -57,6 +60,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const res = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: '  ',
           email: 'ceo@laboura.local',
@@ -71,6 +75,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const res = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'First CEO',
           email: 'not-an-email',
@@ -85,6 +90,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const res = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'First CEO',
           email: 'ceo@laboura.local',
@@ -101,7 +107,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       await clearAllStaff();
     });
 
-    it('succeeds on an empty database, returns TOTP secret and URI, creates CEO, and writes audit log with "bootstrap" sentinel', async () => {
+    it('succeeds on an empty database with secret, creates CEO with totpEnabled: false, and writes audit log with "bootstrap" sentinel', async () => {
       const payload = {
         name: 'First CEO',
         email: 'founder@laboura.local',
@@ -111,6 +117,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const res = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send(payload);
 
       expect(res.status).toBe(201);
@@ -121,19 +128,18 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       expect(res.body.staff.name).toBe('First CEO');
       expect(res.body.staff.code).toMatch(/^CEO-\d{5}$/);
 
-      // TOTP secret revealed once
-      expect(res.body.totpSecret).toBeDefined();
-      expect(typeof res.body.totpSecret).toBe('string');
-      expect(res.body.totpSecret.length).toBeGreaterThanOrEqual(16);
-      expect(res.body.otpauthUrl).toContain('otpauth://totp/');
+      // Bootstrap NO LONGER reveals a TOTP secret
+      expect(res.body.totpSecret).toBeUndefined();
+      expect(res.body.secret).toBeUndefined();
+      expect(res.body.otpauthUrl).toBeUndefined();
 
       // Verify DB row
       const staffRow = await prisma.staff.findUnique({
         where: { id: res.body.staff.id },
       });
       expect(staffRow).toBeDefined();
-      expect(staffRow?.totpEnabled).toBe(true);
-      expect(staffRow?.totpSecret).toBe(res.body.totpSecret);
+      expect(staffRow?.totpEnabled).toBe(false);
+      expect(staffRow?.totpSecret).toBeNull();
 
       // Verify audit log has actorId = 'bootstrap'
       const audit = await prisma.auditLog.findFirst({
@@ -147,6 +153,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const secondCall = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'Imposter CEO',
           email: 'imposter@laboura.local',
@@ -160,10 +167,11 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       expect(totalStaff).toBe(1);
     });
 
-    it('allows bootstrapped CEO to log in with password and TOTP code', async () => {
+    it('allows bootstrapped CEO to log in with password and complete 2FA enrolment on first login', async () => {
       const bootstrapRes = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', freshIp())
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'First CEO',
           email: 'ceo.login.test@laboura.local',
@@ -171,21 +179,36 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         });
       expect(bootstrapRes.status).toBe(201);
 
-      const secret = bootstrapRes.body.totpSecret;
-      const validTotpCode = totpService.generateToken(secret);
-
-      // 1. Password only -> rejected (401)
-      const noTotp = await request(app.getHttpServer())
+      // 1. Password only -> 200 with totp_setup scope
+      const passwordLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
           email: 'ceo.login.test@laboura.local',
           password: 'SuperSecurePassword2026!',
         });
-      expect(noTotp.status).toBe(401);
-      expect(noTotp.body.message).toContain('TOTP 2FA code is required');
+      expect(passwordLogin.status).toBe(200);
+      expect(passwordLogin.body.totpEnrollmentRequired).toBe(true);
+      const setupToken = passwordLogin.body.accessToken as string;
 
-      // 2. Password + valid TOTP -> 200 and issues full token
+      // 2. Setup and enable 2FA
+      const setupRes = await request(app.getHttpServer())
+        .post('/staff/2fa/setup')
+        .set('Authorization', `Bearer ${setupToken}`)
+        .set('X-Forwarded-For', freshIp())
+        .send();
+      expect(setupRes.status).toBe(200);
+      const secret = setupRes.body.secret as string;
+      const validTotpCode = totpService.generateToken(secret);
+
+      const enableRes = await request(app.getHttpServer())
+        .post('/staff/2fa/enable')
+        .set('Authorization', `Bearer ${setupToken}`)
+        .set('X-Forwarded-For', freshIp())
+        .send({ totpCode: validTotpCode });
+      expect(enableRes.status).toBe(200);
+
+      // 3. Password + valid TOTP -> 200 and issues full token
       const successLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
@@ -206,6 +229,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const req1 = request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', clientIp1)
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'CEO Racer 1',
           email: 'racer1@laboura.local',
@@ -215,6 +239,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const req2 = request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', clientIp2)
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'CEO Racer 2',
           email: 'racer2@laboura.local',
@@ -238,6 +263,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         await request(app.getHttpServer())
           .post('/staff/bootstrap')
           .set('X-Forwarded-For', fixedIp)
+          .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
           .send({
             name: 'Throttle Test',
             email: fixedEmail,
@@ -249,6 +275,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       const throttled = await request(app.getHttpServer())
         .post('/staff/bootstrap')
         .set('X-Forwarded-For', fixedIp)
+        .set('x-bootstrap-secret', BOOTSTRAP_SECRET)
         .send({
           name: 'Throttle Test',
           email: fixedEmail,

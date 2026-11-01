@@ -6,7 +6,12 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createHash, randomBytes, randomUUID } from 'node:crypto';
+import {
+  createHash,
+  randomBytes,
+  randomUUID,
+  timingSafeEqual,
+} from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -99,10 +104,12 @@ export interface ReactivateStaffResult {
 
 export interface BootstrapResult {
   staff: StaffView;
-  totpSecret: string;
-  secret: string;
-  otpauthUrl: string;
-  otpauthUri: string;
+}
+
+export function constantTimeEquals(a: string, b: string): boolean {
+  const hashA = createHash('sha256').update(a).digest();
+  const hashB = createHash('sha256').update(b).digest();
+  return timingSafeEqual(hashA, hashB);
 }
 
 export function hashInviteToken(token: string): string {
@@ -126,8 +133,38 @@ export class StaffService {
 
   async bootstrapStaff(
     dto: BootstrapStaffDto,
-    now: Date = new Date(),
+    suppliedSecretOrNow?: string | Date,
+    maybeNow?: Date,
   ): Promise<BootstrapResult> {
+    let suppliedSecret: string | undefined;
+    let now: Date;
+    if (suppliedSecretOrNow instanceof Date) {
+      suppliedSecret = undefined;
+      now = suppliedSecretOrNow;
+    } else {
+      suppliedSecret = suppliedSecretOrNow;
+      now = maybeNow ?? new Date();
+    }
+
+    const configuredSecret = process.env.STAFF_BOOTSTRAP_SECRET;
+    if (!configuredSecret || !configuredSecret.trim()) {
+      throw new ForbiddenException('Server not configured for bootstrap');
+    }
+
+    const candidateSecret = (
+      suppliedSecret ??
+      (dto?.secret || dto?.bootstrapSecret || '')
+    ).trim();
+
+    if (
+      !candidateSecret ||
+      !constantTimeEquals(candidateSecret, configuredSecret.trim())
+    ) {
+      throw new ForbiddenException(
+        'Staff bootstrap is only allowed when no staff accounts exist',
+      );
+    }
+
     const name = typeof dto?.name === 'string' ? dto.name.trim() : '';
     const email =
       typeof dto?.email === 'string' ? dto.email.trim().toLowerCase() : '';
@@ -157,7 +194,6 @@ export class StaffService {
       );
     }
 
-    const { secret, otpauthUrl } = this.totpService.generateSetup(email);
     const passwordHash = await this.authService.hashPassword(password);
     const code = await this.idService.generateCode(STAFF_CODE_PREFIX.ceo);
     const id = randomUUID();
@@ -179,7 +215,7 @@ export class StaffService {
         )
         SELECT
           ${id}, ${code}, 'Bengaluru', ${name}, ${email}, ${passwordHash}, 'ceo',
-          ${secret}, true, 'active', ${now}, ${now}
+          NULL, false, 'active', ${now}, ${now}
         WHERE (SELECT COUNT(*) FROM "Staff") = 0
       `;
 
@@ -214,10 +250,6 @@ export class StaffService {
 
     return {
       staff: createdStaff,
-      totpSecret: secret,
-      secret,
-      otpauthUrl,
-      otpauthUri: otpauthUrl,
     };
   }
 

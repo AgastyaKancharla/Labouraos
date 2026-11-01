@@ -39,7 +39,9 @@ Follow these steps in exact sequential order:
 3. Deploy Blueprint on Render
 4. Enter Environment Variables in Render
 5. Verify Deployment & Database Tables
-6. Create Initial CEO Account (Bootstrap)
+6. Create Initial CEO Account (Bootstrap & First Login 2FA Enrolment)
+7. Create Second CEO Account on a Different Device (Mandatory Immediate Redundancy)
+8. Last-Resort Emergency Manual Recovery (Agastya Only)
 
 ---
 
@@ -200,42 +202,117 @@ Follow these steps in exact sequential order:
 
 ---
 
-### Step 6: Initial CEO Account Bootstrap (One-Time Setup)
+### Step 6: Initial CEO Account Bootstrap & First Login 2FA Enrolment
 
 Once the application is live, no staff accounts exist in the database. Use the bootstrap endpoint to create the CEO account.
 
-You can perform this directly from your browser using an online API tool like **[ReqBin](https://reqbin.com)** or **Postman**:
+#### 1. Locate the Bootstrap Secret in Render
+1. Open the **Render Dashboard** (`https://dashboard.render.com`).
+2. Click on the **`laboura-api`** service.
+3. Click the **Environment** tab on the left sidebar.
+4. Locate `STAFF_BOOTSTRAP_SECRET`. Render auto-generates this secret on first blueprint deploy. Click the eye icon next to `STAFF_BOOTSTRAP_SECRET` to reveal and copy it.
 
-1. Set request method to: `POST`
-2. Set URL to: `https://<your-render-api-url>.onrender.com/staff/bootstrap`
-3. Add Headers:
-   - `Content-Type`: `application/json`
-   - `x-bootstrap-secret`: *(The `STAFF_BOOTSTRAP_SECRET` you set in Render in Step 4)*
-4. Set Request Body (JSON):
-   ```json
-   {
-     "name": "Chief Executive Officer",
-     "email": "ceo@laboura.in",
-     "password": "ReplaceWithSecurePassword123!",
-     "city": "Bengaluru"
-   }
-   ```
-5. Click **Send**.
-6. The server will respond with `201 Created` and output the created staff profile:
-   ```json
-   {
-     "id": "...",
-     "code": "STF-CE-00001",
-     "name": "Chief Executive Officer",
-     "email": "ceo@laboura.in",
-     "role": "ceo"
-   }
-   ```
-7. Now open the internal management console in your browser:
+#### 2. Execute the Bootstrap Request
+You can call the bootstrap endpoint using **curl**, **Postman**, or **[ReqBin](https://reqbin.com)**.
+
+The secret can be passed either as the HTTP header `x-bootstrap-secret` or directly in the JSON request body (`secret` or `bootstrapSecret`):
+
+**Option A: Using curl with HTTP header**
+```bash
+curl -X POST https://<your-render-api-url>.onrender.com/staff/bootstrap \
+  -H "Content-Type: application/json" \
+  -H "x-bootstrap-secret: YOUR_COPIED_BOOTSTRAP_SECRET" \
+  -d '{
+    "name": "Chief Executive Officer",
+    "email": "ceo@laboura.in",
+    "password": "ReplaceWithSecurePassword123!"
+  }'
+```
+
+**Option B: Using JSON body in ReqBin / Postman**
+- Method: `POST`
+- URL: `https://<your-render-api-url>.onrender.com/staff/bootstrap`
+- Headers: `Content-Type: application/json`
+- Body (JSON):
+```json
+{
+  "name": "Chief Executive Officer",
+  "email": "ceo@laboura.in",
+  "password": "ReplaceWithSecurePassword123!",
+  "secret": "YOUR_COPIED_BOOTSTRAP_SECRET"
+}
+```
+
+The server responds with `201 Created`:
+```json
+{
+  "staff": {
+    "id": "...",
+    "code": "CEO-00001",
+    "name": "Chief Executive Officer",
+    "email": "ceo@laboura.in",
+    "role": "ceo",
+    "city": "Bengaluru",
+    "status": "active"
+  }
+}
+```
+
+> [!NOTE]
+> **2FA Enrolment on First Login**: For defense-in-depth, bootstrap does **not** return a TOTP secret in the HTTP response. The account is created with `totpEnabled: false`. The new CEO enrols 2FA on their very first login.
+
+#### 3. Complete 2FA Enrolment on First Login
+1. Open the Admin Dashboard in your browser:
    ```text
-   https://<your-render-api-url>.onrender.com/console/admin
+   https://<your-render-api-url>.onrender.com/admin
    ```
-8. Log in with your email and password. Follow the on-screen instructions to scan the QR code with Google Authenticator or Microsoft Authenticator to enable two-factor authentication (TOTP).
+2. Log in with the email and password specified during bootstrap.
+3. The server recognizes that TOTP enrolment is required and issues a restricted `totp_setup` session.
+4. Scan the presented QR code (or enter the manual key) into your authenticator app (Google Authenticator, Microsoft Authenticator, or Authy).
+5. Enter the 6-digit verification code from your authenticator app and click **Verify & Enable 2FA**.
+6. The system locks down 2FA for the account (`totpEnabled: true`). Full CEO access is now activated.
+
+---
+
+### Step 7: Create a Second CEO Account on a Different Device (Mandatory Immediate Redundancy)
+
+As the immediate next action after the first CEO enrols 2FA:
+
+1. Log into the Admin Dashboard (`https://<your-render-api-url>.onrender.com/admin`) with the primary CEO account.
+2. In the Staff Management section, invite a **second CEO account** (e.g. `ceo2@laboura.in` or a dedicated recovery executive address).
+3. From a **different physical device** (a secondary executive smartphone, tablet, or separate hardware authenticator), open the invitation link.
+4. Set the password and complete the 2FA QR code scan on that separate device's authenticator app.
+5. Verify successful login using the secondary credentials.
+
+> [!IMPORTANT]
+> **Why this step is mandatory:** If only one CEO account exists and that phone is lost, damaged, or wiped before another account is provisioned, administrative access cannot be recovered through the software. Having a second CEO enrolled on an independent device eliminates this single point of failure.
+
+---
+
+### Step 8: Last-Resort Emergency Manual Recovery (Agastya Only)
+
+If all CEO credentials and 2FA devices are lost simultaneously:
+
+- **Authorization:** Performed by **Agastya only**.
+- **Audit Requirement:** Must be documented and audit-logged afterwards.
+- **Procedure via Supabase Dashboard:**
+  1. Open the **Supabase Dashboard** (`https://supabase.com`) and navigate to `laboura-production`.
+  2. Click the **SQL Editor** on the left menu.
+  3. Execute the following SQL query to reset the 2FA state of the targeted CEO account:
+     ```sql
+     UPDATE "Staff"
+     SET "status" = 'active',
+         "totpSecret" = NULL,
+         "totpEnabled" = false
+     WHERE "email" = 'ceo@laboura.in';
+     ```
+  4. Revoke any existing active sessions:
+     ```sql
+     DELETE FROM "StaffSession"
+     WHERE "staffId" IN (SELECT "id" FROM "Staff" WHERE "email" = 'ceo@laboura.in');
+     ```
+  5. The CEO can now log in at `/admin` using their password. The system will detect `totpEnabled: false` and immediately guide them through the first-login TOTP 2FA enrolment flow to link their new authenticator device.
+  6. Log the recovery action and reason in the operational incident log.
 
 ---
 
