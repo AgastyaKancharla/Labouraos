@@ -99,7 +99,7 @@
 
 ---
 
-### [ ] Task 7 — Status history
+### [x] Task 7 — Status history
 
 **Acceptance:**
 - New `StatusHistory` table exactly as `specs/data-design.md` §1.

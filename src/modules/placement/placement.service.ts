@@ -28,6 +28,7 @@ import { CreateReplacementCandidateDto } from './dto/create-replacement-candidat
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import {
   GstInvoiceResponse,
   InvoiceCustomer,
@@ -154,24 +155,36 @@ export class PlacementService {
      * a duplicate-selfie detection is only actionable if the record names who created it.
      * They are NOT for pay: agents are salaried, there is no commission.
      */
-    const placement = await this.prisma.placement.create({
-      data: {
-        code,
-        city: vacancy.city,
-        vacancyId: vacancy.id,
-        jobSeekerId: jobSeeker.id,
-        businessId: vacancy.businessId,
-        createdByStaffId: actor.id,
-        agreedSalary,
-        placementFee,
-        gstAmount,
-        status: 'offered',
-      },
-      include: {
-        vacancy: true,
-        jobSeeker: true,
-        business: true,
-      },
+    const placement = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.placement.create({
+        data: {
+          code,
+          city: vacancy.city,
+          vacancyId: vacancy.id,
+          jobSeekerId: jobSeeker.id,
+          businessId: vacancy.businessId,
+          createdByStaffId: actor.id,
+          agreedSalary,
+          placementFee,
+          gstAmount,
+          status: 'offered',
+        },
+        include: {
+          vacancy: true,
+          jobSeeker: true,
+          business: true,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'placement',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'offered',
+        changedByStaffId: actor.id,
+      });
+
+      return p;
     });
 
     await this.auditService.log({
@@ -246,10 +259,21 @@ export class PlacementService {
         actor.id,
       );
 
-      const updated = await this.prisma.placement.update({
-        where: { id: placement.id },
-        data: { status: 'rejected' },
-        include: { business: true, jobSeeker: true, vacancy: true },
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const up = await tx.placement.update({
+          where: { id: placement.id },
+          data: { status: 'rejected' },
+          include: { business: true, jobSeeker: true, vacancy: true },
+        });
+        await recordStatusChange(tx, {
+          subjectType: 'placement',
+          subjectId: placement.id,
+          fromStatus: placement.status,
+          toStatus: 'rejected',
+          changedByStaffId: actor.id,
+          reason: 'offer_rejected',
+        });
+        return up;
       });
 
       await this.auditService.log({
@@ -281,8 +305,8 @@ export class PlacementService {
     const paymentCode = await this.idService.generateCode('payment');
 
     // Update placement to confirmed, job seeker to placed, and create payment in transaction
-    const [updated, payment] = await this.prisma.$transaction([
-      this.prisma.placement.update({
+    const [updated, payment] = await this.prisma.$transaction(async (tx) => {
+      const up = await tx.placement.update({
         where: { id: placement.id },
         data: {
           status: 'confirmed',
@@ -290,8 +314,16 @@ export class PlacementService {
           gstAmount,
         },
         include: { business: true, jobSeeker: true, vacancy: true, payments: true },
-      }),
-      this.prisma.payment.create({
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'placement',
+        subjectId: placement.id,
+        fromStatus: placement.status,
+        toStatus: 'confirmed',
+        changedByStaffId: actor.id,
+      });
+
+      const p = await tx.payment.create({
         data: {
           code: paymentCode,
           city: placement.city,
@@ -306,12 +338,30 @@ export class PlacementService {
           // Never billed to or deducted from the job seeker
           jobSeekerId: null,
         },
-      }),
-      this.prisma.jobSeeker.update({
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'pending',
+        changedByStaffId: actor.id,
+      });
+
+      await tx.jobSeeker.update({
         where: { id: placement.jobSeekerId },
         data: { status: 'placed' },
-      }),
-    ]);
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'job_seeker',
+        subjectId: placement.jobSeekerId,
+        fromStatus: 'active',
+        toStatus: 'placed',
+        changedByStaffId: actor.id,
+        reason: 'placement_confirmed',
+      });
+
+      return [up, p];
+    });
 
     await this.auditService.log({
       action: 'placement_confirmed',
@@ -397,17 +447,29 @@ export class PlacementService {
       joinedDate: placement.joinedDate,
     };
 
-    const updated = await this.prisma.placement.update({
-      where: { id: placement.id },
-      data: {
-        status: 'active',
-        joinedDate,
-      },
-      include: {
-        business: true,
-        jobSeeker: true,
-        vacancy: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const up = await tx.placement.update({
+        where: { id: placement.id },
+        data: {
+          status: 'active',
+          joinedDate,
+        },
+        include: {
+          business: true,
+          jobSeeker: true,
+          vacancy: true,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'placement',
+        subjectId: placement.id,
+        fromStatus: placement.status,
+        toStatus: 'active',
+        changedByStaffId: actor.id,
+      });
+
+      return up;
     });
 
     await this.auditService.log({
@@ -640,19 +702,32 @@ export class PlacementService {
       eligibility: placement.eligibility,
     };
 
-    const updated = await this.prisma.placement.update({
-      where: { id: placement.id },
-      data: {
-        status: 'dropped_out',
-        dropoutReportedAt,
-        dropoutDateCallerSupplied: callerSupplied,
-        eligibility: dto.eligibility,
-      },
-      include: {
-        business: true,
-        jobSeeker: true,
-        vacancy: true,
-      },
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const up = await tx.placement.update({
+        where: { id: placement.id },
+        data: {
+          status: 'dropped_out',
+          dropoutReportedAt,
+          dropoutDateCallerSupplied: callerSupplied,
+          eligibility: dto.eligibility,
+        },
+        include: {
+          business: true,
+          jobSeeker: true,
+          vacancy: true,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'placement',
+        subjectId: placement.id,
+        fromStatus: placement.status,
+        toStatus: 'dropped_out',
+        changedByStaffId: actor.id,
+        reason: 'candidate_dropout',
+      });
+
+      return up;
     });
 
     await this.auditService.log({
@@ -951,27 +1026,46 @@ export class PlacementService {
       );
     }
 
-    const [updatedCandidate, updatedPlacement] = await this.prisma.$transaction([
-      this.prisma.replacementCandidate.update({
+    const [updatedCandidate, updatedPlacement] = await this.prisma.$transaction(async (tx) => {
+      const c = await tx.replacementCandidate.update({
         where: { id: candidate.id },
         data: {
           status: 'accepted',
           acceptedAt: now,
         },
-      }),
-      this.prisma.placement.update({
+      });
+
+      const p = await tx.placement.update({
         where: { id: placement.id },
         data: {
           status: 'replaced',
         },
-      }),
-      this.prisma.jobSeeker.update({
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'placement',
+        subjectId: placement.id,
+        fromStatus: placement.status,
+        toStatus: 'replaced',
+        changedByStaffId: actor.id,
+      });
+
+      await tx.jobSeeker.update({
         where: { id: candidate.jobSeekerId },
         data: {
           status: 'placed',
         },
-      }),
-    ]);
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'job_seeker',
+        subjectId: candidate.jobSeekerId,
+        fromStatus: 'active',
+        toStatus: 'placed',
+        changedByStaffId: actor.id,
+        reason: 'replacement_accepted',
+      });
+
+      return [c, p];
+    });
 
     await this.auditService.log({
       action: 'replacement_candidate_accepted',
@@ -1154,19 +1248,32 @@ export class PlacementService {
     const daysElapsed = eligibilityResult.daysElapsed;
 
     const paymentCode = await this.idService.generateCode('payment');
-    const payment = await this.prisma.payment.create({
-      data: {
-        code: paymentCode,
-        city: placement.city,
-        type: 'refund',
-        amount: refundAmount,
-        status: 'completed',
-        gatewayReference: `ref_pl_${placement.code}_${Date.now()}`,
-        subjectType: 'placement',
-        subjectId: placement.id,
-        placementId: placement.id,
-        businessId: placement.businessId,
-      },
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          code: paymentCode,
+          city: placement.city,
+          type: 'refund',
+          amount: refundAmount,
+          status: 'completed',
+          gatewayReference: `ref_pl_${placement.code}_${Date.now()}`,
+          subjectType: 'placement',
+          subjectId: placement.id,
+          placementId: placement.id,
+          businessId: placement.businessId,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'completed',
+        changedByStaffId: actor.id,
+        reason: 'placement_guarantee_refund',
+      });
+
+      return p;
     });
 
     await this.auditService.log({

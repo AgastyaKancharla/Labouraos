@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { CreateVacancyDto } from './dto/create-vacancy.dto';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 
 @Injectable()
 export class VacancyService {
@@ -58,21 +59,33 @@ export class VacancyService {
 
     const code = await this.idService.generateCode('vacancy');
 
-    const vacancy = await this.prisma.vacancy.create({
-      data: {
-        code,
-        city: business.city,
-        businessId: business.id,
-        capturedByStaffId: staff.id,
-        tradeSkill: dto.tradeSkill.trim(),
-        offeredSalary: dto.offeredSalary,
-        headcount,
-        description: dto.description?.trim() ?? null,
-        status: 'open',
-      },
-      include: {
-        business: true,
-      },
+    const vacancy = await this.prisma.$transaction(async (tx) => {
+      const v = await tx.vacancy.create({
+        data: {
+          code,
+          city: business.city,
+          businessId: business.id,
+          capturedByStaffId: staff.id,
+          tradeSkill: dto.tradeSkill.trim(),
+          offeredSalary: dto.offeredSalary,
+          headcount,
+          description: dto.description?.trim() ?? null,
+          status: 'open',
+        },
+        include: {
+          business: true,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'vacancy',
+        subjectId: v.id,
+        fromStatus: null,
+        toStatus: 'open',
+        changedByStaffId: staff.id,
+      });
+
+      return v;
     });
 
     await this.auditService.log({

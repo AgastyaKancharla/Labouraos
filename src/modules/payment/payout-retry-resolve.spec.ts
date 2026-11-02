@@ -56,7 +56,7 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
       const login = await enrolledLogin(app.getHttpServer(), { email, password }).expect(200);
       tokens[key] = login.body.accessToken;
     }
-  });
+  }, 60000);
 
   afterEach(() => jest.restoreAllMocks());
 

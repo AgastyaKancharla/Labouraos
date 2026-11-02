@@ -23,6 +23,7 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -225,6 +226,15 @@ export class StaffService {
         );
       }
 
+      await recordStatusChange(tx, {
+        subjectType: 'staff',
+        subjectId: id,
+        fromStatus: null,
+        toStatus: 'active',
+        changedByStaffId: null,
+        reason: 'ceo_bootstrap',
+      });
+
       return tx.staff.findUniqueOrThrow({
         where: { id },
         select: STAFF_VIEW_SELECT,
@@ -325,18 +335,22 @@ export class StaffService {
     const inviteToken = randomBytes(32).toString('hex');
     const inviteExpiresAt = new Date(now.getTime() + INVITE_TTL_MS);
 
-    const staff = await this.insertWithFreshCode(role as Role, (code) => ({
-      code,
-      name,
-      email,
-      role,
-      area: area ?? null,
-      teamLeadId: teamLeadId ?? null,
-      passwordHash: placeholderHash,
-      status: STAFF_STATUS.PENDING_INVITE,
-      inviteTokenHash: hashInviteToken(inviteToken),
-      inviteExpiresAt,
-    }));
+    const staff = await this.insertWithFreshCode(
+      role as Role,
+      (code) => ({
+        code,
+        name,
+        email,
+        role,
+        area: area ?? null,
+        teamLeadId: teamLeadId ?? null,
+        passwordHash: placeholderHash,
+        status: STAFF_STATUS.PENDING_INVITE,
+        inviteTokenHash: hashInviteToken(inviteToken),
+        inviteExpiresAt,
+      }),
+      actor.sub,
+    );
 
     await this.auditService.log({
       actorId: actor.sub,
@@ -446,19 +460,32 @@ export class StaffService {
 
     // Conditional update so two concurrent redemptions (or a deactivation that
     // lands in between) cannot both win: only one request flips the row.
-    const claimed = await this.prisma.staff.updateMany({
-      where: {
-        id: staff.id,
-        inviteTokenHash: tokenHash,
-        status: STAFF_STATUS.PENDING_INVITE,
-        inviteExpiresAt: { gt: now },
-      },
-      data: {
-        passwordHash,
-        status: STAFF_STATUS.ACTIVE,
-        inviteTokenHash: null,
-        inviteExpiresAt: null,
-      },
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      const c = await tx.staff.updateMany({
+        where: {
+          id: staff.id,
+          inviteTokenHash: tokenHash,
+          status: STAFF_STATUS.PENDING_INVITE,
+          inviteExpiresAt: { gt: now },
+        },
+        data: {
+          passwordHash,
+          status: STAFF_STATUS.ACTIVE,
+          inviteTokenHash: null,
+          inviteExpiresAt: null,
+        },
+      });
+      if (c.count === 1) {
+        await recordStatusChange(tx, {
+          subjectType: 'staff',
+          subjectId: staff.id,
+          fromStatus: STAFF_STATUS.PENDING_INVITE,
+          toStatus: STAFF_STATUS.ACTIVE,
+          changedByStaffId: staff.id,
+          reason: 'invite_accepted',
+        });
+      }
+      return c;
     });
     if (claimed.count !== 1) {
       throw new BadRequestException('Invalid or expired invite token');
@@ -502,15 +529,26 @@ export class StaffService {
 
     // The record is kept (data retention): only access is removed. Any unused
     // invite is voided so it cannot bring the account back.
-    const staff = await this.prisma.staff.update({
-      where: { id: staffId },
-      data: {
-        status: STAFF_STATUS.DEACTIVATED,
-        deactivatedAt: now,
-        inviteTokenHash: null,
-        inviteExpiresAt: null,
-      },
-      select: STAFF_VIEW_SELECT,
+    const staff = await this.prisma.$transaction(async (tx) => {
+      const s = await tx.staff.update({
+        where: { id: staffId },
+        data: {
+          status: STAFF_STATUS.DEACTIVATED,
+          deactivatedAt: now,
+          inviteTokenHash: null,
+          inviteExpiresAt: null,
+        },
+        select: STAFF_VIEW_SELECT,
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'staff',
+        subjectId: staffId,
+        fromStatus: target.status,
+        toStatus: STAFF_STATUS.DEACTIVATED,
+        changedByStaffId: actor.sub,
+        reason: 'staff_deactivated',
+      });
+      return s;
     });
     const sessionsRevoked =
       await this.authService.revokeAllSessionsForStaff(staffId);
@@ -559,18 +597,33 @@ export class StaffService {
     const inviteToken = randomBytes(32).toString('hex');
     const inviteExpiresAt = new Date(now.getTime() + INVITE_TTL_MS);
 
-    const updatedStaff = await this.prisma.staff.update({
-      where: { id: staffId },
-      data: {
-        passwordHash: placeholderHash,
-        status: STAFF_STATUS.PENDING_INVITE,
-        inviteTokenHash: hashInviteToken(inviteToken),
-        inviteExpiresAt,
-        totpSecret: null,
-        totpEnabled: false,
-        registeredDeviceId: null,
-      },
-      select: STAFF_VIEW_SELECT,
+    const updatedStaff = await this.prisma.$transaction(async (tx) => {
+      const s = await tx.staff.update({
+        where: { id: staffId },
+        data: {
+          passwordHash: placeholderHash,
+          status: STAFF_STATUS.PENDING_INVITE,
+          inviteTokenHash: hashInviteToken(inviteToken),
+          inviteExpiresAt,
+          totpSecret: null,
+          totpEnabled: false,
+          registeredDeviceId: null,
+        },
+        select: STAFF_VIEW_SELECT,
+      });
+
+      if (target.status !== STAFF_STATUS.PENDING_INVITE) {
+        await recordStatusChange(tx, {
+          subjectType: 'staff',
+          subjectId: staffId,
+          fromStatus: target.status,
+          toStatus: STAFF_STATUS.PENDING_INVITE,
+          changedByStaffId: actor.sub,
+          reason: 'invite_reissued',
+        });
+      }
+
+      return s;
     });
 
     await this.authService.revokeAllSessionsForStaff(staffId);
@@ -626,19 +679,32 @@ export class StaffService {
       randomBytes(32).toString('hex'),
     );
 
-    const staff = await this.prisma.staff.update({
-      where: { id: staffId },
-      data: {
-        status: STAFF_STATUS.ACTIVE,
-        deactivatedAt: null,
-        passwordHash: placeholderHash,
-        totpSecret: null,
-        totpEnabled: false,
-        registeredDeviceId: null,
-        inviteTokenHash: null,
-        inviteExpiresAt: null,
-      },
-      select: STAFF_VIEW_SELECT,
+    const staff = await this.prisma.$transaction(async (tx) => {
+      const s = await tx.staff.update({
+        where: { id: staffId },
+        data: {
+          status: STAFF_STATUS.ACTIVE,
+          deactivatedAt: null,
+          passwordHash: placeholderHash,
+          totpSecret: null,
+          totpEnabled: false,
+          registeredDeviceId: null,
+          inviteTokenHash: null,
+          inviteExpiresAt: null,
+        },
+        select: STAFF_VIEW_SELECT,
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'staff',
+        subjectId: staffId,
+        fromStatus: target.status,
+        toStatus: STAFF_STATUS.ACTIVE,
+        changedByStaffId: actor.sub,
+        reason: 'staff_reactivated',
+      });
+
+      return s;
     });
 
     await this.auditService.log({
@@ -670,13 +736,25 @@ export class StaffService {
   private async insertWithFreshCode(
     role: Role,
     build: (code: string) => Prisma.StaffUncheckedCreateInput,
+    actorId?: string | null,
   ): Promise<StaffView> {
     for (let attempt = 1; attempt <= MAX_CODE_ATTEMPTS; attempt++) {
       const code = await this.idService.generateCode(STAFF_CODE_PREFIX[role]);
       try {
-        return await this.prisma.staff.create({
-          data: build(code),
-          select: STAFF_VIEW_SELECT,
+        return await this.prisma.$transaction(async (tx) => {
+          const created = await tx.staff.create({
+            data: build(code),
+            select: STAFF_VIEW_SELECT,
+          });
+          await recordStatusChange(tx, {
+            subjectType: 'staff',
+            subjectId: created.id,
+            fromStatus: null,
+            toStatus: created.status,
+            changedByStaffId: actorId ?? null,
+            reason: 'staff_created',
+          });
+          return created;
         });
       } catch (error) {
         if (

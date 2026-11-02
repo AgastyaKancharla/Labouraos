@@ -19,6 +19,7 @@ import {
   WebhookVerificationResult,
 } from './payment-provider.interface';
 import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 
 @Injectable()
 export class PaymentService {
@@ -100,9 +101,20 @@ export class PaymentService {
     }
 
     if (status === 'failed') {
-      const updatedPayment = await this.prisma.payment.update({
-        where: { id: payment.id },
-        data: { status: 'failed' },
+      const updatedPayment = await this.prisma.$transaction(async (tx) => {
+        const updated = await tx.payment.update({
+          where: { id: payment.id },
+          data: { status: 'failed' },
+        });
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: payment.id,
+          fromStatus: payment.status,
+          toStatus: 'failed',
+          changedByStaffId: null,
+          reason: 'collection_webhook_failed',
+        });
+        return updated;
       });
       return { received: true, status: 'failed', paymentId: updatedPayment.id };
     }
@@ -110,24 +122,56 @@ export class PaymentService {
     // Process success
     const nowUtc = new Date();
 
-    const updatedPayment = await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: { status: 'succeeded' },
+    const beforeSeeker = payment.jobSeeker;
+    const isReactivation = Boolean(payment.reactivation);
+
+    const { updatedPayment, updatedJobSeeker } = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.payment.update({
+        where: { id: payment.id },
+        data: { status: 'succeeded' },
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'succeeded',
+        changedByStaffId: null,
+        reason: 'collection_webhook_succeeded',
+      });
+
+      let seeker: {
+        code: string;
+        status: string;
+        hitCount: number;
+        paymentReceivedAt: Date | null;
+        city: string;
+      } | null = null;
+
+      // If linked to a job seeker, activate or reactivate them and set paymentReceivedAt
+      if (payment.jobSeekerId) {
+        seeker = await tx.jobSeeker.update({
+          where: { id: payment.jobSeekerId },
+          data: {
+            status: 'active',
+            paymentReceivedAt: nowUtc,
+            hitCount: isReactivation ? 0 : (beforeSeeker?.hitCount ?? 0),
+          },
+        });
+
+        await recordStatusChange(tx, {
+          subjectType: 'job_seeker',
+          subjectId: payment.jobSeekerId,
+          fromStatus: beforeSeeker?.status ?? null,
+          toStatus: 'active',
+          changedByStaffId: null,
+          reason: isReactivation ? 'reactivated_via_payment' : 'activated_via_payment',
+        });
+      }
+
+      return { updatedPayment: updated, updatedJobSeeker: seeker };
     });
 
-    // If linked to a job seeker, activate or reactivate them and set paymentReceivedAt
-    if (payment.jobSeekerId) {
-      const beforeSeeker = payment.jobSeeker;
-      const isReactivation = Boolean(payment.reactivation);
-
-      const updatedJobSeeker = await this.prisma.jobSeeker.update({
-        where: { id: payment.jobSeekerId },
-        data: {
-          status: 'active',
-          paymentReceivedAt: nowUtc,
-          hitCount: isReactivation ? 0 : (beforeSeeker?.hitCount ?? 0),
-        },
-      });
+    if (updatedJobSeeker) {
 
       // Audit log the activation or reactivation
       const staffActor =
@@ -231,26 +275,39 @@ export class PaymentService {
 
     const referralPayoutPaise = await this.getReferralPayoutPaise();
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        code,
-        city: placement.city,
-        type: 'referral_payout',
-        amount: referralPayoutPaise,
-        status: 'pending',
-        gatewayReference,
-        subjectType: 'referral',
-        subjectId: placement.jobSeeker.referredById,
-        referralId: placement.jobSeeker.referredById,
-        placementId: placement.id,
-        jobSeekerId: placement.jobSeekerId,
-        businessId: placement.businessId,
-      },
-      include: {
-        referral: true,
-        jobSeeker: true,
-        placement: true,
-      },
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          code,
+          city: placement.city,
+          type: 'referral_payout',
+          amount: referralPayoutPaise,
+          status: 'pending',
+          gatewayReference,
+          subjectType: 'referral',
+          subjectId: placement.jobSeeker.referredById!,
+          referralId: placement.jobSeeker.referredById,
+          placementId: placement.id,
+          jobSeekerId: placement.jobSeekerId,
+          businessId: placement.businessId,
+        },
+        include: {
+          referral: true,
+          jobSeeker: true,
+          placement: true,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'pending',
+        changedByStaffId: actorId ?? null,
+        reason: 'referral_payout_created',
+      });
+
+      return p;
     });
 
     let actor = actorId
@@ -379,13 +436,26 @@ export class PaymentService {
       payoutAttempts: payment.payoutAttempts,
     };
 
-    const claim = await this.prisma.payment.updateMany({
-      where: {
-        id: payment.id,
-        status: { in: claimableFrom },
-        payoutAttempts: { lt: MAX_PAYOUT_ATTEMPTS },
-      },
-      data: { status: 'processing', payoutAttempts: { increment: 1 } },
+    const claim = await this.prisma.$transaction(async (tx) => {
+      const c = await tx.payment.updateMany({
+        where: {
+          id: payment.id,
+          status: { in: claimableFrom },
+          payoutAttempts: { lt: MAX_PAYOUT_ATTEMPTS },
+        },
+        data: { status: 'processing', payoutAttempts: { increment: 1 } },
+      });
+      if (c.count === 1) {
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: payment.id,
+          fromStatus: payment.status,
+          toStatus: 'processing',
+          changedByStaffId: actorId ?? null,
+          reason: 'payout_dispatched',
+        });
+      }
+      return c;
     });
     if (claim.count !== 1) {
       throw new BadRequestException(
@@ -414,9 +484,21 @@ export class PaymentService {
     if (result.status !== 'processing') data.status = result.status;
     if (result.gatewayReference) data.gatewayReference = result.gatewayReference;
     if (Object.keys(data).length > 0) {
-      await this.prisma.payment.updateMany({
-        where: { id: payment.id, status: 'processing' },
-        data,
+      await this.prisma.$transaction(async (tx) => {
+        await tx.payment.updateMany({
+          where: { id: payment.id, status: 'processing' },
+          data,
+        });
+        if (data.status) {
+          await recordStatusChange(tx, {
+            subjectType: 'payment',
+            subjectId: payment.id,
+            fromStatus: 'processing',
+            toStatus: data.status as string,
+            changedByStaffId: actorId ?? null,
+            reason: `payout_result_${data.status}`,
+          });
+        }
       });
     }
 
@@ -494,12 +576,25 @@ export class PaymentService {
 
     let claimed: { count: number };
     try {
-      claimed = await this.prisma.payment.updateMany({
-        where: { id: payment.id, status: 'processing' },
-        data: {
-          status: outcome,
-          ...(gatewayReference ? { gatewayReference } : {}),
-        },
+      claimed = await this.prisma.$transaction(async (tx) => {
+        const c = await tx.payment.updateMany({
+          where: { id: payment.id, status: 'processing' },
+          data: {
+            status: outcome,
+            ...(gatewayReference ? { gatewayReference } : {}),
+          },
+        });
+        if (c.count === 1) {
+          await recordStatusChange(tx, {
+            subjectType: 'payment',
+            subjectId: payment.id,
+            fromStatus: payment.status,
+            toStatus: outcome,
+            changedByStaffId: actorId ?? null,
+            reason: note,
+          });
+        }
+        return c;
       });
     } catch (err) {
       if ((err as { code?: string }).code === 'P2002') {
@@ -626,6 +721,14 @@ export class PaymentService {
         await tx.payment.update({ where: { id: payment.id }, data });
       }
       if (transition.next) {
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: payment.id,
+          fromStatus: current.status,
+          toStatus: transition.next,
+          changedByStaffId: null,
+          reason: `payout_webhook_${event.event}`,
+        });
         await tx.payoutWebhookEvent.update({
           where: { eventId },
           data: { applied: true },

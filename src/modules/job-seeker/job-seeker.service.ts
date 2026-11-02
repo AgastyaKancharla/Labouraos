@@ -27,6 +27,7 @@ import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibil
 import { PaymentService } from '../payment/payment.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 
 @Injectable()
 export class JobSeekerService {
@@ -114,22 +115,34 @@ export class JobSeekerService {
      * a duplicate-selfie detection is only actionable if the record names who created it.
      * They are NOT for pay: agents are salaried, there is no commission.
      */
-    const jobSeeker = await this.prisma.jobSeeker.create({
-      data: {
-        code,
-        name: dto.name?.trim() || 'Job Seeker',
-        phone,
-        phoneVerified: true,
-        tradeSkill: dto.tradeSkill,
-        minSalary: dto.minSalary,
-        maxSalary: dto.maxSalary,
-        preferredCallWindowStart: dto.preferredCallWindowStart,
-        preferredCallWindowEnd: dto.preferredCallWindowEnd,
-        city: dto.city ?? 'Bengaluru',
-        status: 'pending_payment',
-        referredById: dto.referredById ?? null,
-        registeredByStaffId: actorId ?? null,
-      },
+    const jobSeeker = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.jobSeeker.create({
+        data: {
+          code,
+          name: dto.name?.trim() || 'Job Seeker',
+          phone,
+          phoneVerified: true,
+          tradeSkill: dto.tradeSkill,
+          minSalary: dto.minSalary,
+          maxSalary: dto.maxSalary,
+          preferredCallWindowStart: dto.preferredCallWindowStart,
+          preferredCallWindowEnd: dto.preferredCallWindowEnd,
+          city: dto.city ?? 'Bengaluru',
+          status: 'pending_payment',
+          referredById: dto.referredById ?? null,
+          registeredByStaffId: actorId ?? null,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'job_seeker',
+        subjectId: created.id,
+        fromStatus: null,
+        toStatus: 'pending_payment',
+        changedByStaffId: actorId,
+      });
+
+      return created;
     });
 
     await this.auditService.log({
@@ -179,7 +192,7 @@ export class JobSeekerService {
     };
   }
 
-  async createActivationPayment(jobSeekerId: string) {
+  async createActivationPayment(jobSeekerId: string, actorId?: string) {
     const jobSeeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
@@ -206,18 +219,30 @@ export class JobSeekerService {
 
     const code = await this.idService.generateCode('payment');
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        code,
-        city: jobSeeker.city,
-        type: 'activation',
-        amount: policy.activationFeePaise,
-        status: 'pending',
-        gatewayReference: charge.gatewayReference,
-        subjectType: 'job_seeker',
-        subjectId: jobSeeker.id,
-        jobSeekerId: jobSeeker.id,
-      },
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          code,
+          city: jobSeeker.city,
+          type: 'activation',
+          amount: policy.activationFeePaise,
+          status: 'pending',
+          gatewayReference: charge.gatewayReference,
+          subjectType: 'job_seeker',
+          subjectId: jobSeeker.id,
+          jobSeekerId: jobSeeker.id,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'pending',
+        changedByStaffId: actorId ?? null,
+      });
+
+      return p;
     });
 
     return {
@@ -253,19 +278,31 @@ export class JobSeekerService {
 
     const code = await this.idService.generateCode('payment');
 
-    const payment = await this.prisma.payment.create({
-      data: {
-        code,
-        city: jobSeeker.city,
-        type: 'activation',
-        amount: policy.activationFeePaise,
-        status: 'pending',
-        gatewayReference: charge.gatewayReference,
-        subjectType: 'job_seeker',
-        subjectId: jobSeeker.id,
-        jobSeekerId: jobSeeker.id,
-        reactivation: true,
-      },
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          code,
+          city: jobSeeker.city,
+          type: 'activation',
+          amount: policy.activationFeePaise,
+          status: 'pending',
+          gatewayReference: charge.gatewayReference,
+          subjectType: 'job_seeker',
+          subjectId: jobSeeker.id,
+          jobSeekerId: jobSeeker.id,
+          reactivation: true,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'pending',
+        changedByStaffId: actorId,
+      });
+
+      return p;
     });
 
     await this.auditService.log({
@@ -566,6 +603,17 @@ export class JobSeekerService {
         },
       });
 
+      if (jobSeeker.status !== newStatus) {
+        await recordStatusChange(tx, {
+          subjectType: 'job_seeker',
+          subjectId: jobSeeker.id,
+          fromStatus: jobSeeker.status,
+          toStatus: newStatus,
+          changedByStaffId: recordedBy === 'system' ? null : recordedBy,
+          reason: isNowDeactivated ? 'hit_limit_reached' : undefined,
+        });
+      }
+
       let auditActorId = actorId && actorId !== 'system' ? actorId : null;
       if (!auditActorId) {
         const ceo = await tx.staff.findFirst({ where: { role: 'ceo' } });
@@ -699,18 +747,31 @@ export class JobSeekerService {
     }
 
     const paymentCode = await this.idService.generateCode('payment');
-    const payment = await this.prisma.payment.create({
-      data: {
-        code: paymentCode,
-        city: jobSeeker.city,
-        type: 'refund',
-        amount: eligibilityResult.amountPaise,
-        status: 'completed',
-        gatewayReference: `ref_js_${jobSeeker.code}_${Date.now()}`,
-        subjectType: 'job_seeker',
-        subjectId: jobSeeker.id,
-        jobSeekerId: jobSeeker.id,
-      },
+    const payment = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.payment.create({
+        data: {
+          code: paymentCode,
+          city: jobSeeker.city,
+          type: 'refund',
+          amount: eligibilityResult.amountPaise,
+          status: 'completed',
+          gatewayReference: `ref_js_${jobSeeker.code}_${Date.now()}`,
+          subjectType: 'job_seeker',
+          subjectId: jobSeeker.id,
+          jobSeekerId: jobSeeker.id,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: null,
+        toStatus: 'completed',
+        changedByStaffId: actor.id,
+        reason: 'job_seeker_guarantee_refund',
+      });
+
+      return p;
     });
 
     await this.auditService.log({

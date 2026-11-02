@@ -194,6 +194,7 @@ model Staff {
   createdTargets    Target[]         @relation("CreatedTargets")
   updatedTargets    Target[]         @relation("UpdatedTargets")
   pricingPoliciesSet PricingPolicy[] @relation("PricingPolicySetBy")
+  statusHistoriesChanged StatusHistory[] @relation("StatusHistoryChangedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   registeredDeviceId String?
@@ -460,8 +461,18 @@ model PricingPolicy {
   @@index([effectiveFrom])
 }
 
+model StatusHistory {
+  id               String   @id @default(uuid())
+  subjectType      String   // job_seeker, business, vacancy, interview, placement, replacement_claim, payment, referral, staff
+  subjectId        String
+  fromStatus       String?
+  toStatus         String
+  changedByStaffId String?
+  changedByStaff   Staff?   @relation("StatusHistoryChangedBy", fields: [changedByStaffId], references: [id], onDelete: SetNull)
+  reason           String?
+  changedAt        DateTime @default(now())
 
-
-
-
+  @@index([subjectType, subjectId, changedAt])
+  @@index([changedByStaffId])
+}
 

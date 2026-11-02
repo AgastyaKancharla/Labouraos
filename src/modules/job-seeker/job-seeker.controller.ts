@@ -59,8 +59,11 @@ export class JobSeekerController {
   @Post(':id/activation-payment')
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
-  async createActivationPayment(@Param('id') id: string) {
-    return this.jobSeekerService.createActivationPayment(id);
+  async createActivationPayment(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: JwtPayload },
+  ) {
+    return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
   }
 
   @Post(':id/kyc')
