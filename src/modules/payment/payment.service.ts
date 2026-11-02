@@ -4,7 +4,6 @@ import {
   Injectable,
   Logger,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { Payment, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
@@ -31,20 +30,12 @@ export class PaymentService {
     private readonly idService: IdService,
     @Inject(PAYMENT_PROVIDER)
     private readonly provider: PaymentProvider,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
-    if (this.pricingService) {
-      try {
-        const policy = await this.pricingService.current();
-        return policy.referralPayoutPaise;
-      } catch {
-        // Fall back to default seeded amount
-      }
-    }
-    return 20000;
+    const policy = await this.pricingService.current();
+    return policy.referralPayoutPaise;
   }
 
   getProvider(): PaymentProvider {

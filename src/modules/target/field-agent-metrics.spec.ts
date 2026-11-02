@@ -7,6 +7,7 @@ import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { getPeriodBoundaries } from '../../common/time/period-boundary';
+import { seededPricingService } from '../../test-support/seeded-pricing';
 
 describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
   type MockPrismaService = {
@@ -124,7 +125,10 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
       },
     };
 
-    service = new FieldAgentMetricsService(prismaMock as unknown as PrismaService);
+    service = new FieldAgentMetricsService(
+      prismaMock as unknown as PrismaService,
+      seededPricingService(),
+    );
   });
 
   describe('Metric 1: Placements Closed', () => {

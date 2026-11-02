@@ -8,9 +8,10 @@ import { LeaderboardService } from './leaderboard.service';
 import { TargetController } from './target.controller';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule],
+  imports: [PrismaModule, AuditModule, PricingModule],
   controllers: [TargetController],
   providers: [
     TargetService,

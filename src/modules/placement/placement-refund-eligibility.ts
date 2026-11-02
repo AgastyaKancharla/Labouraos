@@ -99,7 +99,10 @@ export function evaluatePlacementRefundEligibility(
     now,
   );
 
-  const searchDays = input.searchDays ?? 15;
+  if (input.searchDays === undefined) {
+    throw new Error('searchDays must be read from PricingPolicy');
+  }
+  const searchDays = input.searchDays;
   const refundAmount = calculateRefund(input.placementFee, daysElapsed, searchDays);
   if (daysElapsed < searchDays || refundAmount <= 0) {
     return {

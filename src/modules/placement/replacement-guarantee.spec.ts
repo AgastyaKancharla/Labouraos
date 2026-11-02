@@ -6,6 +6,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { replacementGuaranteeDeadline } from '../../common/money/money';
+import { seededPricingService } from '../../test-support/seeded-pricing';
 
 interface MockPlacementRecord {
   id: string;
@@ -93,6 +94,7 @@ describe('Phase 6.5 Task 7: Enforce 60-Day Replacement Guarantee', () => {
       mockAuditService as unknown as AuditService,
       {} as JobSeekerService,
       {} as PaymentService,
+      seededPricingService(),
     );
   });
 

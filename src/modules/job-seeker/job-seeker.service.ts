@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -37,27 +36,11 @@ export class JobSeekerService {
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
     private readonly paymentService: PaymentService,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
-  private async getPolicy(): Promise<{
-    activationFeePaise: number;
-    jobSeekerGuaranteeDays: number;
-    maxHits: number;
-  }> {
-    if (this.pricingService) {
-      try {
-        return await this.pricingService.current();
-      } catch {
-        // Fall back to default seeded values
-      }
-    }
-    return {
-      activationFeePaise: 499 * 100,
-      jobSeekerGuaranteeDays: 30,
-      maxHits: 3,
-    };
+  private async getPolicy() {
+    return this.pricingService.current();
   }
 
   /**
@@ -727,7 +710,6 @@ export class JobSeekerService {
       },
       orderBy: { createdAt: 'desc' },
     });
-    const refundAmountPaise = activationPayment?.amount ?? policy.activationFeePaise;
 
     const eligibilityResult = evaluateJobSeekerRefundEligibility(
       {
@@ -736,7 +718,7 @@ export class JobSeekerService {
         status: jobSeeker.status,
         hasOfferRejectedHit: Boolean(hasOfferRejected),
         hasExistingRefund: Boolean(existingRefund),
-        activationPaymentPaise: refundAmountPaise,
+        activationPaymentPaise: activationPayment?.amount,
         guaranteeDays: policy.jobSeekerGuaranteeDays,
       },
       now,

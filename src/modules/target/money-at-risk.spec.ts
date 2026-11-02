@@ -4,6 +4,8 @@ import {
 import { MoneyAtRiskService } from './money-at-risk.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { PricingPolicy } from '../pricing/pricing.service';
+import { SEEDED_PRICING_POLICY, seededPricingService } from '../../test-support/seeded-pricing';
 
 describe('Phase 6.7 Task 5: Money at Risk', () => {
   type MockPrismaService = {
@@ -16,6 +18,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
 
   let service: MoneyAtRiskService;
   let prismaMock: MockPrismaService;
+  let policy: PricingPolicy;
 
   const mockCallAgentId = 'ca-uuid-001';
   const mockFieldAgentId = 'fa-uuid-001';
@@ -123,7 +126,11 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       },
     };
 
-    service = new MoneyAtRiskService(prismaMock as unknown as PrismaService);
+    policy = { ...SEEDED_PRICING_POLICY };
+    service = new MoneyAtRiskService(
+      prismaMock as unknown as PrismaService,
+      seededPricingService(policy),
+    );
   });
 
   describe('Candidate Money at Risk (Day-30 Approaching Window)', () => {
@@ -526,6 +533,45 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       await expect(
         service.getMoneyAtRisk(undefined, financeUser),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('Changed activation fee', () => {
+    const fixedNow = new Date('2026-11-15T12:00:00.000Z');
+
+    it('follows a changed activation fee and does not rewrite a stored payment', async () => {
+      policy.activationFeePaise = 59900;
+      const paidAt = new Date(fixedNow.getTime() - 24 * 24 * 60 * 60 * 1000);
+      const base = {
+        city: 'Bengaluru',
+        name: 'Candidate',
+        phone: '+919900000001',
+        tradeSkill: 'Electrician',
+        paymentReceivedAt: paidAt,
+        status: 'active',
+        registeredByStaffId: mockCallAgentId,
+        registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
+      };
+
+      prismaMock.jobSeeker.findMany.mockResolvedValue([
+        { ...base, id: 'js-new', code: 'JS-NEW' },
+        { ...base, id: 'js-old', code: 'JS-OLD', phone: '+919900000002' },
+      ]);
+      prismaMock.payment.findMany.mockResolvedValue([
+        {
+          jobSeekerId: 'js-old',
+          type: 'activation',
+          status: 'completed',
+          amount: 49900,
+        },
+      ]);
+
+      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+      const byCode = new Map(result.rows.map((row) => [row.code, row.amountPaise]));
+
+      expect(byCode.get('JS-NEW')).toBe(59900);
+      expect(byCode.get('JS-OLD')).toBe(49900);
+      expect(result.candidatesAtRiskPaise).toBe(59900 + 49900);
     });
   });
 });
