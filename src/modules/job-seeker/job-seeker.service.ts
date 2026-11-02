@@ -47,7 +47,7 @@ export class JobSeekerService {
   }> {
     if (this.pricingService) {
       try {
-        return await this.getPolicy();
+        return await this.pricingService.current();
       } catch {
         // Fall back to default seeded values
       }

@@ -119,10 +119,16 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
   });
 
   const createdPaymentCodes: string[] = [];
+  const createdPaymentIds: string[] = [];
   const createdJobSeekerIds: string[] = [];
 
   afterAll(async () => {
     if (prisma) {
+      if (createdPaymentIds.length > 0) {
+        await prisma.payment.deleteMany({
+          where: { id: { in: createdPaymentIds } },
+        });
+      }
       if (createdPaymentCodes.length > 0) {
         await prisma.payment.deleteMany({
           where: { code: { in: createdPaymentCodes } },
@@ -242,9 +248,11 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         city: 'Bengaluru',
       },
     });
+    createdJobSeekerIds.push(js1.id);
 
     const charge1 = await jobSeekerService.createActivationPayment(js1.id);
     expect(charge1.amount).toBe(49900);
+    if (charge1.paymentId) createdPaymentIds.push(charge1.paymentId);
 
     // 3. CEO changes activation fee to 59900
     await request(app.getHttpServer())
@@ -268,9 +276,11 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         city: 'Bengaluru',
       },
     });
+    createdJobSeekerIds.push(js2.id);
 
     const charge2 = await jobSeekerService.createActivationPayment(js2.id);
     expect(charge2.amount).toBe(59900);
+    if (charge2.paymentId) createdPaymentIds.push(charge2.paymentId);
 
     // 5. Earlier payment on js1 is unchanged
     const p1 = await prisma.payment.findUnique({ where: { id: charge1.paymentId } });

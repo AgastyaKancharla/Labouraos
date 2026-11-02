@@ -69,7 +69,7 @@ export class PlacementService {
   }> {
     if (this.pricingService) {
       try {
-        return await this.getPolicy();
+        return await this.pricingService.current();
       } catch {
         // Fall back to default seeded values if DB query fails in mock unit tests
       }
