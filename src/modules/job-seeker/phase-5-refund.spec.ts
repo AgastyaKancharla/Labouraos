@@ -302,6 +302,21 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
       });
       expect(candidate).toBeDefined();
 
+      const activationCode = `PAY-${String(10000 + (timestamp % 80000)).padStart(5, '0')}`;
+      await prisma.payment.create({
+        data: {
+          code: activationCode,
+          city: 'Bengaluru',
+          type: 'activation',
+          amount: 49900,
+          status: 'completed',
+          gatewayReference: `gw_p5r_act_${timestamp}`,
+          subjectType: 'job_seeker',
+          subjectId: candidate!.id,
+          jobSeekerId: candidate!.id,
+        },
+      });
+
       // On day 20 (before 30 days elapsed): denied
       const day20 = new Date(candidate!.paymentReceivedAt!.getTime() + 20 * 24 * 60 * 60 * 1000).toISOString();
       await request(app.getHttpServer())

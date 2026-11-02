@@ -292,6 +292,11 @@ Format:
 **Cause:** Business updates were codified in the Laboura Master Guide on 2 November 2026.
 **Fix:** AGENTS.md §1/§6/§7 replaced from the Master Guide. Old rules that the code still follows are listed in specs/data-design.md §16; do not change existing behaviour to match the new rules unless your current task says so.
 
+## Never inject a money or rule dependency as optional with a silent fallback
+**Symptom:** Activation, refunds, and money at risk kept charging ₹499 and the 30/60/15-day windows after a CEO changed `PricingPolicy`, including when the database read failed. `499 * 100` slipped past the no-literal check.
+**Cause:** `PricingService` was injected with `@Optional()`, and each caller caught a missing or failed read and substituted hard-coded amounts. `RefundModule` and `TargetModule` did not import `PricingModule`, so those screens never saw the policy row.
+**Fix:** `PricingService` is a required dependency. A failed policy read throws. Refund amounts come from the stored activation payment when one exists. The literal check also rejects `499 * 100` and hard-coded rule numbers in services.
+
 
 
 

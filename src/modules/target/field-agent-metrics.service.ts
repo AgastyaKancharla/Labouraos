@@ -10,8 +10,8 @@ import {
   getCalendarPartsInTimezone,
   getPeriodBoundaries,
 } from '../../common/time/period-boundary';
-import { REPLACEMENT_SEARCH_WINDOW_DAYS } from '../../common/money/money';
 import { calculateDaysElapsed } from '../placement/placement.service';
+import { PricingService } from '../pricing/pricing.service';
 
 export interface FieldAgentMetricsResult {
   staffId: string;
@@ -97,7 +97,10 @@ export interface FieldAgentMetricsResult {
  */
 @Injectable()
 export class FieldAgentMetricsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pricingService: PricingService,
+  ) {}
 
   /**
    * Computes Field Agent performance metrics for a specific calendar month.
@@ -253,6 +256,7 @@ export class FieldAgentMetricsService {
     });
 
     const eligibleSecuredReplacements: typeof acceptedReplacements = [];
+    const policy = await this.pricingService.current();
 
     for (const rc of acceptedReplacements) {
       const placement = rc.placement;
@@ -268,8 +272,7 @@ export class FieldAgentMetricsService {
         rc.acceptedAt,
       );
 
-      // Within 15-day search window
-      if (daysElapsed <= REPLACEMENT_SEARCH_WINDOW_DAYS) {
+      if (daysElapsed <= policy.replacementSearchDays) {
         eligibleSecuredReplacements.push(rc);
       }
     }

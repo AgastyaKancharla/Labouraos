@@ -2,13 +2,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { refundGuaranteeDeadline, toRupees } from '../../common/money/money';
 import { calculateDaysElapsed } from '../placement/placement.service';
-import { PricingService, PricingPolicy } from '../pricing/pricing.service';
+import { PricingService } from '../pricing/pricing.service';
 import {
   CANDIDATE_AT_RISK_WINDOW_DAYS,
   PLACEMENT_AT_RISK_WINDOW_DAYS,
@@ -85,8 +84,7 @@ export interface MoneyAtRiskResult {
 export class MoneyAtRiskService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
   /**
@@ -104,17 +102,9 @@ export class MoneyAtRiskService {
     let resolvedScope: 'agent' | 'team' | 'city' = 'city';
     let filterStaffIds: string[] | null = null;
 
-    let policy: PricingPolicy | null = null;
-    if (this.pricingService) {
-      try {
-        policy = await this.pricingService.current();
-      } catch {
-        policy = null;
-      }
-    }
-    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
-    const defaultActivationFeePaise = policy?.activationFeePaise ?? (499 * 100);
-    const replacementSearchDays = policy?.replacementSearchDays ?? 15;
+    const policy = await this.pricingService.current();
+    const guaranteeDays = policy.jobSeekerGuaranteeDays;
+    const replacementSearchDays = policy.replacementSearchDays;
 
     // 1. Server-side RBAC scoping
     if (actor) {
@@ -258,7 +248,8 @@ export class MoneyAtRiskService {
       const daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
 
       if (daysRemaining <= CANDIDATE_AT_RISK_WINDOW_DAYS && daysRemaining > 0) {
-        const amountPaise = candidatePaymentMap.get(c.id) ?? defaultActivationFeePaise;
+        const storedPaid = candidatePaymentMap.get(c.id);
+        const amountPaise = storedPaid !== undefined ? storedPaid : policy.activationFeePaise;
         const amountRupees = toRupees(amountPaise);
         candidateRows.push({
           type: 'job_seeker',

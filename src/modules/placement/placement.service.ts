@@ -3,7 +3,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -56,33 +55,11 @@ export class PlacementService {
     private readonly auditService: AuditService,
     private readonly jobSeekerService: JobSeekerService,
     private readonly paymentService: PaymentService,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
-  private async getPolicy(): Promise<{
-    placementFeePercent: number;
-    gstPercent: number;
-    replacementWindowDays: number;
-    replacementSearchDays: number;
-    maxFreeReplacements: number;
-    maxReplacementRejections: number;
-  }> {
-    if (this.pricingService) {
-      try {
-        return await this.pricingService.current();
-      } catch {
-        // Fall back to default seeded values if DB query fails in mock unit tests
-      }
-    }
-    return {
-      placementFeePercent: 50,
-      gstPercent: 18,
-      replacementWindowDays: 60,
-      replacementSearchDays: 15,
-      maxFreeReplacements: 2,
-      maxReplacementRejections: 2,
-    };
+  private async getPolicy() {
+    return this.pricingService.current();
   }
 
   async create(vacancyId: string, dto: CreatePlacementDto, actorId: string) {

@@ -10,7 +10,7 @@ import {
   getCalendarPartsInTimezone,
   getPeriodBoundaries,
 } from '../../common/time/period-boundary';
-import { REFUND_GUARANTEE_WINDOW_MS } from '../../common/money/money';
+import { PricingService } from '../pricing/pricing.service';
 
 export interface CallAgentMetricsResult {
   staffId: string;
@@ -77,7 +77,10 @@ export interface CallAgentMetricsResult {
  */
 @Injectable()
 export class CallAgentMetricsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly pricingService: PricingService,
+  ) {}
 
   /**
    * Computes Call Agent performance metrics for a specific calendar month.
@@ -175,7 +178,7 @@ export class CallAgentMetricsService {
     // PERIOD-SCOPING & 30-DAY LAG (CRITICAL ARCHITECTURAL DESIGN):
     // The denominator is scoped strictly to candidates whose 30-day refund guarantee
     // deadline fell within the evaluation period. Because a candidate's 30-day guarantee
-    // deadline is computed as paymentReceivedAt + 30 days (REFUND_GUARANTEE_WINDOW_MS),
+    // deadline is computed as paymentReceivedAt + jobSeekerGuaranteeDays from PricingPolicy,
     // candidates maturing in the period had their payment received between:
     //   startPaymentDate = period.startUtc - 30 days
     //   endPaymentDate = period.endUtc - 30 days
@@ -188,9 +191,11 @@ export class CallAgentMetricsService {
     //
     // ZERO-DENOMINATOR RULE: If zero candidates matured (e.g. new agent with no registrations
     // 30 days prior), refundRate returns null rather than 0% (which would read as perfect performance).
-    const startPaymentDate = new Date(startUtc.getTime() - REFUND_GUARANTEE_WINDOW_MS);
-    const endPaymentDate = new Date(endUtc.getTime() - REFUND_GUARANTEE_WINDOW_MS);
-    const nowPaymentDate = new Date(now.getTime() - REFUND_GUARANTEE_WINDOW_MS);
+    const policy = await this.pricingService.current();
+    const guaranteeWindowMs = policy.jobSeekerGuaranteeDays * 24 * 60 * 60 * 1000;
+    const startPaymentDate = new Date(startUtc.getTime() - guaranteeWindowMs);
+    const endPaymentDate = new Date(endUtc.getTime() - guaranteeWindowMs);
+    const nowPaymentDate = new Date(now.getTime() - guaranteeWindowMs);
 
     // If querying mid-month, a candidate's deadline must have also actually passed as of 'now'
     const maxPaymentDate = now.getTime() < endUtc.getTime() ? nowPaymentDate : endPaymentDate;

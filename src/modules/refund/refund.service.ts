@@ -1,6 +1,6 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { PricingService, PricingPolicy } from '../pricing/pricing.service';
+import { PricingService } from '../pricing/pricing.service';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { RefundDueRow } from './dto/refund-due.dto';
@@ -9,8 +9,7 @@ import { RefundDueRow } from './dto/refund-due.dto';
 export class RefundService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
   /**
@@ -34,17 +33,9 @@ export class RefundService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    let policy: PricingPolicy | null = null;
-    if (this.pricingService) {
-      try {
-        policy = await this.pricingService.current();
-      } catch {
-        policy = null;
-      }
-    }
-    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
-    const replacementSearchDays = policy?.replacementSearchDays ?? 15;
-    const defaultActivationFeePaise = policy?.activationFeePaise ?? (499 * 100);
+    const policy = await this.pricingService.current();
+    const guaranteeDays = policy.jobSeekerGuaranteeDays;
+    const replacementSearchDays = policy.replacementSearchDays;
 
     // --- 1. JOB SEEKERS (Set-Based Query) ---
     // Candidate pool: active or pending candidates who paid activation fee at least guaranteeDays ago
@@ -104,7 +95,11 @@ export class RefundService {
 
     const jobSeekerRows: RefundDueRow[] = [];
     for (const candidate of candidates) {
-      const paidAmount = candidatePaymentMap.get(candidate.id) ?? defaultActivationFeePaise;
+      const storedPaid = candidatePaymentMap.get(candidate.id);
+      // A stored activation payment is the refund. With no payment row, the
+      // amount is the fee in force (so a price change is visible) and is never
+      // a hard-coded literal. A later price change does not rewrite a stored payment.
+      const paidAmount = storedPaid !== undefined ? storedPaid : policy.activationFeePaise;
       const result = evaluateJobSeekerRefundEligibility(
         {
           code: candidate.code,

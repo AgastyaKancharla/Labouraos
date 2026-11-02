@@ -1,8 +1,8 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
-import { PricingService, PricingPolicy } from '../pricing/pricing.service';
+import { PricingService } from '../pricing/pricing.service';
 import {
   PriorityCandidateRow,
   PriorityTradeRow,
@@ -14,8 +14,7 @@ import {
 export class PriorityService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
   async getPriorityCandidates(
@@ -37,16 +36,9 @@ export class PriorityService {
       },
     });
 
-    let policy: PricingPolicy | null = null;
-    if (this.pricingService) {
-      try {
-        policy = await this.pricingService.current();
-      } catch {
-        policy = null;
-      }
-    }
-    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
-    const maxHits = policy?.maxHits ?? 3;
+    const policy = await this.pricingService.current();
+    const guaranteeDays = policy.jobSeekerGuaranteeDays;
+    const maxHits = policy.maxHits;
 
     const rows: PriorityCandidateRow[] = candidates.map((candidate) => {
       let daysRemaining = guaranteeDays;
@@ -133,6 +125,8 @@ export class PriorityService {
       };
     }
 
+    const policy = await this.pricingService.current();
+
     const vacancies = await this.prisma.vacancy.findMany({
       where: vacancyWhere,
       include: { business: true },
@@ -142,7 +136,7 @@ export class PriorityService {
       const msOpen = now.getTime() - vacancy.createdAt.getTime();
       const daysOpen = Math.max(0, Math.floor(msOpen / (1000 * 60 * 60 * 24)));
       const isReplacement = Boolean(vacancy.replacementForPlacementId);
-      const isInReplacementWindow = isReplacement && daysOpen <= 15;
+      const isInReplacementWindow = isReplacement && daysOpen <= policy.replacementSearchDays;
       const feeValue = vacancy.headcount * vacancy.offeredSalary;
 
       return {

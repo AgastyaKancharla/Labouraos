@@ -83,7 +83,10 @@ export function evaluateJobSeekerRefundEligibility(
     };
   }
 
-  const guaranteeDays = input.guaranteeDays ?? 30;
+  if (input.guaranteeDays === undefined) {
+    throw new Error('guaranteeDays must be read from PricingPolicy');
+  }
+  const guaranteeDays = input.guaranteeDays;
   const deadline = refundGuaranteeDeadline(input.paymentReceivedAt, guaranteeDays);
   if (now.getTime() <= deadline.getTime()) {
     return {
@@ -110,9 +113,20 @@ export function evaluateJobSeekerRefundEligibility(
   const daysOwed = Math.floor((now.getTime() - deadline.getTime()) / (24 * 60 * 60 * 1000));
   const daysElapsed = Math.floor((now.getTime() - input.paymentReceivedAt.getTime()) / (24 * 60 * 60 * 1000));
 
+  if (input.activationPaymentPaise === undefined) {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' has no stored activation payment; the current price is not a refund amount`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed,
+      deadline,
+    };
+  }
+
   return {
     eligible: true,
-    amountPaise: input.activationPaymentPaise ?? (499 * 100),
+    amountPaise: input.activationPaymentPaise,
     daysOwed,
     daysElapsed,
     deadline,

@@ -4,6 +4,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { maskPii } from '../../common/rbac/pii-masking.interceptor';
+import { PricingPolicy } from '../pricing/pricing.service';
+import { SEEDED_PRICING_POLICY, seededPricingService } from '../../test-support/seeded-pricing';
 
 interface MockPrismaForRefund {
   staff: {
@@ -26,6 +28,7 @@ interface MockPrismaForRefund {
 describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
   let refundService: RefundService;
   let mockPrisma: MockPrismaForRefund;
+  let policy: PricingPolicy;
 
   const serverNow = new Date('2026-06-30T12:00:00.000Z');
 
@@ -59,7 +62,11 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       },
     };
 
-    refundService = new RefundService(mockPrisma as unknown as PrismaService);
+    policy = { ...SEEDED_PRICING_POLICY };
+    refundService = new RefundService(
+      mockPrisma as unknown as PrismaService,
+      seededPricingService(policy),
+    );
   });
 
   describe('1. Shared Job Seeker Refund Eligibility', () => {
@@ -75,6 +82,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
+          guaranteeDays: 30,
         },
         day29,
       );
@@ -93,6 +101,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
+          guaranteeDays: 30,
         },
         day30Exact,
       );
@@ -111,6 +120,8 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
+          guaranteeDays: 30,
+          activationPaymentPaise: 49900,
         },
         day31,
       );
@@ -130,6 +141,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'active',
           hasOfferRejectedHit: false,
           hasExistingRefund: true, // Already refunded
+          guaranteeDays: 30,
         },
         day31,
       );
@@ -147,6 +159,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'active',
           hasOfferRejectedHit: true, // Offer rejected hit exists
           hasExistingRefund: false,
+          guaranteeDays: 30,
         },
         day31,
       );
@@ -165,6 +178,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'placed',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
+          guaranteeDays: 30,
         },
         day31,
       );
@@ -178,6 +192,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           status: 'deactivated',
           hasOfferRejectedHit: false,
           hasExistingRefund: false,
+          guaranteeDays: 30,
         },
         day31,
       );
@@ -203,6 +218,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           clockPaused: false,
           clockPausedAt: null,
           placementFee,
+          searchDays: 15,
           hasExistingRefund: false,
         },
         day14,
@@ -225,6 +241,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           clockPaused: false,
           clockPausedAt: null,
           placementFee,
+          searchDays: 15,
           hasExistingRefund: false,
         },
         day15,
@@ -248,6 +265,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           clockPaused: false,
           clockPausedAt: null,
           placementFee,
+          searchDays: 15,
           hasExistingRefund: false,
         },
         day20,
@@ -272,6 +290,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           clockPaused: false,
           clockPausedAt: null,
           placementFee,
+          searchDays: 15,
           hasExistingRefund: false,
         },
         day20,
@@ -289,6 +308,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           clockPaused: false,
           clockPausedAt: null,
           placementFee,
+          searchDays: 15,
           hasExistingRefund: false,
         },
         day20,
@@ -309,6 +329,7 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           clockPaused: false,
           clockPausedAt: null,
           placementFee,
+          searchDays: 15,
           hasExistingRefund: true,
         },
         day20,
@@ -536,6 +557,51 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       await expect(
         refundService.getRefundsDue('unknown-actor', serverNow),
       ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('6. Activation fee comes from PricingPolicy, stored payments stay put', () => {
+    it('follows a changed activation fee and does not rewrite a stored payment', async () => {
+      policy.activationFeePaise = 59900;
+      const paidAt = new Date(serverNow.getTime() - 40 * 24 * 60 * 60 * 1000);
+
+      mockPrisma.jobSeeker.findMany.mockResolvedValue([
+        {
+          id: 'js-new',
+          code: 'JS-NEW',
+          city: 'Bengaluru',
+          name: 'New Fee',
+          phone: '9876543210',
+          tradeSkill: 'cook',
+          paymentReceivedAt: paidAt,
+          status: 'active',
+        },
+        {
+          id: 'js-old',
+          code: 'JS-OLD',
+          city: 'Bengaluru',
+          name: 'Old Fee',
+          phone: '9876543211',
+          tradeSkill: 'cook',
+          paymentReceivedAt: paidAt,
+          status: 'active',
+        },
+      ]);
+      mockPrisma.payment.findMany.mockResolvedValue([
+        {
+          jobSeekerId: 'js-old',
+          type: 'activation',
+          status: 'completed',
+          amount: 49900,
+        },
+      ]);
+      mockPrisma.placement.findMany.mockResolvedValue([]);
+
+      const rows = await refundService.getRefundsDue('ceo-1', serverNow);
+      const byCode = new Map(rows.map((row) => [row.code, row.amount]));
+
+      expect(byCode.get('JS-NEW')).toBe(59900);
+      expect(byCode.get('JS-OLD')).toBe(49900);
     });
   });
 });

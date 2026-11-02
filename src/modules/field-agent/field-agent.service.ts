@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -9,8 +9,7 @@ import { PriorityDashboardOpportunity } from './field-agent.types';
 export class FieldAgentService {
   constructor(
     private readonly prisma: PrismaService,
-    @Optional()
-    private readonly pricingService?: PricingService,
+    private readonly pricingService: PricingService,
   ) {}
 
   async getPriorityDashboard(actorId: string, now: Date = new Date()): Promise<PriorityDashboardOpportunity[]> {
@@ -21,16 +20,9 @@ export class FieldAgentService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    let policy: { placementFeePercent: number; jobSeekerGuaranteeDays: number } | null = null;
-    if (this.pricingService) {
-      try {
-        policy = await this.pricingService.current();
-      } catch {
-        policy = null;
-      }
-    }
-    const placementFeePercent = policy?.placementFeePercent ?? 50;
-    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
+    const policy = await this.pricingService.current();
+    const placementFeePercent = policy.placementFeePercent;
+    const guaranteeDays = policy.jobSeekerGuaranteeDays;
 
     const vacancyWhere: Prisma.VacancyWhereInput = {
       status: 'open',
