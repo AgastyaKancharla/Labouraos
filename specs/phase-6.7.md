@@ -103,7 +103,7 @@ Three metrics, same rules:
 
 ---
 
-### [ ] Task 6 — Three visibility levels and behind-pace flagging
+### [x] Task 6 — Three visibility levels and behind-pace flagging
 
 **Acceptance:**
 - **Agent:** their own target, their own achieved figures, and their own money-at-risk list

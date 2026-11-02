@@ -277,6 +277,11 @@ Format:
 **Cause:** Money past deadline (candidate past 30 days, business replacement past 15 days) is already lost money owed to the customer, belonging strictly to refund settlement workflows.
 **Fix:** In `MoneyAtRiskService`, strictly enforce `daysRemaining > 0` (`now < deadline`). Candidates are included only when active, eligible, and within the approaching window (`0 < daysRemaining <= CANDIDATE_AT_RISK_WINDOW_DAYS = 7`). Dropped-out placements with open replacement vacancies are included only when within their replacement window (`0 < daysRemaining <= PLACEMENT_AT_RISK_WINDOW_DAYS = 5`). Disqualified candidates (placed, 3 hits, deactivated) and non-refundable placements (clock paused >2 rejects, replacement already accepted, breach) are excluded via shared eligibility logic. Stored in integer paise throughout and never persisted in database columns.
 
+## Target behind-pace and refund rate breach evaluation boundaries
+**Symptom:** Evaluating agent pacing naively in the first week or across all metrics resulted in false-positive behind-pace flags for new hires or for agents with low refund rates.
+**Cause:** (1) In the first 7 days of the month, small-sample variance makes performance numbers erratic; (2) Refund rate is a quality ceiling metric (`lower_is_better`), where scaling expected pace by elapsed days is mathematically meaningless and falsely penalizes low refund rates; (3) Small matured cohorts (< 5 candidates) in refund rate calculations trigger false breach alarms on single noise events.
+**Fix:** (1) Introduced `BEHIND_PACE_START_DAY = 8` and `BEHIND_PACE_THRESHOLD = 0.8` in `target.constants.ts`. Pacing is only evaluated from day 8 onward in the business timezone (`Asia/Kolkata`); (2) Pacing applies strictly to `higher_is_better` metrics, scaling effective target by `(daysElapsed / daysInPeriod)` from the agent's start date; (3) Refund rate has a dedicated breach flag that requires `maturedCount >= MIN_REFUND_RATE_DENOMINATOR (5)` and `actualRate > effectiveTarget`. Unset or floor-to-zero targets (`not_targeted` or `not_measured`) are never flagged.
+
 
 
 
