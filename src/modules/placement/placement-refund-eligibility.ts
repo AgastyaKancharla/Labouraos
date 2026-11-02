@@ -11,6 +11,7 @@ export interface PlacementRefundEligibilityInput {
   clockPausedAt: Date | null;
   placementFee: number;
   hasExistingRefund: boolean;
+  searchDays?: number;
 }
 
 export interface PlacementRefundEligibilityResult {
@@ -22,19 +23,19 @@ export interface PlacementRefundEligibilityResult {
 }
 
 /**
- * Evaluates Placement 60-day replacement guarantee cash-refund eligibility.
+ * Evaluates Placement replacement guarantee cash-refund eligibility.
  *
- * SHARED ELIGIBILITY LOGIC (Phase 6.5 Task 9):
+ * SHARED ELIGIBILITY LOGIC (Phase 6.5 Task 9 & Phase 9 Task 2):
  * Must be used by BOTH the approval endpoint (`PlacementService.approveRefund`)
  * and the listing endpoint (`GET /refunds/due`).
  *
- * Locked Domain Rules:
+ * Domain Rules:
  * - Placement must be in 'dropped_out' status.
  * - Eligibility must be 'employee_left' ('business_breach' is ineligible for refund guarantee remedy).
  * - No replacement candidate has been accepted.
  * - dropoutReportedAt must be present.
- * - At least 15 days must have elapsed from dropoutReportedAt (taking into account clockPaused).
- * - calculateRefund(placementFee, daysElapsed) > 0.
+ * - At least searchDays (from PricingPolicy, default 15) must have elapsed from dropoutReportedAt (taking into account clockPaused).
+ * - calculateRefund(placementFee, daysElapsed, searchDays) > 0.
  * - No refund has already been issued.
  */
 export function evaluatePlacementRefundEligibility(
@@ -98,11 +99,12 @@ export function evaluatePlacementRefundEligibility(
     now,
   );
 
-  const refundAmount = calculateRefund(input.placementFee, daysElapsed);
-  if (daysElapsed < 15 || refundAmount <= 0) {
+  const searchDays = input.searchDays ?? 15;
+  const refundAmount = calculateRefund(input.placementFee, daysElapsed, searchDays);
+  if (daysElapsed < searchDays || refundAmount <= 0) {
     return {
       eligible: false,
-      ineligibleReason: `Refund is not payable before 15 days have elapsed from dropout report (days elapsed: ${daysElapsed})`,
+      ineligibleReason: `Refund is not payable before ${searchDays} days have elapsed from dropout report (days elapsed: ${daysElapsed})`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed,
@@ -115,11 +117,11 @@ export function evaluatePlacementRefundEligibility(
       ineligibleReason: `A refund has already been issued for placement '${input.code}'`,
       amountPaise: 0,
       daysOwed: 0,
-      daysElapsed,
+      daysElapsed: 0,
     };
   }
 
-  const daysOwed = daysElapsed - 15;
+  const daysOwed = daysElapsed - searchDays;
 
   return {
     eligible: true,

@@ -7,9 +7,10 @@ import { RealPaymentProvider } from './real-payment.provider';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { IdModule } from '../../common/id/id.module';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, IdModule],
+  imports: [PrismaModule, AuditModule, IdModule, PricingModule],
   controllers: [PaymentController],
   providers: [
     {

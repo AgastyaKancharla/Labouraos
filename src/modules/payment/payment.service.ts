@@ -4,13 +4,14 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Payment, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
-import { REFERRAL_PAYOUT_AMOUNT_PAISE } from '../../common/money/money';
+import { PricingService } from '../pricing/pricing.service';
 import { PaymentFilterDto } from './dto/payment-filter.dto';
 import {
   PAYMENT_PROVIDER,
@@ -29,7 +30,21 @@ export class PaymentService {
     private readonly idService: IdService,
     @Inject(PAYMENT_PROVIDER)
     private readonly provider: PaymentProvider,
+    @Optional()
+    private readonly pricingService?: PricingService,
   ) {}
+
+  private async getReferralPayoutPaise(): Promise<number> {
+    if (this.pricingService) {
+      try {
+        const policy = await this.pricingService.current();
+        return policy.referralPayoutPaise;
+      } catch {
+        // Fall back to default seeded amount
+      }
+    }
+    return 20000;
+  }
 
   getProvider(): PaymentProvider {
     return this.provider;
@@ -214,12 +229,14 @@ export class PaymentService {
     const randomHex = Math.random().toString(36).substring(2, 8);
     const gatewayReference = `mock_payout_ref_${placement.id}_${timestamp}_${randomHex}`;
 
+    const referralPayoutPaise = await this.getReferralPayoutPaise();
+
     const payment = await this.prisma.payment.create({
       data: {
         code,
         city: placement.city,
         type: 'referral_payout',
-        amount: REFERRAL_PAYOUT_AMOUNT_PAISE,
+        amount: referralPayoutPaise,
         status: 'pending',
         gatewayReference,
         subjectType: 'referral',

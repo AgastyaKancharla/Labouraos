@@ -358,8 +358,8 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
     const calcStart = Date.now();
     const testSalaries = [1500000, 2000000, 2500033, 3000000, 3333333]; // includes non-even divisions
     for (const salary of testSalaries) {
-      const fee = calculatePlacementFee(salary);
-      const gst = calculateGst(fee);
+      const fee = calculatePlacementFee(salary, 50);
+      const gst = calculateGst(fee, 18);
       const total = fee + gst;
 
       expect(Number.isInteger(fee)).toBe(true);

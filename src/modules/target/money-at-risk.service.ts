@@ -2,11 +2,13 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
-import { refundGuaranteeDeadline } from '../../common/money/money';
+import { refundGuaranteeDeadline, toRupees } from '../../common/money/money';
 import { calculateDaysElapsed } from '../placement/placement.service';
+import { PricingService, PricingPolicy } from '../pricing/pricing.service';
 import {
   CANDIDATE_AT_RISK_WINDOW_DAYS,
   PLACEMENT_AT_RISK_WINDOW_DAYS,
@@ -81,7 +83,11 @@ export interface MoneyAtRiskResult {
  */
 @Injectable()
 export class MoneyAtRiskService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly pricingService?: PricingService,
+  ) {}
 
   /**
    * Retrieves all money at risk scoped by caller role (agent, team, or city-wide).
@@ -97,6 +103,18 @@ export class MoneyAtRiskService {
   ): Promise<MoneyAtRiskResult> {
     let resolvedScope: 'agent' | 'team' | 'city' = 'city';
     let filterStaffIds: string[] | null = null;
+
+    let policy: PricingPolicy | null = null;
+    if (this.pricingService) {
+      try {
+        policy = await this.pricingService.current();
+      } catch {
+        policy = null;
+      }
+    }
+    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
+    const defaultActivationFeePaise = policy?.activationFeePaise ?? (499 * 100);
+    const replacementSearchDays = policy?.replacementSearchDays ?? 15;
 
     // 1. Server-side RBAC scoping
     if (actor) {
@@ -182,7 +200,8 @@ export class MoneyAtRiskService {
     });
 
     let rejectedCandidateIdSet = new Set<string>();
-    let refundedCandidateIdSet = new Set<string>();
+    const refundedCandidateIdSet = new Set<string>();
+    const candidatePaymentMap = new Map<string, number>();
 
     if (candidates.length > 0) {
       const candidateIds = candidates.map((c) => c.id);
@@ -196,15 +215,29 @@ export class MoneyAtRiskService {
       });
       rejectedCandidateIdSet = new Set(rejectedHits.map((h) => h.jobSeekerId));
 
-      const existingCandidateRefunds = await this.prisma.payment.findMany({
+      // Query candidate payments (refunds and activations) in a single set-based query
+      const candidatePayments = await this.prisma.payment.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
-          type: 'refund',
-          status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
         },
-        select: { jobSeekerId: true },
+        orderBy: { createdAt: 'desc' },
       });
-      refundedCandidateIdSet = new Set(existingCandidateRefunds.map((p) => p.jobSeekerId!));
+      for (const p of candidatePayments) {
+        if (!p.jobSeekerId) continue;
+        const isRefund =
+          !p.type ||
+          (p.type === 'refund' &&
+            (!p.status || ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)));
+        if (isRefund) {
+          refundedCandidateIdSet.add(p.jobSeekerId);
+        } else if (
+          (p.type === 'activation' || p.type === 'reactivation') &&
+          (!p.status || ['completed', 'succeeded'].includes(p.status)) &&
+          !candidatePaymentMap.has(p.jobSeekerId)
+        ) {
+          candidatePaymentMap.set(p.jobSeekerId, p.amount);
+        }
+      }
     }
 
     const candidateRows: MoneyAtRiskRow[] = [];
@@ -216,7 +249,7 @@ export class MoneyAtRiskService {
       if (rejectedCandidateIdSet.has(c.id)) continue;
       if (refundedCandidateIdSet.has(c.id)) continue;
 
-      const deadline = refundGuaranteeDeadline(c.paymentReceivedAt);
+      const deadline = refundGuaranteeDeadline(c.paymentReceivedAt, guaranteeDays);
       const diffMs = deadline.getTime() - now.getTime();
 
       // APPROACHING ONLY RULE: If deadline already passed (diffMs <= 0), it is owed/lost money on /refunds/due
@@ -225,13 +258,15 @@ export class MoneyAtRiskService {
       const daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
 
       if (daysRemaining <= CANDIDATE_AT_RISK_WINDOW_DAYS && daysRemaining > 0) {
+        const amountPaise = candidatePaymentMap.get(c.id) ?? defaultActivationFeePaise;
+        const amountRupees = toRupees(amountPaise);
         candidateRows.push({
           type: 'job_seeker',
           id: c.id,
           code: c.code,
           city: c.city,
-          amountPaise: 49900,
-          amountRupees: 499,
+          amountPaise,
+          amountRupees,
           daysRemaining,
           deadline: deadline.toISOString(),
           staffId: c.registeredByStaffId,
@@ -307,16 +342,16 @@ export class MoneyAtRiskService {
         now,
       );
 
-      // 15-day search window
-      const daysRemaining = 15 - daysElapsed;
+      // search window from policy
+      const daysRemaining = replacementSearchDays - daysElapsed;
 
-      // APPROACHING ONLY RULE: If 15 days have elapsed (daysRemaining <= 0), it is owed/lost money on /refunds/due
+      // APPROACHING ONLY RULE: If search window has elapsed (daysRemaining <= 0), it is owed/lost money on /refunds/due
       if (daysRemaining <= 0) continue;
 
       if (daysRemaining <= PLACEMENT_AT_RISK_WINDOW_DAYS) {
-        // Deadline is dropoutReportedAt + 15 days (adjusted for clock pause)
+        // Deadline is dropoutReportedAt + replacementSearchDays (adjusted for clock pause)
         const deadlineDate = new Date(
-          pl.dropoutReportedAt.getTime() + 15 * 24 * 60 * 60 * 1000,
+          pl.dropoutReportedAt.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
         );
 
         placementRows.push({

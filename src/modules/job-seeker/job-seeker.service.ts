@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -24,6 +25,7 @@ import {
 import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
 
 import { PaymentService } from '../payment/payment.service';
+import { PricingService } from '../pricing/pricing.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 
 @Injectable()
@@ -34,7 +36,28 @@ export class JobSeekerService {
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
     private readonly paymentService: PaymentService,
+    @Optional()
+    private readonly pricingService?: PricingService,
   ) {}
+
+  private async getPolicy(): Promise<{
+    activationFeePaise: number;
+    jobSeekerGuaranteeDays: number;
+    maxHits: number;
+  }> {
+    if (this.pricingService) {
+      try {
+        return await this.pricingService.current();
+      } catch {
+        // Fall back to default seeded values
+      }
+    }
+    return {
+      activationFeePaise: 499 * 100,
+      jobSeekerGuaranteeDays: 30,
+      maxHits: 3,
+    };
+  }
 
   /**
    * ANTI-FRAUD NOTE: Candidate onboarding already carries mobile-number OTP verification,
@@ -141,11 +164,12 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }
 
+    const policy = await this.getPolicy();
     const deadline = jobSeeker.paymentReceivedAt
-      ? refundGuaranteeDeadline(jobSeeker.paymentReceivedAt)
+      ? refundGuaranteeDeadline(jobSeeker.paymentReceivedAt, policy.jobSeekerGuaranteeDays)
       : null;
     const isWithinGuarantee = jobSeeker.paymentReceivedAt
-      ? isWithinRefundGuarantee(jobSeeker.paymentReceivedAt, now, jobSeeker.status)
+      ? isWithinRefundGuarantee(jobSeeker.paymentReceivedAt, now, jobSeeker.status, false, policy.jobSeekerGuaranteeDays)
       : false;
 
     return {
@@ -173,8 +197,9 @@ export class JobSeekerService {
       );
     }
 
+    const policy = await this.getPolicy();
     const charge = await this.paymentService.createCharge(
-      49900,
+      policy.activationFeePaise,
       'job_seeker',
       jobSeeker.id,
     );
@@ -186,7 +211,7 @@ export class JobSeekerService {
         code,
         city: jobSeeker.city,
         type: 'activation',
-        amount: 49900,
+        amount: policy.activationFeePaise,
         status: 'pending',
         gatewayReference: charge.gatewayReference,
         subjectType: 'job_seeker',
@@ -219,8 +244,9 @@ export class JobSeekerService {
       );
     }
 
+    const policy = await this.getPolicy();
     const charge = await this.paymentService.createCharge(
-      49900,
+      policy.activationFeePaise,
       'job_seeker',
       jobSeeker.id,
     );
@@ -232,7 +258,7 @@ export class JobSeekerService {
         code,
         city: jobSeeker.city,
         type: 'activation',
-        amount: 49900,
+        amount: policy.activationFeePaise,
         status: 'pending',
         gatewayReference: charge.gatewayReference,
         subjectType: 'job_seeker',
@@ -527,8 +553,9 @@ export class JobSeekerService {
         });
       }
 
+      const policy = await this.getPolicy();
       const newHitCount = jobSeeker.hitCount + 1;
-      const isNowDeactivated = newHitCount >= 3;
+      const isNowDeactivated = newHitCount >= policy.maxHits;
       const newStatus = isNowDeactivated ? 'deactivated' : jobSeeker.status;
 
       const updatedJobSeeker = await tx.jobSeeker.update({
@@ -643,6 +670,17 @@ export class JobSeekerService {
       },
     });
 
+    const policy = await this.getPolicy();
+    const activationPayment = await this.prisma.payment.findFirst({
+      where: {
+        jobSeekerId: jobSeeker.id,
+        type: { in: ['activation', 'reactivation'] },
+        status: { in: ['completed', 'succeeded'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const refundAmountPaise = activationPayment?.amount ?? policy.activationFeePaise;
+
     const eligibilityResult = evaluateJobSeekerRefundEligibility(
       {
         code: jobSeeker.code,
@@ -650,6 +688,8 @@ export class JobSeekerService {
         status: jobSeeker.status,
         hasOfferRejectedHit: Boolean(hasOfferRejected),
         hasExistingRefund: Boolean(existingRefund),
+        activationPaymentPaise: refundAmountPaise,
+        guaranteeDays: policy.jobSeekerGuaranteeDays,
       },
       now,
     );
@@ -664,7 +704,7 @@ export class JobSeekerService {
         code: paymentCode,
         city: jobSeeker.city,
         type: 'refund',
-        amount: 49900,
+        amount: eligibilityResult.amountPaise,
         status: 'completed',
         gatewayReference: `ref_js_${jobSeeker.code}_${Date.now()}`,
         subjectType: 'job_seeker',

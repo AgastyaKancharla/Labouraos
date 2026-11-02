@@ -1,23 +1,30 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PricingService, PricingPolicy } from '../pricing/pricing.service';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { RefundDueRow } from './dto/refund-due.dto';
 
 @Injectable()
 export class RefundService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly pricingService?: PricingService,
+  ) {}
 
   /**
    * Retrieves all refunds currently due for both job seekers and placements.
    *
-   * LOCKED DOMAIN REQUIREMENTS (Phase 6.5 Task 9):
+   * LOCKED DOMAIN REQUIREMENTS (Phase 6.5 Task 9 & Phase 9 Task 2):
    * 1. SHARED ELIGIBILITY LOGIC: Uses the exact same evaluate*RefundEligibility
    *    functions as JobSeekerService.approveRefund and PlacementService.approveRefund.
    * 2. NO N+1 QUERIES: Resolves candidates, hits, placements, and existing refunds
    *    in single set-based queries and joins in memory.
    * 3. COMPUTED FRESH, NEVER STORED: No eligibility flag/column; computed on-the-fly.
    * 4. AMOUNTS AND SORT: Integer paise amounts, sorted longest-owed first (highest daysOwed).
+   * 5. DYNAMIC PRICING: Reads guaranteeDays and searchDays from PricingPolicy, returning
+   *    the amount the candidate actually paid.
    */
   async getRefundsDue(actorId: string, now: Date = new Date()): Promise<RefundDueRow[]> {
     const actor = await this.prisma.staff.findUnique({
@@ -27,29 +34,35 @@ export class RefundService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
+    let policy: PricingPolicy | null = null;
+    if (this.pricingService) {
+      try {
+        policy = await this.pricingService.current();
+      } catch {
+        policy = null;
+      }
+    }
+    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
+    const replacementSearchDays = policy?.replacementSearchDays ?? 15;
+    const defaultActivationFeePaise = policy?.activationFeePaise ?? (499 * 100);
+
     // --- 1. JOB SEEKERS (Set-Based Query) ---
-    // Candidate pool: active or pending candidates who paid activation fee at least 30 days ago
-    const maxPaymentDate = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    // Candidate pool: active or pending candidates who paid activation fee at least guaranteeDays ago
+    const maxPaymentDate = new Date(now.getTime() - guaranteeDays * 24 * 60 * 60 * 1000);
 
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         status: { notIn: ['placed', 'deactivated'] },
-        paymentReceivedAt: { not: null, lte: maxPaymentDate },
-      },
-      select: {
-        id: true,
-        code: true,
-        city: true,
-        name: true,
-        phone: true,
-        tradeSkill: true,
-        paymentReceivedAt: true,
-        status: true,
+        paymentReceivedAt: {
+          not: null,
+          lte: maxPaymentDate,
+        },
       },
     });
 
     let rejectedCandidateIdSet = new Set<string>();
-    let refundedCandidateIdSet = new Set<string>();
+    const refundedCandidateIdSet = new Set<string>();
+    const candidatePaymentMap = new Map<string, number>();
 
     if (candidates.length > 0) {
       const candidateIds = candidates.map((c) => c.id);
@@ -64,20 +77,34 @@ export class RefundService {
       });
       rejectedCandidateIdSet = new Set(rejectedHits.map((h) => h.jobSeekerId));
 
-      // Query existing refunds set-based (1 query)
-      const existingCandidateRefunds = await this.prisma.payment.findMany({
+      // Query candidate payments (refunds and activations) in a single set-based query
+      const candidatePayments = await this.prisma.payment.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
-          type: 'refund',
-          status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
         },
-        select: { jobSeekerId: true },
+        orderBy: { createdAt: 'desc' },
       });
-      refundedCandidateIdSet = new Set(existingCandidateRefunds.map((p) => p.jobSeekerId!));
+      for (const p of candidatePayments) {
+        if (!p.jobSeekerId) continue;
+        const isRefund =
+          !p.type ||
+          (p.type === 'refund' &&
+            (!p.status || ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)));
+        if (isRefund) {
+          refundedCandidateIdSet.add(p.jobSeekerId);
+        } else if (
+          (p.type === 'activation' || p.type === 'reactivation') &&
+          (!p.status || ['completed', 'succeeded'].includes(p.status)) &&
+          !candidatePaymentMap.has(p.jobSeekerId)
+        ) {
+          candidatePaymentMap.set(p.jobSeekerId, p.amount);
+        }
+      }
     }
 
     const jobSeekerRows: RefundDueRow[] = [];
     for (const candidate of candidates) {
+      const paidAmount = candidatePaymentMap.get(candidate.id) ?? defaultActivationFeePaise;
       const result = evaluateJobSeekerRefundEligibility(
         {
           code: candidate.code,
@@ -85,6 +112,8 @@ export class RefundService {
           status: candidate.status,
           hasOfferRejectedHit: rejectedCandidateIdSet.has(candidate.id),
           hasExistingRefund: refundedCandidateIdSet.has(candidate.id),
+          activationPaymentPaise: paidAmount,
+          guaranteeDays,
         },
         now,
       );
@@ -171,14 +200,15 @@ export class RefundService {
           clockPausedAt: placement.clockPausedAt,
           placementFee: placement.placementFee,
           hasExistingRefund: refundedPlacementIdSet.has(placement.id),
+          searchDays: replacementSearchDays,
         },
         now,
       );
 
       if (result.eligible) {
-        // Obligation begins 15 days after dropoutReportedAt
+        // Obligation begins replacementSearchDays after dropoutReportedAt
         const dueSince = new Date(
-          placement.dropoutReportedAt!.getTime() + 15 * 24 * 60 * 60 * 1000,
+          placement.dropoutReportedAt!.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
         ).toISOString();
 
         placementRows.push({

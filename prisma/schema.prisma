@@ -193,6 +193,7 @@ model Staff {
   targets           Target[]         @relation("StaffTargets")
   createdTargets    Target[]         @relation("CreatedTargets")
   updatedTargets    Target[]         @relation("UpdatedTargets")
+  pricingPoliciesSet PricingPolicy[] @relation("PricingPolicySetBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   registeredDeviceId String?
@@ -418,6 +419,45 @@ model Target {
   @@index([staffId])
   @@index([year, month])
 }
+
+model PricingPolicy {
+  id                           String    @id @default(uuid())
+  activationFeePaise           Int
+  placementFeePercent          Int
+  gstPercent                   Int
+  referralPayoutPaise          Int
+  joiningRewardPaise           Int
+  joiningRewardAfterDays       Int
+  jobSeekerGuaranteeDays       Int
+  offerReplyHours              Int
+  maxHits                      Int
+  interviewResultDeadline      String
+  interviewResultEscalateHours Int
+  placementPaymentDueHours     Int
+  replacementWindowDays        Int
+  replacementSearchDays        Int
+  maxFreeReplacements          Int
+  maxReplacementRejections     Int
+  claimReportDays              Int
+  claimDecisionHours           Int
+  noBypassMonths               Int
+  noBypassPenaltyPercent       Int
+  payoutDetailsCoolingHours    Int
+  idleLogoutMinutes            Int
+  maxSessionMinutes            Int
+  loginCodeValidMinutes        Int
+  failedLoginLimit             Int
+  lockoutMinutes               Int
+  callingHoursStart            String
+  callingHoursEnd              String
+  effectiveFrom                DateTime  @default(now())
+  setByStaffId                 String?
+  setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)
+  createdAt                    DateTime  @default(now())
+
+  @@index([effectiveFrom])
+}
+
 
 
 

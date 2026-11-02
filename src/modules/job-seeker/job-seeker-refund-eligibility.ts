@@ -6,6 +6,8 @@ export interface JobSeekerRefundEligibilityInput {
   status: string;
   hasOfferRejectedHit: boolean;
   hasExistingRefund: boolean;
+  activationPaymentPaise?: number;
+  guaranteeDays?: number;
 }
 
 export interface JobSeekerRefundEligibilityResult {
@@ -18,19 +20,20 @@ export interface JobSeekerRefundEligibilityResult {
 }
 
 /**
- * Evaluates Job Seeker 30-day refund guarantee eligibility.
+ * Evaluates Job Seeker refund guarantee eligibility.
  *
- * SHARED ELIGIBILITY LOGIC (Phase 6.5 Task 9):
+ * SHARED ELIGIBILITY LOGIC (Phase 6.5 Task 9 & Phase 9 Task 2):
  * Must be used by BOTH the approval endpoint (`JobSeekerService.approveRefund`)
  * and the listing endpoint (`GET /refunds/due`).
  *
- * Locked Domain Rules:
- * - ₹499 (49900 paise) activation fee must have been paid (paymentReceivedAt != null).
+ * Domain Rules:
+ * - Activation fee must have been paid (paymentReceivedAt != null).
  * - Must NOT be in 'placed' status (confirmed placement).
  * - Must NOT be in 'deactivated' status (3 hits deactivate with no refund entitlement).
  * - Must NOT have any 'offer_rejected' hit (rejecting a suitable offer forfeits guarantee).
- * - Refund can only be approved after 30 days have elapsed from payment receipt (now > deadline).
+ * - Refund can only be approved after guaranteeDays have elapsed from payment receipt (now > deadline).
  * - No refund has already been issued.
+ * - Stored activation payment amount is returned (old records never change).
  */
 export function evaluateJobSeekerRefundEligibility(
   input: JobSeekerRefundEligibilityInput,
@@ -80,11 +83,12 @@ export function evaluateJobSeekerRefundEligibility(
     };
   }
 
-  const deadline = refundGuaranteeDeadline(input.paymentReceivedAt);
+  const guaranteeDays = input.guaranteeDays ?? 30;
+  const deadline = refundGuaranteeDeadline(input.paymentReceivedAt, guaranteeDays);
   if (now.getTime() <= deadline.getTime()) {
     return {
       eligible: false,
-      ineligibleReason: `Refund can only be approved after 30 days have elapsed from payment receipt (${deadline.toISOString()})`,
+      ineligibleReason: `Refund can only be approved after ${guaranteeDays} days have elapsed from payment receipt (${deadline.toISOString()})`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: Math.floor((now.getTime() - input.paymentReceivedAt.getTime()) / (24 * 60 * 60 * 1000)),
@@ -108,7 +112,7 @@ export function evaluateJobSeekerRefundEligibility(
 
   return {
     eligible: true,
-    amountPaise: 49900,
+    amountPaise: input.activationPaymentPaise ?? (499 * 100),
     daysOwed,
     daysElapsed,
     deadline,

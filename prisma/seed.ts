@@ -31,6 +31,43 @@ export async function seed(prismaClient?: PrismaClient) {
   const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
   try {
+    // 0. PricingPolicy (Phase 9 Task 2)
+    const existingPolicy = await prisma.pricingPolicy.findFirst();
+    if (!existingPolicy) {
+      await prisma.pricingPolicy.create({
+        data: {
+          activationFeePaise: 49900,
+          placementFeePercent: 50,
+          gstPercent: 18,
+          referralPayoutPaise: 20000,
+          joiningRewardPaise: 20000,
+          joiningRewardAfterDays: 30,
+          jobSeekerGuaranteeDays: 30,
+          offerReplyHours: 48,
+          maxHits: 3,
+          interviewResultDeadline: '20:00',
+          interviewResultEscalateHours: 24,
+          placementPaymentDueHours: 24,
+          replacementWindowDays: 60,
+          replacementSearchDays: 15,
+          maxFreeReplacements: 2,
+          maxReplacementRejections: 2,
+          claimReportDays: 7,
+          claimDecisionHours: 48,
+          noBypassMonths: 12,
+          noBypassPenaltyPercent: 50,
+          payoutDetailsCoolingHours: 48,
+          idleLogoutMinutes: 60,
+          maxSessionMinutes: 120,
+          loginCodeValidMinutes: 5,
+          failedLoginLimit: 5,
+          lockoutMinutes: 15,
+          callingHoursStart: '09:00',
+          callingHoursEnd: '21:00',
+        },
+      });
+    }
+
     // 1. Staff Members (one of each role)
     // 1a. CEO
     const ceo = await prisma.staff.upsert({

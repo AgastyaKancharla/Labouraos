@@ -483,19 +483,19 @@ export function renderAdminDashboardHtml(): string {
         </div>
         <div style="max-width: 600px;">
           <div class="form-group">
-            <label>Activation Fee (Paise) — ₹499 = 49900</label>
+            <label>Activation Fee (Paise)</label>
             <input type="number" id="policy-activation-fee" style="width: 100%;">
           </div>
           <div class="form-group">
-            <label>Placement Fee (% of 1st month salary) — 50%</label>
+            <label>Placement Fee (% of 1st month salary)</label>
             <input type="number" id="policy-placement-fee" style="width: 100%;">
           </div>
           <div class="form-group">
-            <label>GST Percentage — 18%</label>
+            <label>GST Percentage</label>
             <input type="number" id="policy-gst" style="width: 100%;">
           </div>
           <div class="form-group">
-            <label>Referral Payout (Paise) — flat ₹200 = 20000</label>
+            <label>Referral Payout (Paise)</label>
             <input type="number" id="policy-referral-payout" style="width: 100%;">
           </div>
           <div class="form-group">
@@ -934,7 +934,7 @@ export function renderAdminDashboardHtml(): string {
           replacementSearchDays: Number(document.getElementById('policy-replacement-search').value),
           jobSeekerGuaranteeDays: Number(document.getElementById('policy-candidate-guarantee').value),
         };
-        const updated = await api('/pricing', { method: 'POST', body });
+        const updated = await api('/pricing', { method: 'PUT', body });
         showAlert('Pricing policy successfully updated by CEO!');
         loadPricing();
       } catch (e) {

@@ -1,12 +1,17 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PricingService } from '../pricing/pricing.service';
 import { calculatePlacementFee, refundGuaranteeDeadline } from '../../common/money/money';
 import { PriorityDashboardOpportunity } from './field-agent.types';
 
 @Injectable()
 export class FieldAgentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly pricingService?: PricingService,
+  ) {}
 
   async getPriorityDashboard(actorId: string, now: Date = new Date()): Promise<PriorityDashboardOpportunity[]> {
     const staff = await this.prisma.staff.findUnique({
@@ -15,6 +20,17 @@ export class FieldAgentService {
     if (!staff) {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
+
+    let policy: { placementFeePercent: number; jobSeekerGuaranteeDays: number } | null = null;
+    if (this.pricingService) {
+      try {
+        policy = await this.pricingService.current();
+      } catch {
+        policy = null;
+      }
+    }
+    const placementFeePercent = policy?.placementFeePercent ?? 50;
+    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
 
     const vacancyWhere: Prisma.VacancyWhereInput = {
       status: 'open',
@@ -50,7 +66,7 @@ export class FieldAgentService {
     const opportunities: PriorityDashboardOpportunity[] = [];
 
     for (const vacancy of openVacancies) {
-      const potentialFee = calculatePlacementFee(vacancy.offeredSalary);
+      const potentialFee = calculatePlacementFee(vacancy.offeredSalary, placementFeePercent);
 
       const matching = activeCandidates.filter((candidate) => {
         const tradeMatches =
@@ -64,7 +80,7 @@ export class FieldAgentService {
 
       for (const candidate of matching) {
         const refundDeadline = candidate.paymentReceivedAt
-          ? refundGuaranteeDeadline(candidate.paymentReceivedAt)
+          ? refundGuaranteeDeadline(candidate.paymentReceivedAt, guaranteeDays)
           : null;
 
         const daysRemainingOnGuarantee = refundDeadline
@@ -98,7 +114,7 @@ export class FieldAgentService {
     }
 
     // Sort rules:
-    // 1. refund-clock deadline first (candidates closest to their 30-day refund guarantee expiration come first)
+    // 1. refund-clock deadline first (candidates closest to their guarantee expiration come first)
     // 2. potential fee value as tiebreak (higher fee value first)
     opportunities.sort((a, b) => {
       const timeA = a.refundDeadline ? a.refundDeadline.getTime() : Infinity;
