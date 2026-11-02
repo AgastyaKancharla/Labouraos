@@ -10,7 +10,61 @@ export interface CreateAuditLogParams {
   entityCode: string;
   before?: Record<string, unknown> | null;
   after?: Record<string, unknown> | null;
+  reason?: string | null;
+  changedFields?: string[];
   city?: string;
+}
+
+const PERSONAL_FIELDS = new Set([
+  'name',
+  'ownername',
+  'contactname',
+  'candidatename',
+  'phone',
+  'whatsappphone',
+  'contactphone',
+  'candidatephone',
+  'email',
+  'address',
+  'kycreference',
+  'kycdetails',
+  'dateofbirth',
+  'dob',
+]);
+
+export function isPersonalField(key: string): boolean {
+  const lower = key.toLowerCase();
+  if (PERSONAL_FIELDS.has(lower)) {
+    return true;
+  }
+  if (lower.startsWith('aadhaar')) {
+    return true;
+  }
+  return false;
+}
+
+export function redactValue(val: unknown, changedFields: Set<string>): unknown {
+  if (val === null || val === undefined) {
+    return val;
+  }
+  if (Array.isArray(val)) {
+    return val.map((item) => redactValue(item, changedFields));
+  }
+  if (typeof val === 'object') {
+    const res: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(val as Record<string, unknown>)) {
+      if (isPersonalField(key)) {
+        res[key] = '[changed]';
+        changedFields.add(key);
+      } else if (typeof value === 'object' && value !== null) {
+        res[key] = redactValue(value, changedFields);
+      } else {
+        res[key] = value;
+      }
+    }
+    return res;
+  }
+  return val;
 }
 
 @Injectable()
@@ -22,6 +76,31 @@ export class AuditService {
 
   async log(params: CreateAuditLogParams) {
     const code = await this.idService.generateCode('audit_log');
+    const changedFieldsSet = new Set<string>(params.changedFields ?? []);
+
+    const redactedBefore = params.before
+      ? (redactValue(params.before, changedFieldsSet) as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+    const redactedAfter = params.after
+      ? (redactValue(params.after, changedFieldsSet) as Prisma.InputJsonValue)
+      : Prisma.JsonNull;
+
+    if (!params.changedFields && params.before && params.after) {
+      if (typeof params.before === 'object' && typeof params.after === 'object') {
+        const allKeys = new Set([
+          ...Object.keys(params.before as Record<string, unknown>),
+          ...Object.keys(params.after as Record<string, unknown>),
+        ]);
+        for (const key of allKeys) {
+          const bVal = (params.before as Record<string, unknown>)[key];
+          const aVal = (params.after as Record<string, unknown>)[key];
+          if (JSON.stringify(bVal) !== JSON.stringify(aVal)) {
+            changedFieldsSet.add(key);
+          }
+        }
+      }
+    }
+
     return this.prisma.auditLog.create({
       data: {
         code,
@@ -29,8 +108,10 @@ export class AuditService {
         action: params.action,
         entityType: params.entityType,
         entityCode: params.entityCode,
-        before: params.before ? (params.before as Prisma.InputJsonValue) : Prisma.JsonNull,
-        after: params.after ? (params.after as Prisma.InputJsonValue) : Prisma.JsonNull,
+        before: redactedBefore,
+        after: redactedAfter,
+        reason: params.reason ?? null,
+        changedFields: Array.from(changedFieldsSet),
         city: params.city ?? 'Bengaluru',
       },
     });

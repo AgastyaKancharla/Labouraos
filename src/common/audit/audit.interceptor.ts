@@ -32,6 +32,7 @@ export class AuditInterceptor implements NestInterceptor {
     const request = context.switchToHttp().getRequest<Request & { user?: JwtPayload; auditBefore?: Record<string, unknown> }>();
     const actorId = request.user?.sub ?? 'system';
     const before = request.auditBefore ?? (request.body?.before as Record<string, unknown> | undefined) ?? null;
+    const reason = (request.body?.reason as string | undefined) ?? null;
 
     return next.handle().pipe(
       mergeMap(async (response: unknown) => {
@@ -53,6 +54,7 @@ export class AuditInterceptor implements NestInterceptor {
             entityCode,
             before,
             after: resObj,
+            reason,
           });
         } catch (err: unknown) {
           // Log audit failure to console, never crash the primary write request

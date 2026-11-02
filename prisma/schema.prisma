@@ -258,18 +258,20 @@ model PayoutWebhookEvent {
 }
 
 model AuditLog {
-  id          String    @id @default(uuid())
-  code        String    @unique
-  city        String    @default("Bengaluru")
-  actorId     String
-  actor       Staff?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
-  action      String
-  entityType  String
-  entityCode  String
-  before      Json?
-  after       Json?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id            String    @id @default(uuid())
+  code          String    @unique
+  city          String    @default("Bengaluru")
+  actorId       String
+  actor         Staff?    @relation(fields: [actorId], references: [id], onDelete: SetNull)
+  action        String
+  entityType    String
+  entityCode    String
+  before        Json?
+  after         Json?
+  reason        String?
+  changedFields String[]  @default([])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
   @@index([city])
   @@index([actorId])
