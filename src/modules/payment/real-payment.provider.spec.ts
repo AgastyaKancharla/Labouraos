@@ -96,6 +96,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       const paymentId = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
       const res = await provider.disbursePayout(20000, 'referral', 'RF-001', {
         paymentId,
+        fundAccountId: 'fa_test_account_123',
       });
       expect(res.success).toBe(true);
       expect(res.status).toBe('succeeded');
@@ -111,10 +112,16 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       });
       const paymentId = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
 
-      await provider.disbursePayout(20000, 'referral', 'RF-001', { paymentId });
+      await provider.disbursePayout(20000, 'referral', 'RF-001', {
+        paymentId,
+        fundAccountId: 'fa_test_account_123',
+      });
       // a retry later, and with different non-id inputs, must not change the key
       await new Promise((r) => setTimeout(r, 5));
-      await provider.disbursePayout(20000, 'referral', 'RF-OTHER', { paymentId });
+      await provider.disbursePayout(20000, 'referral', 'RF-OTHER', {
+        paymentId,
+        fundAccountId: 'fa_test_account_123',
+      });
 
       const payoutCalls = capturedRequests.filter((r) => r.url.includes('/payouts'));
       expect(payoutCalls).toHaveLength(2);
