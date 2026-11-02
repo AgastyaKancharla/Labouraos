@@ -38,6 +38,7 @@ const ceoActor = {
 };
 
 interface MockPrismaForPlacement {
+  $transaction?: any;
   staff: {
     findUnique: jest.Mock<Promise<typeof staffActor | typeof ceoActor | null>, [{ where: { id: string } }]>;
   };
@@ -83,6 +84,7 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
     };
 
     mockPrisma = {
+      $transaction: jest.fn().mockImplementation((fn: any) => (typeof fn === 'function' ? fn(mockPrisma) : Promise.all(fn))),
       staff: {
         findUnique: jest.fn().mockImplementation(({ where }) => {
           if (where.id === 'ceo-1') return Promise.resolve(ceoActor);

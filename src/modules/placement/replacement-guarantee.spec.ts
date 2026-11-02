@@ -29,6 +29,7 @@ const staffActor = {
 };
 
 interface MockPrismaForPlacement {
+  $transaction?: any;
   staff: {
     findUnique: jest.Mock<Promise<typeof staffActor | null>, [{ where: { id: string } }]>;
   };
@@ -63,6 +64,7 @@ describe('Phase 6.5 Task 7: Enforce 60-Day Replacement Guarantee', () => {
     };
 
     mockPrisma = {
+      $transaction: jest.fn().mockImplementation((fn: any) => (typeof fn === 'function' ? fn(mockPrisma) : Promise.all(fn))),
       staff: {
         findUnique: jest.fn().mockResolvedValue(staffActor),
       },

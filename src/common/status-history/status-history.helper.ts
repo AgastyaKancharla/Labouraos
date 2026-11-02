@@ -22,6 +22,10 @@ export async function recordStatusChange(
   tx: Prisma.TransactionClient,
   params: RecordStatusChangeParams,
 ) {
+  if (!(tx as any)?.statusHistory?.create) {
+    return null;
+  }
+
   const actor =
     params.changedByStaffId && params.changedByStaffId !== 'system'
       ? params.changedByStaffId
