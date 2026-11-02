@@ -282,6 +282,12 @@ Format:
 **Cause:** (1) In the first 7 days of the month, small-sample variance makes performance numbers erratic; (2) Refund rate is a quality ceiling metric (`lower_is_better`), where scaling expected pace by elapsed days is mathematically meaningless and falsely penalizes low refund rates; (3) Small matured cohorts (< 5 candidates) in refund rate calculations trigger false breach alarms on single noise events.
 **Fix:** (1) Introduced `BEHIND_PACE_START_DAY = 8` and `BEHIND_PACE_THRESHOLD = 0.8` in `target.constants.ts`. Pacing is only evaluated from day 8 onward in the business timezone (`Asia/Kolkata`); (2) Pacing applies strictly to `higher_is_better` metrics, scaling effective target by `(daysElapsed / daysInPeriod)` from the agent's start date; (3) Refund rate has a dedicated breach flag that requires `maturedCount >= MIN_REFUND_RATE_DENOMINATOR (5)` and `actualRate > effectiveTarget`. Unset or floor-to-zero targets (`not_targeted` or `not_measured`) are never flagged.
 
+## Leaderboard participant filtering and target secrecy
+**Symptom:** Displaying raw agent lists on competitive leaderboards risked showing newly created accounts at position 0/last place on day one, and displaying target numbers exposed pro-rated targets, making part-month joiners look artificially good or bad compared to full-month peers.
+**Cause:** Without target filtering, any field agent in the database is ranked regardless of whether they were actively targeted in that period. Publishing target figures leaks individual scheduling and pro-rating arrangements.
+**Fix:** In `LeaderboardService`, query and rank only field agents who have a `placementsClosed` target set for the evaluated period. Return `staffCode`, `name`, `placementsClosed`, and sequential 1-based `position`, deterministically breaking ties by `staffCode` ascending. Exclude all target figures (`target`, `effectiveTarget`) from the response.
+
+
 
 
 

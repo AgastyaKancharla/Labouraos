@@ -122,7 +122,7 @@ Three metrics, same rules:
 
 ---
 
-### [ ] Task 7 — Placements leaderboard
+### [x] Task 7 — Placements leaderboard
 
 **Acceptance:**
 - A leaderboard on **placements closed**, visible to agents as well as management — this is a deliberate choice, since the team is a mix of interns and paid staff where visible standing works
@@ -135,23 +135,23 @@ Three metrics, same rules:
 
 ## Phase 6.7 Gate
 
-- [ ] Creating a job seeker and a placement records the acting staff member, by test
-- [ ] A record with null attribution is excluded from every metric rather than counted against anyone, by test
-- [ ] The `own_captured` scope is either implemented or removed from the matrix, with the choice stated in the report, and enforced by test
-- [ ] A Manager can set a target; Team Lead, Call Agent, Field Agent and Finance cannot — by test
-- [ ] An agent created mid-month has a correctly pro-rated effective target (inclusive start day, floor rounding, explicit "not measured this period" state if target floors to 0), by test
-- [ ] All three Call Agent metrics match a known fixture, including the zero-denominator refund rate returning null, by test
-- [ ] All three Field Agent metrics match a known fixture, including a joined-but-unpaid placement not counting and a day-16 replacement not counting, by test
-- [ ] Money at risk shares its eligibility logic with `/refunds/due` rather than duplicating it, by test
-- [ ] Money at risk respects its two windows and the sum matches its rows, by test
-- [ ] An agent sees only their own figures; a Team Lead only their team's; Finance is refused — by test
-- [ ] Behind-pace flagging applies only to higher-is-better metrics (day 15 at 50% pace flagged, day 5 not flagged); refund rate breach flag fires only when actual rate exceeds threshold with non-zero denominator, by test
-- [ ] The leaderboard excludes agents with no target for the period and shows no targets, by test
-- [ ] **End-to-end proof, recorded in the report:** set a target for a Call Agent and a Field Agent. Register a candidate, take the ₹499, capture a vacancy, create a placement, mark it joined and paid. Confirm each metric moves by exactly the expected amount and is attributed to the right agent. Then confirm a second agent's figures are unaffected.
-- [ ] No stored aggregate or eligibility column was added anywhere
-- [ ] All Phase 1–6.6 gate items still pass
-- [ ] CI green on `main` — confirmed on GitHub Actions, not locally
-- [ ] `LESSONS.md` updated
+- [x] Creating a job seeker and a placement records the acting staff member, by test
+- [x] A record with null attribution is excluded from every metric rather than counted against anyone, by test
+- [x] The `own_captured` scope is either implemented or removed from the matrix, with the choice stated in the report, and enforced by test
+- [x] A Manager can set a target; Team Lead, Call Agent, Field Agent and Finance cannot — by test
+- [x] An agent created mid-month has a correctly pro-rated effective target (inclusive start day, floor rounding, explicit "not measured this period" state if target floors to 0), by test
+- [x] All three Call Agent metrics match a known fixture, including the zero-denominator refund rate returning null, by test
+- [x] All three Field Agent metrics match a known fixture, including a joined-but-unpaid placement not counting and a day-16 replacement not counting, by test
+- [x] Money at risk shares its eligibility logic with `/refunds/due` rather than duplicating it, by test
+- [x] Money at risk respects its two windows and the sum matches its rows, by test
+- [x] An agent sees only their own figures; a Team Lead only their team's; Finance is refused — by test
+- [x] Behind-pace flagging applies only to higher-is-better metrics (day 15 at 50% pace flagged, day 5 not flagged); refund rate breach flag fires only when actual rate exceeds threshold with non-zero denominator, by test
+- [x] The leaderboard excludes agents with no target for the period and shows no targets, by test
+- [x] **End-to-end proof, recorded in the report:** set a target for a Call Agent and a Field Agent. Register a candidate, take the ₹499, capture a vacancy, create a placement, mark it joined and paid. Confirm each metric moves by exactly the expected amount and is attributed to the right agent. Then confirm a second agent's figures are unaffected.
+- [x] No stored aggregate or eligibility column was added anywhere
+- [x] All Phase 1–6.6 gate items still pass
+- [x] CI green on `main` — confirmed on GitHub Actions, not locally
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop. Report to Agastya. Do not start the UI restyle.**
 
