@@ -37,8 +37,10 @@ const ceoActor = {
   area: null,
 };
 
+type MockTxCallback<T> = (tx: unknown) => Promise<T>;
+
 interface MockPrismaForPlacement {
-  $transaction?: any;
+  $transaction?: <T>(fn: MockTxCallback<T> | Promise<T>[]) => Promise<T>;
   staff: {
     findUnique: jest.Mock<Promise<typeof staffActor | typeof ceoActor | null>, [{ where: { id: string } }]>;
   };
@@ -84,7 +86,11 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
     };
 
     mockPrisma = {
-      $transaction: jest.fn().mockImplementation((fn: any) => (typeof fn === 'function' ? fn(mockPrisma) : Promise.all(fn))),
+      $transaction: jest
+        .fn()
+        .mockImplementation(<T>(fn: MockTxCallback<T> | Promise<T>[]) =>
+          typeof fn === 'function' ? fn(mockPrisma) : Promise.all(fn),
+        ),
       staff: {
         findUnique: jest.fn().mockImplementation(({ where }) => {
           if (where.id === 'ceo-1') return Promise.resolve(ceoActor);

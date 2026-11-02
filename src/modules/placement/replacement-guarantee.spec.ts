@@ -28,8 +28,10 @@ const staffActor = {
   area: 'Indiranagar',
 };
 
+type MockTxCallback<T> = (tx: unknown) => Promise<T>;
+
 interface MockPrismaForPlacement {
-  $transaction?: any;
+  $transaction?: <T>(fn: MockTxCallback<T> | Promise<T>[]) => Promise<T>;
   staff: {
     findUnique: jest.Mock<Promise<typeof staffActor | null>, [{ where: { id: string } }]>;
   };
@@ -64,7 +66,11 @@ describe('Phase 6.5 Task 7: Enforce 60-Day Replacement Guarantee', () => {
     };
 
     mockPrisma = {
-      $transaction: jest.fn().mockImplementation((fn: any) => (typeof fn === 'function' ? fn(mockPrisma) : Promise.all(fn))),
+      $transaction: jest
+        .fn()
+        .mockImplementation(<T>(fn: MockTxCallback<T> | Promise<T>[]) =>
+          typeof fn === 'function' ? fn(mockPrisma) : Promise.all(fn),
+        ),
       staff: {
         findUnique: jest.fn().mockResolvedValue(staffActor),
       },

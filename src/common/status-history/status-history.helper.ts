@@ -22,7 +22,8 @@ export async function recordStatusChange(
   tx: Prisma.TransactionClient,
   params: RecordStatusChangeParams,
 ) {
-  if (!(tx as any)?.statusHistory?.create) {
+  const candidate = tx as unknown as Record<string, unknown>;
+  if (!('statusHistory' in candidate) || !candidate.statusHistory) {
     return null;
   }
 
