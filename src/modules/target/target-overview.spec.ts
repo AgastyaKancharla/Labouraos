@@ -1,12 +1,65 @@
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { TargetOverviewService } from './target-overview.service';
 import { TargetService } from './target.service';
 import { CallAgentMetricsService } from './call-agent-metrics.service';
 import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { MoneyAtRiskService } from './money-at-risk.service';
-import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { PrismaService } from '../../common/prisma/prisma.service';
+import { AuditService } from '../../common/audit/audit.service';
 import { BEHIND_PACE_START_DAY, BEHIND_PACE_THRESHOLD, MIN_REFUND_RATE_DENOMINATOR } from './target.constants';
+
+interface MockStaffRecord {
+  id: string;
+  code: string;
+  name: string;
+  role: string;
+  area: string;
+  city: string;
+  createdAt: Date;
+  teamLeadId: string | null;
+  status: string;
+}
+
+interface MockTargetRecord {
+  id: string;
+  staffId: string;
+  year: number;
+  month: number;
+  candidatesActivated: number | null;
+  refundRate: number | null;
+  vacanciesCaptured: number | null;
+  placementsClosed: number | null;
+  replacementsInside15Days: number | null;
+  repeatBusinesses: number | null;
+  createdAt: Date;
+}
+
+interface MockCallAgentMetricRecord {
+  staffId: string;
+  metrics: {
+    candidatesActivated: number;
+    vacanciesCaptured: number;
+    refundRate: number | null;
+  };
+  details: {
+    refundRate?: {
+      maturedCount: number;
+      refundedCount: number;
+      rate: number | null;
+    };
+  };
+}
+
+interface MockFieldAgentMetricRecord {
+  staffId: string;
+  metrics: {
+    placementsClosed: number;
+    replacementsSecuredInside15Days: number;
+    repeatBusinesses: number;
+  };
+  details: Record<string, unknown>;
+}
 
 describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
   let service: TargetOverviewService;
@@ -85,7 +138,7 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     area: 'Koramangala',
   };
 
-  const mockStaffRecords: Record<string, any> = {
+  const mockStaffRecords: Record<string, MockStaffRecord> = {
     [mockCallAgentId]: {
       id: mockCallAgentId,
       code: 'CA-00001',
@@ -154,9 +207,9 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     },
   };
 
-  let mockTargets: Record<string, any> = {};
-  let mockCallAgentMetrics: Record<string, any> = {};
-  let mockFieldAgentMetrics: Record<string, any> = {};
+  let mockTargets: Record<string, MockTargetRecord> = {};
+  let mockCallAgentMetrics: Record<string, MockCallAgentMetricRecord> = {};
+  let mockFieldAgentMetrics: Record<string, MockFieldAgentMetricRecord> = {};
 
   beforeEach(() => {
     mockTargets = {};
@@ -165,22 +218,22 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
 
     const prismaMock = {
       staff: {
-        findUnique: jest.fn().mockImplementation(({ where }) => {
+        findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
           return Promise.resolve(mockStaffRecords[where.id] ?? null);
         }),
-        findMany: jest.fn().mockImplementation(({ where }) => {
+        findMany: jest.fn().mockImplementation(({ where }: { where?: { teamLeadId?: string; role?: { in: string[] } } }) => {
           let list = Object.values(mockStaffRecords);
           if (where?.teamLeadId) {
             list = list.filter((s) => s.teamLeadId === where.teamLeadId);
           }
           if (where?.role?.in) {
-            list = list.filter((s) => where.role.in.includes(s.role));
+            list = list.filter((s) => where.role!.in.includes(s.role));
           }
           return Promise.resolve(list);
         }),
       },
       target: {
-        findUnique: jest.fn().mockImplementation(({ where }) => {
+        findUnique: jest.fn().mockImplementation(({ where }: { where: { staffId_year_month: { staffId: string; year: number; month: number } } }) => {
           const key = `${where.staffId_year_month.staffId}-${where.staffId_year_month.year}-${where.staffId_year_month.month}`;
           const target = mockTargets[key];
           if (!target) return Promise.resolve(null);
@@ -192,10 +245,13 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       },
     };
 
-    targetService = new TargetService(prismaMock as any, { log: jest.fn() } as any);
+    targetService = new TargetService(
+      prismaMock as unknown as PrismaService,
+      { log: jest.fn() } as unknown as AuditService,
+    );
 
     callAgentMetricsService = {
-      getCallAgentMetrics: jest.fn().mockImplementation((staffId) => {
+      getCallAgentMetrics: jest.fn().mockImplementation((staffId: string) => {
         return Promise.resolve(
           mockCallAgentMetrics[staffId] ?? {
             staffId,
@@ -214,10 +270,10 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
           },
         );
       }),
-    } as any;
+    } as unknown as CallAgentMetricsService;
 
     fieldAgentMetricsService = {
-      getFieldAgentMetrics: jest.fn().mockImplementation((staffId) => {
+      getFieldAgentMetrics: jest.fn().mockImplementation((staffId: string) => {
         return Promise.resolve(
           mockFieldAgentMetrics[staffId] ?? {
             staffId,
@@ -230,7 +286,7 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
           },
         );
       }),
-    } as any;
+    } as unknown as FieldAgentMetricsService;
 
     moneyAtRiskService = {
       getMoneyAtRisk: jest.fn().mockResolvedValue({
@@ -243,10 +299,10 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
         placementsAtRiskPaise: 0,
         rows: [],
       }),
-    } as any;
+    } as unknown as MoneyAtRiskService;
 
     service = new TargetOverviewService(
-      prismaMock as any,
+      prismaMock as unknown as PrismaService,
       targetService,
       callAgentMetricsService,
       fieldAgentMetricsService,
@@ -304,9 +360,49 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       expect(result.moneyAtRisk).toBeDefined();
     });
 
+    it('field agent sees their own field metrics and placements', async () => {
+      mockTargets[`${mockFieldAgentId}-2026-11`] = {
+        id: 'tgt-fa-1',
+        staffId: mockFieldAgentId,
+        year: 2026,
+        month: 11,
+        candidatesActivated: null,
+        refundRate: null,
+        vacanciesCaptured: null,
+        placementsClosed: 12,
+        replacementsInside15Days: 2,
+        repeatBusinesses: 3,
+        createdAt: new Date('2026-11-01T00:00:00Z'),
+      };
+
+      mockFieldAgentMetrics[mockFieldAgentId] = {
+        staffId: mockFieldAgentId,
+        metrics: {
+          placementsClosed: 10,
+          replacementsSecuredInside15Days: 2,
+          repeatBusinesses: 2,
+        },
+        details: {},
+      };
+
+      const result = await service.getOverview(
+        { year: 2026, month: 11 },
+        fieldAgentUser,
+        new Date('2026-11-15T12:00:00+05:30'),
+      );
+
+      expect(result.scope).toBe('agent');
+      expect(result.agent?.staff.id).toBe(mockFieldAgentId);
+      expect(result.agent?.achieved.placementsClosed).toBe(10);
+    });
+
     it('agent attempting to access another staff member throws 403 Forbidden', async () => {
       await expect(
         service.getOverview({ staffId: otherAgentId, year: 2026, month: 11 }, callAgentUser),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.getOverview({ staffId: mockCallAgentId, year: 2026, month: 11 }, otherAgentUser),
       ).rejects.toThrow(ForbiddenException);
     });
 
@@ -386,6 +482,10 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     it('team lead attempting to access an agent on another team throws 403 Forbidden', async () => {
       await expect(
         service.getOverview({ staffId: otherAgentId, year: 2026, month: 11 }, teamLeadUser),
+      ).rejects.toThrow(ForbiddenException);
+
+      await expect(
+        service.getOverview({ staffId: mockCallAgentId, year: 2026, month: 11 }, otherTeamLeadUser),
       ).rejects.toThrow(ForbiddenException);
     });
 
