@@ -15,10 +15,10 @@ import {
   toRupees,
   isWithinReplacementGuarantee,
   replacementGuaranteeDeadline,
-  REPLACEMENT_GUARANTEE_WINDOW_DAYS,
 } from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
+import { PricingService } from '../pricing/pricing.service';
 import { CreatePlacementDto } from './dto/create-placement.dto';
 import { RespondPlacementDto } from './dto/respond-placement.dto';
 import { RecordJoinedDto } from './dto/record-joined.dto';
@@ -54,6 +54,7 @@ export class PlacementService {
     private readonly auditService: AuditService,
     private readonly jobSeekerService: JobSeekerService,
     private readonly paymentService: PaymentService,
+    private readonly pricingService: PricingService,
   ) {}
 
   async create(vacancyId: string, dto: CreatePlacementDto, actorId: string) {
@@ -113,8 +114,9 @@ export class PlacementService {
       );
     }
 
-    const placementFee = calculatePlacementFee(agreedSalary);
-    const gstAmount = calculateGst(placementFee);
+    const policy = await this.pricingService.current();
+    const placementFee = calculatePlacementFee(agreedSalary, policy.placementFeePercent);
+    const gstAmount = calculateGst(placementFee, policy.gstPercent);
     const code = await this.idService.generateCode('placement');
 
     /**
@@ -237,9 +239,10 @@ export class PlacementService {
     }
 
     // dto.response === 'accepted'
-    // Calculate 50% placement fee and 18% GST using money module helpers
-    const placementFee = calculatePlacementFee(placement.agreedSalary);
-    const gstAmount = calculateGst(placementFee);
+    // Reuse stored placementFee and gstAmount on placement, or calculate from policy
+    const policy = await this.pricingService.current();
+    const placementFee = placement.placementFee || calculatePlacementFee(placement.agreedSalary, policy.placementFeePercent);
+    const gstAmount = placement.gstAmount || calculateGst(placementFee, policy.gstPercent);
     const totalAmount = placementFee + gstAmount;
 
     // Create payment charge via provider
@@ -572,9 +575,10 @@ export class PlacementService {
       // NOTE: Placement.clockPaused and clockPausedAt govern the 15-day replacement search window
       // AFTER a dropout is reported (when a business rejects 2 replacement candidates).
       // Clock pause does NOT extend this initial 60-day guarantee window, which runs strictly from joinedDate.
-      if (!isWithinReplacementGuarantee(placement.joinedDate, dropoutReportedAt)) {
-        const deadline = replacementGuaranteeDeadline(placement.joinedDate);
-        const refusalMessage = `Replacement guarantee expired on ${deadline.toISOString()} (${REPLACEMENT_GUARANTEE_WINDOW_DAYS} days from joinedDate ${placement.joinedDate.toISOString()}). Dropout reported at ${dropoutReportedAt.toISOString()} is outside the replacement guarantee window.`;
+      const policy = await this.pricingService.current();
+      if (!isWithinReplacementGuarantee(placement.joinedDate, dropoutReportedAt, policy.replacementWindowDays)) {
+        const deadline = replacementGuaranteeDeadline(placement.joinedDate, policy.replacementWindowDays);
+        const refusalMessage = `Replacement guarantee expired on ${deadline.toISOString()} (${policy.replacementWindowDays} days from joinedDate ${placement.joinedDate.toISOString()}). Dropout reported at ${dropoutReportedAt.toISOString()} is outside the replacement guarantee window.`;
 
         await this.auditService.log({
           action: 'placement_dropout_refused',
@@ -819,8 +823,9 @@ export class PlacementService {
     }
 
     const reason = dto?.rejectionReason ?? dto?.reason ?? 'Rejected by business';
+    const policy = await this.pricingService.current();
     const newRejectionCount = placement.replacementRejectionCount + 1;
-    const shouldPause = newRejectionCount >= 3;
+    const shouldPause = newRejectionCount > policy.maxReplacementRejections;
 
     const [updatedCandidate, updatedPlacement] = await this.prisma.$transaction([
       this.prisma.replacementCandidate.update({
@@ -1097,6 +1102,7 @@ export class PlacementService {
       },
     });
 
+    const policy = await this.pricingService.current();
     const eligibilityResult = evaluatePlacementRefundEligibility(
       {
         code: placement.code,
@@ -1108,6 +1114,7 @@ export class PlacementService {
         clockPausedAt: placement.clockPausedAt,
         placementFee: placement.placementFee,
         hasExistingRefund: Boolean(existingRefund),
+        searchDays: policy.replacementSearchDays,
       },
       now,
     );
@@ -1212,12 +1219,15 @@ export class PlacementService {
       });
     }
 
-    // Re-use calculatePlacementFee and calculateGst from money module
-    const baseAmountPaise = calculatePlacementFee(placement.agreedSalary);
-    const totalTaxPaise = calculateGst(baseAmountPaise);
+    // Re-use stored placement fee and GST, or calculate from policy
+    const policy = await this.pricingService.current();
+    const baseAmountPaise = placement.placementFee || calculatePlacementFee(placement.agreedSalary, policy.placementFeePercent);
+    const totalTaxPaise = placement.gstAmount || calculateGst(baseAmountPaise, policy.gstPercent);
     const totalAmountPaise = baseAmountPaise + totalTaxPaise;
 
-    // 18% GST split into 9% CGST and 9% SGST for intra-state supply
+    const gstPercent = policy.gstPercent;
+    const cgstRatePercent = Math.floor(gstPercent / 2);
+    const sgstRatePercent = gstPercent - cgstRatePercent;
     const cgstAmountPaise = Math.floor(totalTaxPaise / 2);
     const sgstAmountPaise = totalTaxPaise - cgstAmountPaise;
 
@@ -1265,13 +1275,13 @@ export class PlacementService {
       lineItems: [
         {
           itemNumber: 1,
-          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (50% of monthly salary)`,
+          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (${policy.placementFeePercent}% of monthly salary)`,
           sacCode: '9985',
           baseAmountPaise,
-          taxRatePercent: 18,
-          cgstRatePercent: 9,
+          taxRatePercent: gstPercent,
+          cgstRatePercent,
           cgstAmountPaise,
-          sgstRatePercent: 9,
+          sgstRatePercent,
           sgstAmountPaise,
           igstRatePercent: 0,
           igstAmountPaise: 0,

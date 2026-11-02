@@ -23,8 +23,8 @@ export class PricingController {
   @Get()
   @RequirePermission('pricing', 'read')
   @RequireRoles('ceo', 'manager')
-  getPricing(): PricingPolicy {
-    return this.pricingService.getPolicy();
+  async getPricing(): Promise<PricingPolicy> {
+    return this.pricingService.current();
   }
 
   @Post()
@@ -34,7 +34,7 @@ export class PricingController {
     @Body() body: Partial<PricingPolicy>,
     @Req() req: Request & { user: JwtPayload },
   ): Promise<PricingPolicy> {
-    return this.pricingService.updatePolicy(body, req.user.sub);
+    return this.pricingService.createVersion(body, req.user.sub);
   }
 
   @Put()
@@ -44,6 +44,6 @@ export class PricingController {
     @Body() body: Partial<PricingPolicy>,
     @Req() req: Request & { user: JwtPayload },
   ): Promise<PricingPolicy> {
-    return this.pricingService.updatePolicy(body, req.user.sub);
+    return this.pricingService.createVersion(body, req.user.sub);
   }
 }

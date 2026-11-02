@@ -1,7 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { PricingService, PricingPolicy } from '../pricing/pricing.service';
 import {
   PriorityCandidateRow,
   PriorityTradeRow,
@@ -11,7 +12,11 @@ import {
 
 @Injectable()
 export class PriorityService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    @Optional()
+    private readonly pricingService?: PricingService,
+  ) {}
 
   async getPriorityCandidates(
     actorId: string,
@@ -32,12 +37,23 @@ export class PriorityService {
       },
     });
 
+    let policy: PricingPolicy | null = null;
+    if (this.pricingService) {
+      try {
+        policy = await this.pricingService.current();
+      } catch {
+        policy = null;
+      }
+    }
+    const guaranteeDays = policy?.jobSeekerGuaranteeDays ?? 30;
+    const maxHits = policy?.maxHits ?? 3;
+
     const rows: PriorityCandidateRow[] = candidates.map((candidate) => {
-      let daysRemaining = 30;
+      let daysRemaining = guaranteeDays;
       let deadline: Date | null = null;
 
       if (candidate.paymentReceivedAt) {
-        deadline = refundGuaranteeDeadline(candidate.paymentReceivedAt);
+        deadline = refundGuaranteeDeadline(candidate.paymentReceivedAt, guaranteeDays);
         const msRemaining = deadline.getTime() - now.getTime();
         daysRemaining = Math.ceil(msRemaining / (1000 * 60 * 60 * 24));
       }
@@ -53,7 +69,7 @@ export class PriorityService {
         band = 'normal';
       }
 
-      const twoHitFlag = candidate.hitCount === 2;
+      const twoHitFlag = candidate.hitCount >= maxHits - 1;
 
       return {
         candidate,

@@ -27,7 +27,7 @@ export interface RefundDueRow {
   id: string;
   code: string;
   city: string;
-  amount: number; // integer paise: 49900 or placementFee
+  amount: number; // integer paise: activationFee or placementFee
   amountOwed: number; // alias for amount (integer paise)
   daysOwed: number; // days elapsed since the refund became owed (longest-owed first)
   daysElapsed: number; // total days elapsed from payment / dropout report

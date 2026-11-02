@@ -1,56 +1,79 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { PricingPolicy } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
-export interface PricingPolicy {
-  activationFeePaise: number;
-  placementFeePercent: number;
-  gstPercent: number;
-  referralPayoutPaise: number;
-  replacementWindowDays: number;
-  replacementSearchDays: number;
-  jobSeekerGuaranteeDays: number;
-  maxReplacementRejections: number;
-  updatedAt: string;
-}
+export { PricingPolicy };
 
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
-
-  // In-memory policy state initialized with §6 domain rules
-  private policy: PricingPolicy = {
-    activationFeePaise: 49900,
-    placementFeePercent: 50,
-    gstPercent: 18,
-    referralPayoutPaise: 20000,
-    replacementWindowDays: 60,
-    replacementSearchDays: 15,
-    jobSeekerGuaranteeDays: 30,
-    maxReplacementRejections: 2,
-    updatedAt: new Date().toISOString(),
-  };
 
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
   ) {}
 
-  getPolicy(): PricingPolicy {
-    return { ...this.policy };
+  async current(): Promise<PricingPolicy> {
+    const now = new Date();
+    const policy = await this.prisma.pricingPolicy.findFirst({
+      where: {
+        effectiveFrom: { lte: now },
+      },
+      orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    if (!policy) {
+      throw new Error('No active PricingPolicy found in database');
+    }
+
+    return policy;
   }
 
-  async updatePolicy(
+  async getPolicy(): Promise<PricingPolicy> {
+    return this.current();
+  }
+
+  async createVersion(
     updates: Partial<PricingPolicy>,
     actorId: string,
   ): Promise<PricingPolicy> {
-    const before = { ...this.policy };
+    const before = await this.current();
 
-    this.policy = {
-      ...this.policy,
-      ...updates,
-      updatedAt: new Date().toISOString(),
-    };
+    const created = await this.prisma.pricingPolicy.create({
+      data: {
+        activationFeePaise: updates.activationFeePaise ?? before.activationFeePaise,
+        placementFeePercent: updates.placementFeePercent ?? before.placementFeePercent,
+        gstPercent: updates.gstPercent ?? before.gstPercent,
+        referralPayoutPaise: updates.referralPayoutPaise ?? before.referralPayoutPaise,
+        joiningRewardPaise: updates.joiningRewardPaise ?? before.joiningRewardPaise,
+        joiningRewardAfterDays: updates.joiningRewardAfterDays ?? before.joiningRewardAfterDays,
+        jobSeekerGuaranteeDays: updates.jobSeekerGuaranteeDays ?? before.jobSeekerGuaranteeDays,
+        offerReplyHours: updates.offerReplyHours ?? before.offerReplyHours,
+        maxHits: updates.maxHits ?? before.maxHits,
+        interviewResultDeadline: updates.interviewResultDeadline ?? before.interviewResultDeadline,
+        interviewResultEscalateHours: updates.interviewResultEscalateHours ?? before.interviewResultEscalateHours,
+        placementPaymentDueHours: updates.placementPaymentDueHours ?? before.placementPaymentDueHours,
+        replacementWindowDays: updates.replacementWindowDays ?? before.replacementWindowDays,
+        replacementSearchDays: updates.replacementSearchDays ?? before.replacementSearchDays,
+        maxFreeReplacements: updates.maxFreeReplacements ?? before.maxFreeReplacements,
+        maxReplacementRejections: updates.maxReplacementRejections ?? before.maxReplacementRejections,
+        claimReportDays: updates.claimReportDays ?? before.claimReportDays,
+        claimDecisionHours: updates.claimDecisionHours ?? before.claimDecisionHours,
+        noBypassMonths: updates.noBypassMonths ?? before.noBypassMonths,
+        noBypassPenaltyPercent: updates.noBypassPenaltyPercent ?? before.noBypassPenaltyPercent,
+        payoutDetailsCoolingHours: updates.payoutDetailsCoolingHours ?? before.payoutDetailsCoolingHours,
+        idleLogoutMinutes: updates.idleLogoutMinutes ?? before.idleLogoutMinutes,
+        maxSessionMinutes: updates.maxSessionMinutes ?? before.maxSessionMinutes,
+        loginCodeValidMinutes: updates.loginCodeValidMinutes ?? before.loginCodeValidMinutes,
+        failedLoginLimit: updates.failedLoginLimit ?? before.failedLoginLimit,
+        lockoutMinutes: updates.lockoutMinutes ?? before.lockoutMinutes,
+        callingHoursStart: updates.callingHoursStart ?? before.callingHoursStart,
+        callingHoursEnd: updates.callingHoursEnd ?? before.callingHoursEnd,
+        effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
+        setByStaffId: actorId,
+      },
+    });
 
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
@@ -61,14 +84,21 @@ export class PricingService {
         actorId: actor.id,
         action: 'pricing_change',
         entityType: 'pricing',
-        entityCode: 'SYSTEM_PRICING',
-        before,
-        after: this.policy as unknown as Record<string, unknown>,
+        entityCode: created.id,
+        before: before as unknown as Record<string, unknown>,
+        after: created as unknown as Record<string, unknown>,
         city: 'Bengaluru',
       });
     }
 
-    this.logger.log(`Pricing policy updated by actor ${actorId}`);
-    return { ...this.policy };
+    this.logger.log(`New pricing policy version created (${created.id}) by actor ${actorId}`);
+    return created;
+  }
+
+  async updatePolicy(
+    updates: Partial<PricingPolicy>,
+    actorId: string,
+  ): Promise<PricingPolicy> {
+    return this.createVersion(updates, actorId);
   }
 }

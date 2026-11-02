@@ -192,8 +192,8 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
     jobSeekerIds.push(worker2.id);
 
     // 1. Confirmed placement
-    const fee1 = calculatePlacementFee(2000000);
-    const gst1 = calculateGst(fee1);
+    const fee1 = calculatePlacementFee(2000000, 50);
+    const gst1 = calculateGst(fee1, 18);
     const pl1 = await prisma.placement.create({
       data: {
         code: `PL-INV1-${timestamp}`,
@@ -212,8 +212,8 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
     placementIds.push(pl1.id);
 
     // 2. Confirmed placement with uneven salary (2500033 paise)
-    const fee2 = calculatePlacementFee(2500033);
-    const gst2 = calculateGst(fee2);
+    const fee2 = calculatePlacementFee(2500033, 50);
+    const gst2 = calculateGst(fee2, 18);
     const pl2 = await prisma.placement.create({
       data: {
         code: `PL-INV2-${timestamp}`,
@@ -343,8 +343,8 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
     const invoice = res.body;
 
     const salary = 2500033;
-    const expectedBaseFee = calculatePlacementFee(salary); // Math.round(2500033 * 0.5) = 1250017
-    const expectedGst = calculateGst(expectedBaseFee); // Math.round(1250017 * 0.18) = 225003
+    const expectedBaseFee = calculatePlacementFee(salary, 50); // Math.round(2500033 * 0.5) = 1250017
+    const expectedGst = calculateGst(expectedBaseFee, 18); // Math.round(1250017 * 0.18) = 225003
     const expectedTotal = expectedBaseFee + expectedGst; // 1475020
 
     expect(Number.isInteger(expectedBaseFee)).toBe(true);

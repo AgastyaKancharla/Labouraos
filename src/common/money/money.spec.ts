@@ -11,7 +11,6 @@ import {
   isWithinReplacementGuarantee,
   REPLACEMENT_GUARANTEE_WINDOW_DAYS,
   REPLACEMENT_GUARANTEE_WINDOW_MS,
-  REFERRAL_PAYOUT_AMOUNT_PAISE,
 } from './money';
 
 describe('Money Module', () => {
@@ -52,41 +51,34 @@ describe('Money Module', () => {
   });
 
   describe('calculateGst', () => {
-    it('calculates exact 18% GST on even amounts', () => {
-      expect(calculateGst(10000)).toBe(1800); // ₹100 -> ₹18
-      expect(calculateGst(49900)).toBe(8982); // ₹499 -> ₹89.82
+    it('calculates exact GST on even amounts with given percentage', () => {
+      expect(calculateGst(10000, 18)).toBe(1800); // ₹100 -> ₹18
+      expect(calculateGst(49900, 18)).toBe(8982); // ₹499 -> ₹89.82
     });
 
     it('asserts GST on an amount that does not divide evenly (verifies rounding)', () => {
       // 105 * 0.18 = 18.9 -> 19
-      expect(calculateGst(105)).toBe(19);
+      expect(calculateGst(105, 18)).toBe(19);
 
       // 101 * 0.18 = 18.18 -> 18
-      expect(calculateGst(101)).toBe(18);
+      expect(calculateGst(101, 18)).toBe(18);
 
       // 103 * 0.18 = 18.54 -> 19
-      expect(calculateGst(103)).toBe(19);
+      expect(calculateGst(103, 18)).toBe(19);
 
       // 1 * 0.18 = 0.18 -> 0
-      expect(calculateGst(1)).toBe(0);
+      expect(calculateGst(1, 18)).toBe(0);
 
       // 3 * 0.18 = 0.54 -> 1
-      expect(calculateGst(3)).toBe(1);
+      expect(calculateGst(3, 18)).toBe(1);
     });
   });
 
   describe('calculatePlacementFee', () => {
-    it('calculates 50% of first month salary in paise', () => {
-      expect(calculatePlacementFee(2000000)).toBe(1000000); // ₹20,000 -> ₹10,000
-      expect(calculatePlacementFee(2500000)).toBe(1250000); // ₹25,000 -> ₹12,500
-      expect(calculatePlacementFee(101)).toBe(51); // 101 / 2 = 50.5 -> rounds to 51
-    });
-  });
-
-  describe('REFERRAL_PAYOUT_AMOUNT_PAISE (§6 locked amount)', () => {
-    it('is locked at flat 20000 paise (₹200) per placement', () => {
-      expect(REFERRAL_PAYOUT_AMOUNT_PAISE).toBe(20000);
-      expect(toRupees(REFERRAL_PAYOUT_AMOUNT_PAISE)).toBe(200);
+    it('calculates placement fee from first month salary in paise and fee percentage', () => {
+      expect(calculatePlacementFee(2000000, 50)).toBe(1000000); // ₹20,000 -> ₹10,000
+      expect(calculatePlacementFee(2500000, 50)).toBe(1250000); // ₹25,000 -> ₹12,500
+      expect(calculatePlacementFee(101, 50)).toBe(51); // 101 / 2 = 50.5 -> rounds to 51
     });
   });
 
@@ -119,8 +111,8 @@ describe('Money Module', () => {
       expect(() => toPaise(10.5)).toThrow(TypeError);
       expect(() => toRupees(100.5)).toThrow(TypeError);
       expect(() => formatINR(100.5)).toThrow(TypeError);
-      expect(() => calculateGst(100.25)).toThrow(TypeError);
-      expect(() => calculatePlacementFee(50000.5)).toThrow(TypeError);
+      expect(() => calculateGst(100.25, 18)).toThrow(TypeError);
+      expect(() => calculatePlacementFee(50000.5, 50)).toThrow(TypeError);
       expect(() => calculateRefund(10000.5, 10)).toThrow(TypeError);
       expect(() => calculateRefund(10000, 10.5)).toThrow(TypeError);
 
@@ -128,15 +120,15 @@ describe('Money Module', () => {
       expect(() => toPaise(-1)).toThrow(RangeError);
       expect(() => toRupees(-1)).toThrow(RangeError);
       expect(() => formatINR(-1)).toThrow(RangeError);
-      expect(() => calculateGst(-1)).toThrow(RangeError);
-      expect(() => calculatePlacementFee(-1)).toThrow(RangeError);
+      expect(() => calculateGst(-1, 18)).toThrow(RangeError);
+      expect(() => calculatePlacementFee(-1, 50)).toThrow(RangeError);
       expect(() => calculateRefund(-100, 10)).toThrow(RangeError);
 
       // Verify all returned values are strictly integers
       expect(Number.isInteger(toPaise(123))).toBe(true);
       expect(Number.isInteger(toRupees(12345))).toBe(true);
-      expect(Number.isInteger(calculateGst(105))).toBe(true);
-      expect(Number.isInteger(calculatePlacementFee(101))).toBe(true);
+      expect(Number.isInteger(calculateGst(105, 18))).toBe(true);
+      expect(Number.isInteger(calculatePlacementFee(101, 50))).toBe(true);
       expect(Number.isInteger(calculateRefund(100000, 15))).toBe(true);
       expect(Number.isInteger(calculateRefund(100000, 20))).toBe(true);
       expect(Number.isInteger(calculateRefund(100000, 35))).toBe(true);
