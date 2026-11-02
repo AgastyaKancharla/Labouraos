@@ -4,12 +4,14 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import {
   calculateHaversineDistanceMeters,
   DEFAULT_GEOFENCE_RADIUS_METERS,
@@ -24,6 +26,7 @@ export class BusinessService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
+    @Optional() private readonly reviewFlagService?: ReviewFlagService,
   ) {}
 
   async create(dto: CreateBusinessDto, actorId: string) {
@@ -167,6 +170,22 @@ export class BusinessService {
           visitedAt: dto.visit?.visitedAt
             ? new Date(dto.visit.visitedAt)
             : (dto.visitedAt ? new Date(dto.visitedAt) : new Date()),
+        },
+      });
+    }
+
+    if (geofenceFlag && this.reviewFlagService) {
+      await this.reviewFlagService.raise({
+        kind: 'gps_mismatch',
+        subjectType: 'business',
+        subjectId: business.id,
+        raisedForStaffId: staff.id,
+        details: {
+          businessCode: business.code,
+          businessLat,
+          businessLon,
+          visitLat,
+          visitLon,
         },
       });
     }

@@ -195,6 +195,8 @@ model Staff {
   updatedTargets    Target[]         @relation("UpdatedTargets")
   pricingPoliciesSet PricingPolicy[] @relation("PricingPolicySetBy")
   statusHistoriesChanged StatusHistory[] @relation("StatusHistoryChangedBy")
+  reviewFlagsRaisedFor ReviewFlag[]    @relation("ReviewFlagRaisedFor")
+  reviewFlagsResolvedBy ReviewFlag[]   @relation("ReviewFlagResolvedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   registeredDeviceId String?
@@ -475,4 +477,25 @@ model StatusHistory {
   @@index([subjectType, subjectId, changedAt])
   @@index([changedByStaffId])
 }
+
+model ReviewFlag {
+  id                String    @id @default(uuid())
+  code              String    @unique
+  kind              String    // see closed list in review-flag.constants.ts
+  subjectType       String    // business, placement, payment, staff, job_seeker, etc.
+  subjectId         String
+  raisedForStaffId  String?
+  raisedForStaff    Staff?    @relation("ReviewFlagRaisedFor", fields: [raisedForStaffId], references: [id], onDelete: SetNull)
+  details           Json?
+  status            String    @default("open") // open, resolved, dismissed
+  raisedAt          DateTime  @default(now())
+  resolvedAt        DateTime?
+  resolvedByStaffId String?
+  resolvedByStaff   Staff?    @relation("ReviewFlagResolvedBy", fields: [resolvedByStaffId], references: [id], onDelete: SetNull)
+  resolution        String?
+
+  @@index([status, raisedAt])
+  @@index([raisedForStaffId])
+}
+
 

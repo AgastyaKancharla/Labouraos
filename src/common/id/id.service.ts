@@ -12,7 +12,8 @@ export type EntityType =
   | 'staff'
   | 'payment'
   | 'audit_log'
-  | 'invoice';
+  | 'invoice'
+  | 'review_flag';
 
 export const ENTITY_PREFIXES: Record<EntityType, string> = {
   job_seeker: 'JS',
@@ -26,6 +27,7 @@ export const ENTITY_PREFIXES: Record<EntityType, string> = {
   payment: 'PAY',
   audit_log: 'AUD',
   invoice: 'INV',
+  review_flag: 'FL',
 };
 
 export function formatCode(prefix: string, seq: number): string {
