@@ -4,11 +4,19 @@ import { IdModule } from '../../common/id/id.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { OtpModule } from '../../common/otp/otp.module';
 import { VacancyModule } from '../vacancy/vacancy.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { BusinessController } from './business.controller';
 import { BusinessService } from './business.service';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, OtpModule, VacancyModule],
+  imports: [
+    PrismaModule,
+    IdModule,
+    AuditModule,
+    OtpModule,
+    VacancyModule,
+    ReviewFlagModule,
+  ],
   controllers: [BusinessController],
   providers: [BusinessService],
   exports: [BusinessService],

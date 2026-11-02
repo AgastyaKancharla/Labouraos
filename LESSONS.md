@@ -297,6 +297,11 @@ Format:
 **Cause:** `PricingService` was injected with `@Optional()`, and each caller caught a missing or failed read and substituted hard-coded amounts. `RefundModule` and `TargetModule` did not import `PricingModule`, so those screens never saw the policy row.
 **Fix:** `PricingService` is a required dependency. A failed policy read throws. Refund amounts come from the stored activation payment when one exists. The literal check also rejects `499 * 100` and hard-coded rule numbers in services.
 
+## Review flags missed the staff id and the area on the token
+**Symptom:** `GET /review-flags` and resolve did not scope to a Team Lead's agents, and creating a business as a field agent returned 403 before a `gps_mismatch` flag could be raised. The review-flag controller also failed to compile.
+**Cause:** The controller passed the JWT payload through as the actor and read `actor.id`, but the staff id is `payload.sub`. It imported `RolesGuard`, which is not a file in this repo; role checks go through `RbacGuard`. The field-agent test token omitted `area`, so the own-area check on business create rejected `body.area`. `ReviewFlagService` was also `@Optional()`, so a missing injection would skip the GPS flag.
+**Fix:** Map `{ id: user.sub, role: user.role }`, guard the routes with `RbacGuard`, put the staff area on field-agent tokens, and inject `ReviewFlagService` as required so a GPS mismatch always raises `gps_mismatch`.
+
 
 
 

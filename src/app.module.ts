@@ -22,6 +22,7 @@ import { WhatsAppModule } from './common/whatsapp/whatsapp.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { TargetModule } from './modules/target/target.module';
 import { StatusHistoryModule } from './modules/status-history/status-history.module';
+import { ReviewFlagModule } from './modules/review-flag/review-flag.module';
 import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
 
@@ -50,6 +51,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     TelephonyModule,
     StaffModule,
     StatusHistoryModule,
+    ReviewFlagModule,
     TargetModule,
     HealthModule,
   ],

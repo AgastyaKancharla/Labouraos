@@ -111,7 +111,7 @@
 
 ---
 
-### [ ] Task 8 — Review flags
+### [x] Task 8 — Review flags
 
 **Acceptance:**
 - New `ReviewFlag` table exactly as `specs/data-design.md` §1, with its closed list of kinds (including `payment_mismatch`).
