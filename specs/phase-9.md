@@ -29,7 +29,7 @@
 
 ---
 
-### [ ] Task 2 — One settings table for every rule number (fixes Problems 2 and 3)
+### [x] Task 2 — One settings table for every rule number (fixes Problems 2 and 3)
 
 **Today:** `PricingService` keeps its settings in memory, so a CEO's change is lost on restart, and nothing reads them anyway — the amounts are typed directly into the services (`49900` in `job-seeker.service.ts`, `money-at-risk.service.ts` and `job-seeker-refund-eligibility.ts`; `50` inside `calculatePlacementFee`; `>= 3` for hits; `>= 3` for replacement rejections; the 30/60/15-day constants in `money.ts`).
 
