@@ -45,26 +45,33 @@ export async function stableTotpCode(secret: string): Promise<string> {
   return authenticator.generate(secret);
 }
 
-/** Enrols the account in TOTP if it is not already, and returns its secret. */
+/** Enrols the account in TOTP if it is not already, and returns its secret and staff details. */
+export async function ensureStaffEnrolled(
+  email: string,
+): Promise<{ secret: string | null; role?: string; registeredDeviceId?: string | null }> {
+  const staff = await db().staff.findUnique({
+    where: { email },
+    select: { totpEnabled: true, totpSecret: true, role: true, registeredDeviceId: true },
+  });
+  if (!staff) {
+    return { secret: null };
+  }
+  let secret = staff.totpSecret;
+  if (!staff.totpEnabled || !staff.totpSecret) {
+    secret = authenticator.generateSecret();
+    enrolledByHelper.add(email);
+    await db().staff.update({
+      where: { email },
+      data: { totpSecret: secret, totpEnabled: true },
+    });
+  }
+  return { secret, role: staff.role, registeredDeviceId: staff.registeredDeviceId };
+}
+
 export async function ensureTotpEnrolled(
   email: string,
 ): Promise<string | null> {
-  const staff = await db().staff.findUnique({
-    where: { email },
-    select: { totpEnabled: true, totpSecret: true },
-  });
-  if (!staff) {
-    return null;
-  }
-  if (staff.totpEnabled && staff.totpSecret) {
-    return staff.totpSecret;
-  }
-  const secret = authenticator.generateSecret();
-  enrolledByHelper.add(email);
-  await db().staff.update({
-    where: { email },
-    data: { totpSecret: secret, totpEnabled: true },
-  });
+  const { secret } = await ensureStaffEnrolled(email);
   return secret;
 }
 
@@ -78,10 +85,18 @@ export function enrolledLogin(
   body: { email: string; password: string; [key: string]: unknown },
 ): LoginCall {
   const run = async (): Promise<request.Response> => {
-    const secret = await ensureTotpEnrolled(body.email);
-    const payload = secret
-      ? { ...body, totpCode: await stableTotpCode(secret) }
-      : body;
+    const { secret, role, registeredDeviceId } = await ensureStaffEnrolled(body.email);
+    const hasExplicitDeviceId = Object.prototype.hasOwnProperty.call(body, 'deviceId');
+    const deviceId =
+      role === 'field_agent' && !hasExplicitDeviceId
+        ? (registeredDeviceId ?? 'test-enrolled-field-agent-device')
+        : body.deviceId;
+
+    const payload = {
+      ...body,
+      ...(secret ? { totpCode: await stableTotpCode(secret) } : {}),
+      ...(deviceId !== undefined ? { deviceId } : {}),
+    };
     return request(server).post('/auth/login').send(payload);
   };
   const call = run();

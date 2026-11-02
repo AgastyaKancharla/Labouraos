@@ -93,19 +93,20 @@ export class AuthService {
     // 2. Device binding for Field Agent app specifically
     if (staff.role === 'field_agent') {
       const incomingDeviceId = loginDto.deviceId?.trim();
+      if (!incomingDeviceId) {
+        throw new UnauthorizedException(
+          'deviceId is required for field agent login',
+        );
+      }
+
       if (!staff.registeredDeviceId) {
         // First login from this field agent registers the device identifier
-        if (incomingDeviceId) {
-          await this.prisma.staff.update({
-            where: { id: staff.id },
-            data: { registeredDeviceId: incomingDeviceId },
-          });
-          staff.registeredDeviceId = incomingDeviceId;
-        }
-      } else if (
-        incomingDeviceId &&
-        incomingDeviceId !== staff.registeredDeviceId
-      ) {
+        await this.prisma.staff.update({
+          where: { id: staff.id },
+          data: { registeredDeviceId: incomingDeviceId },
+        });
+        staff.registeredDeviceId = incomingDeviceId;
+      } else if (incomingDeviceId !== staff.registeredDeviceId) {
         // Unrecognized device on an account that already has one: requires step-up TOTP code
         if (!loginDto.stepUpTotpCode) {
           throw new UnauthorizedException(

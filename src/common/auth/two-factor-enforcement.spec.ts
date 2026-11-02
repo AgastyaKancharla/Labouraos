@@ -43,7 +43,11 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
   }
 
   const passwordOnlyLogin = (email: string) =>
-    request(app.getHttpServer()).post('/auth/login').send({ email, password });
+    request(app.getHttpServer()).post('/auth/login').send({
+      email,
+      password,
+      deviceId: 'tfa-test-device',
+    });
 
   const get = (path: string, token: string) =>
     request(app.getHttpServer())
