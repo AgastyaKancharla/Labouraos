@@ -524,7 +524,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .set('X-Forwarded-For', freshIp());
     expect(ca1Dashboard.status).toBe(200);
     expect(ca1Dashboard.body.scope).toBe('agent');
-    expect(ca1Dashboard.body.agent.staffCode).toBe(ca1Code);
+    expect(ca1Dashboard.body.agent.staff.code).toBe(ca1Code);
     expect(ca1Dashboard.body.agent.achieved.candidatesActivated).toBe(1);
     expect(ca1Dashboard.body.agent.achieved.vacanciesCaptured).toBe(1);
 
@@ -535,7 +535,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .set('X-Forwarded-For', freshIp());
     expect(fa1Dashboard.status).toBe(200);
     expect(fa1Dashboard.body.scope).toBe('agent');
-    expect(fa1Dashboard.body.agent.staffCode).toBe(fa1Code);
+    expect(fa1Dashboard.body.agent.staff.code).toBe(fa1Code);
     expect(fa1Dashboard.body.agent.achieved.placementsClosed).toBe(1);
 
     // Placements Leaderboard: FA1 is ranked at position 1; FA2 is excluded (no target)
