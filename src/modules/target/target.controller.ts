@@ -16,6 +16,7 @@ import { CallAgentMetricsService } from './call-agent-metrics.service';
 import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { MoneyAtRiskService } from './money-at-risk.service';
 import { TargetOverviewService } from './target-overview.service';
+import { LeaderboardService } from './leaderboard.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -35,7 +36,25 @@ export class TargetController {
     private readonly fieldAgentMetricsService: FieldAgentMetricsService,
     private readonly moneyAtRiskService: MoneyAtRiskService,
     private readonly targetOverviewService: TargetOverviewService,
+    private readonly leaderboardService: LeaderboardService,
   ) {}
+
+  @Get('leaderboard')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  @RequirePermission('target', 'read')
+  async getLeaderboard(
+    @Query('year') year: string | undefined,
+    @Query('month') month: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.leaderboardService.getLeaderboard(
+      {
+        year: year ? parseInt(year, 10) : undefined,
+        month: month ? parseInt(month, 10) : undefined,
+      },
+      req.user,
+    );
+  }
 
   @Get('overview')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
