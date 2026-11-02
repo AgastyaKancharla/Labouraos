@@ -252,7 +252,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     // =========================================================================
     console.log('--- STEP 1: Manager sets targets for CA1 and FA1 ---');
 
-    // CA1 Target: 10 activated candidates, 10% refund rate ceiling
+    // CA1 Target: 10 activated candidates, 5 vacancies captured, 10% refund rate ceiling
     const ca1TargetRes = await request(app.getHttpServer())
       .post('/targets')
       .set('Authorization', `Bearer ${managerToken}`)
@@ -262,13 +262,14 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         year,
         month,
         candidatesActivated: 10,
+        vacanciesCaptured: 5,
         refundRate: 0.1,
       });
     expect(ca1TargetRes.status).toBe(201);
     cleanTargetIds.push(ca1TargetRes.body.id);
-    console.log(`[CA1 Target Set] ID: ${ca1TargetRes.body.id}, candidatesActivated: 10, refundRate: 0.1`);
+    console.log(`[CA1 Target Set] ID: ${ca1TargetRes.body.id}, candidatesActivated: 10, vacanciesCaptured: 5, refundRate: 0.1`);
 
-    // FA1 Target: 5 vacancies captured, 5 placements closed
+    // FA1 Target: 5 placements closed
     const fa1TargetRes = await request(app.getHttpServer())
       .post('/targets')
       .set('Authorization', `Bearer ${managerToken}`)
@@ -277,12 +278,11 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         staffId: fa1Id,
         year,
         month,
-        vacanciesCaptured: 5,
         placementsClosed: 5,
       });
     expect(fa1TargetRes.status).toBe(201);
     cleanTargetIds.push(fa1TargetRes.body.id);
-    console.log(`[FA1 Target Set] ID: ${fa1TargetRes.body.id}, vacanciesCaptured: 5, placementsClosed: 5`);
+    console.log(`[FA1 Target Set] ID: ${fa1TargetRes.body.id}, placementsClosed: 5`);
 
     // =========================================================================
     // STEP 2: Baseline verification — all achieved figures are currently 0
@@ -295,13 +295,13 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .set('X-Forwarded-For', freshIp());
     expect(ca1Base.status).toBe(200);
     expect(ca1Base.body.metrics.candidatesActivated).toBe(0);
+    expect(ca1Base.body.metrics.vacanciesCaptured).toBe(0);
 
     const fa1Base = await request(app.getHttpServer())
       .get(`/targets/metrics/field-agent/${fa1Id}?year=${year}&month=${month}`)
       .set('Authorization', `Bearer ${fa1Token}`)
       .set('X-Forwarded-For', freshIp());
     expect(fa1Base.status).toBe(200);
-    expect(fa1Base.body.metrics.vacanciesCaptured).toBe(0);
     expect(fa1Base.body.metrics.placementsClosed).toBe(0);
 
     const ca2Base = await request(app.getHttpServer())
@@ -310,13 +310,13 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .set('X-Forwarded-For', freshIp());
     expect(ca2Base.status).toBe(200);
     expect(ca2Base.body.metrics.candidatesActivated).toBe(0);
+    expect(ca2Base.body.metrics.vacanciesCaptured).toBe(0);
 
     const fa2Base = await request(app.getHttpServer())
       .get(`/targets/metrics/field-agent/${fa2Id}?year=${year}&month=${month}`)
       .set('Authorization', `Bearer ${fa2Token}`)
       .set('X-Forwarded-For', freshIp());
     expect(fa2Base.status).toBe(200);
-    expect(fa2Base.body.metrics.vacanciesCaptured).toBe(0);
     expect(fa2Base.body.metrics.placementsClosed).toBe(0);
     console.log('[Baseline Verified] CA1: 0, FA1: 0, CA2: 0, FA2: 0');
 
@@ -378,12 +378,12 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     expect(activatedCandidate.registeredByStaffId).toBe(ca1Id);
 
     // =========================================================================
-    // STEP 4: FA1 captures a vacancy
+    // STEP 4: CA1 captures a vacancy
     // =========================================================================
-    console.log('\n--- STEP 4: FA1 captures a vacancy ---');
+    console.log('\n--- STEP 4: CA1 captures a vacancy ---');
     const vacancyRes = await request(app.getHttpServer())
       .post('/vacancies')
-      .set('Authorization', `Bearer ${fa1Token}`)
+      .set('Authorization', `Bearer ${ca1Token}`)
       .set('X-Forwarded-For', freshIp())
       .send({
         businessId,
@@ -395,12 +395,12 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     expect(vacancyRes.status).toBe(201);
     const vacancyId = vacancyRes.body.id;
     cleanVacancyIds.push(vacancyId);
-    console.log(`[Vacancy Captured] ID: ${vacancyId}, capturedByStaffId: ${fa1Id}`);
+    console.log(`[Vacancy Captured] ID: ${vacancyId}, capturedByStaffId: ${ca1Id}`);
 
     const capturedVacancy = await prisma.vacancy.findUniqueOrThrow({
       where: { id: vacancyId },
     });
-    expect(capturedVacancy.capturedByStaffId).toBe(fa1Id);
+    expect(capturedVacancy.capturedByStaffId).toBe(ca1Id);
 
     // =========================================================================
     // STEP 5: FA1 creates placement, business accepts, fee paid, candidate joins
@@ -470,24 +470,24 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     // =========================================================================
     console.log('\n--- STEP 6: Confirm metrics moved by expected amount ---');
 
-    // CA1 metrics: candidatesActivated moved from 0 to 1
+    // CA1 metrics: candidatesActivated moved from 0 to 1, vacanciesCaptured moved from 0 to 1
     const ca1After = await request(app.getHttpServer())
       .get(`/targets/metrics/call-agent/${ca1Id}?year=${year}&month=${month}`)
       .set('Authorization', `Bearer ${ca1Token}`)
       .set('X-Forwarded-For', freshIp());
     expect(ca1After.status).toBe(200);
     expect(ca1After.body.metrics.candidatesActivated).toBe(1);
+    expect(ca1After.body.metrics.vacanciesCaptured).toBe(1);
     console.log(`[CA1 Metric Moved] candidatesActivated: 0 -> ${ca1After.body.metrics.candidatesActivated} (Expected: 1)`);
+    console.log(`[CA1 Metric Moved] vacanciesCaptured: 0 -> ${ca1After.body.metrics.vacanciesCaptured} (Expected: 1)`);
 
-    // FA1 metrics: vacanciesCaptured moved from 0 to 1, placementsClosed moved from 0 to 1
+    // FA1 metrics: placementsClosed moved from 0 to 1
     const fa1After = await request(app.getHttpServer())
       .get(`/targets/metrics/field-agent/${fa1Id}?year=${year}&month=${month}`)
       .set('Authorization', `Bearer ${fa1Token}`)
       .set('X-Forwarded-For', freshIp());
     expect(fa1After.status).toBe(200);
-    expect(fa1After.body.metrics.vacanciesCaptured).toBe(1);
     expect(fa1After.body.metrics.placementsClosed).toBe(1);
-    console.log(`[FA1 Metric Moved] vacanciesCaptured: 0 -> ${fa1After.body.metrics.vacanciesCaptured} (Expected: 1)`);
     console.log(`[FA1 Metric Moved] placementsClosed: 0 -> ${fa1After.body.metrics.placementsClosed} (Expected: 1)`);
 
     // =========================================================================
@@ -501,16 +501,16 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .set('X-Forwarded-For', freshIp());
     expect(ca2After.status).toBe(200);
     expect(ca2After.body.metrics.candidatesActivated).toBe(0);
-    console.log(`[CA2 Unaffected] candidatesActivated: ${ca2After.body.metrics.candidatesActivated} (Expected: 0)`);
+    expect(ca2After.body.metrics.vacanciesCaptured).toBe(0);
+    console.log(`[CA2 Unaffected] candidatesActivated: ${ca2After.body.metrics.candidatesActivated}, vacanciesCaptured: ${ca2After.body.metrics.vacanciesCaptured} (Expected: 0)`);
 
     const fa2After = await request(app.getHttpServer())
       .get(`/targets/metrics/field-agent/${fa2Id}?year=${year}&month=${month}`)
       .set('Authorization', `Bearer ${fa2Token}`)
       .set('X-Forwarded-For', freshIp());
     expect(fa2After.status).toBe(200);
-    expect(fa2After.body.metrics.vacanciesCaptured).toBe(0);
     expect(fa2After.body.metrics.placementsClosed).toBe(0);
-    console.log(`[FA2 Unaffected] vacanciesCaptured: ${fa2After.body.metrics.vacanciesCaptured}, placementsClosed: ${fa2After.body.metrics.placementsClosed} (Expected: 0)`);
+    console.log(`[FA2 Unaffected] placementsClosed: ${fa2After.body.metrics.placementsClosed} (Expected: 0)`);
 
     // =========================================================================
     // STEP 8: Verify Dashboard, Overview, and Leaderboard reflect accurate state
@@ -525,7 +525,8 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     expect(ca1Dashboard.status).toBe(200);
     expect(ca1Dashboard.body.scope).toBe('agent');
     expect(ca1Dashboard.body.agent.staffCode).toBe(ca1Code);
-    expect(ca1Dashboard.body.agent.metrics.candidatesActivated.achieved).toBe(1);
+    expect(ca1Dashboard.body.agent.achieved.candidatesActivated).toBe(1);
+    expect(ca1Dashboard.body.agent.achieved.vacanciesCaptured).toBe(1);
 
     // FA1 Dashboard: sees their own target and achieved figures
     const fa1Dashboard = await request(app.getHttpServer())
@@ -535,8 +536,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     expect(fa1Dashboard.status).toBe(200);
     expect(fa1Dashboard.body.scope).toBe('agent');
     expect(fa1Dashboard.body.agent.staffCode).toBe(fa1Code);
-    expect(fa1Dashboard.body.agent.metrics.vacanciesCaptured.achieved).toBe(1);
-    expect(fa1Dashboard.body.agent.metrics.placementsClosed.achieved).toBe(1);
+    expect(fa1Dashboard.body.agent.achieved.placementsClosed).toBe(1);
 
     // Placements Leaderboard: FA1 is ranked at position 1; FA2 is excluded (no target)
     const leaderboardRes = await request(app.getHttpServer())
@@ -561,8 +561,10 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .set('X-Forwarded-For', freshIp());
     expect(mgrOverview.status).toBe(200);
     expect(mgrOverview.body.scope).toBe('city');
-    expect(mgrOverview.body.citySummary.totalCandidatesActivated).toBeGreaterThanOrEqual(1);
-    expect(mgrOverview.body.citySummary.totalVacanciesCaptured).toBeGreaterThanOrEqual(1);
+    expect(mgrOverview.body.totals.achieved.candidatesActivated).toBeGreaterThanOrEqual(1);
+    expect(mgrOverview.body.totals.achieved.vacanciesCaptured).toBeGreaterThanOrEqual(1);
+    expect(mgrOverview.body.totals.achieved.placementsClosed).toBeGreaterThanOrEqual(1);
+    console.log(`[Manager Overview Verified] City aggregate confirmed.`);
     expect(mgrOverview.body.citySummary.totalPlacementsClosed).toBeGreaterThanOrEqual(1);
     console.log(`[Manager Overview Verified] City aggregate confirmed.`);
 
