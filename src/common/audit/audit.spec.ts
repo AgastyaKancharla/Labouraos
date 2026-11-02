@@ -152,8 +152,191 @@ describe('Audit Logging', () => {
     expect(log.action).toBe('deactivation');
     expect(log.entityType).toBe('JobSeeker');
     expect(log.entityCode).toBe(testCode);
+    expect(log.before).toEqual({ status: 'active', hitCount: 2 });
+    expect(log.after).toEqual({ status: 'deactivated', hitCount: 3 });
+    expect(log.changedFields).toEqual(expect.arrayContaining(['status', 'hitCount']));
 
     // Clean up
+    await prisma.auditLog.delete({ where: { id: log.id } });
+  });
+
+  it('ordinary status change keeps before/after status and records reason', async () => {
+    const testCode = `JS-STATUS-${Date.now()}`;
+    const log = await auditService.log({
+      actorId,
+      action: 'status_update',
+      entityType: 'JobSeeker',
+      entityCode: testCode,
+      reason: 'Candidate completed verification',
+      before: { status: 'pending_verification', feePaise: 49900 },
+      after: { status: 'active', feePaise: 49900 },
+    });
+
+    expect(log.reason).toBe('Candidate completed verification');
+    expect(log.before).toEqual({ status: 'pending_verification', feePaise: 49900 });
+    expect(log.after).toEqual({ status: 'active', feePaise: 49900 });
+    expect(log.changedFields).toEqual(['status']);
+
+    await prisma.auditLog.delete({ where: { id: log.id } });
+  });
+
+  it('redacts top-level personal fields and populates changedFields while keeping codes, ids, statuses and amounts', async () => {
+    const testCode = `JS-PII-${Date.now()}`;
+    const log = await auditService.log({
+      actorId,
+      action: 'job_seeker.updated',
+      entityType: 'JobSeeker',
+      entityCode: testCode,
+      before: {
+        code: testCode,
+        id: 'c1234567-0000-0000-0000-000000000001',
+        name: 'Ravi Kumar',
+        phone: '9876543210',
+        whatsappPhone: '9876543210',
+        contactPhone: '9876543210',
+        email: 'ravi@example.com',
+        address: '123 Indiranagar, Bengaluru',
+        kycReference: 'KYC-REF-12345',
+        kycDetails: { method: 'digilocker' },
+        dateOfBirth: '1995-05-15',
+        aadhaarNumber: '123456789012',
+        aadhaarLast4: '9012',
+        status: 'active',
+        amount: 49900,
+      },
+      after: {
+        code: testCode,
+        id: 'c1234567-0000-0000-0000-000000000001',
+        name: 'Ravi K',
+        phone: '9876543211',
+        whatsappPhone: '9876543211',
+        contactPhone: '9876543211',
+        email: 'ravik@example.com',
+        address: '456 Koramangala, Bengaluru',
+        kycReference: 'KYC-REF-67890',
+        kycDetails: { method: 'offline' },
+        dateOfBirth: '1995-05-15',
+        aadhaarNumber: '123456789012',
+        aadhaarLast4: '9012',
+        status: 'active',
+        amount: 49900,
+      },
+    });
+
+    const beforeObj = log.before as Record<string, unknown>;
+    const afterObj = log.after as Record<string, unknown>;
+
+    // Non-personal fields kept
+    expect(beforeObj.code).toBe(testCode);
+    expect(beforeObj.id).toBe('c1234567-0000-0000-0000-000000000001');
+    expect(beforeObj.status).toBe('active');
+    expect(beforeObj.amount).toBe(49900);
+    expect(afterObj.status).toBe('active');
+    expect(afterObj.amount).toBe(49900);
+
+    // Personal fields redacted in both before and after
+    expect(beforeObj.name).toBe('[changed]');
+    expect(beforeObj.phone).toBe('[changed]');
+    expect(beforeObj.whatsappPhone).toBe('[changed]');
+    expect(beforeObj.contactPhone).toBe('[changed]');
+    expect(beforeObj.email).toBe('[changed]');
+    expect(beforeObj.address).toBe('[changed]');
+    expect(beforeObj.kycReference).toBe('[changed]');
+    expect(beforeObj.kycDetails).toBe('[changed]');
+    expect(beforeObj.dateOfBirth).toBe('[changed]');
+    expect(beforeObj.aadhaarNumber).toBe('[changed]');
+    expect(beforeObj.aadhaarLast4).toBe('[changed]');
+
+    expect(afterObj.name).toBe('[changed]');
+    expect(afterObj.phone).toBe('[changed]');
+    expect(afterObj.whatsappPhone).toBe('[changed]');
+    expect(afterObj.contactPhone).toBe('[changed]');
+    expect(afterObj.email).toBe('[changed]');
+    expect(afterObj.address).toBe('[changed]');
+    expect(afterObj.kycReference).toBe('[changed]');
+    expect(afterObj.kycDetails).toBe('[changed]');
+    expect(afterObj.dateOfBirth).toBe('[changed]');
+    expect(afterObj.aadhaarNumber).toBe('[changed]');
+    expect(afterObj.aadhaarLast4).toBe('[changed]');
+
+    // Raw values are nowhere in the row
+    const rowJson = JSON.stringify(log);
+    expect(rowJson).not.toContain('Ravi Kumar');
+    expect(rowJson).not.toContain('9876543210');
+    expect(rowJson).not.toContain('ravi@example.com');
+    expect(rowJson).not.toContain('123 Indiranagar');
+    expect(rowJson).not.toContain('KYC-REF-12345');
+    expect(rowJson).not.toContain('123456789012');
+
+    // changedFields populated
+    expect(log.changedFields).toEqual(
+      expect.arrayContaining([
+        'name',
+        'phone',
+        'whatsappPhone',
+        'contactPhone',
+        'email',
+        'address',
+        'kycReference',
+        'kycDetails',
+        'dateOfBirth',
+        'aadhaarNumber',
+        'aadhaarLast4',
+      ]),
+    );
+
+    await prisma.auditLog.delete({ where: { id: log.id } });
+  });
+
+  it('redacts nested personal fields at any depth', async () => {
+    const testCode = `JS-NESTED-${Date.now()}`;
+    const log = await auditService.log({
+      actorId,
+      action: 'candidate.nested_update',
+      entityType: 'JobSeeker',
+      entityCode: testCode,
+      before: {
+        meta: {
+          candidate: {
+            ownerName: 'Sunita Sharma',
+            candidatePhone: '9123456780',
+          },
+        },
+        trade: 'Plumber',
+      },
+      after: {
+        meta: {
+          candidate: {
+            ownerName: 'Sunita S',
+            candidatePhone: '9123456789',
+          },
+        },
+        trade: 'Plumber',
+      },
+    });
+
+    const beforeObj = log.before as Record<string, unknown>;
+    const afterObj = log.after as Record<string, unknown>;
+
+    expect(beforeObj.trade).toBe('Plumber');
+    expect(afterObj.trade).toBe('Plumber');
+
+    const beforeMeta = beforeObj.meta as { candidate: { ownerName: string; candidatePhone: string } };
+    const afterMeta = afterObj.meta as { candidate: { ownerName: string; candidatePhone: string } };
+
+    expect(beforeMeta.candidate.ownerName).toBe('[changed]');
+    expect(beforeMeta.candidate.candidatePhone).toBe('[changed]');
+    expect(afterMeta.candidate.ownerName).toBe('[changed]');
+    expect(afterMeta.candidate.candidatePhone).toBe('[changed]');
+
+    const rowJson = JSON.stringify(log);
+    expect(rowJson).not.toContain('Sunita Sharma');
+    expect(rowJson).not.toContain('9123456780');
+
+    expect(log.changedFields).toEqual(
+      expect.arrayContaining(['ownerName', 'candidatePhone']),
+    );
+
     await prisma.auditLog.delete({ where: { id: log.id } });
   });
 

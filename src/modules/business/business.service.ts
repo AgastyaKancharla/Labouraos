@@ -357,14 +357,6 @@ export class BusinessService {
       };
     }
 
-    const beforeState = {
-      name: business.name,
-      phone: business.phone,
-      contactName: business.contactName,
-      address: business.address,
-      gstNumber: business.gstNumber,
-    };
-
     const updated = await this.prisma.business.update({
       where: { id: business.id },
       data: {
@@ -385,13 +377,12 @@ export class BusinessService {
       entityCode: business.code,
       actorId: actor.id,
       city: business.city,
-      before: beforeState,
+      reason: 'DPDP erasure request',
+      changedFields: ['name', 'phone', 'contactName', 'address', 'gstNumber', 'selfieUrl', 'selfieHash', 'erasedAt'],
+      before: {
+        erasedAt: null,
+      },
       after: {
-        name: updated.name,
-        phone: updated.phone,
-        contactName: updated.contactName,
-        address: updated.address,
-        gstNumber: updated.gstNumber,
         erasedAt: updated.erasedAt,
       },
     });

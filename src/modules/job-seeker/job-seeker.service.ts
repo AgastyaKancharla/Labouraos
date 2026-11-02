@@ -756,12 +756,6 @@ export class JobSeekerService {
       };
     }
 
-    const beforeState = {
-      name: jobSeeker.name,
-      phone: jobSeeker.phone,
-      kycReference: jobSeeker.kycReference,
-    };
-
     const updated = await this.prisma.jobSeeker.update({
       where: { id: jobSeeker.id },
       data: {
@@ -778,11 +772,12 @@ export class JobSeekerService {
       entityCode: jobSeeker.code,
       actorId: actor.id,
       city: jobSeeker.city,
-      before: beforeState,
+      reason: 'DPDP erasure request',
+      changedFields: ['name', 'phone', 'kycReference', 'erasedAt'],
+      before: {
+        erasedAt: null,
+      },
       after: {
-        name: updated.name,
-        phone: updated.phone,
-        kycReference: updated.kycReference,
         erasedAt: updated.erasedAt,
       },
     });

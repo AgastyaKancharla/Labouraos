@@ -322,8 +322,20 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(audit).toBeDefined();
-    expect((audit?.before as Record<string, unknown>)?.name).toBe('Ravi Shankar');
-    expect((audit?.after as Record<string, unknown>)?.name).toBe('ANONYMIZED_CANDIDATE');
+    expect(audit?.reason).toBe('DPDP erasure request');
+    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'kycReference', 'erasedAt']));
+    expect((audit?.before as Record<string, unknown>)?.name).toBeUndefined();
+    expect((audit?.after as Record<string, unknown>)?.name).toBeUndefined();
+
+    // Verify that NO audit row anywhere contains the erased candidate's name or phone
+    const candidateAuditLogs = await prisma.auditLog.findMany({
+      where: { entityCode: testJobSeekerCode },
+    });
+    for (const log of candidateAuditLogs) {
+      const logStr = JSON.stringify(log);
+      expect(logStr).not.toContain('Ravi Shankar');
+      expect(logStr).not.toContain('9876543210');
+    }
   });
 
   it('3. Erasing an already-erased Job Seeker is an idempotent no-op without duplicating audit log', async () => {
@@ -400,8 +412,20 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
       orderBy: { createdAt: 'desc' },
     });
     expect(audit).toBeDefined();
-    expect((audit?.before as Record<string, unknown>)?.name).toBe('Prime Retail Outlets Pvt Ltd');
-    expect((audit?.after as Record<string, unknown>)?.name).toBe('ANONYMIZED_BUSINESS');
+    expect(audit?.reason).toBe('DPDP erasure request');
+    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'contactName', 'address']));
+    expect((audit?.before as Record<string, unknown>)?.name).toBeUndefined();
+    expect((audit?.after as Record<string, unknown>)?.name).toBeUndefined();
+
+    // Verify that NO audit row anywhere contains the erased business's name or phone
+    const bizAuditLogs = await prisma.auditLog.findMany({
+      where: { entityCode: testBusinessCode },
+    });
+    for (const log of bizAuditLogs) {
+      const logStr = JSON.stringify(log);
+      expect(logStr).not.toContain('Prime Retail Outlets Pvt Ltd');
+      expect(logStr).not.toContain('9123456789');
+    }
   });
 
   it('5. Erasing an already-erased Business is an idempotent no-op without duplicating audit log', async () => {
