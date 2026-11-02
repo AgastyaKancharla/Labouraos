@@ -64,7 +64,7 @@
 
 ---
 
-### [ ] Task 4 — A field agent can't skip the device check (fixes Problem 4)
+### [x] Task 4 — A field agent can't skip the device check (fixes Problem 4)
 
 **Today:** in `AuthService.login`, if a field agent sends no `deviceId`, the device check is skipped entirely.
 
