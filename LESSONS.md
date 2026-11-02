@@ -287,6 +287,12 @@ Format:
 **Cause:** Without target filtering, any field agent in the database is ranked regardless of whether they were actively targeted in that period. Publishing target figures leaks individual scheduling and pro-rating arrangements.
 **Fix:** In `LeaderboardService`, query and rank only field agents who have a `placementsClosed` target set for the evaluated period. Return `staffCode`, `name`, `placementsClosed`, and sequential 1-based `position`, deterministically breaking ties by `staffCode` ascending. Exclude all target figures (`target`, `effectiveTarget`) from the response.
 
+## 2026-11-02 — AGENTS.md §1/§6/§7 replaced from the Master Guide
+**Symptom:** AGENTS.md still carried old locked rules that the business had since updated, creating discrepancies between domain documentation and future requirements.
+**Cause:** Business updates were codified in the Laboura Master Guide on 2 November 2026.
+**Fix:** AGENTS.md §1/§6/§7 replaced from the Master Guide. Old rules that the code still follows are listed in specs/data-design.md §16; do not change existing behaviour to match the new rules unless your current task says so.
+
+
 
 
 

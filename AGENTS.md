@@ -9,24 +9,13 @@ Built by **AgastyaOne** for the client **Laboura**.
 
 ## 1. What this project is
 
-Laboura is a blue-collar staffing marketplace operating in Bengaluru, India.
-It connects job seekers (workers) with businesses that need to hire them.
+Laboura is a staffing service in Bengaluru, India, launching city by city. It connects verified job seekers with businesses that need salaried staff, and guarantees the result on both sides: a job seeker pays ₹499 and gets an offer within 30 days or a full refund; a business pays 50% of the first month's salary and gets free replacements if the worker leaves within 60 days.
 
-**Critical framing: this software is a system of record and a rule enforcer —
-not a matching engine.** Human call agents and field agents do the actual
-matching. The software's job is to record what they do and enforce the money
-rules correctly. Do not build ranking algorithms, ML matching, or
-recommendation engines. A filtered list an agent reads is correct and
-sufficient.
+**Source of truth.** The business rules are owned by Agastya in the *Laboura Master Guide*. Sections 6 and 7 of this file mirror it. `specs/data-design.md` defines every table, column and status for the redesign. If they disagree with each other, stop and ask.
 
-**Exception — not a contradiction:** the Priority Dashboard (API in Phase 4,
-field agent screen in Phase 6) sorts candidates and vacancies by dates the
-system already knows — a refund-guarantee deadline, a replacement-window
-deadline — with a fixed, stated tiebreak rule. Sorting by a known date is not
-the same as estimating how good a match is, so it does not violate the rule
-above. Do not extend it into scoring, weighting, or anything that estimates
-fit between a candidate and a vacancy — that would cross back into "matching
-engine" territory and is still off-limits.
+**Matching.** The software includes a rule-based matching engine: fixed filters and a ranking, no AI. It is built in its own phase. Until then, don't add scoring anywhere else.
+
+**Transition.** The current code still follows older rules in several places. `specs/data-design.md` §16 lists the phases that change them. Do not change existing behaviour to match §6 or §7 unless your current task says so. When a task touches an area, build it to §6 and §7.
 
 Four kinds of people use it:
 - **Call agents** — onboard job seekers, referrals and businesses by phone
@@ -141,120 +130,91 @@ npx prisma studio    # browse the database visually
 
 ---
 
-## 6. Domain rules — these are LOCKED, do not change or invent
+## 6. Domain rules — decided by the business (Master Guide, 2 November 2026)
 
-### Job seeker side
-- Activation fee: **₹499** (`49900` paise), one-time, paid before entering the candidate pool.
-- **30-day guarantee**: if no suitable offer within 30 days of the ₹499 being *received*, full refund. The clock starts at payment receipt, not at signup.
-- **"Suitable offer"** means BOTH: (a) same trade/skill as the candidate's, AND (b) salary within the candidate's own stated minimum–maximum range captured at onboarding. An offer failing either test does not count against the guarantee.
-- **3-hit deactivation cycle.** One hit is any of:
-  - no pickup, after next-day morning AND evening call attempts plus a WhatsApp/SMS
-  - an explicit rejection of a suitable offer
-  - a no-show at an arranged interview
-- At **3 hits the profile is deactivated** and carries **no refund entitlement**.
-- **Reactivation** requires paying ₹499 again. On reactivation: hit counter resets to 0 and a **fresh 30-day refund clock** starts from the new payment.
-- Mobile number must be **OTP-verified** at registration (job seekers and referrals both).
-- Capture **preferred call window**, which must fall inside **09:00–21:00 IST** (legal requirement, TRAI).
+Every number below lives in the `PricingPolicy` table, never as a literal in code.
 
-### Business side
-- Placement fee: **50% of the placed candidate's first month salary**, plus **18% GST** on top. Never deducted from the employee's salary.
-- **60-day replacement guarantee.** Free replacement is the default remedy. Cash refund only if no replacement is found within **15 days of the dropout being reported**.
-- **Refund amount (simplified, LOCKED 2026-10-20 — supersedes any earlier tapered ladder):** flat. Before day 15, no cash refund is payable at all (Laboura is still searching for a free replacement). From day 15 onward with no replacement found, the refund is a **flat 100%** of the placement fee — no 50%/25%/tapering. This is a deliberate simplification pending real-world data; it may be revisited later, but until it is, `calculateRefund(amountPaise, daysElapsed)` must implement exactly this: `daysElapsed < 15` → not yet eligible (the caller rejects the request rather than returning a partial amount), `daysElapsed >= 15` → full `amountPaise`.
+### Job seekers
+- **₹499** to register, flat — no GST added on top.
+- **Order:** name and mobile → consent (separate items, before payment) → profile → payment → Aadhaar verification.
+- **30-day guarantee** from the moment the payment is confirmed in Laboura's bank account.
+- **An offer is a confirmed interview** at a real business, for a vacancy that passes the suitability check done by the software: same trade, salary inside the candidate's range, within their travel distance, matching their shift preference. The candidate has **48 hours** to reply.
+- **A hit** is: no pickup (morning and evening calls unanswered plus a WhatsApp or SMS, all on the same day — reported by the phone system, never typed by an agent), declining a suitable offer, not replying to it, or not turning up to the interview. The last three also **end the refund**. A business saying "not selected" is never a hit.
+- **3 hits** → deactivated, no refund. Paying ₹499 again resets the hits and the 30-day clock.
+- A Team Lead can reverse a wrong hit, with a reason; the CEO and Manager are notified.
+- **Refunds are released by a person** (CEO or Finance), never automatically, after a check that the candidate isn't working at a business Laboura introduced.
+- Mobile verified by OTP. Calls only between **09:00 and 21:00** and inside the candidate's preferred window.
+- **Never collect** religion, caste, marital status or health conditions.
+- **Joining reward:** ₹200 to the candidate after 30 days in a job joined through Laboura, released by CEO or Finance, to a UPI ID collected at joining and name-checked.
 
-- **Eligibility**: applies only when the **employee leaves**. A business-side breach (didn't pay, changed the role, mistreated the worker) does **not** qualify.
-- A business may reject up to **2 replacement candidates**; from the 3rd rejection the guarantee clock **pauses** as unreasonable.
+### Businesses
+- **Fee:** 50% of the agreed first-month salary plus 18% GST, paid **the moment the candidate is selected**, within 24 hours. The joining date is confirmed only after payment. No deposit.
+- **Interviews:** walk-in, 10:30 AM–6:00 PM by default. The owner records the result in the app by OTP **by 8 PM the same day**; the candidate is asked at the same time whether they were offered the job.
+- **Account agent:** every business has one — the field agent who onboarded or verified it. Only the account agent, their Team Lead and management edit it. Call agents may add vacancies to any business by phone; the account agent is notified.
+- **A business that calls in** is a lead until a field agent's verification visit. No candidate is shown to an unverified business.
+- **No-documents businesses** (no licence, no GST): live photo, location check, and Team Lead approval before any candidate is shown.
+- **Agreement signed by OTP**, including the no-bypass clause: hiring anyone Laboura introduced within **12 months** costs the full fee **plus 50%**.
+- **60-day guarantee** from the first employee's joining date. **Up to 2 free replacements**, on the same clock. If the second replacement also leaves, the guarantee ends with no refund. If the business rejects **2 replacement candidates**, the guarantee ends with no refund.
+- No replacement within **15 days** of an accepted claim → **flat 100% refund**, released by CEO or Finance.
+- **Claims:** reported within **7 days** of the worker leaving, fee paid in full, reason from the fixed list, a recorded exit call to the worker, decision by a Team Lead or Manager within 48 hours.
 
-### Referral side
-- Any individual or business can be a referral partner. OTP-verified number required.
-- **Referral payout fires when the referred candidate JOINS THE JOB** — i.e. on the Placement's `joined_date`. It does **not** fire on receipt of the ₹499. This is deliberate anti-fraud; do not "fix" it.
-- **Payout amount (LOCKED 2026-10-24):** flat **₹200** (`20000` paise) per placement, same figure regardless of trade, salary, or placement fee size.
+### Referral partners
+- **₹200** when the referred candidate **joins** — not when they pay. Released by CEO or Finance.
+- Payout UPI or bank details are checked by name; changing them needs an OTP and a 48-hour wait.
+
+### Money
+- All amounts in integer paise.
+- **Collected by UPI straight into the company current account**, with a separate QR code or link per payment carrying the exact amount and a reference. A payment gateway is used only when the payer chooses a card.
+- **A screenshot is never proof of payment.** A payment counts only when the bank confirms it.
+- Everything going out — refunds, payouts, rewards — is released by the CEO or Finance.
 
 ### Identity
-- Aadhaar verification is **offline e-KYC via a licensed vendor only**. Store the result and the vendor reference. **Never the Aadhaar number itself.** PAN is the fallback.
+- Aadhaar through DigiLocker via a licensed vendor (QR scan or PAN/driving licence/voter ID as fallbacks). Store only: verified yes/no, method, vendor reference, last 4 digits, name match, 18+. **Never** the full number, the XML or PDF, the photo or the address.
 
-### Data retention (LOCKED 2026-10-25)
-- **No record is ever automatically deleted or anonymized.** Business records
-  (job seekers, referrals, businesses, vacancies, placements, payments, hit
-  history, call recordings) are kept indefinitely by default — there is no
-  retention-expiry scheduled job anywhere in this system, and none should be
-  added. Agastya's explicit call: "nothing should be deleted, everything
-  should be retrievable" — this is a deliberate choice, not an oversight.
-- The one exception is an **explicit DPDP erasure request from a specific
-  person** (or a specific call recording's retention being invoked, same
-  mechanism). That is handled by a manual, CEO/Manager-only endpoint that
-  anonymizes only the directly-identifying PII fields (name, phone, Aadhaar
-  reference, exact address) on the targeted record — the record itself, and
-  every number/history/relationship tied to it, is kept exactly as before,
-  just with the personal-identity link severed. Audit logged. Never a bulk
-  or scheduled operation — always one specific record, on one specific
-  request.
-- Call recordings follow the same rule: kept indefinitely, no automatic
-  expiry, anonymized/erasure-handled only on an explicit request through the
-  same mechanism.
-- Do not build an automatic retention job "to be safe" or because a draft of
-  this spec once asked for one — this section supersedes any earlier mention
-  of a retention period or scheduled erasure job in `/specs/`.
+### Keeping data (replaces the 25 October "never delete" rule)
+| Data | Kept | Then |
+| --- | --- | --- |
+| Payments, invoices, refunds, payouts | 8 years | deleted |
+| Job seeker, business, referral profiles | 23 months after last activity | anonymised |
+| Identity verification | result only | — |
+| Call recordings | 1 year, or until a dispute closes | deleted |
+| Login and access logs | 1 year | deleted |
+
+Personal data never goes into the audit log or status history.
+
+### Staff
+- Everyone is salaried. No commission for anyone.
+- Monthly targets as built in Phase 6.7.
 
 ---
 
-## 7. Access control (RBAC)
+## 7. Access control and login (Master Guide, 2 November 2026)
 
-Enforced server-side on every request. Build this as a guard, not as per-endpoint hand-written checks.
+Enforced server-side on every request, through the guard — never by hiding a button.
 
-| Role | Job Seeker / Referral | Business | Vacancy / Placement | Payment ledger | Pricing & policy | Targets |
+| Role | Job seekers / referrals | Businesses | Vacancies / placements | Payments | Pricing | Targets |
 | --- | --- | --- | --- | --- | --- | --- |
-| CEO | full read/write | full read/write | full read/write | full read, approve refunds | **sole write access** | all |
-| Manager | full read/write | full read/write | full read/write | full read, approve refunds | read-only | all |
-| Team Lead | own team's only | own team's only | own team's only | none | none | own team |
-| Call Agent | full create/edit | full create/edit | own captured vacancies | none | none | own only |
-| Field Agent | city-wide onboarding* | own area only | own area only | none | none | own only |
-| Finance | read-only, **PII masked** | read-only, **PII masked** | read-only | full read/write | none | none |
+| CEO | all | all | all | all; releases money | **only writer** | all |
+| Manager | all | all | all | read; **does not release money** | read | all |
+| Team Lead | own team | own team's businesses | own team | none | none | own team |
+| Call Agent | create and edit | read all; create leads; add vacancies to any business | read all | none | none | own |
+| Field Agent | city-wide | read all; edit only where account agent | read all; act on own businesses | none | none | own |
+| Finance | read, personal data masked | read, masked | read | all; releases money | none | none |
 
-\* **Field Agent city-wide onboarding**: Field agents onboard job seekers and referrals city-wide (neither model has an area column, only city). Field agents can create, read, process activation payments, submit KYC, log contact attempts, reactivate, and record witnessed hits (`offer_rejected`, `interview_no_show`). Field agents may **not** record `no_pickup` hits (reserved for call team and automated sweep). Business, vacancy and placement remain strictly area-scoped.
+- **Agents never see full phone numbers.** Calls go through the calling system.
+- **Nobody below Manager** can download or export lists.
+- Every sensitive write is audited with actor, time, reason and the fields that changed.
 
-**PII masking for Finance** means: Finance sees the unique ID (`JS-04821`) and
-amounts, never the phone number or KYC details.
-
-**Audit-logged writes**: refund approval, deactivation, reactivation, payout
-release, pricing change, placement creation, any role change.
-
-### Login and session hardening (LOCKED 2026-10-25 — Phase 8 Task 6, do not
-redesign or ask again)
-
-This is about *getting into the system in the first place*, separate from
-the role permissions above.
-
-- **Mandatory 2FA on every staff login, all four roles, via TOTP
-  (RFC 6238)** — an authenticator app (Google Authenticator, Microsoft
-  Authenticator, Authy, etc.), set up once per staff account. Deliberately
-  not the SMS-based `OtpProvider` (Phase 2/7) — that stays reserved for
-  job-seeker/referral/business-facing flows where no app install can be
-  assumed. No SIM-swap exposure, no per-message cost, at this staff scale.
-- **Short-lived access tokens + a visible, revocable session list**
-  (`GET /staff/sessions`, `POST /staff/sessions/:id/revoke`) — solves a
-  different problem than 2FA (how long a token stays valid afterward, and
-  letting a manager cut access immediately), not a substitute for it. Both
-  are required.
-- **Field Agent app (Play Store distribution, no device control
-  possible):** first login registers the device; an unrecognized device on
-  an account that already has one requires a step-up TOTP code before a
-  token is issued.
-- **Admin Dashboard and Call Agent console (browser-based office consoles
-  only):** gated by Cloudflare Access in front of them — identity-gated
-  (no valid company login, no reach to the login page at all), not
-  device-gated. Pre-approved new external service for this phase — do not
-  ask again.
-- **Field Agent browser console (`/field-agent`, `/console/field-agent`) temporary exemption & expiry condition:**
-  Exempt from Cloudflare Access because field agents access the web console
-  from phones outside the Cloudflare Access perimeter.
-  **Expiry condition:** That reason disappears the moment the native Field Agent
-  app ships. When the native app ships, this exemption expires and `/field-agent`
-  must either be retired or placed behind Cloudflare Access; future maintainers
-  must revisit this rather than blindly inheriting it.
-- **Explicitly not built anywhere:** MDM/Android Enterprise managed-device
-  enrollment, IP allowlisting.
-
-Full detail and acceptance tests: `specs/phase-8.md` Task 6.
+### Login (target — built in the login phase; the current code still uses email + TOTP for everyone)
+- Staff log in with their **staff code** and password.
+- Every login by a non-management staff member needs a **6-digit code** from the login code screen, revealed by their Team Lead, a Manager or the CEO, and recorded. Codes are never stored.
+- CEO, Managers and Finance use an authenticator app (TOTP) instead.
+- **Approved devices only**, for every role, approved by a Team Lead or Manager.
+- **One login at a time.** Logout after 1 hour idle, 2 hours at most, or when the app or browser closes.
+- **5 wrong passwords** lock the account for 15 minutes or until unlocked by a Team Lead, Manager or CEO.
+- Office staff can log in only from the office network. No fixed login hours; logins at odd hours are flagged.
+- The CEO or a Manager can lock any account instantly.
+- The admin and call-agent consoles stay behind Cloudflare Access. The `/field-agent` web console exemption expires when the native field agent app ships.
 
 ---
 
