@@ -30,9 +30,52 @@ function providerReplying(reply: Reply) {
 }
 
 const disburse = (provider: RealPaymentProvider, extra: Record<string, unknown> = {}) =>
-  provider.disbursePayout(20000, 'referral', 'RF-1', { paymentId: PAYMENT_ID, ...extra });
+  provider.disbursePayout(20000, 'referral', 'RF-1', {
+    paymentId: PAYMENT_ID,
+    fundAccountId: 'fa_test_valid_123',
+    ...extra,
+  });
 
 describe('Phase 8: RealPaymentProvider payout dispatch (RazorpayX statuses)', () => {
+  describe('Phase 9 Task 6: Verified Payout Account Enforcement', () => {
+    it('refuses when fundAccountId is missing and calls no external endpoint', async () => {
+      const { provider, calls } = providerReplying({ body: { id: 'pout_1', status: 'processed' } });
+      const res = await provider.disbursePayout(20000, 'referral', 'RF-1', { paymentId: PAYMENT_ID });
+      expect(res).toEqual({
+        success: false,
+        gatewayReference: '',
+        status: 'failed',
+        failureReason: 'no_verified_payout_account',
+      });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('refuses when fundAccountId is empty or whitespace and calls no external endpoint', async () => {
+      const { provider, calls } = providerReplying({ body: { id: 'pout_1', status: 'processed' } });
+      const res = await provider.disbursePayout(20000, 'referral', 'RF-1', {
+        paymentId: PAYMENT_ID,
+        fundAccountId: '   ',
+      });
+      expect(res).toEqual({
+        success: false,
+        gatewayReference: '',
+        status: 'failed',
+        failureReason: 'no_verified_payout_account',
+      });
+      expect(calls).toHaveLength(0);
+    });
+
+    it('succeeds and sends fund_account_id to gateway when supplied', async () => {
+      const { provider, calls } = providerReplying({ body: { id: 'pout_1', status: 'processed' } });
+      const res = await provider.disbursePayout(20000, 'referral', 'RF-1', {
+        paymentId: PAYMENT_ID,
+        fundAccountId: 'fa_custom_456',
+      });
+      expect(res.status).toBe('succeeded');
+      expect(calls).toHaveLength(1);
+      expect(JSON.parse(calls[0].init?.body as string).fund_account_id).toBe('fa_custom_456');
+    });
+  });
   describe('gateway status -> our result', () => {
     it('processed is the only final success', async () => {
       const { provider } = providerReplying({ body: { id: 'pout_1', status: 'processed' } });

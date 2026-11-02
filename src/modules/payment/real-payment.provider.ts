@@ -166,11 +166,22 @@ export class RealPaymentProvider implements PaymentProvider {
     }
     const referenceId = payoutIdempotencyKey(paymentId, attempt);
 
+    const fundAccountId = metadata?.fundAccountId;
+    if (typeof fundAccountId !== 'string' || fundAccountId.trim().length === 0) {
+      this.logger.warn(
+        `Refusing payout for ${subjectType} ${subjectId} (payment ${paymentId}): no verified fund account supplied`,
+      );
+      return {
+        success: false,
+        gatewayReference: '',
+        status: 'failed',
+        failureReason: 'no_verified_payout_account',
+      };
+    }
+
     const payload = {
       account_number: this.accountNumber,
-      fund_account_id:
-        (metadata?.fundAccountId as string) ||
-        `fa_test_${subjectType}_${subjectId}`,
+      fund_account_id: fundAccountId.trim(),
       amount: amountPaise,
       currency: 'INR',
       mode: 'UPI',
