@@ -36,12 +36,18 @@ describe('Phase 9 Task 8: Review Flags', () => {
   const KORA_FAR_LAT = 12.9716;
   const KORA_FAR_LON = 77.5946;
 
-  function mkToken(staff: { id: string; role: string; city?: string | null }) {
+  function mkToken(staff: {
+    id: string;
+    role: string;
+    code?: string;
+    area?: string | null;
+  }) {
     return jwtService.sign({
       sub: staff.id,
       email: `${staff.id}@laboura.local`,
       role: staff.role,
-      city: staff.city ?? 'Bengaluru',
+      code: staff.code ?? staff.id,
+      area: staff.area ?? null,
     });
   }
 

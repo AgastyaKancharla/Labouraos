@@ -71,6 +71,7 @@ export class IdService implements OnModuleInit {
       PL: 'Placement',
       PAY: 'Payment',
       AUD: 'AuditLog',
+      FL: 'ReviewFlag',
       // Staff codes are role-prefixed (see STAFF_CODE_PREFIX in staff.service)
       CEO: 'Staff',
       MGR: 'Staff',

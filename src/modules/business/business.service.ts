@@ -4,7 +4,6 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -26,7 +25,7 @@ export class BusinessService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
-    @Optional() private readonly reviewFlagService?: ReviewFlagService,
+    private readonly reviewFlagService: ReviewFlagService,
   ) {}
 
   async create(dto: CreateBusinessDto, actorId: string) {
@@ -174,7 +173,7 @@ export class BusinessService {
       });
     }
 
-    if (geofenceFlag && this.reviewFlagService) {
+    if (geofenceFlag) {
       await this.reviewFlagService.raise({
         kind: 'gps_mismatch',
         subjectType: 'business',

@@ -10,9 +10,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import {
   REVIEW_FLAG_KINDS,
-  REVIEW_FLAG_STATUSES,
   ReviewFlagKind,
-  ReviewFlagStatus,
 } from './review-flag.constants';
 
 export interface RaiseReviewFlagParams {
@@ -112,8 +110,8 @@ export class ReviewFlagService {
       );
     }
 
-    const targetStatus = dto.status ?? 'resolved';
-    if (!REVIEW_FLAG_STATUSES.includes(targetStatus as ReviewFlagStatus) || targetStatus === 'open') {
+    const targetStatus = (dto.status ?? 'resolved') as string;
+    if (targetStatus !== 'resolved' && targetStatus !== 'dismissed') {
       throw new BadRequestException(
         "Status must be either 'resolved' or 'dismissed'",
       );
