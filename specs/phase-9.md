@@ -75,7 +75,7 @@
 
 ---
 
-### [ ] Task 5 — The server refuses to start without a proper login secret (fixes Problem 6)
+### [x] Task 5 — The server refuses to start without a proper login secret (fixes Problem 6)
 
 **Today:** `auth.module.ts` and `jwt.strategy.ts` fall back to a default secret written in the code if `JWT_SECRET` is missing.
 
