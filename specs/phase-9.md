@@ -87,7 +87,7 @@
 
 ---
 
-### [ ] Task 6 — No payouts to a placeholder account (fixes Problem 5)
+### [x] Task 6 — No payouts to a placeholder account (fixes Problem 5)
 
 **Today:** `RealPaymentProvider.disbursePayout` falls back to a made-up fund account (`fa_test_<type>_<id>`) when none is given, so real payouts would fail at the payout company.
 
