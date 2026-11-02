@@ -51,7 +51,7 @@
 
 ---
 
-### [ ] Task 3 — Keep personal data out of the history log (fixes Problem 1)
+### [x] Task 3 — Keep personal data out of the history log (fixes Problem 1)
 
 **Today:** `JobSeekerService.erase` writes the person's name, phone and KYC reference into the audit log's `before` value, so the erased data survives in the log.
 
