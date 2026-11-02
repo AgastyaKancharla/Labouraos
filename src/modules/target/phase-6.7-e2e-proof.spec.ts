@@ -7,7 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
-import { getCalendarPartsInTimezone } from './target.constants';
+import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 
 describe('Phase 6.7 Gate: End-to-End Proof', () => {
@@ -155,9 +155,8 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       data: {
         code: businessCode,
         name: 'Tech Ventures Pvt Ltd',
-        contactPerson: 'Ramesh Gupta',
+        contactName: 'Ramesh Gupta',
         phone: `+9198${String(timestamp).slice(-8)}0`,
-        email: `biz_e2e_${timestamp}@techventures.local`,
         area: koraArea,
         city: 'Bengaluru',
       },
