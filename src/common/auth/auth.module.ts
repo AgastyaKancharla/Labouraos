@@ -12,6 +12,7 @@ import { TotpService } from './totp.service';
 import { CloudflareAccessGuard } from './cloudflare-access.guard';
 import { CloudflareAccessVerifier } from './cloudflare-access.verifier';
 import { AuthThrottlerGuard } from './auth-throttler.guard';
+import { getJwtSecret } from './jwt-secret';
 
 @Global()
 @Module({
@@ -24,16 +25,16 @@ import { AuthThrottlerGuard } from './auth-throttler.guard';
       },
     ]),
     PassportModule.register({ defaultStrategy: 'jwt' }),
-    JwtModule.register({
-      secret:
-        process.env.JWT_SECRET ||
-        'dev_secret_key_change_in_production_min_32_chars',
-      signOptions: {
-        expiresIn: (process.env.JWT_EXPIRES_IN || '15m') as
-          | `${number}h`
-          | `${number}m`
-          | `${number}s`,
-      },
+    JwtModule.registerAsync({
+      useFactory: () => ({
+        secret: getJwtSecret(),
+        signOptions: {
+          expiresIn: (process.env.JWT_EXPIRES_IN || '15m') as
+            | `${number}h`
+            | `${number}m`
+            | `${number}s`,
+        },
+      }),
     }),
   ],
   controllers: [AuthController, StaffSessionController],
