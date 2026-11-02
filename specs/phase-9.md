@@ -124,19 +124,19 @@
 
 ## Phase 9 Gate
 
-- [ ] `AGENTS.md` §1, §6 and §7 match Appendix A exactly; `specs/data-design.md` is in the repo
-- [ ] Every rule number is read from `PricingPolicy`; a CEO change survives a restart; a Manager can't change it — by test
-- [ ] A refund after a price change returns the amount actually paid — by test
-- [ ] No hard-coded rule amounts remain in `src/` — by test or lint check
-- [ ] After an erasure, no audit row contains the person's name or phone — by test
-- [ ] A field agent login without a device id is refused — by test
-- [ ] The server won't start without a proper `JWT_SECRET` — by test
-- [ ] The real payout provider refuses to pay without a fund account — by test
-- [ ] Status changes for job seekers, vacancies, placements, payments and staff write history rows in the same transaction — by test
-- [ ] Review flags: raised on GPS mismatch, scoped per Team Lead, resolution required — by test
-- [ ] All earlier phase gate items still pass
-- [ ] CI green on `main`, confirmed on GitHub Actions — and every task branch was green **before** it was merged
-- [ ] `LESSONS.md` updated
+- [x] `AGENTS.md` §1, §6 and §7 match Appendix A exactly; `specs/data-design.md` is in the repo
+- [x] Every rule number is read from `PricingPolicy`; a CEO change survives a restart; a Manager can't change it — by test
+- [x] A refund after a price change returns the amount actually paid — by test
+- [x] No hard-coded rule amounts remain in `src/` — by test or lint check
+- [x] After an erasure, no audit row contains the person's name or phone — by test
+- [x] A field agent login without a device id is refused — by test
+- [x] The server won't start without a proper `JWT_SECRET` — by test
+- [x] The real payout provider refuses to pay without a fund account — by test
+- [x] Status changes for job seekers, vacancies, placements, payments and staff write history rows in the same transaction — by test
+- [x] Review flags: raised on GPS mismatch, scoped per Team Lead, resolution required — by test
+- [x] All earlier phase gate items still pass
+- [x] CI green on `main`, confirmed on GitHub Actions — and every task branch was green **before** it was merged
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya** — commits, CI run links, test counts, and one line per task on what changed. Do not start the next phase.
 
