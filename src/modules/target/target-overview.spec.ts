@@ -183,6 +183,17 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       teamLeadId: null,
       status: 'active',
     },
+    [otherTeamLeadId]: {
+      id: otherTeamLeadId,
+      code: 'TL-00002',
+      name: 'Team Lead 2',
+      role: 'team_lead',
+      area: 'Indiranagar',
+      city: 'Bengaluru',
+      createdAt: new Date('2026-01-01T00:00:00Z'),
+      teamLeadId: null,
+      status: 'active',
+    },
     'mgr-uuid-001': {
       id: 'mgr-uuid-001',
       code: 'MGR-00001',
