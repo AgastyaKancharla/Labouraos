@@ -15,6 +15,7 @@ import { TargetService } from './target.service';
 import { CallAgentMetricsService } from './call-agent-metrics.service';
 import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { MoneyAtRiskService } from './money-at-risk.service';
+import { TargetOverviewService } from './target-overview.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -33,7 +34,46 @@ export class TargetController {
     private readonly callAgentMetricsService: CallAgentMetricsService,
     private readonly fieldAgentMetricsService: FieldAgentMetricsService,
     private readonly moneyAtRiskService: MoneyAtRiskService,
+    private readonly targetOverviewService: TargetOverviewService,
   ) {}
+
+  @Get('overview')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  @RequirePermission('target', 'read')
+  async getOverview(
+    @Query('staffId') staffId: string | undefined,
+    @Query('year') year: string | undefined,
+    @Query('month') month: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.targetOverviewService.getOverview(
+      {
+        staffId,
+        year: year ? parseInt(year, 10) : undefined,
+        month: month ? parseInt(month, 10) : undefined,
+      },
+      req.user,
+    );
+  }
+
+  @Get('dashboard')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  @RequirePermission('target', 'read')
+  async getDashboard(
+    @Query('staffId') staffId: string | undefined,
+    @Query('year') year: string | undefined,
+    @Query('month') month: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.targetOverviewService.getOverview(
+      {
+        staffId,
+        year: year ? parseInt(year, 10) : undefined,
+        month: month ? parseInt(month, 10) : undefined,
+      },
+      req.user,
+    );
+  }
 
   @Get('money-at-risk')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')

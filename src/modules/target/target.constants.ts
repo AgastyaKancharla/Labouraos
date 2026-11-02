@@ -90,6 +90,18 @@ export const ALLOWED_TARGET_ROLES = ['call_agent', 'field_agent'] as const;
 export const MIN_REFUND_RATE_DENOMINATOR = 5;
 
 /**
+ * Behind-pace threshold (80% of expected pace).
+ * An agent whose achieved figure is below 80% of expected pace is flagged as behind pace.
+ */
+export const BEHIND_PACE_THRESHOLD = 0.8;
+
+/**
+ * Calendar day of the month (in Asia/Kolkata) from which behind-pace flagging begins.
+ * Prevents flagging during the first week when small-sample variance is high.
+ */
+export const BEHIND_PACE_START_DAY = 8;
+
+/**
  * Window in days for job seeker candidates approaching their 30-day refund deadline.
  * A candidate whose guarantee matures within 7 days is approaching deadline and at risk.
  */
@@ -227,3 +239,132 @@ export function evaluateMetricTarget(
     status: 'active',
   };
 }
+
+export interface PaceEvaluationResult {
+  metric: TargetMetricKey;
+  label: string;
+  direction: MetricDirection;
+  status: MetricStatus;
+  storedTarget: number | null;
+  effectiveTarget: number | null;
+  achieved: number | null;
+  expectedPace: number | null;
+  isBehindPace: boolean;
+  isBreached: boolean;
+  maturedCount?: number;
+}
+
+/**
+ * Evaluates pacing and breach status for a single metric:
+ *
+ * PACE FLAGGING RULES (Task 6):
+ * 1. Pace flags apply ONLY to higher_is_better metrics. Applying pace to a ceiling metric (refund rate)
+ *    is meaningless and would falsely flag low refund rates.
+ * 2. A metric with status 'not_targeted' or 'not_measured' is NEVER flagged.
+ * 3. Behind-pace flagging fires from day 8 onward (BEHIND_PACE_START_DAY = 8) in the business timezone.
+ *    A slow first week does not flag the whole team.
+ * 4. Expected pace = effectiveTarget * (daysElapsed / daysInPeriod).
+ *    For mid-month joiners, daysElapsed and daysInPeriod are measured from their start day,
+ *    matching calculateProRatingFactor.
+ * 5. Flagged as behind pace if achieved < (BEHIND_PACE_THRESHOLD * expectedPace), where BEHIND_PACE_THRESHOLD = 0.8.
+ *
+ * REFUND RATE BREACH RULES (Task 6):
+ * 1. Fires only when the actual rate is above the target AND the matured denominator is at least
+ *    MIN_REFUND_RATE_DENOMINATOR (5).
+ * 2. Zero denominator has no refund rate and is never flagged. Small samples (< 5) are treated as noise.
+ */
+export function evaluateMetricPace(params: {
+  metric: TargetMetricKey;
+  targetEvaluation: MetricEvaluationResult;
+  achieved: number | null;
+  currentDay: number;
+  daysElapsed: number;
+  daysInPeriod: number;
+  maturedCount?: number;
+}): PaceEvaluationResult {
+  const {
+    metric,
+    targetEvaluation,
+    achieved,
+    currentDay,
+    daysElapsed,
+    daysInPeriod,
+    maturedCount = 0,
+  } = params;
+
+  const def = TARGET_METRICS[metric];
+  const { direction, status, storedTarget, effectiveTarget } = targetEvaluation;
+
+  // 1. Lower-is-better metrics (ceiling: refundRate)
+  if (direction === 'lower_is_better') {
+    let isBreached = false;
+    if (
+      status === 'active' &&
+      effectiveTarget !== null &&
+      achieved !== null &&
+      maturedCount >= MIN_REFUND_RATE_DENOMINATOR
+    ) {
+      if (achieved > effectiveTarget) {
+        isBreached = true;
+      }
+    }
+
+    return {
+      metric,
+      label: def.label,
+      direction,
+      status,
+      storedTarget,
+      effectiveTarget,
+      achieved,
+      expectedPace: null,
+      isBehindPace: false, // Pace flagging NEVER applies to ceiling metrics
+      isBreached,
+      maturedCount,
+    };
+  }
+
+  // 2. Higher-is-better metrics (volume / margin floors)
+  // Not targeted or not measured -> never flagged
+  if (status !== 'active' || effectiveTarget === null || effectiveTarget <= 0) {
+    return {
+      metric,
+      label: def.label,
+      direction,
+      status,
+      storedTarget,
+      effectiveTarget,
+      achieved,
+      expectedPace: null,
+      isBehindPace: false,
+      isBreached: false,
+    };
+  }
+
+  // Expected pace calculation
+  const expectedPace =
+    daysInPeriod > 0 ? (effectiveTarget * daysElapsed) / daysInPeriod : 0;
+
+  // Behind pace flagging: only from BEHIND_PACE_START_DAY (day 8) onward
+  let isBehindPace = false;
+  if (currentDay >= BEHIND_PACE_START_DAY) {
+    const threshold = BEHIND_PACE_THRESHOLD * expectedPace;
+    if ((achieved ?? 0) < threshold) {
+      isBehindPace = true;
+    }
+  }
+
+  return {
+    metric,
+    label: def.label,
+    direction,
+    status,
+    storedTarget,
+    effectiveTarget,
+    achieved,
+    expectedPace,
+    isBehindPace,
+    isBreached: false,
+  };
+}
+
