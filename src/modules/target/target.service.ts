@@ -395,3 +395,6 @@ export class TargetService {
     };
   }
 }
+
+export type FormattedTargetResponse = ReturnType<TargetService['formatTargetResponse']>;
+
