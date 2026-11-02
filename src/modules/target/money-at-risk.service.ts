@@ -224,14 +224,15 @@ export class MoneyAtRiskService {
       });
       for (const p of candidatePayments) {
         if (!p.jobSeekerId) continue;
-        if (
-          p.type === 'refund' &&
-          ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)
-        ) {
+        const isRefund =
+          !p.type ||
+          (p.type === 'refund' &&
+            (!p.status || ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)));
+        if (isRefund) {
           refundedCandidateIdSet.add(p.jobSeekerId);
         } else if (
           (p.type === 'activation' || p.type === 'reactivation') &&
-          ['completed', 'succeeded'].includes(p.status) &&
+          (!p.status || ['completed', 'succeeded'].includes(p.status)) &&
           !candidatePaymentMap.has(p.jobSeekerId)
         ) {
           candidatePaymentMap.set(p.jobSeekerId, p.amount);

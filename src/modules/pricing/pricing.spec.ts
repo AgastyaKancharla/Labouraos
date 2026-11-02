@@ -139,6 +139,12 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
           where: { id: { in: createdJobSeekerIds } },
         });
       }
+      // Reset PricingPolicy so subsequent test suites see the default seeded policy
+      await prisma.pricingPolicy.deleteMany({
+        where: {
+          id: { not: '00000000-0000-0000-0000-000000000001' },
+        },
+      });
     }
     if (app) {
       await app.close();
