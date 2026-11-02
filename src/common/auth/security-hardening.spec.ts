@@ -140,6 +140,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
             email: account.email,
             password: testPassword,
             totpCode: validCode,
+            ...(account === fieldAgentStaff ? { deviceId: 'initial-setup-device' } : {}),
           });
 
         expect(res.status).toBe(200);
@@ -150,6 +151,13 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
   });
 
   describe('2. Device Binding and Step-Up TOTP for Field Agent App', () => {
+    beforeAll(async () => {
+      await prisma.staff.update({
+        where: { id: fieldAgentStaff.id },
+        data: { registeredDeviceId: null },
+      });
+    });
+
     it('first login registers the primary deviceId for the field agent', async () => {
       const validCode = await stableTotp(fieldAgentStaff.totpSecret);
       const res = await request(app.getHttpServer())
