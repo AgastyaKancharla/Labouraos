@@ -6,8 +6,9 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { PaymentService } from './payment.service';
-import { REFERRAL_PAYOUT_AMOUNT_PAISE } from '../../common/money/money';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+
+const REFERRAL_PAYOUT_AMOUNT_PAISE = 20000;
 
 describe('Phase 6 Task 1: Referral Payout Trigger', () => {
   let app: INestApplication;

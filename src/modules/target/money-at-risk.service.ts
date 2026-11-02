@@ -200,7 +200,7 @@ export class MoneyAtRiskService {
     });
 
     let rejectedCandidateIdSet = new Set<string>();
-    let refundedCandidateIdSet = new Set<string>();
+    const refundedCandidateIdSet = new Set<string>();
     const candidatePaymentMap = new Map<string, number>();
 
     if (candidates.length > 0) {
@@ -215,26 +215,25 @@ export class MoneyAtRiskService {
       });
       rejectedCandidateIdSet = new Set(rejectedHits.map((h) => h.jobSeekerId));
 
-      const existingCandidateRefunds = await this.prisma.payment.findMany({
+      // Query candidate payments (refunds and activations) in a single set-based query
+      const candidatePayments = await this.prisma.payment.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
-          type: 'refund',
-          status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
-        },
-        select: { jobSeekerId: true },
-      });
-      refundedCandidateIdSet = new Set(existingCandidateRefunds.map((p) => p.jobSeekerId!));
-
-      const candidateActivationPayments = await this.prisma.payment.findMany({
-        where: {
-          jobSeekerId: { in: candidateIds },
-          type: { in: ['activation', 'reactivation'] },
-          status: { in: ['completed', 'succeeded'] },
         },
         orderBy: { createdAt: 'desc' },
       });
-      for (const p of candidateActivationPayments) {
-        if (p.jobSeekerId && !candidatePaymentMap.has(p.jobSeekerId)) {
+      for (const p of candidatePayments) {
+        if (!p.jobSeekerId) continue;
+        if (
+          p.type === 'refund' &&
+          ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)
+        ) {
+          refundedCandidateIdSet.add(p.jobSeekerId);
+        } else if (
+          (p.type === 'activation' || p.type === 'reactivation') &&
+          ['completed', 'succeeded'].includes(p.status) &&
+          !candidatePaymentMap.has(p.jobSeekerId)
+        ) {
           candidatePaymentMap.set(p.jobSeekerId, p.amount);
         }
       }

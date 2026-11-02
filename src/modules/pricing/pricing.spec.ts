@@ -118,7 +118,22 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
     caToken = caLogin.body.accessToken;
   });
 
+  const createdPaymentCodes: string[] = [];
+  const createdJobSeekerIds: string[] = [];
+
   afterAll(async () => {
+    if (prisma) {
+      if (createdPaymentCodes.length > 0) {
+        await prisma.payment.deleteMany({
+          where: { code: { in: createdPaymentCodes } },
+        });
+      }
+      if (createdJobSeekerIds.length > 0) {
+        await prisma.jobSeeker.deleteMany({
+          where: { id: { in: createdJobSeekerIds } },
+        });
+      }
+    }
     if (app) {
       await app.close();
     }
@@ -282,10 +297,14 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         city: 'Bengaluru',
       },
     });
+    createdJobSeekerIds.push(jsA.id);
+
+    const payCodeA = `PAY-${Math.floor(Math.random() * 90000 + 10000)}`;
+    createdPaymentCodes.push(payCodeA);
 
     await prisma.payment.create({
       data: {
-        code: `PAY-A-${Date.now()}`,
+        code: payCodeA,
         city: 'Bengaluru',
         type: 'activation',
         amount: 49900,
@@ -302,6 +321,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
     // Approve refund for jsA: should refund 49900 (the amount actually paid)
     const refundA = await jobSeekerService.approveRefund(jsA.id, { asOf: now.toISOString() }, ceoId);
     expect(refundA.amount).toBe(49900);
+    if (refundA.code) createdPaymentCodes.push(refundA.code);
 
     // Candidate B paid 59900
     const jsB = await prisma.jobSeeker.create({
@@ -319,10 +339,14 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         city: 'Bengaluru',
       },
     });
+    createdJobSeekerIds.push(jsB.id);
+
+    const payCodeB = `PAY-${Math.floor(Math.random() * 90000 + 10000)}`;
+    createdPaymentCodes.push(payCodeB);
 
     await prisma.payment.create({
       data: {
-        code: `PAY-B-${Date.now()}`,
+        code: payCodeB,
         city: 'Bengaluru',
         type: 'activation',
         amount: 59900,
@@ -338,6 +362,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
     // Approve refund for jsB: should refund 59900 (the amount actually paid)
     const refundB = await jobSeekerService.approveRefund(jsB.id, { asOf: now.toISOString() }, ceoId);
     expect(refundB.amount).toBe(59900);
+    if (refundB.code) createdPaymentCodes.push(refundB.code);
   });
 
   it('a new PricingService instance (simulating a restart) sees the changed values', async () => {

@@ -5,11 +5,12 @@ import { AuditModule } from '../../common/audit/audit.module';
 import { RbacModule } from '../../common/rbac/rbac.module';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
 import { PaymentModule } from '../payment/payment.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { PlacementService } from './placement.service';
 import { PlacementController, VacancyPlacementController } from './placement.controller';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule],
+  imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule, PricingModule],
   controllers: [VacancyPlacementController, PlacementController],
   providers: [PlacementService],
   exports: [PlacementService],

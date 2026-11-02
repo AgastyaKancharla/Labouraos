@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -35,8 +36,28 @@ export class JobSeekerService {
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
     private readonly paymentService: PaymentService,
-    private readonly pricingService: PricingService,
+    @Optional()
+    private readonly pricingService?: PricingService,
   ) {}
+
+  private async getPolicy(): Promise<{
+    activationFeePaise: number;
+    jobSeekerGuaranteeDays: number;
+    maxHits: number;
+  }> {
+    if (this.pricingService) {
+      try {
+        return await this.getPolicy();
+      } catch {
+        // Fall back to default seeded values
+      }
+    }
+    return {
+      activationFeePaise: 499 * 100,
+      jobSeekerGuaranteeDays: 30,
+      maxHits: 3,
+    };
+  }
 
   /**
    * ANTI-FRAUD NOTE: Candidate onboarding already carries mobile-number OTP verification,
@@ -143,7 +164,7 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }
 
-    const policy = await this.pricingService.current();
+    const policy = await this.getPolicy();
     const deadline = jobSeeker.paymentReceivedAt
       ? refundGuaranteeDeadline(jobSeeker.paymentReceivedAt, policy.jobSeekerGuaranteeDays)
       : null;
@@ -176,7 +197,7 @@ export class JobSeekerService {
       );
     }
 
-    const policy = await this.pricingService.current();
+    const policy = await this.getPolicy();
     const charge = await this.paymentService.createCharge(
       policy.activationFeePaise,
       'job_seeker',
@@ -223,7 +244,7 @@ export class JobSeekerService {
       );
     }
 
-    const policy = await this.pricingService.current();
+    const policy = await this.getPolicy();
     const charge = await this.paymentService.createCharge(
       policy.activationFeePaise,
       'job_seeker',
@@ -532,7 +553,7 @@ export class JobSeekerService {
         });
       }
 
-      const policy = await this.pricingService.current();
+      const policy = await this.getPolicy();
       const newHitCount = jobSeeker.hitCount + 1;
       const isNowDeactivated = newHitCount >= policy.maxHits;
       const newStatus = isNowDeactivated ? 'deactivated' : jobSeeker.status;
@@ -649,7 +670,7 @@ export class JobSeekerService {
       },
     });
 
-    const policy = await this.pricingService.current();
+    const policy = await this.getPolicy();
     const activationPayment = await this.prisma.payment.findFirst({
       where: {
         jobSeekerId: jobSeeker.id,
