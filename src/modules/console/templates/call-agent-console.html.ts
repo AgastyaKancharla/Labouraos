@@ -1,3 +1,5 @@
+import { staffLoginFieldsHtml, staffLoginHandlersJs } from './staff-login-ui';
+
 export function renderCallAgentConsoleHtml(): string {
   return `<!DOCTYPE html>
 <html lang="en">
@@ -178,22 +180,7 @@ export function renderCallAgentConsoleHtml(): string {
       <h2 style="margin-bottom: 16px; font-size: 1.25rem;">Call Agent Login</h2>
       <div id="login-error" class="alert alert-danger hidden"></div>
       <div id="login-info" class="alert alert-success hidden"></div>
-      <div id="login-form-fields">
-        <div class="form-group">
-          <label>Email</label>
-          <input type="email" id="login-email" placeholder="ca@laboura.local">
-        </div>
-        <div class="form-group">
-          <label>Password</label>
-          <input type="password" id="login-password" placeholder="••••••••">
-        </div>
-        <div class="form-group">
-          <label>Authenticator Code (6 digits)</label>
-          <input type="text" id="login-totp" maxlength="6" pattern="[0-9]{6}" style="width: 100%; letter-spacing: 2px;" placeholder="123456" autocomplete="one-time-code">
-          <small style="color: var(--text-muted); font-size: 0.75rem;">Leave blank if logging in for the first time to enroll 2FA.</small>
-        </div>
-        <button id="btn-login" style="width: 100%; margin-top: 8px;">Log In</button>
-      </div>
+      ${staffLoginFieldsHtml()}
 
       <!-- Inline TOTP Enrollment Step -->
       <div id="totp-enroll-section" class="hidden" style="margin-top: 12px; border-top: 1px solid var(--card-border); padding-top: 12px;">
@@ -623,6 +610,8 @@ export function renderCallAgentConsoleHtml(): string {
       const formFields = document.getElementById('login-form-fields');
       if (enrollSec) enrollSec.classList.add('hidden');
       if (formFields) formFields.classList.remove('hidden');
+      var codePanel = document.getElementById('login-code-panel');
+      if (codePanel) codePanel.classList.add('hidden');
       document.getElementById('auth-modal').classList.remove('hidden');
     }
 
@@ -630,59 +619,7 @@ export function renderCallAgentConsoleHtml(): string {
       document.getElementById('auth-modal').classList.add('hidden');
     }
 
-    document.getElementById('btn-login').addEventListener('click', async () => {
-      const email = document.getElementById('login-email').value;
-      const password = document.getElementById('login-password').value;
-      const totpCode = document.getElementById('login-totp').value.trim();
-      const errEl = document.getElementById('login-error');
-      const infoEl = document.getElementById('login-info');
-      try {
-        errEl.classList.add('hidden');
-        if (infoEl) infoEl.classList.add('hidden');
-        const payload = { email, password };
-        if (totpCode) {
-          payload.totpCode = totpCode;
-        }
-        const res = await fetch('/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload)
-        });
-        if (!res.ok) {
-          const err = await res.json().catch(() => ({ message: 'Login failed' }));
-          throw new Error(err.message || 'Invalid credentials');
-        }
-        const data = await res.json();
-        if (data.totpEnrollmentRequired) {
-          // Account requires TOTP 2FA setup
-          setupScopedToken = data.accessToken;
-          const setupRes = await fetch('/staff/2fa/setup', {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Authorization': 'Bearer ' + setupScopedToken
-            }
-          });
-          if (!setupRes.ok) {
-            const err = await setupRes.json().catch(() => ({ message: 'Failed to start 2FA setup' }));
-            throw new Error(err.message || 'Failed to start 2FA setup');
-          }
-          const setupData = await setupRes.json();
-          document.getElementById('totp-setup-secret').textContent = setupData.secret;
-          document.getElementById('login-form-fields').classList.add('hidden');
-          document.getElementById('totp-enroll-section').classList.remove('hidden');
-          return;
-        }
-
-        token = data.accessToken;
-        sessionStorage.setItem('laboura_token', token);
-        hideLoginModal();
-        initUser();
-      } catch (e) {
-        errEl.textContent = e.message;
-        errEl.classList.remove('hidden');
-      }
-    });
+    ${staffLoginHandlersJs()}
 
     document.getElementById('btn-enable-totp').addEventListener('click', async () => {
       const errEl = document.getElementById('login-error');
@@ -722,6 +659,10 @@ export function renderCallAgentConsoleHtml(): string {
     });
 
     document.getElementById('btn-logout').addEventListener('click', () => {
+      var ending = token;
+      if (ending) {
+        fetch('/auth/logout', { method: 'POST', headers: { 'Authorization': 'Bearer ' + ending } }).catch(function () {});
+      }
       sessionStorage.removeItem('laboura_token');
       token = '';
       showLoginModal();

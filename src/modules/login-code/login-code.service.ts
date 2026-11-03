@@ -29,7 +29,7 @@ export class Clock {
   }
 }
 
-const staffBrief = { id: true, code: true, role: true, teamLeadId: true } as const;
+const staffBrief = { id: true, name: true, code: true, role: true, teamLeadId: true } as const;
 
 @Injectable()
 export class LoginCodeService {
