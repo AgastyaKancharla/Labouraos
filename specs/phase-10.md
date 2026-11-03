@@ -119,7 +119,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 
 ## Wave 4 — together (after Task 5 is merged)
 
-### [ ] Task 6 — Login and approval screens
+### [x] Task 6 — Login and approval screens
 **Branch:** `phase-10/task-6-login-screens` · **No migration**
 
 **Acceptance (in the existing server-rendered consoles; plain styling is fine — the Command Center restyle comes later):**
