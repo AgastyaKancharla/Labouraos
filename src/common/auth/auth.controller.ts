@@ -12,6 +12,13 @@ import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, LoginResult, VerifyLoginCodeDto } from './dto/login.dto';
 import { AuthThrottlerGuard } from './auth-throttler.guard';
+import { JwtAuthGuard } from './jwt-auth.guard';
+import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
+import { JwtPayload } from './jwt-payload.interface';
+
+interface AuthenticatedRequest extends Request {
+  user: JwtPayload;
+}
 
 @Controller('auth')
 export class AuthController {
@@ -44,5 +51,21 @@ export class AuthController {
       ip,
       userAgent,
     });
+  }
+
+  @Post('refresh')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @AllowTotpSetupScope()
+  refresh(@Req() req: AuthenticatedRequest) {
+    return this.authService.refresh(req.user);
+  }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  @AllowTotpSetupScope()
+  logout(@Req() req: AuthenticatedRequest) {
+    return this.authService.logout(req.user);
   }
 }

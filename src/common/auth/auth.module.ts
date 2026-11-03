@@ -16,6 +16,7 @@ import { getJwtSecret } from './jwt-secret';
 import { LoginCodeModule } from '../../modules/login-code/login-code.module';
 import { OfficeNetworkModule } from '../../modules/office-network/office-network.module';
 import { ReviewFlagModule } from '../../modules/review-flag/review-flag.module';
+import { PricingModule } from '../../modules/pricing/pricing.module';
 
 @Global()
 @Module({
@@ -30,6 +31,7 @@ import { ReviewFlagModule } from '../../modules/review-flag/review-flag.module';
     LoginCodeModule,
     OfficeNetworkModule,
     ReviewFlagModule,
+    PricingModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       useFactory: () => ({

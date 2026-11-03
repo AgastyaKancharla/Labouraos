@@ -184,6 +184,12 @@ model Staff {
   teamMembers       Staff[]          @relation("TeamHierarchy")
   area              String?
   worksFromOffice   Boolean          @default(false)
+  failedLoginCount  Int              @default(0)
+  lockedUntil       DateTime?
+  lockedByStaffId   String?
+  lockedByStaff     Staff?           @relation("StaffLockedBy", fields: [lockedByStaffId], references: [id], onDelete: SetNull)
+  staffLocked       Staff[]          @relation("StaffLockedBy")
+  lockedReason      String?
   capturedVacancies Vacancy[]
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
@@ -220,6 +226,7 @@ model Staff {
   @@index([city])
   @@index([role])
   @@index([teamLeadId])
+  @@index([lockedByStaffId])
 }
 
 model Payment {
@@ -423,6 +430,7 @@ model LoginCodeRequest {
   refusedByStaffId  String?
   refusedByStaff    Staff?      @relation("LoginCodeRefusedBy", fields: [refusedByStaffId], references: [id], onDelete: SetNull)
   refusedReason     String?
+  sessions          StaffSession[]
 
   @@index([staffId, status])
   @@index([createdAt])
@@ -432,20 +440,28 @@ model LoginCodeRequest {
 }
 
 model StaffSession {
-  id          String    @id @default(uuid())
-  staffId     String
-  staff       Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
-  tokenHash   String?
-  deviceId    String?
-  ipAddress   String?
-  userAgent   String?
-  revokedAt   DateTime?
-  expiresAt   DateTime
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  id                 String            @id @default(uuid())
+  staffId            String
+  staff              Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  tokenHash          String?
+  deviceId           String?
+  ipAddress          String?
+  userAgent          String?
+  revokedAt          DateTime?
+  expiresAt          DateTime
+  lastActivityAt     DateTime          @default(now())
+  /// login time + maxSessionMinutes; refresh never moves this
+  absoluteExpiresAt  DateTime
+  /// logout, idle, max_length, replaced, locked, revoked
+  endedReason        String?
+  loginCodeRequestId String?
+  loginCodeRequest   LoginCodeRequest? @relation(fields: [loginCodeRequestId], references: [id], onDelete: SetNull)
+  createdAt          DateTime          @default(now())
+  updatedAt          DateTime          @updatedAt
 
   @@index([staffId])
   @@index([revokedAt])
+  @@index([loginCodeRequestId])
 }
 
 model JobRun {

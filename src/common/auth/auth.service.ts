@@ -23,6 +23,12 @@ import { LoginCodeService } from '../../modules/login-code/login-code.service';
 import { isOddHourIst } from '../../modules/login-code/login-code.crypto';
 import { OfficeNetworkService } from '../../modules/office-network/office-network.service';
 import { ReviewFlagService } from '../../modules/review-flag/review-flag.service';
+import { PricingService } from '../../modules/pricing/pricing.service';
+import {
+  minutesToMs,
+  sessionEndMessage,
+  sessionLifetimeEnd,
+} from './session-lifetime';
 
 export interface StaffSessionView {
   id: string;
@@ -64,6 +70,7 @@ export class AuthService {
     private readonly loginCodeService: LoginCodeService,
     private readonly officeNetworkService: OfficeNetworkService,
     private readonly reviewFlagService: ReviewFlagService,
+    private readonly pricingService: PricingService,
     private readonly clock: AuthClock,
   ) {}
 
@@ -100,11 +107,24 @@ export class AuthService {
       ? await this.verifyPassword(password, staff.passwordHash)
       : false;
     if (!staff || !passwordOk) {
-      await this.auditAttempt(staff?.id ?? 'login', staff?.code ?? 'unknown', 'auth.login.refused', {
+      if (staff) {
+        await this.rejectIfLocked(staff);
+        const lockedUntil = await this.recordFailedPassword(staff);
+        if (lockedUntil) {
+          throw new UnauthorizedException(
+            this.lockedMessage({ lockedUntil, lockedByStaffId: null }),
+          );
+        }
+        throw new UnauthorizedException(INVALID_CREDENTIALS);
+      }
+      await this.auditAttempt('login', 'unknown', 'auth.login.refused', {
         reason: 'invalid_credentials',
       });
       throw new UnauthorizedException(INVALID_CREDENTIALS);
     }
+
+    await this.rejectIfLocked(staff);
+    await this.clearFailedLogins(staff.id);
 
     if (staff.status !== 'active') {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
@@ -199,6 +219,7 @@ export class AuthService {
       });
       throw new UnauthorizedException('Account is not active');
     }
+    await this.rejectIfLocked(staff);
     if (
       staff.worksFromOffice &&
       !(await this.officeNetworkService.isOnOfficeNetwork(metadata?.ip ?? ''))
@@ -327,11 +348,33 @@ export class AuthService {
   }
 
   async revokeAllSessionsForStaff(staffId: string): Promise<number> {
+    return this.endOpenSessions(staffId, 'revoked');
+  }
+
+  async endOpenSessions(staffId: string, endedReason: string): Promise<number> {
     const result = await this.prisma.staffSession.updateMany({
       where: { staffId, revokedAt: null },
-      data: { revokedAt: this.clock.now() },
+      data: { revokedAt: this.clock.now(), endedReason },
     });
     return result.count;
+  }
+
+  async refresh(actor: JwtPayload): Promise<{ accessToken: string; sessionId: string }> {
+    const session = await this.requireOpenSession(actor);
+    const accessToken = await this.signAccessToken(actor, session.id);
+    const expiresAt = new Date(this.clock.now().getTime() + ACCESS_SESSION_MS);
+    await this.prisma.staffSession.update({
+      where: { id: session.id },
+      data: { expiresAt },
+    });
+    return { accessToken, sessionId: session.id };
+  }
+
+  async logout(actor: JwtPayload): Promise<{ success: boolean }> {
+    if (actor.sid) {
+      await this.endSession(actor.sid, 'logout');
+    }
+    return { success: true };
   }
 
   async revokeSession(
@@ -360,7 +403,7 @@ export class AuthService {
     const revokedAt = this.clock.now();
     await this.prisma.staffSession.update({
       where: { id: sessionId },
-      data: { revokedAt },
+      data: { revokedAt, endedReason: 'revoked' },
     });
 
     await this.auditService.log({
@@ -407,7 +450,11 @@ export class AuthService {
     loginCodeRequestId: string | null,
     totpSetup = false,
   ): Promise<LoginResponseDto> {
-    const expiresAt = new Date(this.clock.now().getTime() + ACCESS_SESSION_MS);
+    const now = this.clock.now();
+    const policy = await this.pricingService.current();
+    const expiresAt = new Date(now.getTime() + ACCESS_SESSION_MS);
+    const absoluteExpiresAt = new Date(now.getTime() + minutesToMs(policy.maxSessionMinutes));
+    await this.endOpenSessions(staff.id, 'replaced');
     const session = await this.prisma.staffSession.create({
       data: {
         staffId: staff.id,
@@ -415,6 +462,9 @@ export class AuthService {
         ipAddress: metadata?.ip || null,
         userAgent: metadata?.userAgent || null,
         expiresAt,
+        lastActivityAt: now,
+        absoluteExpiresAt,
+        loginCodeRequestId,
       },
     });
 
@@ -538,6 +588,143 @@ export class AuthService {
         requestedAt: now,
       },
     });
+  }
+
+  private async requireOpenSession(actor: JwtPayload) {
+    if (!actor.sid) {
+      throw new UnauthorizedException('Session not found');
+    }
+    const session = await this.prisma.staffSession.findUnique({
+      where: { id: actor.sid },
+    });
+    if (!session || session.staffId !== actor.sub) {
+      throw new UnauthorizedException('Session not found');
+    }
+    if (session.revokedAt || session.endedReason) {
+      throw new UnauthorizedException('Session has been revoked');
+    }
+    const now = this.clock.now();
+    const policy = await this.pricingService.current();
+    const end = sessionLifetimeEnd(session, now, policy.idleLogoutMinutes);
+    if (end) {
+      await this.endSession(session.id, end);
+      throw new UnauthorizedException(sessionEndMessage(end));
+    }
+    return session;
+  }
+
+  private async signAccessToken(actor: JwtPayload, sessionId: string): Promise<string> {
+    const payload: JwtPayload = {
+      sub: actor.sub,
+      role: actor.role,
+      email: actor.email,
+      code: actor.code,
+      area: actor.area,
+      teamLeadId: actor.teamLeadId,
+      sid: sessionId,
+      ...(actor.scope ? { scope: actor.scope } : {}),
+    };
+    return this.jwtService.signAsync(payload, { expiresIn: '15m' });
+  }
+
+  private async endSession(sessionId: string, endedReason: string): Promise<void> {
+    await this.prisma.staffSession.updateMany({
+      where: { id: sessionId, revokedAt: null },
+      data: { revokedAt: this.clock.now(), endedReason },
+    });
+  }
+
+  private async rejectIfLocked(staff: Staff): Promise<void> {
+    const current = await this.accountAfterExpiredLock(staff);
+    if (!this.isAccountLocked(current)) {
+      return;
+    }
+    await this.auditAttempt(current.id, current.code, 'auth.login.refused', {
+      reason: 'account_locked',
+      lockedUntil: current.lockedUntil ? current.lockedUntil.toISOString() : null,
+    });
+    throw new UnauthorizedException(this.lockedMessage(current));
+  }
+
+  private async accountAfterExpiredLock(staff: Staff): Promise<Staff> {
+    if (staff.lockedByStaffId) {
+      return staff;
+    }
+    if (staff.lockedUntil && staff.lockedUntil.getTime() <= this.clock.now().getTime()) {
+      return this.prisma.staff.update({
+        where: { id: staff.id },
+        data: { lockedUntil: null, failedLoginCount: 0 },
+      });
+    }
+    return staff;
+  }
+
+  private isAccountLocked(staff: {
+    lockedByStaffId: string | null;
+    lockedUntil: Date | null;
+  }): boolean {
+    if (staff.lockedByStaffId) {
+      return true;
+    }
+    return !!staff.lockedUntil && staff.lockedUntil.getTime() > this.clock.now().getTime();
+  }
+
+  private lockedMessage(staff: {
+    lockedUntil: Date | null;
+    lockedByStaffId: string | null;
+  }): string {
+    if (staff.lockedByStaffId || !staff.lockedUntil) {
+      return 'Account is locked until a Team Lead, Manager or the CEO unlocks it';
+    }
+    return `Account is locked until ${staff.lockedUntil.toISOString()}`;
+  }
+
+  private async clearFailedLogins(staffId: string): Promise<void> {
+    await this.prisma.staff.update({
+      where: { id: staffId },
+      data: { failedLoginCount: 0, lockedUntil: null },
+    });
+  }
+
+  private async recordFailedPassword(staff: Staff): Promise<Date | null> {
+    const policy = await this.pricingService.current();
+    const updated = await this.prisma.staff.update({
+      where: { id: staff.id },
+      data: { failedLoginCount: { increment: 1 } },
+      select: { failedLoginCount: true },
+    });
+    const count = updated.failedLoginCount;
+    if (count < policy.failedLoginLimit) {
+      await this.auditService.log({
+        actorId: staff.id,
+        action: 'auth.login.refused',
+        entityType: 'staff',
+        entityCode: staff.code,
+        before: { failedLoginCount: count - 1 },
+        after: { reason: 'invalid_credentials', failedLoginCount: count },
+      });
+      return null;
+    }
+    const lockedUntil = new Date(
+      this.clock.now().getTime() + minutesToMs(policy.lockoutMinutes),
+    );
+    await this.prisma.staff.update({
+      where: { id: staff.id },
+      data: { lockedUntil },
+    });
+    await this.auditService.log({
+      actorId: staff.id,
+      action: 'auth.login.refused',
+      entityType: 'staff',
+      entityCode: staff.code,
+      before: { failedLoginCount: count - 1, lockedUntil: null },
+      after: {
+        reason: 'account_locked',
+        failedLoginCount: count,
+        lockedUntil: lockedUntil.toISOString(),
+      },
+    });
+    return lockedUntil;
   }
 
   private async auditAttempt(
