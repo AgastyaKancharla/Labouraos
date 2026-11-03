@@ -623,4 +623,24 @@ model CallRecord {
   @@index([subjectType, subjectId])
 }
 
+model MessageLog {
+  id                String    @id @default(uuid())
+  channel           String // sms, whatsapp
+  template          String
+  subjectType       String
+  subjectId         String
+  relatedType       String?
+  relatedId         String?
+  providerMessageId String?   @unique
+  status            String // queued, sent, delivered, read, failed
+  sentAt            DateTime?
+  deliveredAt       DateTime?
+  failedAt          DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([subjectType, subjectId])
+  @@index([status])
+}
+
 

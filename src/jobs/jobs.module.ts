@@ -6,9 +6,10 @@ import { AuditModule } from '../common/audit/audit.module';
 import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
 import { SweepMonitoringService } from './sweep-monitoring.service';
 import { JobsController } from './jobs.controller';
+import { MessageModule } from '../modules/message/message.module';
 
 @Module({
-  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule],
+  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule],
   controllers: [JobsController],
   providers: [NoPickupEvaluationJob, SweepMonitoringService],
   exports: [NoPickupEvaluationJob, SweepMonitoringService],

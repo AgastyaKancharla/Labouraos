@@ -14,6 +14,7 @@ import {
   WhatsAppProvider,
 } from '../common/whatsapp/whatsapp.interface';
 import { AuditService } from '../common/audit/audit.service';
+import { MessagingService } from '../modules/message/messaging.service';
 import {
   getRequestId,
   runWithRequestId,
@@ -44,6 +45,8 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     private readonly whatsAppProvider?: WhatsAppProvider,
     @Optional()
     private readonly auditService?: AuditService,
+    @Optional()
+    private readonly messaging?: MessagingService,
   ) {}
 
   get redisConnection() {
@@ -242,46 +245,70 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
           );
 
           if (amCall && pmCall && !msgAttempt) {
-            const sendRes = await this.whatsAppProvider.sendTemplateMessage(
-              js.phone,
-              'call_attempt_notice',
-              {
-                candidateName: js.name,
-                trade: js.tradeSkill,
-              },
-            );
-
-            if (sendRes.status === 'sent') {
-              await this.prisma.contactAttempt.create({
-                data: {
-                  jobSeekerId: js.id,
-                  channel: 'whatsapp',
-                  outcome: 'no_pickup',
-                  timeOfDay: 'pm',
-                  attemptedAt: new Date(),
+            if (this.messaging) {
+              const logged = await this.messaging.send({
+                channel: 'whatsapp',
+                template: 'call_attempt_notice',
+                subjectType: 'job_seeker',
+                subjectId: js.id,
+                variables: {
+                  candidateName: js.name,
+                  trade: js.tradeSkill,
                 },
               });
-
-              if (this.auditService) {
-                let actor = await this.prisma.staff.findFirst({
-                  where: { role: 'ceo' },
+              if (logged.status === 'sent') {
+                await this.prisma.contactAttempt.create({
+                  data: {
+                    jobSeekerId: js.id,
+                    channel: 'whatsapp',
+                    outcome: 'no_pickup',
+                    timeOfDay: 'pm',
+                    attemptedAt: new Date(),
+                  },
                 });
-                if (!actor) {
-                  actor = await this.prisma.staff.findFirst();
-                }
-                if (actor) {
-                  await this.auditService.log({
-                    actorId: actor.id,
-                    action: 'whatsapp.automated_attempt_sent',
-                    entityType: 'job_seeker',
-                    entityCode: js.code,
-                    after: {
-                      phone: js.phone,
-                      template: 'call_attempt_notice',
-                      messageId: sendRes.messageId,
-                    },
-                    city: 'Bengaluru',
+              }
+            } else {
+              const sendRes = await this.whatsAppProvider.sendTemplateMessage(
+                js.phone,
+                'call_attempt_notice',
+                {
+                  candidateName: js.name,
+                  trade: js.tradeSkill,
+                },
+              );
+
+              if (sendRes.status === 'sent') {
+                await this.prisma.contactAttempt.create({
+                  data: {
+                    jobSeekerId: js.id,
+                    channel: 'whatsapp',
+                    outcome: 'no_pickup',
+                    timeOfDay: 'pm',
+                    attemptedAt: new Date(),
+                  },
+                });
+
+                if (this.auditService) {
+                  let actor = await this.prisma.staff.findFirst({
+                    where: { role: 'ceo' },
                   });
+                  if (!actor) {
+                    actor = await this.prisma.staff.findFirst();
+                  }
+                  if (actor) {
+                    await this.auditService.log({
+                      actorId: actor.id,
+                      action: 'whatsapp.automated_attempt_sent',
+                      entityType: 'job_seeker',
+                      entityCode: js.code,
+                      after: {
+                        phone: js.phone,
+                        template: 'call_attempt_notice',
+                        messageId: sendRes.messageId,
+                      },
+                      city: 'Bengaluru',
+                    });
+                  }
                 }
               }
             }
