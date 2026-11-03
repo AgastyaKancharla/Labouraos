@@ -43,7 +43,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 - Revoking a device ends every open session that used it.
 - Tests: a Team Lead approves their own agent's device and is refused another team's; nobody can approve their own; a revoked device's sessions end; the migration carries an existing registered device over as approved.
 
-### [ ] Task 2 — Office networks (data and check, no login change yet)
+### [x] Task 2 — Office networks (data and check, no login change yet)
 **Branch:** `phase-10/task-2-office-networks` · **Migration folder:** `20261103110000_add_office_networks`
 
 **Acceptance:**
