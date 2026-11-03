@@ -31,7 +31,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 
 ## Wave 1 — together
 
-### [ ] Task 1 — Approved devices (data and approval, no login change yet)
+### [x] Task 1 — Approved devices (data and approval, no login change yet)
 **Branch:** `phase-10/task-1-staff-devices` · **Migration folder:** `20261103100000_add_staff_devices`
 
 **Acceptance:**
