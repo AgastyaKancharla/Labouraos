@@ -146,7 +146,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
     cleanStaffIds.push(fin.id);
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

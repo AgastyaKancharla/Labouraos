@@ -111,7 +111,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
     cleanStaffIds.push(mgr.id);
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

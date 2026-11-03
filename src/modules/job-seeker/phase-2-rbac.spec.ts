@@ -91,7 +91,7 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
 
     // Login tokens
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

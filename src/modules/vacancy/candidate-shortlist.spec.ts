@@ -82,7 +82,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
     });
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

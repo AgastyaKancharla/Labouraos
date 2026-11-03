@@ -66,7 +66,7 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
     });
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

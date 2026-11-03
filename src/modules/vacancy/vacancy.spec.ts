@@ -88,7 +88,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     managerId = mgr.id;
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

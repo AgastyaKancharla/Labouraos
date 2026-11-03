@@ -80,13 +80,16 @@ type LoginCall = Promise<request.Response> & {
 
 export function enrolledLogin(
   server: Parameters<typeof request>[0],
-  body: { email: string; password: string; deviceId?: string; [key: string]: unknown },
+  body: { email: string | null; password: string; deviceId?: string; [key: string]: unknown },
 ): LoginCall {
   const run = async (): Promise<request.Response> => {
-    const staff = await db().staff.findUnique({
-      where: { email: body.email },
-      select: { id: true, code: true, role: true, totpEnabled: true, totpSecret: true },
-    });
+    const email = body.email;
+    const staff = email
+      ? await db().staff.findUnique({
+          where: { email },
+          select: { id: true, code: true, role: true, totpEnabled: true, totpSecret: true },
+        })
+      : null;
     const deviceId =
       typeof body.deviceId === 'string' && body.deviceId.trim()
         ? body.deviceId.trim()
@@ -105,7 +108,7 @@ export function enrolledLogin(
     const management = MANAGEMENT_ROLES.includes(staff.role);
     let totpCode: string | undefined;
     if (management) {
-      const { secret } = await ensureStaffEnrolled(body.email);
+      const { secret } = await ensureStaffEnrolled(email ?? '');
       if (secret) {
         totpCode = await stableTotpCode(secret);
       }

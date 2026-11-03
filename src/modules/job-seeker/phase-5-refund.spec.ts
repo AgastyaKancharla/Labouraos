@@ -90,7 +90,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
     staffIds = [ceo.id, manager.id, callAgent.id, fieldAgent.id, finance.id];
 
     // Logins
-    const getTok = async (email: string) => {
+    const getTok = async (email: string | null) => {
       const res = await enrolledLogin(app.getHttpServer(), { email, password })
         .expect(200);
       return res.body.accessToken;

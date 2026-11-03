@@ -68,7 +68,7 @@ describe('Phase 3 Task 5: Reactivation', () => {
     });
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

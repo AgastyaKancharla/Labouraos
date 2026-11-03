@@ -108,11 +108,13 @@ describe('Phase 8 Task 9: Staff account management', () => {
       .send({ token, password });
   }
 
-  async function login(email: string, passwordForLogin: string) {
-    const row = await prisma.staff.findUnique({
-      where: { email },
-      select: { id: true, code: true, role: true },
-    });
+  async function login(email: string | null, passwordForLogin: string) {
+    const row = email
+      ? await prisma.staff.findUnique({
+          where: { email },
+          select: { id: true, code: true, role: true },
+        })
+      : null;
     const deviceId = 'staff-mgmt-device';
     if (row && !['ceo', 'manager', 'finance'].includes(row.role)) {
       await prisma.staffDevice.upsert({
