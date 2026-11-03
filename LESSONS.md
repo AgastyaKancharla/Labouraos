@@ -302,6 +302,11 @@ Format:
 **Cause:** The controller passed the JWT payload through as the actor and read `actor.id`, but the staff id is `payload.sub`. It imported `RolesGuard`, which is not a file in this repo; role checks go through `RbacGuard`. The field-agent test token omitted `area`, so the own-area check on business create rejected `body.area`. `ReviewFlagService` was also `@Optional()`, so a missing injection would skip the GPS flag.
 **Fix:** Map `{ id: user.sub, role: user.role }`, guard the routes with `RbacGuard`, put the staff area on field-agent tokens, and inject `ReviewFlagService` as required so a GPS mismatch always raises `gps_mismatch`.
 
+## Login code secret looks unset, then the module still starts
+**Symptom:** Deleting `LOGIN_CODE_SECRET` and compiling `LoginCodeModule` succeeded, so the startup test did not fail.
+**Cause:** Constructing `PrismaClient` loads `.env` and fills any variable that is missing. A deleted variable is missing, so the file put the secret back before the service constructor ran. An empty string is already set, and dotenv does not override it.
+**Fix:** The startup test sets `LOGIN_CODE_SECRET` to `''` (and to a 10-character value) instead of deleting it. The code is the first six decimal digits of `HMAC-SHA256(LOGIN_CODE_SECRET, requestId)`. Wrong attempts are counted from `login_code.wrong_code` audit rows, because `LoginCodeRequest` has no attempt column.
+
 
 
 

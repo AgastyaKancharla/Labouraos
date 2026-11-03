@@ -70,6 +70,7 @@ jobs:
           NODE_ENV: test
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
           JWT_SECRET: "ci_jwt_secret_testing_only_32_characters_minimum"
+          LOGIN_CODE_SECRET: "ci_login_code_secret_testing_only_32_characters"
           STAFF_BOOTSTRAP_SECRET: "ci_bootstrap_secret_testing_only_32_characters"
           REDIS_HOST: "localhost"
           REDIS_PORT: "6379"

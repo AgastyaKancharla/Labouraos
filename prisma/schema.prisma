@@ -202,6 +202,9 @@ model Staff {
   devicesApproved   StaffDevice[]    @relation("StaffDeviceApprovedBy")
   devicesRevoked    StaffDevice[]    @relation("StaffDeviceRevokedBy")
   officeNetworksAdded OfficeNetwork[] @relation("OfficeNetworkAddedBy")
+  loginCodeRequests LoginCodeRequest[] @relation("LoginCodeSubject")
+  loginCodesRevealed LoginCodeRequest[] @relation("LoginCodeRevealedBy")
+  loginCodesRefused LoginCodeRequest[] @relation("LoginCodeRefusedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
@@ -380,6 +383,7 @@ model StaffDevice {
   approvedByStaff   Staff?    @relation("StaffDeviceApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: SetNull)
   revokedByStaffId  String?
   revokedByStaff    Staff?    @relation("StaffDeviceRevokedBy", fields: [revokedByStaffId], references: [id], onDelete: SetNull)
+  loginCodeRequests LoginCodeRequest[]
 
   @@unique([staffId, deviceId])
   @@index([staffId])
@@ -399,6 +403,32 @@ model OfficeNetwork {
 
   @@index([active])
   @@index([addedByStaffId])
+}
+
+model LoginCodeRequest {
+  id                String      @id @default(uuid())
+  staffId           String
+  staff             Staff       @relation("LoginCodeSubject", fields: [staffId], references: [id], onDelete: Cascade)
+  staffDeviceId     String
+  staffDevice       StaffDevice @relation(fields: [staffDeviceId], references: [id], onDelete: Cascade)
+  ipAddress         String
+  onOfficeNetwork   Boolean
+  status            String      @default("pending") // pending, revealed, used, expired, refused
+  createdAt         DateTime    @default(now())
+  expiresAt         DateTime
+  revealedByStaffId String?
+  revealedByStaff   Staff?      @relation("LoginCodeRevealedBy", fields: [revealedByStaffId], references: [id], onDelete: SetNull)
+  revealedAt        DateTime?
+  usedAt            DateTime?
+  refusedByStaffId  String?
+  refusedByStaff    Staff?      @relation("LoginCodeRefusedBy", fields: [refusedByStaffId], references: [id], onDelete: SetNull)
+  refusedReason     String?
+
+  @@index([staffId, status])
+  @@index([createdAt])
+  @@index([expiresAt])
+  @@index([revealedByStaffId])
+  @@index([refusedByStaffId])
 }
 
 model StaffSession {
