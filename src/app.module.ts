@@ -18,6 +18,7 @@ import { PlacementModule } from './modules/placement/placement.module';
 import { PricingModule } from './modules/pricing/pricing.module';
 import { ConsoleModule } from './modules/console/console.module';
 import { TelephonyModule } from './modules/telephony/telephony.module';
+import { CallModule } from './modules/call/call.module';
 import { WhatsAppModule } from './common/whatsapp/whatsapp.module';
 import { StaffModule } from './modules/staff/staff.module';
 import { TargetModule } from './modules/target/target.module';
@@ -51,6 +52,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     PricingModule,
     ConsoleModule,
     TelephonyModule,
+    CallModule,
     StaffModule,
     StatusHistoryModule,
     ReviewFlagModule,

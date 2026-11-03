@@ -1195,6 +1195,7 @@ export async function seed(prismaClient?: PrismaClient) {
       PL: 'Placement',
       PAY: 'Payment',
       AUD: 'AuditLog',
+      CALL: 'CallRecord',
     };
 
     for (const [prefix, tableName] of Object.entries(mapping)) {

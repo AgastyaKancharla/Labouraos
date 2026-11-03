@@ -211,6 +211,7 @@ model Staff {
   loginCodeRequests LoginCodeRequest[] @relation("LoginCodeSubject")
   loginCodesRevealed LoginCodeRequest[] @relation("LoginCodeRevealedBy")
   loginCodesRefused LoginCodeRequest[] @relation("LoginCodeRefusedBy")
+  callRecords       CallRecord[]
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
@@ -585,6 +586,41 @@ model ReviewFlag {
 
   @@index([status, raisedAt])
   @@index([raisedForStaffId])
+}
+
+model CallRecord {
+  id                   String    @id @default(uuid())
+  code                 String    @unique
+  provider             String
+  providerCallId       String
+  direction            String? // outbound, inbound
+  staffId              String?
+  staff                Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  subjectType          String? // job_seeker, business, referral
+  subjectId            String?
+  purpose              String? // offer, follow_up, verification, exit_call, check_in, interview_result, refund_check, general
+  relatedType          String?
+  relatedId            String?
+  /// written only by the call-status webhook
+  providerStatus       String
+  /// written only by the call-status webhook
+  answered             Boolean   @default(false)
+  startedAt            DateTime?
+  answeredAt           DateTime?
+  endedAt              DateTime?
+  durationSec          Int?
+  recordingStoragePath String?
+  recordingDeletedAt   DateTime?
+  announcementPlayed   Boolean   @default(false)
+  agentOutcome         String?
+  agentOutcomeReason   String?
+  agentOutcomeAt       DateTime?
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@unique([provider, providerCallId])
+  @@index([staffId])
+  @@index([subjectType, subjectId])
 }
 
 

@@ -52,6 +52,7 @@ describe('IdService & Unique ID Generation', () => {
         'payment',
         'audit_log',
         'review_flag',
+        'call',
       ];
 
       for (const type of types) {

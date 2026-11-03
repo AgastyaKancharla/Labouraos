@@ -13,7 +13,8 @@ export type EntityType =
   | 'payment'
   | 'audit_log'
   | 'invoice'
-  | 'review_flag';
+  | 'review_flag'
+  | 'call';
 
 export const ENTITY_PREFIXES: Record<EntityType, string> = {
   job_seeker: 'JS',
@@ -28,6 +29,7 @@ export const ENTITY_PREFIXES: Record<EntityType, string> = {
   audit_log: 'AUD',
   invoice: 'INV',
   review_flag: 'FL',
+  call: 'CALL',
 };
 
 export function formatCode(prefix: string, seq: number): string {
@@ -72,6 +74,7 @@ export class IdService implements OnModuleInit {
       PAY: 'Payment',
       AUD: 'AuditLog',
       FL: 'ReviewFlag',
+      CALL: 'CallRecord',
       // Staff codes are role-prefixed (see STAFF_CODE_PREFIX in staff.service)
       CEO: 'Staff',
       MGR: 'Staff',
