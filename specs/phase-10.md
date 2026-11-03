@@ -97,7 +97,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 
 ## Wave 3 — alone (after Task 4 is merged)
 
-### [ ] Task 5 — Sessions, lockout, lock and unlock
+### [x] Task 5 — Sessions, lockout, lock and unlock
 **Branch:** `phase-10/task-5-sessions-lockout` · **Migration folder:** `20261103140000_sessions_and_lockout`
 
 **Acceptance — sessions:**
