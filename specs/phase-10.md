@@ -74,7 +74,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 
 ## Wave 2 — alone (after Tasks 1–3 are merged)
 
-### [ ] Task 4 — The new login flow
+### [x] Task 4 — The new login flow
 **Branch:** `phase-10/task-4-login-flow` · **Migration folder:** `20261103130000_staff_email_optional`
 
 **Acceptance:**
