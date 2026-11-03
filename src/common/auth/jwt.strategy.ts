@@ -5,12 +5,19 @@ import { JwtPayload } from './jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from './jwt-secret';
 import { AuthClock } from './auth.service';
+import { PricingService } from '../../modules/pricing/pricing.service';
+import {
+  sessionEndMessage,
+  sessionLifetimeEnd,
+  shouldTouchActivity,
+} from './session-lifetime';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: AuthClock,
+    private readonly pricingService: PricingService,
   ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
@@ -45,8 +52,22 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         throw new UnauthorizedException('Account is not active');
       }
 
-      if (session.expiresAt && session.expiresAt < this.clock.now()) {
-        throw new UnauthorizedException('Session has expired');
+      const now = this.clock.now();
+      const policy = await this.pricingService.current();
+      const end = sessionLifetimeEnd(session, now, policy.idleLogoutMinutes);
+      if (end) {
+        await this.prisma.staffSession.updateMany({
+          where: { id: session.id, revokedAt: null },
+          data: { revokedAt: now, endedReason: end },
+        });
+        throw new UnauthorizedException(sessionEndMessage(end));
+      }
+
+      if (shouldTouchActivity(session.lastActivityAt, now)) {
+        await this.prisma.staffSession.updateMany({
+          where: { id: session.id, revokedAt: null },
+          data: { lastActivityAt: now },
+        });
       }
     }
 

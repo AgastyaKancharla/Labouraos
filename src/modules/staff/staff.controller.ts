@@ -131,4 +131,26 @@ export class StaffController {
   reactivate(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.staffService.reactivateStaff(id, req.user);
   }
+
+  @Post(':id/lock')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo', 'manager')
+  lock(
+    @Param('id') id: string,
+    @Body('reason') reason: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.staffService.lockStaff(id, req.user, reason);
+  }
+
+  @Post(':id/unlock')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  unlock(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.unlockStaff(id, req.user);
+  }
 }

@@ -67,6 +67,8 @@ describe('Phase 8 Task 9: Staff account management', () => {
       data: {
         staffId: actor.id,
         expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+        absoluteExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+        lastActivityAt: new Date(),
       },
     });
     const payload: JwtPayload = {

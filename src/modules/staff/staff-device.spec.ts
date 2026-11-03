@@ -200,6 +200,8 @@ describe('Phase 10 Task 1: Staff devices', () => {
         staffId: agent1Id,
         deviceId: 'phone-a',
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        absoluteExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+        lastActivityAt: new Date(),
       },
     });
     const other = await prisma.staffSession.create({
@@ -207,6 +209,8 @@ describe('Phase 10 Task 1: Staff devices', () => {
         staffId: agent1Id,
         deviceId: 'spare-phone',
         expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+        absoluteExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+        lastActivityAt: new Date(),
       },
     });
 

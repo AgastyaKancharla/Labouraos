@@ -734,6 +734,108 @@ export class StaffService {
     return { staff };
   }
 
+  async lockStaff(
+    staffId: string,
+    actor: JwtPayload,
+    reason: string | undefined,
+  ): Promise<{ success: boolean; sessionsEnded: number }> {
+    const trimmed = typeof reason === 'string' ? reason.trim() : '';
+    if (!trimmed) {
+      throw new BadRequestException('A reason is required to lock an account');
+    }
+    if (actor.role !== 'ceo' && actor.role !== 'manager') {
+      throw new ForbiddenException('Only a Manager or the CEO can lock an account');
+    }
+    const target = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+
+    const before = {
+      failedLoginCount: target.failedLoginCount,
+      lockedUntil: target.lockedUntil ? target.lockedUntil.toISOString() : null,
+      lockedByStaffId: target.lockedByStaffId,
+      lockedReason: target.lockedReason,
+    };
+    await this.prisma.staff.update({
+      where: { id: staffId },
+      data: {
+        lockedByStaffId: actor.sub,
+        lockedReason: trimmed,
+        lockedUntil: null,
+      },
+    });
+    const sessionsEnded = await this.authService.endOpenSessions(staffId, 'locked');
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.locked',
+      entityType: 'staff',
+      entityCode: target.code,
+      reason: trimmed,
+      before,
+      after: {
+        lockedByStaffId: actor.sub,
+        lockedReason: trimmed,
+        lockedUntil: null,
+        sessionsEnded,
+      },
+    });
+    return { success: true, sessionsEnded };
+  }
+
+  async unlockStaff(
+    staffId: string,
+    actor: JwtPayload,
+  ): Promise<{ success: boolean }> {
+    if (
+      actor.role !== 'ceo' &&
+      actor.role !== 'manager' &&
+      actor.role !== 'team_lead'
+    ) {
+      throw new ForbiddenException(
+        'Only a Team Lead, Manager or the CEO can unlock an account',
+      );
+    }
+    const target = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+    if (actor.role === 'team_lead' && target.teamLeadId !== actor.sub) {
+      throw new ForbiddenException(
+        `Access denied: staff '${staffId}' is not part of your team`,
+      );
+    }
+
+    await this.prisma.staff.update({
+      where: { id: staffId },
+      data: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lockedByStaffId: null,
+        lockedReason: null,
+      },
+    });
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.unlocked',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: {
+        failedLoginCount: target.failedLoginCount,
+        lockedUntil: target.lockedUntil ? target.lockedUntil.toISOString() : null,
+        lockedByStaffId: target.lockedByStaffId,
+        lockedReason: target.lockedReason,
+      },
+      after: {
+        failedLoginCount: 0,
+        lockedUntil: null,
+        lockedByStaffId: null,
+        lockedReason: null,
+      },
+    });
+    return { success: true };
+  }
+
   /**
    * Codes come from a sequence, but other writers (seed, hand-keyed rows) can
    * occupy the next value. A `code` collision therefore retries with a fresh

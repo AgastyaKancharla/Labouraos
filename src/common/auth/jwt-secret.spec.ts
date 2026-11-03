@@ -4,6 +4,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuthModule } from './auth.module';
 import { AuthClock } from './auth.service';
+import { PricingService } from '../../modules/pricing/pricing.service';
 
 describe('Phase 9 Task 5: JWT_SECRET Validation at Startup', () => {
   const originalSecret = process.env.JWT_SECRET;
@@ -48,7 +49,8 @@ describe('Phase 9 Task 5: JWT_SECRET Validation at Startup', () => {
     it('JwtStrategy construction fails when JWT_SECRET is missing', () => {
       delete process.env.JWT_SECRET;
       const mockPrisma = {} as PrismaService;
-      expect(() => new JwtStrategy(mockPrisma, new AuthClock())).toThrow(
+      const pricing = {} as PricingService;
+      expect(() => new JwtStrategy(mockPrisma, new AuthClock(), pricing)).toThrow(
         /JWT_SECRET environment variable is missing or empty/,
       );
     });
@@ -56,13 +58,15 @@ describe('Phase 9 Task 5: JWT_SECRET Validation at Startup', () => {
     it('JwtStrategy construction fails when JWT_SECRET is 10 characters', () => {
       process.env.JWT_SECRET = '1234567890';
       const mockPrisma = {} as PrismaService;
-      expect(() => new JwtStrategy(mockPrisma, new AuthClock())).toThrow(/must be at least 32 characters long/);
+      const pricing = {} as PricingService;
+      expect(() => new JwtStrategy(mockPrisma, new AuthClock(), pricing)).toThrow(/must be at least 32 characters long/);
     });
 
     it('JwtStrategy construction succeeds when JWT_SECRET is 32 characters', () => {
       process.env.JWT_SECRET = '12345678901234567890123456789012';
       const mockPrisma = {} as PrismaService;
-      expect(() => new JwtStrategy(mockPrisma, new AuthClock())).not.toThrow();
+      const pricing = {} as PricingService;
+      expect(() => new JwtStrategy(mockPrisma, new AuthClock(), pricing)).not.toThrow();
     });
 
     it('AuthModule compilation fails when JWT_SECRET is missing', async () => {

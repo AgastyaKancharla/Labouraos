@@ -198,7 +198,7 @@ export class StaffDeviceService {
           deviceId: device.deviceId,
           revokedAt: null,
         },
-        data: { revokedAt: now },
+        data: { revokedAt: now, endedReason: 'revoked' },
       });
       return { updated: next, sessionsEnded: ended.count };
     });

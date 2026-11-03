@@ -315,6 +315,8 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
         data: {
           staffId: ceoStaff.id,
           expiresAt: new Date(Date.now() + 15 * 60 * 1000),
+          absoluteExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+          lastActivityAt: new Date(),
         },
       });
 

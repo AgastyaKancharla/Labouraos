@@ -14,6 +14,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
 import { JwtStrategy } from '../common/auth/jwt.strategy';
 import { AuthClock } from '../common/auth/auth.service';
+import { PricingService } from '../modules/pricing/pricing.service';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../common/rbac/rbac.guard';
 import { AuthThrottlerGuard } from '../common/auth/auth-throttler.guard';
@@ -110,6 +111,7 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
           { provide: NoPickupEvaluationJob, useValue: mockJobService },
           { provide: AuditService, useValue: mockAuditService },
           { provide: PrismaService, useValue: mockPrisma },
+          { provide: PricingService, useValue: { current: jest.fn() } },
         ],
       }).compile();
 
