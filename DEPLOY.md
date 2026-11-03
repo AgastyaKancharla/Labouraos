@@ -123,6 +123,7 @@ Follow these steps in exact sequential order:
 | `REDIS_PASSWORD` | *Paste Upstash Password from Step 2* | Redis password |
 | `REDIS_TLS` | `true` | Enables TLS for Upstash |
 | `JWT_SECRET` | *Auto-generated or 32+ char secret* | Secret used to sign authentication tokens |
+| `LOGIN_CODE_SECRET` | *Auto-generated. Do not type one.* | Secret used to compute the 6-digit login code. See "Where to find LOGIN_CODE_SECRET" below |
 | `STAFF_BOOTSTRAP_SECRET` | *Auto-generated or random secret* | Secret required for initial CEO account creation |
 | `OTP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SMS gateway is active |
 | `PAYMENT_PROVIDER_MODE` | `mock` | Default mock mode (§3) until Razorpay keys are active |
@@ -156,7 +157,16 @@ Follow these steps in exact sequential order:
 
 4. Click **Save Changes** at the bottom of the Environment page.
 5. In the Render Dashboard, navigate to the **`laboura-worker`** service.
-6. In `laboura-worker`, the environment variables (`DATABASE_URL`, `REDIS_*`, `JWT_SECRET`) are automatically linked from `laboura-api` by the blueprint (`fromService`). Confirm that `PROCESS_ROLE` shows `worker`.
+6. In `laboura-worker`, the environment variables (`DATABASE_URL`, `REDIS_*`, `JWT_SECRET`, `LOGIN_CODE_SECRET`) are automatically linked from `laboura-api` by the blueprint (`fromService`). Confirm that `PROCESS_ROLE` shows `worker` and that `LOGIN_CODE_SECRET` is present. Both services must share that one secret. A code shown on the login code screen will not match if the two services have different secrets.
+
+#### Where to find `LOGIN_CODE_SECRET`
+
+You do not invent this value and you do not paste it into email or chat.
+
+1. In the Render Dashboard, open **`laboura-api`**.
+2. Click **Environment**.
+3. Find the row named `LOGIN_CODE_SECRET`. Render fills it in by itself the first time the blueprint is applied. Click the eye icon to look at it. Leave the value as Render generated it.
+4. Open **`laboura-worker`**, then **Environment**. The same name should already be listed, copied from `laboura-api`, in the same way `JWT_SECRET` is copied. If that row is missing, add an environment variable that takes its value from the `laboura-api` service's `LOGIN_CODE_SECRET`, then save.
 
 ---
 
@@ -266,11 +276,28 @@ The server responds with `201 Created`:
    ```text
    https://<your-render-api-url>.onrender.com/admin
    ```
-2. Log in with the email and password specified during bootstrap.
-3. The server recognizes that TOTP enrolment is required and issues a restricted `totp_setup` session.
-4. Scan the presented QR code (or enter the manual key) into your authenticator app (Google Authenticator, Microsoft Authenticator, or Authy).
-5. Enter the 6-digit verification code from your authenticator app and click **Verify & Enable 2FA**.
-6. The system locks down 2FA for the account (`totpEnabled: true`). Full CEO access is now activated.
+2. Log in with the **staff code** from the bootstrap response (for example `CEO-00001`) and the password you chose. The email address is not a way to log in. Leave the authenticator box empty on this first attempt.
+3. The page asks you to enrol an authenticator app and shows a secret key. Type that key into Google Authenticator, Microsoft Authenticator, or Authy.
+4. Type the 6-digit code from the app and click **Verify & Enable 2FA**.
+5. Log in again with the same staff code, the same password, and a fresh 6-digit code from the app. That login approves this browser as the CEO's device. The CEO does not ask a Team Lead for a login code. A Manager and Finance use this same authenticator step. A Team Lead, call agent, or field agent instead waits on the page that says "Ask your Team Lead for your code" until someone reveals a code on the Login codes screen.
+
+#### 4. Add the office network range once the office opens
+
+Until you do this, nobody is treated as being on the office network, and no staff member is limited to it. Leave it that way until the office actually has an internet connection you want to allow.
+
+When the office opens, a CEO or a Manager adds the range from the browser. You need the range from the person who set up the office internet. It looks like `203.0.113.0/24` (IPv4) or an IPv6 range. Do not guess it.
+
+1. Log in to the Admin Dashboard as the CEO or a Manager.
+2. Open the browser's page menu and choose **Inspect** (or press F12). Open **Application** in Chrome, or **Storage** in Firefox. Under **Session storage**, click the Laboura site and copy the value named `laboura_token`. Close Inspect. That value is your login token. It lasts about 15 minutes. If a later step says unauthorized, log in again and copy it again.
+3. Open **[https://reqbin.com](https://reqbin.com)** in the browser.
+4. Method: `POST`. URL: `https://<your-render-api-url>.onrender.com/office-networks`.
+5. Header: `Authorization` with the value `Bearer ` followed by the token you copied. Header: `Content-Type` with the value `application/json`.
+6. Body:
+   ```json
+   { "label": "Bengaluru office", "cidr": "203.0.113.0/24" }
+   ```
+   Replace the example range with the real one. Send it. A successful reply means the range is saved.
+7. For each person who may log in only from the office, send another request. Method: `POST`. URL: `https://<your-render-api-url>.onrender.com/staff/<their staff id>/works-from-office`. Same headers. Body: `{ "worksFromOffice": true }`. Their staff id is the long id on their staff row, not the staff code. Until this is set, that person can still log in from outside the office.
 
 ---
 

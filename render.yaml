@@ -27,6 +27,8 @@ services:
         value: "true"
       - key: JWT_SECRET
         generateValue: true
+      - key: LOGIN_CODE_SECRET
+        generateValue: true
       - key: JWT_EXPIRES_IN
         value: "15m"
       - key: STAFF_BOOTSTRAP_SECRET
@@ -124,6 +126,11 @@ services:
           type: web
           name: laboura-api
           envVarKey: JWT_SECRET
+      - key: LOGIN_CODE_SECRET
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: LOGIN_CODE_SECRET
       - key: OTP_PROVIDER_MODE
         value: mock
       - key: PAYMENT_PROVIDER_MODE

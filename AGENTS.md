@@ -205,7 +205,7 @@ Enforced server-side on every request, through the guard — never by hiding a b
 - **Nobody below Manager** can download or export lists.
 - Every sensitive write is audited with actor, time, reason and the fields that changed.
 
-### Login (target — built in the login phase; the current code still uses email + TOTP for everyone)
+### Login
 - Staff log in with their **staff code** and password.
 - Every login by a non-management staff member needs a **6-digit code** from the login code screen, revealed by their Team Lead, a Manager or the CEO, and recorded. Codes are never stored.
 - CEO, Managers and Finance use an authenticator app (TOTP) instead.
