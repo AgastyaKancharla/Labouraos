@@ -197,8 +197,12 @@ model Staff {
   statusHistoriesChanged StatusHistory[] @relation("StatusHistoryChangedBy")
   reviewFlagsRaisedFor ReviewFlag[]    @relation("ReviewFlagRaisedFor")
   reviewFlagsResolvedBy ReviewFlag[]   @relation("ReviewFlagResolvedBy")
+  devices           StaffDevice[]    @relation("StaffDeviceOwner")
+  devicesApproved   StaffDevice[]    @relation("StaffDeviceApprovedBy")
+  devicesRevoked    StaffDevice[]    @relation("StaffDeviceRevokedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
+  /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
   registeredDeviceId String?
   status            String           @default("active") // pending_invite, active, deactivated
   inviteTokenHash   String?          @unique // SHA-256 of the one-time invite token; the raw token is never stored
@@ -356,6 +360,30 @@ model CallbackTask {
   @@index([phone])
   @@index([status])
   @@index([createdAt])
+}
+
+model StaffDevice {
+  id                String    @id @default(uuid())
+  staffId           String
+  staff             Staff     @relation("StaffDeviceOwner", fields: [staffId], references: [id], onDelete: Cascade)
+  deviceId          String
+  label             String
+  platform          String
+  status            String    @default("pending") // pending, approved, revoked
+  requestedAt       DateTime?
+  approvedAt        DateTime?
+  revokedAt         DateTime?
+  lastSeenAt        DateTime?
+  approvedByStaffId String?
+  approvedByStaff   Staff?    @relation("StaffDeviceApprovedBy", fields: [approvedByStaffId], references: [id], onDelete: SetNull)
+  revokedByStaffId  String?
+  revokedByStaff    Staff?    @relation("StaffDeviceRevokedBy", fields: [revokedByStaffId], references: [id], onDelete: SetNull)
+
+  @@unique([staffId, deviceId])
+  @@index([staffId])
+  @@index([status])
+  @@index([approvedByStaffId])
+  @@index([revokedByStaffId])
 }
 
 model StaffSession {
