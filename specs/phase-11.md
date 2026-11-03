@@ -26,7 +26,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 
 ## Wave 1
 
-### [ ] Task 1 — Call records, the status webhook and recordings
+### [x] Task 1 — Call records, the status webhook and recordings
 **Branch:** `phase-11/task-1-call-records` · **Migration folder:** `20261104100000_add_call_records`
 
 **Acceptance:**
