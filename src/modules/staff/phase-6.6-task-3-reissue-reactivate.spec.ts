@@ -1,12 +1,11 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
-import { authenticator } from 'otplib';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
-import { enrolledLogin, stableTotpCode } from '../../test-support/enrolled-login-spec';
+import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { INVITE_TTL_MS } from './staff.service';
 
 type Actor = { id: string; code: string; email: string; role: string };
@@ -115,22 +114,20 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       expect(enrollRes.status).toBe(200);
       const activeSessionToken = enrollRes.body.accessToken as string;
 
-      // Ensure TOTP is enabled in database
+      // Re-issue still clears any TOTP the account happened to have. Call agents
+      // no longer enrol, so the row is given a secret here to prove the clear.
+      await prisma.staff.update({
+        where: { id: hire.id },
+        data: { totpEnabled: true, totpSecret: 'JBSWY3DPEHPK3PXP' },
+      });
       const rowBefore = await prisma.staff.findUniqueOrThrow({ where: { id: hire.id } });
       expect(rowBefore.totpEnabled).toBe(true);
       expect(rowBefore.totpSecret).toBeTruthy();
-      const oldSecret = rowBefore.totpSecret!;
-      const oldTotp = await stableTotpCode(oldSecret);
 
-      // Verify that valid login with old credentials works before reissue
-      const preCheck = await request(app.getHttpServer())
-        .post('/auth/login')
-        .set('X-Forwarded-For', freshIp())
-        .send({
-          email: hire.email,
-          password: goodPassword,
-          totpCode: oldTotp,
-        });
+      const preCheck = await enrolledLogin(app.getHttpServer(), {
+        email: hire.email,
+        password: goodPassword,
+      });
       expect(preCheck.status).toBe(200);
 
       // 2. Re-issue invite via CEO
@@ -158,17 +155,16 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       expect(rowAfter.passwordHash).not.toBe(rowBefore.passwordHash);
 
       // 4. Verify old password fails at login (401 Unauthorized)
-      const freshOldTotp = await stableTotpCode(oldSecret);
       const oldPassLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: hire.email,
+          staffCode: hire.code,
           password: goodPassword,
-          totpCode: freshOldTotp,
+          deviceId: `test-device-${hire.id}`,
         });
       expect(oldPassLogin.status).toBe(401);
-      expect(oldPassLogin.body.message).toBe('Invalid email or password');
+      expect(oldPassLogin.body.message).toBe('Invalid staff code or password');
 
       // 5. Verify old session token was revoked
       const sessionCheck = await request(app.getHttpServer())
@@ -230,53 +226,29 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       expect(row.status).toBe('active');
       expect(row.inviteTokenHash).toBeNull();
 
-      // 4. First login with new password: forces 2FA enrolment
+      // 4. The new password does not issue a token until the login code is entered.
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: hire.email,
+          staffCode: hire.code,
           password: newPassword,
+          deviceId: `test-device-${hire.id}`,
         });
       expect(loginRes.status).toBe(200);
-      expect(loginRes.body.totpEnrollmentRequired).toBe(true);
-      const setupToken = loginRes.body.accessToken as string;
+      expect(loginRes.body.status).toBe('awaiting_code');
+      expect(loginRes.body.accessToken).toBeUndefined();
 
-      // Normal endpoints rejected with totp_setup scope
-      const probeRes = await request(app.getHttpServer())
-        .get('/staff')
-        .set('Authorization', `Bearer ${setupToken}`);
-      expect(probeRes.status).toBe(403);
-      expect(probeRes.body.message).toContain('enrolment required');
-
-      // 5. Complete 2FA enrolment
-      const setup2faRes = await request(app.getHttpServer())
-        .post('/staff/2fa/setup')
-        .set('Authorization', `Bearer ${setupToken}`)
-        .send();
-      expect(setup2faRes.status).toBe(200);
-      const secret = setup2faRes.body.secret as string;
-
-      const totpCode = authenticator.generate(secret);
-      const enable2faRes = await request(app.getHttpServer())
-        .post('/staff/2fa/enable')
-        .set('Authorization', `Bearer ${setupToken}`)
-        .send({ totpCode });
-      expect(enable2faRes.status).toBe(200);
-      expect(enable2faRes.body.success).toBe(true);
-
-      // 6. Next login with password + TOTP provides full token
-      const stableCode = await stableTotpCode(secret);
+      const { loginCodeFor } = await import('../../modules/login-code/login-code.crypto');
       const fullLoginRes = await request(app.getHttpServer())
-        .post('/auth/login')
+        .post('/auth/login/verify-code')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: hire.email,
-          password: newPassword,
-          totpCode: stableCode,
+          loginRequestId: loginRes.body.loginRequestId,
+          code: loginCodeFor(loginRes.body.loginRequestId),
         });
       expect(fullLoginRes.status).toBe(200);
-      expect(fullLoginRes.body.totpEnrollmentRequired).toBeUndefined();
+      expect(fullLoginRes.body.accessToken).toBeDefined();
       const fullToken = fullLoginRes.body.accessToken as string;
 
       // Can now access ordinary endpoints
@@ -381,7 +353,11 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const deactLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({ email: hire.email, password: goodPassword });
+        .send({
+          staffCode: hire.code,
+          password: goodPassword,
+          deviceId: `test-device-${hire.id}`,
+        });
       expect(deactLogin.status).toBe(401);
 
       // 3. Reactivate the hire via Manager (or CEO)
@@ -407,9 +383,13 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       const oldPassLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
-        .send({ email: hire.email, password: goodPassword });
+        .send({
+          staffCode: hire.code,
+          password: goodPassword,
+          deviceId: `test-device-${hire.id}`,
+        });
       expect(oldPassLogin.status).toBe(401);
-      expect(oldPassLogin.body.message).toBe('Invalid email or password');
+      expect(oldPassLogin.body.message).toBe('Invalid staff code or password');
 
       // 6. Verify audit log entry
       const auditLog = await prisma.auditLog.findFirst({
@@ -443,16 +423,18 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         });
       expect(acceptRes.status).toBe(200);
 
-      // 9. Login now succeeds, requiring 2FA enrolment
+      // 9. Login now reaches the code step. A call agent is not sent to TOTP enrolment.
       const freshLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: hire.email,
+          staffCode: hire.code,
           password: freshPassword,
+          deviceId: `test-device-${hire.id}`,
         });
       expect(freshLogin.status).toBe(200);
-      expect(freshLogin.body.totpEnrollmentRequired).toBe(true);
+      expect(freshLogin.body.status).toBe('awaiting_code');
+      expect(freshLogin.body.accessToken).toBeUndefined();
     });
 
     it('a Manager is refused reactivating a CEO', async () => {

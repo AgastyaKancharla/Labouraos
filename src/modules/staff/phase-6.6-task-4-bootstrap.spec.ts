@@ -103,8 +103,9 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: payload.email,
+          staffCode: bootstrapRes.body.staff.code,
           password: payload.password,
+          deviceId: 'phase66-ceo-device',
         });
 
       expect(firstLoginRes.status).toBe(200);
@@ -158,8 +159,9 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: payload.email,
+          staffCode: staffRow.code,
           password: payload.password,
+          deviceId: 'phase66-ceo-device',
           totpCode: stableCode,
         });
 

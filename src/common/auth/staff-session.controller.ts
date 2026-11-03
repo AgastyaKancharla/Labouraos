@@ -70,6 +70,6 @@ export class StaffSessionController {
     if (!totpCode || typeof totpCode !== 'string') {
       throw new BadRequestException('totpCode is required');
     }
-    return this.authService.enableTotp(req.user.sub, totpCode);
+    return this.authService.enableTotp(req.user.sub, totpCode, req.user.sid);
   }
 }

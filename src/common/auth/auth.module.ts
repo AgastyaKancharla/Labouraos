@@ -3,7 +3,7 @@ import { JwtModule } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { PrismaModule } from '../prisma/prisma.module';
-import { AuthService } from './auth.service';
+import { AuthClock, AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { StaffSessionController } from './staff-session.controller';
 import { JwtStrategy } from './jwt.strategy';
@@ -13,6 +13,9 @@ import { CloudflareAccessGuard } from './cloudflare-access.guard';
 import { CloudflareAccessVerifier } from './cloudflare-access.verifier';
 import { AuthThrottlerGuard } from './auth-throttler.guard';
 import { getJwtSecret } from './jwt-secret';
+import { LoginCodeModule } from '../../modules/login-code/login-code.module';
+import { OfficeNetworkModule } from '../../modules/office-network/office-network.module';
+import { ReviewFlagModule } from '../../modules/review-flag/review-flag.module';
 
 @Global()
 @Module({
@@ -24,6 +27,9 @@ import { getJwtSecret } from './jwt-secret';
         limit: 10,
       },
     ]),
+    LoginCodeModule,
+    OfficeNetworkModule,
+    ReviewFlagModule,
     PassportModule.register({ defaultStrategy: 'jwt' }),
     JwtModule.registerAsync({
       useFactory: () => ({
@@ -40,6 +46,7 @@ import { getJwtSecret } from './jwt-secret';
   controllers: [AuthController, StaffSessionController],
   providers: [
     AuthService,
+    AuthClock,
     TotpService,
     JwtStrategy,
     JwtAuthGuard,
@@ -49,6 +56,7 @@ import { getJwtSecret } from './jwt-secret';
   ],
   exports: [
     AuthService,
+    AuthClock,
     TotpService,
     JwtModule,
     JwtAuthGuard,

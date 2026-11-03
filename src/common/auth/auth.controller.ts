@@ -10,7 +10,7 @@ import {
 import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { LoginDto, LoginResponseDto } from './dto/login.dto';
+import { LoginDto, LoginResult, VerifyLoginCodeDto } from './dto/login.dto';
 import { AuthThrottlerGuard } from './auth-throttler.guard';
 
 @Controller('auth')
@@ -24,9 +24,25 @@ export class AuthController {
   async login(
     @Body() loginDto: LoginDto,
     @Req() req: Request,
-  ): Promise<LoginResponseDto> {
+  ): Promise<LoginResult> {
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
     return this.authService.login(loginDto, { ip, userAgent });
+  }
+
+  @Post('login/verify-code')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  async verifyCode(
+    @Body() body: VerifyLoginCodeDto,
+    @Req() req: Request,
+  ) {
+    const ip = req.ip || req.socket.remoteAddress;
+    const userAgent = req.headers['user-agent'];
+    return this.authService.verifyLoginCode(body.loginRequestId, body.code, {
+      ip,
+      userAgent,
+    });
   }
 }

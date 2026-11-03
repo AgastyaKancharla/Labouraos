@@ -20,8 +20,6 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
   const createdIds: string[] = [];
   let counter = 0;
 
-  const roles = ['ceo', 'manager', 'call_agent', 'field_agent', 'finance'];
-
   async function mkStaff(
     role: string,
     extra: Partial<{ totpEnabled: boolean; totpSecret: string | null }> = {},
@@ -39,15 +37,17 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
       },
     });
     createdIds.push(staff.id);
-    return { id: staff.id, email };
+    return { id: staff.id, email, code: staff.code };
   }
 
-  const passwordOnlyLogin = (email: string) =>
-    request(app.getHttpServer()).post('/auth/login').send({
-      email,
+  const passwordOnlyLogin = async (email: string) => {
+    const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
+    return request(app.getHttpServer()).post('/auth/login').send({
+      staffCode: staff.code,
       password,
       deviceId: 'tfa-test-device',
     });
+  };
 
   const get = (path: string, token: string) =>
     request(app.getHttpServer())
@@ -100,11 +100,12 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
       expect(res.body.message).toContain('Two-factor enrolment required');
     });
 
-    it.each(roles)(
+    it.each(['ceo', 'manager', 'finance'])(
       'a password-only %s token is rejected on authenticated endpoints across the API',
       async (role) => {
         const { email } = await mkStaff(role);
         const { body } = await passwordOnlyLogin(email);
+        expect(body.totpEnrollmentRequired).toBe(true);
 
         for (const path of ['/staff/sessions', '/staff', '/pricing', '/job-seekers']) {
           const res = await get(path, body.accessToken);
@@ -117,8 +118,19 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
       },
     );
 
+    it.each(['call_agent', 'field_agent'])(
+      'a %s is not given a TOTP enrolment token',
+      async (role) => {
+        const { email } = await mkStaff(role);
+        const res = await passwordOnlyLogin(email);
+        expect(res.status).toBe(401);
+        expect(res.body.accessToken).toBeUndefined();
+        expect(res.body.message).toContain('waiting for approval');
+      },
+    );
+
     it('succeeds on the TOTP setup endpoint and the enable endpoint', async () => {
-      const { id, email } = await mkStaff('call_agent');
+      const { id, email } = await mkStaff('manager');
       const { body } = await passwordOnlyLogin(email);
 
       const setup = await post('/staff/2fa/setup', body.accessToken);
@@ -136,7 +148,7 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
     });
 
     it('enabling with a wrong code fails and the account stays unenrolled', async () => {
-      const { id, email } = await mkStaff('call_agent');
+      const { id, email } = await mkStaff('finance');
       const { body } = await passwordOnlyLogin(email);
       await post('/staff/2fa/setup', body.accessToken);
 
@@ -183,14 +195,20 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
     it('a wrong code is rejected, a correct code yields a full-scope token that reaches GET /staff', async () => {
       const { email, secret } = await enrolledAccount();
 
+      const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
       const wrong = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ email, password, totpCode: '000000' });
+        .send({ staffCode: staff.code, password, deviceId: 'tfa-test-device', totpCode: '000000' });
       expect(wrong.status).toBe(401);
 
       const right = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ email, password, totpCode: await stableTotpCode(secret) });
+        .send({
+          staffCode: staff.code,
+          password,
+          deviceId: 'tfa-test-device',
+          totpCode: await stableTotpCode(secret),
+        });
       expect(right.status).toBe(200);
       expect(right.body.totpEnrollmentRequired).toBeUndefined();
       expect((jwt.decode(right.body.accessToken) as JwtPayload).scope).toBeUndefined();
@@ -205,9 +223,15 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
 
     it('setup cannot be re-run on an enrolled account, so 2FA cannot be silently switched off', async () => {
       const { id, email, secret } = await enrolledAccount();
+      const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
       const login = await request(app.getHttpServer())
         .post('/auth/login')
-        .send({ email, password, totpCode: await stableTotpCode(secret) });
+        .send({
+          staffCode: staff.code,
+          password,
+          deviceId: 'tfa-test-device',
+          totpCode: await stableTotpCode(secret),
+        });
 
       const rerun = await post('/staff/2fa/setup', login.body.accessToken);
 

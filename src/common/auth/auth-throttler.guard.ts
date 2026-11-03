@@ -14,7 +14,8 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
 
     const body = expressReq.body as Record<string, unknown> | undefined;
     const identity =
-      (body?.email as string) ||
+      (body?.staffCode as string) ||
+      (body?.loginRequestId as string) ||
       (body?.phone as string) ||
       (body?.requestId as string) ||
       'anon';
