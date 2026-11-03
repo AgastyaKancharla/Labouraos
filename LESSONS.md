@@ -312,6 +312,21 @@ Format:
 **Cause:** `AuthService` stamps `StaffSession.expiresAt` from `AuthClock`. `JwtStrategy` compared that timestamp with `new Date()`. Tests that freeze `AuthClock` in the past create a session that is already expired on the wall clock, so the strategy rejects the token before the scope guard can return 403.
 **Fix:** `JwtStrategy` reads `AuthClock` for the expiry check. Construction tests pass an `AuthClock` as the second argument.
 
+## The access-token expiry is not the session limit
+**Symptom:** A live session died at 15 minutes, or a test that moved the clock past 60 idle minutes still accepted the session.
+**Cause:** `StaffSession.expiresAt` is only the short access-token window. `POST /auth/refresh` moves that field and does not move `absoluteExpiresAt`. Idle is `lastActivityAt` plus `idleLogoutMinutes`. The hard stop is `absoluteExpiresAt`, set once at login. The JWT `exp` claim still uses the wall clock, so freezing `AuthClock` does not expire the access token.
+**Fix:** `JwtStrategy` ends the session from `sessionLifetimeEnd` (`max_length` before `idle`, and only when now is strictly later). `lastActivityAt` is written from `AuthClock`, at most once a minute. Refresh re-signs the same session id and updates `expiresAt` only.
+
+## Five wrong passwords are throttled before the lock can be seen
+**Symptom:** The attempt after five wrong passwords returned 429, so the test never saw the locked-account message.
+**Cause:** `POST /auth/login` allows 5 requests a minute for one staff code and one IP. With `TRUSTED_PROXY_HOPS` at 0, changing `X-Forwarded-For` does not change that bucket.
+**Fix:** The lockout test sets the trusted hop count to 1 and sends each attempt from a different `X-Forwarded-For`. The fifth wrong password is still 401 and sets `lockedUntil`. The correct password during the lock is refused with the unlock time.
+
+## The first authenticator code after a cold start can miss its window
+**Symptom:** The first management login in a new Jest process returned 401. The same kind of login passed in a later test in that file.
+**Cause:** TOTP uses real time, not `AuthClock`. A code generated before the app finished booting can fall outside the allowed window.
+**Fix:** Use `stableTotpCode` from `src/test-support/enrolled-login-spec.ts`. If login is not 200, throw the status and body so a later 401 is not mistaken for a lockout.
+
 
 
 

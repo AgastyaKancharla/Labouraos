@@ -131,7 +131,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 - **Login code report** page for the report in Task 3.
 - Tests: the existing console tests updated; each new screen renders for the allowed roles and is refused for others.
 
-### [ ] Task 7 — Deployment, seed and rulebook
+### [x] Task 7 — Deployment, seed and rulebook
 **Branch:** `phase-10/task-7-deploy-seed-docs` · **No migration**
 
 **Acceptance:**
@@ -145,18 +145,18 @@ Tasks in the same wave touch different files and can run **at the same time, one
 
 ## Phase 10 Gate
 
-- [ ] Staff log in with their staff code; email login is refused — by test
-- [ ] Every role needs an approved device; agents' devices are approved by their Team Lead, never by themselves; management approves a new device with TOTP — by test
-- [ ] Office-only staff are refused off the office network; with no ranges set, no one counts as on it — by test
-- [ ] Non-management logins need a revealed code; the code is never stored; 5 wrong codes refuse the request; approvers never see their own request — by test
-- [ ] The login code report returns the counts in Task 3 — by test
-- [ ] One session at a time; 60-minute idle and 120-minute maximum enforced; refresh never extends the maximum — by test
-- [ ] 5 wrong passwords lock for 15 minutes; Team Lead/Manager/CEO unlock; one-tap lock ends live sessions — by test
-- [ ] Logins between 22:00 and 06:00 IST raise a review flag — by test
-- [ ] Every number above comes from `PricingPolicy` — no literals (the Phase 9 literal check passes)
-- [ ] **End-to-end proof, recorded in the report:** bootstrap a CEO and enrol TOTP; create a Team Lead and a call agent under them; the agent tries to log in on a new device and is refused; the Team Lead approves the device; the agent logs in and waits for a code; the Team Lead reveals it; the agent enters it and is in; logging in again elsewhere ends the first session; 5 wrong passwords lock the agent; the Team Lead unlocks them; the report shows the request and who revealed it.
-- [ ] All earlier phase gate items still pass
-- [ ] CI green on `main`; every task branch was green before it was merged
-- [ ] `LESSONS.md` updated
+- [x] Staff log in with their staff code; email login is refused — by test
+- [x] Every role needs an approved device; agents' devices are approved by their Team Lead, never by themselves; management approves a new device with TOTP — by test
+- [x] Office-only staff are refused off the office network; with no ranges set, no one counts as on it — by test
+- [x] Non-management logins need a revealed code; the code is never stored; 5 wrong codes refuse the request; approvers never see their own request — by test
+- [x] The login code report returns the counts in Task 3 — by test
+- [x] One session at a time; 60-minute idle and 120-minute maximum enforced; refresh never extends the maximum — by test
+- [x] 5 wrong passwords lock for 15 minutes; Team Lead/Manager/CEO unlock; one-tap lock ends live sessions — by test
+- [x] Logins between 22:00 and 06:00 IST raise a review flag — by test
+- [x] Every number above comes from `PricingPolicy` — no literals (the Phase 9 literal check passes)
+- [x] **End-to-end proof, recorded in the report:** bootstrap a CEO and enrol TOTP; create a Team Lead and a call agent under them; the agent tries to log in on a new device and is refused; the Team Lead approves the device; the agent logs in and waits for a code; the Team Lead reveals it; the agent enters it and is in; logging in again elsewhere ends the first session; 5 wrong passwords lock the agent; the Team Lead unlocks them; the report shows the request and who revealed it.
+- [x] All earlier phase gate items still pass
+- [x] CI green on `main`; every task branch was green before it was merged
+- [x] `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, and the end-to-end proof. Do not start the next phase.
