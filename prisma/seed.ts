@@ -88,7 +88,7 @@ export async function seed(prismaClient?: PrismaClient) {
     });
 
     // 1b. Manager
-    await prisma.staff.upsert({
+    const manager = await prisma.staff.upsert({
       where: { email: 'manager@laboura.local' },
       update: {
         name: 'Priya Sharma',
@@ -186,6 +186,38 @@ export async function seed(prismaClient?: PrismaClient) {
         city: 'Bengaluru',
       },
     });
+
+    // Approved devices for non-management staff, so local login uses the staff code
+    // and a device id printed below. Management (CEO, Manager, Finance) approves a
+    // device with TOTP instead, so those accounts are not given a seed device.
+    const seededDevices = [
+      { staff: teamLead, deviceId: 'seed-device-TL-00001', approverId: manager.id },
+      { staff: callAgent, deviceId: 'seed-device-CA-00001', approverId: teamLead.id },
+      { staff: fieldAgent, deviceId: 'seed-device-FA-00001', approverId: teamLead.id },
+    ];
+    for (const row of seededDevices) {
+      await prisma.staffDevice.upsert({
+        where: { staffId_deviceId: { staffId: row.staff.id, deviceId: row.deviceId } },
+        update: {
+          status: 'approved',
+          label: 'Seeded browser',
+          platform: 'web',
+          approvedByStaffId: row.approverId,
+        },
+        create: {
+          staffId: row.staff.id,
+          deviceId: row.deviceId,
+          label: 'Seeded browser',
+          platform: 'web',
+          status: 'approved',
+          requestedAt: new Date(),
+          approvedAt: new Date(),
+          approvedByStaffId: row.approverId,
+        },
+      });
+      console.log(`Approved device for ${row.staff.code} (${row.staff.role}): ${row.deviceId}`);
+    }
+    console.log('Seeded staff log in with their staff code.');
 
     // 2. Businesses (different cities and areas)
     const bz1 = await prisma.business.upsert({

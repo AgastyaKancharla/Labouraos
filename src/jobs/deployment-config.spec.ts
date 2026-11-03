@@ -128,6 +128,25 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
       }
     });
 
+    it('generates LOGIN_CODE_SECRET on the web service and shares it with the worker the same way as JWT_SECRET', () => {
+      const webService = blueprint.services.find((s) => s.type === 'web');
+      const workerService = blueprint.services.find((s) => s.type === 'worker');
+      const webVar = webService?.envVars?.find((v) => v.key === 'LOGIN_CODE_SECRET');
+      const workerVar = workerService?.envVars?.find((v) => v.key === 'LOGIN_CODE_SECRET');
+
+      expect(webVar).toBeDefined();
+      expect(webVar?.generateValue).toBe(true);
+      expect(webVar?.value).toBeUndefined();
+      expect(workerVar?.fromService).toEqual({
+        type: 'web',
+        name: 'laboura-api',
+        envVarKey: 'LOGIN_CODE_SECRET',
+      });
+
+      const deploy = fs.readFileSync(deployMdPath, 'utf8');
+      expect(deploy).toContain('LOGIN_CODE_SECRET');
+    });
+
     it('declares provider modes defaulting to mock (§3)', () => {
       const webService = blueprint.services.find((s) => s.type === 'web');
 
