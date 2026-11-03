@@ -53,7 +53,7 @@ Tasks in the same wave touch different files and can run **at the same time, one
 - No ranges configured = nobody is treated as on the office network (fail closed). The office isn't open yet, so the default for every staff member stays `worksFromOffice = false`.
 - Tests: an address inside a range matches and one outside doesn't; IPv6 works; a deactivated range no longer matches; a spoofed `X-Forwarded-For` beyond the trusted hop is ignored; Team Leads and agents are refused the endpoints.
 
-### [ ] Task 3 — Login code engine (codes, reveal, reports — no login change yet)
+### [x] Task 3 — Login code engine (codes, reveal, reports — no login change yet)
 **Branch:** `phase-10/task-3-login-codes` · **Migration folder:** `20261103120000_add_login_code_requests`
 
 **Acceptance:**
