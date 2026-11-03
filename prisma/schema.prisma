@@ -183,6 +183,7 @@ model Staff {
   teamLead          Staff?           @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
   teamMembers       Staff[]          @relation("TeamHierarchy")
   area              String?
+  worksFromOffice   Boolean          @default(false)
   capturedVacancies Vacancy[]
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
@@ -200,6 +201,7 @@ model Staff {
   devices           StaffDevice[]    @relation("StaffDeviceOwner")
   devicesApproved   StaffDevice[]    @relation("StaffDeviceApprovedBy")
   devicesRevoked    StaffDevice[]    @relation("StaffDeviceRevokedBy")
+  officeNetworksAdded OfficeNetwork[] @relation("OfficeNetworkAddedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
@@ -384,6 +386,19 @@ model StaffDevice {
   @@index([status])
   @@index([approvedByStaffId])
   @@index([revokedByStaffId])
+}
+
+model OfficeNetwork {
+  id             String   @id @default(uuid())
+  label          String
+  cidr           String
+  active         Boolean  @default(true)
+  addedByStaffId String?
+  addedByStaff   Staff?   @relation("OfficeNetworkAddedBy", fields: [addedByStaffId], references: [id], onDelete: SetNull)
+  createdAt      DateTime @default(now())
+
+  @@index([active])
+  @@index([addedByStaffId])
 }
 
 model StaffSession {
