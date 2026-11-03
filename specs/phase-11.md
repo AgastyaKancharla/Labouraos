@@ -39,7 +39,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 - `GET /calls/:id/recording` returns a short-lived signed link (5 minutes) for the Team Lead of the agent, a Manager or the CEO only. Every listen is audited.
 - Tests: a webhook creates a record; the same webhook twice changes nothing; a late "ringing" after "completed" is ignored; a bad signature is refused; the recording is copied and the path set; an agent can't fetch a recording link; no response contains a phone number.
 
-### [ ] Task 2 — Message log and SMS
+### [x] Task 2 — Message log and SMS
 **Branch:** `phase-11/task-2-message-log` · **Migration folder:** `20261104110000_add_message_logs`
 
 **Acceptance:**
