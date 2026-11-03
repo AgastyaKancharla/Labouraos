@@ -4,10 +4,14 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from './jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from './jwt-secret';
+import { AuthClock } from './auth.service';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
-  constructor(private readonly prisma: PrismaService) {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clock: AuthClock,
+  ) {
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
@@ -41,7 +45,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         throw new UnauthorizedException('Account is not active');
       }
 
-      if (session.expiresAt && session.expiresAt < new Date()) {
+      if (session.expiresAt && session.expiresAt < this.clock.now()) {
         throw new UnauthorizedException('Session has expired');
       }
     }

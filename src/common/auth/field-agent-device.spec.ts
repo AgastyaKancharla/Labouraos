@@ -55,7 +55,7 @@ describe('Phase 9 Task 4: Field Agent Device ID Enforcement', () => {
         totpEnabled: true,
       },
     });
-    fieldAgentStaff = { id: fa.id, email: fa.email, totpSecret: faSecret, code: fa.code };
+    fieldAgentStaff = { id: fa.id, email: fa.email ?? '', totpSecret: faSecret, code: fa.code };
 
     // 2. Call Agent
     const caSecret = totpService.generateSecret();
@@ -71,7 +71,7 @@ describe('Phase 9 Task 4: Field Agent Device ID Enforcement', () => {
         totpEnabled: true,
       },
     });
-    callAgentStaff = { id: ca.id, email: ca.email, totpSecret: caSecret, code: ca.code };
+    callAgentStaff = { id: ca.id, email: ca.email ?? '', totpSecret: caSecret, code: ca.code };
 
     // 3. CEO
     const ceoSecret = totpService.generateSecret();
@@ -87,7 +87,7 @@ describe('Phase 9 Task 4: Field Agent Device ID Enforcement', () => {
         totpEnabled: true,
       },
     });
-    ceoStaff = { id: ceo.id, email: ceo.email, totpSecret: ceoSecret, code: ceo.code };
+    ceoStaff = { id: ceo.id, email: ceo.email ?? '', totpSecret: ceoSecret, code: ceo.code };
   });
 
   afterAll(async () => {
@@ -105,97 +105,77 @@ describe('Phase 9 Task 4: Field Agent Device ID Enforcement', () => {
     await app.close();
   });
 
-  it('1. Field agent login with no deviceId is refused with 401 and clear message', async () => {
-    const validCode = await stableTotp(fieldAgentStaff.totpSecret);
+  it('1. Field agent login with no deviceId is refused', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({
-        email: fieldAgentStaff.email,
+        staffCode: fieldAgentStaff.code,
         password: testPassword,
-        totpCode: validCode,
       });
 
     expect(res.status).toBe(401);
-    expect(res.body.message).toContain('deviceId is required for field agent login');
+    expect(res.body.message).toContain('A device id is required');
   });
 
-  it('2. Field agent login with empty/whitespace deviceId is refused with 401', async () => {
-    const validCode = await stableTotp(fieldAgentStaff.totpSecret);
+  it('2. Field agent login with empty/whitespace deviceId is refused', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({
-        email: fieldAgentStaff.email,
+        staffCode: fieldAgentStaff.code,
         password: testPassword,
-        totpCode: validCode,
         deviceId: '   ',
       });
 
     expect(res.status).toBe(401);
-    expect(res.body.message).toContain('deviceId is required for field agent login');
+    expect(res.body.message).toContain('A device id is required');
   });
 
-  it('3. Field agent login with deviceId succeeds and registers the device', async () => {
-    const validCode = await stableTotp(fieldAgentStaff.totpSecret);
+  it('3. An unapproved device does not log the field agent in and is not stored on Staff', async () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({
-        email: fieldAgentStaff.email,
+        staffCode: fieldAgentStaff.code,
         password: testPassword,
-        totpCode: validCode,
         deviceId: 'fa-registered-device-001',
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.accessToken).toBeDefined();
-
-    const updated = await prisma.staff.findUnique({
-      where: { id: fieldAgentStaff.id },
-    });
-    expect(updated?.registeredDeviceId).toBe('fa-registered-device-001');
-  });
-
-  it('4. Field agent login with registered deviceId continues to succeed', async () => {
-    const validCode = await stableTotp(fieldAgentStaff.totpSecret);
-    const res = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({
-        email: fieldAgentStaff.email,
-        password: testPassword,
-        totpCode: validCode,
-        deviceId: 'fa-registered-device-001',
-      });
-
-    expect(res.status).toBe(200);
-    expect(res.body.accessToken).toBeDefined();
-  });
-
-  it('5. Field agent with registered device trying to omit deviceId is still refused', async () => {
-    const validCode = await stableTotp(fieldAgentStaff.totpSecret);
-    const res = await request(app.getHttpServer())
-      .post('/auth/login')
-      .send({
-        email: fieldAgentStaff.email,
-        password: testPassword,
-        totpCode: validCode,
       });
 
     expect(res.status).toBe(401);
-    expect(res.body.message).toContain('deviceId is required for field agent login');
+    expect(res.body.accessToken).toBeUndefined();
+    const updated = await prisma.staff.findUnique({ where: { id: fieldAgentStaff.id } });
+    expect(updated?.registeredDeviceId).toBeNull();
+    const device = await prisma.staffDevice.findUniqueOrThrow({
+      where: {
+        staffId_deviceId: { staffId: fieldAgentStaff.id, deviceId: 'fa-registered-device-001' },
+      },
+    });
+    expect(device.status).toBe('pending');
   });
 
-  it('6. Other roles (Call Agent, CEO) can log in without deviceId', async () => {
+  it('4. Call agents and the CEO are also refused without a device id', async () => {
     for (const account of [callAgentStaff, ceoStaff]) {
-      const validCode = await stableTotp(account.totpSecret);
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: account.email,
+          staffCode: account.code,
           password: testPassword,
-          totpCode: validCode,
+          totpCode: await stableTotp(account.totpSecret),
         });
 
-      expect(res.status).toBe(200);
-      expect(res.body.accessToken).toBeDefined();
+      expect(res.status).toBe(401);
+      expect(res.body.message).toContain('A device id is required');
+      expect(res.body.accessToken).toBeUndefined();
     }
+  });
+
+  it('5. Email is not accepted as the login identifier', async () => {
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({
+        email: fieldAgentStaff.email,
+        password: testPassword,
+        deviceId: 'fa-registered-device-001',
+      });
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe('Email is not a login identifier');
   });
 });

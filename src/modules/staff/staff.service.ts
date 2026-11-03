@@ -269,15 +269,20 @@ export class StaffService {
     now: Date = new Date(),
   ): Promise<CreateStaffResult> {
     const name = typeof dto?.name === 'string' ? dto.name.trim() : '';
-    const email =
+    const rawEmail =
       typeof dto?.email === 'string' ? dto.email.trim().toLowerCase() : '';
+    const email = rawEmail === '' ? null : rawEmail;
     const role = dto?.role;
     const area = typeof dto?.area === 'string' ? dto.area.trim() : undefined;
 
     if (!name) {
       throw new BadRequestException('name is required');
     }
-    if (!EMAIL_PATTERN.test(email)) {
+    const emailRequired = role === 'ceo' || role === 'manager' || role === 'finance';
+    if (emailRequired && !email) {
+      throw new BadRequestException('A valid email is required');
+    }
+    if (email && !EMAIL_PATTERN.test(email)) {
       throw new BadRequestException('A valid email is required');
     }
     if (!ROLES.includes(role as Role)) {
@@ -317,14 +322,16 @@ export class StaffService {
       }
     }
 
-    const existing = await this.prisma.staff.findUnique({
-      where: { email },
-      select: { id: true },
-    });
-    if (existing) {
-      throw new ConflictException(
-        'A staff account with this email already exists',
-      );
+    if (email) {
+      const existing = await this.prisma.staff.findUnique({
+        where: { email },
+        select: { id: true },
+      });
+      if (existing) {
+        throw new ConflictException(
+          'A staff account with this email already exists',
+        );
+      }
     }
 
     // The hire sets their own password through the invite. Until they do, the
@@ -424,7 +431,7 @@ export class StaffService {
   async acceptInvite(
     dto: AcceptInviteDto,
     now: Date = new Date(),
-  ): Promise<{ success: true; code: string; email: string }> {
+  ): Promise<{ success: true; code: string; email: string | null }> {
     const token = typeof dto?.token === 'string' ? dto.token.trim() : '';
     const password = typeof dto?.password === 'string' ? dto.password : '';
 

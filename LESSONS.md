@@ -307,6 +307,11 @@ Format:
 **Cause:** Constructing `PrismaClient` loads `.env` and fills any variable that is missing. A deleted variable is missing, so the file put the secret back before the service constructor ran. An empty string is already set, and dotenv does not override it.
 **Fix:** The startup test sets `LOGIN_CODE_SECRET` to `''` (and to a 10-character value) instead of deleting it. The code is the first six decimal digits of `HMAC-SHA256(LOGIN_CODE_SECRET, requestId)`. Wrong attempts are counted from `login_code.wrong_code` audit rows, because `LoginCodeRequest` has no attempt column.
 
+## A frozen login clock expires the session against the wall clock
+**Symptom:** A staff-code login returned a token, then the next request with that token was 401 "Session has expired". A `totp_setup` token was 401 instead of 403.
+**Cause:** `AuthService` stamps `StaffSession.expiresAt` from `AuthClock`. `JwtStrategy` compared that timestamp with `new Date()`. Tests that freeze `AuthClock` in the past create a session that is already expired on the wall clock, so the strategy rejects the token before the scope guard can return 403.
+**Fix:** `JwtStrategy` reads `AuthClock` for the expiry check. Construction tests pass an `AuthClock` as the second argument.
+
 
 
 

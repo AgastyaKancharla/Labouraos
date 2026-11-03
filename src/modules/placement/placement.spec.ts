@@ -112,7 +112,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     staffIds = [faKora.id, faIndi.id, ca.id, ceo.id, mgr.id, finance.id];
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

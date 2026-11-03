@@ -1,25 +1,22 @@
 import { PrismaClient } from '@prisma/client';
 import { authenticator } from 'otplib';
 import * as request from 'supertest';
+import { loginCodeFor } from '../modules/login-code/login-code.crypto';
 
 /**
- * Test-only. Every staff login now requires a TOTP code unless the account is
- * unenrolled, and an unenrolled account only receives a scope-limited token.
- * Specs that exercise ordinary endpoints therefore log in the way a real
- * employee does: enrol the account in TOTP, then present a current code.
+ * Test-only. Staff log in with a staff code and an approved device.
+ * Management also presents a TOTP code. Everyone else receives a login code
+ * and this helper submits it, so existing specs still get an access token.
  */
 
 const TOTP_STEP_MS = 30_000;
 const TOTP_SAFE_MARGIN_MS = 5_000;
+const MANAGEMENT_ROLES = ['ceo', 'manager', 'finance'];
 
 let prisma: PrismaClient | undefined;
 const db = () => (prisma ??= new PrismaClient());
 
-/**
- * Accounts this file enrolled that were not enrolled before (email -> original
- * state). Some specs log in as seeded accounts, which developers also use by
- * hand, so enrolment is undone when the spec file finishes.
- */
+/** Management accounts this file enrolled (email -> undo on teardown). */
 const enrolledByHelper = new Set<string>();
 
 afterAll(async () => {
@@ -45,16 +42,19 @@ export async function stableTotpCode(secret: string): Promise<string> {
   return authenticator.generate(secret);
 }
 
-/** Enrols the account in TOTP if it is not already, and returns its secret and staff details. */
+/** Enrols a management account in TOTP if it is not already, and returns its secret. */
 export async function ensureStaffEnrolled(
   email: string,
-): Promise<{ secret: string | null; role?: string; registeredDeviceId?: string | null }> {
+): Promise<{ secret: string | null; role?: string; code?: string; id?: string }> {
   const staff = await db().staff.findUnique({
     where: { email },
-    select: { totpEnabled: true, totpSecret: true, role: true, registeredDeviceId: true },
+    select: { id: true, code: true, totpEnabled: true, totpSecret: true, role: true },
   });
   if (!staff) {
     return { secret: null };
+  }
+  if (!MANAGEMENT_ROLES.includes(staff.role)) {
+    return { secret: staff.totpSecret, role: staff.role, code: staff.code, id: staff.id };
   }
   let secret = staff.totpSecret;
   if (!staff.totpEnabled || !staff.totpSecret) {
@@ -65,12 +65,10 @@ export async function ensureStaffEnrolled(
       data: { totpSecret: secret, totpEnabled: true },
     });
   }
-  return { secret, role: staff.role, registeredDeviceId: staff.registeredDeviceId };
+  return { secret, role: staff.role, code: staff.code, id: staff.id };
 }
 
-export async function ensureTotpEnrolled(
-  email: string,
-): Promise<string | null> {
+export async function ensureTotpEnrolled(email: string): Promise<string | null> {
   const { secret } = await ensureStaffEnrolled(email);
   return secret;
 }
@@ -82,22 +80,72 @@ type LoginCall = Promise<request.Response> & {
 
 export function enrolledLogin(
   server: Parameters<typeof request>[0],
-  body: { email: string; password: string; [key: string]: unknown },
+  body: { email: string | null; password: string; deviceId?: string; [key: string]: unknown },
 ): LoginCall {
   const run = async (): Promise<request.Response> => {
-    const { secret, role, registeredDeviceId } = await ensureStaffEnrolled(body.email);
-    const hasExplicitDeviceId = Object.prototype.hasOwnProperty.call(body, 'deviceId');
+    const email = body.email;
+    const staff = email
+      ? await db().staff.findUnique({
+          where: { email },
+          select: { id: true, code: true, role: true, totpEnabled: true, totpSecret: true },
+        })
+      : null;
     const deviceId =
-      role === 'field_agent' && !hasExplicitDeviceId
-        ? (registeredDeviceId ?? 'test-enrolled-field-agent-device')
-        : body.deviceId;
+      typeof body.deviceId === 'string' && body.deviceId.trim()
+        ? body.deviceId.trim()
+        : staff
+          ? `test-device-${staff.id}`
+          : 'test-device-missing';
 
-    const payload = {
-      ...body,
-      ...(secret ? { totpCode: await stableTotpCode(secret) } : {}),
-      ...(deviceId !== undefined ? { deviceId } : {}),
-    };
-    return request(server).post('/auth/login').send(payload);
+    if (!staff) {
+      return request(server).post('/auth/login').send({
+        staffCode: 'missing-staff-code',
+        password: body.password,
+        deviceId,
+      });
+    }
+
+    const management = MANAGEMENT_ROLES.includes(staff.role);
+    let totpCode: string | undefined;
+    if (management) {
+      const { secret } = await ensureStaffEnrolled(email ?? '');
+      if (secret) {
+        totpCode = await stableTotpCode(secret);
+      }
+    } else {
+      await db().staffDevice.upsert({
+        where: { staffId_deviceId: { staffId: staff.id, deviceId } },
+        create: {
+          staffId: staff.id,
+          deviceId,
+          label: 'Test device',
+          platform: 'web',
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+        update: {
+          status: 'approved',
+          approvedAt: new Date(),
+          revokedAt: null,
+          revokedByStaffId: null,
+        },
+      });
+    }
+
+    const login = await request(server).post('/auth/login').send({
+      staffCode: staff.code,
+      password: body.password,
+      deviceId,
+      ...(totpCode ? { totpCode } : {}),
+    });
+    if (login.body?.status !== 'awaiting_code') {
+      return login;
+    }
+    const code = loginCodeFor(login.body.loginRequestId as string);
+    return request(server).post('/auth/login/verify-code').send({
+      loginRequestId: login.body.loginRequestId,
+      code,
+    });
   };
   const call = run();
   return Object.assign(call, {

@@ -1,7 +1,7 @@
 export interface JwtPayload {
   sub: string; // staff id
   role: string; // staff role
-  email: string;
+  email: string | null;
   code: string;
   area?: string | null;
   teamLeadId?: string | null;

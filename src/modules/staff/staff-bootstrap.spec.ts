@@ -187,8 +187,9 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: 'ceo.login.test@laboura.local',
+          staffCode: bootstrapRes.body.staff.code,
           password: 'SuperSecurePassword2026!',
+          deviceId: 'bootstrap-ceo-device',
         });
       expect(passwordLogin.status).toBe(200);
       expect(passwordLogin.body.totpEnrollmentRequired).toBe(true);
@@ -216,8 +217,9 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
         .send({
-          email: 'ceo.login.test@laboura.local',
+          staffCode: bootstrapRes.body.staff.code,
           password: 'SuperSecurePassword2026!',
+          deviceId: 'bootstrap-ceo-device',
           totpCode: validTotpCode,
         });
       expect(successLogin.status).toBe(200);

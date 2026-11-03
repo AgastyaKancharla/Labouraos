@@ -104,7 +104,7 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
     staffIds.push(fa.id);
 
     // Login tokens
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(app.getHttpServer(), { email, password });
       return (res.body.accessToken || res.body.token) as string;
     };

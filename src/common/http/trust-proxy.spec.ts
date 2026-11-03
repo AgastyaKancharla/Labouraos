@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { applyTrustProxy, resolveTrustProxyHops } from './trust-proxy';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 
 describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-For', () => {
   const ts = Date.now();
@@ -44,10 +45,11 @@ describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-F
   async function loginBurst(app: INestApplication, email: string, forwardedFor: string[]) {
     const statuses: number[] = [];
     for (const xff of forwardedFor) {
+      const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', xff)
-        .send({ email, password: 'wrong-password' });
+        .send({ staffCode: staff.code, password: 'wrong-password', deviceId: 'tp-device' });
       statuses.push(res.status);
     }
     return statuses;
@@ -100,10 +102,28 @@ describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-F
 
     it('records the socket address on the session, not the spoofed header', async () => {
       const email = await mkStaff();
-      const res = await request(app.getHttpServer())
+      const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
+      await prisma.staffDevice.create({
+        data: {
+          staffId: staff.id,
+          deviceId: 'tp-session',
+          label: 'Session',
+          platform: 'web',
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+      });
+      const waiting = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', '6.6.6.6')
-        .send({ email, password });
+        .send({ staffCode: staff.code, password, deviceId: 'tp-session' });
+      const res = await request(app.getHttpServer())
+        .post('/auth/login/verify-code')
+        .set('X-Forwarded-For', '6.6.6.6')
+        .send({
+          loginRequestId: waiting.body.loginRequestId,
+          code: loginCodeFor(waiting.body.loginRequestId),
+        });
       expect(res.status).toBe(200);
 
       const session = await prisma.staffSession.findUniqueOrThrow({
@@ -146,10 +166,28 @@ describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-F
 
     it('records the proxy-observed client address on the session', async () => {
       const email = await mkStaff();
-      const res = await request(app.getHttpServer())
+      const staff = await prisma.staff.findUniqueOrThrow({ where: { email } });
+      await prisma.staffDevice.create({
+        data: {
+          staffId: staff.id,
+          deviceId: 'tp-session-proxy',
+          label: 'Session',
+          platform: 'web',
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+      });
+      const waiting = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', '6.6.6.6, 203.0.113.70')
-        .send({ email, password });
+        .send({ staffCode: staff.code, password, deviceId: 'tp-session-proxy' });
+      const res = await request(app.getHttpServer())
+        .post('/auth/login/verify-code')
+        .set('X-Forwarded-For', '6.6.6.6, 203.0.113.70')
+        .send({
+          loginRequestId: waiting.body.loginRequestId,
+          code: loginCodeFor(waiting.body.loginRequestId),
+        });
 
       const session = await prisma.staffSession.findUniqueOrThrow({
         where: { id: res.body.sessionId },

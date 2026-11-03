@@ -6,6 +6,7 @@ import { createHash } from 'node:crypto';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { formatCode } from '../../common/id/id.service';
@@ -107,11 +108,46 @@ describe('Phase 8 Task 9: Staff account management', () => {
       .send({ token, password });
   }
 
-  async function login(email: string, password: string) {
-    return request(app.getHttpServer())
+  async function login(email: string | null, passwordForLogin: string) {
+    const row = email
+      ? await prisma.staff.findUnique({
+          where: { email },
+          select: { id: true, code: true, role: true },
+        })
+      : null;
+    const deviceId = 'staff-mgmt-device';
+    if (row && !['ceo', 'manager', 'finance'].includes(row.role)) {
+      await prisma.staffDevice.upsert({
+        where: { staffId_deviceId: { staffId: row.id, deviceId } },
+        create: {
+          staffId: row.id,
+          deviceId,
+          label: 'Staff management test',
+          platform: 'web',
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+        update: { status: 'approved', revokedAt: null },
+      });
+    }
+    const res = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({ email, password });
+      .send({
+        staffCode: row?.code ?? 'missing-staff-code',
+        password: passwordForLogin,
+        deviceId,
+      });
+    if (res.body?.status !== 'awaiting_code') {
+      return res;
+    }
+    return request(app.getHttpServer())
+      .post('/auth/login/verify-code')
+      .set('X-Forwarded-For', freshIp())
+      .send({
+        loginRequestId: res.body.loginRequestId,
+        code: loginCodeFor(res.body.loginRequestId),
+      });
   }
 
   /** Creates a hire through the API and tracks it for cleanup. */
@@ -684,7 +720,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
       const res = await login(h.email, 'definitely-not-the-password');
       expect(res.status).toBe(401);
-      expect(res.body.message).toBe('Invalid email or password');
+      expect(res.body.message).toBe('Invalid staff code or password');
     });
 
     it('a still-unrevoked session of a deactivated account is refused (defence in depth)', async () => {

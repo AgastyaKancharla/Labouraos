@@ -176,7 +176,7 @@ model Staff {
   code              String           @unique
   city              String           @default("Bengaluru")
   name              String
-  email             String           @unique
+  email             String?          @unique
   passwordHash      String
   role              String           // ceo, manager, team_lead, call_agent, field_agent, finance
   teamLeadId        String?

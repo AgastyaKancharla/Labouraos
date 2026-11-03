@@ -103,7 +103,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
     });
     staffIds.push(fa.id);
 
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(app.getHttpServer(), { email, password });
       return (res.body.accessToken || res.body.token) as string;
     };

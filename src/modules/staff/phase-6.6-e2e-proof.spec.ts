@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { stableTotpCode } from '../../test-support/enrolled-login-spec';
+import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { seed } from '../../../prisma/seed';
 
@@ -95,10 +96,11 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     const firstLoginRes = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({
-        email: bootstrapPayload.email,
-        password: bootstrapPayload.password,
-      });
+        .send({
+          staffCode: bootstrapRes.body.staff.code,
+          password: bootstrapPayload.password,
+          deviceId: 'e2e-ceo-device',
+        });
 
     expect(firstLoginRes.status).toBe(200);
     expect(firstLoginRes.body.totpEnrollmentRequired).toBe(true);
@@ -150,11 +152,12 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     const fullLoginRes = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({
-        email: bootstrapPayload.email,
-        password: bootstrapPayload.password,
-        totpCode: await stableTotpCode(ceoTotpSecret),
-      });
+        .send({
+          staffCode: bootstrapRes.body.staff.code,
+          password: bootstrapPayload.password,
+          deviceId: 'e2e-ceo-device',
+          totpCode: await stableTotpCode(ceoTotpSecret),
+        });
 
     expect(fullLoginRes.status).toBe(200);
     expect(fullLoginRes.body.totpEnrollmentRequired).toBeUndefined();
@@ -204,26 +207,22 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
       });
     expect(acceptTl1Res.status).toBe(200);
 
-    // 4c. TL1 first login + enrol 2FA
-    const tl1FirstLogin = await request(app.getHttpServer())
+    // 4c. TL1's device waits for approval. Team leads do not enrol in TOTP.
+    const tl1Code = createTl1Res.body.staff.code as string;
+    const tl1DeviceId = 'e2e-tl1-device';
+    const tl1WaitingDevice = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({ email: 'lead1@laboura.local', password: tl1Password });
-    const tl1SetupToken = tl1FirstLogin.body.accessToken;
-
-    const tl1Setup2fa = await request(app.getHttpServer())
-      .post('/staff/2fa/setup')
-      .set('Authorization', `Bearer ${tl1SetupToken}`)
-      .set('X-Forwarded-For', freshIp())
-      .send();
-    const tl1TotpSecret = tl1Setup2fa.body.secret;
-    const tl1InitialCode = authenticator.generate(tl1TotpSecret);
-
-    await request(app.getHttpServer())
-      .post('/staff/2fa/enable')
-      .set('Authorization', `Bearer ${tl1SetupToken}`)
-      .set('X-Forwarded-For', freshIp())
-      .send({ totpCode: tl1InitialCode });
+      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId });
+    expect(tl1WaitingDevice.status).toBe(401);
+    const tl1Device = await prisma.staffDevice.findUniqueOrThrow({
+      where: { staffId_deviceId: { staffId: tl1Id, deviceId: tl1DeviceId } },
+    });
+    const approveTl1 = await request(app.getHttpServer())
+      .post(`/staff/devices/${tl1Device.id}/approve`)
+      .set('Authorization', `Bearer ${ceoFullToken}`)
+      .set('X-Forwarded-For', freshIp());
+    expect(approveTl1.status).toBe(200);
 
     // 4d. CEO creates Agent 1 under TL1 (call_agent)
     const createAgent1Res = await request(app.getHttpServer())
@@ -304,13 +303,22 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     // STEP 5: Log in as the Team Lead. Confirm they see their own team
     // =========================================================================
     console.log('\n--- STEP 5: Log in as Team Lead 1 & confirm own team visibility ---');
-    const tl1FullLogin = await request(app.getHttpServer())
+    const tl1CodeLogin = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
+      .send({ staffCode: tl1Code, password: tl1Password, deviceId: tl1DeviceId });
+    expect(tl1CodeLogin.body.status).toBe('awaiting_code');
+    const tl1Shown = await request(app.getHttpServer())
+      .post(`/login-codes/${tl1CodeLogin.body.loginRequestId}/reveal`)
+      .set('Authorization', `Bearer ${ceoFullToken}`)
+      .set('X-Forwarded-For', freshIp());
+    expect(tl1Shown.status).toBe(200);
+    const tl1FullLogin = await request(app.getHttpServer())
+      .post('/auth/login/verify-code')
+      .set('X-Forwarded-For', freshIp())
       .send({
-        email: 'lead1@laboura.local',
-        password: tl1Password,
-        totpCode: await stableTotpCode(tl1TotpSecret),
+        loginRequestId: tl1CodeLogin.body.loginRequestId,
+        code: tl1Shown.body.code,
       });
     expect(tl1FullLogin.status).toBe(200);
     const tl1Token = tl1FullLogin.body.accessToken;
@@ -411,11 +419,11 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     const oldLoginAttempt = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
-      .send({
-        email: 'lead1@laboura.local',
-        password: tl1Password,
-        totpCode: await stableTotpCode(tl1TotpSecret),
-      });
+        .send({
+          staffCode: tl1Code,
+          password: tl1Password,
+          deviceId: tl1DeviceId,
+        });
     expect(oldLoginAttempt.status).toBe(401);
 
     // 8b. Prior session token is revoked
@@ -448,45 +456,34 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     expect(acceptNewInviteRes.status).toBe(200);
     expect(acceptNewInviteRes.body.success).toBe(true);
 
-    // Login with new password -> must require 2FA re-enrolment
+    // New password reaches the login-code step. Team leads are not sent back to TOTP.
     const newPasswordLogin = await request(app.getHttpServer())
       .post('/auth/login')
       .set('X-Forwarded-For', freshIp())
       .send({
-        email: 'lead1@laboura.local',
+        staffCode: tl1Code,
         password: newTlPassword,
+        deviceId: tl1DeviceId,
       });
     expect(newPasswordLogin.status).toBe(200);
-    expect(newPasswordLogin.body.totpEnrollmentRequired).toBe(true);
-    const newSetupToken = newPasswordLogin.body.accessToken;
+    expect(newPasswordLogin.body.status).toBe('awaiting_code');
+    expect(newPasswordLogin.body.accessToken).toBeUndefined();
 
-    // Enrol new 2FA device
-    const new2faSetupRes = await request(app.getHttpServer())
-      .post('/staff/2fa/setup')
-      .set('Authorization', `Bearer ${newSetupToken}`)
-      .set('X-Forwarded-For', freshIp())
-      .send();
-    const newTlTotpSecret = new2faSetupRes.body.secret;
-    const newCode = authenticator.generate(newTlTotpSecret);
+    const restoredShown = await request(app.getHttpServer())
+      .post(`/login-codes/${newPasswordLogin.body.loginRequestId}/reveal`)
+      .set('Authorization', `Bearer ${ceoFullToken}`)
+      .set('X-Forwarded-For', freshIp());
+    expect(restoredShown.body.code).toBe(loginCodeFor(newPasswordLogin.body.loginRequestId));
 
-    const new2faEnableRes = await request(app.getHttpServer())
-      .post('/staff/2fa/enable')
-      .set('Authorization', `Bearer ${newSetupToken}`)
-      .set('X-Forwarded-For', freshIp())
-      .send({ totpCode: newCode });
-    expect(new2faEnableRes.status).toBe(200);
-
-    // Full login with new password + new TOTP code
     const restoredLoginRes = await request(app.getHttpServer())
-      .post('/auth/login')
+      .post('/auth/login/verify-code')
       .set('X-Forwarded-For', freshIp())
       .send({
-        email: 'lead1@laboura.local',
-        password: newTlPassword,
-        totpCode: await stableTotpCode(newTlTotpSecret),
+        loginRequestId: newPasswordLogin.body.loginRequestId,
+        code: restoredShown.body.code,
       });
     expect(restoredLoginRes.status).toBe(200);
-    expect(restoredLoginRes.body.totpEnrollmentRequired).toBeUndefined();
+    expect(restoredLoginRes.body.accessToken).toBeDefined();
     const restoredToken = restoredLoginRes.body.accessToken;
 
     // Verify access is fully restored to their team
@@ -504,11 +501,11 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
 
     console.log('Step 9 Output: 2FA Re-enrolled and Full Access Restored:');
     console.log(JSON.stringify({
-      reEnrolmentForced: newPasswordLogin.body.totpEnrollmentRequired === true,
+      codeStep: newPasswordLogin.body.status === 'awaiting_code',
       restoredLoginStatus: restoredLoginRes.status,
       teamListRestoredStatus: restoredStaffList.status,
       restoredTeamStaffCount: restoredStaffList.body.length,
     }, null, 2));
     console.log('--- END OF E2E PROOF ---\n');
-  });
+  }, 180_000);
 });

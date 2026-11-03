@@ -99,7 +99,7 @@ describe('Phase 3 Task 1: Contact-Attempt Logging', () => {
     financeId = finance.id;
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

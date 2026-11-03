@@ -5,6 +5,7 @@ import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { TotpService } from './totp.service';
+import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 import {
   AccessKeypair,
   jwksBody,
@@ -74,7 +75,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
           totpEnabled: true,
         },
       });
-      staffAccounts[role] = { id: staff.id, email: staff.email, totpSecret: secret, code };
+      staffAccounts[role] = { id: staff.id, email: staff.email ?? '', totpSecret: secret, code };
     }
 
     ceoStaff = staffAccounts['ceo'];
@@ -103,13 +104,14 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     await app.close();
   });
 
-  describe('1. Mandatory 2FA via TOTP (RFC 6238) across All Roles', () => {
+  describe('1. Mandatory 2FA via TOTP for management', () => {
     it('correct password with missing TOTP code does NOT issue a token (401 Unauthorized)', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: ceoStaff.email,
+          staffCode: ceoStaff.code,
           password: testPassword,
+          deviceId: 'ceo-sec-device',
         });
 
       expect(res.status).toBe(401);
@@ -120,8 +122,9 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: ceoStaff.email,
+          staffCode: ceoStaff.code,
           password: testPassword,
+          deviceId: 'ceo-sec-device',
           totpCode: '000000',
         });
 
@@ -129,100 +132,99 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       expect(res.body.message).toContain('Invalid TOTP code');
     });
 
-    it('enforces TOTP for all 4 roles (CEO, Manager, Call Agent, Field Agent)', async () => {
-      const testCases = [ceoStaff, managerStaff, callAgentStaff, fieldAgentStaff];
-
-      for (const account of testCases) {
-        const validCode = await stableTotp(account.totpSecret);
+    it('issues a token for CEO and Manager with a valid TOTP code, and does not for agents', async () => {
+      for (const account of [ceoStaff, managerStaff]) {
         const res = await request(app.getHttpServer())
           .post('/auth/login')
           .send({
-            email: account.email,
+            staffCode: account.code,
             password: testPassword,
-            totpCode: validCode,
-            ...(account === fieldAgentStaff ? { deviceId: 'initial-setup-device' } : {}),
+            deviceId: `sec-${account.code}`,
+            totpCode: await stableTotp(account.totpSecret),
           });
-
         expect(res.status).toBe(200);
         expect(res.body.accessToken).toBeDefined();
         expect(res.body.sessionId).toBeDefined();
       }
+
+      for (const account of [callAgentStaff, fieldAgentStaff]) {
+        const res = await request(app.getHttpServer())
+          .post('/auth/login')
+          .send({
+            staffCode: account.code,
+            password: testPassword,
+            deviceId: `sec-${account.code}`,
+            totpCode: await stableTotp(account.totpSecret),
+          });
+        expect(res.status).toBe(401);
+        expect(res.body.accessToken).toBeUndefined();
+        expect(res.body.message).toContain('waiting for approval');
+      }
     });
   });
 
-  describe('2. Device Binding and Step-Up TOTP for Field Agent App', () => {
-    beforeAll(async () => {
-      await prisma.staff.update({
-        where: { id: fieldAgentStaff.id },
-        data: { registeredDeviceId: null },
-      });
-    });
-
-    it('first login registers the primary deviceId for the field agent', async () => {
-      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
+  describe('2. Every role needs an approved device', () => {
+    it('an unapproved field-agent device is pending and does not issue a token', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: fieldAgentStaff.email,
+          staffCode: fieldAgentStaff.code,
           password: testPassword,
-          totpCode: validCode,
           deviceId: 'primary-phone-device-001',
-        });
-
-      expect(res.status).toBe(200);
-
-      const updated = await prisma.staff.findUnique({
-        where: { id: fieldAgentStaff.id },
-      });
-      expect(updated?.registeredDeviceId).toBe('primary-phone-device-001');
-    });
-
-    it('login with recognized registered device succeeds without step-up code', async () => {
-      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
-      const res = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: fieldAgentStaff.email,
-          password: testPassword,
-          totpCode: validCode,
-          deviceId: 'primary-phone-device-001',
-        });
-
-      expect(res.status).toBe(200);
-      expect(res.body.accessToken).toBeDefined();
-    });
-
-    it('login from a new, unrecognized device on a Field Agent account REQUIRES step-up TOTP code', async () => {
-      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
-      const res = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({
-          email: fieldAgentStaff.email,
-          password: testPassword,
-          totpCode: validCode,
-          deviceId: 'unrecognized-rogue-device-999',
         });
 
       expect(res.status).toBe(401);
-      expect(res.body.message).toContain('Unrecognized device requires step-up TOTP verification');
+      expect(res.body.accessToken).toBeUndefined();
+      const device = await prisma.staffDevice.findUniqueOrThrow({
+        where: {
+          staffId_deviceId: { staffId: fieldAgentStaff.id, deviceId: 'primary-phone-device-001' },
+        },
+      });
+      expect(device.status).toBe('pending');
+      const staff = await prisma.staff.findUniqueOrThrow({ where: { id: fieldAgentStaff.id } });
+      expect(staff.registeredDeviceId).toBeNull();
     });
 
-    it('login from unrecognized device SUCCEEDS when valid step-up TOTP code is provided', async () => {
-      const validCode = await stableTotp(fieldAgentStaff.totpSecret);
-      const validStepUpCode = await stableTotp(fieldAgentStaff.totpSecret);
-
+    it('a second device is also pending; a TOTP code does not approve it', async () => {
       const res = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: fieldAgentStaff.email,
+          staffCode: fieldAgentStaff.code,
           password: testPassword,
-          totpCode: validCode,
           deviceId: 'unrecognized-rogue-device-999',
-          stepUpTotpCode: validStepUpCode,
+          totpCode: await stableTotp(fieldAgentStaff.totpSecret),
         });
 
+      expect(res.status).toBe(401);
+      expect(res.body.message).toContain('waiting for approval');
+      const device = await prisma.staffDevice.findUniqueOrThrow({
+        where: {
+          staffId_deviceId: {
+            staffId: fieldAgentStaff.id,
+            deviceId: 'unrecognized-rogue-device-999',
+          },
+        },
+      });
+      expect(device.status).toBe('pending');
+    });
+
+    it('an approved device returns a login code rather than a token', async () => {
+      await prisma.staffDevice.update({
+        where: {
+          staffId_deviceId: { staffId: fieldAgentStaff.id, deviceId: 'primary-phone-device-001' },
+        },
+        data: { status: 'approved', approvedAt: new Date() },
+      });
+      const res = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          staffCode: fieldAgentStaff.code,
+          password: testPassword,
+          deviceId: 'primary-phone-device-001',
+        });
       expect(res.status).toBe(200);
-      expect(res.body.accessToken).toBeDefined();
+      expect(res.body.status).toBe('awaiting_code');
+      expect(res.body.accessToken).toBeUndefined();
     });
   });
 
@@ -232,8 +234,9 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       const loginRes = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: ceoStaff.email,
+          staffCode: ceoStaff.code,
           password: testPassword,
+          deviceId: 'ceo-session-device',
           totpCode: validCode,
         });
 
@@ -253,13 +256,32 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     });
 
     it('revoking a session via POST /staff/sessions/:id/revoke immediately invalidates token on next request', async () => {
-      const validCode = await stableTotp(callAgentStaff.totpSecret);
-      const loginRes = await request(app.getHttpServer())
+      await prisma.staffDevice.upsert({
+        where: {
+          staffId_deviceId: { staffId: callAgentStaff.id, deviceId: 'ca-session-device' },
+        },
+        create: {
+          staffId: callAgentStaff.id,
+          deviceId: 'ca-session-device',
+          label: 'Session',
+          platform: 'web',
+          status: 'approved',
+          approvedAt: new Date(),
+        },
+        update: { status: 'approved' },
+      });
+      const waiting = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: callAgentStaff.email,
+          staffCode: callAgentStaff.code,
           password: testPassword,
-          totpCode: validCode,
+          deviceId: 'ca-session-device',
+        });
+      const loginRes = await request(app.getHttpServer())
+        .post('/auth/login/verify-code')
+        .send({
+          loginRequestId: waiting.body.loginRequestId,
+          code: loginCodeFor(waiting.body.loginRequestId),
         });
 
       expect(loginRes.status).toBe(200);
@@ -297,13 +319,18 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       });
 
       // Call Agent tries to revoke CEO's session
-      const validCode = await stableTotp(callAgentStaff.totpSecret);
-      const caLogin = await request(app.getHttpServer())
+      const caWaiting = await request(app.getHttpServer())
         .post('/auth/login')
         .send({
-          email: callAgentStaff.email,
+          staffCode: callAgentStaff.code,
           password: testPassword,
-          totpCode: validCode,
+          deviceId: 'ca-session-device',
+        });
+      const caLogin = await request(app.getHttpServer())
+        .post('/auth/login/verify-code')
+        .send({
+          loginRequestId: caWaiting.body.loginRequestId,
+          code: loginCodeFor(caWaiting.body.loginRequestId),
         });
 
       const caToken = caLogin.body.accessToken;

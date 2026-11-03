@@ -68,7 +68,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     });
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };

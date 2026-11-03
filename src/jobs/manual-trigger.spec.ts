@@ -13,6 +13,7 @@ import { AuditService } from '../common/audit/audit.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
 import { JwtStrategy } from '../common/auth/jwt.strategy';
+import { AuthClock } from '../common/auth/auth.service';
 import { JwtAuthGuard } from '../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../common/rbac/rbac.guard';
 import { AuthThrottlerGuard } from '../common/auth/auth-throttler.guard';
@@ -102,6 +103,7 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
         controllers: [JobsController],
         providers: [
           JwtStrategy,
+          AuthClock,
           JwtAuthGuard,
           RbacGuard,
           AuthThrottlerGuard,

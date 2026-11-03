@@ -1,50 +1,34 @@
 import { UnauthorizedException } from '@nestjs/common';
-import { JwtModule, JwtService } from '@nestjs/jwt';
+import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
-import * as bcrypt from 'bcrypt';
+import { AppModule } from '../../app.module';
 import { AuthService } from './auth.service';
-import { TotpService } from './totp.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtPayload } from './jwt-payload.interface';
+import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 
 describe('Staff Authentication', () => {
   let authService: AuthService;
   let jwtService: JwtService;
   let prisma: PrismaService;
   let testStaffId: string;
+  let testStaffCode: string;
   const testEmail = `staff_auth_${Date.now()}@laboura.local`;
   const rawPassword = 'StrongPassword123!';
+  const deviceId = 'auth-spec-device';
 
   beforeAll(async () => {
-    prisma = new PrismaService();
-    await prisma.$connect();
-
     const module: TestingModule = await Test.createTestingModule({
-      imports: [
-        JwtModule.register({
-          secret: 'test_jwt_secret_key_minimum_32_characters_length',
-          signOptions: { expiresIn: '1h' },
-        }),
-      ],
-      providers: [
-        AuthService,
-        TotpService,
-        {
-          provide: PrismaService,
-          useValue: prisma,
-        },
-      ],
+      imports: [AppModule],
     }).compile();
 
     authService = module.get<AuthService>(AuthService);
     jwtService = module.get<JwtService>(JwtService);
+    prisma = module.get(PrismaService);
 
-    // Seed staff member with hashed password
     const passwordHash = await authService.hashPassword(rawPassword);
 
-    // Verify hash is not plain text
     expect(passwordHash).not.toBe(rawPassword);
-    expect(await bcrypt.compare(rawPassword, passwordHash)).toBe(true);
 
     const staff = await prisma.staff.create({
       data: {
@@ -57,22 +41,46 @@ describe('Staff Authentication', () => {
         city: 'Bengaluru',
       },
     });
+    await prisma.staffDevice.create({
+      data: {
+        staffId: staff.id,
+        deviceId,
+        label: 'Auth spec',
+        platform: 'web',
+        status: 'approved',
+        approvedAt: new Date(),
+      },
+    });
 
     testStaffId = staff.id;
+    testStaffCode = staff.code;
   });
 
   afterAll(async () => {
     if (testStaffId) {
+      await prisma.loginCodeRequest.deleteMany({ where: { staffId: testStaffId } });
+      await prisma.staffDevice.deleteMany({ where: { staffId: testStaffId } });
+      await prisma.staffSession.deleteMany({ where: { staffId: testStaffId } });
+      await prisma.auditLog.deleteMany({ where: { actorId: testStaffId } });
       await prisma.staff.delete({ where: { id: testStaffId } });
     }
     await prisma.$disconnect();
   });
 
   it('valid login succeeds and returns a valid token carrying id and role', async () => {
-    const response = await authService.login({
-      email: testEmail,
+    const waiting = await authService.login({
+      staffCode: testStaffCode,
       password: rawPassword,
+      deviceId,
     });
+    expect(waiting).toMatchObject({ status: 'awaiting_code' });
+    if (!('loginRequestId' in waiting)) {
+      throw new Error('expected a login code');
+    }
+    const response = await authService.verifyLoginCode(
+      waiting.loginRequestId,
+      loginCodeFor(waiting.loginRequestId),
+    );
 
     expect(response).toBeDefined();
     expect(response.accessToken).toBeDefined();
@@ -94,8 +102,9 @@ describe('Staff Authentication', () => {
   it('wrong password fails with UnauthorizedException', async () => {
     await expect(
       authService.login({
-        email: testEmail,
+        staffCode: testStaffCode,
         password: 'WrongPassword!',
+        deviceId,
       }),
     ).rejects.toThrow(UnauthorizedException);
   });
@@ -105,6 +114,7 @@ describe('Staff Authentication', () => {
       authService.login({
         email: 'nobody@laboura.local',
         password: rawPassword,
+        deviceId,
       }),
     ).rejects.toThrow(UnauthorizedException);
   });
@@ -122,10 +132,18 @@ describe('Staff Authentication', () => {
   });
 
   it('ensures password is never logged or exposed in returned staff profile', async () => {
-    const response = await authService.login({
-      email: testEmail,
+    const waiting = await authService.login({
+      staffCode: testStaffCode,
       password: rawPassword,
+      deviceId,
     });
+    if (!('loginRequestId' in waiting)) {
+      throw new Error('expected a login code');
+    }
+    const response = await authService.verifyLoginCode(
+      waiting.loginRequestId,
+      loginCodeFor(waiting.loginRequestId),
+    );
 
     const staffObj = response.staff;
     expect((staffObj as Record<string, unknown>).password).toBeUndefined();

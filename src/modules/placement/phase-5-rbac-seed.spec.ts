@@ -67,7 +67,7 @@ describe('Phase 5 Task 9: RBAC and Seed Data', () => {
 
     staffIds = [ceo.id, manager.id, finance.id];
 
-    const getTok = async (email: string) => {
+    const getTok = async (email: string | null) => {
       const res = await enrolledLogin(app.getHttpServer(), { email, password })
         .expect(200);
       return res.body.accessToken;

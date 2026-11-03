@@ -118,7 +118,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
     cleanStaffIds.push(finance.id);
 
     const server = app.getHttpServer();
-    const login = async (email: string) => {
+    const login = async (email: string | null) => {
       const res = await enrolledLogin(server, { email, password });
       return res.body.accessToken;
     };
