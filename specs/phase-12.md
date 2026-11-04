@@ -37,7 +37,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - A withdrawal of `call_recording` or `job_matching` by an **active** job seeker moves their `JobSeeker.status` to `paused` and sets `pausedAt` (data-design §4). Withdrawing `promotions` or `job_updates` changes nothing else.
 - Tests: granting all five required purposes returns `hasAllRequired = true`; missing one returns false; `promotions` alone never returns true; withdrawing `call_recording` on an active job seeker pauses them; a repeat grant of the same purpose and notice version does not create a second row; granting a new `noticeVersion` after a notice change creates a new row rather than overwriting the old one.
 
-### [ ] Task 2 — JobSeeker new fields and status list
+### [x] Task 2 — JobSeeker new fields and status list
 **Branch:** `phase-12/task-2-jobseeker-fields` · **Migration folder:** `20261105110000_jobseeker_profile_fields`
 
 **Acceptance:**
