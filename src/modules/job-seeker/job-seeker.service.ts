@@ -31,6 +31,14 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { isJobSeekerStatus } from './job-seeker.status';
 import { validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
+import {
+  CreateJobSeekerTradeDto,
+  UpdateJobSeekerTradeDto,
+} from './dto/job-seeker-trade.dto';
+import {
+  CreateJobSeekerLanguageDto,
+  UpdateJobSeekerLanguageDto,
+} from './dto/job-seeker-language.dto';
 
 @Injectable()
 export class JobSeekerService {
@@ -951,6 +959,369 @@ export class JobSeekerService {
     }
 
     return updated;
+  }
+
+  // --- Trades (Phase 12 Task 3) ---
+
+  async addTrade(jobSeekerId: string, dto: CreateJobSeekerTradeDto, actorId?: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    if (!dto.trade || !dto.trade.trim()) {
+      throw new BadRequestException('Trade is required');
+    }
+
+    const existingTrades = await this.prisma.jobSeekerTrade.findMany({
+      where: { jobSeekerId },
+    });
+
+    if (existingTrades.length >= 3) {
+      throw new BadRequestException('A job seeker cannot have more than 3 trades');
+    }
+
+    const normalizedTrade = dto.trade.trim();
+    if (existingTrades.some((t) => t.trade.toLowerCase() === normalizedTrade.toLowerCase())) {
+      throw new ConflictException(`Trade '${normalizedTrade}' already exists for this job seeker`);
+    }
+
+    // Exactly one isPrimary = true when any row exists
+    let isPrimary = false;
+    if (existingTrades.length === 0) {
+      isPrimary = true;
+    } else if (dto.isPrimary === true) {
+      isPrimary = true;
+      await this.prisma.jobSeekerTrade.updateMany({
+        where: { jobSeekerId, isPrimary: true },
+        data: { isPrimary: false },
+      });
+    }
+
+    const created = await this.prisma.jobSeekerTrade.create({
+      data: {
+        jobSeekerId,
+        trade: normalizedTrade,
+        yearsExperience: dto.yearsExperience ?? 0,
+        isPrimary,
+      },
+    });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.trade_added',
+        entityType: 'job_seeker_trade',
+        entityCode: seeker.code,
+        changedFields: ['trade', 'yearsExperience', 'isPrimary'],
+        city: seeker.city,
+      });
+    }
+
+    return created;
+  }
+
+  async getTrades(jobSeekerId: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    return this.prisma.jobSeekerTrade.findMany({
+      where: { jobSeekerId },
+      orderBy: [{ isPrimary: 'desc' }, { createdAt: 'asc' }],
+    });
+  }
+
+  async updateTrade(
+    jobSeekerId: string,
+    tradeId: string,
+    dto: UpdateJobSeekerTradeDto,
+    actorId?: string,
+  ) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const trade = await this.prisma.jobSeekerTrade.findFirst({
+      where: { id: tradeId, jobSeekerId },
+    });
+    if (!trade) {
+      throw new NotFoundException(`Trade '${tradeId}' not found for job seeker '${jobSeekerId}'`);
+    }
+
+    const data: Record<string, unknown> = {};
+
+    if (dto.trade !== undefined) {
+      const normalized = dto.trade.trim();
+      if (!normalized) {
+        throw new BadRequestException('Trade cannot be empty');
+      }
+      const duplicate = await this.prisma.jobSeekerTrade.findFirst({
+        where: {
+          jobSeekerId,
+          trade: { equals: normalized, mode: 'insensitive' },
+          id: { not: tradeId },
+        },
+      });
+      if (duplicate) {
+        throw new ConflictException(`Trade '${normalized}' already exists for this job seeker`);
+      }
+      data.trade = normalized;
+    }
+
+    if (dto.yearsExperience !== undefined) {
+      data.yearsExperience = dto.yearsExperience;
+    }
+
+    if (dto.isPrimary !== undefined) {
+      if (dto.isPrimary === false && trade.isPrimary) {
+        throw new BadRequestException('Exactly one trade must be primary');
+      }
+      if (dto.isPrimary === true) {
+        await this.prisma.jobSeekerTrade.updateMany({
+          where: { jobSeekerId, id: { not: tradeId }, isPrimary: true },
+          data: { isPrimary: false },
+        });
+        data.isPrimary = true;
+      }
+    }
+
+    const updated = await this.prisma.jobSeekerTrade.update({
+      where: { id: tradeId },
+      data,
+    });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.trade_updated',
+        entityType: 'job_seeker_trade',
+        entityCode: seeker.code,
+        changedFields: Object.keys(data),
+        city: seeker.city,
+      });
+    }
+
+    return updated;
+  }
+
+  async deleteTrade(jobSeekerId: string, tradeId: string, actorId?: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const trade = await this.prisma.jobSeekerTrade.findFirst({
+      where: { id: tradeId, jobSeekerId },
+    });
+    if (!trade) {
+      throw new NotFoundException(`Trade '${tradeId}' not found for job seeker '${jobSeekerId}'`);
+    }
+
+    await this.prisma.jobSeekerTrade.delete({
+      where: { id: tradeId },
+    });
+
+    if (trade.isPrimary) {
+      const nextPrimary = await this.prisma.jobSeekerTrade.findFirst({
+        where: { jobSeekerId },
+        orderBy: { createdAt: 'asc' },
+      });
+      if (nextPrimary) {
+        await this.prisma.jobSeekerTrade.update({
+          where: { id: nextPrimary.id },
+          data: { isPrimary: true },
+        });
+      }
+    }
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.trade_deleted',
+        entityType: 'job_seeker_trade',
+        entityCode: seeker.code,
+        changedFields: ['id'],
+        city: seeker.city,
+      });
+    }
+
+    return { success: true };
+  }
+
+  // --- Languages (Phase 12 Task 3) ---
+
+  async addLanguage(jobSeekerId: string, dto: CreateJobSeekerLanguageDto, actorId?: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    if (!dto.language || !dto.language.trim()) {
+      throw new BadRequestException('Language is required');
+    }
+
+    const normalizedLang = dto.language.trim();
+    const existing = await this.prisma.jobSeekerLanguage.findFirst({
+      where: {
+        jobSeekerId,
+        language: { equals: normalizedLang, mode: 'insensitive' },
+      },
+    });
+    if (existing) {
+      throw new ConflictException(`Language '${normalizedLang}' already exists for this job seeker`);
+    }
+
+    const created = await this.prisma.jobSeekerLanguage.create({
+      data: {
+        jobSeekerId,
+        language: normalizedLang,
+        speaks: dto.speaks ?? false,
+        reads: dto.reads ?? false,
+        writes: dto.writes ?? false,
+      },
+    });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.language_added',
+        entityType: 'job_seeker_language',
+        entityCode: seeker.code,
+        changedFields: ['language', 'speaks', 'reads', 'writes'],
+        city: seeker.city,
+      });
+    }
+
+    return created;
+  }
+
+  async getLanguages(jobSeekerId: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    return this.prisma.jobSeekerLanguage.findMany({
+      where: { jobSeekerId },
+      orderBy: { createdAt: 'asc' },
+    });
+  }
+
+  async updateLanguage(
+    jobSeekerId: string,
+    languageId: string,
+    dto: UpdateJobSeekerLanguageDto,
+    actorId?: string,
+  ) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const lang = await this.prisma.jobSeekerLanguage.findFirst({
+      where: { id: languageId, jobSeekerId },
+    });
+    if (!lang) {
+      throw new NotFoundException(
+        `Language '${languageId}' not found for job seeker '${jobSeekerId}'`,
+      );
+    }
+
+    const data: Record<string, unknown> = {};
+
+    if (dto.language !== undefined) {
+      const normalized = dto.language.trim();
+      if (!normalized) {
+        throw new BadRequestException('Language cannot be empty');
+      }
+      const duplicate = await this.prisma.jobSeekerLanguage.findFirst({
+        where: {
+          jobSeekerId,
+          language: { equals: normalized, mode: 'insensitive' },
+          id: { not: languageId },
+        },
+      });
+      if (duplicate) {
+        throw new ConflictException(
+          `Language '${normalized}' already exists for this job seeker`,
+        );
+      }
+      data.language = normalized;
+    }
+
+    if (dto.speaks !== undefined) data.speaks = dto.speaks;
+    if (dto.reads !== undefined) data.reads = dto.reads;
+    if (dto.writes !== undefined) data.writes = dto.writes;
+
+    const updated = await this.prisma.jobSeekerLanguage.update({
+      where: { id: languageId },
+      data,
+    });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.language_updated',
+        entityType: 'job_seeker_language',
+        entityCode: seeker.code,
+        changedFields: Object.keys(data),
+        city: seeker.city,
+      });
+    }
+
+    return updated;
+  }
+
+  async deleteLanguage(jobSeekerId: string, languageId: string, actorId?: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const lang = await this.prisma.jobSeekerLanguage.findFirst({
+      where: { id: languageId, jobSeekerId },
+    });
+    if (!lang) {
+      throw new NotFoundException(
+        `Language '${languageId}' not found for job seeker '${jobSeekerId}'`,
+      );
+    }
+
+    await this.prisma.jobSeekerLanguage.delete({
+      where: { id: languageId },
+    });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.language_deleted',
+        entityType: 'job_seeker_language',
+        entityCode: seeker.code,
+        changedFields: ['id'],
+        city: seeker.city,
+      });
+    }
+
+    return { success: true };
   }
 }
 

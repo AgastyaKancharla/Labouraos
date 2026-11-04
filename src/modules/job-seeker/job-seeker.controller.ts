@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Delete,
   Get,
   Param,
   Patch,
@@ -21,6 +22,14 @@ import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import { RecordHitDto } from './dto/record-hit.dto';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
+import {
+  CreateJobSeekerTradeDto,
+  UpdateJobSeekerTradeDto,
+} from './dto/job-seeker-trade.dto';
+import {
+  CreateJobSeekerLanguageDto,
+  UpdateJobSeekerLanguageDto,
+} from './dto/job-seeker-language.dto';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -146,6 +155,92 @@ export class JobSeekerController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.jobSeekerService.transitionStatus(id, status, req.user.sub);
+  }
+
+  // --- Trades (Phase 12 Task 3) ---
+
+  @Post(':id/trades')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async addTrade(
+    @Param('id') id: string,
+    @Body() body: CreateJobSeekerTradeDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.addTrade(id, body, req.user.sub);
+  }
+
+  @Get(':id/trades')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'read')
+  async getTrades(@Param('id') id: string) {
+    return this.jobSeekerService.getTrades(id);
+  }
+
+  @Patch(':id/trades/:tradeId')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async updateTrade(
+    @Param('id') id: string,
+    @Param('tradeId') tradeId: string,
+    @Body() body: UpdateJobSeekerTradeDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.updateTrade(id, tradeId, body, req.user.sub);
+  }
+
+  @Delete(':id/trades/:tradeId')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async deleteTrade(
+    @Param('id') id: string,
+    @Param('tradeId') tradeId: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.deleteTrade(id, tradeId, req.user.sub);
+  }
+
+  // --- Languages (Phase 12 Task 3) ---
+
+  @Post(':id/languages')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async addLanguage(
+    @Param('id') id: string,
+    @Body() body: CreateJobSeekerLanguageDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.addLanguage(id, body, req.user.sub);
+  }
+
+  @Get(':id/languages')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'read')
+  async getLanguages(@Param('id') id: string) {
+    return this.jobSeekerService.getLanguages(id);
+  }
+
+  @Patch(':id/languages/:languageId')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async updateLanguage(
+    @Param('id') id: string,
+    @Param('languageId') languageId: string,
+    @Body() body: UpdateJobSeekerLanguageDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.updateLanguage(id, languageId, body, req.user.sub);
+  }
+
+  @Delete(':id/languages/:languageId')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async deleteLanguage(
+    @Param('id') id: string,
+    @Param('languageId') languageId: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.deleteLanguage(id, languageId, req.user.sub);
   }
 }
 
