@@ -1323,6 +1323,134 @@ export class JobSeekerService {
 
     return { success: true };
   }
+
+  /**
+   * Records an IdentityVerification row for a job seeker.
+   * Requires that Consent.aadhaar_verification is active for this job seeker.
+   * NEVER writes to deprecated columns (kycStatus, kycReference).
+   * Runs assertNoRawAadhaar on input.
+   */
+  async createIdentityVerification(
+    jobSeekerId: string,
+    dto: Record<string, unknown>,
+    actorId?: string,
+  ) {
+    assertNoRawAadhaar(dto);
+
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
+    }
+
+    if (!this.consentService) {
+      throw new BadRequestException('ConsentService is not available');
+    }
+
+    const hasAadhaarConsent = await this.consentService.hasConsent(
+      'job_seeker',
+      jobSeekerId,
+      'aadhaar_verification',
+    );
+    if (!hasAadhaarConsent) {
+      throw new BadRequestException(
+        'Consent for aadhaar_verification is required before identity verification can be requested',
+      );
+    }
+
+    const method = String(dto.method || 'digilocker');
+    const allowedMethods = ['digilocker', 'aadhaar_qr', 'pan', 'driving_licence', 'voter_id'];
+    if (!allowedMethods.includes(method)) {
+      throw new BadRequestException(
+        `Invalid identity verification method: ${method}. Allowed: ${allowedMethods.join(', ')}`,
+      );
+    }
+
+    const status = String(dto.status || 'verified');
+    const allowedStatuses = ['pending', 'verified', 'failed'];
+    if (!allowedStatuses.includes(status)) {
+      throw new BadRequestException(
+        `Invalid identity verification status: ${status}. Allowed: ${allowedStatuses.join(', ')}`,
+      );
+    }
+
+    let last4: string | null = null;
+    if (dto.last4 !== undefined && dto.last4 !== null && dto.last4 !== '') {
+      const last4Str = String(dto.last4).trim();
+      if (!/^\d{4}$/.test(last4Str)) {
+        throw new BadRequestException('last4 must be exactly 4 digits');
+      }
+      last4 = last4Str;
+    }
+
+    const vendor = String(dto.vendor || 'digilocker');
+    const vendorReference = String(
+      dto.vendorReference ||
+        `idv_ref_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    );
+
+    const nameMatches =
+      dto.nameMatches !== undefined ? Boolean(dto.nameMatches) : status === 'verified';
+    const isAdult =
+      dto.isAdult !== undefined ? Boolean(dto.isAdult) : status === 'verified';
+    const verifiedAt = status === 'verified' ? new Date() : null;
+    const failureReason =
+      status === 'failed'
+        ? dto.failureReason
+          ? String(dto.failureReason)
+          : 'Verification failed'
+        : null;
+
+    const verification = await this.prisma.identityVerification.create({
+      data: {
+        jobSeekerId,
+        method,
+        vendor,
+        vendorReference,
+        status,
+        last4,
+        nameMatches,
+        isAdult,
+        verifiedAt,
+        failureReason,
+      },
+    });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.identity_verification',
+        entityType: 'identity_verification',
+        entityCode: seeker.code,
+        before: null,
+        after: {
+          id: verification.id,
+          method: verification.method,
+          status: verification.status,
+          vendor: verification.vendor,
+          last4: verification.last4,
+        },
+        changedFields: ['id', 'status', 'method'],
+        city: seeker.city,
+      });
+    }
+
+    return verification;
+  }
+
+  async getIdentityVerifications(jobSeekerId: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
+    }
+    return this.prisma.identityVerification.findMany({
+      where: { jobSeekerId },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 }
 
 

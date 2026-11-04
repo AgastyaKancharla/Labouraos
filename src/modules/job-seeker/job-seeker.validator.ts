@@ -7,7 +7,7 @@ export function assertNoRawAadhaar(data: unknown): void {
 
   const obj = data as Record<string, unknown>;
   for (const [key, value] of Object.entries(obj)) {
-    if (key.toLowerCase().includes('aadhaar')) {
+    if (key.toLowerCase().includes('aadhaar') || key.toLowerCase().includes('aadhar')) {
       throw new BadRequestException('Raw Aadhaar fields and numbers must never be submitted or stored');
     }
     if (typeof value === 'string') {

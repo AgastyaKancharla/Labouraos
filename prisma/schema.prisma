@@ -37,6 +37,7 @@ model JobSeeker {
   hits                      JobSeekerHit[]
   trades                    JobSeekerTrade[]
   languages                 JobSeekerLanguage[]
+  identityVerifications     IdentityVerification[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
   erasedAt                  DateTime?
@@ -113,6 +114,26 @@ model JobSeekerLanguage {
 
   @@unique([jobSeekerId, language])
   @@index([jobSeekerId])
+}
+
+model IdentityVerification {
+  id              String    @id @default(uuid())
+  jobSeekerId     String
+  jobSeeker       JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  method          String    // digilocker, aadhaar_qr, pan, driving_licence, voter_id
+  vendor          String
+  vendorReference String
+  status          String    // pending, verified, failed
+  last4           String?   // last 4 digits only
+  nameMatches     Boolean?
+  isAdult         Boolean?
+  verifiedAt      DateTime?
+  failureReason   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([jobSeekerId])
+  @@index([status])
 }
 
 model Referral {
