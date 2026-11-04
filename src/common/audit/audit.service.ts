@@ -24,6 +24,7 @@ const PERSONAL_FIELDS = new Set([
   'whatsappphone',
   'contactphone',
   'candidatephone',
+  'callroutingphone',
   'email',
   'address',
   'kycreference',

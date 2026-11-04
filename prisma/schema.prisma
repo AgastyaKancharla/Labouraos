@@ -183,6 +183,8 @@ model Staff {
   teamLead          Staff?           @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
   teamMembers       Staff[]          @relation("TeamHierarchy")
   area              String?
+  /// AES-256-GCM ciphertext. Never selected into an API response.
+  callRoutingPhone  String?
   worksFromOffice   Boolean          @default(false)
   failedLoginCount  Int              @default(0)
   lockedUntil       DateTime?

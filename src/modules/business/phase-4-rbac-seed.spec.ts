@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 
 describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
   let app: INestApplication;
@@ -153,7 +154,7 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
     expect(singleRes.body.business.phone).toBe('********');
   });
 
-  it('does NOT mask phone number when manager or field agent reads business', async () => {
+  it('manager sees the full business number; a field agent sees only the last 4 digits', async () => {
     const mgrRes = await request(app.getHttpServer())
       .get(`/businesses/${testBusinessId}`)
       .set('Authorization', `Bearer ${managerToken}`)
@@ -167,7 +168,8 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .expect(200);
 
-    expect(faRes.body.phone).not.toBe('********');
-    expect(faRes.body.phone).toMatch(/^96/);
+    const fullPhone = `96${timestamp.toString().slice(-8)}1`;
+    expect(faRes.body.phone).toBe(maskPhoneLast4(fullPhone));
+    expect(faRes.body.phone).not.toMatch(/^96/);
   });
 });
