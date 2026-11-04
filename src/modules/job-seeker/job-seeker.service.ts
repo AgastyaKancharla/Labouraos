@@ -28,7 +28,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { ConsentService } from '../consent/consent.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
-import { isJobSeekerStatus, normalizeJobSeekerStatus, JobSeekerStatus } from './job-seeker.status';
+import { isJobSeekerStatus } from './job-seeker.status';
 import { validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 
@@ -934,10 +934,23 @@ export class JobSeekerService {
       data.pausedAt = dto.pausedAt ? new Date(dto.pausedAt) : null;
     }
 
-    return this.prisma.jobSeeker.update({
+    const updated = await this.prisma.jobSeeker.update({
       where: { id: jobSeekerId },
       data,
     });
+
+    if (actorId && actorId !== 'system') {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.profile_updated',
+        entityType: 'job_seeker',
+        entityCode: seeker.code,
+        changedFields: Object.keys(data),
+        city: seeker.city,
+      });
+    }
+
+    return updated;
   }
 }
 
