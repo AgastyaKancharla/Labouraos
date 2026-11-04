@@ -35,6 +35,8 @@ model JobSeeker {
   payments                  Payment[]
   contactAttempts           ContactAttempt[]
   hits                      JobSeekerHit[]
+  trades                    JobSeekerTrade[]
+  languages                 JobSeekerLanguage[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
   erasedAt                  DateTime?
@@ -82,6 +84,35 @@ model JobSeeker {
   @@index([status])
   @@index([status, paymentReceivedAt])
   @@index([registeredByStaffId])
+}
+
+model JobSeekerTrade {
+  id              String    @id @default(uuid())
+  jobSeekerId     String
+  jobSeeker       JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  trade           String
+  yearsExperience Int       @default(0)
+  isPrimary       Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@unique([jobSeekerId, trade])
+  @@index([jobSeekerId])
+}
+
+model JobSeekerLanguage {
+  id          String    @id @default(uuid())
+  jobSeekerId String
+  jobSeeker   JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  language    String
+  speaks      Boolean   @default(false)
+  reads       Boolean   @default(false)
+  writes      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@unique([jobSeekerId, language])
+  @@index([jobSeekerId])
 }
 
 model Referral {
