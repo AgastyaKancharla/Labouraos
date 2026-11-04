@@ -94,7 +94,7 @@ describe('Phase 11 Task 8: Login rate limit per internet connection across staff
           deviceId: deviceIds[i],
         });
       results.push(res.status);
-      expect(res.body.status).toBe('waiting_for_code');
+      expect(res.body.status).toBe('awaiting_code');
     }
 
     // All 20 logins succeed (HTTP 200) without being throttled
