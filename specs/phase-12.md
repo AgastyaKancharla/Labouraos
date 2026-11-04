@@ -26,7 +26,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 1
 
-### [ ] Task 1 — Consent table and service
+### [x] Task 1 — Consent table and service
 **Branch:** `phase-12/task-1-consent` · **Migration folder:** `20261105100000_add_consent`
 
 **Acceptance:**
