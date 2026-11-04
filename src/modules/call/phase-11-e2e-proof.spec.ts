@@ -34,6 +34,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
 
   let caToken: string;
   let tlToken: string;
+  let tlStaffId: string;
   let testSeekerId: string;
   let testSeekerCode: string;
   const testRawPhone = '+919876543210';
@@ -83,6 +84,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
       },
     });
     createdStaffIds.push(tl.id);
+    tlStaffId = tl.id;
     tlToken = jwt.sign({ sub: tl.id, role: tl.role, code: tl.code, email: tl.email });
 
     // 2. Call Agent with routing phone set
@@ -381,7 +383,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
       where: {
         entityCode: thirdCall.code,
         action: 'call.recording.listened',
-        actorId: tl.id,
+        actorId: tlStaffId,
       },
     });
     expect(auditLogs).toHaveLength(1);
