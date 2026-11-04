@@ -11,6 +11,7 @@ import { TELEPHONY_PROVIDER } from '../telephony/telephony.interface';
 import { RECORDING_STORAGE, MemoryRecordingStorage } from './recording-storage';
 import { encryptCallRoutingPhone } from '../staff/call-routing-key';
 import { NoPickupEvaluationJob } from '../../jobs/no-pickup-evaluation.job';
+import { signCallStatusBody } from './call-signature';
 
 class ControllableClock extends CallClock {
   current = new Date('2026-11-04T05:00:00.000Z'); // 10:30 IST
@@ -143,11 +144,14 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     await app.close();
   });
 
-  function signPayload(body: Record<string, unknown>): { raw: Buffer; signature: string } {
-    const jsonStr = JSON.stringify(body);
-    const raw = Buffer.from(jsonStr, 'utf8');
-    const signature = crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
-    return { raw, signature };
+  function postCallWebhook(payload: Record<string, unknown>, signature?: string) {
+    const raw = JSON.stringify(payload);
+    const signed = signature === undefined ? signCallStatusBody(raw, WEBHOOK_SECRET) : signature;
+    return request(app.getHttpServer())
+      .post('/telephony/webhook/call-status')
+      .set('Content-Type', 'application/json')
+      .set('x-telephony-signature', signed)
+      .send(raw);
   }
 
   it('proves the full end-to-end scenario: morning+evening no-answer -> sweep hit -> 3rd call answered+outcome -> TL listen audited -> privacy floor maintained', async () => {
@@ -187,14 +191,8 @@ describe('Phase 11 Gate End-to-End Proof', () => {
       durationSec: 30,
       direction: 'outbound',
     };
-    const signedAm = signPayload(amEventPayload);
-
-    await request(app.getHttpServer())
-      .post('/telephony/webhook/call-status')
-      .set('Content-Type', 'application/json')
-      .set('X-Telephony-Signature', signedAm.signature)
-      .send(signedAm.raw)
-      .expect(200);
+    const amRes = await postCallWebhook(amEventPayload);
+    expect(amRes.status).toBe(201);
 
     // Verify system created AM no_pickup contact attempt
     const amAttempt = await prisma.contactAttempt.findUnique({
@@ -237,14 +235,8 @@ describe('Phase 11 Gate End-to-End Proof', () => {
       durationSec: 30,
       direction: 'outbound',
     };
-    const signedPm = signPayload(pmEventPayload);
-
-    await request(app.getHttpServer())
-      .post('/telephony/webhook/call-status')
-      .set('Content-Type', 'application/json')
-      .set('X-Telephony-Signature', signedPm.signature)
-      .send(signedPm.raw)
-      .expect(200);
+    const pmRes = await postCallWebhook(pmEventPayload);
+    expect(pmRes.status).toBe(201);
 
     // Verify system created PM no_pickup contact attempt
     const pmAttempt = await prisma.contactAttempt.findUnique({
@@ -319,14 +311,8 @@ describe('Phase 11 Gate End-to-End Proof', () => {
       recordingUrl: 'https://telephony-mock.local/recordings/e2e-rec-01.mp3',
       direction: 'outbound',
     };
-    const signedThird = signPayload(thirdEventPayload);
-
-    await request(app.getHttpServer())
-      .post('/telephony/webhook/call-status')
-      .set('Content-Type', 'application/json')
-      .set('X-Telephony-Signature', signedThird.signature)
-      .send(signedThird.raw)
-      .expect(200);
+    const thirdRes = await postCallWebhook(thirdEventPayload);
+    expect(thirdRes.status).toBe(201);
 
     // Verify system created picked_up contact attempt for the answered call
     const thirdAttempt = await prisma.contactAttempt.findUnique({
