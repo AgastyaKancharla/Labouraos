@@ -217,7 +217,7 @@ export function renderCallAgentConsoleHtml(): string {
     <button class="tab-btn" data-tab="onboard-biz">Business Onboarding</button>
     <button class="tab-btn" data-tab="vacancy-capture">Vacancy Capture</button>
     <button class="tab-btn" data-tab="shortlist">Candidate Shortlist</button>
-    <button class="tab-btn" data-tab="contact-attempts">Contact & Hits</button>
+    <button class="tab-btn" data-tab="contact-attempts">Calling & Hits</button>
     <button class="tab-btn" data-tab="placement-flow">Placement Flow</button>
   </nav>
 
@@ -239,7 +239,7 @@ export function renderCallAgentConsoleHtml(): string {
             <div class="form-group">
               <label>Mobile Number (10 digits)</label>
               <div class="otp-group">
-                <input type="text" id="js-phone" placeholder="9876543210">
+                <input type="text" id="js-phone" placeholder="98XXXXXXXX">
                 <button type="button" id="btn-js-send-otp" onclick="sendOtp('js')">Send OTP</button>
               </div>
             </div>
@@ -309,7 +309,7 @@ export function renderCallAgentConsoleHtml(): string {
           <div class="form-group">
             <label>Mobile Number</label>
             <div class="otp-group">
-              <input type="text" id="rf-phone" placeholder="9876543211">
+              <input type="text" id="rf-phone" placeholder="98XXXXXXXX">
               <button type="button" onclick="sendOtp('rf')">Send OTP</button>
             </div>
           </div>
@@ -348,7 +348,7 @@ export function renderCallAgentConsoleHtml(): string {
             <div class="form-group">
               <label>Business Phone</label>
               <div class="otp-group">
-                <input type="text" id="biz-phone" placeholder="9876543212">
+                <input type="text" id="biz-phone" placeholder="98XXXXXXXX">
                 <button type="button" onclick="sendOtp('biz')">Send OTP</button>
               </div>
             </div>
@@ -447,43 +447,107 @@ export function renderCallAgentConsoleHtml(): string {
       </div>
     </div>
 
-    <!-- 6. Contact Attempts & Hit Recording -->
+    <!-- 6. Calling & Hit Recording -->
     <div id="view-contact-attempts" class="tab-view hidden">
       <div class="card">
         <div class="card-title">
-          <span>Log Candidate Contact Attempt & Hits</span>
+          <span>Calling, Profiles & Hits</span>
         </div>
         <div class="grid-2">
-          <!-- Contact Attempt -->
+          <!-- Profile Calling -->
           <div style="background: #162032; padding: 16px; border-radius: 6px;">
-            <h3 style="font-size: 1rem; margin-bottom: 12px; color: var(--primary);">Log Contact Attempt</h3>
+            <h3 style="font-size: 1rem; margin-bottom: 12px; color: var(--primary);">Place Outbound Call & Profile</h3>
             <div class="form-group">
-              <label>Candidate ID or Code</label>
-              <input type="text" id="contact-js-id" placeholder="JS-00001 or UUID">
-            </div>
-            <div class="form-group">
-              <label>Channel</label>
-              <select id="contact-channel">
-                <option value="call">Phone Call</option>
-                <option value="whatsapp">WhatsApp</option>
-                <option value="sms">SMS</option>
+              <label>Profile Type</label>
+              <select id="call-subject-type">
+                <option value="job_seeker">Job Seeker</option>
+                <option value="business">Business</option>
+                <option value="referral">Referral Partner</option>
               </select>
             </div>
             <div class="form-group">
-              <label>Outcome</label>
-              <select id="contact-outcome">
-                <option value="no_pickup">No Pickup</option>
-                <option value="picked_up">Picked Up</option>
-              </select>
+              <label>ID or Code (e.g. JS-00001, BZ-00001, RF-00001, or UUID)</label>
+              <div style="display: flex; gap: 8px;">
+                <input type="text" id="call-subject-id" placeholder="JS-00001 or UUID">
+                <button type="button" class="btn-sm" onclick="loadCallingProfile()">Load Profile</button>
+              </div>
             </div>
-            <div class="form-group">
-              <label>Time of Day</label>
-              <select id="contact-time">
-                <option value="am">Morning (AM)</option>
-                <option value="pm">Evening (PM)</option>
-              </select>
+
+            <!-- Profile Summary Card -->
+            <div id="calling-profile-card" style="display: none; background: #0f172a; padding: 12px; border-radius: 6px; margin-bottom: 14px; border: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+                <strong id="profile-card-name" style="font-size: 1.05rem;">—</strong>
+                <span id="profile-card-code" class="badge">—</span>
+              </div>
+              <div style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 6px;">
+                Phone: <strong id="profile-card-phone" style="color: var(--text);">—</strong>
+                <span style="margin: 0 6px;">•</span>
+                Status: <span id="profile-card-status">—</span>
+              </div>
+
+              <!-- Blocked calling alert notice -->
+              <div id="call-blocked-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); color: #fca5a5; padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
+              </div>
+
+              <!-- Call trigger controls -->
+              <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+                <select id="call-purpose-select" style="max-width: 180px;">
+                  <option value="general">General</option>
+                  <option value="offer">Offer</option>
+                  <option value="follow_up">Follow Up</option>
+                  <option value="verification">Verification</option>
+                  <option value="exit_call">Exit Call</option>
+                  <option value="check_in">Check In</option>
+                  <option value="interview_result">Interview Result</option>
+                  <option value="refund_check">Refund Check</option>
+                </select>
+                <button type="button" id="btn-trigger-call" class="btn-call" onclick="triggerProfileCall()">Call</button>
+              </div>
+
+              <!-- Active Call / Outcome Card -->
+              <div id="call-in-progress-section" style="display: none; margin-top: 14px; padding: 12px; background: #1e293b; border-radius: 6px;">
+                <div id="call-status-message" style="font-size: 0.9rem; font-weight: 500; margin-bottom: 8px;">Call placed...</div>
+                
+                <!-- Answered Call Outcome Form (Closed List) -->
+                <div id="answered-outcome-form" style="display: none;">
+                  <label style="font-size: 0.85rem; color: var(--primary); font-weight: bold; margin-bottom: 4px; display: block;">Record Call Outcome</label>
+                  <select id="call-agent-outcome" style="margin-bottom: 8px;">
+                    <option value="interested">Interested</option>
+                    <option value="accepted_offer">Accepted Offer</option>
+                    <option value="rejected_offer">Rejected Offer</option>
+                    <option value="callback_requested">Callback Requested</option>
+                    <option value="not_interested">Not Interested</option>
+                    <option value="working_now">Working Now</option>
+                    <option value="other">Other</option>
+                  </select>
+                  <input type="text" id="call-agent-outcome-reason" placeholder="Outcome reason (optional)" style="margin-bottom: 8px;">
+                  <button type="button" class="btn-sm" onclick="submitProfileCallOutcome()">Submit Outcome</button>
+                </div>
+              </div>
             </div>
-            <button onclick="submitContactAttempt()">Record Contact Attempt</button>
+
+            <!-- Call & Message History -->
+            <div id="profile-history-section" style="display: none; margin-top: 16px;">
+              <h4 style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 8px;">Call & Message History</h4>
+              <div class="table-container" style="max-height: 220px; overflow-y: auto;">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Time</th>
+                      <th>Direction</th>
+                      <th>Purpose</th>
+                      <th>Answered</th>
+                      <th>Duration</th>
+                      <th>Outcome</th>
+                      <th>Recording</th>
+                    </tr>
+                  </thead>
+                  <tbody id="profile-history-tbody">
+                    <tr><td colspan="7">No history yet</td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
 
           <!-- Hit Recording -->
@@ -852,6 +916,7 @@ export function renderCallAgentConsoleHtml(): string {
             <td>\${c.paymentReceivedAt ? new Date(new Date(c.paymentReceivedAt).getTime() + 30*24*3600*1000).toLocaleDateString() : '—'}</td>
             <td>
               <button class="btn-sm" onclick="selectCandidateForOffer('\${vcId}', '\${c.id}', '\${c.code}')">Select for Placement</button>
+              <button class="btn-sm btn-call" onclick="quickCallSeeker('\${c.id}', '\${c.code}')">Call</button>
             </td>
           </tr>
         \`).join('') || '<tr><td colspan="7">No matching active candidates found</td></tr>';
@@ -867,20 +932,197 @@ export function renderCallAgentConsoleHtml(): string {
       showAlert('Selected candidate ' + jsCode + ' for placement offer');
     }
 
-    // 6. Contact attempts & Hits
-    async function submitContactAttempt() {
-      const jsId = document.getElementById('contact-js-id').value.trim();
-      if (!jsId) return alert('Candidate ID required');
+    function formatPhoneLast4(val) {
+      if (!val) return '—';
+      const digits = String(val).replace(/[^0-9]/g, '');
+      return digits.length >= 4 ? '••••••' + digits.slice(-4) : '••••••';
+    }
+
+    // 6. Calling, Profile & Hits
+    let currentCallingSubject = null;
+    let activeCallRecordId = null;
+
+    function quickCallSeeker(id, code) {
+      document.querySelector('.tab-btn[data-tab="contact-attempts"]').click();
+      document.getElementById('call-subject-type').value = 'job_seeker';
+      document.getElementById('call-subject-id').value = code || id;
+      loadCallingProfile('job_seeker', id || code).then(function() {
+        triggerProfileCall();
+      });
+    }
+
+    async function loadCallingProfile(type, id) {
+      const subjectType = type || document.getElementById('call-subject-type').value;
+      const subjectId = id || document.getElementById('call-subject-id').value.trim();
+      if (!subjectId) return alert('Enter ID or Code');
+
+      document.getElementById('call-blocked-alert').style.display = 'none';
+      document.getElementById('call-in-progress-section').style.display = 'none';
+      document.getElementById('answered-outcome-form').style.display = 'none';
+
       try {
-        const body = {
-          channel: document.getElementById('contact-channel').value,
-          outcome: document.getElementById('contact-outcome').value,
-          timeOfDay: document.getElementById('contact-time').value,
-        };
-        const res = await api('/job-seekers/' + jsId + '/contact-attempts', { method: 'POST', body });
-        showAlert('Contact attempt recorded! ID: ' + res.id);
+        let endpoint = '/job-seekers/' + encodeURIComponent(subjectId);
+        if (subjectType === 'business') endpoint = '/businesses/' + encodeURIComponent(subjectId);
+        if (subjectType === 'referral') endpoint = '/referrals/' + encodeURIComponent(subjectId);
+
+        const data = await api(endpoint);
+        currentCallingSubject = { type: subjectType, id: data.id, code: data.code, data: data };
+
+        document.getElementById('profile-card-name').textContent = data.name || data.contactName || '—';
+        document.getElementById('profile-card-code').textContent = data.code || subjectId;
+        document.getElementById('profile-card-phone').textContent = formatPhoneLast4(data.phone);
+        document.getElementById('profile-card-status').textContent = data.status || 'Active';
+        document.getElementById('calling-profile-card').style.display = 'block';
+
+        await loadProfileHistory(subjectType, data.id || subjectId);
+      } catch (e) {
+        showAlert('Error loading profile: ' + e.message, false);
+      }
+    }
+
+    async function triggerProfileCall() {
+      if (!currentCallingSubject) return alert('Load a profile first');
+      const btn = document.getElementById('btn-trigger-call');
+      btn.disabled = true;
+      document.getElementById('call-blocked-alert').style.display = 'none';
+      document.getElementById('answered-outcome-form').style.display = 'none';
+
+      const purpose = document.getElementById('call-purpose-select').value;
+      try {
+        const res = await api('/calls', {
+          method: 'POST',
+          body: {
+            subjectType: currentCallingSubject.type,
+            subjectId: currentCallingSubject.id,
+            purpose: purpose,
+          }
+        });
+        activeCallRecordId = res.callRecordId || res.id;
+        document.getElementById('call-in-progress-section').style.display = 'block';
+
+        let callData = null;
+        try {
+          callData = await api('/calls/' + activeCallRecordId);
+        } catch {}
+
+        if (callData && callData.answered) {
+          document.getElementById('call-status-message').textContent = 'Call answered (' + (callData.code || activeCallRecordId) + '). Record outcome below:';
+          document.getElementById('answered-outcome-form').style.display = 'block';
+        } else {
+          document.getElementById('call-status-message').textContent = 'Call placed: ' + (callData ? (callData.answered ? 'answered' : 'unanswered (' + callData.providerStatus + ')') : 'initiated') + '.';
+          document.getElementById('answered-outcome-form').style.display = callData && callData.answered ? 'block' : 'none';
+        }
+        showAlert('Call placed: ' + (callData ? callData.code : activeCallRecordId));
+        await loadProfileHistory(currentCallingSubject.type, currentCallingSubject.id);
+      } catch (e) {
+        const msg = e.message || 'Calling is currently blocked';
+        document.getElementById('call-blocked-alert').textContent = 'Calling blocked: ' + msg;
+        document.getElementById('call-blocked-alert').style.display = 'block';
+        showAlert('Calling blocked: ' + msg, false);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function submitProfileCallOutcome() {
+      if (!activeCallRecordId) return alert('No active answered call to record outcome for');
+      const outcome = document.getElementById('call-agent-outcome').value;
+      const reason = document.getElementById('call-agent-outcome-reason').value.trim();
+      try {
+        await api('/calls/' + activeCallRecordId + '/outcome', {
+          method: 'POST',
+          body: { agentOutcome: outcome, reason: reason || undefined }
+        });
+        showAlert('Outcome recorded: ' + outcome);
+        document.getElementById('answered-outcome-form').style.display = 'none';
+        document.getElementById('call-status-message').textContent = 'Outcome recorded: ' + outcome;
+        if (currentCallingSubject) {
+          await loadProfileHistory(currentCallingSubject.type, currentCallingSubject.id);
+        }
       } catch (e) {
         showAlert(e.message, false);
+      }
+    }
+
+    async function loadProfileHistory(subjectType, subjectId) {
+      const tbody = document.getElementById('profile-history-tbody');
+      tbody.innerHTML = '<tr><td colspan="7">Loading history...</td></tr>';
+      document.getElementById('profile-history-section').style.display = 'block';
+      try {
+        const calls = await api('/calls?subjectType=' + subjectType + '&subjectId=' + encodeURIComponent(subjectId));
+        let messages = [];
+        const payload = parseJwt(token);
+        const canReadMessages = payload && ['team_lead', 'manager', 'ceo'].includes(payload.role);
+        if (canReadMessages) {
+          try {
+            messages = await api('/messages?subjectType=' + subjectType + '&subjectId=' + encodeURIComponent(subjectId));
+          } catch {}
+        }
+
+        const items = [];
+        (calls || []).forEach(function (c) {
+          items.push({
+            time: c.startedAt || c.createdAt,
+            type: 'Call (' + (c.direction || 'outbound') + ')',
+            purpose: c.purpose || 'general',
+            answered: c.answered ? 'Yes' : 'No',
+            duration: c.durationSec != null ? c.durationSec + 's' : '—',
+            outcome: c.agentOutcome || c.providerStatus || '—',
+            recording: c.recordingStoragePath ? c.id : null,
+          });
+        });
+        (messages || []).forEach(function (m) {
+          items.push({
+            time: m.sentAt || m.createdAt,
+            type: m.channel ? m.channel.toUpperCase() : 'Message',
+            purpose: m.template || '—',
+            answered: '—',
+            duration: '—',
+            outcome: m.status || 'sent',
+            recording: null,
+          });
+        });
+
+        items.sort(function (a, b) {
+          return new Date(b.time).getTime() - new Date(a.time).getTime();
+        });
+
+        const isRecordingRole = payload && ['team_lead', 'manager', 'ceo'].includes(payload.role);
+
+        if (items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7">No call or message history found</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = items.map(function (it) {
+          const listenBtn = (it.recording && isRecordingRole)
+            ? '<button class="btn-sm" onclick="listenRecording(' + JSON.stringify(it.recording) + ')">Listen</button>'
+            : '—';
+          return '<tr>' +
+            '<td>' + (it.time ? new Date(it.time).toLocaleString('en-IN') : '—') + '</td>' +
+            '<td>' + it.type + '</td>' +
+            '<td>' + it.purpose + '</td>' +
+            '<td>' + it.answered + '</td>' +
+            '<td>' + it.duration + '</td>' +
+            '<td>' + it.outcome + '</td>' +
+            '<td>' + listenBtn + '</td>' +
+          '</tr>';
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="7">Could not load history: ' + e.message + '</td></tr>';
+      }
+    }
+
+    async function listenRecording(callId) {
+      try {
+        const res = await api('/calls/' + callId + '/recording');
+        if (res.url) {
+          window.open(res.url, '_blank');
+        } else {
+          showAlert('No recording URL returned', false);
+        }
+      } catch (e) {
+        showAlert('Recording listen failed: ' + e.message, false);
       }
     }
 

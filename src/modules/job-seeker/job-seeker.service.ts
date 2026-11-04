@@ -146,7 +146,7 @@ export class JobSeekerService {
   }
 
   async findById(id: string, now: Date = new Date()) {
-    const jobSeeker = await this.prisma.jobSeeker.findUnique({
+    let jobSeeker = await this.prisma.jobSeeker.findUnique({
       where: { id },
       include: {
         referredBy: true,
@@ -155,6 +155,17 @@ export class JobSeekerService {
         hits: { orderBy: { recordedAt: 'desc' } },
       },
     });
+    if (!jobSeeker) {
+      jobSeeker = await this.prisma.jobSeeker.findUnique({
+        where: { code: id },
+        include: {
+          referredBy: true,
+          payments: true,
+          contactAttempts: { orderBy: { attemptedAt: 'desc' } },
+          hits: { orderBy: { recordedAt: 'desc' } },
+        },
+      });
+    }
     if (!jobSeeker) {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }

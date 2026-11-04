@@ -85,13 +85,22 @@ export class ReferralService {
   }
 
   async findById(id: string) {
-    const referral = await this.prisma.referral.findUnique({
+    let referral = await this.prisma.referral.findUnique({
       where: { id },
       include: {
         jobSeekers: true,
         payments: true,
       },
     });
+    if (!referral) {
+      referral = await this.prisma.referral.findUnique({
+        where: { code: id },
+        include: {
+          jobSeekers: true,
+          payments: true,
+        },
+      });
+    }
     if (!referral) {
       throw new NotFoundException(`Referral partner '${id}' not found`);
     }

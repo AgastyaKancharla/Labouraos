@@ -228,10 +228,16 @@ export class BusinessService {
   }
 
   async findById(id: string, actorId: string) {
-    const business = await this.prisma.business.findUnique({
+    let business = await this.prisma.business.findUnique({
       where: { id },
       include: { vacancies: true, visits: true },
     });
+    if (!business) {
+      business = await this.prisma.business.findUnique({
+        where: { code: id },
+        include: { vacancies: true, visits: true },
+      });
+    }
     if (!business) {
       throw new NotFoundException(`Business '${id}' not found`);
     }

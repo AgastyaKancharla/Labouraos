@@ -223,7 +223,7 @@ export class CallService {
         direction: 'outbound',
         staffId: actor.id,
         subjectType,
-        subjectId,
+        subjectId: subject.id,
         purpose,
         relatedType: input.relatedType ?? null,
         relatedId: input.relatedId ?? null,
@@ -305,11 +305,13 @@ export class CallService {
   }
 
   async list(actor: CallActor, subjectType: string, subjectId: string) {
+    const subject = await this.loadSubject(subjectType, subjectId);
+    const resolvedSubjectId = subject ? subject.id : subjectId;
     const staffIds = await this.visibleStaffIds(actor);
     const rows = await this.prisma.callRecord.findMany({
       where: {
         subjectType,
-        subjectId,
+        subjectId: resolvedSubjectId,
         ...(staffIds ? { staffId: { in: staffIds } } : {}),
       },
       orderBy: { createdAt: 'desc' },
@@ -419,18 +421,31 @@ export class CallService {
 
   private async loadSubject(subjectType: string, subjectId: string) {
     if (subjectType === 'job_seeker') {
-      const row = await this.prisma.jobSeeker.findUnique({
+      let row = await this.prisma.jobSeeker.findUnique({
         where: { id: subjectId },
         select: {
+          id: true,
           phone: true,
           preferredCallWindowStart: true,
           preferredCallWindowEnd: true,
         },
       });
       if (!row) {
+        row = await this.prisma.jobSeeker.findUnique({
+          where: { code: subjectId },
+          select: {
+            id: true,
+            phone: true,
+            preferredCallWindowStart: true,
+            preferredCallWindowEnd: true,
+          },
+        });
+      }
+      if (!row) {
         return null;
       }
       return {
+        id: row.id,
         phone: row.phone,
         windowStart: row.preferredCallWindowStart,
         windowEnd: row.preferredCallWindowEnd,
@@ -438,23 +453,35 @@ export class CallService {
       };
     }
     if (subjectType === 'business') {
-      const row = await this.prisma.business.findUnique({
+      let row = await this.prisma.business.findUnique({
         where: { id: subjectId },
-        select: { phone: true, area: true },
+        select: { id: true, phone: true, area: true },
       });
+      if (!row) {
+        row = await this.prisma.business.findUnique({
+          where: { code: subjectId },
+          select: { id: true, phone: true, area: true },
+        });
+      }
       if (!row) {
         return null;
       }
-      return { phone: row.phone, area: row.area, windowStart: null, windowEnd: null };
+      return { id: row.id, phone: row.phone, area: row.area, windowStart: null, windowEnd: null };
     }
-    const row = await this.prisma.referral.findUnique({
+    let row = await this.prisma.referral.findUnique({
       where: { id: subjectId },
-      select: { phone: true },
+      select: { id: true, phone: true },
     });
+    if (!row) {
+      row = await this.prisma.referral.findUnique({
+        where: { code: subjectId },
+        select: { id: true, phone: true },
+      });
+    }
     if (!row) {
       return null;
     }
-    return { phone: row.phone, area: null, windowStart: null, windowEnd: null };
+    return { id: row.id, phone: row.phone, area: null, windowStart: null, windowEnd: null };
   }
 
   private async assertCanCall(
