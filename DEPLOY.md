@@ -130,6 +130,12 @@ Follow these steps in exact sequential order:
 | `WHATSAPP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until WhatsApp API is active |
 | `TELEPHONY_PROVIDER_MODE` | `mock` | Default mock mode (§3) until telephony vendor is active |
 | `KYC_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SurePass keys are active |
+| `CALL_ROUTING_KEY` | *Auto-generated. Do not type one.* | 32-byte secret used to AES-256-GCM encrypt staff call routing phone numbers |
+| `TELEPHONY_WEBHOOK_SECRET` | *32+ char shared secret* | Shared secret configured in the calling provider webhook |
+| `MESSAGE_WEBHOOK_SECRET` | *32+ char shared secret* | Shared secret configured in the WhatsApp/SMS messaging webhook |
+| `SUPABASE_URL` | *https://<project-ref>.supabase.co* | Supabase project URL from Supabase Settings > API |
+| `SUPABASE_SERVICE_ROLE_KEY` | *Supabase service_role secret key* | Secret service role API key from Supabase Settings > API |
+| `RECORDINGS_BUCKET` | `recordings` | Name of the private Supabase Storage bucket for call audio |
 | `COMPANY_LEGAL_NAME` | *e.g. Laboura Private Limited* | Registered company entity name used on GST invoices |
 | `COMPANY_GSTIN` | *e.g. 29AABCL1234F1ZQ* | 15-digit GSTIN used on tax invoices |
 | `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing) / `true` (live) | **Security boundary:** Enforces Cloudflare Access on office consoles |
@@ -167,6 +173,40 @@ You do not invent this value and you do not paste it into email or chat.
 2. Click **Environment**.
 3. Find the row named `LOGIN_CODE_SECRET`. Render fills it in by itself the first time the blueprint is applied. Click the eye icon to look at it. Leave the value as Render generated it.
 4. Open **`laboura-worker`**, then **Environment**. The same name should already be listed, copied from `laboura-api`, in the same way `JWT_SECRET` is copied. If that row is missing, add an environment variable that takes its value from the `laboura-api` service's `LOGIN_CODE_SECRET`, then save.
+
+#### Where to find `CALL_ROUTING_KEY`
+
+Like `LOGIN_CODE_SECRET`, you do not invent `CALL_ROUTING_KEY` and never commit it to git:
+1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
+2. Find `CALL_ROUTING_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
+3. Open **`laboura-worker`** -> **Environment**. Verify that `CALL_ROUTING_KEY` is linked from `laboura-api`.
+
+#### How to Create the Private Call Recordings Bucket in Supabase Dashboard (No Terminal Required)
+
+All completed call audio recordings are saved to private Supabase Storage:
+1. Open your browser and navigate to **[https://supabase.com](https://supabase.com)** and open your project.
+2. In the left navigation menu, click the **Storage** icon (bucket icon).
+3. Click the green **New bucket** button at the top of the Storage screen.
+4. In the dialog:
+   - **Name**: Type `recordings`.
+   - **Public bucket**: Ensure the toggle is switched **OFF** (Private). Call recordings contain confidential audio and MUST NOT be publicly accessible.
+5. Click **Save bucket**.
+6. To get your Supabase Storage API keys:
+   - In Supabase, click **Project Settings** (gear icon) -> **API**.
+   - Copy the **Project URL** (e.g. `https://xxxx.supabase.co`) -> paste as `SUPABASE_URL` in Render.
+   - Under **Project API keys**, find `service_role` (click "Reveal") -> copy and paste as `SUPABASE_SERVICE_ROLE_KEY` in Render. Keep this key confidential.
+
+#### Webhook Addresses to Give to Calling and Messaging Companies
+
+When onboarding with your telephony and messaging providers (e.g. Exotel, Tata Tele Business Services, Gupshup, Meta WhatsApp Cloud API), configure the following webhook destination URLs in their dashboards:
+
+| Channel / Event | Webhook URL to Configure in Vendor Dashboard | Signature Header Expected |
+| --- | --- | --- |
+| **Telephony Call Status & Recordings** | `https://<your-render-api-url>.onrender.com/telephony/webhook/call-status` | `X-Telephony-Signature` or `X-Exotel-Signature` |
+| **WhatsApp Message Delivery Status** | `https://<your-render-api-url>.onrender.com/messages/webhook/whatsapp` | `X-Message-Signature` or `X-Hub-Signature-256` |
+| **SMS Delivery Status** | `https://<your-render-api-url>.onrender.com/messages/webhook/sms` | `X-Message-Signature` |
+
+In both vendor dashboards, configure the shared secret to match the values you entered for `TELEPHONY_WEBHOOK_SECRET` and `MESSAGE_WEBHOOK_SECRET` in Render.
 
 ---
 
