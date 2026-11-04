@@ -119,7 +119,15 @@ export class JobSeekerController {
       body.note,
       req.user.sub,
       req.user.role,
+      { interviewId: body.interviewId, callRecordId: body.callRecordId },
     );
+  }
+
+  @Get(':id/hits')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead', 'finance')
+  @RequirePermission('job_seeker', 'read')
+  async listHits(@Param('id') id: string) {
+    return this.jobSeekerService.listHits(id);
   }
 
   @Post(':id/reactivate')

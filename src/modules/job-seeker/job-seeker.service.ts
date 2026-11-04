@@ -26,6 +26,7 @@ import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibil
 import { PaymentService } from '../payment/payment.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ConsentService } from '../consent/consent.service';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { isJobSeekerStatus } from './job-seeker.status';
@@ -39,6 +40,7 @@ import {
   CreateJobSeekerLanguageDto,
   UpdateJobSeekerLanguageDto,
 } from './dto/job-seeker-language.dto';
+import { normalizeHitReason } from './dto/record-hit.dto';
 
 @Injectable()
 export class JobSeekerService {
@@ -50,6 +52,7 @@ export class JobSeekerService {
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
     @Optional() private readonly consentService?: ConsentService,
+    @Optional() private readonly reviewFlagService?: ReviewFlagService,
   ) {}
 
   private async getPolicy() {
@@ -387,21 +390,25 @@ export class JobSeekerService {
 
   async recordHit(
     jobSeekerId: string,
-    reason: string,
+    rawReason: string,
     note?: string,
     actorId?: string,
     actorRole?: string,
+    meta?: { interviewId?: string; callRecordId?: string },
   ) {
-    const validReasons: HitReason[] = [
+    const validReasons = [
       'no_pickup',
-      'offer_rejected',
+      'offer_declined',
+      'offer_no_reply',
       'interview_no_show',
+      'offer_rejected',
     ];
-    if (!validReasons.includes(reason as HitReason)) {
+    if (!validReasons.includes(rawReason)) {
       throw new BadRequestException(
-        `Invalid hit reason '${reason}'. Allowed reasons: ${validReasons.join(', ')}`,
+        `Invalid hit reason '${rawReason}'. Allowed reasons: no_pickup, offer_declined, offer_no_reply, interview_no_show`,
       );
     }
+    const reason = normalizeHitReason(rawReason);
 
     let resolvedRole = actorRole;
     if (!resolvedRole && actorId && actorId !== 'system') {
@@ -414,7 +421,7 @@ export class JobSeekerService {
 
     if (resolvedRole === 'field_agent' && reason === 'no_pickup') {
       const refusalMessage =
-        "Field agents may only record 'offer_rejected' or 'interview_no_show' hits. Recording 'no_pickup' hits is restricted to call agents and the automated sweep.";
+        "Field agents may only record 'offer_declined', 'offer_no_reply' or 'interview_no_show' hits. Recording 'no_pickup' hits is restricted to call agents and the automated sweep.";
 
       const jobSeeker = await this.prisma.jobSeeker.findUnique({
         where: { id: jobSeekerId },
@@ -439,7 +446,7 @@ export class JobSeekerService {
             refusalReason: 'UNAUTHORIZED_HIT_REASON_FOR_ROLE',
             attemptedReason: reason,
             role: resolvedRole,
-            allowedReasons: ['offer_rejected', 'interview_no_show'],
+            allowedReasons: ['offer_declined', 'offer_no_reply', 'interview_no_show'],
             message: refusalMessage,
           },
         });
@@ -526,6 +533,8 @@ export class JobSeekerService {
           jobSeekerId: jobSeeker.id,
           reason,
           note: note ?? null,
+          interviewId: meta?.interviewId ?? null,
+          callRecordId: meta?.callRecordId ?? null,
           recordedBy,
           recordedAt: now,
         },
@@ -539,14 +548,16 @@ export class JobSeekerService {
       }
 
       const policy = await this.getPolicy();
-      const newHitCount = jobSeeker.hitCount + 1;
-      const isNowDeactivated = newHitCount >= policy.maxHits;
+      const activeHitCount = await tx.jobSeekerHit.count({
+        where: { jobSeekerId: jobSeeker.id, reversedAt: null },
+      });
+      const isNowDeactivated = activeHitCount >= policy.maxHits;
       const newStatus = isNowDeactivated ? 'deactivated' : jobSeeker.status;
 
       const updatedJobSeeker = await tx.jobSeeker.update({
         where: { id: jobSeeker.id },
         data: {
-          hitCount: newHitCount,
+          hitCount: activeHitCount,
           status: newStatus,
         },
       });
@@ -654,7 +665,8 @@ export class JobSeekerService {
     const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
       where: {
         jobSeekerId: jobSeeker.id,
-        reason: 'offer_rejected',
+        reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
+        reversedAt: null,
       },
     });
 
@@ -1450,6 +1462,144 @@ export class JobSeekerService {
       where: { jobSeekerId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  async reverseHit(
+    hitId: string,
+    reversalReason: string,
+    actorId: string,
+    actorRole?: string,
+  ) {
+    if (!reversalReason || !reversalReason.trim()) {
+      throw new BadRequestException('reversalReason is required');
+    }
+
+    const hit = await this.prisma.jobSeekerHit.findUnique({
+      where: { id: hitId },
+      include: { jobSeeker: true },
+    });
+    if (!hit) {
+      throw new NotFoundException(`Job seeker hit '${hitId}' not found`);
+    }
+
+    if (hit.reversedAt) {
+      throw new BadRequestException(`Hit '${hitId}' has already been reversed`);
+    }
+
+    const now = new Date();
+    const policy = await this.getPolicy();
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      const updatedHit = await tx.jobSeekerHit.update({
+        where: { id: hitId },
+        data: {
+          reversedAt: now,
+          reversedByStaffId: actorId,
+          reversalReason: reversalReason.trim(),
+        },
+      });
+
+      const activeHitCount = await tx.jobSeekerHit.count({
+        where: {
+          jobSeekerId: hit.jobSeekerId,
+          reversedAt: null,
+        },
+      });
+
+      const wasDeactivated = hit.jobSeeker.status === 'deactivated';
+      const shouldReactivate = wasDeactivated && activeHitCount < policy.maxHits;
+      const newStatus = shouldReactivate ? 'active' : hit.jobSeeker.status;
+
+      const updatedJobSeeker = await tx.jobSeeker.update({
+        where: { id: hit.jobSeekerId },
+        data: {
+          hitCount: activeHitCount,
+          status: newStatus,
+        },
+      });
+
+      if (hit.jobSeeker.status !== newStatus) {
+        await recordStatusChange(tx, {
+          subjectType: 'job_seeker',
+          subjectId: hit.jobSeeker.id,
+          fromStatus: hit.jobSeeker.status,
+          toStatus: newStatus,
+          changedByStaffId: actorId,
+          reason: 'hit_reversed',
+          changedAt: now,
+        });
+      }
+
+      await this.auditService.log({
+        actorId,
+        actorRole: actorRole || 'system',
+        action: 'job_seeker.hit_reversed',
+        entityType: 'job_seeker_hit',
+        entityCode: hit.id,
+        before: {
+          reversedAt: null,
+          hitCount: hit.jobSeeker.hitCount,
+          status: hit.jobSeeker.status,
+        },
+        after: {
+          reversedAt: now,
+          reversedByStaffId: actorId,
+          reversalReason: reversalReason.trim(),
+          hitCount: activeHitCount,
+          status: newStatus,
+        },
+        city: hit.jobSeeker.city,
+      });
+
+      return { updatedHit, updatedJobSeeker };
+    });
+
+    if (this.reviewFlagService) {
+      await this.reviewFlagService.raise({
+        kind: 'hit_reversed',
+        subjectType: 'job_seeker_hit',
+        subjectId: hit.id,
+        raisedForStaffId: actorId,
+        details: {
+          jobSeekerId: hit.jobSeeker.id,
+          jobSeekerCode: hit.jobSeeker.code,
+          reversalReason: reversalReason.trim(),
+          originalReason: hit.reason,
+          reversedByStaffId: actorId,
+          reversedByRole: actorRole,
+        },
+      });
+    }
+
+    return {
+      ...result.updatedHit,
+      reason: normalizeHitReason(result.updatedHit.reason),
+      jobSeeker: result.updatedJobSeeker,
+    };
+  }
+
+  async getHit(hitId: string) {
+    const hit = await this.prisma.jobSeekerHit.findUnique({
+      where: { id: hitId },
+    });
+    if (!hit) {
+      throw new NotFoundException(`Job seeker hit '${hitId}' not found`);
+    }
+    return {
+      ...hit,
+      reason: normalizeHitReason(hit.reason),
+    };
+  }
+
+  async listHits(jobSeekerId: string) {
+    const hits = await this.prisma.jobSeekerHit.findMany({
+      where: { jobSeekerId },
+      orderBy: { recordedAt: 'desc' },
+    });
+    return hits.map((h) => ({
+      ...h,
+      reason: normalizeHitReason(h.reason),
+    }));
   }
 }
 
