@@ -11,10 +11,12 @@ import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { LoginDto, LoginResult, VerifyLoginCodeDto } from './dto/login.dto';
-import { AuthThrottlerGuard } from './auth-throttler.guard';
+import { AuthThrottlerGuard, LOGIN_CONNECTION_RATE_LIMIT, LOGIN_CONNECTION_TTL, LOGIN_RATE_LIMIT_PER_CONNECTION } from './auth-throttler.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
 import { JwtPayload } from './jwt-payload.interface';
+
+export { LOGIN_CONNECTION_RATE_LIMIT, LOGIN_RATE_LIMIT_PER_CONNECTION, LOGIN_CONNECTION_TTL };
 
 interface AuthenticatedRequest extends Request {
   user: JwtPayload;
@@ -27,7 +29,10 @@ export class AuthController {
   @Post('login')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    default: { limit: 5, ttl: 60000 },
+    connection: { limit: LOGIN_CONNECTION_RATE_LIMIT, ttl: LOGIN_CONNECTION_TTL },
+  })
   async login(
     @Body() loginDto: LoginDto,
     @Req() req: Request,
@@ -40,7 +45,10 @@ export class AuthController {
   @Post('login/verify-code')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({
+    default: { limit: 5, ttl: 60000 },
+    connection: { limit: LOGIN_CONNECTION_RATE_LIMIT, ttl: LOGIN_CONNECTION_TTL },
+  })
   async verifyCode(
     @Body() body: VerifyLoginCodeDto,
     @Req() req: Request,
