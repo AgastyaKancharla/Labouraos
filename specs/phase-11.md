@@ -50,7 +50,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 - `GET /messages?subjectType=&subjectId=` for the subject's agents' Team Lead, Manager, CEO — no phone numbers in the response.
 - Tests: a send writes one row and moves it to `sent`; a provider failure marks it `failed`; a repeated delivery webhook changes nothing; no row contains a message body or phone number.
 
-### [ ] Task 3 — Hidden numbers, and the phone the calling system rings
+### [x] Task 3 — Hidden numbers, and the phone the calling system rings
 **Branch:** `phase-11/task-3-hidden-numbers` · **Migration folder:** `20261104120000_staff_call_routing_phone`
 
 **Acceptance:**
