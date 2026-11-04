@@ -111,7 +111,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 - `docs/calling-vendor-checklist.md`: what the code needs from the calling company — agent leg as an ordinary mobile number, customer sees only the company number, recording, call-status webhook with the fields in `CallStatusEvent`, 140/1600 number series — so the Exotel vs Tata choice can be checked against it.
 - Tests: the deployment-config test checks the new variables.
 
-### [ ] Task 8 — A login limit per internet connection
+### [x] Task 8 — A login limit per internet connection
 **Branch:** `phase-11/task-8-login-ip-limit` · **No migration**
 
 **Acceptance:**
