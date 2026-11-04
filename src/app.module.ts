@@ -29,6 +29,7 @@ import { OfficeNetworkModule } from './modules/office-network/office-network.mod
 import { LoginCodeModule } from './modules/login-code/login-code.module';
 import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
+import { ConsentModule } from './modules/consent/consent.module';
 
 @Module({
   imports: [
@@ -61,6 +62,7 @@ import { ObservabilityModule } from './common/observability/observability.module
     OfficeNetworkModule,
     LoginCodeModule,
     TargetModule,
+    ConsentModule,
     HealthModule,
   ],
 })
