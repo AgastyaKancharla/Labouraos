@@ -12,6 +12,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 @Injectable()
 export class MockTelephonyProvider implements TelephonyProvider {
   private readonly logger = new Logger(MockTelephonyProvider.name);
+  lastOutbound: OutboundCallParams | null = null;
 
   constructor(private readonly prisma: PrismaService) {}
 
@@ -73,11 +74,12 @@ export class MockTelephonyProvider implements TelephonyProvider {
   async initiateOutboundCall(
     params: OutboundCallParams,
   ): Promise<OutboundCallResult> {
+    this.lastOutbound = params;
     const callId = `outbound_call_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
     const recordingEnabled = Boolean(params.recordCall);
 
     this.logger.log(
-      `[MOCK TELEPHONY] Outbound click-to-call initiated from agent ${params.agentPhone} to customer ${params.customerPhone} (callId: ${callId}, recording: ${recordingEnabled})`,
+      `[MOCK TELEPHONY] Outbound call initiated, agent leg first: ${params.ringAgentFirst === true}, recording: ${recordingEnabled}, callId: ${callId}`,
     );
 
     return {
