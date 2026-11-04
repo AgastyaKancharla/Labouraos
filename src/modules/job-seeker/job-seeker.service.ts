@@ -11,7 +11,6 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
-import { HitReason } from './dto/record-hit.dto';
 import {
   assertNoRawAadhaar,
   validateCallWindow,

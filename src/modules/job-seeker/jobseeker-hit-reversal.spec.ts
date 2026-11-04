@@ -175,7 +175,7 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
       .set('Authorization', `Bearer ${callAgentToken}`);
 
     expect(listRes.status).toBe(200);
-    const mapped = listRes.body.find((h: any) => h.id === legacyHit.id);
+    const mapped = listRes.body.find((h: Record<string, unknown>) => h.id === legacyHit.id);
     expect(mapped.reason).toBe('offer_declined');
   });
 
