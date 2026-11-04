@@ -61,7 +61,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 2 (after Wave 1 is merged)
 
-### [ ] Task 4 — The consent capture page and OTP
+### [x] Task 4 — The consent capture page and OTP
 **Branch:** `phase-12/task-4-consent-capture` · **No migration**
 
 **Acceptance:**
