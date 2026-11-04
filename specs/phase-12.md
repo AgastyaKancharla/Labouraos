@@ -48,7 +48,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - A status move from `lead` to `consented` is only allowed through `ConsentService.hasAllRequired` returning true (wire the actual transition in Task 4, once the capture page exists — this task just builds the guard and a service method that checks it and throws if called early).
 - Tests: a job seeker under 18 can't reach `pending_activation`; the old status values still read correctly after migration; the deprecated columns are untouched by any new code path; attempting `lead → consented` without all required consents throws.
 
-### [ ] Task 3 — JobSeekerTrade and JobSeekerLanguage
+### [x] Task 3 — JobSeekerTrade and JobSeekerLanguage
 **Branch:** `phase-12/task-3-trade-language` · **Migration folder:** `20261105120000_jobseeker_trade_language`
 
 **Acceptance:**
