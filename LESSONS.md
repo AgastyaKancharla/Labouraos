@@ -322,6 +322,11 @@ Format:
 **Cause:** `POST /auth/login` allows 5 requests a minute for one staff code and one IP. With `TRUSTED_PROXY_HOPS` at 0, changing `X-Forwarded-For` does not change that bucket.
 **Fix:** The lockout test sets the trusted hop count to 1 and sends each attempt from a different `X-Forwarded-For`. The fifth wrong password is still 401 and sets `lockedUntil`. The correct password during the lock is refused with the unlock time.
 
+## A UUID can look like a 12-digit Aadhaar number
+**Symptom:** `real-kyc.provider.spec.ts` failed with `Expected pattern: not /\b\d{12}\b/` on a job seeker row that stored no Aadhaar number.
+**Cause:** The check serialised the whole row. A UUID's last group is 12 hex characters, and this row's id ended in `961206566506`.
+**Fix:** Assert the id is a UUID, then scan every other field for a 12-digit number.
+
 ## The first authenticator code after a cold start can miss its window
 **Symptom:** The first management login in a new Jest process returned 401. The same kind of login passed in a later test in that file.
 **Cause:** TOTP uses real time, not `AuthClock`. A code generated before the app finished booting can fall outside the allowed window.
