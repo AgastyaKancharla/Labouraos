@@ -76,7 +76,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 - `POST /calls/:id/outcome` with `agentOutcome` from the closed list in data-design §1 and an optional reason: only by the staff member who made the call, only when `answered = true`. A call that wasn't answered can't get an outcome.
 - Tests: a call is placed with no numbers in the request or response; a call at 21:30 IST is refused; a job seeker outside their window is refused; a field agent can call; the old endpoint is gone; an outcome on an unanswered call is refused; another agent can't record the outcome; the announcement text matches.
 
-### [ ] Task 5 — Contact attempts come only from the system
+### [x] Task 5 — Contact attempts come only from the system
 **Branch:** `phase-11/task-5-system-contact-attempts` · **Migration folder:** `20261104130000_contact_attempt_sources`
 
 **Acceptance:**
