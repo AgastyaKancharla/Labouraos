@@ -651,4 +651,23 @@ model MessageLog {
   @@index([status])
 }
 
+model Consent {
+  id            String    @id @default(uuid())
+  subjectType   String    // job_seeker, business, referral, staff
+  subjectId     String
+  purpose       String    // job_matching, profile_sharing, call_recording, aadhaar_verification, job_updates, promotions
+  granted       Boolean   @default(false)
+  noticeVersion String
+  language      String    // kn, hi, en
+  method        String    // sms_link, in_app, contract
+  otpRequestId  String?
+  grantedAt     DateTime?
+  withdrawnAt   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([subjectType, subjectId, purpose, noticeVersion])
+  @@index([subjectType, subjectId])
+}
+
 
