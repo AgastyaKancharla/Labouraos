@@ -313,6 +313,10 @@ model ContactAttempt {
   hit          JobSeekerHit? @relation(fields: [hitId], references: [id], onDelete: SetNull)
   staffId      String?
   staff        Staff?        @relation(fields: [staffId], references: [id], onDelete: SetNull)
+  callRecordId String?       @unique
+  callRecord   CallRecord?   @relation(fields: [callRecordId], references: [id], onDelete: SetNull)
+  messageLogId String?       @unique
+  messageLog   MessageLog?   @relation(fields: [messageLogId], references: [id], onDelete: SetNull)
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
 
@@ -617,6 +621,7 @@ model CallRecord {
   agentOutcome         String?
   agentOutcomeReason   String?
   agentOutcomeAt       DateTime?
+  contactAttempt       ContactAttempt?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -638,6 +643,7 @@ model MessageLog {
   sentAt            DateTime?
   deliveredAt       DateTime?
   failedAt          DateTime?
+  contactAttempt    ContactAttempt?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 

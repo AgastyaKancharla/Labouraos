@@ -17,7 +17,6 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
-import { CreateContactAttemptDto } from './dto/create-contact-attempt.dto';
 import { RecordHitDto } from './dto/record-hit.dto';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 
@@ -75,17 +74,6 @@ export class JobSeekerController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.jobSeekerService.updateKyc(id, body, req.user.sub);
-  }
-
-  @Post(':id/contact-attempts')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
-  @RequirePermission('job_seeker', 'write')
-  async recordContactAttempt(
-    @Param('id') id: string,
-    @Body() body: CreateContactAttemptDto,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.jobSeekerService.recordContactAttempt(id, body, req.user.sub);
   }
 
   @Post(':id/hits')

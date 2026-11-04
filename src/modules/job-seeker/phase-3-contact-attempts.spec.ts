@@ -28,6 +28,7 @@ describe('Phase 3 Task 1: Contact-Attempt Logging', () => {
   const password = 'Password123!Secure';
 
   beforeAll(async () => {
+    process.env.CALL_ROUTING_KEY = 'click_to_call_routing_key_32_characters';
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -151,148 +152,17 @@ describe('Phase 3 Task 1: Contact-Attempt Logging', () => {
     }
   });
 
-  it('call_agent can log contact attempts (call, whatsapp, sms)', async () => {
-    const attemptedAt = new Date('2026-10-18T10:30:00.000Z');
-
-    const res = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'no_pickup',
-        attemptedAt: attemptedAt.toISOString(),
-        timeOfDay: 'am',
-      });
-
-    expect(res.status).toBe(201);
-    expect(res.body.id).toBeDefined();
-    expect(res.body.jobSeekerId).toBe(testJobSeekerId);
-    expect(res.body.channel).toBe('call');
-    expect(res.body.outcome).toBe('no_pickup');
-    expect(res.body.timeOfDay).toBe('am');
-    expect(new Date(res.body.attemptedAt).toISOString()).toBe(attemptedAt.toISOString());
-
-    // Check database
-    const dbRecord = await prisma.contactAttempt.findUnique({
-      where: { id: res.body.id },
-    });
-    expect(dbRecord).toBeDefined();
-    expect(dbRecord?.channel).toBe('call');
-    expect(dbRecord?.outcome).toBe('no_pickup');
-    expect(dbRecord?.timeOfDay).toBe('am');
-    expect(dbRecord?.staffId).toBe(callAgentId);
-
-    // Check audit log
-    const audit = await prisma.auditLog.findFirst({
-      where: {
-        actorId: callAgentId,
-        action: 'job_seeker.contact_attempt',
-        entityCode: testJobSeekerCode,
-      },
-    });
-    expect(audit).toBeDefined();
-    expect(audit?.entityType).toBe('job_seeker');
-  });
-
-  it('manager and ceo can also log contact attempts', async () => {
-    const mgrRes = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${managerToken}`)
-      .send({
-        channel: 'whatsapp',
-        outcome: 'picked_up',
-        timeOfDay: 'pm',
-      });
-    expect(mgrRes.status).toBe(201);
-    expect(mgrRes.body.channel).toBe('whatsapp');
-    expect(mgrRes.body.outcome).toBe('picked_up');
-
-    const ceoRes = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${ceoToken}`)
-      .send({
-        channel: 'sms',
-        outcome: 'no_pickup',
-        timeOfDay: 'pm',
-      });
-    expect(ceoRes.status).toBe(201);
-    expect(ceoRes.body.channel).toBe('sms');
-  });
-
-  it('rejects invalid channels, outcomes, timeOfDay, and malformed dates', async () => {
-    const badChannel = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        channel: 'email',
-        outcome: 'no_pickup',
-        timeOfDay: 'am',
-      });
-    expect(badChannel.status).toBe(400);
-
-    const badOutcome = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'busy',
-        timeOfDay: 'am',
-      });
-    expect(badOutcome.status).toBe(400);
-
-    const badTime = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'no_pickup',
-        timeOfDay: 'evening',
-      });
-    expect(badTime.status).toBe(400);
-
-    const badDate = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'no_pickup',
-        timeOfDay: 'am',
-        attemptedAt: 'not-a-date',
-      });
-    expect(badDate.status).toBe(400);
-  });
-
-  it('returns 404 for unknown job seeker', async () => {
-    const res = await request(app.getHttpServer())
-      .post('/job-seekers/00000000-0000-0000-0000-000000000000/contact-attempts')
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'no_pickup',
-        timeOfDay: 'am',
-      });
-    expect(res.status).toBe(404);
-  });
-
-  it('field_agent can log contact attempts (201) while finance is denied (403)', async () => {
-    const faRes = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${fieldAgentToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'no_pickup',
-        timeOfDay: 'am',
-      });
-    expect(faRes.status).toBe(201);
-
-    const fiRes = await request(app.getHttpServer())
-      .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
-      .set('Authorization', `Bearer ${financeToken}`)
-      .send({
-        channel: 'call',
-        outcome: 'no_pickup',
-        timeOfDay: 'am',
-      });
-    expect(fiRes.status).toBe(403);
+  it('the hand-entry contact attempts endpoint is gone (404) for all roles', async () => {
+    for (const token of [callAgentToken, managerToken, ceoToken, fieldAgentToken, financeToken]) {
+      const res = await request(app.getHttpServer())
+        .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
+        .set('Authorization', `Bearer ${token}`)
+        .send({
+          channel: 'call',
+          outcome: 'no_pickup',
+          timeOfDay: 'am',
+        });
+      expect(res.status).toBe(404);
+    }
   });
 });

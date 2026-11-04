@@ -246,7 +246,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
 
           if (amCall && pmCall && !msgAttempt) {
             if (this.messaging) {
-              const logged = await this.messaging.send({
+              await this.messaging.send({
                 channel: 'whatsapp',
                 template: 'call_attempt_notice',
                 subjectType: 'job_seeker',
@@ -256,18 +256,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
                   trade: js.tradeSkill,
                 },
               });
-              if (logged.status === 'sent') {
-                await this.prisma.contactAttempt.create({
-                  data: {
-                    jobSeekerId: js.id,
-                    channel: 'whatsapp',
-                    outcome: 'no_pickup',
-                    timeOfDay: 'pm',
-                    attemptedAt: new Date(),
-                  },
-                });
-              }
-            } else {
+            } else if (this.whatsAppProvider) {
               const sendRes = await this.whatsAppProvider.sendTemplateMessage(
                 js.phone,
                 'call_attempt_notice',

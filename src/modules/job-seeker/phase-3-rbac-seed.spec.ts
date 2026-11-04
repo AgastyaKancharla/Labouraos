@@ -24,6 +24,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
   const password = 'Password123!Secure';
 
   beforeAll(async () => {
+    process.env.CALL_ROUTING_KEY = 'click_to_call_routing_key_32_characters';
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     }).compile();
@@ -181,7 +182,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
   });
 
   describe('Field Agent and Finance Access Denial', () => {
-    it('Field agent can log contact attempts and witnessed hits, but is denied no_pickup (403)', async () => {
+    it('Field agent can log witnessed hits, but hand-entry contact attempts are gone (404) and no_pickup is denied (403)', async () => {
       const attRes = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -190,7 +191,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
           outcome: 'no_pickup',
           timeOfDay: 'am',
         });
-      expect(attRes.status).toBe(201);
+      expect(attRes.status).toBe(404);
 
       const hitWitnessRes = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/hits`)
@@ -214,7 +215,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
       expect(reactRes.status).toBe(201);
     });
 
-    it('Finance is denied POST contact attempts, hits, and reactivate (403)', async () => {
+    it('Finance is denied POST hits, reactivate (403), and contact attempts are gone (404)', async () => {
       const attRes = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
         .set('Authorization', `Bearer ${financeToken}`)
@@ -223,7 +224,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
           outcome: 'no_pickup',
           timeOfDay: 'am',
         });
-      expect(attRes.status).toBe(403);
+      expect(attRes.status).toBe(404);
 
       const hitRes = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/hits`)
@@ -239,7 +240,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
       expect(reactRes.status).toBe(403);
     });
 
-    it('Call Agent, Manager, and CEO are permitted to record contact attempts and hits', async () => {
+    it('Call Agent, Manager, and CEO are permitted to record hits, but contact attempts are gone (404)', async () => {
       // Call agent logs attempt
       const caAtt = await request(app.getHttpServer())
         .post(`/job-seekers/${testJobSeekerId}/contact-attempts`)
@@ -249,7 +250,7 @@ describe('Phase 3 Task 6: RBAC and Seed Data', () => {
           outcome: 'picked_up',
           timeOfDay: 'am',
         });
-      expect(caAtt.status).toBe(201);
+      expect(caAtt.status).toBe(404);
 
       // Manager logs hit
       const mgrHit = await request(app.getHttpServer())
