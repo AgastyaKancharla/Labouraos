@@ -11,7 +11,11 @@ import { JwtAuthGuard } from './jwt-auth.guard';
 import { TotpService } from './totp.service';
 import { CloudflareAccessGuard } from './cloudflare-access.guard';
 import { CloudflareAccessVerifier } from './cloudflare-access.verifier';
-import { AuthThrottlerGuard } from './auth-throttler.guard';
+import {
+  AuthThrottlerGuard,
+  LOGIN_CONNECTION_RATE_LIMIT,
+  LOGIN_CONNECTION_TTL,
+} from './auth-throttler.guard';
 import { getJwtSecret } from './jwt-secret';
 import { LoginCodeModule } from '../../modules/login-code/login-code.module';
 import { OfficeNetworkModule } from '../../modules/office-network/office-network.module';
@@ -24,8 +28,14 @@ import { PricingModule } from '../../modules/pricing/pricing.module';
     PrismaModule,
     ThrottlerModule.forRoot([
       {
+        name: 'default',
         ttl: 60000,
         limit: 10,
+      },
+      {
+        name: 'connection',
+        ttl: LOGIN_CONNECTION_TTL,
+        limit: LOGIN_CONNECTION_RATE_LIMIT,
       },
     ]),
     LoginCodeModule,
