@@ -280,8 +280,8 @@ describe('Telephony Module (Task 4)', () => {
       expect(task?.recordingConsent).toBe(false);
     });
 
-    it('initiates click-to-call outbound call with DPDP consent notice', async () => {
-      const res = await request(app.getHttpServer())
+    it('the old raw-number click-to-call endpoint is gone', async () => {
+      await request(app.getHttpServer())
         .post('/telephony/outbound/click-to-call')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({
@@ -289,12 +289,7 @@ describe('Telephony Module (Task 4)', () => {
           customerPhone: '+919876500000',
           recordCall: true,
         })
-        .expect(201);
-
-      expect(res.body.status).toBe('initiated');
-      expect(res.body.callId).toBeDefined();
-      expect(res.body.recordingEnabled).toBe(true);
-      expect(res.body.consentAnnounced).toBe(true);
+        .expect(404);
     });
   });
 

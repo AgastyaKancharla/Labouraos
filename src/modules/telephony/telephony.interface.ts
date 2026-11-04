@@ -27,6 +27,9 @@ export interface OutboundCallParams {
   agentPhone: string;
   customerPhone: string;
   recordCall?: boolean;
+  /** Dial the agent's routing number before the subject. */
+  ringAgentFirst?: boolean;
+  announcement?: string;
   metadata?: Record<string, string>;
 }
 

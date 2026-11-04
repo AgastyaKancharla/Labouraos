@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { TelephonyModule } from '../telephony/telephony.module';
 import { CallController } from './call.controller';
 import { CallService } from './call.service';
+import { CallClock } from './call-clock';
 import { RecordingCopyJob } from './recording-copy.job';
 import {
   HttpRecordingDownloader,
@@ -12,10 +14,11 @@ import {
 } from './recording-storage';
 
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, TelephonyModule],
   controllers: [CallController],
   providers: [
     CallService,
+    CallClock,
     RecordingCopyJob,
     {
       provide: RECORDING_STORAGE,

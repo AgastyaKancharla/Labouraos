@@ -10,6 +10,8 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 
+import { CALL_ANNOUNCEMENT } from '../call/call-announcement';
+
 export interface RealTelephonyProviderOptions {
   apiKey?: string;
   vendor?: string;
@@ -17,8 +19,8 @@ export interface RealTelephonyProviderOptions {
   concurrentChannels?: number;
 }
 
-export const DPDP_CONSENT_ANNOUNCEMENT =
-  'This call is recorded for quality, training and compliance under the Digital Personal Data Protection Act. By continuing, you consent to this recording.';
+/** Kept for existing imports. The spoken text no longer treats continuing as consent. */
+export const DPDP_CONSENT_ANNOUNCEMENT = CALL_ANNOUNCEMENT;
 
 @Injectable()
 export class RealTelephonyProvider implements TelephonyProvider {
@@ -154,6 +156,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
     params: OutboundCallParams,
   ): Promise<OutboundCallResult> {
     const callId = `outbound_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const announcement = params.announcement ?? CALL_ANNOUNCEMENT;
     const recordingEnabled = Boolean(params.recordCall);
 
     if (recordingEnabled) {
@@ -168,11 +171,9 @@ export class RealTelephonyProvider implements TelephonyProvider {
           entityType: 'telephony_call',
           entityCode: callId,
           after: {
-            agentPhone: params.agentPhone,
-            customerPhone: params.customerPhone,
-            announcement: DPDP_CONSENT_ANNOUNCEMENT,
+            announcement,
             recordingEnabled: true,
-            timestamp: new Date(),
+            ringAgentFirst: params.ringAgentFirst === true,
           },
           city: 'Bengaluru',
         });
@@ -180,7 +181,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
     }
 
     this.logger.log(
-      `[REAL TELEPHONY] Outbound call placed via cloud vendor from agent ${params.agentPhone} to customer ${params.customerPhone} (callId: ${callId})`,
+      `[REAL TELEPHONY] Outbound call placed, agent leg first: ${params.ringAgentFirst === true}, recording: ${recordingEnabled}, callId: ${callId}`,
     );
 
     return {

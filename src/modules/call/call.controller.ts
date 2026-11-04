@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Get,
   Headers,
@@ -56,5 +57,33 @@ export class CallController {
       throw new BadRequestException('subjectType and subjectId are required');
     }
     return this.calls.list({ id: req.user.sub, role: req.user.role }, subjectType, subjectId);
+  }
+
+  @Post('calls')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  place(
+    @Body()
+    body: {
+      subjectType?: string;
+      subjectId?: string;
+      purpose?: string;
+      relatedType?: string;
+      relatedId?: string;
+    },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.calls.place({ id: req.user.sub, role: req.user.role }, body);
+  }
+
+  @Post('calls/:id/outcome')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  outcome(
+    @Param('id') id: string,
+    @Body() body: { agentOutcome?: string; reason?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.calls.recordOutcome({ id: req.user.sub, role: req.user.role }, id, body);
   }
 }

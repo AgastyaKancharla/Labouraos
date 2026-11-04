@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -10,11 +11,19 @@ import { CallRecord } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { Role, RBAC_MATRIX } from '../../common/rbac/rbac.types';
+import { PricingService } from '../pricing/pricing.service';
+import { TELEPHONY_PROVIDER, TelephonyProvider } from '../telephony/telephony.interface';
+import { decryptCallRoutingPhone } from '../staff/call-routing-key';
 import { CallStatusEvent, toCallStatusEvent } from './call-status.event';
 import { canAdvanceCallStatus } from './call-status';
 import { callStatusSignatureMatches } from './call-signature';
 import { RecordingCopyJob } from './recording-copy.job';
 import { RECORDING_LINK_TTL_SECONDS, RECORDING_STORAGE, RecordingStorage } from './recording-storage';
+import { CALL_ANNOUNCEMENT } from './call-announcement';
+import { CallClock } from './call-clock';
+import { isAgentOutcome, isCallPurpose } from './call-outcomes';
+import { isWithinClockWindow } from './call-window';
 
 export interface CallActor {
   id: string;
@@ -30,6 +39,9 @@ export class CallService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly copyJob: RecordingCopyJob,
+    private readonly pricing: PricingService,
+    private readonly clock: CallClock,
+    @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
     @Inject(RECORDING_STORAGE) private readonly storage: RecordingStorage,
   ) {}
 
@@ -99,6 +111,144 @@ export class CallService {
     });
     await this.copyIfCompleted(existing.id, event);
     return { id: existing.id, code: existing.code, unchanged: false };
+  }
+
+  async place(
+    actor: CallActor,
+    input: {
+      subjectType?: string;
+      subjectId?: string;
+      purpose?: string;
+      relatedType?: string;
+      relatedId?: string;
+    },
+  ) {
+    const subjectType = input.subjectType ?? '';
+    const subjectId = input.subjectId ?? '';
+    const purpose = input.purpose ?? '';
+    if (subjectType !== 'job_seeker' && subjectType !== 'business' && subjectType !== 'referral') {
+      throw new BadRequestException('subjectType must be job_seeker, business or referral');
+    }
+    if (!subjectId) {
+      throw new BadRequestException('subjectId is required');
+    }
+    if (!isCallPurpose(purpose)) {
+      throw new BadRequestException('purpose is not one of the allowed call purposes');
+    }
+
+    const subject = await this.loadSubject(subjectType, subjectId);
+    if (!subject) {
+      throw new NotFoundException('The person or business to call was not found');
+    }
+    await this.assertCanCall(actor, subjectType, subject);
+
+    const now = this.clock.now();
+    const policy = await this.pricing.current();
+    if (!isWithinClockWindow(now, policy.callingHoursStart, policy.callingHoursEnd)) {
+      throw new BadRequestException(
+        `Calls are only placed between ${policy.callingHoursStart} and ${policy.callingHoursEnd} IST`,
+      );
+    }
+    if (
+      subjectType === 'job_seeker' &&
+      subject.windowStart &&
+      subject.windowEnd &&
+      !isWithinClockWindow(now, subject.windowStart, subject.windowEnd)
+    ) {
+      throw new BadRequestException(
+        `This candidate can only be called between ${subject.windowStart} and ${subject.windowEnd} IST`,
+      );
+    }
+
+    const caller = await this.prisma.staff.findUnique({
+      where: { id: actor.id },
+      select: { callRoutingPhone: true },
+    });
+    if (!caller?.callRoutingPhone) {
+      throw new BadRequestException(
+        'Set the phone the calling system rings before placing a call',
+      );
+    }
+    const agentPhone = decryptCallRoutingPhone(caller.callRoutingPhone);
+
+    const provider = this.telephony.getCapacity().vendor;
+    const code = await this.idService.generateCode('call');
+    const created = await this.prisma.callRecord.create({
+      data: {
+        code,
+        provider,
+        providerCallId: `pending-${code}`,
+        direction: 'outbound',
+        staffId: actor.id,
+        subjectType,
+        subjectId,
+        purpose,
+        relatedType: input.relatedType ?? null,
+        relatedId: input.relatedId ?? null,
+        providerStatus: 'initiated',
+        answered: false,
+        announcementPlayed: true,
+      },
+    });
+
+    const result = await this.telephony.initiateOutboundCall({
+      agentPhone,
+      customerPhone: subject.phone,
+      recordCall: true,
+      ringAgentFirst: true,
+      announcement: CALL_ANNOUNCEMENT,
+      metadata: { callRecordId: created.id },
+    });
+
+    if (result.callId && result.callId !== created.providerCallId) {
+      await this.prisma.callRecord.update({
+        where: { id: created.id },
+        data: { providerCallId: result.callId },
+      });
+    }
+
+    return { callRecordId: created.id };
+  }
+
+  async recordOutcome(
+    actor: CallActor,
+    id: string,
+    input: { agentOutcome?: string; reason?: string },
+  ) {
+    const row = await this.prisma.callRecord.findUnique({ where: { id } });
+    if (!row) {
+      throw new NotFoundException('Call not found');
+    }
+    if (row.staffId !== actor.id) {
+      throw new ForbiddenException('Only the person who made the call can record the outcome');
+    }
+    if (!row.answered) {
+      throw new BadRequestException('A call that was not answered cannot have an outcome');
+    }
+    const agentOutcome = input.agentOutcome ?? '';
+    if (!isAgentOutcome(agentOutcome)) {
+      throw new BadRequestException('agentOutcome is not one of the allowed outcomes');
+    }
+    const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
+    const at = this.clock.now();
+    await this.prisma.callRecord.update({
+      where: { id: row.id },
+      data: {
+        agentOutcome,
+        agentOutcomeReason: reason,
+        agentOutcomeAt: at,
+      },
+    });
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'call.outcome_recorded',
+      entityType: 'call_record',
+      entityCode: row.code,
+      after: { agentOutcome },
+      reason,
+      changedFields: ['agentOutcome'],
+    });
+    return { callRecordId: row.id, agentOutcome };
   }
 
   async getOne(actor: CallActor, id: string) {
@@ -223,6 +373,66 @@ export class CallService {
       select: { teamLeadId: true },
     });
     return maker?.teamLeadId === actor.id;
+  }
+
+  private async loadSubject(subjectType: string, subjectId: string) {
+    if (subjectType === 'job_seeker') {
+      const row = await this.prisma.jobSeeker.findUnique({
+        where: { id: subjectId },
+        select: {
+          phone: true,
+          preferredCallWindowStart: true,
+          preferredCallWindowEnd: true,
+        },
+      });
+      if (!row) {
+        return null;
+      }
+      return {
+        phone: row.phone,
+        windowStart: row.preferredCallWindowStart,
+        windowEnd: row.preferredCallWindowEnd,
+        area: null as string | null,
+      };
+    }
+    if (subjectType === 'business') {
+      const row = await this.prisma.business.findUnique({
+        where: { id: subjectId },
+        select: { phone: true, area: true },
+      });
+      if (!row) {
+        return null;
+      }
+      return { phone: row.phone, area: row.area, windowStart: null, windowEnd: null };
+    }
+    const row = await this.prisma.referral.findUnique({
+      where: { id: subjectId },
+      select: { phone: true },
+    });
+    if (!row) {
+      return null;
+    }
+    return { phone: row.phone, area: null, windowStart: null, windowEnd: null };
+  }
+
+  private async assertCanCall(
+    actor: CallActor,
+    subjectType: 'job_seeker' | 'business' | 'referral',
+    subject: { area: string | null },
+  ) {
+    const rule = RBAC_MATRIX[actor.role as Role]?.[subjectType]?.read;
+    if (!rule?.allowed) {
+      throw new ForbiddenException('You cannot call this record');
+    }
+    if (actor.role === 'field_agent' && subjectType === 'business') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor.id },
+        select: { area: true },
+      });
+      if (!staff?.area || staff.area !== subject.area) {
+        throw new ForbiddenException('You cannot call a business outside your area');
+      }
+    }
   }
 
   private async visibleStaffIds(actor: CallActor): Promise<string[] | null> {
