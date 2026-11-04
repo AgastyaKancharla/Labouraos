@@ -76,8 +76,8 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     expect(html).toContain('vc-trade');
     // Candidate shortlist view
     expect(html).toContain('shortlist-vc-id');
-    // Contact attempts and hits
-    expect(html).toContain('contact-channel');
+    // Calling and hits
+    expect(html).toContain('call-agent-outcome');
     expect(html).toContain('hit-reason');
     // Placement offer and response flow
     expect(html).toContain('place-vc-id');
