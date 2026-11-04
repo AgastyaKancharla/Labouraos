@@ -6,21 +6,21 @@ import { CloudflareAccessGuard } from '../../common/auth/cloudflare-access.guard
 
 @Controller()
 export class ConsoleController {
-  @Get('admin')
+  @Get(['admin', 'console/admin'])
   @UseGuards(CloudflareAccessGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
   getAdminDashboard(): string {
     return renderAdminDashboardHtml();
   }
 
-  @Get('call-agent')
+  @Get(['call-agent', 'console/call-agent'])
   @UseGuards(CloudflareAccessGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
   getCallAgentConsole(): string {
     return renderCallAgentConsoleHtml();
   }
 
-  @Get('field-agent')
+  @Get(['field-agent', 'console/field-agent'])
   @Header('Content-Type', 'text/html; charset=utf-8')
   getFieldAgentApp(): string {
     return renderFieldAgentAppHtml();

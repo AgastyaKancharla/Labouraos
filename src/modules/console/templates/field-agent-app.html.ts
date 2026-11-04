@@ -224,6 +224,91 @@ export function renderFieldAgentAppHtml(): string {
     </div>
   </div>
 
+  <!-- Profile & Calling Modal -->
+  <div id="fa-calling-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 650px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="fa-calling-title" style="font-size: 1.15rem; margin: 0; color: var(--primary);">Profile & Calling</h3>
+        <button type="button" class="btn-sm" onclick="closeFaCallingModal()">✕ Close</button>
+      </div>
+
+      <!-- Profile details -->
+      <div style="background: #0f172a; padding: 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--card-border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <strong id="fa-profile-name" style="font-size: 1.05rem;">—</strong>
+          <span id="fa-profile-code" class="badge">—</span>
+        </div>
+        <div style="font-size: 0.9rem; color: #94a3b8;">
+          Phone: <strong id="fa-profile-phone" style="color: var(--text);">—</strong>
+          <span style="margin: 0 6px;">•</span>
+          Status: <span id="fa-profile-status">—</span>
+        </div>
+
+        <!-- Blocked calling alert notice -->
+        <div id="fa-call-blocked-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); color: #fca5a5; padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
+        </div>
+
+        <!-- Call controls -->
+        <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+          <select id="fa-call-purpose" style="max-width: 180px;">
+            <option value="general">General</option>
+            <option value="offer">Offer</option>
+            <option value="follow_up">Follow Up</option>
+            <option value="verification">Verification</option>
+            <option value="exit_call">Exit Call</option>
+            <option value="check_in">Check In</option>
+            <option value="interview_result">Interview Result</option>
+            <option value="refund_check">Refund Check</option>
+          </select>
+          <button type="button" id="btn-fa-call" class="btn-call" onclick="triggerFaCall()">Call</button>
+        </div>
+
+        <!-- Active Call / Outcome Card -->
+        <div id="fa-call-progress-section" style="display: none; margin-top: 14px; padding: 12px; background: #1e293b; border-radius: 6px;">
+          <div id="fa-call-status-msg" style="font-size: 0.9rem; font-weight: 500; margin-bottom: 8px;">Call placed...</div>
+          
+          <!-- Answered Call Outcome Form (Closed List) -->
+          <div id="fa-answered-outcome-form" style="display: none;">
+            <label style="font-size: 0.85rem; color: var(--primary); font-weight: bold; margin-bottom: 4px; display: block;">Record Call Outcome</label>
+            <select id="fa-call-outcome" style="margin-bottom: 8px;">
+              <option value="interested">Interested</option>
+              <option value="accepted_offer">Accepted Offer</option>
+              <option value="rejected_offer">Rejected Offer</option>
+              <option value="callback_requested">Callback Requested</option>
+              <option value="not_interested">Not Interested</option>
+              <option value="working_now">Working Now</option>
+              <option value="other">Other</option>
+            </select>
+            <input type="text" id="fa-call-outcome-reason" placeholder="Outcome reason (optional)" style="margin-bottom: 8px;">
+            <button type="button" class="btn-sm" onclick="submitFaOutcome()">Submit Outcome</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div>
+        <h4 style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 8px;">Call & Message History</h4>
+        <div class="table-container" style="max-height: 200px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Direction</th>
+                <th>Purpose</th>
+                <th>Answered</th>
+                <th>Duration</th>
+                <th>Outcome</th>
+              </tr>
+            </thead>
+            <tbody id="fa-history-tbody">
+              <tr><td colspan="6">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1>Laboura Field Agent App</h1>
@@ -273,10 +358,11 @@ export function renderFieldAgentAppHtml(): string {
                 <th>Urgency Band</th>
                 <th>Hits / Warnings</th>
                 <th>Guarantee Deadline</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="priority-candidates-tbody">
-              <tr><td colspan="7" style="text-align: center;">Loading candidate urgency...</td></tr>
+              <tr><td colspan="8" style="text-align: center;">Loading candidate urgency...</td></tr>
             </tbody>
           </table>
         </div>
@@ -333,7 +419,7 @@ export function renderFieldAgentAppHtml(): string {
           <div class="form-group">
             <label>Business Phone (10 digits)</label>
             <div style="display: flex; gap: 8px;">
-              <input type="text" id="fa-biz-phone" placeholder="9876543210">
+              <input type="text" id="fa-biz-phone" placeholder="98XXXXXXXX">
               <button type="button" onclick="sendBizOtp()">Send OTP</button>
             </div>
           </div>
@@ -652,9 +738,10 @@ export function renderFieldAgentAppHtml(): string {
                 \${isTwoHit ? '<span class="badge badge-2hit">⚠️ 2 HITS — AT RISK</span>' : \`\${c.candidate?.hitCount || 0} hits\`}
               </td>
               <td>\${deadline ? new Date(deadline).toLocaleDateString() : '—'}</td>
+              <td><button class="btn-sm btn-call" onclick="openFaCalling('job_seeker', '\${c.candidateId || c.id}', '\${c.code}', '\${c.name}')">Call</button></td>
             </tr>
           \`;
-        }).join('') || '<tr><td colspan="7">No urgent candidates found</td></tr>';
+        }).join('') || '<tr><td colspan="8">No urgent candidates found</td></tr>';
 
         // 2. Vacancy Priority List (Own Area, directly calling /priority/vacancies)
         const vacancies = await api('/priority/vacancies');
@@ -838,6 +925,7 @@ export function renderFieldAgentAppHtml(): string {
             <td>\${c.hitCount} Hits</td>
             <td>
               <button class="btn-sm" onclick="arrangeInterview('\${vcId}', '\${c.id}')">Arrange Interview</button>
+              <button class="btn-sm btn-call" onclick="openFaCalling('job_seeker', '\${c.id}', '\${c.code}', '\${c.name}')">Call</button>
             </td>
           </tr>
         \`).join('') || '<tr><td colspan="6">No candidates match vacancy requirements</td></tr>';
@@ -866,6 +954,151 @@ export function renderFieldAgentAppHtml(): string {
         showAlert('Interview arranged! Placement offer created: ' + res.code);
       } catch (e) {
         showAlert(e.message, false);
+      }
+    }
+
+    function formatPhoneLast4(val) {
+      if (!val) return '—';
+      const digits = String(val).replace(/[^0-9]/g, '');
+      return digits.length >= 4 ? '••••••' + digits.slice(-4) : '••••••';
+    }
+
+    // Field Agent Calling & History
+    let faCallingSubject = null;
+    let faActiveCallRecordId = null;
+
+    async function openFaCalling(subjectType, id, code, name) {
+      document.getElementById('fa-call-blocked-alert').style.display = 'none';
+      document.getElementById('fa-call-progress-section').style.display = 'none';
+      document.getElementById('fa-answered-outcome-form').style.display = 'none';
+      document.getElementById('fa-calling-modal').classList.remove('hidden');
+
+      try {
+        let endpoint = '/job-seekers/' + encodeURIComponent(id);
+        if (subjectType === 'business') endpoint = '/businesses/' + encodeURIComponent(id);
+        if (subjectType === 'referral') endpoint = '/referrals/' + encodeURIComponent(id);
+
+        const data = await api(endpoint);
+        faCallingSubject = { type: subjectType, id: data.id || id, code: data.code || code, data: data };
+
+        document.getElementById('fa-profile-name').textContent = data.name || data.contactName || name || '—';
+        document.getElementById('fa-profile-code').textContent = data.code || code;
+        document.getElementById('fa-profile-phone').textContent = formatPhoneLast4(data.phone);
+        document.getElementById('fa-profile-status').textContent = data.status || 'Active';
+
+        await loadFaHistory(subjectType, data.id || id);
+      } catch (e) {
+        showAlert('Could not load profile: ' + e.message, false);
+      }
+    }
+
+    function closeFaCallingModal() {
+      document.getElementById('fa-calling-modal').classList.add('hidden');
+    }
+
+    async function triggerFaCall() {
+      if (!faCallingSubject) return alert('No profile loaded');
+      const btn = document.getElementById('btn-fa-call');
+      btn.disabled = true;
+      document.getElementById('fa-call-blocked-alert').style.display = 'none';
+      document.getElementById('fa-answered-outcome-form').style.display = 'none';
+
+      const purpose = document.getElementById('fa-call-purpose').value;
+      try {
+        const res = await api('/calls', {
+          method: 'POST',
+          body: {
+            subjectType: faCallingSubject.type,
+            subjectId: faCallingSubject.id,
+            purpose: purpose,
+          }
+        });
+        faActiveCallRecordId = res.callRecordId || res.id;
+        document.getElementById('fa-call-progress-section').style.display = 'block';
+
+        let callData = null;
+        try {
+          callData = await api('/calls/' + faActiveCallRecordId);
+        } catch {}
+
+        if (callData && callData.answered) {
+          document.getElementById('fa-call-status-msg').textContent = 'Call answered (' + (callData.code || faActiveCallRecordId) + '). Record outcome:';
+          document.getElementById('fa-answered-outcome-form').style.display = 'block';
+        } else {
+          document.getElementById('fa-call-status-msg').textContent = 'Call placed: ' + (callData ? (callData.answered ? 'answered' : 'unanswered (' + callData.providerStatus + ')') : 'initiated') + '.';
+          document.getElementById('fa-answered-outcome-form').style.display = callData && callData.answered ? 'block' : 'none';
+        }
+        showAlert('Call placed: ' + (callData ? callData.code : faActiveCallRecordId));
+        await loadFaHistory(faCallingSubject.type, faCallingSubject.id);
+      } catch (e) {
+        const msg = e.message || 'Calling is currently blocked';
+        document.getElementById('fa-call-blocked-alert').textContent = 'Calling blocked: ' + msg;
+        document.getElementById('fa-call-blocked-alert').style.display = 'block';
+        showAlert('Calling blocked: ' + msg, false);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function submitFaOutcome() {
+      if (!faActiveCallRecordId) return alert('No active answered call');
+      const outcome = document.getElementById('fa-call-outcome').value;
+      const reason = document.getElementById('fa-call-outcome-reason').value.trim();
+      try {
+        await api('/calls/' + faActiveCallRecordId + '/outcome', {
+          method: 'POST',
+          body: { agentOutcome: outcome, reason: reason || undefined }
+        });
+        showAlert('Outcome recorded: ' + outcome);
+        document.getElementById('fa-answered-outcome-form').style.display = 'none';
+        document.getElementById('fa-call-status-msg').textContent = 'Outcome recorded: ' + outcome;
+        if (faCallingSubject) {
+          await loadFaHistory(faCallingSubject.type, faCallingSubject.id);
+        }
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function loadFaHistory(subjectType, subjectId) {
+      const tbody = document.getElementById('fa-history-tbody');
+      tbody.innerHTML = '<tr><td colspan="6">Loading history...</td></tr>';
+      try {
+        const calls = await api('/calls?subjectType=' + subjectType + '&subjectId=' + encodeURIComponent(subjectId));
+
+        const items = [];
+        (calls || []).forEach(function (c) {
+          items.push({
+            time: c.startedAt || c.createdAt,
+            type: 'Call (' + (c.direction || 'outbound') + ')',
+            purpose: c.purpose || 'general',
+            answered: c.answered ? 'Yes' : 'No',
+            duration: c.durationSec != null ? c.durationSec + 's' : '—',
+            outcome: c.agentOutcome || c.providerStatus || '—',
+          });
+        });
+
+        items.sort(function (a, b) {
+          return new Date(b.time).getTime() - new Date(a.time).getTime();
+        });
+
+        if (items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="6">No call history found</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = items.map(function (it) {
+          return '<tr>' +
+            '<td>' + (it.time ? new Date(it.time).toLocaleString('en-IN') : '—') + '</td>' +
+            '<td>' + it.type + '</td>' +
+            '<td>' + it.purpose + '</td>' +
+            '<td>' + it.answered + '</td>' +
+            '<td>' + it.duration + '</td>' +
+            '<td>' + it.outcome + '</td>' +
+          '</tr>';
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="6">Could not load history: ' + e.message + '</td></tr>';
       }
     }
 

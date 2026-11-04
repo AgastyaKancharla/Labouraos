@@ -194,6 +194,92 @@ export function renderAdminDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Profile & Calling Modal -->
+  <div id="admin-calling-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 650px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="admin-calling-title" style="font-size: 1.15rem; margin: 0; color: var(--primary);">Profile & Calling</h3>
+        <button type="button" class="btn-sm" onclick="closeAdminCallingModal()">✕ Close</button>
+      </div>
+
+      <!-- Profile details -->
+      <div style="background: #0f172a; padding: 12px; border-radius: 6px; margin-bottom: 12px; border: 1px solid var(--card-border);">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px;">
+          <strong id="admin-profile-name" style="font-size: 1.05rem;">—</strong>
+          <span id="admin-profile-code" class="badge">—</span>
+        </div>
+        <div style="font-size: 0.9rem; color: #94a3b8;">
+          Phone: <strong id="admin-profile-phone" style="color: var(--text);">—</strong>
+          <span style="margin: 0 6px;">•</span>
+          Status: <span id="admin-profile-status">—</span>
+        </div>
+
+        <!-- Blocked calling alert notice -->
+        <div id="admin-call-blocked-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); color: #fca5a5; padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
+        </div>
+
+        <!-- Call controls -->
+        <div style="margin-top: 12px; display: flex; gap: 8px; align-items: center;">
+          <select id="admin-call-purpose" style="max-width: 180px;">
+            <option value="general">General</option>
+            <option value="offer">Offer</option>
+            <option value="follow_up">Follow Up</option>
+            <option value="verification">Verification</option>
+            <option value="exit_call">Exit Call</option>
+            <option value="check_in">Check In</option>
+            <option value="interview_result">Interview Result</option>
+            <option value="refund_check">Refund Check</option>
+          </select>
+          <button type="button" id="btn-admin-call" class="btn-call" onclick="triggerAdminCall()">Call</button>
+        </div>
+
+        <!-- Active Call / Outcome Card -->
+        <div id="admin-call-progress-section" style="display: none; margin-top: 14px; padding: 12px; background: #1e293b; border-radius: 6px;">
+          <div id="admin-call-status-msg" style="font-size: 0.9rem; font-weight: 500; margin-bottom: 8px;">Call placed...</div>
+          
+          <!-- Answered Call Outcome Form (Closed List) -->
+          <div id="admin-answered-outcome-form" style="display: none;">
+            <label style="font-size: 0.85rem; color: var(--primary); font-weight: bold; margin-bottom: 4px; display: block;">Record Call Outcome</label>
+            <select id="admin-call-outcome" style="margin-bottom: 8px;">
+              <option value="interested">Interested</option>
+              <option value="accepted_offer">Accepted Offer</option>
+              <option value="rejected_offer">Rejected Offer</option>
+              <option value="callback_requested">Callback Requested</option>
+              <option value="not_interested">Not Interested</option>
+              <option value="working_now">Working Now</option>
+              <option value="other">Other</option>
+            </select>
+            <input type="text" id="admin-call-outcome-reason" placeholder="Outcome reason (optional)" style="margin-bottom: 8px;">
+            <button type="button" class="btn-sm" onclick="submitAdminOutcome()">Submit Outcome</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div>
+        <h4 style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 8px;">Call & Message History</h4>
+        <div class="table-container" style="max-height: 200px; overflow-y: auto;">
+          <table>
+            <thead>
+              <tr>
+                <th>Time</th>
+                <th>Direction</th>
+                <th>Purpose</th>
+                <th>Answered</th>
+                <th>Duration</th>
+                <th>Outcome</th>
+                <th>Recording</th>
+              </tr>
+            </thead>
+            <tbody id="admin-history-tbody">
+              <tr><td colspan="7">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1>Laboura Admin Dashboard</h1>
@@ -241,10 +327,11 @@ export function renderAdminDashboardHtml(): string {
                 <th>Status</th>
                 <th>Hits</th>
                 <th>KYC</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="job-seekers-tbody">
-              <tr><td colspan="8" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="9" style="text-align: center;">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -268,10 +355,11 @@ export function renderAdminDashboardHtml(): string {
                 <th>Type</th>
                 <th>Phone Verified</th>
                 <th>City</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="referrals-tbody">
-              <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="7" style="text-align: center;">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -295,10 +383,11 @@ export function renderAdminDashboardHtml(): string {
                 <th>Area</th>
                 <th>Selfie Verified</th>
                 <th>Geofence Flag</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="businesses-tbody">
-              <tr><td colspan="6" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="7" style="text-align: center;">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -683,6 +772,12 @@ export function renderAdminDashboardHtml(): string {
       else if (tab === 'login-report') loadLoginReport().catch(function (e) { showAlert(e.message, false); });
     }
 
+    function formatPhoneLast4(val) {
+      if (!val) return '—';
+      const digits = String(val).replace(/[^0-9]/g, '');
+      return digits.length >= 4 ? '••••••' + digits.slice(-4) : '••••••';
+    }
+
     async function loadJobSeekers() {
       try {
         const data = await api('/job-seekers');
@@ -691,14 +786,15 @@ export function renderAdminDashboardHtml(): string {
           <tr>
             <td><strong>\${j.code}</strong></td>
             <td>\${j.name}</td>
-            <td>\${j.phone || '—'}</td>
+            <td>\${formatPhoneLast4(j.phone)}</td>
             <td>\${j.tradeSkill}</td>
             <td>₹\${(j.minSalary/100).toLocaleString('en-IN')} - ₹\${(j.maxSalary/100).toLocaleString('en-IN')}</td>
             <td><span class="badge">\${j.status}</span></td>
             <td>\${j.hitCount}</td>
             <td>\${j.kycStatus}</td>
+            <td><button class="btn-sm btn-call" onclick="openAdminCalling('job_seeker', '\${j.id}', '\${j.code}')">Call</button></td>
           </tr>
-        \`).join('') || '<tr><td colspan="8">No candidates found</td></tr>';
+        \`).join('') || '<tr><td colspan="9">No candidates found</td></tr>';
       } catch (e) {
         console.error(e);
       }
@@ -712,12 +808,13 @@ export function renderAdminDashboardHtml(): string {
           <tr>
             <td><strong>\${r.code}</strong></td>
             <td>\${r.name}</td>
-            <td>\${r.phone || '—'}</td>
+            <td>\${formatPhoneLast4(r.phone)}</td>
             <td>\${r.type}</td>
             <td>\${r.phoneVerified ? 'Yes' : 'No'}</td>
             <td>\${r.city}</td>
+            <td><button class="btn-sm btn-call" onclick="openAdminCalling('referral', '\${r.id}', '\${r.code}')">Call</button></td>
           </tr>
-        \`).join('') || '<tr><td colspan="6">No referral partners found</td></tr>';
+        \`).join('') || '<tr><td colspan="7">No referral partners found</td></tr>';
       } catch (e) {
         console.error(e);
       }
@@ -731,14 +828,187 @@ export function renderAdminDashboardHtml(): string {
           <tr>
             <td><strong>\${b.code}</strong></td>
             <td>\${b.name}</td>
-            <td>\${b.phone || '—'}</td>
+            <td>\${formatPhoneLast4(b.phone)}</td>
             <td>\${b.area}</td>
             <td>\${b.selfieUrl ? 'Yes' : 'Pending'}</td>
             <td>\${b.geofenceFlag ? 'FLAGGED' : 'Clean'}</td>
+            <td><button class="btn-sm btn-call" onclick="openAdminCalling('business', '\${b.id}', '\${b.code}')">Call</button></td>
           </tr>
-        \`).join('') || '<tr><td colspan="6">No businesses found</td></tr>';
+        \`).join('') || '<tr><td colspan="7">No businesses found</td></tr>';
       } catch (e) {
         console.error(e);
+      }
+    }
+
+    // Admin Calling & Recording Management
+    let adminCallingSubject = null;
+    let adminActiveCallRecordId = null;
+
+    async function openAdminCalling(subjectType, id, code) {
+      document.getElementById('admin-call-blocked-alert').style.display = 'none';
+      document.getElementById('admin-call-progress-section').style.display = 'none';
+      document.getElementById('admin-answered-outcome-form').style.display = 'none';
+      document.getElementById('admin-calling-modal').classList.remove('hidden');
+
+      try {
+        let endpoint = '/job-seekers/' + encodeURIComponent(id);
+        if (subjectType === 'business') endpoint = '/businesses/' + encodeURIComponent(id);
+        if (subjectType === 'referral') endpoint = '/referrals/' + encodeURIComponent(id);
+
+        const data = await api(endpoint);
+        adminCallingSubject = { type: subjectType, id: data.id || id, code: data.code || code, data: data };
+
+        document.getElementById('admin-profile-name').textContent = data.name || data.contactName || '—';
+        document.getElementById('admin-profile-code').textContent = data.code || code;
+        document.getElementById('admin-profile-phone').textContent = formatPhoneLast4(data.phone);
+        document.getElementById('admin-profile-status').textContent = data.status || 'Active';
+
+        await loadAdminHistory(subjectType, data.id || id);
+      } catch (e) {
+        showAlert('Could not load profile: ' + e.message, false);
+      }
+    }
+
+    function closeAdminCallingModal() {
+      document.getElementById('admin-calling-modal').classList.add('hidden');
+    }
+
+    async function triggerAdminCall() {
+      if (!adminCallingSubject) return alert('No profile loaded');
+      const btn = document.getElementById('btn-admin-call');
+      btn.disabled = true;
+      document.getElementById('admin-call-blocked-alert').style.display = 'none';
+      document.getElementById('admin-answered-outcome-form').style.display = 'none';
+
+      const purpose = document.getElementById('admin-call-purpose').value;
+      try {
+        const res = await api('/calls', {
+          method: 'POST',
+          body: {
+            subjectType: adminCallingSubject.type,
+            subjectId: adminCallingSubject.id,
+            purpose: purpose,
+          }
+        });
+        adminActiveCallRecordId = res.callRecordId || res.id;
+        document.getElementById('admin-call-progress-section').style.display = 'block';
+
+        let callData = null;
+        try {
+          callData = await api('/calls/' + adminActiveCallRecordId);
+        } catch {}
+
+        if (callData && callData.answered) {
+          document.getElementById('admin-call-status-msg').textContent = 'Call answered (' + (callData.code || adminActiveCallRecordId) + '). Record outcome:';
+          document.getElementById('admin-answered-outcome-form').style.display = 'block';
+        } else {
+          document.getElementById('admin-call-status-msg').textContent = 'Call placed: ' + (callData ? (callData.answered ? 'answered' : 'unanswered (' + callData.providerStatus + ')') : 'initiated') + '.';
+          document.getElementById('admin-answered-outcome-form').style.display = callData && callData.answered ? 'block' : 'none';
+        }
+        showAlert('Call placed: ' + (callData ? callData.code : adminActiveCallRecordId));
+        await loadAdminHistory(adminCallingSubject.type, adminCallingSubject.id);
+      } catch (e) {
+        const msg = e.message || 'Calling is currently blocked';
+        document.getElementById('admin-call-blocked-alert').textContent = 'Calling blocked: ' + msg;
+        document.getElementById('admin-call-blocked-alert').style.display = 'block';
+        showAlert('Calling blocked: ' + msg, false);
+      } finally {
+        btn.disabled = false;
+      }
+    }
+
+    async function submitAdminOutcome() {
+      if (!adminActiveCallRecordId) return alert('No active answered call');
+      const outcome = document.getElementById('admin-call-outcome').value;
+      const reason = document.getElementById('admin-call-outcome-reason').value.trim();
+      try {
+        await api('/calls/' + adminActiveCallRecordId + '/outcome', {
+          method: 'POST',
+          body: { agentOutcome: outcome, reason: reason || undefined }
+        });
+        showAlert('Outcome recorded: ' + outcome);
+        document.getElementById('admin-answered-outcome-form').style.display = 'none';
+        document.getElementById('admin-call-status-msg').textContent = 'Outcome recorded: ' + outcome;
+        if (adminCallingSubject) {
+          await loadAdminHistory(adminCallingSubject.type, adminCallingSubject.id);
+        }
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function loadAdminHistory(subjectType, subjectId) {
+      const tbody = document.getElementById('admin-history-tbody');
+      tbody.innerHTML = '<tr><td colspan="7">Loading history...</td></tr>';
+      try {
+        const calls = await api('/calls?subjectType=' + subjectType + '&subjectId=' + encodeURIComponent(subjectId));
+        let messages = [];
+        try {
+          messages = await api('/messages?subjectType=' + subjectType + '&subjectId=' + encodeURIComponent(subjectId));
+        } catch {}
+
+        const items = [];
+        (calls || []).forEach(function (c) {
+          items.push({
+            time: c.startedAt || c.createdAt,
+            type: 'Call (' + (c.direction || 'outbound') + ')',
+            purpose: c.purpose || 'general',
+            answered: c.answered ? 'Yes' : 'No',
+            duration: c.durationSec != null ? c.durationSec + 's' : '—',
+            outcome: c.agentOutcome || c.providerStatus || '—',
+            recording: c.recordingStoragePath ? c.id : null,
+          });
+        });
+        (messages || []).forEach(function (m) {
+          items.push({
+            time: m.sentAt || m.createdAt,
+            type: m.channel ? m.channel.toUpperCase() : 'Message',
+            purpose: m.template || '—',
+            answered: '—',
+            duration: '—',
+            outcome: m.status || 'sent',
+            recording: null,
+          });
+        });
+
+        items.sort(function (a, b) {
+          return new Date(b.time).getTime() - new Date(a.time).getTime();
+        });
+
+        if (items.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="7">No history found</td></tr>';
+          return;
+        }
+
+        tbody.innerHTML = items.map(function (it) {
+          const listenBtn = it.recording
+            ? '<button class="btn-sm" onclick="listenRecording(' + JSON.stringify(it.recording) + ')">Listen</button>'
+            : '—';
+          return '<tr>' +
+            '<td>' + (it.time ? new Date(it.time).toLocaleString('en-IN') : '—') + '</td>' +
+            '<td>' + it.type + '</td>' +
+            '<td>' + it.purpose + '</td>' +
+            '<td>' + it.answered + '</td>' +
+            '<td>' + it.duration + '</td>' +
+            '<td>' + it.outcome + '</td>' +
+            '<td>' + listenBtn + '</td>' +
+          '</tr>';
+        }).join('');
+      } catch (e) {
+        tbody.innerHTML = '<tr><td colspan="7">Could not load history: ' + e.message + '</td></tr>';
+      }
+    }
+
+    async function listenRecording(callId) {
+      try {
+        const res = await api('/calls/' + callId + '/recording');
+        if (res.url) {
+          window.open(res.url, '_blank');
+        } else {
+          showAlert('No recording URL returned', false);
+        }
+      } catch (e) {
+        showAlert('Recording listen failed: ' + e.message, false);
       }
     }
 
