@@ -102,7 +102,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 - A clear message when calling is blocked (outside hours, outside the candidate's window, no routing phone set).
 - Tests: the screens render for the allowed roles; no full phone number appears in any agent page.
 
-### [ ] Task 7 — Deployment, docs and the vendor checklist
+### [x] Task 7 — Deployment, docs and the vendor checklist
 **Branch:** `phase-11/task-7-deploy-docs` · **No migration**
 
 **Acceptance:**
