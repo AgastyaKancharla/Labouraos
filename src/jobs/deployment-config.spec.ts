@@ -175,6 +175,12 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
         'WHATSAPP_API_KEY',
         'TELEPHONY_API_KEY',
         'KYC_API_KEY',
+        'CALL_ROUTING_KEY',
+        'TELEPHONY_WEBHOOK_SECRET',
+        'MESSAGE_WEBHOOK_SECRET',
+        'SUPABASE_URL',
+        'SUPABASE_SERVICE_ROLE_KEY',
+        'RECORDINGS_BUCKET',
       ];
 
       for (const service of blueprint.services) {
@@ -225,6 +231,47 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
       expect(content).toContain('CLOUDFLARE_ACCESS_ENFORCED');
       expect(content).toContain('MUST be set to');
       expect(content).toContain('before any real candidate');
+
+      // Phase 11: Call routing key, webhook addresses, and private recordings bucket in Supabase
+      expect(content).toContain('CALL_ROUTING_KEY');
+      expect(content).toContain('TELEPHONY_WEBHOOK_SECRET');
+      expect(content).toContain('MESSAGE_WEBHOOK_SECRET');
+      expect(content).toContain('SUPABASE_SERVICE_ROLE_KEY');
+      expect(content).toContain('recordings');
+      expect(content).toContain('/telephony/webhook/call-status');
+      expect(content).toContain('/messages/webhook/whatsapp');
+      expect(content).toContain('/messages/webhook/sms');
+    });
+
+    it('verifies docs/calling-vendor-checklist.md documents all technical requirements and vendor comparison', () => {
+      const checklistPath = path.join(rootDir, 'docs/calling-vendor-checklist.md');
+      expect(fs.existsSync(checklistPath)).toBe(true);
+      const checklist = fs.readFileSync(checklistPath, 'utf8');
+
+      // Agent leg as ordinary mobile
+      expect(checklist).toContain('Agent Leg');
+      expect(checklist).toContain('ordinary mobile number');
+
+      // Customer sees company number only
+      expect(checklist).toContain('Customer Leg');
+      expect(checklist).toContain('only Laboura');
+
+      // Recording
+      expect(checklist).toContain('This call is recorded for quality and service.');
+
+      // CallStatusEvent fields
+      expect(checklist).toContain('CallStatusEvent');
+      expect(checklist).toContain('providerCallId');
+      expect(checklist).toContain('durationSec');
+      expect(checklist).toContain('recordingUrl');
+
+      // 140 / 1600 series
+      expect(checklist).toContain('140');
+      expect(checklist).toContain('1600');
+
+      // Exotel vs Tata choice check
+      expect(checklist).toContain('Exotel');
+      expect(checklist).toContain('Tata');
     });
   });
 });

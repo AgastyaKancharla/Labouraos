@@ -83,6 +83,18 @@ services:
         sync: false
       - key: COMPANY_ADDRESS
         value: "Bengaluru, Karnataka, India"
+      - key: CALL_ROUTING_KEY
+        generateValue: true
+      - key: TELEPHONY_WEBHOOK_SECRET
+        sync: false
+      - key: MESSAGE_WEBHOOK_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: RECORDINGS_BUCKET
+        sync: false
 
   - type: worker
     name: laboura-worker
@@ -146,3 +158,23 @@ services:
           type: web
           name: laboura-api
           envVarKey: ALERT_WEBHOOK_URL
+      - key: CALL_ROUTING_KEY
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: CALL_ROUTING_KEY
+      - key: SUPABASE_URL
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: SUPABASE_URL
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: SUPABASE_SERVICE_ROLE_KEY
+      - key: RECORDINGS_BUCKET
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: RECORDINGS_BUCKET
