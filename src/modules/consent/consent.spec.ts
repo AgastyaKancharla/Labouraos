@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../app.module';
@@ -56,12 +57,13 @@ describe('Phase 12 Task 1 — Consent table and service', () => {
   });
 
   async function createTestSeeker(status: string = 'active'): Promise<string> {
-    const stamp = Date.now() + Math.floor(Math.random() * 100000);
+    const randomSuffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+    const phoneSuffix = Math.floor(10000000 + Math.random() * 90000000);
     const seeker = await prisma.jobSeeker.create({
       data: {
-        code: `JS-CS-${stamp}`.slice(0, 16),
-        name: `Consent Seeker ${stamp}`,
-        phone: `+9191${String(stamp).slice(-8)}`,
+        code: `JS-CS-${randomSuffix}`,
+        name: `Consent Seeker ${randomSuffix}`,
+        phone: `+9191${phoneSuffix}`,
         tradeSkill: 'Plumber',
         minSalary: 1500000,
         maxSalary: 2500000,

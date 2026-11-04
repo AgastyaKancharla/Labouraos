@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -64,12 +65,13 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
   });
 
   async function createLead(dob?: Date | null): Promise<string> {
-    const stamp = Date.now() + Math.floor(Math.random() * 100000);
+    const randomSuffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+    const phoneSuffix = Math.floor(10000000 + Math.random() * 90000000);
     const seeker = await prisma.jobSeeker.create({
       data: {
-        code: `JS-P12-${stamp}`.slice(0, 16),
-        name: `Lead Candidate ${stamp}`,
-        phone: `+9192${String(stamp).slice(-8)}`,
+        code: `JS-P12-${randomSuffix}`,
+        name: `Lead Candidate ${randomSuffix}`,
+        phone: `+9192${phoneSuffix}`,
         tradeSkill: 'Electrician',
         minSalary: 1400000,
         maxSalary: 2400000,
