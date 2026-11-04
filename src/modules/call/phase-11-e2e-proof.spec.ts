@@ -86,7 +86,6 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     tlToken = jwt.sign({ sub: tl.id, role: tl.role, code: tl.code, email: tl.email });
 
     // 2. Call Agent with routing phone set
-    const routingEncrypted = encryptCallRoutingPhone('+919899988877');
     const ca = await prisma.staff.create({
       data: {
         code: `CA-GATE-${stamp}`,
@@ -96,9 +95,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
         role: 'call_agent',
         status: 'active',
         teamLeadId: tl.id,
-        callRoutingPhone: routingEncrypted.ciphertext,
-        callRoutingPhoneIv: routingEncrypted.iv,
-        callRoutingPhoneTag: routingEncrypted.tag,
+        callRoutingPhone: encryptCallRoutingPhone('+919899988877'),
       },
     });
     createdStaffIds.push(ca.id);
@@ -134,7 +131,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     }
     if (createdSeekerIds.length > 0) {
       await prisma.contactAttempt.deleteMany({ where: { jobSeekerId: { in: createdSeekerIds } } });
-      await prisma.hit.deleteMany({ where: { jobSeekerId: { in: createdSeekerIds } } });
+      await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: createdSeekerIds } } });
       await prisma.jobSeeker.deleteMany({ where: { id: { in: createdSeekerIds } } });
     }
     if (createdStaffIds.length > 0) {
@@ -382,13 +379,13 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     // Verify audit log entry was written for the listen action
     const auditLogs = await prisma.auditLog.findMany({
       where: {
-        entityType: 'CallRecord',
-        entityId: thirdCallId,
-        action: 'call_recording.listened',
+        entityCode: thirdCall.code,
+        action: 'call.recording.listened',
+        actorId: tl.id,
       },
     });
     expect(auditLogs).toHaveLength(1);
-    expect(auditLogs[0].actorRole).toBe('team_lead');
+    expect(auditLogs[0].entityType).toBe('call_record');
 
     // =========================================================================
     // STEP 6: Privacy Floor Check Across All Agent Queries
