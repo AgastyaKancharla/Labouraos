@@ -64,7 +64,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 
 ## Wave 2 (after Wave 1 is merged)
 
-### [ ] Task 4 — Click-to-call from a profile
+### [x] Task 4 — Click-to-call from a profile
 **Branch:** `phase-11/task-4-click-to-call` · **No migration**
 
 **Acceptance:**
