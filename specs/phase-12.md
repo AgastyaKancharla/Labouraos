@@ -73,7 +73,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - Add `consent_explain` to the `CallRecord.purpose` closed list (data-design §1), so the agent's explanatory call can be tagged distinctly from a general call. No schema change — just the closed-list file.
 - Tests: a full tick-and-submit moves status to `consented`; ticking only 4 of 5 required leaves status at `lead`; an expired token is refused; a reused token is refused; the OTP must match before submit succeeds; the job seeker's phone number never appears in the page's own API responses to agents (only to the job seeker's own browser, which already has it since they're the one who received the SMS).
 
-### [ ] Task 5 — IdentityVerification
+### [x] Task 5 — IdentityVerification
 **Branch:** `phase-12/task-5-identity-verification` · **Migration folder:** `20261105130000_add_identity_verification`
 
 **Acceptance:**
