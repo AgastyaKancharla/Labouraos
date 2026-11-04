@@ -163,7 +163,7 @@ export class MessagingService {
         },
       });
     } catch (err: unknown) {
-      if ((err as any)?.code !== 'P2002') {
+      if ((err as { code?: string })?.code !== 'P2002') {
         throw err;
       }
     }

@@ -117,7 +117,11 @@ export class CallService {
   }
 
   private async recordContactAttemptIfFinal(call: CallRecord) {
-    if (!FINAL_CALL_STATUSES.includes(call.providerStatus as any)) {
+    if (
+      !FINAL_CALL_STATUSES.includes(
+        call.providerStatus as (typeof FINAL_CALL_STATUSES)[number],
+      )
+    ) {
       return;
     }
     if (call.subjectType !== 'job_seeker' || !call.subjectId) {
@@ -145,7 +149,7 @@ export class CallService {
         },
       });
     } catch (err: unknown) {
-      if ((err as any)?.code !== 'P2002') {
+      if ((err as { code?: string })?.code !== 'P2002') {
         throw err;
       }
     }
