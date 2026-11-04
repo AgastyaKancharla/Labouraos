@@ -3,7 +3,6 @@ import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
-import * as crypto from 'crypto';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CallClock } from './call-clock';
