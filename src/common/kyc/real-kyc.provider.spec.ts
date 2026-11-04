@@ -190,8 +190,13 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
       expect(savedInDb?.kycStatus).toBe('verified');
       expect(savedInDb?.kycReference).toBe(vendorReference);
 
-      // Inspect entire serialized record: must NOT contain any 12-digit Aadhaar number
-      const serialized = JSON.stringify(savedInDb);
+      // The generated id is a UUID. Its last group is 12 hex characters and can be
+      // all digits, which is not an Aadhaar number. Every other field is scanned.
+      const { id, ...storedWithoutId } = savedInDb!;
+      expect(id).toMatch(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
+      const serialized = JSON.stringify(storedWithoutId);
       expect(serialized).not.toMatch(/\b\d{12}\b/);
       expect(serialized).not.toMatch(/\b\d{4}\s\d{4}\s\d{4}\b/);
     });
