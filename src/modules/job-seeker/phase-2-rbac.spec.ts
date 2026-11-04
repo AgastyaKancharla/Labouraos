@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 
 describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
   let app: INestApplication;
@@ -200,13 +201,14 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
       expect(res.body.phone).toBe('********');
     });
 
-    it('Non-finance read (Call Agent / CEO) sees unmasked phone and kycReference', async () => {
+    it('Call agent sees only the last 4 digits; CEO sees the full phone and KYC reference', async () => {
       const caRes = await request(app.getHttpServer())
         .get(`/job-seekers/${testJobSeekerId}`)
         .set('Authorization', `Bearer ${callAgentToken}`);
 
       expect(caRes.status).toBe(200);
-      expect(caRes.body.phone).toBe(testPhone);
+      expect(caRes.body.phone).toBe(maskPhoneLast4(testPhone));
+      expect(caRes.body.phone).not.toContain(testPhone.slice(0, 6));
       expect(caRes.body.kycReference).toBe(testKycRef);
 
       const ceoRes = await request(app.getHttpServer())
@@ -248,7 +250,8 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
         .get(`/job-seekers/${testJobSeekerId}`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
       expect(itemRes.status).toBe(200);
-      expect(itemRes.body.phone).toBe(testPhone);
+      expect(itemRes.body.phone).toBe(maskPhoneLast4(testPhone));
+      expect(itemRes.body.phone).not.toContain(testPhone.slice(0, 6));
     });
 
     it('Finance is denied POST /referrals (403) while Field Agent can GET /referrals (200)', async () => {

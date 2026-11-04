@@ -7,6 +7,7 @@ import {
   HttpStatus,
   Param,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -89,6 +90,17 @@ export class StaffController {
   @RequireRoles('ceo', 'manager', 'team_lead')
   getById(@Param('id') id: string) {
     return this.staffService.getStaffById(id);
+  }
+
+  @Put(':id/call-routing-phone')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
+  setCallRoutingPhone(
+    @Param('id') id: string,
+    @Body('phone') phone: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.staffService.setCallRoutingPhone(id, phone, req.user);
   }
 
   /**

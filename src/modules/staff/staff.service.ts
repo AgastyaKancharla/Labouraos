@@ -24,6 +24,7 @@ import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -66,7 +67,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Explicit allow-list of columns returned to callers. passwordHash, totpSecret,
- * registeredDeviceId and inviteTokenHash must never leave the service.
+ * registeredDeviceId, inviteTokenHash and callRoutingPhone must never leave the service.
  */
 const STAFF_VIEW_SELECT = {
   id: true,
@@ -130,7 +131,9 @@ export class StaffService {
     private readonly auditService: AuditService,
     private readonly authService: AuthService,
     private readonly totpService: TotpService,
-  ) {}
+  ) {
+    getCallRoutingKey();
+  }
 
   async bootstrapStaff(
     dto: BootstrapStaffDto,
@@ -884,5 +887,50 @@ export class StaffService {
       }
     }
     throw new ConflictException('Could not allocate a unique staff code');
+  }
+
+  /**
+   * Sets the number the calling system rings. The ciphertext is stored;
+   * the response never contains the number.
+   */
+  async setCallRoutingPhone(staffId: string, phone: string, actor: JwtPayload) {
+    const trimmed = typeof phone === 'string' ? phone.trim() : '';
+    if (!/^\+?[0-9]{10,15}$/.test(trimmed)) {
+      throw new BadRequestException('A phone number is required');
+    }
+
+    const target = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { id: true, code: true, role: true, teamLeadId: true, callRoutingPhone: true },
+    });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+
+    const isSelf = actor.sub === target.id;
+    const isManagement = actor.role === 'ceo' || actor.role === 'manager';
+    const isTheirLead = actor.role === 'team_lead' && target.teamLeadId === actor.sub;
+    if (!isSelf && !isManagement && !isTheirLead) {
+      throw new ForbiddenException(
+        'Only the staff member, their team lead, a manager or the CEO can set this number',
+      );
+    }
+
+    const encrypted = encryptCallRoutingPhone(trimmed);
+    await this.prisma.staff.update({
+      where: { id: target.id },
+      data: { callRoutingPhone: encrypted },
+    });
+
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.call_routing_phone_set',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: { callRoutingPhoneSet: Boolean(target.callRoutingPhone) },
+      after: { callRoutingPhoneSet: true },
+    });
+
+    return { set: true };
   }
 }

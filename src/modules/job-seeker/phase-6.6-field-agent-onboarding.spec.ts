@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 
 describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => {
   let app: INestApplication;
@@ -206,6 +207,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
   describe('1. Full Job Seeker Onboarding Tool for Field Agent', () => {
     let createdSeekerId: string;
     let createdSeekerCode: string;
+    let createdSeekerPhone: string;
 
     it('Field agent can create a job seeker (POST /job-seekers) with verified OTP', async () => {
       const phone = `95${timestamp.toString().slice(-8)}`;
@@ -232,6 +234,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
 
       createdSeekerId = res.body.id;
       createdSeekerCode = res.body.code;
+      createdSeekerPhone = phone;
       expect(createdSeekerCode).toMatch(/^JS-\d{5}$/);
       cleanJobSeekerIds.push(createdSeekerId);
     });
@@ -264,7 +267,10 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
 
       expect(listRes.status).toBe(200);
       expect(Array.isArray(listRes.body)).toBe(true);
-      expect(listRes.body.some((s: { id: string }) => s.id === createdSeekerId)).toBe(true);
+      const listed = listRes.body.find((s: { id: string }) => s.id === createdSeekerId);
+      expect(listed).toBeDefined();
+      expect(listed.phone).toBe(maskPhoneLast4(createdSeekerPhone));
+      expect(JSON.stringify(listRes.body)).not.toContain(createdSeekerPhone);
 
       const detailRes = await request(app.getHttpServer())
         .get(`/job-seekers/${createdSeekerId}`)
@@ -272,14 +278,14 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
 
       expect(detailRes.status).toBe(200);
       expect(detailRes.body.id).toBe(createdSeekerId);
-      // Field agent is non-finance: sees unmasked phone
-      expect(detailRes.body.phone).toContain('95');
+      expect(detailRes.body.phone).toBe(maskPhoneLast4(createdSeekerPhone));
+      expect(JSON.stringify(detailRes.body)).not.toContain(createdSeekerPhone);
 
       const ceoRes = await request(app.getHttpServer())
         .get(`/job-seekers/${createdSeekerId}`)
         .set('Authorization', `Bearer ${ceoToken}`);
       expect(ceoRes.status).toBe(200);
-      expect(ceoRes.body.phone).toContain('95');
+      expect(ceoRes.body.phone).toBe(createdSeekerPhone);
     });
 
     it('Field agent can create activation payment (POST /job-seekers/:id/activation-payment)', async () => {
@@ -616,6 +622,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
 
   describe('3. Referral Onboarding for Field Agent', () => {
     let createdRefId: string;
+    let createdRefPhone: string;
 
     it('Field agent can create a referral partner (POST /referrals)', async () => {
       const phone = `87${timestamp.toString().slice(-8)}`;
@@ -636,6 +643,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       expect(res.body.name).toBe('Field Onboarded Partner');
 
       createdRefId = res.body.id;
+      createdRefPhone = phone;
       cleanReferralIds.push(createdRefId);
     });
 
@@ -646,7 +654,10 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
 
       expect(listRes.status).toBe(200);
       expect(Array.isArray(listRes.body)).toBe(true);
-      expect(listRes.body.some((r: { id: string }) => r.id === createdRefId)).toBe(true);
+      const listed = listRes.body.find((r: { id: string }) => r.id === createdRefId);
+      expect(listed).toBeDefined();
+      expect(listed.phone).toBe(maskPhoneLast4(createdRefPhone));
+      expect(JSON.stringify(listRes.body)).not.toContain(createdRefPhone);
 
       const detailRes = await request(app.getHttpServer())
         .get(`/referrals/${createdRefId}`)
@@ -654,7 +665,8 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
 
       expect(detailRes.status).toBe(200);
       expect(detailRes.body.id).toBe(createdRefId);
-      expect(detailRes.body.phone).toContain('87');
+      expect(detailRes.body.phone).toBe(maskPhoneLast4(createdRefPhone));
+      expect(JSON.stringify(detailRes.body)).not.toContain(createdRefPhone);
     });
 
     it('Finance is strictly denied (403) creating a referral partner', async () => {

@@ -8,6 +8,7 @@ import { OtpService } from '../../common/otp/otp.service';
 
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 
 describe('Phase 4 Task 1: Business Onboarding', () => {
   let app: INestApplication;
@@ -187,7 +188,9 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(res.body.code).toMatch(/^BZ-\d{5}$/);
     expect(res.body.name).toBe('Koramangala Bakers');
     expect(res.body.area).toBe('Koramangala'); // Stamped with agent's area automatically
-    expect(res.body.phone).toBe(phone);
+    expect(res.body.phone).toBe(maskPhoneLast4(phone));
+    const storedBusiness = await prisma.business.findUnique({ where: { id: res.body.id } });
+    expect(storedBusiness?.phone).toBe(phone);
     expect(res.body.contactName).toBe('Ramesh Patel');
     expect(res.body.gstNumber).toBe('29ABCDE1234F1Z5');
     expect(res.body.phoneVerified).toBe(true);
