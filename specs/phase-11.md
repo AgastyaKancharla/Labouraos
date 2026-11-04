@@ -92,7 +92,7 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 
 ## Wave 3 (after Wave 2 is merged)
 
-### [ ] Task 6 — Calling screens
+### [x] Task 6 — Calling screens
 **Branch:** `phase-11/task-6-calling-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**
