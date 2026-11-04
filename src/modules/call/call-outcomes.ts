@@ -3,6 +3,7 @@ export const CALL_PURPOSES = [
   'offer',
   'follow_up',
   'verification',
+  'consent_explain',
   'exit_call',
   'check_in',
   'interview_result',
