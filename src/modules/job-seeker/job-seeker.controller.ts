@@ -87,6 +87,24 @@ export class JobSeekerController {
     return this.jobSeekerService.updateKyc(id, body, req.user.sub);
   }
 
+  @Post(':id/identity-verification')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async requestIdentityVerification(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.createIdentityVerification(id, body, req.user.sub);
+  }
+
+  @Get(':id/identity-verifications')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead', 'finance')
+  @RequirePermission('job_seeker', 'read')
+  async listIdentityVerifications(@Param('id') id: string) {
+    return this.jobSeekerService.getIdentityVerifications(id);
+  }
+
   @Post(':id/hits')
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')

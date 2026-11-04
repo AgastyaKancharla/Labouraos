@@ -165,6 +165,23 @@ export class ConsentService {
   }
 
   /**
+   * Returns true if active (granted = true, grantedAt != null, withdrawnAt = null) consent exists for (subjectType, subjectId, purpose).
+   */
+  async hasConsent(subjectType: string, subjectId: string, purpose: string): Promise<boolean> {
+    const row = await this.prisma.consent.findFirst({
+      where: {
+        subjectType,
+        subjectId,
+        purpose,
+        granted: true,
+        grantedAt: { not: null },
+        withdrawnAt: null,
+      },
+    });
+    return Boolean(row);
+  }
+
+  /**
    * Returns all consent records for a given subject.
    */
   async getConsents(subjectType: string, subjectId: string) {
