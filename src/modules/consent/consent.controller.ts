@@ -2,12 +2,13 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   Headers,
   Param,
   Post,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -36,14 +37,15 @@ export class ConsentController {
    * Public endpoint to render consent capture page or return token details.
    */
   @Get(':token')
-  @Header('Content-Type', 'application/json; charset=utf-8')
   async getConsentPage(
     @Param('token') token: string,
-    @Headers('accept') accept?: string,
+    @Headers('accept') accept: string | undefined,
+    @Res({ passthrough: true }) res: Response,
   ) {
     const details = await this.consentLinkService.getTokenDetails(token);
 
     if (accept && accept.includes('text/html')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
       return renderConsentPageHtml(
         token,
         details.candidateName,
@@ -51,6 +53,7 @@ export class ConsentController {
       );
     }
 
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return details;
   }
 
