@@ -127,8 +127,8 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       .expect(201);
     expect(payLinkRes.body.paymentLink).toBeDefined();
 
-    // 4. Contact attempt logging
-    const contactRes = await request(app.getHttpServer())
+    // 4. Contact attempt logging endpoint is removed (404)
+    await request(app.getHttpServer())
       .post(`/job-seekers/${candidateId}/contact-attempts`)
       .set('Authorization', `Bearer ${caToken}`)
       .send({
@@ -136,8 +136,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
         outcome: 'picked_up',
         timeOfDay: 'am',
       })
-      .expect(201);
-    expect(contactRes.body.channel).toBe('call');
+      .expect(404);
 
     // 5. Hit recording
     const hitRes = await request(app.getHttpServer())

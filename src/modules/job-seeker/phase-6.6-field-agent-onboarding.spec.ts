@@ -312,7 +312,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       expect(res.body.kycStatus).toBe('verified');
     });
 
-    it('Field agent can log contact attempt (POST /job-seekers/:id/contact-attempts)', async () => {
+    it('Field agent hand-entry contact attempt is gone (POST /job-seekers/:id/contact-attempts -> 404)', async () => {
       const res = await request(app.getHttpServer())
         .post(`/job-seekers/${createdSeekerId}/contact-attempts`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -323,10 +323,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           notes: 'Field agent pre-interview call attempt',
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.id).toBeDefined();
-      expect(res.body.channel).toBe('call');
-      expect(res.body.outcome).toBe('picked_up');
+      expect(res.status).toBe(404);
     });
   });
 

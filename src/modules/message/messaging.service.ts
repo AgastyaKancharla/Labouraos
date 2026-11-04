@@ -11,6 +11,7 @@ import { WHATSAPP_PROVIDER, WhatsAppProvider } from '../../common/whatsapp/whats
 import { canAdvanceMessageStatus } from './message-status';
 import { dltTemplateId, SMS_PROVIDER, SmsProvider } from './sms.provider';
 import { callStatusSignatureMatches } from '../call/call-signature';
+import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 
 export interface SendMessageInput {
   channel: 'sms' | 'whatsapp';
@@ -134,7 +135,38 @@ export class MessagingService {
         failedAt: status === 'failed' ? now : null,
       },
     });
+    if (status === 'sent' && row.subjectType === 'job_seeker' && row.subjectId) {
+      await this.recordContactAttempt(row);
+    }
     return this.toPublic(row);
+  }
+
+  private async recordContactAttempt(row: MessageLog) {
+    const existing = await this.prisma.contactAttempt.findUnique({
+      where: { messageLogId: row.id },
+    });
+    if (existing) {
+      return;
+    }
+    const attemptedAt = row.sentAt ?? new Date();
+    const parts = getCalendarPartsInTimezone(attemptedAt, 'Asia/Kolkata');
+    const timeOfDay = parts.hour < 12 ? 'am' : 'pm';
+    try {
+      await this.prisma.contactAttempt.create({
+        data: {
+          jobSeekerId: row.subjectId,
+          channel: row.channel,
+          outcome: 'no_pickup',
+          attemptedAt,
+          timeOfDay,
+          messageLogId: row.id,
+        },
+      });
+    } catch (err: unknown) {
+      if ((err as any)?.code !== 'P2002') {
+        throw err;
+      }
+    }
   }
 
   private toPublic(row: MessageLog) {

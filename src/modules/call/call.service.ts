@@ -16,7 +16,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { TELEPHONY_PROVIDER, TelephonyProvider } from '../telephony/telephony.interface';
 import { decryptCallRoutingPhone } from '../staff/call-routing-key';
 import { CallStatusEvent, toCallStatusEvent } from './call-status.event';
-import { canAdvanceCallStatus } from './call-status';
+import { canAdvanceCallStatus, FINAL_CALL_STATUSES } from './call-status';
 import { callStatusSignatureMatches } from './call-signature';
 import { RecordingCopyJob } from './recording-copy.job';
 import { RECORDING_LINK_TTL_SECONDS, RECORDING_STORAGE, RecordingStorage } from './recording-storage';
@@ -24,6 +24,7 @@ import { CALL_ANNOUNCEMENT } from './call-announcement';
 import { CallClock } from './call-clock';
 import { isAgentOutcome, isCallPurpose } from './call-outcomes';
 import { isWithinClockWindow } from './call-window';
+import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 
 export interface CallActor {
   id: string;
@@ -90,6 +91,7 @@ export class CallService {
         },
       });
       await this.copyIfCompleted(created.id, event);
+      await this.recordContactAttemptIfFinal(created);
       return { id: created.id, code: created.code, unchanged: false };
     }
 
@@ -97,7 +99,7 @@ export class CallService {
       return { id: existing.id, code: existing.code, unchanged: true };
     }
 
-    await this.prisma.callRecord.update({
+    const updated = await this.prisma.callRecord.update({
       where: { id: existing.id },
       data: {
         providerStatus: event.status,
@@ -110,7 +112,43 @@ export class CallService {
       },
     });
     await this.copyIfCompleted(existing.id, event);
+    await this.recordContactAttemptIfFinal(updated);
     return { id: existing.id, code: existing.code, unchanged: false };
+  }
+
+  private async recordContactAttemptIfFinal(call: CallRecord) {
+    if (!FINAL_CALL_STATUSES.includes(call.providerStatus as any)) {
+      return;
+    }
+    if (call.subjectType !== 'job_seeker' || !call.subjectId) {
+      return;
+    }
+    const existing = await this.prisma.contactAttempt.findUnique({
+      where: { callRecordId: call.id },
+    });
+    if (existing) {
+      return;
+    }
+    const attemptedAt = call.startedAt ?? call.createdAt;
+    const parts = getCalendarPartsInTimezone(attemptedAt, 'Asia/Kolkata');
+    const timeOfDay = parts.hour < 12 ? 'am' : 'pm';
+    try {
+      await this.prisma.contactAttempt.create({
+        data: {
+          jobSeekerId: call.subjectId,
+          channel: 'call',
+          outcome: call.answered ? 'picked_up' : 'no_pickup',
+          attemptedAt,
+          timeOfDay,
+          staffId: call.staffId,
+          callRecordId: call.id,
+        },
+      });
+    } catch (err: unknown) {
+      if ((err as any)?.code !== 'P2002') {
+        throw err;
+      }
+    }
   }
 
   async place(
