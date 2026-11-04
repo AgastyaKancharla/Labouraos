@@ -3,9 +3,10 @@ import { JobSeekerController } from './job-seeker.controller';
 import { JobSeekerService } from './job-seeker.service';
 import { PaymentModule } from '../payment/payment.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { ConsentModule } from '../consent/consent.module';
 
 @Module({
-  imports: [PaymentModule, PricingModule],
+  imports: [PaymentModule, PricingModule, ConsentModule],
   controllers: [JobSeekerController],
   providers: [JobSeekerService],
   exports: [JobSeekerService],

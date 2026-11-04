@@ -83,3 +83,38 @@ export function validateSalaryRange(minSalary: unknown, maxSalary: unknown): voi
     );
   }
 }
+
+export function calculateAge(dob: Date, referenceDate: Date = new Date()): number {
+  let age = referenceDate.getFullYear() - dob.getFullYear();
+  const m = referenceDate.getMonth() - dob.getMonth();
+  if (m < 0 || (m === 0 && referenceDate.getDate() < dob.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+export function validateJobSeekerAge(
+  dob: Date | string | null | undefined,
+  targetStatus: string,
+  referenceDate: Date = new Date(),
+): void {
+  const requires18 = ['pending_activation', 'active', 'paused', 'deactivated', 'placed'].includes(
+    targetStatus,
+  );
+  if (requires18) {
+    if (!dob) {
+      throw new BadRequestException(
+        'dateOfBirth is required before status can move to pending_activation or beyond',
+      );
+    }
+    const parsedDob = typeof dob === 'string' ? new Date(dob) : dob;
+    if (Number.isNaN(parsedDob.getTime())) {
+      throw new BadRequestException('Invalid dateOfBirth provided');
+    }
+    const age = calculateAge(parsedDob, referenceDate);
+    if (age < 18) {
+      throw new BadRequestException('Job seeker must be at least 18 years old');
+    }
+  }
+}
+

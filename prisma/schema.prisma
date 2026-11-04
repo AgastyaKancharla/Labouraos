@@ -14,15 +14,18 @@ model JobSeeker {
   name                      String
   phone                     String      @unique
   phoneVerified             Boolean     @default(false)
+  /// @deprecated moves to JobSeekerTrade
   tradeSkill                String
   minSalary                 Int         // paise
   maxSalary                 Int         // paise
   preferredCallWindowStart  String      // "09:00" IST
   preferredCallWindowEnd    String      // "21:00" IST
-  status                    String      @default("pending_activation") // pending_activation, active, deactivated, placed
+  status                    String      @default("lead") // lead, consented, pending_activation, active, paused, deactivated, placed
   hitCount                  Int         @default(0)
+  /// @deprecated moves to IdentityVerification
   kycStatus                 String      @default("pending") // pending, verified, failed
-  kycReference              String?     // vendor reference ID only. NEVER raw national ID numbers.
+  /// @deprecated vendor reference ID only. NEVER raw national ID numbers.
+  kycReference              String?
   referredById              String?
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
   registeredByStaffId       String?
@@ -35,8 +38,44 @@ model JobSeeker {
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
   erasedAt                  DateTime?
+  anonymisedAt              DateTime?
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
+
+  // Phase 12 profile fields (data-design §4)
+  dateOfBirth               DateTime?   @db.Date
+  gender                    String?
+  whatsappPhone             String?
+  photoStoragePath          String?
+  photoTakenAt              DateTime?
+  locality                  String?
+  pincode                   String?
+  latitude                  Float?
+  longitude                 Float?
+  travelDistanceKm          Int?
+  preferredLocalities       String[]    @default([])
+  willingToRelocate         Boolean?
+  needsAccommodation        Boolean?
+  salaryPeriod              String?     // monthly, daily
+  availableFrom             DateTime?   @db.Date
+  lookingSince              DateTime?   @db.Date
+  shiftPreference           String?     // day, night, rotational, any
+  jobType                   String?     // full_time, part_time, live_in
+  currentlyWorking          Boolean?
+  lastEmployer              String?
+  lastRole                  String?
+  lastSalaryPaise           Int?
+  educationLevel            String?
+  certificates              String[]    @default([])
+  drivingLicenceType        String?
+  ownVehicle                Boolean?
+  policeVerified            Boolean?
+  hasSmartphone             Boolean?
+  cvStoragePath             String?
+  keySkills                 String[]    @default([])
+  qualification             String?
+  currentSalaryPaise        Int?
+  pausedAt                  DateTime?
 
   @@index([city])
   @@index([tradeSkill])
