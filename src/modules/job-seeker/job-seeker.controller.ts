@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -19,6 +20,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import { RecordHitDto } from './dto/record-hit.dto';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
+import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -122,6 +124,28 @@ export class JobSeekerController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.jobSeekerService.erase(id, req.user.sub);
+  }
+
+  @Patch(':id/profile')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async updateProfile(
+    @Param('id') id: string,
+    @Body() body: UpdateJobSeekerProfileDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.updateProfile(id, body, req.user.sub);
+  }
+
+  @Post(':id/status')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async transitionStatus(
+    @Param('id') id: string,
+    @Body('status') status: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.transitionStatus(id, status, req.user.sub);
   }
 }
 

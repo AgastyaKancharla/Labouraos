@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -24,8 +25,12 @@ import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibil
 
 import { PaymentService } from '../payment/payment.service';
 import { PricingService } from '../pricing/pricing.service';
+import { ConsentService } from '../consent/consent.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { isJobSeekerStatus, normalizeJobSeekerStatus, JobSeekerStatus } from './job-seeker.status';
+import { validateJobSeekerAge } from './job-seeker.validator';
+import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 
 @Injectable()
 export class JobSeekerService {
@@ -36,6 +41,7 @@ export class JobSeekerService {
     private readonly otpService: OtpService,
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
+    @Optional() private readonly consentService?: ConsentService,
   ) {}
 
   private async getPolicy() {
@@ -97,6 +103,12 @@ export class JobSeekerService {
      * a duplicate-selfie detection is only actionable if the record names who created it.
      * They are NOT for pay: agents are salaried, there is no commission.
      */
+    const status = (dto.status as string) || 'pending_payment';
+    const dob = dto.dateOfBirth ? new Date(dto.dateOfBirth as string | Date) : null;
+    if (dob) {
+      validateJobSeekerAge(dob, status);
+    }
+
     const jobSeeker = await this.prisma.$transaction(async (tx) => {
       const created = await tx.jobSeeker.create({
         data: {
@@ -110,7 +122,8 @@ export class JobSeekerService {
           preferredCallWindowStart: dto.preferredCallWindowStart,
           preferredCallWindowEnd: dto.preferredCallWindowEnd,
           city: dto.city ?? 'Bengaluru',
-          status: 'pending_payment',
+          status,
+          dateOfBirth: dob,
           referredById: dto.referredById ?? null,
           registeredByStaffId: actorId ?? null,
         },
@@ -120,7 +133,7 @@ export class JobSeekerService {
         subjectType: 'job_seeker',
         subjectId: created.id,
         fromStatus: null,
-        toStatus: 'pending_payment',
+        toStatus: status,
         changedByStaffId: actorId,
       });
 
@@ -770,6 +783,161 @@ export class JobSeekerService {
     });
 
     return updated;
+  }
+
+  /**
+   * Moves a job seeker from 'lead' to 'consented' once all required consents are granted.
+   * Throws BadRequestException if called early or if candidate is not in 'lead' status.
+   */
+  async transitionToConsented(jobSeekerId: string, actorId?: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    if (seeker.status !== 'lead') {
+      throw new BadRequestException(
+        `Job seeker must be in 'lead' status to transition to 'consented'. Current status: '${seeker.status}'`,
+      );
+    }
+
+    if (!this.consentService) {
+      throw new BadRequestException('ConsentService is not available');
+    }
+
+    const hasAll = await this.consentService.hasAllRequired('job_seeker', jobSeekerId);
+    if (!hasAll) {
+      throw new BadRequestException(
+        'Cannot move job seeker to consented without all required consents granted',
+      );
+    }
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.jobSeeker.update({
+        where: { id: jobSeekerId },
+        data: { status: 'consented' },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'job_seeker',
+        subjectId: jobSeekerId,
+        fromStatus: seeker.status,
+        toStatus: 'consented',
+        changedByStaffId: actorId ?? null,
+        reason: 'all_required_consents_granted',
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * Transitions status for a job seeker with closed-list and age enforcement:
+   * - 'consented': delegates to transitionToConsented
+   * - 'pending_activation', 'active', etc.: requires dateOfBirth and age >= 18
+   */
+  async transitionStatus(jobSeekerId: string, targetStatus: string, actorId?: string) {
+    if (!isJobSeekerStatus(targetStatus)) {
+      throw new BadRequestException(`Invalid job seeker status: '${targetStatus}'`);
+    }
+
+    if (targetStatus === 'consented') {
+      return this.transitionToConsented(jobSeekerId, actorId);
+    }
+
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    validateJobSeekerAge(seeker.dateOfBirth, targetStatus);
+
+    return this.prisma.$transaction(async (tx) => {
+      const updated = await tx.jobSeeker.update({
+        where: { id: jobSeekerId },
+        data: { status: targetStatus },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'job_seeker',
+        subjectId: jobSeekerId,
+        fromStatus: seeker.status,
+        toStatus: targetStatus,
+        changedByStaffId: actorId ?? null,
+      });
+
+      return updated;
+    });
+  }
+
+  /**
+   * Updates profile fields from Phase 12 redesign.
+   * Never writes to deprecated columns (tradeSkill, kycStatus, kycReference).
+   */
+  async updateProfile(jobSeekerId: string, dto: UpdateJobSeekerProfileDto, actorId?: string) {
+    assertNoRawAadhaar(dto);
+
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+    });
+    if (!seeker) {
+      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+
+    const data: Record<string, unknown> = {};
+
+    if (dto.dateOfBirth !== undefined) {
+      data.dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
+    }
+    if (dto.gender !== undefined) data.gender = dto.gender;
+    if (dto.whatsappPhone !== undefined) data.whatsappPhone = dto.whatsappPhone;
+    if (dto.photoStoragePath !== undefined) data.photoStoragePath = dto.photoStoragePath;
+    if (dto.photoTakenAt !== undefined) {
+      data.photoTakenAt = dto.photoTakenAt ? new Date(dto.photoTakenAt) : null;
+    }
+    if (dto.locality !== undefined) data.locality = dto.locality;
+    if (dto.pincode !== undefined) data.pincode = dto.pincode;
+    if (dto.latitude !== undefined) data.latitude = dto.latitude;
+    if (dto.longitude !== undefined) data.longitude = dto.longitude;
+    if (dto.travelDistanceKm !== undefined) data.travelDistanceKm = dto.travelDistanceKm;
+    if (dto.preferredLocalities !== undefined) data.preferredLocalities = dto.preferredLocalities;
+    if (dto.willingToRelocate !== undefined) data.willingToRelocate = dto.willingToRelocate;
+    if (dto.needsAccommodation !== undefined) data.needsAccommodation = dto.needsAccommodation;
+    if (dto.salaryPeriod !== undefined) data.salaryPeriod = dto.salaryPeriod;
+    if (dto.availableFrom !== undefined) {
+      data.availableFrom = dto.availableFrom ? new Date(dto.availableFrom) : null;
+    }
+    if (dto.lookingSince !== undefined) {
+      data.lookingSince = dto.lookingSince ? new Date(dto.lookingSince) : null;
+    }
+    if (dto.shiftPreference !== undefined) data.shiftPreference = dto.shiftPreference;
+    if (dto.jobType !== undefined) data.jobType = dto.jobType;
+    if (dto.currentlyWorking !== undefined) data.currentlyWorking = dto.currentlyWorking;
+    if (dto.lastEmployer !== undefined) data.lastEmployer = dto.lastEmployer;
+    if (dto.lastRole !== undefined) data.lastRole = dto.lastRole;
+    if (dto.lastSalaryPaise !== undefined) data.lastSalaryPaise = dto.lastSalaryPaise;
+    if (dto.educationLevel !== undefined) data.educationLevel = dto.educationLevel;
+    if (dto.certificates !== undefined) data.certificates = dto.certificates;
+    if (dto.drivingLicenceType !== undefined) data.drivingLicenceType = dto.drivingLicenceType;
+    if (dto.ownVehicle !== undefined) data.ownVehicle = dto.ownVehicle;
+    if (dto.policeVerified !== undefined) data.policeVerified = dto.policeVerified;
+    if (dto.hasSmartphone !== undefined) data.hasSmartphone = dto.hasSmartphone;
+    if (dto.cvStoragePath !== undefined) data.cvStoragePath = dto.cvStoragePath;
+    if (dto.keySkills !== undefined) data.keySkills = dto.keySkills;
+    if (dto.qualification !== undefined) data.qualification = dto.qualification;
+    if (dto.currentSalaryPaise !== undefined) data.currentSalaryPaise = dto.currentSalaryPaise;
+    if (dto.pausedAt !== undefined) {
+      data.pausedAt = dto.pausedAt ? new Date(dto.pausedAt) : null;
+    }
+
+    return this.prisma.jobSeeker.update({
+      where: { id: jobSeekerId },
+      data,
+    });
   }
 }
 

@@ -1,0 +1,35 @@
+export interface UpdateJobSeekerProfileDto {
+  dateOfBirth?: Date | string | null;
+  gender?: string | null;
+  whatsappPhone?: string | null;
+  photoStoragePath?: string | null;
+  photoTakenAt?: Date | string | null;
+  locality?: string | null;
+  pincode?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  travelDistanceKm?: number | null;
+  preferredLocalities?: string[];
+  willingToRelocate?: boolean | null;
+  needsAccommodation?: boolean | null;
+  salaryPeriod?: string | null;
+  availableFrom?: Date | string | null;
+  lookingSince?: Date | string | null;
+  shiftPreference?: string | null;
+  jobType?: string | null;
+  currentlyWorking?: boolean | null;
+  lastEmployer?: string | null;
+  lastRole?: string | null;
+  lastSalaryPaise?: number | null;
+  educationLevel?: string | null;
+  certificates?: string[];
+  drivingLicenceType?: string | null;
+  ownVehicle?: boolean | null;
+  policeVerified?: boolean | null;
+  hasSmartphone?: boolean | null;
+  cvStoragePath?: string | null;
+  keySkills?: string[];
+  qualification?: string | null;
+  currentSalaryPaise?: number | null;
+  pausedAt?: Date | string | null;
+}
