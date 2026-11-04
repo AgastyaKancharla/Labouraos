@@ -123,15 +123,15 @@ Each task has its own branch and, where needed, a fixed migration folder name so
 
 ## Phase 11 Gate
 
-- [ ] Call status, answered and duration come only from the provider webhook; repeats change nothing — by test
-- [ ] Every completed call's recording is copied into Laboura's storage; only Team Lead, Manager and CEO can listen; every listen is audited — by test
-- [ ] Every SMS and WhatsApp goes through `MessagingService` and is logged without its body — by test
-- [ ] Call agents, field agents and team leads never see a full phone number; `callRoutingPhone` is encrypted and never returned — by test
-- [ ] Calls are placed with no numbers in the request; outside calling hours or the candidate's window they are refused; the raw-number endpoint is gone — by test
-- [ ] Contact attempts are created only by the system; no role can type one — by test
-- [ ] The announcement says "This call is recorded for quality and service." — by test
-- [ ] Login is limited per connection as well as per staff code — by test
-- [ ] **End-to-end proof, recorded in the report:** a call agent with a routing phone set calls a job seeker from the profile; the mock provider sends "no answer" in the morning and again in the evening; a WhatsApp goes out the same day; the sweep records one hit; a third call is answered and the agent records "interested"; a Team Lead listens to the recording and the listen is audited; the agent's API responses never contained a full phone number.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] Call status, answered and duration come only from the provider webhook; repeats change nothing — by test
+- [x] Every completed call's recording is copied into Laboura's storage; only Team Lead, Manager and CEO can listen; every listen is audited — by test
+- [x] Every SMS and WhatsApp goes through `MessagingService` and is logged without its body — by test
+- [x] Call agents, field agents and team leads never see a full phone number; `callRoutingPhone` is encrypted and never returned — by test
+- [x] Calls are placed with no numbers in the request; outside calling hours or the candidate's window they are refused; the raw-number endpoint is gone — by test
+- [x] Contact attempts are created only by the system; no role can type one — by test
+- [x] The announcement says "This call is recorded for quality and service." — by test
+- [x] Login is limited per connection as well as per staff code — by test
+- [x] **End-to-end proof, recorded in the report:** a call agent with a routing phone set calls a job seeker from the profile; the mock provider sends "no answer" in the morning and again in the evening; a WhatsApp goes out the same day; the sweep records one hit; a third call is answered and the agent records "interested"; a Team Lead listens to the recording and the listen is audited; the agent's API responses never contained a full phone number.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, and the end-to-end proof. Do not start the next phase.

@@ -332,6 +332,16 @@ Format:
 **Cause:** TOTP uses real time, not `AuthClock`. A code generated before the app finished booting can fall outside the allowed window.
 **Fix:** Use `stableTotpCode` from `src/test-support/enrolled-login-spec.ts`. If login is not 200, throw the status and body so a later 401 is not mistaken for a lockout.
 
+## Supertest raw body for HMAC signature verification
+**Symptom:** In integration tests targeting webhook endpoints with HMAC verification (`/telephony/webhook/call-status`), sending a `Buffer` via Supertest's `.send(buffer)` returned `401 "Unauthorized"`.
+**Cause:** When `rawBody: true` is enabled in NestJS, Express's `json` body parser attaches `req.rawBody` when parsing incoming JSON string payloads. Passing a `Buffer` into `.send()` circumvents JSON parsing or fails to attach `req.rawBody` as expected by `callStatusSignatureMatches`.
+**Fix:** Pass the serialized JSON string `raw = JSON.stringify(payload)` into `.send(raw)` with `'Content-Type': 'application/json'`, and calculate the HMAC signature over that exact string using `signCallStatusBody(raw, secret)`.
+
+## Dual-bucket rate limiting with @nestjs/throttler
+**Symptom:** Adding a global connection IP limit (60 req/min) collided with the per-staff-code login rate limit (5 req/min), either ignoring the staff identity or throttling legitimate office traffic from 20 agents on the same IP.
+**Cause:** Default `generateKey` logic only produces a single cache key per request.
+**Fix:** Configure named throttlers (`default` and `connection`) in `ThrottlerModule`, override `generateKey(context, suffix, name)` in `AuthThrottlerGuard` to branch based on `name === 'connection'`, and apply dual `@Throttle({ default: { limit: 5, ttl: 60000 }, connection: { limit: 60, ttl: 60000 } })` decorators on the target controller endpoints.
+
 
 
 
