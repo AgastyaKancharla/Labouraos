@@ -174,7 +174,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     expect(found.band).toBeDefined();
   });
 
-  it('verifies area-scoping: field agent can onboard business and capture vacancy in own area, but denied in other area (403)', async () => {
+  it('does not persist deprecated area and limits a new lead to its creating field agent', async () => {
     // 1. FA Koramangala onboards business in Koramangala
     const phoneKora = `95002${String(timestamp).slice(-5)}`;
     const otpKora = await request(app.getHttpServer())
@@ -202,7 +202,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       })
       .expect(201);
 
-    expect(bizKora.body.area).toBe(koraArea);
+    expect(bizKora.body.area).toBeNull();
 
     // 2. FA Koramangala captures vacancy for their Koramangala business
     const vacKora = await request(app.getHttpServer())
