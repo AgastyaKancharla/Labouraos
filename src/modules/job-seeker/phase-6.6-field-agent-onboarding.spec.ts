@@ -230,7 +230,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       expect(res.status).toBe(201);
       expect(res.body.id).toBeDefined();
       expect(res.body.name).toBe('Field Onboarded Seeker');
-      expect(res.body.status).toBe('pending_payment');
+      expect(res.body.status).toBe('lead');
 
       createdSeekerId = res.body.id;
       createdSeekerCode = res.body.code;

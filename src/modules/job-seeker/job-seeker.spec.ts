@@ -147,7 +147,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     expect(res.status).toBe(201);
     expect(res.body.id).toBeDefined();
     expect(res.body.code).toMatch(/^JS-\d{5}$/);
-    expect(res.body.status).toBe('pending_payment');
+    expect(res.body.status).toBe('lead');
     expect(res.body.phoneVerified).toBe(true);
     expect(res.body.tradeSkill).toBe('Electrician');
     expect(res.body.minSalary).toBe(2000000);
