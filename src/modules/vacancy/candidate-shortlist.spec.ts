@@ -17,6 +17,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
 
   let koramangalaVacancyId: string;
   let indiranagarVacancyId: string;
+  let koramangalaBusinessId: string;
 
   let matchingCandidate1Id: string;
   let matchingCandidate2Id: string;
@@ -103,8 +104,10 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
         contactName: 'Mr. Raman',
         phone: `91${timestamp.toString().slice(-8)}1`,
         phoneVerified: true,
+        verificationStatus: 'verified',
       },
     });
+    koramangalaBusinessId = koraBiz.id;
 
     // Create Vacancy in Koramangala: Electrician, salaryMinPaise: 2500000 (₹25,000)
     const koraVac = await prisma.vacancy.create({
@@ -131,6 +134,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
         contactName: 'Ms. Priya',
         phone: `91${timestamp.toString().slice(-8)}2`,
         phoneVerified: true,
+        verificationStatus: 'verified',
       },
     });
 
@@ -326,6 +330,25 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
     expect(names).not.toContain('Candidate Five - Salary Too Low');
     expect(names).not.toContain('Candidate Six - Pending Activation');
     expect(names).not.toContain('Candidate Seven - Deactivated');
+  });
+
+  it('hides candidates until a business is verified, with a clear reason', async () => {
+    await prisma.business.update({
+      where: { id: koramangalaBusinessId },
+      data: { verificationStatus: 'pending_tl_check' },
+    });
+    try {
+      const res = await request(app.getHttpServer())
+        .get(`/vacancies/${koramangalaVacancyId}/shortlist`)
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .expect(403);
+      expect(res.body.message).toContain('Candidates are hidden until the business is verified');
+    } finally {
+      await prisma.business.update({
+        where: { id: koramangalaBusinessId },
+        data: { verificationStatus: 'verified' },
+      });
+    }
   });
 
   it('enforces area-scoping: field agent cannot view candidates for vacancy in another area (403)', async () => {

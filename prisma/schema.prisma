@@ -207,6 +207,7 @@ model Business {
   placements    Placement[]
   payments      Payment[]
   visits        BusinessVisit[]
+  visitAssignments VisitAssignment[]
   agreements    BusinessAgreement[]
   erasedAt      DateTime?
   createdAt     DateTime        @default(now())
@@ -364,6 +365,10 @@ model Staff {
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
   businessVisits    BusinessVisit[]
+  checkIns          FieldCheckIn[]
+  suggestedVisitAssignments VisitAssignment[] @relation("VisitAssignmentSuggested")
+  assignedVisitAssignments VisitAssignment[] @relation("VisitAssignmentAssigned")
+  assignedVisitAssignmentsByMe VisitAssignment[] @relation("VisitAssignmentAssignedBy")
   auditLogs         AuditLog[]
   contactAttempts   ContactAttempt[]
   callbackTasks     CallbackTask[]
@@ -529,11 +534,53 @@ model BusinessVisit {
   selfieUrl    String?
   selfieHash   String?
   geofenceFlag Boolean   @default(false)
+  purpose      String?
+  ownerOtpRequestId String?
+  photoLive    Boolean?
+  assignmentId String?
+  assignment   VisitAssignment? @relation("VisitAssignmentBusinessVisit", fields: [assignmentId], references: [id], onDelete: SetNull)
+  completedAssignment VisitAssignment? @relation("VisitAssignmentVisit")
   visitedAt    DateTime  @default(now())
   createdAt    DateTime  @default(now())
 
   @@index([businessId])
   @@index([selfieHash])
+}
+
+model VisitAssignment {
+  id                String       @id @default(uuid())
+  businessId        String
+  business          Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  purpose           String
+  suggestedStaffId  String?
+  suggestedStaff    Staff?       @relation("VisitAssignmentSuggested", fields: [suggestedStaffId], references: [id], onDelete: SetNull)
+  assignedStaffId   String?
+  assignedStaff     Staff?       @relation("VisitAssignmentAssigned", fields: [assignedStaffId], references: [id], onDelete: SetNull)
+  assignedByStaffId String?
+  assignedByStaff   Staff?       @relation("VisitAssignmentAssignedBy", fields: [assignedByStaffId], references: [id], onDelete: SetNull)
+  status            String       @default("pending")
+  relatedType       String?
+  relatedId         String?
+  visitId           String?      @unique
+  visit             BusinessVisit? @relation("VisitAssignmentVisit", fields: [visitId], references: [id], onDelete: SetNull)
+  businessVisits    BusinessVisit[] @relation("VisitAssignmentBusinessVisit")
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+
+  @@index([businessId, status])
+  @@index([assignedStaffId, status])
+}
+
+model FieldCheckIn {
+  id             String   @id @default(uuid())
+  staffId        String
+  staff          Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  latitude       Float
+  longitude      Float
+  accuracyMeters Float
+  checkedInAt    DateTime @default(now())
+
+  @@index([staffId, checkedInAt])
 }
 
 model CallbackTask {

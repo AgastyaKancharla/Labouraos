@@ -174,6 +174,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       })
       .expect(201);
     const bizId = bizRes.body.id;
+    await prisma.business.update({ where: { id: bizId }, data: { verificationStatus: 'verified' } });
 
     const vcRes = await request(app.getHttpServer())
       .post('/vacancies')

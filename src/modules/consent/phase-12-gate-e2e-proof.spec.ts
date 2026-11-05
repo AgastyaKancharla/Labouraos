@@ -356,6 +356,7 @@ describe('Phase 12 gate end-to-end proof', () => {
         city: 'Bengaluru',
         area: 'Koramangala',
         phone: `+9188${Math.floor(10000000 + Math.random() * 90000000)}`,
+        verificationStatus: 'verified',
       },
     });
     createdBusinessIds.push(business.id);

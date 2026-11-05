@@ -367,6 +367,11 @@ Format:
 **Cause:** The agreement field list missed the GST snapshot column.
 **Fix:** Store `gstPercent` from `PricingService.current()` on `BusinessAgreement` at link time alongside the fee and no-bypass values.
 
+## Phase 13 assigned visits are independent of legacy areas
+**Symptom:** A field agent with a confirmed visit assignment could be blocked from recording the visit because the business and staff had different legacy `area` values.
+**Cause:** The old `own_area` guard and service check predate Phase 13 assignments; the current phase removes area-based ownership in Task 6, and the confirmed assignment is the authorization for this visit.
+**Fix:** An open assignment for the business and assigned agent authorizes owner OTP and visit completion regardless of area. Keep the assignment status and assignee checks server-side until Task 6 replaces the remaining area permissions with `own_account`.
+
 
 
 

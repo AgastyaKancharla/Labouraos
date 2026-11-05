@@ -25,6 +25,10 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { VacancyService } from '../vacancy/vacancy.service';
 import { CreateVacancyDto } from '../vacancy/dto/create-vacancy.dto';
 import { ConsentLinkService } from '../consent/consent-link.service';
+import {
+  BusinessVerificationService,
+  CreateVisitAssignmentDto,
+} from './business-verification.service';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -34,6 +38,7 @@ export class BusinessController {
     private readonly businessService: BusinessService,
     private readonly vacancyService: VacancyService,
     private readonly consentLinkService: ConsentLinkService,
+    private readonly verificationService: BusinessVerificationService,
   ) {}
 
   @Post()
@@ -77,6 +82,71 @@ export class BusinessController {
     return this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language);
   }
 
+  @Post(':id/visit-assignments')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  createVisitAssignment(
+    @Param('id') businessId: string,
+    @Body() body: CreateVisitAssignmentDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.createAssignment(businessId, req.user.sub, body);
+  }
+
+  @Post(':businessId/visit-assignments/:assignmentId/assign')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  assignVisit(
+    @Param('assignmentId') assignmentId: string,
+    @Body('assignedStaffId') assignedStaffId: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.assign(assignmentId, req.user.sub, assignedStaffId);
+  }
+
+  @Post(':businessId/visit-assignments/:assignmentId/owner-otp')
+  @RequireRoles('field_agent')
+  sendVisitOwnerOtp(
+    @Param('businessId') businessId: string,
+    @Param('assignmentId') assignmentId: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.sendOwnerOtp(businessId, assignmentId, req.user.sub);
+  }
+
+  @Post(':id/verification/approve')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  approveVerification(
+    @Param('id') businessId: string,
+    @Body('accountAgentId') accountAgentId: string | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.approve(businessId, req.user.sub, accountAgentId);
+  }
+
+  @Post(':id/verification/reject')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  rejectVerification(
+    @Param('id') businessId: string,
+    @Body('reason') reason: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.reject(businessId, req.user.sub, reason);
+  }
+
+  @Post(':id/account-agent')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  reassignAccountAgent(
+    @Param('id') businessId: string,
+    @Body('accountAgentId') accountAgentId: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.reassignAccountAgent(businessId, req.user.sub, accountAgentId);
+  }
+
   @Post(':id/vacancies')
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('vacancy', 'write')
@@ -100,7 +170,6 @@ export class BusinessController {
 
   @Post(':id/visits')
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
-  @RequirePermission('business', 'write')
   async recordVisit(
     @Param('id') businessId: string,
     @Body() body: RecordVisitDto,
