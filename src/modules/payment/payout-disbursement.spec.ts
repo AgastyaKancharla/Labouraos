@@ -284,7 +284,7 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
         .expect(400);
     });
 
-    it('enforces RBAC: CEO and Manager can disburse; Call Agent and Field Agent are denied (403)', async () => {
+    it('enforces RBAC: CEO and Finance can disburse; Manager, Call Agent and Field Agent are denied (403)', async () => {
       const referral = await prisma.referral.create({
         data: {
           code: `RF-D4-${timestamp}`,
@@ -325,10 +325,17 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
         .send({})
         .expect(403);
 
-      // Manager allowed
+      // Manager denied: managers do not release money
       await request(app.getHttpServer())
         .post(`/payments/${payment.id}/disburse`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .send({})
+        .expect(403);
+
+      // Finance can release money
+      await request(app.getHttpServer())
+        .post(`/payments/${payment.id}/disburse`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({})
         .expect(201);
 

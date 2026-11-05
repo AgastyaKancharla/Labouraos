@@ -26,7 +26,6 @@ describe('Phase 8 Task 9: Staff account management', () => {
   let staffService: StaffService;
 
   const ts = Date.now();
-  const areaTag = `Area-T9-${ts}`;
   const goodPassword = 'Correct-Horse-Battery-9';
   const createdStaffIds: string[] = [];
   let ipCounter = 0;
@@ -45,7 +44,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
   async function mkStaff(
     role: string,
-    extra: Partial<{ area: string; teamLeadId: string; status: string }> = {},
+    extra: Partial<{ teamLeadId: string; status: string }> = {},
   ): Promise<Actor> {
     const email = `t9_${role}_${ts}_${createdStaffIds.length}@laboura.local`;
     const staff = await prisma.staff.create({
@@ -76,7 +75,6 @@ describe('Phase 8 Task 9: Staff account management', () => {
       role: actor.role,
       email: actor.email,
       code: actor.code,
-      area: null,
       teamLeadId: null,
       sid: session.id,
     };
@@ -99,7 +97,6 @@ describe('Phase 8 Task 9: Staff account management', () => {
     name: `New ${role}`,
     email: `hire_${role}_${ts}_${ipCounter++}@laboura.local`,
     role,
-    ...(role === 'field_agent' ? { area: areaTag } : {}),
     ...extra,
   });
 
@@ -185,7 +182,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
     manager = await mkStaff('manager');
     teamLead = await mkStaff('team_lead');
     callAgent = await mkStaff('call_agent');
-    fieldAgent = await mkStaff('field_agent', { area: areaTag });
+    fieldAgent = await mkStaff('field_agent');
     finance = await mkStaff('finance');
     for (const a of [ceo, manager, teamLead, callAgent, fieldAgent, finance]) {
       tokens[a.id] = await mkToken(a);
@@ -226,7 +223,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
       );
     });
 
-    it('Manager can create a field agent with an area and a team lead', async () => {
+    it('Manager can create a field agent without an assigned area', async () => {
       const res = await createViaApi(
         manager,
         newHire('field_agent', { teamLeadId: teamLead.id }),
@@ -235,7 +232,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
       expect(res.status).toBe(201);
       expect(res.body.staff.code).toMatch(/^FA-\d{5}$/);
-      expect(res.body.staff.area).toBe(areaTag);
+      expect(res.body.staff).not.toHaveProperty('area');
       expect(res.body.staff.teamLeadId).toBe(teamLead.id);
     });
 
@@ -303,7 +300,6 @@ describe('Phase 8 Task 9: Staff account management', () => {
       ['missing name', { name: '  ' }],
       ['invalid email', { email: 'not-an-email' }],
       ['unknown role', { role: 'superuser' }],
-      ['area on a non-field-agent', { area: 'Koramangala' }],
     ])('rejects %s with 400', async (_label, override) => {
       const res = await createViaApi(ceo, {
         ...newHire('call_agent'),
@@ -312,12 +308,12 @@ describe('Phase 8 Task 9: Staff account management', () => {
       expect(res.status).toBe(400);
     });
 
-    it('requires an area for a field agent', async () => {
+    it('does not require or return a legacy area for a field agent', async () => {
       const body = newHire('field_agent');
-      delete (body as { area?: string }).area;
       const res = await createViaApi(ceo, body);
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('area');
+      createdStaffIds.push(res.body.staff?.id);
+      expect(res.status).toBe(201);
+      expect(res.body.staff).not.toHaveProperty('area');
     });
 
     it('rejects a duplicate email with 409', async () => {
@@ -508,7 +504,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
   });
 
   describe('GET /staff — listing', () => {
-    it('lists staff for CEO and Manager, filterable by role / area / team / status', async () => {
+    it('lists staff for CEO and Manager, filterable by role / team / status', async () => {
       const lead = await mkStaff('team_lead');
       const a = await hire('field_agent', { teamLeadId: lead.id });
       const b = await hire('call_agent', { teamLeadId: lead.id });
@@ -525,17 +521,16 @@ describe('Phase 8 Task 9: Staff account management', () => {
         );
       }
 
-      const byRoleArea = await request(app.getHttpServer())
+      const byRole = await request(app.getHttpServer())
         .get('/staff')
-        .query({ role: 'field_agent', area: areaTag })
+        .query({ role: 'field_agent' })
         .set('Authorization', auth(ceo));
-      expect(byRoleArea.body.map((s: { id: string }) => s.id)).toEqual(
+      expect(byRole.body.map((s: { id: string }) => s.id)).toEqual(
         expect.arrayContaining([a.id, fieldAgent.id]),
       );
       expect(
-        byRoleArea.body.every(
-          (s: { role: string; area: string }) =>
-            s.role === 'field_agent' && s.area === areaTag,
+        byRole.body.every(
+          (s: { role: string }) => s.role === 'field_agent',
         ),
       ).toBe(true);
 
@@ -549,14 +544,13 @@ describe('Phase 8 Task 9: Staff account management', () => {
     it('exposes only the allow-listed fields — never hashes, TOTP secrets, device ids or phone', async () => {
       const res = await request(app.getHttpServer())
         .get('/staff')
-        .query({ role: 'field_agent', area: areaTag })
+        .query({ role: 'field_agent' })
         .set('Authorization', auth(ceo));
 
       expect(res.body.length).toBeGreaterThan(0);
       for (const row of res.body) {
         expect(Object.keys(row).sort()).toEqual(
           [
-            'area',
             'code',
             'createdAt',
             'deactivatedAt',

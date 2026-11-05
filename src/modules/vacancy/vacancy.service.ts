@@ -95,15 +95,8 @@ export class VacancyService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    if (
-      staff.role === 'field_agent' &&
-      (business.area !== null
-        ? business.area !== staff.area
-        : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
-    ) {
-      throw new ForbiddenException(
-        `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
-      );
+    if (staff.role === 'field_agent' && business.accountAgentId !== staff.id) {
+      throw new ForbiddenException('Field agents may only add vacancies to their account businesses');
     }
 
     const policy = await this.pricingService.current();
@@ -206,11 +199,14 @@ export class VacancyService {
     if (filterStatus) {
       where.status = filterStatus;
     }
-
-    if (staff.role === 'field_agent') {
+    if (staff.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { teamLeadId: staff.id }, select: { id: true } });
+      const teamIds = team.map(({ id }) => id);
       where.business = {
-        area: staff.area ?? undefined,
-        city: staff.city,
+        OR: [
+          { accountAgentId: { in: teamIds } },
+          { leadCreatedByStaffId: { in: teamIds } },
+        ],
       };
     }
 
@@ -221,7 +217,7 @@ export class VacancyService {
     });
   }
 
-  async findById(id: string, actorId: string) {
+  async findById(id: string) {
     const vacancy = await this.prisma.vacancy.findUnique({
       where: { id },
       include: { business: true },
@@ -230,33 +226,15 @@ export class VacancyService {
       throw new NotFoundException(`Vacancy '${id}' not found`);
     }
 
-    const staff = await this.prisma.staff.findUnique({
-      where: { id: actorId },
-    });
-    if (staff?.role === 'field_agent' && vacancy.business.area !== staff.area) {
-      throw new ForbiddenException(
-        `Access denied: vacancy business is in area '${vacancy.business.area}', not your area '${staff.area}'`,
-      );
-    }
-
     return vacancy;
   }
 
-  async findByBusiness(businessId: string, actorId: string) {
+  async findByBusiness(businessId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
     });
     if (!business) {
       throw new NotFoundException(`Business '${businessId}' not found`);
-    }
-
-    const staff = await this.prisma.staff.findUnique({
-      where: { id: actorId },
-    });
-    if (staff?.role === 'field_agent' && business.area !== staff.area) {
-      throw new ForbiddenException(
-        `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
-      );
     }
 
     return this.prisma.vacancy.findMany({
@@ -283,12 +261,6 @@ export class VacancyService {
     }
 
     if (vacancy.salaryMinPaise === null) return [];
-
-    if (staff.role === 'field_agent' && vacancy.business.area !== staff.area) {
-      throw new ForbiddenException(
-        `Access denied: vacancy business is in area '${vacancy.business.area}', not your area '${staff.area}'`,
-      );
-    }
 
     if (vacancy.business.verificationStatus !== 'verified') {
       throw new ForbiddenException('Candidates are hidden until the business is verified');

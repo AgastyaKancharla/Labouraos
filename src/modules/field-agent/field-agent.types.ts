@@ -7,7 +7,7 @@ export interface PriorityDashboardOpportunity {
   salaryMinPaise: number;
   businessId: string;
   businessName: string;
-  businessArea: string | null;
+  businessLocality: string | null;
   candidateId: string;
   candidateCode: string;
   candidateName: string;

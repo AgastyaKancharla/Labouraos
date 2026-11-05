@@ -29,7 +29,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'FA-00001',
     name: 'Field Agent One',
     role: 'field_agent',
-    area: 'Koramangala',
     city: 'Bengaluru',
     teamLeadId: mockTeamLeadId,
     status: 'active',
@@ -41,7 +40,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'FA-00001',
     email: 'fa1@laboura.local',
     role: 'field_agent',
-    area: 'Koramangala',
   };
 
   const otherAgentUser: JwtPayload = {
@@ -49,7 +47,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'FA-00002',
     email: 'fa2@laboura.local',
     role: 'field_agent',
-    area: 'Indiranagar',
   };
 
   const teamLeadUser: JwtPayload = {
@@ -57,7 +54,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'TL-00001',
     email: 'lead1@laboura.local',
     role: 'team_lead',
-    area: 'Koramangala',
   };
 
   const otherTeamLeadUser: JwtPayload = {
@@ -65,7 +61,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'TL-00002',
     email: 'lead2@laboura.local',
     role: 'team_lead',
-    area: 'Indiranagar',
   };
 
   const managerUser: JwtPayload = {
@@ -73,7 +68,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'MGR-00001',
     email: 'mgr@laboura.local',
     role: 'manager',
-    area: 'Koramangala',
   };
 
   const ceoUser: JwtPayload = {
@@ -81,7 +75,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'CEO-00001',
     email: 'ceo@laboura.local',
     role: 'ceo',
-    area: 'Koramangala',
   };
 
   const financeUser: JwtPayload = {
@@ -89,7 +82,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
     code: 'FIN-00001',
     email: 'fin@laboura.local',
     role: 'finance',
-    area: 'Koramangala',
   };
 
   beforeEach(() => {

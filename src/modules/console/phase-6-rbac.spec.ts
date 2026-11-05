@@ -225,13 +225,13 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
   });
 
   describe('RBAC: Refund Approvals (AGENTS.md §7)', () => {
-    it('Finance, Call Agent, and Field Agent cannot approve candidate refunds (403)', async () => {
+    it('Manager, Call Agent, and Field Agent cannot approve candidate refunds (403)', async () => {
       const candidate = await prisma.jobSeeker.findFirst({
         where: { code: 'JS-00001' },
       });
       expect(candidate).toBeDefined();
 
-      for (const token of [financeToken, callAgentToken, fieldAgentToken]) {
+      for (const token of [managerToken, callAgentToken, fieldAgentToken]) {
         await request(app.getHttpServer())
           .post(`/job-seekers/${candidate!.id}/refund`)
           .set('Authorization', `Bearer ${token}`)
@@ -240,13 +240,13 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
       }
     });
 
-    it('Finance, Call Agent, and Field Agent cannot approve placement refunds (403)', async () => {
+    it('Manager, Call Agent, and Field Agent cannot approve placement refunds (403)', async () => {
       const placement = await prisma.placement.findFirst({
         where: { code: 'PL-00003' },
       });
       expect(placement).toBeDefined();
 
-      for (const token of [financeToken, callAgentToken, fieldAgentToken]) {
+      for (const token of [managerToken, callAgentToken, fieldAgentToken]) {
         await request(app.getHttpServer())
           .post(`/placements/${placement!.id}/refund`)
           .set('Authorization', `Bearer ${token}`)

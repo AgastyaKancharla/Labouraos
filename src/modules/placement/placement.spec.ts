@@ -130,6 +130,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         code: `BZ-P5K-${timestamp}`,
         name: 'Kora Tech Solutions',
         area: koraArea,
+        accountAgentId: faKora.id,
         city: 'Bengaluru',
         phone: `91${timestamp.toString().slice(-8)}1`,
         phoneVerified: true,
@@ -141,6 +142,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         code: `BZ-P5I-${timestamp}`,
         name: 'Indi Retail Hub',
         area: indiArea,
+        accountAgentId: faIndi.id,
         city: 'Bengaluru',
         phone: `91${timestamp.toString().slice(-8)}2`,
         phoneVerified: true,
@@ -316,8 +318,8 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect(audit?.action).toBe('placement_created');
   });
 
-  it('enforces field agent area scoping: denied for vacancy outside assigned area (403)', async () => {
-    // faKora tries to place into indiVacancy
+  it('enforces account-agent scoping: denied for another agent’s business (403)', async () => {
+    // faKora tries to place into a vacancy owned by faIndi
     const res = await request(app.getHttpServer())
       .post(`/vacancies/${indiVacancyId}/placements`)
       .set('Authorization', `Bearer ${faKoraToken}`)
@@ -329,7 +331,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect(res.status).toBe(403);
   });
 
-  it('allows field agent to create placement within their own assigned area', async () => {
+  it('allows field agent to create placement for their account business', async () => {
     const res = await request(app.getHttpServer())
       .post(`/vacancies/${indiVacancyId}/placements`)
       .set('Authorization', `Bearer ${faIndiToken}`)
@@ -494,7 +496,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(res.body.message).toContain('offered');
     });
 
-    it('enforces area scoping when responding to a placement (403 for other area)', async () => {
+    it('enforces account-agent scoping when responding to a placement (403 for another account)', async () => {
       // Create placement in Koramangala
       const placeRes = await request(app.getHttpServer())
         .post(`/vacancies/${koraVacancyId}/placements`)
@@ -505,7 +507,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         })
         .expect(201);
 
-      // faIndi tries to respond to a Koramangala placement
+      // faIndi tries to respond to a placement owned by faKora
       const res = await request(app.getHttpServer())
         .post(`/placements/${placeRes.body.id}/respond`)
         .set('Authorization', `Bearer ${faIndiToken}`)
@@ -1188,7 +1190,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   });
 
   describe('Phase 5 Task 7: Refund approval (business side)', () => {
-    it('denies non-CEO/non-Manager staff (403)', async () => {
+    it('denies non-release roles and Managers (403), while Finance can release (201)', async () => {
       const js = await prisma.jobSeeker.create({
         data: {
           code: `JS-P5REF1-${timestamp}`,
@@ -1232,12 +1234,19 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({})
         .expect(403);
 
-      // Finance gets 403 (approval stays CEO/Manager only, per §7)
+      // Manager cannot release money
+      await request(app.getHttpServer())
+        .post(`/placements/${placement.id}/refund`)
+        .set('Authorization', `Bearer ${mgrToken}`)
+        .send({ asOf: '2026-10-17T00:00:00.000Z', reason: 'No replacement within the search period' })
+        .expect(403);
+
+      // Finance can release eligible refunds
       await request(app.getHttpServer())
         .post(`/placements/${placement.id}/refund`)
         .set('Authorization', `Bearer ${financeToken}`)
-        .send({})
-        .expect(403);
+        .send({ asOf: '2026-10-17T00:00:00.000Z', reason: 'No replacement within the search period' })
+        .expect(201);
     });
 
     it('denies refund when eligibility is business_breach (no remedy)', async () => {
@@ -1331,7 +1340,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
       const res = await request(app.getHttpServer())
         .post(`/placements/${placement.id}/refund`)
-        .set('Authorization', `Bearer ${mgrToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ asOf: '2026-11-01T00:00:00.000Z' }) // day 31
         .expect(400);
 
@@ -1475,7 +1484,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
         const res = await request(app.getHttpServer())
           .post(`/placements/${placement.id}/refund`)
-          .set('Authorization', `Bearer ${mgrToken}`)
+          .set('Authorization', `Bearer ${financeToken}`)
           .send({ asOf: tc.asOf })
           .expect(201);
 
@@ -1495,7 +1504,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
       await request(app.getHttpServer())
         .post(`/placements/${placement.id}/refund`)
-        .set('Authorization', `Bearer ${mgrToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ asOf: '2026-12-01T00:00:00.000Z' })
         .expect(400);
 

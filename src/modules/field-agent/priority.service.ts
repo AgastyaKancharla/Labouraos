@@ -121,12 +121,6 @@ export class PriorityService {
       city: staff.city,
     };
 
-    if (staff.role === 'field_agent') {
-      vacancyWhere.business = {
-        area: staff.area ?? undefined,
-        city: staff.city,
-      };
-    }
 
     const policy = await this.pricingService.current();
 
@@ -152,7 +146,7 @@ export class PriorityService {
         headcount: vacancy.headcount,
         businessId: vacancy.business.id,
         businessName: vacancy.business.name,
-        businessArea: vacancy.business.area,
+        businessLocality: vacancy.business.locality,
         daysOpen,
         isReplacement,
         isInReplacementWindow,
@@ -190,12 +184,6 @@ export class PriorityService {
       city: staff.city,
     };
 
-    if (staff.role === 'field_agent') {
-      vacancyWhere.business = {
-        area: staff.area ?? undefined,
-        city: staff.city,
-      };
-    }
 
     const openVacancies = await this.prisma.vacancy.findMany({
       where: vacancyWhere,

@@ -5,7 +5,6 @@ import {
   Get,
   Param,
   Post,
-  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -54,11 +53,8 @@ export class BusinessController {
   @Get()
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('business', 'read')
-  async findAll(
-    @Req() req: Request & { user: JwtPayload },
-    @Query('area') filterArea?: string,
-  ) {
-    return this.businessService.findAll(req.user.sub, filterArea);
+  async findAll(@Req() req: Request & { user: JwtPayload }) {
+    return this.businessService.findAll(req.user.sub);
   }
 
   @Get(':id')
@@ -66,9 +62,8 @@ export class BusinessController {
   @RequirePermission('business', 'read')
   async findById(
     @Param('id') id: string,
-    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.businessService.findById(id, req.user.sub);
+    return this.businessService.findById(id);
   }
 
   @Post(':id/agreement-links')
@@ -163,9 +158,8 @@ export class BusinessController {
   @RequirePermission('vacancy', 'read')
   async findVacanciesByBusiness(
     @Param('id') businessId: string,
-    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.vacancyService.findByBusiness(businessId, req.user.sub);
+    return this.vacancyService.findByBusiness(businessId);
   }
 
   @Post(':id/visits')

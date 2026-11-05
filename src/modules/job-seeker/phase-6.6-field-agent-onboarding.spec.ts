@@ -683,24 +683,23 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
     });
   });
 
-  describe('4. Area Scoping Invariance on Businesses', () => {
-    it('Field agent CAN access business inside assigned area (Koramangala)', async () => {
+  describe('4. Business access across localities', () => {
+    it('Field agents can read businesses regardless of locality', async () => {
       const res = await request(app.getHttpServer())
         .get(`/businesses/${koramangalaBusinessId}`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
 
       expect(res.status).toBe(200);
       expect(res.body.id).toBe(koramangalaBusinessId);
-      expect(res.body.area).toBe('Koramangala');
     });
 
-    it('Field agent is strictly REFUSED (403) accessing business outside assigned area (Indiranagar)', async () => {
+    it('Field agents can read a business outside their former area', async () => {
       const res = await request(app.getHttpServer())
         .get(`/businesses/${indiranagarBusinessId}`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
 
-      expect(res.status).toBe(403);
-      expect(res.body.message).toContain('Access denied');
+      expect(res.status).toBe(200);
+      expect(res.body.id).toBe(indiranagarBusinessId);
     });
   });
 });

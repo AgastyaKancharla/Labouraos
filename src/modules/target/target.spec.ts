@@ -123,7 +123,6 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
         email: `fa_t2_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         teamLeadId: teamLead2Id,
         city: 'Bengaluru',
       },

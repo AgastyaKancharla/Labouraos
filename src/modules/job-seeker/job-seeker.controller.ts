@@ -130,7 +130,7 @@ export class JobSeekerController {
   }
 
   @Post(':id/refund')
-  @RequireRoles('ceo', 'manager')
+  @RequireRoles('ceo', 'finance')
   @RequirePermission('payment', 'write')
   async approveRefund(
     @Param('id') id: string,

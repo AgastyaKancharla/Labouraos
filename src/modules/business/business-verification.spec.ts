@@ -80,7 +80,6 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
           role: 'field_agent',
           status: 'active',
           city: 'Bengaluru',
-          area: 'Koramangala',
           teamLeadId,
         },
       });
@@ -94,8 +93,8 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
     nearestAgentId = nearestAgent.id;
     lockedAgentId = lockedAgent.id;
     uncheckedAgentId = uncheckedAgent.id;
-    farAgentToken = jwt.sign({ sub: farAgent.id, role: farAgent.role, code: farAgent.code, email: farAgent.email, area: farAgent.area });
-    nearestAgentToken = jwt.sign({ sub: nearestAgent.id, role: nearestAgent.role, code: nearestAgent.code, email: nearestAgent.email, area: nearestAgent.area });
+    farAgentToken = jwt.sign({ sub: farAgent.id, role: farAgent.role, code: farAgent.code, email: farAgent.email });
+    nearestAgentToken = jwt.sign({ sub: nearestAgent.id, role: nearestAgent.role, code: nearestAgent.code, email: nearestAgent.email });
 
     businessPhone = `+9197${suffix.slice(0, 8)}`;
     const business = await prisma.business.create({
@@ -105,7 +104,6 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
         phone: businessPhone,
         phoneVerified: true,
         city: 'Bengaluru',
-        area: 'Koramangala',
         latitude: 12.9716,
         longitude: 77.5946,
         documentsStatus: 'no_documents',
@@ -189,7 +187,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       .expect(201);
     await request(app.getHttpServer())
       .post('/field-agent/check-in')
-      .set('Authorization', `Bearer ${jwt.sign({ sub: lockedAgentId, role: 'field_agent', area: 'Koramangala' })}`)
+      .set('Authorization', `Bearer ${jwt.sign({ sub: lockedAgentId, role: 'field_agent' })}`)
       .send({ latitude: 12.97161, longitude: 77.59461, accuracyMeters: 2 })
       .expect(201);
     await prisma.staff.update({

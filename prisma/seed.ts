@@ -154,7 +154,6 @@ export async function seed(prismaClient?: PrismaClient) {
       update: {
         name: 'Vikram Rao',
         role: 'team_lead',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
       create: {
@@ -163,7 +162,6 @@ export async function seed(prismaClient?: PrismaClient) {
         email: 'lead.koramangala@laboura.local',
         passwordHash,
         role: 'team_lead',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -174,7 +172,6 @@ export async function seed(prismaClient?: PrismaClient) {
       update: {
         name: 'Deepa Nair',
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
       },
@@ -184,7 +181,6 @@ export async function seed(prismaClient?: PrismaClient) {
         email: 'call.agent@laboura.local',
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
       },
@@ -196,7 +192,6 @@ export async function seed(prismaClient?: PrismaClient) {
       update: {
         name: 'Kiran Kumar',
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
       },
@@ -206,7 +201,6 @@ export async function seed(prismaClient?: PrismaClient) {
         email: 'field.agent@laboura.local',
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
       },
@@ -262,12 +256,12 @@ export async function seed(prismaClient?: PrismaClient) {
     }
     console.log('Seeded staff log in with their staff code.');
 
-    // 2. Businesses (different cities and areas)
+    // 2. Businesses (different cities and localities)
     const bz1 = await prisma.business.upsert({
       where: { phone: '+918011110001' },
       update: {
         name: 'Metro Facility Solutions',
-        area: 'Koramangala',
+        locality: 'Koramangala',
         city: 'Bengaluru',
         phoneVerified: true,
         latitude: 12.9352,
@@ -280,7 +274,7 @@ export async function seed(prismaClient?: PrismaClient) {
         contactName: 'Sunil Verma',
         phone: '+918011110001',
         phoneVerified: true,
-        area: 'Koramangala',
+        locality: 'Koramangala',
         city: 'Bengaluru',
         latitude: 12.9352,
         longitude: 77.6245,
@@ -292,7 +286,7 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { phone: '+918011110002' },
       update: {
         name: 'Indira Retail Mart',
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         city: 'Bengaluru',
         phoneVerified: true,
         latitude: 12.9784,
@@ -305,7 +299,7 @@ export async function seed(prismaClient?: PrismaClient) {
         contactName: 'Rohit Shenoy',
         phone: '+918011110002',
         phoneVerified: true,
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         city: 'Bengaluru',
         latitude: 12.9784,
         longitude: 77.6408,
@@ -317,7 +311,7 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { phone: '+918211110003' },
       update: {
         name: 'Mysuru Industrial Fabrications',
-        area: 'Hebbal Industrial',
+        locality: 'Hebbal Industrial',
         city: 'Mysuru',
         phoneVerified: true,
         latitude: 12.3051,
@@ -332,7 +326,7 @@ export async function seed(prismaClient?: PrismaClient) {
         contactName: 'Raghavendra K',
         phone: '+918211110003',
         phoneVerified: true,
-        area: 'Hebbal Industrial',
+        locality: 'Hebbal Industrial',
         city: 'Mysuru',
         latitude: 12.3051,
         longitude: 76.6551,

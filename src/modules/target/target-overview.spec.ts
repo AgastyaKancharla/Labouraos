@@ -14,7 +14,6 @@ interface MockStaffRecord {
   code: string;
   name: string;
   role: string;
-  area: string;
   city: string;
   createdAt: Date;
   teamLeadId: string | null;
@@ -79,7 +78,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'CA-00001',
     email: 'ca1@laboura.local',
     role: 'call_agent',
-    area: 'Koramangala',
   };
 
   const fieldAgentUser: JwtPayload = {
@@ -87,7 +85,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'FA-00001',
     email: 'fa1@laboura.local',
     role: 'field_agent',
-    area: 'Koramangala',
   };
 
   const otherAgentUser: JwtPayload = {
@@ -95,7 +92,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'CA-00002',
     email: 'ca2@laboura.local',
     role: 'call_agent',
-    area: 'Indiranagar',
   };
 
   const teamLeadUser: JwtPayload = {
@@ -103,7 +99,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'TL-00001',
     email: 'tl1@laboura.local',
     role: 'team_lead',
-    area: 'Koramangala',
   };
 
   const otherTeamLeadUser: JwtPayload = {
@@ -111,7 +106,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'TL-00002',
     email: 'tl2@laboura.local',
     role: 'team_lead',
-    area: 'Indiranagar',
   };
 
   const managerUser: JwtPayload = {
@@ -119,7 +113,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'MGR-00001',
     email: 'mgr@laboura.local',
     role: 'manager',
-    area: 'Koramangala',
   };
 
   const ceoUser: JwtPayload = {
@@ -127,7 +120,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'CEO-00001',
     email: 'ceo@laboura.local',
     role: 'ceo',
-    area: 'Koramangala',
   };
 
   const financeUser: JwtPayload = {
@@ -135,7 +127,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
     code: 'FIN-00001',
     email: 'fin@laboura.local',
     role: 'finance',
-    area: 'Koramangala',
   };
 
   const mockStaffRecords: Record<string, MockStaffRecord> = {
@@ -144,7 +135,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'CA-00001',
       name: 'Call Agent 1',
       role: 'call_agent',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: mockTeamLeadId,
@@ -155,7 +145,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'FA-00001',
       name: 'Field Agent 1',
       role: 'field_agent',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: mockTeamLeadId,
@@ -166,7 +155,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'CA-00002',
       name: 'Other Agent 2',
       role: 'call_agent',
-      area: 'Indiranagar',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: otherTeamLeadId,
@@ -177,7 +165,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'TL-00001',
       name: 'Team Lead 1',
       role: 'team_lead',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -188,7 +175,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'TL-00002',
       name: 'Team Lead 2',
       role: 'team_lead',
-      area: 'Indiranagar',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -199,7 +185,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'MGR-00001',
       name: 'Manager 1',
       role: 'manager',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -210,7 +195,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
       code: 'CEO-00001',
       name: 'CEO 1',
       role: 'ceo',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -666,7 +650,6 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
         code: 'CA-00099',
         name: 'Mid Month Agent',
         role: 'call_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
         createdAt: new Date('2026-11-20T10:00:00+05:30'),
         teamLeadId: mockTeamLeadId,

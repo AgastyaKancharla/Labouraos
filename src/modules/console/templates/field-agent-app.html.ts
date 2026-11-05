@@ -312,7 +312,7 @@ export function renderFieldAgentAppHtml(): string {
   <header>
     <div>
       <h1>Laboura Field Agent App</h1>
-      <span style="font-size: 0.75rem; color: var(--text-muted);" id="agent-area-display">Assigned Area: Loading...</span>
+      <span style="font-size: 0.75rem; color: var(--text-muted);">City-wide assignments</span>
     </div>
     <div class="user-info">
       <span id="user-display" style="font-size: 0.875rem;">Not logged in</span>
@@ -432,8 +432,8 @@ export function renderFieldAgentAppHtml(): string {
             <small id="fa-biz-otp-status" style="color: var(--warning); display: block; margin-top: 4px;"></small>
           </div>
           <div class="form-group">
-            <label>Area (Scoped to your assigned area)</label>
-            <input type="text" id="fa-biz-area" readonly style="background: #1e293b;">
+            <label>Locality</label>
+            <input type="text" id="fa-biz-locality" placeholder="Type the business locality">
           </div>
           <div class="form-group">
             <label>Address</label>
@@ -474,7 +474,7 @@ export function renderFieldAgentAppHtml(): string {
         </div>
         <div style="max-width: 550px;">
           <div class="form-group">
-            <label>Business Code or ID (must be in your area)</label>
+            <label>Business Code or ID</label>
             <input type="text" id="fa-vc-biz-id" placeholder="BZ-00001 or UUID">
           </div>
           <div class="form-group">
@@ -521,7 +521,7 @@ export function renderFieldAgentAppHtml(): string {
               </tr>
             </thead>
             <tbody id="fa-shortlist-tbody">
-              <tr><td colspan="6" style="text-align: center;">Enter vacancy ID to load area-matched candidates</td></tr>
+              <tr><td colspan="6" style="text-align: center;">Enter vacancy ID to load candidates</td></tr>
             </tbody>
           </table>
         </div>
@@ -677,11 +677,6 @@ export function renderFieldAgentAppHtml(): string {
       currentAgent = payload;
       document.getElementById('user-display').textContent = payload.email;
 
-      // Display agent's assigned area and lock area field
-      const assignedArea = payload.area || 'Koramangala';
-      document.getElementById('agent-area-display').textContent = 'Assigned Area: ' + assignedArea;
-      document.getElementById('fa-biz-area').value = assignedArea;
-
       // Load Priority Dashboard data immediately
       loadPriorityData();
     }
@@ -760,7 +755,7 @@ export function renderFieldAgentAppHtml(): string {
               <td>\${v.replacementDeadline ? new Date(v.replacementDeadline).toLocaleDateString() : '—'}</td>
             </tr>
           \`;
-        }).join('') || '<tr><td colspan="6">No priority vacancies in this area</td></tr>';
+        }).join('') || '<tr><td colspan="6">No priority vacancies in this city</td></tr>';
 
         // 3. Trade Supply / Demand Board (Own Area, directly calling /priority/trades)
         const trades = await api('/priority/trades');
@@ -864,7 +859,7 @@ export function renderFieldAgentAppHtml(): string {
         if (!bizOtpRequestId) return alert('Business phone must pass OTP verification');
         if (!capturedSelfieHash) return alert('Camera selfie is required for in-person onboarding');
 
-        const area = document.getElementById('fa-biz-area').value;
+        const locality = document.getElementById('fa-biz-locality').value.trim();
         const lat = agentLat || 12.9352;
         const lon = agentLon || 77.6245;
 
@@ -872,7 +867,7 @@ export function renderFieldAgentAppHtml(): string {
           name: document.getElementById('fa-biz-name').value.trim(),
           phone: document.getElementById('fa-biz-phone').value.trim(),
           address: document.getElementById('fa-biz-address').value.trim(),
-          area,
+          locality,
           latitude: lat,
           longitude: lon,
           visitLatitude: lat,
@@ -883,7 +878,7 @@ export function renderFieldAgentAppHtml(): string {
         };
 
         const res = await api('/businesses', { method: 'POST', body });
-        showAlert('Business onboarded in ' + area + ': ' + res.code);
+        showAlert('Business onboarded: ' + res.code);
         document.getElementById('fa-vc-biz-id').value = res.id;
       } catch (e) {
         showAlert(e.message, false);
@@ -903,7 +898,7 @@ export function renderFieldAgentAppHtml(): string {
           method: 'POST',
           body: { tradeSkill, salaryMinPaise, headcount, description }
         });
-        showAlert('Vacancy captured in your area: ' + res.code);
+        showAlert('Vacancy captured: ' + res.code);
         document.getElementById('fa-shortlist-vc-id').value = res.id;
       } catch (e) {
         showAlert(e.message, false);

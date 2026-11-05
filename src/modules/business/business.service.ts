@@ -413,7 +413,7 @@ export class BusinessService {
     });
   }
 
-  async findAll(actorId: string, filterArea?: string) {
+  async findAll(actorId: string) {
     const staff = await this.prisma.staff.findUnique({
       where: { id: actorId },
     });
@@ -422,14 +422,16 @@ export class BusinessService {
     }
 
     const where: Prisma.BusinessWhereInput = {};
-    if (staff.role === 'field_agent') {
-      where.city = staff.city;
+    if (staff.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({
+        where: { teamLeadId: staff.id },
+        select: { id: true },
+      });
+      const teamIds = team.map(({ id }) => id);
       where.OR = [
-        ...(staff.area ? [{ area: staff.area }] : []),
-        { area: null, leadCreatedByStaffId: staff.id },
+        { accountAgentId: { in: teamIds } },
+        { leadCreatedByStaffId: { in: teamIds } },
       ];
-    } else if (filterArea) {
-      where.area = filterArea;
     }
 
     return this.prisma.business.findMany({
@@ -439,7 +441,7 @@ export class BusinessService {
     });
   }
 
-  async findById(id: string, actorId: string) {
+  async findById(id: string) {
     let business = await this.prisma.business.findUnique({
       where: { id },
       include: { vacancies: true, visits: true },
@@ -452,20 +454,6 @@ export class BusinessService {
     }
     if (!business) {
       throw new NotFoundException(`Business '${id}' not found`);
-    }
-
-    const staff = await this.prisma.staff.findUnique({
-      where: { id: actorId },
-    });
-    if (
-      staff?.role === 'field_agent' &&
-      (business.area !== null
-        ? business.area !== staff.area
-        : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
-    ) {
-      throw new ForbiddenException(
-        `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
-      );
     }
 
     return business;
@@ -490,18 +478,6 @@ export class BusinessService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    if (
-      staff.role === 'field_agent' &&
-      !dto.assignmentId &&
-      (business.area !== null
-        ? business.area !== staff.area
-        : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
-    ) {
-      throw new ForbiddenException(
-        `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
-      );
-    }
-
     const selfieHash = dto.selfieHash?.trim() || null;
     const selfieUrl = dto.selfieUrl?.trim() || null;
     const assignment = dto.assignmentId
@@ -515,6 +491,17 @@ export class BusinessService {
         assignment.status !== 'assigned'
       ) {
         throw new ForbiddenException('Only the assigned field agent can complete an open visit assignment');
+      }
+    }
+    if (staff.role === 'field_agent') {
+      const accountAgent = business.accountAgentId === staff.id;
+      const leadCreatedByAgent =
+        business.leadCreatedByStaffId === staff.id &&
+        ['lead', 'pending_visit'].includes(business.verificationStatus ?? '');
+      const assignedOpenVisit =
+        assignment?.assignedStaffId === staff.id && assignment.status === 'assigned';
+      if (!accountAgent && !leadCreatedByAgent && !assignedOpenVisit) {
+        throw new ForbiddenException('Field agents may only write their account businesses, own open visits, or own active leads');
       }
     }
     const purpose = assignment?.purpose ?? dto.purpose ?? 'follow_up';

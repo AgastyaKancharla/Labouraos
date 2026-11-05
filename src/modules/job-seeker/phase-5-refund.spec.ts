@@ -168,7 +168,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
   });
 
   describe('POST /job-seekers/:id/refund', () => {
-    it('denies non-CEO/non-Manager staff (403)', async () => {
+    it('denies call agents, field agents, and managers (403)', async () => {
       const candidate = await prisma.jobSeeker.create({
         data: {
           code: `JS-P5R-ACT-${timestamp}`,
@@ -198,12 +198,13 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
         .send({})
         .expect(403);
 
-      // Finance denied (approval stays CEO/Manager only, per §7)
+      // Manager denied: managers do not release money
       await request(app.getHttpServer())
         .post(`/job-seekers/${candidate.id}/refund`)
-        .set('Authorization', `Bearer ${financeToken}`)
+        .set('Authorization', `Bearer ${managerToken}`)
         .send({})
         .expect(403);
+
     });
 
     it('denies refund to a candidate placed on day 10 when claimed on day 31', async () => {
@@ -227,7 +228,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
       const day31 = '2026-11-01T12:00:00.000Z';
       const res = await request(app.getHttpServer())
         .post(`/job-seekers/${placedCandidate.id}/refund`)
-        .set('Authorization', `Bearer ${managerToken}`)
+        .set('Authorization', `Bearer ${ceoToken}`)
         .send({ asOf: day31 })
         .expect(400);
 
@@ -289,7 +290,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
       const day31 = '2026-11-01T12:00:00.000Z';
       const res = await request(app.getHttpServer())
         .post(`/job-seekers/${rejCandidate.id}/refund`)
-        .set('Authorization', `Bearer ${managerToken}`)
+        .set('Authorization', `Bearer ${ceoToken}`)
         .send({ asOf: day31 })
         .expect(400);
 
@@ -325,11 +326,11 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
         .send({ asOf: day20 })
         .expect(400);
 
-      // On day 31 (after 30 days elapsed): approved by CEO
+      // On day 31 (after 30 days elapsed): approved by Finance
       const day31 = new Date(candidate!.paymentReceivedAt!.getTime() + 31 * 24 * 60 * 60 * 1000).toISOString();
       const refundRes = await request(app.getHttpServer())
         .post(`/job-seekers/${candidate!.id}/refund`)
-        .set('Authorization', `Bearer ${ceoToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ asOf: day31 })
         .expect(201);
 

@@ -19,7 +19,6 @@ export interface CallAgentMetricsResult {
     code: string;
     name: string;
     role: string;
-    area: string | null;
     city: string;
   };
   period: {
@@ -243,7 +242,6 @@ export class CallAgentMetricsService {
         code: staff.code,
         name: staff.name,
         role: staff.role,
-        area: staff.area,
         city: staff.city,
       },
       period: {

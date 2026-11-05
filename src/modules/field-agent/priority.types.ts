@@ -25,7 +25,7 @@ export interface PriorityVacancyRow {
   headcount: number;
   businessId: string;
   businessName: string;
-  businessArea: string | null;
+  businessLocality: string | null;
   daysOpen: number;
   isReplacement: boolean;
   isInReplacementWindow: boolean;

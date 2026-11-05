@@ -9,7 +9,6 @@ interface MockStaffRecord {
   code: string;
   name: string;
   role: string;
-  area: string;
   city: string;
   createdAt: Date;
   teamLeadId: string | null;
@@ -41,7 +40,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
     code: 'CA-00001',
     email: 'ca@laboura.local',
     role: 'call_agent',
-    area: 'Koramangala',
   };
 
   const fieldAgentUser: JwtPayload = {
@@ -49,7 +47,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
     code: 'FA-00001',
     email: 'fa1@laboura.local',
     role: 'field_agent',
-    area: 'Koramangala',
   };
 
   const teamLeadUser: JwtPayload = {
@@ -57,7 +54,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
     code: 'TL-00001',
     email: 'tl@laboura.local',
     role: 'team_lead',
-    area: 'Koramangala',
   };
 
   const managerUser: JwtPayload = {
@@ -65,7 +61,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
     code: 'MGR-00001',
     email: 'mgr@laboura.local',
     role: 'manager',
-    area: 'Koramangala',
   };
 
   const ceoUser: JwtPayload = {
@@ -73,7 +68,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
     code: 'CEO-00001',
     email: 'ceo@laboura.local',
     role: 'ceo',
-    area: 'Koramangala',
   };
 
   const financeUser: JwtPayload = {
@@ -81,7 +75,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
     code: 'FIN-00001',
     email: 'fin@laboura.local',
     role: 'finance',
-    area: 'Koramangala',
   };
 
   const mockStaffRecords: Record<string, MockStaffRecord> = {
@@ -90,7 +83,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
       code: 'FA-00001',
       name: 'Field Agent One',
       role: 'field_agent',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -101,7 +93,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
       code: 'FA-00002',
       name: 'Field Agent Two',
       role: 'field_agent',
-      area: 'Indiranagar',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -112,7 +103,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
       code: 'FA-00003',
       name: 'Field Agent Three',
       role: 'field_agent',
-      area: 'Whitefield',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,
@@ -123,7 +113,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
       code: 'FA-00004',
       name: 'Untargeted New Agent',
       role: 'field_agent',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-11-01T00:00:00Z'),
       teamLeadId: null,
@@ -134,7 +123,6 @@ describe('Phase 6.7 Task 7: Placements Leaderboard', () => {
       code: 'CA-00001',
       name: 'Call Agent One',
       role: 'call_agent',
-      area: 'Koramangala',
       city: 'Bengaluru',
       createdAt: new Date('2026-01-01T00:00:00Z'),
       teamLeadId: null,

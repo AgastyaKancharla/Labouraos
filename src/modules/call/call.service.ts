@@ -481,24 +481,24 @@ export class CallService {
         phone: row.phone,
         windowStart: row.preferredCallWindowStart,
         windowEnd: row.preferredCallWindowEnd,
-        area: null as string | null,
+        accountAgentId: null,
       };
     }
     if (subjectType === 'business') {
       let row = await this.prisma.business.findUnique({
         where: { id: subjectId },
-        select: { id: true, phone: true, area: true },
+        select: { id: true, phone: true, accountAgentId: true },
       });
       if (!row) {
         row = await this.prisma.business.findUnique({
           where: { code: subjectId },
-          select: { id: true, phone: true, area: true },
+          select: { id: true, phone: true, accountAgentId: true },
         });
       }
       if (!row) {
         return null;
       }
-      return { id: row.id, phone: row.phone, area: row.area, windowStart: null, windowEnd: null };
+      return { id: row.id, phone: row.phone, accountAgentId: row.accountAgentId, windowStart: null, windowEnd: null };
     }
     let row = await this.prisma.referral.findUnique({
       where: { id: subjectId },
@@ -513,25 +513,21 @@ export class CallService {
     if (!row) {
       return null;
     }
-    return { id: row.id, phone: row.phone, area: null, windowStart: null, windowEnd: null };
+    return { id: row.id, phone: row.phone, accountAgentId: null, windowStart: null, windowEnd: null };
   }
 
   private async assertCanCall(
     actor: CallActor,
     subjectType: 'job_seeker' | 'business' | 'referral',
-    subject: { area: string | null },
+    subject: { accountAgentId: string | null },
   ) {
     const rule = RBAC_MATRIX[actor.role as Role]?.[subjectType]?.read;
     if (!rule?.allowed) {
       throw new ForbiddenException('You cannot call this record');
     }
     if (actor.role === 'field_agent' && subjectType === 'business') {
-      const staff = await this.prisma.staff.findUnique({
-        where: { id: actor.id },
-        select: { area: true },
-      });
-      if (!staff?.area || staff.area !== subject.area) {
-        throw new ForbiddenException('You cannot call a business outside your area');
+      if (subject.accountAgentId !== actor.id) {
+        throw new ForbiddenException('Field agents may only call their account businesses');
       }
     }
   }

@@ -2,7 +2,7 @@ export interface ExportPlacementsQueryDto {
   from?: string;
   to?: string;
   status?: string;
-  area?: string;
+  locality?: string;
 }
 
 export interface RegulatoryPlacementExportRow {
@@ -16,7 +16,7 @@ export interface RegulatoryPlacementExportRow {
   monthlySalaryINR: number;
   placementFeeINR: number;
   status: string;
-  area: string | null;
+  locality: string | null;
   city: string;
 }
 
@@ -32,7 +32,7 @@ export function formatPlacementsCsv(rows: RegulatoryPlacementExportRow[]): strin
     'Monthly Salary (INR)',
     'Placement Fee (INR)',
     'Status',
-    'Area',
+    'Locality',
     'City',
   ];
 
@@ -58,7 +58,7 @@ export function formatPlacementsCsv(rows: RegulatoryPlacementExportRow[]): strin
       escapeCsv(row.monthlySalaryINR),
       escapeCsv(row.placementFeeINR),
       escapeCsv(row.status),
-      escapeCsv(row.area),
+      escapeCsv(row.locality),
       escapeCsv(row.city),
     ].join(','));
   }

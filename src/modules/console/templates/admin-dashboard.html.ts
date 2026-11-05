@@ -829,7 +829,7 @@ export function renderAdminDashboardHtml(): string {
             <td><strong>\${b.code}</strong></td>
             <td>\${b.name}</td>
             <td>\${formatPhoneLast4(b.phone)}</td>
-            <td>\${b.area}</td>
+            <td>\${b.locality || ''}</td>
             <td>\${b.selfieUrl ? 'Yes' : 'Pending'}</td>
             <td>\${b.geofenceFlag ? 'FLAGGED' : 'Clean'}</td>
             <td><button class="btn-sm btn-call" onclick="openAdminCalling('business', '\${b.id}', '\${b.code}')">Call</button></td>

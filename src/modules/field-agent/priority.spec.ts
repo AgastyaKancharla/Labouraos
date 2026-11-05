@@ -113,7 +113,7 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
       data: {
         code: `BZ-PRIOK-${timestamp}`,
         name: 'Kora Enterprise Hub',
-        area: koraArea,
+        locality: koraArea,
         city: 'Bengaluru',
         phone: `97${timestamp.toString().slice(-8)}1`,
         phoneVerified: true,
@@ -124,7 +124,7 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
       data: {
         code: `BZ-PRIOI-${timestamp}`,
         name: 'Indi Commercial Complex',
-        area: indiArea,
+        locality: indiArea,
         city: 'Bengaluru',
         phone: `97${timestamp.toString().slice(-8)}2`,
         phoneVerified: true,
@@ -437,7 +437,7 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
   });
 
   describe('GET /priority/vacancies', () => {
-    it('scopes vacancies to field agent area and puts in-window replacement vacancy at the top', async () => {
+    it('shows city-wide vacancies and puts in-window replacement vacancy at the top', async () => {
       const res = await request(app.getHttpServer())
         .get(`/priority/vacancies?now=${baseTime.toISOString()}`)
         .set('Authorization', `Bearer ${faKoraToken}`)
@@ -445,36 +445,29 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
 
       expect(Array.isArray(res.body)).toBe(true);
 
-      // All vacancies belong to koraArea
-      for (const row of res.body) {
-        expect(row.businessArea).toBe(koraArea);
-        expect(row.id).not.toBe(indiVacId);
-      }
+      expect(res.body.some((row: { businessLocality: string }) => row.businessLocality === koraArea)).toBe(true);
+      expect(res.body.some((row: { businessLocality: string }) => row.businessLocality === indiArea)).toBe(true);
 
       const ids = res.body.map((r: { id: string }) => r.id);
 
-      // Replacement vacancy inside 15-day window must be at the very top
-      expect(ids[0]).toBe(koraInWindowReplacementVacId);
-
-      // Old vacancy (10 days open) comes before newer vacancy (1 day open)
+      // The in-window replacement ranks before the regular vacancies from this fixture.
       const oldIdx = ids.indexOf(koraOldVacId);
       const newHighFeeIdx = ids.indexOf(koraNewHighFeeVacId);
+      expect(ids).toContain(koraInWindowReplacementVacId);
+      expect(ids.indexOf(koraInWindowReplacementVacId)).toBeLessThan(oldIdx);
       expect(oldIdx).toBeLessThan(newHighFeeIdx);
 
-      // Indiranagar field agent only sees indiArea vacancies
+      // Another field agent also sees city-wide vacancies
       const indiRes = await request(app.getHttpServer())
         .get(`/priority/vacancies?now=${baseTime.toISOString()}`)
         .set('Authorization', `Bearer ${faIndiToken}`)
         .expect(200);
-      for (const row of indiRes.body) {
-        expect(row.businessArea).toBe(indiArea);
-        expect(row.id).not.toBe(koraInWindowReplacementVacId);
-      }
+      expect(indiRes.body.some((row: { id: string }) => row.id === koraInWindowReplacementVacId)).toBe(true);
       const indiIds = indiRes.body.map((r: { id: string }) => r.id);
       expect(indiIds).toContain(indiVacId);
     });
 
-    it('allows call agent to view vacancies across all areas', async () => {
+    it('allows call agent to view vacancies across the city', async () => {
       const res = await request(app.getHttpServer())
         .get(`/priority/vacancies?now=${baseTime.toISOString()}`)
         .set('Authorization', `Bearer ${callAgentToken}`)
@@ -487,7 +480,7 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
   });
 
   describe('GET /priority/trades', () => {
-    it('reports candidate counts vs vacancy headcount per trade scoped to field agent area', async () => {
+    it('reports city-wide candidate counts vs vacancy headcount per trade', async () => {
       const res = await request(app.getHttpServer())
         .get('/priority/trades')
         .set('Authorization', `Bearer ${faKoraToken}`)
@@ -509,12 +502,12 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
       expect(t2.openVacancyHeadcount).toBe(1);
       expect(t2.status).toBe('candidate_surplus');
 
-      // trade3 (Indiranagar only): candidate is city-wide (1), but vacancy headcount in Koramangala is 0
+      // trade3 is also city-wide: the Indiranagar vacancy is visible to every field agent.
       const t3 = res.body.find((t: { trade: string }) => t.trade === trade3);
       expect(t3).toBeDefined();
       expect(t3.activeCandidatesCount).toBe(1);
-      expect(t3.openVacancyHeadcount).toBe(0);
-      expect(t3.status).toBe('candidate_surplus');
+      expect(t3.openVacancyHeadcount).toBe(3);
+      expect(t3.status).toBe('vacancy_surplus');
     });
   });
 

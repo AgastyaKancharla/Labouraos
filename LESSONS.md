@@ -372,6 +372,11 @@ Format:
 **Cause:** The old `own_area` guard and service check predate Phase 13 assignments; the current phase removes area-based ownership in Task 6, and the confirmed assignment is the authorization for this visit.
 **Fix:** An open assignment for the business and assigned agent authorizes owner OTP and visit completion regardless of area. Keep the assignment status and assignee checks server-side until Task 6 replaces the remaining area permissions with `own_account`.
 
+## Phase 13 permissions resolve from business ownership, not area fields
+**Symptom:** Field-agent access and candidate priority lists still depended on legacy staff or business `area`, while call and placement services enforced their own area checks separately from RBAC.
+**Cause:** Authorization had been split between JWT area claims, controller guards, and service checks, so removing an area filter in one place could leave stale restrictions elsewhere.
+**Fix:** Resolve business, vacancy, and placement writes through the linked business's `accountAgentId`; allow only the documented own-lead and open-assignment exceptions. Read access remains city-wide, and legacy area fields stay unused until their removal phase.
+
 
 
 

@@ -104,6 +104,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         code: `BZ-VKORA-${timestamp}`,
         name: 'Koramangala Cafe & Resto',
         area: 'Koramangala',
+        accountAgentId: faKora.id,
         city: 'Bengaluru',
         phone: `81${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
@@ -117,6 +118,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         code: `BZ-VINDI-${timestamp}`,
         name: 'Indiranagar Retail Mart',
         area: 'Indiranagar',
+        accountAgentId: faIndi.id,
         city: 'Bengaluru',
         phone: `82${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
@@ -176,7 +178,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(resFloatSalary.status).toBe(400);
   });
 
-  it('field agent creates vacancy on a business in their own area', async () => {
+  it('field agent creates vacancy for their account business regardless of legacy area', async () => {
     const res = await request(app.getHttpServer())
       .post(`/businesses/${koramangalaBusinessId}/vacancies`)
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
@@ -290,7 +292,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(created.body.interviewSlots[0].capacity).toBe(4);
   });
 
-  it('field agent cannot create vacancy on a business in another area (403)', async () => {
+  it('field agent cannot create vacancy for another account business (403)', async () => {
     const res = await request(app.getHttpServer())
       .post(`/businesses/${indiranagarBusinessId}/vacancies`)
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`) // Koramangala agent targeting Indiranagar
@@ -301,7 +303,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       });
 
     expect(res.status).toBe(403);
-    expect(res.body.message).toContain('Access denied');
+    expect(res.body.message).toContain('business is outside your account');
   });
 
   it('notifies another account agent when a call agent adds a vacancy', async () => {
@@ -326,7 +328,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(notice).toBeDefined();
   });
 
-  it('field agent only sees vacancies in their own area, while call agent sees all', async () => {
+  it('field agents read all vacancies, while call agents see all', async () => {
     // 1. Create a vacancy in Indiranagar by Indiranagar agent
     const indiVacRes = await request(app.getHttpServer())
       .post(`/businesses/${indiranagarBusinessId}/vacancies`)
@@ -339,19 +341,19 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(indiVacRes.status).toBe(201);
     const indiranagarVacancyId = indiVacRes.body.id;
 
-    // 2. Koramangala agent tries to GET /vacancies/:id of Indiranagar vacancy -> 403 Forbidden
+    // 2. Koramangala agent can GET /vacancies/:id of an unrelated account
     const koraReadRes = await request(app.getHttpServer())
       .get(`/vacancies/${indiranagarVacancyId}`)
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`);
-    expect(koraReadRes.status).toBe(403);
+    expect(koraReadRes.status).toBe(200);
 
-    // 3. Koramangala agent GET /vacancies list -> only contains Koramangala vacancies
+    // 3. Koramangala agent GET /vacancies list -> includes vacancies in both localities
     const koraListRes = await request(app.getHttpServer())
       .get('/vacancies')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`);
     expect(koraListRes.status).toBe(200);
     const hasIndi = koraListRes.body.some((v: { id: string }) => v.id === indiranagarVacancyId);
-    expect(hasIndi).toBe(false);
+    expect(hasIndi).toBe(true);
 
     // 4. Call agent can read the Indiranagar vacancy
     const caReadRes = await request(app.getHttpServer())

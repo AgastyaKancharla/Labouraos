@@ -31,7 +31,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'CA-00001',
     email: 'ca1@laboura.local',
     role: 'call_agent',
-    area: 'Koramangala',
   };
 
   const fieldAgentUser: JwtPayload = {
@@ -39,7 +38,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'FA-00001',
     email: 'fa1@laboura.local',
     role: 'field_agent',
-    area: 'Koramangala',
   };
 
   const teamLeadUser: JwtPayload = {
@@ -47,7 +45,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'TL-00001',
     email: 'tl1@laboura.local',
     role: 'team_lead',
-    area: 'Koramangala',
   };
 
   const otherTeamLeadUser: JwtPayload = {
@@ -55,7 +52,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'TL-00002',
     email: 'tl2@laboura.local',
     role: 'team_lead',
-    area: 'Indiranagar',
   };
 
   const managerUser: JwtPayload = {
@@ -63,7 +59,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'MGR-00001',
     email: 'mgr@laboura.local',
     role: 'manager',
-    area: 'Koramangala',
   };
 
   const ceoUser: JwtPayload = {
@@ -71,7 +66,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'CEO-00001',
     email: 'ceo@laboura.local',
     role: 'ceo',
-    area: 'Koramangala',
   };
 
   const financeUser: JwtPayload = {
@@ -79,7 +73,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     code: 'FIN-00001',
     email: 'fin@laboura.local',
     role: 'finance',
-    area: 'Koramangala',
   };
 
   beforeEach(() => {
@@ -271,7 +264,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
-        business: { name: 'Acme Corp', area: 'Koramangala' },
+        business: { name: 'Acme Corp' },
         jobSeeker: { name: 'Worker One', phone: '+919900000011' },
         createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
       };
@@ -289,7 +282,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
-        business: { name: 'Beta Ltd', area: 'Koramangala' },
+        business: { name: 'Beta Ltd' },
         jobSeeker: { name: 'Worker Two', phone: '+919900000012' },
         createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
       };

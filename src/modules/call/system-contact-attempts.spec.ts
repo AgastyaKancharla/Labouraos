@@ -34,13 +34,12 @@ describe('Phase 11 Task 5: system contact attempts', () => {
   const callIds: string[] = [];
   const messageIds: string[] = [];
 
-  function tokenFor(staff: { id: string; role: string; code: string; email: string | null; area?: string | null }) {
+  function tokenFor(staff: { id: string; role: string; code: string; email: string | null }) {
     return jwt.sign({
       sub: staff.id,
       email: staff.email,
       role: staff.role,
       code: staff.code,
-      area: staff.area ?? null,
     });
   }
 
@@ -70,7 +69,7 @@ describe('Phase 11 Task 5: system contact attempts', () => {
     };
   }
 
-  async function makeStaff(role: string, extra?: { area?: string; teamLeadId?: string }) {
+  async function makeStaff(role: string, extra?: { teamLeadId?: string }) {
     const stamp = `${Date.now()}-${staffIds.length}`;
     const staff = await prisma.staff.create({
       data: {
@@ -79,7 +78,6 @@ describe('Phase 11 Task 5: system contact attempts', () => {
         email: `sca-${role}-${stamp}@laboura.local`,
         passwordHash: await bcrypt.hash('Attempt-Password-1', 4),
         role,
-        area: extra?.area ?? null,
         teamLeadId: extra?.teamLeadId ?? null,
         status: 'active',
       },
