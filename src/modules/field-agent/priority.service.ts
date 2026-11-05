@@ -135,19 +135,20 @@ export class PriorityService {
       include: { business: true },
     });
 
-    const rows: PriorityVacancyRow[] = vacancies.map((vacancy) => {
+    const rows: PriorityVacancyRow[] = vacancies.flatMap((vacancy) => {
+      if (vacancy.salaryMinPaise === null) return [];
       const msOpen = now.getTime() - vacancy.createdAt.getTime();
       const daysOpen = Math.max(0, Math.floor(msOpen / (1000 * 60 * 60 * 24)));
       const isReplacement = Boolean(vacancy.replacementForPlacementId);
       const isInReplacementWindow = isReplacement && daysOpen <= policy.replacementSearchDays;
-      const feeValue = vacancy.headcount * vacancy.offeredSalary;
+      const feeValue = vacancy.headcount * vacancy.salaryMinPaise;
 
-      return {
+      return [{
         vacancy,
         id: vacancy.id,
         code: vacancy.code,
         tradeSkill: vacancy.tradeSkill,
-        offeredSalary: vacancy.offeredSalary,
+        salaryMinPaise: vacancy.salaryMinPaise,
         headcount: vacancy.headcount,
         businessId: vacancy.business.id,
         businessName: vacancy.business.name,
@@ -156,10 +157,10 @@ export class PriorityService {
         isReplacement,
         isInReplacementWindow,
         feeValue,
-      };
+      }];
     });
 
-    // Sort: replacement vacancies still inside 15-day window to top, then days-open descending, then headcount * offeredSalary descending
+    // Sort: replacement vacancies still inside 15-day window to top, then days-open descending, then headcount * salaryMinPaise descending
     rows.sort((a, b) => {
       if (a.isInReplacementWindow !== b.isInReplacementWindow) {
         return a.isInReplacementWindow ? -1 : 1;

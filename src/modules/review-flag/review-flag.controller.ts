@@ -29,7 +29,7 @@ export class ReviewFlagController {
   }
 
   @Get()
-  @RequireRoles('ceo', 'manager', 'team_lead')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'field_agent')
   async list(
     @Req() req: Request & { user: JwtPayload },
     @Query() query: ListReviewFlagsQuery,

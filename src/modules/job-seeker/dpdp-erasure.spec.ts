@@ -180,7 +180,7 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
         code: `VC-DPDP-${timestamp}`,
         businessId: bz.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2200000,
+        salaryMinPaise: 2200000,
         status: 'open',
         city: 'Bengaluru',
       },
@@ -392,7 +392,7 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
       where: { businessId: testBusinessId },
     });
     expect(vacancy).toBeDefined();
-    expect(vacancy?.offeredSalary).toBe(2200000);
+    expect(vacancy?.salaryMinPaise).toBe(2200000);
 
     const placement = await prisma.placement.findFirst({
       where: { businessId: testBusinessId },

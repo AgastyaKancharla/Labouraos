@@ -753,7 +753,7 @@ export function renderFieldAgentAppHtml(): string {
               <td><strong>\${v.code}</strong></td>
               <td>\${v.business ? v.business.name : v.businessId}</td>
               <td>\${v.tradeSkill}</td>
-              <td>₹\${(v.offeredSalary/100).toLocaleString()}</td>
+              <td>₹\${(v.salaryMinPaise/100).toLocaleString()}</td>
               <td>
                 \${isReplacement ? '<span class="badge badge-replacement">REPLACEMENT (IN-WINDOW)</span>' : '<span class="badge">FRESH</span>'}
               </td>
@@ -893,15 +893,15 @@ export function renderFieldAgentAppHtml(): string {
     async function submitFieldVacancy() {
       const bizId = document.getElementById('fa-vc-biz-id').value.trim();
       const tradeSkill = document.getElementById('fa-vc-trade').value.trim();
-      const offeredSalary = Number(document.getElementById('fa-vc-salary').value) * 100;
+      const salaryMinPaise = Number(document.getElementById('fa-vc-salary').value) * 100;
       const headcount = Number(document.getElementById('fa-vc-headcount').value);
       const description = document.getElementById('fa-vc-desc').value.trim();
 
-      if (!bizId || !tradeSkill || !offeredSalary) return alert('Fill required vacancy fields');
+      if (!bizId || !tradeSkill || !salaryMinPaise) return alert('Fill required vacancy fields');
       try {
         const res = await api('/businesses/' + bizId + '/vacancies', {
           method: 'POST',
-          body: { tradeSkill, offeredSalary, headcount, description }
+          body: { tradeSkill, salaryMinPaise, headcount, description }
         });
         showAlert('Vacancy captured in your area: ' + res.code);
         document.getElementById('fa-shortlist-vc-id').value = res.id;

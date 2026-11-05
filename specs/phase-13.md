@@ -46,7 +46,7 @@ One task after another, in order. Each task has its own branch and, where needed
 - The rule "no agent can ever **grant** consent" is unchanged and still proven by test.
 - Tests: withdrawal with no call, an unanswered call, another agent's call, another job seeker's call, or a call older than the window is refused; a valid withdrawal pauses an active job seeker, sends one `consent_withdrawn` SMS, and is audited; re-granting through the link restores `active`; the withdrawal history survives the re-grant in `AuditLog`; there is still no staff route that grants consent.
 
-### [ ] Task 2 — Business profile, documents and households
+### [x] Task 2 — Business profile, documents and households
 **Branch:** `phase-13/task-2-business-fields` · **Migration folder:** `20261106110000_business_profile_fields`
 
 **Acceptance:**

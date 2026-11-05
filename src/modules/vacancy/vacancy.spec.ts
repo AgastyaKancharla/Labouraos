@@ -147,12 +147,12 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     }
   });
 
-  it('rejects vacancy creation if tradeSkill or offeredSalary is missing or invalid', async () => {
+  it('rejects vacancy creation if tradeSkill or salaryMinPaise is missing or invalid', async () => {
     const resNoTrade = await request(app.getHttpServer())
       .post(`/businesses/${koramangalaBusinessId}/vacancies`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         headcount: 2,
       });
     expect(resNoTrade.status).toBe(400);
@@ -162,7 +162,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
         tradeSkill: 'Electrician',
-        offeredSalary: -500,
+        salaryMinPaise: -500,
       });
     expect(resNegativeSalary.status).toBe(400);
 
@@ -171,7 +171,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
         tradeSkill: 'Electrician',
-        offeredSalary: 20000.5, // Float money is forbidden per AGENTS.md §2
+        salaryMinPaise: 20000.5, // Float money is forbidden per AGENTS.md §2
       });
     expect(resFloatSalary.status).toBe(400);
   });
@@ -182,7 +182,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         tradeSkill: 'Electrician',
-        offeredSalary: 2200000, // ₹22,000 in paise
+        salaryMinPaise: 2200000, // ₹22,000 in paise
         headcount: 3,
         description: 'Commercial wiring and panel installation',
       });
@@ -191,7 +191,8 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(res.body.id).toBeDefined();
     expect(res.body.code).toMatch(/^VC-\d{5}$/);
     expect(res.body.tradeSkill).toBe('Electrician');
-    expect(res.body.offeredSalary).toBe(2200000);
+    expect(res.body.salaryMinPaise).toBe(2200000);
+    expect(res.body.offeredSalary).toBeNull();
     expect(res.body.headcount).toBe(3);
     expect(res.body.status).toBe('open');
     expect(res.body.businessId).toBe(koramangalaBusinessId);
@@ -208,18 +209,121 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(audit?.actorId).toBe(faKoramangalaId);
   });
 
+  it('requires a reason for a gender requirement and creates a walk-in slot using current policy times', async () => {
+    const policy = await prisma.pricingPolicy.findFirstOrThrow({ orderBy: { effectiveFrom: 'desc' } });
+    const originalStart = policy.walkInStart;
+    const originalEnd = policy.walkInEnd;
+    await prisma.pricingPolicy.update({
+      where: { id: policy.id },
+      data: { walkInStart: '11:15', walkInEnd: '17:45' },
+    });
+
+    try {
+      const rejected = await request(app.getHttpServer())
+        .post(`/businesses/${koramangalaBusinessId}/vacancies`)
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({
+          tradeSkill: 'Electrician',
+          salaryMinPaise: 2200000,
+          genderRequirement: 'women',
+        })
+        .expect(400);
+      expect(rejected.body.message).toContain('genderReason');
+
+      const rejectedExtra = await request(app.getHttpServer())
+        .post(`/businesses/${koramangalaBusinessId}/vacancies`)
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({ tradeSkill: 'Electrician', salaryMinPaise: 2200000, extras: ['cash_bonus'] })
+        .expect(400);
+      expect(rejectedExtra.body.message).toContain('extras');
+
+      const created = await request(app.getHttpServer())
+        .post(`/businesses/${koramangalaBusinessId}/vacancies`)
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({
+          tradeSkill: 'Electrician',
+          salaryMinPaise: 2200000,
+          genderRequirement: 'women',
+          genderReason: 'Role requirement supplied by the business',
+          walkInDate: '2026-12-05',
+        })
+        .expect(201);
+
+      expect(created.body.tradeSkill).toBe('Electrician');
+      expect(created.body.salaryMinPaise).toBe(2200000);
+      expect(created.body.offeredSalary).toBeNull();
+      expect(created.body.interviewSlots).toHaveLength(1);
+      expect(created.body.interviewSlots[0].startsAt).toBe(
+        new Date('2026-12-05T11:15:00+05:30').toISOString(),
+      );
+      expect(created.body.interviewSlots[0].endsAt).toBe(
+        new Date('2026-12-05T17:45:00+05:30').toISOString(),
+      );
+    } finally {
+      await prisma.pricingPolicy.update({
+        where: { id: policy.id },
+        data: { walkInStart: originalStart, walkInEnd: originalEnd },
+      });
+    }
+  });
+
+  it('accepts manually entered scheduled interview slots', async () => {
+    const created = await request(app.getHttpServer())
+      .post(`/businesses/${koramangalaBusinessId}/vacancies`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        tradeSkill: 'Electrician',
+        salaryMinPaise: 2200000,
+        interviewType: 'scheduled',
+        interviewSlots: [
+          {
+            startsAt: '2026-12-05T04:30:00.000Z',
+            endsAt: '2026-12-05T05:00:00.000Z',
+            capacity: 4,
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(created.body.interviewType).toBe('scheduled');
+    expect(created.body.interviewSlots).toHaveLength(1);
+    expect(created.body.interviewSlots[0].capacity).toBe(4);
+  });
+
   it('field agent cannot create vacancy on a business in another area (403)', async () => {
     const res = await request(app.getHttpServer())
       .post(`/businesses/${indiranagarBusinessId}/vacancies`)
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`) // Koramangala agent targeting Indiranagar
       .send({
         tradeSkill: 'Plumber',
-        offeredSalary: 1800000,
+        salaryMinPaise: 1800000,
         headcount: 1,
       });
 
     expect(res.status).toBe(403);
     expect(res.body.message).toContain('Access denied');
+  });
+
+  it('notifies another account agent when a call agent adds a vacancy', async () => {
+    await prisma.business.update({
+      where: { id: koramangalaBusinessId },
+      data: { accountAgentId: faKoramangalaId },
+    });
+
+    const created = await request(app.getHttpServer())
+      .post(`/businesses/${koramangalaBusinessId}/vacancies`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ tradeSkill: 'Electrician', salaryMinPaise: 2200000 })
+      .expect(201);
+
+    const notice = await prisma.reviewFlag.findFirst({
+      where: {
+        kind: 'vacancy_captured_for_account_business',
+        subjectId: created.body.id,
+        raisedForStaffId: faKoramangalaId,
+      },
+    });
+    expect(notice).toBeDefined();
   });
 
   it('field agent only sees vacancies in their own area, while call agent sees all', async () => {
@@ -229,7 +333,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       .set('Authorization', `Bearer ${fieldAgentIndiranagarToken}`)
       .send({
         tradeSkill: 'Sales Associate',
-        offeredSalary: 2500000,
+        salaryMinPaise: 2500000,
         headcount: 2,
       });
     expect(indiVacRes.status).toBe(201);

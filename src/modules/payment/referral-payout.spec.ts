@@ -188,7 +188,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
         code: `VC-P6-${timestamp}-2`,
         businessId: business.id,
         tradeSkill: 'Plumber',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         city: 'Bengaluru',
       },
     });
@@ -307,7 +307,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
         code: `VC-P6-${timestamp}-3`,
         businessId: business.id,
         tradeSkill: 'Carpenter',
-        offeredSalary: 1800000,
+        salaryMinPaise: 1800000,
         city: 'Bengaluru',
       },
     });

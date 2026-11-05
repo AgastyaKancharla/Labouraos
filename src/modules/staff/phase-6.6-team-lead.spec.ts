@@ -165,7 +165,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
         code: `VC-TL-${timestamp}`,
         businessId: bz.id,
         tradeSkill: 'Plumber',
-        offeredSalary: 2200000,
+        salaryMinPaise: 2200000,
         city: 'Bengaluru',
         capturedByStaffId: agent2.id,
       },

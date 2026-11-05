@@ -210,7 +210,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       .set('Authorization', `Bearer ${faKoraToken}`)
       .send({
         tradeSkill: 'Carpenter',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         headcount: 1,
       })
       .expect(201);
@@ -222,7 +222,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       .set('Authorization', `Bearer ${faIndiToken}`)
       .send({
         tradeSkill: 'Carpenter',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         headcount: 1,
       })
       .expect(403);

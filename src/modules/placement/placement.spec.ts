@@ -153,7 +153,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         code: `VC-P5K-${timestamp}`,
         businessId: koraBiz.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         status: 'open',
       },
     });
@@ -164,7 +164,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         code: `VC-P5I-${timestamp}`,
         businessId: indiBiz.id,
         tradeSkill: 'Plumber',
-        offeredSalary: 2500000,
+        salaryMinPaise: 2500000,
         status: 'open',
       },
     });

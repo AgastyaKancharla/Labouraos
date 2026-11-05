@@ -366,7 +366,7 @@ describe('Phase 12 gate end-to-end proof', () => {
         businessId: business.id,
         capturedByStaffId: fieldAgent.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2500000,
+        salaryMinPaise: 2500000,
         headcount: 1,
         status: 'open',
       },

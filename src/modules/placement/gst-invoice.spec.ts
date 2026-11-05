@@ -137,7 +137,7 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
         code: `VC-INV1-${timestamp}`,
         businessId: business.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2000000, // ₹20,000 in paise
+        salaryMinPaise: 2000000, // ₹20,000 in paise
         status: 'open',
         city: 'Bengaluru',
       },
@@ -149,7 +149,7 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
         code: `VC-INV2-${timestamp}`,
         businessId: business.id,
         tradeSkill: 'Plumber',
-        offeredSalary: 2500033, // ₹25,000.33 in paise (uneven division test)
+        salaryMinPaise: 2500033, // ₹25,000.33 in paise (uneven division test)
         status: 'open',
         city: 'Bengaluru',
       },

@@ -885,13 +885,13 @@ export function renderCallAgentConsoleHtml(): string {
       try {
         const bizId = document.getElementById('vc-biz-id').value.trim();
         const tradeSkill = document.getElementById('vc-trade').value.trim();
-        const offeredSalary = Number(document.getElementById('vc-salary').value) * 100;
+        const salaryMinPaise = Number(document.getElementById('vc-salary').value) * 100;
         const headcount = Number(document.getElementById('vc-headcount').value);
         const description = document.getElementById('vc-desc').value.trim();
 
         const res = await api('/vacancies', {
           method: 'POST',
-          body: { businessId: bizId, tradeSkill, offeredSalary, headcount, description }
+          body: { businessId: bizId, tradeSkill, salaryMinPaise, headcount, description }
         });
         showAlert('Vacancy captured successfully: ' + res.code);
       } catch (e) {

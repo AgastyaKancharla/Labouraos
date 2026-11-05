@@ -19,6 +19,8 @@ export const SEEDED_PRICING_POLICY = {
   maxReplacementRejections: 2,
   consentWithdrawalCallWindowMinutes: 60,
   duplicateBusinessRadiusMeters: 50,
+  walkInStart: '10:30',
+  walkInEnd: '18:00',
 } as PricingPolicy;
 
 export function seededPricingService(
