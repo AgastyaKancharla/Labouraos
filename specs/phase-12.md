@@ -120,15 +120,15 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Phase 12 Gate
 
-- [ ] A job seeker cannot be matched, called for matching purposes, or have Aadhaar checked without the relevant consent granted — by test
-- [ ] Consent is only ever recorded through a job seeker's own OTP-verified submission, never typed in by an agent on their behalf — by test
-- [ ] `lead → consented` happens automatically and only when all five required purposes are granted — by test
-- [ ] Withdrawing `call_recording` or `job_matching` pauses an active job seeker — by test
-- [ ] `IdentityVerification` never stores a full Aadhaar number, by test, and only runs after `aadhaar_verification` consent — by test
-- [ ] Reversing a `JobSeekerHit` removes it from `maxHits`/refund counting and raises a `ReviewFlag` — by test
-- [ ] No raw Aadhaar data anywhere in a request or response — by test, reusing `assertNoRawAadhaar`
-- [ ] `CallRecord.purpose` includes `consent_explain` — by test
-- [ ] **End-to-end proof, recorded in the report:** a field agent registers a lead and places a `consent_explain` call; the system sends the consent SMS link; the job seeker opens it, verifies by OTP, ticks all five required purposes, and submits; status moves to `consented`; an Aadhaar verification is requested and succeeds with only `last4` stored; the job seeker later withdraws `call_recording` consent and is paused.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] A job seeker cannot be matched, called for matching purposes, or have Aadhaar checked without the relevant consent granted — by test
+- [x] Consent is only ever recorded through a job seeker's own OTP-verified submission, never typed in by an agent on their behalf — by test
+- [x] `lead → consented` happens automatically and only when all five required purposes are granted — by test
+- [x] Withdrawing `call_recording` or `job_matching` pauses an active job seeker — by test
+- [x] `IdentityVerification` never stores a full Aadhaar number, by test, and only runs after `aadhaar_verification` consent — by test
+- [x] Reversing a `JobSeekerHit` removes it from `maxHits`/refund counting and raises a `ReviewFlag` — by test
+- [x] No raw Aadhaar data anywhere in a request or response — by test, reusing `assertNoRawAadhaar`
+- [x] `CallRecord.purpose` includes `consent_explain` — by test
+- [x] **End-to-end proof, recorded in the report:** a field agent registers a lead and places a `consent_explain` call; the system sends the consent SMS link; the job seeker opens it, verifies by OTP, ticks all five required purposes, and submits; status moves to `consented`; an Aadhaar verification is requested and succeeds with only `last4` stored; the job seeker later withdraws `call_recording` consent and is paused.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, and the end-to-end proof. Do not start the next phase.
