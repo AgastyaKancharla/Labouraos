@@ -1,24 +1,18 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
-import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
 import { KYC_PROVIDER, KycProvider } from './kyc.interface';
 import { MockKycProvider } from './mock-kyc.provider';
 import { KycModule } from './kyc.module';
-import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { JwtService } from '@nestjs/jwt';
 
 describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
 
-  let callAgentToken: string;
-  let callAgentId: string;
-
   const timestamp = Date.now();
-  const password = 'Password123!Secure';
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -30,43 +24,19 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
 
     prisma = app.get<PrismaService>(PrismaService);
 
-    const passwordHash = await bcrypt.hash(password, 10);
-
-    const callAgent = await prisma.staff.create({
-      data: {
-        code: `CA-KYC-${timestamp}`,
-        name: 'Call Agent KYC',
-        email: `call_agent_kyc_${timestamp}@laboura.local`,
-        passwordHash,
-        role: 'call_agent',
-        area: 'Indiranagar',
-        city: 'Bengaluru',
-      },
-    });
-    callAgentId = callAgent.id;
-
-    const server = app.getHttpServer();
-    const loginRes = await enrolledLogin(server, { email: callAgent.email, password });
-    callAgentToken = loginRes.body.accessToken;
   });
 
   afterAll(async () => {
     if (prisma) {
       await prisma.auditLog.deleteMany({
         where: {
-          OR: [
-            { actorId: callAgentId },
-            { entityType: 'job_seeker' },
-          ],
+          entityType: 'job_seeker',
         },
       });
       await prisma.jobSeeker.deleteMany({
         where: {
           phone: { contains: `${timestamp.toString().slice(-8)}` },
         },
-      });
-      await prisma.staff.deleteMany({
-        where: { id: callAgentId },
       });
     }
     if (app) {
