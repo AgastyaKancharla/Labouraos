@@ -199,7 +199,8 @@ export class MoneyAtRiskService {
       const rejectedHits = await this.prisma.jobSeekerHit.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
-          reason: 'offer_rejected',
+          reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
+          reversedAt: null,
         },
         select: { jobSeekerId: true },
       });

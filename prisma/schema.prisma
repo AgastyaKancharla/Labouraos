@@ -305,6 +305,7 @@ model Staff {
   loginCodesRevealed LoginCodeRequest[] @relation("LoginCodeRevealedBy")
   loginCodesRefused LoginCodeRequest[] @relation("LoginCodeRefusedBy")
   callRecords       CallRecord[]
+  reversedHits      JobSeekerHit[]   @relation("JobSeekerHitReversedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
@@ -417,20 +418,27 @@ model ContactAttempt {
 }
 
 model JobSeekerHit {
-  id              String           @id @default(uuid())
-  jobSeekerId     String
-  jobSeeker       JobSeeker        @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
-  reason          String           // no_pickup, offer_rejected, interview_no_show
-  note            String?
-  recordedBy      String           // staffId or "system"
-  recordedAt      DateTime         @default(now())
-  contactAttempts ContactAttempt[]
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                String           @id @default(uuid())
+  jobSeekerId       String
+  jobSeeker         JobSeeker        @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  reason            String           // no_pickup, offer_declined, offer_no_reply, interview_no_show
+  note              String?
+  recordedBy        String           // staffId or "system"
+  recordedAt        DateTime         @default(now())
+  interviewId       String?
+  callRecordId      String?
+  reversedAt        DateTime?
+  reversedByStaffId String?
+  reversedByStaff   Staff?           @relation("JobSeekerHitReversedBy", fields: [reversedByStaffId], references: [id], onDelete: SetNull)
+  reversalReason    String?
+  contactAttempts   ContactAttempt[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
 
   @@index([jobSeekerId])
   @@index([recordedAt])
   @@index([jobSeekerId, reason])
+  @@index([reversedAt])
 }
 
 model BusinessVisit {

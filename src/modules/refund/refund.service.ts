@@ -58,11 +58,12 @@ export class RefundService {
     if (candidates.length > 0) {
       const candidateIds = candidates.map((c) => c.id);
 
-      // Query offer_rejected hits set-based (1 query)
+      // Query non-reversed disqualifying hits set-based (1 query)
       const rejectedHits = await this.prisma.jobSeekerHit.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
-          reason: 'offer_rejected',
+          reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
+          reversedAt: null,
         },
         select: { jobSeekerId: true },
       });
