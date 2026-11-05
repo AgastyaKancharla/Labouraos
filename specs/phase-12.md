@@ -88,7 +88,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 3 (after Wave 2 is merged)
 
-### [ ] Task 6 — JobSeekerHit changes
+### [x] Task 6 — JobSeekerHit changes
 **Branch:** `phase-12/task-6-hit-changes` · **Migration folder:** `20261105140000_jobseeker_hit_changes`
 
 **Acceptance:**
