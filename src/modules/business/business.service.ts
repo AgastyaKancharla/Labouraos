@@ -2,9 +2,11 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -17,6 +19,10 @@ import {
 } from '../../common/geo/geo.util';
 import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
+import { BUSINESS_TYPES } from './business.constants';
+import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
+import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo.storage';
+import { PricingService } from '../pricing/pricing.service';
 
 @Injectable()
 export class BusinessService {
@@ -26,6 +32,9 @@ export class BusinessService {
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
     private readonly reviewFlagService: ReviewFlagService,
+    private readonly pricingService: PricingService,
+    @Inject(GST_LOOKUP_PROVIDER) private readonly gstLookup: GstLookupProvider,
+    @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStorage: BusinessPhotoStorage,
   ) {}
 
   async create(dto: CreateBusinessDto, actorId: string) {
@@ -57,7 +66,7 @@ export class BusinessService {
       where: { phone },
     });
     if (existing) {
-      throw new ConflictException(`Business with phone '${phone}' already exists`);
+      throw new ConflictException('A business with this mobile number already exists');
     }
 
     const staff = await this.prisma.staff.findUnique({
@@ -67,20 +76,35 @@ export class BusinessService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    let area = dto.area?.trim();
-    if (staff.role === 'field_agent') {
-      if (!staff.area) {
-        throw new ForbiddenException('Field agent does not have an assigned area');
-      }
-      if (area && area !== staff.area) {
-        throw new ForbiddenException(
-          `Access denied: field agent is restricted to area '${staff.area}' and cannot set area '${area}'`,
-        );
-      }
-      area = staff.area;
-    } else {
-      if (!area) {
-        throw new BadRequestException('area is required');
+    const businessType = dto.businessType?.trim() || null;
+    if (businessType && !(BUSINESS_TYPES as readonly string[]).includes(businessType)) {
+      throw new BadRequestException('businessType is not one of the allowed business types');
+    }
+
+    const locality = dto.locality?.trim() || null;
+    const gstNumber = dto.gstNumber?.trim() || null;
+    const registrationNumbers = [gstNumber, dto.licenceNumber, dto.shopEstablishmentNumber, dto.udyamNumber, dto.pan]
+      .map((value) => value?.trim())
+      .filter((value): value is string => Boolean(value));
+    const documentsStatus = registrationNumbers.length > 0 ? 'documented' : 'no_documents';
+
+    let gstLookupData: { gstVerified: boolean; gstLegalName: string | null; gstStatus: string; gstCheckedAt: Date } | null = null;
+    if (gstNumber) {
+      try {
+        const result = await this.gstLookup.lookup(gstNumber);
+        gstLookupData = {
+          gstVerified: result.verified,
+          gstLegalName: result.legalName,
+          gstStatus: result.status,
+          gstCheckedAt: new Date(),
+        };
+      } catch {
+        gstLookupData = {
+          gstVerified: false,
+          gstLegalName: null,
+          gstStatus: 'lookup_failed',
+          gstCheckedAt: new Date(),
+        };
       }
     }
 
@@ -129,25 +153,53 @@ export class BusinessService {
     }
 
     const code = await this.idService.generateCode('business');
-    const contactName = (dto.contactPerson ?? dto.contactName)?.trim() ?? null;
     const city = dto.city?.trim() ?? staff.city ?? 'Bengaluru';
+    const policy = await this.pricingService.current();
+    const duplicateMatches = await this.findDuplicateMatches({
+      name: dto.name.trim(),
+      gstNumber,
+      licenceNumber: dto.licenceNumber?.trim() || null,
+      shopEstablishmentNumber: dto.shopEstablishmentNumber?.trim() || null,
+      udyamNumber: dto.udyamNumber?.trim() || null,
+      photoHash: null,
+      latitude: typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null),
+      longitude: typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null),
+      duplicateRadiusMeters: policy.duplicateBusinessRadiusMeters,
+    });
 
     const business = await this.prisma.business.create({
       data: {
         code,
         name: dto.name.trim(),
         address: dto.address?.trim() ?? null,
-        contactName,
         phone,
         phoneVerified: true,
-        area,
         city,
-        gstNumber: dto.gstNumber?.trim() ?? null,
+        legalName: dto.legalName?.trim() || null,
+        ownerName: dto.ownerName?.trim() || null,
+        additionalContactName: dto.additionalContactName?.trim() || dto.contactPerson?.trim() || null,
+        additionalContactPhone: dto.additionalContactPhone?.trim() || null,
+        businessType,
+        employeeCount: dto.employeeCount ?? null,
+        staffNeeded: dto.staffNeeded ?? [],
+        licenceNumber: dto.licenceNumber?.trim() || null,
+        shopEstablishmentNumber: dto.shopEstablishmentNumber?.trim() || null,
+        udyamNumber: dto.udyamNumber?.trim() || null,
+        pan: dto.pan?.trim() || null,
+        gstNumber,
+        ...(gstLookupData ?? { gstVerified: null, gstLegalName: null, gstStatus: null, gstCheckedAt: null }),
+        yearsInOperation: dto.yearsInOperation ?? null,
+        hiringFrequency: dto.hiringFrequency?.trim() || null,
+        billingName: dto.billingName?.trim() || null,
+        billingAddress: dto.billingAddress?.trim() || null,
+        documentsStatus,
+        verificationStatus: 'lead',
+        leadCreatedByStaffId: staff.id,
+        leadChannel: staff.role === 'field_agent' ? 'field_visit' : 'phone_call',
+        locality,
         latitude: typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null),
         longitude: typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null),
         geofenceFlag,
-        selfieUrl,
-        selfieHash,
       },
     });
 
@@ -189,19 +241,172 @@ export class BusinessService {
       });
     }
 
+    for (const [matchedBusinessId, matchTypes] of duplicateMatches) {
+      await this.raiseDuplicateFlag(business.id, staff.id, matchedBusinessId, [...matchTypes]);
+    }
+
     await this.auditService.log({
       actorId: staff.id,
       action: 'business.created',
       entityType: 'business',
       entityCode: business.code,
       after: {
-        ...business,
+        businessType: business.businessType,
+        documentsStatus: business.documentsStatus,
+        verificationStatus: business.verificationStatus,
+        leadChannel: business.leadChannel,
+        leadCreatedByStaffId: business.leadCreatedByStaffId,
+        gstVerified: business.gstVerified,
+        gstStatus: business.gstStatus,
         ...(geofenceFlag ? { flags: ['GEOFENCE_MISMATCH'] } : {}),
-      } as unknown as Record<string, unknown>,
+      },
+      changedFields: [
+        'businessType',
+        'documentsStatus',
+        'verificationStatus',
+        'leadChannel',
+        'leadCreatedByStaffId',
+        'gstVerified',
+        'gstStatus',
+        'locality',
+      ],
       city: business.city,
     });
 
     return business;
+  }
+
+  async uploadStorefrontPhoto(businessId: string, photo: Buffer, contentType: string, actorId: string) {
+    const extensions: Record<string, string> = {
+      'image/jpeg': 'jpg',
+      'image/png': 'png',
+      'image/webp': 'webp',
+    };
+    const extension = extensions[contentType];
+    if (!extension || photo.length === 0) {
+      throw new BadRequestException('Upload a non-empty JPEG, PNG or WebP storefront photo');
+    }
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    const actor = await this.prisma.staff.findUnique({ where: { id: actorId } });
+    if (!actor) throw new NotFoundException(`Staff '${actorId}' not found`);
+
+    const photoHash = createHash('sha256').update(photo).digest('hex');
+    const photoPath = `businesses/${business.id}/storefront/${photoHash}.${extension}`;
+    await this.photoStorage.put(photoPath, photo, contentType);
+    const updated = await this.prisma.business.update({
+      where: { id: business.id },
+      data: { storefrontPhotoPath: photoPath, storefrontPhotoHash: photoHash, storefrontPhotoLive: false },
+    });
+
+    const policy = await this.pricingService.current();
+    const duplicates = await this.findDuplicateMatches({
+      name: business.name,
+      gstNumber: null,
+      licenceNumber: null,
+      shopEstablishmentNumber: null,
+      udyamNumber: null,
+      photoHash,
+      latitude: business.latitude,
+      longitude: business.longitude,
+      duplicateRadiusMeters: policy.duplicateBusinessRadiusMeters,
+      excludeBusinessId: business.id,
+    });
+    for (const [matchedBusinessId, matchTypes] of duplicates) {
+      await this.raiseDuplicateFlag(business.id, actor.id, matchedBusinessId, [...matchTypes]);
+    }
+
+    await this.auditService.log({
+      actorId,
+      action: 'business.storefront_photo_uploaded',
+      entityType: 'business',
+      entityCode: business.code,
+      before: { storefrontPhotoPath: business.storefrontPhotoPath, storefrontPhotoHash: business.storefrontPhotoHash },
+      after: { storefrontPhotoPath: photoPath, storefrontPhotoHash: photoHash, storefrontPhotoLive: false },
+      changedFields: ['storefrontPhotoPath', 'storefrontPhotoHash', 'storefrontPhotoLive'],
+      city: business.city,
+    });
+    return updated;
+  }
+
+  private async findDuplicateMatches(input: {
+    name: string;
+    gstNumber: string | null;
+    licenceNumber: string | null;
+    shopEstablishmentNumber: string | null;
+    udyamNumber: string | null;
+    photoHash: string | null;
+    latitude: number | null;
+    longitude: number | null;
+    duplicateRadiusMeters: number;
+    excludeBusinessId?: string;
+  }) {
+    const candidates = await this.prisma.business.findMany({
+      where: { id: input.excludeBusinessId ? { not: input.excludeBusinessId } : undefined },
+      select: {
+        id: true,
+        code: true,
+        name: true,
+        gstNumber: true,
+        licenceNumber: true,
+        shopEstablishmentNumber: true,
+        udyamNumber: true,
+        storefrontPhotoHash: true,
+        latitude: true,
+        longitude: true,
+      },
+    });
+    const matches = new Map<string, Set<string>>();
+    const add = (id: string, matchType: string) => {
+      const reasons = matches.get(id) ?? new Set<string>();
+      reasons.add(matchType);
+      matches.set(id, reasons);
+    };
+    const normalize = (value: string | null | undefined) => value?.replace(/\s+/g, '').toUpperCase() ?? '';
+    const comparisons = [
+      ['gstNumber', input.gstNumber, 'gst_number'],
+      ['licenceNumber', input.licenceNumber, 'licence_number'],
+      ['shopEstablishmentNumber', input.shopEstablishmentNumber, 'shop_establishment_number'],
+      ['udyamNumber', input.udyamNumber, 'udyam_number'],
+      ['storefrontPhotoHash', input.photoHash, 'storefront_photo_hash'],
+    ] as const;
+    for (const candidate of candidates) {
+      for (const [field, value, reason] of comparisons) {
+        if (value && normalize(candidate[field]) === normalize(value)) add(candidate.id, reason);
+      }
+      const existingName = candidate.name.toLowerCase().replace(/\s+/g, '');
+      const incomingName = input.name.toLowerCase().replace(/\s+/g, '');
+      if (
+        existingName && incomingName &&
+        (existingName.includes(incomingName) || incomingName.includes(existingName)) &&
+        input.latitude !== null && input.longitude !== null &&
+        candidate.latitude !== null && candidate.longitude !== null &&
+        calculateHaversineDistanceMeters(input.latitude, input.longitude, candidate.latitude, candidate.longitude) <= input.duplicateRadiusMeters
+      ) {
+        add(candidate.id, 'similar_name_nearby');
+      }
+    }
+    return matches;
+  }
+
+  private async raiseDuplicateFlag(businessId: string, actorId: string, matchedBusinessId: string, matchTypes: string[]) {
+    const matched = await this.prisma.business.findUnique({ where: { id: matchedBusinessId }, select: { code: true } });
+    if (!matched) return;
+    const flag = await this.reviewFlagService.raise({
+      kind: 'duplicate_business',
+      subjectType: 'business',
+      subjectId: businessId,
+      raisedForStaffId: actorId,
+      details: { matchedBusinessCode: matched.code, matchTypes },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'business.duplicate_flag_raised',
+      entityType: 'review_flag',
+      entityCode: flag.code,
+      after: { kind: 'duplicate_business', matchedBusinessCode: matched.code, matchTypes },
+      changedFields: ['kind', 'matchedBusinessCode', 'matchTypes'],
+    });
   }
 
   async findAll(actorId: string, filterArea?: string) {
@@ -214,8 +419,11 @@ export class BusinessService {
 
     const where: Prisma.BusinessWhereInput = {};
     if (staff.role === 'field_agent') {
-      where.area = staff.area ?? undefined;
       where.city = staff.city;
+      where.OR = [
+        ...(staff.area ? [{ area: staff.area }] : []),
+        { area: null, leadCreatedByStaffId: staff.id },
+      ];
     } else if (filterArea) {
       where.area = filterArea;
     }
@@ -245,7 +453,12 @@ export class BusinessService {
     const staff = await this.prisma.staff.findUnique({
       where: { id: actorId },
     });
-    if (staff?.role === 'field_agent' && business.area !== staff.area) {
+    if (
+      staff?.role === 'field_agent' &&
+      (business.area !== null
+        ? business.area !== staff.area
+        : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
+    ) {
       throw new ForbiddenException(
         `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
       );
@@ -273,7 +486,12 @@ export class BusinessService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    if (staff.role === 'field_agent' && business.area !== staff.area) {
+    if (
+      staff.role === 'field_agent' &&
+      (business.area !== null
+        ? business.area !== staff.area
+        : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
+    ) {
       throw new ForbiddenException(
         `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
       );

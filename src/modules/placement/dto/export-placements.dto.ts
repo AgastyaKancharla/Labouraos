@@ -16,7 +16,7 @@ export interface RegulatoryPlacementExportRow {
   monthlySalaryINR: number;
   placementFeeINR: number;
   status: string;
-  area: string;
+  area: string | null;
   city: string;
 }
 

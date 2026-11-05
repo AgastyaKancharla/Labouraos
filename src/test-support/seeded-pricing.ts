@@ -18,6 +18,7 @@ export const SEEDED_PRICING_POLICY = {
   maxFreeReplacements: 2,
   maxReplacementRejections: 2,
   consentWithdrawalCallWindowMinutes: 60,
+  duplicateBusinessRadiusMeters: 50,
 } as PricingPolicy;
 
 export function seededPricingService(

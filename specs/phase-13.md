@@ -28,7 +28,7 @@ One task after another, in order. Each task has its own branch and, where needed
 
 ---
 
-### [ ] Task 1 — Consent withdrawal through an agent
+### [x] Task 1 — Consent withdrawal through an agent
 **Branch:** `phase-13/task-1-agent-withdrawal` · **Migration folder:** `20261106100000_consent_withdrawal_by_agent`
 
 **Acceptance:**

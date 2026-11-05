@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -8,7 +9,9 @@ import {
   Req,
   UseGuards,
   UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { BusinessService } from './business.service';
 import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
@@ -91,6 +94,26 @@ export class BusinessController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.businessService.recordVisit(businessId, body, req.user.sub);
+  }
+
+  @Post(':id/storefront-photo')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('business', 'write')
+  @UseInterceptors(FileInterceptor('photo'))
+  uploadStorefrontPhoto(
+    @Param('id') businessId: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    if (!photo) {
+      throw new BadRequestException('A storefront photo is required');
+    }
+    return this.businessService.uploadStorefrontPhoto(
+      businessId,
+      photo.buffer,
+      photo.mimetype,
+      req.user.sub,
+    );
   }
 
   @Post(':id/erase')

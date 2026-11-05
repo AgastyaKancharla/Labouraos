@@ -111,7 +111,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .expect(201);
 
     expect(res.body.geofenceFlag).toBe(false);
-    expect(res.body.selfieHash).toBe(`hash-safe-${timestamp}`);
+    expect(res.body.selfieHash).toBeNull();
 
     // Verify BusinessVisit was persisted
     const visits = await prisma.businessVisit.findMany({
@@ -119,6 +119,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     });
     expect(visits.length).toBe(1);
     expect(visits[0].geofenceFlag).toBe(false);
+    expect(visits[0].selfieHash).toBe(`hash-safe-${timestamp}`);
   });
 
   it('flags rather than blocks business creation when visit is outside geofence radius', async () => {

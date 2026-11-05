@@ -70,6 +70,8 @@ export class PricingService {
         lockoutMinutes: updates.lockoutMinutes ?? before.lockoutMinutes,
         callingHoursStart: updates.callingHoursStart ?? before.callingHoursStart,
         callingHoursEnd: updates.callingHoursEnd ?? before.callingHoursEnd,
+        duplicateBusinessRadiusMeters:
+          updates.duplicateBusinessRadiusMeters ?? before.duplicateBusinessRadiusMeters,
         consentWithdrawalCallWindowMinutes:
           updates.consentWithdrawalCallWindowMinutes ?? before.consentWithdrawalCallWindowMinutes,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),

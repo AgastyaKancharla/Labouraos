@@ -158,16 +158,51 @@ model Business {
   city          String          @default("Bengaluru")
   name          String
   address       String?
+  /// @deprecated replaced by additionalContactName
   contactName   String?
   phone         String          @unique
   phoneVerified Boolean         @default(false)
-  area          String
+  /// @deprecated replaced by locality; removed in the final clean-up migration
+  area          String?
   gstNumber     String?
   latitude      Float?
   longitude     Float?
   geofenceFlag  Boolean         @default(false)
+  /// @deprecated moved to BusinessVisit
   selfieUrl     String?
+  /// @deprecated moved to BusinessVisit
   selfieHash    String?
+  legalName                String?
+  ownerName                String?
+  additionalContactName    String?
+  additionalContactPhone   String?
+  businessType             String?
+  employeeCount            Int?
+  staffNeeded              String[]  @default([])
+  licenceNumber            String?
+  shopEstablishmentNumber  String?
+  udyamNumber              String?
+  pan                      String?
+  gstVerified              Boolean?
+  gstLegalName             String?
+  gstStatus                String?
+  gstCheckedAt             DateTime?
+  yearsInOperation         Int?
+  hiringFrequency          String?
+  billingName              String?
+  billingAddress           String?
+  storefrontPhotoPath      String?
+  storefrontPhotoHash      String?
+  storefrontPhotoLive      Boolean?
+  documentsStatus          String?
+  verificationStatus       String?   @default("lead")
+  verifiedAt               DateTime?
+  verifiedByStaffId        String?
+  accountAgentId           String?
+  accountAgentAssignedAt   DateTime?
+  leadCreatedByStaffId     String?
+  leadChannel              String?
+  locality                 String?
   vacancies     Vacancy[]
   placements    Placement[]
   payments      Payment[]
@@ -177,6 +212,8 @@ model Business {
   updatedAt     DateTime        @updatedAt
 
   @@index([city, area])
+  @@index([accountAgentId])
+  @@index([verificationStatus])
 }
 
 model Vacancy {
@@ -650,6 +687,7 @@ model PricingPolicy {
   lockoutMinutes               Int
   callingHoursStart            String
   callingHoursEnd              String
+  duplicateBusinessRadiusMeters Int @default(50)
   consentWithdrawalCallWindowMinutes Int @default(60)
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?

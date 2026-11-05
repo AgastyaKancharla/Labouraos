@@ -14,7 +14,7 @@ export interface InvoiceCustomer {
   contactPhone?: string;
   gstin: string | null;
   address: string | null;
-  area: string;
+  area: string | null;
   city: string;
   state: string;
   stateCode: string;
