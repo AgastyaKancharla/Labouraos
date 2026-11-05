@@ -5,20 +5,39 @@ import {
   Headers,
   Param,
   Post,
+  Req,
   Res,
   UseGuards,
 } from '@nestjs/common';
 import { Response } from 'express';
+import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
+import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { ConsentLinkService, SubmitConsentDto } from './consent-link.service';
+import { ConsentWithdrawalService, AgentConsentWithdrawalDto } from './consent-withdrawal.service';
 import { renderConsentPageHtml } from './consent-page.template';
+
+type AuthenticatedRequest = Request & { user: JwtPayload };
 
 @Controller('consent')
 export class ConsentController {
-  constructor(private readonly consentLinkService: ConsentLinkService) {}
+  constructor(
+    private readonly consentLinkService: ConsentLinkService,
+    private readonly consentWithdrawalService: ConsentWithdrawalService,
+  ) {}
+
+  @Post('withdraw')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  withdraw(@Body() body: AgentConsentWithdrawalDto, @Req() req: AuthenticatedRequest) {
+    return this.consentWithdrawalService.withdraw(
+      { id: req.user.sub, role: req.user.role },
+      body,
+    );
+  }
 
   /**
    * Generates a short-lived, single-use token and dispatches SMS link.

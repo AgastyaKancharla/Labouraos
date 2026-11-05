@@ -103,6 +103,7 @@ export async function seed(prismaClient?: PrismaClient) {
           lockoutMinutes: 15,
           callingHoursStart: '09:00',
           callingHoursEnd: '21:00',
+          consentWithdrawalCallWindowMinutes: 60,
         },
       });
     }

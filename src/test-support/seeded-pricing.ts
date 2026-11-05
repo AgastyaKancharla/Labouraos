@@ -17,6 +17,7 @@ export const SEEDED_PRICING_POLICY = {
   replacementSearchDays: 15,
   maxFreeReplacements: 2,
   maxReplacementRejections: 2,
+  consentWithdrawalCallWindowMinutes: 60,
 } as PricingPolicy;
 
 export function seededPricingService(

@@ -6,11 +6,14 @@ import { ConsentService } from './consent.service';
 import { ConsentClock } from './consent-clock';
 import { ConsentLinkService } from './consent-link.service';
 import { ConsentController } from './consent.controller';
+import { ConsentWithdrawalService } from './consent-withdrawal.service';
+import { PricingModule } from '../pricing/pricing.module';
+import { AuditModule } from '../../common/audit/audit.module';
 
 @Module({
-  imports: [PrismaModule, MessageModule, OtpModule],
+  imports: [PrismaModule, MessageModule, OtpModule, PricingModule, AuditModule],
   controllers: [ConsentController],
-  providers: [ConsentService, ConsentClock, ConsentLinkService],
+  providers: [ConsentService, ConsentClock, ConsentLinkService, ConsentWithdrawalService],
   exports: [ConsentService, ConsentClock, ConsentLinkService],
 })
 export class ConsentModule {}

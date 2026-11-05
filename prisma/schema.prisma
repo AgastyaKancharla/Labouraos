@@ -650,6 +650,7 @@ model PricingPolicy {
   lockoutMinutes               Int
   callingHoursStart            String
   callingHoursEnd              String
+  consentWithdrawalCallWindowMinutes Int @default(60)
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?
   setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)
@@ -762,6 +763,9 @@ model Consent {
   otpRequestId  String?
   grantedAt     DateTime?
   withdrawnAt   DateTime?
+  withdrawnMethod       String?
+  withdrawnByStaffId    String?
+  withdrawnCallRecordId String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

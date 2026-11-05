@@ -192,23 +192,26 @@ export class ConsentLinkService {
     // Mark token as used
     record.usedAt = this.clock.now();
 
-    // If all 5 required purposes are granted, move status from lead to consented
+    // Move a lead forward after first consent, or reactivate a paused seeker once all required purposes are restored.
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);
     let finalStatus = seeker.status;
 
-    if (hasAll && seeker.status === 'lead') {
+    if (hasAll && (seeker.status === 'lead' || seeker.status === 'paused')) {
+      const nextStatus = seeker.status === 'lead' ? 'consented' : 'active';
       await this.prisma.$transaction(async (tx) => {
         const updated = await tx.jobSeeker.update({
           where: { id: seeker.id },
-          data: { status: 'consented' },
+          data: { status: nextStatus, ...(nextStatus === 'active' ? { pausedAt: null } : {}) },
         });
         await recordStatusChange(tx, {
           subjectType: 'job_seeker',
           subjectId: seeker.id,
           fromStatus: seeker.status,
-          toStatus: 'consented',
+          toStatus: nextStatus,
           changedByStaffId: null,
-          reason: 'all_required_consents_granted_via_sms_link',
+          reason: nextStatus === 'active'
+            ? 'all_required_consents_restored_via_sms_link'
+            : 'all_required_consents_granted_via_sms_link',
         });
         finalStatus = updated.status;
       });
