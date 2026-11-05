@@ -420,7 +420,7 @@ export class JobSeekerService {
 
     if (resolvedRole === 'field_agent' && reason === 'no_pickup') {
       const refusalMessage =
-        "Field agents may only record 'offer_declined', 'offer_no_reply' or 'interview_no_show' hits. Recording 'no_pickup' hits is restricted to call agents and the automated sweep.";
+        "Field agents may only record 'offer_declined' (or 'offer_rejected'), 'offer_no_reply' or 'interview_no_show' hits. Recording 'no_pickup' hits is restricted to call agents and the automated sweep.";
 
       const jobSeeker = await this.prisma.jobSeeker.findUnique({
         where: { id: jobSeekerId },
@@ -445,7 +445,7 @@ export class JobSeekerService {
             refusalReason: 'UNAUTHORIZED_HIT_REASON_FOR_ROLE',
             attemptedReason: reason,
             role: resolvedRole,
-            allowedReasons: ['offer_declined', 'offer_no_reply', 'interview_no_show'],
+            allowedReasons: ['offer_declined', 'offer_rejected', 'offer_no_reply', 'interview_no_show'],
             message: refusalMessage,
           },
         });
@@ -530,7 +530,7 @@ export class JobSeekerService {
       const hit = await tx.jobSeekerHit.create({
         data: {
           jobSeekerId: jobSeeker.id,
-          reason,
+          reason: rawReason,
           note: note ?? null,
           interviewId: meta?.interviewId ?? null,
           callRecordId: meta?.callRecordId ?? null,
@@ -547,16 +547,14 @@ export class JobSeekerService {
       }
 
       const policy = await this.getPolicy();
-      const activeHitCount = await tx.jobSeekerHit.count({
-        where: { jobSeekerId: jobSeeker.id, reversedAt: null },
-      });
-      const isNowDeactivated = activeHitCount >= policy.maxHits;
+      const newHitCount = jobSeeker.hitCount + 1;
+      const isNowDeactivated = newHitCount >= policy.maxHits;
       const newStatus = isNowDeactivated ? 'deactivated' : jobSeeker.status;
 
       const updatedJobSeeker = await tx.jobSeeker.update({
         where: { id: jobSeeker.id },
         data: {
-          hitCount: activeHitCount,
+          hitCount: newHitCount,
           status: newStatus,
         },
       });
@@ -1498,21 +1496,16 @@ export class JobSeekerService {
         },
       });
 
-      const activeHitCount = await tx.jobSeekerHit.count({
-        where: {
-          jobSeekerId: hit.jobSeekerId,
-          reversedAt: null,
-        },
-      });
+      const newHitCount = Math.max(0, hit.jobSeeker.hitCount - 1);
 
       const wasDeactivated = hit.jobSeeker.status === 'deactivated';
-      const shouldReactivate = wasDeactivated && activeHitCount < policy.maxHits;
+      const shouldReactivate = wasDeactivated && newHitCount < policy.maxHits;
       const newStatus = shouldReactivate ? 'active' : hit.jobSeeker.status;
 
       const updatedJobSeeker = await tx.jobSeeker.update({
         where: { id: hit.jobSeekerId },
         data: {
-          hitCount: activeHitCount,
+          hitCount: newHitCount,
           status: newStatus,
         },
       });
@@ -1543,7 +1536,7 @@ export class JobSeekerService {
           reversedAt: now,
           reversedByStaffId: actorId,
           reversalReason: reversalReason.trim(),
-          hitCount: activeHitCount,
+          hitCount: newHitCount,
           status: newStatus,
         },
         city: hit.jobSeeker.city,
