@@ -25,8 +25,8 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
 
   const timestamp = Date.now();
   const password = 'Password123!Secure';
-  const area1 = `Area-EXP1-${timestamp}`;
-  const area2 = `Area-EXP2-${timestamp}`;
+  const locality1 = `Locality-EXP1-${timestamp}`;
+  const locality2 = `Locality-EXP2-${timestamp}`;
 
   let pl1Code: string;
   let pl2Code: string;
@@ -97,7 +97,6 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
         email: `fa_exp_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: area1,
         city: 'Bengaluru',
       },
     });
@@ -121,7 +120,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
         name: 'Apex Manufacturing Ltd',
         phone: `96${String(timestamp).slice(-8)}`,
         phoneVerified: true,
-        area: area1,
+        locality: locality1,
         city: 'Bengaluru',
       },
     });
@@ -134,7 +133,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
         name: 'Global Logistics Hub',
         phone: `97${String(timestamp).slice(-8)}`,
         phoneVerified: true,
-        area: area2,
+        locality: locality2,
         city: 'Bengaluru',
       },
     });
@@ -280,7 +279,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
     expect(res.headers['content-disposition']).toMatch(/attachment;\s*filename="placements-export-\d{4}-\d{2}-\d{2}\.csv"/);
 
     const csvContent = res.text;
-    expect(csvContent).toContain('Placement Code,Joined Date,Dropout Date,Trade Skill,Candidate Code,Employer Code,Employer Name,Monthly Salary (INR),Placement Fee (INR),Status,Area,City');
+    expect(csvContent).toContain('Placement Code,Joined Date,Dropout Date,Trade Skill,Candidate Code,Employer Code,Employer Name,Monthly Salary (INR),Placement Fee (INR),Status,Locality,City');
     expect(csvContent).toContain(pl1Code);
     expect(csvContent).toContain('Apex Manufacturing Ltd');
     expect(csvContent).toContain('Welder');
@@ -318,17 +317,17 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
     expect(pl2Row.dropoutDate).toBe('2026-10-22');
   });
 
-  it('3. Filters export by date range, status, and area', async () => {
-    // Filter by area1: should contain pl1 but not pl2
+  it('3. Filters export by date range, status, and locality', async () => {
+    // Filter by locality1: should contain pl1 but not pl2
     const areaRes = await request(app.getHttpServer())
-      .get(`/placements/export?area=${encodeURIComponent(area1)}`)
+      .get(`/placements/export?locality=${encodeURIComponent(locality1)}`)
       .set('Authorization', `Bearer ${mgrToken}`)
       .set('Accept', 'application/json');
 
     expect(areaRes.status).toBe(200);
-    const areaRows = areaRes.body;
-    expect(areaRows.some((r: RegulatoryPlacementExportRow) => r.placementCode === pl1Code)).toBe(true);
-    expect(areaRows.some((r: RegulatoryPlacementExportRow) => r.placementCode === pl2Code)).toBe(false);
+    const localityRows = areaRes.body;
+    expect(localityRows.some((r: RegulatoryPlacementExportRow) => r.placementCode === pl1Code)).toBe(true);
+    expect(localityRows.some((r: RegulatoryPlacementExportRow) => r.placementCode === pl2Code)).toBe(false);
 
     // Filter by status=dropped_out: should contain pl2 but not pl1
     const statusRes = await request(app.getHttpServer())

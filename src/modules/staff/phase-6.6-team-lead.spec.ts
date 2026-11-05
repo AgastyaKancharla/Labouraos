@@ -154,6 +154,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
         phone: `91${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
         area: 'Koramangala',
+        accountAgentId: agent2.id,
         city: 'Bengaluru',
       },
     });

@@ -30,7 +30,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'CA-00001',
     name: 'Call Agent One',
     role: 'call_agent',
-    area: 'Koramangala',
     city: 'Bengaluru',
     teamLeadId: mockTeamLeadId,
     status: 'active',
@@ -42,7 +41,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'CA-00001',
     email: 'ca1@laboura.local',
     role: 'call_agent',
-    area: 'Koramangala',
   };
 
   const otherAgentUser: JwtPayload = {
@@ -50,7 +48,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'CA-00002',
     email: 'ca2@laboura.local',
     role: 'call_agent',
-    area: 'Indiranagar',
   };
 
   const teamLeadUser: JwtPayload = {
@@ -58,7 +55,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'TL-00001',
     email: 'lead1@laboura.local',
     role: 'team_lead',
-    area: 'Koramangala',
   };
 
   const otherTeamLeadUser: JwtPayload = {
@@ -66,7 +62,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'TL-00002',
     email: 'lead2@laboura.local',
     role: 'team_lead',
-    area: 'Indiranagar',
   };
 
   const managerUser: JwtPayload = {
@@ -74,7 +69,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'MGR-00001',
     email: 'mgr@laboura.local',
     role: 'manager',
-    area: 'Koramangala',
   };
 
   const ceoUser: JwtPayload = {
@@ -82,7 +76,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'CEO-00001',
     email: 'ceo@laboura.local',
     role: 'ceo',
-    area: 'Koramangala',
   };
 
   const financeUser: JwtPayload = {
@@ -90,7 +83,6 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
     code: 'FIN-00001',
     email: 'fin@laboura.local',
     role: 'finance',
-    area: 'Koramangala',
   };
 
   beforeEach(() => {

@@ -39,7 +39,6 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
   const timestamp = Date.now();
   const password = 'Password123!Secure';
   const koraArea = `Area-E2E-Kora-${timestamp}`;
-  const indiArea = `Area-E2E-Indi-${timestamp}`;
 
   const cleanStaffIds: string[] = [];
   const cleanTargetIds: string[] = [];
@@ -126,7 +125,6 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         email: `fa1_e2e_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: koraArea,
         city: 'Bengaluru',
       },
     });
@@ -142,7 +140,6 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         email: `fa2_e2e_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: indiArea,
         city: 'Bengaluru',
       },
     });
@@ -157,7 +154,8 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         name: 'Tech Ventures Pvt Ltd',
         contactName: 'Ramesh Gupta',
         phone: `+9198${String(timestamp).slice(-8)}0`,
-        area: koraArea,
+        locality: koraArea,
+        accountAgentId: fa1Id,
         city: 'Bengaluru',
       },
     });

@@ -15,6 +15,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
   let otpService: OtpService;
 
   let faKoraToken: string;
+  let faKoraId: string;
   const koraArea = 'Koramangala';
 
   let faIndiToken: string;
@@ -43,10 +44,10 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         email: `fa_kora_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: koraArea,
         city: 'Bengaluru',
       },
     });
+    faKoraId = faKora.id;
 
     const faIndi = await prisma.staff.create({
       data: {
@@ -116,14 +117,14 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       .expect(200);
     expect(Array.isArray(initCandidatesRes.body)).toBe(true);
 
-    // 2. Initial fetch from /priority/vacancies (own area)
+    // 2. Initial fetch from /priority/vacancies (city-wide)
     const initVacanciesRes = await request(app.getHttpServer())
       .get('/priority/vacancies')
       .set('Authorization', `Bearer ${faKoraToken}`)
       .expect(200);
     expect(Array.isArray(initVacanciesRes.body)).toBe(true);
 
-    // 3. Initial fetch from /priority/trades (own area)
+    // 3. Initial fetch from /priority/trades (city-wide)
     const initTradesRes = await request(app.getHttpServer())
       .get('/priority/trades')
       .set('Authorization', `Bearer ${faKoraToken}`)
@@ -174,7 +175,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     expect(found.band).toBeDefined();
   });
 
-  it('does not persist deprecated area and limits a new lead to its creating field agent', async () => {
+  it('does not persist deprecated area and grants vacancy writes only to the account agent', async () => {
     // 1. FA Koramangala onboards business in Koramangala
     const phoneKora = `95002${String(timestamp).slice(-5)}`;
     const otpKora = await request(app.getHttpServer())
@@ -195,7 +196,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       .send({
         name: 'Kora Tech Hub',
         phone: phoneKora,
-        area: koraArea,
+        locality: koraArea,
         otpRequestId: otpKora.body.requestId,
         selfieUrl: 'https://cdn.laboura.local/selfies/kora.jpg',
         selfieHash: `hash_kora_${timestamp}`,
@@ -203,6 +204,12 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
       .expect(201);
 
     expect(bizKora.body.area).toBeNull();
+
+    // The business becomes writable by the field agent as an account business.
+    await prisma.business.update({
+      where: { id: bizKora.body.id },
+      data: { accountAgentId: faKoraId },
+    });
 
     // 2. FA Koramangala captures vacancy for their Koramangala business
     const vacKora = await request(app.getHttpServer())

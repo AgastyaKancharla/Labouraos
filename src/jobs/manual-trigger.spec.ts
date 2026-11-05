@@ -142,7 +142,6 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
         role,
         email: `${role}@laboura.local`,
         code: `STF-${role.substring(0, 2).toUpperCase()}-00001`,
-        area: 'Bengaluru Central',
         ...extra,
       };
       return jwtService.sign(payload);

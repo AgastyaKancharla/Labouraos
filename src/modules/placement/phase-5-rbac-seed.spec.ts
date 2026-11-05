@@ -172,15 +172,15 @@ describe('Phase 5 Task 9: RBAC and Seed Data', () => {
     });
   });
 
-  describe('Finance cannot approve refunds', () => {
-    it('denies Finance attempting to approve job seeker refund (403)', async () => {
+  describe('Manager cannot release refunds', () => {
+    it('denies Manager attempting to approve job seeker refund (403)', async () => {
       const candidate = await prisma.jobSeeker.findFirst({
         where: { status: 'active' },
       });
       if (candidate) {
         await request(app.getHttpServer())
           .post(`/job-seekers/${candidate.id}/refund`)
-          .set('Authorization', `Bearer ${financeToken}`)
+          .set('Authorization', `Bearer ${managerToken}`)
           .send({})
           .expect(403);
       }

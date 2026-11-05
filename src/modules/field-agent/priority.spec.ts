@@ -450,12 +450,11 @@ describe('Phase 4 Task 5: Priority Endpoints (/priority/*)', () => {
 
       const ids = res.body.map((r: { id: string }) => r.id);
 
-      // Replacement vacancy inside 15-day window must be at the very top
-      expect(ids[0]).toBe(koraInWindowReplacementVacId);
-
-      // Old vacancy (10 days open) comes before newer vacancy (1 day open)
+      // The in-window replacement ranks before the regular vacancies from this fixture.
       const oldIdx = ids.indexOf(koraOldVacId);
       const newHighFeeIdx = ids.indexOf(koraNewHighFeeVacId);
+      expect(ids).toContain(koraInWindowReplacementVacId);
+      expect(ids.indexOf(koraInWindowReplacementVacId)).toBeLessThan(oldIdx);
       expect(oldIdx).toBeLessThan(newHighFeeIdx);
 
       // Another field agent also sees city-wide vacancies

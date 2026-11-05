@@ -55,6 +55,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
 
   const callAgentTokens: string[] = [];
   const fieldAgentTokens: string[] = [];
+  const fieldAgentIds: string[] = [];
   const createdStaffIds: string[] = [];
   const createdPaymentIds: string[] = [];
   const createdJobSeekerIds: string[] = [];
@@ -115,7 +116,6 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
     for (let i = 0; i < FIELD_AGENT_COUNT; i++) {
       const code = `FA-LOAD-${timestamp}-${i}`;
       const email = `fa_load_${timestamp}_${i}@laboura.local`;
-      const area = i % 2 === 0 ? 'Koramangala' : 'Indiranagar';
       const staff = await prisma.staff.create({
         data: {
           code,
@@ -123,13 +123,13 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
           email,
           passwordHash,
           role: 'field_agent',
-          area,
           city: 'Bengaluru',
         },
       });
       createdStaffIds.push(staff.id);
+      fieldAgentIds.push(staff.id);
       fieldAgentTokens.push(
-        jwtService.sign({ sub: staff.id, email, role: 'field_agent', area }),
+        jwtService.sign({ sub: staff.id, email, role: 'field_agent' }),
       );
     }
   });
@@ -305,7 +305,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
           phone: bzPhone,
           otpRequestId: bzOtpRequestId,
           contactPerson: `Manager ${i}`,
-          area,
+          locality: area,
           city: 'Bengaluru',
           address: `${i} Industrial Layout, ${area}`,
         });
@@ -313,6 +313,11 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
       metrics.businessRegistration.push(Date.now() - bzStart);
       expect(bzRes.status).toBe(201);
       createdBusinessIds.push(bzRes.body.id);
+
+      await prisma.business.update({
+        where: { id: bzRes.body.id },
+        data: { accountAgentId: fieldAgentIds[i] },
+      });
 
       // Capture vacancy
       const vacStart = Date.now();
@@ -325,7 +330,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
           requiredWorkers: 2,
           salaryMinPaise: 2200000,
           description: `Need 2 electricians in ${area}`,
-          area,
+          locality: area,
           city: 'Bengaluru',
         });
 
