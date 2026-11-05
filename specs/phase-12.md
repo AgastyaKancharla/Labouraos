@@ -100,11 +100,14 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - Tests: a reversed hit doesn't count toward `maxHits`; reversing raises exactly one `ReviewFlag`; a non-reversed `interview_no_show` ends refund eligibility immediately; the old `offer_rejected` value on existing rows still reads without error.
 
 ### [ ] Task 7 — Deprecate old fields, nothing removed yet
-**Branch:** `phase-12/task-7-deprecate-old-fields` · **No migration**
+**Branch:** `phase-12/task-7-deprecate-old-fields` · **Migration folder:** `20261105150000_jobseeker_tradeskill_nullable`
 
 **Acceptance:**
+- **`JobSeeker.tradeSkill` becomes nullable** (`String` → `String?`), by migration (decided 5 Nov, after Codex raised it). The original "no migration" label on this task was wrong: the column is `NOT NULL` with no default, so every create is forced to write it, and "no write path writes the old columns" is impossible without this change. Relaxing `NOT NULL` is non-destructive — existing rows keep their values and nothing is dropped. The column itself is still **not** removed here (§14 does that).
+- **Do not touch `Vacancy.tradeSkill`.** It is a different column on a different model and it is **not** deprecated — data-design §6 keeps it. Only the `JobSeeker` one changes.
+- `kycStatus` already has a default and `kycReference` is already nullable, so neither needs a migration — writes simply stop setting them.
 - Grep the codebase for every remaining read of `JobSeeker.tradeSkill`, `kycStatus`, `kycReference`. Each read site is switched to read from `JobSeekerTrade`/`IdentityVerification` instead, with a fallback to the old column only where the new table has no row yet (so old test data and not-yet-migrated real rows don't break).
-- No write path writes the old columns anymore.
+- No write path writes the old columns anymore. Job seeker creation writes `JobSeekerTrade` only.
 - **The legacy `POST /job-seekers/:id/kyc` endpoint is removed** (decided 5 Nov, after Codex raised it). It accepts a hand-typed `kycStatus` and vendor reference with **no consent check**, which bypasses the `aadhaar_verification` consent gate Task 5 built — the same hand-entry pattern already removed for call outcomes and contact attempts in Phase 11. `POST /job-seekers/:id/identity-verification` replaces it entirely. Its payload is **not** translated or mapped: an incomplete legacy payload cannot produce an honest `IdentityVerification` row (design rule 2 — a guessed value is worse than an honest null), and existing rows are test data.
 - The admin dashboard column that prints `j.kycStatus` reads the latest `IdentityVerification.status` instead, with the same old-column fallback as every other read site.
 - If a manual override is ever needed (vendor down, genuine edge case), it is a separate, audited, Manager-and-CEO-only action specified in a later phase — not this endpoint left standing.
