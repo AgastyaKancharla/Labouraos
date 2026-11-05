@@ -387,6 +387,11 @@ Format:
 **Cause:** `consentWithdrawalCallWindowMinutes` is configurable in `PricingPolicy`, and a browser-side literal can disagree with the server's eligibility check.
 **Fix:** Ask the authenticated eligibility endpoint for the agent's current qualifying call; it uses `PricingService.current()` and returns only eligibility plus the call record ID. The withdrawal endpoint revalidates the same conditions at submission time.
 
+## No-documents business approval needs a fresh answered verification call
+**Symptom:** A business can have its visit, photo, owner OTP, and signed agreement complete while still being correctly refused at approval.
+**Cause:** For a no-documents business, the approving Team Lead or manager must personally make an answered system call after the business reaches `pending_tl_check`.
+**Fix:** Keep that call check tied to the latest `pending_tl_check` transition. A pre-visit or unanswered call does not satisfy the approval condition.
+
 
 
 

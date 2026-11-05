@@ -117,7 +117,7 @@ One task after another, in order. Each task has its own branch and, where needed
 - `Staff.area` is marked `@deprecated` and nothing reads it.
 - Tests: a field agent can read any business but can edit only their own account businesses (plus the visit and lead exceptions above); a call agent can create a lead and add a vacancy to someone else's business but can't edit a verified business; a manager is refused on all three money-release routes; finance and CEO succeed; nothing reads `Staff.area` or `Business.area`.
 
-### [ ] Task 7 — Screens
+### [x] Task 7 — Screens
 **Branch:** `phase-13/task-7-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**
@@ -133,15 +133,15 @@ One task after another, in order. Each task has its own branch and, where needed
 
 ## Phase 13 Gate
 
-- [ ] A business can't reach `verified` without a done verification visit with the owner's OTP, an agreement signed by the owner on their own phone, and a Team Lead/Manager/CEO approval — by test
-- [ ] No candidate is shown for a business that isn't `verified` — by test
-- [ ] Households and businesses with no registration numbers can register; they are `no_documents` and raise `no_documents_check` — by test
-- [ ] The agreement's numbers come from `PricingPolicy` at send time and never change afterwards; no staff route can sign it — by test
-- [ ] The owner's `call_recording` consent is created in the same OTP step as the agreement — by test
-- [ ] A job seeker's consent can be withdrawn by an agent only inside an answered, recent call with that job seeker; the job seeker gets an SMS; it is audited; no agent can grant consent — by test
-- [ ] `own_area` is gone; `own_account` works; Managers can't release money — by test
-- [ ] `Business.area` and `Vacancy.offeredSalary` are nullable and no longer written; `Vacancy.tradeSkill` is untouched — by test
-- [ ] **End-to-end proof, recorded in the report:** a call agent creates a household lead with no documents; a Team Lead creates a verification assignment and the nearest checked-in field agent is suggested and confirmed; the agent visits, enters the owner's OTP, uploads a photo; the owner signs the agreement and call-recording consent on their own phone; the `no_documents_check` flag is raised; the Team Lead approves, the visiting agent becomes account agent; a vacancy is added with a walk-in day; the shortlist that was empty before approval now works. Separately: a job seeker calls in, the agent withdraws `call_recording` inside the call window, the job seeker is paused and gets the SMS, re-grants by link and is active again.
+- [x] A business can't reach `verified` without a done verification visit with the owner's OTP, an agreement signed by the owner on their own phone, and a Team Lead/Manager/CEO approval — by test
+- [x] No candidate is shown for a business that isn't `verified` — by test
+- [x] Households and businesses with no registration numbers can register; they are `no_documents` and raise `no_documents_check` — by test
+- [x] The agreement's numbers come from `PricingPolicy` at send time and never change afterwards; no staff route can sign it — by test
+- [x] The owner's `call_recording` consent is created in the same OTP step as the agreement — by test
+- [x] A job seeker's consent can be withdrawn by an agent only inside an answered, recent call with that job seeker; the job seeker gets an SMS; it is audited; no agent can grant consent — by test
+- [x] `own_area` is gone; `own_account` works; Managers can't release money — by test
+- [x] `Business.area` and `Vacancy.offeredSalary` are nullable and no longer written; `Vacancy.tradeSkill` is untouched — by test
+- [x] **End-to-end proof, recorded in the report:** a call agent creates a household lead with no documents; a Team Lead creates a verification assignment and the nearest checked-in field agent is suggested and confirmed; the agent visits, enters the owner's OTP, uploads a photo; the owner signs the agreement and call-recording consent on their own phone; the `no_documents_check` flag is raised; the Team Lead approves, the visiting agent becomes account agent; a vacancy is added with a walk-in day; the shortlist that was empty before approval now works. Separately: a job seeker calls in, the agent withdraws `call_recording` inside the call window, the job seeker is paused and gets the SMS, re-grants by link and is active again.
 - [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.
