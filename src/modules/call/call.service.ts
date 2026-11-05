@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common';
 import { CallRecord } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { ConsentService } from '../consent/consent.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { Role, RBAC_MATRIX } from '../../common/rbac/rbac.types';
@@ -37,6 +38,7 @@ export class CallService {
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly consentService: ConsentService,
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly copyJob: RecordingCopyJob,
@@ -182,6 +184,36 @@ export class CallService {
     if (!subject) {
       throw new NotFoundException('The person or business to call was not found');
     }
+
+    if (subjectType === 'job_seeker' && purpose !== 'consent_explain') {
+      const hasCallRecordingConsent = await this.consentService.hasConsent(
+        'job_seeker',
+        subject.id,
+        'call_recording',
+      );
+      if (!hasCallRecordingConsent) {
+        throw new ForbiddenException(
+          'Consent for call_recording is required before calling a job seeker',
+        );
+      }
+    }
+
+    if (
+      subjectType === 'job_seeker' &&
+      ['offer', 'follow_up', 'interview_result'].includes(purpose)
+    ) {
+      const hasJobMatchingConsent = await this.consentService.hasConsent(
+        'job_seeker',
+        subject.id,
+        'job_matching',
+      );
+      if (!hasJobMatchingConsent) {
+        throw new ForbiddenException(
+          'Consent for job_matching is required before calling a job seeker about job opportunities',
+        );
+      }
+    }
+
     await this.assertCanCall(actor, subjectType, subject);
 
     const now = this.clock.now();

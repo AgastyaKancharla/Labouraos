@@ -167,6 +167,18 @@ describe('Phase 11 Task 6: Calling screens', () => {
     });
     seekerIds.push(seeker.id);
     testSeekerId = seeker.id;
+    await prisma.consent.createMany({
+      data: ['call_recording', 'job_matching'].map((purpose) => ({
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        purpose,
+        noticeVersion: 'calling-screens-test',
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      })),
+    });
 
     const biz = await prisma.business.create({
       data: {
@@ -198,7 +210,10 @@ describe('Phase 11 Task 6: Calling screens', () => {
       await prisma.contactAttempt.deleteMany({ where: { callRecordId: { in: validCallIds } } });
       await prisma.callRecord.deleteMany({ where: { id: { in: validCallIds } } });
     }
-    if (seekerIds.length) await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
+    if (seekerIds.length) {
+      await prisma.consent.deleteMany({ where: { subjectId: { in: seekerIds } } });
+      await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
+    }
     if (bizIds.length) await prisma.business.deleteMany({ where: { id: { in: bizIds } } });
     if (refIds.length) await prisma.referral.deleteMany({ where: { id: { in: refIds } } });
     if (staffIds.length) {
