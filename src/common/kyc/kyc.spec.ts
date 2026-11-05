@@ -4,8 +4,6 @@ import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { OtpService } from '../otp/otp.service';
-import { MockOtpProvider } from '../otp/mock-otp.provider';
 import { KYC_PROVIDER, KycProvider } from './kyc.interface';
 import { MockKycProvider } from './mock-kyc.provider';
 import { KycModule } from './kyc.module';
@@ -15,7 +13,6 @@ import { JwtService } from '@nestjs/jwt';
 describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let otpService: OtpService;
 
   let callAgentToken: string;
   let callAgentId: string;
@@ -32,7 +29,6 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
     await app.init();
 
     prisma = app.get<PrismaService>(PrismaService);
-    otpService = app.get<OtpService>(OtpService);
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -77,30 +73,6 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
       await app.close();
     }
   });
-
-  async function createPendingJobSeeker(phoneSuffix: string) {
-    const phone = `61${phoneSuffix}`;
-    const { requestId } = await otpService.sendOtp(phone);
-    const mockProvider = otpService.getProvider() as MockOtpProvider;
-    const code = mockProvider.getCode(requestId)!;
-    await otpService.verifyOtp(requestId, code);
-
-    const res = await request(app.getHttpServer())
-      .post('/job-seekers')
-      .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        name: `KYC Candidate ${phoneSuffix}`,
-        phone,
-        otpRequestId: requestId,
-        tradeSkill: 'Electrician',
-        minSalary: 2000000,
-        maxSalary: 2500000,
-        preferredCallWindowStart: '09:00',
-        preferredCallWindowEnd: '18:00',
-      });
-
-    return res.body;
-  }
 
   describe('MockKycProvider & Provider Selection', () => {
     const originalEnv = process.env.KYC_PROVIDER;
