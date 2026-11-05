@@ -26,7 +26,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 1
 
-### [x] Task 1 — Consent table and service
+### [ ] Task 1 — Consent table and service
 **Branch:** `phase-12/task-1-consent` · **Migration folder:** `20261105100000_add_consent`
 
 **Acceptance:**
@@ -37,7 +37,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - A withdrawal of `call_recording` or `job_matching` by an **active** job seeker moves their `JobSeeker.status` to `paused` and sets `pausedAt` (data-design §4). Withdrawing `promotions` or `job_updates` changes nothing else.
 - Tests: granting all five required purposes returns `hasAllRequired = true`; missing one returns false; `promotions` alone never returns true; withdrawing `call_recording` on an active job seeker pauses them; a repeat grant of the same purpose and notice version does not create a second row; granting a new `noticeVersion` after a notice change creates a new row rather than overwriting the old one.
 
-### [x] Task 2 — JobSeeker new fields and status list
+### [ ] Task 2 — JobSeeker new fields and status list
 **Branch:** `phase-12/task-2-jobseeker-fields` · **Migration folder:** `20261105110000_jobseeker_profile_fields`
 
 **Acceptance:**
@@ -48,7 +48,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - A status move from `lead` to `consented` is only allowed through `ConsentService.hasAllRequired` returning true (wire the actual transition in Task 4, once the capture page exists — this task just builds the guard and a service method that checks it and throws if called early).
 - Tests: a job seeker under 18 can't reach `pending_activation`; the old status values still read correctly after migration; the deprecated columns are untouched by any new code path; attempting `lead → consented` without all required consents throws.
 
-### [x] Task 3 — JobSeekerTrade and JobSeekerLanguage
+### [ ] Task 3 — JobSeekerTrade and JobSeekerLanguage
 **Branch:** `phase-12/task-3-trade-language` · **Migration folder:** `20261105120000_jobseeker_trade_language`
 
 **Acceptance:**
@@ -61,7 +61,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 2 (after Wave 1 is merged)
 
-### [x] Task 4 — The consent capture page and OTP
+### [ ] Task 4 — The consent capture page and OTP
 **Branch:** `phase-12/task-4-consent-capture` · **No migration**
 
 **Acceptance:**
@@ -73,7 +73,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - Add `consent_explain` to the `CallRecord.purpose` closed list (data-design §1), so the agent's explanatory call can be tagged distinctly from a general call. No schema change — just the closed-list file.
 - Tests: a full tick-and-submit moves status to `consented`; ticking only 4 of 5 required leaves status at `lead`; an expired token is refused; a reused token is refused; the OTP must match before submit succeeds; the job seeker's phone number never appears in the page's own API responses to agents (only to the job seeker's own browser, which already has it since they're the one who received the SMS).
 
-### [x] Task 5 — IdentityVerification
+### [ ] Task 5 — IdentityVerification
 **Branch:** `phase-12/task-5-identity-verification` · **Migration folder:** `20261105130000_add_identity_verification`
 
 **Acceptance:**
@@ -88,7 +88,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 3 (after Wave 2 is merged)
 
-### [x] Task 6 — JobSeekerHit changes
+### [ ] Task 6 — JobSeekerHit changes
 **Branch:** `phase-12/task-6-hit-changes` · **Migration folder:** `20261105140000_jobseeker_hit_changes`
 
 **Acceptance:**
@@ -105,8 +105,11 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 **Acceptance:**
 - Grep the codebase for every remaining read of `JobSeeker.tradeSkill`, `kycStatus`, `kycReference`. Each read site is switched to read from `JobSeekerTrade`/`IdentityVerification` instead, with a fallback to the old column only where the new table has no row yet (so old test data and not-yet-migrated real rows don't break).
 - No write path writes the old columns anymore.
+- **The legacy `POST /job-seekers/:id/kyc` endpoint is removed** (decided 5 Nov, after Codex raised it). It accepts a hand-typed `kycStatus` and vendor reference with **no consent check**, which bypasses the `aadhaar_verification` consent gate Task 5 built — the same hand-entry pattern already removed for call outcomes and contact attempts in Phase 11. `POST /job-seekers/:id/identity-verification` replaces it entirely. Its payload is **not** translated or mapped: an incomplete legacy payload cannot produce an honest `IdentityVerification` row (design rule 2 — a guessed value is worse than an honest null), and existing rows are test data.
+- The admin dashboard column that prints `j.kycStatus` reads the latest `IdentityVerification.status` instead, with the same old-column fallback as every other read site.
+- If a manual override is ever needed (vendor down, genuine edge case), it is a separate, audited, Manager-and-CEO-only action specified in a later phase — not this endpoint left standing.
 - This task does **not** drop the columns — that happens in the final clean-up migration (data-design §14), not before every service is confirmed off them.
-- Tests: a job seeker with only old-style data (no `JobSeekerTrade` row) still returns a usable primary trade from the fallback; a job seeker with new-style data ignores the old column entirely; no test asserts the old columns still get written.
+- Tests: a job seeker with only old-style data (no `JobSeekerTrade` row) still returns a usable primary trade from the fallback; a job seeker with new-style data ignores the old column entirely; no test asserts the old columns still get written; `POST /job-seekers/:id/kyc` returns 404 for every role (matching the Phase 11 precedent for the removed raw-number calling endpoint).
 
 ---
 
