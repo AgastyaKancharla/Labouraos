@@ -51,7 +51,12 @@ export class VacancyService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    if (staff.role === 'field_agent' && business.area !== staff.area) {
+    if (
+      staff.role === 'field_agent' &&
+      (business.area !== null
+        ? business.area !== staff.area
+        : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
+    ) {
       throw new ForbiddenException(
         `Access denied: business is in area '${business.area}', not your area '${staff.area}'`,
       );

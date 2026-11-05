@@ -352,6 +352,16 @@ Format:
 **Cause:** Phase 12 defines `ConsentService.withdraw` but does not define a public withdrawal request flow, and job seekers do not have accounts.
 **Fix:** The Phase 12 gate proof calls `ConsentService.withdraw` directly, as decided for this task. A job-seeker-facing OTP-protected withdrawal flow remains missing and is deferred to a later phase.
 
+## Phase 13 business locality is entered by the agent beside GPS coordinates
+**Symptom:** The business profile requires a locality value, but Phase 13 specifies no reverse-geocoding provider.
+**Cause:** Matching and the map use GPS coordinates only; locality is a display field and no external geocoder is part of this phase.
+**Fix:** The agent enters the locality name and the system stores it alongside the GPS coordinates. Do not add reverse geocoding in Phase 13.
+
+## Prisma scalar-list fields use empty arrays for existing records
+**Symptom:** Prisma rejects nullable scalar-list fields, while Phase 13 list columns must be available on existing rows.
+**Cause:** PostgreSQL scalar lists cannot be optional in Prisma's data model.
+**Fix:** Declare Phase 13 scalar-list columns as `String[] @default([])` and add them with an empty-array default so existing rows mean “nothing recorded”, not a guessed value. Use this pattern for later scalar-list columns too.
+
 
 
 

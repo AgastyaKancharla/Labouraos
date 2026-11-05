@@ -167,7 +167,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(resUnverifiedOtp.status).toBe(400);
   });
 
-  it('field agent creates business stamped automatically with their own area', async () => {
+  it('field agent creates a business without writing the deprecated area or contact fields', async () => {
     const phone = `92${timestamp.toString().slice(-8)}`;
     const otpRequestId = await getVerifiedOtp(phone);
 
@@ -178,6 +178,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Koramangala Bakers',
         address: '80 Feet Road, 4th Block',
         contactPerson: 'Ramesh Patel',
+        locality: 'Koramangala',
         phone,
         otpRequestId,
         gstNumber: '29ABCDE1234F1Z5',
@@ -187,11 +188,13 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(res.body.id).toBeDefined();
     expect(res.body.code).toMatch(/^BZ-\d{5}$/);
     expect(res.body.name).toBe('Koramangala Bakers');
-    expect(res.body.area).toBe('Koramangala'); // Stamped with agent's area automatically
+    expect(res.body.area).toBeNull();
+    expect(res.body.locality).toBe('Koramangala');
     expect(res.body.phone).toBe(maskPhoneLast4(phone));
     const storedBusiness = await prisma.business.findUnique({ where: { id: res.body.id } });
     expect(storedBusiness?.phone).toBe(phone);
-    expect(res.body.contactName).toBe('Ramesh Patel');
+    expect(res.body.contactName).toBeNull();
+    expect(res.body.additionalContactName).toBe('Ramesh Patel');
     expect(res.body.gstNumber).toBe('29ABCDE1234F1Z5');
     expect(res.body.phoneVerified).toBe(true);
 
@@ -287,11 +290,12 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         contactPerson: 'Anil Deshmukh',
         phone,
         otpRequestId,
-        area: 'Whitefield',
+        locality: 'Whitefield',
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.area).toBe('Whitefield');
+    expect(res.body.area).toBeNull();
+    expect(res.body.locality).toBe('Whitefield');
     expect(res.body.code).toMatch(/^BZ-\d{5}$/);
   });
 });

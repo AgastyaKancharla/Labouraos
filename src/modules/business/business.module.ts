@@ -7,6 +7,13 @@ import { VacancyModule } from '../vacancy/vacancy.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { BusinessController } from './business.controller';
 import { BusinessService } from './business.service';
+import { GST_LOOKUP_PROVIDER, MockGstLookupProvider } from './gst-lookup.provider';
+import {
+  BUSINESS_PHOTO_STORAGE,
+  MemoryBusinessPhotoStorage,
+  SupabaseBusinessPhotoStorage,
+} from './storefront-photo.storage';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
   imports: [
@@ -16,9 +23,22 @@ import { BusinessService } from './business.service';
     OtpModule,
     VacancyModule,
     ReviewFlagModule,
+    PricingModule,
   ],
   controllers: [BusinessController],
-  providers: [BusinessService],
+  providers: [
+    BusinessService,
+    { provide: GST_LOOKUP_PROVIDER, useClass: MockGstLookupProvider },
+    {
+      provide: BUSINESS_PHOTO_STORAGE,
+      useFactory: () => {
+        const mode = process.env.BUSINESS_PHOTO_STORAGE_MODE || 'mock';
+        if (mode === 'mock') return new MemoryBusinessPhotoStorage();
+        if (mode === 'supabase') return new SupabaseBusinessPhotoStorage();
+        throw new Error(`Unsupported business photo storage mode: ${mode}`);
+      },
+    },
+  ],
   exports: [BusinessService],
 })
 export class BusinessModule {}
