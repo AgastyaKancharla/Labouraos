@@ -38,10 +38,10 @@ export class ConsentService {
    * Idempotent: repeated grant of the same purpose and notice version updates the existing row.
    * A new noticeVersion creates a new row rather than overwriting the prior version.
    */
-  async grant(dto: GrantConsentDto) {
+  async grant(dto: GrantConsentDto, client: Prisma.TransactionClient | PrismaService = this.prisma) {
     const now = this.clock.now();
 
-    const previous = await this.prisma.consent.findUnique({
+    const previous = await client.consent.findUnique({
       where: {
         subjectType_subjectId_purpose_noticeVersion: {
           subjectType: dto.subjectType,
@@ -69,7 +69,7 @@ export class ConsentService {
       });
     }
 
-    return this.prisma.consent.upsert({
+    return client.consent.upsert({
       where: {
         subjectType_subjectId_purpose_noticeVersion: {
           subjectType: dto.subjectType,

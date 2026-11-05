@@ -18,7 +18,10 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { ConsentLinkService, SubmitConsentDto } from './consent-link.service';
 import { ConsentWithdrawalService, AgentConsentWithdrawalDto } from './consent-withdrawal.service';
-import { renderConsentPageHtml } from './consent-page.template';
+import {
+  renderBusinessAgreementPageHtml,
+  renderConsentPageHtml,
+} from './consent-page.template';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -65,6 +68,15 @@ export class ConsentController {
 
     if (accept && accept.includes('text/html')) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      if (details.subjectType === 'business') {
+        return renderBusinessAgreementPageHtml(
+          token,
+          details.businessName,
+          details.maskedPhone,
+          details.agreementTermsHtml,
+          details.preferredLanguage as 'kn' | 'hi' | 'en',
+        );
+      }
       return renderConsentPageHtml(
         token,
         details.candidateName,

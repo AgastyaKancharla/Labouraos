@@ -24,6 +24,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 
 import { VacancyService } from '../vacancy/vacancy.service';
 import { CreateVacancyDto } from '../vacancy/dto/create-vacancy.dto';
+import { ConsentLinkService } from '../consent/consent-link.service';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -32,6 +33,7 @@ export class BusinessController {
   constructor(
     private readonly businessService: BusinessService,
     private readonly vacancyService: VacancyService,
+    private readonly consentLinkService: ConsentLinkService,
   ) {}
 
   @Post()
@@ -62,6 +64,17 @@ export class BusinessController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.businessService.findById(id, req.user.sub);
+  }
+
+  @Post(':id/agreement-links')
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  createAgreementLink(
+    @Param('id') businessId: string,
+    @Body() body: { language?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.consentLinkService.createAgreementLink(businessId, req.user.sub, body?.language);
   }
 
   @Post(':id/vacancies')

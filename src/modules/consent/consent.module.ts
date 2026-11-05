@@ -9,11 +9,28 @@ import { ConsentController } from './consent.controller';
 import { ConsentWithdrawalService } from './consent-withdrawal.service';
 import { PricingModule } from '../pricing/pricing.module';
 import { AuditModule } from '../../common/audit/audit.module';
+import {
+  AGREEMENT_DOCUMENT_STORAGE,
+  MemoryAgreementDocumentStorage,
+  SupabaseAgreementDocumentStorage,
+} from './agreement-document.storage';
 
 @Module({
   imports: [PrismaModule, MessageModule, OtpModule, PricingModule, AuditModule],
   controllers: [ConsentController],
-  providers: [ConsentService, ConsentClock, ConsentLinkService, ConsentWithdrawalService],
+  providers: [
+    ConsentService,
+    ConsentClock,
+    ConsentLinkService,
+    ConsentWithdrawalService,
+    {
+      provide: AGREEMENT_DOCUMENT_STORAGE,
+      useFactory: () =>
+        process.env.AGREEMENT_STORAGE_MODE === 'supabase'
+          ? new SupabaseAgreementDocumentStorage()
+          : new MemoryAgreementDocumentStorage(),
+    },
+  ],
   exports: [ConsentService, ConsentClock, ConsentLinkService],
 })
 export class ConsentModule {}
