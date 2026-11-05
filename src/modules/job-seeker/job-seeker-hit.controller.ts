@@ -10,7 +10,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
-import { RolesGuard } from '../../common/rbac/roles.guard';
+import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -19,7 +19,7 @@ import { JobSeekerService } from './job-seeker.service';
 import { ReverseHitDto } from './dto/record-hit.dto';
 
 @Controller('job-seeker-hits')
-@UseGuards(JwtAuthGuard, RolesGuard)
+@UseGuards(JwtAuthGuard, RbacGuard)
 @UseInterceptors(PiiMaskingInterceptor)
 export class JobSeekerHitController {
   constructor(private readonly jobSeekerService: JobSeekerService) {}
