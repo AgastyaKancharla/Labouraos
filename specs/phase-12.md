@@ -26,7 +26,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 1
 
-### [ ] Task 1 — Consent table and service
+### [x] Task 1 — Consent table and service
 **Branch:** `phase-12/task-1-consent` · **Migration folder:** `20261105100000_add_consent`
 
 **Acceptance:**
@@ -37,7 +37,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - A withdrawal of `call_recording` or `job_matching` by an **active** job seeker moves their `JobSeeker.status` to `paused` and sets `pausedAt` (data-design §4). Withdrawing `promotions` or `job_updates` changes nothing else.
 - Tests: granting all five required purposes returns `hasAllRequired = true`; missing one returns false; `promotions` alone never returns true; withdrawing `call_recording` on an active job seeker pauses them; a repeat grant of the same purpose and notice version does not create a second row; granting a new `noticeVersion` after a notice change creates a new row rather than overwriting the old one.
 
-### [ ] Task 2 — JobSeeker new fields and status list
+### [x] Task 2 — JobSeeker new fields and status list
 **Branch:** `phase-12/task-2-jobseeker-fields` · **Migration folder:** `20261105110000_jobseeker_profile_fields`
 
 **Acceptance:**
@@ -48,7 +48,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - A status move from `lead` to `consented` is only allowed through `ConsentService.hasAllRequired` returning true (wire the actual transition in Task 4, once the capture page exists — this task just builds the guard and a service method that checks it and throws if called early).
 - Tests: a job seeker under 18 can't reach `pending_activation`; the old status values still read correctly after migration; the deprecated columns are untouched by any new code path; attempting `lead → consented` without all required consents throws.
 
-### [ ] Task 3 — JobSeekerTrade and JobSeekerLanguage
+### [x] Task 3 — JobSeekerTrade and JobSeekerLanguage
 **Branch:** `phase-12/task-3-trade-language` · **Migration folder:** `20261105120000_jobseeker_trade_language`
 
 **Acceptance:**
@@ -61,7 +61,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 2 (after Wave 1 is merged)
 
-### [ ] Task 4 — The consent capture page and OTP
+### [x] Task 4 — The consent capture page and OTP
 **Branch:** `phase-12/task-4-consent-capture` · **No migration**
 
 **Acceptance:**
@@ -73,7 +73,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - Add `consent_explain` to the `CallRecord.purpose` closed list (data-design §1), so the agent's explanatory call can be tagged distinctly from a general call. No schema change — just the closed-list file.
 - Tests: a full tick-and-submit moves status to `consented`; ticking only 4 of 5 required leaves status at `lead`; an expired token is refused; a reused token is refused; the OTP must match before submit succeeds; the job seeker's phone number never appears in the page's own API responses to agents (only to the job seeker's own browser, which already has it since they're the one who received the SMS).
 
-### [ ] Task 5 — IdentityVerification
+### [x] Task 5 — IdentityVerification
 **Branch:** `phase-12/task-5-identity-verification` · **Migration folder:** `20261105130000_add_identity_verification`
 
 **Acceptance:**
@@ -88,7 +88,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 
 ## Wave 3 (after Wave 2 is merged)
 
-### [ ] Task 6 — JobSeekerHit changes
+### [x] Task 6 — JobSeekerHit changes
 **Branch:** `phase-12/task-6-hit-changes` · **Migration folder:** `20261105140000_jobseeker_hit_changes`
 
 **Acceptance:**
