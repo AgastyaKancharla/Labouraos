@@ -75,7 +75,6 @@ const STAFF_VIEW_SELECT = {
   name: true,
   email: true,
   role: true,
-  area: true,
   teamLeadId: true,
   status: true,
   createdAt: true,
@@ -255,7 +254,6 @@ export class StaffService {
         name: createdStaff.name,
         email: createdStaff.email,
         role: createdStaff.role,
-        area: createdStaff.area,
         teamLeadId: createdStaff.teamLeadId,
         status: createdStaff.status,
       },
@@ -276,7 +274,6 @@ export class StaffService {
       typeof dto?.email === 'string' ? dto.email.trim().toLowerCase() : '';
     const email = rawEmail === '' ? null : rawEmail;
     const role = dto?.role;
-    const area = typeof dto?.area === 'string' ? dto.area.trim() : undefined;
 
     if (!name) {
       throw new BadRequestException('name is required');
@@ -296,13 +293,6 @@ export class StaffService {
         `Only a CEO can create '${role}' accounts`,
       );
     }
-    if (role === 'field_agent' && !area) {
-      throw new BadRequestException('area is required for field agents');
-    }
-    if (role !== 'field_agent' && area) {
-      throw new BadRequestException('area applies to field agents only');
-    }
-
     const teamLeadId = dto.teamLeadId || undefined;
     if (teamLeadId) {
       if (!TEAM_MEMBER_ROLES.includes(role)) {
@@ -352,7 +342,6 @@ export class StaffService {
         name,
         email,
         role,
-        area: area ?? null,
         teamLeadId: teamLeadId ?? null,
         passwordHash: placeholderHash,
         status: STAFF_STATUS.PENDING_INVITE,
@@ -373,7 +362,6 @@ export class StaffService {
         name: staff.name,
         email: staff.email,
         role: staff.role,
-        area: staff.area,
         teamLeadId: staff.teamLeadId,
         status: staff.status,
         inviteExpiresAt: inviteExpiresAt.toISOString(),
@@ -411,7 +399,6 @@ export class StaffService {
     return this.prisma.staff.findMany({
       where: {
         ...(query.role ? { role: query.role } : {}),
-        ...(query.area ? { area: query.area } : {}),
         ...(effectiveTeamLeadId ? { teamLeadId: effectiveTeamLeadId } : {}),
         ...(query.status ? { status: query.status } : {}),
       },

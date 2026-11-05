@@ -80,13 +80,8 @@ export class PlacementService {
       throw new NotFoundException(`Vacancy '${vacancyId}' not found`);
     }
 
-    // Field agents can only place for vacancies in their assigned area
-    if (actor.role === 'field_agent') {
-      if (!actor.area || vacancy.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only create placements for vacancies in their own area '${actor.area}', but vacancy belongs to '${vacancy.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && vacancy.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only create placements for their account businesses');
     }
 
     const agreedSalary = dto.agreedSalary ?? dto.monthlySalary;
@@ -206,12 +201,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
     if (placement.status !== 'offered') {
@@ -395,12 +386,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
     if (placement.status !== 'confirmed') {
@@ -520,12 +507,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
     if (placement.status !== 'active') {
@@ -753,12 +736,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
     if (placement.status !== 'dropped_out') {
@@ -865,12 +844,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${placementId}' not found`);
     }
 
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
     const candidate = await this.prisma.replacementCandidate.findFirst({
@@ -977,12 +952,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${placementId}' not found`);
     }
 
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only manage placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
+    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+      throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
     const candidate = await this.prisma.replacementCandidate.findFirst({
@@ -1093,8 +1064,15 @@ export class PlacementService {
     }
 
     const where: Record<string, unknown> = {};
-    if (actor.role === 'field_agent') {
-      where.business = { area: actor.area ?? undefined };
+    if (actor.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
+      const teamIds = team.map(({ id }) => id);
+      where.business = {
+        OR: [
+          { accountAgentId: { in: teamIds } },
+          { leadCreatedByStaffId: { in: teamIds } },
+        ],
+      };
     }
 
     return this.prisma.placement.findMany({
@@ -1138,14 +1116,6 @@ export class PlacementService {
     });
     if (!placement) {
       throw new NotFoundException(`Placement '${id}' not found`);
-    }
-
-    if (actor.role === 'field_agent') {
-      if (!actor.area || placement.business.area !== actor.area) {
-        throw new ForbiddenException(
-          `Field agent can only access placements in their own area '${actor.area}', but placement belongs to '${placement.business.area}'`,
-        );
-      }
     }
 
     return placement;
@@ -1358,7 +1328,7 @@ export class PlacementService {
       contactPhone: placement.business.phone,
       gstin: placement.business.gstNumber ?? null,
       address: placement.business.address,
-      area: placement.business.area,
+      locality: placement.business.locality,
       city: placement.business.city,
       state: 'Karnataka',
       stateCode: '29',
@@ -1426,8 +1396,8 @@ export class PlacementService {
       where.status = query.status;
     }
 
-    if (query.area) {
-      where.business = { area: query.area };
+    if (query.locality) {
+      where.business = { locality: query.locality };
     }
 
     if (query.from || query.to) {
@@ -1461,7 +1431,7 @@ export class PlacementService {
       monthlySalaryINR: toRupees(p.agreedSalary),
       placementFeeINR: toRupees(p.placementFee),
       status: p.status,
-      area: p.business.area,
+      locality: p.business.locality,
       city: p.city,
     }));
   }

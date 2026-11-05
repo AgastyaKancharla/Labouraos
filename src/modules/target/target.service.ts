@@ -372,7 +372,6 @@ export class TargetService {
         code: staff.code,
         name: staff.name,
         role: staff.role,
-        area: staff.area,
         city: staff.city,
         createdAt: staff.createdAt,
       },

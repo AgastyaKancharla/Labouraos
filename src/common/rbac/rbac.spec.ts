@@ -34,6 +34,12 @@ class TestRbacController {
     return { id, name: 'Sample Business' };
   }
 
+  @Post('business/:id')
+  @RequirePermission('business', 'write')
+  writeBusiness(@Param('id') id: string) {
+    return { id, updated: true };
+  }
+
   @Get('staff/:id')
   @RequirePermission('staff', 'read')
   getStaff(@Param('id') id: string) {
@@ -78,6 +84,8 @@ describe('RBAC Guard and PII Masking', () => {
   let agentUnderLead2Id: string;
   let whitefieldBusinessId: string;
   let koramangalaBusinessId: string;
+  let fieldAgentId: string;
+  let visitAssignmentId: string;
 
   beforeAll(async () => {
     prisma = new PrismaService();
@@ -137,6 +145,20 @@ describe('RBAC Guard and PII Masking', () => {
     });
     agentUnderLead2Id = agent2.id;
 
+    const fieldAgent = await prisma.staff.create({
+      data: {
+        code: `FA-${timestamp}-1`,
+        name: 'Field Agent 1',
+        email: `field1_${timestamp}@laboura.local`,
+        passwordHash: 'hash',
+        role: 'field_agent',
+        teamLeadId: lead1.id,
+        area: 'Koramangala',
+        city: 'Bengaluru',
+      },
+    });
+    fieldAgentId = fieldAgent.id;
+
     // 3. Create businesses in different areas
     const bWhitefield = await prisma.business.create({
       data: {
@@ -144,6 +166,8 @@ describe('RBAC Guard and PII Masking', () => {
         name: 'Whitefield Tech',
         phone: `+9180${String(timestamp).slice(-7)}1`,
         area: 'Whitefield',
+        leadCreatedByStaffId: agent2.id,
+        verificationStatus: 'verified',
         city: 'Bengaluru',
       },
     });
@@ -155,6 +179,8 @@ describe('RBAC Guard and PII Masking', () => {
         name: 'Koramangala Tech',
         phone: `+9180${String(timestamp).slice(-7)}2`,
         area: 'Koramangala',
+        accountAgentId: fieldAgent.id,
+        leadCreatedByStaffId: agent1.id,
         city: 'Bengaluru',
       },
     });
@@ -183,11 +209,10 @@ describe('RBAC Guard and PII Masking', () => {
     managerToken = await jwt.signAsync({ sub: 'mgr-1', role: 'manager', email: 'mgr@laboura.local', code: 'MGR-01' });
     callAgentToken = await jwt.signAsync({ sub: agent1.id, role: 'call_agent', email: agent1.email, code: agent1.code });
     fieldAgentToken = await jwt.signAsync({
-      sub: 'fa-1',
+      sub: fieldAgent.id,
       role: 'field_agent',
       email: 'fa@laboura.local',
       code: 'FA-01',
-      area: 'Koramangala',
     });
     financeToken = await jwt.signAsync({ sub: 'fin-1', role: 'finance', email: 'fin@laboura.local', code: 'FIN-01' });
     teamLead1Token = await jwt.signAsync({ sub: lead1.id, role: 'team_lead', email: lead1.email, code: lead1.code });
@@ -195,11 +220,12 @@ describe('RBAC Guard and PII Masking', () => {
 
   afterAll(async () => {
     // Cleanup
+    if (visitAssignmentId) await prisma.visitAssignment.delete({ where: { id: visitAssignmentId } });
     await prisma.business.deleteMany({
       where: { id: { in: [whitefieldBusinessId, koramangalaBusinessId] } },
     });
     await prisma.staff.deleteMany({
-      where: { id: { in: [agentUnderLead1Id, agentUnderLead2Id, teamLead1Id, teamLead2Id] } },
+      where: { id: { in: [agentUnderLead1Id, agentUnderLead2Id, fieldAgentId, teamLead1Id, teamLead2Id] } },
     });
     if (app) {
       await app.close();
@@ -215,23 +241,71 @@ describe('RBAC Guard and PII Masking', () => {
     expect(res.status).toBe(403);
   });
 
-  it('a field_agent requesting another area business → 403', async () => {
-    // field agent is in Koramangala; requesting Whitefield business
+  it('a field_agent can read a business outside their legacy area', async () => {
     const res = await request(app.getHttpServer())
       .get(`/test-rbac/business/${whitefieldBusinessId}`)
       .set('Authorization', `Bearer ${fieldAgentToken}`);
 
-    expect(res.status).toBe(403);
+    expect(res.status).toBe(200);
   });
 
-  it('a field_agent requesting their own area business → 200', async () => {
-    // field agent is in Koramangala; requesting Koramangala business
+  it('a field_agent can read any business regardless of legacy area', async () => {
     const res = await request(app.getHttpServer())
       .get(`/test-rbac/business/${koramangalaBusinessId}`)
       .set('Authorization', `Bearer ${fieldAgentToken}`);
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(koramangalaBusinessId);
+  });
+
+  it('field agents can write their account business, not another account business', async () => {
+    const own = await request(app.getHttpServer())
+      .post(`/test-rbac/business/${koramangalaBusinessId}`)
+      .set('Authorization', `Bearer ${fieldAgentToken}`);
+    expect(own.status).toBe(201);
+
+    const other = await request(app.getHttpServer())
+      .post(`/test-rbac/business/${whitefieldBusinessId}`)
+      .set('Authorization', `Bearer ${fieldAgentToken}`);
+    expect(other.status).toBe(403);
+  });
+
+  it('field agents can write an active lead they created', async () => {
+    await prisma.business.update({
+      where: { id: koramangalaBusinessId },
+      data: { leadCreatedByStaffId: fieldAgentId, accountAgentId: null, verificationStatus: 'lead' },
+    });
+    const res = await request(app.getHttpServer())
+      .post(`/test-rbac/business/${koramangalaBusinessId}`)
+      .set('Authorization', `Bearer ${fieldAgentToken}`);
+    expect(res.status).toBe(201);
+  });
+
+  it('call agents can write their active leads but cannot edit a verified business', async () => {
+    await prisma.business.update({
+      where: { id: koramangalaBusinessId },
+      data: { leadCreatedByStaffId: agentUnderLead1Id, accountAgentId: null, verificationStatus: 'lead' },
+    });
+    const ownLead = await request(app.getHttpServer())
+      .post(`/test-rbac/business/${koramangalaBusinessId}`)
+      .set('Authorization', `Bearer ${callAgentToken}`);
+    expect(ownLead.status).toBe(201);
+
+    const verifiedBusiness = await request(app.getHttpServer())
+      .post(`/test-rbac/business/${whitefieldBusinessId}`)
+      .set('Authorization', `Bearer ${callAgentToken}`);
+    expect(verifiedBusiness.status).toBe(403);
+  });
+
+  it('a confirmed open visit assignment permits the assigned field agent to write across areas', async () => {
+    const assignment = await prisma.visitAssignment.create({
+      data: { businessId: whitefieldBusinessId, purpose: 'verification', assignedStaffId: fieldAgentId, status: 'assigned' },
+    });
+    visitAssignmentId = assignment.id;
+    const res = await request(app.getHttpServer())
+      .post(`/test-rbac/business/${whitefieldBusinessId}`)
+      .set('Authorization', `Bearer ${fieldAgentToken}`);
+    expect(res.status).toBe(201);
   });
 
   it('a team_lead requesting another team agent → 403', async () => {
@@ -251,6 +325,18 @@ describe('RBAC Guard and PII Masking', () => {
 
     expect(res.status).toBe(200);
     expect(res.body.id).toBe(agentUnderLead1Id);
+  });
+
+  it('a team_lead can access businesses tied to their team, but not another team', async () => {
+    const own = await request(app.getHttpServer())
+      .get(`/test-rbac/business/${koramangalaBusinessId}`)
+      .set('Authorization', `Bearer ${teamLead1Token}`);
+    expect(own.status).toBe(200);
+
+    const other = await request(app.getHttpServer())
+      .get(`/test-rbac/business/${whitefieldBusinessId}`)
+      .set('Authorization', `Bearer ${teamLead1Token}`);
+    expect(other.status).toBe(403);
   });
 
   it('a finance token reading a job seeker → 200, but phone is masked', async () => {

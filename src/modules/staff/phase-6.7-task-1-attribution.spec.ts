@@ -78,7 +78,6 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         email: `fa_t1k_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: koraArea,
         city: 'Bengaluru',
       },
     });
@@ -92,7 +91,6 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         email: `fa_t1i_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: indiArea,
         city: 'Bengaluru',
       },
     });
@@ -128,7 +126,8 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         name: 'Kora Biz T1',
         phone: `+9181${String(timestamp).slice(-8)}1`,
         phoneVerified: true,
-        area: koraArea,
+        locality: koraArea,
+        accountAgentId: fa.id,
         city: 'Bengaluru',
       },
     });
@@ -141,7 +140,8 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         name: 'Indi Biz T1',
         phone: `+9181${String(timestamp).slice(-8)}2`,
         phoneVerified: true,
-        area: indiArea,
+        locality: indiArea,
+        accountAgentId: fa2.id,
         city: 'Bengaluru',
       },
     });
@@ -516,12 +516,11 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       expect(ids).toContain(indiVacancyId);
     });
 
-    it('Field Agent remains strictly area-scoped for vacancies (no area leak)', async () => {
-      // Field Agent 1 is in Koramangala; accessing Indiranagar vacancy -> 403 Forbidden
+    it('Field Agents can read vacancies across localities', async () => {
       const res403 = await request(app.getHttpServer())
         .get(`/vacancies/${indiVacancyId}`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
-      expect(res403.status).toBe(403);
+      expect(res403.status).toBe(200);
 
       // Field Agent 2 is in Indiranagar; accessing Indiranagar vacancy -> 200 OK
       const res200 = await request(app.getHttpServer())
@@ -541,8 +540,8 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       expect(ids).toContain(indiVacancyId);
     });
 
-    it('Field Agent remains strictly area-scoped for placements (no area leak)', async () => {
-      // Field Agent 1 is in Koramangala; creating placement on Indiranagar vacancy -> 403 Forbidden
+    it('Field Agents can write placements only for their account business', async () => {
+      // Field Agent 1 does not own the Indiranagar business account.
       const js = await prisma.jobSeeker.create({
         data: {
           code: `JS-T1LEAK-${timestamp}`,
@@ -568,15 +567,14 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.message).toContain('Field agent can only create placements for vacancies in their own area');
+      expect(res.body.message).toContain('business is outside your account');
     });
 
-    it('Field Agent remains strictly area-scoped for businesses (no area leak)', async () => {
-      // Field Agent 1 is in Koramangala; accessing Indiranagar business -> 403 Forbidden
+    it('Field Agents can read businesses across localities', async () => {
       const res = await request(app.getHttpServer())
         .get(`/businesses/${indiBizId}`)
         .set('Authorization', `Bearer ${fieldAgentToken}`);
-      expect(res.status).toBe(403);
+      expect(res.status).toBe(200);
     });
   });
 });

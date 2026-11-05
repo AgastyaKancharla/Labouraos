@@ -13,7 +13,7 @@ describe('Seed Data Script', () => {
     await prisma.$disconnect();
   });
 
-  it('npm run seed creates one staff member of each role, plus businesses and job seekers in different cities and areas', async () => {
+  it('npm run seed creates one staff member of each role, plus businesses and job seekers in different cities and localities', async () => {
     // Run seed
     await seed(prisma);
 
@@ -27,7 +27,7 @@ describe('Seed Data Script', () => {
       expect(staffMember?.role).toBe(role);
     }
 
-    // Assert businesses in different cities and areas
+    // Assert businesses in different cities and localities
     const businesses = await prisma.business.findMany({
       where: {
         code: { in: ['BZ-00001', 'BZ-00002', 'BZ-00003'] },
@@ -36,9 +36,9 @@ describe('Seed Data Script', () => {
     expect(businesses.length).toBeGreaterThanOrEqual(3);
 
     const businessCities = new Set(businesses.map((b) => b.city));
-    const businessAreas = new Set(businesses.map((b) => b.area));
+    const businessLocalities = new Set(businesses.map((b) => b.locality));
     expect(businessCities.size).toBeGreaterThanOrEqual(2); // Bengaluru, Mysuru
-    expect(businessAreas.size).toBeGreaterThanOrEqual(3); // Koramangala, Indiranagar, Hebbal
+    expect(businessLocalities.size).toBeGreaterThanOrEqual(3); // Koramangala, Indiranagar, Hebbal
 
     // Assert job seekers in different cities and statuses
     const jobSeekers = await prisma.jobSeeker.findMany({

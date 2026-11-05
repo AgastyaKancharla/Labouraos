@@ -209,7 +209,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(audit?.actorId).toBe(faKoramangalaId);
   });
 
-  it('field agent cannot write a business in another agent area (403)', async () => {
+  it('field agent can create a lead in any locality without writing a legacy area', async () => {
     const phone = `93${timestamp.toString().slice(-8)}`;
     const otpRequestId = await getVerifiedOtp(phone);
 
@@ -222,14 +222,16 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         contactPerson: 'Sunita Rao',
         phone,
         otpRequestId,
-        area: 'Indiranagar', // Different from Koramangala
+        locality: 'Indiranagar',
       });
 
-    expect(res.status).toBe(403);
-    expect(res.body.message).toContain('Access denied');
+    expect(res.status).toBe(201);
+    expect(res.body.locality).toBe('Indiranagar');
+    expect(res.body.area).toBeNull();
+    expect(res.body.leadCreatedByStaffId).toBe(faKoramangalaId);
   });
 
-  it('field agent cannot read a business in another area (403), but call agent and manager can', async () => {
+  it('field agents can read any business regardless of locality, as can call agents and managers', async () => {
     // 1. Create a business in Indiranagar by Indiranagar field agent
     const phoneIndi = `94${timestamp.toString().slice(-8)}`;
     const otpIndi = await getVerifiedOtp(phoneIndi);
@@ -248,19 +250,20 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(createRes.status).toBe(201);
     const indiranagarBusinessId = createRes.body.id;
 
-    // 2. Koramangala field agent tries to GET /businesses/:id of Indiranagar business -> 403 Forbidden
+    // 2. A field agent can read the business regardless of locality.
     const koraAgentReadRes = await request(app.getHttpServer())
       .get(`/businesses/${indiranagarBusinessId}`)
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`);
-    expect(koraAgentReadRes.status).toBe(403);
+    expect(koraAgentReadRes.status).toBe(200);
+    expect(koraAgentReadRes.body.id).toBe(indiranagarBusinessId);
 
-    // 3. Koramangala field agent GET /businesses list -> does NOT include Indiranagar business
+    // 3. Field agents can read the city-wide business list.
     const koraListRes = await request(app.getHttpServer())
       .get('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`);
     expect(koraListRes.status).toBe(200);
     const found = koraListRes.body.find((b: { id: string }) => b.id === indiranagarBusinessId);
-    expect(found).toBeUndefined();
+    expect(found).toBeDefined();
 
     // 4. Call agent can read any business regardless of area
     const caReadRes = await request(app.getHttpServer())

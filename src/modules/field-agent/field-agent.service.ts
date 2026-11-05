@@ -30,12 +30,6 @@ export class FieldAgentService {
       city: staff.city,
     };
 
-    if (staff.role === 'field_agent') {
-      vacancyWhere.business = {
-        area: staff.area ?? undefined,
-        city: staff.city,
-      };
-    }
 
     const openVacancies = await this.prisma.vacancy.findMany({
       where: vacancyWhere,
@@ -48,7 +42,7 @@ export class FieldAgentService {
       return [];
     }
 
-    // Active candidates across the entire city (deliberate exception to area-scoping)
+    // Active candidates across the entire city.
     const activeCandidates = await this.prisma.jobSeeker.findMany({
       where: {
         city: staff.city,
@@ -93,7 +87,7 @@ export class FieldAgentService {
           salaryMinPaise,
           businessId: vacancy.business.id,
           businessName: vacancy.business.name,
-          businessArea: vacancy.business.area,
+          businessLocality: vacancy.business.locality,
           candidateId: candidate.id,
           candidateCode: candidate.code,
           candidateName: candidate.name,

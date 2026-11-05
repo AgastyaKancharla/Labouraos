@@ -46,7 +46,7 @@ export class PaymentController {
   @Post(':id/disburse')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'write')
-  @RequireRoles('ceo', 'manager', 'finance')
+  @RequireRoles('ceo', 'finance')
   async disburse(
     @Param('id') id: string,
     @Body() body: { simulateFailure?: boolean },
@@ -59,7 +59,7 @@ export class PaymentController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'write')
-  @RequireRoles('ceo', 'manager')
+  @RequireRoles('ceo', 'finance')
   async retryPayout(
     @Param('id') id: string,
     @Req() req: Request & { user: JwtPayload },
@@ -71,7 +71,7 @@ export class PaymentController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'write')
-  @RequireRoles('ceo', 'manager')
+  @RequireRoles('ceo', 'finance')
   async resolvePayout(
     @Param('id') id: string,
     @Body() body: { outcome?: unknown; gatewayReference?: unknown; note?: unknown },

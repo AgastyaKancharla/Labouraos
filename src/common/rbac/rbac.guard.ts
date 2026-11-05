@@ -70,6 +70,25 @@ export class RbacGuard implements CanActivate {
 
     const roleRule = RBAC_MATRIX[user.role as Role]?.[requiredPermission.resource]?.[action];
 
+    if (
+      user.role === 'field_agent' &&
+      requiredPermission.resource === 'business' &&
+      action === 'write' &&
+      request.method.toUpperCase() === 'POST' &&
+      /^\/?businesses\/?$/.test(request.path)
+    ) {
+      return true;
+    }
+    if (
+      user.role === 'call_agent' &&
+      requiredPermission.resource === 'business' &&
+      action === 'write' &&
+      request.method.toUpperCase() === 'POST' &&
+      /^\/?businesses\/?$/.test(request.path)
+    ) {
+      return true;
+    }
+
     if (!roleRule || !roleRule.allowed) {
       throw new ForbiddenException(
         `Role '${user.role}' is not permitted to perform '${action}' on '${requiredPermission.resource}'`,
@@ -81,39 +100,59 @@ export class RbacGuard implements CanActivate {
       return true;
     }
 
-    if (roleRule.scope === 'own_area') {
-      const targetArea =
-        (request.params?.area as string | undefined) ??
-        (request.query?.area as string | undefined) ??
-        (request.body?.area as string | undefined);
-
-      if (targetArea && targetArea !== user.area) {
-        throw new ForbiddenException(
-          `Access denied: entity is in area '${targetArea}' but user is restricted to area '${user.area}'`,
-        );
+    if (roleRule.scope === 'own_account' || roleRule.scope === 'own_lead') {
+      const business = await this.getBusinessForRequest(requiredPermission.resource, request);
+      if (!business) {
+        throw new ForbiddenException('Access denied: business could not be resolved for this write');
       }
-
-      // If entity ID is provided in route params, look up the entity's area in DB
-      const entityId = request.params?.id as string | undefined;
-      if (entityId) {
-        let entityArea: string | null = null;
-        if (requiredPermission.resource === 'business') {
-          const business = await this.prisma.business.findUnique({
-            where: { id: entityId },
-            select: { area: true },
-          });
-          entityArea = business?.area ?? null;
+      if (roleRule.scope === 'own_lead') {
+        if (
+          user.role !== 'call_agent' ||
+          business.leadCreatedByStaffId !== user.sub ||
+          business.verificationStatus !== 'lead'
+        ) {
+          throw new ForbiddenException('Call agents may only edit leads they created while they remain leads');
         }
-
-        if (entityArea && entityArea !== user.area) {
-          throw new ForbiddenException(
-            `Access denied: resource belongs to area '${entityArea}', not your area '${user.area}'`,
-          );
+      } else if (business.accountAgentId !== user.sub) {
+        const isBusinessWrite = requiredPermission.resource === 'business';
+        const leadException =
+          isBusinessWrite &&
+          business.leadCreatedByStaffId === user.sub &&
+          ['lead', 'pending_visit'].includes(business.verificationStatus ?? '');
+        const visitException = isBusinessWrite
+          ? await this.prisma.visitAssignment.findFirst({
+              where: {
+                businessId: business.id,
+                assignedStaffId: user.sub,
+                status: 'assigned',
+              },
+              select: { id: true },
+            })
+          : null;
+        if (!leadException && !visitException) {
+          throw new ForbiddenException('Access denied: business is outside your account');
         }
       }
     }
 
     if (roleRule.scope === 'own_team') {
+      if (['business', 'vacancy', 'placement'].includes(requiredPermission.resource)) {
+        const business = await this.getBusinessForRequest(requiredPermission.resource, request);
+        if (business) {
+          const staffIds = [business.accountAgentId, business.leadCreatedByStaffId]
+            .filter((id): id is string => Boolean(id));
+          const belongsToTeam = staffIds.length
+            ? await this.prisma.staff.findFirst({
+                where: { id: { in: staffIds }, teamLeadId: user.sub },
+                select: { id: true },
+              })
+            : null;
+          if (!belongsToTeam) {
+            throw new ForbiddenException('Access denied: business is outside your team');
+          }
+          return true;
+        }
+      }
       const targetStaffId =
         (request.params?.staffId as string | undefined) ??
         (request.params?.id as string | undefined);
@@ -185,5 +224,69 @@ export class RbacGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  private async getBusinessForRequest(
+    resource: string,
+    request: Request,
+  ): Promise<{
+    id: string;
+    accountAgentId: string | null;
+    leadCreatedByStaffId: string | null;
+    verificationStatus: string | null;
+  } | null> {
+    const params = request.params as Record<string, string | undefined>;
+    const path = request.path;
+    const select = {
+      id: true,
+      accountAgentId: true,
+      leadCreatedByStaffId: true,
+      verificationStatus: true,
+    } as const;
+    if (resource === 'business') {
+      const id = params.id ?? params.businessId;
+      if (!id) return null;
+      return this.prisma.business.findFirst({
+        where: { OR: [{ id }, { code: id }] },
+        select,
+      });
+    }
+    if (resource === 'vacancy') {
+      const businessId = path.startsWith('/businesses/')
+        ? params.id ?? params.businessId
+        : typeof request.body?.businessId === 'string'
+          ? request.body.businessId
+          : null;
+      if (businessId) {
+        return this.prisma.business.findFirst({
+          where: { OR: [{ id: businessId }, { code: businessId }] },
+          select,
+        });
+      }
+      const vacancyId = params.id;
+      if (!vacancyId) return null;
+      const vacancy = await this.prisma.vacancy.findFirst({
+        where: { OR: [{ id: vacancyId }, { code: vacancyId }] },
+        select: { business: { select } },
+      });
+      return vacancy?.business ?? null;
+    }
+    if (resource === 'placement') {
+      const entityId = params.id;
+      if (!entityId) return null;
+      if (path.includes('/vacancies/')) {
+        const vacancy = await this.prisma.vacancy.findFirst({
+          where: { OR: [{ id: entityId }, { code: entityId }] },
+          select: { business: { select } },
+        });
+        return vacancy?.business ?? null;
+      }
+      const placement = await this.prisma.placement.findFirst({
+        where: { OR: [{ id: entityId }, { code: entityId }] },
+        select: { business: { select } },
+      });
+      return placement?.business ?? null;
+    }
+    return null;
   }
 }

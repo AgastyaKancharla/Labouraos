@@ -40,14 +40,12 @@ describe('Phase 9 Task 8: Review Flags', () => {
     id: string;
     role: string;
     code?: string;
-    area?: string | null;
   }) {
     return jwtService.sign({
       sub: staff.id,
       email: `${staff.id}@laboura.local`,
       role: staff.role,
       code: staff.code ?? staff.id,
-      area: staff.area ?? null,
     });
   }
 
@@ -112,7 +110,6 @@ describe('Phase 9 Task 8: Review Flags', () => {
         passwordHash: 'dummyhash',
         role: 'team_lead',
         status: 'active',
-        area: 'Koramangala',
       },
     });
     teamLead1StaffId = tl1.id;
@@ -126,7 +123,6 @@ describe('Phase 9 Task 8: Review Flags', () => {
         passwordHash: 'dummyhash',
         role: 'field_agent',
         status: 'active',
-        area: 'Koramangala',
         teamLeadId: tl1.id,
       },
     });
@@ -142,7 +138,6 @@ describe('Phase 9 Task 8: Review Flags', () => {
         passwordHash: 'dummyhash',
         role: 'team_lead',
         status: 'active',
-        area: 'Indiranagar',
       },
     });
     teamLead2Token = mkToken(tl2);
@@ -155,7 +150,6 @@ describe('Phase 9 Task 8: Review Flags', () => {
         passwordHash: 'dummyhash',
         role: 'field_agent',
         status: 'active',
-        area: 'Indiranagar',
         teamLeadId: tl2.id,
       },
     });
@@ -210,7 +204,6 @@ describe('Phase 9 Task 8: Review Flags', () => {
           longitude: KORA_LON,
           visitLatitude: KORA_NEAR_LAT,
           visitLongitude: KORA_NEAR_LON,
-          area: 'Koramangala',
         })
         .expect(201);
 
@@ -238,7 +231,6 @@ describe('Phase 9 Task 8: Review Flags', () => {
           longitude: KORA_LON,
           visitLatitude: KORA_FAR_LAT,
           visitLongitude: KORA_FAR_LON,
-          area: 'Koramangala',
         })
         .expect(201);
 

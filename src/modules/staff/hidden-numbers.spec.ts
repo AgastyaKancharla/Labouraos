@@ -64,7 +64,6 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     role: string;
     code: string;
     email: string | null;
-    area?: string | null;
     teamLeadId?: string | null;
   }) {
     return jwt.sign({
@@ -72,7 +71,6 @@ describe('Phase 11 Task 3: hidden numbers', () => {
       email: staff.email,
       role: staff.role,
       code: staff.code,
-      area: staff.area ?? null,
       teamLeadId: staff.teamLeadId ?? null,
     });
   }
@@ -101,7 +99,7 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     await app.close();
   });
 
-  async function makeStaff(role: string, extra?: { teamLeadId?: string; area?: string }) {
+  async function makeStaff(role: string, extra?: { teamLeadId?: string }) {
     const stamp = `${Date.now()}-${staffIds.length}`;
     const staff = await prisma.staff.create({
       data: {
@@ -111,7 +109,6 @@ describe('Phase 11 Task 3: hidden numbers', () => {
         passwordHash: await bcrypt.hash('Hidden-Password-1', 4),
         role,
         city: 'Bengaluru',
-        area: extra?.area ?? null,
         teamLeadId: extra?.teamLeadId ?? null,
         status: 'active',
       },
@@ -124,7 +121,7 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     const lead = await makeStaff('team_lead');
     const otherLead = await makeStaff('team_lead');
     const callAgent = await makeStaff('call_agent', { teamLeadId: lead.id });
-    const fieldAgent = await makeStaff('field_agent', { teamLeadId: lead.id, area: 'Koramangala' });
+    const fieldAgent = await makeStaff('field_agent', { teamLeadId: lead.id });
     const manager = await makeStaff('manager');
     const ceo = await makeStaff('ceo');
     const outsider = await makeStaff('call_agent');
@@ -157,7 +154,7 @@ describe('Phase 11 Task 3: hidden numbers', () => {
         code: `BZ-HN-${stamp}`,
         name: 'Hidden Cafe',
         phone: BUSINESS_PHONE,
-        area: 'Koramangala',
+        accountAgentId: fieldAgent.id,
       },
     });
     businessIds.push(business.id);

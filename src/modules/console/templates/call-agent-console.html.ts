@@ -367,8 +367,8 @@ export function renderCallAgentConsoleHtml(): string {
           </div>
           <div>
             <div class="form-group">
-              <label>Bengaluru Area</label>
-              <input type="text" id="biz-area" placeholder="Koramangala, Indiranagar, Whitefield...">
+              <label>Locality</label>
+              <input type="text" id="biz-locality" placeholder="Type the business locality">
             </div>
             <div class="form-group">
               <label>Address</label>
@@ -866,7 +866,7 @@ export function renderCallAgentConsoleHtml(): string {
         const body = {
           name: document.getElementById('biz-name').value.trim(),
           phone: document.getElementById('biz-phone').value.trim(),
-          area: document.getElementById('biz-area').value.trim(),
+          locality: document.getElementById('biz-locality').value.trim(),
           contactName: document.getElementById('biz-contact').value.trim(),
           address: document.getElementById('biz-address').value.trim(),
           gstNumber: document.getElementById('biz-gst').value.trim() || undefined,

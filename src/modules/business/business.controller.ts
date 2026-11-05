@@ -5,7 +5,6 @@ import {
   Get,
   Param,
   Post,
-  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -54,11 +53,8 @@ export class BusinessController {
   @Get()
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('business', 'read')
-  async findAll(
-    @Req() req: Request & { user: JwtPayload },
-    @Query('area') filterArea?: string,
-  ) {
-    return this.businessService.findAll(req.user.sub, filterArea);
+  async findAll(@Req() req: Request & { user: JwtPayload }) {
+    return this.businessService.findAll(req.user.sub);
   }
 
   @Get(':id')

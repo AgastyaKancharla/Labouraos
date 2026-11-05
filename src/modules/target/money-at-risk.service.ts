@@ -293,7 +293,7 @@ export class MoneyAtRiskService {
           select: { status: true },
         },
         business: {
-          select: { name: true, area: true },
+          select: { name: true },
         },
         jobSeeker: {
           select: { name: true, phone: true },

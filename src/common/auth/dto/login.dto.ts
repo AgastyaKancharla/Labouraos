@@ -28,7 +28,6 @@ export class LoginResponseDto {
     name: string;
     email: string | null;
     role: string;
-    area: string | null;
   };
 }
 

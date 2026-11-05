@@ -351,6 +351,7 @@ model Staff {
   teamLeadId        String?
   teamLead          Staff?           @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
   teamMembers       Staff[]          @relation("TeamHierarchy")
+  /// @deprecated Replaced by account-agent assignment; no application code reads it.
   area              String?
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?

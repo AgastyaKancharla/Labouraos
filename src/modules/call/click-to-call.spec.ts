@@ -36,13 +36,12 @@ describe('Phase 11 Task 4: click to call', () => {
   const businessIds: string[] = [];
   const callIds: string[] = [];
 
-  function tokenFor(staff: { id: string; role: string; code: string; email: string | null; area?: string | null }) {
+  function tokenFor(staff: { id: string; role: string; code: string; email: string | null }) {
     return jwt.sign({
       sub: staff.id,
       email: staff.email,
       role: staff.role,
       code: staff.code,
-      area: staff.area ?? null,
     });
   }
 
@@ -73,7 +72,7 @@ describe('Phase 11 Task 4: click to call', () => {
     await app.close();
   });
 
-  async function makeStaff(role: string, extra?: { area?: string; teamLeadId?: string }) {
+  async function makeStaff(role: string, extra?: { teamLeadId?: string }) {
     const stamp = `${Date.now()}-${staffIds.length}`;
     const staff = await prisma.staff.create({
       data: {
@@ -82,7 +81,6 @@ describe('Phase 11 Task 4: click to call', () => {
         email: `ctc-${role}-${stamp}@laboura.local`,
         passwordHash: await bcrypt.hash('Caller-Password-1', 4),
         role,
-        area: extra?.area ?? null,
         teamLeadId: extra?.teamLeadId ?? null,
         status: 'active',
       },
@@ -96,7 +94,7 @@ describe('Phase 11 Task 4: click to call', () => {
 
     const callAgent = await makeStaff('call_agent');
     const otherAgent = await makeStaff('call_agent');
-    const fieldAgent = await makeStaff('field_agent', { area: 'Koramangala' });
+    const fieldAgent = await makeStaff('field_agent');
     const stamp = Date.now();
     const seeker = await prisma.jobSeeker.create({
       data: {
@@ -143,7 +141,7 @@ describe('Phase 11 Task 4: click to call', () => {
         code: `BZ-CTC-${stamp}`,
         name: 'Click Cafe',
         phone: BUSINESS_PHONE,
-        area: 'Koramangala',
+        accountAgentId: fieldAgent.id,
       },
     });
     businessIds.push(business.id);
@@ -152,7 +150,6 @@ describe('Phase 11 Task 4: click to call', () => {
         code: `BZ-CT2-${stamp}`,
         name: 'Other Cafe',
         phone: OUTSIDE_BUSINESS_PHONE,
-        area: 'Indiranagar',
       },
     });
     businessIds.push(outside.id);

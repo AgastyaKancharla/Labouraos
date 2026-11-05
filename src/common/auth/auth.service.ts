@@ -473,7 +473,6 @@ export class AuthService {
       role: staff.role,
       email: staff.email,
       code: staff.code,
-      area: staff.area,
       teamLeadId: staff.teamLeadId,
       sid: session.id,
       ...(totpSetup ? { scope: 'totp_setup' as const } : {}),
@@ -501,7 +500,6 @@ export class AuthService {
         name: staff.name,
         email: staff.email,
         role: staff.role,
-        area: staff.area,
       },
     };
   }
@@ -619,7 +617,6 @@ export class AuthService {
       role: actor.role,
       email: actor.email,
       code: actor.code,
-      area: actor.area,
       teamLeadId: actor.teamLeadId,
       sid: sessionId,
       ...(actor.scope ? { scope: actor.scope } : {}),

@@ -351,12 +351,12 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
     }
   });
 
-  it('enforces area-scoping: field agent cannot view candidates for vacancy in another area (403)', async () => {
-    // Indiranagar field agent attempts to read candidate shortlist for Koramangala vacancy
-    await request(app.getHttpServer())
+  it('field agents can read candidates for verified vacancies across localities', async () => {
+    const crossLocality = await request(app.getHttpServer())
       .get(`/vacancies/${koramangalaVacancyId}/candidates`)
       .set('Authorization', `Bearer ${fieldAgentIndiranagarToken}`)
-      .expect(403);
+      .expect(200);
+    expect(Array.isArray(crossLocality.body)).toBe(true);
 
     // Indiranagar field agent can read candidates for their own area vacancy
     const res = await request(app.getHttpServer())

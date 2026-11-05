@@ -85,7 +85,7 @@ One task after another, in order. Each task has its own branch and, where needed
 - **No staff route can sign an agreement or grant a business's consent.**
 - Tests: a full sign creates one agreement and two consent rows sharing one OTP request; a used or expired link is refused; the numbers on the agreement match `PricingPolicy` at send time and don't change when the policy changes later; no staff route signs; the stored copy's hash matches `termsHash`.
 
-### [ ] Task 5 — Verification visits, check-ins and the verified gate
+### [x] Task 5 — Verification visits, check-ins and the verified gate
 **Branch:** `phase-13/task-5-verification` · **Migration folder:** `20261106140000_visits_and_checkins`
 
 **Acceptance:**

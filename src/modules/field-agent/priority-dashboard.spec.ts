@@ -105,7 +105,7 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
       data: {
         code: `BZ-PDK-${timestamp}`,
         name: 'Kora Tech Hub',
-        area: 'Koramangala',
+        locality: 'Koramangala',
         city: 'Bengaluru',
         phone: `94${timestamp.toString().slice(-8)}1`,
         phoneVerified: true,
@@ -117,7 +117,7 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
       data: {
         code: `BZ-PDI-${timestamp}`,
         name: 'Indi Retail Mart',
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         city: 'Bengaluru',
         phone: `94${timestamp.toString().slice(-8)}2`,
         phoneVerified: true,
@@ -247,7 +247,7 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
     await app.close();
   });
 
-  it('scopes vacancies to the field agent assigned area while candidates are city-wide', async () => {
+  it('shows city-wide vacancies and candidates to field agents', async () => {
     const res = await request(app.getHttpServer())
       .get('/field-agent/priority-dashboard')
       .set('Authorization', `Bearer ${faKoraToken}`)
@@ -255,31 +255,26 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
 
     expect(Array.isArray(res.body)).toBe(true);
 
-    // All opportunities returned must belong to Koramangala vacancies only
-    for (const opp of res.body) {
-      expect(opp.businessArea).toBe('Koramangala');
-      expect(opp.vacancyId).not.toBe(indiVacancyId);
-    }
+    expect(res.body.some((opp: { businessLocality: string }) => opp.businessLocality === 'Koramangala')).toBe(true);
+    expect(res.body.some((opp: { businessLocality: string }) => opp.businessLocality === 'Indiranagar')).toBe(true);
+    expect(res.body.some((opp: { vacancyId: string }) => opp.vacancyId === indiVacancyId)).toBe(true);
 
     // Candidate visibility is city-wide (all active matching candidates in the city appear)
     const candidateIds = res.body.map((opp: { candidateId: string }) => opp.candidateId);
     expect(candidateIds).toContain(oppUrgentRefundCandidateId);
     expect(candidateIds).toContain(oppLaterRefundCandidateId);
 
-    // Indiranagar field agent only sees Indiranagar vacancies
+    // Another field agent also sees both localities.
     const indiRes = await request(app.getHttpServer())
       .get('/field-agent/priority-dashboard')
       .set('Authorization', `Bearer ${faIndiToken}`)
       .expect(200);
-    for (const opp of indiRes.body) {
-      expect(opp.businessArea).toBe('Indiranagar');
-      expect(opp.vacancyId).not.toBe(koraVacancyId);
-    }
+    expect(indiRes.body.some((opp: { vacancyId: string }) => opp.vacancyId === koraVacancyId)).toBe(true);
     const indiVacancyIds = indiRes.body.map((opp: { vacancyId: string }) => opp.vacancyId);
     expect(indiVacancyIds).toContain(indiVacancyId);
   });
 
-  it('allows call agent and manager to view vacancies across all areas', async () => {
+  it('allows call agents and managers to view vacancies across the city', async () => {
     const res = await request(app.getHttpServer())
       .get('/field-agent/priority-dashboard')
       .set('Authorization', `Bearer ${callAgentToken}`)

@@ -3,7 +3,6 @@ export interface JwtPayload {
   role: string; // staff role
   email: string | null;
   code: string;
-  area?: string | null;
   teamLeadId?: string | null;
   sid?: string; // staff session id
   /**

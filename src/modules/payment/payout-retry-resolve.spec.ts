@@ -132,8 +132,8 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
       ...r,
     });
 
-  describe('RBAC: only CEO and Manager', () => {
-    it.each(['finance', 'call_agent', 'field_agent', 'team_lead'])('%s is denied retry and resolve (403) and nothing changes', async (who) => {
+  describe('RBAC: only CEO and Finance', () => {
+    it.each(['manager', 'call_agent', 'field_agent', 'team_lead'])('%s is denied retry and resolve (403) and nothing changes', async (who) => {
       const failed = await makePayout({ status: 'failed' });
       const stuck = await makePayout({ status: 'processing' });
       const spy = providerReturns({});
@@ -182,11 +182,11 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
       expect(rows[0].after).toMatchObject({ status: 'succeeded', payoutAttempts: 2 });
     });
 
-    it('Manager may retry, and a reversed payout is retryable too', async () => {
+    it('Finance may retry, and a reversed payout is retryable too', async () => {
       const p = await makePayout({ status: 'reversed', payoutAttempts: 1 });
       providerReturns({ status: 'processing' });
 
-      const res = await retry(p.id, 'manager');
+      const res = await retry(p.id, 'finance');
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('processing');
     });
@@ -244,7 +244,8 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
 
       expect(spy).toHaveBeenCalledTimes(1);
       expect(results.filter((r) => r.status === 200)).toHaveLength(1);
-      expect(results.filter((r) => r.status === 400)).toHaveLength(2);
+      expect(results.filter((r) => r.status === 400)).toHaveLength(1);
+      expect(results.filter((r) => r.status === 403)).toHaveLength(1);
       expect((await reload(p.id)).payoutAttempts).toBe(2);
       expect(await audits(p.code, 'payout_retry')).toHaveLength(1);
     });
@@ -343,7 +344,7 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
       const p = await makePayout({ status: 'processing' });
       const note = 'RazorpayX dashboard shows processed, UTR 523223155921';
 
-      const res = await resolve(p.id, { outcome: 'succeeded', gatewayReference: `pout_manual_${timestamp}`, note }, 'manager');
+      const res = await resolve(p.id, { outcome: 'succeeded', gatewayReference: `pout_manual_${timestamp}`, note }, 'finance');
 
       expect(res.status).toBe(200);
       expect(res.body.status).toBe('succeeded');
@@ -354,8 +355,8 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
       expect(rows).toHaveLength(1);
       expect(rows[0].before).toMatchObject({ status: 'processing' });
       expect(rows[0].after).toMatchObject({ status: 'succeeded', reconciliationNote: note });
-      const manager = await prisma.staff.findUniqueOrThrow({ where: { email: staffEmails[1] } });
-      expect(rows[0].actorId).toBe(manager.id);
+      const finance = await prisma.staff.findUniqueOrThrow({ where: { email: staffEmails[2] } });
+      expect(rows[0].actorId).toBe(finance.id);
     });
 
     it('resolves as failed, after which the payout can be retried', async () => {
@@ -404,7 +405,7 @@ describe('Phase 8: retrying a failed payout and manually resolving a stuck one',
         resolve(p.id, { outcome: 'failed', note: 'b' }, 'manager'),
       ]);
 
-      expect(results.map((r) => r.status).sort()).toEqual([200, 400]);
+      expect(results.map((r) => r.status).sort()).toEqual([200, 403]);
       const winner = results.find((r) => r.status === 200)!;
       expect((await reload(p.id)).status).toBe(winner.body.status);
       expect(await audits(p.code, 'payout_resolved_manually')).toHaveLength(1);

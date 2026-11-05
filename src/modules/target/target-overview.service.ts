@@ -33,7 +33,6 @@ export interface AgentOverview {
     code: string;
     name: string;
     role: string;
-    area: string | null;
     city: string;
     createdAt: Date;
     teamLeadId: string | null;
@@ -548,7 +547,6 @@ export class TargetOverviewService {
         code: staff.code,
         name: staff.name,
         role: staff.role,
-        area: staff.area,
         city: staff.city,
         createdAt: staff.createdAt,
         teamLeadId: staff.teamLeadId,

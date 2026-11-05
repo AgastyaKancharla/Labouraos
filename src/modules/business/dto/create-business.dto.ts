@@ -12,7 +12,6 @@ export class CreateBusinessDto {
   ownerName?: string;
   address?: string;
   locality?: string;
-  area?: string;
   contactPerson?: string;
   contactName?: string;
   additionalContactName?: string;
