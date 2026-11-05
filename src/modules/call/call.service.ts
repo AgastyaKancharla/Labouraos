@@ -180,10 +180,15 @@ export class CallService {
       throw new BadRequestException('purpose is not one of the allowed call purposes');
     }
 
+    const subject = await this.loadSubject(subjectType, subjectId);
+    if (!subject) {
+      throw new NotFoundException('The person or business to call was not found');
+    }
+
     if (subjectType === 'job_seeker' && purpose !== 'consent_explain') {
       const hasCallRecordingConsent = await this.consentService.hasConsent(
         'job_seeker',
-        subjectId,
+        subject.id,
         'call_recording',
       );
       if (!hasCallRecordingConsent) {
@@ -199,7 +204,7 @@ export class CallService {
     ) {
       const hasJobMatchingConsent = await this.consentService.hasConsent(
         'job_seeker',
-        subjectId,
+        subject.id,
         'job_matching',
       );
       if (!hasJobMatchingConsent) {
@@ -209,10 +214,6 @@ export class CallService {
       }
     }
 
-    const subject = await this.loadSubject(subjectType, subjectId);
-    if (!subject) {
-      throw new NotFoundException('The person or business to call was not found');
-    }
     await this.assertCanCall(actor, subjectType, subject);
 
     const now = this.clock.now();
