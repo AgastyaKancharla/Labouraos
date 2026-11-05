@@ -72,7 +72,6 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
         code: `JS-P12-${randomSuffix}`,
         name: `Lead Candidate ${randomSuffix}`,
         phone: `+9192${phoneSuffix}`,
-        tradeSkill: 'Electrician',
         minSalary: 1400000,
         maxSalary: 2400000,
         preferredCallWindowStart: '09:00',
@@ -80,6 +79,9 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
         status: 'lead',
         dateOfBirth: dob ?? null,
       },
+    });
+    await prisma.jobSeekerTrade.create({
+      data: { jobSeekerId: seeker.id, trade: 'Electrician', isPrimary: true },
     });
     createdSeekerIds.push(seeker.id);
     return seeker.id;
@@ -227,7 +229,7 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
     expect(res.body.travelDistanceKm).toBe(15);
     expect(res.body.preferredLocalities).toEqual(['Indiranagar', 'Koramangala']);
     expect(res.body.keySkills).toEqual(['Pipefitting', 'Welding']);
-    expect(res.body.tradeSkill).toBe('Electrician'); // Deprecated column remains untouched
-    expect(res.body.kycStatus).toBe('pending'); // Deprecated column remains untouched
+    expect(res.body.tradeSkill).toBe('Electrician'); // Resolved from JobSeekerTrade
+    expect(res.body.kycStatus).toBe('pending'); // Legacy fallback when no IdentityVerification exists
   });
 });

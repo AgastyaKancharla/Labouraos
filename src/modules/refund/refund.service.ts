@@ -4,6 +4,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { RefundDueRow } from './dto/refund-due.dto';
+import { primaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
 
 @Injectable()
 export class RefundService {
@@ -49,6 +50,7 @@ export class RefundService {
           lte: maxPaymentDate,
         },
       },
+      include: { trades: true },
     });
 
     let rejectedCandidateIdSet = new Set<string>();
@@ -127,14 +129,14 @@ export class RefundService {
           dueSince: result.deadline!.toISOString(),
           name: candidate.name,
           phone: candidate.phone,
-          tradeSkill: candidate.tradeSkill,
+          tradeSkill: primaryJobSeekerTrade(candidate) ?? '',
           paymentReceivedAt: candidate.paymentReceivedAt!.toISOString(),
           jobSeeker: {
             id: candidate.id,
             code: candidate.code,
             name: candidate.name,
             phone: candidate.phone,
-            tradeSkill: candidate.tradeSkill,
+            tradeSkill: primaryJobSeekerTrade(candidate) ?? '',
             paymentReceivedAt: candidate.paymentReceivedAt!.toISOString(),
           },
         });

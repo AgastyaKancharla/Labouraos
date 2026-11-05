@@ -271,7 +271,6 @@ describe('Phase 11 Task 5: system contact attempts', () => {
         code: `JS-MSG-${stamp}`,
         name: 'Message Attempt Seeker',
         phone: '+919811100033',
-        tradeSkill: 'Welder',
         minSalary: 1000000,
         maxSalary: 2000000,
         preferredCallWindowStart: '10:00',
@@ -280,6 +279,9 @@ describe('Phase 11 Task 5: system contact attempts', () => {
       },
     });
     seekerIds.push(seeker.id);
+    await prisma.jobSeekerTrade.create({
+      data: { jobSeekerId: seeker.id, trade: 'Welder', isPrimary: true },
+    });
 
     const sent = await messagingService.send({
       channel: 'whatsapp',
@@ -288,7 +290,7 @@ describe('Phase 11 Task 5: system contact attempts', () => {
       subjectId: seeker.id,
       variables: {
         candidateName: seeker.name,
-        trade: seeker.tradeSkill,
+        trade: 'Welder',
       },
     });
     messageIds.push(sent.id);

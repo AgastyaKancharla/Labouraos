@@ -98,6 +98,7 @@ describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
     expect(html).toContain('payments');
     expect(html).toContain('refunds');
     expect(html).toContain('pricing');
+    expect(html).toContain('j.identityVerifications?.[0]?.status ?? j.kycStatus');
 
     // Contains refund action elements
     expect(html).toContain('refund-placement-id');

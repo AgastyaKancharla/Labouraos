@@ -3,7 +3,8 @@ export interface CreateJobSeekerDto {
   phone?: string;
   mobileNumber?: string;
   otpRequestId: string;
-  tradeSkill: string;
+  tradeSkill?: string;
+  yearsExperience?: number;
   minSalary: number;
   maxSalary: number;
   preferredCallWindowStart: string;

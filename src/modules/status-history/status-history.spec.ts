@@ -202,7 +202,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       const jobSeekerId = createRes.body.id;
 
-      // Check history: should have fromStatus: null -> pending_payment
+      // Phase 12 registers a new job seeker as a lead.
       let historyRes = await request(app.getHttpServer())
         .get(`/status-history?subjectType=job_seeker&subjectId=${jobSeekerId}`)
         .set('Authorization', `Bearer ${ceoToken}`)
@@ -210,7 +210,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       expect(historyRes.body).toHaveLength(1);
       expect(historyRes.body[0].fromStatus).toBeNull();
-      expect(historyRes.body[0].toStatus).toBe('pending_payment');
+      expect(historyRes.body[0].toStatus).toBe('lead');
 
       // 2. Activate via payment
       // Create payment
@@ -237,7 +237,7 @@ describe('Phase 9 Task 7: Status History', () => {
         .expect(200);
 
       expect(historyRes.body).toHaveLength(2);
-      expect(historyRes.body[1].fromStatus).toBe('pending_payment');
+      expect(historyRes.body[1].fromStatus).toBe('lead');
       expect(historyRes.body[1].toStatus).toBe('active');
       expect(historyRes.body[1].changedByStaffId).toBeNull(); // webhook is system actor
 

@@ -9,6 +9,7 @@ import {
   PriorityVacancyRow,
   UrgencyBand,
 } from './priority.types';
+import { primaryJobSeekerTrade, withPrimaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
 
 @Injectable()
 export class PriorityService {
@@ -34,13 +35,15 @@ export class PriorityService {
         city: staff.city,
         status: 'active',
       },
+      include: { trades: true },
     });
 
     const policy = await this.pricingService.current();
     const guaranteeDays = policy.jobSeekerGuaranteeDays;
     const maxHits = policy.maxHits;
 
-    const rows: PriorityCandidateRow[] = candidates.map((candidate) => {
+    const rows: PriorityCandidateRow[] = candidates.map((rawCandidate) => {
+      const candidate = withPrimaryJobSeekerTrade(rawCandidate);
       let daysRemaining = guaranteeDays;
       let deadline: Date | null = null;
 
@@ -68,7 +71,7 @@ export class PriorityService {
         id: candidate.id,
         code: candidate.code,
         name: candidate.name,
-        tradeSkill: candidate.tradeSkill,
+        tradeSkill: candidate.tradeSkill ?? '',
         minSalary: candidate.minSalary,
         maxSalary: candidate.maxSalary,
         daysRemaining,
@@ -202,6 +205,7 @@ export class PriorityService {
         city: staff.city,
         status: 'active',
       },
+      include: { trades: true },
     });
 
     const tradeMap = new Map<
@@ -210,9 +214,11 @@ export class PriorityService {
     >();
 
     for (const c of activeCandidates) {
-      const key = c.tradeSkill.trim().toLowerCase();
+      const candidateTrade = primaryJobSeekerTrade(c);
+      if (candidateTrade === null) continue;
+      const key = candidateTrade.trim().toLowerCase();
       const existing = tradeMap.get(key) ?? {
-        trade: c.tradeSkill.trim(),
+        trade: candidateTrade.trim(),
         activeCandidatesCount: 0,
         openVacancyHeadcount: 0,
       };

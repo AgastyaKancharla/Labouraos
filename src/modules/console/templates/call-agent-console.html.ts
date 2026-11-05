@@ -910,7 +910,7 @@ export function renderCallAgentConsoleHtml(): string {
           <tr>
             <td><strong>\${c.code}</strong></td>
             <td>\${c.name}</td>
-            <td>\${c.tradeSkill}</td>
+            <td>\${c.trades?.length ? c.trades.find(t => t.isPrimary)?.trade : c.tradeSkill}</td>
             <td>₹\${(c.minSalary/100).toLocaleString()} - ₹\${(c.maxSalary/100).toLocaleString()}</td>
             <td><span class="badge" style="background: \${c.hitCount >= 2 ? 'var(--danger)' : '#334155'};">\${c.hitCount} Hits</span></td>
             <td>\${c.paymentReceivedAt ? new Date(new Date(c.paymentReceivedAt).getTime() + 30*24*3600*1000).toLocaleDateString() : '—'}</td>

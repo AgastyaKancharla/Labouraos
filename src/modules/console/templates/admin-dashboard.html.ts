@@ -787,11 +787,11 @@ export function renderAdminDashboardHtml(): string {
             <td><strong>\${j.code}</strong></td>
             <td>\${j.name}</td>
             <td>\${formatPhoneLast4(j.phone)}</td>
-            <td>\${j.tradeSkill}</td>
+            <td>\${j.trades?.length ? j.trades.find(t => t.isPrimary)?.trade : j.tradeSkill}</td>
             <td>₹\${(j.minSalary/100).toLocaleString('en-IN')} - ₹\${(j.maxSalary/100).toLocaleString('en-IN')}</td>
             <td><span class="badge">\${j.status}</span></td>
             <td>\${j.hitCount}</td>
-            <td>\${j.kycStatus}</td>
+            <td>\${j.identityVerifications?.[0]?.status ?? j.kycStatus}</td>
             <td><button class="btn-sm btn-call" onclick="openAdminCalling('job_seeker', '\${j.id}', '\${j.code}')">Call</button></td>
           </tr>
         \`).join('') || '<tr><td colspan="9">No candidates found</td></tr>';

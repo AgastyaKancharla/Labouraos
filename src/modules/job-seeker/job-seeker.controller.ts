@@ -76,17 +76,6 @@ export class JobSeekerController {
     return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
   }
 
-  @Post(':id/kyc')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
-  @RequirePermission('job_seeker', 'write')
-  async submitKyc(
-    @Param('id') id: string,
-    @Body() body: Record<string, unknown>,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.jobSeekerService.updateKyc(id, body, req.user.sub);
-  }
-
   @Post(':id/identity-verification')
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')

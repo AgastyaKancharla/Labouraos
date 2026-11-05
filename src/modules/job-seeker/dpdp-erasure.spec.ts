@@ -295,7 +295,6 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     expect(updated).toBeDefined();
     expect(updated?.name).toBe('ANONYMIZED_CANDIDATE');
     expect(updated?.phone).toBe(`ERASED-${testJobSeekerCode}`);
-    expect(updated?.kycReference).toBeNull();
     expect(updated?.erasedAt).toBeDefined();
 
     // Verify non-identifying fields and relations are preserved
@@ -323,7 +322,7 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     });
     expect(audit).toBeDefined();
     expect(audit?.reason).toBe('DPDP erasure request');
-    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'kycReference', 'erasedAt']));
+    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'erasedAt']));
     expect((audit?.before as Record<string, unknown>)?.name).toBeUndefined();
     expect((audit?.after as Record<string, unknown>)?.name).toBeUndefined();
 
