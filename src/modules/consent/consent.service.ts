@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConsentClock } from './consent-clock';
 import { REQUIRED_CONSENT_PURPOSES_BY_SUBJECT } from './consent.constants';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { AuditService } from '../../common/audit/audit.service';
 
 export interface GrantConsentDto {
   subjectType: string;
@@ -19,6 +20,9 @@ export interface WithdrawConsentDto {
   subjectType: string;
   subjectId: string;
   purpose: string;
+  withdrawnMethod?: string | null;
+  withdrawnByStaffId?: string | null;
+  withdrawnCallRecordId?: string | null;
 }
 
 @Injectable()
@@ -26,6 +30,7 @@ export class ConsentService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: ConsentClock,
+    private readonly auditService: AuditService,
   ) {}
 
   /**
@@ -35,6 +40,34 @@ export class ConsentService {
    */
   async grant(dto: GrantConsentDto) {
     const now = this.clock.now();
+
+    const previous = await this.prisma.consent.findUnique({
+      where: {
+        subjectType_subjectId_purpose_noticeVersion: {
+          subjectType: dto.subjectType,
+          subjectId: dto.subjectId,
+          purpose: dto.purpose,
+          noticeVersion: dto.noticeVersion,
+        },
+      },
+    });
+    if (previous?.withdrawnAt && previous.withdrawnByStaffId) {
+      await this.auditService.log({
+        actorId: previous.withdrawnByStaffId,
+        action: 'consent_withdrawal_history_preserved',
+        entityType: 'consent',
+        entityCode: previous.id,
+        before: {
+          withdrawnAt: previous.withdrawnAt.toISOString(),
+          withdrawnMethod: previous.withdrawnMethod,
+          withdrawnByStaffId: previous.withdrawnByStaffId,
+          withdrawnCallRecordId: previous.withdrawnCallRecordId,
+        },
+        after: { consentRegranted: true },
+        changedFields: ['withdrawnAt', 'withdrawnMethod', 'withdrawnByStaffId', 'withdrawnCallRecordId'],
+        reason: 'Prior agent withdrawal retained before consent was re-granted by OTP',
+      });
+    }
 
     return this.prisma.consent.upsert({
       where: {
@@ -56,6 +89,9 @@ export class ConsentService {
         otpRequestId: dto.otpRequestId ?? null,
         grantedAt: now,
         withdrawnAt: null,
+        withdrawnMethod: null,
+        withdrawnByStaffId: null,
+        withdrawnCallRecordId: null,
       },
       update: {
         granted: true,
@@ -64,6 +100,9 @@ export class ConsentService {
         otpRequestId: dto.otpRequestId ?? null,
         grantedAt: now,
         withdrawnAt: null,
+        withdrawnMethod: null,
+        withdrawnByStaffId: null,
+        withdrawnCallRecordId: null,
       },
     });
   }
@@ -76,7 +115,7 @@ export class ConsentService {
   async withdraw(dto: WithdrawConsentDto) {
     const now = this.clock.now();
 
-    const activeRows = await this.prisma.consent.findMany({
+    const changed = await this.prisma.consent.updateMany({
       where: {
         subjectType: dto.subjectType,
         subjectId: dto.subjectId,
@@ -84,22 +123,18 @@ export class ConsentService {
         granted: true,
         withdrawnAt: null,
       },
+      data: {
+        granted: false,
+        withdrawnAt: now,
+        withdrawnMethod: dto.withdrawnMethod ?? null,
+        withdrawnByStaffId: dto.withdrawnByStaffId ?? null,
+        withdrawnCallRecordId: dto.withdrawnCallRecordId ?? null,
+      },
     });
-
-    if (activeRows.length > 0) {
-      await this.prisma.consent.updateMany({
-        where: {
-          id: { in: activeRows.map((r) => r.id) },
-        },
-        data: {
-          granted: false,
-          withdrawnAt: now,
-        },
-      });
-    }
 
     // A withdrawal of call_recording or job_matching by an active job seeker moves status to paused
     if (
+      changed.count > 0 &&
       dto.subjectType === 'job_seeker' &&
       (dto.purpose === 'call_recording' || dto.purpose === 'job_matching')
     ) {
@@ -133,7 +168,7 @@ export class ConsentService {
       }
     }
 
-    return { withdrawn: true };
+    return { withdrawn: changed.count > 0 };
   }
 
   /**
