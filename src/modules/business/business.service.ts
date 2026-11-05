@@ -441,7 +441,7 @@ export class BusinessService {
     });
   }
 
-  async findById(id: string, actorId: string) {
+  async findById(id: string) {
     let business = await this.prisma.business.findUnique({
       where: { id },
       include: { vacancies: true, visits: true },

@@ -62,9 +62,8 @@ export class BusinessController {
   @RequirePermission('business', 'read')
   async findById(
     @Param('id') id: string,
-    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.businessService.findById(id, req.user.sub);
+    return this.businessService.findById(id);
   }
 
   @Post(':id/agreement-links')
@@ -159,9 +158,8 @@ export class BusinessController {
   @RequirePermission('vacancy', 'read')
   async findVacanciesByBusiness(
     @Param('id') businessId: string,
-    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.vacancyService.findByBusiness(businessId, req.user.sub);
+    return this.vacancyService.findByBusiness(businessId);
   }
 
   @Post(':id/visits')

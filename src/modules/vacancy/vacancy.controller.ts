@@ -74,9 +74,8 @@ export class VacancyController {
   @RequirePermission('vacancy', 'read')
   async findById(
     @Param('id') id: string,
-    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.vacancyService.findById(id, req.user.sub);
+    return this.vacancyService.findById(id);
   }
 }
 

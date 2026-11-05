@@ -217,7 +217,7 @@ export class VacancyService {
     });
   }
 
-  async findById(id: string, _actorId: string) {
+  async findById(id: string) {
     const vacancy = await this.prisma.vacancy.findUnique({
       where: { id },
       include: { business: true },
@@ -229,7 +229,7 @@ export class VacancyService {
     return vacancy;
   }
 
-  async findByBusiness(businessId: string, _actorId: string) {
+  async findByBusiness(businessId: string) {
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
     });
