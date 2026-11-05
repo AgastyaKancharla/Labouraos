@@ -14,9 +14,10 @@ import {
   MemoryAgreementDocumentStorage,
   SupabaseAgreementDocumentStorage,
 } from './agreement-document.storage';
+import { BusinessVerificationModule } from '../business/business-verification.module';
 
 @Module({
-  imports: [PrismaModule, MessageModule, OtpModule, PricingModule, AuditModule],
+  imports: [PrismaModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule],
   controllers: [ConsentController],
   providers: [
     ConsentService,

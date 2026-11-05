@@ -15,6 +15,7 @@ import {
 } from './storefront-photo.storage';
 import { PricingModule } from '../pricing/pricing.module';
 import { ConsentModule } from '../consent/consent.module';
+import { BusinessVerificationModule } from './business-verification.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { ConsentModule } from '../consent/consent.module';
     ReviewFlagModule,
     PricingModule,
     ConsentModule,
+    BusinessVerificationModule,
   ],
   controllers: [BusinessController],
   providers: [

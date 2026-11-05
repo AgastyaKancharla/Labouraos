@@ -290,6 +290,10 @@ export class VacancyService {
       );
     }
 
+    if (vacancy.business.verificationStatus !== 'verified') {
+      throw new ForbiddenException('Candidates are hidden until the business is verified');
+    }
+
     const matchingConsents = await this.prisma.consent.findMany({
       where: {
         subjectType: 'job_seeker',

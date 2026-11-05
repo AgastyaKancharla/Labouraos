@@ -51,4 +51,8 @@ export class RecordVisitDto {
   selfieUrl?: string;
   selfieHash?: string;
   visitedAt?: string | Date;
+  purpose?: string;
+  ownerOtpRequestId?: string;
+  ownerOtpCode?: string;
+  assignmentId?: string;
 }

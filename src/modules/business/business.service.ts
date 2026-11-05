@@ -23,6 +23,8 @@ import { BUSINESS_TYPES } from './business.constants';
 import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo.storage';
 import { PricingService } from '../pricing/pricing.service';
+import { BusinessClock } from './business-clock';
+import { BusinessVerificationService } from './business-verification.service';
 
 @Injectable()
 export class BusinessService {
@@ -33,6 +35,8 @@ export class BusinessService {
     private readonly otpService: OtpService,
     private readonly reviewFlagService: ReviewFlagService,
     private readonly pricingService: PricingService,
+    private readonly clock: BusinessClock,
+    private readonly verificationService: BusinessVerificationService,
     @Inject(GST_LOOKUP_PROVIDER) private readonly gstLookup: GstLookupProvider,
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStorage: BusinessPhotoStorage,
   ) {}
@@ -488,6 +492,7 @@ export class BusinessService {
 
     if (
       staff.role === 'field_agent' &&
+      !dto.assignmentId &&
       (business.area !== null
         ? business.area !== staff.area
         : business.leadCreatedByStaffId !== staff.id && business.accountAgentId !== staff.id)
@@ -499,6 +504,36 @@ export class BusinessService {
 
     const selfieHash = dto.selfieHash?.trim() || null;
     const selfieUrl = dto.selfieUrl?.trim() || null;
+    const assignment = dto.assignmentId
+      ? await this.prisma.visitAssignment.findUnique({ where: { id: dto.assignmentId } })
+      : null;
+    if (dto.assignmentId && !assignment) throw new NotFoundException('Visit assignment not found');
+    if (assignment) {
+      if (
+        assignment.businessId !== business.id ||
+        assignment.assignedStaffId !== staff.id ||
+        assignment.status !== 'assigned'
+      ) {
+        throw new ForbiddenException('Only the assigned field agent can complete an open visit assignment');
+      }
+    }
+    const purpose = assignment?.purpose ?? dto.purpose ?? 'follow_up';
+    if (purpose === 'verification') {
+      if (!assignment) throw new BadRequestException('A verification visit requires its assigned visit assignment');
+      if (!selfieUrl || !selfieHash) {
+        throw new BadRequestException('A verification visit requires the visit photo and its hash');
+      }
+      if (!dto.ownerOtpRequestId || !dto.ownerOtpCode) {
+        throw new BadRequestException('Owner presence OTP is required for a verification visit');
+      }
+      const otpValid = await this.otpService.verifyOtp(dto.ownerOtpRequestId, dto.ownerOtpCode);
+      const otpBelongsToOwner = otpValid
+        ? await this.otpService.isVerified(dto.ownerOtpRequestId, business.phone)
+        : false;
+      if (!otpBelongsToOwner) {
+        throw new BadRequestException('Valid owner presence OTP is required for a verification visit');
+      }
+    }
 
     if (selfieHash) {
       const duplicateInBusiness = await this.prisma.business.findFirst({
@@ -539,25 +574,45 @@ export class BusinessService {
       }
     }
 
-    const visit = await this.prisma.businessVisit.create({
-      data: {
-        businessId: business.id,
-        staffId: staff.id,
-        latitude: dto.latitude,
-        longitude: dto.longitude,
-        selfieUrl,
-        selfieHash,
-        geofenceFlag,
-        visitedAt: dto.visitedAt ? new Date(dto.visitedAt) : new Date(),
-      },
-    });
-
-    if (geofenceFlag && !business.geofenceFlag) {
-      await this.prisma.business.update({
-        where: { id: business.id },
-        data: { geofenceFlag: true },
+    const visitedAt = dto.visitedAt ? new Date(dto.visitedAt) : this.clock.now();
+    const visit = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.businessVisit.create({
+        data: {
+          businessId: business.id,
+          staffId: staff.id,
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          selfieUrl,
+          selfieHash,
+          geofenceFlag,
+          purpose,
+          ownerOtpRequestId: purpose === 'verification' ? dto.ownerOtpRequestId : null,
+          photoLive: false,
+          assignmentId: assignment?.id ?? null,
+          visitedAt,
+        },
       });
-    }
+      if (assignment) {
+        const completed = await tx.visitAssignment.updateMany({
+          where: {
+            id: assignment.id,
+            assignedStaffId: staff.id,
+            status: 'assigned',
+          },
+          data: { status: 'done', visitId: created.id },
+        });
+        if (completed.count !== 1) {
+          throw new ForbiddenException('Only the assigned field agent can complete an open visit assignment');
+        }
+      }
+      if (geofenceFlag && !business.geofenceFlag) {
+        await tx.business.update({
+          where: { id: business.id },
+          data: { geofenceFlag: true },
+        });
+      }
+      return created;
+    });
 
     await this.auditService.log({
       actorId: staff.id,
@@ -565,11 +620,22 @@ export class BusinessService {
       entityType: 'business_visit',
       entityCode: visit.id,
       after: {
-        ...visit,
-        ...(geofenceFlag ? { flags: ['GEOFENCE_MISMATCH'] } : {}),
-      } as unknown as Record<string, unknown>,
+        businessId: business.id,
+        purpose,
+        assignmentId: assignment?.id ?? null,
+        ownerOtpRequestId: purpose === 'verification' ? dto.ownerOtpRequestId : null,
+        geofenceFlag,
+        photoLive: false,
+        assignmentStatus: assignment ? 'done' : null,
+      },
+      changedFields: ['latitude', 'longitude', 'selfieUrl', 'selfieHash', 'purpose', 'assignmentId', 'assignmentStatus'],
+      reason: geofenceFlag ? 'Visit recorded with a geofence mismatch for review' : 'Business visit recorded',
       city: business.city,
     });
+
+    if (purpose === 'verification') {
+      await this.verificationService.advanceToPendingTlCheckIfReady(business.id, staff.id);
+    }
 
     return visit;
   }

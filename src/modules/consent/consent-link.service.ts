@@ -23,6 +23,7 @@ import {
 } from './business-agreement.template';
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
+import { BusinessVerificationService } from '../business/business-verification.service';
 
 interface ConsentLinkTokenBase {
   token: string;
@@ -90,6 +91,7 @@ export class ConsentLinkService {
     private readonly otpService: OtpService,
     private readonly pricingService: PricingService,
     private readonly auditService: AuditService,
+    private readonly businessVerificationService: BusinessVerificationService,
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
   ) {}
 
@@ -435,6 +437,7 @@ export class ConsentLinkService {
     });
 
     record.usedAt = signedAt;
+    await this.businessVerificationService.advanceToPendingTlCheckIfReady(business.id);
     await this.auditService.log({
       actorId: record.createdByStaffId,
       action: 'business_agreement.signed_by_owner_otp',
