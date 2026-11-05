@@ -12,6 +12,7 @@ export interface GstLookupProvider {
 
 export class MockGstLookupProvider implements GstLookupProvider {
   async lookup(_gstNumber: string): Promise<GstLookupResult> {
+    void _gstNumber;
     return { verified: false, legalName: null, status: 'not_verified_by_mock' };
   }
 }
