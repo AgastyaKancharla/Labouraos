@@ -362,6 +362,11 @@ Format:
 **Cause:** PostgreSQL scalar lists cannot be optional in Prisma's data model.
 **Fix:** Declare Phase 13 scalar-list columns as `String[] @default([])` and add them with an empty-array default so existing rows mean “nothing recorded”, not a guessed value. Use this pattern for later scalar-list columns too.
 
+## Business agreements retain the GST rate used when sent
+**Symptom:** Data-design §5 omitted `gstPercent`, while Phase 13 Task 4 requires every agreement price figure to remain fixed after signing.
+**Cause:** The agreement field list missed the GST snapshot column.
+**Fix:** Store `gstPercent` from `PricingService.current()` on `BusinessAgreement` at link time alongside the fee and no-bypass values.
+
 
 
 

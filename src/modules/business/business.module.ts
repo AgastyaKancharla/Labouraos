@@ -14,6 +14,7 @@ import {
   SupabaseBusinessPhotoStorage,
 } from './storefront-photo.storage';
 import { PricingModule } from '../pricing/pricing.module';
+import { ConsentModule } from '../consent/consent.module';
 
 @Module({
   imports: [
@@ -24,6 +25,7 @@ import { PricingModule } from '../pricing/pricing.module';
     VacancyModule,
     ReviewFlagModule,
     PricingModule,
+    ConsentModule,
   ],
   controllers: [BusinessController],
   providers: [
