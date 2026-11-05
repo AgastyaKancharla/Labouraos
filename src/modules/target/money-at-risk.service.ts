@@ -8,6 +8,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { refundGuaranteeDeadline, toRupees } from '../../common/money/money';
 import { calculateDaysElapsed } from '../placement/placement.service';
 import { PricingService } from '../pricing/pricing.service';
+import { primaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
 import {
   CANDIDATE_AT_RISK_WINDOW_DAYS,
   PLACEMENT_AT_RISK_WINDOW_DAYS,
@@ -180,6 +181,7 @@ export class MoneyAtRiskService {
         name: true,
         phone: true,
         tradeSkill: true,
+        trades: { select: { trade: true, isPrimary: true } },
         paymentReceivedAt: true,
         status: true,
         registeredByStaffId: true,
@@ -267,7 +269,7 @@ export class MoneyAtRiskService {
           details: {
             name: c.name,
             phone: c.phone,
-            tradeSkill: c.tradeSkill,
+            tradeSkill: primaryJobSeekerTrade(c) ?? '',
           },
         });
       }

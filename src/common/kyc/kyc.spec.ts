@@ -10,6 +10,7 @@ import { KYC_PROVIDER, KycProvider } from './kyc.interface';
 import { MockKycProvider } from './mock-kyc.provider';
 import { KycModule } from './kyc.module';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { JwtService } from '@nestjs/jwt';
 
 describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
   let app: INestApplication;
@@ -152,103 +153,18 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
     });
   });
 
-  describe('POST /job-seekers/:id/kyc endpoint', () => {
-    it('accepts vendor reference and verified result, updating kycStatus and audit logging', async () => {
-      const seeker = await createPendingJobSeeker(timestamp.toString().slice(-8));
+  it('removes POST /job-seekers/:id/kyc for every staff role', async () => {
+    const jwt = app.get(JwtService);
+    const roles = ['ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance'];
 
-      const vendorRef = `vendor_ref_${Date.now()}`;
+    for (const role of roles) {
+      const token = jwt.sign({ sub: `removed-kyc-${role}`, role, code: `TEST-${role}` });
       const res = await request(app.getHttpServer())
-        .post(`/job-seekers/${seeker.id}/kyc`)
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
-          kycReference: vendorRef,
-          kycStatus: 'verified',
-        });
+        .post('/job-seekers/removed-kyc-test/kyc')
+        .set('Authorization', `Bearer ${token}`)
+        .send({ kycStatus: 'verified', kycReference: 'hand-entered-ref' });
 
-      expect(res.status).toBe(201);
-      expect(res.body.kycStatus).toBe('verified');
-      expect(res.body.kycReference).toBe(vendorRef);
-
-      // Verify in DB
-      const dbSeeker = await prisma.jobSeeker.findUnique({
-        where: { id: seeker.id },
-      });
-      expect(dbSeeker?.kycStatus).toBe('verified');
-      expect(dbSeeker?.kycReference).toBe(vendorRef);
-
-      // Verify audit log
-      const logs = await prisma.auditLog.findMany({
-        where: {
-          entityCode: seeker.code,
-          action: 'job_seeker.kyc',
-        },
-      });
-      expect(logs).toHaveLength(1);
-      expect(logs[0].actorId).toBe(callAgentId);
-    });
-
-    it('accepts vendor reference and failed result', async () => {
-      const phoneSuffix = (timestamp + 1).toString().slice(-8);
-      const seeker = await createPendingJobSeeker(phoneSuffix);
-
-      const res = await request(app.getHttpServer())
-        .post(`/job-seekers/${seeker.id}/kyc`)
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
-          kycReference: 'vendor_ref_failed_123',
-          kycStatus: 'failed',
-        });
-
-      expect(res.status).toBe(201);
-      expect(res.body.kycStatus).toBe('failed');
-      expect(res.body.kycReference).toBe('vendor_ref_failed_123');
-    });
-
-    it('MANDATORY SECURITY: rejects submitting a 12-digit number under any field name', async () => {
-      const phoneSuffix = (timestamp + 2).toString().slice(-8);
-      const seeker = await createPendingJobSeeker(phoneSuffix);
-
-      // Attempt 1: Field named aadhaar
-      const res1 = await request(app.getHttpServer())
-        .post(`/job-seekers/${seeker.id}/kyc`)
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
-          kycReference: 'vendor_ref_123',
-          kycStatus: 'verified',
-          aadhaar: '123456789012',
-        });
-      expect(res1.status).toBe(400);
-      expect(res1.body.message).toContain('Aadhaar');
-
-      // Attempt 2: 12-digit number string in an arbitrary field name
-      const res2 = await request(app.getHttpServer())
-        .post(`/job-seekers/${seeker.id}/kyc`)
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
-          kycReference: 'vendor_ref_123',
-          kycStatus: 'verified',
-          documentNumber: '987654321098',
-        });
-      expect(res2.status).toBe(400);
-      expect(res2.body.message).toContain('Aadhaar');
-
-      // Attempt 3: 12-digit number with spaces "1234 5678 9012"
-      const res3 = await request(app.getHttpServer())
-        .post(`/job-seekers/${seeker.id}/kyc`)
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
-          kycReference: 'vendor_ref_123',
-          kycStatus: 'verified',
-          arbitraryKey: '1234 5678 9012',
-        });
-      expect(res3.status).toBe(400);
-      expect(res3.body.message).toContain('Aadhaar');
-
-      // Verify DB record was NOT modified with any 12-digit number
-      const dbSeeker = await prisma.jobSeeker.findUnique({
-        where: { id: seeker.id },
-      });
-      expect(dbSeeker?.kycReference).toBeNull();
-    });
+      expect(res.status).toBe(404);
+    }
   });
 });

@@ -149,7 +149,7 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
       }
     });
 
-    it('verifies that no raw Aadhaar number is persisted anywhere in the database when e-KYC completes', async () => {
+    it('returns 404 for the removed hand-entered KYC endpoint', async () => {
       // 1. Create a candidate
       const candidate = await prisma.jobSeeker.create({
         data: {
@@ -167,38 +167,14 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
         },
       });
 
-      // 2. Perform real KYC verification via provider
-      const vendorReference = `ovse_licensed_ref_${timestamp}`;
       const kycRes = await request(app.getHttpServer())
         .post(`/job-seekers/${candidate.id}/kyc`)
         .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
-          kycReference: vendorReference,
-          kycStatus: 'verified',
-        });
+        .send({ kycReference: 'legacy-hand-entered-ref', kycStatus: 'verified' });
 
-      expect(kycRes.status).toBe(201);
-      expect(kycRes.body.kycStatus).toBe('verified');
-      expect(kycRes.body.kycReference).toBe(vendorReference);
-
-      // 3. Inspect raw DB record directly
-      const savedInDb = await prisma.jobSeeker.findUnique({
-        where: { id: candidate.id },
-      });
-
-      expect(savedInDb).toBeDefined();
-      expect(savedInDb?.kycStatus).toBe('verified');
-      expect(savedInDb?.kycReference).toBe(vendorReference);
-
-      // The generated id is a UUID. Its last group is 12 hex characters and can be
-      // all digits, which is not an Aadhaar number. Every other field is scanned.
-      const { id, ...storedWithoutId } = savedInDb!;
-      expect(id).toMatch(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      );
-      const serialized = JSON.stringify(storedWithoutId);
-      expect(serialized).not.toMatch(/\b\d{12}\b/);
-      expect(serialized).not.toMatch(/\b\d{4}\s\d{4}\s\d{4}\b/);
+      expect(kycRes.status).toBe(404);
+      const savedInDb = await prisma.jobSeeker.findUnique({ where: { id: candidate.id } });
+      expect(savedInDb?.kycReference).toBeNull();
     });
   });
 

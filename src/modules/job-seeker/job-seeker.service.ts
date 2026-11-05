@@ -40,6 +40,7 @@ import {
   UpdateJobSeekerLanguageDto,
 } from './dto/job-seeker-language.dto';
 import { normalizeHitReason } from './dto/record-hit.dto';
+import { withCurrentJobSeekerFields } from './job-seeker-legacy-read';
 
 @Injectable()
 export class JobSeekerService {
@@ -69,10 +70,6 @@ export class JobSeekerService {
     const phone = (dto.phone ?? dto.mobileNumber)?.trim();
     if (!phone) {
       throw new BadRequestException('Mobile number is required');
-    }
-
-    if (!dto.tradeSkill || typeof dto.tradeSkill !== 'string') {
-      throw new BadRequestException('tradeSkill is required');
     }
 
     validateCallWindow(dto.preferredCallWindowStart, dto.preferredCallWindowEnd);
@@ -113,10 +110,16 @@ export class JobSeekerService {
      * a duplicate-selfie detection is only actionable if the record names who created it.
      * They are NOT for pay: agents are salaried, there is no commission.
      */
-    const status = (dto.status as string) || 'pending_payment';
+    const status = (dto.status as string) || 'lead';
     const dob = dto.dateOfBirth ? new Date(dto.dateOfBirth as string | Date) : null;
     if (dob) {
       validateJobSeekerAge(dob, status);
+    }
+    const trade = typeof dto.tradeSkill === 'string' ? dto.tradeSkill.trim() : '';
+    if (status === 'pending_activation' && !trade) {
+      throw new BadRequestException(
+        'A primary trade is required before a job seeker can reach pending_activation',
+      );
     }
 
     const jobSeeker = await this.prisma.$transaction(async (tx) => {
@@ -126,7 +129,6 @@ export class JobSeekerService {
           name: dto.name?.trim() || 'Job Seeker',
           phone,
           phoneVerified: true,
-          tradeSkill: dto.tradeSkill,
           minSalary: dto.minSalary,
           maxSalary: dto.maxSalary,
           preferredCallWindowStart: dto.preferredCallWindowStart,
@@ -139,6 +141,17 @@ export class JobSeekerService {
         },
       });
 
+      if (trade) {
+        await tx.jobSeekerTrade.create({
+          data: {
+            jobSeekerId: created.id,
+            trade,
+            yearsExperience: dto.yearsExperience ?? 0,
+            isPrimary: true,
+          },
+        });
+      }
+
       await recordStatusChange(tx, {
         subjectType: 'job_seeker',
         subjectId: created.id,
@@ -147,7 +160,11 @@ export class JobSeekerService {
         changedByStaffId: actorId,
       });
 
-      return created;
+      const createdWithRelations = await tx.jobSeeker.findUniqueOrThrow({
+        where: { id: created.id },
+        include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      });
+      return withCurrentJobSeekerFields(createdWithRelations);
     });
 
     await this.auditService.log({
@@ -163,9 +180,14 @@ export class JobSeekerService {
   }
 
   async findAll() {
-    return this.prisma.jobSeeker.findMany({
+    const seekers = await this.prisma.jobSeeker.findMany({
+      include: {
+        trades: true,
+        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
       orderBy: { createdAt: 'desc' },
     });
+    return seekers.map(withCurrentJobSeekerFields);
   }
 
   async findById(id: string, now: Date = new Date()) {
@@ -176,6 +198,8 @@ export class JobSeekerService {
         payments: true,
         contactAttempts: { orderBy: { attemptedAt: 'desc' } },
         hits: { orderBy: { recordedAt: 'desc' } },
+        trades: true,
+        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
     });
     if (!jobSeeker) {
@@ -186,6 +210,8 @@ export class JobSeekerService {
           payments: true,
           contactAttempts: { orderBy: { attemptedAt: 'desc' } },
           hits: { orderBy: { recordedAt: 'desc' } },
+          trades: true,
+          identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
       });
     }
@@ -202,7 +228,7 @@ export class JobSeekerService {
       : false;
 
     return {
-      ...jobSeeker,
+      ...withCurrentJobSeekerFields(jobSeeker),
       refundGuaranteeDeadline: deadline,
       isWithinRefundGuarantee: isWithinGuarantee,
     };
@@ -344,47 +370,6 @@ export class JobSeekerService {
       status: payment.status,
       reactivation: true,
     };
-  }
-
-  async updateKyc(jobSeekerId: string, body: Record<string, unknown>, actorId: string) {
-    assertNoRawAadhaar(body);
-
-    const jobSeeker = await this.prisma.jobSeeker.findUnique({
-      where: { id: jobSeekerId },
-    });
-    if (!jobSeeker) {
-      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
-    }
-
-    const kycStatus = String(body.kycStatus || body.status || 'verified');
-    if (kycStatus !== 'verified' && kycStatus !== 'failed') {
-      throw new BadRequestException("kycStatus must be 'verified' or 'failed'");
-    }
-
-    const kycReference = String(body.kycReference || body.vendorReference || '');
-    if (!kycReference) {
-      throw new BadRequestException('kycReference (vendor reference) is required');
-    }
-
-    const updated = await this.prisma.jobSeeker.update({
-      where: { id: jobSeeker.id },
-      data: {
-        kycStatus,
-        kycReference,
-      },
-    });
-
-    await this.auditService.log({
-      actorId,
-      action: 'job_seeker.kyc',
-      entityType: 'job_seeker',
-      entityCode: updated.code,
-      before: { kycStatus: jobSeeker.kycStatus, kycReference: jobSeeker.kycReference },
-      after: { kycStatus: updated.kycStatus, kycReference: updated.kycReference },
-      city: updated.city,
-    });
-
-    return updated;
   }
 
   async recordHit(
@@ -557,6 +542,7 @@ export class JobSeekerService {
           hitCount: newHitCount,
           status: newStatus,
         },
+        include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
       });
 
       if (jobSeeker.status !== newStatus) {
@@ -623,7 +609,7 @@ export class JobSeekerService {
         ...hit,
         hitCount: updatedJobSeeker.hitCount,
         status: updatedJobSeeker.status,
-        jobSeeker: updatedJobSeeker,
+        jobSeeker: withCurrentJobSeekerFields(updatedJobSeeker),
       };
     });
   }
@@ -778,9 +764,9 @@ export class JobSeekerService {
       data: {
         name: 'ANONYMIZED_CANDIDATE',
         phone: `ERASED-${jobSeeker.code}`,
-        kycReference: null,
         erasedAt: new Date(),
       },
+      include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
 
     await this.auditService.log({
@@ -790,7 +776,7 @@ export class JobSeekerService {
       actorId: actor.id,
       city: jobSeeker.city,
       reason: 'DPDP erasure request',
-      changedFields: ['name', 'phone', 'kycReference', 'erasedAt'],
+      changedFields: ['name', 'phone', 'erasedAt'],
       before: {
         erasedAt: null,
       },
@@ -799,7 +785,7 @@ export class JobSeekerService {
       },
     });
 
-    return updated;
+    return withCurrentJobSeekerFields(updated);
   }
 
   /**
@@ -835,6 +821,7 @@ export class JobSeekerService {
       const updated = await tx.jobSeeker.update({
         where: { id: jobSeekerId },
         data: { status: 'consented' },
+        include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
       });
 
       await recordStatusChange(tx, {
@@ -846,7 +833,7 @@ export class JobSeekerService {
         reason: 'all_required_consents_granted',
       });
 
-      return updated;
+      return withCurrentJobSeekerFields(updated);
     });
   }
 
@@ -873,10 +860,22 @@ export class JobSeekerService {
 
     validateJobSeekerAge(seeker.dateOfBirth, targetStatus);
 
+    if (targetStatus === 'pending_activation') {
+      const primaryTradeCount = await this.prisma.jobSeekerTrade.count({
+        where: { jobSeekerId, isPrimary: true },
+      });
+      if (primaryTradeCount === 0) {
+        throw new BadRequestException(
+          'A primary trade is required before a job seeker can reach pending_activation',
+        );
+      }
+    }
+
     return this.prisma.$transaction(async (tx) => {
       const updated = await tx.jobSeeker.update({
         where: { id: jobSeekerId },
         data: { status: targetStatus },
+        include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
       });
 
       await recordStatusChange(tx, {
@@ -887,7 +886,7 @@ export class JobSeekerService {
         changedByStaffId: actorId ?? null,
       });
 
-      return updated;
+      return withCurrentJobSeekerFields(updated);
     });
   }
 
@@ -954,6 +953,7 @@ export class JobSeekerService {
     const updated = await this.prisma.jobSeeker.update({
       where: { id: jobSeekerId },
       data,
+      include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
 
     if (actorId && actorId !== 'system') {
@@ -967,7 +967,7 @@ export class JobSeekerService {
       });
     }
 
-    return updated;
+    return withCurrentJobSeekerFields(updated);
   }
 
   // --- Trades (Phase 12 Task 3) ---
@@ -1508,6 +1508,7 @@ export class JobSeekerService {
           hitCount: newHitCount,
           status: newStatus,
         },
+        include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
       });
 
       if (hit.jobSeeker.status !== newStatus) {
@@ -1542,7 +1543,7 @@ export class JobSeekerService {
         city: hit.jobSeeker.city,
       });
 
-      return { updatedHit, updatedJobSeeker };
+      return { updatedHit, updatedJobSeeker: withCurrentJobSeekerFields(updatedJobSeeker) };
     });
 
     if (this.reviewFlagService) {

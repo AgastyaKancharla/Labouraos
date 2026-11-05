@@ -23,6 +23,45 @@ export function assertSeedAllowed(env?: string): void {
   }
 }
 
+async function seedPrimaryTrade(prisma: PrismaClient, jobSeekerId: string, trade: string) {
+  await prisma.jobSeekerTrade.updateMany({
+    where: { jobSeekerId },
+    data: { isPrimary: false },
+  });
+  await prisma.jobSeekerTrade.upsert({
+    where: { jobSeekerId_trade: { jobSeekerId, trade } },
+    update: { isPrimary: true },
+    create: { jobSeekerId, trade, isPrimary: true },
+  });
+}
+
+async function seedIdentityVerification(
+  prisma: PrismaClient,
+  jobSeekerId: string,
+  status: string,
+  vendorReference: string,
+) {
+  const existing = await prisma.identityVerification.findFirst({
+    where: { jobSeekerId, vendorReference },
+  });
+  if (existing) {
+    await prisma.identityVerification.update({
+      where: { id: existing.id },
+      data: { status },
+    });
+    return;
+  }
+  await prisma.identityVerification.create({
+    data: {
+      jobSeekerId,
+      method: 'digilocker',
+      vendor: 'seed-vendor',
+      vendorReference,
+      status,
+    },
+  });
+}
+
 export async function seed(prismaClient?: PrismaClient) {
   assertSeedAllowed();
 
@@ -420,7 +459,6 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { phone: '+919900000001' },
       update: {
         name: 'Suresh Gowda',
-        tradeSkill: 'Electrician',
         minSalary: 1800000,
         maxSalary: 2500000,
         status: 'active',
@@ -433,7 +471,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Suresh Gowda',
         phone: '+919900000001',
         phoneVerified: true,
-        tradeSkill: 'Electrician',
         minSalary: 1800000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
@@ -441,18 +478,16 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'active',
         paymentReceivedAt: new Date('2026-06-01T10:00:00.000Z'),
         hitCount: 0,
-        kycStatus: 'verified',
-        kycReference: 'KYC-VENDOR-REF-001',
         referredById: referral.id,
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js1.id, 'Electrician');
 
-    await prisma.jobSeeker.upsert({
+    const js2 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000002' },
       update: {
         name: 'Anand Kumar',
-        tradeSkill: 'Plumber',
         minSalary: 1600000,
         maxSalary: 2200000,
         status: 'pending_payment',
@@ -464,7 +499,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Anand Kumar',
         phone: '+919900000002',
         phoneVerified: true,
-        tradeSkill: 'Plumber',
         minSalary: 1600000,
         maxSalary: 2200000,
         preferredCallWindowStart: '10:00',
@@ -472,16 +506,15 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'pending_payment',
         paymentReceivedAt: null,
         hitCount: 0,
-        kycStatus: 'pending',
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js2.id, 'Plumber');
 
     const js3 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000003' },
       update: {
         name: 'Manjunath R',
-        tradeSkill: 'Driver',
         minSalary: 1500000,
         maxSalary: 2000000,
         status: 'active',
@@ -493,7 +526,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Manjunath R',
         phone: '+919900000003',
         phoneVerified: true,
-        tradeSkill: 'Driver',
         minSalary: 1500000,
         maxSalary: 2000000,
         preferredCallWindowStart: '09:00',
@@ -501,18 +533,17 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'active',
         paymentReceivedAt: new Date('2026-06-05T10:00:00.000Z'),
         hitCount: 0,
-        kycStatus: 'verified',
-        kycReference: 'KYC-VENDOR-REF-003',
         city: 'Mysuru',
       },
     });
+    await seedPrimaryTrade(prisma, js3.id, 'Driver');
+    await seedIdentityVerification(prisma, js3.id, 'verified', 'KYC-VENDOR-REF-003');
 
     // 4b. Phase 3 Seed Data: 1 hit, 2 hits, deactivated (3 hits), reactivated
     const js4 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000004' },
       update: {
         name: 'Kavitha M',
-        tradeSkill: 'Tailor',
         minSalary: 1400000,
         maxSalary: 1800000,
         status: 'active',
@@ -525,7 +556,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Kavitha M',
         phone: '+919900000004',
         phoneVerified: true,
-        tradeSkill: 'Tailor',
         minSalary: 1400000,
         maxSalary: 1800000,
         preferredCallWindowStart: '09:00',
@@ -533,17 +563,16 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'active',
         hitCount: 1,
         paymentReceivedAt: new Date('2026-06-10T10:00:00.000Z'),
-        kycStatus: 'verified',
-        kycReference: 'KYC-VENDOR-REF-004',
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js4.id, 'Tailor');
+    await seedIdentityVerification(prisma, js4.id, 'verified', 'KYC-VENDOR-REF-004');
 
     const js5 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000005' },
       update: {
         name: 'Deepak V',
-        tradeSkill: 'Carpenter',
         minSalary: 1600000,
         maxSalary: 2200000,
         status: 'active',
@@ -556,7 +585,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Deepak V',
         phone: '+919900000005',
         phoneVerified: true,
-        tradeSkill: 'Carpenter',
         minSalary: 1600000,
         maxSalary: 2200000,
         preferredCallWindowStart: '09:00',
@@ -564,17 +592,16 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'active',
         hitCount: 2,
         paymentReceivedAt: new Date('2026-06-10T10:00:00.000Z'),
-        kycStatus: 'verified',
-        kycReference: 'KYC-VENDOR-REF-005',
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js5.id, 'Carpenter');
+    await seedIdentityVerification(prisma, js5.id, 'verified', 'KYC-VENDOR-REF-005');
 
     const js6 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000006' },
       update: {
         name: 'Ravi Shankar',
-        tradeSkill: 'Mason',
         minSalary: 1500000,
         maxSalary: 2000000,
         status: 'deactivated',
@@ -587,7 +614,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Ravi Shankar',
         phone: '+919900000006',
         phoneVerified: true,
-        tradeSkill: 'Mason',
         minSalary: 1500000,
         maxSalary: 2000000,
         preferredCallWindowStart: '09:00',
@@ -595,17 +621,16 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'deactivated',
         hitCount: 3,
         paymentReceivedAt: new Date('2026-05-15T10:00:00.000Z'),
-        kycStatus: 'verified',
-        kycReference: 'KYC-VENDOR-REF-006',
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js6.id, 'Mason');
+    await seedIdentityVerification(prisma, js6.id, 'verified', 'KYC-VENDOR-REF-006');
 
     const js7 = await prisma.jobSeeker.upsert({
       where: { phone: '+919900000007' },
       update: {
         name: 'Lakshmi Bai',
-        tradeSkill: 'Housekeeper',
         minSalary: 1200000,
         maxSalary: 1600000,
         status: 'active',
@@ -618,7 +643,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Lakshmi Bai',
         phone: '+919900000007',
         phoneVerified: true,
-        tradeSkill: 'Housekeeper',
         minSalary: 1200000,
         maxSalary: 1600000,
         preferredCallWindowStart: '09:00',
@@ -626,11 +650,11 @@ export async function seed(prismaClient?: PrismaClient) {
         status: 'active',
         hitCount: 0,
         paymentReceivedAt: new Date('2026-06-28T10:00:00.000Z'),
-        kycStatus: 'verified',
-        kycReference: 'KYC-VENDOR-REF-007',
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js7.id, 'Housekeeper');
+    await seedIdentityVerification(prisma, js7.id, 'verified', 'KYC-VENDOR-REF-007');
 
     // Idempotent seeding of hits for JS4, JS5, JS6
     await prisma.jobSeekerHit.deleteMany({
@@ -772,7 +796,6 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { phone: '+919900000008' },
       update: {
         name: 'Ramesh Placed',
-        tradeSkill: 'Plumber',
         minSalary: 1800000,
         maxSalary: 2200000,
         status: 'placed',
@@ -785,7 +808,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Ramesh Placed',
         phone: '+919900000008',
         phoneVerified: true,
-        tradeSkill: 'Plumber',
         minSalary: 1800000,
         maxSalary: 2200000,
         preferredCallWindowStart: '09:00',
@@ -796,6 +818,7 @@ export async function seed(prismaClient?: PrismaClient) {
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js8.id, 'Plumber');
 
     const pl2 = await prisma.placement.upsert({
       where: { code: 'PL-00002' },
@@ -857,7 +880,6 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { phone: '+919900000009' },
       update: {
         name: 'Anand PastSixty',
-        tradeSkill: 'Painter',
         minSalary: 1600000,
         maxSalary: 2000000,
         status: 'active',
@@ -869,7 +891,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Anand PastSixty',
         phone: '+919900000009',
         phoneVerified: true,
-        tradeSkill: 'Painter',
         minSalary: 1600000,
         maxSalary: 2000000,
         preferredCallWindowStart: '09:00',
@@ -879,6 +900,7 @@ export async function seed(prismaClient?: PrismaClient) {
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js9.id, 'Painter');
 
     const pl3 = await prisma.placement.upsert({
       where: { code: 'PL-00003' },
@@ -941,7 +963,6 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { phone: '+919900000010' },
       update: {
         name: 'Karthik Paused',
-        tradeSkill: 'Welder',
         minSalary: 2200000,
         maxSalary: 2600000,
         status: 'active',
@@ -953,7 +974,6 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Karthik Paused',
         phone: '+919900000010',
         phoneVerified: true,
-        tradeSkill: 'Welder',
         minSalary: 2200000,
         maxSalary: 2600000,
         preferredCallWindowStart: '09:00',
@@ -963,6 +983,7 @@ export async function seed(prismaClient?: PrismaClient) {
         city: 'Bengaluru',
       },
     });
+    await seedPrimaryTrade(prisma, js10.id, 'Welder');
 
     const pl4 = await prisma.placement.upsert({
       where: { code: 'PL-00004' },
@@ -1147,13 +1168,7 @@ export async function seed(prismaClient?: PrismaClient) {
       },
     });
 
-    await prisma.jobSeeker.update({
-      where: { id: js1.id },
-      data: {
-        kycStatus: 'verified',
-        kycReference: 'ovse_seed_kyc_ref_998877',
-      },
-    });
+    await seedIdentityVerification(prisma, js1.id, 'verified', 'ovse_seed_kyc_ref_998877');
 
     await prisma.auditLog.upsert({
       where: { code: 'AUD-00073' },

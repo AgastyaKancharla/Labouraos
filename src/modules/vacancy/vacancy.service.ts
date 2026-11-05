@@ -198,7 +198,10 @@ export class VacancyService {
       where: {
         city: vacancy.city,
         status: 'active',
-        tradeSkill: { equals: vacancy.tradeSkill, mode: 'insensitive' },
+        OR: [
+          { trades: { some: { trade: { equals: vacancy.tradeSkill, mode: 'insensitive' } } } },
+          { trades: { none: {} }, tradeSkill: { equals: vacancy.tradeSkill, mode: 'insensitive' } },
+        ],
         minSalary: { lte: vacancy.offeredSalary },
         maxSalary: { gte: vacancy.offeredSalary },
       },

@@ -15,7 +15,7 @@ model JobSeeker {
   phone                     String      @unique
   phoneVerified             Boolean     @default(false)
   /// @deprecated moves to JobSeekerTrade
-  tradeSkill                String
+  tradeSkill                String?
   minSalary                 Int         // paise
   maxSalary                 Int         // paise
   preferredCallWindowStart  String      // "09:00" IST

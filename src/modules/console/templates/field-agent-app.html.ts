@@ -731,7 +731,7 @@ export function renderFieldAgentAppHtml(): string {
             <tr>
               <td><strong>\${c.code}</strong></td>
               <td>\${c.name}</td>
-              <td>\${c.tradeSkill}</td>
+              <td>\${c.trades?.length ? c.trades.find(t => t.isPrimary)?.trade : c.tradeSkill}</td>
               <td>₹\${(c.minSalary/100).toLocaleString()} - ₹\${(c.maxSalary/100).toLocaleString()}</td>
               <td><span class="badge \${bandClass}">\${bandName.toUpperCase()}</span></td>
               <td>
@@ -920,7 +920,7 @@ export function renderFieldAgentAppHtml(): string {
           <tr>
             <td><strong>\${c.code}</strong></td>
             <td>\${c.name}</td>
-            <td>\${c.tradeSkill}</td>
+            <td>\${c.trades?.length ? c.trades.find(t => t.isPrimary)?.trade : c.tradeSkill}</td>
             <td>₹\${(c.minSalary/100).toLocaleString()} - ₹\${(c.maxSalary/100).toLocaleString()}</td>
             <td>\${c.hitCount} Hits</td>
             <td>

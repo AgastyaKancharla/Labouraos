@@ -1,0 +1,2 @@
+ALTER TABLE "JobSeeker"
+ALTER COLUMN "tradeSkill" DROP NOT NULL;

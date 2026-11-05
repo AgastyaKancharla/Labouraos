@@ -307,12 +307,15 @@ describe('Seed Data Script', () => {
     expect(otpAudit).toBeDefined();
     expect(otpAudit?.action).toBe('otp.send_attempt');
 
-    // 5. KYC verification record
+    // 5. Identity verification record
     const js1 = await prisma.jobSeeker.findUnique({
       where: { code: 'JS-00001' },
     });
-    expect(js1?.kycStatus).toBe('verified');
-    expect(js1?.kycReference).toBe('ovse_seed_kyc_ref_998877');
+    const identityVerification = await prisma.identityVerification.findFirst({
+      where: { jobSeekerId: js1!.id, vendorReference: 'ovse_seed_kyc_ref_998877' },
+    });
+    expect(identityVerification?.status).toBe('verified');
+    expect(identityVerification?.vendorReference).toBe('ovse_seed_kyc_ref_998877');
   });
 
   describe('Seed environment allow-list guard (Phase 6.5 Task 10)', () => {

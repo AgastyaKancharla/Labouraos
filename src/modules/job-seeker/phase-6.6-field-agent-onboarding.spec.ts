@@ -299,7 +299,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       expect(res.body.status).toBe('pending');
     });
 
-    it('Field agent can submit KYC (POST /job-seekers/:id/kyc)', async () => {
+    it('Field agent cannot use the removed hand-entered KYC endpoint', async () => {
       const res = await request(app.getHttpServer())
         .post(`/job-seekers/${createdSeekerId}/kyc`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -308,8 +308,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           status: 'verified',
         });
 
-      expect(res.status).toBe(201);
-      expect(res.body.kycStatus).toBe('verified');
+      expect(res.status).toBe(404);
     });
 
     it('Field agent hand-entry contact attempt is gone (POST /job-seekers/:id/contact-attempts -> 404)', async () => {

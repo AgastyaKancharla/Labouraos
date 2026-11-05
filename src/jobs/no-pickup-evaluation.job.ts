@@ -20,6 +20,7 @@ import {
   runWithRequestId,
 } from '../common/observability/request-context';
 import { StructuredLogger } from '../common/observability/structured-logger.service';
+import { primaryJobSeekerTrade } from '../modules/job-seeker/job-seeker-legacy-read';
 
 export const NO_PICKUP_EVALUATION_QUEUE = 'no-pickup-evaluation';
 export const NO_PICKUP_EVALUATION_JOB = 'daily-no-pickup-evaluation';
@@ -200,6 +201,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
         name: true,
         phone: true,
         tradeSkill: true,
+        trades: { select: { trade: true, isPrimary: true } },
       },
       orderBy: { createdAt: 'asc' },
     });
@@ -253,7 +255,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
                 subjectId: js.id,
                 variables: {
                   candidateName: js.name,
-                  trade: js.tradeSkill,
+                  trade: primaryJobSeekerTrade(js) ?? '',
                 },
               });
             } else if (this.whatsAppProvider) {
@@ -262,7 +264,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
                 'call_attempt_notice',
                 {
                   candidateName: js.name,
-                  trade: js.tradeSkill,
+                  trade: primaryJobSeekerTrade(js) ?? '',
                 },
               );
 

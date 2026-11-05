@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { calculatePlacementFee, refundGuaranteeDeadline } from '../../common/money/money';
 import { PriorityDashboardOpportunity } from './field-agent.types';
+import { jobSeekerHasTrade, withPrimaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
 
 @Injectable()
 export class FieldAgentService {
@@ -53,6 +54,7 @@ export class FieldAgentService {
         city: staff.city,
         status: 'active',
       },
+      include: { trades: true },
     });
 
     const opportunities: PriorityDashboardOpportunity[] = [];
@@ -61,9 +63,7 @@ export class FieldAgentService {
       const potentialFee = calculatePlacementFee(vacancy.offeredSalary, placementFeePercent);
 
       const matching = activeCandidates.filter((candidate) => {
-        const tradeMatches =
-          candidate.tradeSkill.trim().toLowerCase() ===
-          vacancy.tradeSkill.trim().toLowerCase();
+        const tradeMatches = jobSeekerHasTrade(candidate, vacancy.tradeSkill);
         const salaryMatches =
           candidate.minSalary <= vacancy.offeredSalary &&
           candidate.maxSalary >= vacancy.offeredSalary;
@@ -100,7 +100,7 @@ export class FieldAgentService {
           refundDeadline,
           daysRemainingOnGuarantee,
           vacancy,
-          candidate,
+          candidate: withPrimaryJobSeekerTrade(candidate),
         });
       }
     }
