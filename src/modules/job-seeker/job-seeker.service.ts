@@ -1531,7 +1531,6 @@ export class JobSeekerService {
 
       await this.auditService.log({
         actorId,
-        actorRole: actorRole || 'system',
         action: 'job_seeker.hit_reversed',
         entityType: 'job_seeker_hit',
         entityCode: hit.id,
