@@ -146,7 +146,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
         code: `VC-EXP1-${timestamp}`,
         businessId: bz1.id,
         tradeSkill: 'Welder',
-        offeredSalary: 2400000,
+        salaryMinPaise: 2400000,
         city: 'Bengaluru',
       },
     });
@@ -157,7 +157,7 @@ describe('Phase 8 Task 4: Regulatory Placement-Data Export', () => {
         code: `VC-EXP2-${timestamp}`,
         businessId: bz2.id,
         tradeSkill: 'Forklift Operator',
-        offeredSalary: 2800000,
+        salaryMinPaise: 2800000,
         city: 'Bengaluru',
       },
     });

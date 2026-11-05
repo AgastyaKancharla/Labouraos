@@ -106,7 +106,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
       },
     });
 
-    // Create Vacancy in Koramangala: Electrician, offeredSalary: 2500000 (₹25,000)
+    // Create Vacancy in Koramangala: Electrician, salaryMinPaise: 2500000 (₹25,000)
     const koraVac = await prisma.vacancy.create({
       data: {
         code: `VC-CSK-${timestamp}`,
@@ -114,7 +114,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
         businessId: koraBiz.id,
         capturedByStaffId: faKora.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2500000,
+        salaryMinPaise: 2500000,
         headcount: 2,
         status: 'open',
       },
@@ -142,7 +142,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
         businessId: indiBiz.id,
         capturedByStaffId: faIndi.id,
         tradeSkill: 'Barista',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         headcount: 1,
         status: 'open',
       },

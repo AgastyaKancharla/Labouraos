@@ -74,6 +74,8 @@ export class PricingService {
           updates.duplicateBusinessRadiusMeters ?? before.duplicateBusinessRadiusMeters,
         consentWithdrawalCallWindowMinutes:
           updates.consentWithdrawalCallWindowMinutes ?? before.consentWithdrawalCallWindowMinutes,
+        walkInStart: updates.walkInStart ?? before.walkInStart,
+        walkInEnd: updates.walkInEnd ?? before.walkInEnd,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

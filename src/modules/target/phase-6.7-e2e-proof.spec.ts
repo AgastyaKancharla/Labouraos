@@ -388,7 +388,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .send({
         businessId,
         tradeSkill: 'Electrician',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         description: 'Commercial electrician for tech park',
         city: 'Bengaluru',
       });

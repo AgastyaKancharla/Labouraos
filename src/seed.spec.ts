@@ -111,8 +111,8 @@ describe('Seed Data Script', () => {
     expect(seededVacancies.length).toBe(6);
     for (const v of seededVacancies) {
       expect(v.status).toBe('open');
-      expect(typeof v.offeredSalary).toBe('number');
-      expect(v.offeredSalary).toBeGreaterThan(0);
+      expect(typeof v.salaryMinPaise).toBe('number');
+      expect(v.salaryMinPaise).toBeGreaterThan(0);
     }
 
     // Assert replacement vacancies: at least one inside 15-day window and one outside it

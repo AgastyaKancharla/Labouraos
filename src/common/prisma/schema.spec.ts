@@ -114,7 +114,7 @@ describe('Data Model Relationships', () => {
         businessId: business.id,
         capturedByStaffId: agent.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2200000, // paise
+        salaryMinPaise: 2200000, // paise
         status: 'open',
         city: 'Bengaluru',
       },
@@ -126,7 +126,7 @@ describe('Data Model Relationships', () => {
 
     expect(vacancy.business.id).toBe(business.id);
     expect(vacancy.capturedBy?.id).toBe(agent.id);
-    expect(Number.isInteger(vacancy.offeredSalary)).toBe(true);
+    expect(Number.isInteger(vacancy.salaryMinPaise)).toBe(true);
 
     // 7. Create Placement linking Vacancy, JobSeeker, Business
     const placement = await prisma.placement.create({
@@ -167,7 +167,7 @@ describe('Data Model Relationships', () => {
         capturedByStaffId: agent.id,
         replacementForPlacementId: placement.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2200000,
+        salaryMinPaise: 2200000,
         status: 'open',
         city: 'Bengaluru',
       },

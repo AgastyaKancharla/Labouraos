@@ -97,7 +97,7 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
         code: `VC-P4-${timestamp}`,
         businessId: business.id,
         tradeSkill: 'Electrician',
-        offeredSalary: 2500000,
+        salaryMinPaise: 2500000,
         status: 'open',
       },
     });

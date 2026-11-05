@@ -124,39 +124,39 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
       },
     });
 
-    // Vacancy 1 in Koramangala: Carpenter, offeredSalary: 2000000 paise (fee = 1000000 paise)
+    // Vacancy 1 in Koramangala: Carpenter, salaryMinPaise: 2000000 paise (fee = 1000000 paise)
     const vac1 = await prisma.vacancy.create({
       data: {
         code: `VC-PDK1-${timestamp}`,
         businessId: koraBiz.id,
         capturedByStaffId: faKoraId,
         tradeSkill: 'Carpenter',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         status: 'open',
       },
     });
     koraVacancyId = vac1.id;
 
-    // Vacancy 2 in Koramangala: High fee carpenter, offeredSalary: 4000000 paise (fee = 2000000 paise)
+    // Vacancy 2 in Koramangala: High fee carpenter, salaryMinPaise: 4000000 paise (fee = 2000000 paise)
     await prisma.vacancy.create({
       data: {
         code: `VC-PDK2-${timestamp}`,
         businessId: koraBiz.id,
         capturedByStaffId: faKoraId,
         tradeSkill: 'Carpenter',
-        offeredSalary: 4000000,
+        salaryMinPaise: 4000000,
         status: 'open',
       },
     });
 
-    // Vacancy 3 in Indiranagar: Carpenter, offeredSalary: 2000000 paise
+    // Vacancy 3 in Indiranagar: Carpenter, salaryMinPaise: 2000000 paise
     const vac3 = await prisma.vacancy.create({
       data: {
         code: `VC-PDI1-${timestamp}`,
         businessId: indiBiz.id,
         capturedByStaffId: faIndiId,
         tradeSkill: 'Carpenter',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         status: 'open',
       },
     });
@@ -206,7 +206,7 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
     // Both paid on the exact same date (10 days ago), so refund deadline is identical!
     const samePaymentDate = new Date(baseTime.getTime() - 10 * 24 * 60 * 60 * 1000);
 
-    // Candidate 3 matches Vacancy 2 (offeredSalary 4000000 -> fee 2000000)
+    // Candidate 3 matches Vacancy 2 (salaryMinPaise 4000000 -> fee 2000000)
     const cHighFee = await prisma.jobSeeker.create({
       data: {
         code: `JS-PDH-${timestamp}`,
@@ -224,7 +224,7 @@ describe('Phase 4 Task 5: Priority Dashboard API', () => {
     });
     oppHighFeeCandidateId = cHighFee.id;
 
-    // Candidate 4 matches Vacancy 1 (offeredSalary 2000000 -> fee 1000000)
+    // Candidate 4 matches Vacancy 1 (salaryMinPaise 2000000 -> fee 1000000)
     const cLowFee = await prisma.jobSeeker.create({
       data: {
         code: `JS-PDS-${timestamp}`,

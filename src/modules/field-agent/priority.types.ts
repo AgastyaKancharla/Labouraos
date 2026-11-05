@@ -21,7 +21,7 @@ export interface PriorityVacancyRow {
   id: string;
   code: string;
   tradeSkill: string;
-  offeredSalary: number;
+  salaryMinPaise: number;
   headcount: number;
   businessId: string;
   businessName: string;

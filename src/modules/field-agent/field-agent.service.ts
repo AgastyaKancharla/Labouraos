@@ -60,13 +60,14 @@ export class FieldAgentService {
     const opportunities: PriorityDashboardOpportunity[] = [];
 
     for (const vacancy of openVacancies) {
-      const potentialFee = calculatePlacementFee(vacancy.offeredSalary, placementFeePercent);
+      if (vacancy.salaryMinPaise === null) continue;
+      const potentialFee = calculatePlacementFee(vacancy.salaryMinPaise, placementFeePercent);
 
       const matching = activeCandidates.filter((candidate) => {
         const tradeMatches = jobSeekerHasTrade(candidate, vacancy.tradeSkill);
         const salaryMatches =
-          candidate.minSalary <= vacancy.offeredSalary &&
-          candidate.maxSalary >= vacancy.offeredSalary;
+          candidate.minSalary <= vacancy.salaryMinPaise &&
+          candidate.maxSalary >= vacancy.salaryMinPaise;
         return tradeMatches && salaryMatches;
       });
 
@@ -88,7 +89,7 @@ export class FieldAgentService {
           vacancyId: vacancy.id,
           vacancyCode: vacancy.code,
           tradeSkill: vacancy.tradeSkill,
-          offeredSalary: vacancy.offeredSalary,
+          salaryMinPaise: vacancy.salaryMinPaise,
           businessId: vacancy.business.id,
           businessName: vacancy.business.name,
           businessArea: vacancy.business.area,

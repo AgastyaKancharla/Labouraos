@@ -227,10 +227,37 @@ model Vacancy {
   replacementForPlacementId   String?     // null for fresh vacancies; links to dropped-out placement if replacement
   replacementForPlacement     Placement?  @relation("ReplacementPlacementVacancies", fields: [replacementForPlacementId], references: [id], onDelete: SetNull)
   tradeSkill                  String
-  offeredSalary               Int         // paise
+  /// @deprecated copied to salaryMinPaise in Phase 13
+  offeredSalary               Int?
   headcount                   Int         @default(1)
   description                 String?
   status                      String      @default("open") // open, filled, cancelled
+  roleTitle                   String?
+  salaryMinPaise              Int?
+  salaryMaxPaise              Int?
+  salaryPeriod                String?
+  extras                      String[]    @default([])
+  workingHours                String?
+  shift                       String?
+  weeklyOff                   String?
+  latitude                    Float?
+  longitude                   Float?
+  locality                    String?
+  experienceRequiredYears     Int?
+  educationRequired           String?
+  languagesRequired           String[]    @default([])
+  licencesRequired            String[]    @default([])
+  ageMin                      Int?
+  ageMax                      Int?
+  genderRequirement           String?
+  genderReason                String?
+  startDate                   DateTime?   @db.Date
+  urgency                     String?
+  probationDays               Int?
+  interviewType               String?
+  interviewContactName        String?
+  capturedChannel             String?
+  interviewSlots              VacancyInterviewSlot[]
   placements                  Placement[]
   createdAt                   DateTime    @default(now())
   updatedAt                   DateTime    @updatedAt
@@ -240,6 +267,18 @@ model Vacancy {
   @@index([replacementForPlacementId])
   @@index([tradeSkill])
   @@index([status])
+}
+
+model VacancyInterviewSlot {
+  id        String   @id @default(uuid())
+  vacancyId String
+  vacancy   Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  startsAt  DateTime
+  endsAt    DateTime
+  capacity  Int?
+  createdAt DateTime @default(now())
+
+  @@index([vacancyId, startsAt])
 }
 
 model Placement {
@@ -689,6 +728,8 @@ model PricingPolicy {
   callingHoursEnd              String
   duplicateBusinessRadiusMeters Int @default(50)
   consentWithdrawalCallWindowMinutes Int @default(60)
+  walkInStart                  String    @default("10:30")
+  walkInEnd                    String    @default("18:00")
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?
   setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)

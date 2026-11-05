@@ -79,6 +79,8 @@ export class ReviewFlagService {
       });
       const memberIds = teamMembers.map((m) => m.id);
       where.raisedForStaffId = { in: memberIds };
+    } else if (actor.role === 'field_agent') {
+      where.raisedForStaffId = actor.id;
     } else {
       throw new ForbiddenException(
         'Review flags can only be viewed by Team Leads, Managers, or CEO',

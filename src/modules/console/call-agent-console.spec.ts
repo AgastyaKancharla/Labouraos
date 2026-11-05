@@ -181,7 +181,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       .send({
         businessId: bizId,
         tradeSkill: 'Electrician',
-        offeredSalary: 2000000,
+        salaryMinPaise: 2000000,
         headcount: 1,
       })
       .expect(201);

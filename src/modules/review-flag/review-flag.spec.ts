@@ -294,16 +294,18 @@ describe('Phase 9 Task 8: Review Flags', () => {
         .expect(403);
     });
 
-    it('refuses Field Agent with 403', async () => {
-      await request(app.getHttpServer())
+    it('allows Field Agents to see only notices assigned to themselves', async () => {
+      const ownFlags = await request(app.getHttpServer())
         .get('/review-flags')
         .set('Authorization', `Bearer ${fieldAgent1Token}`)
-        .expect(403);
+        .expect(200);
+      expect(ownFlags.body.every((flag: { raisedForStaffId: string }) => flag.raisedForStaffId === fieldAgent1StaffId)).toBe(true);
 
-      await request(app.getHttpServer())
+      const otherFlags = await request(app.getHttpServer())
         .get('/review-flags')
         .set('Authorization', `Bearer ${fieldAgent2Token}`)
-        .expect(403);
+        .expect(200);
+      expect(otherFlags.body.every((flag: { raisedForStaffId: string }) => flag.raisedForStaffId === fieldAgent2StaffId)).toBe(true);
     });
 
     it('refuses Finance with 403', async () => {

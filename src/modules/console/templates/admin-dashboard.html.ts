@@ -1021,7 +1021,7 @@ export function renderAdminDashboardHtml(): string {
             <td><strong>\${v.code}</strong></td>
             <td>\${v.business ? v.business.name : v.businessId}</td>
             <td>\${v.tradeSkill}</td>
-            <td>₹\${(v.offeredSalary/100).toLocaleString('en-IN')}</td>
+            <td>₹\${(v.salaryMinPaise/100).toLocaleString('en-IN')}</td>
             <td><span class="badge">\${v.status}</span></td>
             <td>\${v.replacementForPlacementId ? 'Replacement' : 'Fresh'}</td>
           </tr>
