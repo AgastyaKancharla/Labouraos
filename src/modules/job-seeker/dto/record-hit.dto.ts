@@ -1,5 +1,3 @@
-import { IsNotEmpty, IsString } from 'class-validator';
-
 export const JOB_SEEKER_HIT_REASONS = [
   'no_pickup',
   'offer_declined',
@@ -31,8 +29,6 @@ export interface RecordHitDto {
   [key: string]: unknown;
 }
 
-export class ReverseHitDto {
-  @IsString()
-  @IsNotEmpty()
+export interface ReverseHitDto {
   reversalReason: string;
 }
