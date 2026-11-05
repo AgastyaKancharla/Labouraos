@@ -82,7 +82,6 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
         name: `Agreement Business ${suffix}`,
         phone: ownerPhone,
         phoneVerified: true,
-        createdById: staff.id,
         leadCreatedByStaffId: staff.id,
         leadChannel: 'phone_call',
         verificationStatus: 'lead',
