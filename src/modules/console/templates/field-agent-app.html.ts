@@ -324,6 +324,7 @@ export function renderFieldAgentAppHtml(): string {
   <nav class="nav-tabs">
     <button class="tab-btn active" data-tab="priority-dashboard">★ Priority Dashboard</button>
     <button class="tab-btn" data-tab="onboard-biz">Business Onboarding (Selfie)</button>
+    <button class="tab-btn" data-tab="visits">Check in & Visits</button>
     <button class="tab-btn" data-tab="vacancy-capture">Capture Vacancy</button>
     <button class="tab-btn" data-tab="shortlist-interview">Shortlist & Interview</button>
   </nav>
@@ -336,7 +337,7 @@ export function renderFieldAgentAppHtml(): string {
       <!-- Live Priority Sub-Nav -->
       <div style="display: flex; gap: 8px; margin-bottom: 16px;">
         <button class="btn-sm" id="subtab-btn-candidates" onclick="showPrioritySubTab('candidates')">Candidate Urgency (City-wide)</button>
-        <button class="btn-sm btn-secondary" id="subtab-btn-vacancies" onclick="showPrioritySubTab('vacancies')">Vacancy Priority (Own Area)</button>
+        <button class="btn-sm btn-secondary" id="subtab-btn-vacancies" onclick="showPrioritySubTab('vacancies')">Vacancy Priority (City-wide)</button>
         <button class="btn-sm btn-secondary" id="subtab-btn-trades" onclick="showPrioritySubTab('trades')">Trade Supply/Demand Board</button>
         <button class="btn-sm" style="margin-left: auto;" onclick="loadPriorityData()">↺ Refresh Live Data</button>
       </div>
@@ -368,10 +369,10 @@ export function renderFieldAgentAppHtml(): string {
         </div>
       </div>
 
-      <!-- Vacancy Priority List (Own Area) -->
+      <!-- Vacancy Priority List (City-wide) -->
       <div id="priority-sub-vacancies" class="card hidden">
         <div class="card-title">
-          <span>Vacancy Priority List (Own Area Scoped)</span>
+          <span>Vacancy Priority List (City-wide)</span>
           <span style="font-size: 0.8rem; color: var(--text-muted);">In-window replacements top prioritized</span>
         </div>
         <div class="table-container">
@@ -393,10 +394,10 @@ export function renderFieldAgentAppHtml(): string {
         </div>
       </div>
 
-      <!-- Trade Supply/Demand Board (Own Area) -->
+      <!-- Trade Supply/Demand Board (City-wide) -->
       <div id="priority-sub-trades" class="card hidden">
         <div class="card-title">
-          <span>Trade Supply / Demand Board (Own Area)</span>
+          <span>Trade Supply / Demand Board (City-wide)</span>
           <span style="font-size: 0.8rem; color: var(--text-muted);">Surplus-candidate vs Surplus-vacancy trades at a glance</span>
         </div>
         <div id="trade-board-container" class="grid-board">
@@ -405,17 +406,41 @@ export function renderFieldAgentAppHtml(): string {
       </div>
     </div>
 
+    <div id="view-visits" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>Daily check-in</span></div>
+        <p>Check in once when you are ready for visits. Location is recorded only for this check-in event.</p>
+        <button id="fa-check-in-button" onclick="checkInForVisits()">Check in</button>
+        <div id="fa-check-in-status" aria-live="polite"></div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>My verification assignments</span><button class="btn-sm" onclick="loadMyAssignments()">Refresh</button></div>
+        <div id="fa-assignment-list">Load assignments to begin.</div>
+      </div>
+      <div class="card" id="fa-visit-step" hidden>
+        <div class="card-title"><span>Visit and confirm owner presence</span></div>
+        <input type="hidden" id="fa-visit-business-id"><input type="hidden" id="fa-visit-assignment-id">
+        <div id="fa-visit-business-label"></div>
+        <button type="button" onclick="requestOwnerPresenceOtp()">Send owner presence OTP</button>
+        <div class="form-group"><label>Owner OTP</label><input id="fa-owner-otp-code" inputmode="numeric" autocomplete="one-time-code"></div>
+        <div class="form-group"><label>Storefront photo from this visit</label><input type="file" id="fa-visit-photo" accept="image/*" capture="environment"></div>
+        <button onclick="completeVerificationVisit()">Complete verification visit</button>
+      </div>
+    </div>
+
     <!-- 2. Business Onboarding (Camera-Only Selfie Capture) -->
     <div id="view-onboard-biz" class="tab-view hidden">
       <div class="card">
         <div class="card-title">
-          <span>In-Person Business Onboarding (Live Camera Selfie Only)</span>
+          <span>In-Person Business Registration</span>
         </div>
         <div style="max-width: 600px;">
           <div class="form-group">
             <label>Business Name</label>
             <input type="text" id="fa-biz-name" placeholder="Cafe Coffee Day Koramangala">
           </div>
+          <div class="form-group"><label>Business type</label><select id="fa-biz-type"><option value="restaurant">Restaurant</option><option value="retail">Retail</option><option value="factory">Factory</option><option value="office">Office</option><option value="warehouse">Warehouse</option><option value="household">Household</option><option value="other">Other</option></select></div>
+          <div class="form-group"><label>Owner name</label><input id="fa-biz-owner-name"></div>
           <div class="form-group">
             <label>Business Phone (10 digits)</label>
             <div style="display: flex; gap: 8px;">
@@ -439,6 +464,15 @@ export function renderFieldAgentAppHtml(): string {
             <label>Address</label>
             <input type="text" id="fa-biz-address" placeholder="100 80ft Road, 4th Block">
           </div>
+          <div class="form-group"><label>Licence number <small>(only if they have it)</small></label><input id="fa-biz-licence"></div>
+          <div class="form-group"><label>GST number <small>(only if they have it)</small></label><input id="fa-biz-gst"></div>
+          <div class="form-group"><label>Shop and Establishment number <small>(only if they have it)</small></label><input id="fa-biz-shop"></div>
+          <div class="form-group"><label>Udyam number <small>(only if they have it)</small></label><input id="fa-biz-udyam"></div>
+          <div class="form-group"><label>PAN <small>(only if they have it)</small></label><input id="fa-biz-pan"></div>
+          <div class="form-group"><label>Storefront photo</label><input type="file" id="fa-storefront-photo" accept="image/*" capture="environment"></div>
+          <div class="form-group"><label>Billing name</label><input id="fa-biz-billing-name"></div>
+          <div class="form-group"><label>Billing address</label><textarea id="fa-biz-billing-address"></textarea></div>
+          <div id="fa-biz-documents-status" aria-live="polite">Registration numbers are optional; only enter them if the business has them.</div>
 
           <!-- Camera-Only Selfie Capture: accept="image/*" capture="user" (NO GALLERY PICKER EXPOSED) -->
           <div class="form-group">
@@ -470,7 +504,7 @@ export function renderFieldAgentAppHtml(): string {
     <div id="view-vacancy-capture" class="tab-view hidden">
       <div class="card">
         <div class="card-title">
-          <span>Capture Vacancy for Area Business</span>
+          <span>Capture Vacancy for Business</span>
         </div>
         <div style="max-width: 550px;">
           <div class="form-group">
@@ -489,6 +523,33 @@ export function renderFieldAgentAppHtml(): string {
             <label>Headcount</label>
             <input type="number" id="fa-vc-headcount" value="1">
           </div>
+          <div class="form-group"><label>Role title</label><input id="fa-vc-role-title"></div>
+          <div class="form-group"><label>Salary maximum (₹)</label><input type="number" id="fa-vc-salary-max"></div>
+          <div class="form-group"><label>Salary period</label><select id="fa-vc-salary-period"><option value="monthly">Monthly</option><option value="daily">Daily</option></select></div>
+          <div class="form-group"><label>Extras</label><select id="fa-vc-extras" multiple><option value="overtime">Overtime</option><option value="incentives">Incentives</option><option value="food">Food</option><option value="accommodation">Accommodation</option><option value="transport">Transport</option><option value="uniform">Uniform</option><option value="pf_esi">PF/ESI</option></select></div>
+          <div class="form-group"><label>Working hours</label><input id="fa-vc-hours"></div>
+          <div class="form-group"><label>Shift</label><input id="fa-vc-shift"></div>
+          <div class="form-group"><label>Weekly off</label><input id="fa-vc-weekly-off"></div>
+          <div class="form-group"><label>Locality</label><input id="fa-vc-locality"></div>
+          <div class="form-group"><label>Latitude (optional)</label><input type="number" id="fa-vc-latitude" step="any"></div>
+          <div class="form-group"><label>Longitude (optional)</label><input type="number" id="fa-vc-longitude" step="any"></div>
+          <div class="form-group"><label>Experience required (years)</label><input type="number" id="fa-vc-experience" min="0"></div>
+          <div class="form-group"><label>Education required</label><input id="fa-vc-education"></div>
+          <div class="form-group"><label>Languages required (comma separated)</label><input id="fa-vc-languages"></div>
+          <div class="form-group"><label>Licences required (comma separated)</label><input id="fa-vc-licences"></div>
+          <div class="form-group"><label>Minimum age</label><input type="number" id="fa-vc-age-min"></div>
+          <div class="form-group"><label>Maximum age</label><input type="number" id="fa-vc-age-max"></div>
+          <div class="form-group"><label>Gender requirement</label><select id="fa-vc-gender"><option value="none">None</option><option value="male">Male</option><option value="female">Female</option></select></div>
+          <div class="form-group"><label>Reason for gender requirement</label><input id="fa-vc-gender-reason"></div>
+          <div class="form-group"><label>Start date</label><input type="date" id="fa-vc-start-date"></div>
+          <div class="form-group"><label>Urgency</label><select id="fa-vc-urgency"><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div>
+          <div class="form-group"><label>Probation (days)</label><input type="number" id="fa-vc-probation" min="0"></div>
+          <div class="form-group"><label>Interview type</label><select id="fa-vc-interview-type"><option value="walk_in">Walk-in</option><option value="scheduled">Scheduled</option></select></div>
+          <div class="form-group"><label>Walk-in day</label><input type="date" id="fa-vc-walk-in-date"></div>
+          <div class="form-group"><label>Interview contact name</label><input id="fa-vc-interview-contact"></div>
+          <div class="form-group"><label>Scheduled slot start</label><input type="datetime-local" id="fa-vc-slot-start"></div>
+          <div class="form-group"><label>Scheduled slot end</label><input type="datetime-local" id="fa-vc-slot-end"></div>
+          <div class="form-group"><label>Scheduled slot capacity</label><input type="number" id="fa-vc-slot-capacity" min="1" value="1"></div>
           <div class="form-group">
             <label>Description / Role Notes</label>
             <textarea id="fa-vc-desc" rows="3" placeholder="Working hours, skills needed..."></textarea>
@@ -693,6 +754,7 @@ export function renderFieldAgentAppHtml(): string {
         if (tab === 'priority-dashboard') {
           loadPriorityData(); // Always re-fetches live data, never cached stale across days
         }
+        if (tab === 'visits') loadMyAssignments();
       });
     });
 
@@ -738,7 +800,7 @@ export function renderFieldAgentAppHtml(): string {
           \`;
         }).join('') || '<tr><td colspan="8">No urgent candidates found</td></tr>';
 
-        // 2. Vacancy Priority List (Own Area, directly calling /priority/vacancies)
+        // 2. Vacancy Priority List (City-wide, directly calling /priority/vacancies)
         const vacancies = await api('/priority/vacancies');
         const vTbody = document.getElementById('priority-vacancies-tbody');
         vTbody.innerHTML = vacancies.map(v => {
@@ -757,7 +819,7 @@ export function renderFieldAgentAppHtml(): string {
           \`;
         }).join('') || '<tr><td colspan="6">No priority vacancies in this city</td></tr>';
 
-        // 3. Trade Supply / Demand Board (Own Area, directly calling /priority/trades)
+        // 3. Trade Supply / Demand Board (City-wide, directly calling /priority/trades)
         const trades = await api('/priority/trades');
         const boardEl = document.getElementById('trade-board-container');
         boardEl.innerHTML = trades.map(t => {
@@ -866,8 +928,17 @@ export function renderFieldAgentAppHtml(): string {
         const body = {
           name: document.getElementById('fa-biz-name').value.trim(),
           phone: document.getElementById('fa-biz-phone').value.trim(),
+          businessType: document.getElementById('fa-biz-type').value,
+          ownerName: document.getElementById('fa-biz-owner-name').value.trim() || undefined,
           address: document.getElementById('fa-biz-address').value.trim(),
           locality,
+          gstNumber: document.getElementById('fa-biz-gst').value.trim() || undefined,
+          licenceNumber: document.getElementById('fa-biz-licence').value.trim() || undefined,
+          shopEstablishmentNumber: document.getElementById('fa-biz-shop').value.trim() || undefined,
+          udyamNumber: document.getElementById('fa-biz-udyam').value.trim() || undefined,
+          pan: document.getElementById('fa-biz-pan').value.trim() || undefined,
+          billingName: document.getElementById('fa-biz-billing-name').value.trim() || undefined,
+          billingAddress: document.getElementById('fa-biz-billing-address').value.trim() || undefined,
           latitude: lat,
           longitude: lon,
           visitLatitude: lat,
@@ -878,7 +949,15 @@ export function renderFieldAgentAppHtml(): string {
         };
 
         const res = await api('/businesses', { method: 'POST', body });
-        showAlert('Business onboarded: ' + res.code);
+        const photo = document.getElementById('fa-storefront-photo').files?.[0];
+        if (photo) {
+          const form = new FormData(); form.append('photo', photo);
+          const upload = await fetch('/businesses/' + res.id + '/storefront-photo', { method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form });
+          if (!upload.ok) throw new Error((await upload.json().catch(() => ({}))).message || 'Storefront photo upload failed');
+        }
+        document.getElementById('fa-biz-documents-status').textContent =
+          (body.gstNumber || body.licenceNumber || body.shopEstablishmentNumber || body.udyamNumber || body.pan) ? 'Documents: documented' : 'Documents: no documents';
+        showAlert('Business onboarded: ' + res.code + '. Documents: ' + (body.gstNumber || body.licenceNumber || body.shopEstablishmentNumber || body.udyamNumber || body.pan ? 'documented' : 'no documents'));
         document.getElementById('fa-vc-biz-id').value = res.id;
       } catch (e) {
         showAlert(e.message, false);
@@ -891,18 +970,119 @@ export function renderFieldAgentAppHtml(): string {
       const salaryMinPaise = Number(document.getElementById('fa-vc-salary').value) * 100;
       const headcount = Number(document.getElementById('fa-vc-headcount').value);
       const description = document.getElementById('fa-vc-desc').value.trim();
+      const csv = (id) => document.getElementById(id).value.split(',').map(v => v.trim()).filter(Boolean);
+      const extras = Array.from(document.getElementById('fa-vc-extras').selectedOptions).map(option => option.value);
+      const interviewType = document.getElementById('fa-vc-interview-type').value;
+      const slotStart = document.getElementById('fa-vc-slot-start').value;
+      const slotEnd = document.getElementById('fa-vc-slot-end').value;
 
       if (!bizId || !tradeSkill || !salaryMinPaise) return alert('Fill required vacancy fields');
       try {
         const res = await api('/businesses/' + bizId + '/vacancies', {
           method: 'POST',
-          body: { tradeSkill, salaryMinPaise, headcount, description }
+          body: {
+            tradeSkill, salaryMinPaise, salaryMaxPaise: Number(document.getElementById('fa-vc-salary-max').value) * 100 || undefined,
+            salaryPeriod: document.getElementById('fa-vc-salary-period').value, headcount, description,
+            roleTitle: document.getElementById('fa-vc-role-title').value.trim() || undefined, extras,
+            workingHours: document.getElementById('fa-vc-hours').value.trim() || undefined,
+            shift: document.getElementById('fa-vc-shift').value.trim() || undefined,
+            weeklyOff: document.getElementById('fa-vc-weekly-off').value.trim() || undefined,
+            locality: document.getElementById('fa-vc-locality').value.trim() || undefined,
+            latitude: document.getElementById('fa-vc-latitude').value ? Number(document.getElementById('fa-vc-latitude').value) : undefined,
+            longitude: document.getElementById('fa-vc-longitude').value ? Number(document.getElementById('fa-vc-longitude').value) : undefined,
+            experienceRequiredYears: Number(document.getElementById('fa-vc-experience').value) || undefined,
+            educationRequired: document.getElementById('fa-vc-education').value.trim() || undefined,
+            languagesRequired: csv('fa-vc-languages'), licencesRequired: csv('fa-vc-licences'),
+            ageMin: Number(document.getElementById('fa-vc-age-min').value) || undefined, ageMax: Number(document.getElementById('fa-vc-age-max').value) || undefined,
+            genderRequirement: document.getElementById('fa-vc-gender').value, genderReason: document.getElementById('fa-vc-gender-reason').value.trim() || undefined,
+            startDate: document.getElementById('fa-vc-start-date').value || undefined,
+            urgency: document.getElementById('fa-vc-urgency').value,
+            probationDays: Number(document.getElementById('fa-vc-probation').value) || undefined,
+            interviewType,
+            interviewContactName: document.getElementById('fa-vc-interview-contact').value.trim() || undefined,
+            walkInDate: document.getElementById('fa-vc-walk-in-date').value || undefined,
+            interviewSlots: interviewType === 'scheduled' && slotStart && slotEnd ? [{ startsAt: new Date(slotStart).toISOString(), endsAt: new Date(slotEnd).toISOString(), capacity: Number(document.getElementById('fa-vc-slot-capacity').value) }] : undefined
+          }
         });
         showAlert('Vacancy captured: ' + res.code);
         document.getElementById('fa-shortlist-vc-id').value = res.id;
       } catch (e) {
         showAlert(e.message, false);
       }
+    }
+
+    function browserLocation() {
+      return new Promise((resolve, reject) => {
+        if (!navigator.geolocation) return reject(new Error('Location is unavailable on this device'));
+        navigator.geolocation.getCurrentPosition(
+          position => resolve({ latitude: position.coords.latitude, longitude: position.coords.longitude, accuracyMeters: position.coords.accuracy }),
+          () => reject(new Error('Location permission is required for this action')),
+          { enableHighAccuracy: true, timeout: 15000 }
+        );
+      });
+    }
+
+    async function checkInForVisits() {
+      try {
+        const location = await browserLocation();
+        const result = await api('/field-agent/check-in', { method: 'POST', body: location });
+        document.getElementById('fa-check-in-status').textContent = 'Checked in at ' + new Date(result.checkedInAt).toLocaleTimeString();
+      } catch (e) { document.getElementById('fa-check-in-status').textContent = e.message; }
+    }
+
+    async function loadMyAssignments() {
+      try {
+        const rows = await api('/businesses/visit-assignments');
+        const target = document.getElementById('fa-assignment-list');
+        target.replaceChildren();
+        if (!rows.length) { target.textContent = 'No open visit assignments.'; return; }
+        rows.forEach(assignment => {
+          const row = document.createElement('div');
+          row.className = 'board-card';
+          row.textContent = assignment.business.code + ' · ' + assignment.business.name + ' · ' + (assignment.business.locality || '') + ' · ' + assignment.purpose;
+          const button = document.createElement('button'); button.textContent = 'Start visit'; button.className = 'btn-sm';
+          button.addEventListener('click', () => {
+            document.getElementById('fa-visit-business-id').value = assignment.business.id;
+            document.getElementById('fa-visit-assignment-id').value = assignment.id;
+            document.getElementById('fa-visit-business-label').textContent = assignment.business.code + ' · ' + assignment.business.name;
+            document.getElementById('fa-visit-step').hidden = false;
+          });
+          row.appendChild(button); target.appendChild(row);
+        });
+      } catch (e) { document.getElementById('fa-assignment-list').textContent = e.message; }
+    }
+
+    let ownerOtpRequestId = '';
+    async function requestOwnerPresenceOtp() {
+      try {
+        const businessId = document.getElementById('fa-visit-business-id').value;
+        const assignmentId = document.getElementById('fa-visit-assignment-id').value;
+        const result = await api('/businesses/' + businessId + '/visit-assignments/' + assignmentId + '/owner-otp', { method: 'POST', body: {} });
+        ownerOtpRequestId = result.requestId;
+        showAlert('Presence code sent to owner ending ' + result.phone.slice(-4));
+      } catch (e) { showAlert(e.message, false); }
+    }
+
+    async function completeVerificationVisit() {
+      try {
+        if (!ownerOtpRequestId) throw new Error('Send the owner presence OTP first');
+        const file = document.getElementById('fa-visit-photo').files?.[0];
+        if (!file) throw new Error('Take a storefront photo during the visit');
+        const location = await browserLocation();
+        const bytes = await file.arrayBuffer();
+        const digest = await crypto.subtle.digest('SHA-256', bytes);
+        const photoHash = Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('');
+        const dataUrl = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+        const result = await api('/businesses/' + document.getElementById('fa-visit-business-id').value + '/visits', { method: 'POST', body: {
+          ...location, selfieUrl: dataUrl, selfieHash: photoHash, ownerOtpRequestId,
+          ownerOtpCode: document.getElementById('fa-owner-otp-code').value.trim(), assignmentId: document.getElementById('fa-visit-assignment-id').value,
+          purpose: 'verification'
+        }});
+        document.getElementById('fa-visit-step').hidden = true;
+        ownerOtpRequestId = '';
+        showAlert('Visit recorded. Business status: ' + result.verificationStatus);
+        loadMyAssignments();
+      } catch (e) { showAlert(e.message, false); }
     }
 
     async function loadFieldShortlist() {

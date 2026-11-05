@@ -37,6 +37,26 @@ export class ConsentWithdrawalService {
     private readonly audit: AuditService,
   ) {}
 
+  async eligibility(actor: { id: string }, jobSeekerId: string) {
+    if (!jobSeekerId) throw new BadRequestException('jobSeekerId is required');
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true } });
+    if (!seeker) throw new NotFoundException('Job seeker not found');
+    const policy = await this.pricing.current();
+    const now = this.clock.now();
+    const call = await this.prisma.callRecord.findFirst({
+      where: {
+        staffId: actor.id,
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        answered: true,
+        endedAt: { lte: now, gte: new Date(now.getTime() - policy.consentWithdrawalCallWindowMinutes * 60_000) },
+      },
+      orderBy: { endedAt: 'desc' },
+      select: { id: true },
+    });
+    return { eligible: Boolean(call), callRecordId: call?.id ?? null };
+  }
+
   async withdraw(
     actor: { id: string; role: string },
     dto: AgentConsentWithdrawalDto,

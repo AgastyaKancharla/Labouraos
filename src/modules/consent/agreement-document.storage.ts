@@ -2,6 +2,7 @@ export const AGREEMENT_DOCUMENT_STORAGE = 'AGREEMENT_DOCUMENT_STORAGE';
 
 export interface AgreementDocumentStorage {
   put(path: string, body: Buffer, contentType: string): Promise<void>;
+  get(path: string): Promise<Buffer | undefined>;
 }
 
 export class MemoryAgreementDocumentStorage implements AgreementDocumentStorage {
@@ -11,7 +12,7 @@ export class MemoryAgreementDocumentStorage implements AgreementDocumentStorage 
     this.documents.set(path, Buffer.from(body));
   }
 
-  get(path: string): Buffer | undefined {
+  async get(path: string): Promise<Buffer | undefined> {
     const body = this.documents.get(path);
     return body ? Buffer.from(body) : undefined;
   }
@@ -38,5 +39,18 @@ export class SupabaseAgreementDocumentStorage implements AgreementDocumentStorag
       body: new Uint8Array(body),
     });
     if (!response.ok) throw new Error(`Agreement store failed with status ${response.status}`);
+  }
+
+  async get(path: string): Promise<Buffer | undefined> {
+    if (!this.baseUrl || !this.serviceKey) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required to read agreements');
+    }
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${this.baseUrl}/storage/v1/object/${this.bucket}/${objectPath}`, {
+      headers: { Authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey },
+    });
+    if (response.status === 404) return undefined;
+    if (!response.ok) throw new Error(`Agreement read failed with status ${response.status}`);
+    return Buffer.from(await response.arrayBuffer());
   }
 }

@@ -103,7 +103,7 @@ One task after another, in order. Each task has its own branch and, where needed
 - **The verified gate:** `GET /vacancies/:id/shortlist`, and anything else that shows candidates to or for a business, returns nothing for a business that is not `verified`, with a clear reason. Existing shortlist tests change their fixtures to verified businesses — say so in the report; that is a rule change, not weakening.
 - Tests: the nearest checked-in agent is suggested; a locked or not-checked-in agent is never suggested; a visit without the owner OTP doesn't complete verification; an unsigned business can't reach `pending_tl_check`; a `no_documents` business raises the flag and can't be approved until the approver has an answered verification call to it; a non-verified business's shortlist is empty; approval sets the account agent.
 
-### [ ] Task 6 — Permissions: account agent instead of area, and who releases money
+### [x] Task 6 — Permissions: account agent instead of area, and who releases money
 **Branch:** `phase-13/task-6-permissions` · **No migration**
 
 **Acceptance:**

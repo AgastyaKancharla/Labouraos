@@ -377,6 +377,16 @@ Format:
 **Cause:** Authorization had been split between JWT area claims, controller guards, and service checks, so removing an area filter in one place could leave stale restrictions elsewhere.
 **Fix:** Resolve business, vacancy, and placement writes through the linked business's `accountAgentId`; allow only the documented own-lead and open-assignment exceptions. Read access remains city-wide, and legacy area fields stay unused until their removal phase.
 
+## Phase 13 visit assignment queues use scalar ownership fields
+**Symptom:** A Team Lead visit queue query using presumed `Business.accountAgent` or `Business.leadCreatedByStaff` relations failed TypeScript compilation.
+**Cause:** Those ownership fields are scalar IDs in the current schema and do not have Prisma relations to `Staff`.
+**Fix:** Load the Team Lead's staff IDs, filter `VisitAssignment.business` by `accountAgentId` or `leadCreatedByStaffId`, and return only the business summary fields the console needs. Field agents see only assignments currently assigned to them.
+
+## Consent withdrawal eligibility uses the current pricing window on the server
+**Symptom:** A console needs to decide whether to show the consent withdrawal action, but must not duplicate the answered-call age rule.
+**Cause:** `consentWithdrawalCallWindowMinutes` is configurable in `PricingPolicy`, and a browser-side literal can disagree with the server's eligibility check.
+**Fix:** Ask the authenticated eligibility endpoint for the agent's current qualifying call; it uses `PricingService.current()` and returns only eligibility plus the call record ID. The withdrawal endpoint revalidates the same conditions at submission time.
+
 
 
 

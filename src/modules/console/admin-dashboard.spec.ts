@@ -93,6 +93,12 @@ describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
     expect(html).toContain('job-seekers');
     expect(html).toContain('referrals');
     expect(html).toContain('businesses');
+    expect(html).toContain('business-reviews');
+    expect(html).toContain('business-visit-assignment-queue');
+    expect(html).toContain('business-approval-queue');
+    expect(html).toContain('NO DOCUMENTS — closer check required');
+    expect(html).toContain('Confirm or change agent');
+    expect(html).toContain('Assign verification visit');
     expect(html).toContain('vacancies');
     expect(html).toContain('placements');
     expect(html).toContain('payments');

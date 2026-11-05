@@ -59,6 +59,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
 
     expect(res.headers['content-type']).toContain('text/html');
     const html = res.text;
+    expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
 
     expect(html).toContain('Laboura Call Agent Console');
     // Onboarding forms
@@ -66,6 +67,16 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     expect(html).toContain('js-phone');
     expect(html).toContain('rf-name');
     expect(html).toContain('biz-name');
+    expect(html).toContain('value="household"');
+    expect(html).toContain('biz-owner-name');
+    expect(html).toContain('biz-licence');
+    expect(html).toContain('biz-storefront-photo');
+    expect(html).toContain('biz-billing-address');
+    expect(html).toContain('business-profile-details');
+    expect(html).toContain('Send agreement');
+    expect(html).toContain('view-consent-withdrawal');
+    expect(html).toContain('withdrawal-eligibility');
+    expect(html).toContain('id="withdraw-consent-form" class="hidden"');
     // OTP verification
     expect(html).toContain('sendOtp');
     expect(html).toContain('verifyOtp');
@@ -74,6 +85,9 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     // Vacancy capture
     expect(html).toContain('vc-biz-id');
     expect(html).toContain('vc-trade');
+    expect(html).toContain('vc-role-title');
+    expect(html).toContain('vc-gender-reason');
+    expect(html).toContain('vc-slot-start');
     // Candidate shortlist view
     expect(html).toContain('shortlist-vc-id');
     // Calling and hits

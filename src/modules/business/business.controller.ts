@@ -6,12 +6,13 @@ import {
   Param,
   Post,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Request } from 'express';
+import { Request, Response } from 'express';
 import { BusinessService } from './business.service';
 import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -57,6 +58,12 @@ export class BusinessController {
     return this.businessService.findAll(req.user.sub);
   }
 
+  @Get('visit-assignments')
+  @RequireRoles('field_agent', 'team_lead', 'manager', 'ceo')
+  listVisitAssignments(@Req() req: Request & { user: JwtPayload }) {
+    return this.verificationService.listAssignments(req.user.sub, req.user.role);
+  }
+
   @Get(':id')
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'finance', 'team_lead')
   @RequirePermission('business', 'read')
@@ -64,6 +71,16 @@ export class BusinessController {
     @Param('id') id: string,
   ) {
     return this.businessService.findById(id);
+  }
+
+  @Get(':id/agreement')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'read')
+  async getSignedAgreement(@Param('id') id: string, @Res() res: Response) {
+    const document = await this.consentLinkService.getSignedAgreementDocument(id);
+    res.type('html').setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.setHeader('X-Content-SHA256', document.termsHash);
+    return res.send(document.body);
   }
 
   @Post(':id/agreement-links')

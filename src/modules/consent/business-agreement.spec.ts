@@ -180,7 +180,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
       { purpose: 'call_recording', method: 'sms_link', otpRequestId: otp.body.requestId },
     ]);
 
-    const storedDocument = storage.get(agreement.documentStoragePath);
+    const storedDocument = await storage.get(agreement.documentStoragePath);
     expect(storedDocument).toBeDefined();
     expect(createHash('sha256').update(storedDocument!).digest('hex')).toBe(agreement.termsHash);
     await request(app.getHttpServer()).get(`/consent/${link.body.token}`).expect(400);

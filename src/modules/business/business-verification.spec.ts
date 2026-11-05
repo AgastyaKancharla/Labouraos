@@ -204,12 +204,28 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
     expect(assignment.body.suggestedStaffId).not.toBe(lockedAgentId);
     expect(assignment.body.suggestedStaffId).not.toBe(uncheckedAgentId);
     expect(assignment.body.status).toBe('pending');
+    const teamLeadQueue = await request(app.getHttpServer())
+      .get('/businesses/visit-assignments')
+      .set('Authorization', `Bearer ${teamLeadToken}`)
+      .expect(200);
+    expect(teamLeadQueue.body.some((row: { id: string }) => row.id === assignment.body.id)).toBe(true);
+    expect(teamLeadQueue.body.find((row: { id: string }) => row.id === assignment.body.id).business.phone).toBeUndefined();
+    const unassignedAgentQueue = await request(app.getHttpServer())
+      .get('/businesses/visit-assignments')
+      .set('Authorization', `Bearer ${nearestAgentToken}`)
+      .expect(200);
+    expect(unassignedAgentQueue.body.some((row: { id: string }) => row.id === assignment.body.id)).toBe(false);
 
     await request(app.getHttpServer())
       .post(`/businesses/${businessId}/visit-assignments/${assignment.body.id}/assign`)
       .set('Authorization', `Bearer ${teamLeadToken}`)
       .send({ assignedStaffId: nearestAgentId })
       .expect(201);
+    const assignedAgentQueue = await request(app.getHttpServer())
+      .get('/businesses/visit-assignments')
+      .set('Authorization', `Bearer ${nearestAgentToken}`)
+      .expect(200);
+    expect(assignedAgentQueue.body.some((row: { id: string }) => row.id === assignment.body.id)).toBe(true);
     expect((await prisma.business.findUniqueOrThrow({ where: { id: businessId } })).verificationStatus).toBe('pending_visit');
 
     const visitBody = {
@@ -256,6 +272,16 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       signedName: 'Verification Owner',
       purposes: ['agreement_terms', 'call_recording'],
     });
+    const signedDocument = await request(app.getHttpServer())
+      .get(`/businesses/${businessId}/agreement`)
+      .set('Authorization', `Bearer ${teamLeadToken}`)
+      .expect(200);
+    expect(signedDocument.headers['content-type']).toContain('text/html');
+    expect(signedDocument.headers['x-content-sha256']).toMatch(/^[a-f0-9]{64}$/);
+    await request(app.getHttpServer())
+      .get(`/businesses/${businessId}/agreement`)
+      .set('Authorization', `Bearer ${nearestAgentToken}`)
+      .expect(403);
     expect((await prisma.business.findUniqueOrThrow({ where: { id: businessId } })).verificationStatus).toBe('pending_tl_check');
     expect(await prisma.reviewFlag.count({
       where: { subjectType: 'business', subjectId: businessId, kind: 'no_documents_check', status: 'open' },

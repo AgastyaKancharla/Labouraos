@@ -444,19 +444,21 @@ export class BusinessService {
   async findById(id: string) {
     let business = await this.prisma.business.findUnique({
       where: { id },
-      include: { vacancies: true, visits: true },
+      include: { vacancies: true, visits: true, agreements: { select: { signedAt: true } } },
     });
     if (!business) {
       business = await this.prisma.business.findUnique({
         where: { code: id },
-        include: { vacancies: true, visits: true },
+        include: { vacancies: true, visits: true, agreements: { select: { signedAt: true } } },
       });
     }
     if (!business) {
       throw new NotFoundException(`Business '${id}' not found`);
     }
-
-    return business;
+    const accountAgent = business.accountAgentId
+      ? await this.prisma.staff.findUnique({ where: { id: business.accountAgentId }, select: { id: true, code: true, name: true } })
+      : null;
+    return { ...business, accountAgentSummary: accountAgent };
   }
 
   async recordVisit(businessId: string, dto: RecordVisitDto, actorId: string) {
