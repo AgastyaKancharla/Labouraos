@@ -60,7 +60,7 @@ One task after another, in order. Each task has its own branch and, where needed
 - `leadCreatedByStaffId` and `leadChannel` (`field_visit`, `phone_call`) are set at creation from the logged-in staff member.
 - Tests: a business with only a Udyam number is `documented`; a household with nothing is `no_documents` and is created successfully; a business can be created with no `area`; no new code writes `area`, `contactName` or `Business.selfieUrl`; a GST lookup failure still saves the business; a reused storefront photo, a reused GST or licence number, and a similar name within 50 m each raise `duplicate_business`; a similar name 200 m away does not.
 
-### [ ] Task 3 — Vacancy fields and interview slots
+### [x] Task 3 — Vacancy fields and interview slots
 **Branch:** `phase-13/task-3-vacancy-fields` · **Migration folder:** `20261106120000_vacancy_fields_and_slots`
 
 **Acceptance:**
@@ -73,7 +73,7 @@ One task after another, in order. Each task has its own branch and, where needed
 - When a call agent adds a vacancy to a business whose account agent is someone else, the account agent is notified (an in-app notice is enough — reuse whatever notification the consoles already have, or a `ReviewFlag`-style list; do not invent an SMS to staff), and `capturedByStaffId` stays the call agent so the vacancy counts towards their "vacancies captured".
 - Tests: an existing vacancy's salary is readable as `salaryMinPaise` after migration; a new vacancy never writes `offeredSalary`; a gender requirement without a reason is refused; a walk-in day creates a 10:30–18:00 IST slot read from `PricingPolicy`; `Vacancy.tradeSkill` is still required.
 
-### [ ] Task 4 — The agreement, signed by the owner on their own phone
+### [x] Task 4 — The agreement, signed by the owner on their own phone
 **Branch:** `phase-13/task-4-business-agreement` · **Migration folder:** `20261106130000_add_business_agreement`
 
 **Acceptance:**
