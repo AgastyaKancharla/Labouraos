@@ -57,6 +57,25 @@ export interface SubmitConsentDto {
   signedName?: string;
 }
 
+export type ConsentLinkDetails =
+  | {
+      valid: true;
+      subjectType: 'business';
+      businessId: string;
+      businessName: string;
+      maskedPhone: string;
+      preferredLanguage: AgreementLanguage;
+      agreementTermsHtml: string;
+    }
+  | {
+      valid: true;
+      subjectType: 'job_seeker';
+      jobSeekerId: string;
+      candidateName: string;
+      phone: string;
+      preferredLanguage: string;
+    };
+
 @Injectable()
 export class ConsentLinkService {
   private readonly tokens = new Map<string, ConsentLinkTokenRecord>();
@@ -185,7 +204,7 @@ export class ConsentLinkService {
     return record;
   }
 
-  async getTokenDetails(token: string) {
+  async getTokenDetails(token: string): Promise<ConsentLinkDetails> {
     const record = this.validateToken(token);
     if (record.subjectType === 'business') {
       const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
