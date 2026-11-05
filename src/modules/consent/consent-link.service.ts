@@ -192,6 +192,17 @@ export class ConsentLinkService {
     return { success: true, token, expiresAt };
   }
 
+  async getSignedAgreementDocument(businessId: string) {
+    const agreement = await this.prisma.businessAgreement.findFirst({
+      where: { businessId }, orderBy: { signedAt: 'desc' },
+      select: { documentStoragePath: true, termsHash: true },
+    });
+    if (!agreement) throw new NotFoundException('No signed agreement exists for this business');
+    const body = await this.agreementStorage.get(agreement.documentStoragePath);
+    if (!body) throw new NotFoundException('The signed agreement document is unavailable');
+    return { body, termsHash: agreement.termsHash };
+  }
+
   validateToken(token: string): ConsentLinkTokenRecord {
     const record = this.tokens.get(token);
     if (!record) {

@@ -163,6 +163,11 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
     const stale = await createCall(agent.id, seeker.id, {
       endedAt: new Date(clock.current.getTime() - 61 * 60_000),
     });
+    const ineligible = await request(app.getHttpServer())
+      .get(`/consent/withdrawal-eligibility?jobSeekerId=${seeker.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(ineligible.body).toEqual({ eligible: false, callRecordId: null });
 
     const cases = [
       { jobSeekerId: seeker.id, purposes: ["call_recording"] },
@@ -216,6 +221,11 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
       });
     }
     const call = await createCall(agent.id, seeker.id);
+    const eligibility = await request(app.getHttpServer())
+      .get(`/consent/withdrawal-eligibility?jobSeekerId=${seeker.id}`)
+      .set("Authorization", `Bearer ${token}`)
+      .expect(200);
+    expect(eligibility.body).toEqual({ eligible: true, callRecordId: call.id });
     const response = await request(app.getHttpServer())
       .post("/consent/withdraw")
       .set("Authorization", `Bearer ${token}`)

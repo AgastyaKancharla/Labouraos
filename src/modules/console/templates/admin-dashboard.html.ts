@@ -296,6 +296,7 @@ export function renderAdminDashboardHtml(): string {
     <button class="tab-btn active" data-tab="job-seekers">Job Seekers</button>
     <button class="tab-btn" data-tab="referrals">Referrals</button>
     <button class="tab-btn" data-tab="businesses">Businesses</button>
+    <button class="tab-btn hidden" id="tab-business-reviews" data-tab="business-reviews">Business Reviews</button>
     <button class="tab-btn" data-tab="vacancies">Vacancies</button>
     <button class="tab-btn" data-tab="placements">Placements</button>
     <button class="tab-btn" data-tab="payments">Payment Ledger</button>
@@ -391,6 +392,21 @@ export function renderAdminDashboardHtml(): string {
             </tbody>
           </table>
         </div>
+      </div>
+    </div>
+
+    <div id="view-business-reviews" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>Business leads ready for verification</span></div>
+        <div id="business-lead-queue">Loading businesses…</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Pending verification visit assignments</span><button class="btn-sm" onclick="loadBusinessReviewQueue()">Refresh</button></div>
+        <div id="business-visit-assignment-queue">Loading assignments…</div>
+      </div>
+      <div class="card">
+        <div class="card-title"><span>Businesses waiting for approval</span></div>
+        <div id="business-approval-queue">Loading businesses…</div>
       </div>
     </div>
 
@@ -732,6 +748,9 @@ export function renderAdminDashboardHtml(): string {
           switchTab('job-seekers');
         }
       }
+      const reviewTab = document.getElementById('tab-business-reviews');
+      if (['team_lead', 'manager', 'ceo'].includes(payload.role)) reviewTab.classList.remove('hidden');
+      else reviewTab.classList.add('hidden');
 
       labouraShowApproverTabs();
       if (labouraIsApprover()) {
@@ -762,6 +781,7 @@ export function renderAdminDashboardHtml(): string {
       if (tab === 'job-seekers') loadJobSeekers();
       else if (tab === 'referrals') loadReferrals();
       else if (tab === 'businesses') loadBusinesses();
+      else if (tab === 'business-reviews') loadBusinessReviewQueue();
       else if (tab === 'vacancies') loadVacancies();
       else if (tab === 'placements') loadPlacements();
       else if (tab === 'payments') loadPayments();
@@ -838,6 +858,69 @@ export function renderAdminDashboardHtml(): string {
       } catch (e) {
         console.error(e);
       }
+    }
+
+    async function loadBusinessReviewQueue() {
+      const assignmentTarget = document.getElementById('business-visit-assignment-queue');
+      const approvalTarget = document.getElementById('business-approval-queue');
+      assignmentTarget.textContent = 'Loading assignments…';
+      approvalTarget.textContent = 'Loading businesses…';
+      try {
+        const [assignments, businesses, staff] = await Promise.all([
+          api('/businesses/visit-assignments'),
+          api('/businesses'),
+          api('/staff?role=field_agent&status=active')
+        ]);
+        assignmentTarget.replaceChildren();
+        const leadsTarget = document.getElementById('business-lead-queue');
+        leadsTarget.replaceChildren();
+        const leads = businesses.filter(b => b.verificationStatus === 'lead');
+        if (!leads.length) leadsTarget.textContent = 'No business leads waiting for a verification visit.';
+        leads.forEach(business => {
+          const row = document.createElement('div'); row.className = 'board-card';
+          const summary = document.createElement('p');
+          summary.textContent = business.code + ' · ' + business.name + ' · ' + (business.locality || '') + ' · ' + (business.documentsStatus === 'no_documents' ? 'NO DOCUMENTS' : 'Documented');
+          const assign = document.createElement('button'); assign.textContent = 'Assign verification visit';
+          assign.addEventListener('click', async () => {
+            try { await api('/businesses/' + business.id + '/visit-assignments', { method: 'POST', body: { purpose: 'verification' } }); showAlert('Verification visit created.'); await loadBusinessReviewQueue(); }
+            catch (e) { showAlert(e.message, false); }
+          });
+          row.append(summary, assign); leadsTarget.appendChild(row);
+        });
+        const pending = assignments.filter(a => a.status === 'pending');
+        if (!pending.length) assignmentTarget.textContent = 'No pending visit assignments.';
+        pending.forEach(assignment => {
+          const row = document.createElement('div'); row.className = 'board-card';
+          const summary = document.createElement('p');
+          summary.textContent = assignment.business.code + ' · ' + assignment.business.name + ' · ' + (assignment.business.locality || '') + (assignment.business.documentsStatus === 'no_documents' ? ' · NO DOCUMENTS — closer check required' : '') + ' · Suggested: ' + (assignment.suggestedStaff ? assignment.suggestedStaff.name + ' (' + assignment.suggestedStaff.code + ')' : 'none checked in');
+          const select = document.createElement('select');
+          staff.forEach(agent => { const option = document.createElement('option'); option.value = agent.id; option.textContent = agent.name + ' (' + agent.code + ')'; if (agent.id === assignment.suggestedStaffId) option.selected = true; select.appendChild(option); });
+          const confirm = document.createElement('button'); confirm.textContent = 'Confirm or change agent';
+          confirm.addEventListener('click', async () => {
+            try { await api('/businesses/' + assignment.businessId + '/visit-assignments/' + assignment.id + '/assign', { method: 'POST', body: { assignedStaffId: select.value } }); showAlert('Visit assigned.'); await loadBusinessReviewQueue(); }
+            catch (e) { showAlert(e.message, false); }
+          });
+          row.append(summary, select, confirm); assignmentTarget.appendChild(row);
+        });
+
+        approvalTarget.replaceChildren();
+        const waiting = businesses.filter(b => b.verificationStatus === 'pending_tl_check');
+        if (!waiting.length) approvalTarget.textContent = 'No businesses waiting for approval.';
+        waiting.forEach(business => {
+          const row = document.createElement('div'); row.className = 'board-card';
+          const summary = document.createElement('p');
+          summary.textContent = business.code + ' · ' + business.name + ' · ' + (business.documentsStatus === 'no_documents' ? 'NO DOCUMENTS — owner verification call required' : 'Documented') + ' · ' + business.verificationStatus;
+          const select = document.createElement('select');
+          const defaultOption = document.createElement('option'); defaultOption.value = ''; defaultOption.textContent = 'Use visiting agent as account agent'; select.appendChild(defaultOption);
+          staff.forEach(agent => { const option = document.createElement('option'); option.value = agent.id; option.textContent = agent.name + ' (' + agent.code + ')'; select.appendChild(option); });
+          const approve = document.createElement('button'); approve.textContent = 'Approve verification';
+          approve.addEventListener('click', async () => {
+            try { await api('/businesses/' + business.id + '/verification/approve', { method: 'POST', body: select.value ? { accountAgentId: select.value } : {} }); showAlert('Business verified.'); await loadBusinessReviewQueue(); }
+            catch (e) { showAlert(e.message, false); }
+          });
+          row.append(summary, select, approve); approvalTarget.appendChild(row);
+        });
+      } catch (e) { assignmentTarget.textContent = e.message; approvalTarget.textContent = e.message; }
     }
 
     // Admin Calling & Recording Management

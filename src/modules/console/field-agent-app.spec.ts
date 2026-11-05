@@ -83,10 +83,20 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
 
     expect(res.headers['content-type']).toContain('text/html');
     const html = res.text;
+    expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
 
     // Header and core layout
     expect(html).toContain('Laboura Field Agent App');
     expect(html).toContain('Priority Dashboard');
+    expect(html).toContain('id="fa-check-in-button"');
+    expect(html).toContain('My verification assignments');
+    expect(html).toContain('Send owner presence OTP');
+    expect(html).toContain('Complete verification visit');
+    expect(html).toContain('/businesses/visit-assignments');
+    expect(html).toContain('value="household"');
+    expect(html).toContain('fa-biz-udyam');
+    expect(html).toContain('fa-vc-role-title');
+    expect(html).toContain('fa-vc-slot-start');
 
     // Business onboarding with camera-only selfie capture: accept="image/*" capture="user"
     // No gallery picker exposed

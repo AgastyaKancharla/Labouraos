@@ -215,6 +215,8 @@ export function renderCallAgentConsoleHtml(): string {
     <button class="tab-btn active" data-tab="onboard-seeker">Job Seeker Onboarding</button>
     <button class="tab-btn" data-tab="onboard-referral">Referral Onboarding</button>
     <button class="tab-btn" data-tab="onboard-biz">Business Onboarding</button>
+    <button class="tab-btn" data-tab="business-profile">Business Verification</button>
+    <button class="tab-btn" data-tab="consent-withdrawal">Withdraw Consent</button>
     <button class="tab-btn" data-tab="vacancy-capture">Vacancy Capture</button>
     <button class="tab-btn" data-tab="shortlist">Candidate Shortlist</button>
     <button class="tab-btn" data-tab="contact-attempts">Calling & Hits</button>
@@ -360,10 +362,8 @@ export function renderCallAgentConsoleHtml(): string {
               </div>
               <small id="biz-otp-status" style="color: var(--warning); margin-top: 4px; display: block;"></small>
             </div>
-            <div class="form-group">
-              <label>Contact Person Name</label>
-              <input type="text" id="biz-contact" placeholder="Anil Rao">
-            </div>
+            <div class="form-group"><label>Business type</label><select id="biz-type"><option value="restaurant">Restaurant</option><option value="retail">Retail</option><option value="factory">Factory</option><option value="office">Office</option><option value="warehouse">Warehouse</option><option value="household">Household</option><option value="other">Other</option></select></div>
+            <div class="form-group"><label>Owner name</label><input id="biz-owner-name"></div>
           </div>
           <div>
             <div class="form-group">
@@ -374,13 +374,51 @@ export function renderCallAgentConsoleHtml(): string {
               <label>Address</label>
               <input type="text" id="biz-address" placeholder="100 Feet Rd, 4th Block">
             </div>
-            <div class="form-group">
-              <label>GST Number (Optional)</label>
-              <input type="text" id="biz-gst" placeholder="29ABCDE1234F1Z5">
-            </div>
+            <div class="form-group"><label>GST number <small>(only if they have it)</small></label><input type="text" id="biz-gst" placeholder="29ABCDE1234F1Z5"></div>
+            <div class="form-group"><label>Licence number <small>(only if they have it)</small></label><input id="biz-licence"></div>
+            <div class="form-group"><label>Shop and Establishment number <small>(only if they have it)</small></label><input id="biz-shop"></div>
+            <div class="form-group"><label>Udyam number <small>(only if they have it)</small></label><input id="biz-udyam"></div>
+            <div class="form-group"><label>PAN <small>(only if they have it)</small></label><input id="biz-pan"></div>
+            <div class="form-group"><label>Storefront photo</label><input type="file" id="biz-storefront-photo" accept="image/*"></div>
+            <div class="form-group"><label>Billing name</label><input id="biz-billing-name"></div>
+            <div class="form-group"><label>Billing address</label><textarea id="biz-billing-address"></textarea></div>
+            <small id="biz-documents-status" aria-live="polite">Registration numbers are optional; only enter them if the business has them.</small>
           </div>
         </div>
         <button onclick="submitBusiness()" style="margin-top: 12px;">Register Business</button>
+      </div>
+    </div>
+
+    <div id="view-business-profile" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>Business profile and verification</span></div>
+        <div class="form-group"><label>Business code or ID</label><input id="business-profile-id"></div>
+        <button onclick="loadBusinessProfile()">Load profile</button>
+        <div id="business-profile-details" aria-live="polite"></div>
+        <div id="business-profile-actions" class="hidden">
+          <button id="business-send-agreement" onclick="sendBusinessAgreement()">Send agreement</button>
+          <a id="business-agreement-link" class="hidden" target="_blank" rel="noopener">Signed agreement</a>
+        </div>
+      </div>
+    </div>
+
+    <div id="view-consent-withdrawal" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>Withdraw job seeker consent</span></div>
+        <p>Available only during an answered, recent call with this job seeker. The job seeker will receive an SMS; withdrawing job matching or call recording pauses their profile.</p>
+        <div class="form-group"><label>Job seeker ID</label><input id="withdraw-job-seeker-id"></div>
+        <button onclick="checkConsentWithdrawalEligibility()">Check answered call</button>
+        <div id="withdraw-consent-form" class="hidden">
+          <label><input type="checkbox" value="call_recording" class="withdraw-purpose"> Call recording</label>
+          <label><input type="checkbox" value="job_matching" class="withdraw-purpose"> Job matching</label>
+          <label><input type="checkbox" value="profile_sharing" class="withdraw-purpose"> Profile sharing</label>
+          <label><input type="checkbox" value="aadhaar_verification" class="withdraw-purpose"> Identity verification</label>
+          <label><input type="checkbox" value="job_updates" class="withdraw-purpose"> Job updates</label>
+          <label><input type="checkbox" value="promotions" class="withdraw-purpose"> Promotions</label>
+          <p>Only checked purposes are withdrawn. The system records the request and sends an SMS confirmation.</p>
+          <button onclick="withdrawJobSeekerConsent()">Confirm withdrawal</button>
+        </div>
+        <div id="withdraw-consent-status" aria-live="polite"></div>
       </div>
     </div>
 
@@ -406,6 +444,35 @@ export function renderCallAgentConsoleHtml(): string {
           <div class="form-group">
             <label>Headcount</label>
             <input type="number" id="vc-headcount" value="1">
+          </div>
+          <div class="form-group"><label>Role title</label><input id="vc-role-title"></div>
+          <div class="grid-2">
+            <div class="form-group"><label>Salary maximum (₹)</label><input type="number" id="vc-salary-max"></div>
+            <div class="form-group"><label>Salary period</label><select id="vc-salary-period"><option value="monthly">Monthly</option><option value="daily">Daily</option></select></div>
+            <div class="form-group"><label>Extras</label><select id="vc-extras" multiple><option value="overtime">Overtime</option><option value="incentives">Incentives</option><option value="food">Food</option><option value="accommodation">Accommodation</option><option value="transport">Transport</option><option value="uniform">Uniform</option><option value="pf_esi">PF/ESI</option></select></div>
+            <div class="form-group"><label>Working hours</label><input id="vc-hours"></div>
+            <div class="form-group"><label>Shift</label><input id="vc-shift"></div>
+            <div class="form-group"><label>Weekly off</label><input id="vc-weekly-off"></div>
+            <div class="form-group"><label>Vacancy locality (optional)</label><input id="vc-locality"></div>
+            <div class="form-group"><label>Latitude (optional)</label><input type="number" id="vc-latitude" step="any"></div>
+            <div class="form-group"><label>Longitude (optional)</label><input type="number" id="vc-longitude" step="any"></div>
+            <div class="form-group"><label>Experience required (years)</label><input type="number" id="vc-experience" min="0"></div>
+            <div class="form-group"><label>Education required</label><input id="vc-education"></div>
+            <div class="form-group"><label>Languages required (comma separated)</label><input id="vc-languages"></div>
+            <div class="form-group"><label>Licences required (comma separated)</label><input id="vc-licences"></div>
+            <div class="form-group"><label>Minimum age</label><input type="number" id="vc-age-min"></div>
+            <div class="form-group"><label>Maximum age</label><input type="number" id="vc-age-max"></div>
+            <div class="form-group"><label>Gender requirement</label><select id="vc-gender"><option value="none">None</option><option value="male">Male</option><option value="female">Female</option></select></div>
+            <div class="form-group"><label>Reason for gender requirement</label><input id="vc-gender-reason"></div>
+            <div class="form-group"><label>Start date</label><input type="date" id="vc-start-date"></div>
+            <div class="form-group"><label>Urgency</label><select id="vc-urgency"><option value="normal">Normal</option><option value="urgent">Urgent</option></select></div>
+            <div class="form-group"><label>Probation (days)</label><input type="number" id="vc-probation" min="0"></div>
+            <div class="form-group"><label>Interview type</label><select id="vc-interview-type"><option value="walk_in">Walk-in</option><option value="scheduled">Scheduled</option></select></div>
+            <div class="form-group"><label>Walk-in day</label><input type="date" id="vc-walk-in-date"></div>
+            <div class="form-group"><label>Interview contact name</label><input id="vc-interview-contact"></div>
+            <div class="form-group"><label>Scheduled slot start</label><input type="datetime-local" id="vc-slot-start"></div>
+            <div class="form-group"><label>Scheduled slot end</label><input type="datetime-local" id="vc-slot-end"></div>
+            <div class="form-group"><label>Scheduled slot capacity</label><input type="number" id="vc-slot-capacity" min="1" value="1"></div>
           </div>
           <div class="form-group">
             <label>Description / Notes</label>
@@ -636,6 +703,7 @@ export function renderCallAgentConsoleHtml(): string {
 
   <script>
     let token = sessionStorage.getItem('laboura_token') || '';
+    let currentUser = null;
     let otpRequests = { js: '', rf: '', biz: '' };
 
     function showAlert(msg, isSuccess = true) {
@@ -750,6 +818,7 @@ export function renderCallAgentConsoleHtml(): string {
         showLoginModal();
         return;
       }
+      currentUser = payload;
       document.getElementById('user-display').textContent = payload.email;
       document.getElementById('user-role-badge').textContent = payload.role.toUpperCase();
     }
@@ -867,17 +936,107 @@ export function renderCallAgentConsoleHtml(): string {
           name: document.getElementById('biz-name').value.trim(),
           phone: document.getElementById('biz-phone').value.trim(),
           locality: document.getElementById('biz-locality').value.trim(),
-          contactName: document.getElementById('biz-contact').value.trim(),
+          businessType: document.getElementById('biz-type').value,
+          ownerName: document.getElementById('biz-owner-name').value.trim() || undefined,
           address: document.getElementById('biz-address').value.trim(),
           gstNumber: document.getElementById('biz-gst').value.trim() || undefined,
+          licenceNumber: document.getElementById('biz-licence').value.trim() || undefined,
+          shopEstablishmentNumber: document.getElementById('biz-shop').value.trim() || undefined,
+          udyamNumber: document.getElementById('biz-udyam').value.trim() || undefined,
+          pan: document.getElementById('biz-pan').value.trim() || undefined,
+          billingName: document.getElementById('biz-billing-name').value.trim() || undefined,
+          billingAddress: document.getElementById('biz-billing-address').value.trim() || undefined,
           otpRequestId: reqId,
         };
 
         const res = await api('/businesses', { method: 'POST', body });
-        showAlert('Business created: ' + res.code);
+        const photo = document.getElementById('biz-storefront-photo').files?.[0];
+        if (photo) {
+          const form = new FormData();
+          form.append('photo', photo);
+          const upload = await fetch('/businesses/' + res.id + '/storefront-photo', {
+            method: 'POST', headers: { Authorization: 'Bearer ' + token }, body: form
+          });
+          if (!upload.ok) throw new Error((await upload.json().catch(() => ({}))).message || 'Storefront photo upload failed');
+        }
+        document.getElementById('biz-documents-status').textContent =
+          (body.gstNumber || body.licenceNumber || body.shopEstablishmentNumber || body.udyamNumber || body.pan) ? 'Documents: documented' : 'Documents: no documents';
+        document.getElementById('business-profile-id').value = res.id;
+        showAlert('Business created: ' + res.code + '. Next step: send the agreement and assign a verification visit.');
       } catch (e) {
         showAlert(e.message, false);
       }
+    }
+
+    let loadedBusinessId = '';
+    async function loadBusinessProfile() {
+      try {
+        const id = document.getElementById('business-profile-id').value.trim();
+        const business = await api('/businesses/' + encodeURIComponent(id));
+        loadedBusinessId = business.id;
+        const next = { lead: 'send agreement', pending_visit: 'complete assigned visit', pending_tl_check: 'approve', verified: 'verified', rejected: 'review rejection' }[business.verificationStatus] || 'review';
+        const agentId = business.accountAgentSummary ? business.accountAgentSummary.name + ' (' + business.accountAgentSummary.code + ')' : 'Unassigned';
+        document.getElementById('business-profile-details').textContent =
+          business.name + ' · ' + business.verificationStatus + ' · Next step: ' + next + ' · Documents: ' + (business.documentsStatus === 'no_documents' ? 'no documents' : 'documented') + ' · Account agent: ' + agentId;
+        document.getElementById('business-profile-actions').classList.remove('hidden');
+        document.getElementById('business-send-agreement').classList.toggle('hidden', business.verificationStatus !== 'lead');
+        document.getElementById('business-agreement-link').classList.add('hidden');
+        const agreement = business.agreements?.[0];
+        if (agreement?.signedAt && ['team_lead', 'manager', 'ceo'].includes(currentUser?.role)) {
+          const link = document.getElementById('business-agreement-link');
+          link.href = '#';
+          link.onclick = async (event) => {
+            event.preventDefault();
+            try {
+              const response = await fetch('/businesses/' + encodeURIComponent(business.id) + '/agreement', { headers: { Authorization: 'Bearer ' + token } });
+              if (!response.ok) throw new Error('Could not load signed agreement');
+              const blobUrl = URL.createObjectURL(await response.blob());
+              window.open(blobUrl, '_blank', 'noopener');
+            } catch (e) { showAlert(e.message, false); }
+          };
+          link.classList.remove('hidden');
+        }
+      } catch (e) { showAlert(e.message, false); }
+    }
+
+    async function sendBusinessAgreement() {
+      try {
+        const id = loadedBusinessId || document.getElementById('business-profile-id').value.trim();
+        await api('/businesses/' + encodeURIComponent(id) + '/agreement-links', { method: 'POST', body: { language: 'en' } });
+        showAlert('Agreement link sent to the business owner.');
+        await loadBusinessProfile();
+      } catch (e) { showAlert(e.message, false); }
+    }
+
+    let eligibleWithdrawalCallId = '';
+    async function checkConsentWithdrawalEligibility() {
+      const id = document.getElementById('withdraw-job-seeker-id').value.trim();
+      const panel = document.getElementById('withdraw-consent-form');
+      panel.classList.add('hidden');
+      eligibleWithdrawalCallId = '';
+      try {
+        const result = await api('/consent/withdrawal-eligibility?jobSeekerId=' + encodeURIComponent(id));
+        if (!result.eligible || !result.callRecordId) {
+          document.getElementById('withdraw-consent-status').textContent = 'No answered call for this job seeker is inside the withdrawal window.';
+          return;
+        }
+        eligibleWithdrawalCallId = result.callRecordId;
+        document.getElementById('withdraw-consent-status').textContent = 'Answered call confirmed. Select the purposes the job seeker asked to withdraw.';
+        panel.classList.remove('hidden');
+      } catch (e) { document.getElementById('withdraw-consent-status').textContent = e.message; }
+    }
+
+    async function withdrawJobSeekerConsent() {
+      const purposes = Array.from(document.querySelectorAll('.withdraw-purpose:checked')).map(el => el.value);
+      if (!purposes.length || !eligibleWithdrawalCallId) return alert('Check an answered call and select at least one purpose');
+      try {
+        const result = await api('/consent/withdraw', { method: 'POST', body: {
+          jobSeekerId: document.getElementById('withdraw-job-seeker-id').value.trim(),
+          callRecordId: eligibleWithdrawalCallId, purposes
+        }});
+        document.getElementById('withdraw-consent-form').classList.add('hidden');
+        document.getElementById('withdraw-consent-status').textContent = result.withdrawn ? 'Consent withdrawn. Audit recorded and SMS confirmation sent.' : 'No active consent was changed.';
+      } catch (e) { document.getElementById('withdraw-consent-status').textContent = e.message; }
     }
 
     // 4. Submit Vacancy
@@ -888,10 +1047,37 @@ export function renderCallAgentConsoleHtml(): string {
         const salaryMinPaise = Number(document.getElementById('vc-salary').value) * 100;
         const headcount = Number(document.getElementById('vc-headcount').value);
         const description = document.getElementById('vc-desc').value.trim();
+        const csv = (id) => document.getElementById(id).value.split(',').map(v => v.trim()).filter(Boolean);
+        const extras = Array.from(document.getElementById('vc-extras').selectedOptions).map(option => option.value);
+        const interviewType = document.getElementById('vc-interview-type').value;
+        const slotStart = document.getElementById('vc-slot-start').value;
+        const slotEnd = document.getElementById('vc-slot-end').value;
 
         const res = await api('/vacancies', {
           method: 'POST',
-          body: { businessId: bizId, tradeSkill, salaryMinPaise, headcount, description }
+          body: {
+            businessId: bizId, tradeSkill, salaryMinPaise, salaryMaxPaise: Number(document.getElementById('vc-salary-max').value) * 100 || undefined,
+            salaryPeriod: document.getElementById('vc-salary-period').value, headcount, description,
+            roleTitle: document.getElementById('vc-role-title').value.trim() || undefined, extras,
+            workingHours: document.getElementById('vc-hours').value.trim() || undefined,
+            shift: document.getElementById('vc-shift').value.trim() || undefined,
+            weeklyOff: document.getElementById('vc-weekly-off').value.trim() || undefined,
+            locality: document.getElementById('vc-locality').value.trim() || undefined,
+            latitude: document.getElementById('vc-latitude').value ? Number(document.getElementById('vc-latitude').value) : undefined,
+            longitude: document.getElementById('vc-longitude').value ? Number(document.getElementById('vc-longitude').value) : undefined,
+            experienceRequiredYears: Number(document.getElementById('vc-experience').value) || undefined,
+            educationRequired: document.getElementById('vc-education').value.trim() || undefined,
+            languagesRequired: csv('vc-languages'), licencesRequired: csv('vc-licences'),
+            ageMin: Number(document.getElementById('vc-age-min').value) || undefined, ageMax: Number(document.getElementById('vc-age-max').value) || undefined,
+            genderRequirement: document.getElementById('vc-gender').value, genderReason: document.getElementById('vc-gender-reason').value.trim() || undefined,
+            startDate: document.getElementById('vc-start-date').value || undefined,
+            urgency: document.getElementById('vc-urgency').value,
+            probationDays: Number(document.getElementById('vc-probation').value) || undefined,
+            interviewType,
+            interviewContactName: document.getElementById('vc-interview-contact').value.trim() || undefined,
+            walkInDate: document.getElementById('vc-walk-in-date').value || undefined,
+            interviewSlots: interviewType === 'scheduled' && slotStart && slotEnd ? [{ startsAt: new Date(slotStart).toISOString(), endsAt: new Date(slotEnd).toISOString(), capacity: Number(document.getElementById('vc-slot-capacity').value) }] : undefined
+          }
         });
         showAlert('Vacancy captured successfully: ' + res.code);
       } catch (e) {

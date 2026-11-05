@@ -5,6 +5,7 @@ import {
   Headers,
   Param,
   Post,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -40,6 +41,13 @@ export class ConsentController {
       { id: req.user.sub, role: req.user.role },
       body,
     );
+  }
+
+  @Get('withdrawal-eligibility')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  withdrawalEligibility(@Query('jobSeekerId') jobSeekerId: string, @Req() req: AuthenticatedRequest) {
+    return this.consentWithdrawalService.eligibility({ id: req.user.sub }, jobSeekerId);
   }
 
   /**

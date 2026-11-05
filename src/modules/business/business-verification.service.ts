@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Staff } from '@prisma/client';
+import { Prisma, Staff } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
@@ -40,6 +40,34 @@ export class BusinessVerificationService {
     private readonly reviewFlagService: ReviewFlagService,
     private readonly clock: BusinessClock,
   ) {}
+
+  async listAssignments(staffId: string, role: string) {
+    const staff = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!staff) throw new NotFoundException('Staff not found');
+    let where: Prisma.VisitAssignmentWhereInput;
+    if (role === 'field_agent') {
+      where = { assignedStaffId: staffId, status: 'assigned' };
+    } else if (role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { teamLeadId: staffId }, select: { id: true } });
+      const teamIds = team.map(({ id }) => id);
+      where = { status: 'pending', business: { OR: [
+        { leadCreatedByStaffId: { in: teamIds } },
+        { accountAgentId: { in: teamIds } },
+      ] } };
+    } else {
+      where = { status: 'pending' };
+    }
+    const rows = await this.prisma.visitAssignment.findMany({
+      where,
+      orderBy: { createdAt: 'asc' },
+      include: {
+        business: { select: { id: true, code: true, name: true, locality: true, documentsStatus: true, verificationStatus: true } },
+        suggestedStaff: { select: { id: true, code: true, name: true } },
+        assignedStaff: { select: { id: true, code: true, name: true } },
+      },
+    });
+    return rows;
+  }
 
   async checkIn(staffId: string, dto: CheckInDto) {
     const now = this.clock.now();
