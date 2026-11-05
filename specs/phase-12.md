@@ -99,7 +99,7 @@ Each task has its own branch and a fixed migration folder name. Build on the lat
 - Any **non-reversed** hit of kind `offer_declined`, `offer_no_reply` or `interview_no_show` ends the refund window immediately (change 13 in the code-check doc) — wire this into whatever currently computes refund eligibility.
 - Tests: a reversed hit doesn't count toward `maxHits`; reversing raises exactly one `ReviewFlag`; a non-reversed `interview_no_show` ends refund eligibility immediately; the old `offer_rejected` value on existing rows still reads without error.
 
-### [ ] Task 7 — Deprecate old fields, nothing removed yet
+### [x] Task 7 — Deprecate old fields, nothing removed yet
 **Branch:** `phase-12/task-7-deprecate-old-fields` · **Migration folder:** `20261105150000_jobseeker_tradeskill_nullable`
 
 **Acceptance:**
