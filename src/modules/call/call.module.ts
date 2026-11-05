@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { TelephonyModule } from '../telephony/telephony.module';
+import { ConsentModule } from '../consent/consent.module';
 import { CallController } from './call.controller';
 import { CallService } from './call.service';
 import { CallClock } from './call-clock';
@@ -14,7 +15,7 @@ import {
 } from './recording-storage';
 
 @Module({
-  imports: [PrismaModule, TelephonyModule],
+  imports: [PrismaModule, TelephonyModule, ConsentModule],
   controllers: [CallController],
   providers: [
     CallService,

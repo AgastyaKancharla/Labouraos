@@ -342,6 +342,16 @@ Format:
 **Cause:** Default `generateKey` logic only produces a single cache key per request.
 **Fix:** Configure named throttlers (`default` and `connection`) in `ThrottlerModule`, override `generateKey(context, suffix, name)` in `AuthThrottlerGuard` to branch based on `name === 'connection'`, and apply dual `@Throttle({ default: { limit: 5, ttl: 60000 }, connection: { limit: 60, ttl: 60000 } })` decorators on the target controller endpoints.
 
+## Consent was not enforced on candidate shortlists and matching calls
+**Symptom:** An active job seeker could appear in a vacancy shortlist or receive an offer/follow-up call without active consent.
+**Cause:** The shortlist filtered only by status, trade and salary, while the call service checked access and call timing but not consent.
+**Fix:** Filter vacancy shortlists by active `job_matching` consent; require `call_recording` consent before job seeker calls except `consent_explain`, and require `job_matching` for `offer`, `follow_up` and `interview_result` calls.
+
+## Job seeker consent withdrawal endpoint is deferred
+**Symptom:** Phase 12 has no job-seeker-facing, OTP-protected route for withdrawing consent.
+**Cause:** Phase 12 defines `ConsentService.withdraw` but does not define a public withdrawal request flow, and job seekers do not have accounts.
+**Fix:** The Phase 12 gate proof calls `ConsentService.withdraw` directly, as decided for this task. A job-seeker-facing OTP-protected withdrawal flow remains missing and is deferred to a later phase.
+
 
 
 

@@ -194,8 +194,24 @@ export class VacancyService {
       );
     }
 
+    const matchingConsents = await this.prisma.consent.findMany({
+      where: {
+        subjectType: 'job_seeker',
+        purpose: 'job_matching',
+        granted: true,
+        grantedAt: { not: null },
+        withdrawnAt: null,
+      },
+      select: { subjectId: true },
+    });
+    const consentedJobSeekerIds = matchingConsents.map((consent) => consent.subjectId);
+    if (consentedJobSeekerIds.length === 0) {
+      return [];
+    }
+
     return this.prisma.jobSeeker.findMany({
       where: {
+        id: { in: consentedJobSeekerIds },
         city: vacancy.city,
         status: 'active',
         OR: [

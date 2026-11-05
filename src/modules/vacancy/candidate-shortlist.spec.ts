@@ -20,6 +20,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
 
   let matchingCandidate1Id: string;
   let matchingCandidate2Id: string;
+  let matchingCandidateWithoutConsentId: string;
 
   const timestamp = Date.now();
   const password = 'Password123!Secure';
@@ -184,6 +185,36 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
     });
     matchingCandidate2Id = c2.id;
 
+    await prisma.consent.createMany({
+      data: [c1.id, c2.id].map((subjectId) => ({
+        subjectType: 'job_seeker',
+        subjectId,
+        purpose: 'job_matching',
+        noticeVersion: 'candidate-shortlist-test',
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      })),
+    });
+
+    // Candidate 8: active and otherwise matching, but has not consented to job matching.
+    const noConsentCandidate = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-CS8-${timestamp}`,
+        name: 'Candidate Eight - Matching Consent Missing',
+        phone: `92${timestamp.toString().slice(-8)}8`,
+        phoneVerified: true,
+        tradeSkill: 'Electrician',
+        minSalary: 2000000,
+        maxSalary: 3000000,
+        preferredCallWindowStart: '10:00',
+        preferredCallWindowEnd: '18:00',
+        status: 'active',
+      },
+    });
+    matchingCandidateWithoutConsentId = noConsentCandidate.id;
+
     // Candidate 3: Mismatched trade ('Painter'), salary matches, active -> excluded
     await prisma.jobSeeker.create({
       data: {
@@ -281,6 +312,7 @@ describe('Phase 4 Task 3: Candidate Shortlist', () => {
     // Matching candidates must be included
     expect(candidateIds).toContain(matchingCandidate1Id);
     expect(candidateIds).toContain(matchingCandidate2Id);
+    expect(candidateIds).not.toContain(matchingCandidateWithoutConsentId);
 
     // Candidate 1 was registered before Candidate 2 -> stable order by registration date
     const idx1 = candidateIds.indexOf(matchingCandidate1Id);

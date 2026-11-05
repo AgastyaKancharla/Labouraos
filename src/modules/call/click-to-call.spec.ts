@@ -112,6 +112,18 @@ describe('Phase 11 Task 4: click to call', () => {
       },
     });
     seekerIds.push(seeker.id);
+    await prisma.consent.create({
+      data: {
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        purpose: 'call_recording',
+        noticeVersion: 'click-to-call-test',
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      },
+    });
     const earlySeeker = await prisma.jobSeeker.create({
       data: {
         code: `JS-CT2-${stamp}`,
@@ -163,6 +175,38 @@ describe('Phase 11 Task 4: click to call', () => {
       .set('Authorization', `Bearer ${tokenFor(fieldAgent)}`)
       .send({ phone: '+919800077700' })
       .expect(200);
+
+    const matchingCallWithoutConsent = await request(app.getHttpServer())
+      .post('/calls')
+      .set('Authorization', `Bearer ${tokenFor(callAgent)}`)
+      .send({ subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'offer' });
+    expect(matchingCallWithoutConsent.status).toBe(403);
+    expect(matchingCallWithoutConsent.body.message).toContain('job_matching');
+
+    await prisma.consent.create({
+      data: {
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        purpose: 'job_matching',
+        noticeVersion: 'click-to-call-test',
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      },
+    });
+    await prisma.consent.createMany({
+      data: ['call_recording', 'job_matching'].map((purpose) => ({
+        subjectType: 'job_seeker',
+        subjectId: earlySeeker.id,
+        purpose,
+        noticeVersion: 'click-to-call-test',
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      })),
+    });
 
     const requestBody = { subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'general' };
     expect(JSON.stringify(requestBody)).not.toContain(SEEKER_PHONE);

@@ -120,6 +120,18 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     createdSeekerIds.push(seeker.id);
     testSeekerId = seeker.id;
     testSeekerCode = seeker.code;
+    await prisma.consent.createMany({
+      data: ['call_recording', 'job_matching'].map((purpose) => ({
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        purpose,
+        noticeVersion: 'phase-11-call-fixture',
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      })),
+    });
   });
 
   afterAll(async () => {
@@ -132,6 +144,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
       await prisma.messageLog.deleteMany({ where: { id: { in: createdMessageIds } } });
     }
     if (createdSeekerIds.length > 0) {
+      await prisma.consent.deleteMany({ where: { subjectId: { in: createdSeekerIds } } });
       await prisma.contactAttempt.deleteMany({ where: { jobSeekerId: { in: createdSeekerIds } } });
       await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: createdSeekerIds } } });
       await prisma.jobSeeker.deleteMany({ where: { id: { in: createdSeekerIds } } });
