@@ -593,6 +593,12 @@ export class BusinessService {
         if (completed.count !== 1) {
           throw new ForbiddenException('Only the assigned field agent can complete an open visit assignment');
         }
+        if (assignment.purpose === 'interview_attendance' && assignment.relatedType === 'interview' && assignment.relatedId) {
+          await tx.interview.update({
+            where: { id: assignment.relatedId },
+            data: { attendanceVisitId: created.id },
+          });
+        }
       }
       if (geofenceFlag && !business.geofenceFlag) {
         await tx.business.update({

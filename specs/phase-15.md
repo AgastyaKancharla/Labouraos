@@ -41,7 +41,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Extend the Phase 14 helper `hasLiveOffer` to include an `Interview` in `offered` or `confirmed`.
 - Tests: an offer to a candidate who fails any matching rule is refused; a full slot is refused; a replacement vacancy is refused; the offer messages contain no business name or address; `replyDueAt` is 48 hours later, read from `PricingPolicy`; booking writes an introduction; a candidate with a live offer no longer appears in matching.
 
-### [ ] Task 2 — The candidate's reply, and what a reply means
+### [x] Task 2 — The candidate's reply, and what a reply means
 **Branch:** `phase-15/task-2-candidate-reply` · **Migration folder:** `20261108110000_interview_reply`
 
 **Acceptance:**

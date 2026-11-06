@@ -15,9 +15,10 @@ import { InterviewController } from './interview.controller';
 import { InterviewService } from './interview.service';
 import { PricingModule } from '../pricing/pricing.module';
 import { CallModule } from '../call/call.module';
+import { BusinessVerificationModule } from '../business/business-verification.module';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule],
   controllers: [VacancyController, CandidateIntroductionController, InterviewController],
   providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService],
   exports: [VacancyService, CandidateIntroductionService, InterviewService],

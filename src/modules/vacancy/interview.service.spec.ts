@@ -15,9 +15,10 @@ describe('InterviewService booking', () => {
     vacancy: { findFirst: Mock };
     jobSeeker: { findFirst: Mock };
     vacancyInterviewSlot: { findUnique: Mock };
-    interview: { findUnique: Mock; findMany: Mock; update: Mock };
+    interview: { findUnique: Mock; findMany: Mock; update: Mock; count: Mock };
     callRecord: { findUnique: Mock; findFirst: Mock };
     messageLog: { findMany: Mock };
+    reviewFlag: { findFirst: Mock };
     $transaction: Mock;
   };
   const now = new Date('2026-11-06T09:00:00.000Z');
@@ -28,6 +29,7 @@ describe('InterviewService booking', () => {
   let matching: { match: jest.Mock };
   let hits: { recordHit: jest.Mock };
   let calls: { recordOutcome: jest.Mock };
+  let attendance: { createInterviewAttendanceAssignment: jest.Mock };
   let linkService: { createInterviewActionToken: Mock; validateInterviewActionToken: Mock; consumeInterviewActionToken: Mock };
   const previousPublicAppUrl = process.env.PUBLIC_APP_URL;
 
@@ -76,15 +78,17 @@ describe('InterviewService booking', () => {
       vacancy: { findFirst: jest.fn().mockResolvedValue(vacancy) },
       jobSeeker: { findFirst: jest.fn().mockResolvedValue(seeker) },
       vacancyInterviewSlot: { findUnique: jest.fn().mockResolvedValue(slot) },
-      interview: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}) },
+      interview: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(0) },
       callRecord: { findUnique: jest.fn(), findFirst: jest.fn() },
       messageLog: { findMany: jest.fn().mockResolvedValue([{ channel: 'sms' }, { channel: 'whatsapp' }]) },
+      reviewFlag: { findFirst: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn().mockImplementation((callback: (client: TxMock) => unknown) => callback(tx)),
     };
     messaging = { send: jest.fn().mockImplementation(({ channel }) => Promise.resolve({ id: `msg-${channel}`, status: 'sent' })) };
     matching = { match: jest.fn().mockResolvedValue({ total: 1, pageSize: 10, matches: [match] }) };
     hits = { recordHit: jest.fn().mockResolvedValue({}) };
     calls = { recordOutcome: jest.fn().mockResolvedValue({}) };
+    attendance = { createInterviewAttendanceAssignment: jest.fn().mockResolvedValue({ id: 'assignment-id' }) };
     linkService = {
       createInterviewActionToken: jest.fn().mockReturnValue('single-use-token'),
       validateInterviewActionToken: jest.fn().mockReturnValue({ interviewId: 'interview-id' }),
@@ -101,6 +105,7 @@ describe('InterviewService booking', () => {
       matching as never,
       hits as never,
       calls as never,
+      attendance as never,
     );
   });
 
@@ -151,12 +156,15 @@ describe('InterviewService booking', () => {
     expect(tx.interview.create.mock.calls[0][0].data.suitabilitySnapshot).toMatchObject({
       trade: { vacancy: 'cook', matched: 'cook' }, salary: { passed: true }, distance: { passed: true }, shift: { passed: true }, slot: { passed: true },
     });
+    expect(tx.interview.create.mock.calls[0][0].data.agentAttendanceRequired).toBe(true);
+    expect(attendance.createInterviewAttendanceAssignment).not.toHaveBeenCalled();
   });
 
   const liveInterview = () => ({
     id: 'interview-id', code: 'INT-00001', status: 'offered', jobSeekerId: 'seeker-id', businessId: 'business-id',
     vacancyId: 'vacancy-id', offerSentAt: now, replyDueAt: new Date(now.getTime() + 48 * 60 * 60 * 1000),
     candidateRespondedAt: null, slotStartsAt: slot.startsAt, callRecordId: null, offerMessageLogIds: ['msg-sms', 'msg-whatsapp'],
+    agentAttendanceRequired: true, proposedByStaffId: 'call-1',
     business: { id: 'business-id', name: 'PRIVATE BUSINESS', address: 'PRIVATE ADDRESS', locality: 'Indiranagar', ownerName: 'Owner', additionalContactName: 'Manager', contactName: null },
     jobSeeker: { id: 'seeker-id', name: 'Candidate Sample', photoStoragePath: null },
     vacancy: { locality: 'Indiranagar' },
@@ -181,6 +189,7 @@ describe('InterviewService booking', () => {
     expect(Object.keys(ownerMessages[0][0].variables).sort()).toEqual(['firstName', 'interviewTime', 'photoLink']);
     expect(linkService.consumeInterviewActionToken).toHaveBeenCalledWith('single-use-token', 'candidate_reply');
     expect(prisma.interview.update).toHaveBeenCalledWith(expect.objectContaining({ data: { businessDetailsSentAt: now } }));
+    expect(attendance.createInterviewAttendanceAssignment).toHaveBeenCalledWith('business-id', 'interview-id', 'call-1');
   });
 
   it('a No link declines and records one offer_declined hit', async () => {
@@ -245,5 +254,23 @@ describe('InterviewService booking', () => {
     expect(result.processed).toBe(1);
     expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: { status: 'cancelled', cancelReason: 'offer_not_followed_up' } }));
     expect(hits.recordHit).not.toHaveBeenCalled();
+  });
+
+  it('requires attendance for the first interview and open flags, and always for no-documents businesses', async () => {
+    await service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1');
+    expect(tx.interview.create.mock.calls[0][0].data.agentAttendanceRequired).toBe(true);
+
+    prisma.interview.count.mockResolvedValue(1);
+    await service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1');
+    expect(tx.interview.create.mock.calls[1][0].data.agentAttendanceRequired).toBe(false);
+
+    prisma.reviewFlag.findFirst.mockResolvedValue({ id: 'flag-id' });
+    await service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1');
+    expect(tx.interview.create.mock.calls[2][0].data.agentAttendanceRequired).toBe(true);
+
+    prisma.reviewFlag.findFirst.mockResolvedValue(null);
+    prisma.vacancy.findFirst.mockResolvedValue({ ...vacancy, business: { ...vacancy.business, documentsStatus: 'no_documents' } });
+    await service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1');
+    expect(tx.interview.create.mock.calls[3][0].data.agentAttendanceRequired).toBe(true);
   });
 });
