@@ -314,6 +314,8 @@ model Interview {
   offerSentAt              DateTime
   replyDueAt               DateTime
   candidateRespondedAt     DateTime?
+  callRecordId             String?               @unique
+  callRecord               CallRecord?           @relation(fields: [callRecordId], references: [id], onDelete: SetNull)
   businessDetailsSentAt    DateTime?
   agentAttendanceRequired  Boolean               @default(false)
   attendanceVisitId        String?
@@ -910,6 +912,7 @@ model CallRecord {
   agentOutcomeReason   String?
   agentOutcomeAt       DateTime?
   contactAttempt       ContactAttempt?
+  interviewReply       Interview?
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

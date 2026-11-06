@@ -25,7 +25,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ---
 
-### [ ] Task 1 — The interview and the offer
+### [x] Task 1 — The interview and the offer
 **Branch:** `phase-15/task-1-interview-offer` · **Migration folder:** `20261108100000_add_interview`
 
 **Acceptance:**
