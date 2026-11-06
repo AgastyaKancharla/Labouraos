@@ -97,13 +97,13 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 14 Gate
 
-- [ ] Each of the 13 matching rules is enforced, one test per rule; nothing outside the rules appears — by test
-- [ ] Ranking follows the weights in `PricingPolicy`; changing a weight changes the order — by test
-- [ ] Cards and the share page never show phone, last name, address, date of birth or Aadhaar data — by test
-- [ ] Every showing to a business, by link or in person, is logged and can't be edited or deleted; `firstIntroduction` gives the earliest — by test
-- [ ] The map never sends a candidate's exact location — by test
-- [ ] Photos need `profile_sharing` consent and are only ever served by short-lived links — by test
-- [ ] **End-to-end proof, recorded in the report:** a verified business has a walk-in vacancy for an electrician at ₹15,000–18,000 a month; five job seekers exist — one fits perfectly on day 26, one fits on day 4, one is too far, one has paused consent, one wants night shift; the shortlist shows the day-26 one first, then the day-4 one, and none of the other three; the left-out counts are right; the agent sends the top two to the owner; two introductions are logged with the message id; the map shows the business and vacancy pins and the candidates only as rounded dots.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] Each of the 13 matching rules is enforced, one test per rule; nothing outside the rules appears — by test
+- [x] Ranking follows the weights in `PricingPolicy`; changing a weight changes the order — by test
+- [x] Cards and the share page never show phone, last name, address, date of birth or Aadhaar data — by test
+- [x] Every showing to a business, by link or in person, is logged and can't be edited or deleted; `firstIntroduction` gives the earliest — by test
+- [x] The map never sends a candidate's exact location — by test
+- [x] Photos need `profile_sharing` consent and are only ever served by short-lived links — by test
+- [x] **End-to-end proof, recorded in the report:** a verified business has a walk-in vacancy for an electrician at ₹15,000–18,000 a month; five job seekers exist — one fits perfectly on day 26, one fits on day 4, one is too far, one has paused consent, one wants night shift; the shortlist shows the day-26 one first, then the day-4 one, and none of the other three; the left-out counts are right; the agent sends the top two to the owner; two introductions are logged with the message id; the map shows the business and vacancy pins and the candidates only as rounded dots.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.
