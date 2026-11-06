@@ -779,6 +779,10 @@ model PricingPolicy {
   consentWithdrawalCallWindowMinutes Int @default(60)
   walkInStart                  String    @default("10:30")
   walkInEnd                    String    @default("18:00")
+  matchPageSize                Int       @default(3)
+  salaryDaysPerMonth           Int       @default(26)
+  matchingWeights              Json      @default("{\"clock\":30,\"distance\":20,\"experience\":15,\"salary\":15,\"reliability\":10,\"completeness\":5,\"pastResults\":5}")
+  adultMinimumAge              Int       @default(18)
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?
   setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)

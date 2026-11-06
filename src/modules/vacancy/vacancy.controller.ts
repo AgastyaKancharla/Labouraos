@@ -19,12 +19,16 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { MatchingService } from './matching.service';
 
 @Controller('vacancies')
 @UseGuards(JwtAuthGuard, RbacGuard)
 @UseInterceptors(PiiMaskingInterceptor)
 export class VacancyController {
-  constructor(private readonly vacancyService: VacancyService) {}
+  constructor(
+    private readonly vacancyService: VacancyService,
+    private readonly matchingService: MatchingService,
+  ) {}
 
   @Post()
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
@@ -64,9 +68,13 @@ export class VacancyController {
   @RequirePermission('vacancy', 'read')
   async getShortlist(
     @Param('id') id: string,
-    @Req() req: Request & { user: JwtPayload },
+    @Query('page') pageQuery?: string,
   ) {
-    return this.vacancyService.getCandidates(id, req.user.sub);
+    const page = pageQuery === undefined ? 1 : Number(pageQuery);
+    if (!Number.isInteger(page) || page < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    return this.matchingService.match(id, { page });
   }
 
   @Get(':id')

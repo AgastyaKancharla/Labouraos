@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { PricingPolicy } from '@prisma/client';
+import { Prisma, PricingPolicy } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
@@ -76,6 +76,13 @@ export class PricingService {
           updates.consentWithdrawalCallWindowMinutes ?? before.consentWithdrawalCallWindowMinutes,
         walkInStart: updates.walkInStart ?? before.walkInStart,
         walkInEnd: updates.walkInEnd ?? before.walkInEnd,
+        matchPageSize: updates.matchPageSize ?? before.matchPageSize,
+        salaryDaysPerMonth: updates.salaryDaysPerMonth ?? before.salaryDaysPerMonth,
+        matchingWeights:
+          updates.matchingWeights === null || updates.matchingWeights === undefined
+            ? (before.matchingWeights as Prisma.InputJsonValue)
+            : (updates.matchingWeights as Prisma.InputJsonValue),
+        adultMinimumAge: updates.adultMinimumAge ?? before.adultMinimumAge,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

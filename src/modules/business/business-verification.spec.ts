@@ -122,6 +122,11 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
         tradeSkill: 'Electrician',
         minSalary: 2000000,
         maxSalary: 3000000,
+        dateOfBirth: new Date('1995-01-01T00:00:00.000Z'),
+        latitude: 12.9717,
+        longitude: 77.5947,
+        travelDistanceKm: 20,
+        shiftPreference: 'any',
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
         status: 'active',
@@ -140,6 +145,18 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
         grantedAt: new Date(),
       },
     });
+    await prisma.consent.create({
+      data: {
+        subjectType: 'job_seeker',
+        subjectId: candidate.id,
+        purpose: 'profile_sharing',
+        noticeVersion: `verification-sharing-${suffix}`,
+        granted: true,
+        language: 'en',
+        method: 'sms_link',
+        grantedAt: new Date(),
+      },
+    });
     const vacancy = await prisma.vacancy.create({
       data: {
         code: `VC-VF-${suffix}`,
@@ -147,6 +164,9 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
         businessId: business.id,
         tradeSkill: 'Electrician',
         salaryMinPaise: 2500000,
+        latitude: 12.9716,
+        longitude: 77.5946,
+        shift: 'day',
         headcount: 1,
         status: 'open',
       },
@@ -329,7 +349,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       .get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${nearestAgentToken}`)
       .expect(200);
-    expect(shortlist.body.map((row: { id: string }) => row.id)).toContain(candidateId);
+    expect(shortlist.body.matches.map((row: { jobSeekerId: string }) => row.jobSeekerId)).toContain(candidateId);
 
     const farAgent = await prisma.staff.findFirstOrThrow({ where: { code: `FA-VF-FAR-${suffix}` } });
     const reassigned = await request(app.getHttpServer())

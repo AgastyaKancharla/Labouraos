@@ -5,11 +5,13 @@ import { AuditModule } from '../../common/audit/audit.module';
 import { VacancyController } from './vacancy.controller';
 import { VacancyService } from './vacancy.service';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
+import { MatchingService } from './matching.service';
+import { ConsentModule } from '../consent/consent.module';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule],
   controllers: [VacancyController],
-  providers: [VacancyService],
+  providers: [VacancyService, MatchingService],
   exports: [VacancyService],
 })
 export class VacancyModule {}
