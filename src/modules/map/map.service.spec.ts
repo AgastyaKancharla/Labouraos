@@ -88,4 +88,9 @@ describe('MapService', () => {
     expect(() => parseBounds('78,12,77,13')).toThrow('out of range or reversed');
     expect(() => parseBounds('77,13,78,12')).toThrow('out of range or reversed');
   });
+
+  it('rejects malformed trade filters', async () => {
+    await expect(service.points(bounds, 'electrician\nadmin')).rejects.toThrow('valid trade name');
+    await expect(service.points(bounds, '<script>')).rejects.toThrow('valid trade name');
+  });
 });

@@ -19,7 +19,7 @@ export class MapService {
   async points(bboxValue: string | undefined, tradeValue?: string): Promise<MapPoints> {
     const bounds = parseBounds(bboxValue);
     const trade = tradeValue?.trim() || undefined;
-    if (trade && (trade.length > 100 || /[<>\u0000-\u001f]/.test(trade))) {
+    if (trade && !isValidTradeFilter(trade)) {
       throw new BadRequestException('trade must be a valid trade name');
     }
 
@@ -166,4 +166,11 @@ function roundCoordinate(value: number): number {
 
 function isNonEmptyString(value: string | null): value is string {
   return typeof value === 'string' && value.trim().length > 0;
+}
+
+function isValidTradeFilter(trade: string): boolean {
+  return trade.length <= 100 && !/[<>]/.test(trade) && !Array.from(trade).some((character) => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127;
+  });
 }
