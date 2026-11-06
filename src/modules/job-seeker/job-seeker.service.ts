@@ -2,6 +2,7 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
   Optional,
@@ -41,6 +42,12 @@ import {
 } from './dto/job-seeker-language.dto';
 import { normalizeHitReason } from './dto/record-hit.dto';
 import { withCurrentJobSeekerFields } from './job-seeker-legacy-read';
+import { ConsentClock } from '../consent/consent-clock';
+import {
+  CANDIDATE_PHOTO_LINK_TTL_SECONDS,
+  CANDIDATE_PHOTO_STORAGE,
+  CandidatePhotoStorage,
+} from './photo-storage';
 
 @Injectable()
 export class JobSeekerService {
@@ -53,6 +60,8 @@ export class JobSeekerService {
     private readonly pricingService: PricingService,
     @Optional() private readonly consentService?: ConsentService,
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
+    @Optional() private readonly consentClock?: ConsentClock,
+    @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
   private async getPolicy() {
@@ -911,10 +920,6 @@ export class JobSeekerService {
     }
     if (dto.gender !== undefined) data.gender = dto.gender;
     if (dto.whatsappPhone !== undefined) data.whatsappPhone = dto.whatsappPhone;
-    if (dto.photoStoragePath !== undefined) data.photoStoragePath = dto.photoStoragePath;
-    if (dto.photoTakenAt !== undefined) {
-      data.photoTakenAt = dto.photoTakenAt ? new Date(dto.photoTakenAt) : null;
-    }
     if (dto.locality !== undefined) data.locality = dto.locality;
     if (dto.pincode !== undefined) data.pincode = dto.pincode;
     if (dto.latitude !== undefined) data.latitude = dto.latitude;
@@ -968,6 +973,46 @@ export class JobSeekerService {
     }
 
     return withCurrentJobSeekerFields(updated);
+  }
+
+  async uploadPhoto(jobSeekerId: string, photo: { buffer: Buffer; mimetype: string }, actorId: string) {
+    if (!photo.buffer.length || !photo.mimetype.toLowerCase().startsWith('image/')) {
+      throw new BadRequestException('A valid image file is required');
+    }
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
+    if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    const consent = await this.prisma.consent.findFirst({
+      where: {
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        purpose: 'profile_sharing',
+        granted: true,
+        grantedAt: { not: null },
+        withdrawnAt: null,
+      },
+      select: { id: true },
+    });
+    if (!consent) throw new ForbiddenException('Active profile_sharing consent is required to upload a photo');
+    if (!this.photoStorage || !this.consentClock) throw new Error('Candidate photo storage is not configured');
+
+    const path = `job-seekers/${seeker.id}/profile-photo`;
+    const photoTakenAt = this.consentClock.now();
+    await this.photoStorage.put(path, photo.buffer, photo.mimetype);
+    const updated = await this.prisma.jobSeeker.update({
+      where: { id: seeker.id },
+      data: { photoStoragePath: path, photoTakenAt },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.photo_uploaded',
+      entityType: 'job_seeker',
+      entityCode: seeker.code,
+      before: { photoStoragePath: seeker.photoStoragePath, photoTakenAt: seeker.photoTakenAt?.toISOString() ?? null },
+      after: { photoStoragePath: path, photoTakenAt: photoTakenAt.toISOString() },
+      changedFields: ['photoStoragePath', 'photoTakenAt'],
+      city: seeker.city,
+    });
+    return { jobSeekerId: updated.id, photoTakenAt: updated.photoTakenAt, expiresInSeconds: CANDIDATE_PHOTO_LINK_TTL_SECONDS };
   }
 
   // --- Trades (Phase 12 Task 3) ---

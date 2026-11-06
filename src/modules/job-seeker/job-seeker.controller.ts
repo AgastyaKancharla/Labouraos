@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
@@ -9,7 +10,9 @@ import {
   Req,
   UseGuards,
   UseInterceptors,
+  UploadedFile,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { JobSeekerService } from './job-seeker.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -159,6 +162,19 @@ export class JobSeekerController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.jobSeekerService.updateProfile(id, body, req.user.sub);
+  }
+
+  @Post(':id/photo')
+  @UseInterceptors(FileInterceptor('photo'))
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'write')
+  async uploadPhoto(
+    @Param('id') id: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    if (!photo) throw new BadRequestException('A photo file is required');
+    return this.jobSeekerService.uploadPhoto(id, photo, req.user.sub);
   }
 
   @Post(':id/status')
