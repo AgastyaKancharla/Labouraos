@@ -8,11 +8,14 @@ import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { MatchingService } from './matching.service';
 import { ConsentModule } from '../consent/consent.module';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
+import { MessageModule } from '../message/message.module';
+import { CandidateIntroductionService } from './candidate-introduction.service';
+import { CandidateIntroductionController } from './candidate-introduction.controller';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule],
-  controllers: [VacancyController],
-  providers: [VacancyService, MatchingService],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule],
+  controllers: [VacancyController, CandidateIntroductionController],
+  providers: [VacancyService, MatchingService, CandidateIntroductionService],
   exports: [VacancyService],
 })
 export class VacancyModule {}
