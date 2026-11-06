@@ -392,6 +392,11 @@ Format:
 **Cause:** For a no-documents business, the approving Team Lead or manager must personally make an answered system call after the business reaches `pending_tl_check`.
 **Fix:** Keep that call check tied to the latest `pending_tl_check` transition. A pre-visit or unanswered call does not satisfy the approval condition.
 
+## Console route assertions must target the relevant screen handler
+**Symptom:** CI failed a test that rejected `/candidates` anywhere in the Field Agent app after the shortlist moved to the paged endpoint.
+**Cause:** The Priority Dashboard still has an unrelated `/priority/candidates` endpoint, so a whole-page substring assertion matched valid dashboard code.
+**Fix:** Assert the shortlist route inside its loader or inspect only the rendered shortlist card handler; keep unrelated console routes out of the assertion.
+
 
 
 
