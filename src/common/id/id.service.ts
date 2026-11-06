@@ -7,6 +7,7 @@ export type EntityType =
   | 'business'
   | 'vacancy'
   | 'placement'
+  | 'interview'
   | 'field_agent'
   | 'call_agent'
   | 'staff'
@@ -22,6 +23,7 @@ export const ENTITY_PREFIXES: Record<EntityType, string> = {
   business: 'BZ',
   vacancy: 'VC',
   placement: 'PL',
+  interview: 'INT',
   field_agent: 'FA',
   call_agent: 'CA',
   staff: 'ST',
@@ -71,6 +73,7 @@ export class IdService implements OnModuleInit {
       RF: 'Referral',
       VC: 'Vacancy',
       PL: 'Placement',
+      INT: 'Interview',
       PAY: 'Payment',
       AUD: 'AuditLog',
       FL: 'ReviewFlag',

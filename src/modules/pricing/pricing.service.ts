@@ -52,6 +52,7 @@ export class PricingService {
         offerReplyHours: updates.offerReplyHours ?? before.offerReplyHours,
         maxHits: updates.maxHits ?? before.maxHits,
         interviewResultDeadline: updates.interviewResultDeadline ?? before.interviewResultDeadline,
+        interviewResultCloseHours: updates.interviewResultCloseHours ?? before.interviewResultCloseHours,
         interviewResultEscalateHours: updates.interviewResultEscalateHours ?? before.interviewResultEscalateHours,
         placementPaymentDueHours: updates.placementPaymentDueHours ?? before.placementPaymentDueHours,
         replacementWindowDays: updates.replacementWindowDays ?? before.replacementWindowDays,

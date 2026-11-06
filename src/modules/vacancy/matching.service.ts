@@ -69,6 +69,7 @@ type MatchCandidate = {
   placements: Array<{ businessId: string; status: string; replacementCandidates: Array<{ status: string }> }>;
   replacementCandidateOffers: Array<{ status: string; placement: { businessId: string } }>;
   payments: Array<{ type: string; status: string }>;
+  interviews: Array<{ status: string }>;
   consents: Array<{ purpose: string; granted: boolean; grantedAt: Date | null; withdrawnAt: Date | null }>;
 };
 
@@ -147,6 +148,7 @@ export class MatchingService {
         languages: true,
         hits: { select: { reason: true, reversedAt: true } },
         placements: { include: { replacementCandidates: { select: { status: true } } } },
+        interviews: { select: { status: true } },
         replacementCandidateOffers: { include: { placement: { select: { businessId: true } } } },
         payments: { select: { type: true, status: true } },
       },
@@ -369,6 +371,7 @@ export class MatchingService {
 
   private hasLiveOffer(_jobSeekerId: string, seeker: MatchCandidate): boolean {
     return seeker.placements.some((row) => row.status === 'offered' || row.status === 'confirmed') ||
+      seeker.interviews.some((row) => row.status === 'offered' || row.status === 'confirmed') ||
       seeker.replacementCandidateOffers.some((row) => row.status === 'offered');
   }
 
