@@ -52,7 +52,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Pages of `matchPageSize`: page 1 is the best 3, **Show next 3** is page 2, and so on.
 - Tests: each of the 13 rules excludes the right person, one test each; a daily-salary seeker matches a monthly vacancy correctly with 26 days; a seeker with no location is excluded and counted; a paused seeker or one without `profile_sharing` never appears; ranking puts a day-27 seeker above an identical day-5 seeker; weights come from `PricingPolicy` (changing them changes the order); paging returns 3, then the next 3, with no repeats.
 
-### [ ] Task 2 — Candidate cards and photos
+### [x] Task 2 — Candidate cards and photos
 **Branch:** `phase-14/task-2-candidate-cards` · **No migration**
 
 **Acceptance:**
@@ -61,7 +61,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - The card's photo is a signed link valid for 5 minutes, never a permanent URL.
 - Tests: a card contains none of the forbidden fields for any role; a photo upload without `profile_sharing` is refused; `photoStoragePath` can no longer be set through the profile update; the photo link expires.
 
-### [ ] Task 3 — Showing candidates to a business, and the proof of introduction
+### [x] Task 3 — Showing candidates to a business, and the proof of introduction
 **Branch:** `phase-14/task-3-introductions` · **Migration folder:** `20261107110000_add_candidate_introduction`
 
 **Acceptance:**
