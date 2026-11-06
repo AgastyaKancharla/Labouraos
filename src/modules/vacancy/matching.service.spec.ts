@@ -56,6 +56,7 @@ describe('MatchingService', () => {
     hits: [],
     placements: [],
     replacementCandidateOffers: [],
+    interviews: [],
     payments: [{ type: 'activation', status: 'succeeded' }],
     ...overrides,
   });
@@ -115,10 +116,11 @@ describe('MatchingService', () => {
     candidates = [
       baseCandidate('paused', { status: 'paused' }),
       baseCandidate('offer', { placements: [{ status: 'offered', businessId: 'other', replacementCandidates: [] }] }),
+      baseCandidate('interview-offer', { interviews: [{ status: 'offered' }] }),
       baseCandidate('replacement-offer', { replacementCandidateOffers: [{ status: 'offered', placement: { businessId: 'other' } }] }),
       baseCandidate('eligible'),
     ];
-    consentRows = ['offer', 'replacement-offer', 'eligible'].flatMap((subjectId) => [
+    consentRows = ['offer', 'interview-offer', 'replacement-offer', 'eligible'].flatMap((subjectId) => [
       { subjectId, purpose: 'job_matching', granted: true, grantedAt: now, withdrawnAt: null },
       { subjectId, purpose: 'profile_sharing', granted: true, grantedAt: now, withdrawnAt: null },
     ]);

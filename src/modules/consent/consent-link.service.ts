@@ -33,6 +33,15 @@ interface ConsentLinkTokenBase {
   createdAt: Date;
 }
 
+export type InterviewLinkPurpose = 'candidate_reply' | 'candidate_check' | 'owner_result';
+
+export interface InterviewActionLinkRecord extends ConsentLinkTokenBase {
+  subjectType: 'interview';
+  interviewId: string;
+  purpose: InterviewLinkPurpose;
+  phone: string;
+}
+
 export type ConsentLinkTokenRecord = ConsentLinkTokenBase & (
   | { subjectType: 'job_seeker'; subjectId: string; jobSeekerId: string }
   | {
@@ -48,6 +57,7 @@ export type ConsentLinkTokenRecord = ConsentLinkTokenBase & (
         termsHash: string;
       };
     }
+  | InterviewActionLinkRecord
 );
 
 export interface SubmitConsentDto {
@@ -98,6 +108,40 @@ export class ConsentLinkService {
 
   setTtlMs(ttlMs: number) {
     this.ttlMs = ttlMs;
+  }
+
+  createInterviewActionToken(
+    interviewId: string,
+    purpose: InterviewLinkPurpose,
+    phone: string,
+    expiresAt: Date,
+  ): string {
+    const token = randomBytes(32).toString('hex');
+    this.tokens.set(token, {
+      token,
+      subjectType: 'interview',
+      interviewId,
+      purpose,
+      phone,
+      expiresAt,
+      usedAt: null,
+      createdAt: this.clock.now(),
+    });
+    return token;
+  }
+
+  validateInterviewActionToken(token: string, purpose: InterviewLinkPurpose): InterviewActionLinkRecord {
+    const record = this.validateToken(token);
+    if (record.subjectType !== 'interview' || record.purpose !== purpose) {
+      throw new BadRequestException('Invalid interview link token');
+    }
+    return record;
+  }
+
+  consumeInterviewActionToken(token: string, purpose: InterviewLinkPurpose): InterviewActionLinkRecord {
+    const record = this.validateInterviewActionToken(token, purpose);
+    record.usedAt = this.clock.now();
+    return record;
   }
 
   async createLink(jobSeekerId: string) {
@@ -220,6 +264,9 @@ export class ConsentLinkService {
 
   async getTokenDetails(token: string): Promise<ConsentLinkDetails> {
     const record = this.validateToken(token);
+    if (record.subjectType === 'interview') {
+      throw new BadRequestException('This token is not a consent or agreement link');
+    }
     if (record.subjectType === 'business') {
       const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
       if (!business) throw new NotFoundException('Business not found');
@@ -261,6 +308,13 @@ export class ConsentLinkService {
 
   async sendOtp(token: string) {
     const record = this.validateToken(token);
+    if (record.subjectType === 'interview') {
+      if (record.purpose !== 'owner_result') {
+        throw new BadRequestException('This interview link does not require OTP');
+      }
+      const otp = await this.otpService.sendOtp(record.phone);
+      return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.phone) };
+    }
     if (record.subjectType === 'business') {
       const otp = await this.otpService.sendOtp(record.businessPhone);
       return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.businessPhone) };
@@ -282,6 +336,9 @@ export class ConsentLinkService {
 
   async submitConsent(dto: SubmitConsentDto) {
     const record = this.validateToken(dto.token);
+    if (record.subjectType === 'interview') {
+      throw new BadRequestException('This token is not a consent or agreement link');
+    }
     if (this.processingTokens.has(record.token)) {
       throw new BadRequestException('Consent link submission is already processing');
     }

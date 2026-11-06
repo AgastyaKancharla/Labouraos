@@ -32,6 +32,7 @@ model JobSeeker {
   registeredBy              Staff?      @relation("JobSeekerRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   placements                Placement[]
+  interviews                Interview[]
   candidateIntroductions    CandidateIntroduction[]
   payments                  Payment[]
   contactAttempts           ContactAttempt[]
@@ -212,6 +213,7 @@ model Business {
   agreements    BusinessAgreement[]
   candidateIntroductions CandidateIntroduction[]
   candidateIntroductionLinks CandidateIntroductionLink[]
+  interviews                Interview[]
   erasedAt      DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -263,6 +265,7 @@ model Vacancy {
   interviewContactName        String?
   capturedChannel             String?
   interviewSlots              VacancyInterviewSlot[]
+  interviews                  Interview[]
   placements                  Placement[]
   candidateIntroductions     CandidateIntroduction[]
   candidateIntroductionLinks CandidateIntroductionLink[]
@@ -283,9 +286,54 @@ model VacancyInterviewSlot {
   startsAt  DateTime
   endsAt    DateTime
   capacity  Int?
+  interviews Interview[]
   createdAt DateTime @default(now())
 
   @@index([vacancyId, startsAt])
+}
+
+model Interview {
+  id                       String                @id @default(uuid())
+  code                     String                @unique
+  vacancyId                String
+  vacancy                  Vacancy               @relation(fields: [vacancyId], references: [id], onDelete: Restrict)
+  businessId               String
+  business                 Business              @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  jobSeekerId              String
+  jobSeeker                JobSeeker             @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
+  vacancyInterviewSlotId   String
+  vacancyInterviewSlot     VacancyInterviewSlot @relation(fields: [vacancyInterviewSlotId], references: [id], onDelete: Restrict)
+  slotStartsAt             DateTime
+  slotEndsAt               DateTime
+  proposedByStaffId        String
+  proposedBy               Staff                 @relation("InterviewProposedBy", fields: [proposedByStaffId], references: [id], onDelete: Restrict)
+  proposedAt               DateTime              @default(now())
+  suitabilitySnapshot      Json
+  status                   String                @default("offered") // offered, confirmed, declined, no_reply, completed, no_show, cancelled, no_result
+  offerMessageLogIds       String[]              @default([])
+  offerSentAt              DateTime
+  replyDueAt               DateTime
+  candidateRespondedAt     DateTime?
+  businessDetailsSentAt    DateTime?
+  agentAttendanceRequired  Boolean               @default(false)
+  attendanceVisitId        String?
+  result                   String?
+  resultReason             String?
+  resultOtpRequestId       String?
+  resultDueAt              DateTime
+  resultRecordedAt         DateTime?
+  candidateCheckAnswer     String?
+  candidateCheckAt         DateTime?
+  cancelReason             String?
+  createdAt                DateTime              @default(now())
+  updatedAt                DateTime              @updatedAt
+
+  @@index([vacancyId, status])
+  @@index([businessId, jobSeekerId, status])
+  @@index([jobSeekerId, status])
+  @@index([vacancyInterviewSlotId, status])
+  @@index([replyDueAt, status])
+  @@index([resultDueAt, status])
 }
 
 model Placement {
@@ -371,6 +419,7 @@ model Staff {
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
   candidateIntroductionsShown CandidateIntroduction[] @relation("CandidateIntroductionShownBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
+  interviewsProposed   Interview[]      @relation("InterviewProposedBy")
   businessVisits    BusinessVisit[]
   checkIns          FieldCheckIn[]
   suggestedVisitAssignments VisitAssignment[] @relation("VisitAssignmentSuggested")
@@ -763,6 +812,7 @@ model PricingPolicy {
   offerReplyHours              Int
   maxHits                      Int
   interviewResultDeadline      String
+  interviewResultCloseHours    Int       @default(48)
   interviewResultEscalateHours Int
   placementPaymentDueHours     Int
   replacementWindowDays        Int
