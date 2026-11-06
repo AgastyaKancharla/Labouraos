@@ -202,12 +202,13 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       .expect(201);
     const vacancyId = vcRes.body.id;
 
-    // 7. Shortlist retrieval (calls Phase 4 Task 3 endpoint)
+    // 7. Shortlist retrieval returns the Phase 14 paginated matching result.
     const shortlistRes = await request(app.getHttpServer())
       .get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${caToken}`)
       .expect(200);
-    expect(Array.isArray(shortlistRes.body)).toBe(true);
+    expect(Array.isArray(shortlistRes.body.matches)).toBe(true);
+    expect(shortlistRes.body).toMatchObject({ page: 1, pageSize: expect.any(Number) });
 
     // 8. Placement offer flow
     const placeRes = await request(app.getHttpServer())

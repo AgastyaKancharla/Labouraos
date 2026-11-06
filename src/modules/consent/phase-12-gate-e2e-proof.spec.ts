@@ -263,8 +263,16 @@ describe('Phase 12 gate end-to-end proof', () => {
       isAdult: true,
       status: 'verified',
     });
-    expect(JSON.stringify({ identityRequest, identityResponse: identityResponse.body, verification }))
-      .not.toMatch(/\b\d{12}\b/);
+    expect(identityResponse.body.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(verification.id).toBe(identityResponse.body.id);
+    expect(verification.id).toMatch(/^[0-9a-f-]{36}$/i);
+    expect(verification.id).toBe(identityResponse.body.id);
+    const serialized = JSON.stringify({ identityRequest, identityResponse: identityResponse.body, verification });
+    const withoutUuids = serialized.replace(
+      /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
+      '',
+    );
+    expect(withoutUuids).not.toMatch(/\b\d{12}\b/);
 
     await request(app.getHttpServer())
       .post(`/job-seekers/${jobSeekerId}/trades`)

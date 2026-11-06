@@ -1,0 +1,2 @@
+ALTER TABLE "PricingPolicy"
+  ADD COLUMN "adultMinimumAge" INTEGER NOT NULL DEFAULT 18;

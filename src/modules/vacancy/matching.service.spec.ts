@@ -107,6 +107,7 @@ describe('MatchingService', () => {
       matchingWeights: { clock: 30, distance: 20, experience: 15, salary: 15, reliability: 10, completeness: 5, pastResults: 5 },
       jobSeekerGuaranteeDays: 30,
       maxHits: 3,
+      adultMinimumAge: 18,
     };
   });
 
@@ -171,6 +172,13 @@ describe('MatchingService', () => {
     expect((await run()).matches).toHaveLength(0);
     candidates = [baseCandidate('too-old')];
     expect((await run(candidates, { ageMax: 30 })).matches).toHaveLength(0);
+  });
+
+  it('reads the adult age threshold from PricingPolicy', async () => {
+    candidates = [baseCandidate('young-adult', { dateOfBirth: new Date('2006-01-01T00:00:00.000Z') })];
+    policy.adultMinimumAge = 21;
+    const result = await run();
+    expect(result.matches).toHaveLength(0);
   });
 
   it('matches a specified gender requirement', async () => {

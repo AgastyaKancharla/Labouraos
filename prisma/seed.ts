@@ -114,6 +114,7 @@ export async function seed(prismaClient?: PrismaClient) {
             completeness: 5,
             pastResults: 5,
           },
+          adultMinimumAge: 18,
           duplicateBusinessRadiusMeters: 50,
           consentWithdrawalCallWindowMinutes: 60,
           walkInStart: '10:30',

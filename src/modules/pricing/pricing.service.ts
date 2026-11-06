@@ -82,6 +82,7 @@ export class PricingService {
           updates.matchingWeights === null || updates.matchingWeights === undefined
             ? (before.matchingWeights as Prisma.InputJsonValue)
             : (updates.matchingWeights as Prisma.InputJsonValue),
+        adultMinimumAge: updates.adultMinimumAge ?? before.adultMinimumAge,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

@@ -176,7 +176,7 @@ export class MatchingService {
       }
       const distanceKm = distanceInKm(seeker.latitude, seeker.longitude, vacancy.latitude, vacancy.longitude);
       if (distanceKm > seeker.travelDistanceKm) continue;
-      if (!this.passesAfterDistanceRules(seeker, vacancy, now)) continue;
+      if (!this.passesAfterDistanceRules(seeker, vacancy, policy.adultMinimumAge, now)) continue;
       const match = this.score(
         seeker,
         vacancy,
@@ -220,7 +220,12 @@ export class MatchingService {
     return true;
   }
 
-  private passesAfterDistanceRules(seeker: MatchCandidate, vacancy: VacancyForMatching, now: Date): boolean {
+  private passesAfterDistanceRules(
+    seeker: MatchCandidate,
+    vacancy: VacancyForMatching,
+    adultMinimumAge: number,
+    now: Date,
+  ): boolean {
     if (this.businessRejected(vacancy.businessId, seeker.id, seeker)) return false;
 
     const providedLanguages = seeker.languages.filter((row) => row.speaks).map((row) => row.language.toLowerCase());
@@ -232,7 +237,7 @@ export class MatchingService {
     if (seeker.availableFrom && vacancy.startDate && seeker.availableFrom.getTime() > vacancy.startDate.getTime()) return false;
     if (!seeker.dateOfBirth) return false;
     const age = ageOn(seeker.dateOfBirth, now);
-    if (age < 18 || (vacancy.ageMin !== null && age < vacancy.ageMin) || (vacancy.ageMax !== null && age > vacancy.ageMax)) return false;
+    if (age < adultMinimumAge || (vacancy.ageMin !== null && age < vacancy.ageMin) || (vacancy.ageMax !== null && age > vacancy.ageMax)) return false;
     if (vacancy.genderRequirement && !['none', 'any'].includes(vacancy.genderRequirement.toLowerCase()) &&
       seeker.gender?.toLowerCase() !== vacancy.genderRequirement.toLowerCase()) return false;
     if (seeker.shiftPreference !== 'any' && (

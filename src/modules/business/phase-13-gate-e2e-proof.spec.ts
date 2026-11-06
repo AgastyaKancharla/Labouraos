@@ -187,6 +187,11 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
         tradeSkill: 'Electrician',
         minSalary: 1500000,
         maxSalary: 2500000,
+        dateOfBirth: new Date('1995-01-01T00:00:00.000Z'),
+        latitude: 12.9717,
+        longitude: 77.5947,
+        travelDistanceKm: 20,
+        shiftPreference: 'any',
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
         status: 'active',
@@ -238,7 +243,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     })).toBe(0);
     const shortlist = await request(server).get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${visitingAgent.token}`).expect(200);
-    expect(shortlist.body.map((row: { id: string }) => row.id)).toContain(candidate.id);
+    expect(shortlist.body.matches.map((row: { jobSeekerId: string }) => row.jobSeekerId)).toContain(candidate.id);
 
     const withdrawalPhone = `7${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     const withdrawalCandidate = await prisma.jobSeeker.create({
