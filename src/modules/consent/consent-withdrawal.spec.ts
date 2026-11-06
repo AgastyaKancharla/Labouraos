@@ -33,6 +33,7 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
   const createdAuditIds: string[] = [];
 
   beforeAll(async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     clock = new TestConsentClock();
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
