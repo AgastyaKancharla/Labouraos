@@ -23,6 +23,7 @@ import { publicLink } from '../../common/public-link';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { CallService } from '../call/call.service';
 import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
+import { BusinessVerificationService } from '../business/business-verification.service';
 
 interface BookInterviewDto {
   vacancyId: string;
@@ -55,6 +56,7 @@ export class InterviewService {
     private readonly matchingService: MatchingService,
     private readonly jobSeekerService: JobSeekerService,
     private readonly calls: CallService,
+    private readonly businessVerification: BusinessVerificationService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
@@ -132,6 +134,7 @@ export class InterviewService {
       0,
       'Asia/Kolkata',
     );
+    const agentAttendanceRequired = await this.requiresAttendance(vacancy.business);
 
     const created = await this.prisma.$transaction(async (tx) => {
       await tx.$queryRaw(Prisma.sql`
@@ -199,6 +202,7 @@ export class InterviewService {
           offerSentAt: now,
           replyDueAt,
           resultDueAt,
+          agentAttendanceRequired,
         },
       });
       await recordStatusChange(tx, {
@@ -428,8 +432,30 @@ export class InterviewService {
         interviewId: interview.id, callRecordId: callRecordId ?? undefined,
       });
     }
+    if (accepted && interview.agentAttendanceRequired) {
+      await this.businessVerification.createInterviewAttendanceAssignment(
+        interview.businessId,
+        interview.id,
+        interview.proposedByStaffId,
+      );
+    }
     if (accepted) await this.sendConfirmationDetails(interview, now);
     return { id: interview.id, status };
+  }
+
+  private async requiresAttendance(business: { id: string; documentsStatus: string | null }) {
+    if (business.documentsStatus === 'no_documents') return true;
+    const [previousInterview, openFlag] = await Promise.all([
+      this.prisma.interview.count({ where: { businessId: business.id } }),
+      this.prisma.reviewFlag.findFirst({
+        where: {
+          subjectType: 'business', subjectId: business.id, status: 'open',
+          kind: { in: ['business_many_rejections', 'business_stopped_after_interviews', 'interview_no_result'] },
+        },
+        select: { id: true },
+      }),
+    ]);
+    return previousInterview === 0 || Boolean(openFlag);
   }
 
   private async sendConfirmationDetails(

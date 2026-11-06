@@ -169,6 +169,33 @@ export class BusinessVerificationService {
     return assignment;
   }
 
+  async createInterviewAttendanceAssignment(businessId: string, interviewId: string, actorId: string) {
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    const suggestedStaffId = await this.suggestFieldAgent(business);
+    const assignment = await this.prisma.visitAssignment.create({
+      data: {
+        businessId,
+        purpose: 'interview_attendance',
+        suggestedStaffId,
+        relatedType: 'interview',
+        relatedId: interviewId,
+        status: 'pending',
+      },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'business.visit_assignment_created',
+      entityType: 'visit_assignment',
+      entityCode: assignment.id,
+      after: { businessId, purpose: 'interview_attendance', suggestedStaffId, relatedType: 'interview', relatedId: interviewId, status: 'pending' },
+      changedFields: ['purpose', 'suggestedStaffId', 'relatedType', 'relatedId', 'status'],
+      city: business.city,
+      reason: 'Attendance support assigned for a confirmed interview',
+    });
+    return assignment;
+  }
+
   async assign(assignmentId: string, actorId: string, assignedStaffId: string) {
     if (!assignedStaffId) throw new BadRequestException('assignedStaffId is required');
     const actor = await this.requireReviewActor(actorId);
