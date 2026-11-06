@@ -5,6 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { MessagingService } from '../message/messaging.service';
 import { MatchingService } from './matching.service';
+import { publicLink } from '../../common/public-link';
 
 type CurrentMatch = {
   jobSeekerId: string;
@@ -43,7 +44,7 @@ export class CandidateIntroductionService {
       return { jobSeekerId, ...found };
     });
     const token = randomBytes(32).toString('hex');
-    const link = `${process.env.APP_BASE_URL ?? ''}/candidate-introductions/${token}`;
+    const link = publicLink(`/candidate-introductions/${token}`);
     await this.prisma.candidateIntroductionLink.create({
       data: {
         tokenHash: this.hashToken(token),

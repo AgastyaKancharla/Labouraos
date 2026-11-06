@@ -24,6 +24,7 @@ import {
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
+import { publicLink } from '../../common/public-link';
 
 interface ConsentLinkTokenBase {
   token: string;
@@ -130,7 +131,7 @@ export class ConsentLinkService {
       subjectId: seeker.id,
       variables: {
         token,
-        link: `/consent/${token}`,
+        link: publicLink(`/consent/${token}`),
       },
     });
 
@@ -187,7 +188,7 @@ export class ConsentLinkService {
       template: 'agreement_link',
       subjectType: 'business',
       subjectId: business.id,
-      variables: { token, link: `/consent/${token}` },
+      variables: { token, link: publicLink(`/consent/${token}`) },
     });
     return { success: true, token, expiresAt };
   }

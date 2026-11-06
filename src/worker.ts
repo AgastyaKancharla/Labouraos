@@ -1,8 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { StructuredLogger } from './common/observability/structured-logger.service';
+import { getPublicAppUrl } from './common/public-link';
 
 export async function bootstrapWorker() {
+  getPublicAppUrl();
   process.env.PROCESS_ROLE = 'worker';
 
   const logger = new StructuredLogger('WorkerBootstrap');

@@ -27,6 +27,8 @@ services:
         value: "true"
       - key: JWT_SECRET
         generateValue: true
+      - key: PUBLIC_APP_URL
+        sync: false
       - key: LOGIN_CODE_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN
@@ -138,6 +140,11 @@ services:
           type: web
           name: laboura-api
           envVarKey: JWT_SECRET
+      - key: PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: PUBLIC_APP_URL
       - key: LOGIN_CODE_SECRET
         fromService:
           type: web

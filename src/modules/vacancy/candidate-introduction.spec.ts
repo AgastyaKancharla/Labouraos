@@ -18,6 +18,7 @@ describe('CandidateIntroductionService', () => {
   let service: CandidateIntroductionService;
 
   beforeEach(() => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     prisma = {
       vacancy: { findFirst: jest.fn().mockResolvedValue({ id: 'vacancy-1', businessId: 'business-1' }) },
       business: { findFirst: jest.fn().mockResolvedValue({ id: 'business-1', code: 'BZ-00001' }) },
@@ -51,7 +52,10 @@ describe('CandidateIntroductionService', () => {
       .resolves.toEqual({ count: 3, channel: 'share_link', messageLogId: 'message-1' });
     expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({
       channel: 'whatsapp', template: 'candidates_shared', subjectType: 'business', subjectId: 'business-1',
+      variables: { link: expect.stringMatching(/^https:\/\/app\.laboura\.in\/candidate-introductions\/[a-f0-9]{64}$/) },
     }));
+    const sentLink = messaging.send.mock.calls[0][0].variables.link as string;
+    expect(sentLink).toMatch(/^https:\/\//);
     expect(prisma.candidateIntroduction.createMany).toHaveBeenCalledWith({ data: expect.arrayContaining([
       expect.objectContaining({ jobSeekerId: 'seeker-1', channel: 'share_link', messageLogId: 'message-1', rank: 1 }),
       expect.objectContaining({ jobSeekerId: 'seeker-2', channel: 'share_link', messageLogId: 'message-1', rank: 2 }),
