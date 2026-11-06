@@ -4,6 +4,8 @@ import {
   Injectable,
   NotFoundException,
   ServiceUnavailableException,
+  Inject,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -18,6 +20,9 @@ import { localCalendarToUtc, getCalendarPartsInTimezone } from '../../common/tim
 import { formatINR } from '../../common/money/money';
 import { MatchingService } from './matching.service';
 import { publicLink } from '../../common/public-link';
+import { JobSeekerService } from '../job-seeker/job-seeker.service';
+import { CallService } from '../call/call.service';
+import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
 
 interface BookInterviewDto {
   vacancyId: string;
@@ -48,6 +53,9 @@ export class InterviewService {
     private readonly consentLinks: ConsentLinkService,
     private readonly messagingService: MessagingService,
     private readonly matchingService: MatchingService,
+    private readonly jobSeekerService: JobSeekerService,
+    private readonly calls: CallService,
+    @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
   async book(dto: BookInterviewDto, staffId: string) {
@@ -291,6 +299,175 @@ export class InterviewService {
       reason: 'Suitable candidate offered an interview slot',
     });
     return { ...created.interview, offerMessageLogIds: messageLogIds };
+  }
+
+  async respondFromLink(token: string, answer: 'yes' | 'no') {
+    if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
+    const link = this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');
+    const result = await this.applyCandidateReply(link.interviewId, answer === 'yes', null, null);
+    this.consentLinks.consumeInterviewActionToken(token, 'candidate_reply');
+    return result;
+  }
+
+  validateCandidateReplyLink(token: string) {
+    return this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');
+  }
+
+  async respondFromCall(
+    interviewId: string,
+    callRecordId: string,
+    answer: 'accepted_offer' | 'rejected_offer',
+    reason: string | undefined,
+    staffId: string,
+  ) {
+    if (!['accepted_offer', 'rejected_offer'].includes(answer)) {
+      throw new BadRequestException('answer must be accepted_offer or rejected_offer');
+    }
+    if (answer === 'rejected_offer' && !reason?.trim()) {
+      throw new BadRequestException('A reason is required when declining an interview offer by call');
+    }
+    const interview = await this.prisma.interview.findUnique({ where: { id: interviewId } });
+    if (!interview || interview.status !== 'offered') throw new BadRequestException('This interview is no longer awaiting a reply');
+    const actor = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!actor) throw new NotFoundException('Staff not found');
+    await this.calls.recordOutcome(
+      { id: staffId, role: actor.role },
+      callRecordId,
+      { agentOutcome: answer, reason },
+    );
+    const call = await this.prisma.callRecord.findUnique({ where: { id: callRecordId } });
+    if (!call || call.purpose !== 'offer' || call.subjectType !== 'job_seeker' ||
+        call.subjectId !== interview.jobSeekerId || !call.answered ||
+        (call.startedAt ?? call.createdAt).getTime() < interview.offerSentAt.getTime()) {
+      throw new BadRequestException('Reply must be recorded on an answered offer call to this candidate after the offer was sent');
+    }
+    return this.applyCandidateReply(interviewId, answer === 'accepted_offer', call.id, reason?.trim() ?? null);
+  }
+
+  async processDueReplies(now = this.clock.now()) {
+    const due = await this.prisma.interview.findMany({
+      where: { status: 'offered', replyDueAt: { lte: now } },
+      orderBy: { replyDueAt: 'asc' },
+    });
+    let processed = 0;
+    for (const interview of due) {
+      const call = await this.prisma.callRecord.findFirst({
+        where: {
+          subjectType: 'job_seeker', subjectId: interview.jobSeekerId, purpose: 'offer',
+          OR: [
+            { startedAt: { gte: interview.offerSentAt } },
+            { startedAt: null, createdAt: { gte: interview.offerSentAt } },
+          ],
+        },
+        orderBy: { createdAt: 'asc' },
+      });
+      const sentMessages = await this.prisma.messageLog.findMany({
+        where: { id: { in: interview.offerMessageLogIds }, status: { in: ['sent', 'delivered', 'read'] } },
+        select: { channel: true },
+      });
+      const bothMessagesSent = ['sms', 'whatsapp'].every((channel) => sentMessages.some((message) => message.channel === channel));
+      const nextStatus = call && bothMessagesSent ? 'no_reply' : 'cancelled';
+      const updated = await this.prisma.$transaction(async (tx) => {
+        const changed = await tx.interview.updateMany({
+          where: { id: interview.id, status: 'offered' },
+          data: {
+            status: nextStatus,
+            cancelReason: nextStatus === 'cancelled' ? 'offer_not_followed_up' : null,
+          },
+        });
+        if (changed.count !== 1) return false;
+        await recordStatusChange(tx, {
+          subjectType: 'interview', subjectId: interview.id, fromStatus: 'offered', toStatus: nextStatus,
+          changedByStaffId: null,
+          reason: nextStatus === 'cancelled' ? 'offer_not_followed_up' : 'reply_deadline_elapsed_after_offer_attempt',
+          changedAt: now,
+        });
+        return true;
+      });
+      if (!updated) continue;
+      if (nextStatus === 'no_reply') {
+        await this.jobSeekerService.recordHit(
+          interview.jobSeekerId, 'offer_no_reply', 'Candidate did not reply by the offer deadline', 'system', undefined,
+          { interviewId: interview.id, callRecordId: call?.id },
+        );
+      }
+      processed += 1;
+    }
+    return { processed };
+  }
+
+  private async applyCandidateReply(interviewId: string, accepted: boolean, callRecordId: string | null, reason: string | null) {
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: interviewId },
+      include: { business: true, jobSeeker: true, vacancy: true },
+    });
+    if (!interview) throw new NotFoundException('Interview not found');
+    const now = this.clock.now();
+    if (interview.status !== 'offered' || interview.candidateRespondedAt || now.getTime() > interview.replyDueAt.getTime()) {
+      throw new BadRequestException('This interview is no longer awaiting a reply');
+    }
+    const status = accepted ? 'confirmed' : 'declined';
+    const changed = await this.prisma.$transaction(async (tx) => {
+      const update = await tx.interview.updateMany({
+        where: { id: interview.id, status: 'offered', candidateRespondedAt: null },
+        data: {
+          status,
+          candidateRespondedAt: now,
+          callRecordId,
+        },
+      });
+      if (update.count !== 1) throw new BadRequestException('This interview is no longer awaiting a reply');
+      await recordStatusChange(tx, {
+        subjectType: 'interview', subjectId: interview.id, fromStatus: 'offered', toStatus: status,
+        changedByStaffId: null, reason: reason ?? undefined, changedAt: now,
+      });
+      return true;
+    });
+    if (changed && !accepted) {
+      await this.jobSeekerService.recordHit(interview.jobSeekerId, 'offer_declined', reason ?? undefined, 'system', undefined, {
+        interviewId: interview.id, callRecordId: callRecordId ?? undefined,
+      });
+    }
+    if (accepted) await this.sendConfirmationDetails(interview, now);
+    return { id: interview.id, status };
+  }
+
+  private async sendConfirmationDetails(
+    interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
+    now: Date,
+  ) {
+    const time = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
+    }).format(interview.slotStartsAt);
+    const contactPerson = interview.business.additionalContactName || interview.business.ownerName || interview.business.contactName || '';
+    const candidateMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
+      this.messagingService.send({
+        channel, template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
+        relatedType: 'interview', relatedId: interview.id,
+        variables: {
+          businessName: interview.business.name,
+          address: interview.business.address ?? '',
+          area: interview.vacancy.locality ?? interview.business.locality ?? '',
+          interviewTime: time,
+          contactPerson,
+        },
+      }),
+    ));
+    let photoLink = '';
+    if (interview.jobSeeker.photoStoragePath && this.photoStorage) {
+      photoLink = await this.photoStorage.signedUrl(interview.jobSeeker.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS);
+    }
+    const ownerMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
+      this.messagingService.send({
+        channel, template: 'interview_candidate_for_owner', subjectType: 'business', subjectId: interview.businessId,
+        relatedType: 'interview', relatedId: interview.id,
+        variables: { firstName: interview.jobSeeker.name.trim().split(/\s+/)[0], photoLink, interviewTime: time },
+      }),
+    ));
+    if ([...candidateMessages, ...ownerMessages].some((message) => message.status === 'failed')) {
+      throw new ServiceUnavailableException('Interview confirmation details could not be delivered');
+    }
+    await this.prisma.interview.update({ where: { id: interview.id }, data: { businessDetailsSentAt: now } });
   }
 
   private async findMatchingCandidate(vacancyId: string, jobSeekerId: string) {

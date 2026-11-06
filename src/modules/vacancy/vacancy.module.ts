@@ -14,11 +14,12 @@ import { CandidateIntroductionController } from './candidate-introduction.contro
 import { InterviewController } from './interview.controller';
 import { InterviewService } from './interview.service';
 import { PricingModule } from '../pricing/pricing.module';
+import { CallModule } from '../call/call.module';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule],
   controllers: [VacancyController, CandidateIntroductionController, InterviewController],
   providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService],
-  exports: [VacancyService, CandidateIntroductionService],
+  exports: [VacancyService, CandidateIntroductionService, InterviewService],
 })
 export class VacancyModule {}
