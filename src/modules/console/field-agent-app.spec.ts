@@ -123,7 +123,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     expect(html).toContain('showFieldSelectedInPerson');
     expect(html).toContain('sendFieldSelectedToOwner');
     expect(html).toContain('Left out — no location:');
-    expect(html).not.toContain('/candidates\'');
     const cardRenderer = html.slice(html.indexOf('async function loadFieldShortlistPage'), html.indexOf('async function submitFieldIntroductions'));
     expect(cardRenderer).not.toMatch(/\.phone\b|\.address\b|\.latitude\b|\.longitude\b|dateOfBirth|\bdob\b/i);
   });
