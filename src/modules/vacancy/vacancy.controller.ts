@@ -20,6 +20,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { MatchingService } from './matching.service';
+import { CandidateIntroductionService } from './candidate-introduction.service';
 
 @Controller('vacancies')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -28,6 +29,7 @@ export class VacancyController {
   constructor(
     private readonly vacancyService: VacancyService,
     private readonly matchingService: MatchingService,
+    private readonly candidateIntroductionService: CandidateIntroductionService,
   ) {}
 
   @Post()
@@ -75,6 +77,33 @@ export class VacancyController {
       throw new BadRequestException('page must be a positive integer');
     }
     return this.matchingService.match(id, { page });
+  }
+
+  @Post(':id/introductions/in-person')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('vacancy', 'write')
+  async showCandidatesInPerson(
+    @Param('id') id: string,
+    @Body() body: { jobSeekerIds?: string[] },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.candidateIntroductionService.showInPerson(id, body?.jobSeekerIds ?? [], req.user.sub);
+  }
+
+  @Post(':id/introductions')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('vacancy', 'write')
+  async shareCandidates(
+    @Param('id') id: string,
+    @Body() body: { jobSeekerIds?: string[]; channel?: 'sms' | 'whatsapp' },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.candidateIntroductionService.shareByLink(
+      id,
+      body?.jobSeekerIds ?? [],
+      req.user.sub,
+      body?.channel ?? 'sms',
+    );
   }
 
   @Get(':id')

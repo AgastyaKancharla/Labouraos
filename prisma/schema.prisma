@@ -32,6 +32,7 @@ model JobSeeker {
   registeredBy              Staff?      @relation("JobSeekerRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   placements                Placement[]
+  candidateIntroductions    CandidateIntroduction[]
   payments                  Payment[]
   contactAttempts           ContactAttempt[]
   hits                      JobSeekerHit[]
@@ -209,6 +210,8 @@ model Business {
   visits        BusinessVisit[]
   visitAssignments VisitAssignment[]
   agreements    BusinessAgreement[]
+  candidateIntroductions CandidateIntroduction[]
+  candidateIntroductionLinks CandidateIntroductionLink[]
   erasedAt      DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
@@ -261,6 +264,8 @@ model Vacancy {
   capturedChannel             String?
   interviewSlots              VacancyInterviewSlot[]
   placements                  Placement[]
+  candidateIntroductions     CandidateIntroduction[]
+  candidateIntroductionLinks CandidateIntroductionLink[]
   createdAt                   DateTime    @default(now())
   updatedAt                   DateTime    @updatedAt
 
@@ -364,6 +369,7 @@ model Staff {
   lockedReason      String?
   capturedVacancies Vacancy[]
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
+  candidateIntroductionsShown CandidateIntroduction[] @relation("CandidateIntroductionShownBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
   businessVisits    BusinessVisit[]
   checkIns          FieldCheckIn[]
@@ -876,11 +882,49 @@ model MessageLog {
   deliveredAt       DateTime?
   failedAt          DateTime?
   contactAttempt    ContactAttempt?
+  candidateIntroductions CandidateIntroduction[]
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   @@index([subjectType, subjectId])
   @@index([status])
+}
+
+model CandidateIntroduction {
+  id              String   @id @default(uuid())
+  businessId      String
+  vacancyId       String
+  jobSeekerId     String
+  shownByStaffId  String
+  shownAt         DateTime @default(now())
+  rank            Int
+  score           Float
+  matchReasons    Json
+  channel         String // share_link, in_person
+  messageLogId    String?
+  business        Business  @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  vacancy         Vacancy   @relation(fields: [vacancyId], references: [id], onDelete: Restrict)
+  jobSeeker       JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
+  shownBy         Staff     @relation("CandidateIntroductionShownBy", fields: [shownByStaffId], references: [id], onDelete: Restrict)
+  messageLog      MessageLog? @relation(fields: [messageLogId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, jobSeekerId, shownAt])
+  @@index([vacancyId, shownAt])
+  @@index([messageLogId])
+}
+
+model CandidateIntroductionLink {
+  id           String   @id @default(uuid())
+  tokenHash    String   @unique
+  businessId   String
+  vacancyId    String
+  jobSeekerIds String[]
+  consumedAt   DateTime?
+  createdAt    DateTime @default(now())
+  business     Business @relation(fields: [businessId], references: [id], onDelete: Restrict)
+  vacancy      Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Restrict)
+
+  @@index([businessId, vacancyId])
 }
 
 model Consent {
