@@ -28,7 +28,7 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
     for (const role of roles) {
       const staff = await prisma.staff.create({
         data: {
-          code: `${role.slice(0, 2).toUpperCase()}-CARD-${timestamp}`,
+          code: `CARD-${role.toUpperCase()}-${timestamp}`,
           name: `${role} card test`,
           email: `${role}_card_${timestamp}@laboura.local`,
           passwordHash,
