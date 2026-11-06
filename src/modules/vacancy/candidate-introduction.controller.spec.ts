@@ -1,8 +1,18 @@
 import { Response } from 'express';
 import { CandidateIntroductionController } from './candidate-introduction.controller';
 import { CandidateIntroductionService } from './candidate-introduction.service';
+import { RequestMethod } from '@nestjs/common';
+import { METHOD_METADATA } from '@nestjs/common/constants';
 
 describe('CandidateIntroductionController', () => {
+  it('exposes no edit or delete route for immutable introduction records', () => {
+    const methods = Object.getOwnPropertyNames(CandidateIntroductionController.prototype)
+      .map((name) => Object.getOwnPropertyDescriptor(CandidateIntroductionController.prototype, name)?.value)
+      .filter((handler): handler is (...args: never[]) => unknown => typeof handler === 'function')
+      .map((handler) => Reflect.getMetadata(METHOD_METADATA, handler));
+    expect(methods).toEqual([undefined, RequestMethod.GET]);
+  });
+
   it('renders only the candidate card fields on the public share page', async () => {
     const service = {
       redeemShareLink: jest.fn().mockResolvedValue({
