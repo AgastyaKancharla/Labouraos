@@ -7,9 +7,10 @@ import { VacancyService } from './vacancy.service';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { MatchingService } from './matching.service';
 import { ConsentModule } from '../consent/consent.module';
+import { JobSeekerModule } from '../job-seeker/job-seeker.module';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule],
   controllers: [VacancyController],
   providers: [VacancyService, MatchingService],
   exports: [VacancyService],

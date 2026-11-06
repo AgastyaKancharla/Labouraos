@@ -1,10 +1,15 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { ConsentClock } from '../consent/consent-clock';
 import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
+import {
+  CANDIDATE_PHOTO_LINK_TTL_SECONDS,
+  CANDIDATE_PHOTO_STORAGE,
+  CandidatePhotoStorage,
+} from '../job-seeker/photo-storage';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const WEIGHT_KEYS = ['clock', 'distance', 'experience', 'salary', 'reliability', 'completeness', 'pastResults'] as const;
@@ -94,6 +99,19 @@ type CandidateMatch = {
   jobSeekerId: string;
   score: number;
   matchReasons: string[];
+  photoStoragePath: string | null;
+  card: {
+    firstName: string;
+    photoUrl: string | null;
+    photoUrlExpiresInSeconds: number | null;
+    age: number;
+    trade: string;
+    yearsExperience: number;
+    languages: string[];
+    distanceKm: number;
+    expectedSalary: { minPaise: number; maxPaise: number };
+    matchReasons: string[];
+  };
 };
 
 @Injectable()
@@ -102,6 +120,7 @@ export class MatchingService {
     private readonly prisma: PrismaService,
     private readonly pricingService: PricingService,
     private readonly clock: ConsentClock,
+    @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
   async match(vacancyId: string, options: { page: number }) {
@@ -193,13 +212,28 @@ export class MatchingService {
     matches.sort((a, b) => b.score - a.score || a.jobSeekerId.localeCompare(b.jobSeekerId));
     const pageSize = policy.matchPageSize;
     const offset = (options.page - 1) * pageSize;
+    const pageMatches = await Promise.all(matches.slice(offset, offset + pageSize).map(async (match) => {
+      const { photoStoragePath, ...publicMatch } = match;
+      const photoUrl = photoStoragePath
+        ? await this.requirePhotoStorage().signedUrl(photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS)
+        : null;
+      return {
+        ...publicMatch,
+        card: {
+          ...match.card,
+          photoUrl,
+          photoUrlExpiresInSeconds: photoUrl ? CANDIDATE_PHOTO_LINK_TTL_SECONDS : null,
+        },
+      };
+    }));
+
     return {
       vacancyId: vacancy.id,
       page: options.page,
       pageSize,
       total: matches.length,
       leftOut,
-      matches: matches.slice(offset, offset + pageSize),
+      matches: pageMatches,
     };
   }
 
@@ -298,7 +332,32 @@ export class MatchingService {
       'Salary fits',
       deadline ? `Day ${Math.min(guaranteeDays, Math.max(1, guaranteeDays - daysLeft))} of ${guaranteeDays}` : `Day 1 of ${guaranteeDays}`,
     ];
-    return { jobSeekerId: seeker.id, score, matchReasons };
+    return {
+      jobSeekerId: seeker.id,
+      score,
+      matchReasons,
+      photoStoragePath: seeker.photoStoragePath,
+      card: {
+        firstName: seeker.name.trim().split(/\s+/)[0] ?? '',
+        photoUrl: null,
+        photoUrlExpiresInSeconds: null,
+        age: ageOn(seeker.dateOfBirth!, now),
+        trade: matchedTrade?.trade ?? vacancy.tradeSkill,
+        yearsExperience: experience,
+        languages: seeker.languages.filter((language) => language.speaks).map((language) => language.language),
+        distanceKm: Math.round(distanceKm),
+        expectedSalary: {
+          minPaise: seekerMin,
+          maxPaise: monthlyAmount(seeker.maxSalary, seeker.salaryPeriod, salaryDaysPerMonth),
+        },
+        matchReasons,
+      },
+    };
+  }
+
+  private requirePhotoStorage(): CandidatePhotoStorage {
+    if (!this.photoStorage) throw new Error('Candidate photo storage is not configured');
+    return this.photoStorage;
   }
 
   private refundStillOwed(seeker: MatchCandidate): boolean {

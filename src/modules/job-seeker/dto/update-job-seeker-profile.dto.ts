@@ -2,8 +2,6 @@ export interface UpdateJobSeekerProfileDto {
   dateOfBirth?: Date | string | null;
   gender?: string | null;
   whatsappPhone?: string | null;
-  photoStoragePath?: string | null;
-  photoTakenAt?: Date | string | null;
   locality?: string | null;
   pincode?: string | null;
   latitude?: number | null;
