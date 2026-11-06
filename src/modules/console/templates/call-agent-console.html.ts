@@ -221,6 +221,7 @@ export function renderCallAgentConsoleHtml(): string {
     <button class="tab-btn" data-tab="shortlist">Candidate Shortlist</button>
     <button class="tab-btn" data-tab="contact-attempts">Calling & Hits</button>
     <button class="tab-btn" data-tab="placement-flow">Placement Flow</button>
+    <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
   </nav>
 
   <main>

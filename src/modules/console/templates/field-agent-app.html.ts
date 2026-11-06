@@ -327,6 +327,7 @@ export function renderFieldAgentAppHtml(): string {
     <button class="tab-btn" data-tab="visits">Check in & Visits</button>
     <button class="tab-btn" data-tab="vacancy-capture">Capture Vacancy</button>
     <button class="tab-btn" data-tab="shortlist-interview">Shortlist & Interview</button>
+    <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
   </nav>
 
   <main>

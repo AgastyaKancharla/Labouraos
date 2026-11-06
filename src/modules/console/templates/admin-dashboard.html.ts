@@ -303,6 +303,7 @@ export function renderAdminDashboardHtml(): string {
     <button class="tab-btn" data-tab="refunds">Refund Approvals</button>
     <!-- CEO-only Pricing Tab; Manager tokens cannot see this per AGENTS.md §7 and specs/phase-6.md Task 4 -->
     <button class="tab-btn hidden" id="tab-pricing" data-tab="pricing">Pricing & Policy (CEO)</button>
+    <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
     ${officeApproverHtml()}
   </nav>
 
