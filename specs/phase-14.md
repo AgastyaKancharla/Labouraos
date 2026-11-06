@@ -75,7 +75,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - `CandidateIntroduction` is never editable or deletable by anyone, like `AuditLog`.
 - Tests: sharing 3 candidates writes 3 rows and one message; showing in person writes rows with no message; a candidate who no longer passes the rules can't be shown; `firstIntroduction` returns the first showing after several; no route edits or deletes an introduction; the share page shows no forbidden field.
 
-### [ ] Task 4 — The map
+### [x] Task 4 — The map
 **Branch:** `phase-14/task-4-map` · **No migration**
 
 **Acceptance:**
