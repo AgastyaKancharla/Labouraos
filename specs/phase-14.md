@@ -18,7 +18,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ---
 
-### [ ] Task 1 — The matching engine
+### [x] Task 1 — The matching engine
 **Branch:** `phase-14/task-1-matching-engine` · **Migration folder:** `20261107100000_matching_policy`
 
 **Acceptance:**

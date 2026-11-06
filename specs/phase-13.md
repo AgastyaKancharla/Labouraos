@@ -142,6 +142,6 @@ One task after another, in order. Each task has its own branch and, where needed
 - [x] `own_area` is gone; `own_account` works; Managers can't release money — by test
 - [x] `Business.area` and `Vacancy.offeredSalary` are nullable and no longer written; `Vacancy.tradeSkill` is untouched — by test
 - [x] **End-to-end proof, recorded in the report:** a call agent creates a household lead with no documents; a Team Lead creates a verification assignment and the nearest checked-in field agent is suggested and confirmed; the agent visits, enters the owner's OTP, uploads a photo; the owner signs the agreement and call-recording consent on their own phone; the `no_documents_check` flag is raised; the Team Lead approves, the visiting agent becomes account agent; a vacancy is added with a walk-in day; the shortlist that was empty before approval now works. Separately: a job seeker calls in, the agent withdraws `call_recording` inside the call window, the job seeker is paused and gets the SMS, re-grants by link and is active again.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.
