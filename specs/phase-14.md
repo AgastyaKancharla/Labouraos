@@ -84,7 +84,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - The console page uses an OpenStreetMap-based map (Leaflet, pinned version, from an allowed CDN); no Google Maps. Clicking a business opens its profile; clicking a vacancy opens its shortlist.
 - Tests: no response contains a job seeker coordinate with more than 2 decimal places; a paused or no-consent job seeker never appears as a dot; finance is refused; a business pin opens the right profile id.
 
-### [ ] Task 5 — Screens
+### [x] Task 5 — Screens
 **Branch:** `phase-14/task-5-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**
