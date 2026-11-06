@@ -14,6 +14,7 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
   const password = 'Password123!Secure';
   const roles = ['field_agent', 'call_agent', 'team_lead', 'manager', 'ceo', 'finance'] as const;
   const tokens: Record<(typeof roles)[number], string> = {} as Record<(typeof roles)[number], string>;
+  const staffIds: Partial<Record<(typeof roles)[number], string>> = {};
   let seekerId: string;
   let noSharingSeekerId: string;
   let vacancyId: string;
@@ -37,8 +38,13 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
           ...(role === 'field_agent' ? { area: 'Indiranagar' } : {}),
         },
       });
+      staffIds[role] = staff.id;
       tokens[role] = (await enrolledLogin(app.getHttpServer(), { email: staff.email, password }).expect(200)).body.accessToken;
     }
+    await prisma.staff.update({
+      where: { id: staffIds.field_agent },
+      data: { teamLeadId: staffIds.team_lead },
+    });
 
     const business = await prisma.business.create({
       data: {
@@ -48,6 +54,7 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
         contactName: 'Business owner',
         phone: `918${String(timestamp).slice(-9)}`,
         phoneVerified: true,
+        accountAgentId: staffIds.field_agent,
         verificationStatus: 'verified',
       },
     });
