@@ -488,29 +488,22 @@ export function renderCallAgentConsoleHtml(): string {
     <div id="view-shortlist" class="tab-view hidden">
       <div class="card">
         <div class="card-title">
-          <span>Candidate Shortlist (Phase 4 Filtered List)</span>
+          <span>Matching Candidate Cards</span>
         </div>
         <div style="display: flex; gap: 12px; margin-bottom: 16px;">
           <input type="text" id="shortlist-vc-id" placeholder="Enter Vacancy ID or Code (e.g. VC-00001)" style="max-width: 400px;">
-          <button onclick="loadShortlist()">Fetch Shortlist</button>
+          <button onclick="loadShortlist()">Fetch top matches</button>
         </div>
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Candidate Code</th>
-                <th>Name</th>
-                <th>Trade</th>
-                <th>Salary Range (INR)</th>
-                <th>Hits</th>
-                <th>Guarantee Deadline</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody id="shortlist-tbody">
-              <tr><td colspan="7" style="text-align: center;">Enter a vacancy ID to load matching candidates</td></tr>
-            </tbody>
-          </table>
+        <div id="shortlist-left-out" aria-live="polite"></div>
+        <div id="shortlist-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:16px 0">
+          <p>Enter a vacancy ID to load matching candidates.</p>
+        </div>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button id="shortlist-next" class="btn-secondary" onclick="loadShortlistPage(shortlistPage + 1)" hidden>Show next 3</button>
+          <label for="shortlist-channel">Message channel</label>
+          <select id="shortlist-channel"><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option></select>
+          <button onclick="showSelectedInPerson()">Shown in person</button>
+          <button class="btn-success" onclick="sendSelectedToOwner()">Send to owner</button>
         </div>
       </div>
     </div>
@@ -1087,29 +1080,73 @@ export function renderCallAgentConsoleHtml(): string {
     }
 
     // 5. Shortlist
+    let shortlistPage = 1;
+    let shortlistPageCount = 1;
+    let shortlistSelectedIds = new Set();
+
     async function loadShortlist() {
+      shortlistPage = 1;
+      shortlistSelectedIds = new Set();
+      await loadShortlistPage(1);
+    }
+
+    async function loadShortlistPage(page) {
       const vcId = document.getElementById('shortlist-vc-id').value.trim();
       if (!vcId) return alert('Vacancy ID required');
       try {
-        const data = await api('/vacancies/' + vcId + '/shortlist');
-        const tbody = document.getElementById('shortlist-tbody');
-        tbody.innerHTML = data.map(c => \`
-          <tr>
-            <td><strong>\${c.code}</strong></td>
-            <td>\${c.name}</td>
-            <td>\${c.trades?.length ? c.trades.find(t => t.isPrimary)?.trade : c.tradeSkill}</td>
-            <td>₹\${(c.minSalary/100).toLocaleString()} - ₹\${(c.maxSalary/100).toLocaleString()}</td>
-            <td><span class="badge" style="background: \${c.hitCount >= 2 ? 'var(--danger)' : '#334155'};">\${c.hitCount} Hits</span></td>
-            <td>\${c.paymentReceivedAt ? new Date(new Date(c.paymentReceivedAt).getTime() + 30*24*3600*1000).toLocaleDateString() : '—'}</td>
-            <td>
-              <button class="btn-sm" onclick="selectCandidateForOffer('\${vcId}', '\${c.id}', '\${c.code}')">Select for Placement</button>
-              <button class="btn-sm btn-call" onclick="quickCallSeeker('\${c.id}', '\${c.code}')">Call</button>
-            </td>
-          </tr>
-        \`).join('') || '<tr><td colspan="7">No matching active candidates found</td></tr>';
+        const data = await api('/vacancies/' + encodeURIComponent(vcId) + '/shortlist?page=' + page);
+        shortlistPage = data.page;
+        shortlistPageCount = Math.ceil(data.total / data.pageSize);
+        const container = document.getElementById('shortlist-cards');
+        container.replaceChildren();
+        data.matches.forEach(match => {
+          const card = match.card;
+          const article = document.createElement('article');
+          article.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--card-bg)';
+          const selectLabel = document.createElement('label');
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = shortlistSelectedIds.has(match.jobSeekerId);
+          checkbox.addEventListener('change', () => checkbox.checked ? shortlistSelectedIds.add(match.jobSeekerId) : shortlistSelectedIds.delete(match.jobSeekerId));
+          selectLabel.append(checkbox, document.createTextNode(' Select candidate'));
+          article.appendChild(selectLabel);
+          if (card.photoUrl) { const photo = document.createElement('img'); photo.src = card.photoUrl; photo.alt = 'Candidate photo'; photo.width = 72; photo.height = 72; photo.style.cssText = 'display:block;object-fit:cover;border-radius:50%;margin:10px 0'; article.appendChild(photo); }
+          const title = document.createElement('h3'); title.textContent = card.firstName + ', ' + card.age; article.appendChild(title);
+          const fields = [card.trade + ' · ' + card.yearsExperience + ' yrs', card.languages.join(', '), card.distanceKm + ' km away', '₹' + (card.expectedSalary.minPaise / 100).toLocaleString('en-IN') + ' – ₹' + (card.expectedSalary.maxPaise / 100).toLocaleString('en-IN'), match.matchReasons.join(' · ')];
+          fields.filter(Boolean).forEach(value => { const row = document.createElement('p'); row.textContent = value; article.appendChild(row); });
+          container.appendChild(article);
+        });
+        if (!data.matches.length) { const empty = document.createElement('p'); empty.textContent = 'No matching candidates on this page.'; container.appendChild(empty); }
+        const leftOut = data.leftOut;
+        document.getElementById('shortlist-left-out').textContent = 'Left out — no location: ' + leftOut.no_location + ' (complete home location); no travel distance: ' + leftOut.no_travel_distance + ' (complete travel distance); consent missing: ' + leftOut.consent_missing + ' (confirm matching and profile sharing consent).';
+        const next = document.getElementById('shortlist-next');
+        next.hidden = shortlistPage >= shortlistPageCount;
       } catch (e) {
         showAlert(e.message, false);
       }
+    }
+
+    async function submitSelectedIntroductions(path, body, successMessage) {
+      const vcId = document.getElementById('shortlist-vc-id').value.trim();
+      if (!vcId) return showAlert('Vacancy ID required', false);
+      if (!shortlistSelectedIds.size) return showAlert('Select at least one candidate', false);
+      try {
+        const result = await api('/vacancies/' + encodeURIComponent(vcId) + path, {
+          method: 'POST',
+          body: Object.assign({ jobSeekerIds: Array.from(shortlistSelectedIds) }, body || {})
+        });
+        showAlert(successMessage + ' (' + result.count + ')');
+        shortlistSelectedIds = new Set();
+        await loadShortlist();
+      } catch (e) { showAlert(e.message, false); }
+    }
+
+    function sendSelectedToOwner() {
+      return submitSelectedIntroductions('/introductions', { channel: document.getElementById('shortlist-channel').value }, 'Candidates sent to owner');
+    }
+
+    function showSelectedInPerson() {
+      return submitSelectedIntroductions('/introductions/in-person', {}, 'Candidates recorded as shown in person');
     }
 
     function selectCandidateForOffer(vcId, jsId, jsCode) {

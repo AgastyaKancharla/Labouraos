@@ -8,7 +8,8 @@ describe('CandidateIntroductionService', () => {
   const shownAt = new Date('2026-11-06T03:00:00.000Z');
   let prisma: {
     vacancy: { findFirst: jest.Mock };
-    candidateIntroduction: { createMany: jest.Mock; findFirst: jest.Mock };
+    business: { findFirst: jest.Mock };
+    candidateIntroduction: { createMany: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
     candidateIntroductionLink: { create: jest.Mock; delete: jest.Mock; findUnique: jest.Mock; updateMany: jest.Mock };
     $transaction: jest.Mock;
   };
@@ -19,7 +20,8 @@ describe('CandidateIntroductionService', () => {
   beforeEach(() => {
     prisma = {
       vacancy: { findFirst: jest.fn().mockResolvedValue({ id: 'vacancy-1', businessId: 'business-1' }) },
-      candidateIntroduction: { createMany: jest.fn().mockResolvedValue({ count: 2 }), findFirst: jest.fn() },
+      business: { findFirst: jest.fn().mockResolvedValue({ id: 'business-1', code: 'BZ-00001' }) },
+      candidateIntroduction: { createMany: jest.fn().mockResolvedValue({ count: 2 }), findFirst: jest.fn(), findMany: jest.fn() },
       candidateIntroductionLink: { create: jest.fn(), delete: jest.fn(), findUnique: jest.fn(), updateMany: jest.fn() },
       $transaction: jest.fn(async (callback: (tx: unknown) => Promise<unknown>) => callback(prisma)),
     };
@@ -156,5 +158,27 @@ describe('CandidateIntroductionService', () => {
       orderBy: [{ shownAt: 'asc' }, { id: 'asc' }],
       select: { shownAt: true },
     });
+  });
+
+  it('lists introductions with only the business history fields and no candidate contact or location data', async () => {
+    prisma.candidateIntroduction.findMany.mockResolvedValue([{
+      vacancyId: 'vacancy-1', shownAt, rank: 2, channel: 'in_person',
+      jobSeeker: { name: 'Asha Kumar', trades: [{ trade: 'Electrician', isPrimary: true }], tradeSkill: 'Electrician' },
+      vacancy: { code: 'VC-00001' }, shownBy: { name: 'Field Agent One' },
+    }]);
+
+    const result = await service.listForBusiness('BZ-00001');
+    expect(result).toEqual({
+      businessId: 'business-1', businessCode: 'BZ-00001',
+      introductions: [{
+        vacancyId: 'vacancy-1', vacancyCode: 'VC-00001', candidateFirstName: 'Asha', trade: 'Electrician',
+        shownAt, shownByName: 'Field Agent One', channel: 'in_person', rank: 2,
+      }],
+    });
+    expect(JSON.stringify(result)).not.toMatch(/phone|address|latitude|longitude|dateOfBirth|\bdob\b/i);
+    expect(prisma.candidateIntroduction.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { businessId: 'business-1' },
+      select: expect.objectContaining({ jobSeeker: expect.objectContaining({ select: { name: true, trades: { select: { trade: true, isPrimary: true } }, tradeSkill: true } }) }),
+    }));
   });
 });

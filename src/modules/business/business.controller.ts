@@ -29,6 +29,7 @@ import {
   BusinessVerificationService,
   CreateVisitAssignmentDto,
 } from './business-verification.service';
+import { CandidateIntroductionService } from '../vacancy/candidate-introduction.service';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -39,6 +40,7 @@ export class BusinessController {
     private readonly vacancyService: VacancyService,
     private readonly consentLinkService: ConsentLinkService,
     private readonly verificationService: BusinessVerificationService,
+    private readonly candidateIntroductionService: CandidateIntroductionService,
   ) {}
 
   @Post()
@@ -71,6 +73,13 @@ export class BusinessController {
     @Param('id') id: string,
   ) {
     return this.businessService.findById(id);
+  }
+
+  @Get(':id/introductions')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'read')
+  listIntroductions(@Param('id') id: string) {
+    return this.candidateIntroductionService.listForBusiness(id);
   }
 
   @Get(':id/agreement')

@@ -564,50 +564,22 @@ export function renderFieldAgentAppHtml(): string {
     <div id="view-shortlist-interview" class="tab-view hidden">
       <div class="card">
         <div class="card-title">
-          <span>Candidate Shortlist & Arrange Interview</span>
+          <span>Matching Candidate Cards</span>
         </div>
         <div style="display: flex; gap: 10px; margin-bottom: 16px;">
           <input type="text" id="fa-shortlist-vc-id" placeholder="Enter Vacancy ID or Code (e.g. VC-00001)" style="max-width: 400px;">
-          <button onclick="loadFieldShortlist()">Fetch Area Shortlist</button>
+          <button onclick="loadFieldShortlist()">Fetch top matches</button>
         </div>
-        <div class="table-container">
-          <table>
-            <thead>
-              <tr>
-                <th>Code</th>
-                <th>Candidate Name</th>
-                <th>Trade</th>
-                <th>Salary Range (INR)</th>
-                <th>Hits</th>
-                <th>Action</th>
-              </tr>
-            </thead>
-            <tbody id="fa-shortlist-tbody">
-              <tr><td colspan="6" style="text-align: center;">Enter vacancy ID to load candidates</td></tr>
-            </tbody>
-          </table>
+        <div id="fa-shortlist-left-out" aria-live="polite"></div>
+        <div id="fa-shortlist-cards" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin:16px 0">
+          <p>Enter a vacancy ID to load matching candidates.</p>
         </div>
-      </div>
-
-      <!-- Arrange Interview Box -->
-      <div class="card" id="fa-interview-box" style="display: none;">
-        <div class="card-title">
-          <span>Arrange Interview / Placement Offer</span>
-        </div>
-        <div style="max-width: 500px;">
-          <div class="form-group">
-            <label>Selected Vacancy ID</label>
-            <input type="text" id="fa-int-vc-id" readonly>
-          </div>
-          <div class="form-group">
-            <label>Selected Candidate ID</label>
-            <input type="text" id="fa-int-js-id" readonly>
-          </div>
-          <div class="form-group">
-            <label>Agreed Monthly Salary (INR)</label>
-            <input type="number" id="fa-int-salary" placeholder="20000">
-          </div>
-          <button class="btn-success" onclick="submitFieldInterview()">Confirm Interview & Create Placement Offer</button>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <button id="fa-shortlist-next" class="btn-secondary" onclick="loadFieldShortlistPage(faShortlistPage + 1)" hidden>Show next 3</button>
+          <label for="fa-shortlist-channel">Message channel</label>
+          <select id="fa-shortlist-channel"><option value="sms">SMS</option><option value="whatsapp">WhatsApp</option></select>
+          <button onclick="showFieldSelectedInPerson()">Shown in person</button>
+          <button class="btn-success" onclick="sendFieldSelectedToOwner()">Send to owner</button>
         </div>
       </div>
     </div>
@@ -1086,29 +1058,61 @@ export function renderFieldAgentAppHtml(): string {
       } catch (e) { showAlert(e.message, false); }
     }
 
+    let faShortlistPage = 1;
+    let faShortlistPageCount = 1;
+    let faShortlistSelectedIds = new Set();
+
     async function loadFieldShortlist() {
+      faShortlistSelectedIds = new Set();
+      await loadFieldShortlistPage(1);
+    }
+
+    async function loadFieldShortlistPage(page) {
       const vcId = document.getElementById('fa-shortlist-vc-id').value.trim();
       if (!vcId) return alert('Vacancy ID required');
       try {
-        const data = await api('/vacancies/' + vcId + '/candidates');
-        const tbody = document.getElementById('fa-shortlist-tbody');
-        tbody.innerHTML = data.map(c => \`
-          <tr>
-            <td><strong>\${c.code}</strong></td>
-            <td>\${c.name}</td>
-            <td>\${c.trades?.length ? c.trades.find(t => t.isPrimary)?.trade : c.tradeSkill}</td>
-            <td>₹\${(c.minSalary/100).toLocaleString()} - ₹\${(c.maxSalary/100).toLocaleString()}</td>
-            <td>\${c.hitCount} Hits</td>
-            <td>
-              <button class="btn-sm" onclick="arrangeInterview('\${vcId}', '\${c.id}')">Arrange Interview</button>
-              <button class="btn-sm btn-call" onclick="openFaCalling('job_seeker', '\${c.id}', '\${c.code}', '\${c.name}')">Call</button>
-            </td>
-          </tr>
-        \`).join('') || '<tr><td colspan="6">No candidates match vacancy requirements</td></tr>';
-      } catch (e) {
-        showAlert(e.message, false);
-      }
+        const data = await api('/vacancies/' + encodeURIComponent(vcId) + '/shortlist?page=' + page);
+        faShortlistPage = data.page;
+        faShortlistPageCount = Math.ceil(data.total / data.pageSize);
+        const container = document.getElementById('fa-shortlist-cards');
+        container.replaceChildren();
+        data.matches.forEach(match => {
+          const card = match.card;
+          const article = document.createElement('article');
+          article.style.cssText = 'border:1px solid var(--border);border-radius:8px;padding:14px;background:var(--card-bg)';
+          const label = document.createElement('label');
+          const checkbox = document.createElement('input');
+          checkbox.type = 'checkbox';
+          checkbox.checked = faShortlistSelectedIds.has(match.jobSeekerId);
+          checkbox.addEventListener('change', () => checkbox.checked ? faShortlistSelectedIds.add(match.jobSeekerId) : faShortlistSelectedIds.delete(match.jobSeekerId));
+          label.append(checkbox, document.createTextNode(' Select candidate'));
+          article.appendChild(label);
+          if (card.photoUrl) { const photo = document.createElement('img'); photo.src = card.photoUrl; photo.alt = 'Candidate photo'; photo.width = 72; photo.height = 72; photo.style.cssText = 'display:block;object-fit:cover;border-radius:50%;margin:10px 0'; article.appendChild(photo); }
+          const title = document.createElement('h3'); title.textContent = card.firstName + ', ' + card.age; article.appendChild(title);
+          [card.trade + ' · ' + card.yearsExperience + ' yrs', card.languages.join(', '), card.distanceKm + ' km away', '₹' + (card.expectedSalary.minPaise / 100).toLocaleString('en-IN') + ' – ₹' + (card.expectedSalary.maxPaise / 100).toLocaleString('en-IN'), match.matchReasons.join(' · ')].filter(Boolean).forEach(value => { const row = document.createElement('p'); row.textContent = value; article.appendChild(row); });
+          container.appendChild(article);
+        });
+        if (!data.matches.length) { const empty = document.createElement('p'); empty.textContent = 'No matching candidates on this page.'; container.appendChild(empty); }
+        const leftOut = data.leftOut;
+        document.getElementById('fa-shortlist-left-out').textContent = 'Left out — no location: ' + leftOut.no_location + ' (complete home location); no travel distance: ' + leftOut.no_travel_distance + ' (complete travel distance); consent missing: ' + leftOut.consent_missing + ' (confirm matching and profile sharing consent).';
+        document.getElementById('fa-shortlist-next').hidden = faShortlistPage >= faShortlistPageCount;
+      } catch (e) { showAlert(e.message, false); }
     }
+
+    async function submitFieldIntroductions(path, body, successMessage) {
+      const vcId = document.getElementById('fa-shortlist-vc-id').value.trim();
+      if (!vcId) return showAlert('Vacancy ID required', false);
+      if (!faShortlistSelectedIds.size) return showAlert('Select at least one candidate', false);
+      try {
+        const result = await api('/vacancies/' + encodeURIComponent(vcId) + path, { method: 'POST', body: Object.assign({ jobSeekerIds: Array.from(faShortlistSelectedIds) }, body || {}) });
+        showAlert(successMessage + ' (' + result.count + ')');
+        faShortlistSelectedIds = new Set();
+        await loadFieldShortlist();
+      } catch (e) { showAlert(e.message, false); }
+    }
+
+    function showFieldSelectedInPerson() { return submitFieldIntroductions('/introductions/in-person', {}, 'Candidates recorded as shown in person'); }
+    function sendFieldSelectedToOwner() { return submitFieldIntroductions('/introductions', { channel: document.getElementById('fa-shortlist-channel').value }, 'Candidates sent to owner'); }
 
     function arrangeInterview(vcId, jsId) {
       document.getElementById('fa-int-vc-id').value = vcId;

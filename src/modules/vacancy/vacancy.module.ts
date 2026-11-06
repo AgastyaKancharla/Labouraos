@@ -16,6 +16,6 @@ import { CandidateIntroductionController } from './candidate-introduction.contro
   imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule],
   controllers: [VacancyController, CandidateIntroductionController],
   providers: [VacancyService, MatchingService, CandidateIntroductionService],
-  exports: [VacancyService],
+  exports: [VacancyService, CandidateIntroductionService],
 })
 export class VacancyModule {}
