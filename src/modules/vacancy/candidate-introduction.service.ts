@@ -139,6 +139,41 @@ export class CandidateIntroductionService {
     return row?.shownAt ?? null;
   }
 
+  async listForBusiness(businessId: string) {
+    const business = await this.prisma.business.findFirst({
+      where: businessId.startsWith('BZ-') ? { code: businessId } : { id: businessId },
+      select: { id: true, code: true },
+    });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    const rows = await this.prisma.candidateIntroduction.findMany({
+      where: { businessId: business.id },
+      orderBy: [{ shownAt: 'desc' }, { id: 'desc' }],
+      select: {
+        vacancyId: true,
+        shownAt: true,
+        rank: true,
+        channel: true,
+        jobSeeker: { select: { name: true, trades: { select: { trade: true, isPrimary: true } }, tradeSkill: true } },
+        vacancy: { select: { code: true } },
+        shownBy: { select: { name: true } },
+      },
+    });
+    return {
+      businessId: business.id,
+      businessCode: business.code,
+      introductions: rows.map((row) => ({
+        vacancyId: row.vacancyId,
+        vacancyCode: row.vacancy.code,
+        candidateFirstName: row.jobSeeker.name.trim().split(/\s+/)[0] ?? '',
+        trade: row.jobSeeker.trades.find((candidateTrade) => candidateTrade.isPrimary)?.trade ?? row.jobSeeker.trades[0]?.trade ?? row.jobSeeker.tradeSkill,
+        shownAt: row.shownAt,
+        shownByName: row.shownBy.name,
+        channel: row.channel,
+        rank: row.rank,
+      })),
+    };
+  }
+
   private async currentlyEligible(vacancyId: string, jobSeekerIds: string[]) {
     if (!Array.isArray(jobSeekerIds) || jobSeekerIds.length === 0 || jobSeekerIds.some((id) => typeof id !== 'string' || !id.trim())) {
       throw new BadRequestException('jobSeekerIds must be a non-empty array of ids');

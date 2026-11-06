@@ -386,12 +386,17 @@ export function renderAdminDashboardHtml(): string {
                 <th>Selfie Verified</th>
                 <th>Geofence Flag</th>
                 <th>Actions</th>
+                <th id="business-introductions-header" hidden>Introductions</th>
               </tr>
             </thead>
             <tbody id="businesses-tbody">
-              <tr><td colspan="7" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="8" style="text-align: center;">Loading...</td></tr>
             </tbody>
           </table>
+        </div>
+        <div id="business-introduction-panel" class="card" hidden>
+          <div class="card-title"><span id="business-introduction-title">Candidate introductions</span><button class="btn-sm" onclick="document.getElementById('business-introduction-panel').hidden = true">Close</button></div>
+          <div id="business-introduction-list" aria-live="polite"></div>
         </div>
       </div>
     </div>
@@ -845,6 +850,9 @@ export function renderAdminDashboardHtml(): string {
       try {
         const data = await api('/businesses');
         const tbody = document.getElementById('businesses-tbody');
+        const canViewIntroductions = ['team_lead', 'manager', 'ceo'].includes(currentUser?.role);
+        const introHeader = document.getElementById('business-introductions-header');
+        introHeader.hidden = !canViewIntroductions;
         tbody.innerHTML = data.map(b => \`
           <tr>
             <td><strong>\${b.code}</strong></td>
@@ -854,11 +862,32 @@ export function renderAdminDashboardHtml(): string {
             <td>\${b.selfieUrl ? 'Yes' : 'Pending'}</td>
             <td>\${b.geofenceFlag ? 'FLAGGED' : 'Clean'}</td>
             <td><button class="btn-sm btn-call" onclick="openAdminCalling('business', '\${b.id}', '\${b.code}')">Call</button></td>
+            \${canViewIntroductions ? '<td><button class="btn-sm business-intro-button" data-business-id="' + b.id + '" data-business-code="' + b.code + '">Introductions</button></td>' : ''}
           </tr>
-        \`).join('') || '<tr><td colspan="7">No businesses found</td></tr>';
+        \`).join('') || '<tr><td colspan="' + (canViewIntroductions ? 8 : 7) + '">No businesses found</td></tr>';
+        tbody.querySelectorAll('.business-intro-button').forEach(button => button.addEventListener('click', () => loadBusinessIntroductions(button.dataset.businessId, button.dataset.businessCode)));
       } catch (e) {
         console.error(e);
       }
+    }
+
+    async function loadBusinessIntroductions(id, code) {
+      if (!['team_lead', 'manager', 'ceo'].includes(currentUser?.role)) return;
+      const panel = document.getElementById('business-introduction-panel');
+      const list = document.getElementById('business-introduction-list');
+      document.getElementById('business-introduction-title').textContent = 'Candidate introductions · ' + code;
+      list.textContent = 'Loading introductions…';
+      panel.hidden = false;
+      try {
+        const data = await api('/businesses/' + encodeURIComponent(id) + '/introductions');
+        list.replaceChildren();
+        if (!data.introductions.length) { list.textContent = 'No candidates have been shown to this business.'; return; }
+        data.introductions.forEach(introduction => {
+          const row = document.createElement('p');
+          row.textContent = introduction.candidateFirstName + ' · ' + introduction.trade + ' · ' + introduction.vacancyCode + ' · shown ' + new Date(introduction.shownAt).toLocaleString() + ' by ' + introduction.shownByName + ' (' + introduction.channel + ')';
+          list.appendChild(row);
+        });
+      } catch (e) { list.textContent = e.message || 'Could not load introductions.'; }
     }
 
     async function loadBusinessReviewQueue() {
