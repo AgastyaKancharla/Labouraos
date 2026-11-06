@@ -39,6 +39,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
   const gateNow = new Date();
 
   beforeAll(async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     businessClock.nowValue = gateNow;
     consentClock.nowValue = gateNow;
     const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] })

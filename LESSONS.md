@@ -412,3 +412,8 @@ Format:
 
 
 
+## Relative links sent outside the app
+**Symptom:** Links sent by SMS contained only a path, so recipients could not open them directly.
+**Cause:** Link generation used relative paths or an unset base URL fallback.
+**Fix:** Build all externally sent links from the required `PUBLIC_APP_URL`; tests must assert the full absolute link, not just the path.
+

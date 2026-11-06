@@ -64,6 +64,7 @@ function seeker(id: string, daysSincePayment: number, overrides: Record<string, 
 
 describe('Phase 14 gate end-to-end proof', () => {
   it('ranks suitable candidates, records the owner share, and maps only rounded candidate cells', async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     const candidates = [
       seeker('day-26', 26),
       seeker('day-4', 4),

@@ -41,6 +41,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
   const suffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
 
   beforeAll(async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [AppModule],
     })

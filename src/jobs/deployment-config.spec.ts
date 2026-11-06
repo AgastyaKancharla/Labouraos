@@ -112,6 +112,7 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
         'REDIS_PORT',
         'REDIS_PASSWORD',
         'JWT_SECRET',
+        'PUBLIC_APP_URL',
       ];
 
       for (const key of requiredKeys) {
@@ -145,6 +146,20 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
 
       const deploy = fs.readFileSync(deployMdPath, 'utf8');
       expect(deploy).toContain('LOGIN_CODE_SECRET');
+    });
+
+    it('configures PUBLIC_APP_URL without a committed value and shares it with the worker', () => {
+      const webService = blueprint.services.find((s) => s.type === 'web');
+      const workerService = blueprint.services.find((s) => s.type === 'worker');
+      const webVar = webService?.envVars?.find((v) => v.key === 'PUBLIC_APP_URL');
+      const workerVar = workerService?.envVars?.find((v) => v.key === 'PUBLIC_APP_URL');
+
+      expect(webVar).toMatchObject({ key: 'PUBLIC_APP_URL', sync: false });
+      expect(webVar?.value).toBeUndefined();
+      expect(workerVar?.fromService).toEqual({
+        type: 'web', name: 'laboura-api', envVarKey: 'PUBLIC_APP_URL',
+      });
+      expect(fs.readFileSync(deployMdPath, 'utf8')).toMatch(/PUBLIC_APP_URL.*public web address of the app/i);
     });
 
     it('declares provider modes defaulting to mock (§3)', () => {

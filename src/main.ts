@@ -4,8 +4,10 @@ import { StructuredLogger } from './common/observability/structured-logger.servi
 import { GlobalExceptionFilter } from './common/observability/global-exception.filter';
 import { AlertService } from './common/observability/alert.service';
 import { applyTrustProxy } from './common/http/trust-proxy';
+import { getPublicAppUrl } from './common/public-link';
 
-async function bootstrap() {
+export async function bootstrap() {
+  getPublicAppUrl();
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     // Webhook signatures are computed over the exact bytes the gateway sent
@@ -26,4 +28,7 @@ async function bootstrap() {
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
 }
-void bootstrap();
+
+if (require.main === module) {
+  void bootstrap();
+}

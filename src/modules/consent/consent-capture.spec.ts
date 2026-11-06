@@ -11,6 +11,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { CALL_PURPOSES } from '../call/call-outcomes';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
+import { MessagingService } from '../message/messaging.service';
 
 class ControllableConsentClock extends ConsentClock {
   current = new Date('2026-11-05T10:00:00.000Z');
@@ -30,6 +31,8 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   let jwt: JwtService;
   let clock: ControllableConsentClock;
   let otpService: OtpService;
+  let messagingService: MessagingService;
+  let messagingSend: jest.SpyInstance;
 
   let agentToken: string;
   let fieldAgentToken: string;
@@ -39,6 +42,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   const createdSeekerIds: string[] = [];
 
   beforeAll(async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     clock = new ControllableConsentClock();
 
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -54,6 +58,8 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     prisma = app.get(PrismaService);
     jwt = app.get(JwtService);
     otpService = app.get(OtpService);
+    messagingService = app.get(MessagingService);
+    messagingSend = jest.spyOn(messagingService, 'send');
 
     const passwordHash = await bcrypt.hash('StaffPassword123!', 4);
 
@@ -162,6 +168,10 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     });
     expect(msg).not.toBeNull();
     expect(msg?.channel).toBe('sms');
+    expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'consent_link',
+      variables: { token: res.body.token, link: `https://app.laboura.in/consent/${res.body.token}` },
+    }));
   });
 
   it('full tick-and-submit with OTP verification moves status from lead to consented', async () => {

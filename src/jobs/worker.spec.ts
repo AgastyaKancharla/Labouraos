@@ -16,6 +16,7 @@ describe('Phase 6.5 Task 3: Separate Worker Entrypoint & Worker Lifecycle', () =
   let mockJobSeekerService: Partial<JobSeekerService>;
 
   beforeEach(() => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     mockPrisma = {
       jobSeeker: { findMany: jest.fn() },
       contactAttempt: { findMany: jest.fn(), create: jest.fn() },

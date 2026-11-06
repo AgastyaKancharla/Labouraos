@@ -44,6 +44,7 @@ describe('Phase 12 gate end-to-end proof', () => {
   const originalCallRoutingKey = process.env.CALL_ROUTING_KEY;
 
   beforeAll(async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     process.env.CALL_ROUTING_KEY = 'phase_12_gate_call_routing_key_32_chars';
 
     const moduleRef: TestingModule = await Test.createTestingModule({

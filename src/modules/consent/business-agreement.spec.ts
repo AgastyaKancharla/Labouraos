@@ -15,6 +15,7 @@ import {
   MemoryAgreementDocumentStorage,
 } from './agreement-document.storage';
 import { ConsentLinkService } from './consent-link.service';
+import { MessagingService } from '../message/messaging.service';
 
 class AgreementTestClock extends ConsentClock {
   current = new Date('2026-11-05T10:00:00.000Z');
@@ -36,6 +37,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
   let pricingService: PricingService;
   let clock: AgreementTestClock;
   let storage: MemoryAgreementDocumentStorage;
+  let messagingService: MessagingService;
+  let messagingSend: jest.SpyInstance;
   let agentToken: string;
   let staffId: string;
   let businessId: string;
@@ -43,6 +46,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
   const suffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
 
   beforeAll(async () => {
+    process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     clock = new AgreementTestClock();
     storage = new MemoryAgreementDocumentStorage();
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -60,6 +64,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     jwt = app.get(JwtService);
     otpService = app.get(OtpService);
     pricingService = app.get(PricingService);
+    messagingService = app.get(MessagingService);
+    messagingSend = jest.spyOn(messagingService, 'send');
 
     const staff = await prisma.staff.create({
       data: {
@@ -120,11 +126,14 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
       .expect(201);
     expect(currentSpy).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(link.body)).not.toContain(ownerPhone);
-    expect(
-      await prisma.messageLog.findFirst({
-        where: { subjectType: 'business', subjectId: businessId, template: 'agreement_link' },
-      }),
-    ).not.toBeNull();
+    const agreementMessage = await prisma.messageLog.findFirst({
+      where: { subjectType: 'business', subjectId: businessId, template: 'agreement_link' },
+    });
+    expect(agreementMessage).not.toBeNull();
+    expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'agreement_link',
+      variables: { token: link.body.token, link: `https://app.laboura.in/consent/${link.body.token}` },
+    }));
 
     const page = await request(app.getHttpServer())
       .get(`/consent/${link.body.token}`)
