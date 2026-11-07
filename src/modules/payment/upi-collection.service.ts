@@ -92,7 +92,7 @@ export class UpiCollectionService {
     }
     const lockKey = `payment:${input.type}:${input.subjectType}:${input.subjectId}`;
     const payment = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
       const existing = await tx.payment.findFirst({
         where: {
           type: input.type,

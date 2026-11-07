@@ -25,6 +25,7 @@ type MockPrisma = {
   pricingPolicy: Record<string, jest.Mock>;
   $transaction: jest.Mock;
   $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
 };
 
 describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
@@ -100,6 +101,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       },
       $transaction: jest.fn(async (cb: (tx: MockPrisma) => Promise<unknown>) => cb(mockPrisma)),
       $queryRaw: jest.fn(),
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     prisma = mockPrisma;
 

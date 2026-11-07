@@ -114,8 +114,8 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     expect(res.status).toBe(201);
     expect(res.body.paymentId).toBeDefined();
     expect(res.body.paymentCode).toMatch(/^PAY-\d{5}$/);
-    expect(res.body.paymentLink).toContain('https://pay.laboura.local/pay/');
-    expect(res.body.gatewayReference).toBeDefined();
+    expect(res.body.paymentLink).toContain('/payments/request/');
+    expect(res.body.upiReference).toBeDefined();
     expect(res.body.amount).toBe(49900); // 49900 paise
     expect(res.body.status).toBe('pending');
 
@@ -138,7 +138,13 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
 
-    const { gatewayReference, paymentId } = paymentRes.body;
+    const { paymentId } = paymentRes.body;
+    let gatewayReference = paymentRes.body.gatewayReference;
+    if (!gatewayReference && paymentRes.body.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      gatewayReference = updated.gatewayReference;
+    }
 
     const beforeTime = new Date(Date.now() - 1000);
 
@@ -249,7 +255,13 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
 
-    const { gatewayReference, paymentId } = paymentRes.body;
+    const { paymentId } = paymentRes.body;
+    let gatewayReference = paymentRes.body.gatewayReference;
+    if (!gatewayReference && paymentRes.body.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      gatewayReference = updated.gatewayReference;
+    }
 
     const webhookPayload = {
       gatewayReference,
@@ -317,7 +329,13 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`);
 
-    const { gatewayReference } = paymentRes.body;
+    const { paymentId } = paymentRes.body;
+    let gatewayReference = paymentRes.body.gatewayReference;
+    if (!gatewayReference && paymentRes.body.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      gatewayReference = updated.gatewayReference;
+    }
 
     // Fail the payment
     const failRes = await request(app.getHttpServer())

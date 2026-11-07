@@ -291,9 +291,15 @@ describe('Phase 12 gate end-to-end proof', () => {
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .expect(201);
     createdPaymentIds.push(activation.body.paymentId);
+    let gatewayReference = activation.body.gatewayReference;
+    if (!gatewayReference && activation.body.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(activation.body.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: activation.body.paymentId } });
+      gatewayReference = updated.gatewayReference;
+    }
     const paymentResult = await request(app.getHttpServer())
       .post('/payments/webhook')
-      .send({ gatewayReference: activation.body.gatewayReference, status: 'succeeded' });
+      .send({ gatewayReference, status: 'succeeded' });
     expect([200, 201]).toContain(paymentResult.status);
     expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: jobSeekerId } })).toMatchObject({
       status: 'active',

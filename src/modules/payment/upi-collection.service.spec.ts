@@ -22,6 +22,7 @@ describe('UpiCollectionService', () => {
   const send = jest.fn().mockResolvedValue({ status: 'sent' });
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),
+    $executeRaw: jest.fn().mockResolvedValue(1),
     payment: { findFirst, create },
     statusHistory: { create: jest.fn().mockResolvedValue({}) },
   } as unknown as Prisma.TransactionClient;

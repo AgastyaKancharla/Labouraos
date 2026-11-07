@@ -240,10 +240,17 @@ export class PaymentService {
           let invoiceCode = placement.invoiceCode;
           if (!invoiceCode) {
             invoiceCode = await this.idService.generateCode('invoice');
-            await tx.placement.update({
-              where: { id: placement.id },
-              data: { invoiceCode },
-            });
+            if (tx.placement.update) {
+              await tx.placement.update({
+                where: { id: placement.id },
+                data: { invoiceCode },
+              });
+            } else {
+              await tx.placement.updateMany({
+                where: { id: placement.id },
+                data: { invoiceCode },
+              });
+            }
           }
           await recordStatusChange(tx, {
             subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'confirmed',

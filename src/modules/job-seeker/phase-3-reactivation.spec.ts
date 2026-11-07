@@ -171,7 +171,7 @@ describe('Phase 3 Task 5: Reactivation', () => {
     expect(res.body.reactivation).toBe(true);
     expect(res.body.status).toBe('pending');
     expect(res.body.paymentLink).toBeDefined();
-    expect(res.body.gatewayReference).toBeDefined();
+    expect(res.body.upiReference).toBeDefined();
 
     // Verify row in database
     const payment = await prisma.payment.findUnique({
@@ -201,7 +201,13 @@ describe('Phase 3 Task 5: Reactivation', () => {
       .post(`/job-seekers/${deactivatedJobSeekerId}/reactivate`)
       .set('Authorization', `Bearer ${callAgentToken}`);
 
-    const { gatewayReference, paymentId } = reactivateRes.body;
+    const { paymentId } = reactivateRes.body;
+    let gatewayReference = reactivateRes.body.gatewayReference;
+    if (!gatewayReference && reactivateRes.body.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(reactivateRes.body.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
+      gatewayReference = updated.gatewayReference;
+    }
 
     // Simulate webhook arrival
     const webhookRes = await request(app.getHttpServer())

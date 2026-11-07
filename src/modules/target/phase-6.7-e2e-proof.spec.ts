@@ -357,12 +357,19 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     cleanPaymentIds.push(paymentRes.body.paymentId);
     console.log(`[Activation Payment Initiated] ID: ${paymentRes.body.paymentId}, amount: ${paymentRes.body.amount}`);
 
-    // Gateway webhook marks payment succeeded
+    // Gateway webhook marks payment succeeded (payer chooses card)
+    let gatewayReference = paymentRes.body.gatewayReference;
+    if (!gatewayReference && paymentRes.body.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentRes.body.paymentId } });
+      gatewayReference = updated.gatewayReference;
+    }
+
     const webhookRes = await request(app.getHttpServer())
       .post('/payments/webhook')
       .set('X-Forwarded-For', freshIp())
       .send({
-        gatewayReference: paymentRes.body.gatewayReference,
+        gatewayReference,
         status: 'succeeded',
         amountPaise: 49900,
       });
