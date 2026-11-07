@@ -61,6 +61,55 @@ export class PaymentService {
     return this.provider.createCharge(amountPaise, subjectType, subjectId);
   }
 
+  async payByCard(token: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { upiReference: token },
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment with reference '${token}' not found`);
+    }
+    if (payment.status !== 'pending') {
+      throw new BadRequestException(`Payment is already '${payment.status}'`);
+    }
+
+    if (payment.method === 'gateway_card' && payment.gatewayReference) {
+      return {
+        paymentId: payment.id,
+        gatewayReference: payment.gatewayReference,
+        paymentLink: `https://pay.laboura.local/pay/${payment.gatewayReference}`,
+      };
+    }
+
+    const charge = await this.createCharge(
+      payment.expectedAmountPaise ?? payment.amount,
+      payment.subjectType,
+      payment.subjectId,
+    );
+
+    await this.prisma.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          method: 'gateway_card',
+          gatewayReference: charge.gatewayReference,
+        },
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: payment.id,
+        fromStatus: payment.status,
+        toStatus: payment.status,
+        reason: 'switched_to_gateway_card',
+      });
+    });
+
+    return {
+      paymentId: payment.id,
+      gatewayReference: charge.gatewayReference,
+      paymentLink: charge.paymentLink,
+    };
+  }
+
   async verifyWebhook(
     payload: unknown,
     signature?: string,
@@ -292,15 +341,13 @@ export class PaymentService {
       return { received: true, status: 'unmatched', reason: 'no_reference', bankCreditId: credit.id };
     }
 
-    const pendingPayments = await this.prisma.payment.findMany({
+    const candidatePayments = await this.prisma.payment.findMany({
       where: {
-        status: 'pending',
-        method: 'upi_direct',
         upiReference: { not: null },
       },
     });
 
-    const matchedPayment = pendingPayments.find(
+    const matchedPayment = candidatePayments.find(
       (p) => p.upiReference && remark.toUpperCase().includes(p.upiReference.toUpperCase()),
     );
 
@@ -312,6 +359,29 @@ export class PaymentService {
         details: { bankUtr, amountPaise, remark, reason: 'unknown_reference' },
       });
       return { received: true, status: 'unmatched', reason: 'unknown_reference', bankCreditId: credit.id };
+    }
+
+    if (matchedPayment.method === 'gateway_card' || matchedPayment.status === 'succeeded') {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: matchedPayment.id,
+        details: {
+          bankCreditId: credit.id,
+          bankUtr,
+          amountPaise,
+          paymentMethod: matchedPayment.method,
+          paymentStatus: matchedPayment.status,
+          reason: matchedPayment.method === 'gateway_card' ? 'switched_to_card' : 'already_succeeded',
+        },
+      });
+      return {
+        received: true,
+        status: 'unmatched',
+        reason: matchedPayment.method === 'gateway_card' ? 'switched_to_card' : 'already_succeeded',
+        bankCreditId: credit.id,
+        paymentId: matchedPayment.id,
+      };
     }
 
     const expectedAmount = matchedPayment.expectedAmountPaise ?? matchedPayment.amount;

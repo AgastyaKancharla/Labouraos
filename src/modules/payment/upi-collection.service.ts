@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
+import { PaymentService } from './payment.service';
 
 export interface CreateUpiRequestInput {
   type: string;
@@ -57,6 +58,7 @@ export class UpiCollectionService {
     private readonly prisma: PrismaService,
     private readonly idService: IdService,
     private readonly messagingService: MessagingService,
+    @Optional() private readonly paymentService?: PaymentService,
   ) {}
 
   private getConfiguration() {
@@ -218,5 +220,12 @@ export class UpiCollectionService {
     }
     await this.prisma.payment.update({ where: { id: payment.id }, data: { payerUtrHint: utr } });
     return { saved: true, status: 'pending' };
+  }
+
+  async payByCard(token: string) {
+    if (!this.paymentService) {
+      throw new BadRequestException('PaymentService is not injected in UpiCollectionService');
+    }
+    return this.paymentService.payByCard(token);
   }
 }

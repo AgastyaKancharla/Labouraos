@@ -53,6 +53,21 @@ export class PaymentController {
     return this.upiCollectionService.saveUtrHint(token, utr);
   }
 
+  @Post('request/:token/card')
+  @HttpCode(HttpStatus.OK)
+  async payByCard(
+    @Param('token') token: string,
+    @Headers('accept') accept: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    const result = await this.paymentService.payByCard(token);
+    if (accept?.includes('text/html')) {
+      res.redirect(result.paymentLink);
+      return;
+    }
+    return result;
+  }
+
   @Post('bank-feed/webhook')
   @HttpCode(HttpStatus.OK)
   async bankFeedWebhook(
