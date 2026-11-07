@@ -92,13 +92,13 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 16 Gate
 
-- [ ] Every registration and placement fee is a UPI request with its own reference and exact amount; re-sending never creates a second payment — by test
-- [ ] A payment becomes `succeeded` only from the bank's notice with an exact match, Finance matching a recorded bank credit of the same amount, or the card gateway — never from a screenshot, a typed UTR or an agent — by test
-- [ ] A wrong amount or unknown reference is never confirmed and raises `payment_mismatch` — by test
-- [ ] Success is handled in one function, idempotently, whatever confirmed it; the 30-day clock starts when the money is confirmed — by test
-- [ ] Only CEO and Finance can record, match or ignore bank credits — by test
-- [ ] The GST invoice is created automatically on confirmation and uses the placement's own GST percent — by test
-- [ ] **End-to-end proof, recorded in the report:** a job seeker is sent a ₹499 UPI link; they type a UTR hint (nothing changes); the mock bank sends a credit with the right reference and ₹499 → the payment succeeds, the job seeker is active and the clock starts at the credit time. An owner selects a candidate at ₹16,000 → a UPI request for ₹8,000 + ₹1,440 goes to the owner; the bank sends ₹9,000 by mistake → nothing is confirmed and Finance sees a mismatch; Finance records the correct ₹9,440 credit from the statement and matches it → the placement is confirmed, the job seeker `placed`, the joining date sent, and the invoice created with 18% GST. A second owner pays by card through the gateway and is confirmed the same way.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] Every registration and placement fee is a UPI request with its own reference and exact amount; re-sending never creates a second payment — by test
+- [x] A payment becomes `succeeded` only from the bank's notice with an exact match, Finance matching a recorded bank credit of the same amount, or the card gateway — never from a screenshot, a typed UTR or an agent — by test
+- [x] A wrong amount or unknown reference is never confirmed and raises `payment_mismatch` — by test
+- [x] Success is handled in one function, idempotently, whatever confirmed it; the 30-day clock starts when the money is confirmed — by test
+- [x] Only CEO and Finance can record, match or ignore bank credits — by test
+- [x] The GST invoice is created automatically on confirmation and uses the placement's own GST percent — by test
+- [x] **End-to-end proof, recorded in the report:** a job seeker is sent a ₹499 UPI link; they type a UTR hint (nothing changes); the mock bank sends a credit with the right reference and ₹499 → the payment succeeds, the job seeker is active and the clock starts at the credit time. An owner selects a candidate at ₹16,000 → a UPI request for ₹8,000 + ₹1,440 goes to the owner; the bank sends ₹9,000 by mistake → nothing is confirmed and Finance sees a mismatch; Finance records the correct ₹9,440 credit from the statement and matches it → the placement is confirmed, the job seeker `placed`, the joining date sent, and the invoice created with 18% GST. A second owner pays by card through the gateway and is confirmed the same way.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.

@@ -422,3 +422,13 @@ Format:
 **Cause:** Link generation used relative paths or an unset base URL fallback.
 **Fix:** Build all externally sent links from the required `PUBLIC_APP_URL`; tests must assert the full absolute link, not just the path.
 
+## PostgreSQL pg_advisory_xact_lock void return type requires Prisma $executeRaw
+**Symptom:** `PrismaClientKnownRequestError: Failed to deserialize column of type 'void'` when acquiring transaction advisory locks via `prisma.$queryRaw`.
+**Cause:** PostgreSQL's `pg_advisory_xact_lock` returns `void`. Prisma's `$queryRaw` expects result sets with typed columns to deserialize into JavaScript objects and throws when encountering a void column type.
+**Fix:** Use `await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);` which does not attempt row-column deserialization.
+
+## Placement invoice GST calculation must use placement snapshot
+**Symptom:** Changing the GST percent in `PricingPolicy` retroactively altered the fee and GST amounts on invoices generated for earlier placements.
+**Cause:** `getInvoice` queried `pricingService.current()` to obtain the GST percentage dynamically instead of reading the placement's historical snapshot.
+**Fix:** Snapshot `feePercentAtCreation` and `gstPercentAtCreation` on the `Placement` record at creation time and have `getInvoice` strictly compute tax and fee using those immutable snapshot fields.
+
