@@ -24,7 +24,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ---
 
-### [ ] Task 1 — Payment records for UPI, and one place where success is handled
+### [x] Task 1 — Payment records for UPI, and one place where success is handled
 **Branch:** `phase-16/task-1-payment-columns` · **Migration folder:** `20261109100000_payment_upi_columns`
 
 **Acceptance:**
