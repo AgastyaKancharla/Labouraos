@@ -475,7 +475,7 @@ export class PaymentService {
       },
     });
 
-    const openFlags = await this.prisma.reviewFlag.findMany({
+    await this.prisma.reviewFlag.updateMany({
       where: {
         kind: 'payment_mismatch',
         status: 'open',
@@ -484,14 +484,13 @@ export class PaymentService {
           { subjectType: 'bank_credit', subjectId: credit.id },
         ],
       },
+      data: {
+        status: 'resolved',
+        resolution: 'Matched manually by Finance',
+        resolvedAt: new Date(),
+        resolvedByStaffId: actorId,
+      },
     });
-    for (const flag of openFlags) {
-      await this.reviewFlagService.resolve(
-        flag.id,
-        { id: actorId, role: 'finance' },
-        { status: 'resolved', resolution: 'Matched manually by Finance' },
-      );
-    }
 
     await this.auditService.log({
       actorId,
@@ -535,21 +534,20 @@ export class PaymentService {
       },
     });
 
-    const openFlags = await this.prisma.reviewFlag.findMany({
+    await this.prisma.reviewFlag.updateMany({
       where: {
         kind: 'payment_mismatch',
         status: 'open',
         subjectType: 'bank_credit',
         subjectId: credit.id,
       },
+      data: {
+        status: 'dismissed',
+        resolution: reason.trim(),
+        resolvedAt: new Date(),
+        resolvedByStaffId: actorId,
+      },
     });
-    for (const flag of openFlags) {
-      await this.reviewFlagService.resolve(
-        flag.id,
-        { id: actorId, role: 'finance' },
-        { status: 'dismissed', resolution: reason.trim() },
-      );
-    }
 
     await this.auditService.log({
       actorId,

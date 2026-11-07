@@ -68,6 +68,7 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       },
       reviewFlag: {
         findMany: jest.fn().mockResolvedValue([]),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       statusHistory: {
         create: jest.fn().mockResolvedValue({}),
