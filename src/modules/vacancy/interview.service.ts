@@ -25,6 +25,7 @@ import { CallService } from '../call/call.service';
 import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { PlacementService } from '../placement/placement.service';
 
 interface BookInterviewDto {
   vacancyId: string;
@@ -59,6 +60,7 @@ export class InterviewService {
     private readonly calls: CallService,
     private readonly businessVerification: BusinessVerificationService,
     private readonly reviewFlags: ReviewFlagService,
+    private readonly placements: PlacementService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
@@ -539,7 +541,10 @@ export class InterviewService {
     if (input.result === 'candidate_no_show') {
       await this.jobSeekerService.recordHit(interview.jobSeekerId, 'interview_no_show', undefined, 'system', undefined, { interviewId: interview.id });
     }
-    return { id: interview.id, status, result: input.result };
+    const placement = input.result === 'selected'
+      ? await this.placements.createAwaitingPaymentFromInterview(interview.id, now)
+      : null;
+    return { id: interview.id, status, result: input.result, placement };
   }
 
   async submitCandidateOfferCheck(token: string, answer: 'yes' | 'no') {

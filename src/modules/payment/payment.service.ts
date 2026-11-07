@@ -19,6 +19,7 @@ import {
 } from './payment-provider.interface';
 import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { MessagingService } from '../message/messaging.service';
 
 @Injectable()
 export class PaymentService {
@@ -31,6 +32,7 @@ export class PaymentService {
     @Inject(PAYMENT_PROVIDER)
     private readonly provider: PaymentProvider,
     private readonly pricingService: PricingService,
+    private readonly messagingService: MessagingService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -108,6 +110,10 @@ export class PaymentService {
         return updated;
       });
       return { received: true, status: 'failed', paymentId: updatedPayment.id };
+    }
+
+    if (payment.type === 'placement_fee' && payment.placementId) {
+      return this.succeedPlacementFee(payment, new Date());
     }
 
     // Process success
@@ -223,6 +229,70 @@ export class PaymentService {
       status: 'succeeded',
       paymentId: updatedPayment.id,
     };
+  }
+
+  private async succeedPlacementFee(payment: Payment, now: Date) {
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.payment.updateMany({
+        where: { id: payment.id, type: 'placement_fee', status: payment.status },
+        data: { status: 'succeeded' },
+      });
+      if (claimed.count !== 1) return null;
+      const updatedPayment = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
+      await recordStatusChange(tx, {
+        subjectType: 'payment', subjectId: payment.id, fromStatus: payment.status, toStatus: 'succeeded',
+        changedByStaffId: null, reason: 'collection_webhook_succeeded', changedAt: now,
+      });
+      const placement = await tx.placement.findUnique({
+        where: { id: payment.placementId! },
+        include: { jobSeeker: true, business: true },
+      });
+      if (!placement) throw new NotFoundException('Placement for fee payment was not found');
+      const paid = await tx.placement.updateMany({
+        where: { id: placement.id, status: 'awaiting_payment' },
+        data: { status: 'confirmed', paidAt: now },
+      });
+      if (paid.count !== 1) return { updatedPayment, placement, placementChanged: false };
+      await recordStatusChange(tx, {
+        subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'confirmed',
+        changedByStaffId: null, reason: 'placement_fee_payment_succeeded', changedAt: now,
+      });
+      if (placement.jobSeeker.status !== 'placed') {
+        await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'placed' } });
+        await recordStatusChange(tx, {
+          subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
+          fromStatus: placement.jobSeeker.status, toStatus: 'placed', changedByStaffId: null,
+          reason: 'placement_fee_payment_succeeded', changedAt: now,
+        });
+      }
+      return { updatedPayment, placement, placementChanged: true };
+    });
+    if (!transition) {
+      return { received: true, alreadyProcessed: true, paymentId: payment.id };
+    }
+    if (transition.placementChanged) {
+      const auditActor = await this.fallbackActorId();
+      if (auditActor) {
+        await this.auditService.log({
+          actorId: auditActor, action: 'placement_fee_paid', entityType: 'Placement',
+          entityCode: transition.placement.code, city: transition.placement.city,
+          before: { status: 'awaiting_payment', jobSeekerStatus: transition.placement.jobSeeker.status },
+          after: { status: 'confirmed', paidAt: now.toISOString(), jobSeekerStatus: 'placed', paymentId: payment.id },
+        });
+      }
+      const joiningDate = transition.placement.joiningDate;
+      if (joiningDate) {
+        const joiningDateDisplay = new Intl.DateTimeFormat('en-IN', {
+          timeZone: 'Asia/Kolkata', dateStyle: 'medium',
+        }).format(joiningDate);
+        await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
+          channel, template: 'joining_confirmed', subjectType: 'job_seeker',
+          subjectId: transition.placement.jobSeekerId, relatedType: 'placement',
+          relatedId: transition.placement.id, variables: { joiningDate: joiningDateDisplay },
+        })));
+      }
+    }
+    return { received: true, status: 'succeeded', paymentId: transition.updatedPayment.id };
   }
 
   async createReferralPayout(

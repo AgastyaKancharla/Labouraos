@@ -5,6 +5,9 @@ import * as bcrypt from 'bcrypt';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PlacementService } from './placement.service';
+import { PricingService } from '../pricing/pricing.service';
+import { calculatePlacementFee, calculateGst } from '../../common/money/money';
+import { IdService } from '../../common/id/id.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
 describe('Phase 5 Task 1: Placement Creation', () => {
@@ -17,13 +20,16 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   let ceoToken: string;
   let mgrToken: string;
   let financeToken: string;
+  let teamLeadToken: string;
 
   let koraVacancyId: string;
-  let indiVacancyId: string;
   let activeJobSeekerId: string;
-  let placedJobSeekerId: string;
 
   let staffIds: string[] = [];
+  let faKoraId: string;
+  let fixtureIndex = 0;
+  const testPolicyIds: string[] = [];
+  const overdueFlagPlacementIds: string[] = [];
 
   const timestamp = Date.now();
   const password = 'Password123!Secure';
@@ -75,6 +81,16 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         city: 'Bengaluru',
       },
     });
+    const teamLead = await prisma.staff.create({
+      data: {
+        code: `TL-P5-${timestamp}`,
+        name: 'Team Lead P5',
+        email: `tl_p5_${timestamp}@laboura.local`,
+        passwordHash,
+        role: 'team_lead',
+        city: 'Bengaluru',
+      },
+    });
 
     const ceo = await prisma.staff.create({
       data: {
@@ -109,7 +125,8 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
 
-    staffIds = [faKora.id, faIndi.id, ca.id, ceo.id, mgr.id, finance.id];
+    staffIds = [faKora.id, faIndi.id, ca.id, teamLead.id, ceo.id, mgr.id, finance.id];
+    faKoraId = faKora.id;
 
     const server = app.getHttpServer();
     const login = async (email: string | null) => {
@@ -120,6 +137,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     faKoraToken = await login(faKora.email);
     faIndiToken = await login(faIndi.email);
     caToken = await login(ca.email);
+    teamLeadToken = await login(teamLead.email);
     ceoToken = await login(ceo.email);
     mgrToken = await login(mgr.email);
     financeToken = await login(finance.email);
@@ -137,18 +155,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
 
-    const indiBiz = await prisma.business.create({
-      data: {
-        code: `BZ-P5I-${timestamp}`,
-        name: 'Indi Retail Hub',
-        area: indiArea,
-        accountAgentId: faIndi.id,
-        city: 'Bengaluru',
-        phone: `91${timestamp.toString().slice(-8)}2`,
-        phoneVerified: true,
-      },
-    });
-
     // Vacancies
     const koraVac = await prisma.vacancy.create({
       data: {
@@ -160,17 +166,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
     koraVacancyId = koraVac.id;
-
-    const indiVac = await prisma.vacancy.create({
-      data: {
-        code: `VC-P5I-${timestamp}`,
-        businessId: indiBiz.id,
-        tradeSkill: 'Plumber',
-        salaryMinPaise: 2500000,
-        status: 'open',
-      },
-    });
-    indiVacancyId = indiVac.id;
 
     // Job Seekers
     const activeJs = await prisma.jobSeeker.create({
@@ -188,24 +183,72 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     });
     activeJobSeekerId = activeJs.id;
 
-    const placedJs = await prisma.jobSeeker.create({
+  });
+
+  async function createAwaitingPaymentFixture(vacancyId: string, jobSeekerId: string, agreedSalary: number) {
+    fixtureIndex += 1;
+    const vacancy = await prisma.vacancy.findUniqueOrThrow({ where: { id: vacancyId }, include: { business: true } });
+    const policy = await app.get(PricingService).current();
+    const placementId = `p5-fixture-${timestamp}-${fixtureIndex}`;
+    const placementFee = calculatePlacementFee(agreedSalary, policy.placementFeePercent);
+    const gstAmount = calculateGst(placementFee, policy.gstPercent);
+    const now = new Date();
+    const placement = await prisma.placement.create({
       data: {
-        code: `JS-P5PLC-${timestamp}`,
-        name: 'Already Placed Candidate',
-        phone: `92${timestamp.toString().slice(-8)}2`,
-        tradeSkill: 'Electrician',
-        minSalary: 1800000,
-        maxSalary: 2400000,
-        preferredCallWindowStart: '10:00',
-        preferredCallWindowEnd: '18:00',
-        status: 'placed',
+        id: placementId,
+        code: await app.get(IdService).generateCode('placement'),
+        city: vacancy.city,
+        vacancyId: vacancy.id,
+        jobSeekerId,
+        businessId: vacancy.businessId,
+        createdByStaffId: faKoraId,
+        selectedAt: now,
+        paymentDueAt: new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000),
+        joiningDate: now,
+        rootPlacementId: placementId,
+        replacementNumber: 0,
+        feePercentAtCreation: policy.placementFeePercent,
+        gstPercentAtCreation: policy.gstPercent,
+        agreedSalary,
+        placementFee,
+        gstAmount,
+        status: 'awaiting_payment',
       },
     });
-    placedJobSeekerId = placedJs.id;
-  });
+    const payment = await prisma.payment.create({
+      data: {
+        code: await app.get(IdService).generateCode('payment'),
+        city: vacancy.city,
+        type: 'placement_fee',
+        amount: placementFee + gstAmount,
+        status: 'pending',
+        gatewayReference: `p5_fixture_${timestamp}_${fixtureIndex}`,
+        subjectType: 'placement',
+        subjectId: placement.id,
+        businessId: vacancy.businessId,
+        placementId: placement.id,
+        jobSeekerId: null,
+      },
+    });
+    return { body: placement, payment };
+  }
+
+  async function markFixturePaymentSucceeded(placementId: string) {
+    const placement = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+    const now = new Date();
+    await prisma.$transaction(async (tx) => {
+      await tx.payment.updateMany({ where: { placementId, type: 'placement_fee' }, data: { status: 'succeeded' } });
+      await tx.placement.update({ where: { id: placementId }, data: { status: 'confirmed', paidAt: now } });
+      await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'placed' } });
+    });
+    return prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+  }
 
   afterAll(async () => {
     // Teardown in correct FK dependency order
+    await prisma.reviewFlag.deleteMany({
+      where: { kind: 'payment_overdue', subjectType: 'placement', subjectId: { in: overdueFlagPlacementIds } },
+    });
     await prisma.payment.deleteMany({
       where: {
         placement: {
@@ -231,6 +274,12 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       },
     });
+    await prisma.interview.deleteMany({
+      where: { business: { code: { in: [`BZ-P5K-${timestamp}`, `BZ-P5I-${timestamp}`] } } },
+    });
+    await prisma.vacancyInterviewSlot.deleteMany({
+      where: { vacancy: { code: { in: [`VC-P5K-${timestamp}`, `VC-P5I-${timestamp}`] } } },
+    });
     await prisma.vacancy.deleteMany({
       where: {
         code: { in: [`VC-P5K-${timestamp}`, `VC-P5I-${timestamp}`] },
@@ -241,7 +290,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         code: {
           in: [
             `JS-P5ACT-${timestamp}`,
-            `JS-P5PLC-${timestamp}`,
+            `JS-P15PAY-${timestamp}`,
             `JS-P5ACC-${timestamp}`,
             `JS-P5REJ-${timestamp}`,
             `JS-P5FEE-${timestamp}`,
@@ -269,15 +318,14 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
     await prisma.business.deleteMany({
-      where: {
-        code: { in: [`BZ-P5K-${timestamp}`, `BZ-P5I-${timestamp}`] },
-      },
+      where: { code: `BZ-P5K-${timestamp}` },
     });
     await prisma.auditLog.deleteMany({
       where: {
         actorId: { in: staffIds },
       },
     });
+    await prisma.pricingPolicy.deleteMany({ where: { id: { in: testPolicyIds } } });
     await prisma.staff.deleteMany({
       where: {
         id: { in: staffIds },
@@ -286,410 +334,164 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     await app.close();
   });
 
-  it('creates a placement in offered status with agreed monthly salary and PL- code', async () => {
-    const agreedSalary = 2200000; // ₹22,000 in paise
-    const res = await request(app.getHttpServer())
+  it.each([
+    ['field_agent', () => faKoraToken], ['call_agent', () => caToken],
+    ['team_lead', () => teamLeadToken], ['manager', () => mgrToken],
+    ['ceo', () => ceoToken], ['finance', () => financeToken],
+  ])('removes legacy placement creation and response routes for %s', async (_role, token) => {
+    const auth = `Bearer ${(token as () => string)()}`;
+    await request(app.getHttpServer())
       .post(`/vacancies/${koraVacancyId}/placements`)
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({
-        jobSeekerId: activeJobSeekerId,
-        agreedSalary,
-      })
-      .expect(201);
-
-    expect(res.body.id).toBeDefined();
-    expect(res.body.code).toMatch(/^PL-\d{5}$/);
-    expect(res.body.status).toBe('offered');
-    expect(res.body.agreedSalary).toBe(2200000);
-    // 50% placement fee = 1100000 paise
-    expect(res.body.placementFee).toBe(1100000);
-    // 18% GST on 1100000 = 198000 paise
-    expect(res.body.gstAmount).toBe(198000);
-
-    // Job seeker status must remain 'active', NOT 'placed'
-    const js = await prisma.jobSeeker.findUnique({ where: { id: activeJobSeekerId } });
-    expect(js?.status).toBe('active');
-
-    // Audit log entry created
-    const audit = await prisma.auditLog.findFirst({
-      where: { entityCode: res.body.code },
-    });
-    expect(audit).toBeDefined();
-    expect(audit?.action).toBe('placement_created');
+      .set('Authorization', auth)
+      .send({ jobSeekerId: activeJobSeekerId, agreedSalary: 2200000 })
+      .expect(404);
+    await request(app.getHttpServer())
+      .post('/placements/legacy-placement/respond')
+      .set('Authorization', auth)
+      .send({ response: 'accepted' })
+      .expect(404);
   });
 
-  it('enforces account-agent scoping: denied for another agent’s business (403)', async () => {
-    // faKora tries to place into a vacancy owned by faIndi
-    const res = await request(app.getHttpServer())
-      .post(`/vacancies/${indiVacancyId}/placements`)
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({
-        jobSeekerId: activeJobSeekerId,
-        agreedSalary: 2000000,
-      });
+  it('creates a selected interview placement with signed-agreement fees and confirms the candidate only after payment', async () => {
+    const candidate = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-P15PAY-${timestamp}`, name: 'Interview Selected Candidate',
+        phone: `95${timestamp.toString().slice(-8)}9`, tradeSkill: 'Electrician',
+        minSalary: 1800000, maxSalary: 2400000,
+        preferredCallWindowStart: '09:00', preferredCallWindowEnd: '18:00', status: 'active',
+      },
+    });
+    const vacancy = await prisma.vacancy.findUniqueOrThrow({
+      where: { id: koraVacancyId }, include: { business: true },
+    });
+    const now = new Date();
+    const policy = await app.get(PricingService).current();
+    const agreement = await prisma.businessAgreement.create({
+      data: {
+        businessId: vacancy.businessId,
+        version: `phase15-${timestamp}`,
+        termsHash: `terms-${timestamp}`,
+        noBypassMonths: policy.noBypassMonths,
+        noBypassPenaltyPercent: policy.noBypassPenaltyPercent,
+        feePercent: 37,
+        gstPercent: 12,
+        signedName: 'Owner P15',
+        signedPhone: vacancy.business.phone,
+        otpRequestId: `otp-${timestamp}`,
+        signedAt: now,
+        documentStoragePath: `agreements/${timestamp}.pdf`,
+      },
+    });
+    const slot = await prisma.vacancyInterviewSlot.create({
+      data: {
+        vacancyId: vacancy.id,
+        startsAt: new Date(now.getTime() + 60 * 60 * 1000),
+        endsAt: new Date(now.getTime() + 90 * 60 * 1000),
+        capacity: 1,
+      },
+    });
+    const interview = await prisma.interview.create({
+      data: {
+        code: await app.get(IdService).generateCode('interview'),
+        vacancyId: vacancy.id,
+        businessId: vacancy.businessId,
+        jobSeekerId: candidate.id,
+        vacancyInterviewSlotId: slot.id,
+        slotStartsAt: slot.startsAt,
+        slotEndsAt: slot.endsAt,
+        proposedByStaffId: faKoraId,
+        suitabilitySnapshot: { trade: { passed: true } },
+        status: 'completed',
+        offerSentAt: now,
+        replyDueAt: now,
+        resultDueAt: now,
+        result: 'selected',
+        resultOtpRequestId: `otp-result-${timestamp}`,
+        resultRecordedAt: now,
+        selectedSalaryPaise: 2000000,
+        selectedJoiningDate: new Date(now.getTime() + 24 * 60 * 60 * 1000),
+      },
+    });
 
-    expect(res.status).toBe(403);
+    const placements = app.get(PlacementService);
+    const selected = await placements.createAwaitingPaymentFromInterview(interview.id, now);
+    if (!selected.payment) throw new Error('Selected interview did not create its placement fee payment');
+    const expectedFee = calculatePlacementFee(2000000, agreement.feePercent);
+    const expectedGst = calculateGst(expectedFee, agreement.gstPercent);
+    expect(selected).toMatchObject({
+      status: 'awaiting_payment',
+      interviewId: interview.id,
+      createdByStaffId: faKoraId,
+      selectedAt: now,
+      paymentDueAt: new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000),
+      agreedSalary: 2000000,
+      feePercentAtCreation: agreement.feePercent,
+      gstPercentAtCreation: agreement.gstPercent,
+      placementFee: expectedFee,
+      gstAmount: expectedGst,
+      rootPlacementId: selected.id,
+      replacementNumber: 0,
+    });
+    expect(selected.payment).toMatchObject({ status: 'pending', amount: expectedFee + expectedGst });
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidate.id } })).status).toBe('active');
+
+    const changedPolicy = await app.get(PricingService).createVersion({
+      placementFeePercent: agreement.feePercent + 1,
+      gstPercent: agreement.gstPercent + 1,
+    }, (await prisma.staff.findUniqueOrThrow({ where: { id: faKoraId } })).id);
+    testPolicyIds.push(changedPolicy.id);
+    const retry = await placements.createAwaitingPaymentFromInterview(interview.id, now);
+    if (!retry.payment) throw new Error('Placement retry did not return its existing fee payment');
+    expect(retry.feePercentAtCreation).toBe(agreement.feePercent);
+    expect(retry.gstPercentAtCreation).toBe(agreement.gstPercent);
+    expect(retry.placementFee).toBe(expectedFee);
+    expect(retry.payment.id).toBe(selected.payment.id);
+
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: selected.payment.id } });
+    const firstWebhook = await request(app.getHttpServer()).post('/payments/webhook').send({
+      gatewayReference: payment.gatewayReference, status: 'succeeded',
+    }).expect(201);
+    expect(firstWebhook.body.status).toBe('succeeded');
+    const paidPlacement = await prisma.placement.findUniqueOrThrow({ where: { id: selected.id } });
+    expect(paidPlacement.status).toBe('confirmed');
+    expect(paidPlacement.paidAt).toBeInstanceOf(Date);
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidate.id } })).status).toBe('placed');
+    expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(2);
+
+    const replay = await request(app.getHttpServer()).post('/payments/webhook').send({
+      gatewayReference: payment.gatewayReference, status: 'succeeded',
+    }).expect(201);
+    expect(replay.body.alreadyProcessed).toBe(true);
+    expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(2);
+    await prisma.businessAgreement.delete({ where: { id: agreement.id } });
+    await prisma.pricingPolicy.delete({ where: { id: changedPolicy.id } });
   });
 
-  it('allows field agent to create placement for their account business', async () => {
-    const res = await request(app.getHttpServer())
-      .post(`/vacancies/${indiVacancyId}/placements`)
-      .set('Authorization', `Bearer ${faIndiToken}`)
-      .send({
-        jobSeekerId: activeJobSeekerId,
-        agreedSalary: 2400000,
-      })
-      .expect(201);
-
-    expect(res.body.code).toMatch(/^PL-\d{5}$/);
-    expect(res.body.status).toBe('offered');
-  });
-
-  it('allows call agent to create placement across any area', async () => {
-    const res = await request(app.getHttpServer())
-      .post(`/vacancies/${indiVacancyId}/placements`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({
-        jobSeekerId: activeJobSeekerId,
-        agreedSalary: 2500000,
-      })
-      .expect(201);
-
-    expect(res.body.code).toMatch(/^PL-\d{5}$/);
-    expect(res.body.status).toBe('offered');
-  });
-
-  it('rejects placement if candidate is already placed (400)', async () => {
-    const res = await request(app.getHttpServer())
-      .post(`/vacancies/${koraVacancyId}/placements`)
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({
-        jobSeekerId: placedJobSeekerId,
-        agreedSalary: 2000000,
-      });
-
-    expect(res.status).toBe(400);
-    expect(res.body.message).toContain('already placed');
-  });
-
-  describe('Phase 5 Task 2: Offer Response and Confirmation', () => {
-    let testPlacementId: string;
-    let candidateToAcceptId: string;
-    let candidateToRejectId: string;
-
-    beforeAll(async () => {
-      // Create fresh candidates for accept & reject tests
-      const jsAccept = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5ACC-${timestamp}`,
-          name: 'Accept Candidate',
-          phone: `93${timestamp.toString().slice(-8)}1`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-          hitCount: 0,
-        },
-      });
-      candidateToAcceptId = jsAccept.id;
-
-      const jsReject = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5REJ-${timestamp}`,
-          name: 'Reject Candidate',
-          phone: `93${timestamp.toString().slice(-8)}2`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-          hitCount: 0,
-        },
-      });
-      candidateToRejectId = jsReject.id;
+  it('flags an unpaid placement at its policy deadline and does not send the joining date', async () => {
+    const candidate = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-P15DUE-${timestamp}`, name: 'Unpaid Interview Candidate',
+        phone: `96${timestamp.toString().slice(-8)}9`, tradeSkill: 'Electrician',
+        minSalary: 1800000, maxSalary: 2400000,
+        preferredCallWindowStart: '09:00', preferredCallWindowEnd: '18:00', status: 'active',
+      },
     });
+    const fixture = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2000000);
+    overdueFlagPlacementIds.push(fixture.body.id);
 
-    it('accepting an offer moves placement to confirmed and job seeker to placed', async () => {
-      // 1. Create offered placement
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({
-          jobSeekerId: candidateToAcceptId,
-          agreedSalary: 2000000,
-        })
-        .expect(201);
-
-      testPlacementId = placeRes.body.id;
-      expect(placeRes.body.status).toBe('offered');
-
-      // 2. Respond accepted
-      const respondRes = await request(app.getHttpServer())
-        .post(`/placements/${testPlacementId}/respond`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
-
-      expect(respondRes.body.status).toBe('confirmed');
-
-      // Job seeker status must now be 'placed'
-      const js = await prisma.jobSeeker.findUnique({ where: { id: candidateToAcceptId } });
-      expect(js?.status).toBe('placed');
-
-      // Audit logged
-      const audit = await prisma.auditLog.findFirst({
-        where: { entityCode: placeRes.body.code, action: 'placement_confirmed' },
-      });
-      expect(audit).toBeDefined();
-    });
-
-    it('rejecting an offer records a hit through the hit cycle and sets placement status to rejected', async () => {
-      // 1. Create offered placement
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          jobSeekerId: candidateToRejectId,
-          agreedSalary: 2000000,
-        })
-        .expect(201);
-
-      const placementId = placeRes.body.id;
-
-      // 2. Respond rejected
-      const respondRes = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/respond`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          response: 'rejected',
-          rejectionReason: 'Candidate declined: commute too far',
-        })
-        .expect(201);
-
-      expect(respondRes.body.status).toBe('rejected');
-
-      // Job seeker hitCount must have incremented to 1
-      const js = await prisma.jobSeeker.findUnique({ where: { id: candidateToRejectId } });
-      expect(js?.hitCount).toBe(1);
-      expect(js?.status).toBe('active'); // Still active at 1 hit
-
-      // Hit record must exist with reason 'offer_rejected'
-      const hit = await prisma.jobSeekerHit.findFirst({
-        where: { jobSeekerId: candidateToRejectId },
-      });
-      expect(hit).toBeDefined();
-      expect(hit?.reason).toBe('offer_rejected');
-      expect(hit?.note).toContain('commute too far');
-    });
-
-    it('rejects response if placement is not in offered status (400)', async () => {
-      // testPlacementId was already confirmed above
-      const res = await request(app.getHttpServer())
-        .post(`/placements/${testPlacementId}/respond`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ response: 'rejected' });
-
-      expect(res.status).toBe(400);
-      expect(res.body.message).toContain('offered');
-    });
-
-    it('enforces account-agent scoping when responding to a placement (403 for another account)', async () => {
-      // Create placement in Koramangala
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          jobSeekerId: candidateToRejectId,
-          agreedSalary: 2000000,
-        })
-        .expect(201);
-
-      // faIndi tries to respond to a placement owned by faKora
-      const res = await request(app.getHttpServer())
-        .post(`/placements/${placeRes.body.id}/respond`)
-        .set('Authorization', `Bearer ${faIndiToken}`)
-        .send({ response: 'accepted' });
-
-      expect(res.status).toBe(403);
-    });
-  });
-
-  describe('Phase 5 Task 3: Placement Fee and GST', () => {
-    let feeCandidateId: string;
-    let oddSalaryCandidateId: string;
-
-    beforeAll(async () => {
-      const jsFee = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5FEE-${timestamp}`,
-          name: 'Fee Candidate',
-          phone: `94${timestamp.toString().slice(-8)}1`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-      feeCandidateId = jsFee.id;
-
-      const jsOdd = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5ODD-${timestamp}`,
-          name: 'Odd Salary Candidate',
-          phone: `94${timestamp.toString().slice(-8)}2`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2500000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-      oddSalaryCandidateId = jsOdd.id;
-    });
-
-    it('creates Payment row for 50% placement fee + 18% GST billed to business, not job seeker', async () => {
-      // 1. Create placement with agreed salary ₹20,000 = 2000000 paise
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({
-          jobSeekerId: feeCandidateId,
-          agreedSalary: 2000000,
-        })
-        .expect(201);
-
-      const placementId = placeRes.body.id;
-
-      // 2. Accept placement
-      const acceptRes = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/respond`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
-
-      expect(acceptRes.body.status).toBe('confirmed');
-      expect(acceptRes.body.payment).toBeDefined();
-
-      // Check returned payment info
-      const { payment } = acceptRes.body;
-      expect(payment.placementFee).toBe(1000000); // 50% of 2000000
-      expect(payment.gstAmount).toBe(180000); // 18% of 1000000
-      expect(payment.amount).toBe(1180000); // 1000000 + 180000
-      expect(payment.status).toBe('pending');
-      expect(payment.code).toMatch(/^PAY-\d{5}$/);
-
-      // Verify Payment record in DB
-      const dbPayment = await prisma.payment.findUnique({
-        where: { id: payment.id },
-      });
-      expect(dbPayment).toBeDefined();
-      expect(dbPayment?.type).toBe('placement_fee');
-      expect(dbPayment?.amount).toBe(1180000);
-      expect(dbPayment?.placementId).toBe(placementId);
-      expect(dbPayment?.businessId).toBeDefined();
-      // Billed to the business, never deducted from or assigned to the job seeker
-      expect(dbPayment?.jobSeekerId).toBeNull();
-    });
-
-    it('calculates fee and GST correctly for salary that does not divide evenly (rounding check)', async () => {
-      // Agreed salary: 2,345,677 paise (~₹23,456.77)
-      // 50% fee = Math.round(2345677 * 0.5) = Math.round(1172838.5) = 1172839 paise
-      // 18% GST = Math.round(1172839 * 0.18) = Math.round(211111.02) = 211111 paise
-      // Total = 1172839 + 211111 = 1383950 paise
-      const agreedSalary = 2345677;
-
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({
-          jobSeekerId: oddSalaryCandidateId,
-          agreedSalary,
-        })
-        .expect(201);
-
-      const acceptRes = await request(app.getHttpServer())
-        .post(`/placements/${placeRes.body.id}/respond`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
-
-      const { payment } = acceptRes.body;
-      expect(payment.placementFee).toBe(1172839);
-      expect(payment.gstAmount).toBe(211111);
-      expect(payment.amount).toBe(1383950);
-      expect(Number.isInteger(payment.amount)).toBe(true);
-      expect(Number.isInteger(payment.placementFee)).toBe(true);
-      expect(Number.isInteger(payment.gstAmount)).toBe(true);
-    });
-
-    it('processes payment webhook for placement fee and ensures idempotent duplicate handling', async () => {
-      // Create and confirm a placement
-      const freshJs = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5WH-${timestamp}`,
-          name: 'Webhook Candidate',
-          phone: `94${timestamp.toString().slice(-8)}3`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          jobSeekerId: freshJs.id,
-          agreedSalary: 2000000,
-        })
-        .expect(201);
-
-      const acceptRes = await request(app.getHttpServer())
-        .post(`/placements/${placeRes.body.id}/respond`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
-
-      const { gatewayReference, id: paymentId } = acceptRes.body.payment;
-
-      // 1. Deliver webhook first time
-      const webhookRes1 = await request(app.getHttpServer())
-        .post('/payments/webhook')
-        .send({
-          gatewayReference,
-          status: 'succeeded',
-        })
-        .expect(201);
-
-      expect(webhookRes1.body.received).toBe(true);
-      expect(webhookRes1.body.status).toBe('succeeded');
-
-      const paymentAfter1 = await prisma.payment.findUnique({
-        where: { id: paymentId },
-      });
-      expect(paymentAfter1?.status).toBe('succeeded');
-
-      // 2. Deliver duplicate webhook (same payload) -> must be idempotent no-op
-      const webhookRes2 = await request(app.getHttpServer())
-        .post('/payments/webhook')
-        .send({
-          gatewayReference,
-          status: 'succeeded',
-        })
-        .expect(201);
-
-      expect(webhookRes2.body.received).toBe(true);
-      expect(webhookRes2.body.alreadyProcessed).toBe(true);
-    });
+    const dueAt = fixture.body.paymentDueAt;
+    if (!dueAt) throw new Error('Placement payment deadline was not set');
+    const placementService = app.get(PlacementService);
+    expect(await placementService.processPaymentDeadlines(new Date(dueAt.getTime() - 1))).toEqual({ raised: 0 });
+    expect(await placementService.processPaymentDeadlines(new Date(dueAt.getTime() + 1))).toEqual({ raised: 1 });
+    expect(await placementService.processPaymentDeadlines(new Date(dueAt.getTime() + 2))).toEqual({ raised: 0 });
+    expect(await prisma.reviewFlag.count({
+      where: { kind: 'payment_overdue', subjectType: 'placement', subjectId: fixture.body.id },
+    })).toBe(1);
+    expect(await prisma.messageLog.count({
+      where: { relatedId: fixture.body.id, template: 'joining_confirmed' },
+    })).toBe(0);
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidate.id } })).status).toBe('active');
   });
 
   describe('Task 4: Candidate joining', () => {
@@ -709,14 +511,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       });
 
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          jobSeekerId: candidate.id,
-          agreedSalary: 2100000,
-        })
-        .expect(201);
+      const placeRes = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2100000);
 
       const placementId = placeRes.body.id;
 
@@ -728,11 +523,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .expect(400);
 
       // Confirm placement
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/respond`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
+      await markFixturePaymentSucceeded(placementId);
 
       // Area-scoping: FA from Indiranagar cannot record joined for Koramangala business
       await request(app.getHttpServer())
@@ -796,11 +587,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       });
 
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ jobSeekerId: candidate.id, agreedSalary: 2000000 })
-        .expect(201);
+      const placeRes = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2000000);
 
       const placementId = placeRes.body.id;
 
@@ -812,11 +599,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .expect(400);
 
       // Confirm and join
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/respond`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
+      await markFixturePaymentSucceeded(placementId);
 
       // Cannot report dropout on 'confirmed' placement
       await request(app.getHttpServer())
@@ -898,19 +681,11 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       });
 
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ jobSeekerId: candidate.id, agreedSalary: 2000000 })
-        .expect(201);
+      const placeRes = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2000000);
 
       const placementId = placeRes.body.id;
 
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/respond`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
+      await markFixturePaymentSucceeded(placementId);
 
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
@@ -958,19 +733,11 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       });
 
-      const placeRes = await request(app.getHttpServer())
-        .post(`/vacancies/${koraVacancyId}/placements`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ jobSeekerId: originalCandidate.id, agreedSalary: 2000000 })
-        .expect(201);
+      const placeRes = await createAwaitingPaymentFixture(koraVacancyId, originalCandidate.id, 2000000);
 
       const placementId = placeRes.body.id;
 
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/respond`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ response: 'accepted' })
-        .expect(201);
+      await markFixturePaymentSucceeded(placementId);
 
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)

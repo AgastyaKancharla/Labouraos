@@ -9,9 +9,10 @@ import { JobsController } from './jobs.controller';
 import { MessageModule } from '../modules/message/message.module';
 import { VacancyModule } from '../modules/vacancy/vacancy.module';
 import { InterviewReplyJob } from './interview-reply.job';
+import { PlacementModule } from '../modules/placement/placement.module';
 
 @Module({
-  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule],
+  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule],
   controllers: [JobsController],
   providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob],
   exports: [NoPickupEvaluationJob, SweepMonitoringService],

@@ -8,9 +8,10 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { IdModule } from '../../common/id/id.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { MessageModule } from '../message/message.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, IdModule, PricingModule],
+  imports: [PrismaModule, AuditModule, IdModule, PricingModule, MessageModule],
   controllers: [PaymentController],
   providers: [
     {

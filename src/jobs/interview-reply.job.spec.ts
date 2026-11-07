@@ -12,7 +12,12 @@ describe('Interview reply deadline scheduler', () => {
   it('registers a once-per-minute worker scheduler', async () => {
     process.env.PROCESS_ROLE = 'worker';
     const processDueReplies = jest.fn().mockResolvedValue({ processed: 0 });
-    const job = new InterviewReplyJob({ processDueReplies } as never);
+    const processResultDeadlines = jest.fn().mockResolvedValue({ closed: 0 });
+    const processPaymentDeadlines = jest.fn().mockResolvedValue({ raised: 0 });
+    const job = new InterviewReplyJob(
+      { processDueReplies, processResultDeadlines } as never,
+      { processPaymentDeadlines } as never,
+    );
     const upsertJobScheduler = jest.fn().mockResolvedValue(undefined);
     const mockQueue = { upsertJobScheduler, close: jest.fn().mockResolvedValue(undefined), on: jest.fn() };
     const workerOn = jest.fn();
@@ -27,12 +32,19 @@ describe('Interview reply deadline scheduler', () => {
     expect(getWorker).toHaveBeenCalledTimes(1);
     await expect(job.processDueReplies()).resolves.toEqual({ processed: 0 });
     expect(processDueReplies).toHaveBeenCalledTimes(1);
+    await expect(job.process()).resolves.toEqual({
+      replies: { processed: 0 }, results: { closed: 0 }, payments: { raised: 0 },
+    });
+    expect(processPaymentDeadlines).toHaveBeenCalledTimes(1);
     await job.close();
   });
 
   it('does not register a worker scheduler in the web process', async () => {
     process.env.PROCESS_ROLE = 'web';
-    const job = new InterviewReplyJob({ processDueReplies: jest.fn() } as never);
+    const job = new InterviewReplyJob(
+      { processDueReplies: jest.fn(), processResultDeadlines: jest.fn() } as never,
+      { processPaymentDeadlines: jest.fn() } as never,
+    );
     const schedule = jest.spyOn(job, 'schedule');
     await job.onModuleInit();
     expect(schedule).not.toHaveBeenCalled();

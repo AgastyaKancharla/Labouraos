@@ -7,12 +7,16 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { IdService } from '../../common/id/id.service';
+import { PricingService } from '../pricing/pricing.service';
+import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 
 describe('Phase 6 Task 5: Call Agent Console', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let otpService: OtpService;
   let caToken: string;
+  let caStaffId: string;
 
   const timestamp = Date.now();
   const password = 'Password123!';
@@ -44,6 +48,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     const caLogin = await enrolledLogin(app.getHttpServer(), { email: ca.email, password })
       .expect(200);
     caToken = caLogin.body.accessToken;
+    caStaffId = ca.id;
   });
 
   afterAll(async () => {
@@ -210,24 +215,19 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     expect(Array.isArray(shortlistRes.body.matches)).toBe(true);
     expect(shortlistRes.body).toMatchObject({ page: 1, pageSize: expect.any(Number) });
 
-    // 8. Placement offer flow
-    const placeRes = await request(app.getHttpServer())
-      .post(`/vacancies/${vacancyId}/placements`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({
-        jobSeekerId: candidateId,
-        agreedSalary: 2000000,
-      })
-      .expect(201);
-    const placementId = placeRes.body.id;
-
-    // Placement response flow
-    const respRes = await request(app.getHttpServer())
-      .post(`/placements/${placementId}/respond`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({ response: 'accepted' })
-      .expect(201);
-    expect(respRes.body.status).toBe('confirmed');
+    // Start from a paid placement fixture; Task 15 owns the selected-interview flow.
+    const policy = await app.get(PricingService).current();
+    const { placement, payment } = await createAwaitingPaymentPlacementFixture({
+      prisma, idService: app.get(IdService), vacancyId, jobSeekerId: candidateId, createdByStaffId: caStaffId,
+      agreedSalary: 2000000, feePercent: policy.placementFeePercent, gstPercent: policy.gstPercent,
+      paymentDueHours: policy.placementPaymentDueHours,
+    });
+    const placementId = placement.id;
+    const paymentRes = await request(app.getHttpServer()).post('/payments/webhook').send({
+      gatewayReference: payment.gatewayReference, status: 'succeeded',
+    }).expect(201);
+    expect(paymentRes.body.status).toBe('succeeded');
+    expect((await prisma.placement.findUniqueOrThrow({ where: { id: placementId } })).status).toBe('confirmed');
 
     // Placement joined flow
     const joinRes = await request(app.getHttpServer())

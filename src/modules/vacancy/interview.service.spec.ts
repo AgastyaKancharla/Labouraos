@@ -37,6 +37,7 @@ describe('InterviewService booking', () => {
     verifyInterviewOwnerOtp: Mock;
   };
   let reviewFlags: { raise: jest.Mock };
+  let placements: { createAwaitingPaymentFromInterview: jest.Mock };
   const previousPublicAppUrl = process.env.PUBLIC_APP_URL;
 
   const vacancy = {
@@ -102,6 +103,7 @@ describe('InterviewService booking', () => {
       verifyInterviewOwnerOtp: jest.fn().mockResolvedValue({ interviewId: 'interview-id', phone: '+911234567890' }),
     };
     reviewFlags = { raise: jest.fn().mockResolvedValue({ id: 'flag-id' }) };
+    placements = { createAwaitingPaymentFromInterview: jest.fn().mockResolvedValue({ id: 'placement-id', status: 'awaiting_payment' }) };
     service = new InterviewService(
       prisma as never,
       { generateCode: jest.fn().mockResolvedValue('INT-00001') } as never,
@@ -118,6 +120,7 @@ describe('InterviewService booking', () => {
       calls as never,
       { createInterviewAttendanceAssignment: attendance.createInterviewAttendanceAssignment } as never,
       reviewFlags as never,
+      placements as never,
     );
   });
 
@@ -304,7 +307,8 @@ describe('InterviewService booking', () => {
     });
 
     expect(linkService.verifyInterviewOwnerOtp).toHaveBeenCalledWith('single-use-token', 'otp-request-id', '123456');
-    expect(result).toMatchObject({ status: 'completed', result: 'selected' });
+    expect(result).toMatchObject({ status: 'completed', result: 'selected', placement: { id: 'placement-id', status: 'awaiting_payment' } });
+    expect(placements.createAwaitingPaymentFromInterview).toHaveBeenCalledWith('interview-id', now);
     expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'interview-id', status: 'confirmed', resultRecordedAt: null },
       data: expect.objectContaining({
