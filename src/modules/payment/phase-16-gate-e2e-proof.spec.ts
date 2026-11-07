@@ -74,7 +74,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
       .overrideProvider(WHATSAPP_PROVIDER).useValue(mockWhatsAppProvider)
       .compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication({ rawBody: true });
     await app.init();
 
     prisma = app.get(PrismaService);
