@@ -412,7 +412,7 @@ export class PlacementService {
 
   async completeDay60Placements(now = new Date()): Promise<number> {
     const policy = await this.pricingService.current();
-    const windowDays = policy.replacementWindowDays ?? 60;
+    const windowDays = policy.replacementWindowDays;
 
     const activePlacements = await this.prisma.placement.findMany({
       where: {

@@ -24,6 +24,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   let teamLeadToken: string;
 
   let koraVacancyId: string;
+  let koraBusinessId: string;
   let activeJobSeekerId: string;
 
   let staffIds: string[] = [];
@@ -155,6 +156,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         phoneVerified: true,
       },
     });
+    koraBusinessId = koraBiz.id;
 
     // Vacancies
     const koraVac = await prisma.vacancy.create({
@@ -521,7 +523,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       const placementId = placeRes.body.id;
 
       // Cannot mark joined if placement is still in 'offered' status
-      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      let plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
       await createJoiningCallsFixture({
         prisma,
         idService: app.get(IdService),
@@ -540,7 +542,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       await markFixturePaymentSucceeded(placementId);
 
       // Area-scoping: FA from Indiranagar cannot record joined for Koramangala business
-      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
       await createJoiningCallsFixture({
         prisma,
         idService: app.get(IdService),
@@ -597,7 +599,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(audit?.action).toBe('placement_joined');
 
       // Calling /joined again on already active placement returns 400
-      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
       await createJoiningCallsFixture({
         prisma,
         idService: app.get(IdService),
@@ -806,7 +808,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         prisma,
         idService: app.get(IdService),
         placementId,
-        jobSeekerId: candidate.id,
+        jobSeekerId: originalCandidate.id,
         businessId: koraBusinessId,
         callTime: plRow.joiningDate ?? new Date(),
       });

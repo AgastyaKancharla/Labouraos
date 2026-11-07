@@ -242,7 +242,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       idService: app.get(IdService),
       placementId,
       jobSeekerId: candidateId,
-      businessId,
+      businessId: bizId,
       callTime: new Date(joinedDateStr),
     });
     const joinRes = await request(app.getHttpServer())
