@@ -9,6 +9,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { calculatePlacementFee, calculateGst } from '../../common/money/money';
 import { IdService } from '../../common/id/id.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 
 describe('Phase 5 Task 1: Placement Creation', () => {
   let app: INestApplication;
@@ -23,6 +24,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   let teamLeadToken: string;
 
   let koraVacancyId: string;
+  let koraBusinessId: string;
   let activeJobSeekerId: string;
 
   let staffIds: string[] = [];
@@ -154,6 +156,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         phoneVerified: true,
       },
     });
+    koraBusinessId = koraBiz.id;
 
     // Vacancies
     const koraVac = await prisma.vacancy.create({
@@ -520,6 +523,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       const placementId = placeRes.body.id;
 
       // Cannot mark joined if placement is still in 'offered' status
+      let plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: candidate.id,
+        businessId: koraBusinessId,
+        callTime: plRow.joiningDate ?? new Date(),
+      });
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${caToken}`)
@@ -530,14 +542,36 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       await markFixturePaymentSucceeded(placementId);
 
       // Area-scoping: FA from Indiranagar cannot record joined for Koramangala business
+      plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: candidate.id,
+        businessId: koraBusinessId,
+        callTime: plRow.joiningDate ?? new Date(),
+      });
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${faIndiToken}`)
         .send({})
         .expect(403);
 
-      // Successfully record joined with explicit joinedDate
+      // Successfully record joined with answered confirmation calls
       const explicitDate = '2026-10-20T08:00:00.000Z';
+      await prisma.callRecord.deleteMany({ where: { relatedId: placementId } });
+      await prisma.placement.update({
+        where: { id: placementId },
+        data: { joiningDate: new Date(explicitDate) },
+      });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: candidate.id,
+        businessId: koraBusinessId,
+        callTime: new Date(explicitDate),
+      });
       const joinRes = await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${faKoraToken}`)
@@ -566,6 +600,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(audit?.action).toBe('placement_joined');
 
       // Calling /joined again on already active placement returns 400
+      plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: candidate.id,
+        businessId: koraBusinessId,
+        callTime: plRow.joiningDate ?? new Date(),
+      });
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${caToken}`)
@@ -612,6 +655,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({ eligibility: 'employee_left' })
         .expect(400);
 
+      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: candidate.id,
+        businessId: koraBusinessId,
+        callTime: plRow.joiningDate ?? new Date(),
+      });
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${caToken}`)
@@ -691,6 +743,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
       await markFixturePaymentSucceeded(placementId);
 
+      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: candidate.id,
+        businessId: koraBusinessId,
+        callTime: plRow.joiningDate ?? new Date(),
+      });
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${caToken}`)
@@ -743,6 +804,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
       await markFixturePaymentSucceeded(placementId);
 
+      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
+      await createJoiningCallsFixture({
+        prisma,
+        idService: app.get(IdService),
+        placementId,
+        jobSeekerId: originalCandidate.id,
+        businessId: koraBusinessId,
+        callTime: plRow.joiningDate ?? new Date(),
+      });
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/joined`)
         .set('Authorization', `Bearer ${caToken}`)

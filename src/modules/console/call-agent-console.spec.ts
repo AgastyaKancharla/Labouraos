@@ -10,6 +10,7 @@ import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
+import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 
 describe('Phase 6 Task 5: Call Agent Console', () => {
   let app: INestApplication;
@@ -231,10 +232,23 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     expect((await prisma.placement.findUniqueOrThrow({ where: { id: placementId } })).status).toBe('confirmed');
 
     // Placement joined flow
+    const joinedDateStr = '2026-10-24T10:00:00.000Z';
+    await prisma.placement.update({
+      where: { id: placementId },
+      data: { joiningDate: new Date(joinedDateStr) },
+    });
+    await createJoiningCallsFixture({
+      prisma,
+      idService: app.get(IdService),
+      placementId,
+      jobSeekerId: candidateId,
+      businessId: bizId,
+      callTime: new Date(joinedDateStr),
+    });
     const joinRes = await request(app.getHttpServer())
       .post(`/placements/${placementId}/joined`)
       .set('Authorization', `Bearer ${caToken}`)
-      .send({ joinedDate: '2026-10-24T10:00:00.000Z' })
+      .send({ joinedDate: joinedDateStr })
       .expect(201);
     expect(joinRes.body.status).toBe('active');
   });

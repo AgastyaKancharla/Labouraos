@@ -26,7 +26,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ---
 
-### [ ] Task 1 — Joining confirmed by calls; the placement completes on day 60
+### [x] Task 1 — Joining confirmed by calls; the placement completes on day 60
 **Branch:** `phase-17/task-1-joining` · **Migration folder:** `20261110100000_joining_confirmation`
 
 **Acceptance:**

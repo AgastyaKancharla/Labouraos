@@ -9,6 +9,7 @@ import {
   NoPickupEvaluationJob,
   NO_PICKUP_EVALUATION_JOB,
 } from './no-pickup-evaluation.job';
+import { PlacementCompletionJob } from './placement-completion.job';
 import { AuditService } from '../common/audit/audit.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
@@ -109,6 +110,7 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
           RbacGuard,
           AuthThrottlerGuard,
           { provide: NoPickupEvaluationJob, useValue: mockJobService },
+          { provide: PlacementCompletionJob, useValue: { process: jest.fn().mockResolvedValue({ completed: 0 }) } },
           { provide: AuditService, useValue: mockAuditService },
           { provide: PrismaService, useValue: mockPrisma },
           { provide: PricingService, useValue: { current: jest.fn() } },

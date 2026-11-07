@@ -12,6 +12,7 @@ import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
+import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 
 describe('Phase 6.7 Gate: End-to-End Proof', () => {
   let app: INestApplication;
@@ -434,12 +435,21 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     console.log(`[Placement Fee Webhook Processed] Status: succeeded`);
 
     // Candidate joins the job
+    const joiningCallTime = new Date();
+    await createJoiningCallsFixture({
+      prisma,
+      idService: app.get(IdService),
+      placementId,
+      jobSeekerId: candidateId,
+      businessId,
+      callTime: joiningCallTime,
+    });
     const joinedRes = await request(app.getHttpServer())
       .post(`/placements/${placementId}/joined`)
       .set('Authorization', `Bearer ${fa1Token}`)
       .set('X-Forwarded-For', freshIp())
       .send({
-        joinedDate: new Date().toISOString(),
+        joinedDate: joiningCallTime.toISOString(),
       });
     expect(joinedRes.status).toBe(201);
     console.log(`[Candidate Joined Recorded] Placement status: active`);

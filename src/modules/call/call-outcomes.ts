@@ -9,6 +9,7 @@ export const CALL_PURPOSES = [
   'check_in',
   'interview_result',
   'refund_check',
+  'joining_confirmation',
   'general',
 ] as const;
 

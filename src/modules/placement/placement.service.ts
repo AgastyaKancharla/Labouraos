@@ -240,7 +240,10 @@ export class PlacementService {
     return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId);
   }
 
-  async recordJoined(id: string, dto: RecordJoinedDto, actorId: string) {
+  async recordJoined(id: string, _dto?: RecordJoinedDto, actorId?: string, now = new Date()) {
+    if (!actorId) {
+      throw new BadRequestException('actorId is required');
+    }
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
     });
@@ -262,7 +265,7 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
+    if (actor && actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
       throw new ForbiddenException('Field agents may only manage placements for their account businesses');
     }
 
@@ -272,19 +275,89 @@ export class PlacementService {
       );
     }
 
-    let joinedDate: Date;
-    if (dto?.joinedDate) {
-      joinedDate = new Date(dto.joinedDate);
-      if (isNaN(joinedDate.getTime())) {
-        throw new BadRequestException('joinedDate must be a valid date string');
-      }
-    } else {
-      joinedDate = new Date();
+    if (!placement.joiningDate) {
+      throw new BadRequestException('Placement does not have a confirmed joining date');
     }
+
+    if (now.getTime() < placement.joiningDate.getTime()) {
+      throw new BadRequestException(
+        `Cannot record joining before the joining date (${placement.joiningDate.toISOString()})`,
+      );
+    }
+
+    // Both worker and business joining confirmation calls must be answered and made on or after joiningDate
+    const workerCall = await this.prisma.callRecord.findFirst({
+      where: {
+        subjectType: 'job_seeker',
+        subjectId: placement.jobSeekerId,
+        purpose: 'joining_confirmation',
+        answered: true,
+        OR: [
+          { relatedId: placement.id },
+          { relatedId: null },
+        ],
+        AND: [
+          {
+            OR: [
+              { startedAt: { gte: placement.joiningDate } },
+              { answeredAt: { gte: placement.joiningDate } },
+              { createdAt: { gte: placement.joiningDate } },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    const businessCall = await this.prisma.callRecord.findFirst({
+      where: {
+        subjectType: 'business',
+        subjectId: placement.businessId,
+        purpose: 'joining_confirmation',
+        answered: true,
+        OR: [
+          { relatedId: placement.id },
+          { relatedId: null },
+        ],
+        AND: [
+          {
+            OR: [
+              { startedAt: { gte: placement.joiningDate } },
+              { answeredAt: { gte: placement.joiningDate } },
+              { createdAt: { gte: placement.joiningDate } },
+            ],
+          },
+        ],
+      },
+      orderBy: [{ startedAt: 'desc' }, { createdAt: 'desc' }],
+    });
+
+    if (!workerCall && !businessCall) {
+      throw new BadRequestException(
+        'Both worker and business joining confirmation calls are missing or unanswered',
+      );
+    }
+    if (!workerCall) {
+      throw new BadRequestException(
+        'Worker joining confirmation call is missing or was not answered',
+      );
+    }
+    if (!businessCall) {
+      throw new BadRequestException(
+        'Business joining confirmation call is missing or was not answered',
+      );
+    }
+
+    // joinedDate = the day both were confirmed — never a date typed by an agent
+    const workerCallTime = workerCall.answeredAt ?? workerCall.startedAt ?? workerCall.createdAt;
+    const businessCallTime = businessCall.answeredAt ?? businessCall.startedAt ?? businessCall.createdAt;
+    const joinedDate = new Date(Math.max(workerCallTime.getTime(), businessCallTime.getTime()));
 
     const before = {
       status: placement.status,
       joinedDate: placement.joinedDate,
+      joiningWorkerCallId: placement.joiningWorkerCallId,
+      joiningBusinessCallId: placement.joiningBusinessCallId,
     };
 
     const updated = await this.prisma.$transaction(async (tx) => {
@@ -293,6 +366,8 @@ export class PlacementService {
         data: {
           status: 'active',
           joinedDate,
+          joiningWorkerCallId: workerCall.id,
+          joiningBusinessCallId: businessCall.id,
         },
         include: {
           business: true,
@@ -306,7 +381,7 @@ export class PlacementService {
         subjectId: placement.id,
         fromStatus: placement.status,
         toStatus: 'active',
-        changedByStaffId: actor.id,
+        changedByStaffId: actor?.id ?? null,
       });
 
       return up;
@@ -322,6 +397,8 @@ export class PlacementService {
       after: {
         status: updated.status,
         joinedDate: updated.joinedDate,
+        joiningWorkerCallId: updated.joiningWorkerCallId,
+        joiningBusinessCallId: updated.joiningBusinessCallId,
       },
     });
 
@@ -331,6 +408,105 @@ export class PlacementService {
     }
 
     return updated;
+  }
+
+  async completeDay60Placements(now = new Date()): Promise<number> {
+    const policy = await this.pricingService.current();
+    const windowDays = policy.replacementWindowDays;
+
+    const activePlacements = await this.prisma.placement.findMany({
+      where: {
+        status: 'active',
+        joinedDate: { not: null },
+      },
+      include: {
+        business: true,
+      },
+    });
+
+    let completedCount = 0;
+
+    for (const placement of activePlacements) {
+      if (placement.guaranteeEndedReason) {
+        continue;
+      }
+
+      let rootJoinedDate = placement.joinedDate;
+      if (placement.rootPlacementId && placement.rootPlacementId !== placement.id) {
+        const root = await this.prisma.placement.findUnique({
+          where: { id: placement.rootPlacementId },
+          select: { joinedDate: true, guaranteeEndedReason: true, status: true },
+        });
+        if (root?.guaranteeEndedReason || root?.status === 'guarantee_ended') {
+          continue;
+        }
+        if (root?.joinedDate) {
+          rootJoinedDate = root.joinedDate;
+        }
+      }
+
+      if (!rootJoinedDate) {
+        continue;
+      }
+
+      // Check open claims (if ReplacementClaim model exists)
+      const prismaRecord = this.prisma as unknown as Record<string, unknown>;
+      const claimDelegate = prismaRecord.replacementClaim as
+        | { findFirst: (args: { where: { placementId: string; decision: null } }) => Promise<unknown> }
+        | undefined;
+      if (claimDelegate && typeof claimDelegate.findFirst === 'function') {
+        const openClaim = await claimDelegate.findFirst({
+          where: {
+            placementId: placement.id,
+            decision: null,
+          },
+        });
+        if (openClaim) {
+          continue;
+        }
+      }
+
+      const expiryThreshold = new Date(rootJoinedDate.getTime() + windowDays * 24 * 60 * 60 * 1000);
+      if (now.getTime() >= expiryThreshold.getTime()) {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.placement.update({
+            where: { id: placement.id },
+            data: { status: 'completed' },
+          });
+
+          await recordStatusChange(tx, {
+            subjectType: 'placement',
+            subjectId: placement.id,
+            fromStatus: 'active',
+            toStatus: 'completed',
+            changedByStaffId: null,
+            reason: 'replacement_guarantee_window_completed',
+          });
+        });
+
+        const systemStaff =
+          (await this.prisma.staff.findFirst({
+            where: { role: 'ceo' },
+            select: { id: true },
+          })) ?? (await this.prisma.staff.findFirst({ select: { id: true } }));
+
+        if (systemStaff) {
+          await this.auditService.log({
+            action: 'placement_completed',
+            entityType: 'Placement',
+            entityCode: placement.code,
+            actorId: systemStaff.id,
+            city: placement.city,
+            before: { status: 'active' },
+            after: { status: 'completed' },
+          });
+        }
+
+        completedCount++;
+      }
+    }
+
+    return completedCount;
   }
 
   async triggerReferralPayout(placementId: string, actorId?: string) {

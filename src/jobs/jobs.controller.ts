@@ -13,11 +13,13 @@ import { RequirePermission } from '../common/rbac/permissions.decorator';
 import { JwtPayload } from '../common/auth/jwt-payload.interface';
 import { AuditService } from '../common/audit/audit.service';
 import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
+import { PlacementCompletionJob } from './placement-completion.job';
 
 @Controller('jobs')
 export class JobsController {
   constructor(
     private readonly noPickupEvaluationJob: NoPickupEvaluationJob,
+    private readonly placementCompletionJob: PlacementCompletionJob,
     private readonly auditService: AuditService,
   ) {}
 
@@ -47,5 +49,26 @@ export class JobsController {
     });
 
     return { jobId };
+  }
+
+  @Post('placement-completion/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('placement', 'write')
+  async runPlacementCompletion(
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<{ completed: number }> {
+    const result = await this.placementCompletionJob.process();
+
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'placement-completion',
+      after: { completed: result.completed },
+      city: 'Bengaluru',
+    });
+
+    return result;
   }
 }
