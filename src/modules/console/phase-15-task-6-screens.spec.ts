@@ -25,7 +25,7 @@ describe('Phase 15 Task 6 screens', () => {
     expect(html).toContain('My Interviews');
     expect(html).toContain('Filter by vacancy ID or code');
     expect(html).toContain('if (interview.answeredOfferCallId)');
-    expect(html).not.toContain('/vacancies/\' + vcId + '/placements');
+    expect(html).not.toContain("/vacancies/' + vcId + '/placements");
     expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
   });
 
