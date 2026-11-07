@@ -101,6 +101,8 @@ services:
         sync: false
       - key: RECORDINGS_BUCKET
         sync: false
+      - key: BANK_FEED_WEBHOOK_SECRET
+        sync: false
 
   - type: worker
     name: laboura-worker

@@ -53,6 +53,69 @@ export class PaymentController {
     return this.upiCollectionService.saveUtrHint(token, utr);
   }
 
+  @Post('bank-feed/webhook')
+  @HttpCode(HttpStatus.OK)
+  async bankFeedWebhook(
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('x-bank-signature') bankSig?: string,
+    @Headers('x-signature') sig?: string,
+    @Headers('x-webhook-signature') webhookSig?: string,
+  ) {
+    const signature = bankSig || sig || webhookSig;
+    return this.paymentService.handleBankFeedWebhook(req.rawBody, signature);
+  }
+
+  @Post('bank-credits')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'finance')
+  async recordBankCredit(
+    @Body()
+    body: {
+      bankUtr: string;
+      amountPaise: number;
+      receivedAt: string;
+      payerName?: string;
+      payerVpaMasked?: string;
+      remark?: string;
+    },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.recordManualBankCredit(body, req.user.sub);
+  }
+
+  @Get('bank-credits')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'finance')
+  async listBankCredits(@Query('status') status?: string) {
+    return this.paymentService.listBankCredits({ status });
+  }
+
+  @Post('bank-credits/:id/ignore')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'finance')
+  async ignoreBankCredit(
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.ignoreBankCredit(id, body.reason, req.user.sub);
+  }
+
+  @Post(':id/confirm')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'finance')
+  async confirmPayment(
+    @Param('id') id: string,
+    @Body() body: { bankCreditId: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.confirmPaymentWithBankCredit(id, body.bankCreditId, req.user.sub);
+  }
+
   @Get()
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'read')

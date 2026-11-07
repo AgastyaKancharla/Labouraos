@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   Logger,
@@ -17,6 +18,11 @@ import {
   PaymentProvider,
   WebhookVerificationResult,
 } from './payment-provider.interface';
+import {
+  BANK_FEED_PROVIDER,
+  BankFeedProvider,
+} from './bank-feed-provider.interface';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
@@ -31,8 +37,11 @@ export class PaymentService {
     private readonly idService: IdService,
     @Inject(PAYMENT_PROVIDER)
     private readonly provider: PaymentProvider,
+    @Inject(BANK_FEED_PROVIDER)
+    private readonly bankFeedProvider: BankFeedProvider,
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
+    private readonly reviewFlagService: ReviewFlagService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -119,9 +128,9 @@ export class PaymentService {
 
   async onPaymentSucceeded(
     paymentId: string,
-    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string },
+    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string },
   ) {
-    const { confirmedAt, confirmedBy, confirmedByStaffId } = confirmation;
+    const { confirmedAt, confirmedBy, confirmedByStaffId, bankUtr } = confirmation;
     const transition = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
@@ -133,7 +142,13 @@ export class PaymentService {
 
       const claimed = await tx.payment.updateMany({
         where: { id: paymentId, status: payment.status },
-        data: { status: 'succeeded', confirmedAt, confirmedBy, confirmedByStaffId: confirmedByStaffId ?? null },
+        data: {
+          status: 'succeeded',
+          confirmedAt,
+          confirmedBy,
+          confirmedByStaffId: confirmedByStaffId ?? null,
+          bankUtr: bankUtr ?? payment.bankUtr,
+        },
       });
       if (claimed.count !== 1) return { alreadyProcessed: true as const, payment };
       await recordStatusChange(tx, {
@@ -235,6 +250,331 @@ export class PaymentService {
       }
     }
     return { received: true, status: 'succeeded', paymentId };
+  }
+
+  async handleBankFeedWebhook(rawBody: Buffer | string | undefined, signature?: string) {
+    const verification = await this.bankFeedProvider.verifyWebhook(rawBody, signature);
+    if (!verification.isValid || !verification.event) {
+      throw new BadRequestException('Invalid bank feed webhook signature or payload');
+    }
+
+    const { bankUtr, amountPaise, receivedAt, payerName, payerVpaMasked, remark } = verification.event;
+
+    // Idempotent check by bankUtr
+    const existing = await this.prisma.bankCredit.findUnique({
+      where: { bankUtr },
+    });
+    if (existing) {
+      this.logger.log(`Bank credit '${bankUtr}' already processed. Idempotent skip.`);
+      return { received: true, alreadyProcessed: true, bankCreditId: existing.id };
+    }
+
+    const credit = await this.prisma.bankCredit.create({
+      data: {
+        bankUtr,
+        amountPaise,
+        receivedAt,
+        payerName: payerName ?? null,
+        payerVpaMasked: payerVpaMasked ?? null,
+        remark: remark ?? null,
+        source: 'bank_feed',
+        status: 'unmatched',
+      },
+    });
+
+    if (!remark || !remark.trim()) {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'bank_credit',
+        subjectId: credit.id,
+        details: { bankUtr, amountPaise, reason: 'no_reference' },
+      });
+      return { received: true, status: 'unmatched', reason: 'no_reference', bankCreditId: credit.id };
+    }
+
+    const pendingPayments = await this.prisma.payment.findMany({
+      where: {
+        status: 'pending',
+        method: 'upi_direct',
+        upiReference: { not: null },
+      },
+    });
+
+    const matchedPayment = pendingPayments.find(
+      (p) => p.upiReference && remark.toUpperCase().includes(p.upiReference.toUpperCase()),
+    );
+
+    if (!matchedPayment) {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'bank_credit',
+        subjectId: credit.id,
+        details: { bankUtr, amountPaise, remark, reason: 'unknown_reference' },
+      });
+      return { received: true, status: 'unmatched', reason: 'unknown_reference', bankCreditId: credit.id };
+    }
+
+    const expectedAmount = matchedPayment.expectedAmountPaise ?? matchedPayment.amount;
+    if (expectedAmount !== amountPaise) {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: matchedPayment.id,
+        details: {
+          bankCreditId: credit.id,
+          bankUtr,
+          expectedAmountPaise: expectedAmount,
+          receivedAmountPaise: amountPaise,
+          reason: 'amount_mismatch',
+        },
+      });
+      return { received: true, status: 'unmatched', reason: 'amount_mismatch', bankCreditId: credit.id };
+    }
+
+    await this.onPaymentSucceeded(matchedPayment.id, {
+      confirmedAt: receivedAt,
+      confirmedBy: 'bank_feed',
+      bankUtr,
+    });
+
+    await this.prisma.bankCredit.update({
+      where: { id: credit.id },
+      data: {
+        status: 'matched',
+        matchedPaymentId: matchedPayment.id,
+      },
+    });
+
+    return {
+      received: true,
+      status: 'succeeded',
+      paymentId: matchedPayment.id,
+      bankCreditId: credit.id,
+    };
+  }
+
+  async recordManualBankCredit(
+    dto: {
+      bankUtr: string;
+      amountPaise: number;
+      receivedAt: Date | string;
+      payerName?: string;
+      payerVpaMasked?: string;
+      remark?: string;
+    },
+    actorId: string,
+  ) {
+    const bankUtr = dto.bankUtr?.trim();
+    if (!bankUtr) {
+      throw new BadRequestException('bankUtr is required');
+    }
+    const amountPaise = Number(dto.amountPaise);
+    if (!amountPaise || amountPaise <= 0 || isNaN(amountPaise)) {
+      throw new BadRequestException('amountPaise must be a positive integer');
+    }
+    const receivedAt = new Date(dto.receivedAt);
+    if (isNaN(receivedAt.getTime())) {
+      throw new BadRequestException('receivedAt must be a valid date');
+    }
+
+    const existing = await this.prisma.bankCredit.findUnique({
+      where: { bankUtr },
+    });
+    if (existing) {
+      throw new ConflictException(`Bank credit with UTR '${bankUtr}' already exists`);
+    }
+
+    const credit = await this.prisma.bankCredit.create({
+      data: {
+        bankUtr,
+        amountPaise,
+        receivedAt,
+        payerName: dto.payerName?.trim() || null,
+        payerVpaMasked: dto.payerVpaMasked?.trim() || null,
+        remark: dto.remark?.trim() || null,
+        source: 'finance_manual',
+        enteredByStaffId: actorId,
+        status: 'unmatched',
+      },
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'bank_credit.recorded',
+      entityType: 'BankCredit',
+      entityCode: bankUtr,
+      after: {
+        id: credit.id,
+        bankUtr,
+        amountPaise,
+        receivedAt: receivedAt.toISOString(),
+        source: 'finance_manual',
+      },
+    });
+
+    return credit;
+  }
+
+  async confirmPaymentWithBankCredit(
+    paymentId: string,
+    bankCreditId: string,
+    actorId: string,
+  ) {
+    if (!bankCreditId) {
+      throw new BadRequestException('bankCreditId is required');
+    }
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+    });
+    if (!payment) {
+      throw new NotFoundException(`Payment '${paymentId}' not found`);
+    }
+    if (payment.status !== 'pending') {
+      throw new BadRequestException(`Cannot confirm payment with status '${payment.status}'`);
+    }
+
+    const credit = await this.prisma.bankCredit.findUnique({
+      where: { id: bankCreditId },
+    });
+    if (!credit) {
+      throw new NotFoundException(`Bank credit '${bankCreditId}' not found`);
+    }
+    if (credit.status === 'matched') {
+      throw new BadRequestException('Bank credit is already matched');
+    }
+    if (credit.status === 'ignored') {
+      throw new BadRequestException('Cannot match an ignored bank credit');
+    }
+
+    const expectedAmount = payment.expectedAmountPaise ?? payment.amount;
+    if (expectedAmount !== credit.amountPaise) {
+      throw new BadRequestException(
+        `Amount mismatch: payment expected ${expectedAmount} paise but credit has ${credit.amountPaise} paise`,
+      );
+    }
+
+    const existingPaymentWithUtr = await this.prisma.payment.findFirst({
+      where: { bankUtr: credit.bankUtr, NOT: { id: payment.id } },
+    });
+    if (existingPaymentWithUtr) {
+      throw new ConflictException(`Bank UTR '${credit.bankUtr}' is already matched to another payment`);
+    }
+
+    await this.onPaymentSucceeded(payment.id, {
+      confirmedAt: credit.receivedAt,
+      confirmedBy: 'finance_manual',
+      confirmedByStaffId: actorId,
+      bankUtr: credit.bankUtr,
+    });
+
+    await this.prisma.bankCredit.update({
+      where: { id: credit.id },
+      data: {
+        status: 'matched',
+        matchedPaymentId: payment.id,
+      },
+    });
+
+    await this.prisma.reviewFlag.updateMany({
+      where: {
+        kind: 'payment_mismatch',
+        status: 'open',
+        OR: [
+          { subjectType: 'payment', subjectId: payment.id },
+          { subjectType: 'bank_credit', subjectId: credit.id },
+        ],
+      },
+      data: {
+        status: 'resolved',
+        resolution: 'Matched manually by Finance',
+        resolvedAt: new Date(),
+        resolvedByStaffId: actorId,
+      },
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'payment.confirmed_manual',
+      entityType: 'Payment',
+      entityCode: payment.code,
+      after: {
+        paymentId: payment.id,
+        bankCreditId: credit.id,
+        bankUtr: credit.bankUtr,
+        confirmedBy: 'finance_manual',
+      },
+    });
+
+    return {
+      success: true,
+      paymentId: payment.id,
+      bankCreditId: credit.id,
+    };
+  }
+
+  async ignoreBankCredit(bankCreditId: string, reason: string, actorId: string) {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('reason is required to ignore a bank credit');
+    }
+    const credit = await this.prisma.bankCredit.findUnique({
+      where: { id: bankCreditId },
+    });
+    if (!credit) {
+      throw new NotFoundException(`Bank credit '${bankCreditId}' not found`);
+    }
+    if (credit.status === 'matched') {
+      throw new BadRequestException('Cannot ignore a matched bank credit');
+    }
+
+    const updated = await this.prisma.bankCredit.update({
+      where: { id: credit.id },
+      data: {
+        status: 'ignored',
+        ignoredReason: reason.trim(),
+      },
+    });
+
+    await this.prisma.reviewFlag.updateMany({
+      where: {
+        kind: 'payment_mismatch',
+        status: 'open',
+        subjectType: 'bank_credit',
+        subjectId: credit.id,
+      },
+      data: {
+        status: 'dismissed',
+        resolution: reason.trim(),
+        resolvedAt: new Date(),
+        resolvedByStaffId: actorId,
+      },
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'bank_credit.ignored',
+      entityType: 'BankCredit',
+      entityCode: credit.bankUtr,
+      before: { status: credit.status },
+      after: { status: 'ignored', ignoredReason: reason.trim() },
+    });
+
+    return updated;
+  }
+
+  async listBankCredits(query?: { status?: string }) {
+    const where: Prisma.BankCreditWhereInput = {};
+    if (query?.status) {
+      where.status = query.status;
+    }
+    return this.prisma.bankCredit.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: {
+        enteredByStaff: {
+          select: { id: true, code: true, name: true, role: true },
+        },
+      },
+    });
   }
 
   async createReferralPayout(

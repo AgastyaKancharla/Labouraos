@@ -48,7 +48,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **The payment page** (public, single-use-token link via `publicLink()`, sent by SMS and WhatsApp with template `payment_request`): shows what it's for, the amount, the payee name, the QR code, a **Pay with a UPI app** button (the `upi://` link), a **Pay by card** option (Task 4), and an optional box: "Paid already? Enter your UPI reference number (12 digits) to help us find it faster" → saved as `payerUtrHint`. **There is no screenshot upload anywhere**, and the page says payment is confirmed once it reaches Laboura's bank.
 - Tests: the UPI link has the exact amount and reference; the QR decodes to the same link; re-sending doesn't create a second payment; a request without `COMPANY_UPI_VPA` fails clearly while the server still starts; a typed UTR hint never marks a payment succeeded; no route accepts an image as payment proof.
 
-### [ ] Task 3 — Confirming the money: the bank's notice, or Finance
+### [x] Task 3 — Confirming the money: the bank's notice, or Finance
 **Branch:** `phase-16/task-3-confirmation` · **Migration folder:** `20261109110000_add_bank_credit`
 
 **Acceptance:**

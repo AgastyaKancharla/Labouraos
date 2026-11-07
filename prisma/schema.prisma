@@ -463,6 +463,7 @@ model Staff {
   loginCodesRevealed LoginCodeRequest[] @relation("LoginCodeRevealedBy")
   loginCodesRefused LoginCodeRequest[] @relation("LoginCodeRefusedBy")
   callRecords       CallRecord[]
+  bankCreditsEntered BankCredit[]     @relation("BankCreditEnteredBy")
   reversedHits      JobSeekerHit[]   @relation("JobSeekerHitReversedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
@@ -511,6 +512,7 @@ model Payment {
   referral          Referral?   @relation(fields: [referralId], references: [id], onDelete: SetNull)
   placementId       String?
   placement         Placement?  @relation(fields: [placementId], references: [id], onDelete: SetNull)
+  bankCredit        BankCredit?
   reactivation      Boolean     @default(false)
   // How many times a payout has been sent to the gateway. Each attempt after the
   // first gets its own idempotency key; attempt 1 uses the payment id alone.
@@ -524,6 +526,28 @@ model Payment {
   @@index([subjectType, subjectId])
   @@index([jobSeekerId, type])
   @@index([placementId, type])
+}
+
+model BankCredit {
+  id                String    @id @default(uuid())
+  bankUtr           String    @unique
+  amountPaise       Int
+  receivedAt        DateTime
+  payerName         String?
+  payerVpaMasked    String?
+  remark            String?
+  source            String    // bank_feed, finance_manual
+  enteredByStaffId  String?
+  enteredByStaff    Staff?    @relation("BankCreditEnteredBy", fields: [enteredByStaffId], references: [id], onDelete: SetNull)
+  status            String    @default("unmatched") // unmatched, matched, ignored
+  matchedPaymentId  String?   @unique
+  matchedPayment    Payment?  @relation(fields: [matchedPaymentId], references: [id], onDelete: SetNull)
+  ignoredReason     String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@index([status])
+  @@index([createdAt])
 }
 
 // One row per payout-status webhook event already applied (AGENTS.md §2 rule 7).
