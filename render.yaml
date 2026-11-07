@@ -29,6 +29,10 @@ services:
         generateValue: true
       - key: PUBLIC_APP_URL
         sync: false
+      - key: COMPANY_UPI_VPA
+        sync: false
+      - key: COMPANY_UPI_PAYEE_NAME
+        sync: false
       - key: LOGIN_CODE_SECRET
         generateValue: true
       - key: JWT_EXPIRES_IN

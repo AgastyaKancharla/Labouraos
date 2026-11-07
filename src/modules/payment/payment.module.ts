@@ -9,6 +9,7 @@ import { AuditModule } from '../../common/audit/audit.module';
 import { IdModule } from '../../common/id/id.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { MessageModule } from '../message/message.module';
+import { UpiCollectionService } from './upi-collection.service';
 
 @Module({
   imports: [PrismaModule, AuditModule, IdModule, PricingModule, MessageModule],
@@ -34,7 +35,8 @@ import { MessageModule } from '../message/message.module';
       },
     },
     PaymentService,
+    UpiCollectionService,
   ],
-  exports: [PaymentService, PAYMENT_PROVIDER],
+  exports: [PaymentService, PAYMENT_PROVIDER, UpiCollectionService],
 })
 export class PaymentModule {}

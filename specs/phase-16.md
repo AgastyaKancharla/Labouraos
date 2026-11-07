@@ -37,7 +37,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - `StatusHistory` for every payment status change; `AuditLog` never contains a UTR's owner, a UPI ID or a name.
 - Tests: calling `onPaymentSucceeded` twice changes nothing the second time; an activation confirmed through it starts the clock at `confirmedAt`; a placement fee confirmed through it sets `placed` and sends the joining date once; the existing gateway tests still pass unchanged; a payment can be saved with no `gatewayReference`.
 
-### [ ] Task 2 — A QR code and link for every payment
+### [x] Task 2 — A QR code and link for every payment
 **Branch:** `phase-16/task-2-upi-request` · **No migration**
 
 **Acceptance:**

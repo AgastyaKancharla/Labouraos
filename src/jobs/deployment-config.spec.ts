@@ -216,6 +216,19 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
   });
 
   describe('4. Documentation (DEPLOY.md)', () => {
+    it('declares UPI collection configuration without values and documents its optional startup behavior', () => {
+      const webService = blueprint.services.find((s) => s.type === 'web');
+      for (const key of ['COMPANY_UPI_VPA', 'COMPANY_UPI_PAYEE_NAME']) {
+        const variable = webService?.envVars?.find((v) => v.key === key);
+        expect(variable).toMatchObject({ key, sync: false });
+        expect(variable?.value).toBeUndefined();
+      }
+      const content = fs.readFileSync(deployMdPath, 'utf8');
+      expect(content).toContain('COMPANY_UPI_VPA');
+      expect(content).toContain('COMPANY_UPI_PAYEE_NAME');
+      expect(content).toContain('server can start without it');
+    });
+
     it('declares company legal name with sync: false allowing runtime configuration without redeploy', () => {
       const webService = blueprint.services.find((s) => s.type === 'web');
       const companyNameVar = webService?.envVars?.find((v) => v.key === 'COMPANY_LEGAL_NAME');

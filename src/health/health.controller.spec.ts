@@ -42,7 +42,12 @@ describe('Phase 6.5 Task 5: Health Check & Readiness Probe Split', () => {
 
       const response = controller.getHealth();
 
-      expect(response).toEqual({ status: 'ok' });
+      expect(response).toEqual({
+        status: 'ok',
+        upiCollection: process.env.COMPANY_UPI_VPA?.trim() && process.env.COMPANY_UPI_PAYEE_NAME?.trim()
+          ? 'configured'
+          : 'UPI collection not configured',
+      });
       expect(dbSpy).not.toHaveBeenCalled();
       expect(redisSpy).not.toHaveBeenCalled();
       expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
@@ -184,7 +189,29 @@ describe('Phase 6.5 Task 5: Health Check & Readiness Probe Split', () => {
     it('GET /health returns 200 { status: "ok" } over HTTP', async () => {
       const res = await request(app.getHttpServer()).get('/health');
       expect(res.status).toBe(200);
-      expect(res.body).toEqual({ status: 'ok' });
+      expect(res.body).toEqual({
+        status: 'ok',
+        upiCollection: process.env.COMPANY_UPI_VPA?.trim() && process.env.COMPANY_UPI_PAYEE_NAME?.trim()
+          ? 'configured'
+          : 'UPI collection not configured',
+      });
+    });
+
+    it('reports missing UPI configuration without making the health check fail', async () => {
+      const originalVpa = process.env.COMPANY_UPI_VPA;
+      const originalPayeeName = process.env.COMPANY_UPI_PAYEE_NAME;
+      try {
+        process.env.COMPANY_UPI_VPA = '';
+        process.env.COMPANY_UPI_PAYEE_NAME = '';
+        const res = await request(app.getHttpServer()).get('/health');
+        expect(res.status).toBe(200);
+        expect(res.body).toEqual({ status: 'ok', upiCollection: 'UPI collection not configured' });
+      } finally {
+        if (originalVpa === undefined) delete process.env.COMPANY_UPI_VPA;
+        else process.env.COMPANY_UPI_VPA = originalVpa;
+        if (originalPayeeName === undefined) delete process.env.COMPANY_UPI_PAYEE_NAME;
+        else process.env.COMPANY_UPI_PAYEE_NAME = originalPayeeName;
+      }
     });
 
     it('GET /health/ready returns 200 when dependencies answer over HTTP', async () => {

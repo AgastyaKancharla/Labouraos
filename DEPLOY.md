@@ -124,6 +124,8 @@ Follow these steps in exact sequential order:
 | `REDIS_TLS` | `true` | Enables TLS for Upstash |
 | `JWT_SECRET` | *Auto-generated or 32+ char secret* | Secret used to sign authentication tokens |
 | `PUBLIC_APP_URL` | *e.g. `https://app.laboura.in`* | Public web address of the app, used to create absolute links sent by SMS and WhatsApp |
+| `COMPANY_UPI_VPA` | *e.g. `laboura@bank`* | Company's UPI ID used to create payment links and QR codes; payment requests fail clearly while unset, but the server can start without it |
+| `COMPANY_UPI_PAYEE_NAME` | *e.g. `Laboura`* | Payee name displayed by UPI apps and on the public payment page; payment requests fail clearly while unset |
 | `LOGIN_CODE_SECRET` | *Auto-generated. Do not type one.* | Secret used to compute the 6-digit login code. See "Where to find LOGIN_CODE_SECRET" below |
 | `STAFF_BOOTSTRAP_SECRET` | *Auto-generated or random secret* | Secret required for initial CEO account creation |
 | `OTP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SMS gateway is active |
@@ -181,6 +183,23 @@ Like `LOGIN_CODE_SECRET`, you do not invent `CALL_ROUTING_KEY` and never commit 
 1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
 2. Find `CALL_ROUTING_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
 3. Open **`laboura-worker`** -> **Environment**. Verify that `CALL_ROUTING_KEY` is linked from `laboura-api`.
+
+#### How to configure Laboura's Business UPI Details (COMPANY_UPI_VPA and COMPANY_UPI_PAYEE_NAME)
+
+Every payment into Laboura (the candidate registration fee and the business placement fee) is collected via UPI straight into Laboura's current bank account using dynamically generated UPI links and QR codes.
+
+To enable UPI collection:
+1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
+2. Locate or add **`COMPANY_UPI_VPA`**:
+   - This is Laboura's official business UPI Virtual Payment Address (UPI ID) provided by your bank (for example, `laboura@icici` or `labouraservices@hdfcbank`).
+   - Every candidate and business UPI payment QR code directs money directly into this bank account.
+3. Locate or add **`COMPANY_UPI_PAYEE_NAME`**:
+   - This is the business name as registered with the bank (for example, `Laboura` or `Laboura Staffing`).
+   - Customers will see this exact name inside Google Pay, PhonePe, Paytm, or BHIM when confirming their payment.
+4. Click **Save Changes**.
+
+> [!NOTE]
+> **Optional at Server Startup**: These two variables are not required for the server to boot or for staff to log in. This allows setting up and testing the application before the company current account is officially opened. However, trying to generate a payment request without them will produce a clear error message, and `/health/ready` will show "UPI collection not configured" until both are set.
 
 #### How to Create the Private Call Recordings Bucket in Supabase Dashboard (No Terminal Required)
 

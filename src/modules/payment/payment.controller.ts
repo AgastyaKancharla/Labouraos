@@ -9,6 +9,7 @@ import {
   Post,
   Query,
   Req,
+  Res,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
@@ -21,11 +22,36 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { Response } from 'express';
+import { UpiCollectionService } from './upi-collection.service';
 
 @Controller('payments')
 @UseInterceptors(PiiMaskingInterceptor)
 export class PaymentController {
-  constructor(private readonly paymentService: PaymentService) {}
+  constructor(
+    private readonly paymentService: PaymentService,
+    private readonly upiCollectionService: UpiCollectionService,
+  ) {}
+
+  @Get('request/:token')
+  async paymentRequestPage(
+    @Param('token') token: string,
+    @Headers('accept') accept: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (accept?.includes('text/html')) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return this.upiCollectionService.renderPaymentPage(token);
+    }
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    return this.upiCollectionService.getPaymentPage(token);
+  }
+
+  @Post('request/:token/utr-hint')
+  @HttpCode(HttpStatus.OK)
+  async savePaymentUtrHint(@Param('token') token: string, @Body('utr') utr: unknown) {
+    return this.upiCollectionService.saveUtrHint(token, utr);
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard, RbacGuard)
