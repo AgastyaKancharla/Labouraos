@@ -29,6 +29,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   let faKoraId: string;
   let fixtureIndex = 0;
   const testPolicyIds: string[] = [];
+  const overdueFlagPlacementIds: string[] = [];
 
   const timestamp = Date.now();
   const password = 'Password123!Secure';
@@ -245,6 +246,9 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
   afterAll(async () => {
     // Teardown in correct FK dependency order
+    await prisma.reviewFlag.deleteMany({
+      where: { kind: 'payment_overdue', subjectType: 'placement', subjectId: { in: overdueFlagPlacementIds } },
+    });
     await prisma.payment.deleteMany({
       where: {
         placement: {
@@ -461,6 +465,33 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(2);
     await prisma.businessAgreement.delete({ where: { id: agreement.id } });
     await prisma.pricingPolicy.delete({ where: { id: changedPolicy.id } });
+  });
+
+  it('flags an unpaid placement at its policy deadline and does not send the joining date', async () => {
+    const candidate = await prisma.jobSeeker.create({
+      data: {
+        code: `JS-P15DUE-${timestamp}`, name: 'Unpaid Interview Candidate',
+        phone: `96${timestamp.toString().slice(-8)}9`, tradeSkill: 'Electrician',
+        minSalary: 1800000, maxSalary: 2400000,
+        preferredCallWindowStart: '09:00', preferredCallWindowEnd: '18:00', status: 'active',
+      },
+    });
+    const fixture = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2000000);
+    overdueFlagPlacementIds.push(fixture.body.id);
+
+    const dueAt = fixture.body.paymentDueAt;
+    if (!dueAt) throw new Error('Placement payment deadline was not set');
+    const placementService = app.get(PlacementService);
+    expect(await placementService.processPaymentDeadlines(new Date(dueAt.getTime() - 1))).toEqual({ raised: 0 });
+    expect(await placementService.processPaymentDeadlines(new Date(dueAt.getTime() + 1))).toEqual({ raised: 1 });
+    expect(await placementService.processPaymentDeadlines(new Date(dueAt.getTime() + 2))).toEqual({ raised: 0 });
+    expect(await prisma.reviewFlag.count({
+      where: { kind: 'payment_overdue', subjectType: 'placement', subjectId: fixture.body.id },
+    })).toBe(1);
+    expect(await prisma.messageLog.count({
+      where: { relatedId: fixture.body.id, template: 'joining_confirmed' },
+    })).toBe(0);
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidate.id } })).status).toBe('active');
   });
 
   describe('Task 4: Candidate joining', () => {
