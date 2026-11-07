@@ -167,7 +167,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
 
       const res = await post(app.getHttpServer(), tampered, signature);
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('pending');
       expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('pending_payment');
     });

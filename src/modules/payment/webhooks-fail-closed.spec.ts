@@ -146,6 +146,13 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
   });
 
   describe('3. MockPaymentProvider fail-closed behaviour', () => {
+    beforeEach(() => {
+      delete process.env.PAYMENT_WEBHOOK_SECRET;
+      delete process.env.RAZORPAY_WEBHOOK_SECRET;
+      delete process.env.PAYOUT_WEBHOOK_SECRET;
+      delete process.env.RAZORPAYX_WEBHOOK_SECRET;
+    });
+
     afterEach(() => {
       delete process.env.PAYMENT_WEBHOOK_SECRET;
       delete process.env.RAZORPAY_WEBHOOK_SECRET;
@@ -154,6 +161,8 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
     });
 
     it('rejects unsigned card webhook payloads when secret is unset', async () => {
+      delete process.env.PAYMENT_WEBHOOK_SECRET;
+      delete process.env.RAZORPAY_WEBHOOK_SECRET;
       const provider = new MockPaymentProvider();
       const result = await provider.verifyWebhook({ gatewayReference: 'ref1', status: 'succeeded' });
       expect(result.isValid).toBe(false);
@@ -182,6 +191,8 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
     });
 
     it('rejects unsigned payout webhook payloads when payout secret is unset', async () => {
+      delete process.env.PAYOUT_WEBHOOK_SECRET;
+      delete process.env.RAZORPAYX_WEBHOOK_SECRET;
       const provider = new MockPaymentProvider();
       const raw = JSON.stringify({ payoutId: 'pout_1', status: 'processed' });
       const result = await provider.verifyPayoutWebhook(raw);

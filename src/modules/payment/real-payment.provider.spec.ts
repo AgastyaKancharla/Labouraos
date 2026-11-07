@@ -216,6 +216,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
 
     beforeAll(async () => {
       process.env.PAYMENT_PROVIDER = 'real';
+      process.env.PAYMENT_WEBHOOK_SECRET = testWebhookSecret;
       process.env.RAZORPAY_WEBHOOK_SECRET = testWebhookSecret;
 
       const moduleRef: TestingModule = await Test.createTestingModule({
@@ -245,6 +246,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
 
     afterAll(async () => {
       delete process.env.PAYMENT_PROVIDER;
+      delete process.env.PAYMENT_WEBHOOK_SECRET;
       delete process.env.RAZORPAY_WEBHOOK_SECRET;
       if (app) {
         await prisma.auditLog.deleteMany({ where: { actorId: ceoStaffId } });
