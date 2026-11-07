@@ -74,7 +74,6 @@ export class PaymentService {
 
     const payment = await this.prisma.payment.findUnique({
       where: { gatewayReference },
-      include: { jobSeeker: true },
     });
 
     if (!payment) {
@@ -112,187 +111,130 @@ export class PaymentService {
       return { received: true, status: 'failed', paymentId: updatedPayment.id };
     }
 
-    if (payment.type === 'placement_fee' && payment.placementId) {
-      return this.succeedPlacementFee(payment, new Date());
-    }
-
-    // Process success
-    const nowUtc = new Date();
-
-    const beforeSeeker = payment.jobSeeker;
-    const isReactivation = Boolean(payment.reactivation);
-
-    const { updatedPayment, updatedJobSeeker } = await this.prisma.$transaction(async (tx) => {
-      const updated = await tx.payment.update({
-        where: { id: payment.id },
-        data: { status: 'succeeded' },
-      });
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: payment.id,
-        fromStatus: payment.status,
-        toStatus: 'succeeded',
-        changedByStaffId: null,
-        reason: 'collection_webhook_succeeded',
-      });
-
-      let seeker: {
-        code: string;
-        status: string;
-        hitCount: number;
-        paymentReceivedAt: Date | null;
-        city: string;
-      } | null = null;
-
-      // If linked to a job seeker, activate or reactivate them and set paymentReceivedAt
-      if (payment.jobSeekerId) {
-        seeker = await tx.jobSeeker.update({
-          where: { id: payment.jobSeekerId },
-          data: {
-            status: 'active',
-            paymentReceivedAt: nowUtc,
-            hitCount: isReactivation ? 0 : (beforeSeeker?.hitCount ?? 0),
-          },
-        });
-
-        await recordStatusChange(tx, {
-          subjectType: 'job_seeker',
-          subjectId: payment.jobSeekerId,
-          fromStatus: beforeSeeker?.status ?? null,
-          toStatus: 'active',
-          changedByStaffId: null,
-          reason: isReactivation ? 'reactivated_via_payment' : 'activated_via_payment',
-        });
-      }
-
-      return { updatedPayment: updated, updatedJobSeeker: seeker };
+    return this.onPaymentSucceeded(payment.id, {
+      confirmedAt: new Date(),
+      confirmedBy: 'gateway',
     });
-
-    if (updatedJobSeeker) {
-
-      // Audit log the activation or reactivation
-      const staffActor =
-        (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
-        (await this.prisma.staff.findFirst());
-
-      if (staffActor) {
-        await this.auditService.log({
-          actorId: staffActor.id,
-          action: isReactivation ? 'job_seeker.reactivated' : 'job_seeker.activated',
-          entityType: 'job_seeker',
-          entityCode: updatedJobSeeker.code,
-          before: beforeSeeker
-            ? {
-                status: beforeSeeker.status,
-                hitCount: beforeSeeker.hitCount,
-                paymentReceivedAt: beforeSeeker.paymentReceivedAt,
-              }
-            : null,
-          after: {
-            status: updatedJobSeeker.status,
-            hitCount: updatedJobSeeker.hitCount,
-            paymentReceivedAt: updatedJobSeeker.paymentReceivedAt,
-            reactivation: isReactivation,
-          },
-          city: updatedJobSeeker.city,
-        });
-      }
-    }
-
-    if (payment.placementId) {
-      const placement = await this.prisma.placement.findUnique({
-        where: { id: payment.placementId },
-      });
-      if (placement) {
-        const staffActor =
-          (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
-          (await this.prisma.staff.findFirst());
-        if (staffActor) {
-          await this.auditService.log({
-            actorId: staffActor.id,
-            action: 'payment.placement_fee_paid',
-            entityType: 'placement',
-            entityCode: placement.code,
-            after: {
-              paymentId: updatedPayment.id,
-              status: 'succeeded',
-              amount: updatedPayment.amount,
-            },
-            city: placement.city,
-          });
-        }
-      }
-    }
-
-    return {
-      received: true,
-      status: 'succeeded',
-      paymentId: updatedPayment.id,
-    };
   }
 
-  private async succeedPlacementFee(payment: Payment, now: Date) {
+  async onPaymentSucceeded(
+    paymentId: string,
+    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string },
+  ) {
+    const { confirmedAt, confirmedBy, confirmedByStaffId } = confirmation;
     const transition = await this.prisma.$transaction(async (tx) => {
+      const payment = await tx.payment.findUnique({
+        where: { id: paymentId },
+        include: { jobSeeker: true },
+      });
+      if (!payment) throw new NotFoundException(`Payment '${paymentId}' not found`);
+      if (payment.status === 'succeeded') return { alreadyProcessed: true as const, payment };
+      if (payment.status === 'failed') return { alreadyFailed: true as const, payment };
+
       const claimed = await tx.payment.updateMany({
-        where: { id: payment.id, type: 'placement_fee', status: payment.status },
-        data: { status: 'succeeded' },
+        where: { id: paymentId, status: payment.status },
+        data: { status: 'succeeded', confirmedAt, confirmedBy, confirmedByStaffId: confirmedByStaffId ?? null },
       });
-      if (claimed.count !== 1) return null;
-      const updatedPayment = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
+      if (claimed.count !== 1) return { alreadyProcessed: true as const, payment };
       await recordStatusChange(tx, {
-        subjectType: 'payment', subjectId: payment.id, fromStatus: payment.status, toStatus: 'succeeded',
-        changedByStaffId: null, reason: 'collection_webhook_succeeded', changedAt: now,
+        subjectType: 'payment', subjectId: paymentId, fromStatus: payment.status, toStatus: 'succeeded',
+        changedByStaffId: confirmedByStaffId ?? null, reason: `payment_confirmed_${confirmedBy}`, changedAt: confirmedAt,
       });
-      const placement = await tx.placement.findUnique({
-        where: { id: payment.placementId! },
-        include: { jobSeeker: true, business: true },
-      });
-      if (!placement) throw new NotFoundException('Placement for fee payment was not found');
-      const paid = await tx.placement.updateMany({
-        where: { id: placement.id, status: 'awaiting_payment' },
-        data: { status: 'confirmed', paidAt: now },
-      });
-      if (paid.count !== 1) return { updatedPayment, placement, placementChanged: false };
-      await recordStatusChange(tx, {
-        subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'confirmed',
-        changedByStaffId: null, reason: 'placement_fee_payment_succeeded', changedAt: now,
-      });
-      if (placement.jobSeeker.status !== 'placed') {
-        await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'placed' } });
+
+      let updatedSeeker: Awaited<ReturnType<typeof tx.jobSeeker.update>> | null = null;
+      if (payment.type === 'activation' && payment.jobSeekerId) {
+        updatedSeeker = await tx.jobSeeker.update({
+          where: { id: payment.jobSeekerId },
+          data: {
+            status: 'active', paymentReceivedAt: confirmedAt,
+            hitCount: payment.reactivation ? 0 : (payment.jobSeeker?.hitCount ?? 0),
+          },
+        });
         await recordStatusChange(tx, {
-          subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
-          fromStatus: placement.jobSeeker.status, toStatus: 'placed', changedByStaffId: null,
-          reason: 'placement_fee_payment_succeeded', changedAt: now,
+          subjectType: 'job_seeker', subjectId: payment.jobSeekerId,
+          fromStatus: payment.jobSeeker?.status ?? null, toStatus: 'active',
+          changedByStaffId: confirmedByStaffId ?? null,
+          reason: payment.reactivation ? 'reactivated_via_payment' : 'activated_via_payment', changedAt: confirmedAt,
         });
       }
-      return { updatedPayment, placement, placementChanged: true };
+
+      let placementTransition: {
+        placement: Prisma.PlacementGetPayload<{ include: { jobSeeker: true } }>;
+      } | null = null;
+      if (payment.type === 'placement_fee' && payment.placementId) {
+        const placement = await tx.placement.findUnique({
+          where: { id: payment.placementId }, include: { jobSeeker: true },
+        });
+        if (!placement) throw new NotFoundException('Placement for fee payment was not found');
+        const paid = await tx.placement.updateMany({
+          where: { id: placement.id, status: 'awaiting_payment' },
+          data: { status: 'confirmed', paidAt: confirmedAt },
+        });
+        if (paid.count === 1) {
+          await recordStatusChange(tx, {
+            subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'confirmed',
+            changedByStaffId: confirmedByStaffId ?? null, reason: 'placement_fee_payment_succeeded', changedAt: confirmedAt,
+          });
+          if (placement.jobSeeker.status !== 'placed') {
+            await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'placed' } });
+            await recordStatusChange(tx, {
+              subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
+              fromStatus: placement.jobSeeker.status, toStatus: 'placed',
+              changedByStaffId: confirmedByStaffId ?? null,
+              reason: 'placement_fee_payment_succeeded', changedAt: confirmedAt,
+            });
+          }
+          placementTransition = { placement };
+        }
+      }
+      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition };
     });
-    if (!transition) {
-      return { received: true, alreadyProcessed: true, paymentId: payment.id };
+
+    if ('alreadyProcessed' in transition && transition.alreadyProcessed) {
+      return { received: true, alreadyProcessed: true, paymentId };
     }
-    if (transition.placementChanged) {
-      const auditActor = await this.fallbackActorId();
-      if (auditActor) {
-        await this.auditService.log({
-          actorId: auditActor, action: 'placement_fee_paid', entityType: 'Placement',
-          entityCode: transition.placement.code, city: transition.placement.city,
-          before: { status: 'awaiting_payment', jobSeekerStatus: transition.placement.jobSeeker.status },
-          after: { status: 'confirmed', paidAt: now.toISOString(), jobSeekerStatus: 'placed', paymentId: payment.id },
-        });
-      }
-      const joiningDate = transition.placement.joiningDate;
-      if (joiningDate) {
-        const joiningDateDisplay = new Intl.DateTimeFormat('en-IN', {
+    if ('alreadyFailed' in transition && transition.alreadyFailed) {
+      return { received: true, alreadyFailed: true, paymentId };
+    }
+    if (transition.updatedSeeker) {
+      const actorId = await this.fallbackActorId();
+      if (actorId) await this.auditService.log({
+        actorId,
+        action: transition.payment.reactivation ? 'job_seeker.reactivated' : 'job_seeker.activated',
+        entityType: 'job_seeker', entityCode: transition.updatedSeeker.code,
+        before: transition.payment.jobSeeker ? {
+          status: transition.payment.jobSeeker.status,
+          hitCount: transition.payment.jobSeeker.hitCount,
+          paymentReceivedAt: transition.payment.jobSeeker.paymentReceivedAt,
+        } : null,
+        after: {
+          status: transition.updatedSeeker.status, hitCount: transition.updatedSeeker.hitCount,
+          paymentReceivedAt: transition.updatedSeeker.paymentReceivedAt,
+          reactivation: transition.payment.reactivation,
+        }, city: transition.updatedSeeker.city,
+      });
+    }
+    if (transition.placementTransition) {
+      const { placement } = transition.placementTransition;
+      const actorId = await this.fallbackActorId();
+      if (actorId) await this.auditService.log({
+        actorId, action: 'placement_fee_paid', entityType: 'Placement', entityCode: placement.code,
+        city: placement.city,
+        before: { status: 'awaiting_payment', jobSeekerStatus: placement.jobSeeker.status },
+        after: { status: 'confirmed', paidAt: confirmedAt.toISOString(), jobSeekerStatus: 'placed', paymentId },
+      });
+      if (placement.joiningDate) {
+        const joiningDate = new Intl.DateTimeFormat('en-IN', {
           timeZone: 'Asia/Kolkata', dateStyle: 'medium',
-        }).format(joiningDate);
+        }).format(placement.joiningDate);
         await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
           channel, template: 'joining_confirmed', subjectType: 'job_seeker',
-          subjectId: transition.placement.jobSeekerId, relatedType: 'placement',
-          relatedId: transition.placement.id, variables: { joiningDate: joiningDateDisplay },
+          subjectId: placement.jobSeekerId, relatedType: 'placement', relatedId: placement.id,
+          variables: { joiningDate },
         })));
       }
     }
-    return { received: true, status: 'succeeded', paymentId: transition.updatedPayment.id };
+    return { received: true, status: 'succeeded', paymentId };
   }
 
   async createReferralPayout(

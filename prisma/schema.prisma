@@ -486,10 +486,21 @@ model Payment {
   id                String      @id @default(uuid())
   code              String      @unique
   city              String      @default("Bengaluru")
-  type              String      // activation, placement_fee, referral_payout, refund
+  type              String      // activation, placement_fee, referral_payout, refund, joining_reward
   amount            Int         // paise
   status            String      @default("pending") // pending, processing, succeeded, completed, failed, reversed, refunded
-  gatewayReference  String      @unique
+  gatewayReference  String?     @unique
+  method            String      @default("upi_direct") // upi_direct, gateway_card
+  upiReference      String?     @unique
+  expectedAmountPaise Int?
+  bankUtr           String?     @unique
+  confirmedBy       String?     // bank_feed, finance_manual, gateway
+  confirmedByStaffId String?
+  confirmedAt       DateTime?
+  approvedByStaffId String?
+  approvedAt        DateTime?
+  payoutAccountId   String?
+  payerUtrHint      String?
   subjectType       String      // job_seeker, business, referral, placement
   subjectId         String
   jobSeekerId       String?
