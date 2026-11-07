@@ -195,17 +195,19 @@ describe('MatchingService', () => {
     expect(result.matches).toHaveLength(0);
   });
 
-  it('excludes a business that rejected the seeker through a placement or replacement', async () => {
+  it('excludes a business that rejected the seeker through a placement, replacement or interview result', async () => {
     candidates = [
       baseCandidate('placement-rejected', { placements: [{ status: 'rejected', businessId: 'business-id', replacementCandidates: [] }] }),
       baseCandidate('replacement-rejected', { placements: [{ status: 'active', businessId: 'business-id', replacementCandidates: [{ status: 'rejected' }] }] }),
+      baseCandidate('interview-not-selected', { interviews: [{ status: 'completed', businessId: 'business-id', result: 'not_selected' }] }),
+      baseCandidate('no-result-again-matches', { interviews: [{ status: 'no_result', businessId: 'business-id', result: null }] }),
     ];
     consentRows = candidates.flatMap(({ id }) => [
       { subjectId: id, purpose: 'job_matching', granted: true, grantedAt: now, withdrawnAt: null },
       { subjectId: id, purpose: 'profile_sharing', granted: true, grantedAt: now, withdrawnAt: null },
     ]);
     const result = await run();
-    expect(result.matches).toHaveLength(0);
+    expect(result.matches.map(({ jobSeekerId }) => jobSeekerId)).toEqual(['no-result-again-matches']);
   });
 
   it('does not show seekers to an unverified business', async () => {

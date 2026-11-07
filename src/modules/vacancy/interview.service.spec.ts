@@ -15,7 +15,7 @@ describe('InterviewService booking', () => {
     vacancy: { findFirst: Mock };
     jobSeeker: { findFirst: Mock };
     vacancyInterviewSlot: { findUnique: Mock };
-    interview: { findUnique: Mock; findMany: Mock; update: Mock; count: Mock };
+    interview: { findUnique: Mock; findMany: Mock; update: Mock; updateMany: Mock; count: Mock };
     callRecord: { findUnique: Mock; findFirst: Mock };
     messageLog: { findMany: Mock };
     reviewFlag: { findFirst: Mock };
@@ -30,7 +30,13 @@ describe('InterviewService booking', () => {
   let hits: { recordHit: jest.Mock };
   let calls: { recordOutcome: jest.Mock };
   let attendance: { createInterviewAttendanceAssignment: jest.Mock };
-  let linkService: { createInterviewActionToken: Mock; validateInterviewActionToken: Mock; consumeInterviewActionToken: Mock };
+  let linkService: {
+    createInterviewActionToken: Mock;
+    validateInterviewActionToken: Mock;
+    consumeInterviewActionToken: Mock;
+    verifyInterviewOwnerOtp: Mock;
+  };
+  let reviewFlags: { raise: jest.Mock };
   const previousPublicAppUrl = process.env.PUBLIC_APP_URL;
 
   const vacancy = {
@@ -78,7 +84,7 @@ describe('InterviewService booking', () => {
       vacancy: { findFirst: jest.fn().mockResolvedValue(vacancy) },
       jobSeeker: { findFirst: jest.fn().mockResolvedValue(seeker) },
       vacancyInterviewSlot: { findUnique: jest.fn().mockResolvedValue(slot) },
-      interview: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), count: jest.fn().mockResolvedValue(0) },
+      interview: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
       callRecord: { findUnique: jest.fn(), findFirst: jest.fn() },
       messageLog: { findMany: jest.fn().mockResolvedValue([{ channel: 'sms' }, { channel: 'whatsapp' }]) },
       reviewFlag: { findFirst: jest.fn().mockResolvedValue(null) },
@@ -93,19 +99,25 @@ describe('InterviewService booking', () => {
       createInterviewActionToken: jest.fn().mockReturnValue('single-use-token'),
       validateInterviewActionToken: jest.fn().mockReturnValue({ interviewId: 'interview-id' }),
       consumeInterviewActionToken: jest.fn().mockReturnValue({}),
+      verifyInterviewOwnerOtp: jest.fn().mockResolvedValue({ interviewId: 'interview-id', phone: '+911234567890' }),
     };
+    reviewFlags = { raise: jest.fn().mockResolvedValue({ id: 'flag-id' }) };
     service = new InterviewService(
       prisma as never,
       { generateCode: jest.fn().mockResolvedValue('INT-00001') } as never,
       { log: jest.fn().mockResolvedValue(undefined) } as never,
-      { current: jest.fn().mockResolvedValue({ offerReplyHours: 48, interviewResultDeadline: '20:00' }) } as never,
+      { current: jest.fn().mockResolvedValue({
+        offerReplyHours: 48, interviewResultDeadline: '20:00', interviewResultCloseHours: 48,
+        interviewResultEscalateHours: 24,
+      }) } as never,
       { now: () => now } as never,
       linkService as never,
       messaging as never,
       matching as never,
       hits as never,
       calls as never,
-      attendance as never,
+      { createInterviewAttendanceAssignment: attendance.createInterviewAttendanceAssignment } as never,
+      reviewFlags as never,
     );
   });
 
@@ -272,5 +284,87 @@ describe('InterviewService booking', () => {
     prisma.vacancy.findFirst.mockResolvedValue({ ...vacancy, business: { ...vacancy.business, documentsStatus: 'no_documents' } });
     await service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1');
     expect(tx.interview.create.mock.calls[3][0].data.agentAttendanceRequired).toBe(true);
+  });
+
+  const confirmedInterview = () => ({
+    id: 'interview-id', code: 'INT-00001', status: 'confirmed', resultRecordedAt: null,
+    slotStartsAt: slot.startsAt, slotEndsAt: slot.endsAt, resultDueAt: new Date('2026-11-10T14:30:00.000Z'),
+    resultRequestSentAt: null, candidateCheckAnswer: null, businessId: 'business-id',
+    jobSeekerId: 'seeker-id', proposedByStaffId: 'call-1',
+    business: { ...vacancy.business, phone: '+911234567890' },
+    jobSeeker: { ...seeker, name: 'Candidate Sample', photoStoragePath: null },
+    vacancy: { ...vacancy },
+  });
+
+  it('records a result only after the owner OTP is verified and sends the candidate check', async () => {
+    prisma.interview.findUnique.mockResolvedValue(confirmedInterview());
+    const result = await service.submitOwnerResult('single-use-token', {
+      otpRequestId: 'otp-request-id', otpCode: '123456', result: 'selected',
+      selectedSalaryPaise: 1600000, selectedJoiningDate: '2026-11-20',
+    });
+
+    expect(linkService.verifyInterviewOwnerOtp).toHaveBeenCalledWith('single-use-token', 'otp-request-id', '123456');
+    expect(result).toMatchObject({ status: 'completed', result: 'selected' });
+    expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { id: 'interview-id', status: 'confirmed', resultRecordedAt: null },
+      data: expect.objectContaining({
+        status: 'completed', result: 'selected', resultOtpRequestId: 'otp-request-id',
+        selectedSalaryPaise: 1600000, selectedJoiningDate: new Date('2026-11-20T00:00:00.000Z'),
+      }),
+    }));
+    expect(messaging.send).not.toHaveBeenCalled();
+    expect(linkService.consumeInterviewActionToken).toHaveBeenCalledWith('single-use-token', 'owner_result');
+  });
+
+  it('does not record an owner result when OTP verification fails', async () => {
+    linkService.verifyInterviewOwnerOtp.mockRejectedValue(new BadRequestException('Valid owner OTP is required'));
+    await expect(service.submitOwnerResult('single-use-token', {
+      otpRequestId: 'otp-request-id', otpCode: '000000', result: 'not_selected', resultReason: 'skills',
+    })).rejects.toThrow('Valid owner OTP is required');
+    expect(tx.interview.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('records a no-show hit but never a hit for not selected', async () => {
+    prisma.interview.findUnique.mockResolvedValue(confirmedInterview());
+    await service.submitOwnerResult('single-use-token', {
+      otpRequestId: 'otp-request-id', otpCode: '123456', result: 'candidate_no_show',
+    });
+    expect(hits.recordHit).toHaveBeenCalledWith('seeker-id', 'interview_no_show', undefined, 'system', undefined, {
+      interviewId: 'interview-id',
+    });
+
+    hits.recordHit.mockClear();
+    prisma.interview.findUnique.mockResolvedValue(confirmedInterview());
+    await service.submitOwnerResult('single-use-token', {
+      otpRequestId: 'otp-request-id', otpCode: '123456', result: 'not_selected', resultReason: 'skills',
+    });
+    expect(hits.recordHit).not.toHaveBeenCalled();
+  });
+
+  it('raises an idempotent mismatch flag when the candidate says yes and the owner did not select them', async () => {
+    prisma.interview.findUnique.mockResolvedValue({
+      ...confirmedInterview(), status: 'completed', result: 'not_selected', candidateCheckAnswer: 'offered_yes',
+    });
+    await service.submitCandidateOfferCheck('single-use-token', 'yes');
+    expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({
+      kind: 'interview_result_mismatch', subjectType: 'interview', subjectId: 'interview-id',
+    }));
+  });
+
+  it('sends the owner result request, due notice, overdue flag and no-result close once at their deadlines', async () => {
+    const interview = confirmedInterview();
+    prisma.interview.findMany.mockResolvedValue([interview]);
+    const result = await service.processResultDeadlines(new Date('2026-11-12T06:30:00.000Z'));
+    expect(result).toMatchObject({ requestsSent: 1, dueNotices: 1, overdueFlags: 1, closed: 1 });
+    expect(messaging.send).toHaveBeenCalledTimes(4);
+    expect(messaging.send.mock.calls.filter(([input]) => input.template === 'interview_result_request')).toHaveLength(2);
+    expect(messaging.send.mock.calls.filter(([input]) => input.template === 'candidate_offer_check')).toHaveLength(2);
+    expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_result_due' }));
+    expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_result_overdue' }));
+    expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_no_result' }));
+    expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ status: 'no_result', candidateCheckAnswer: 'no_answer' }),
+    }));
+    expect(hits.recordHit).not.toHaveBeenCalled();
   });
 });

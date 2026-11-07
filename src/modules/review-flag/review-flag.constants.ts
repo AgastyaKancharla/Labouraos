@@ -4,6 +4,8 @@ export const REVIEW_FLAG_KINDS = [
   'no_documents_check',
   'interview_result_mismatch',
   'interview_result_overdue',
+  'interview_no_result',
+  'interview_result_due',
   'payment_overdue',
   'payment_mismatch',
   'business_many_rejections',

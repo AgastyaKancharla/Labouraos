@@ -24,6 +24,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { CallService } from '../call/call.service';
 import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { BusinessVerificationService } from '../business/business-verification.service';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 
 interface BookInterviewDto {
   vacancyId: string;
@@ -57,6 +58,7 @@ export class InterviewService {
     private readonly jobSeekerService: JobSeekerService,
     private readonly calls: CallService,
     private readonly businessVerification: BusinessVerificationService,
+    private readonly reviewFlags: ReviewFlagService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
@@ -398,6 +400,243 @@ export class InterviewService {
       processed += 1;
     }
     return { processed };
+  }
+
+  async processResultDeadlines(now = this.clock.now()) {
+    const policy = await this.pricingService.current();
+    const interviews = await this.prisma.interview.findMany({
+      where: { status: 'confirmed' },
+      include: { business: true, jobSeeker: true },
+      orderBy: { slotEndsAt: 'asc' },
+    });
+    let requestsSent = 0;
+    let dueNotices = 0;
+    let overdueFlags = 0;
+    let closed = 0;
+    for (const interview of interviews) {
+      if (!interview.resultRequestSentAt && interview.slotEndsAt.getTime() <= now.getTime()) {
+        await this.sendOwnerResultRequest(interview, now, policy.interviewResultCloseHours);
+        requestsSent += 1;
+      }
+      if (!interview.resultRecordedAt && interview.resultDueAt.getTime() <= now.getTime()) {
+        const agentId = interview.business.accountAgentId ?? interview.business.leadCreatedByStaffId;
+        if (agentId && await this.raiseFlagOnce(
+          'interview_result_due', 'interview', interview.id, agentId,
+          { businessId: interview.businessId, interviewId: interview.id, action: 'Call the business owner to record the interview result' },
+        )) dueNotices += 1;
+      }
+      const escalatesAt = interview.slotEndsAt.getTime() + policy.interviewResultEscalateHours * 60 * 60 * 1000;
+      if (!interview.resultRecordedAt && escalatesAt <= now.getTime()) {
+        const agentId = interview.business.accountAgentId ?? interview.business.leadCreatedByStaffId;
+        if (agentId && await this.raiseFlagOnce(
+          'interview_result_overdue', 'interview', interview.id, agentId,
+          { businessId: interview.businessId, interviewId: interview.id, overdueHours: policy.interviewResultEscalateHours },
+        )) overdueFlags += 1;
+      }
+      const closesAt = interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000;
+      if (!interview.resultRecordedAt && closesAt <= now.getTime()) {
+        const changed = await this.prisma.$transaction(async (tx) => {
+          const result = await tx.interview.updateMany({
+            where: { id: interview.id, status: 'confirmed', resultRecordedAt: null },
+            data: { status: 'no_result', candidateCheckAnswer: interview.candidateCheckAnswer ?? 'no_answer' },
+          });
+          if (result.count !== 1) return false;
+          await recordStatusChange(tx, {
+            subjectType: 'interview', subjectId: interview.id, fromStatus: 'confirmed', toStatus: 'no_result',
+            changedByStaffId: null, reason: 'Owner result window closed without a recorded result', changedAt: now,
+          });
+          return true;
+        });
+        if (changed) {
+          await this.raiseFlagOnce(
+            'interview_no_result', 'business', interview.businessId,
+            interview.business.accountAgentId ?? interview.business.leadCreatedByStaffId,
+            { interviewId: interview.id },
+          );
+          await this.raiseMismatchIfNeeded(interview.id, interview.business.accountAgentId ?? interview.business.leadCreatedByStaffId);
+          closed += 1;
+        }
+      }
+    }
+    return { requestsSent, dueNotices, overdueFlags, closed };
+  }
+
+  validateOwnerResultLink(token: string) {
+    return this.consentLinks.validateInterviewActionToken(token, 'owner_result');
+  }
+
+  async sendOwnerResultOtp(token: string) {
+    this.validateOwnerResultLink(token);
+    return this.consentLinks.sendOtp(token);
+  }
+
+  validateCandidateCheckLink(token: string) {
+    return this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
+  }
+
+  async submitOwnerResult(token: string, input: {
+    otpRequestId: string;
+    otpCode: string;
+    result: 'selected' | 'not_selected' | 'candidate_no_show';
+    resultReason?: string;
+    selectedSalaryPaise?: number;
+    selectedJoiningDate?: string;
+  }) {
+    const link = await this.consentLinks.verifyInterviewOwnerOtp(token, input.otpRequestId, input.otpCode);
+    if (!['selected', 'not_selected', 'candidate_no_show'].includes(input.result)) {
+      throw new BadRequestException('result must be selected, not_selected or candidate_no_show');
+    }
+    const reasons = ['skills', 'experience', 'communication', 'salary_expectation', 'not_suitable', 'other'];
+    if (input.result === 'not_selected' && !reasons.includes(input.resultReason ?? '')) {
+      throw new BadRequestException('resultReason must be from the not-selected reason list');
+    }
+    if (input.result === 'selected' && (!Number.isSafeInteger(input.selectedSalaryPaise) || (input.selectedSalaryPaise ?? 0) <= 0)) {
+      throw new BadRequestException('selectedSalaryPaise must be a positive whole number of paise');
+    }
+    const joiningDate = input.selectedJoiningDate ? new Date(input.selectedJoiningDate) : null;
+    if (input.result === 'selected' && (!joiningDate || !Number.isFinite(joiningDate.getTime()))) {
+      throw new BadRequestException('selectedJoiningDate is required for a selected result');
+    }
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: link.interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
+    });
+    if (!interview || interview.status !== 'confirmed' || interview.resultRecordedAt) {
+      throw new BadRequestException('This interview is no longer awaiting an owner result');
+    }
+    if (interview.business.phone !== link.phone) {
+      throw new BadRequestException('The owner phone changed after this result link was issued');
+    }
+    const now = this.clock.now();
+    const status = input.result === 'candidate_no_show' ? 'no_show' : 'completed';
+    await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.interview.updateMany({
+        where: { id: interview.id, status: 'confirmed', resultRecordedAt: null },
+        data: {
+          status,
+          result: input.result,
+          resultReason: input.result === 'not_selected' ? input.resultReason : null,
+          resultOtpRequestId: input.otpRequestId,
+          resultRecordedAt: now,
+          selectedSalaryPaise: input.result === 'selected' ? input.selectedSalaryPaise : null,
+          selectedJoiningDate: input.result === 'selected' ? joiningDate : null,
+          candidateCheckAnswer: 'no_answer',
+        },
+      });
+      if (updated.count !== 1) throw new BadRequestException('This interview is no longer awaiting an owner result');
+      await recordStatusChange(tx, {
+        subjectType: 'interview', subjectId: interview.id, fromStatus: 'confirmed', toStatus: status,
+        changedByStaffId: null, reason: 'Owner recorded the interview result by OTP', changedAt: now,
+      });
+    });
+    this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
+    await this.auditService.log({
+      actorId: interview.proposedByStaffId, action: 'interview.result_recorded', entityType: 'Interview',
+      entityCode: interview.code, city: interview.business.city,
+      after: { status, result: input.result, resultReason: input.resultReason ?? null, selectedSalaryPaise: input.selectedSalaryPaise ?? null, selectedJoiningDate: joiningDate?.toISOString() ?? null },
+      changedFields: ['status', 'result', 'resultReason', 'resultOtpRequestId', 'resultRecordedAt', 'selectedSalaryPaise', 'selectedJoiningDate'],
+      reason: 'Business owner verified by OTP on the business phone',
+    });
+    if (input.result === 'candidate_no_show') {
+      await this.jobSeekerService.recordHit(interview.jobSeekerId, 'interview_no_show', undefined, 'system', undefined, { interviewId: interview.id });
+    }
+    return { id: interview.id, status, result: input.result };
+  }
+
+  async submitCandidateOfferCheck(token: string, answer: 'yes' | 'no') {
+    if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
+    const link = this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
+    const interview = await this.prisma.interview.findUnique({ where: { id: link.interviewId } });
+    if (!interview || !interview.resultRecordedAt) throw new BadRequestException('The owner has not recorded a result yet');
+    const now = this.clock.now();
+    const updated = await this.prisma.interview.updateMany({
+      where: { id: interview.id, candidateCheckAnswer: 'no_answer' },
+      data: { candidateCheckAnswer: answer === 'yes' ? 'offered_yes' : 'offered_no', candidateCheckAt: now },
+    });
+    if (updated.count !== 1) throw new BadRequestException('This candidate check link has already been used');
+    this.consentLinks.consumeInterviewActionToken(token, 'candidate_check');
+    await this.raiseMismatchIfNeeded(interview.id, null);
+    return { id: interview.id, candidateCheckAnswer: answer === 'yes' ? 'offered_yes' : 'offered_no' };
+  }
+
+  private async sendOwnerResultRequest(
+    interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true } }>,
+    now: Date,
+    closeHours: number,
+  ) {
+    const claimed = await this.prisma.interview.updateMany({
+      where: { id: interview.id, status: 'confirmed', resultRequestSentAt: null },
+      data: { resultRequestSentAt: now, candidateCheckAnswer: 'no_answer' },
+    });
+    if (claimed.count !== 1) return;
+    const linkExpiresAt = new Date(interview.slotEndsAt.getTime() + closeHours * 60 * 60 * 1000);
+    const token = this.consentLinks.createInterviewActionToken(
+      interview.id, 'owner_result', interview.business.phone, linkExpiresAt,
+    );
+    const link = publicLink(`/interviews/result/${token}`);
+    const interviewTime = new Intl.DateTimeFormat('en-IN', {
+      timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
+    }).format(interview.slotStartsAt);
+    const [ownerMessages] = await Promise.all([
+      Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
+        channel, template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
+        relatedType: 'interview', relatedId: interview.id, variables: { link, interviewTime },
+      }))),
+      this.sendCandidateOfferCheck(interview, now),
+    ]);
+    if (ownerMessages.some((message) => message.status === 'failed')) {
+      throw new ServiceUnavailableException('The owner result request could not be delivered');
+    }
+  }
+
+  private async sendCandidateOfferCheck(
+    interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
+    now: Date,
+  ) {
+    const policy = await this.pricingService.current();
+    const token = this.consentLinks.createInterviewActionToken(
+      interview.id, 'candidate_check', interview.jobSeeker.phone,
+      new Date(now.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
+    );
+    const link = publicLink(`/interviews/check/${token}`);
+    const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
+      this.messagingService.send({
+        channel, template: 'candidate_offer_check', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
+        relatedType: 'interview', relatedId: interview.id, variables: { link },
+      }),
+    ));
+    if (messages.some((message) => message.status === 'failed')) {
+      throw new ServiceUnavailableException('The candidate offer check could not be delivered');
+    }
+  }
+
+  private async raiseFlagOnce(
+    kind: 'interview_result_due' | 'interview_result_overdue' | 'interview_no_result' | 'interview_result_mismatch',
+    subjectType: string,
+    subjectId: string,
+    raisedForStaffId: string | null,
+    details: Record<string, unknown>,
+  ) {
+    const existing = await this.prisma.reviewFlag.findFirst({
+      where: { kind, subjectType, subjectId }, select: { id: true },
+    });
+    if (existing) return false;
+    await this.reviewFlags.raise({ kind, subjectType, subjectId, raisedForStaffId, details });
+    return true;
+  }
+
+  private async raiseMismatchIfNeeded(interviewId: string, fallbackStaffId: string | null) {
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: interviewId }, include: { business: true },
+    });
+    if (!interview || !['not_selected', null].includes(interview.result) ||
+        !['no_result', 'completed'].includes(interview.status) || interview.candidateCheckAnswer !== 'offered_yes') {
+      return false;
+    }
+    return this.raiseFlagOnce(
+      'interview_result_mismatch', 'interview', interview.id,
+      interview.business.accountAgentId ?? interview.business.leadCreatedByStaffId ?? fallbackStaffId,
+      { businessId: interview.businessId, interviewId: interview.id, ownerResult: interview.result ?? 'no_result', candidateAnswer: 'offered_yes' },
+    );
   }
 
   private async applyCandidateReply(interviewId: string, accepted: boolean, callRecordId: string | null, reason: string | null) {

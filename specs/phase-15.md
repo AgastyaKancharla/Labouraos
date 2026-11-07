@@ -53,7 +53,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Every status change writes `StatusHistory`.
 - Tests: Yes by link confirms and sends the business details; No by link declines and records one hit; an agent can record a reply only on an answered offer call; a declined offer's hit carries the call id; no reply after a call → `no_reply` + hit; no reply with no call → `cancelled`, no hit; a used or expired link is refused; business details never go out before `confirmed`.
 
-### [ ] Task 3 — An agent at the interview when needed
+### [x] Task 3 — An agent at the interview when needed
 **Branch:** `phase-15/task-3-attendance` · **No migration**
 
 **Acceptance:**

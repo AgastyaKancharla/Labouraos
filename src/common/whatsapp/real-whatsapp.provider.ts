@@ -4,6 +4,12 @@ import { WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
 export const APPROVED_TEMPLATES = [
   'call_attempt_notice',
   'interview_reminder',
+  'interview_offer',
+  'interview_booked',
+  'interview_candidate_for_owner',
+  'interview_result_request',
+  'candidate_offer_check',
+  'joining_confirmed',
   'job_offer_notice',
   'candidate_activation_confirmation',
 ];
