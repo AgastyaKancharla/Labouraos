@@ -6,11 +6,12 @@ import { RbacModule } from '../../common/rbac/rbac.module';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
 import { PaymentModule } from '../payment/payment.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { PlacementService } from './placement.service';
 import { PlacementController, VacancyPlacementController } from './placement.controller';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule, PricingModule],
+  imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule, PricingModule, ReviewFlagModule],
   controllers: [VacancyPlacementController, PlacementController],
   providers: [PlacementService],
   exports: [PlacementService],

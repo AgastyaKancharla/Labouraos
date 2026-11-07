@@ -375,20 +375,20 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   });
 
   it.each([
-    ["field_agent", () => faKoraToken], ["call_agent", () => caToken],
-    ["team_lead", () => teamLeadToken], ["manager", () => mgrToken],
-    ["ceo", () => ceoToken], ["finance", () => financeToken],
-  ])("removes legacy placement creation and response routes for %s", async (_role, token) => {
+    ['field_agent', () => faKoraToken], ['call_agent', () => caToken],
+    ['team_lead', () => teamLeadToken], ['manager', () => mgrToken],
+    ['ceo', () => ceoToken], ['finance', () => financeToken],
+  ])('removes legacy placement creation and response routes for %s', async (_role, token) => {
     const auth = `Bearer ${(token as () => string)()}`;
     await request(app.getHttpServer())
       .post(`/vacancies/${koraVacancyId}/placements`)
-      .set("Authorization", auth)
+      .set('Authorization', auth)
       .send({ jobSeekerId: activeJobSeekerId, agreedSalary: 2200000 })
       .expect(404);
     await request(app.getHttpServer())
-      .post("/placements/legacy-placement/respond")
-      .set("Authorization", auth)
-      .send({ response: "accepted" })
+      .post('/placements/legacy-placement/respond')
+      .set('Authorization', auth)
+      .send({ response: 'accepted' })
       .expect(404);
   });
 
@@ -454,6 +454,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
     const placements = app.get(PlacementService);
     const selected = await placements.createAwaitingPaymentFromInterview(interview.id, now);
+    if (!selected.payment) throw new Error('Selected interview did not create its placement fee payment');
     const expectedFee = calculatePlacementFee(2000000, agreement.feePercent);
     const expectedGst = calculateGst(expectedFee, agreement.gstPercent);
     expect(selected).toMatchObject({
@@ -478,6 +479,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     }, (await prisma.staff.findUniqueOrThrow({ where: { id: faKoraId } })).id);
     testPolicyIds.push(changedPolicy.id);
     const retry = await placements.createAwaitingPaymentFromInterview(interview.id, now);
+    if (!retry.payment) throw new Error('Placement retry did not return its existing fee payment');
     expect(retry.feePercentAtCreation).toBe(agreement.feePercent);
     expect(retry.gstPercentAtCreation).toBe(agreement.gstPercent);
     expect(retry.placementFee).toBe(expectedFee);

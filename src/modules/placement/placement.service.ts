@@ -81,7 +81,10 @@ export class PlacementService {
       });
       if (existing) {
         const payment = existing.payments.find((row) => row.type === 'placement_fee');
-        return { placement: existing, payment, paymentLink: null, existing: true };
+        return {
+          placement: existing, payment, paymentLink: null, existing: true,
+          actorId: existing.createdByStaffId ?? interview.proposedByStaffId,
+        };
       }
 
       const agreement = await tx.businessAgreement.findFirst({
@@ -151,13 +154,16 @@ export class PlacementService {
         subjectType: 'payment', subjectId: payment.id, fromStatus: null, toStatus: 'pending',
         changedByStaffId: interview.proposedByStaffId, changedAt: now,
       });
-      return { placement, payment, paymentLink: charge.paymentLink, existing: false };
+      return {
+        placement, payment, paymentLink: charge.paymentLink, existing: false,
+        actorId: interview.proposedByStaffId,
+      };
     });
 
     if (!created.existing) {
       await this.auditService.log({
         action: 'placement.awaiting_payment_created', entityType: 'Placement', entityCode: created.placement.code,
-        actorId: created.placement.createdByStaffId ?? undefined, city: created.placement.city,
+        actorId: created.actorId, city: created.placement.city,
         after: {
           status: created.placement.status, interviewId, selectedAt: now.toISOString(),
           paymentDueAt: created.placement.paymentDueAt?.toISOString(), agreedSalary: created.placement.agreedSalary,
