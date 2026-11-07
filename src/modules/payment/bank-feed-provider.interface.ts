@@ -12,6 +12,7 @@ export interface BankFeedEvent {
 export interface BankFeedVerificationResult {
   isValid: boolean;
   event?: BankFeedEvent;
+  reason?: string;
 }
 
 export interface BankFeedProvider {

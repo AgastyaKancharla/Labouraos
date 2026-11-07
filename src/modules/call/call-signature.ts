@@ -1,7 +1,7 @@
-import { createHmac, timingSafeEqual } from 'crypto';
+import { validateWebhookHmac, signWebhookHmac } from '../../common/webhook/webhook-signature';
 
 export function signCallStatusBody(rawBody: Buffer | string, secret: string): string {
-  return createHmac('sha256', secret).update(rawBody).digest('hex');
+  return signWebhookHmac(rawBody, secret);
 }
 
 export function callStatusSignatureMatches(
@@ -9,14 +9,5 @@ export function callStatusSignatureMatches(
   signature: string | undefined,
   secret: string,
 ): boolean {
-  if (!rawBody || !signature || !secret) {
-    return false;
-  }
-  const expected = signCallStatusBody(rawBody, secret);
-  const given = Buffer.from(signature);
-  const wanted = Buffer.from(expected);
-  if (given.length !== wanted.length) {
-    return false;
-  }
-  return timingSafeEqual(given, wanted);
+  return validateWebhookHmac(rawBody, signature, secret).isValid;
 }

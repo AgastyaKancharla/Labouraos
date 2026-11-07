@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import { Payment, Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
@@ -126,7 +127,9 @@ export class PaymentService {
   ) {
     const verification = await this.verifyWebhook(payload, signature, rawBody);
     if (!verification.isValid) {
-      throw new BadRequestException('Invalid webhook signature or payload');
+      throw new UnauthorizedException(
+        `Invalid or missing webhook signature${verification.reason ? ` (${verification.reason})` : ''}`,
+      );
     }
 
     const { gatewayReference, status } = verification;
@@ -333,7 +336,9 @@ export class PaymentService {
   async handleBankFeedWebhook(rawBody: Buffer | string | undefined, signature?: string) {
     const verification = await this.bankFeedProvider.verifyWebhook(rawBody, signature);
     if (!verification.isValid || !verification.event) {
-      throw new BadRequestException('Invalid bank feed webhook signature or payload');
+      throw new UnauthorizedException(
+        `Invalid or missing bank feed webhook signature${verification.reason ? ` (${verification.reason})` : ''}`,
+      );
     }
 
     const { bankUtr, amountPaise, receivedAt, payerName, payerVpaMasked, remark } = verification.event;
@@ -1142,7 +1147,9 @@ export class PaymentService {
 
     const event = await this.provider.verifyPayoutWebhook(rawBody, signature);
     if (!event.isValid) {
-      throw new BadRequestException('Invalid webhook signature or payload');
+      throw new UnauthorizedException(
+        `Invalid or missing payout webhook signature${event.reason ? ` (${event.reason})` : ''}`,
+      );
     }
     if (event.outcome === 'unknown' || !event.payoutId) {
       return { received: true, ignored: 'not_a_payout_status_event', event: event.event };
@@ -1317,5 +1324,42 @@ export class PaymentService {
       throw new NotFoundException(`Payment '${id}' not found`);
     }
     return payment;
+  }
+
+  async simulateMockWebhook(body: Record<string, unknown>) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Cannot simulate webhook in production');
+    }
+    const gatewayReference = String(body.gatewayReference || body.reference || '');
+    const status = body.status === 'failed' ? 'failed' : 'succeeded';
+    const payment = await this.prisma.payment.findUnique({
+      where: { gatewayReference },
+    });
+    if (!payment) {
+      return { received: false, error: 'Payment not found' };
+    }
+    if (payment.status === 'succeeded') {
+      return { received: true, alreadyProcessed: true, paymentId: payment.id };
+    }
+    if (payment.status === 'failed') {
+      return { received: true, alreadyFailed: true, paymentId: payment.id };
+    }
+    if (status === 'failed') {
+      await this.prisma.payment.update({
+        where: { id: payment.id },
+        data: { status: 'failed' },
+      });
+      return { received: true, status: 'failed', paymentId: payment.id };
+    }
+    const result = await this.onPaymentSucceeded(payment.id, {
+      confirmedAt: new Date(),
+      confirmedBy: 'gateway',
+    });
+    return {
+      received: true,
+      status: 'succeeded',
+      paymentId: payment.id,
+      alreadyProcessed: result.alreadyProcessed,
+    };
   }
 }

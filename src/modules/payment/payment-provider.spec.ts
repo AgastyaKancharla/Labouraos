@@ -1,5 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
+import * as crypto from 'crypto';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -44,19 +45,25 @@ describe('Payment Provider and Mock Implementation (Phase 2 Task 4)', () => {
     });
 
     it('verifies valid webhook payloads', async () => {
+      const secret = 'ci_mock_payment_webhook_secret_32_characters';
+      process.env.PAYMENT_WEBHOOK_SECRET = secret;
       const payload = {
         gatewayReference: 'mock_gw_123',
         status: 'succeeded',
         amountPaise: 49900,
       };
+      const raw = JSON.stringify(payload);
+      const signature = crypto.createHmac('sha256', secret).update(raw).digest('hex');
 
-      const result = await provider.verifyWebhook(payload);
+      const result = await provider.verifyWebhook(payload, signature, raw);
       expect(result.isValid).toBe(true);
       expect(result.gatewayReference).toBe('mock_gw_123');
       expect(result.status).toBe('succeeded');
     });
 
     it('rejects webhook when signature is invalid', async () => {
+      const secret = 'ci_mock_payment_webhook_secret_32_characters';
+      process.env.PAYMENT_WEBHOOK_SECRET = secret;
       const payload = {
         gatewayReference: 'mock_gw_123',
         status: 'succeeded',

@@ -8,7 +8,7 @@ import { IdService } from '../../common/id/id.service';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 import { RealPaymentProvider } from './real-payment.provider';
 
-const SECRET = 'rzpx_webhook_secret_integration';
+const SECRET = 'rzpx_webhook_secret_integration_32chars';
 
 describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhook)', () => {
   let app: INestApplication;

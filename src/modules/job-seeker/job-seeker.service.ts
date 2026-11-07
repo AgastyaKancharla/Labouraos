@@ -59,11 +59,11 @@ export class JobSeekerService {
     private readonly otpService: OtpService,
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
+    private readonly upiCollectionService: UpiCollectionService,
     @Optional() private readonly consentService?: ConsentService,
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
-    @Optional() private readonly upiCollectionService?: UpiCollectionService,
   ) {}
 
   private async getPolicy() {
@@ -246,6 +246,7 @@ export class JobSeekerService {
   }
 
   async createActivationPayment(jobSeekerId: string, actorId?: string) {
+    void actorId;
     const jobSeeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
@@ -265,71 +266,26 @@ export class JobSeekerService {
 
     const policy = await this.getPolicy();
 
-    if (this.upiCollectionService) {
-      const upiRequest = await this.upiCollectionService.createRequest({
-        type: 'activation',
-        subjectType: 'job_seeker',
-        subjectId: jobSeeker.id,
-        amountPaise: policy.activationFeePaise,
-        city: jobSeeker.city,
-        jobSeekerId: jobSeeker.id,
-        notifySubjectType: 'job_seeker',
-        notifySubjectId: jobSeeker.id,
-      });
-      return {
-        paymentId: upiRequest.paymentId,
-        paymentCode: upiRequest.paymentCode,
-        paymentLink: upiRequest.paymentLink,
-        upiReference: upiRequest.upiReference,
-        upiUri: upiRequest.upiUri,
-        gatewayReference: null,
-        amount: upiRequest.amountPaise,
-        amountPaise: upiRequest.amountPaise,
-        status: upiRequest.status,
-      };
-    }
-
-    const charge = await this.paymentService.createCharge(
-      policy.activationFeePaise,
-      'job_seeker',
-      jobSeeker.id,
-    );
-
-    const code = await this.idService.generateCode('payment');
-
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.create({
-        data: {
-          code,
-          city: jobSeeker.city,
-          type: 'activation',
-          amount: policy.activationFeePaise,
-          status: 'pending',
-          gatewayReference: charge.gatewayReference,
-          subjectType: 'job_seeker',
-          subjectId: jobSeeker.id,
-          jobSeekerId: jobSeeker.id,
-        },
-      });
-
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: p.id,
-        fromStatus: null,
-        toStatus: 'pending',
-        changedByStaffId: actorId ?? null,
-      });
-
-      return p;
+    const upiRequest = await this.upiCollectionService.createRequest({
+      type: 'activation',
+      subjectType: 'job_seeker',
+      subjectId: jobSeeker.id,
+      amountPaise: policy.activationFeePaise,
+      city: jobSeeker.city,
+      jobSeekerId: jobSeeker.id,
+      notifySubjectType: 'job_seeker',
+      notifySubjectId: jobSeeker.id,
     });
-
     return {
-      paymentId: payment.id,
-      paymentCode: payment.code,
-      paymentLink: charge.paymentLink,
-      gatewayReference: charge.gatewayReference,
-      amount: payment.amount,
-      status: payment.status,
+      paymentId: upiRequest.paymentId,
+      paymentCode: upiRequest.paymentCode,
+      paymentLink: upiRequest.paymentLink,
+      upiReference: upiRequest.upiReference,
+      upiUri: upiRequest.upiUri,
+      gatewayReference: null,
+      amount: upiRequest.amountPaise,
+      amountPaise: upiRequest.amountPaise,
+      status: upiRequest.status,
     };
   }
 
@@ -349,79 +305,16 @@ export class JobSeekerService {
 
     const policy = await this.getPolicy();
 
-    if (this.upiCollectionService) {
-      const upiRequest = await this.upiCollectionService.createRequest({
-        type: 'activation',
-        subjectType: 'job_seeker',
-        subjectId: jobSeeker.id,
-        amountPaise: policy.activationFeePaise,
-        city: jobSeeker.city,
-        jobSeekerId: jobSeeker.id,
-        notifySubjectType: 'job_seeker',
-        notifySubjectId: jobSeeker.id,
-        reactivation: true,
-      });
-
-      await this.auditService.log({
-        actorId,
-        action: 'job_seeker.reactivation_initiated',
-        entityType: 'job_seeker',
-        entityCode: jobSeeker.code,
-        after: {
-          paymentId: upiRequest.paymentId,
-          paymentCode: upiRequest.paymentCode,
-          amount: upiRequest.amountPaise,
-          reactivation: true,
-        },
-        city: jobSeeker.city,
-      });
-
-      return {
-        paymentId: upiRequest.paymentId,
-        paymentCode: upiRequest.paymentCode,
-        paymentLink: upiRequest.paymentLink,
-        upiReference: upiRequest.upiReference,
-        upiUri: upiRequest.upiUri,
-        gatewayReference: null,
-        amount: upiRequest.amountPaise,
-        amountPaise: upiRequest.amountPaise,
-        status: upiRequest.status,
-        reactivation: true,
-      };
-    }
-    const charge = await this.paymentService.createCharge(
-      policy.activationFeePaise,
-      'job_seeker',
-      jobSeeker.id,
-    );
-
-    const code = await this.idService.generateCode('payment');
-
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.create({
-        data: {
-          code,
-          city: jobSeeker.city,
-          type: 'activation',
-          amount: policy.activationFeePaise,
-          status: 'pending',
-          gatewayReference: charge.gatewayReference,
-          subjectType: 'job_seeker',
-          subjectId: jobSeeker.id,
-          jobSeekerId: jobSeeker.id,
-          reactivation: true,
-        },
-      });
-
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: p.id,
-        fromStatus: null,
-        toStatus: 'pending',
-        changedByStaffId: actorId,
-      });
-
-      return p;
+    const upiRequest = await this.upiCollectionService.createRequest({
+      type: 'activation',
+      subjectType: 'job_seeker',
+      subjectId: jobSeeker.id,
+      amountPaise: policy.activationFeePaise,
+      city: jobSeeker.city,
+      jobSeekerId: jobSeeker.id,
+      notifySubjectType: 'job_seeker',
+      notifySubjectId: jobSeeker.id,
+      reactivation: true,
     });
 
     await this.auditService.log({
@@ -430,21 +323,24 @@ export class JobSeekerService {
       entityType: 'job_seeker',
       entityCode: jobSeeker.code,
       after: {
-        paymentId: payment.id,
-        paymentCode: payment.code,
-        amount: payment.amount,
+        paymentId: upiRequest.paymentId,
+        paymentCode: upiRequest.paymentCode,
+        amount: upiRequest.amountPaise,
         reactivation: true,
       },
       city: jobSeeker.city,
     });
 
     return {
-      paymentId: payment.id,
-      paymentCode: payment.code,
-      paymentLink: charge.paymentLink,
-      gatewayReference: charge.gatewayReference,
-      amount: payment.amount,
-      status: payment.status,
+      paymentId: upiRequest.paymentId,
+      paymentCode: upiRequest.paymentCode,
+      paymentLink: upiRequest.paymentLink,
+      upiReference: upiRequest.upiReference,
+      upiUri: upiRequest.upiUri,
+      gatewayReference: null,
+      amount: upiRequest.amountPaise,
+      amountPaise: upiRequest.amountPaise,
+      status: upiRequest.status,
       reactivation: true,
     };
   }

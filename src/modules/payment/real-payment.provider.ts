@@ -48,11 +48,12 @@ export class RealPaymentProvider implements PaymentProvider {
       'dummy_gateway_secret';
     this.webhookSecret =
       options?.webhookSecret ??
-      process.env.RAZORPAY_WEBHOOK_SECRET ??
       process.env.PAYMENT_WEBHOOK_SECRET ??
-      'dummy_webhook_secret_for_hmac';
+      process.env.RAZORPAY_WEBHOOK_SECRET ??
+      '';
     this.payoutWebhookSecret =
       options?.payoutWebhookSecret ??
+      process.env.PAYOUT_WEBHOOK_SECRET ??
       process.env.RAZORPAYX_WEBHOOK_SECRET ??
       this.webhookSecret;
     this.accountNumber =
@@ -285,8 +286,17 @@ export class RealPaymentProvider implements PaymentProvider {
       outcome: 'unknown',
     };
 
+    if (!this.payoutWebhookSecret) {
+      this.logger.warn('Payout webhook rejected: secret is not configured');
+      return { ...invalid, reason: 'secret_missing' };
+    }
+    if (this.payoutWebhookSecret.length < 32) {
+      this.logger.warn('Payout webhook rejected: secret is too short (min 32 chars)');
+      return { ...invalid, reason: 'secret_too_short' };
+    }
+
     if (!(typeof rawBody === 'string' || Buffer.isBuffer(rawBody)) || !signature) {
-      return invalid;
+      return { ...invalid, reason: !signature ? 'signature_missing' : 'raw_body_missing' };
     }
 
     // HMAC-SHA256 of the RAW body, as the gateway signs it
@@ -298,7 +308,7 @@ export class RealPaymentProvider implements PaymentProvider {
     const want = Buffer.from(expected, 'utf8');
     if (got.length !== want.length || !crypto.timingSafeEqual(got, want)) {
       this.logger.warn('Payout webhook signature mismatch in RealPaymentProvider');
-      return invalid;
+      return { ...invalid, reason: 'signature_mismatch' };
     }
 
     const parsed = parsePayoutWebhookBody(rawBody.toString('utf8'));
@@ -324,8 +334,17 @@ export class RealPaymentProvider implements PaymentProvider {
       status: 'failed',
     };
 
+    if (!this.webhookSecret) {
+      this.logger.warn('Webhook rejected: secret is not configured');
+      return { ...invalid, reason: 'secret_missing' };
+    }
+    if (this.webhookSecret.length < 32) {
+      this.logger.warn('Webhook rejected: secret is too short (min 32 chars)');
+      return { ...invalid, reason: 'secret_too_short' };
+    }
+
     if (!signature) {
-      return invalid;
+      return { ...invalid, reason: 'signature_missing' };
     }
 
     // A string payload IS raw bytes; an already-parsed object is not.
@@ -334,7 +353,7 @@ export class RealPaymentProvider implements PaymentProvider {
       this.logger.warn(
         'Webhook rejected: no raw request body to verify the signature against',
       );
-      return invalid;
+      return { ...invalid, reason: 'raw_body_missing' };
     }
 
     // HMAC-SHA256 signature verification over the raw bytes
@@ -352,7 +371,7 @@ export class RealPaymentProvider implements PaymentProvider {
 
     if (!isValidSignature) {
       this.logger.warn('Webhook signature mismatch in RealPaymentProvider');
-      return invalid;
+      return { ...invalid, reason: 'signature_mismatch' };
     }
 
     let parsedBody: unknown;

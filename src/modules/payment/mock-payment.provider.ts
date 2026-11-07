@@ -6,6 +6,7 @@ import {
   DisbursePayoutResult,
 } from './payment-provider.interface';
 import { parsePayoutWebhookBody } from './payout-webhook-parser';
+import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 
 @Injectable()
 export class MockPaymentProvider implements PaymentProvider {
@@ -67,10 +68,13 @@ export class MockPaymentProvider implements PaymentProvider {
     rawBody: Buffer | string,
     signature?: string,
   ): Promise<PayoutWebhookResult> {
-    const parsed = parsePayoutWebhookBody(rawBody.toString('utf8'));
-    if (signature === 'invalid-signature' || !parsed) {
+    const secret =
+      process.env.PAYOUT_WEBHOOK_SECRET || process.env.RAZORPAYX_WEBHOOK_SECRET;
+    const validation = validateWebhookHmac(rawBody, signature, secret);
+    if (!validation.isValid) {
       return {
         isValid: false,
+        reason: validation.reason,
         event: '',
         payoutId: '',
         referenceId: null,
@@ -79,31 +83,58 @@ export class MockPaymentProvider implements PaymentProvider {
         outcome: 'unknown',
       };
     }
-    // The mock has no secret to sign with; it accepts the real payload shape.
+
+    const parsed = parsePayoutWebhookBody(rawBody.toString('utf8'));
+    if (!parsed) {
+      return {
+        isValid: false,
+        reason: 'invalid_json',
+        event: '',
+        payoutId: '',
+        referenceId: null,
+        paymentIdHint: null,
+        gatewayStatus: '',
+        outcome: 'unknown',
+      };
+    }
     return { isValid: true, ...parsed };
   }
 
   async verifyWebhook(
     payload: unknown,
     signature?: string,
+    rawBody?: Buffer | string,
   ): Promise<WebhookVerificationResult> {
-    if (signature === 'invalid-signature') {
+    const secret =
+      process.env.PAYMENT_WEBHOOK_SECRET || process.env.RAZORPAY_WEBHOOK_SECRET;
+    const bodyToVerify = rawBody ?? (typeof payload === 'string' ? payload : undefined);
+    const validation = validateWebhookHmac(bodyToVerify, signature, secret);
+    if (!validation.isValid) {
       return {
         isValid: false,
+        reason: validation.reason,
         gatewayReference: '',
         status: 'failed',
       };
     }
 
-    if (!payload || typeof payload !== 'object') {
-      return {
-        isValid: false,
-        gatewayReference: '',
-        status: 'failed',
-      };
+    let data: Record<string, unknown>;
+    if (payload && typeof payload === 'object') {
+      data = payload as Record<string, unknown>;
+    } else {
+      try {
+        const rawStr = Buffer.isBuffer(bodyToVerify) ? bodyToVerify.toString('utf8') : String(bodyToVerify);
+        data = JSON.parse(rawStr) as Record<string, unknown>;
+      } catch {
+        return {
+          isValid: false,
+          reason: 'invalid_json',
+          gatewayReference: '',
+          status: 'failed',
+        };
+      }
     }
 
-    const data = payload as Record<string, unknown>;
     const gatewayReference = String(data.gatewayReference || data.reference || '');
     const status = data.status === 'failed' ? 'failed' : 'succeeded';
     const amountPaise = typeof data.amountPaise === 'number' ? data.amountPaise : undefined;
@@ -111,6 +142,7 @@ export class MockPaymentProvider implements PaymentProvider {
     if (!gatewayReference) {
       return {
         isValid: false,
+        reason: 'missing_reference',
         gatewayReference: '',
         status: 'failed',
       };

@@ -7,6 +7,7 @@ import { RealTelephonyProvider, DPDP_CONSENT_ANNOUNCEMENT } from './real-telepho
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { INestApplication } from '@nestjs/common';
+import * as crypto from 'crypto';
 import * as request from 'supertest';
 import { JwtService } from '@nestjs/jwt';
 import { AuthModule } from '../../common/auth/auth.module';
@@ -22,7 +23,12 @@ describe('Telephony Module (Task 4)', () => {
   let financeToken: string;
   let callAgentStaffId: string;
 
+  const TELEPHONY_SECRET = 'ci_telephony_webhook_secret_32_characters';
+  const signTelephony = (raw: string) =>
+    crypto.createHmac('sha256', TELEPHONY_SECRET).update(raw).digest('hex');
+
   beforeAll(async () => {
+    process.env.TELEPHONY_WEBHOOK_SECRET = TELEPHONY_SECRET;
     const moduleRef: TestingModule = await Test.createTestingModule({
       imports: [PrismaModule, AuditModule, AuthModule, RbacModule],
       controllers: [TelephonyController],
@@ -36,7 +42,7 @@ describe('Telephony Module (Task 4)', () => {
       ],
     }).compile();
 
-    app = moduleRef.createNestApplication();
+    app = moduleRef.createNestApplication({ rawBody: true });
     await app.init();
 
     prisma = app.get(PrismaService);
@@ -112,13 +118,16 @@ describe('Telephony Module (Task 4)', () => {
       });
 
       const callId = `call_test_${Date.now()}`;
+      const raw = JSON.stringify({
+        CallSid: callId,
+        From: phone,
+        To: '18001234567',
+      });
       const res = await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({
-          CallSid: callId,
-          From: phone,
-          To: '18001234567',
-        })
+        .set('x-telephony-signature', signTelephony(raw))
+        .set('content-type', 'application/json')
+        .send(raw)
         .expect(201);
 
       expect(res.body.isDuplicate).toBe(false);
@@ -137,13 +146,16 @@ describe('Telephony Module (Task 4)', () => {
       const unknownPhone = `+9191111${Date.now().toString().slice(-5)}`;
       const callId = `call_unknown_${Date.now()}`;
 
+      const raw = JSON.stringify({
+        call_id: callId,
+        caller: unknownPhone,
+        virtual_number: '18001234567',
+      });
       const res = await request(app.getHttpServer())
         .post('/telephony/webhook/missed-call')
-        .send({
-          call_id: callId,
-          caller: unknownPhone,
-          virtual_number: '18001234567',
-        })
+        .set('x-telephony-signature', signTelephony(raw))
+        .set('content-type', 'application/json')
+        .send(raw)
         .expect(201);
 
       expect(res.body.isDuplicate).toBe(false);
@@ -163,18 +175,24 @@ describe('Telephony Module (Task 4)', () => {
       const phone = `+9192222${Date.now().toString().slice(-5)}`;
 
       // First delivery
+      const raw1 = JSON.stringify({ CallSid: callId, From: phone });
       const res1 = await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({ CallSid: callId, From: phone })
+        .set('x-telephony-signature', signTelephony(raw1))
+        .set('content-type', 'application/json')
+        .send(raw1)
         .expect(201);
 
       expect(res1.body.isDuplicate).toBe(false);
       const firstTaskId = res1.body.callbackTaskId;
 
       // Second delivery (duplicate webhook)
+      const raw2 = JSON.stringify({ CallSid: callId, From: phone });
       const res2 = await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({ CallSid: callId, From: phone })
+        .set('x-telephony-signature', signTelephony(raw2))
+        .set('content-type', 'application/json')
+        .send(raw2)
         .expect(201);
 
       expect(res2.body.isDuplicate).toBe(true);
@@ -194,15 +212,18 @@ describe('Telephony Module (Task 4)', () => {
       const phone = `+9193333${Date.now().toString().slice(-5)}`;
       const recordingUrl = `https://telephony-storage.laboura.in/recordings/${callId}.mp3`;
 
+      const raw = JSON.stringify({
+        CallSid: callId,
+        From: phone,
+        RecordingUrl: recordingUrl,
+        recordingEnabled: true,
+        // Note: NO affirmative consent signal provided in webhook payload
+      });
       const res = await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({
-          CallSid: callId,
-          From: phone,
-          RecordingUrl: recordingUrl,
-          recordingEnabled: true,
-          // Note: NO affirmative consent signal provided in webhook payload
-        })
+        .set('x-telephony-signature', signTelephony(raw))
+        .set('content-type', 'application/json')
+        .send(raw)
         .expect(201);
 
       // Bare recording must NOT be treated as consent
@@ -223,15 +244,18 @@ describe('Telephony Module (Task 4)', () => {
       const phone = `+9193334${Date.now().toString().slice(-5)}`;
       const recordingUrl = `https://telephony-storage.laboura.in/recordings/${callId}.mp3`;
 
+      const raw = JSON.stringify({
+        CallSid: callId,
+        From: phone,
+        RecordingUrl: recordingUrl,
+        recordingEnabled: true,
+        recordingConsent: true, // Affirmative consent-confirmed signal
+      });
       const res = await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({
-          CallSid: callId,
-          From: phone,
-          RecordingUrl: recordingUrl,
-          recordingEnabled: true,
-          recordingConsent: true, // Affirmative consent-confirmed signal
-        })
+        .set('x-telephony-signature', signTelephony(raw))
+        .set('content-type', 'application/json')
+        .send(raw)
         .expect(201);
 
       expect(res.body.consentAnnounced).toBe(true);
@@ -315,7 +339,11 @@ describe('Telephony Module (Task 4)', () => {
       }));
 
       const results = await Promise.all(
-        calls.map((c) => telephonyService.handleInboundWebhook(c)),
+        calls.map((c) => {
+          const raw = JSON.stringify(c);
+          const sig = signTelephony(raw);
+          return telephonyService.handleInboundWebhook(c, raw, sig);
+        }),
       );
 
       for (const res of results) {
@@ -338,12 +366,15 @@ describe('Telephony Module (Task 4)', () => {
   describe('Callback Queue Management & RBAC', () => {
     it('allows call agents to view queue, assign and complete tasks', async () => {
       const callId = `call_mgmt_${Date.now()}`;
+      const raw1 = JSON.stringify({
+        CallSid: callId,
+        From: '+919555500000',
+      });
       await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({
-          CallSid: callId,
-          From: '+919555500000',
-        })
+        .set('x-telephony-signature', signTelephony(raw1))
+        .set('content-type', 'application/json')
+        .send(raw1)
         .expect(201);
 
       // View queue
@@ -375,12 +406,15 @@ describe('Telephony Module (Task 4)', () => {
 
     it('denies finance role access to callback assignment (RBAC check)', async () => {
       const callId = `call_rbac_${Date.now()}`;
+      const raw2 = JSON.stringify({
+        CallSid: callId,
+        From: '+919555511111',
+      });
       const inRes = await request(app.getHttpServer())
         .post('/telephony/inbound')
-        .send({
-          CallSid: callId,
-          From: '+919555511111',
-        })
+        .set('x-telephony-signature', signTelephony(raw2))
+        .set('content-type', 'application/json')
+        .send(raw2)
         .expect(201);
 
       await request(app.getHttpServer())

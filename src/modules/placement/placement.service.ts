@@ -58,8 +58,8 @@ export class PlacementService {
     private readonly jobSeekerService: JobSeekerService,
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
+    private readonly upiCollectionService: UpiCollectionService,
     @Optional() private readonly reviewFlags?: ReviewFlagService,
-    @Optional() private readonly upiCollectionService?: UpiCollectionService,
   ) {}
 
   private async getPolicy() {
@@ -146,40 +146,19 @@ export class PlacementService {
     let paymentLink: string | null = null;
 
     if (!created.existing) {
-      if (this.upiCollectionService) {
-        const upiRequest = await this.upiCollectionService.createRequest({
-          type: 'placement_fee',
-          subjectType: 'placement',
-          subjectId: created.placement.id,
-          amountPaise: created.totalAmount,
-          city: created.placement.city,
-          businessId: created.placement.businessId,
-          placementId: created.placement.id,
-          notifySubjectType: 'business',
-          notifySubjectId: created.placement.businessId,
-        });
-        payment = await this.prisma.payment.findUnique({ where: { id: upiRequest.paymentId } });
-        paymentLink = upiRequest.paymentLink;
-      } else {
-        const charge = await this.paymentService.createCharge(created.totalAmount, 'placement', created.placement.id);
-        const paymentCode = await this.idService.generateCode('payment');
-        payment = await this.prisma.payment.create({
-          data: {
-            code: paymentCode,
-            city: created.placement.city,
-            type: 'placement_fee',
-            amount: created.totalAmount,
-            status: 'pending',
-            gatewayReference: charge.gatewayReference,
-            subjectType: 'placement',
-            subjectId: created.placement.id,
-            businessId: created.placement.businessId,
-            placementId: created.placement.id,
-            jobSeekerId: null,
-          },
-        });
-        paymentLink = charge.paymentLink;
-      }
+      const upiRequest = await this.upiCollectionService.createRequest({
+        type: 'placement_fee',
+        subjectType: 'placement',
+        subjectId: created.placement.id,
+        amountPaise: created.totalAmount,
+        city: created.placement.city,
+        businessId: created.placement.businessId,
+        placementId: created.placement.id,
+        notifySubjectType: 'business',
+        notifySubjectId: created.placement.businessId,
+      });
+      payment = await this.prisma.payment.findUnique({ where: { id: upiRequest.paymentId } });
+      paymentLink = upiRequest.paymentLink;
 
       await this.auditService.log({
         action: 'placement.awaiting_payment_created', entityType: 'Placement', entityCode: created.placement.code,

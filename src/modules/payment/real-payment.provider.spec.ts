@@ -10,7 +10,7 @@ import { PAYMENT_PROVIDER, PaymentProvider } from './payment-provider.interface'
 import { PaymentModule } from './payment.module';
 
 describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => {
-  const webhookSecret = 'test_webhook_secret_key_12345';
+  const webhookSecret = 'test_webhook_secret_key_12345_32chars';
   const keyId = 'rzp_test_sample_key';
   const keySecret = 'sample_secret_key_67890';
 

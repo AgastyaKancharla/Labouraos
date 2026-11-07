@@ -134,8 +134,11 @@ Follow these steps in exact sequential order:
 | `TELEPHONY_PROVIDER_MODE` | `mock` | Default mock mode (§3) until telephony vendor is active |
 | `KYC_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SurePass keys are active |
 | `CALL_ROUTING_KEY` | *Auto-generated. Do not type one.* | 32-byte secret used to AES-256-GCM encrypt staff call routing phone numbers |
-| `TELEPHONY_WEBHOOK_SECRET` | *32+ char shared secret* | Shared secret configured in the calling provider webhook |
-| `MESSAGE_WEBHOOK_SECRET` | *32+ char shared secret* | Shared secret configured in the WhatsApp/SMS messaging webhook |
+| `BANK_FEED_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with the bank feed provider to sign bank credit notifications |
+| `PAYMENT_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Razorpay or the card payment provider to sign card collection webhooks |
+| `PAYOUT_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with RazorpayX or the payout bank to sign refund and reward transfer webhooks |
+| `TELEPHONY_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Exotel or calling provider to sign call event and missed call webhooks |
+| `MESSAGE_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Gupshup or WhatsApp/SMS provider to sign message delivery status webhooks |
 | `SUPABASE_URL` | *https://<project-ref>.supabase.co* | Supabase project URL from Supabase Settings > API |
 | `SUPABASE_SERVICE_ROLE_KEY` | *Supabase service_role secret key* | Secret service role API key from Supabase Settings > API |
 | `RECORDINGS_BUCKET` | `recordings` | Name of the private Supabase Storage bucket for call audio |
@@ -216,17 +219,21 @@ All completed call audio recordings are saved to private Supabase Storage:
    - Copy the **Project URL** (e.g. `https://xxxx.supabase.co`) -> paste as `SUPABASE_URL` in Render.
    - Under **Project API keys**, find `service_role` (click "Reveal") -> copy and paste as `SUPABASE_SERVICE_ROLE_KEY` in Render. Keep this key confidential.
 
-#### Webhook Addresses to Give to Calling and Messaging Companies
+#### Webhook Addresses to Configure in Partner Dashboards
 
-When onboarding with your telephony and messaging providers (e.g. Exotel, Tata Tele Business Services, Gupshup, Meta WhatsApp Cloud API), configure the following webhook destination URLs in their dashboards:
+When onboarding with bank, payment, telephony, and messaging partners, configure the following incoming webhook destination URLs in their respective developer portals. Every incoming webhook requires an HMAC-SHA256 signature calculated with a secret of at least 32 characters configured in Render:
 
-| Channel / Event | Webhook URL to Configure in Vendor Dashboard | Signature Header Expected |
-| --- | --- | --- |
-| **Telephony Call Status & Recordings** | `https://<your-render-api-url>.onrender.com/telephony/webhook/call-status` | `X-Telephony-Signature` or `X-Exotel-Signature` |
-| **WhatsApp Message Delivery Status** | `https://<your-render-api-url>.onrender.com/messages/webhook/whatsapp` | `X-Message-Signature` or `X-Hub-Signature-256` |
-| **SMS Delivery Status** | `https://<your-render-api-url>.onrender.com/messages/webhook/sms` | `X-Message-Signature` |
+| Channel / Event | Webhook URL to Configure in Vendor Dashboard | Secret Name | Signature Header Expected |
+| --- | --- | --- | --- |
+| **Bank Feed Credits** | `https://<your-render-api-url>.onrender.com/payments/bank-feed/webhook` | `BANK_FEED_WEBHOOK_SECRET` | `X-Bank-Feed-Signature` or `X-Signature` |
+| **Card Payment Charges** | `https://<your-render-api-url>.onrender.com/payments/webhook` | `PAYMENT_WEBHOOK_SECRET` | `X-Razorpay-Signature` or `X-Payment-Signature` |
+| **Payout Disbursements** | `https://<your-render-api-url>.onrender.com/payments/payout-webhook` | `PAYOUT_WEBHOOK_SECRET` | `X-Razorpay-Signature` or `X-Payout-Signature` |
+| **Telephony Call Status** | `https://<your-render-api-url>.onrender.com/telephony/webhook/call-status` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
+| **Telephony Missed Calls** | `https://<your-render-api-url>.onrender.com/telephony/webhook/missed-call` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
+| **WhatsApp Message Delivery** | `https://<your-render-api-url>.onrender.com/messages/webhook/whatsapp` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature` or `X-Hub-Signature-256` |
+| **SMS Message Delivery** | `https://<your-render-api-url>.onrender.com/messages/webhook/sms` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature` or `X-Signature` |
 
-In both vendor dashboards, configure the shared secret to match the values you entered for `TELEPHONY_WEBHOOK_SECRET` and `MESSAGE_WEBHOOK_SECRET` in Render.
+In each partner dashboard, configure the shared webhook signing secret to match the corresponding 32+ character secret entered in Render environment variables.
 
 ---
 

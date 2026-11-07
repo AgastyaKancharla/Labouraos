@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  UnauthorizedException,
 } from '@nestjs/common';
 import {
   InboundCallEvent,
@@ -14,6 +15,7 @@ import {
 } from './telephony.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 
 @Injectable()
 export class TelephonyService {
@@ -25,7 +27,16 @@ export class TelephonyService {
 
   async handleInboundWebhook(
     payload: Record<string, unknown>,
+    signature?: string,
+    rawBody?: Buffer | string,
   ): Promise<InboundCallResult> {
+    const secret = process.env.TELEPHONY_WEBHOOK_SECRET;
+    const bodyToVerify = rawBody ?? Buffer.from(JSON.stringify(payload), 'utf8');
+    const validation = validateWebhookHmac(bodyToVerify, signature, secret);
+    if (!validation.isValid) {
+      throw new UnauthorizedException('Invalid or missing telephony webhook signature');
+    }
+
     const callId = String(
       payload.CallSid ||
         payload.call_id ||

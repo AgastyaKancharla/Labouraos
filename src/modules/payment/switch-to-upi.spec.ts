@@ -157,10 +157,6 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       {} as never,
       paymentService,
       pricingService,
-      undefined,
-      undefined,
-      undefined,
-      undefined,
       upiCollectionService,
     );
 
@@ -171,7 +167,6 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       jobSeekerService,
       paymentService,
       pricingService,
-      undefined,
       upiCollectionService,
     );
   });
