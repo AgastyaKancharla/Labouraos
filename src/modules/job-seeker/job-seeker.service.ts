@@ -386,6 +386,7 @@ export class JobSeekerService {
         amount: upiRequest.amountPaise,
         amountPaise: upiRequest.amountPaise,
         status: upiRequest.status,
+        reactivation: true,
       };
     }
     const charge = await this.paymentService.createCharge(

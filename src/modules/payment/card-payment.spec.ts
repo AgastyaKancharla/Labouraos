@@ -22,6 +22,7 @@ type MockPrisma = {
   reviewFlag: Record<string, jest.Mock>;
   $transaction: jest.Mock;
   $queryRaw: jest.Mock;
+  $executeRaw: jest.Mock;
 };
 
 describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
@@ -73,6 +74,7 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
       },
       $transaction: jest.fn(async (cb: (tx: MockPrisma) => Promise<unknown>) => cb(mockPrisma)),
       $queryRaw: jest.fn(),
+      $executeRaw: jest.fn().mockResolvedValue(1),
     };
     prisma = mockPrisma;
 
