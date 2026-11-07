@@ -157,7 +157,7 @@ export class UpiCollectionService {
     };
   }
 
-  async resendRequest(paymentId: string, notifySubjectType: 'job_seeker' | 'business', notifySubjectId: string) {
+  async resendRequest(paymentId: string, notifySubjectType?: 'job_seeker' | 'business', notifySubjectId?: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.method !== 'upi_direct' || payment.gatewayReference !== null || payment.status !== 'pending' || !payment.upiReference || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Pending UPI payment request not found');
@@ -166,7 +166,26 @@ export class UpiCollectionService {
       code: payment.code, upiReference: payment.upiReference, expectedAmountPaise: payment.expectedAmountPaise,
     });
     const link = publicLink(`/payments/request/${encodeURIComponent(payment.upiReference)}`);
-    await this.sendPaymentLink(payment, notifySubjectType, notifySubjectId, link, payeeName);
+    let subjectType = notifySubjectType;
+    let subjectId = notifySubjectId;
+    if (!subjectType || !subjectId) {
+      if (payment.jobSeekerId) {
+        subjectType = 'job_seeker';
+        subjectId = payment.jobSeekerId;
+      } else if (payment.businessId) {
+        subjectType = 'business';
+        subjectId = payment.businessId;
+      } else if (payment.placementId) {
+        const pl = await this.prisma.placement.findUnique({ where: { id: payment.placementId } });
+        if (pl) {
+          subjectType = 'business';
+          subjectId = pl.businessId;
+        }
+      }
+    }
+    if (subjectType && subjectId) {
+      await this.sendPaymentLink(payment, subjectType, subjectId, link, payeeName);
+    }
     return { paymentId: payment.id, paymentLink: link, upiReference: payment.upiReference };
   }
 

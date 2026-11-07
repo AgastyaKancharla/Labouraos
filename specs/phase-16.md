@@ -79,7 +79,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - The ₹499 gets a simple receipt link, no GST invoice (no GST is added to it; the CA will confirm how GST sits inside it).
 - Tests: an activation request is UPI, not a gateway charge, and starts the clock only when confirmed; a selected interview sends the owner one UPI request for fee plus GST; confirming it creates the invoice number and sends the link once; changing GST in `PricingPolicy` doesn't change an existing invoice.
 
-### [ ] Task 6 — Screens
+### [x] Task 6 — Screens
 **Branch:** `phase-16/task-6-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**

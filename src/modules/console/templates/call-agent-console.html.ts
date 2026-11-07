@@ -555,6 +555,12 @@ export function renderCallAgentConsoleHtml(): string {
                 Status: <span id="profile-card-status">—</span>
               </div>
 
+              <!-- Payment status and resend link for candidates -->
+              <div id="profile-payment-status-row" style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 6px; display: none;">
+                Payment: <span id="profile-card-payment-status" class="badge">waiting</span>
+                <button type="button" id="btn-resend-profile-payment" class="btn-sm" style="margin-left: 8px; display: none;" onclick="resendCurrentProfilePayment()">Resend payment link</button>
+              </div>
+
               <!-- Blocked calling alert notice -->
               <div id="call-blocked-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); color: #fca5a5; padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
               </div>
@@ -1219,11 +1225,38 @@ export function renderCallAgentConsoleHtml(): string {
         document.getElementById('profile-card-code').textContent = data.code || subjectId;
         document.getElementById('profile-card-phone').textContent = formatPhoneLast4(data.phone);
         document.getElementById('profile-card-status').textContent = data.status || 'Active';
+
+        const pRow = document.getElementById('profile-payment-status-row');
+        if (pRow) {
+          if (subjectType === 'job_seeker') {
+            pRow.style.display = 'block';
+            const isPaid = data.paymentReceivedAt || ['active', 'placed'].includes(data.status);
+            const pStatus = isPaid ? 'paid' : (data.status === 'lead' ? 'waiting' : data.status);
+            document.getElementById('profile-card-payment-status').textContent = pStatus;
+            const resendBtn = document.getElementById('btn-resend-profile-payment');
+            if (resendBtn) {
+              resendBtn.style.display = (!isPaid && data.status === 'lead') ? 'inline-block' : 'none';
+            }
+          } else {
+            pRow.style.display = 'none';
+          }
+        }
+
         document.getElementById('calling-profile-card').style.display = 'block';
 
         await loadProfileHistory(subjectType, data.id || subjectId);
       } catch (e) {
         showAlert('Error loading profile: ' + e.message, false);
+      }
+    }
+
+    async function resendCurrentProfilePayment() {
+      if (!currentCallingSubject || currentCallingSubject.type !== 'job_seeker') return;
+      try {
+        await api('/job-seekers/' + currentCallingSubject.id + '/resend-payment', { method: 'POST' });
+        showAlert('Payment link resent to candidate');
+      } catch (e) {
+        showAlert(e.message, false);
       }
     }
 
@@ -1401,7 +1434,22 @@ export function renderCallAgentConsoleHtml(): string {
           const due = placement.paymentDueAt ? new Date(placement.paymentDueAt).toLocaleString('en-IN') : '—';
           const paymentStatus = placement.paidAt ? 'Paid' : placement.status === 'awaiting_payment' && placement.paymentDueAt && new Date(placement.paymentDueAt).getTime() <= now ? 'Overdue' : placement.status === 'awaiting_payment' ? 'Awaiting payment' : '—';
           const details = document.createElement('p'); details.textContent = 'Payment due ' + due + ' · ' + paymentStatus;
-          row.append(heading, details); target.appendChild(row);
+          row.append(heading, details);
+          if (!placement.paidAt && placement.status === 'awaiting_payment') {
+            const resendBtn = document.createElement('button');
+            resendBtn.className = 'btn-sm';
+            resendBtn.textContent = 'Resend payment link';
+            resendBtn.onclick = async () => {
+              try {
+                await api('/placements/' + placement.id + '/resend-payment', { method: 'POST' });
+                showAlert('Payment link resent to business');
+              } catch (e) {
+                showAlert(e.message, false);
+              }
+            };
+            row.appendChild(resendBtn);
+          }
+          target.appendChild(row);
         });
       } catch (e) { target.textContent = e.message; }
     }

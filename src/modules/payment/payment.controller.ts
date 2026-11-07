@@ -62,6 +62,13 @@ export class PaymentController {
     };
   }
 
+  @Post(':id/resend')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  async resendPayment(@Param('id') id: string) {
+    return this.upiCollectionService.resendRequest(id);
+  }
+
   @Post('request/:token/utr-hint')
   @HttpCode(HttpStatus.OK)
   async savePaymentUtrHint(@Param('token') token: string, @Body('utr') utr: unknown) {
@@ -132,6 +139,26 @@ export class PaymentController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.paymentService.ignoreBankCredit(id, body.reason, req.user.sub);
+  }
+
+  @Get('review-flags')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'finance')
+  async listReviewFlags(@Query('status') status?: string) {
+    return this.paymentService.listPaymentMismatchFlags(status);
+  }
+
+  @Post('review-flags/:id/resolve')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'finance')
+  async resolveReviewFlag(
+    @Param('id') id: string,
+    @Body() body: { resolution: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.resolvePaymentMismatchFlag(id, body.resolution, req.user.sub);
   }
 
   @Post(':id/confirm')

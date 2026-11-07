@@ -1167,9 +1167,24 @@ export function renderFieldAgentAppHtml(): string {
             ' · Result due ' + new Date(interview.resultDueAt).toLocaleString('en-IN') +
             ' · Attendance visit ' + (interview.agentAttendanceRequired ? 'needed' : 'not needed'); card.appendChild(details);
           if (interview.placement) {
+            const pStatus = interview.placement.paidAt ? 'Paid' : interview.placement.status === 'awaiting_payment' && interview.placement.paymentDueAt && new Date(interview.placement.paymentDueAt).getTime() <= Date.now() ? 'Overdue' : interview.placement.status === 'awaiting_payment' ? 'Awaiting payment' : '—';
             const placement = document.createElement('p'); placement.textContent = 'Placement ' + interview.placement.code + ' · ' + interview.placement.status +
               (interview.placement.paymentDueAt ? ' · Payment due ' + new Date(interview.placement.paymentDueAt).toLocaleString('en-IN') : '') +
-              (interview.placement.paidAt ? ' · Paid ' + new Date(interview.placement.paidAt).toLocaleDateString('en-IN') : ''); card.appendChild(placement);
+              ' · ' + pStatus; card.appendChild(placement);
+            if (!interview.placement.paidAt && interview.placement.status === 'awaiting_payment') {
+              const resendBtn = document.createElement('button');
+              resendBtn.className = 'btn-sm';
+              resendBtn.textContent = 'Resend payment link';
+              resendBtn.onclick = async () => {
+                try {
+                  await api('/placements/' + interview.placement.id + '/resend-payment', { method: 'POST' });
+                  showAlert('Payment link resent to business');
+                } catch (e) {
+                  showAlert(e.message, false);
+                }
+              };
+              card.appendChild(resendBtn);
+            }
           }
           if (interview.answeredOfferCallId) {
             const form = document.createElement('div'); form.className = 'offer-call-reply-form';
