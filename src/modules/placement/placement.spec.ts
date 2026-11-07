@@ -270,7 +270,9 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         },
       },
     });
-    await prisma.interview.deleteMany({ where: { businessId: { in: [`BZ-P5K-${timestamp}`, `BZ-P5I-${timestamp}`] } } });
+    await prisma.interview.deleteMany({
+      where: { business: { code: { in: [`BZ-P5K-${timestamp}`, `BZ-P5I-${timestamp}`] } } },
+    });
     await prisma.vacancyInterviewSlot.deleteMany({
       where: { vacancy: { code: { in: [`VC-P5K-${timestamp}`, `VC-P5I-${timestamp}`] } } },
     });
