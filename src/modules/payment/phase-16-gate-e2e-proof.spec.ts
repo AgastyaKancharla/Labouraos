@@ -509,11 +509,14 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     expect(invoice.summary.totalAmountPaise).toBe(944000);
 
     // Changing policy GST percent to 28% does NOT change existing invoice
-    await pricingService.createVersion({ gstPercent: 28 }, ceoId);
+    const policy28 = await pricingService.createVersion({ gstPercent: 28 }, ceoId);
 
     const invoiceAfterGstChange = await placementService.getInvoice(placement.id, financeId);
     expect(invoiceAfterGstChange.lineItems[0].taxRatePercent).toBe(18); // Still 18%, not 28%
     expect(invoiceAfterGstChange.summary.totalTaxPaise).toBe(144000);
+
+    // Clean up policy so subsequent test suites aren't affected
+    await prisma.pricingPolicy.delete({ where: { id: policy28.id } });
 
     // ------------------------------------------------------------------------------------
     // PART 3: Second business pays by card through gateway
@@ -648,12 +651,13 @@ describe('Phase 16 Gate End-to-End Proof', () => {
       .post(`/payments/request/${encodeURIComponent(cardUpiRef)}/card`)
       .expect(200);
 
-    expect(cardRes.body.method).toBe('gateway_card');
+    expect(cardRes.body.paymentId).toBe(cardPayment!.id);
     expect(cardRes.body.gatewayReference).toBeDefined();
+    expect(cardRes.body.paymentLink).toBeDefined();
 
     const switchedPayment = await prisma.payment.findUnique({ where: { id: cardPayment!.id } });
     expect(switchedPayment?.method).toBe('gateway_card');
-    expect(switchedPayment?.gatewayReference).toBeDefined();
+    expect(switchedPayment?.gatewayReference).toBe(cardRes.body.gatewayReference);
 
     // Gateway webhook confirms the card payment
     const gwPayload = {
