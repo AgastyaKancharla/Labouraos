@@ -288,7 +288,7 @@ describe('Phase 15 gate end-to-end proof', () => {
       otpRequestId: otpResponse.body.requestId, otpCode, result: 'selected',
       selectedSalaryPaise: 1600000, selectedJoiningDate: joiningDate.toISOString(),
     }).expect(201);
-    const placement = resultResponse.body.placement as { id: string; status: string; agreedSalary: number; placementFee: number; gstAmount: number; feePercentAtCreation: number; gstPercentAtCreation: number; payment: { id: string; gatewayReference: string; amount: number } };
+    const placement = resultResponse.body.placement as { id: string; status: string; agreedSalary: number; placementFee: number; gstAmount: number; feePercentAtCreation: number; gstPercentAtCreation: number; payment: { id: string; gatewayReference: string; amount: number; upiReference?: string } };
     placementIds.push(placement.id);
     paymentIds.push(placement.payment.id);
     expect(placement.status).toBe('awaiting_payment');
