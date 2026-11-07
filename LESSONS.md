@@ -432,3 +432,8 @@ Format:
 **Cause:** `getInvoice` queried `pricingService.current()` to obtain the GST percentage dynamically instead of reading the placement's historical snapshot.
 **Fix:** Snapshot `feePercentAtCreation` and `gstPercentAtCreation` on the `Placement` record at creation time and have `getInvoice` strictly compute tax and fee using those immutable snapshot fields.
 
+## Fail-closed webhooks, mandatory secrets, and required domain services
+**Symptom:** In production, mock providers accepted unsigned webhooks when secrets were unset ("if (secret)"), `POST /payments/mock/simulate-webhook` was publicly exposed, and `UpiCollectionService` was marked `@Optional()` with a card gateway fallback, allowing fake credits to activate candidates without money.
+**Cause:** 1) Defaulting to accept-on-missing-secret allowed attackers to bypass authentication by calling endpoints with unset secrets. 2) Mock implementations that are more permissive than production implementations create silent vulnerabilities if ever run in production. 3) Using `@Optional()` for required domain services reintroduced deprecated gateway fallbacks when UPI collection was mandatory.
+**Fix:** 1) All incoming webhook endpoints enforce HMAC-SHA256 signature validation against secrets of at least 32 characters, failing closed (401 Unauthorized) if the secret is unset, shorter than 32 characters, or if the signature is missing or mismatched. 2) Mock providers strictly mirror real providers and enforce HMAC validation. 3) `POST /payments/mock/simulate-webhook` returns 404 in production. 4) `UpiCollectionService` is a required constructor dependency in `JobSeekerService` and `PlacementService`, removing optional fallbacks.
+

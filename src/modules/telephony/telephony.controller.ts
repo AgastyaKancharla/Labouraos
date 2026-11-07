@@ -2,6 +2,7 @@ import {
   Body,
   Controller,
   Get,
+  Headers,
   Param,
   Post,
   Query,
@@ -21,13 +22,25 @@ export class TelephonyController {
   constructor(private readonly telephonyService: TelephonyService) {}
 
   @Post('inbound')
-  async handleInboundWebhook(@Body() body: Record<string, unknown>) {
-    return this.telephonyService.handleInboundWebhook(body);
+  async handleInboundWebhook(
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('x-telephony-signature') sig1?: string,
+    @Headers('x-signature') sig2?: string,
+  ) {
+    const signature = sig1 || sig2;
+    return this.telephonyService.handleInboundWebhook(body, signature, req.rawBody);
   }
 
   @Post('webhook/missed-call')
-  async handleMissedCallWebhook(@Body() body: Record<string, unknown>) {
-    return this.telephonyService.handleInboundWebhook(body);
+  async handleMissedCallWebhook(
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { rawBody?: Buffer },
+    @Headers('x-telephony-signature') sig1?: string,
+    @Headers('x-signature') sig2?: string,
+  ) {
+    const signature = sig1 || sig2;
+    return this.telephonyService.handleInboundWebhook(body, signature, req.rawBody);
   }
 
   @Get('callbacks')

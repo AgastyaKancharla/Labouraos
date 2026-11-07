@@ -228,7 +228,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       // Simulate payment webhook
       await request(app.getHttpServer())
-        .post('/payments/webhook')
+        .post('/payments/mock/simulate-webhook')
         .send({
           gatewayReference: gatewayRef,
           status: 'succeeded',
@@ -283,7 +283,7 @@ describe('Phase 9 Task 7: Status History', () => {
 
       // Simulate webhook for reactivation
       await request(app.getHttpServer())
-        .post('/payments/webhook')
+        .post('/payments/mock/simulate-webhook')
         .send({
           gatewayReference: reactivateGatewayRef,
           status: 'succeeded',

@@ -2,7 +2,7 @@ import * as crypto from 'crypto';
 import { RealPaymentProvider } from './real-payment.provider';
 
 const PAYMENT_ID = '3f2b8c1e-9a47-4d55-8b0e-1c2d3e4f5a6b';
-const SECRET = 'rzpx_webhook_secret_for_tests';
+const SECRET = 'rzpx_webhook_secret_for_tests_32_chars';
 
 type Reply = { status?: number; body?: unknown; throws?: Error };
 
@@ -22,7 +22,7 @@ function providerReplying(reply: Reply) {
   const provider = new RealPaymentProvider({
     keyId: 'k',
     keySecret: 's',
-    webhookSecret: 'unused_collection_secret',
+    webhookSecret: 'unused_collection_secret_32_characters',
     payoutWebhookSecret: SECRET,
     fetchFn,
   });

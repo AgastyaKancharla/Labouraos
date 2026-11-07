@@ -13,16 +13,21 @@ export class MessageController {
   @Post('messages/webhook/whatsapp')
   whatsapp(
     @Req() req: Request & { rawBody?: Buffer },
-    @Headers('x-message-signature') signature?: string,
+    @Headers('x-message-signature') sig1?: string,
+    @Headers('x-signature') sig2?: string,
+    @Headers('x-hub-signature-256') sig3?: string,
   ) {
+    const signature = sig1 || sig2 || sig3;
     return this.messaging.applyDelivery(req.rawBody, signature);
   }
 
   @Post('messages/webhook/sms')
   sms(
     @Req() req: Request & { rawBody?: Buffer },
-    @Headers('x-message-signature') signature?: string,
+    @Headers('x-message-signature') sig1?: string,
+    @Headers('x-signature') sig2?: string,
   ) {
+    const signature = sig1 || sig2;
     return this.messaging.applyDelivery(req.rawBody, signature);
   }
 

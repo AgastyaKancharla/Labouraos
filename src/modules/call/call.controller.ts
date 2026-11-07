@@ -26,8 +26,10 @@ export class CallController {
   @Post('telephony/webhook/call-status')
   applyStatus(
     @Req() req: Request & { rawBody?: Buffer },
-    @Headers('x-telephony-signature') signature?: string,
+    @Headers('x-telephony-signature') sig1?: string,
+    @Headers('x-signature') sig2?: string,
   ) {
+    const signature = sig1 || sig2;
     return this.calls.applyWebhook(req.rawBody, signature);
   }
 

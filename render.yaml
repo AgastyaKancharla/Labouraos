@@ -103,6 +103,10 @@ services:
         sync: false
       - key: BANK_FEED_WEBHOOK_SECRET
         sync: false
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false
+      - key: PAYOUT_WEBHOOK_SECRET
+        sync: false
 
   - type: worker
     name: laboura-worker

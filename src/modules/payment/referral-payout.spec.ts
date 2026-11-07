@@ -121,7 +121,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
 
     // 4. Simulate payment webhook completion (₹499 received)
     await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({ gatewayReference: gwRef, status: 'succeeded' })
       .expect(201);
 
@@ -203,7 +203,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       paymentDueHours: policy.placementPaymentDueHours,
     });
     const placementId = placement.id;
-    await request(app.getHttpServer()).post('/payments/webhook').send({
+    await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);
 
@@ -315,7 +315,7 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       paymentDueHours: policy.placementPaymentDueHours,
     });
     const placementId = placement.id;
-    await request(app.getHttpServer()).post('/payments/webhook').send({
+    await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);
 

@@ -366,7 +366,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     }
 
     const webhookRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .set('X-Forwarded-For', freshIp())
       .send({
         gatewayReference,
@@ -426,7 +426,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     console.log(`[Awaiting payment placement fixture] ID: ${placementId}, createdByStaffId: ${fa1Id}`);
 
     const feeWebhookRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .set('X-Forwarded-For', freshIp())
       .send({ gatewayReference: payment.gatewayReference, status: 'succeeded', amountPaise: payment.amount });
     expect(feeWebhookRes.status).toBe(201);

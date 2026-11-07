@@ -5,6 +5,7 @@ import {
   Headers,
   HttpCode,
   HttpStatus,
+  NotFoundException,
   Param,
   Post,
   Query,
@@ -95,10 +96,11 @@ export class PaymentController {
   async bankFeedWebhook(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-bank-signature') bankSig?: string,
+    @Headers('x-bank-feed-signature') bankFeedSig?: string,
     @Headers('x-signature') sig?: string,
     @Headers('x-webhook-signature') webhookSig?: string,
   ) {
-    const signature = bankSig || sig || webhookSig;
+    const signature = bankSig || bankFeedSig || sig || webhookSig;
     return this.paymentService.handleBankFeedWebhook(req.rawBody, signature);
   }
 
@@ -259,6 +261,9 @@ export class PaymentController {
 
   @Post('mock/simulate-webhook')
   async simulateWebhook(@Body() body: Record<string, unknown>) {
-    return this.paymentService.handleWebhook(body);
+    if (process.env.NODE_ENV === 'production') {
+      throw new NotFoundException('Cannot POST /payments/mock/simulate-webhook in production');
+    }
+    return this.paymentService.simulateMockWebhook(body);
   }
 }

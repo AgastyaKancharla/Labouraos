@@ -452,7 +452,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(payment.upiReference)}/card`).expect(200);
       payment = await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
     }
-    const firstWebhook = await request(app.getHttpServer()).post('/payments/webhook').send({
+    const firstWebhook = await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);
     expect(firstWebhook.body.status).toBe('succeeded');
@@ -462,7 +462,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidate.id } })).status).toBe('placed');
     expect(await prisma.messageLog.count({ where: { relatedId: selected.id, template: 'joining_confirmed' } })).toBe(2);
 
-    const replay = await request(app.getHttpServer()).post('/payments/webhook').send({
+    const replay = await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);
     expect(replay.body.alreadyProcessed).toBe(true);

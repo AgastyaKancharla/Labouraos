@@ -8,7 +8,7 @@ import { IdService } from '../../common/id/id.service';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 import { RealPaymentProvider } from './real-payment.provider';
 
-const SECRET = 'rzpx_webhook_secret_integration';
+const SECRET = 'rzpx_webhook_secret_integration_32chars';
 
 describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhook)', () => {
   let app: INestApplication;
@@ -145,18 +145,18 @@ describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhoo
     prisma.auditLog.findMany({ where: { entityCode: code, action: 'payout_status_webhook' } });
 
   describe('authentication', () => {
-    it('rejects a bad signature (400) and changes nothing', async () => {
+    it('rejects a bad signature (401) and changes nothing', async () => {
       const p = await makePayout();
       const res = await deliver(body(p.id, 'processed'), { signature: 'f'.repeat(64) });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect((await reload(p.id)).status).toBe('processing');
       expect(await prisma.payoutWebhookEvent.count({ where: { paymentId: p.id } })).toBe(0);
     });
 
-    it('rejects a missing signature (400)', async () => {
+    it('rejects a missing signature (401)', async () => {
       const p = await makePayout();
-      expect((await deliver(body(p.id, 'processed'), { signature: null })).status).toBe(400);
+      expect((await deliver(body(p.id, 'processed'), { signature: null })).status).toBe(401);
       expect((await reload(p.id)).status).toBe('processing');
     });
 
@@ -164,7 +164,7 @@ describe('Phase 8: RazorpayX payout-status webhook (POST /payments/payout-webhoo
       const p = await makePayout();
       const raw = JSON.stringify(body(p.id, 'processed'));
       const res = await deliver(raw.replace('"processed"', '"reversed"'), { signature: sign(raw) });
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
     });
 
     it('verifies the raw bytes: a pretty-printed body with a signature over those bytes is accepted', async () => {

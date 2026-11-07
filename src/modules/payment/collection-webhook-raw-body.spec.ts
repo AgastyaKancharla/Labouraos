@@ -167,7 +167,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
 
       const res = await post(app.getHttpServer(), tampered, signature);
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('pending');
       expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('pending_payment');
     });
@@ -180,7 +180,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
 
       const res = await post(app.getHttpServer(), swapped, hmac(raw));
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: victim.payment.id } })).status).toBe('pending');
     });
 
@@ -190,7 +190,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
 
       const res = await post(app.getHttpServer(), raw + ' ', hmac(raw));
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('pending');
     });
 
@@ -202,7 +202,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
 
       const res = await post(app.getHttpServer(), raw, hmac(reserialised));
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(401);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('pending');
     });
 
@@ -210,13 +210,13 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
       const { payment, gatewayReference } = await makePendingActivation();
       const raw = genuineRawBody(gatewayReference);
 
-      expect((await post(app.getHttpServer(), raw, undefined)).status).toBe(400);
-      expect((await post(app.getHttpServer(), raw, '')).status).toBe(400);
-      expect((await post(app.getHttpServer(), raw, hmac(raw, 'someone_elses_secret'))).status).toBe(400);
+      expect((await post(app.getHttpServer(), raw, undefined)).status).toBe(401);
+      expect((await post(app.getHttpServer(), raw, '')).status).toBe(401);
+      expect((await post(app.getHttpServer(), raw, hmac(raw, 'someone_elses_secret_32_chars_long'))).status).toBe(401);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('pending');
     });
 
-    it('fails closed (400) if the app is started without rawBody, rather than verifying a re-serialised copy', async () => {
+    it('fails closed (401) if the app is started without rawBody, rather than verifying a re-serialised copy', async () => {
       const bareModule = await Test.createTestingModule({ imports: [AppModule] })
         .overrideProvider(PAYMENT_PROVIDER)
         .useValue(provider())
@@ -229,7 +229,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
 
         const res = await post(bareApp.getHttpServer(), raw, hmac(raw));
 
-        expect(res.status).toBe(400);
+        expect(res.status).toBe(401);
         expect((await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } })).status).toBe('pending');
       } finally {
         await bareApp.close();

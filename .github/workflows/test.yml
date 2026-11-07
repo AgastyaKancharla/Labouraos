@@ -79,4 +79,8 @@ jobs:
           COMPANY_UPI_VPA: "laboura@icici"
           COMPANY_UPI_PAYEE_NAME: "Laboura Staffing Pvt Ltd"
           BANK_FEED_WEBHOOK_SECRET: "ci_bank_feed_webhook_secret_32_characters"
+          PAYMENT_WEBHOOK_SECRET: "ci_payment_webhook_secret_32_characters"
+          PAYOUT_WEBHOOK_SECRET: "ci_payout_webhook_secret_32_characters"
+          TELEPHONY_WEBHOOK_SECRET: "ci_telephony_webhook_secret_32_characters"
+          MESSAGE_WEBHOOK_SECRET: "ci_message_webhook_secret_32_characters"
         run: npm test

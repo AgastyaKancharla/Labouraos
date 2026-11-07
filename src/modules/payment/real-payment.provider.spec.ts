@@ -10,7 +10,7 @@ import { PAYMENT_PROVIDER, PaymentProvider } from './payment-provider.interface'
 import { PaymentModule } from './payment.module';
 
 describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => {
-  const webhookSecret = 'test_webhook_secret_key_12345';
+  const webhookSecret = 'test_webhook_secret_key_12345_32chars';
   const keyId = 'rzp_test_sample_key';
   const keySecret = 'sample_secret_key_67890';
 
@@ -211,11 +211,12 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
     let prisma: PrismaService;
     let idService: IdService;
     const timestamp = Date.now();
-    const testWebhookSecret = 'test_hmac_secret_phase7_task2';
+    const testWebhookSecret = 'test_hmac_secret_phase7_task2_32chars';
     let ceoStaffId: string;
 
     beforeAll(async () => {
       process.env.PAYMENT_PROVIDER = 'real';
+      process.env.PAYMENT_WEBHOOK_SECRET = testWebhookSecret;
       process.env.RAZORPAY_WEBHOOK_SECRET = testWebhookSecret;
 
       const moduleRef: TestingModule = await Test.createTestingModule({
@@ -245,6 +246,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
 
     afterAll(async () => {
       delete process.env.PAYMENT_PROVIDER;
+      delete process.env.PAYMENT_WEBHOOK_SECRET;
       delete process.env.RAZORPAY_WEBHOOK_SECRET;
       if (app) {
         await prisma.auditLog.deleteMany({ where: { actorId: ceoStaffId } });
@@ -363,13 +365,13 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       });
       expect(auditLogsAfterSecond).toHaveLength(1);
 
-      // 6. Webhook with invalid signature is rejected with 400
+      // 6. Webhook with invalid signature is rejected with 401
       await request(app.getHttpServer())
         .post('/payments/webhook')
         .set('Content-Type', 'application/json')
         .set('x-razorpay-signature', 'forged_tampered_signature')
         .send(payloadStr)
-        .expect(400);
+        .expect(401);
     });
   });
 

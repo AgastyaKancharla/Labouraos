@@ -8,6 +8,7 @@ export interface WebhookVerificationResult {
   status: 'succeeded' | 'failed';
   amountPaise?: number;
   rawPayload?: Record<string, unknown>;
+  reason?: string;
 }
 
 export interface DisbursePayoutResult {
@@ -30,6 +31,7 @@ export interface DisbursePayoutResult {
 export interface PayoutWebhookResult extends ParsedPayoutEvent {
   /** True only when the signature checked out and the body parsed. */
   isValid: boolean;
+  reason?: string;
 }
 
 export interface PaymentProvider {

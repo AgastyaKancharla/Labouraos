@@ -150,7 +150,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
 
     // Gateway fires webhook
     const webhookRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({
         gatewayReference,
         status: 'succeeded',
@@ -271,14 +271,14 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
 
     // First webhook call
     const firstCall = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send(webhookPayload);
     expect(firstCall.status).toBe(201);
     expect(firstCall.body.status).toBe('succeeded');
 
     // Second webhook call with identical payload
     const secondCall = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send(webhookPayload);
     expect(secondCall.status).toBe(201);
     expect(secondCall.body.received).toBe(true);
@@ -311,7 +311,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   it('webhook for unknown reference or already failed payment is rejected cleanly (no crash, no 500)', async () => {
     // 1. Unknown gateway reference
     const unknownRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({
         gatewayReference: 'non_existent_reference_xyz',
         status: 'succeeded',
@@ -339,7 +339,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
 
     // Fail the payment
     const failRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({
         gatewayReference,
         status: 'failed',
@@ -349,7 +349,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
 
     // Try to succeed an already failed payment
     const retryRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({
         gatewayReference,
         status: 'succeeded',

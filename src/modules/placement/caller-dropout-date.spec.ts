@@ -5,6 +5,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
+import { UpiCollectionService } from '../payment/upi-collection.service';
 import { seededPricingService } from '../../test-support/seeded-pricing';
 
 interface MockPlacementRecord {
@@ -126,6 +127,7 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       {} as JobSeekerService,
       {} as PaymentService,
       seededPricingService(),
+      {} as UpiCollectionService,
     );
   });
 
