@@ -200,7 +200,7 @@ export class CallService {
 
     if (
       subjectType === 'job_seeker' &&
-      ['offer', 'follow_up', 'interview_result'].includes(purpose)
+      ['offer', 'follow_up', 'interview_result', 'joining_confirmation'].includes(purpose)
     ) {
       const hasJobMatchingConsent = await this.consentService.hasConsent(
         'job_seeker',

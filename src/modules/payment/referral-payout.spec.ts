@@ -9,6 +9,7 @@ import { PaymentService } from './payment.service';
 import { PricingService } from '../pricing/pricing.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
+import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 
 const REFERRAL_PAYOUT_AMOUNT_PAISE = 20000;
 
@@ -209,6 +210,18 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
 
     // 5. Candidate joins: set joinedDate
     const joinedDateStr = '2026-10-22T09:00:00.000Z';
+    await prisma.placement.update({
+      where: { id: placementId },
+      data: { joiningDate: new Date(joinedDateStr) },
+    });
+    await createJoiningCallsFixture({
+      prisma,
+      idService,
+      placementId,
+      jobSeekerId: candidate.id,
+      businessId: vacancy.businessId,
+      callTime: new Date(joinedDateStr),
+    });
     const joinRes = await request(app.getHttpServer())
       .post(`/placements/${placementId}/joined`)
       .set('Authorization', `Bearer ${caToken}`)
@@ -320,10 +333,23 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
     }).expect(201);
 
     // 4. Record joined
+    const joinedDateStr2 = '2026-10-23T10:00:00.000Z';
+    await prisma.placement.update({
+      where: { id: placementId },
+      data: { joiningDate: new Date(joinedDateStr2) },
+    });
+    await createJoiningCallsFixture({
+      prisma,
+      idService,
+      placementId,
+      jobSeekerId: candidate.id,
+      businessId: vacancy.businessId,
+      callTime: new Date(joinedDateStr2),
+    });
     await request(app.getHttpServer())
       .post(`/placements/${placementId}/joined`)
       .set('Authorization', `Bearer ${caToken}`)
-      .send({ joinedDate: '2026-10-23T10:00:00.000Z' })
+      .send({ joinedDate: joinedDateStr2 })
       .expect(201);
 
     // 5. Verify NO referral payout payment was created for this placement or candidate

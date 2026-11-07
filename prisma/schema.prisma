@@ -358,6 +358,10 @@ model Placement {
   paymentDueAt               DateTime?
   paidAt                     DateTime?
   joiningDate                DateTime?
+  joiningWorkerCallId        String?
+  joiningWorkerCall          CallRecord? @relation("PlacementJoiningWorkerCall", fields: [joiningWorkerCallId], references: [id], onDelete: SetNull)
+  joiningBusinessCallId      String?
+  joiningBusinessCall        CallRecord? @relation("PlacementJoiningBusinessCall", fields: [joiningBusinessCallId], references: [id], onDelete: SetNull)
   rootPlacementId            String?
   replacementNumber          Int         @default(0)
   feePercentAtCreation       Int?
@@ -393,6 +397,8 @@ model Placement {
   @@index([status])
   @@index([status, eligibility])
   @@index([createdByStaffId])
+  @@index([joiningWorkerCallId])
+  @@index([joiningBusinessCallId])
 }
 
 model ReplacementCandidate {
@@ -947,7 +953,7 @@ model CallRecord {
   staff                Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
   subjectType          String? // job_seeker, business, referral
   subjectId            String?
-  purpose              String? // offer, follow_up, verification, exit_call, check_in, interview_result, refund_check, general
+  purpose              String? // offer, follow_up, verification, exit_call, check_in, interview_result, refund_check, joining_confirmation, general
   relatedType          String?
   relatedId            String?
   /// written only by the call-status webhook
@@ -966,6 +972,8 @@ model CallRecord {
   agentOutcomeAt       DateTime?
   contactAttempt       ContactAttempt?
   interviewReply       Interview?
+  placementsAsWorkerJoining   Placement[] @relation("PlacementJoiningWorkerCall")
+  placementsAsBusinessJoining Placement[] @relation("PlacementJoiningBusinessCall")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
