@@ -60,7 +60,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - A UTR can be matched to one payment only, ever.
 - Tests: a bank notice with the right reference and amount confirms the payment and starts the clock; the same notice twice changes nothing; a wrong amount raises `payment_mismatch` and confirms nothing; an unknown reference stays unmatched; Finance can confirm only equal amounts; a manager, team lead or agent is refused on every Finance route; a UTR can't be used twice; a bad webhook signature is refused.
 
-### [ ] Task 4 — Card payments, only when the payer chooses card
+### [x] Task 4 — Card payments, only when the payer chooses card
 **Branch:** `phase-16/task-4-card` · **No migration**
 
 **Acceptance:**
