@@ -6,7 +6,9 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { PaymentService } from './payment.service';
+import { PricingService } from '../pricing/pricing.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 
 const REFERRAL_PAYOUT_AMOUNT_PAISE = 20000;
 
@@ -193,24 +195,17 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       },
     });
 
-    // 4. Create placement via API
-    const placeRes = await request(app.getHttpServer())
-      .post(`/vacancies/${vacancy.id}/placements`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({
-        jobSeekerId: candidate.id,
-        agreedSalary: 2000000,
-      })
-      .expect(201);
-
-    const placementId = placeRes.body.id;
-
-    // Respond / confirm placement
-    await request(app.getHttpServer())
-      .post(`/placements/${placementId}/respond`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({ response: 'accepted' })
-      .expect(201);
+    // This phase 6 test starts from the state the retired placement flow used to create.
+    const policy = await app.get(PricingService).current();
+    const { placement, payment } = await createAwaitingPaymentPlacementFixture({
+      prisma, idService, vacancyId: vacancy.id, jobSeekerId: candidate.id, createdByStaffId: caStaffId,
+      agreedSalary: 2000000, feePercent: policy.placementFeePercent, gstPercent: policy.gstPercent,
+      paymentDueHours: policy.placementPaymentDueHours,
+    });
+    const placementId = placement.id;
+    await request(app.getHttpServer()).post('/payments/webhook').send({
+      gatewayReference: payment.gatewayReference, status: 'succeeded',
+    }).expect(201);
 
     // 5. Candidate joins: set joinedDate
     const joinedDateStr = '2026-10-22T09:00:00.000Z';
@@ -312,23 +307,17 @@ describe('Phase 6 Task 1: Referral Payout Trigger', () => {
       },
     });
 
-    // 3. Create placement & accept
-    const placeRes = await request(app.getHttpServer())
-      .post(`/vacancies/${vacancy.id}/placements`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({
-        jobSeekerId: candidate.id,
-        agreedSalary: 1800000,
-      })
-      .expect(201);
-
-    const placementId = placeRes.body.id;
-
-    await request(app.getHttpServer())
-      .post(`/placements/${placementId}/respond`)
-      .set('Authorization', `Bearer ${caToken}`)
-      .send({ response: 'accepted' })
-      .expect(201);
+    // This phase 6 test starts from the state the retired placement flow used to create.
+    const policy = await app.get(PricingService).current();
+    const { placement, payment } = await createAwaitingPaymentPlacementFixture({
+      prisma, idService, vacancyId: vacancy.id, jobSeekerId: candidate.id, createdByStaffId: caStaffId,
+      agreedSalary: 1800000, feePercent: policy.placementFeePercent, gstPercent: policy.gstPercent,
+      paymentDueHours: policy.placementPaymentDueHours,
+    });
+    const placementId = placement.id;
+    await request(app.getHttpServer()).post('/payments/webhook').send({
+      gatewayReference: payment.gatewayReference, status: 'succeeded',
+    }).expect(201);
 
     // 4. Record joined
     await request(app.getHttpServer())

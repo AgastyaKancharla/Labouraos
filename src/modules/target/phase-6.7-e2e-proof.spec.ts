@@ -9,6 +9,9 @@ import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
+import { IdService } from '../../common/id/id.service';
+import { PricingService } from '../pricing/pricing.service';
+import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 
 describe('Phase 6.7 Gate: End-to-End Proof', () => {
   let app: INestApplication;
@@ -401,45 +404,26 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     expect(capturedVacancy.capturedByStaffId).toBe(ca1Id);
 
     // =========================================================================
-    // STEP 5: FA1 creates placement, business accepts, fee paid, candidate joins
+    // STEP 5: A paid placement is joined; Task 15 owns selected-interview creation.
     // =========================================================================
-    console.log('\n--- STEP 5: FA1 creates placement, fee paid, candidate joined ---');
-    const placementRes = await request(app.getHttpServer())
-      .post(`/vacancies/${vacancyId}/placements`)
-      .set('Authorization', `Bearer ${fa1Token}`)
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        jobSeekerId: candidateId,
-        agreedSalary: 2000000, // ₹20,000/mo -> 50% fee = ₹10,000 + 18% GST = ₹11,800
-      });
-    expect(placementRes.status).toBe(201);
-    const placementId = placementRes.body.id;
+    console.log('\n--- STEP 5: FA1 records joining for a paid placement ---');
+    const policy = await app.get(PricingService).current();
+    const { placement, payment } = await createAwaitingPaymentPlacementFixture({
+      prisma, idService: app.get(IdService), vacancyId, jobSeekerId: candidateId, createdByStaffId: fa1Id,
+      agreedSalary: 2000000, feePercent: policy.placementFeePercent, gstPercent: policy.gstPercent,
+      paymentDueHours: policy.placementPaymentDueHours,
+    });
+    const placementId = placement.id;
     cleanPlacementIds.push(placementId);
-    console.log(`[Placement Created] ID: ${placementId}, createdByStaffId: ${fa1Id}`);
+    cleanPaymentIds.push(payment.id);
+    console.log(`[Awaiting payment placement fixture] ID: ${placementId}, createdByStaffId: ${fa1Id}`);
 
-    // Business accepts placement -> creates placement fee charge
-    const respondRes = await request(app.getHttpServer())
-      .post(`/placements/${placementId}/respond`)
-      .set('Authorization', `Bearer ${fa1Token}`)
-      .set('X-Forwarded-For', freshIp())
-      .send({
-        response: 'accepted',
-      });
-    expect(respondRes.status).toBe(201);
-    cleanPaymentIds.push(respondRes.body.payment.id);
-    const placementPayment = respondRes.body.payment;
-    console.log(`[Placement Fee Generated] ID: ${placementPayment.id}, amount: ${placementPayment.amount}`);
-
-    // Payment webhook succeeds placement fee
     const feeWebhookRes = await request(app.getHttpServer())
       .post('/payments/webhook')
       .set('X-Forwarded-For', freshIp())
-      .send({
-        gatewayReference: placementPayment.gatewayReference,
-        status: 'succeeded',
-        amountPaise: placementPayment.amount,
-      });
+      .send({ gatewayReference: payment.gatewayReference, status: 'succeeded', amountPaise: payment.amount });
     expect(feeWebhookRes.status).toBe(201);
+    expect(feeWebhookRes.body.status).toBe('succeeded');
     console.log(`[Placement Fee Webhook Processed] Status: succeeded`);
 
     // Candidate joins the job

@@ -314,7 +314,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       cleanJobSeekerIds.push(js2.id);
     });
 
-    it('creating a placement as Call Agent records acting staff in createdByStaffId', async () => {
+    it('retired placement creation route is unavailable to Call Agents', async () => {
       const res = await request(app.getHttpServer())
         .post(`/vacancies/${koraVacancyId}/placements`)
         .set('Authorization', `Bearer ${callAgentToken}`)
@@ -323,19 +323,10 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
           agreedSalary: 2000000,
         });
 
-      expect(res.status).toBe(201);
-      cleanPlacementIds.push(res.body.id);
-
-      const inDb = await prisma.placement.findUnique({
-        where: { id: res.body.id },
-        include: { createdBy: true },
-      });
-      expect(inDb?.createdByStaffId).toBe(callAgentId);
-      expect(inDb?.createdBy?.id).toBe(callAgentId);
-      expect(inDb?.createdBy?.role).toBe('call_agent');
+      expect(res.status).toBe(404);
     });
 
-    it('creating a placement as Field Agent records acting staff in createdByStaffId', async () => {
+    it('retired placement creation route is unavailable to Field Agents', async () => {
       const res = await request(app.getHttpServer())
         .post(`/vacancies/${koraVacancyId}/placements`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
@@ -344,16 +335,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
           agreedSalary: 2000000,
         });
 
-      expect(res.status).toBe(201);
-      cleanPlacementIds.push(res.body.id);
-
-      const inDb = await prisma.placement.findUnique({
-        where: { id: res.body.id },
-        include: { createdBy: true },
-      });
-      expect(inDb?.createdByStaffId).toBe(fieldAgentId);
-      expect(inDb?.createdBy?.id).toBe(fieldAgentId);
-      expect(inDb?.createdBy?.role).toBe('field_agent');
+      expect(res.status).toBe(404);
     });
   });
 
@@ -540,8 +522,8 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       expect(ids).toContain(indiVacancyId);
     });
 
-    it('Field Agents can write placements only for their account business', async () => {
-      // Field Agent 1 does not own the Indiranagar business account.
+    it('does not expose the retired placement creation route to field agents', async () => {
+      // Placement creation now happens from an owner-recorded selected interview.
       const js = await prisma.jobSeeker.create({
         data: {
           code: `JS-T1LEAK-${timestamp}`,
@@ -566,8 +548,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
           agreedSalary: 2200000,
         });
 
-      expect(res.status).toBe(403);
-      expect(res.body.message).toContain('business is outside your account');
+      expect(res.status).toBe(404);
     });
 
     it('Field Agents can read businesses across localities', async () => {

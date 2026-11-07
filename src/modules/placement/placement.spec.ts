@@ -351,7 +351,8 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       data: {
         code: `JS-P15PAY-${timestamp}`, name: 'Interview Selected Candidate',
         phone: `95${timestamp.toString().slice(-8)}9`, tradeSkill: 'Electrician',
-        minSalary: 1800000, maxSalary: 2400000, status: 'active',
+        minSalary: 1800000, maxSalary: 2400000,
+        preferredCallWindowStart: '09:00', preferredCallWindowEnd: '18:00', status: 'active',
       },
     });
     const vacancy = await prisma.vacancy.findUniqueOrThrow({
@@ -414,6 +415,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect(selected).toMatchObject({
       status: 'awaiting_payment',
       interviewId: interview.id,
+      createdByStaffId: faKoraId,
       selectedAt: now,
       paymentDueAt: new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000),
       agreedSalary: 2000000,
