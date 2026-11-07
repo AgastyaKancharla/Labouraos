@@ -62,7 +62,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Attendance is evidence only — it never replaces the owner's OTP result (Task 4).
 - Tests: the first interview with a business requires attendance; the second doesn't (unless no-documents or flagged); a `no_documents` business always does; the attendance assignment is created on confirmation, not on offer.
 
-### [ ] Task 4 — The result, the deadlines and the candidate check
+### [x] Task 4 — The result, the deadlines and the candidate check
 **Branch:** `phase-15/task-4-result` · **Migration folder:** `20261108120000_interview_result`
 
 **Acceptance:**
