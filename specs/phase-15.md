@@ -75,7 +75,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Deadline jobs:** at `resultDueAt` with no result → a notice to the account agent to call the owner; at slot end + `interviewResultEscalateHours` (24) → `interview_result_overdue` flag to the Team Lead; at slot end + `interviewResultCloseHours` (48) → status `no_result`, **no hit**, the candidate is free for matching again, and an `interview_no_result` flag on the business (add it to the `ReviewFlag` closed list).
 - Tests: only the owner's OTP submission records a result; a no-show records a hit, not-selected doesn't; a not-selected candidate is never matched to that business again; the mismatch flag is raised; each deadline fires at the right time and only once; after 48 hours the interview is `no_result`, no hit, and the candidate appears in matching again.
 
-### [ ] Task 5 — Selected becomes a placement waiting for payment
+### [x] Task 5 — Selected becomes a placement waiting for payment
 **Branch:** `phase-15/task-5-placement-from-interview` · **Migration folder:** `20261108130000_placement_from_interview`
 
 **Acceptance:**

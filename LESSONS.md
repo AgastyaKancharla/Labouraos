@@ -47,6 +47,11 @@ Format:
 **Cause:** `Placement` has `onDelete: Restrict` relationships with `JobSeeker` and `Vacancy`, while `Vacancy.replacementForPlacementId` references `Placement`. Deleting `JobSeeker` or `Vacancy` while `Placement` rows exist violates foreign key constraints.
 **Fix:** Before deleting `JobSeeker`, delete or clear dependent `Placement` rows (or unlink `replacementForPlacementId` first, then delete `Placement`, then `Vacancy` and `JobSeeker`). When clearing tables in `walking-skeleton.spec.ts`, delete `Placement` before `JobSeeker`, and re-run `await seed(prisma)` in `afterAll` so seeded state remains intact for subsequent suites.
 
+## Interview test teardown must filter through the business relation
+**Symptom:** `placement.spec.ts` teardown failed deleting interview slots with `Interview_vacancyInterviewSlotId_fkey`; later suites failed deleting staff with `Interview_proposedByStaffId_fkey`.
+**Cause:** The interview cleanup compared `businessId` (a database ID) to business codes, so it deleted no interviews and left their slot and proposing-staff references behind.
+**Fix:** Filter interviews through `business.code`, delete those interviews before their slots, and preserve the dependent-record teardown order.
+
 ## TypeScript control-flow type narrowing with string union statuses
 **Symptom:** In `placement.service.ts`, `placement.status === 'replaced'` caused compilation error `TS2367: This comparison appears to be unintentional because the types '"dropped_out"' and '"replaced"' have no overlap.`
 **Cause:** An earlier guard `if (placement.status !== 'dropped_out')` narrowed the type of `placement.status` to the literal `'dropped_out'`. Checking for any other literal value downstream is caught by TypeScript's strict type checker as impossible code.
