@@ -53,7 +53,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Every status change writes `StatusHistory`.
 - Tests: Yes by link confirms and sends the business details; No by link declines and records one hit; an agent can record a reply only on an answered offer call; a declined offer's hit carries the call id; no reply after a call → `no_reply` + hit; no reply with no call → `cancelled`, no hit; a used or expired link is refused; business details never go out before `confirmed`.
 
-### [ ] Task 3 — An agent at the interview when needed
+### [x] Task 3 — An agent at the interview when needed
 **Branch:** `phase-15/task-3-attendance` · **No migration**
 
 **Acceptance:**
@@ -62,7 +62,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Attendance is evidence only — it never replaces the owner's OTP result (Task 4).
 - Tests: the first interview with a business requires attendance; the second doesn't (unless no-documents or flagged); a `no_documents` business always does; the attendance assignment is created on confirmation, not on offer.
 
-### [ ] Task 4 — The result, the deadlines and the candidate check
+### [x] Task 4 — The result, the deadlines and the candidate check
 **Branch:** `phase-15/task-4-result` · **Migration folder:** `20261108120000_interview_result`
 
 **Acceptance:**

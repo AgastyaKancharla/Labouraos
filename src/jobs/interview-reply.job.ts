@@ -36,7 +36,7 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         INTERVIEW_REPLY_QUEUE,
-        async () => this.processDueReplies(),
+        async () => this.process(),
         { connection: this.connection },
       );
       this.worker.on('error', (error) => this.logger.error(`Interview reply worker error: ${error.message}`));
@@ -54,6 +54,12 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
 
   processDueReplies() {
     return this.interviews.processDueReplies();
+  }
+
+  async process() {
+    const replies = await this.interviews.processDueReplies();
+    const results = await this.interviews.processResultDeadlines();
+    return { replies, results };
   }
 
   async onModuleInit(): Promise<void> {

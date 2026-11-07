@@ -323,7 +323,10 @@ model Interview {
   resultReason             String?
   resultOtpRequestId       String?
   resultDueAt              DateTime
+  resultRequestSentAt      DateTime?
   resultRecordedAt         DateTime?
+  selectedSalaryPaise      Int?
+  selectedJoiningDate      DateTime?
   candidateCheckAnswer     String?
   candidateCheckAt         DateTime?
   cancelReason             String?

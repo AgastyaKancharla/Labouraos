@@ -144,6 +144,14 @@ export class ConsentLinkService {
     return record;
   }
 
+  async verifyInterviewOwnerOtp(token: string, requestId: string, code: string): Promise<InterviewActionLinkRecord> {
+    const record = this.validateInterviewActionToken(token, 'owner_result');
+    const validCode = await this.otpService.verifyOtp(requestId, code);
+    const belongsToOwner = validCode && await this.otpService.isVerified(requestId, record.phone);
+    if (!belongsToOwner) throw new BadRequestException('Valid owner OTP is required to record an interview result');
+    return record;
+  }
+
   async createLink(jobSeekerId: string) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },

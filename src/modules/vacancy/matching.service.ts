@@ -69,7 +69,7 @@ type MatchCandidate = {
   placements: Array<{ businessId: string; status: string; replacementCandidates: Array<{ status: string }> }>;
   replacementCandidateOffers: Array<{ status: string; placement: { businessId: string } }>;
   payments: Array<{ type: string; status: string }>;
-  interviews: Array<{ status: string }>;
+  interviews: Array<{ status: string; businessId: string; result: string | null }>;
   consents: Array<{ purpose: string; granted: boolean; grantedAt: Date | null; withdrawnAt: Date | null }>;
 };
 
@@ -148,7 +148,7 @@ export class MatchingService {
         languages: true,
         hits: { select: { reason: true, reversedAt: true } },
         placements: { include: { replacementCandidates: { select: { status: true } } } },
-        interviews: { select: { status: true } },
+        interviews: { select: { status: true, businessId: true, result: true } },
         replacementCandidateOffers: { include: { placement: { select: { businessId: true } } } },
         payments: { select: { type: true, status: true } },
       },
@@ -378,7 +378,7 @@ export class MatchingService {
   private businessRejected(businessId: string, _jobSeekerId: string, seeker: MatchCandidate): boolean {
     return seeker.placements.some((row) => row.businessId === businessId && (
       row.status === 'rejected' || row.replacementCandidates.some((candidate) => candidate.status === 'rejected')
-    ));
+    )) || seeker.interviews.some((interview) => interview.businessId === businessId && interview.result === 'not_selected');
   }
 
   private readWeights(value: Prisma.JsonValue): Record<FactorName, number> {
