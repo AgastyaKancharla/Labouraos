@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { InterviewService } from '../modules/vacancy/interview.service';
+import { PlacementService } from '../modules/placement/placement.service';
 
 export const INTERVIEW_REPLY_QUEUE = 'interview-reply-deadlines';
 export const INTERVIEW_REPLY_SWEEP = 'process-due-interview-replies';
@@ -11,7 +12,10 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
 
-  constructor(private readonly interviews: InterviewService) {}
+  constructor(
+    private readonly interviews: InterviewService,
+    private readonly placements: PlacementService,
+  ) {}
 
   private get connection() {
     return {
@@ -59,7 +63,8 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
   async process() {
     const replies = await this.interviews.processDueReplies();
     const results = await this.interviews.processResultDeadlines();
-    return { replies, results };
+    const payments = await this.placements.processPaymentDeadlines();
+    return { replies, results, payments };
   }
 
   async onModuleInit(): Promise<void> {

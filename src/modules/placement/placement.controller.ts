@@ -18,8 +18,6 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
-import { CreatePlacementDto } from './dto/create-placement.dto';
-import { RespondPlacementDto } from './dto/respond-placement.dto';
 import { RecordJoinedDto } from './dto/record-joined.dto';
 import { RecordDropoutDto } from './dto/record-dropout.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
@@ -33,16 +31,6 @@ import { ExportPlacementsQueryDto, formatPlacementsCsv } from './dto/export-plac
 export class VacancyPlacementController {
   constructor(private readonly placementService: PlacementService) {}
 
-  @Post()
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
-  @RequirePermission('placement', 'write')
-  async create(
-    @Param('id') vacancyId: string,
-    @Body() dto: CreatePlacementDto,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.placementService.create(vacancyId, dto, req.user.sub);
-  }
 }
 
 @Controller('placements')
@@ -50,17 +38,6 @@ export class VacancyPlacementController {
 @UseInterceptors(PiiMaskingInterceptor)
 export class PlacementController {
   constructor(private readonly placementService: PlacementService) {}
-
-  @Post(':id/respond')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
-  @RequirePermission('placement', 'write')
-  async respond(
-    @Param('id') id: string,
-    @Body() dto: RespondPlacementDto,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.placementService.respond(id, dto, req.user.sub);
-  }
 
   @Post(':id/joined')
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')

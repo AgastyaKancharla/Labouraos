@@ -3,10 +3,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { randomUUID } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import {
   calculatePlacementFee,
@@ -35,6 +37,7 @@ import {
   InvoiceSupplier,
 } from './dto/gst-invoice.dto';
 import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/export-placements.dto';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 
 export function calculateDaysElapsed(
   startDate: Date,
@@ -56,10 +59,152 @@ export class PlacementService {
     private readonly jobSeekerService: JobSeekerService,
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
+    @Optional() private readonly reviewFlags?: ReviewFlagService,
   ) {}
 
   private async getPolicy() {
     return this.pricingService.current();
+  }
+
+  async createAwaitingPaymentFromInterview(interviewId: string, now: Date) {
+    const created = await this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Interview" WHERE "id" = ${interviewId} FOR UPDATE`);
+      const interview = await tx.interview.findUnique({
+        where: { id: interviewId },
+        include: { business: true, jobSeeker: true, vacancy: true },
+      });
+      if (!interview || interview.result !== 'selected' || interview.status !== 'completed' || !interview.resultRecordedAt) {
+        throw new BadRequestException('A completed selected interview is required to create a placement');
+      }
+
+      const existing = await tx.placement.findUnique({
+        where: { interviewId },
+        include: { payments: true, business: true, jobSeeker: true, vacancy: true },
+      });
+      if (existing) {
+        const payment = existing.payments.find((row) => row.type === 'placement_fee');
+        return { placement: existing, payment, paymentLink: null, existing: true };
+      }
+
+      const agreement = await tx.businessAgreement.findFirst({
+        where: { businessId: interview.businessId },
+        orderBy: [{ signedAt: 'desc' }, { createdAt: 'desc' }],
+      });
+      if (!agreement) {
+        throw new BadRequestException('A signed business agreement is required before a selected interview can create a placement');
+      }
+      if (!interview.selectedSalaryPaise || !interview.selectedJoiningDate) {
+        throw new BadRequestException('The selected interview must include salary and joining date');
+      }
+
+      const policy = await this.getPolicy();
+      const placementFee = calculatePlacementFee(interview.selectedSalaryPaise, agreement.feePercent);
+      const gstAmount = calculateGst(placementFee, agreement.gstPercent);
+      const totalAmount = placementFee + gstAmount;
+      const id = randomUUID();
+      const charge = await this.paymentService.createCharge(totalAmount, 'placement', id);
+      const code = await this.idService.generateCode('placement');
+      const paymentCode = await this.idService.generateCode('payment');
+      const paymentDueAt = new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000);
+      const placement = await tx.placement.create({
+        data: {
+          id,
+          code,
+          city: interview.vacancy.city,
+          vacancyId: interview.vacancyId,
+          jobSeekerId: interview.jobSeekerId,
+          businessId: interview.businessId,
+          createdByStaffId: interview.proposedByStaffId,
+          interviewId: interview.id,
+          selectedAt: now,
+          paymentDueAt,
+          joiningDate: interview.selectedJoiningDate,
+          rootPlacementId: id,
+          replacementNumber: 0,
+          feePercentAtCreation: agreement.feePercent,
+          gstPercentAtCreation: agreement.gstPercent,
+          agreedSalary: interview.selectedSalaryPaise,
+          placementFee,
+          gstAmount,
+          status: 'awaiting_payment',
+        },
+        include: { business: true, jobSeeker: true, vacancy: true, payments: true },
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'placement', subjectId: placement.id, fromStatus: null, toStatus: 'awaiting_payment',
+        changedByStaffId: interview.proposedByStaffId, changedAt: now, reason: 'owner_selected_candidate',
+      });
+      const payment = await tx.payment.create({
+        data: {
+          code: paymentCode,
+          city: placement.city,
+          type: 'placement_fee',
+          amount: totalAmount,
+          status: 'pending',
+          gatewayReference: charge.gatewayReference,
+          subjectType: 'placement',
+          subjectId: placement.id,
+          businessId: placement.businessId,
+          placementId: placement.id,
+          jobSeekerId: null,
+        },
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'payment', subjectId: payment.id, fromStatus: null, toStatus: 'pending',
+        changedByStaffId: interview.proposedByStaffId, changedAt: now,
+      });
+      return { placement, payment, paymentLink: charge.paymentLink, existing: false };
+    });
+
+    if (!created.existing) {
+      await this.auditService.log({
+        action: 'placement.awaiting_payment_created', entityType: 'Placement', entityCode: created.placement.code,
+        actorId: created.placement.createdByStaffId ?? undefined, city: created.placement.city,
+        after: {
+          status: created.placement.status, interviewId, selectedAt: now.toISOString(),
+          paymentDueAt: created.placement.paymentDueAt?.toISOString(), agreedSalary: created.placement.agreedSalary,
+          feePercentAtCreation: created.placement.feePercentAtCreation,
+          gstPercentAtCreation: created.placement.gstPercentAtCreation,
+          placementFee: created.placement.placementFee, gstAmount: created.placement.gstAmount,
+          paymentId: created.payment?.id,
+        },
+      });
+    }
+    return {
+      ...created.placement,
+      payment: created.payment ? {
+        id: created.payment.id,
+        code: created.payment.code,
+        amount: created.payment.amount,
+        status: created.payment.status,
+        paymentLink: created.paymentLink,
+        gatewayReference: created.payment.gatewayReference,
+      } : null,
+    };
+  }
+
+  async processPaymentDeadlines(now = new Date()) {
+    const due = await this.prisma.placement.findMany({
+      where: { status: 'awaiting_payment', paymentDueAt: { lte: now } },
+      include: { business: true },
+      orderBy: { paymentDueAt: 'asc' },
+    });
+    let raised = 0;
+    for (const placement of due) {
+      const existing = await this.prisma.reviewFlag.findFirst({
+        where: { kind: 'payment_overdue', subjectType: 'placement', subjectId: placement.id },
+        select: { id: true },
+      });
+      if (existing) continue;
+      if (!this.reviewFlags) throw new Error('ReviewFlagService is required to process placement payment deadlines');
+      await this.reviewFlags.raise({
+        kind: 'payment_overdue', subjectType: 'placement', subjectId: placement.id,
+        raisedForStaffId: placement.business.accountAgentId ?? placement.business.leadCreatedByStaffId,
+        details: { placementId: placement.id, businessId: placement.businessId, paymentDueAt: placement.paymentDueAt?.toISOString() },
+      });
+      raised += 1;
+    }
+    return { raised };
   }
 
   async create(vacancyId: string, dto: CreatePlacementDto, actorId: string) {
