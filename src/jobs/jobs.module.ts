@@ -10,13 +10,14 @@ import { MessageModule } from '../modules/message/message.module';
 import { VacancyModule } from '../modules/vacancy/vacancy.module';
 import { InterviewReplyJob } from './interview-reply.job';
 import { PlacementCompletionJob } from './placement-completion.job';
+import { ClaimOverdueJob } from './claim-overdue.job';
 import { PlacementModule } from '../modules/placement/placement.module';
 
 @Module({
   imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule],
   controllers: [JobsController],
-  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob],
-  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob],
+  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob],
+  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob],
 })
 export class JobsModule {}
 

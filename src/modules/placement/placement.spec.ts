@@ -617,13 +617,12 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     });
   });
 
-  describe('Task 5: Dropout reporting and the 60-day replacement clock', () => {
-    it('records employee_left dropout on active placement with dropoutReportedAt and audit log', async () => {
-      // Create candidate, placement, accept, and join
+  describe('Task 5: Dropout reporting endpoint removed (Phase 17 Task 2)', () => {
+    it('returns 404 for every role on POST /placements/:id/dropout', async () => {
       const candidate = await prisma.jobSeeker.create({
         data: {
-          code: `JS-P5DROP1-${timestamp}`,
-          name: 'Dropout Candidate 1',
+          code: `JS-P5DROP404-${timestamp}`,
+          name: 'Dropout 404 Candidate',
           phone: `96${timestamp.toString().slice(-8)}5`,
           tradeSkill: 'Electrician',
           minSalary: 1800000,
@@ -635,25 +634,8 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       });
 
       const placeRes = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2000000);
-
       const placementId = placeRes.body.id;
-
-      // Cannot report dropout on 'offered' placement
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/dropout`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ eligibility: 'employee_left' })
-        .expect(400);
-
-      // Confirm and join
       await markFixturePaymentSucceeded(placementId);
-
-      // Cannot report dropout on 'confirmed' placement
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/dropout`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ eligibility: 'employee_left' })
-        .expect(400);
 
       const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
       await createJoiningCallsFixture({
@@ -670,114 +652,47 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({})
         .expect(201);
 
-      // Reject invalid eligibility
+      // 404 for call agent
       await request(app.getHttpServer())
         .post(`/placements/${placementId}/dropout`)
         .set('Authorization', `Bearer ${caToken}`)
-        .send({ eligibility: 'invalid_reason' })
-        .expect(400);
-
-      // Area-scoping: FA from Indiranagar cannot report dropout on Koramangala business placement
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/dropout`)
-        .set('Authorization', `Bearer ${faIndiToken}`)
         .send({ eligibility: 'employee_left' })
-        .expect(403);
+        .expect(404);
 
-      // Successfully report dropout
-      const reportDate = new Date().toISOString();
-      const dropRes = await request(app.getHttpServer())
+      // 404 for field agent
+      await request(app.getHttpServer())
         .post(`/placements/${placementId}/dropout`)
         .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({
-          eligibility: 'employee_left',
-          dropoutReportedAt: reportDate,
-          reason: 'Worker left for family emergency',
-        })
-        .expect(201);
+        .send({ eligibility: 'employee_left' })
+        .expect(404);
 
-      expect(dropRes.body.id).toBe(placementId);
-      expect(dropRes.body.status).toBe('dropped_out');
-      expect(dropRes.body.eligibility).toBe('employee_left');
-      expect(new Date(dropRes.body.dropoutReportedAt).toISOString()).toBe(reportDate);
-      expect(dropRes.body.dropoutDateCallerSupplied).toBe(true);
-
-      // Check DB state
-      const dbPlacement = await prisma.placement.findUnique({
-        where: { id: placementId },
-      });
-      expect(dbPlacement?.status).toBe('dropped_out');
-      expect(dbPlacement?.eligibility).toBe('employee_left');
-      expect(dbPlacement?.dropoutReportedAt?.toISOString()).toBe(reportDate);
-      expect(dbPlacement?.dropoutDateCallerSupplied).toBe(true);
-
-      // Audit log entry
-      const audit = await prisma.auditLog.findFirst({
-        where: {
-          entityCode: placeRes.body.code,
-          action: 'placement_dropout',
-        },
-      });
-      expect(audit).toBeDefined();
-      expect(audit?.action).toBe('placement_dropout');
-    });
-
-    it('records business_breach dropout marking placement ineligible for remedy', async () => {
-      const candidate = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5DROP2-${timestamp}`,
-          name: 'Dropout Candidate 2',
-          phone: `97${timestamp.toString().slice(-8)}6`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-
-      const placeRes = await createAwaitingPaymentFixture(koraVacancyId, candidate.id, 2000000);
-
-      const placementId = placeRes.body.id;
-
-      await markFixturePaymentSucceeded(placementId);
-
-      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
-      await createJoiningCallsFixture({
-        prisma,
-        idService: app.get(IdService),
-        placementId,
-        jobSeekerId: candidate.id,
-        businessId: koraBusinessId,
-        callTime: plRow.joiningDate ?? new Date(),
-      });
+      // 404 for team lead
       await request(app.getHttpServer())
-        .post(`/placements/${placementId}/joined`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({})
-        .expect(201);
-
-      const dropRes = await request(app.getHttpServer())
         .post(`/placements/${placementId}/dropout`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          eligibility: 'business_breach',
-          reason: 'Business changed work role and underpaid worker',
-        })
-        .expect(201);
+        .set('Authorization', `Bearer ${teamLeadToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(404);
 
-      expect(dropRes.body.status).toBe('dropped_out');
-      expect(dropRes.body.eligibility).toBe('business_breach');
-      expect(dropRes.body.dropoutReportedAt).toBeDefined();
-      expect(dropRes.body.dropoutDateCallerSupplied).toBe(false);
+      // 404 for manager
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${mgrToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(404);
 
-      const dbPlacement = await prisma.placement.findUnique({
-        where: { id: placementId },
-      });
-      expect(dbPlacement?.status).toBe('dropped_out');
-      expect(dbPlacement?.eligibility).toBe('business_breach');
-      expect(dbPlacement?.dropoutDateCallerSupplied).toBe(false);
+      // 404 for ceo
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${ceoToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(404);
+
+      // 404 for finance
+      await request(app.getHttpServer())
+        .post(`/placements/${placementId}/dropout`)
+        .set('Authorization', `Bearer ${financeToken}`)
+        .send({ eligibility: 'employee_left' })
+        .expect(404);
     });
   });
 
@@ -820,15 +735,14 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .expect(201);
 
       const dropoutDate = new Date();
-      const dropoutReportedAt = dropoutDate.toISOString();
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/dropout`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
+      await prisma.placement.update({
+        where: { id: placementId },
+        data: {
+          status: 'dropped_out',
           eligibility: 'employee_left',
-          dropoutReportedAt,
-        })
-        .expect(201);
+          dropoutReportedAt: dropoutDate,
+        },
+      });
 
       // Create 3 replacement candidates
       const rc1 = await prisma.jobSeeker.create({
