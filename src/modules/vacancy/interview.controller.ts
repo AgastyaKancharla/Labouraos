@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards, UseInterceptors } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -12,6 +12,27 @@ type AuthenticatedRequest = Request & { user: JwtPayload };
 @Controller('interviews')
 export class InterviewController {
   constructor(private readonly interviews: InterviewService) {}
+
+  @Get()
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseInterceptors(PiiMaskingInterceptor)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  list(
+    @Req() req: AuthenticatedRequest,
+    @Query('vacancyId') vacancyId?: string,
+    @Query('agentId') agentId?: string,
+    @Query('status') status?: string,
+  ) {
+    return this.interviews.list(req.user.sub, { vacancyId, agentId, status });
+  }
+
+  @Get('vacancies/:vacancyId/slots')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseInterceptors(PiiMaskingInterceptor)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  slots(@Param('vacancyId') vacancyId: string, @Req() req: AuthenticatedRequest) {
+    return this.interviews.listSlots(vacancyId, req.user.sub);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard, RbacGuard)

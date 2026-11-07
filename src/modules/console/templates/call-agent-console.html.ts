@@ -219,8 +219,9 @@ export function renderCallAgentConsoleHtml(): string {
     <button class="tab-btn" data-tab="consent-withdrawal">Withdraw Consent</button>
     <button class="tab-btn" data-tab="vacancy-capture">Vacancy Capture</button>
     <button class="tab-btn" data-tab="shortlist">Candidate Shortlist</button>
+    <button class="tab-btn" data-tab="interviews">Interviews</button>
     <button class="tab-btn" data-tab="contact-attempts">Calling & Hits</button>
-    <button class="tab-btn" data-tab="placement-flow">Placement Flow</button>
+    <button class="tab-btn" data-tab="placement-flow">Placement Payments</button>
     <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
   </nav>
 
@@ -508,6 +509,14 @@ export function renderCallAgentConsoleHtml(): string {
       </div>
     </div>
 
+    <div id="view-interviews" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>My Interviews</span><button class="btn-sm" onclick="loadAgentInterviews()">Refresh</button></div>
+        <div style="display:flex;gap:10px;margin-bottom:12px"><input id="interview-filter-vacancy" placeholder="Filter by vacancy ID or code"><button onclick="loadAgentInterviews()">Filter</button></div>
+        <div id="interview-list" aria-live="polite">Load interviews to see reply and result deadlines.</div>
+      </div>
+    </div>
+
     <!-- 6. Calling & Hit Recording -->
     <div id="view-contact-attempts" class="tab-view hidden">
       <div class="card">
@@ -636,60 +645,12 @@ export function renderCallAgentConsoleHtml(): string {
       </div>
     </div>
 
-    <!-- 7. Placement Offer & Response Flow -->
+    <!-- 7. Placement Status -->
     <div id="view-placement-flow" class="tab-view hidden">
       <div class="card">
-        <div class="card-title">
-          <span>Placement Offer & Response Flow</span>
-        </div>
-        <div class="grid-2">
-          <!-- Offer Placement -->
-          <div style="background: #162032; padding: 16px; border-radius: 6px;">
-            <h3 style="font-size: 1rem; margin-bottom: 12px; color: var(--primary);">1. Make Placement Offer</h3>
-            <div class="form-group">
-              <label>Vacancy ID or Code</label>
-              <input type="text" id="place-vc-id" placeholder="VC-00001 or UUID">
-            </div>
-            <div class="form-group">
-              <label>Candidate ID or Code</label>
-              <input type="text" id="place-js-id" placeholder="JS-00001 or UUID">
-            </div>
-            <div class="form-group">
-              <label>Agreed Monthly Salary (INR)</label>
-              <input type="number" id="place-salary" placeholder="20000">
-            </div>
-            <button onclick="submitPlacementOffer()">Offer Placement</button>
-          </div>
-
-          <!-- Respond & Join -->
-          <div style="background: #162032; padding: 16px; border-radius: 6px;">
-            <h3 style="font-size: 1rem; margin-bottom: 12px; color: var(--primary);">2. Record Response & Joining</h3>
-            <div class="form-group">
-              <label>Placement ID</label>
-              <input type="text" id="resp-place-id" placeholder="PL-00001 or UUID">
-            </div>
-            <div class="form-group">
-              <label>Response</label>
-              <select id="resp-response">
-                <option value="accepted">Accepted / Confirmed</option>
-                <option value="rejected">Rejected</option>
-              </select>
-            </div>
-            <div class="form-group">
-              <label>Rejection Reason (if rejected)</label>
-              <input type="text" id="resp-reason" placeholder="Distance too far, etc.">
-            </div>
-            <button onclick="submitPlacementResponse()">Record Candidate Response</button>
-
-            <hr style="border: 0; border-top: 1px solid var(--card-border); margin: 16px 0;">
-
-            <div class="form-group">
-              <label>Joined Date (when candidate starts)</label>
-              <input type="datetime-local" id="join-date">
-            </div>
-            <button class="btn-success" onclick="submitPlacementJoined()">Record Joined (Triggers Referral Payout)</button>
-          </div>
-        </div>
+        <div class="card-title"><span>Placement Payment Status</span><button class="btn-sm" onclick="loadAgentPlacements()">Refresh</button></div>
+        <p>Selected interviews create placements. The joining date is confirmed after the business fee is paid.</p>
+        <div id="agent-placement-list" aria-live="polite">No placements loaded.</div>
       </div>
     </div>
 
@@ -825,6 +786,8 @@ export function renderCallAgentConsoleHtml(): string {
         btn.classList.add('active');
         document.querySelectorAll('.tab-view').forEach(v => v.classList.add('hidden'));
         document.getElementById('view-' + tab).classList.remove('hidden');
+        if (tab === 'interviews') loadAgentInterviews();
+        if (tab === 'placement-flow') loadAgentPlacements();
       });
     });
 
@@ -1114,6 +1077,8 @@ export function renderCallAgentConsoleHtml(): string {
           const title = document.createElement('h3'); title.textContent = card.firstName + ', ' + card.age; article.appendChild(title);
           const fields = [card.trade + ' · ' + card.yearsExperience + ' yrs', card.languages.join(', '), card.distanceKm + ' km away', '₹' + (card.expectedSalary.minPaise / 100).toLocaleString('en-IN') + ' – ₹' + (card.expectedSalary.maxPaise / 100).toLocaleString('en-IN'), match.matchReasons.join(' · ')];
           fields.filter(Boolean).forEach(value => { const row = document.createElement('p'); row.textContent = value; article.appendChild(row); });
+          const book = document.createElement('button'); book.textContent = 'Book interview'; book.className = 'btn-success';
+          book.addEventListener('click', () => bookInterviewFromCard(vcId, match.jobSeekerId, article)); article.appendChild(book);
           container.appendChild(article);
         });
         if (!data.matches.length) { const empty = document.createElement('p'); empty.textContent = 'No matching candidates on this page.'; container.appendChild(empty); }
@@ -1124,6 +1089,71 @@ export function renderCallAgentConsoleHtml(): string {
       } catch (e) {
         showAlert(e.message, false);
       }
+    }
+
+    async function bookInterviewFromCard(vacancyId, jobSeekerId, article) {
+      try {
+        const slots = await api('/interviews/vacancies/' + encodeURIComponent(vacancyId) + '/slots');
+        const available = slots.filter(slot => slot.remainingCapacity === null || slot.remainingCapacity > 0);
+        if (!available.length) return showAlert('No future interview slots have remaining capacity.', false);
+        let panel = article.querySelector('.interview-slot-booking');
+        if (!panel) { panel = document.createElement('div'); panel.className = 'interview-slot-booking'; panel.style.marginTop = '10px'; article.appendChild(panel); }
+        panel.replaceChildren();
+        const select = document.createElement('select');
+        available.forEach(slot => {
+          const option = document.createElement('option'); option.value = slot.id;
+          option.textContent = new Date(slot.startsAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) + ' · ' +
+            (slot.remainingCapacity === null ? 'capacity open' : slot.remainingCapacity + ' spaces left');
+          select.appendChild(option);
+        });
+        const confirm = document.createElement('button'); confirm.textContent = 'Confirm booking'; confirm.className = 'btn-success';
+        confirm.addEventListener('click', async () => {
+          try {
+            await api('/interviews', { method: 'POST', body: { vacancyId, jobSeekerId, slotId: select.value } });
+            showAlert('Interview booked; offer sent to candidate.'); panel.replaceChildren(); await loadAgentInterviews();
+          } catch (e) { showAlert(e.message, false); }
+        });
+        panel.append(select, confirm);
+      } catch (e) { showAlert(e.message, false); }
+    }
+
+    async function loadAgentInterviews() {
+      const target = document.getElementById('interview-list');
+      try {
+        const vacancyId = document.getElementById('interview-filter-vacancy').value.trim();
+        const data = await api('/interviews' + (vacancyId ? '?vacancyId=' + encodeURIComponent(vacancyId) : ''));
+        target.replaceChildren();
+        if (!data.length) { target.textContent = 'No interviews found.'; return; }
+        data.forEach(interview => {
+          const card = document.createElement('article'); card.className = 'card';
+          const title = document.createElement('h3'); title.textContent = interview.code + ' · ' + interview.vacancy.code + ' · ' + interview.jobSeeker.code; card.appendChild(title);
+          const details = document.createElement('p');
+          details.textContent = interview.status + ' · Reply due ' + new Date(interview.replyDueAt).toLocaleString('en-IN') +
+            ' · Result due ' + new Date(interview.resultDueAt).toLocaleString('en-IN') +
+            ' · Attendance visit ' + (interview.agentAttendanceRequired ? 'needed' : 'not needed'); card.appendChild(details);
+          if (interview.placement) {
+            const placement = document.createElement('p'); placement.textContent = 'Placement ' + interview.placement.code + ' · ' + interview.placement.status +
+              (interview.placement.paymentDueAt ? ' · Payment due ' + new Date(interview.placement.paymentDueAt).toLocaleString('en-IN') : '') +
+              (interview.placement.paidAt ? ' · Paid ' + new Date(interview.placement.paidAt).toLocaleDateString('en-IN') : ''); card.appendChild(placement);
+          }
+          if (interview.answeredOfferCallId) {
+            const form = document.createElement('div'); form.className = 'offer-call-reply-form';
+            const answer = document.createElement('select'); answer.innerHTML = '<option value="accepted_offer">Candidate accepts</option><option value="rejected_offer">Candidate declines</option>';
+            const reason = document.createElement('input'); reason.placeholder = 'Reason required when declined';
+            const submit = document.createElement('button'); submit.textContent = 'Record answered call reply';
+            submit.addEventListener('click', async () => {
+              try {
+                await api('/interviews/' + interview.id + '/call-reply', { method: 'POST', body: {
+                  callRecordId: interview.answeredOfferCallId, answer: answer.value, reason: reason.value.trim() || undefined,
+                } });
+                showAlert('Interview reply recorded.'); await loadAgentInterviews();
+              } catch (e) { showAlert(e.message, false); }
+            });
+            form.append(answer, reason, submit); card.appendChild(form);
+          }
+          target.appendChild(card);
+        });
+      } catch (e) { target.textContent = e.message; }
     }
 
     async function submitSelectedIntroductions(path, body, successMessage) {
@@ -1147,13 +1177,6 @@ export function renderCallAgentConsoleHtml(): string {
 
     function showSelectedInPerson() {
       return submitSelectedIntroductions('/introductions/in-person', {}, 'Candidates recorded as shown in person');
-    }
-
-    function selectCandidateForOffer(vcId, jsId, jsCode) {
-      document.querySelector('.tab-btn[data-tab="placement-flow"]').click();
-      document.getElementById('place-vc-id').value = vcId;
-      document.getElementById('place-js-id').value = jsId;
-      showAlert('Selected candidate ' + jsCode + ' for placement offer');
     }
 
     function formatPhoneLast4(val) {
@@ -1365,54 +1388,22 @@ export function renderCallAgentConsoleHtml(): string {
       }
     }
 
-    // 7. Placement Flow
-    async function submitPlacementOffer() {
-      const vcId = document.getElementById('place-vc-id').value.trim();
-      const jsId = document.getElementById('place-js-id').value.trim();
-      const salary = Number(document.getElementById('place-salary').value) * 100;
-      if (!vcId || !jsId || !salary) return alert('Fill vacancy, candidate, and salary');
+    async function loadAgentPlacements() {
+      const target = document.getElementById('agent-placement-list');
       try {
-        const res = await api('/vacancies/' + vcId + '/placements', {
-          method: 'POST',
-          body: { jobSeekerId: jsId, agreedSalary: salary }
+        const placements = await api('/placements');
+        target.replaceChildren();
+        if (!placements.length) { target.textContent = 'No placements found.'; return; }
+        const now = Date.now();
+        placements.forEach(placement => {
+          const row = document.createElement('article'); row.className = 'card';
+          const heading = document.createElement('h3'); heading.textContent = placement.code + ' · ' + placement.jobSeeker.code + ' · ' + placement.status;
+          const due = placement.paymentDueAt ? new Date(placement.paymentDueAt).toLocaleString('en-IN') : '—';
+          const paymentStatus = placement.paidAt ? 'Paid' : placement.status === 'awaiting_payment' && placement.paymentDueAt && new Date(placement.paymentDueAt).getTime() <= now ? 'Overdue' : placement.status === 'awaiting_payment' ? 'Awaiting payment' : '—';
+          const details = document.createElement('p'); details.textContent = 'Payment due ' + due + ' · ' + paymentStatus;
+          row.append(heading, details); target.appendChild(row);
         });
-        showAlert('Placement offer created! Placement Code: ' + res.code);
-        document.getElementById('resp-place-id').value = res.id;
-      } catch (e) {
-        showAlert(e.message, false);
-      }
-    }
-
-    async function submitPlacementResponse() {
-      const plId = document.getElementById('resp-place-id').value.trim();
-      const resp = document.getElementById('resp-response').value;
-      const reason = document.getElementById('resp-reason').value.trim();
-      if (!plId) return alert('Placement ID required');
-      try {
-        const res = await api('/placements/' + plId + '/respond', {
-          method: 'POST',
-          body: { response: resp, rejectionReason: reason || undefined }
-        });
-        showAlert('Candidate response recorded! Placement status: ' + res.status);
-      } catch (e) {
-        showAlert(e.message, false);
-      }
-    }
-
-    async function submitPlacementJoined() {
-      const plId = document.getElementById('resp-place-id').value.trim();
-      const joinDateInput = document.getElementById('join-date').value;
-      if (!plId) return alert('Placement ID required');
-      try {
-        const body = {};
-        if (joinDateInput) {
-          body.joinedDate = new Date(joinDateInput).toISOString();
-        }
-        const res = await api('/placements/' + plId + '/joined', { method: 'POST', body });
-        showAlert('Candidate joined successfully! Status: ' + res.status + '. Referral payout triggered.');
-      } catch (e) {
-        showAlert(e.message, false);
-      }
+      } catch (e) { target.textContent = e.message; }
     }
 
     window.addEventListener('DOMContentLoaded', () => {

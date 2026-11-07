@@ -327,6 +327,7 @@ export function renderFieldAgentAppHtml(): string {
     <button class="tab-btn" data-tab="visits">Check in & Visits</button>
     <button class="tab-btn" data-tab="vacancy-capture">Capture Vacancy</button>
     <button class="tab-btn" data-tab="shortlist-interview">Shortlist & Interview</button>
+    <button class="tab-btn" data-tab="my-interviews">My Interviews</button>
     <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
   </nav>
 
@@ -584,6 +585,14 @@ export function renderFieldAgentAppHtml(): string {
       </div>
     </div>
 
+    <div id="view-my-interviews" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>My Interviews</span><button class="btn-sm" onclick="loadFieldInterviews()">Refresh</button></div>
+        <div style="display:flex;gap:10px;margin-bottom:12px"><input id="fa-interview-filter-vacancy" placeholder="Filter by vacancy ID or code"><button onclick="loadFieldInterviews()">Filter</button></div>
+        <div id="fa-interview-list" aria-live="polite">Load interviews to see reply and result deadlines.</div>
+      </div>
+    </div>
+
   </main>
 
   <script>
@@ -728,6 +737,7 @@ export function renderFieldAgentAppHtml(): string {
           loadPriorityData(); // Always re-fetches live data, never cached stale across days
         }
         if (tab === 'visits') loadMyAssignments();
+        if (tab === 'my-interviews') loadFieldInterviews();
       });
     });
 
@@ -1090,6 +1100,8 @@ export function renderFieldAgentAppHtml(): string {
           if (card.photoUrl) { const photo = document.createElement('img'); photo.src = card.photoUrl; photo.alt = 'Candidate photo'; photo.width = 72; photo.height = 72; photo.style.cssText = 'display:block;object-fit:cover;border-radius:50%;margin:10px 0'; article.appendChild(photo); }
           const title = document.createElement('h3'); title.textContent = card.firstName + ', ' + card.age; article.appendChild(title);
           [card.trade + ' · ' + card.yearsExperience + ' yrs', card.languages.join(', '), card.distanceKm + ' km away', '₹' + (card.expectedSalary.minPaise / 100).toLocaleString('en-IN') + ' – ₹' + (card.expectedSalary.maxPaise / 100).toLocaleString('en-IN'), match.matchReasons.join(' · ')].filter(Boolean).forEach(value => { const row = document.createElement('p'); row.textContent = value; article.appendChild(row); });
+          const book = document.createElement('button'); book.textContent = 'Book interview'; book.className = 'btn-success';
+          book.addEventListener('click', () => bookFieldInterviewFromCard(vcId, match.jobSeekerId, article)); article.appendChild(book);
           container.appendChild(article);
         });
         if (!data.matches.length) { const empty = document.createElement('p'); empty.textContent = 'No matching candidates on this page.'; container.appendChild(empty); }
@@ -1114,27 +1126,69 @@ export function renderFieldAgentAppHtml(): string {
     function showFieldSelectedInPerson() { return submitFieldIntroductions('/introductions/in-person', {}, 'Candidates recorded as shown in person'); }
     function sendFieldSelectedToOwner() { return submitFieldIntroductions('/introductions', { channel: document.getElementById('fa-shortlist-channel').value }, 'Candidates sent to owner'); }
 
-    function arrangeInterview(vcId, jsId) {
-      document.getElementById('fa-int-vc-id').value = vcId;
-      document.getElementById('fa-int-js-id').value = jsId;
-      document.getElementById('fa-interview-box').style.display = 'block';
-      document.getElementById('fa-interview-box').scrollIntoView({ behavior: 'smooth' });
+    async function bookFieldInterviewFromCard(vacancyId, jobSeekerId, article) {
+      try {
+        const slots = await api('/interviews/vacancies/' + encodeURIComponent(vacancyId) + '/slots');
+        const available = slots.filter(slot => slot.remainingCapacity === null || slot.remainingCapacity > 0);
+        if (!available.length) return showAlert('No future interview slots have remaining capacity.', false);
+        let panel = article.querySelector('.interview-slot-booking');
+        if (!panel) { panel = document.createElement('div'); panel.className = 'interview-slot-booking'; panel.style.marginTop = '10px'; article.appendChild(panel); }
+        panel.replaceChildren();
+        const select = document.createElement('select');
+        available.forEach(slot => {
+          const option = document.createElement('option'); option.value = slot.id;
+          option.textContent = new Date(slot.startsAt).toLocaleString('en-IN', { dateStyle: 'medium', timeStyle: 'short' }) + ' · ' +
+            (slot.remainingCapacity === null ? 'capacity open' : slot.remainingCapacity + ' spaces left');
+          select.appendChild(option);
+        });
+        const confirm = document.createElement('button'); confirm.textContent = 'Confirm booking'; confirm.className = 'btn-success';
+        confirm.addEventListener('click', async () => {
+          try {
+            await api('/interviews', { method: 'POST', body: { vacancyId, jobSeekerId, slotId: select.value } });
+            showAlert('Interview booked; offer sent to candidate.'); panel.replaceChildren(); await loadFieldInterviews();
+          } catch (e) { showAlert(e.message, false); }
+        });
+        panel.append(select, confirm);
+      } catch (e) { showAlert(e.message, false); }
     }
 
-    async function submitFieldInterview() {
-      const vcId = document.getElementById('fa-int-vc-id').value;
-      const jsId = document.getElementById('fa-int-js-id').value;
-      const salary = Number(document.getElementById('fa-int-salary').value) * 100;
-      if (!salary) return alert('Agreed salary is required');
+    async function loadFieldInterviews() {
+      const target = document.getElementById('fa-interview-list');
       try {
-        const res = await api('/vacancies/' + vcId + '/placements', {
-          method: 'POST',
-          body: { jobSeekerId: jsId, agreedSalary: salary }
+        const vacancyId = document.getElementById('fa-interview-filter-vacancy').value.trim();
+        const data = await api('/interviews' + (vacancyId ? '?vacancyId=' + encodeURIComponent(vacancyId) : ''));
+        target.replaceChildren();
+        if (!data.length) { target.textContent = 'No interviews found.'; return; }
+        data.forEach(interview => {
+          const card = document.createElement('article'); card.className = 'card';
+          const title = document.createElement('h3'); title.textContent = interview.code + ' · ' + interview.vacancy.code + ' · ' + interview.jobSeeker.code; card.appendChild(title);
+          const details = document.createElement('p');
+          details.textContent = interview.status + ' · Reply due ' + new Date(interview.replyDueAt).toLocaleString('en-IN') +
+            ' · Result due ' + new Date(interview.resultDueAt).toLocaleString('en-IN') +
+            ' · Attendance visit ' + (interview.agentAttendanceRequired ? 'needed' : 'not needed'); card.appendChild(details);
+          if (interview.placement) {
+            const placement = document.createElement('p'); placement.textContent = 'Placement ' + interview.placement.code + ' · ' + interview.placement.status +
+              (interview.placement.paymentDueAt ? ' · Payment due ' + new Date(interview.placement.paymentDueAt).toLocaleString('en-IN') : '') +
+              (interview.placement.paidAt ? ' · Paid ' + new Date(interview.placement.paidAt).toLocaleDateString('en-IN') : ''); card.appendChild(placement);
+          }
+          if (interview.answeredOfferCallId) {
+            const form = document.createElement('div'); form.className = 'offer-call-reply-form';
+            const answer = document.createElement('select'); answer.innerHTML = '<option value="accepted_offer">Candidate accepts</option><option value="rejected_offer">Candidate declines</option>';
+            const reason = document.createElement('input'); reason.placeholder = 'Reason required when declined';
+            const submit = document.createElement('button'); submit.textContent = 'Record answered call reply';
+            submit.addEventListener('click', async () => {
+              try {
+                await api('/interviews/' + interview.id + '/call-reply', { method: 'POST', body: {
+                  callRecordId: interview.answeredOfferCallId, answer: answer.value, reason: reason.value.trim() || undefined,
+                } });
+                showAlert('Interview reply recorded.'); await loadFieldInterviews();
+              } catch (e) { showAlert(e.message, false); }
+            });
+            form.append(answer, reason, submit); card.appendChild(form);
+          }
+          target.appendChild(card);
         });
-        showAlert('Interview arranged! Placement offer created: ' + res.code);
-      } catch (e) {
-        showAlert(e.message, false);
-      }
+      } catch (e) { target.textContent = e.message; }
     }
 
     function formatPhoneLast4(val) {

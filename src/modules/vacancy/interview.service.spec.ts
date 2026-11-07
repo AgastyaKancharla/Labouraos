@@ -11,10 +11,10 @@ describe('InterviewService booking', () => {
     statusHistory: { create: Mock };
   };
   type PrismaMock = {
-    staff: { findUnique: Mock; findFirst: Mock };
+    staff: { findUnique: Mock; findFirst: Mock; findMany: Mock };
     vacancy: { findFirst: Mock };
     jobSeeker: { findFirst: Mock };
-    vacancyInterviewSlot: { findUnique: Mock };
+    vacancyInterviewSlot: { findUnique: Mock; findMany: Mock };
     interview: { findUnique: Mock; findMany: Mock; update: Mock; updateMany: Mock; count: Mock };
     callRecord: { findUnique: Mock; findFirst: Mock };
     messageLog: { findMany: Mock };
@@ -81,10 +81,10 @@ describe('InterviewService booking', () => {
       statusHistory: { create: jest.fn().mockResolvedValue({}) },
     };
     prisma = {
-      staff: { findUnique: jest.fn().mockResolvedValue({ id: 'call-1', role: 'call_agent' }), findFirst: jest.fn() },
+      staff: { findUnique: jest.fn().mockResolvedValue({ id: 'call-1', role: 'call_agent' }), findFirst: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       vacancy: { findFirst: jest.fn().mockResolvedValue(vacancy) },
       jobSeeker: { findFirst: jest.fn().mockResolvedValue(seeker) },
-      vacancyInterviewSlot: { findUnique: jest.fn().mockResolvedValue(slot) },
+      vacancyInterviewSlot: { findUnique: jest.fn().mockResolvedValue(slot), findMany: jest.fn().mockResolvedValue([]) },
       interview: { findUnique: jest.fn(), findMany: jest.fn(), update: jest.fn().mockResolvedValue({}), updateMany: jest.fn().mockResolvedValue({ count: 1 }), count: jest.fn().mockResolvedValue(0) },
       callRecord: { findUnique: jest.fn(), findFirst: jest.fn() },
       messageLog: { findMany: jest.fn().mockResolvedValue([{ channel: 'sms' }, { channel: 'whatsapp' }]) },
@@ -371,5 +371,47 @@ describe('InterviewService booking', () => {
       data: expect.objectContaining({ status: 'no_result', candidateCheckAnswer: 'no_answer' }),
     }));
     expect(hits.recordHit).not.toHaveBeenCalled();
+  });
+
+  it('lists only the agent’s interviews and exposes a reply call only after an answered offer call', async () => {
+    const interview = {
+      id: 'interview-id', jobSeekerId: 'seeker-id', offerSentAt: now, status: 'offered',
+      jobSeeker: { id: 'seeker-id', code: 'JS-00001', name: 'Candidate' },
+      vacancy: { id: 'vacancy-id', code: 'VC-00001', tradeSkill: 'cook', roleTitle: 'Cook' },
+      placement: null,
+    };
+    prisma.interview.findMany.mockResolvedValue([interview]);
+    prisma.callRecord.findFirst.mockResolvedValue({ id: 'answered-offer-call' });
+
+    const rows = await service.list('call-1', { vacancyId: 'VC-00001' });
+
+    expect(prisma.interview.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { proposedByStaffId: 'call-1', vacancyId: 'vacancy-id' },
+    }));
+    expect(prisma.callRecord.findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ purpose: 'offer', answered: true, subjectId: 'seeker-id' }),
+    }));
+    expect(rows[0].answeredOfferCallId).toBe('answered-offer-call');
+  });
+
+  it('restricts team lead interview lists to their own team', async () => {
+    prisma.staff.findUnique.mockResolvedValue({ id: 'lead-1', role: 'team_lead' });
+    prisma.staff.findMany.mockResolvedValue([{ id: 'lead-1' }, { id: 'agent-1' }]);
+    prisma.interview.findMany.mockResolvedValue([]);
+
+    await service.list('lead-1');
+    expect(prisma.interview.findMany).toHaveBeenCalledWith(expect.objectContaining({
+      where: { proposedByStaffId: { in: ['lead-1', 'agent-1'] } },
+    }));
+    await expect(service.list('lead-1', { agentId: 'outside-agent' })).rejects.toThrow('your team');
+  });
+
+  it('lists future slots with remaining capacity calculated from live interviews', async () => {
+    prisma.vacancyInterviewSlot.findMany.mockResolvedValue([slot]);
+    prisma.interview.count.mockResolvedValue(1);
+
+    const rows = await service.listSlots('VC-00001', 'call-1');
+
+    expect(rows).toEqual([{ ...slot, booked: 1, remainingCapacity: 1 }]);
   });
 });
