@@ -406,7 +406,7 @@ export class InterviewService {
     const policy = await this.pricingService.current();
     const interviews = await this.prisma.interview.findMany({
       where: { status: 'confirmed' },
-      include: { business: true, jobSeeker: true },
+      include: { business: true, jobSeeker: true, vacancy: true },
       orderBy: { slotEndsAt: 'asc' },
     });
     let requestsSent = 0;
@@ -581,7 +581,7 @@ export class InterviewService {
         channel, template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
         relatedType: 'interview', relatedId: interview.id, variables: { link, interviewTime },
       }))),
-      this.sendCandidateOfferCheck(interview, now),
+      this.sendCandidateOfferCheck(interview),
     ]);
     if (ownerMessages.some((message) => message.status === 'failed')) {
       throw new ServiceUnavailableException('The owner result request could not be delivered');
@@ -590,12 +590,11 @@ export class InterviewService {
 
   private async sendCandidateOfferCheck(
     interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
-    now: Date,
   ) {
     const policy = await this.pricingService.current();
     const token = this.consentLinks.createInterviewActionToken(
       interview.id, 'candidate_check', interview.jobSeeker.phone,
-      new Date(now.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
+      new Date(interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
     );
     const link = publicLink(`/interviews/check/${token}`);
     const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
