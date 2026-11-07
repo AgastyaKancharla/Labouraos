@@ -661,17 +661,9 @@ describe('Phase 16 Gate End-to-End Proof', () => {
 
     // Gateway webhook confirms the card payment
     const gwPayload = {
-      event: 'payment.captured',
-      payload: {
-        payment: {
-          entity: {
-            id: switchedPayment!.gatewayReference,
-            amount: 1180000,
-            status: 'captured',
-            notes: { paymentId: cardPayment!.id },
-          },
-        },
-      },
+      gatewayReference: switchedPayment!.gatewayReference,
+      status: 'succeeded',
+      amountPaise: 1180000,
     };
 
     await request(app.getHttpServer())
