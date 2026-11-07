@@ -343,7 +343,8 @@ describe('InterviewService booking', () => {
 
   it('raises an idempotent mismatch flag when the candidate says yes and the owner did not select them', async () => {
     prisma.interview.findUnique.mockResolvedValue({
-      ...confirmedInterview(), status: 'completed', result: 'not_selected', candidateCheckAnswer: 'offered_yes',
+      ...confirmedInterview(), status: 'completed', result: 'not_selected', resultRecordedAt: now,
+      candidateCheckAnswer: 'offered_yes',
     });
     await service.submitCandidateOfferCheck('single-use-token', 'yes');
     expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({
