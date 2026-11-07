@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
-import qrcode from 'qrcode-generator';
+import qrcode = require('qrcode-generator');
 import { publicLink } from '../../common/public-link';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';

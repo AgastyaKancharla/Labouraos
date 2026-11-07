@@ -42,7 +42,12 @@ describe('Phase 6.5 Task 5: Health Check & Readiness Probe Split', () => {
 
       const response = controller.getHealth();
 
-      expect(response).toEqual({ status: 'ok' });
+      expect(response).toEqual({
+        status: 'ok',
+        upiCollection: process.env.COMPANY_UPI_VPA?.trim() && process.env.COMPANY_UPI_PAYEE_NAME?.trim()
+          ? 'configured'
+          : 'UPI collection not configured',
+      });
       expect(dbSpy).not.toHaveBeenCalled();
       expect(redisSpy).not.toHaveBeenCalled();
       expect(mockPrisma.$queryRawUnsafe).not.toHaveBeenCalled();
