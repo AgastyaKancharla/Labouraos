@@ -6,6 +6,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { replacementGuaranteeDeadline } from '../../common/money/money';
 import { seededPricingService } from '../../test-support/seeded-pricing';
 
@@ -97,6 +98,7 @@ describe('Phase 6.5 Task 7: Enforce 60-Day Replacement Guarantee', () => {
       {} as PaymentService,
       seededPricingService(),
       {} as UpiCollectionService,
+      {} as unknown as ReviewFlagService,
     );
   });
 
