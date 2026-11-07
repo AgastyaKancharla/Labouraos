@@ -124,6 +124,8 @@ Follow these steps in exact sequential order:
 | `REDIS_TLS` | `true` | Enables TLS for Upstash |
 | `JWT_SECRET` | *Auto-generated or 32+ char secret* | Secret used to sign authentication tokens |
 | `PUBLIC_APP_URL` | *e.g. `https://app.laboura.in`* | Public web address of the app, used to create absolute links sent by SMS and WhatsApp |
+| `COMPANY_UPI_VPA` | *e.g. `laboura@bank`* | Company's UPI ID used to create payment links and QR codes; payment requests fail clearly while unset, but the server can start without it |
+| `COMPANY_UPI_PAYEE_NAME` | *e.g. `Laboura`* | Payee name displayed by UPI apps and on the public payment page; payment requests fail clearly while unset |
 | `LOGIN_CODE_SECRET` | *Auto-generated. Do not type one.* | Secret used to compute the 6-digit login code. See "Where to find LOGIN_CODE_SECRET" below |
 | `STAFF_BOOTSTRAP_SECRET` | *Auto-generated or random secret* | Secret required for initial CEO account creation |
 | `OTP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SMS gateway is active |

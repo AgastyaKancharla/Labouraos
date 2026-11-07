@@ -233,6 +233,14 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     expect(payment.gatewayReference).toBeNull();
   });
 
+  it('has no route that accepts an image as payment proof', async () => {
+    await request(app.getHttpServer())
+      .post('/payments/request/not-a-token/proof')
+      .set('Content-Type', 'image/png')
+      .send(Buffer.from([137, 80, 78, 71]))
+      .expect(404);
+  });
+
   it('MANDATORY IDEMPOTENCY: firing exact same webhook twice results in exactly 1 payment, 1 audit entry, and 1 activation', async () => {
     const phoneSuffix = (timestamp + 2).toString().slice(-8);
     const seeker = await createPendingJobSeeker(phoneSuffix);

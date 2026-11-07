@@ -6,10 +6,14 @@ export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
-  getHealth(): { status: string } {
+  getHealth(): { status: string; upiCollection: string } {
     // Cheap liveness probe with NO external dependency checks.
     // Pointed to by Render's healthCheckPath so container boot and deploys never gate on dependency reachability.
-    return { status: 'ok' };
+    const configured = Boolean(process.env.COMPANY_UPI_VPA?.trim() && process.env.COMPANY_UPI_PAYEE_NAME?.trim());
+    return {
+      status: 'ok',
+      upiCollection: configured ? 'configured' : 'UPI collection not configured',
+    };
   }
 
   @Get('ready')
