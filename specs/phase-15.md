@@ -101,15 +101,15 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 15 Gate
 
-- [ ] An offer is refused unless the candidate passes every matching rule and the slot has room; the suitability snapshot is stored — by test
-- [ ] The business name and address reach the candidate only after they confirm; the owner gets first name, photo and time only — by test
-- [ ] A reply counts only from the candidate's own link tap or an answered, recorded offer call — by test
-- [ ] Declined, no reply after a documented call, and no-show each record one hit; not selected and `no_result` never do — by test
-- [ ] Only the owner, by OTP on their own phone, records a result; a mismatch with the candidate's answer is flagged — by test
-- [ ] The 8 PM notice, the 24-hour flag and the 48-hour close each fire once at the right time — by test
-- [ ] The fee comes from the signed agreement; the worker is `placed` only after payment succeeds — by test
-- [ ] The old `POST /placements` and `/respond` are gone — by test
-- [ ] **End-to-end proof, recorded in the report:** a matched candidate is offered a walk-in slot; the SMS has no business name; they tap Yes and receive the business address; the first-interview attendance visit is assigned; after the slot the owner selects them by OTP with ₹16,000 salary and a joining date; the candidate answers "yes, offered"; a placement appears `awaiting_payment` with the fee from the agreement; the job seeker is still `active`; the payment succeeds; the job seeker is `placed` and receives the joining date. Separately: a second candidate never replies after a recorded call → `no_reply` and a hit; a third interview gets no owner result → overdue flag at 24 hours, `no_result` at 48 hours, no hit, and that candidate reappears in matching.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] An offer is refused unless the candidate passes every matching rule and the slot has room; the suitability snapshot is stored — by test
+- [x] The business name and address reach the candidate only after they confirm; the owner gets first name, photo and time only — by test
+- [x] A reply counts only from the candidate's own link tap or an answered, recorded offer call — by test
+- [x] Declined, no reply after a documented call, and no-show each record one hit; not selected and `no_result` never do — by test
+- [x] Only the owner, by OTP on their own phone, records a result; a mismatch with the candidate's answer is flagged — by test
+- [x] The 8 PM notice, the 24-hour flag and the 48-hour close each fire once at the right time — by test
+- [x] The fee comes from the signed agreement; the worker is `placed` only after payment succeeds — by test
+- [x] The old `POST /placements` and `/respond` are gone — by test
+- [x] **End-to-end proof, recorded in the report:** a matched candidate is offered a walk-in slot; the SMS has no business name; they tap Yes and receive the business address; the first-interview attendance visit is assigned; after the slot the owner selects them by OTP with ₹16,000 salary and a joining date; the candidate answers "yes, offered"; a placement appears `awaiting_payment` with the fee from the agreement; the job seeker is still `active`; the payment succeeds; the job seeker is `placed` and receives the joining date. Separately: a second candidate never replies after a recorded call → `no_reply` and a hit; a third interview gets no owner result → overdue flag at 24 hours, `no_result` at 48 hours, no hit, and that candidate reappears in matching.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.
