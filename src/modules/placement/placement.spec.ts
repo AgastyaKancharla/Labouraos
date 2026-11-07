@@ -559,6 +559,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
       // Successfully record joined with answered confirmation calls
       const explicitDate = '2026-10-20T08:00:00.000Z';
+      await prisma.callRecord.deleteMany({ where: { relatedId: placementId } });
       await prisma.placement.update({
         where: { id: placementId },
         data: { joiningDate: new Date(explicitDate) },
