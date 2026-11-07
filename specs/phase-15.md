@@ -87,7 +87,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Remove** `POST /placements` and `POST /placements/:id/respond` (the old offer flow). Leave a test that each now returns 404 for every role, like earlier removed endpoints. The replacement-candidate endpoints stay.
 - Tests: a selected result creates one `awaiting_payment` placement with the agreement's percentages; changing `PricingPolicy` afterwards doesn't change it; the job seeker is **not** `placed` before payment; payment success sets `placed`, `paidAt`, `confirmed` and sends the joining date once; an overdue payment raises the flag and sends nothing; the two old endpoints return 404.
 
-### [ ] Task 6 — Screens
+### [x] Task 6 — Screens
 **Branch:** `phase-15/task-6-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**

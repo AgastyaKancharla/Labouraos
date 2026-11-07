@@ -309,6 +309,87 @@ export class InterviewService {
     return { ...created.interview, offerMessageLogIds: messageLogIds };
   }
 
+  async list(staffId: string, filters: { vacancyId?: string; agentId?: string; status?: string } = {}) {
+    const actor = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!actor) throw new NotFoundException('Staff not found');
+    if (!['call_agent', 'field_agent', 'team_lead', 'manager', 'ceo'].includes(actor.role)) {
+      throw new ForbiddenException('This staff role cannot view interviews');
+    }
+    const where: Prisma.InterviewWhereInput = {};
+    if (filters.status) where.status = filters.status;
+    if (filters.vacancyId) {
+      const vacancy = await this.prisma.vacancy.findFirst({
+        where: filters.vacancyId.startsWith('VC-') ? { code: filters.vacancyId } : { id: filters.vacancyId },
+        select: { id: true },
+      });
+      if (!vacancy) throw new NotFoundException('Vacancy not found');
+      where.vacancyId = vacancy.id;
+    }
+
+    if (actor.role === 'call_agent' || actor.role === 'field_agent') {
+      if (filters.agentId && filters.agentId !== actor.id) throw new ForbiddenException('You can only view your own interviews');
+      where.proposedByStaffId = actor.id;
+    } else if (actor.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({
+        where: { OR: [{ id: actor.id }, { teamLeadId: actor.id }] }, select: { id: true },
+      });
+      const teamIds = team.map(({ id }) => id);
+      if (filters.agentId && !teamIds.includes(filters.agentId)) throw new ForbiddenException('You can only view interviews proposed by your team');
+      where.proposedByStaffId = filters.agentId ?? { in: teamIds };
+    } else if (filters.agentId) {
+      where.proposedByStaffId = filters.agentId;
+    }
+
+    const rows = await this.prisma.interview.findMany({
+      where,
+      include: {
+        jobSeeker: { select: { id: true, code: true, name: true } },
+        vacancy: { select: { id: true, code: true, tradeSkill: true, roleTitle: true } },
+        placement: { select: { id: true, code: true, status: true, paymentDueAt: true, paidAt: true } },
+      },
+      orderBy: { slotStartsAt: 'desc' },
+    });
+    return Promise.all(rows.map(async (interview) => {
+      const answeredOfferCall = interview.status === 'offered'
+        ? await this.prisma.callRecord.findFirst({
+          where: {
+            subjectType: 'job_seeker', subjectId: interview.jobSeekerId, purpose: 'offer', answered: true,
+            OR: [
+              { startedAt: { gte: interview.offerSentAt } },
+              { startedAt: null, createdAt: { gte: interview.offerSentAt } },
+            ],
+          },
+          orderBy: { createdAt: 'desc' }, select: { id: true },
+        })
+        : null;
+      return { ...interview, answeredOfferCallId: answeredOfferCall?.id ?? null };
+    }));
+  }
+
+  async listSlots(vacancyRef: string, staffId: string) {
+    const actor = await this.prisma.staff.findUnique({ where: { id: staffId } });
+    if (!actor) throw new NotFoundException('Staff not found');
+    if (!['call_agent', 'field_agent', 'team_lead', 'manager', 'ceo'].includes(actor.role)) {
+      throw new ForbiddenException('This staff role cannot view interview slots');
+    }
+    const vacancy = await this.prisma.vacancy.findFirst({
+      where: vacancyRef.startsWith('VC-') ? { code: vacancyRef } : { id: vacancyRef },
+      select: { id: true, replacementForPlacementId: true },
+    });
+    if (!vacancy) throw new NotFoundException('Vacancy not found');
+    if (vacancy.replacementForPlacementId) throw new BadRequestException('Interviews cannot be booked for replacement vacancies');
+    const slots = await this.prisma.vacancyInterviewSlot.findMany({
+      where: { vacancyId: vacancy.id, startsAt: { gt: this.clock.now() } },
+      orderBy: { startsAt: 'asc' },
+    });
+    return Promise.all(slots.map(async (slot) => {
+      const booked = await this.prisma.interview.count({
+        where: { vacancyInterviewSlotId: slot.id, status: { in: ['offered', 'confirmed'] } },
+      });
+      return { ...slot, booked, remainingCapacity: slot.capacity === null ? null : Math.max(0, slot.capacity - booked) };
+    }));
+  }
+
   async respondFromLink(token: string, answer: 'yes' | 'no') {
     if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
     const link = this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');

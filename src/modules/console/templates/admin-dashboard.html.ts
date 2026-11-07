@@ -298,6 +298,7 @@ export function renderAdminDashboardHtml(): string {
     <button class="tab-btn" data-tab="businesses">Businesses</button>
     <button class="tab-btn hidden" id="tab-business-reviews" data-tab="business-reviews">Business Reviews</button>
     <button class="tab-btn" data-tab="vacancies">Vacancies</button>
+    <button class="tab-btn hidden" id="tab-interview-oversight" data-tab="interview-oversight">Interview Oversight</button>
     <button class="tab-btn" data-tab="placements">Placements</button>
     <button class="tab-btn" data-tab="payments">Payment Ledger</button>
     <button class="tab-btn" data-tab="refunds">Refund Approvals</button>
@@ -443,6 +444,14 @@ export function renderAdminDashboardHtml(): string {
       </div>
     </div>
 
+    <div id="view-interview-oversight" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title"><span>Team Interview Oversight</span><button class="btn-sm" onclick="loadInterviewOversight()">Refresh</button></div>
+        <div style="display:flex;gap:10px;margin-bottom:12px"><input id="team-interview-agent" placeholder="Filter by team agent ID"><input id="team-interview-vacancy" placeholder="Filter by vacancy ID or code"><button onclick="loadInterviewOversight()">Filter</button></div>
+        <div id="interview-oversight-list" aria-live="polite">No interview data loaded.</div>
+      </div>
+    </div>
+
     <!-- Placements View -->
     <div id="view-placements" class="tab-view hidden">
       <div class="card">
@@ -461,11 +470,13 @@ export function renderAdminDashboardHtml(): string {
                 <th>Fee</th>
                 <th>GST</th>
                 <th>Status</th>
+                <th>Payment due</th>
+                <th>Payment status</th>
                 <th>Joined Date</th>
               </tr>
             </thead>
             <tbody id="placements-tbody">
-              <tr><td colspan="8" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="10" style="text-align: center;">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -757,6 +768,9 @@ export function renderAdminDashboardHtml(): string {
       const reviewTab = document.getElementById('tab-business-reviews');
       if (['team_lead', 'manager', 'ceo'].includes(payload.role)) reviewTab.classList.remove('hidden');
       else reviewTab.classList.add('hidden');
+      const interviewTab = document.getElementById('tab-interview-oversight');
+      if (['team_lead', 'manager', 'ceo'].includes(payload.role)) interviewTab.classList.remove('hidden');
+      else interviewTab.classList.add('hidden');
 
       labouraShowApproverTabs();
       if (labouraIsApprover()) {
@@ -789,6 +803,7 @@ export function renderAdminDashboardHtml(): string {
       else if (tab === 'businesses') loadBusinesses();
       else if (tab === 'business-reviews') loadBusinessReviewQueue();
       else if (tab === 'vacancies') loadVacancies();
+      else if (tab === 'interview-oversight') loadInterviewOversight();
       else if (tab === 'placements') loadPlacements();
       else if (tab === 'payments') loadPayments();
       else if (tab === 'pricing') loadPricing();
@@ -1148,6 +1163,7 @@ export function renderAdminDashboardHtml(): string {
       try {
         const data = await api('/placements');
         const tbody = document.getElementById('placements-tbody');
+        const now = Date.now();
         tbody.innerHTML = data.map(p => \`
           <tr>
             <td><strong>\${p.code}</strong></td>
@@ -1157,12 +1173,46 @@ export function renderAdminDashboardHtml(): string {
             <td>₹\${(p.placementFee/100).toLocaleString('en-IN')}</td>
             <td>₹\${(p.gstAmount/100).toLocaleString('en-IN')}</td>
             <td><span class="badge">\${p.status}</span></td>
+            <td>\${p.paymentDueAt ? new Date(p.paymentDueAt).toLocaleString('en-IN') : '—'}</td>
+            <td>\${p.paidAt ? 'Paid' : p.status === 'awaiting_payment' && p.paymentDueAt && new Date(p.paymentDueAt).getTime() <= now ? 'Overdue' : p.status === 'awaiting_payment' ? 'Awaiting payment' : '—'}</td>
             <td>\${p.joinedDate ? new Date(p.joinedDate).toLocaleDateString() : '—'}</td>
           </tr>
-        \`).join('') || '<tr><td colspan="8">No placements found</td></tr>';
+        \`).join('') || '<tr><td colspan="10">No placements found</td></tr>';
       } catch (e) {
         console.error(e);
       }
+    }
+
+    async function loadInterviewOversight() {
+      const target = document.getElementById('interview-oversight-list');
+      target.textContent = 'Loading interviews…';
+      try {
+        const agentId = document.getElementById('team-interview-agent').value.trim();
+        const vacancyId = document.getElementById('team-interview-vacancy').value.trim();
+        const params = new URLSearchParams();
+        if (agentId) params.set('agentId', agentId);
+        if (vacancyId) params.set('vacancyId', vacancyId);
+        const query = params.toString();
+        const interviews = await api('/interviews' + (query ? '?' + query : ''));
+        const now = Date.now();
+        const rows = interviews.map(interview => {
+          const overdue = interview.status === 'confirmed' && !interview.resultRecordedAt && new Date(interview.resultDueAt).getTime() <= now;
+          const mismatch = (interview.result === 'not_selected' || interview.status === 'no_result') && interview.candidateCheckAnswer === 'offered_yes';
+          const noResult = interview.status === 'no_result';
+          return { interview, overdue, mismatch, noResult };
+        }).filter(row => row.overdue || row.mismatch || row.noResult);
+        target.replaceChildren();
+        if (!rows.length) { target.textContent = 'No overdue results, mismatches, or no-result interviews.'; return; }
+        rows.forEach(({ interview, overdue, mismatch, noResult }) => {
+          const card = document.createElement('article'); card.className = 'board-card';
+          const heading = document.createElement('h3'); heading.textContent = interview.code + ' · ' + interview.vacancy.code + ' · ' + interview.jobSeeker.code + ' · ' + interview.status;
+          const details = document.createElement('p'); details.textContent =
+            (overdue ? 'OVERDUE RESULT · ' : '') + (mismatch ? 'RESULT MISMATCH · ' : '') + (noResult ? 'NO RESULT · ' : '') +
+            'Reply due ' + new Date(interview.replyDueAt).toLocaleString('en-IN') + ' · Result due ' + new Date(interview.resultDueAt).toLocaleString('en-IN') +
+            ' · Attendance ' + (interview.agentAttendanceRequired ? 'needed' : 'not needed');
+          card.append(heading, details); target.appendChild(card);
+        });
+      } catch (e) { target.textContent = e.message || 'Could not load interviews.'; }
     }
 
     async function loadPayments() {

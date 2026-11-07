@@ -87,7 +87,7 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
       expect(res.text).toContain('Referral Onboarding');
       expect(res.text).toContain('Business Onboarding');
       expect(res.text).toContain('Candidate Shortlist');
-      expect(res.text).toContain('Placement Flow');
+      expect(res.text).toContain('Placement Payment Status');
     });
 
     it('serves Field Agent app at GET /field-agent with auth modal and live Priority Dashboard', async () => {

@@ -114,9 +114,10 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     expect(html).toContain('/priority/vacancies');
     expect(html).toContain('/priority/trades');
 
-    // Shortlist and interview arrangement
+    // Shortlist, interview booking, and interview status
     expect(html).toContain('fa-shortlist-vc-id');
-    expect(html).toContain('fa-interview-box');
+    expect(html).toContain('Book interview');
+    expect(html).toContain('fa-interview-list');
     expect(html).toContain('/shortlist?page=');
     expect(html).toContain('fa-shortlist-next');
     expect(html).toContain('Show next 3');

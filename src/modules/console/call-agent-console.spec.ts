@@ -98,10 +98,11 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     // Calling and hits
     expect(html).toContain('call-agent-outcome');
     expect(html).toContain('hit-reason');
-    // Placement offer and response flow
-    expect(html).toContain('place-vc-id');
-    expect(html).toContain('resp-response');
-    expect(html).toContain('submitPlacementJoined');
+    // Interview booking, eligible call reply, and placement payment status
+    expect(html).toContain('Book interview');
+    expect(html).toContain('interview-list');
+    expect(html).toContain('answeredOfferCallId');
+    expect(html).toContain('agent-placement-list');
   });
 
   it('verifies Call Agent end-to-end API workflow from console', async () => {
