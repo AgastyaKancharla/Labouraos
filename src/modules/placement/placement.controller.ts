@@ -19,7 +19,8 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RecordJoinedDto } from './dto/record-joined.dto';
-import { RecordDropoutDto } from './dto/record-dropout.dto';
+import { ReportClaimDto } from './dto/report-claim.dto';
+import { DecideClaimDto } from './dto/decide-claim.dto';
 import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
 import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
@@ -50,15 +51,36 @@ export class PlacementController {
     return this.placementService.recordJoined(id, dto, req.user.sub);
   }
 
-  @Post(':id/dropout')
+  @Get(':id/claims')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo', 'finance')
+  @RequirePermission('placement', 'read')
+  async listClaims(
+    @Param('id') id: string,
+  ) {
+    return this.placementService.listClaims(id);
+  }
+
+  @Post(':id/claims')
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
   @RequirePermission('placement', 'write')
-  async recordDropout(
+  async reportClaim(
     @Param('id') id: string,
-    @Body() dto: RecordDropoutDto,
+    @Body() dto: ReportClaimDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.placementService.recordDropout(id, dto, req.user.sub);
+    return this.placementService.reportClaim(id, dto, req.user.sub);
+  }
+
+  @Post(':id/claims/:claimId/decide')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'write')
+  async decideClaim(
+    @Param('id') id: string,
+    @Param('claimId') claimId: string,
+    @Body() dto: DecideClaimDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.decideClaim(id, claimId, dto, req.user.sub);
   }
 
   @Post(':id/replacement-candidates')

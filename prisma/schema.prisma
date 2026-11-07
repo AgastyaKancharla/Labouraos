@@ -386,6 +386,7 @@ model Placement {
   replacementRejectionCount  Int         @default(0)
   replacementVacancies       Vacancy[]   @relation("ReplacementPlacementVacancies")
   replacementCandidates      ReplacementCandidate[]
+  replacementClaims          ReplacementClaim[]
   payments                   Payment[]
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
@@ -417,6 +418,42 @@ model ReplacementCandidate {
 
   @@index([placementId])
   @@index([jobSeekerId])
+}
+
+model ReplacementClaim {
+  id                     String      @id @default(uuid())
+  code                   String      @unique
+  placementId            String
+  placement              Placement   @relation(fields: [placementId], references: [id], onDelete: Restrict)
+  workerLeftOn           DateTime
+  reportedAt             DateTime    @default(now())
+  reportedWithinDeadline Boolean
+  feePaidInFull          Boolean
+  reason                 String
+  evidencePaths          String[]    @default([])
+  exitCallRecordId       String?
+  exitCallRecord         CallRecord? @relation("ExitCallRecord", fields: [exitCallRecordId], references: [id], onDelete: SetNull)
+  callRecordId           String
+  callRecord             CallRecord  @relation("ClaimCallRecord", fields: [callRecordId], references: [id], onDelete: Restrict)
+  decision               String?
+  decisionReason         String?
+  decidedByStaffId       String?
+  decidedByStaff         Staff?      @relation("ClaimDecidedBy", fields: [decidedByStaffId], references: [id], onDelete: SetNull)
+  decidedAt              DateTime?
+  decisionDueAt          DateTime
+  overruledByStaffId     String?
+  overruledByStaff       Staff?      @relation("ClaimOverruledBy", fields: [overruledByStaffId], references: [id], onDelete: SetNull)
+  overruleReason         String?
+  createdAt              DateTime    @default(now())
+  updatedAt              DateTime    @updatedAt
+
+  @@index([placementId])
+  @@index([decision])
+  @@index([decisionDueAt])
+  @@index([decidedByStaffId])
+  @@index([overruledByStaffId])
+  @@index([callRecordId])
+  @@index([exitCallRecordId])
 }
 
 model Staff {
@@ -471,6 +508,8 @@ model Staff {
   callRecords       CallRecord[]
   bankCreditsEntered BankCredit[]     @relation("BankCreditEnteredBy")
   reversedHits      JobSeekerHit[]   @relation("JobSeekerHitReversedBy")
+  claimsDecided     ReplacementClaim[] @relation("ClaimDecidedBy")
+  claimsOverruled   ReplacementClaim[] @relation("ClaimOverruledBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
@@ -974,6 +1013,8 @@ model CallRecord {
   interviewReply       Interview?
   placementsAsWorkerJoining   Placement[] @relation("PlacementJoiningWorkerCall")
   placementsAsBusinessJoining Placement[] @relation("PlacementJoiningBusinessCall")
+  exitCallClaims              ReplacementClaim[] @relation("ExitCallRecord")
+  callRecordClaims            ReplacementClaim[] @relation("ClaimCallRecord")
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 

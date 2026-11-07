@@ -36,7 +36,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - A daily job moves an `active` placement to `completed` on day `replacementWindowDays` (60) after its **root** placement's `joinedDate`, unless a claim is open on it or its guarantee has ended.
 - Tests: joining is refused with only one side confirmed, with an unanswered call, or before the joining date; with both it sets `active` and `joinedDate`; no request field can set `joinedDate`; day 60 completes the placement once; an open claim stops completion.
 
-### [ ] Task 2 — Replacement claims
+### [x] Task 2 — Replacement claims
 **Branch:** `phase-17/task-2-claims` · **Migration folder:** `20261110110000_add_replacement_claim`
 
 **Acceptance:**
