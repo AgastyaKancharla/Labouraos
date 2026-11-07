@@ -8,12 +8,14 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { SMS_PROVIDER, SmsProvider } from '../message/sms.provider';
 import { WHATSAPP_PROVIDER, WhatsAppProvider } from '../../common/whatsapp/whatsapp.interface';
 import { PlacementService } from '../placement/placement.service';
+import { PricingService } from '../pricing/pricing.service';
 
 describe('Phase 16 Gate End-to-End Proof', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
   let placementService: PlacementService;
+  let pricingService: PricingService;
 
   const testSecret = 'phase16_test_webhook_secret_32_chars';
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
@@ -37,6 +39,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
   let teamLeadToken = '';
 
   let ceoId = '';
+  let financeId = '';
   let callAgentId = '';
   let fieldAgentId = '';
 
@@ -77,6 +80,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     prisma = app.get(PrismaService);
     jwt = app.get(JwtService);
     placementService = app.get(PlacementService);
+    pricingService = app.get(PricingService);
 
     // Create Staff accounts
     const passwordHash = 'dummy-hash';
@@ -96,7 +100,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         passwordHash, role: 'finance', status: 'active', city: 'Bengaluru',
       },
     });
-    staffIds.push(finance.id);
+    financeId = finance.id; staffIds.push(finance.id);
     financeToken = jwt.sign({ sub: finance.id, role: finance.role, code: finance.code, email: finance.email });
 
     const manager = await prisma.staff.create({
@@ -171,6 +175,8 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         city: 'Bengaluru',
         minSalary: 1400000,
         maxSalary: 1800000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
       },
     });
     seekerIds.push(seeker.id);
@@ -302,6 +308,8 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         gstPercent: 18,
         signedName: 'Owner Proof 1',
         signedPhone: bizPhone,
+        otpRequestId: `otp-${suffix}`,
+        documentStoragePath: `agreements/${suffix}.pdf`,
         signedAt: new Date(),
       },
     });
@@ -333,7 +341,6 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         startsAt: new Date(Date.now() + 86400000),
         endsAt: new Date(Date.now() + 90000000),
         capacity: 5,
-        bookedCount: 1,
       },
     });
     slotIds.push(slot.id);
@@ -342,24 +349,32 @@ describe('Phase 16 Gate End-to-End Proof', () => {
       data: {
         code: `IN-P16-${suffix}`,
         vacancyId: vacancy.id,
+        businessId: business.id,
         jobSeekerId: seeker.id,
-        slotId: slot.id,
-        status: 'confirmed',
+        vacancyInterviewSlotId: slot.id,
+        slotStartsAt: slot.startsAt,
+        slotEndsAt: slot.endsAt,
+        status: 'completed',
+        result: 'selected',
+        resultRecordedAt: new Date(),
+        selectedSalaryPaise: 1600000,
+        selectedJoiningDate: new Date('2026-11-20'),
         proposedByStaffId: callAgentId,
         replyDueAt: new Date(Date.now() + 172800000),
         resultDueAt: new Date(Date.now() + 86400000),
+        suitabilitySnapshot: { score: 100, tradeMatched: true },
+        offerSentAt: new Date(),
       },
     });
     interviewIds.push(interview.id);
 
     // Owner selects candidate at ₹16,000 (agreedSalary: 1600000 paise)
     // Creates placement awaiting_payment with fee 50% (800000 paise) + 18% GST (144000 paise) = 944000 paise
-    const placement = await placementService.createAwaitingPaymentFromInterview(
+    const createdPlacement = await placementService.createAwaitingPaymentFromInterview(
       interview.id,
-      1600000,
-      new Date('2026-11-20'),
-      fieldAgentId,
+      new Date('2026-11-09T10:00:00Z'),
     );
+    const placement = createdPlacement;
     placementIds.push(placement.id);
 
     expect(placement.status).toBe('awaiting_payment');
@@ -486,53 +501,19 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     expect(confirmedCredit?.matchedPaymentId).toBe(placementPayment!.id);
 
     // Gate Item 6: Automatic GST invoice created using placement's gstPercentAtCreation
-    const invoice = await placementService.getInvoice(placement.id);
+    const invoice = await placementService.getInvoice(placement.id, financeId);
     expect(invoice.invoiceNumber).toMatch(/^INV-\d{5}$/);
-    expect(invoice.feeAmount).toBe(800000);
-    expect(invoice.gstPercent).toBe(18);
-    expect(invoice.gstAmount).toBe(144000);
-    expect(invoice.totalAmount).toBe(944000);
+    expect(invoice.summary.subtotalPaise).toBe(800000);
+    expect(invoice.lineItems[0].taxRatePercent).toBe(18);
+    expect(invoice.summary.totalTaxPaise).toBe(144000);
+    expect(invoice.summary.totalAmountPaise).toBe(944000);
 
     // Changing policy GST percent to 28% does NOT change existing invoice
-    await prisma.pricingPolicy.create({
-      data: {
-        version: 999,
-        activationFeePaise: 49900,
-        placementFeePercent: 50,
-        gstPercent: 28, // Future GST change
-        referralPayoutPaise: 20000,
-        joiningRewardPaise: 20000,
-        joiningRewardAfterDays: 30,
-        jobSeekerGuaranteeDays: 30,
-        offerReplyHours: 48,
-        maxHits: 3,
-        interviewResultDeadline: '20:00',
-        interviewResultEscalateHours: 24,
-        placementPaymentDueHours: 24,
-        replacementWindowDays: 60,
-        replacementSearchDays: 15,
-        maxFreeReplacements: 2,
-        maxReplacementRejections: 2,
-        claimReportDays: 7,
-        claimDecisionHours: 48,
-        noBypassMonths: 12,
-        noBypassPenaltyPercent: 50,
-        payoutDetailsCoolingHours: 48,
-        idleLogoutMinutes: 60,
-        maxSessionMinutes: 120,
-        loginCodeValidMinutes: 5,
-        failedLoginLimit: 5,
-        lockoutMinutes: 15,
-        callingHoursStart: '09:00',
-        callingHoursEnd: '21:00',
-        effectiveFrom: new Date(),
-        setByStaffId: ceoId,
-      },
-    });
+    await pricingService.createVersion({ gstPercent: 28 }, ceoId);
 
-    const invoiceAfterGstChange = await placementService.getInvoice(placement.id);
-    expect(invoiceAfterGstChange.gstPercent).toBe(18); // Still 18%, not 28%
-    expect(invoiceAfterGstChange.gstAmount).toBe(144000);
+    const invoiceAfterGstChange = await placementService.getInvoice(placement.id, financeId);
+    expect(invoiceAfterGstChange.lineItems[0].taxRatePercent).toBe(18); // Still 18%, not 28%
+    expect(invoiceAfterGstChange.summary.totalTaxPaise).toBe(144000);
 
     // ------------------------------------------------------------------------------------
     // PART 3: Second business pays by card through gateway
@@ -569,6 +550,8 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         gstPercent: 18,
         signedName: 'Owner Proof 2',
         signedPhone: bizPhone2,
+        otpRequestId: `otp2-${suffix}`,
+        documentStoragePath: `agreements2/${suffix}.pdf`,
         signedAt: new Date(),
       },
     });
@@ -583,6 +566,8 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         city: 'Bengaluru',
         minSalary: 1500000,
         maxSalary: 2200000,
+        preferredCallWindowStart: '09:00',
+        preferredCallWindowEnd: '18:00',
       },
     });
     seekerIds.push(seeker2.id);
@@ -614,7 +599,6 @@ describe('Phase 16 Gate End-to-End Proof', () => {
         startsAt: new Date(Date.now() + 86400000),
         endsAt: new Date(Date.now() + 90000000),
         capacity: 5,
-        bookedCount: 1,
       },
     });
     slotIds.push(slot2.id);
@@ -623,23 +607,31 @@ describe('Phase 16 Gate End-to-End Proof', () => {
       data: {
         code: `IN2-P16-${suffix}`,
         vacancyId: vacancy2.id,
+        businessId: business2.id,
         jobSeekerId: seeker2.id,
-        slotId: slot2.id,
-        status: 'confirmed',
+        vacancyInterviewSlotId: slot2.id,
+        slotStartsAt: slot2.startsAt,
+        slotEndsAt: slot2.endsAt,
+        status: 'completed',
+        result: 'selected',
+        resultRecordedAt: new Date(),
+        selectedSalaryPaise: 2000000,
+        selectedJoiningDate: new Date('2026-11-25'),
         proposedByStaffId: callAgentId,
         replyDueAt: new Date(Date.now() + 172800000),
         resultDueAt: new Date(Date.now() + 86400000),
+        suitabilitySnapshot: { score: 100, tradeMatched: true },
+        offerSentAt: new Date(),
       },
     });
     interviewIds.push(interview2.id);
 
     // Agreed salary ₹20,000 -> placement fee 50% = ₹10,000 + 18% GST (₹1,800) = ₹11,800 (1180000 paise)
-    const placement2 = await placementService.createAwaitingPaymentFromInterview(
+    const createdPlacement2 = await placementService.createAwaitingPaymentFromInterview(
       interview2.id,
-      2000000,
-      new Date('2026-11-25'),
-      fieldAgentId,
+      new Date('2026-11-09T11:00:00Z'),
     );
+    const placement2 = createdPlacement2;
     placementIds.push(placement2.id);
 
     const cardPayment = await prisma.payment.findFirst({
