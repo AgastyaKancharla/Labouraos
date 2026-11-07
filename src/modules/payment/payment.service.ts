@@ -271,12 +271,10 @@ export class PaymentService {
       return { received: true, alreadyProcessed: true, paymentId: payment.id };
     }
     if (transition.placementChanged) {
-      const staffActor =
-        (await this.prisma.staff.findFirst({ where: { role: 'ceo' } })) ??
-        (await this.prisma.staff.findFirst());
-      if (staffActor) {
+      const auditActor = await this.fallbackActorId();
+      if (auditActor) {
         await this.auditService.log({
-          actorId: staffActor.id, action: 'placement_fee_paid', entityType: 'Placement',
+          actorId: auditActor, action: 'placement_fee_paid', entityType: 'Placement',
           entityCode: transition.placement.code, city: transition.placement.city,
           before: { status: 'awaiting_payment', jobSeekerStatus: transition.placement.jobSeeker.status },
           after: { status: 'confirmed', paidAt: now.toISOString(), jobSeekerStatus: 'placed', paymentId: payment.id },
