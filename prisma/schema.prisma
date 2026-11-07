@@ -373,9 +373,12 @@ model Placement {
   dropoutReportedAt          DateTime?
   dropoutDateCallerSupplied  Boolean     @default(false)
   eligibility                String?     // employee_left, business_breach
+  /// @deprecated Phase 17 replacement rules no longer use pause state.
   clockPaused                Boolean     @default(false)
+  /// @deprecated Phase 17 replacement rules no longer use pause state.
   clockPausedAt              DateTime?
   status                     String      @default("awaiting_payment") // awaiting_payment, cancelled, confirmed, active, dropped_out, replaced, completed, guarantee_ended; legacy statuses remain readable
+  /// @deprecated Phase 17 replacement rules no longer use rejection counters.
   replacementRejectionCount  Int         @default(0)
   replacementVacancies       Vacancy[]   @relation("ReplacementPlacementVacancies")
   replacementCandidates      ReplacementCandidate[]
