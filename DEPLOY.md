@@ -184,6 +184,23 @@ Like `LOGIN_CODE_SECRET`, you do not invent `CALL_ROUTING_KEY` and never commit 
 2. Find `CALL_ROUTING_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
 3. Open **`laboura-worker`** -> **Environment**. Verify that `CALL_ROUTING_KEY` is linked from `laboura-api`.
 
+#### How to configure Laboura's Business UPI Details (COMPANY_UPI_VPA and COMPANY_UPI_PAYEE_NAME)
+
+Every payment into Laboura (the candidate registration fee and the business placement fee) is collected via UPI straight into Laboura's current bank account using dynamically generated UPI links and QR codes.
+
+To enable UPI collection:
+1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
+2. Locate or add **`COMPANY_UPI_VPA`**:
+   - This is Laboura's official business UPI Virtual Payment Address (UPI ID) provided by your bank (for example, `laboura@icici` or `labouraservices@hdfcbank`).
+   - Every candidate and business UPI payment QR code directs money directly into this bank account.
+3. Locate or add **`COMPANY_UPI_PAYEE_NAME`**:
+   - This is the business name as registered with the bank (for example, `Laboura` or `Laboura Staffing`).
+   - Customers will see this exact name inside Google Pay, PhonePe, Paytm, or BHIM when confirming their payment.
+4. Click **Save Changes**.
+
+> [!NOTE]
+> **Optional at Server Startup**: These two variables are not required for the server to boot or for staff to log in. This allows setting up and testing the application before the company current account is officially opened. However, trying to generate a payment request without them will produce a clear error message, and `/health/ready` will show "UPI collection not configured" until both are set.
+
 #### How to Create the Private Call Recordings Bucket in Supabase Dashboard (No Terminal Required)
 
 All completed call audio recordings are saved to private Supabase Storage:
