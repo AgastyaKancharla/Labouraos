@@ -72,6 +72,9 @@ describe('UpiCollectionService', () => {
         expectedAmountPaise: 49900, upiReference: expect.stringMatching(/^PAY-00042-[a-f0-9]{8}$/),
       }),
     }));
+    expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
+      where: expect.objectContaining({ method: 'upi_direct', gatewayReference: null }),
+    }));
     expect(send).toHaveBeenCalledTimes(2);
   });
 

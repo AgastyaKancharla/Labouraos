@@ -96,6 +96,10 @@ export class UpiCollectionService {
           subjectType: input.subjectType,
           subjectId: input.subjectId,
           status: 'pending',
+          method: 'upi_direct',
+          gatewayReference: null,
+          upiReference: { not: null },
+          expectedAmountPaise: { not: null },
         },
       });
       if (existing) return existing;
@@ -150,7 +154,7 @@ export class UpiCollectionService {
 
   async resendRequest(paymentId: string, notifySubjectType: 'job_seeker' | 'business', notifySubjectId: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
-    if (!payment || payment.method !== 'upi_direct' || payment.status !== 'pending' || !payment.upiReference || payment.expectedAmountPaise === null) {
+    if (!payment || payment.method !== 'upi_direct' || payment.gatewayReference !== null || payment.status !== 'pending' || !payment.upiReference || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Pending UPI payment request not found');
     }
     const { payeeName } = this.buildUpiUri({
