@@ -24,6 +24,7 @@ import {
 import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
 
 import { PaymentService } from '../payment/payment.service';
+import { UpiCollectionService } from '../payment/upi-collection.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ConsentService } from '../consent/consent.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
@@ -62,6 +63,7 @@ export class JobSeekerService {
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
+    @Optional() private readonly upiCollectionService?: UpiCollectionService,
   ) {}
 
   private async getPolicy() {
@@ -262,6 +264,31 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
+
+    if (this.upiCollectionService) {
+      const upiRequest = await this.upiCollectionService.createRequest({
+        type: 'activation',
+        subjectType: 'job_seeker',
+        subjectId: jobSeeker.id,
+        amountPaise: policy.activationFeePaise,
+        city: jobSeeker.city,
+        jobSeekerId: jobSeeker.id,
+        notifySubjectType: 'job_seeker',
+        notifySubjectId: jobSeeker.id,
+      });
+      return {
+        paymentId: upiRequest.paymentId,
+        paymentCode: upiRequest.paymentCode,
+        paymentLink: upiRequest.paymentLink,
+        upiReference: upiRequest.upiReference,
+        upiUri: upiRequest.upiUri,
+        gatewayReference: null,
+        amount: upiRequest.amountPaise,
+        amountPaise: upiRequest.amountPaise,
+        status: upiRequest.status,
+      };
+    }
+
     const charge = await this.paymentService.createCharge(
       policy.activationFeePaise,
       'job_seeker',
@@ -321,6 +348,46 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
+
+    if (this.upiCollectionService) {
+      const upiRequest = await this.upiCollectionService.createRequest({
+        type: 'activation',
+        subjectType: 'job_seeker',
+        subjectId: jobSeeker.id,
+        amountPaise: policy.activationFeePaise,
+        city: jobSeeker.city,
+        jobSeekerId: jobSeeker.id,
+        notifySubjectType: 'job_seeker',
+        notifySubjectId: jobSeeker.id,
+        reactivation: true,
+      });
+
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.reactivation_initiated',
+        entityType: 'job_seeker',
+        entityCode: jobSeeker.code,
+        after: {
+          paymentId: upiRequest.paymentId,
+          paymentCode: upiRequest.paymentCode,
+          amount: upiRequest.amountPaise,
+          reactivation: true,
+        },
+        city: jobSeeker.city,
+      });
+
+      return {
+        paymentId: upiRequest.paymentId,
+        paymentCode: upiRequest.paymentCode,
+        paymentLink: upiRequest.paymentLink,
+        upiReference: upiRequest.upiReference,
+        upiUri: upiRequest.upiUri,
+        gatewayReference: null,
+        amount: upiRequest.amountPaise,
+        amountPaise: upiRequest.amountPaise,
+        status: upiRequest.status,
+      };
+    }
     const charge = await this.paymentService.createCharge(
       policy.activationFeePaise,
       'job_seeker',

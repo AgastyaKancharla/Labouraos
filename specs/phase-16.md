@@ -69,7 +69,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - The gateway is never used unless the payer picks card.
 - Tests: choosing card creates one gateway charge and sets `gatewayReference`; the card webhook confirms through the shared function; a later UPI credit for the same payment raises a flag instead of a second confirmation; nothing calls the gateway for a UPI payment.
 
-### [ ] Task 5 — Registration and placement fees move to UPI; the invoice is automatic
+### [x] Task 5 — Registration and placement fees move to UPI; the invoice is automatic
 **Branch:** `phase-16/task-5-switch-to-upi` · **No migration**
 
 **Acceptance:**
