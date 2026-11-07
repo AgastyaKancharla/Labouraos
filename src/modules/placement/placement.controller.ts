@@ -97,6 +97,13 @@ export class PlacementController {
     return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub, now);
   }
 
+  @Post(':id/resend-payment')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  @RequirePermission('placement', 'write')
+  async resendPayment(@Param('id') id: string) {
+    return this.placementService.resendPaymentLink(id);
+  }
+
   @Post(':id/refund')
   @RequireRoles('ceo', 'finance')
   @RequirePermission('payment', 'write')

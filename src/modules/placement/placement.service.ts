@@ -233,6 +233,34 @@ export class PlacementService {
     return { raised };
   }
 
+  async resendPaymentLink(placementId: string) {
+    const placement = await this.prisma.placement.findFirst({
+      where: {
+        OR: [{ id: placementId }, { code: placementId }],
+      },
+      include: {
+        business: true,
+      },
+    });
+    if (!placement) {
+      throw new NotFoundException(`Placement '${placementId}' not found`);
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: {
+        placementId: placement.id,
+        status: 'pending',
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) {
+      throw new NotFoundException(`No pending payment found for placement '${placement.code}'`);
+    }
+    if (!this.upiCollectionService) {
+      throw new BadRequestException('UpiCollectionService is not configured');
+    }
+    return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId);
+  }
+
   async recordJoined(id: string, dto: RecordJoinedDto, actorId: string) {
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },

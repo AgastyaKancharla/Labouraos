@@ -79,6 +79,16 @@ export class JobSeekerController {
     return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
   }
 
+  @Post(':id/resend-payment')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async resendPayment(
+    @Param('id') id: string,
+    @Req() req: Request & { user?: JwtPayload },
+  ) {
+    return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
+  }
+
   @Post(':id/identity-verification')
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')

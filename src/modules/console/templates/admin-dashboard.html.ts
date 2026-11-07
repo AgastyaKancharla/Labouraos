@@ -473,10 +473,11 @@ export function renderAdminDashboardHtml(): string {
                 <th>Payment due</th>
                 <th>Payment status</th>
                 <th>Joined Date</th>
+                <th>Actions</th>
               </tr>
             </thead>
             <tbody id="placements-tbody">
-              <tr><td colspan="10" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="11" style="text-align: center;">Loading...</td></tr>
             </tbody>
           </table>
         </div>
@@ -485,9 +486,124 @@ export function renderAdminDashboardHtml(): string {
 
     <!-- Payment Ledger View -->
     <div id="view-payments" class="tab-view hidden">
+      <!-- Finance UPI & Bank Confirmation Section -->
+      <div class="card" id="finance-bank-actions-card">
+        <div class="card-title">
+          <span>Pending Payments Awaiting Confirmation</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Payments are confirmed only when exact funds arrive in the bank account. Agents cannot mark payments as paid.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Payment Code</th>
+                <th>Reference</th>
+                <th>Type</th>
+                <th>Amount</th>
+                <th>Due Time</th>
+                <th>Payer's UTR Hint</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="pending-payments-tbody">
+              <tr><td colspan="7" style="text-align: center;">Loading pending payments...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Unmatched Bank Credits Section -->
+      <div class="card" id="finance-bank-credits-card">
+        <div class="card-title">
+          <span>Unmatched Bank Credits</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh Credits</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Credits received from the bank feed or statement waiting to be matched to a pending payment, or ignored.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Bank UTR</th>
+                <th>Amount</th>
+                <th>Received At</th>
+                <th>Payer Name</th>
+                <th>Remark / Note</th>
+                <th>Source</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="bank-credits-tbody">
+              <tr><td colspan="8" style="text-align: center;">Loading unmatched bank credits...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Add Bank Credit Form (Finance Manual Entry) -->
+      <div class="card" id="finance-add-credit-card">
+        <div class="card-title">
+          <span>Add Bank Credit (From Bank Statement)</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Finance and CEO only. Record credits from statement with exact UTR and amount.</p>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; align-items: flex-end;">
+          <div class="form-group">
+            <label>Bank UTR (12 digits / ref)</label>
+            <input type="text" id="credit-utr" placeholder="e.g. 202611090001">
+          </div>
+          <div class="form-group">
+            <label>Amount (₹ Rupees)</label>
+            <input type="number" id="credit-amount" placeholder="e.g. 499 or 9440" step="any">
+          </div>
+          <div class="form-group">
+            <label>Received At</label>
+            <input type="datetime-local" id="credit-received-at">
+          </div>
+          <div class="form-group">
+            <label>Payer Name (optional)</label>
+            <input type="text" id="credit-payer-name" placeholder="Payer Name">
+          </div>
+          <div class="form-group">
+            <label>Remark / Note (optional)</label>
+            <input type="text" id="credit-remark" placeholder="Remark from statement">
+          </div>
+          <div>
+            <button class="btn-success" onclick="submitAddBankCredit()">Add Bank Credit</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Payment Mismatch Review Flags Section -->
+      <div class="card" id="finance-mismatch-flags-card">
+        <div class="card-title">
+          <span>Payment Mismatch Flags</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh Flags</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Flags raised when a bank credit has the wrong amount, unknown reference, or double payment.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Flag Code</th>
+                <th>Subject</th>
+                <th>Details</th>
+                <th>Raised At</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="mismatch-flags-tbody">
+              <tr><td colspan="6" style="text-align: center;">Loading flags...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Historical Payment Ledger -->
       <div class="card">
         <div class="card-title">
-          <span>Finance Payment Ledger</span>
+          <span>Payment Ledger History</span>
           <button class="btn-sm" onclick="loadPayments()">Refresh</button>
         </div>
         <div class="filter-bar">
@@ -776,7 +892,11 @@ export function renderAdminDashboardHtml(): string {
       if (labouraIsApprover()) {
         loadLoginCodes().catch(function () {});
       }
-      loadJobSeekers();
+      if (payload.role === 'finance') {
+        switchTab('payments');
+      } else {
+        loadJobSeekers();
+      }
     }
 
     // Tabs navigation
@@ -833,7 +953,12 @@ export function renderAdminDashboardHtml(): string {
             <td><span class="badge">\${j.status}</span></td>
             <td>\${j.hitCount}</td>
             <td>\${j.identityVerifications?.[0]?.status ?? j.kycStatus}</td>
-            <td><button class="btn-sm btn-call" onclick="openAdminCalling('job_seeker', '\${j.id}', '\${j.code}')">Call</button></td>
+            <td>
+              <button class="btn-sm btn-call" onclick="openAdminCalling('job_seeker', '\${j.id}', '\${j.code}')">Call</button>
+              \${j.status === 'lead' ? \`
+                <button class="btn-sm" onclick="resendSeekerPayment('\${j.id}')">Resend payment link</button>
+              \` : ''}
+            </td>
           </tr>
         \`).join('') || '<tr><td colspan="9">No candidates found</td></tr>';
       } catch (e) {
@@ -1176,8 +1301,13 @@ export function renderAdminDashboardHtml(): string {
             <td>\${p.paymentDueAt ? new Date(p.paymentDueAt).toLocaleString('en-IN') : '—'}</td>
             <td>\${p.paidAt ? 'Paid' : p.status === 'awaiting_payment' && p.paymentDueAt && new Date(p.paymentDueAt).getTime() <= now ? 'Overdue' : p.status === 'awaiting_payment' ? 'Awaiting payment' : '—'}</td>
             <td>\${p.joinedDate ? new Date(p.joinedDate).toLocaleDateString() : '—'}</td>
+            <td>
+              \${!p.paidAt && p.status === 'awaiting_payment' ? \`
+                <button class="btn-sm" onclick="resendPlacementPayment('\${p.id}')">Resend payment link</button>
+              \` : '—'}
+            </td>
           </tr>
-        \`).join('') || '<tr><td colspan="10">No placements found</td></tr>';
+        \`).join('') || '<tr><td colspan="11">No placements found</td></tr>';
       } catch (e) {
         console.error(e);
       }
@@ -1215,8 +1345,93 @@ export function renderAdminDashboardHtml(): string {
       } catch (e) { target.textContent = e.message || 'Could not load interviews.'; }
     }
 
+    let currentUnmatchedCredits = [];
+
     async function loadPayments() {
       try {
+        if (currentUser && ['finance', 'ceo'].includes(currentUser.role)) {
+          // Load unmatched bank credits
+          try {
+            const credits = await api('/payments/bank-credits?status=unmatched');
+            currentUnmatchedCredits = Array.isArray(credits) ? credits : [];
+            const creditsTbody = document.getElementById('bank-credits-tbody');
+            if (creditsTbody) {
+              creditsTbody.innerHTML = currentUnmatchedCredits.map(c => \`
+                <tr>
+                  <td><strong>\${c.bankUtr}</strong></td>
+                  <td>₹\${(c.amountPaise / 100).toLocaleString('en-IN')} (\${c.amountPaise} paise)</td>
+                  <td>\${new Date(c.receivedAt).toLocaleString()}</td>
+                  <td>\${c.payerName || '—'}</td>
+                  <td><small>\${c.remark || '—'}</small></td>
+                  <td><span class="badge">\${c.source}</span></td>
+                  <td><span class="badge">\${c.status}</span></td>
+                  <td>
+                    <button class="btn-sm" onclick="promptMatchCredit('\${c.id}', \${c.amountPaise})">Match</button>
+                    <button class="btn-sm btn-danger" onclick="promptIgnoreBankCredit('\${c.id}')">Ignore</button>
+                  </td>
+                </tr>
+              \`).join('') || '<tr><td colspan="8">No unmatched bank credits</td></tr>';
+            }
+          } catch (e) {
+            console.error('Error loading bank credits:', e);
+          }
+
+          // Load payment mismatch flags
+          try {
+            const flags = await api('/payments/review-flags?status=open');
+            const flagsTbody = document.getElementById('mismatch-flags-tbody');
+            if (flagsTbody) {
+              flagsTbody.innerHTML = (Array.isArray(flags) ? flags : []).map(f => \`
+                <tr>
+                  <td><strong>\${f.code}</strong></td>
+                  <td>\${f.subjectType}: \${f.subjectId}</td>
+                  <td><small>\${JSON.stringify(f.details || {})}</small></td>
+                  <td>\${new Date(f.raisedAt).toLocaleString()}</td>
+                  <td><span class="badge">\${f.status}</span></td>
+                  <td>
+                    <button class="btn-sm" onclick="promptResolveFlag('\${f.id}')">Resolve</button>
+                  </td>
+                </tr>
+              \`).join('') || '<tr><td colspan="6">No open payment mismatch flags</td></tr>';
+            }
+          } catch (e) {
+            console.error('Error loading mismatch flags:', e);
+          }
+
+          // Load pending payments
+          try {
+            const pending = await api('/payments?status=pending');
+            const pendingTbody = document.getElementById('pending-payments-tbody');
+            if (pendingTbody) {
+              const creditUtrs = new Set(currentUnmatchedCredits.map(c => c.bankUtr));
+              pendingTbody.innerHTML = (Array.isArray(pending) ? pending : []).map(p => {
+                const hintMatch = p.payerUtrHint && creditUtrs.has(p.payerUtrHint);
+                const dueTime = p.paymentDueAt ? new Date(p.paymentDueAt).toLocaleString() : 'Within 24h';
+                return \`
+                  <tr>
+                    <td><strong>\${p.code}</strong></td>
+                    <td><code>\${p.upiReference || '—'}</code></td>
+                    <td>\${p.type}</td>
+                    <td>₹\${(p.amount / 100).toLocaleString('en-IN')} (\${p.amount} paise)</td>
+                    <td>\${dueTime}</td>
+                    <td>
+                      \${p.payerUtrHint ? \`
+                        <span>\${p.payerUtrHint}</span>
+                        \${hintMatch ? '<span class="badge badge-success" style="background:#059669;margin-left:4px">Matching Credit Found!</span>' : ''}
+                      \` : '—'}
+                    </td>
+                    <td>
+                      <button class="btn-sm" onclick="promptMatchPayment('\${p.id}', \${p.amount})">Match</button>
+                    </td>
+                  </tr>
+                \`;
+              }).join('') || '<tr><td colspan="7">No pending payments awaiting match</td></tr>';
+            }
+          } catch (e) {
+            console.error('Error loading pending payments:', e);
+          }
+        }
+
         const type = document.getElementById('filter-payment-type').value;
         const status = document.getElementById('filter-payment-status').value;
         const from = document.getElementById('filter-payment-from').value;
@@ -1237,7 +1452,7 @@ export function renderAdminDashboardHtml(): string {
             <td>₹\${(p.amount/100).toLocaleString('en-IN')} (\${p.amount} paise)</td>
             <td><span class="badge">\${p.status}</span></td>
             <td>\${p.subjectType}: \${p.subjectId}</td>
-            <td><small>\${p.gatewayReference || '—'}</small></td>
+            <td><small>\${p.bankUtr || p.gatewayReference || '—'}</small></td>
             <td>\${new Date(p.createdAt).toLocaleString()}</td>
             <td>
               \${p.status === 'pending' && p.type === 'referral_payout' ? \`
@@ -1248,6 +1463,115 @@ export function renderAdminDashboardHtml(): string {
         \`).join('') || '<tr><td colspan="8">No payments match filters</td></tr>';
       } catch (e) {
         console.error(e);
+      }
+    }
+
+    async function submitAddBankCredit() {
+      const bankUtr = document.getElementById('credit-utr').value.trim();
+      const amountInRupees = parseFloat(document.getElementById('credit-amount').value);
+      const receivedAt = document.getElementById('credit-received-at').value;
+      const payerName = document.getElementById('credit-payer-name').value.trim();
+      const remark = document.getElementById('credit-remark').value.trim();
+
+      if (!bankUtr || isNaN(amountInRupees) || !receivedAt) {
+        return alert('Bank UTR, valid amount, and received date/time are required');
+      }
+
+      try {
+        const body = {
+          bankUtr,
+          amountPaise: Math.round(amountInRupees * 100),
+          receivedAt,
+          payerName: payerName || undefined,
+          remark: remark || undefined,
+        };
+        await api('/payments/bank-credits', { method: 'POST', body });
+        showAlert('Bank credit recorded successfully');
+        document.getElementById('credit-utr').value = '';
+        document.getElementById('credit-amount').value = '';
+        document.getElementById('credit-payer-name').value = '';
+        document.getElementById('credit-remark').value = '';
+        loadPayments();
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function promptMatchPayment(paymentId, expectedAmountPaise) {
+      const creditId = prompt('Enter Bank Credit ID to match (must be exact amount ₹' + (expectedAmountPaise / 100) + '):');
+      if (!creditId) return;
+      try {
+        await api('/payments/' + paymentId + '/confirm', {
+          method: 'POST',
+          body: { bankCreditId: creditId.trim() },
+        });
+        showAlert('Payment confirmed successfully with bank credit!');
+        loadPayments();
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function promptMatchCredit(creditId, amountPaise) {
+      const paymentId = prompt('Enter Pending Payment ID to match (must be exact amount ₹' + (amountPaise / 100) + '):');
+      if (!paymentId) return;
+      try {
+        await api('/payments/' + paymentId.trim() + '/confirm', {
+          method: 'POST',
+          body: { bankCreditId: creditId },
+        });
+        showAlert('Payment confirmed successfully with bank credit!');
+        loadPayments();
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function promptIgnoreBankCredit(creditId) {
+      const reason = prompt('Enter required reason for ignoring this bank credit:');
+      if (!reason || !reason.trim()) return alert('Reason is required');
+      try {
+        await api('/payments/bank-credits/' + creditId + '/ignore', {
+          method: 'POST',
+          body: { reason: reason.trim() },
+        });
+        showAlert('Bank credit marked as ignored');
+        loadPayments();
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function promptResolveFlag(flagId) {
+      const resolution = prompt('Enter written resolution for this mismatch flag:');
+      if (!resolution || !resolution.trim()) return alert('Resolution is required');
+      try {
+        await api('/payments/review-flags/' + flagId + '/resolve', {
+          method: 'POST',
+          body: { resolution: resolution.trim() },
+        });
+        showAlert('Payment mismatch flag resolved');
+        loadPayments();
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function resendPlacementPayment(id) {
+      try {
+        await api('/placements/' + id + '/resend-payment', { method: 'POST' });
+        showAlert('Payment link resent successfully!');
+      } catch (e) {
+        showAlert(e.message, false);
+      }
+    }
+
+    async function resendSeekerPayment(id) {
+      try {
+        await api('/job-seekers/' + id + '/resend-payment', { method: 'POST' });
+        showAlert('Payment link resent successfully!');
+      } catch (e) {
+        showAlert(e.message, false);
       }
     }
 

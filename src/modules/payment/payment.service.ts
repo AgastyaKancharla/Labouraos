@@ -660,6 +660,53 @@ export class PaymentService {
     return updated;
   }
 
+  async listPaymentMismatchFlags(status: string = 'open') {
+    const where: Prisma.ReviewFlagWhereInput = { kind: 'payment_mismatch' };
+    if (status) {
+      where.status = status;
+    }
+    return this.prisma.reviewFlag.findMany({
+      where,
+      orderBy: { raisedAt: 'desc' },
+      include: {
+        raisedForStaff: { select: { id: true, code: true, name: true, role: true } },
+        resolvedByStaff: { select: { id: true, code: true, name: true, role: true } },
+      },
+    });
+  }
+
+  async resolvePaymentMismatchFlag(flagId: string, resolution: string, actorId: string) {
+    if (!resolution || !resolution.trim()) {
+      throw new BadRequestException('A written resolution is required');
+    }
+    const flag = await this.prisma.reviewFlag.findUnique({ where: { id: flagId } });
+    if (!flag || flag.kind !== 'payment_mismatch') {
+      throw new NotFoundException(`Payment mismatch flag '${flagId}' not found`);
+    }
+    const updated = await this.prisma.reviewFlag.update({
+      where: { id: flagId },
+      data: {
+        status: 'resolved',
+        resolution: resolution.trim(),
+        resolvedAt: new Date(),
+        resolvedByStaffId: actorId,
+      },
+      include: {
+        raisedForStaff: { select: { id: true, code: true, name: true, role: true } },
+        resolvedByStaff: { select: { id: true, code: true, name: true, role: true } },
+      },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'review_flag.resolved',
+      entityType: 'review_flag',
+      entityCode: flag.code,
+      before: { status: flag.status, resolution: flag.resolution },
+      after: { status: updated.status, resolution: updated.resolution },
+    });
+    return updated;
+  }
+
   async listBankCredits(query?: { status?: string }) {
     const where: Prisma.BankCreditWhereInput = {};
     if (query?.status) {
