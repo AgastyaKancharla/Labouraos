@@ -7,11 +7,13 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { PaymentService } from './payment.service';
 
 describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let otpService: OtpService;
+  let paymentService: PaymentService;
 
   let callAgentToken: string;
   let callAgentId: string;
@@ -29,6 +31,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
 
     prisma = app.get<PrismaService>(PrismaService);
     otpService = app.get<OtpService>(OtpService);
+    paymentService = app.get<PaymentService>(PaymentService);
 
     const passwordHash = await bcrypt.hash(password, 10);
 
@@ -61,9 +64,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
         },
       });
       await prisma.payment.deleteMany({
-        where: {
-          code: { contains: `${timestamp}` },
-        },
+        where: { jobSeeker: { phone: { contains: timestamp.toString().slice(-8) } } },
       });
       await prisma.jobSeeker.deleteMany({
         where: {
@@ -179,6 +180,57 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     });
     expect(logs).toHaveLength(1);
     expect(logs[0].entityType).toBe('job_seeker');
+  });
+
+  it('onPaymentSucceeded starts activation at confirmedAt and a replay has no effects', async () => {
+    const suffix = (timestamp + 5).toString().slice(-8);
+    const seeker = await createPendingJobSeeker(suffix);
+    const paymentRes = await request(app.getHttpServer())
+      .post(`/job-seekers/${seeker.id}/activation-payment`)
+      .set('Authorization', `Bearer ${callAgentToken}`);
+    const confirmedAt = new Date('2026-11-05T12:34:56.000Z');
+
+    await paymentService.onPaymentSucceeded(paymentRes.body.paymentId, {
+      confirmedAt,
+      confirmedBy: 'finance_manual',
+      confirmedByStaffId: callAgentId,
+    });
+    const firstPayment = await prisma.payment.findUniqueOrThrow({ where: { id: paymentRes.body.paymentId } });
+    const firstSeeker = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } });
+    const firstHistoryCount = await prisma.statusHistory.count({
+      where: { subjectType: 'payment', subjectId: firstPayment.id },
+    });
+    expect(firstPayment.status).toBe('succeeded');
+    expect(firstPayment.confirmedAt?.toISOString()).toBe(confirmedAt.toISOString());
+    expect(firstSeeker.status).toBe('active');
+    expect(firstSeeker.paymentReceivedAt?.toISOString()).toBe(confirmedAt.toISOString());
+
+    await paymentService.onPaymentSucceeded(paymentRes.body.paymentId, {
+      confirmedAt: new Date('2026-11-06T12:34:56.000Z'),
+      confirmedBy: 'bank_feed',
+    });
+    const replayedPayment = await prisma.payment.findUniqueOrThrow({ where: { id: firstPayment.id } });
+    const replayedSeeker = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } });
+    expect(replayedPayment.confirmedAt?.toISOString()).toBe(confirmedAt.toISOString());
+    expect(replayedSeeker.paymentReceivedAt?.toISOString()).toBe(confirmedAt.toISOString());
+    expect(await prisma.statusHistory.count({ where: { subjectType: 'payment', subjectId: firstPayment.id } }))
+      .toBe(firstHistoryCount);
+    expect(await prisma.auditLog.count({ where: { entityCode: seeker.code, action: 'job_seeker.activated' } }))
+      .toBe(1);
+  });
+
+  it('stores a payment with no gateway reference', async () => {
+    const suffix = (timestamp + 6).toString().slice(-8);
+    const seeker = await createPendingJobSeeker(suffix);
+    const paymentRes = await request(app.getHttpServer())
+      .post(`/job-seekers/${seeker.id}/activation-payment`)
+      .set('Authorization', `Bearer ${callAgentToken}`);
+
+    const payment = await prisma.payment.update({
+      where: { id: paymentRes.body.paymentId },
+      data: { gatewayReference: null },
+    });
+    expect(payment.gatewayReference).toBeNull();
   });
 
   it('MANDATORY IDEMPOTENCY: firing exact same webhook twice results in exactly 1 payment, 1 audit entry, and 1 activation', async () => {
