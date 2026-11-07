@@ -47,6 +47,21 @@ export class PaymentController {
     return this.upiCollectionService.getPaymentPage(token);
   }
 
+  @Get(':id/receipt')
+  async getPaymentReceipt(@Param('id') id: string) {
+    const payment = await this.paymentService.findById(id);
+    return {
+      paymentId: payment.id,
+      paymentCode: payment.code,
+      amountPaise: payment.amount,
+      status: payment.status,
+      confirmedAt: payment.confirmedAt,
+      type: payment.type,
+      receiptType: 'registration_receipt',
+      note: 'Registration receipt. No GST is added to this fee.',
+    };
+  }
+
   @Post('request/:token/utr-hint')
   @HttpCode(HttpStatus.OK)
   async savePaymentUtrHint(@Param('token') token: string, @Body('utr') utr: unknown) {

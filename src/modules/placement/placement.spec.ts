@@ -447,7 +447,11 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     expect(retry.placementFee).toBe(expectedFee);
     expect(retry.payment.id).toBe(selected.payment.id);
 
-    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: selected.payment.id } });
+    let payment = await prisma.payment.findUniqueOrThrow({ where: { id: selected.payment.id } });
+    if (!payment.gatewayReference && payment.upiReference) {
+      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(payment.upiReference)}/card`).expect(200);
+      payment = await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
+    }
     const firstWebhook = await request(app.getHttpServer()).post('/payments/webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);

@@ -20,6 +20,7 @@ import {
 } from '../../common/money/money';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
+import { UpiCollectionService } from '../payment/upi-collection.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RecordJoinedDto } from './dto/record-joined.dto';
 import { RecordDropoutDto } from './dto/record-dropout.dto';
@@ -58,6 +59,7 @@ export class PlacementService {
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
     @Optional() private readonly reviewFlags?: ReviewFlagService,
+    @Optional() private readonly upiCollectionService?: UpiCollectionService,
   ) {}
 
   private async getPolicy() {
@@ -83,6 +85,7 @@ export class PlacementService {
         const payment = existing.payments.find((row) => row.type === 'placement_fee');
         return {
           placement: existing, payment, paymentLink: null, existing: true,
+          totalAmount: existing.placementFee + existing.gstAmount,
           actorId: existing.createdByStaffId ?? interview.proposedByStaffId,
         };
       }
@@ -103,9 +106,7 @@ export class PlacementService {
       const gstAmount = calculateGst(placementFee, agreement.gstPercent);
       const totalAmount = placementFee + gstAmount;
       const id = randomUUID();
-      const charge = await this.paymentService.createCharge(totalAmount, 'placement', id);
       const code = await this.idService.generateCode('placement');
-      const paymentCode = await this.idService.generateCode('payment');
       const paymentDueAt = new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000);
       const placement = await tx.placement.create({
         data: {
@@ -135,32 +136,51 @@ export class PlacementService {
         subjectType: 'placement', subjectId: placement.id, fromStatus: null, toStatus: 'awaiting_payment',
         changedByStaffId: interview.proposedByStaffId, changedAt: now, reason: 'owner_selected_candidate',
       });
-      const payment = await tx.payment.create({
-        data: {
-          code: paymentCode,
-          city: placement.city,
-          type: 'placement_fee',
-          amount: totalAmount,
-          status: 'pending',
-          gatewayReference: charge.gatewayReference,
-          subjectType: 'placement',
-          subjectId: placement.id,
-          businessId: placement.businessId,
-          placementId: placement.id,
-          jobSeekerId: null,
-        },
-      });
-      await recordStatusChange(tx, {
-        subjectType: 'payment', subjectId: payment.id, fromStatus: null, toStatus: 'pending',
-        changedByStaffId: interview.proposedByStaffId, changedAt: now,
-      });
       return {
-        placement, payment, paymentLink: charge.paymentLink, existing: false,
+        placement, totalAmount, existing: false,
         actorId: interview.proposedByStaffId,
       };
     });
 
+    let payment = created.placement.payments?.find((p) => p.type === 'placement_fee') ?? null;
+    let paymentLink: string | null = null;
+
     if (!created.existing) {
+      if (this.upiCollectionService) {
+        const upiRequest = await this.upiCollectionService.createRequest({
+          type: 'placement_fee',
+          subjectType: 'placement',
+          subjectId: created.placement.id,
+          amountPaise: created.totalAmount,
+          city: created.placement.city,
+          businessId: created.placement.businessId,
+          placementId: created.placement.id,
+          notifySubjectType: 'business',
+          notifySubjectId: created.placement.businessId,
+        });
+        payment = await this.prisma.payment.findUnique({ where: { id: upiRequest.paymentId } });
+        paymentLink = upiRequest.paymentLink;
+      } else {
+        const charge = await this.paymentService.createCharge(created.totalAmount, 'placement', created.placement.id);
+        const paymentCode = await this.idService.generateCode('payment');
+        payment = await this.prisma.payment.create({
+          data: {
+            code: paymentCode,
+            city: created.placement.city,
+            type: 'placement_fee',
+            amount: created.totalAmount,
+            status: 'pending',
+            gatewayReference: charge.gatewayReference,
+            subjectType: 'placement',
+            subjectId: created.placement.id,
+            businessId: created.placement.businessId,
+            placementId: created.placement.id,
+            jobSeekerId: null,
+          },
+        });
+        paymentLink = charge.paymentLink;
+      }
+
       await this.auditService.log({
         action: 'placement.awaiting_payment_created', entityType: 'Placement', entityCode: created.placement.code,
         actorId: created.actorId, city: created.placement.city,
@@ -170,19 +190,21 @@ export class PlacementService {
           feePercentAtCreation: created.placement.feePercentAtCreation,
           gstPercentAtCreation: created.placement.gstPercentAtCreation,
           placementFee: created.placement.placementFee, gstAmount: created.placement.gstAmount,
-          paymentId: created.payment?.id,
+          paymentId: payment?.id,
         },
       });
     }
+    const effectivePayment = payment ?? created.payment;
     return {
       ...created.placement,
-      payment: created.payment ? {
-        id: created.payment.id,
-        code: created.payment.code,
-        amount: created.payment.amount,
-        status: created.payment.status,
-        paymentLink: created.paymentLink,
-        gatewayReference: created.payment.gatewayReference,
+      payment: effectivePayment ? {
+        id: effectivePayment.id,
+        code: effectivePayment.code,
+        amount: effectivePayment.amount,
+        status: effectivePayment.status,
+        paymentLink: paymentLink ?? created.paymentLink,
+        gatewayReference: effectivePayment.gatewayReference,
+        upiReference: effectivePayment.upiReference,
       } : null,
     };
   }
@@ -1147,13 +1169,14 @@ export class PlacementService {
       });
     }
 
-    // Re-use stored placement fee and GST, or calculate from policy
+    // Re-use stored placement fee and GST from placement record at creation, never today's policy!
     const policy = await this.getPolicy();
-    const baseAmountPaise = placement.placementFee || calculatePlacementFee(placement.agreedSalary, policy.placementFeePercent);
-    const totalTaxPaise = placement.gstAmount || calculateGst(baseAmountPaise, policy.gstPercent);
+    const gstPercent = placement.gstPercentAtCreation ?? policy.gstPercent;
+    const feePercent = placement.feePercentAtCreation ?? policy.placementFeePercent;
+    const baseAmountPaise = placement.placementFee || calculatePlacementFee(placement.agreedSalary, feePercent);
+    const totalTaxPaise = placement.gstAmount || calculateGst(baseAmountPaise, gstPercent);
     const totalAmountPaise = baseAmountPaise + totalTaxPaise;
 
-    const gstPercent = policy.gstPercent;
     const cgstRatePercent = Math.floor(gstPercent / 2);
     const sgstRatePercent = gstPercent - cgstRatePercent;
     const cgstAmountPaise = Math.floor(totalTaxPaise / 2);
@@ -1203,7 +1226,7 @@ export class PlacementService {
       lineItems: [
         {
           itemNumber: 1,
-          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (${policy.placementFeePercent}% of monthly salary)`,
+          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of monthly salary)`,
           sacCode: '9985',
           baseAmountPaise,
           taxRatePercent: gstPercent,

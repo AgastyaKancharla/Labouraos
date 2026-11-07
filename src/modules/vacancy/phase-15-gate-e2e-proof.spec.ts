@@ -288,7 +288,7 @@ describe('Phase 15 gate end-to-end proof', () => {
       otpRequestId: otpResponse.body.requestId, otpCode, result: 'selected',
       selectedSalaryPaise: 1600000, selectedJoiningDate: joiningDate.toISOString(),
     }).expect(201);
-    const placement = resultResponse.body.placement as { id: string; status: string; agreedSalary: number; placementFee: number; gstAmount: number; feePercentAtCreation: number; gstPercentAtCreation: number; payment: { id: string; gatewayReference: string; amount: number } };
+    const placement = resultResponse.body.placement as { id: string; status: string; agreedSalary: number; placementFee: number; gstAmount: number; feePercentAtCreation: number; gstPercentAtCreation: number; payment: { id: string; gatewayReference: string; amount: number; upiReference?: string } };
     placementIds.push(placement.id);
     paymentIds.push(placement.payment.id);
     expect(placement.status).toBe('awaiting_payment');
@@ -306,7 +306,13 @@ describe('Phase 15 gate end-to-end proof', () => {
     await request(server).post(`/interviews/check/${candidateCheckToken}`).send({ answer: 'yes' }).expect(201);
     expect((await prisma.interview.findUniqueOrThrow({ where: { id: booked[0].id } })).candidateCheckAnswer).toBe('offered_yes');
 
-    const paymentSuccess = { gatewayReference: placement.payment.gatewayReference, status: 'succeeded' };
+    let paymentGatewayRef = placement.payment.gatewayReference;
+    if (!paymentGatewayRef && placement.payment.upiReference) {
+      await request(server).post(`/payments/request/${encodeURIComponent(placement.payment.upiReference)}/card`).expect(200);
+      const updated = await prisma.payment.findUniqueOrThrow({ where: { id: placement.payment.id } });
+      paymentGatewayRef = updated.gatewayReference!;
+    }
+    const paymentSuccess = { gatewayReference: paymentGatewayRef, status: 'succeeded' };
     await request(server).post('/payments/mock/simulate-webhook').send(paymentSuccess).expect(201);
     const paidPlacement = await prisma.placement.findUniqueOrThrow({ where: { id: placement.id } });
     expect(paidPlacement.status).toBe('confirmed');

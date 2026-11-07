@@ -219,7 +219,12 @@ describe('Phase 9 Task 7: Status History', () => {
         .set('Authorization', `Bearer ${callAgentToken}`)
         .expect(201);
 
-      const gatewayRef = paymentRes.body.gatewayReference;
+      let gatewayRef = paymentRes.body.gatewayReference;
+      if (!gatewayRef && paymentRes.body.upiReference) {
+        await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+        const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentRes.body.paymentId } });
+        gatewayRef = updated.gatewayReference;
+      }
 
       // Simulate payment webhook
       await request(app.getHttpServer())
@@ -269,7 +274,12 @@ describe('Phase 9 Task 7: Status History', () => {
         .set('Authorization', `Bearer ${callAgentToken}`)
         .expect(201);
 
-      const reactivateGatewayRef = reactivateRes.body.gatewayReference;
+      let reactivateGatewayRef = reactivateRes.body.gatewayReference;
+      if (!reactivateGatewayRef && reactivateRes.body.upiReference) {
+        await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(reactivateRes.body.upiReference)}/card`).expect(200);
+        const updated = await prisma.payment.findUniqueOrThrow({ where: { id: reactivateRes.body.paymentId } });
+        reactivateGatewayRef = updated.gatewayReference;
+      }
 
       // Simulate webhook for reactivation
       await request(app.getHttpServer())

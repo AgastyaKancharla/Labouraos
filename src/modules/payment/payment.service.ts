@@ -26,6 +26,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
+import { publicLink } from '../../common/public-link';
 
 @Injectable()
 export class PaymentService {
@@ -224,6 +225,7 @@ export class PaymentService {
 
       let placementTransition: {
         placement: Prisma.PlacementGetPayload<{ include: { jobSeeker: true } }>;
+        invoiceCode: string;
       } | null = null;
       if (payment.type === 'placement_fee' && payment.placementId) {
         const placement = await tx.placement.findUnique({
@@ -235,6 +237,21 @@ export class PaymentService {
           data: { status: 'confirmed', paidAt: confirmedAt },
         });
         if (paid.count === 1) {
+          let invoiceCode = placement.invoiceCode;
+          if (!invoiceCode) {
+            invoiceCode = await this.idService.generateCode('invoice');
+            if (tx.placement.update) {
+              await tx.placement.update({
+                where: { id: placement.id },
+                data: { invoiceCode },
+              });
+            } else {
+              await tx.placement.updateMany({
+                where: { id: placement.id },
+                data: { invoiceCode },
+              });
+            }
+          }
           await recordStatusChange(tx, {
             subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'confirmed',
             changedByStaffId: confirmedByStaffId ?? null, reason: 'placement_fee_payment_succeeded', changedAt: confirmedAt,
@@ -248,7 +265,7 @@ export class PaymentService {
               reason: 'placement_fee_payment_succeeded', changedAt: confirmedAt,
             });
           }
-          placementTransition = { placement };
+          placementTransition = { placement, invoiceCode };
         }
       }
       return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition };
@@ -277,15 +294,21 @@ export class PaymentService {
           reactivation: transition.payment.reactivation,
         }, city: transition.updatedSeeker.city,
       });
+      const receiptLink = publicLink(`/payments/${paymentId}/receipt`);
+      await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
+        channel, template: 'payment_receipt', subjectType: 'job_seeker',
+        subjectId: transition.updatedSeeker!.id, relatedType: 'payment', relatedId: paymentId,
+        variables: { link: receiptLink },
+      })));
     }
     if (transition.placementTransition) {
-      const { placement } = transition.placementTransition;
+      const { placement, invoiceCode } = transition.placementTransition;
       const actorId = await this.fallbackActorId();
       if (actorId) await this.auditService.log({
         actorId, action: 'placement_fee_paid', entityType: 'Placement', entityCode: placement.code,
         city: placement.city,
         before: { status: 'awaiting_payment', jobSeekerStatus: placement.jobSeeker.status },
-        after: { status: 'confirmed', paidAt: confirmedAt.toISOString(), jobSeekerStatus: 'placed', paymentId },
+        after: { status: 'confirmed', paidAt: confirmedAt.toISOString(), jobSeekerStatus: 'placed', paymentId, invoiceCode },
       });
       if (placement.joiningDate) {
         const joiningDate = new Intl.DateTimeFormat('en-IN', {
@@ -297,6 +320,12 @@ export class PaymentService {
           variables: { joiningDate },
         })));
       }
+      const invoiceLink = publicLink(`/placements/${placement.id}/invoice`);
+      await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
+        channel, template: 'placement_invoice', subjectType: 'business',
+        subjectId: placement.businessId, relatedType: 'placement', relatedId: placement.id,
+        variables: { link: invoiceLink, invoiceCode },
+      })));
     }
     return { received: true, status: 'succeeded', paymentId };
   }

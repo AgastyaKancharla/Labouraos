@@ -75,4 +75,8 @@ jobs:
           STAFF_BOOTSTRAP_SECRET: "ci_bootstrap_secret_testing_only_32_characters"
           REDIS_HOST: "localhost"
           REDIS_PORT: "6379"
+          PUBLIC_APP_URL: "https://app.laboura.in"
+          COMPANY_UPI_VPA: "laboura@icici"
+          COMPANY_UPI_PAYEE_NAME: "Laboura Staffing Pvt Ltd"
+          BANK_FEED_WEBHOOK_SECRET: "ci_bank_feed_webhook_secret_32_characters"
         run: npm test

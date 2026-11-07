@@ -20,6 +20,7 @@ export interface CreateUpiRequestInput {
   placementId?: string;
   notifySubjectType?: 'job_seeker' | 'business';
   notifySubjectId?: string;
+  reactivation?: boolean;
 }
 
 export interface QrMatrix {
@@ -91,7 +92,7 @@ export class UpiCollectionService {
     }
     const lockKey = `payment:${input.type}:${input.subjectType}:${input.subjectId}`;
     const payment = await this.prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
       const existing = await tx.payment.findFirst({
         where: {
           type: input.type,
@@ -102,6 +103,7 @@ export class UpiCollectionService {
           gatewayReference: null,
           upiReference: { not: null },
           expectedAmountPaise: { not: null },
+          reactivation: input.reactivation ?? false,
         },
       });
       if (existing) return existing;
@@ -123,6 +125,7 @@ export class UpiCollectionService {
           jobSeekerId: input.jobSeekerId ?? null,
           businessId: input.businessId ?? null,
           placementId: input.placementId ?? null,
+          reactivation: input.reactivation ?? false,
         },
       });
       await recordStatusChange(tx, {
