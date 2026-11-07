@@ -23,14 +23,10 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   let teamLeadToken: string;
 
   let koraVacancyId: string;
-  let indiVacancyId: string;
   let activeJobSeekerId: string;
-  let placedJobSeekerId: string;
 
   let staffIds: string[] = [];
   let faKoraId: string;
-  let faIndiId: string;
-  let caId: string;
   let fixtureIndex = 0;
   const testPolicyIds: string[] = [];
 
@@ -130,8 +126,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
     staffIds = [faKora.id, faIndi.id, ca.id, teamLead.id, ceo.id, mgr.id, finance.id];
     faKoraId = faKora.id;
-    faIndiId = faIndi.id;
-    caId = ca.id;
 
     const server = app.getHttpServer();
     const login = async (email: string | null) => {
@@ -160,18 +154,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
 
-    const indiBiz = await prisma.business.create({
-      data: {
-        code: `BZ-P5I-${timestamp}`,
-        name: 'Indi Retail Hub',
-        area: indiArea,
-        accountAgentId: faIndi.id,
-        city: 'Bengaluru',
-        phone: `91${timestamp.toString().slice(-8)}2`,
-        phoneVerified: true,
-      },
-    });
-
     // Vacancies
     const koraVac = await prisma.vacancy.create({
       data: {
@@ -183,17 +165,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
     koraVacancyId = koraVac.id;
-
-    const indiVac = await prisma.vacancy.create({
-      data: {
-        code: `VC-P5I-${timestamp}`,
-        businessId: indiBiz.id,
-        tradeSkill: 'Plumber',
-        salaryMinPaise: 2500000,
-        status: 'open',
-      },
-    });
-    indiVacancyId = indiVac.id;
 
     // Job Seekers
     const activeJs = await prisma.jobSeeker.create({
@@ -211,20 +182,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     });
     activeJobSeekerId = activeJs.id;
 
-    const placedJs = await prisma.jobSeeker.create({
-      data: {
-        code: `JS-P5PLC-${timestamp}`,
-        name: 'Already Placed Candidate',
-        phone: `92${timestamp.toString().slice(-8)}2`,
-        tradeSkill: 'Electrician',
-        minSalary: 1800000,
-        maxSalary: 2400000,
-        preferredCallWindowStart: '10:00',
-        preferredCallWindowEnd: '18:00',
-        status: 'placed',
-      },
-    });
-    placedJobSeekerId = placedJs.id;
   });
 
   async function createAwaitingPaymentFixture(vacancyId: string, jobSeekerId: string, agreedSalary: number) {
@@ -328,7 +285,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           in: [
             `JS-P5ACT-${timestamp}`,
             `JS-P15PAY-${timestamp}`,
-            `JS-P5PLC-${timestamp}`,
             `JS-P5ACC-${timestamp}`,
             `JS-P5REJ-${timestamp}`,
             `JS-P5FEE-${timestamp}`,
@@ -356,9 +312,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       },
     });
     await prisma.business.deleteMany({
-      where: {
-        code: { in: [`BZ-P5K-${timestamp}`, `BZ-P5I-${timestamp}`] },
-      },
+      where: { code: `BZ-P5K-${timestamp}` },
     });
     await prisma.auditLog.deleteMany({
       where: {
