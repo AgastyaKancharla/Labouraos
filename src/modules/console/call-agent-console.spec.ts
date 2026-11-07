@@ -224,7 +224,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
       paymentDueHours: policy.placementPaymentDueHours,
     });
     const placementId = placement.id;
-    const paymentRes = await request(app.getHttpServer()).post('/payments/webhook').send({
+    const paymentRes = await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({
       gatewayReference: payment.gatewayReference, status: 'succeeded',
     }).expect(201);
     expect(paymentRes.body.status).toBe('succeeded');

@@ -368,7 +368,25 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
   describe('7. HTTP Controller Gate: All 7 webhook routes fail closed (401)', () => {
     let app: INestApplication;
 
-    const mockPrisma = {
+    const mockPrisma: {
+      staff: { findFirst: jest.Mock };
+      statusHistory: { create: jest.Mock };
+      messageLog: {
+        findUnique: jest.Mock;
+        update: jest.Mock;
+      };
+      callbackTask: { findFirst: jest.Mock; create: jest.Mock };
+      jobSeeker: { findFirst: jest.Mock; update: jest.Mock };
+      payment: {
+        findFirst: jest.Mock;
+        findUnique: jest.Mock;
+        findMany: jest.Mock;
+        update: jest.Mock;
+        updateMany: jest.Mock;
+      };
+      bankCredit: { findUnique: jest.Mock; create: jest.Mock };
+      $transaction: jest.Mock;
+    } = {
       staff: { findFirst: jest.fn() },
       statusHistory: { create: jest.fn() },
       messageLog: {
@@ -385,8 +403,9 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       bankCredit: { findUnique: jest.fn(), create: jest.fn().mockResolvedValue({ id: 'bc-1', amountPaise: 49900 }) },
-      $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma)),
+      $transaction: jest.fn(),
     };
+    mockPrisma.$transaction.mockImplementation(async (cb: (tx: unknown) => Promise<unknown>) => cb(mockPrisma));
 
     beforeAll(async () => {
       const moduleRef = await Test.createTestingModule({

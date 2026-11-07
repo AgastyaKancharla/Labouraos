@@ -211,7 +211,7 @@ describe('Phase 3 Task 5: Reactivation', () => {
 
     // Simulate webhook arrival
     const webhookRes = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({
         gatewayReference,
         status: 'succeeded',

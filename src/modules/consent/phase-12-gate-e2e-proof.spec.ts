@@ -298,7 +298,7 @@ describe('Phase 12 gate end-to-end proof', () => {
       gatewayReference = updated.gatewayReference;
     }
     const paymentResult = await request(app.getHttpServer())
-      .post('/payments/webhook')
+      .post('/payments/mock/simulate-webhook')
       .send({ gatewayReference, status: 'succeeded' });
     expect([200, 201]).toContain(paymentResult.status);
     expect(await prisma.jobSeeker.findUniqueOrThrow({ where: { id: jobSeekerId } })).toMatchObject({

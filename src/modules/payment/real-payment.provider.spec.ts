@@ -211,7 +211,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
     let prisma: PrismaService;
     let idService: IdService;
     const timestamp = Date.now();
-    const testWebhookSecret = 'test_hmac_secret_phase7_task2';
+    const testWebhookSecret = 'test_hmac_secret_phase7_task2_32chars';
     let ceoStaffId: string;
 
     beforeAll(async () => {
@@ -363,13 +363,13 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
       });
       expect(auditLogsAfterSecond).toHaveLength(1);
 
-      // 6. Webhook with invalid signature is rejected with 400
+      // 6. Webhook with invalid signature is rejected with 401
       await request(app.getHttpServer())
         .post('/payments/webhook')
         .set('Content-Type', 'application/json')
         .set('x-razorpay-signature', 'forged_tampered_signature')
         .send(payloadStr)
-        .expect(400);
+        .expect(401);
     });
   });
 

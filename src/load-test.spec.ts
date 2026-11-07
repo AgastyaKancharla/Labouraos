@@ -231,7 +231,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
     // 40 concurrent webhook requests with identical gatewayReference
     const webhookCalls = Array.from({ length: CONCURRENT_WEBHOOKS }, () =>
       request(baseUrl)
-        .post('/payments/webhook')
+        .post('/payments/mock/simulate-webhook')
         .send({
           gatewayReference: payment.gatewayReference,
           status: 'succeeded',

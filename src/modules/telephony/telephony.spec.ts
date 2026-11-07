@@ -342,7 +342,7 @@ describe('Telephony Module (Task 4)', () => {
         calls.map((c) => {
           const raw = JSON.stringify(c);
           const sig = signTelephony(raw);
-          return telephonyService.handleInboundWebhook(c, raw, sig);
+          return telephonyService.handleInboundWebhook(c, sig, raw);
         }),
       );
 
