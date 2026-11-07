@@ -4,15 +4,25 @@ import { PaymentService } from './payment.service';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 import { MockPaymentProvider } from './mock-payment.provider';
 import { RealPaymentProvider } from './real-payment.provider';
+import { BANK_FEED_PROVIDER } from './bank-feed-provider.interface';
+import { MockBankFeedProvider } from './mock-bank-feed.provider';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { IdModule } from '../../common/id/id.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { MessageModule } from '../message/message.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { UpiCollectionService } from './upi-collection.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, IdModule, PricingModule, MessageModule],
+  imports: [
+    PrismaModule,
+    AuditModule,
+    IdModule,
+    PricingModule,
+    MessageModule,
+    ReviewFlagModule,
+  ],
   controllers: [PaymentController],
   providers: [
     {
@@ -34,9 +44,13 @@ import { UpiCollectionService } from './upi-collection.service';
         throw new Error(`Unsupported payment provider: ${providerName}`);
       },
     },
+    {
+      provide: BANK_FEED_PROVIDER,
+      useClass: MockBankFeedProvider,
+    },
     PaymentService,
     UpiCollectionService,
   ],
-  exports: [PaymentService, PAYMENT_PROVIDER, UpiCollectionService],
+  exports: [PaymentService, PAYMENT_PROVIDER, BANK_FEED_PROVIDER, UpiCollectionService],
 })
 export class PaymentModule {}

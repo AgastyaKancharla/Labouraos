@@ -69,8 +69,8 @@ export class ReviewFlagService {
       where.kind = query.kind;
     }
 
-    if (actor.role === 'ceo' || actor.role === 'manager') {
-      // CEO and Manager see all flags
+    if (actor.role === 'ceo' || actor.role === 'manager' || actor.role === 'finance') {
+      // CEO, Manager, and Finance see all flags
     } else if (actor.role === 'team_lead') {
       // Team Lead only sees flags whose raisedForStaffId is one of their team members
       const teamMembers = await this.prisma.staff.findMany({
@@ -126,8 +126,8 @@ export class ReviewFlagService {
       throw new NotFoundException(`Review flag '${id}' not found`);
     }
 
-    if (actor.role === 'ceo' || actor.role === 'manager') {
-      // CEO and Manager may resolve any flag
+    if (actor.role === 'ceo' || actor.role === 'manager' || actor.role === 'finance') {
+      // CEO, Manager, and Finance may resolve any flag
     } else if (actor.role === 'team_lead') {
       if (!flag.raisedForStaffId) {
         throw new ForbiddenException(
