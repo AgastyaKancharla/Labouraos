@@ -559,7 +559,7 @@ export class InterviewService {
   }
 
   private async sendOwnerResultRequest(
-    interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true } }>,
+    interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
     now: Date,
     closeHours: number,
   ) {
