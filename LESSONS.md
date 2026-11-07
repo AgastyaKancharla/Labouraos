@@ -50,7 +50,7 @@ Format:
 ## Interview test teardown must filter through the business relation
 **Symptom:** `placement.spec.ts` teardown failed deleting interview slots with `Interview_vacancyInterviewSlotId_fkey`; later suites failed deleting staff with `Interview_proposedByStaffId_fkey`.
 **Cause:** The interview cleanup compared `businessId` (a database ID) to business codes, so it deleted no interviews and left their slot and proposing-staff references behind.
-**Fix:** Filter interviews through `business.code`, delete those interviews before their slots, and preserve the dependent-record teardown order.
+**Fix:** Filter interviews through `business.code`; delete dependent payment and placement rows first, then interviews before their slots; and preserve the dependent-record teardown order.
 
 ## TypeScript control-flow type narrowing with string union statuses
 **Symptom:** In `placement.service.ts`, `placement.status === 'replaced'` caused compilation error `TS2367: This comparison appears to be unintentional because the types '"dropped_out"' and '"replaced"' have no overlap.`
