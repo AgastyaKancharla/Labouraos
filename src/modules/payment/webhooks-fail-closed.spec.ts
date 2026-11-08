@@ -20,6 +20,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { PayoutAccountService } from '../payout-account/payout-account.service';
 import { PAYMENT_PROVIDER } from './payment-provider.interface';
 import { BANK_FEED_PROVIDER } from './bank-feed-provider.interface';
 import { TELEPHONY_PROVIDER } from '../telephony/telephony.interface';
@@ -280,6 +281,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
           {} as unknown as PricingService,
           {} as never,
           {} as unknown as ReviewFlagService,
+          {} as unknown as PayoutAccountService,
         );
         await expect(paymentService.simulateMockWebhook({ gatewayReference: 'test' })).rejects.toThrow(
           NotFoundException,
@@ -346,6 +348,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
         pricingService as unknown as PricingService,
         {} as never,
         {} as unknown as ReviewFlagService,
+        {} as unknown as PayoutAccountService,
       );
 
       // Attacker sends fake bank credit matching candidate's upiReference and exact amount, but unsigned
@@ -480,7 +483,17 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
           {
             provide: PaymentService,
             useFactory: (prisma, audit, id, payProv, bankProv, pricing, review) =>
-              new PaymentService(prisma, audit, id, payProv, bankProv, pricing, {} as never, review),
+              new PaymentService(
+                prisma,
+                audit,
+                id,
+                payProv,
+                bankProv,
+                pricing,
+                {} as never,
+                review,
+                {} as unknown as PayoutAccountService,
+              ),
             inject: [
               PrismaService,
               AuditService,

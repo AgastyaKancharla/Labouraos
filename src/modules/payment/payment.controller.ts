@@ -215,6 +215,17 @@ export class PaymentController {
     return this.paymentService.recordPayout(id, req.user.sub, body);
   }
 
+  @Post(':id/reveal-payout-details')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'finance')
+  async revealPayoutDetails(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.revealPayoutDetails(id, req.user.sub);
+  }
+
   /**
    * Collection webhook (activation and placement-fee payments). The signature is
    * verified over `req.rawBody`, the bytes the gateway sent, which requires

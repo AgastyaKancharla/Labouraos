@@ -17,6 +17,8 @@ import { RecordPayoutDto } from './dto/record-payout.dto';
 import { matchReceiverName } from '../payout-account/name-matcher';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
+import { PayoutAccountService } from '../payout-account/payout-account.service';
+import { decryptPayoutValue } from '../payout-account/payout-account-key';
 import {
   PAYMENT_PROVIDER,
   PaymentProvider,
@@ -46,6 +48,7 @@ export class PaymentService {
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
+    private readonly payoutAccountService: PayoutAccountService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -831,7 +834,34 @@ export class PaymentService {
       });
     }
 
+    // Phase 18 Task 4: Automatically queue payout details link for referral partner if no account
+    if (placement.jobSeeker.referredById) {
+      const auditStaffId = await this.fallbackActorId(actorId);
+      await this.sendPayoutDetailsLinkIfNoAccount(
+        'referral',
+        placement.jobSeeker.referredById,
+        auditStaffId ?? actorId ?? 'system',
+        'system',
+      );
+    }
+
     return payment;
+  }
+
+  async sendPayoutDetailsLinkIfNoAccount(
+    ownerType: 'referral' | 'job_seeker' | 'business',
+    ownerId: string,
+    actorId: string,
+    actorRole = 'system',
+    now = new Date(),
+  ) {
+    return this.payoutAccountService.sendLinkIfNotOnRecord(
+      ownerType,
+      ownerId,
+      actorId,
+      actorRole,
+      now,
+    );
   }
 
   /** Who audit rows for system-driven changes are attributed to (actorId must be a real staff row). */
@@ -1066,6 +1096,32 @@ export class PaymentService {
       reason: 'Payment approved by CEO or Finance',
     });
 
+    // Phase 18 Task 4: When a refund becomes owed/approved and receiver has no account, send link
+    if (payment.type === 'refund') {
+      const receiverOwnerType =
+        payment.jobSeekerId || payment.subjectType === 'job_seeker' ? 'job_seeker' : 'business';
+      let receiverOwnerId: string;
+      if (receiverOwnerType === 'job_seeker') {
+        receiverOwnerId = payment.jobSeekerId || payment.subjectId;
+      } else {
+        if (payment.businessId) {
+          receiverOwnerId = payment.businessId;
+        } else if (payment.placementId) {
+          const pl = await this.prisma.placement.findUnique({ where: { id: payment.placementId } });
+          receiverOwnerId = pl?.businessId || payment.subjectId;
+        } else {
+          receiverOwnerId = payment.subjectId;
+        }
+      }
+      await this.sendPayoutDetailsLinkIfNoAccount(
+        receiverOwnerType,
+        receiverOwnerId,
+        actorId,
+        'system',
+        now,
+      );
+    }
+
     return updated;
   }
 
@@ -1270,7 +1326,123 @@ export class PaymentService {
     return updated;
   }
 
+  async revealPayoutDetails(paymentId: string, actorId: string, now = new Date()) {
+    const payment = await this.loadPayoutPayment(paymentId);
 
+    if (payment.status !== 'approved') {
+      throw new BadRequestException(
+        `Payout details can only be revealed for approved payments. Current status: '${payment.status}'`,
+      );
+    }
+
+    let ownerType: string;
+    let ownerId: string;
+
+    if (payment.type === 'referral_payout') {
+      ownerType = 'referral';
+      ownerId = payment.referralId || payment.subjectId;
+    } else if (payment.type === 'joining_reward') {
+      ownerType = 'job_seeker';
+      ownerId = payment.jobSeekerId || payment.subjectId;
+    } else if (payment.type === 'refund') {
+      if (payment.jobSeekerId || payment.subjectType === 'job_seeker') {
+        ownerType = 'job_seeker';
+        ownerId = payment.jobSeekerId || payment.subjectId;
+      } else {
+        ownerType = 'business';
+        if (payment.businessId) {
+          ownerId = payment.businessId;
+        } else if (payment.placementId) {
+          const pl = await this.prisma.placement.findUnique({ where: { id: payment.placementId } });
+          ownerId = pl?.businessId || payment.subjectId;
+        } else {
+          ownerId = payment.subjectId;
+        }
+      }
+    } else {
+      ownerType = payment.subjectType;
+      ownerId = payment.subjectId;
+    }
+
+    let account: PayoutAccount | null = null;
+    if (payment.payoutAccountId) {
+      account = await this.prisma.payoutAccount.findUnique({
+        where: { id: payment.payoutAccountId },
+      });
+    }
+
+    if (!account) {
+      account = await this.prisma.payoutAccount.findFirst({
+        where: {
+          ownerType,
+          ownerId,
+          status: { not: 'superseded' },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+    }
+
+    if (!account) {
+      throw new BadRequestException('No payout account found for payment receiver');
+    }
+
+    if (account.status === 'superseded') {
+      throw new BadRequestException('Payout account has been superseded');
+    }
+    if (account.status === 'flagged') {
+      throw new BadRequestException('Payout account is flagged and cannot be paid');
+    }
+
+    if (account.activeFrom.getTime() > now.getTime()) {
+      throw new BadRequestException(
+        `Payout account is in cooling period (48-hour wait) until ${account.activeFrom.toISOString()}`,
+      );
+    }
+
+    let upiId: string | undefined;
+    let accountNumber: string | undefined;
+    let ifsc: string | undefined;
+
+    if (account.method === 'upi') {
+      if (!account.upiIdEncrypted) {
+        throw new BadRequestException('Payout account has no encrypted UPI ID');
+      }
+      upiId = decryptPayoutValue(account.upiIdEncrypted);
+    } else {
+      if (!account.bankAccountEncrypted) {
+        throw new BadRequestException('Payout account has no encrypted bank account');
+      }
+      accountNumber = decryptPayoutValue(account.bankAccountEncrypted);
+      ifsc = account.ifsc ?? undefined;
+    }
+
+    await this.auditService.log({
+      actorId,
+      action: 'payout_details_revealed',
+      entityType: 'payment',
+      entityCode: payment.code,
+      before: null,
+      after: {
+        paymentId: payment.id,
+        payoutAccountId: account.id,
+        method: account.method,
+        maskedValue: account.maskedValue,
+      },
+      changedFields: [],
+      reason: 'Payout details revealed to CEO or Finance for manual disbursement',
+    });
+
+    return {
+      paymentId: payment.id,
+      payoutAccountId: account.id,
+      method: account.method,
+      maskedValue: account.maskedValue,
+      ownerName: account.ownerNameAtEntry,
+      upiId,
+      accountNumber,
+      ifsc,
+    };
+  }
 
   async findAll(filters?: PaymentFilterDto) {
     const where: Prisma.PaymentWhereInput = {};
