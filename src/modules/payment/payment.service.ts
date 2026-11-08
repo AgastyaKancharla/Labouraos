@@ -27,7 +27,6 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
-import { ConsentService } from '../consent/consent.service';
 import { publicLink } from '../../common/public-link';
 
 @Injectable()
@@ -45,7 +44,6 @@ export class PaymentService {
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
-    private readonly consentService: ConsentService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -892,8 +890,17 @@ export class PaymentService {
 
     if (payment.type === 'referral_payout') {
       const referralId = payment.referralId || payment.subjectId;
-      const termsSigned = await this.consentService.hasConsent('referral', referralId, 'agreement_terms');
-      if (!termsSigned) {
+      const termsConsent = await this.prisma.consent.findFirst({
+        where: {
+          subjectType: 'referral',
+          subjectId: referralId,
+          purpose: 'agreement_terms',
+          granted: true,
+          grantedAt: { not: null },
+          withdrawnAt: null,
+        },
+      });
+      if (!termsConsent) {
         throw new BadRequestException('Referral partner has not signed agreement terms');
       }
     }

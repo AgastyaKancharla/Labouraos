@@ -280,7 +280,6 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
           {} as unknown as PricingService,
           {} as never,
           {} as unknown as ReviewFlagService,
-          { hasConsent: jest.fn() } as never,
         );
         await expect(paymentService.simulateMockWebhook({ gatewayReference: 'test' })).rejects.toThrow(
           NotFoundException,
@@ -347,7 +346,6 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
         pricingService as unknown as PricingService,
         {} as never,
         {} as unknown as ReviewFlagService,
-        { hasConsent: jest.fn() } as never,
       );
 
       // Attacker sends fake bank credit matching candidate's upiReference and exact amount, but unsigned
@@ -482,17 +480,7 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
           {
             provide: PaymentService,
             useFactory: (prisma, audit, id, payProv, bankProv, pricing, review) =>
-              new PaymentService(
-                prisma,
-                audit,
-                id,
-                payProv,
-                bankProv,
-                pricing,
-                {} as never,
-                review,
-                { hasConsent: jest.fn().mockResolvedValue(true) } as never,
-              ),
+              new PaymentService(prisma, audit, id, payProv, bankProv, pricing, {} as never, review),
             inject: [
               PrismaService,
               AuditService,

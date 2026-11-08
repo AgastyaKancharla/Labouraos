@@ -106,7 +106,6 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       pricingService,
       messagingService,
       reviewFlagService as unknown as ReviewFlagService,
-      { hasConsent: jest.fn() } as never,
     );
   });
 
