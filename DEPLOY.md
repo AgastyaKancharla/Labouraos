@@ -134,6 +134,7 @@ Follow these steps in exact sequential order:
 | `TELEPHONY_PROVIDER_MODE` | `mock` | Default mock mode (§3) until telephony vendor is active |
 | `KYC_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SurePass keys are active |
 | `CALL_ROUTING_KEY` | *Auto-generated. Do not type one.* | 32-byte secret used to AES-256-GCM encrypt staff call routing phone numbers |
+| `PAYOUT_ACCOUNT_KEY` | *Auto-generated. Do not type one.* | 32-byte secret used to AES-256-GCM encrypt candidate, referral, and business payout accounts |
 | `BANK_FEED_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with the bank feed provider to sign bank credit notifications |
 | `PAYMENT_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Razorpay or the card payment provider to sign card collection webhooks |
 | `PAYOUT_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with RazorpayX or the payout bank to sign refund and reward transfer webhooks |
@@ -186,6 +187,13 @@ Like `LOGIN_CODE_SECRET`, you do not invent `CALL_ROUTING_KEY` and never commit 
 1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
 2. Find `CALL_ROUTING_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
 3. Open **`laboura-worker`** -> **Environment**. Verify that `CALL_ROUTING_KEY` is linked from `laboura-api`.
+
+#### Where to find `PAYOUT_ACCOUNT_KEY`
+
+Like `CALL_ROUTING_KEY`, you do not invent `PAYOUT_ACCOUNT_KEY` and never commit it to git:
+1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
+2. Find `PAYOUT_ACCOUNT_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
+3. Open **`laboura-worker`** -> **Environment**. Verify that `PAYOUT_ACCOUNT_KEY` is linked from `laboura-api`.
 
 #### How to configure Laboura's Business UPI Details (COMPANY_UPI_VPA and COMPANY_UPI_PAYEE_NAME)
 

@@ -26,7 +26,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ---
 
-### [ ] Task 1 — Payout accounts, entered by the person on their own phone
+### [x] Task 1 — Payout accounts, entered by the person on their own phone
 **Branch:** `phase-18/task-1-payout-accounts` · **Migration folder:** `20261111100000_add_payout_account`
 
 **Acceptance:**

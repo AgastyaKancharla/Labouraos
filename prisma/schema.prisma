@@ -552,6 +552,7 @@ model Payment {
   approvedByStaffId String?
   approvedAt        DateTime?
   payoutAccountId   String?
+  payoutAccount     PayoutAccount? @relation(fields: [payoutAccountId], references: [id], onDelete: SetNull)
   payerUtrHint      String?
   subjectType       String      // job_seeker, business, referral, placement
   subjectId         String
@@ -1164,6 +1165,35 @@ model FollowUpTask {
   @@index([assignedStaffId])
   @@index([kind])
 }
+
+model PayoutAccount {
+  id                    String    @id @default(uuid())
+  code                  String    @unique
+  ownerType             String    // referral, job_seeker, business
+  ownerId               String
+  ownerNameAtEntry      String
+  method                String    // upi, bank
+  maskedValue           String
+  valueHash             String
+  upiIdEncrypted        String?
+  bankAccountEncrypted  String?
+  ifsc                  String?
+  verifiedName          String?
+  nameMatches           Boolean?
+  status                String    @default("pending_validation") // pending_validation, verified, flagged, superseded
+  validatedAt           DateTime?
+  activeFrom            DateTime
+  changeOtpRequestId    String?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  payments              Payment[]
+
+  @@index([ownerType, ownerId])
+  @@index([valueHash])
+  @@index([status])
+}
+
 
 
 

@@ -17,7 +17,8 @@ export type EntityType =
   | 'review_flag'
   | 'call'
   | 'replacement_claim'
-  | 'follow_up_task';
+  | 'follow_up_task'
+  | 'payout_account';
 
 export const ENTITY_PREFIXES: Record<EntityType, string> = {
   job_seeker: 'JS',
@@ -36,6 +37,7 @@ export const ENTITY_PREFIXES: Record<EntityType, string> = {
   call: 'CALL',
   replacement_claim: 'RCL',
   follow_up_task: 'FUT',
+  payout_account: 'PA',
 };
 
 export function formatCode(prefix: string, seq: number): string {
