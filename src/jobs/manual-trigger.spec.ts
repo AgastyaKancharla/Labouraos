@@ -13,6 +13,7 @@ import { PlacementCompletionJob } from './placement-completion.job';
 import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
 import { PatternFlagsJob } from './pattern-flags.job';
+import { JoiningRewardJob } from './joining-reward.job';
 import { AuditService } from '../common/audit/audit.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
@@ -117,6 +118,7 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
           { provide: ClaimOverdueJob, useValue: { process: jest.fn().mockResolvedValue({ raised: 0 }) } },
           { provide: FollowUpJob, useValue: { process: jest.fn().mockResolvedValue({ created: 0, missed: 0 }) } },
           { provide: PatternFlagsJob, useValue: { process: jest.fn().mockResolvedValue({ businessManyRejections: 0, businessStopped: 0, agentRejection: 0 }) } },
+          { provide: JoiningRewardJob, useValue: { process: jest.fn().mockResolvedValue({ queued: 0 }) } },
           { provide: AuditService, useValue: mockAuditService },
           { provide: PrismaService, useValue: mockPrisma },
           { provide: PricingService, useValue: { current: jest.fn() } },

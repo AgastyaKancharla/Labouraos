@@ -17,6 +17,7 @@ import { PlacementCompletionJob } from './placement-completion.job';
 import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
 import { PatternFlagsJob } from './pattern-flags.job';
+import { JoiningRewardJob } from './joining-reward.job';
 
 @Controller('jobs')
 export class JobsController {
@@ -26,6 +27,7 @@ export class JobsController {
     private readonly claimOverdueJob: ClaimOverdueJob,
     private readonly followUpJob: FollowUpJob,
     private readonly patternFlagsJob: PatternFlagsJob,
+    private readonly joiningRewardJob: JoiningRewardJob,
     private readonly auditService: AuditService,
   ) {}
 
@@ -134,6 +136,27 @@ export class JobsController {
       action: 'job.manual_trigger',
       entityType: 'job',
       entityCode: 'pattern-flags',
+      after: { ...result },
+      city: 'Bengaluru',
+    });
+
+    return result;
+  }
+
+  @Post('joining-reward/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('placement', 'write')
+  async runJoiningReward(
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    const result = await this.joiningRewardJob.process();
+
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'joining-reward',
       after: { ...result },
       city: 'Bengaluru',
     });

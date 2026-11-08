@@ -13,6 +13,7 @@ import { PlacementCompletionJob } from './placement-completion.job';
 import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
 import { PatternFlagsJob } from './pattern-flags.job';
+import { JoiningRewardJob } from './joining-reward.job';
 import { PlacementModule } from '../modules/placement/placement.module';
 import { FollowUpModule } from '../modules/follow-up/follow-up.module';
 import { ReviewFlagModule } from '../modules/review-flag/review-flag.module';
@@ -20,8 +21,8 @@ import { ReviewFlagModule } from '../modules/review-flag/review-flag.module';
 @Module({
   imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule],
   controllers: [JobsController],
-  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob],
-  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob],
+  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob],
+  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob],
 })
 export class JobsModule {}
 

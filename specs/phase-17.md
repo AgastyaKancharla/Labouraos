@@ -90,7 +90,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - These flags feed Phase 15's attendance rule (an agent attends interviews at a flagged business).
 - Tests: each pattern fires at its threshold and not one below; a second run doesn't duplicate an open flag; thresholds come from `PricingPolicy`.
 
-### [ ] Task 6 — The joining reward queue
+### [x] Task 6 — The joining reward queue
 **Branch:** `phase-17/task-6-joining-reward` · **No migration**
 
 **Acceptance:**
