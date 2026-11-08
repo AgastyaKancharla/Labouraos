@@ -168,6 +168,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       paymentService,
       pricingService,
       upiCollectionService,
+      { raise: jest.fn(), resolve: jest.fn() } as unknown as ReviewFlagService,
     );
   });
 

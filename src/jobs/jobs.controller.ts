@@ -14,12 +14,14 @@ import { JwtPayload } from '../common/auth/jwt-payload.interface';
 import { AuditService } from '../common/audit/audit.service';
 import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
 import { PlacementCompletionJob } from './placement-completion.job';
+import { ClaimOverdueJob } from './claim-overdue.job';
 
 @Controller('jobs')
 export class JobsController {
   constructor(
     private readonly noPickupEvaluationJob: NoPickupEvaluationJob,
     private readonly placementCompletionJob: PlacementCompletionJob,
+    private readonly claimOverdueJob: ClaimOverdueJob,
     private readonly auditService: AuditService,
   ) {}
 
@@ -66,6 +68,27 @@ export class JobsController {
       entityType: 'job',
       entityCode: 'placement-completion',
       after: { completed: result.completed },
+      city: 'Bengaluru',
+    });
+
+    return result;
+  }
+
+  @Post('claim-overdue/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('placement', 'write')
+  async runClaimOverdue(
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<{ raised: number }> {
+    const result = await this.claimOverdueJob.process();
+
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'claim-overdue',
+      after: { raised: result.raised },
       city: 'Bengaluru',
     });
 
