@@ -199,6 +199,84 @@ export function renderCallAgentConsoleHtml(): string {
     </div>
   </div>
 
+  <!-- Follow-up Completion Modal -->
+  <div id="follow-up-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="follow-up-modal-title" style="font-size: 1.15rem; margin: 0; color: var(--primary);">Complete Follow-up Task</h3>
+        <button type="button" class="btn-sm" onclick="closeFollowUpModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Calls must be answered and recorded.</p>
+      <input type="hidden" id="complete-task-id">
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answered Call Record ID *</label>
+        <input type="text" id="follow-up-call-record-id" placeholder="CR-00001 or Call Record UUID">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answer *</label>
+        <select id="follow-up-answer" onchange="onFollowUpAnswerChange()">
+          <option value="working_elsewhere">Working elsewhere</option>
+          <option value="not_working">Not working</option>
+          <option value="working_at_introduced_business">Working at introduced business</option>
+          <option value="no_answer">No answer</option>
+        </select>
+      </div>
+      <div class="form-group hidden" id="follow-up-introduced-business-group" style="margin-bottom: 10px;">
+        <label>Introduced Business *</label>
+        <select id="follow-up-introduced-business">
+          <option value="">Select introduced business...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Notes</label>
+        <textarea id="follow-up-notes" rows="3" placeholder="Candidate response details..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeFollowUpModal()">Cancel</button>
+        <button type="button" class="btn-sm" onclick="submitCompleteFollowUp()">Complete Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Call Agent Claim Form Modal -->
+  <div id="ca-claim-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Report Replacement Claim</h3>
+        <button type="button" class="btn-sm" onclick="closeCaClaimModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Claim can only be reported after an answered call with the business owner.</p>
+      <input type="hidden" id="ca-claim-placement-id">
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answered Owner Call Record ID *</label>
+        <input type="text" id="ca-claim-call-record-id" placeholder="CR-00001 or Call Record UUID">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Worker Left On (Date) *</label>
+        <input type="date" id="ca-claim-worker-left-on">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Reason *</label>
+        <select id="ca-claim-reason">
+          <option value="resigned">Resigned / Left voluntarily</option>
+          <option value="absconded">Absconded / Stopped reporting</option>
+          <option value="misconduct">Misconduct / Behaviour issue</option>
+          <option value="performance">Unsatisfactory performance</option>
+          <option value="attendance">Chronic absenteeism</option>
+          <option value="business_closed">Business closed / Downsized</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Notes / Evidence</label>
+        <textarea id="ca-claim-notes" rows="3" placeholder="Owner statements and reason details..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeCaClaimModal()">Cancel</button>
+        <button type="button" class="btn-sm" onclick="submitCaClaim()">Submit Claim</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1>Laboura Call Agent Console</h1>
@@ -222,6 +300,7 @@ export function renderCallAgentConsoleHtml(): string {
     <button class="tab-btn" data-tab="interviews">Interviews</button>
     <button class="tab-btn" data-tab="contact-attempts">Calling & Hits</button>
     <button class="tab-btn" data-tab="placement-flow">Placement Payments</button>
+    <button class="tab-btn" data-tab="follow-ups">My Follow-ups</button>
     <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
   </nav>
 
@@ -660,6 +739,34 @@ export function renderCallAgentConsoleHtml(): string {
       </div>
     </div>
 
+    <!-- 8. My Follow-ups -->
+    <div id="view-follow-ups" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title">
+          <span>My Follow-up Tasks</span>
+          <button class="btn-sm" onclick="loadMyFollowUps()">Refresh</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Calls must be answered and recorded. Record candidate status; if working at an introduced business, select which one.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Task Code</th>
+                <th>Candidate</th>
+                <th>Kind</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="follow-ups-tbody">
+              <tr><td colspan="6" style="text-align: center;">Loading follow-up tasks...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <script>
@@ -794,6 +901,7 @@ export function renderCallAgentConsoleHtml(): string {
         document.getElementById('view-' + tab).classList.remove('hidden');
         if (tab === 'interviews') loadAgentInterviews();
         if (tab === 'placement-flow') loadAgentPlacements();
+        if (tab === 'follow-ups') loadMyFollowUps();
       });
     });
 
@@ -1430,11 +1538,29 @@ export function renderCallAgentConsoleHtml(): string {
         const now = Date.now();
         placements.forEach(placement => {
           const row = document.createElement('article'); row.className = 'card';
-          const heading = document.createElement('h3'); heading.textContent = placement.code + ' · ' + placement.jobSeeker.code + ' · ' + placement.status;
+          const heading = document.createElement('h3'); heading.textContent = placement.code + ' · ' + (placement.jobSeeker ? placement.jobSeeker.code : placement.jobSeekerId) + ' · ' + placement.status;
           const due = placement.paymentDueAt ? new Date(placement.paymentDueAt).toLocaleString('en-IN') : '—';
           const paymentStatus = placement.paidAt ? 'Paid' : placement.status === 'awaiting_payment' && placement.paymentDueAt && new Date(placement.paymentDueAt).getTime() <= now ? 'Overdue' : placement.status === 'awaiting_payment' ? 'Awaiting payment' : '—';
-          const details = document.createElement('p'); details.textContent = 'Payment due ' + due + ' · ' + paymentStatus;
+          
+          const workerCallCheck = placement.joiningWorkerCallId ? '✓ Worker call' : '✗ Worker call';
+          const bizCallCheck = placement.joiningBusinessCallId ? '✓ Business call' : '✗ Business call';
+          const guaranteeLeft = placement.guaranteeEndedReason ? 'Ended: ' + placement.guaranteeEndedReason : (placement.guaranteeDaysLeft !== undefined && placement.guaranteeDaysLeft !== null ? placement.guaranteeDaysLeft + ' days left' : (placement.joinedDate ? Math.max(0, 60 - Math.floor((now - new Date(placement.joinedDate).getTime()) / 86400000)) + ' days left' : '—'));
+          const replacementsUsed = placement.replacementNumber + ' / 2';
+          const rejectionsUsed = (placement.rejectionsUsed || 0) + ' / 2';
+          const openClaimText = placement.openClaim ? 'Pending (Due: ' + new Date(placement.openClaim.decisionDueAt).toLocaleString('en-IN') + ')' : 'None';
+
+          const details = document.createElement('p');
+          details.innerHTML = 'Payment due: ' + due + ' · ' + paymentStatus + '<br>' +
+            'Joining checklist: ' + workerCallCheck + ', ' + bizCallCheck + '<br>' +
+            'Guarantee: ' + guaranteeLeft + ' · Replacements: ' + replacementsUsed + ' · Rejections: ' + rejectionsUsed + '<br>' +
+            'Open Claim: ' + openClaimText;
           row.append(heading, details);
+
+          const actionsDiv = document.createElement('div');
+          actionsDiv.style.display = 'flex';
+          actionsDiv.style.gap = '8px';
+          actionsDiv.style.marginTop = '8px';
+
           if (!placement.paidAt && placement.status === 'awaiting_payment') {
             const resendBtn = document.createElement('button');
             resendBtn.className = 'btn-sm';
@@ -1447,11 +1573,167 @@ export function renderCallAgentConsoleHtml(): string {
                 showAlert(e.message, false);
               }
             };
-            row.appendChild(resendBtn);
+            actionsDiv.appendChild(resendBtn);
+          }
+
+          if (placement.status === 'confirmed') {
+            const joinBtn = document.createElement('button');
+            joinBtn.className = 'btn-sm';
+            joinBtn.textContent = 'Record Joining';
+            joinBtn.onclick = async () => {
+              try {
+                await api('/placements/' + placement.id + '/joined', { method: 'POST', body: {} });
+                showAlert('Joining confirmed');
+                loadAgentPlacements();
+              } catch (e) {
+                showAlert('Joining confirmation failed: ' + e.message, false);
+              }
+            };
+            actionsDiv.appendChild(joinBtn);
+          }
+
+          if (placement.status === 'active') {
+            const claimBtn = document.createElement('button');
+            claimBtn.className = 'btn-sm btn-secondary';
+            claimBtn.textContent = 'Report Claim';
+            claimBtn.onclick = () => openCaClaimModal(placement.id, placement.code);
+            actionsDiv.appendChild(claimBtn);
+          }
+
+          if (actionsDiv.children.length > 0) {
+            row.appendChild(actionsDiv);
           }
           target.appendChild(row);
         });
       } catch (e) { target.textContent = e.message; }
+    }
+
+    function openCaClaimModal(placementId, placementCode) {
+      document.getElementById('ca-claim-placement-id').value = placementId;
+      document.getElementById('ca-claim-call-record-id').value = '';
+      document.getElementById('ca-claim-worker-left-on').value = new Date().toISOString().split('T')[0];
+      document.getElementById('ca-claim-notes').value = '';
+      document.getElementById('ca-claim-modal').classList.remove('hidden');
+    }
+
+    function closeCaClaimModal() {
+      document.getElementById('ca-claim-modal').classList.add('hidden');
+    }
+
+    async function submitCaClaim() {
+      const placementId = document.getElementById('ca-claim-placement-id').value;
+      const callRecordId = document.getElementById('ca-claim-call-record-id').value.trim();
+      const workerLeftOn = document.getElementById('ca-claim-worker-left-on').value;
+      const reason = document.getElementById('ca-claim-reason').value;
+      const notes = document.getElementById('ca-claim-notes').value.trim();
+
+      if (!callRecordId) return alert('Answered owner call record ID is required');
+      if (!workerLeftOn) return alert('Worker left date is required');
+
+      try {
+        await api('/placements/' + placementId + '/claims', {
+          method: 'POST',
+          body: { callRecordId, workerLeftOn, reason, notes: notes || undefined },
+        });
+        showAlert('Claim submitted successfully');
+        closeCaClaimModal();
+        loadAgentPlacements();
+      } catch (e) {
+        showAlert('Claim submission failed: ' + e.message, false);
+      }
+    }
+
+    let activeFollowUpTaskId = null;
+
+    async function loadMyFollowUps() {
+      const tbody = document.getElementById('follow-ups-tbody');
+      if (!tbody) return;
+      try {
+        const tasks = await api('/follow-up-tasks');
+        const now = Date.now();
+        tbody.innerHTML = tasks.map(function(t) {
+          const isOverdue = t.status === 'pending' && new Date(t.dueAt).getTime() <= now;
+          const statusDisplay = t.status === 'done' ? '<span class="badge" style="background:var(--success);">Completed</span>' : isOverdue ? '<span class="badge" style="background:var(--danger);">Overdue</span>' : '<span class="badge">' + t.status + '</span>';
+          const seekerText = t.jobSeeker ? t.jobSeeker.code + ' (' + t.jobSeeker.name + ')' : (t.jobSeekerId || '—');
+          const actionBtn = t.status === 'pending' ? '<button class="btn-sm" data-id="' + t.id + '" onclick="openCompleteFollowUpModal(this.dataset.id)">Complete Task</button>' : '—';
+          return '<tr>' +
+            '<td><strong>' + t.code + '</strong></td>' +
+            '<td>' + seekerText + '</td>' +
+            '<td><span class="badge">' + t.kind + '</span></td>' +
+            '<td>' + new Date(t.dueAt).toLocaleDateString() + '</td>' +
+            '<td>' + statusDisplay + '</td>' +
+            '<td>' + actionBtn + '</td>' +
+          '</tr>';
+        }).join('') || '<tr><td colspan="6" style="text-align: center;">No follow-up tasks found</td></tr>';
+      } catch (e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger);">Failed to load follow-ups: ' + e.message + '</td></tr>';
+      }
+    }
+
+    function openCompleteFollowUpModal(taskId) {
+      activeFollowUpTaskId = taskId;
+      document.getElementById('complete-task-id').value = taskId;
+      document.getElementById('follow-up-call-record-id').value = '';
+      document.getElementById('follow-up-answer').value = 'working_elsewhere';
+      document.getElementById('follow-up-introduced-business-group').classList.add('hidden');
+      document.getElementById('follow-up-notes').value = '';
+      document.getElementById('follow-up-modal').classList.remove('hidden');
+    }
+
+    function closeFollowUpModal() {
+      document.getElementById('follow-up-modal').classList.add('hidden');
+      activeFollowUpTaskId = null;
+    }
+
+    async function onFollowUpAnswerChange() {
+      const answer = document.getElementById('follow-up-answer').value;
+      const group = document.getElementById('follow-up-introduced-business-group');
+      const select = document.getElementById('follow-up-introduced-business');
+      if (answer === 'working_at_introduced_business') {
+        group.classList.remove('hidden');
+        select.innerHTML = '<option value="">Loading introduced businesses...</option>';
+        try {
+          const businesses = await api('/follow-up-tasks/' + activeFollowUpTaskId + '/introduced-businesses');
+          select.innerHTML = '<option value="">Select introduced business...</option>' + businesses.map(function(b) {
+            return '<option value="' + b.id + '">' + b.code + ' · ' + b.name + '</option>';
+          }).join('');
+        } catch (e) {
+          select.innerHTML = '<option value="">Failed to load businesses</option>';
+        }
+      } else {
+        group.classList.add('hidden');
+      }
+    }
+
+    async function submitCompleteFollowUp() {
+      const taskId = document.getElementById('complete-task-id').value;
+      const callRecordId = document.getElementById('follow-up-call-record-id').value.trim();
+      const answer = document.getElementById('follow-up-answer').value;
+      const answerBusinessId = document.getElementById('follow-up-introduced-business').value;
+      const notes = document.getElementById('follow-up-notes').value.trim();
+
+      if (!callRecordId) return alert('Answered call record ID is required');
+      if (answer === 'working_at_introduced_business' && !answerBusinessId) {
+        return alert('Please select the introduced business');
+      }
+
+      try {
+        await api('/follow-up-tasks/' + taskId + '/complete', {
+          method: 'POST',
+          body: {
+            callRecordId,
+            answer,
+            answerBusinessId: answer === 'working_at_introduced_business' ? answerBusinessId : undefined,
+            notes: notes || undefined,
+          },
+        });
+        showAlert('Follow-up task completed successfully');
+        closeFollowUpModal();
+        loadMyFollowUps();
+      } catch (e) {
+        showAlert('Failed to complete follow-up: ' + e.message, false);
+      }
     }
 
     window.addEventListener('DOMContentLoaded', () => {

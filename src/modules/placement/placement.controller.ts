@@ -106,6 +106,13 @@ export class PlacementController {
     return this.placementService.findAll(req.user.sub);
   }
 
+  @Get('claims/pending')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  @RequirePermission('placement', 'read')
+  async listPendingClaims(@Req() req: Request & { user: JwtPayload }) {
+    return this.placementService.listPendingClaims(req.user.sub);
+  }
+
   @Get('export')
   @RequireRoles('ceo', 'manager', 'finance')
   @RequirePermission('placement', 'read')

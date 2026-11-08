@@ -98,7 +98,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Replacement placements earn it the same way, counted from their own joining.
 - Tests: queued on day 30, not day 29; not queued if a claim was accepted before day 30; never twice; nobody but CEO and Finance can release it.
 
-### [ ] Task 7 — Screens
+### [x] Task 7 — Screens
 **Branch:** `phase-17/task-7-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**

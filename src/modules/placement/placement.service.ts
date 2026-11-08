@@ -1256,12 +1256,22 @@ export class PlacementService {
       };
     }
 
-    return this.prisma.placement.findMany({
+    const placements = await this.prisma.placement.findMany({
       where,
       include: {
         business: true,
         jobSeeker: true,
         vacancy: true,
+        joiningWorkerCall: true,
+        joiningBusinessCall: true,
+        replacementClaims: {
+          include: {
+            callRecord: true,
+            exitCallRecord: true,
+            decidedByStaff: { select: { id: true, code: true, name: true, role: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
         replacementCandidates: {
           include: {
             jobSeeker: true,
@@ -1269,6 +1279,85 @@ export class PlacementService {
         },
       },
       orderBy: { createdAt: 'desc' },
+    });
+
+    if (!Array.isArray(placements)) {
+      return placements;
+    }
+
+    const rootIds = Array.from(new Set(placements.map(p => p.rootPlacementId).filter((id): id is string => Boolean(id))));
+    const rootPlacements = rootIds.length > 0 && typeof this.prisma.placement?.findMany === 'function'
+      ? await this.prisma.placement.findMany({
+          where: { id: { in: rootIds } },
+          select: { id: true, code: true, joinedDate: true, guaranteeEndedReason: true, status: true },
+        })
+      : [];
+    const rootMap = new Map(rootPlacements.map(r => [r.id, r]));
+
+    const policy = await this.getPolicy();
+    const guaranteeDays = policy.replacementWindowDays;
+
+    return placements.map(p => {
+      const root = p.rootPlacementId ? (rootMap.get(p.rootPlacementId) ?? p) : p;
+      const rootJoinedDate = root?.joinedDate ?? p.joinedDate ?? null;
+      let guaranteeDaysLeft: number | null = null;
+      if (rootJoinedDate) {
+        const elapsed = Math.floor((Date.now() - new Date(rootJoinedDate).getTime()) / (1000 * 60 * 60 * 24));
+        guaranteeDaysLeft = Math.max(0, guaranteeDays - elapsed);
+      }
+      const claims = p.replacementClaims || [];
+      const openClaim = claims.find((c: { decision: string | null }) => c.decision === null) || null;
+      const candidates = p.replacementCandidates || [];
+      const rejectionsUsed = candidates.filter((rc: { status: string }) => rc.status === 'rejected').length;
+      return {
+        ...p,
+        rootJoinedDate,
+        guaranteeDaysLeft,
+        openClaim,
+        rejectionsUsed,
+      };
+    });
+  }
+
+  async listPendingClaims(actorId: string) {
+    const actor = await this.prisma.staff.findUnique({
+      where: { id: actorId },
+    });
+    if (!actor) {
+      throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+
+    const where: Record<string, unknown> = {
+      decision: null,
+    };
+
+    if (actor.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
+      const teamIds = team.map(({ id }) => id);
+      where.placement = {
+        business: {
+          OR: [
+            { accountAgentId: { in: teamIds } },
+            { leadCreatedByStaffId: { in: teamIds } },
+          ],
+        },
+      };
+    }
+
+    return this.prisma.replacementClaim.findMany({
+      where,
+      include: {
+        placement: {
+          include: {
+            business: true,
+            jobSeeker: true,
+            vacancy: true,
+          },
+        },
+        callRecord: true,
+        exitCallRecord: true,
+      },
+      orderBy: { decisionDueAt: 'asc' },
     });
   }
 
@@ -1288,6 +1377,16 @@ export class PlacementService {
         business: true,
         jobSeeker: true,
         vacancy: true,
+        joiningWorkerCall: true,
+        joiningBusinessCall: true,
+        replacementClaims: {
+          include: {
+            callRecord: true,
+            exitCallRecord: true,
+            decidedByStaff: { select: { id: true, code: true, name: true, role: true } },
+          },
+          orderBy: { createdAt: 'desc' },
+        },
         replacementCandidates: {
           include: {
             jobSeeker: true,
