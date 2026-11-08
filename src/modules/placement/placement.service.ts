@@ -1469,7 +1469,7 @@ export class PlacementService {
       where: {
         placementId: { in: [placement.id, rootId] },
         type: 'refund',
-        status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+        status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
       },
     });
 
@@ -1515,8 +1515,10 @@ export class PlacementService {
           city: placement.city,
           type: 'refund',
           amount: refundAmount,
-          status: 'completed',
-          gatewayReference: `ref_pl_${rootPlacement.code}_${Date.now()}`,
+          status: 'approved',
+          approvedByStaffId: actor.id,
+          approvedAt: now,
+          gatewayReference: null,
           subjectType: 'placement',
           subjectId: placement.id,
           placementId: placement.id,
@@ -1528,7 +1530,7 @@ export class PlacementService {
         subjectType: 'payment',
         subjectId: p.id,
         fromStatus: null,
-        toStatus: 'completed',
+        toStatus: 'approved',
         changedByStaffId: actor.id,
         reason: 'placement_guarantee_refund',
       });

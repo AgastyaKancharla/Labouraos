@@ -7,13 +7,16 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
-import { Payment, Prisma } from '@prisma/client';
-import { createHash } from 'node:crypto';
+import { PayoutAccount, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
 import { PaymentFilterDto } from './dto/payment-filter.dto';
+import { RecordPayoutDto } from './dto/record-payout.dto';
+import { matchReceiverName } from '../payout-account/name-matcher';
+import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
+import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import {
   PAYMENT_PROVIDER,
   PaymentProvider,
@@ -24,7 +27,6 @@ import {
   BankFeedProvider,
 } from './bank-feed-provider.interface';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
-import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
@@ -763,10 +765,6 @@ export class PaymentService {
     }
 
     const code = await this.idService.generateCode('payment');
-    const timestamp = Date.now();
-    const randomHex = Math.random().toString(36).substring(2, 8);
-    const gatewayReference = `mock_payout_ref_${placement.id}_${timestamp}_${randomHex}`;
-
     const referralPayoutPaise = await this.getReferralPayoutPaise();
 
     const payment = await this.prisma.$transaction(async (tx) => {
@@ -777,7 +775,7 @@ export class PaymentService {
           type: 'referral_payout',
           amount: referralPayoutPaise,
           status: 'pending',
-          gatewayReference,
+          gatewayReference: null,
           subjectType: 'referral',
           subjectId: placement.jobSeeker.referredById!,
           referralId: placement.jobSeeker.referredById,
@@ -865,28 +863,14 @@ export class PaymentService {
     return payment;
   }
 
-  async disbursePayout(
-    paymentId: string,
-    actorId?: string,
-    options?: { simulateFailure?: boolean },
-  ) {
-    const payment = await this.loadPayoutPayment(paymentId);
-
-    if (payment.status !== 'pending') {
-      throw new BadRequestException(
-        `Only pending payments can be disbursed. Current status: '${payment.status}'`,
-      );
-    }
-
-    return this.dispatchPayout(payment, ['pending'], 'payout_release', actorId, options);
-  }
-
-  async approvePayment(paymentId: string, actorId: string) {
+  async approvePayment(paymentId: string, actorId: string, asOf?: Date | string) {
     const payment = await this.loadPayoutPayment(paymentId);
 
     if (payment.status !== 'pending') {
       throw new BadRequestException(`Payment cannot be approved from status '${payment.status}'`);
     }
+
+    const now = asOf ? new Date(asOf) : new Date();
 
     if (payment.type === 'referral_payout') {
       const referralId = payment.referralId || payment.subjectId;
@@ -903,9 +887,156 @@ export class PaymentService {
       if (!termsConsent) {
         throw new BadRequestException('Referral partner has not signed agreement terms');
       }
+    } else if (payment.type === 'refund') {
+      if (payment.jobSeekerId || payment.subjectType === 'job_seeker') {
+        const jsId = payment.jobSeekerId || payment.subjectId;
+        const jobSeeker = await this.prisma.jobSeeker.findUnique({
+          where: { id: jsId },
+        });
+        if (!jobSeeker) {
+          throw new NotFoundException(`Job seeker '${jsId}' not found`);
+        }
+
+        const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
+          where: {
+            jobSeekerId: jobSeeker.id,
+            reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
+            reversedAt: null,
+          },
+        });
+
+        const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
+          ? await this.prisma.consent.findFirst({
+              where: {
+                subjectType: 'job_seeker',
+                subjectId: jobSeeker.id,
+                purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
+                withdrawnAt: { not: null, gte: jobSeeker.paymentReceivedAt },
+              },
+            })
+          : null;
+
+        const openBypassFlag = await this.prisma.reviewFlag.findFirst({
+          where: {
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            kind: 'bypass_suspected',
+            status: 'open',
+          },
+        });
+
+        const bypassFollowUp = await this.prisma.followUpTask.findFirst({
+          where: {
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            kind: 'refund_check',
+            answer: 'working_at_introduced_business',
+          },
+        });
+
+        const policy = await this.pricingService.current();
+        const activationPayment = await this.prisma.payment.findFirst({
+          where: {
+            jobSeekerId: jobSeeker.id,
+            type: { in: ['activation', 'reactivation'] },
+            status: { in: ['completed', 'succeeded'] },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        const eligibility = evaluateJobSeekerRefundEligibility(
+          {
+            code: jobSeeker.code,
+            paymentReceivedAt: jobSeeker.paymentReceivedAt,
+            status: jobSeeker.status,
+            hasOfferRejectedHit: Boolean(hasOfferRejected),
+            hasExistingRefund: false,
+            activationPaymentPaise: activationPayment?.amount,
+            guaranteeDays: policy.jobSeekerGuaranteeDays,
+            hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
+            hasOpenBypassFlag: Boolean(openBypassFlag),
+            hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
+          },
+          now,
+        );
+
+        if (!eligibility.eligible) {
+          throw new BadRequestException(eligibility.ineligibleReason!);
+        }
+      } else if (payment.placementId || payment.subjectType === 'placement') {
+        const placementId = payment.placementId || payment.subjectId;
+        const placement = await this.prisma.placement.findUnique({
+          where: { id: placementId },
+          include: { replacementCandidates: true },
+        });
+        if (!placement) {
+          throw new NotFoundException(`Placement '${placementId}' not found`);
+        }
+
+        const rootId = placement.rootPlacementId ?? placement.id;
+        const rootPlacement = placement.rootPlacementId
+          ? await this.prisma.placement.findUniqueOrThrow({
+              where: { id: rootId },
+              include: { replacementCandidates: true },
+            })
+          : placement;
+
+        const selectedReplacement = await this.prisma.placement.findFirst({
+          where: {
+            rootPlacementId: rootId,
+            replacementNumber: { gt: 0 },
+            status: { in: ['confirmed', 'active', 'completed'] },
+          },
+        });
+        const hasAcceptedReplacement = Boolean(
+          selectedReplacement ||
+            placement.replacementCandidates.some((rc) => rc.status === 'accepted') ||
+            rootPlacement.replacementCandidates?.some((rc) => rc.status === 'accepted'),
+        );
+
+        const claim = await this.prisma.replacementClaim.findFirst({
+          where: {
+            placement: { OR: [{ id: rootId }, { rootPlacementId: rootId }] },
+            decision: 'accepted',
+          },
+          orderBy: { decidedAt: 'desc' },
+        });
+
+        const claimAcceptedAt = claim?.decidedAt ?? claim?.reportedAt ?? placement.dropoutReportedAt;
+        const policy = await this.pricingService.current();
+
+        const eligibility = evaluatePlacementRefundEligibility(
+          {
+            code: rootPlacement.code,
+            status: placement.status,
+            hasAcceptedReplacement,
+            hasSelectedReplacement: Boolean(selectedReplacement),
+            claimAcceptedAt,
+            dropoutReportedAt: placement.dropoutReportedAt,
+            placementFee: rootPlacement.placementFee,
+            hasExistingRefund: false,
+            searchDays: policy.replacementSearchDays,
+            guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
+          },
+          now,
+        );
+
+        if (!eligibility.eligible) {
+          throw new BadRequestException(eligibility.ineligibleReason!);
+        }
+      }
+    } else if (payment.type === 'joining_reward') {
+      const placementId = payment.placementId;
+      if (placementId) {
+        const placement = await this.prisma.placement.findUnique({
+          where: { id: placementId },
+        });
+        if (!placement || ['cancelled', 'dropped_out'].includes(placement.status)) {
+          throw new BadRequestException('Placement is no longer active for joining reward');
+        }
+      }
     }
 
-    const now = new Date();
     const updated = await this.prisma.payment.update({
       where: { id: payment.id },
       data: {
@@ -938,397 +1069,202 @@ export class PaymentService {
     return updated;
   }
 
-  /**
-   * Re-sends a payout that definitively failed (or was reversed). CEO/Manager
-   * only. It goes through the same atomic claim as a first disbursement, and
-   * uses a NEW idempotency key: reusing the old one would make the gateway
-   * hand back the original failed payout instead of creating a new one.
-   *
-   * A payout stuck in `processing` is deliberately not retryable: it may have
-   * been paid, so it has to be resolved against the gateway's records first.
-   */
-  async retryPayout(paymentId: string, actorId: string) {
+  async recordPayout(paymentId: string, actorId: string, dto: RecordPayoutDto) {
+    if (!dto.bankUtr || !dto.bankUtr.trim()) {
+      throw new BadRequestException('bankUtr is required');
+    }
+    if (!dto.receiverNameShown || !dto.receiverNameShown.trim()) {
+      throw new BadRequestException('receiverNameShown is required');
+    }
+
+    const bankUtr = dto.bankUtr.trim();
+    const receiverNameShown = dto.receiverNameShown.trim();
+    const paidAtDate = dto.paidAt ? new Date(dto.paidAt) : new Date();
+
     const payment = await this.loadPayoutPayment(paymentId);
 
-    if (payment.payoutAttempts < 1) {
-      throw new BadRequestException('This payment has never been sent as a payout');
-    }
-    if (payment.status !== 'failed' && payment.status !== 'reversed') {
+    // 1. Must be approved first
+    if (payment.status !== 'approved') {
       throw new BadRequestException(
-        payment.status === 'processing'
-          ? 'Payout is still processing; it may already have been paid. Reconcile it against the gateway and resolve it instead of retrying.'
-          : `Only failed or reversed payouts can be retried. Current status: '${payment.status}'`,
-      );
-    }
-    if (payment.payoutAttempts >= MAX_PAYOUT_ATTEMPTS) {
-      throw new BadRequestException(
-        `Payout has already been attempted ${payment.payoutAttempts} times; escalate instead of retrying`,
+        `Payment cannot be marked paid without being approved first. Current status: '${payment.status}'`,
       );
     }
 
-    return this.dispatchPayout(payment, ['failed', 'reversed'], 'payout_retry', actorId);
-  }
+    // 2. bankUtr must be unique across all payments
+    const existingUtr = await this.prisma.payment.findFirst({
+      where: { bankUtr },
+    });
+    if (existingUtr && existingUtr.id !== payment.id) {
+      throw new BadRequestException(`Bank UTR '${bankUtr}' has already been used on payment '${existingUtr.code}'`);
+    }
 
-  /**
-   * The one place a payout reaches the gateway. The claim is a single
-   * conditional update checked by affected-row count, so of any number of
-   * concurrent callers exactly one gets through (AGENTS.md §2 rule 7).
-   */
-  private async dispatchPayout(
-    payment: Payment,
-    claimableFrom: string[],
-    action: 'payout_release' | 'payout_retry',
-    actorId?: string,
-    options?: { simulateFailure?: boolean },
-  ) {
-    const before = {
-      status: payment.status,
-      gatewayReference: payment.gatewayReference,
-      payoutAttempts: payment.payoutAttempts,
-    };
+    // 3. Resolve payout account
+    let ownerType: string;
+    let ownerId: string;
 
-    const claim = await this.prisma.$transaction(async (tx) => {
-      const c = await tx.payment.updateMany({
+    if (payment.type === 'referral_payout') {
+      ownerType = 'referral';
+      ownerId = payment.referralId || payment.subjectId;
+    } else if (payment.type === 'joining_reward') {
+      ownerType = 'job_seeker';
+      ownerId = payment.jobSeekerId || payment.subjectId;
+    } else if (payment.type === 'refund') {
+      if (payment.jobSeekerId || payment.subjectType === 'job_seeker') {
+        ownerType = 'job_seeker';
+        ownerId = payment.jobSeekerId || payment.subjectId;
+      } else {
+        ownerType = 'business';
+        if (payment.businessId) {
+          ownerId = payment.businessId;
+        } else if (payment.placementId) {
+          const pl = await this.prisma.placement.findUnique({ where: { id: payment.placementId } });
+          ownerId = pl?.businessId || payment.subjectId;
+        } else {
+          ownerId = payment.subjectId;
+        }
+      }
+    } else {
+      ownerType = payment.subjectType;
+      ownerId = payment.subjectId;
+    }
+
+    let account: PayoutAccount | null = null;
+    if (dto.payoutAccountId) {
+      account = await this.prisma.payoutAccount.findUnique({
+        where: { id: dto.payoutAccountId },
+      });
+      if (!account || account.ownerType !== ownerType || account.ownerId !== ownerId) {
+        throw new BadRequestException(`Specified payout account does not belong to receiver`);
+      }
+    } else if (payment.payoutAccountId) {
+      account = await this.prisma.payoutAccount.findUnique({
+        where: { id: payment.payoutAccountId },
+      });
+    }
+
+    if (!account) {
+      account = await this.prisma.payoutAccount.findFirst({
         where: {
-          id: payment.id,
-          status: { in: claimableFrom },
-          payoutAttempts: { lt: MAX_PAYOUT_ATTEMPTS },
+          ownerType,
+          ownerId,
+          status: { not: 'superseded' },
         },
-        data: { status: 'processing', payoutAttempts: { increment: 1 } },
+        orderBy: { createdAt: 'desc' },
       });
-      if (c.count === 1) {
-        await recordStatusChange(tx, {
-          subjectType: 'payment',
-          subjectId: payment.id,
-          fromStatus: payment.status,
-          toStatus: 'processing',
-          changedByStaffId: actorId ?? null,
-          reason: 'payout_dispatched',
-        });
-      }
-      return c;
-    });
-    if (claim.count !== 1) {
+    }
+
+    if (!account) {
+      throw new BadRequestException(`Receiver has no payout account on file`);
+    }
+
+    if (account.status === 'superseded') {
+      throw new BadRequestException(`Payout account has been superseded`);
+    }
+    if (account.status === 'flagged') {
+      throw new BadRequestException(`Payout account is flagged and cannot be paid`);
+    }
+
+    // Cooling period check (48-hour wait): activeFrom must have passed
+    if (account.activeFrom.getTime() > paidAtDate.getTime()) {
       throw new BadRequestException(
-        'Payout is already being processed or is no longer in a state that can be sent',
+        `Payout account is in cooling period (48-hour wait) until ${account.activeFrom.toISOString()}`,
       );
     }
-    // We hold the claim, so this attempt number is ours alone.
-    const claimed = await this.prisma.payment.findUniqueOrThrow({
-      where: { id: payment.id },
-    });
-    const attempt = claimed.payoutAttempts;
 
-    // If the provider throws, whether the gateway moved money is unknown, so the
-    // payment is deliberately left in 'processing' (not released back to
-    // 'pending') for a human to reconcile rather than risk a second payout.
-    const result = await this.provider.disbursePayout(
-      payment.amount,
-      payment.subjectType,
-      payment.subjectId,
-      { ...options, paymentId: payment.id, attempt },
-    );
+    // 4. Name matching
+    const ownerName = account.ownerNameAtEntry;
+    const isMatch = matchReceiverName(ownerName, receiverNameShown);
 
-    // Conditional on still being 'processing': the gateway's webhook can land
-    // before this response is written, and a stale result must not overwrite it.
-    const data: Prisma.PaymentUpdateManyMutationInput = {};
-    if (result.status !== 'processing') data.status = result.status;
-    if (result.gatewayReference) data.gatewayReference = result.gatewayReference;
-    if (Object.keys(data).length > 0) {
-      await this.prisma.$transaction(async (tx) => {
-        await tx.payment.updateMany({
-          where: { id: payment.id, status: 'processing' },
-          data,
-        });
-        if (data.status) {
-          await recordStatusChange(tx, {
-            subjectType: 'payment',
-            subjectId: payment.id,
-            fromStatus: 'processing',
-            toStatus: data.status as string,
-            changedByStaffId: actorId ?? null,
-            reason: `payout_result_${data.status}`,
-          });
-        }
+    if (!isMatch) {
+      // Raise payout_name_mismatch ReviewFlag to CEO
+      await this.reviewFlagService.raise({
+        kind: 'payout_name_mismatch',
+        subjectType: ownerType,
+        subjectId: ownerId,
+        details: {
+          flaggedByStaffId: actorId,
+          severity: 'amber',
+          reason: `Receiver name '${receiverNameShown}' does not match account owner '${ownerName}'`,
+          notes: `Payment ${payment.code}`,
+        },
       });
-    }
 
-    const updatedPayment = await this.prisma.payment.findUniqueOrThrow({
-      where: { id: payment.id },
-      include: {
-        jobSeeker: true,
-        business: true,
-        placement: true,
-        referral: true,
-      },
-    });
-
-    const auditActor = await this.fallbackActorId(actorId);
-    if (auditActor) {
       await this.auditService.log({
-        actorId: auditActor,
-        action,
-        entityType: 'Payment',
-        entityCode: updatedPayment.code,
-        before,
+        actorId,
+        action: 'payout_name_mismatch',
+        entityType: 'payment',
+        entityCode: payment.code,
+        before: { status: payment.status },
         after: {
-          id: updatedPayment.id,
-          code: updatedPayment.code,
-          status: updatedPayment.status,
-          amount: updatedPayment.amount,
-          gatewayReference: updatedPayment.gatewayReference,
-          payoutAttempts: updatedPayment.payoutAttempts,
-          gatewayResult: result.status,
-          ambiguous: result.ambiguous ?? false,
-          failureReason: result.failureReason,
-        },
-        city: updatedPayment.city,
-      });
-    }
-
-    return updatedPayment;
-  }
-
-  /**
-   * Settles a payout stuck in `processing` once someone has checked the
-   * gateway's own records (dashboard / Fetch Payout). CEO/Manager only.
-   * `succeeded` needs the gateway's payout id as proof; both outcomes need a
-   * note saying what was checked. Always audit-logged.
-   */
-  async resolvePayout(
-    paymentId: string,
-    actorId: string,
-    dto: { outcome?: unknown; gatewayReference?: unknown; note?: unknown },
-  ) {
-    const outcome = dto?.outcome;
-    if (outcome !== 'succeeded' && outcome !== 'failed') {
-      throw new BadRequestException("outcome must be 'succeeded' or 'failed'");
-    }
-    const note = typeof dto.note === 'string' ? dto.note.trim() : '';
-    if (!note) {
-      throw new BadRequestException(
-        'note is required: record what was checked against the gateway',
-      );
-    }
-    const gatewayReference =
-      typeof dto.gatewayReference === 'string' ? dto.gatewayReference.trim() : '';
-    if (outcome === 'succeeded' && !gatewayReference) {
-      throw new BadRequestException(
-        "gatewayReference (the gateway's payout id) is required to resolve as succeeded",
-      );
-    }
-
-    const payment = await this.loadPayoutPayment(paymentId);
-    if (payment.status !== 'processing') {
-      throw new BadRequestException(
-        `Only a payout stuck in 'processing' can be resolved. Current status: '${payment.status}'`,
-      );
-    }
-
-    let claimed: { count: number };
-    try {
-      claimed = await this.prisma.$transaction(async (tx) => {
-        const c = await tx.payment.updateMany({
-          where: { id: payment.id, status: 'processing' },
-          data: {
-            status: outcome,
-            ...(gatewayReference ? { gatewayReference } : {}),
-          },
-        });
-        if (c.count === 1) {
-          await recordStatusChange(tx, {
-            subjectType: 'payment',
-            subjectId: payment.id,
-            fromStatus: payment.status,
-            toStatus: outcome,
-            changedByStaffId: actorId ?? null,
-            reason: note,
-          });
-        }
-        return c;
-      });
-    } catch (err) {
-      if ((err as { code?: string }).code === 'P2002') {
-        throw new BadRequestException(
-          'That gatewayReference is already recorded against another payment',
-        );
-      }
-      throw err;
-    }
-    if (claimed.count !== 1) {
-      throw new BadRequestException(
-        'Payout was settled by someone else while resolving; reload it',
-      );
-    }
-
-    const updated = await this.prisma.payment.findUniqueOrThrow({
-      where: { id: payment.id },
-    });
-    const auditActor = await this.fallbackActorId(actorId);
-    if (auditActor) {
-      await this.auditService.log({
-        actorId: auditActor,
-        action: 'payout_resolved_manually',
-        entityType: 'Payment',
-        entityCode: updated.code,
-        before: {
           status: payment.status,
-          gatewayReference: payment.gatewayReference,
+          attemptedBankUtr: bankUtr,
+          receiverNameShown,
+          expectedName: ownerName,
         },
-        after: {
-          status: updated.status,
-          gatewayReference: updated.gatewayReference,
-          amount: updated.amount,
-          reconciliationNote: note,
-        },
-        city: updated.city,
+        changedFields: [],
+        reason: 'Payout refused: receiver name mismatch',
       });
+
+      throw new BadRequestException(
+        `Receiver name '${receiverNameShown}' does not match account owner '${ownerName}'`,
+      );
     }
+
+    // 5. Name matched -> mark paid & verify account
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const p = await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          status: 'succeeded',
+          bankUtr,
+          payoutAccountId: account.id,
+          paidAt: paidAtDate,
+          paidByStaffId: actorId,
+        },
+      });
+
+      await tx.payoutAccount.update({
+        where: { id: account.id },
+        data: {
+          status: 'verified',
+          verifiedName: receiverNameShown,
+          nameMatches: true,
+          validatedAt: paidAtDate,
+        },
+      });
+
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'succeeded',
+        changedByStaffId: actorId,
+        reason: 'payout_recorded',
+      });
+
+      return p;
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'payout_recorded',
+      entityType: 'payment',
+      entityCode: payment.code,
+      before: { status: payment.status },
+      after: {
+        status: 'succeeded',
+        bankUtr,
+        receiverNameShown,
+        paidAt: paidAtDate.toISOString(),
+      },
+      changedFields: ['status', 'bankUtr', 'payoutAccountId', 'paidAt', 'paidByStaffId'],
+      reason: 'Payout recorded by CEO or Finance with verified name',
+    });
+
     return updated;
   }
 
-  /**
-   * RazorpayX payout-status webhook. Authenticated by signature over the raw
-   * body, idempotent per event id (AGENTS.md §2 rule 7), and safe against
-   * events arriving out of order (see payout-state.ts).
-   */
-  async handlePayoutWebhook(
-    rawBody: Buffer | string | undefined,
-    signature?: string,
-    eventIdHeader?: string,
-  ) {
-    if (rawBody === undefined) {
-      // Re-serialising the parsed body would not match what the gateway signed.
-      throw new BadRequestException('Raw request body unavailable');
-    }
 
-    const event = await this.provider.verifyPayoutWebhook(rawBody, signature);
-    if (!event.isValid) {
-      throw new UnauthorizedException(
-        `Invalid or missing payout webhook signature${event.reason ? ` (${event.reason})` : ''}`,
-      );
-    }
-    if (event.outcome === 'unknown' || !event.payoutId) {
-      return { received: true, ignored: 'not_a_payout_status_event', event: event.event };
-    }
-    // narrowed above; captured so the narrowing survives into the transaction callback
-    const outcome = event.outcome;
-
-    const payment =
-      (await this.prisma.payment.findUnique({
-        where: { gatewayReference: event.payoutId },
-      })) ??
-      (event.paymentIdHint
-        ? await this.prisma.payment.findUnique({ where: { id: event.paymentIdHint } })
-        : null);
-
-    if (!payment || payment.payoutAttempts < 1) {
-      this.logger.warn(
-        `Payout webhook ${event.event} for ${event.payoutId} matches no dispatched payout`,
-      );
-      return { received: true, matched: false };
-    }
-
-    if (event.amountPaise !== undefined && event.amountPaise !== payment.amount) {
-      this.logger.error(
-        `Payout webhook amount ${event.amountPaise} does not match payment ${payment.code} amount ${payment.amount}; ignoring`,
-      );
-      return { received: true, ignored: 'amount_mismatch', paymentId: payment.id };
-    }
-
-    const eventId =
-      eventIdHeader?.trim() ||
-      `body:${createHash('sha256').update(rawBody).digest('hex')}`;
-
-    const applied = await this.prisma.$transaction(async (tx) => {
-      // ON CONFLICT DO NOTHING: a redelivery (or a concurrent twin) inserts 0 rows
-      const inserted = await tx.payoutWebhookEvent.createMany({
-        data: [
-          {
-            eventId,
-            event: event.event,
-            outcome,
-            paymentId: payment.id,
-          },
-        ],
-        skipDuplicates: true,
-      });
-      if (inserted.count === 0) return { duplicate: true as const };
-
-      // Serialise events for the same payout, then decide from the live status
-      const rows = await tx.$queryRaw<Array<{ status: string; gatewayReference: string }>>`
-        SELECT "status", "gatewayReference" FROM "Payment" WHERE "id" = ${payment.id} FOR UPDATE`;
-      const current = rows[0];
-      const transition = resolveWebhookTransition(current.status, outcome);
-
-      const data: Prisma.PaymentUpdateInput = {};
-      if (transition.next) data.status = transition.next;
-      if (
-        transition.reason !== 'not_dispatched' &&
-        transition.reason !== 'terminal' &&
-        current.gatewayReference !== event.payoutId
-      ) {
-        data.gatewayReference = event.payoutId;
-      }
-      if (Object.keys(data).length > 0) {
-        await tx.payment.update({ where: { id: payment.id }, data });
-      }
-      if (transition.next) {
-        await recordStatusChange(tx, {
-          subjectType: 'payment',
-          subjectId: payment.id,
-          fromStatus: current.status,
-          toStatus: transition.next,
-          changedByStaffId: null,
-          reason: `payout_webhook_${event.event}`,
-        });
-        await tx.payoutWebhookEvent.update({
-          where: { eventId },
-          data: { applied: true },
-        });
-      }
-      return { duplicate: false as const, from: current.status, transition };
-    });
-
-    if (applied.duplicate) {
-      return { received: true, duplicate: true, paymentId: payment.id };
-    }
-
-    const { transition, from } = applied;
-    if (transition.next) {
-      const auditActor = await this.fallbackActorId();
-      if (auditActor) {
-        await this.auditService.log({
-          actorId: auditActor,
-          action: 'payout_status_webhook',
-          entityType: 'Payment',
-          entityCode: payment.code,
-          before: { status: from },
-          after: {
-            status: transition.next,
-            source: 'razorpayx_webhook',
-            event: event.event,
-            eventId,
-            gatewayStatus: event.gatewayStatus,
-            payoutId: event.payoutId,
-            utr: event.utr ?? null,
-            failureReason: event.failureReason ?? null,
-            // the gateway overruled an earlier "failed" we had recorded
-            correction: from === 'failed' && transition.next === 'succeeded',
-          },
-          city: payment.city,
-        });
-      }
-    }
-
-    return {
-      received: true,
-      paymentId: payment.id,
-      applied: transition.next !== null,
-      status: transition.next ?? from,
-      reason: transition.reason,
-    };
-  }
 
   async findAll(filters?: PaymentFilterDto) {
     const where: Prisma.PaymentWhereInput = {};

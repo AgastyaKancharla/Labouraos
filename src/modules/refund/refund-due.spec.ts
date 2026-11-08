@@ -212,11 +212,8 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'PL-00001',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           hasAcceptedReplacement: false,
           dropoutReportedAt: dropoutDate,
-          clockPaused: false,
-          clockPausedAt: null,
           placementFee,
           searchDays: 15,
           hasExistingRefund: false,
@@ -235,11 +232,8 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'PL-00001',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           hasAcceptedReplacement: false,
           dropoutReportedAt: dropoutDate,
-          clockPaused: false,
-          clockPausedAt: null,
           placementFee,
           searchDays: 15,
           hasExistingRefund: false,
@@ -253,17 +247,36 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       expect(evalResult.daysElapsed).toBe(15);
     });
 
+    it('placement at day 16 is present in listing and accepted by evaluator', () => {
+      // Day 16: June 17
+      const day16 = new Date('2026-06-17T00:00:00.000Z');
+      const evalResult = evaluatePlacementRefundEligibility(
+        {
+          code: 'PL-00001',
+          status: 'dropped_out',
+          hasAcceptedReplacement: false,
+          dropoutReportedAt: dropoutDate,
+          placementFee,
+          searchDays: 15,
+          hasExistingRefund: false,
+        },
+        day16,
+      );
+
+      expect(evalResult.eligible).toBe(true);
+      expect(evalResult.amountPaise).toBe(placementFee);
+      expect(evalResult.daysOwed).toBe(1);
+      expect(evalResult.daysElapsed).toBe(16);
+    });
+
     it('placement at day 20 carries daysOwed: 5 and full placement fee', () => {
       const day20 = new Date('2026-06-21T00:00:00.000Z');
       const evalResult = evaluatePlacementRefundEligibility(
         {
           code: 'PL-00001',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           hasAcceptedReplacement: false,
           dropoutReportedAt: dropoutDate,
-          clockPaused: false,
-          clockPausedAt: null,
           placementFee,
           searchDays: 15,
           hasExistingRefund: false,
@@ -277,36 +290,31 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       expect(evalResult.daysElapsed).toBe(20);
     });
 
-    it('placement with business_breach or accepted replacement never appears', () => {
+    it('placement with guarantee ended without refund or accepted replacement never appears', () => {
       const day20 = new Date('2026-06-21T00:00:00.000Z');
 
-      const breachResult = evaluatePlacementRefundEligibility(
+      const endedResult = evaluatePlacementRefundEligibility(
         {
           code: 'PL-00001',
           status: 'dropped_out',
-          eligibility: 'business_breach',
+          guaranteeEndedReason: 'second_replacement_left',
           hasAcceptedReplacement: false,
           dropoutReportedAt: dropoutDate,
-          clockPaused: false,
-          clockPausedAt: null,
           placementFee,
           searchDays: 15,
           hasExistingRefund: false,
         },
         day20,
       );
-      expect(breachResult.eligible).toBe(false);
-      expect(breachResult.ineligibleReason).toContain('business_breach');
+      expect(endedResult.eligible).toBe(false);
+      expect(endedResult.ineligibleReason).toContain('Guarantee ended without refund');
 
       const replacementAcceptedResult = evaluatePlacementRefundEligibility(
         {
           code: 'PL-00001',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           hasAcceptedReplacement: true,
           dropoutReportedAt: dropoutDate,
-          clockPaused: false,
-          clockPausedAt: null,
           placementFee,
           searchDays: 15,
           hasExistingRefund: false,
@@ -323,11 +331,8 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
         {
           code: 'PL-00001',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           hasAcceptedReplacement: false,
           dropoutReportedAt: dropoutDate,
-          clockPaused: false,
-          clockPausedAt: null,
           placementFee,
           searchDays: 15,
           hasExistingRefund: true,
@@ -385,13 +390,10 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           code: 'PL-00001',
           city: 'Bengaluru',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt: pl1Dropout,
           dropoutDateCallerSupplied: true,
           joinedDate: new Date('2026-04-01T00:00:00.000Z'),
           placementFee: 2000000,
-          clockPaused: false,
-          clockPausedAt: null,
           business: { name: 'Acme Hotels', area: 'Koramangala' },
           jobSeeker: { name: 'Worker One', phone: '9123456780' },
           replacementCandidates: [],
@@ -401,13 +403,10 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           code: 'PL-00002',
           city: 'Bengaluru',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt: pl2Dropout,
           dropoutDateCallerSupplied: false,
           joinedDate: new Date('2026-05-01T00:00:00.000Z'),
           placementFee: 3000000,
-          clockPaused: false,
-          clockPausedAt: null,
           business: { name: 'Beta Logistics', area: 'Indiranagar' },
           jobSeeker: { name: 'Worker Two', phone: '9123456781' },
           replacementCandidates: [],
@@ -488,13 +487,10 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
           code: 'PL-00001',
           city: 'Bengaluru',
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt: plDropout,
           dropoutDateCallerSupplied: false,
           joinedDate: new Date('2026-04-01T00:00:00.000Z'),
           placementFee: 2000000,
-          clockPaused: false,
-          clockPausedAt: null,
           business: { name: 'Acme Hotels', area: 'Koramangala' },
           jobSeeker: { name: 'Worker One', phone: '9123456780' },
           replacementCandidates: [],

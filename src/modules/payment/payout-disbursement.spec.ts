@@ -139,9 +139,8 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
     });
   });
 
-  describe('Payout Disbursement Flow & Audit Logging', () => {
-    it('successfully disburses pending payout, updates status to succeeded, and audit logs payout_release', async () => {
-      // Create referral
+  describe('Removed Payout Disbursement Flow returns 404 (Phase 18 Task 3)', () => {
+    it('returns 404 for every role on POST /payments/:id/disburse', async () => {
       const referral = await prisma.referral.create({
         data: {
           code: `RF-D1-${timestamp}`,
@@ -153,7 +152,6 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
         },
       });
 
-      // Create pending payout
       const paymentCode = await idService.generateCode('payment');
       const payment = await prisma.payment.create({
         data: {
@@ -161,7 +159,6 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
           type: 'referral_payout',
           amount: 20000,
           status: 'pending',
-          gatewayReference: `gw_initial_${timestamp}_1`,
           subjectType: 'referral',
           subjectId: referral.id,
           referralId: referral.id,
@@ -169,196 +166,47 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
         },
       });
 
-      // Finance disburses the payout
-      const res = await request(app.getHttpServer())
+      // 404 for CEO
+      await request(app.getHttpServer())
         .post(`/payments/${payment.id}/disburse`)
-        .set('Authorization', `Bearer ${financeToken}`)
+        .set('Authorization', `Bearer ${ceoToken}`)
         .send({})
-        .expect(201);
+        .expect(404);
 
-      expect(res.body.id).toBe(payment.id);
-      expect(res.body.status).toBe('succeeded');
-
-      // Check database status
-      const dbPayment = await prisma.payment.findUnique({
-        where: { id: payment.id },
-      });
-      expect(dbPayment?.status).toBe('succeeded');
-
-      // Check audit log for payout_release
-      const audit = await prisma.auditLog.findFirst({
-        where: {
-          entityCode: payment.code,
-          action: 'payout_release',
-        },
-      });
-      expect(audit).toBeDefined();
-      expect(audit?.action).toBe('payout_release');
-      expect(audit?.entityType).toBe('Payment');
-      expect((audit?.before as Record<string, unknown>)?.status).toBe('pending');
-      expect((audit?.after as Record<string, unknown>)?.status).toBe('succeeded');
-    });
-
-    it('updates status to failed when disbursement fails and audit logs the event', async () => {
-      const referral = await prisma.referral.create({
-        data: {
-          code: `RF-D2-${timestamp}`,
-          name: 'Payout Partner 2',
-          phone: `92002${String(timestamp).slice(-5)}`,
-          phoneVerified: true,
-          type: 'individual',
-          city: 'Bengaluru',
-        },
-      });
-
-      const paymentCode = await idService.generateCode('payment');
-      const payment = await prisma.payment.create({
-        data: {
-          code: paymentCode,
-          type: 'referral_payout',
-          amount: 20000,
-          status: 'pending',
-          gatewayReference: `gw_initial_${timestamp}_2`,
-          subjectType: 'referral',
-          subjectId: referral.id,
-          referralId: referral.id,
-          city: 'Bengaluru',
-        },
-      });
-
-      // Finance disburses with simulated failure
-      const res = await request(app.getHttpServer())
-        .post(`/payments/${payment.id}/disburse`)
-        .set('Authorization', `Bearer ${financeToken}`)
-        .send({ simulateFailure: true })
-        .expect(201);
-
-      expect(res.body.status).toBe('failed');
-
-      const dbPayment = await prisma.payment.findUnique({
-        where: { id: payment.id },
-      });
-      expect(dbPayment?.status).toBe('failed');
-
-      const audit = await prisma.auditLog.findFirst({
-        where: {
-          entityCode: payment.code,
-          action: 'payout_release',
-        },
-      });
-      expect(audit).toBeDefined();
-      expect((audit?.after as Record<string, unknown>)?.status).toBe('failed');
-    });
-
-    it('rejects disbursing an already succeeded or non-pending payment (400)', async () => {
-      const referral = await prisma.referral.create({
-        data: {
-          code: `RF-D3-${timestamp}`,
-          name: 'Payout Partner 3',
-          phone: `92003${String(timestamp).slice(-5)}`,
-          phoneVerified: true,
-          type: 'individual',
-          city: 'Bengaluru',
-        },
-      });
-
-      const paymentCode = await idService.generateCode('payment');
-      const payment = await prisma.payment.create({
-        data: {
-          code: paymentCode,
-          type: 'referral_payout',
-          amount: 20000,
-          status: 'succeeded',
-          gatewayReference: `gw_initial_${timestamp}_3`,
-          subjectType: 'referral',
-          subjectId: referral.id,
-          referralId: referral.id,
-          city: 'Bengaluru',
-        },
-      });
-
+      // 404 for Finance
       await request(app.getHttpServer())
         .post(`/payments/${payment.id}/disburse`)
         .set('Authorization', `Bearer ${financeToken}`)
         .send({})
-        .expect(400);
-    });
+        .expect(404);
 
-    it('enforces RBAC: CEO and Finance can disburse; Manager, Call Agent and Field Agent are denied (403)', async () => {
-      const referral = await prisma.referral.create({
-        data: {
-          code: `RF-D4-${timestamp}`,
-          name: 'Payout Partner 4',
-          phone: `92004${String(timestamp).slice(-5)}`,
-          phoneVerified: true,
-          type: 'individual',
-          city: 'Bengaluru',
-        },
-      });
-
-      const paymentCode = await idService.generateCode('payment');
-      const payment = await prisma.payment.create({
-        data: {
-          code: paymentCode,
-          type: 'referral_payout',
-          amount: 20000,
-          status: 'pending',
-          gatewayReference: `gw_initial_${timestamp}_4`,
-          subjectType: 'referral',
-          subjectId: referral.id,
-          referralId: referral.id,
-          city: 'Bengaluru',
-        },
-      });
-
-      // Call Agent denied
-      await request(app.getHttpServer())
-        .post(`/payments/${payment.id}/disburse`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({})
-        .expect(403);
-
-      // Field Agent denied
-      await request(app.getHttpServer())
-        .post(`/payments/${payment.id}/disburse`)
-        .set('Authorization', `Bearer ${faToken}`)
-        .send({})
-        .expect(403);
-
-      // Manager denied: managers do not release money
+      // 404 for Manager
       await request(app.getHttpServer())
         .post(`/payments/${payment.id}/disburse`)
         .set('Authorization', `Bearer ${managerToken}`)
         .send({})
-        .expect(403);
+        .expect(404);
 
-      // Finance can release money
+      // 404 for Call Agent
       await request(app.getHttpServer())
         .post(`/payments/${payment.id}/disburse`)
-        .set('Authorization', `Bearer ${financeToken}`)
+        .set('Authorization', `Bearer ${caToken}`)
         .send({})
-        .expect(201);
+        .expect(404);
 
-      // CEO allowed on pending payout
-      const paymentCeo = await prisma.payment.create({
-        data: {
-          code: await idService.generateCode('payment'),
-          type: 'referral_payout',
-          amount: 20000,
-          status: 'pending',
-          gatewayReference: `gw_payout_ceo_${timestamp}`,
-          subjectType: 'referral',
-          subjectId: referral.id,
-          referralId: referral.id,
-          city: 'Bengaluru',
-        },
-      });
-
+      // 404 for Field Agent
       await request(app.getHttpServer())
-        .post(`/payments/${paymentCeo.id}/disburse`)
-        .set('Authorization', `Bearer ${ceoToken}`)
+        .post(`/payments/${payment.id}/disburse`)
+        .set('Authorization', `Bearer ${faToken}`)
         .send({})
-        .expect(201);
+        .expect(404);
+    });
+
+    it('returns 404 on POST /payments/payout-webhook', async () => {
+      await request(app.getHttpServer())
+        .post('/payments/payout-webhook')
+        .send({ event: 'payout.processed' })
+        .expect(404);
     });
   });
 });

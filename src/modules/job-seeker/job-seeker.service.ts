@@ -630,7 +630,7 @@ export class JobSeekerService {
       where: {
         jobSeekerId: jobSeeker.id,
         type: 'refund',
-        status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+        status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
       },
     });
 
@@ -705,8 +705,10 @@ export class JobSeekerService {
           city: jobSeeker.city,
           type: 'refund',
           amount: eligibilityResult.amountPaise,
-          status: 'completed',
-          gatewayReference: `ref_js_${jobSeeker.code}_${Date.now()}`,
+          status: 'approved',
+          approvedByStaffId: actor.id,
+          approvedAt: now,
+          gatewayReference: null,
           subjectType: 'job_seeker',
           subjectId: jobSeeker.id,
           jobSeekerId: jobSeeker.id,
@@ -717,7 +719,7 @@ export class JobSeekerService {
         subjectType: 'payment',
         subjectId: p.id,
         fromStatus: null,
-        toStatus: 'completed',
+        toStatus: 'approved',
         changedByStaffId: actor.id,
         reason: 'job_seeker_guarantee_refund',
       });

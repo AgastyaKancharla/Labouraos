@@ -8,6 +8,8 @@ import { OtpModule } from '../../common/otp/otp.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { PayoutAccountService } from './payout-account.service';
 import { PayoutAccountController } from './payout-account.controller';
+import { NAME_CHECK_PROVIDER } from './name-check-provider.interface';
+import { ManualNameCheckProvider } from './manual-name-check.provider';
 
 @Module({
   imports: [
@@ -20,7 +22,14 @@ import { PayoutAccountController } from './payout-account.controller';
     ReviewFlagModule,
   ],
   controllers: [PayoutAccountController],
-  providers: [PayoutAccountService],
-  exports: [PayoutAccountService],
+  providers: [
+    PayoutAccountService,
+    {
+      provide: NAME_CHECK_PROVIDER,
+      useClass: ManualNameCheckProvider,
+    },
+    ManualNameCheckProvider,
+  ],
+  exports: [PayoutAccountService, NAME_CHECK_PROVIDER, ManualNameCheckProvider],
 })
 export class PayoutAccountModule {}

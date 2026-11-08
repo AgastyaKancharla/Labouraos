@@ -4,26 +4,29 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { PaymentService } from './payment.service';
-import { PAYMENT_PROVIDER, PaymentProvider } from './payment-provider.interface';
+import {
+  encryptPayoutValue,
+  hashPayoutValue,
+  maskPayoutValue,
+} from '../payout-account/payout-account-key';
 
-describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule 7)', () => {
+describe('Phase 18: payout recording is claimed atomically and UTR is unique', () => {
   let moduleRef: TestingModule;
   let prisma: PrismaService;
   let idService: IdService;
   let service: PaymentService;
-  let provider: PaymentProvider;
   const timestamp = Date.now();
   let ceoStaffId: string;
   const createdPaymentIds: string[] = [];
   const createdReferralIds: string[] = [];
   let seq = 0;
 
-  const makePendingPayout = async () => {
+  const makeApprovedPayoutWithAccount = async () => {
     seq += 1;
     const referral = await prisma.referral.create({
       data: {
         code: `RF-IDEM-${timestamp}-${seq}`,
-        name: 'Idempotency Partner',
+        name: 'Arun Kumar',
         phone: `94${String(timestamp).slice(-6)}${String(seq).padStart(2, '0')}`,
         phoneVerified: true,
         type: 'individual',
@@ -31,13 +34,32 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
       },
     });
     createdReferralIds.push(referral.id);
+
+    // Create payout account
+    const upiId = `arun.idem.${timestamp}.${seq}@okaxis`;
+    const account = await prisma.payoutAccount.create({
+      data: {
+        code: await idService.generateCode('payout_account'),
+        ownerType: 'referral',
+        ownerId: referral.id,
+        ownerNameAtEntry: 'Arun Kumar',
+        method: 'upi',
+        maskedValue: maskPayoutValue('upi', upiId),
+        valueHash: hashPayoutValue('upi', upiId),
+        upiIdEncrypted: encryptPayoutValue(upiId),
+        status: 'pending_validation',
+        activeFrom: new Date(),
+      },
+    });
+
     const payment = await prisma.payment.create({
       data: {
         code: await idService.generateCode('payment'),
         type: 'referral_payout',
         amount: 20000,
-        status: 'pending',
-        gatewayReference: `gw_idem_${timestamp}_${seq}`,
+        status: 'approved',
+        approvedByStaffId: ceoStaffId,
+        approvedAt: new Date(),
         subjectType: 'referral',
         subjectId: referral.id,
         referralId: referral.id,
@@ -45,7 +67,7 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
       },
     });
     createdPaymentIds.push(payment.id);
-    return payment;
+    return { payment, account, referral };
   };
 
   beforeAll(async () => {
@@ -54,7 +76,8 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
     await app.init();
     prisma = app.get(PrismaService);
     idService = app.get(IdService);
-    // audit entries need a staff row to attribute to; don't rely on other suites leaving one behind
+    service = app.get(PaymentService);
+
     const ceo = await prisma.staff.create({
       data: {
         code: `CEO-IDEM-${timestamp}`,
@@ -66,8 +89,6 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
       },
     });
     ceoStaffId = ceo.id;
-    service = app.get(PaymentService);
-    provider = app.get<PaymentProvider>(PAYMENT_PROVIDER);
   });
 
   afterEach(() => {
@@ -83,94 +104,91 @@ describe('Phase 8: payout disbursement is claimed atomically (AGENTS.md §2 rule
       where: { entityCode: { in: payments.map((p) => p.code) } },
     });
     await prisma.payment.deleteMany({ where: { id: { in: createdPaymentIds } } });
+    await prisma.payoutAccount.deleteMany({
+      where: { ownerType: 'referral', ownerId: { in: createdReferralIds } },
+    });
     await prisma.auditLog.deleteMany({ where: { actorId: ceoStaffId } });
     await prisma.staff.deleteMany({ where: { id: ceoStaffId } });
     await prisma.referral.deleteMany({ where: { id: { in: createdReferralIds } } });
     await moduleRef.close();
   });
 
-  // Slow enough that, without an atomic claim, every concurrent caller would
-  // still be inside the "is it pending?" window when the first one reaches the gateway.
-  const slowSuccess = () =>
-    jest.spyOn(provider, 'disbursePayout').mockImplementation(async () => {
-      await new Promise((r) => setTimeout(r, 150));
-      return { success: true, gatewayReference: `gw_ok_${Math.random()}`, status: 'succeeded' };
+  it('refuses to record a payout if status is not approved (e.g. pending)', async () => {
+    const { payment } = await makeApprovedPayoutWithAccount();
+    await prisma.payment.update({
+      where: { id: payment.id },
+      data: { status: 'pending' },
     });
 
-  it('two concurrent disbursements of one pending payment make exactly one provider call', async () => {
-    const payment = await makePendingPayout();
-    const spy = slowSuccess();
+    await expect(
+      service.recordPayout(payment.id, ceoStaffId, {
+        bankUtr: `UTR${timestamp}001`,
+        receiverNameShown: 'Arun Kumar',
+      }),
+    ).rejects.toThrow(BadRequestException);
+  });
+
+  it('two concurrent recordings on one approved payment: exactly one succeeds', async () => {
+    const { payment } = await makeApprovedPayoutWithAccount();
+    const utr1 = `UTR${timestamp}002`;
+    const utr2 = `UTR${timestamp}003`;
 
     const results = await Promise.allSettled([
-      service.disbursePayout(payment.id),
-      service.disbursePayout(payment.id),
+      service.recordPayout(payment.id, ceoStaffId, {
+        bankUtr: utr1,
+        receiverNameShown: 'Arun Kumar',
+      }),
+      service.recordPayout(payment.id, ceoStaffId, {
+        bankUtr: utr2,
+        receiverNameShown: 'Arun Kumar',
+      }),
     ]);
 
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
+    const fulfilled = results.filter((r) => r.status === 'fulfilled');
     const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+
+    expect(fulfilled).toHaveLength(1);
     expect(rejected).toHaveLength(1);
     expect(rejected[0].reason).toBeInstanceOf(BadRequestException);
 
     const after = await prisma.payment.findUnique({ where: { id: payment.id } });
     expect(after?.status).toBe('succeeded');
+    expect(after?.bankUtr).toBeTruthy();
   });
 
-  it('holds under a burst of 10 concurrent attempts: one provider call, one audit row', async () => {
-    const payment = await makePendingPayout();
-    const spy = slowSuccess();
+  it('a payment marked succeeded cannot be paid again', async () => {
+    const { payment } = await makeApprovedPayoutWithAccount();
+    const utr = `UTR${timestamp}004`;
 
-    const results = await Promise.allSettled(
-      Array.from({ length: 10 }, () => service.disbursePayout(payment.id)),
-    );
-
-    expect(spy).toHaveBeenCalledTimes(1);
-    expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1);
-    expect(results.filter((r) => r.status === 'rejected')).toHaveLength(9);
-
-    const audits = await prisma.auditLog.findMany({
-      where: { entityCode: payment.code, action: 'payout_release' },
+    const done = await service.recordPayout(payment.id, ceoStaffId, {
+      bankUtr: utr,
+      receiverNameShown: 'Arun Kumar',
     });
-    expect(audits).toHaveLength(1);
-  });
-
-  it('passes the payment id to the provider so a real gateway can derive an idempotent key', async () => {
-    const payment = await makePendingPayout();
-    const spy = slowSuccess();
-
-    await service.disbursePayout(payment.id);
-
-    expect(spy).toHaveBeenCalledWith(
-      payment.amount,
-      payment.subjectType,
-      payment.subjectId,
-      expect.objectContaining({ paymentId: payment.id }),
-    );
-  });
-
-  it('a payment whose provider call threw stays in processing and cannot be paid again', async () => {
-    const payment = await makePendingPayout();
-    jest.spyOn(provider, 'disbursePayout').mockRejectedValueOnce(new Error('gateway exploded'));
-
-    await expect(service.disbursePayout(payment.id)).rejects.toThrow('gateway exploded');
-    expect((await prisma.payment.findUnique({ where: { id: payment.id } }))?.status).toBe(
-      'processing',
-    );
-
-    // spyOn returns the existing mock, so drop the first (rejected) call from its history
-    const spy = slowSuccess();
-    spy.mockClear();
-    await expect(service.disbursePayout(payment.id)).rejects.toBeInstanceOf(BadRequestException);
-    expect(spy).not.toHaveBeenCalled();
-  });
-
-  it('a normal sequential disbursement still succeeds and cannot be repeated', async () => {
-    const payment = await makePendingPayout();
-    const spy = slowSuccess();
-
-    const done = await service.disbursePayout(payment.id);
     expect(done.status).toBe('succeeded');
-    await expect(service.disbursePayout(payment.id)).rejects.toBeInstanceOf(BadRequestException);
-    expect(spy).toHaveBeenCalledTimes(1);
+
+    await expect(
+      service.recordPayout(payment.id, ceoStaffId, {
+        bankUtr: `UTR${timestamp}005`,
+        receiverNameShown: 'Arun Kumar',
+      }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('a UTR cannot be reused across different payments (400)', async () => {
+    const item1 = await makeApprovedPayoutWithAccount();
+    const item2 = await makeApprovedPayoutWithAccount();
+    const reusedUtr = `UTR${timestamp}REUSE`;
+
+    await service.recordPayout(item1.payment.id, ceoStaffId, {
+      bankUtr: reusedUtr,
+      receiverNameShown: 'Arun Kumar',
+    });
+
+    await expect(
+      service.recordPayout(item2.payment.id, ceoStaffId, {
+        bankUtr: reusedUtr,
+        receiverNameShown: 'Arun Kumar',
+      }),
+    ).rejects.toThrow(BadRequestException);
   });
 });
