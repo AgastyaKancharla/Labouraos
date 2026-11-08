@@ -792,7 +792,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .expect(201);
     });
 
-    it('denies refund when eligibility is business_breach (no remedy)', async () => {
+    it('denies refund when guarantee has ended without refund (guaranteeEndedReason: two_rejections)', async () => {
       const js = await prisma.jobSeeker.create({
         data: {
           code: `JS-P5REF2-${timestamp}`,
@@ -817,7 +817,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           placementFee: 1000000,
           gstAmount: 180000,
           status: 'dropped_out',
-          eligibility: 'business_breach',
+          guaranteeEndedReason: 'two_rejections',
           dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
         },
       });
@@ -828,7 +828,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         .send({ asOf: '2026-11-01T00:00:00.000Z' }) // day 31
         .expect(400);
 
-      expect(res.body.message).toContain('business_breach');
+      expect(res.body.message).toContain('Guarantee ended without refund: two_rejections');
     });
 
     it('denies refund when a replacement candidate has been accepted', async () => {
@@ -1054,7 +1054,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(await prisma.payment.count({ where: { placementId: placement.id, type: 'refund' } })).toBe(1);
     });
 
-    it('freezes refund eligibility when clock is paused at day 10', async () => {
+    it('denies refund before 15 days have elapsed from claim acceptance', async () => {
       const js = await prisma.jobSeeker.create({
         data: {
           code: `JS-P5REFPAUSE-${timestamp}`,
@@ -1070,7 +1070,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       });
 
       const dropoutReportedAt = new Date('2026-10-01T00:00:00.000Z');
-      const clockPausedAt = new Date('2026-10-11T00:00:00.000Z'); // 10 days after report
 
       const placement = await prisma.placement.create({
         data: {
@@ -1082,22 +1081,18 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           placementFee: 1000000,
           gstAmount: 180000,
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt,
-          clockPaused: true,
-          clockPausedAt,
-          replacementRejectionCount: 3,
         },
       });
 
-      // Even at day 35 (2026-11-05), elapsed days are frozen at 10 (< 15)
+      // On day 10 (2026-10-11), elapsed days are 10 (< 15) -> 400
       const res = await request(app.getHttpServer())
         .post(`/placements/${placement.id}/refund`)
         .set('Authorization', `Bearer ${ceoToken}`)
-        .send({ asOf: '2026-11-05T00:00:00.000Z' })
+        .send({ asOf: '2026-10-11T00:00:00.000Z' })
         .expect(400);
 
-      expect(res.body.message).toContain('not payable before 15 days');
+      expect(res.body.message).toContain('Refund is not payable before 15 days have elapsed');
       expect(res.body.message).toContain('days elapsed: 10');
     });
   });
