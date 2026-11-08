@@ -15,6 +15,7 @@ import { decryptCallRoutingPhone } from '../staff/call-routing-key';
 import { publicLink } from '../../common/public-link';
 import {
   encryptPayoutValue,
+  getPayoutAccountKey,
   hashPayoutValue,
   maskPayoutValue,
   normalizePayoutValue,
@@ -52,7 +53,9 @@ export class PayoutAccountService {
     private readonly messagingService: MessagingService,
     private readonly otpService: OtpService,
     private readonly reviewFlagService: ReviewFlagService,
-  ) {}
+  ) {
+    getPayoutAccountKey();
+  }
 
   setTtlMs(ttlMs: number) {
     this.ttlMs = ttlMs;
