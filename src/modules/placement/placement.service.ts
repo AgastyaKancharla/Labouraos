@@ -624,6 +624,87 @@ export class PlacementService {
     return completedCount;
   }
 
+  async queueJoiningRewards(now = new Date()): Promise<number> {
+    const policy = await this.pricingService.current();
+    const rewardDays = policy.joiningRewardAfterDays;
+    const rewardAmount = policy.joiningRewardPaise;
+
+    const placements = await this.prisma.placement.findMany({
+      where: {
+        status: 'active',
+        joinedDate: { not: null },
+      },
+      include: {
+        replacementClaims: {
+          where: { decision: 'accepted' },
+        },
+      },
+    });
+
+    let queuedCount = 0;
+
+    for (const placement of placements) {
+      if (!placement.joinedDate) continue;
+
+      const daysElapsed = Math.floor(
+        (now.getTime() - placement.joinedDate.getTime()) / (24 * 60 * 60 * 1000),
+      );
+      if (daysElapsed < rewardDays) {
+        continue;
+      }
+
+      // Worker is still there: no accepted replacement claim on this placement
+      if (placement.replacementClaims && placement.replacementClaims.length > 0) {
+        continue;
+      }
+
+      // Once per placement: check if joining_reward already exists
+      const existing = await this.prisma.payment.findFirst({
+        where: {
+          placementId: placement.id,
+          type: 'joining_reward',
+        },
+      });
+      if (existing) {
+        continue;
+      }
+
+      const code = await this.idService.generateCode('payment');
+      const payment = await this.prisma.payment.create({
+        data: {
+          code,
+          city: placement.city,
+          type: 'joining_reward',
+          amount: rewardAmount,
+          status: 'pending',
+          subjectType: 'job_seeker',
+          subjectId: placement.jobSeekerId,
+          jobSeekerId: placement.jobSeekerId,
+          placementId: placement.id,
+        },
+      });
+
+      await this.auditService.log({
+        action: 'joining_reward_queued',
+        entityType: 'payment',
+        entityCode: payment.code,
+        actorId: placement.createdByStaffId ?? placement.jobSeekerId,
+        city: placement.city,
+        after: {
+          code: payment.code,
+          placementId: placement.id,
+          jobSeekerId: placement.jobSeekerId,
+          amount: rewardAmount,
+          status: 'pending',
+        },
+      });
+
+      queuedCount++;
+    }
+
+    return queuedCount;
+  }
+
   async triggerReferralPayout(placementId: string, actorId?: string) {
     return this.paymentService.createReferralPayout(placementId, actorId);
   }
