@@ -70,7 +70,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Reveal at the moment of paying:** `POST /payments/:id/reveal-payout-details` (CEO, Finance; only for an `approved` payment with an eligible account) returns the full UPI ID or account number and IFSC once, so Finance can type it into the bank's UPI app. Every reveal is audited.
 - Tests: the link goes out once at each trigger; reveal works only for CEO and Finance on an approved payment, and is audited; nobody else ever receives the full value.
 
-### [ ] Task 5 — Screens
+### [x] Task 5 — Screens
 **Branch:** `phase-18/task-5-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**
@@ -82,13 +82,13 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 18 Gate
 
-- [ ] Payout details are entered only by the owner on their own phone by OTP; stored encrypted; never returned except to CEO/Finance at the moment of paying — by test
-- [ ] A changed account can't be paid for 48 hours and Finance is told; shared accounts and staff-number UPIs are flagged and blocked — by test
-- [ ] Every payment out is owed → approved → paid, by CEO or Finance only, with a unique UTR; nothing is paid automatically — by test
-- [ ] A name that doesn't match the receiver blocks the payment and raises `payout_name_mismatch` — by test
-- [ ] Referral payouts need the partner's signed terms — by test
-- [ ] The payout-company routes are gone; the refunds-due list and approval use the same rule; nothing reads `clockPaused`, `clockPausedAt` or `eligibility` — by test
-- [ ] **End-to-end proof, recorded in the report:** a worker joins and receives the payout link; they enter a UPI ID on their phone by OTP; 30 days later the ₹200 reward is owed; Finance approves it, reveals the UPI ID, records the UTR with the name the app showed → paid, account verified. A referral partner signs terms by OTP; their ₹200 is approved and paid the same way. A business owed a fee refund on day 16 enters a bank account; Finance types a different name → refused and flagged; with the right name → paid. A partner changes their UPI ID → a payment the next day is refused, and allowed after 48 hours.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] Payout details are entered only by the owner on their own phone by OTP; stored encrypted; never returned except to CEO/Finance at the moment of paying — by test
+- [x] A changed account can't be paid for 48 hours and Finance is told; shared accounts and staff-number UPIs are flagged and blocked — by test
+- [x] Every payment out is owed → approved → paid, by CEO or Finance only, with a unique UTR; nothing is paid automatically — by test
+- [x] A name that doesn't match the receiver blocks the payment and raises `payout_name_mismatch` — by test
+- [x] Referral payouts need the partner's signed terms — by test
+- [x] The payout-company routes are gone; the refunds-due list and approval use the same rule; nothing reads `clockPaused`, `clockPausedAt` or `eligibility` — by test
+- [x] **End-to-end proof, recorded in the report:** a worker joins and receives the payout link; they enter a UPI ID on their phone by OTP; 30 days later the ₹200 reward is owed; Finance approves it, reveals the UPI ID, records the UTR with the name the app showed → paid, account verified. A referral partner signs terms by OTP; their ₹200 is approved and paid the same way. A business owed a fee refund on day 16 enters a bank account; Finance types a different name → refused and flagged; with the right name → paid. A partner changes their UPI ID → a payment the next day is refused, and allowed after 48 hours.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.

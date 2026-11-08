@@ -452,4 +452,19 @@ Format:
 **Cause:** Unescaped `${...}` inside a TypeScript template string is evaluated at server compile time rather than in the browser client runtime.
 **Fix:** Escape client-side interpolation as `\${...}` or use dataset attributes and standard string concatenation in console HTML templates.
 
+## ThrottlerGuard dependency resolution in isolated module tests
+**Symptom:** `Nest can't resolve dependencies of the AuthThrottlerGuard (?, Symbol(ThrottlerStorage), Reflector)`.
+**Cause:** When a service module (like `PaymentModule`) imports another module (like `PayoutAccountModule`) that transitively imports `OtpModule` (which declares `OtpController` guarded by `AuthThrottlerGuard`), isolated test suites compiling only `PaymentModule` fail because `THROTTLER:MODULE_OPTIONS` is only provided by `AuthModule`.
+**Fix:** Keep module boundaries decoupled. Instead of importing controller-bearing modules solely for in-memory token lookups, export shared token stores (like `payoutLinkTokens`) and utility functions directly from the service layer so modules can interact without dragging in throttled controllers and their guard options.
+
+## Guarding cross-service method invocations for partial test mocks
+**Symptom:** `TypeError: this.paymentService.sendPayoutDetailsLinkIfNoAccount is not a function` in earlier phase unit tests.
+**Cause:** Tests written in earlier phases instantiated services (`PlacementService`, `JobSeekerService`) passing partial mock objects (e.g. `{}`) for `PaymentService`. Adding a new method call broke those tests.
+**Fix:** Guard optional service method invocations with `if (this.paymentService?.sendPayoutDetailsLinkIfNoAccount)` in service triggers, allowing partial test mocks to pass while executing reliably in production DI.
+
+## Sensitive payout details exposure floor
+**Symptom:** Risk of leaking plain UPI IDs or bank accounts through general listing endpoints or agent consoles.
+**Cause:** Selecting unmasked or raw fields in `findAll` or returning decrypted values on general `GET /payments/:id` or `GET /payout-accounts/:ownerType/:ownerId`.
+**Fix:** Store details AES-256-GCM encrypted using `PAYOUT_ACCOUNT_KEY` (minimum 32 characters, fail-closed on startup). All listing and detail endpoints return strictly `maskedValue`. Only `POST /payments/:id/reveal-payout-details` decrypts and returns full credentials, strictly gated to `ceo` and `finance` on approved payments, with every invocation recorded in the immutable audit log.
+
 
