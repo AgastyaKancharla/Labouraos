@@ -2,13 +2,15 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IdModule } from '../../common/id/id.module';
 import { AuditModule } from '../../common/audit/audit.module';
+import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagService } from './review-flag.service';
 import { ReviewFlagController } from './review-flag.controller';
+import { PatternFlagService } from './pattern-flag.service';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule],
+  imports: [PrismaModule, IdModule, AuditModule, PricingModule],
   controllers: [ReviewFlagController],
-  providers: [ReviewFlagService],
-  exports: [ReviewFlagService],
+  providers: [ReviewFlagService, PatternFlagService],
+  exports: [ReviewFlagService, PatternFlagService],
 })
 export class ReviewFlagModule {}

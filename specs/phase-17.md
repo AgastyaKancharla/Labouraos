@@ -78,7 +78,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Candidate refund eligibility** (in `refund.service.ts`) adds the 7 Nov decision: not eligible if they withdrew `job_matching`, `profile_sharing` or `call_recording` after paying. The existing rules (not placed, not deactivated, no disqualifying hit) stay.
 - Tests: each kind is created once on the right day; a task can't be completed without an answered call; the business list offered is only introduced businesses; an introduced unpaid business raises `bypass_suspected` and blocks the refund; a business that paid does not; a candidate who withdrew job matching is not refund-eligible; one who withdrew promotions still is.
 
-### [ ] Task 5 — Pattern flags
+### [x] Task 5 — Pattern flags
 **Branch:** `phase-17/task-5-pattern-flags` · **Migration folder:** `20261110140000_pattern_flag_policy`
 
 **Acceptance:**

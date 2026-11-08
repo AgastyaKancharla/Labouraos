@@ -104,6 +104,11 @@ export async function seed(prismaClient?: PrismaClient) {
           callingHoursStart: '09:00',
           callingHoursEnd: '21:00',
           followUpGraceDays: 2,
+          patternWindowDays: 60,
+          patternBusinessMinInterviews: 5,
+          patternStopDays: 30,
+          patternAgentMinInterviews: 10,
+          patternAgentRejectionPercent: 80,
           matchPageSize: 3,
           salaryDaysPerMonth: 26,
           matchingWeights: {

@@ -25,6 +25,11 @@ export const SEEDED_PRICING_POLICY = {
   consentWithdrawalCallWindowMinutes: 60,
   duplicateBusinessRadiusMeters: 50,
   followUpGraceDays: 2,
+  patternWindowDays: 60,
+  patternBusinessMinInterviews: 5,
+  patternStopDays: 30,
+  patternAgentMinInterviews: 10,
+  patternAgentRejectionPercent: 80,
   walkInStart: '10:30',
   walkInEnd: '18:00',
 } as PricingPolicy;
