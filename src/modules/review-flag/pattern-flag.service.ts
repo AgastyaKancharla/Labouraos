@@ -7,6 +7,7 @@ export interface PatternFlagResults {
   businessManyRejections: number;
   businessStopped: number;
   agentRejection: number;
+  [key: string]: unknown;
 }
 
 @Injectable()

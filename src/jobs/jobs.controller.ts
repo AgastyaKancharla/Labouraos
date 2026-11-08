@@ -123,7 +123,7 @@ export class JobsController {
   @Post('pattern-flags/run')
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
   @RequireRoles('ceo')
-  @RequirePermission('review_flag', 'write')
+  @RequirePermission('business', 'write')
   async runPatternFlags(
     @Req() req: Request & { user: JwtPayload },
   ) {
@@ -134,7 +134,7 @@ export class JobsController {
       action: 'job.manual_trigger',
       entityType: 'job',
       entityCode: 'pattern-flags',
-      after: result,
+      after: { ...result },
       city: 'Bengaluru',
     });
 
