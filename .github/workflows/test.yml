@@ -72,6 +72,7 @@ jobs:
           JWT_SECRET: "ci_jwt_secret_testing_only_32_characters_minimum"
           LOGIN_CODE_SECRET: "ci_login_code_secret_testing_only_32_characters"
           CALL_ROUTING_KEY: "ci_call_routing_key_testing_only_32_characters"
+          PAYOUT_ACCOUNT_KEY: "ci_payout_account_key_testing_only_32_characters"
           STAFF_BOOTSTRAP_SECRET: "ci_bootstrap_secret_testing_only_32_characters"
           REDIS_HOST: "localhost"
           REDIS_PORT: "6379"

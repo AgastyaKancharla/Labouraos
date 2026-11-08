@@ -91,6 +91,8 @@ services:
         value: "Bengaluru, Karnataka, India"
       - key: CALL_ROUTING_KEY
         generateValue: true
+      - key: PAYOUT_ACCOUNT_KEY
+        generateValue: true
       - key: TELEPHONY_WEBHOOK_SECRET
         sync: false
       - key: MESSAGE_WEBHOOK_SECRET
@@ -180,6 +182,11 @@ services:
           type: web
           name: laboura-api
           envVarKey: CALL_ROUTING_KEY
+      - key: PAYOUT_ACCOUNT_KEY
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: PAYOUT_ACCOUNT_KEY
       - key: SUPABASE_URL
         fromService:
           type: web

@@ -32,6 +32,7 @@ import { ObservabilityModule } from './common/observability/observability.module
 import { ConsentModule } from './modules/consent/consent.module';
 import { MapModule } from './modules/map/map.module';
 import { FollowUpModule } from './modules/follow-up/follow-up.module';
+import { PayoutAccountModule } from './modules/payout-account/payout-account.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { FollowUpModule } from './modules/follow-up/follow-up.module';
     ConsentModule,
     MapModule,
     FollowUpModule,
+    PayoutAccountModule,
     HealthModule,
   ],
 })
