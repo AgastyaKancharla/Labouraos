@@ -112,16 +112,16 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 17 Gate
 
-- [ ] Joining needs answered calls to both worker and business; the joining date can't be typed — by test
-- [ ] A claim needs an answered owner call; late, unpaid or reject-list claims are rejected automatically; only Team Lead/Manager decide, within 48 hours or flagged — by test
-- [ ] Replacements are free interviews on a replacement vacancy; at most 2; the clock counts from the root's joining and never restarts — by test
-- [ ] Second replacement leaving or two rejections end the guarantee with no refund; no replacement in 15 days makes the fee refundable by CEO/Finance — by test
-- [ ] Follow-ups are created on schedule and completed only with an answered call; working at an introduced unpaid business raises `bypass_suspected` and blocks the ₹499 refund — by test
-- [ ] A candidate who withdrew job matching, profile sharing or call recording after paying is not refund-eligible — by test
-- [ ] Pattern flags fire at their thresholds from `PricingPolicy`, without duplicates — by test
-- [ ] The joining reward is queued on day 30 only for a worker still there, and is never paid automatically — by test
-- [ ] The old `dropout` and replacement-candidate endpoints are gone; nothing reads `clockPaused`, `replacementRejectionCount` or `eligibility` — by test
-- [ ] **End-to-end proof, recorded in the report:** a paid placement; on the joining date the agent calls worker and owner (both answered) and joining is recorded; the day-7 check-in is created and done; on day 20 the worker resigns and the owner reports it on a call on day 22; the Team Lead accepts within 48 hours after the exit call; a replacement vacancy opens; the first replacement candidate is rejected by the owner's OTP, the second is selected free and joins; on day 30 of the root the original worker's reward is not queued (they left) but the replacement's is queued 30 days after their own joining; on day 60 of the root the replacement placement completes. Separately: a not-selected candidate says on the day-30 follow-up that they work at that business, which never paid → `bypass_suspected`, and their refund is blocked.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] Joining needs answered calls to both worker and business; the joining date can't be typed — by test
+- [x] A claim needs an answered owner call; late, unpaid or reject-list claims are rejected automatically; only Team Lead/Manager decide, within 48 hours or flagged — by test
+- [x] Replacements are free interviews on a replacement vacancy; at most 2; the clock counts from the root's joining and never restarts — by test
+- [x] Second replacement leaving or two rejections end the guarantee with no refund; no replacement in 15 days makes the fee refundable by CEO/Finance — by test
+- [x] Follow-ups are created on schedule and completed only with an answered call; working at an introduced unpaid business raises `bypass_suspected` and blocks the ₹499 refund — by test
+- [x] A candidate who withdrew job matching, profile sharing or call recording after paying is not refund-eligible — by test
+- [x] Pattern flags fire at their thresholds from `PricingPolicy`, without duplicates — by test
+- [x] The joining reward is queued on day 30 only for a worker still there, and is never paid automatically — by test
+- [x] The old `dropout` and replacement-candidate endpoints are gone; nothing reads `clockPaused`, `replacementRejectionCount` or `eligibility` — by test
+- [x] **End-to-end proof, recorded in the report:** a paid placement; on the joining date the agent calls worker and owner (both answered) and joining is recorded; the day-7 check-in is created and done; on day 20 the worker resigns and the owner reports it on a call on day 22; the Team Lead accepts within 48 hours after the exit call; a replacement vacancy opens; the first replacement candidate is rejected by the owner's OTP, the second is selected free and joins; on day 30 of the root the original worker's reward is not queued (they left) but the replacement's is queued 30 days after their own joining; on day 60 of the root the replacement placement completes. Separately: a not-selected candidate says on the day-30 follow-up that they work at that business, which never paid → `bypass_suspected`, and their refund is blocked.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.
