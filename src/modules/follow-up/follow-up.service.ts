@@ -268,7 +268,7 @@ export class FollowUpService {
 
   async createScheduledTasks(now = new Date()): Promise<{ created: number; missed: number }> {
     const policy = await this.pricingService.current();
-    const graceDays = policy.followUpGraceDays ?? 2;
+    const graceDays = policy.followUpGraceDays;
     let created = 0;
 
     // 1. Sweep missed tasks
@@ -381,7 +381,7 @@ export class FollowUpService {
     }
 
     // 4. refund_check
-    const guaranteeDays = policy.jobSeekerGuaranteeDays ?? 30;
+    const guaranteeDays = policy.jobSeekerGuaranteeDays;
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         paymentReceivedAt: { not: null },
