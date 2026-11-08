@@ -62,7 +62,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - Every approval and payment is audited (who, when, which payment, the UTR — never the full UPI ID).
 - Tests: a payment can't be marked paid without being approved first; only CEO and Finance can approve or record; a payout to an account in its 48-hour wait, flagged or superseded is refused; a name mismatch is refused and flagged; a matching name records the UTR and verifies the account; a UTR can't be reused; approving re-checks eligibility (a candidate who became `placed` in between can't be refunded); the old payout routes return 404; the refunds-due list and approval agree on a business refund on day 15 and day 16 after acceptance.
 
-### [ ] Task 4 — Collecting payout details at the right moment, and paying
+### [x] Task 4 — Collecting payout details at the right moment, and paying
 **Branch:** `phase-18/task-4-collect-and-pay` · **No migration**
 
 **Acceptance:**

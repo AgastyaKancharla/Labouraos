@@ -476,6 +476,10 @@ export function renderCallAgentConsoleHtml(): string {
         <div class="form-group"><label>Business code or ID</label><input id="business-profile-id"></div>
         <button onclick="loadBusinessProfile()">Load profile</button>
         <div id="business-profile-details" aria-live="polite"></div>
+        <div id="business-payout-row" style="margin-top: 10px; font-size: 0.9rem; color: #94a3b8;">
+          Payout Details: <span id="business-payout-status" class="badge">None on file</span>
+          <button type="button" id="btn-business-send-payout-link" class="btn-sm" style="margin-left: 8px;" onclick="sendBusinessPayoutLink()">Send payout details link</button>
+        </div>
         <div id="business-profile-actions" class="hidden">
           <button id="business-send-agreement" onclick="sendBusinessAgreement()">Send agreement</button>
           <a id="business-agreement-link" class="hidden" target="_blank" rel="noopener">Signed agreement</a>
@@ -638,6 +642,12 @@ export function renderCallAgentConsoleHtml(): string {
               <div id="profile-payment-status-row" style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 6px; display: none;">
                 Payment: <span id="profile-card-payment-status" class="badge">waiting</span>
                 <button type="button" id="btn-resend-profile-payment" class="btn-sm" style="margin-left: 8px; display: none;" onclick="resendCurrentProfilePayment()">Resend payment link</button>
+              </div>
+
+              <!-- Phase 18 Task 5: Payout details status and send link -->
+              <div id="profile-payout-details-row" style="font-size: 0.9rem; color: #94a3b8; margin-bottom: 6px;">
+                Payout Details: <span id="profile-card-payout-status" class="badge">None on file</span>
+                <button type="button" id="btn-send-payout-link" class="btn-sm" style="margin-left: 8px;" onclick="sendCurrentProfilePayoutLink()">Send payout details link</button>
               </div>
 
               <!-- Blocked calling alert notice -->
@@ -1067,7 +1077,43 @@ export function renderCallAgentConsoleHtml(): string {
           };
           link.classList.remove('hidden');
         }
+
+        // Phase 18 Task 5: Business payout details (masked only)
+        try {
+          const payoutAccounts = await api('/payout-accounts/business/' + encodeURIComponent(business.id || id));
+          const bStatusEl = document.getElementById('business-payout-status');
+          if (bStatusEl) {
+            if (Array.isArray(payoutAccounts) && payoutAccounts.length > 0) {
+              const activeAcc = payoutAccounts.find(a => a.status !== 'superseded') || payoutAccounts[0];
+              bStatusEl.textContent = activeAcc.maskedValue || (activeAcc.method === 'upi' ? 'UPI on file' : 'Bank on file');
+              bStatusEl.className = 'badge ' + (activeAcc.status === 'verified' ? 'badge-success' : '');
+            } else {
+              bStatusEl.textContent = 'None on file';
+              bStatusEl.className = 'badge';
+            }
+          }
+        } catch {
+          const bStatusEl = document.getElementById('business-payout-status');
+          if (bStatusEl) {
+            bStatusEl.textContent = 'None on file';
+            bStatusEl.className = 'badge';
+          }
+        }
       } catch (e) { showAlert(e.message, false); }
+    }
+
+    async function sendBusinessPayoutLink() {
+      const id = loadedBusinessId || document.getElementById('business-profile-id').value.trim();
+      if (!id) return alert('Load a business first');
+      try {
+        await api('/payout-accounts/links', {
+          method: 'POST',
+          body: { ownerType: 'business', ownerId: id },
+        });
+        showAlert('Payout details link sent to business owner via SMS.');
+      } catch (e) {
+        showAlert('Failed to send payout link: ' + e.message, false);
+      }
     }
 
     async function sendBusinessAgreement() {
@@ -1350,11 +1396,46 @@ export function renderCallAgentConsoleHtml(): string {
           }
         }
 
+        // Phase 18 Task 5: Payout details (masked only)
+        try {
+          const payoutAccounts = await api('/payout-accounts/' + subjectType + '/' + encodeURIComponent(data.id || subjectId));
+          const pStatusEl = document.getElementById('profile-card-payout-status');
+          if (pStatusEl) {
+            if (Array.isArray(payoutAccounts) && payoutAccounts.length > 0) {
+              const activeAcc = payoutAccounts.find(a => a.status !== 'superseded') || payoutAccounts[0];
+              pStatusEl.textContent = activeAcc.maskedValue || (activeAcc.method === 'upi' ? 'UPI on file' : 'Bank on file');
+              pStatusEl.className = 'badge ' + (activeAcc.status === 'verified' ? 'badge-success' : '');
+            } else {
+              pStatusEl.textContent = 'None on file';
+              pStatusEl.className = 'badge';
+            }
+          }
+        } catch {
+          const pStatusEl = document.getElementById('profile-card-payout-status');
+          if (pStatusEl) {
+            pStatusEl.textContent = 'None on file';
+            pStatusEl.className = 'badge';
+          }
+        }
+
         document.getElementById('calling-profile-card').style.display = 'block';
 
         await loadProfileHistory(subjectType, data.id || subjectId);
       } catch (e) {
         showAlert('Error loading profile: ' + e.message, false);
+      }
+    }
+
+    async function sendCurrentProfilePayoutLink() {
+      if (!currentCallingSubject) return alert('Load a profile first');
+      try {
+        await api('/payout-accounts/links', {
+          method: 'POST',
+          body: { ownerType: currentCallingSubject.type, ownerId: currentCallingSubject.id },
+        });
+        showAlert('Payout details link sent to phone via SMS.');
+      } catch (e) {
+        showAlert('Failed to send payout link: ' + e.message, false);
       }
     }
 
