@@ -675,7 +675,16 @@ export class PaymentService {
   }
 
   async listPaymentMismatchFlags(status: string = 'open') {
-    const where: Prisma.ReviewFlagWhereInput = { kind: 'payment_mismatch' };
+    const where: Prisma.ReviewFlagWhereInput = {
+      kind: {
+        in: [
+          'payment_mismatch',
+          'payout_shared_account',
+          'payout_matches_staff',
+          'payout_name_mismatch',
+        ],
+      },
+    };
     if (status) {
       where.status = status;
     }
@@ -694,7 +703,13 @@ export class PaymentService {
       throw new BadRequestException('A written resolution is required');
     }
     const flag = await this.prisma.reviewFlag.findUnique({ where: { id: flagId } });
-    if (!flag || flag.kind !== 'payment_mismatch') {
+    const allowedKinds = [
+      'payment_mismatch',
+      'payout_shared_account',
+      'payout_matches_staff',
+      'payout_name_mismatch',
+    ];
+    if (!flag || !allowedKinds.includes(flag.kind)) {
       throw new NotFoundException(`Payment mismatch flag '${flagId}' not found`);
     }
     const updated = await this.prisma.reviewFlag.update({
@@ -1552,16 +1567,77 @@ export class PaymentService {
       where.createdAt = createdAt;
     }
 
-    return this.prisma.payment.findMany({
+    const payments = await this.prisma.payment.findMany({
       where,
       include: {
         jobSeeker: true,
         business: true,
         placement: true,
         referral: true,
+        payoutAccount: {
+          select: {
+            id: true,
+            code: true,
+            maskedValue: true,
+            status: true,
+            ownerNameAtEntry: true,
+            activeFrom: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    const results = await Promise.all(
+      payments.map(async (p) => {
+        if (p.payoutAccount) {
+          return {
+            ...p,
+            maskedPayoutAccount: p.payoutAccount.maskedValue,
+          };
+        }
+        let ownerType: string | null = null;
+        let ownerId: string | null = null;
+        if (p.type === 'referral_payout') {
+          ownerType = 'referral';
+          ownerId = p.referralId;
+        } else if (p.type === 'joining_reward') {
+          ownerType = 'job_seeker';
+          ownerId = p.jobSeekerId;
+        } else if (p.type === 'refund') {
+          if (p.jobSeekerId) {
+            ownerType = 'job_seeker';
+            ownerId = p.jobSeekerId;
+          } else if (p.businessId) {
+            ownerType = 'business';
+            ownerId = p.businessId;
+          } else if (p.placement?.businessId) {
+            ownerType = 'business';
+            ownerId = p.placement.businessId;
+          }
+        }
+        if (ownerType && ownerId && this.prisma.payoutAccount?.findFirst) {
+          const acc = await this.prisma.payoutAccount.findFirst({
+            where: { ownerType, ownerId, status: { not: 'superseded' } },
+            orderBy: { createdAt: 'desc' },
+            select: { maskedValue: true, status: true, activeFrom: true },
+          });
+          if (acc) {
+            return {
+              ...p,
+              maskedPayoutAccount: acc.maskedValue,
+              payoutAccountStatus: acc.status,
+              payoutAccountActiveFrom: acc.activeFrom,
+            };
+          }
+        }
+        return {
+          ...p,
+          maskedPayoutAccount: null,
+        };
+      }),
+    );
+    return results;
   }
 
   async findById(id: string) {

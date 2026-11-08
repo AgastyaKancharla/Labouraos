@@ -81,49 +81,53 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
   }, 60000);
 
   afterAll(async () => {
-    const payments = await prisma.payment.findMany({
-      where: { id: { in: paymentIds } },
-      select: { code: true },
-    });
-    const staff = await prisma.staff.findMany({
-      where: { email: { in: staffEmails } },
-      select: { id: true },
-    });
-    await prisma.auditLog.deleteMany({
-      where: {
-        OR: [
-          { entityCode: { in: payments.map((p) => p.code) } },
-          { actorId: { in: staff.map((s) => s.id) } },
-        ],
-      },
-    });
-    await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
-    await prisma.payoutAccount.deleteMany({
-      where: {
-        OR: [
-          { ownerType: 'referral', ownerId: { in: referralIds } },
-          { ownerType: 'job_seeker', ownerId: { in: jobSeekerIds } },
-          { ownerType: 'business', ownerId: { in: businessIds } },
-        ],
-      },
-    });
-    await prisma.consent.deleteMany({
-      where: {
-        OR: [
-          { subjectType: 'referral', subjectId: { in: referralIds } },
-          { subjectType: 'job_seeker', subjectId: { in: jobSeekerIds } },
-        ],
-      },
-    });
-    await prisma.placement.deleteMany({ where: { id: { in: placementIds } } });
-    await prisma.callRecord.deleteMany({ where: { id: { in: callRecordIds } } });
-    await prisma.vacancy.deleteMany({ where: { id: { in: vacancyIds } } });
-    await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
-    await prisma.jobSeeker.deleteMany({ where: { id: { in: jobSeekerIds } } });
-    await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
-    await prisma.staffSession.deleteMany({ where: { staffId: { in: staff.map((s) => s.id) } } });
-    await prisma.staff.deleteMany({ where: { email: { in: staffEmails } } });
-    await app.close();
+    if (prisma) {
+      const payments = await prisma.payment.findMany({
+        where: { id: { in: paymentIds } },
+        select: { code: true },
+      });
+      const staff = await prisma.staff.findMany({
+        where: { email: { in: staffEmails } },
+        select: { id: true },
+      });
+      await prisma.auditLog.deleteMany({
+        where: {
+          OR: [
+            { entityCode: { in: payments.map((p) => p.code) } },
+            { actorId: { in: staff.map((s) => s.id) } },
+          ],
+        },
+      });
+      await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
+      await prisma.payoutAccount.deleteMany({
+        where: {
+          OR: [
+            { ownerType: 'referral', ownerId: { in: referralIds } },
+            { ownerType: 'job_seeker', ownerId: { in: jobSeekerIds } },
+            { ownerType: 'business', ownerId: { in: businessIds } },
+          ],
+        },
+      });
+      await prisma.consent.deleteMany({
+        where: {
+          OR: [
+            { subjectType: 'referral', subjectId: { in: referralIds } },
+            { subjectType: 'job_seeker', subjectId: { in: jobSeekerIds } },
+          ],
+        },
+      });
+      await prisma.placement.deleteMany({ where: { id: { in: placementIds } } });
+      await prisma.callRecord.deleteMany({ where: { id: { in: callRecordIds } } });
+      await prisma.vacancy.deleteMany({ where: { id: { in: vacancyIds } } });
+      await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
+      await prisma.jobSeeker.deleteMany({ where: { id: { in: jobSeekerIds } } });
+      await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
+      await prisma.staffSession.deleteMany({ where: { staffId: { in: staff.map((s) => s.id) } } });
+      await prisma.staff.deleteMany({ where: { email: { in: staffEmails } } });
+    }
+    if (app) {
+      await app.close();
+    }
   });
 
   const nextPhone = () => {

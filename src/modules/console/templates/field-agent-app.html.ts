@@ -322,6 +322,12 @@ export function renderFieldAgentAppHtml(): string {
           Status: <span id="fa-profile-status">—</span>
         </div>
 
+        <!-- Phase 18 Task 5: Payout Details & Send Link -->
+        <div id="fa-profile-payout-row" style="font-size: 0.9rem; color: #94a3b8; margin-top: 6px;">
+          Payout Details: <span id="fa-profile-payout-status" class="badge">None on file</span>
+          <button type="button" id="fa-btn-send-payout-link" class="btn-sm" style="margin-left: 8px;" onclick="sendFaProfilePayoutLink()">Send payout details link</button>
+        </div>
+
         <!-- Blocked calling alert notice -->
         <div id="fa-call-blocked-alert" style="display: none; background: rgba(239, 68, 68, 0.15); border: 1px solid var(--danger); color: #fca5a5; padding: 8px 12px; border-radius: 4px; font-size: 0.85rem; margin-top: 8px;">
         </div>
@@ -1390,9 +1396,44 @@ export function renderFieldAgentAppHtml(): string {
         document.getElementById('fa-profile-phone').textContent = formatPhoneLast4(data.phone);
         document.getElementById('fa-profile-status').textContent = data.status || 'Active';
 
+        // Phase 18 Task 5: Payout details (masked only)
+        try {
+          const payoutAccounts = await api('/payout-accounts/' + subjectType + '/' + encodeURIComponent(data.id || id));
+          const pStatusEl = document.getElementById('fa-profile-payout-status');
+          if (pStatusEl) {
+            if (Array.isArray(payoutAccounts) && payoutAccounts.length > 0) {
+              const activeAcc = payoutAccounts.find(a => a.status !== 'superseded') || payoutAccounts[0];
+              pStatusEl.textContent = activeAcc.maskedValue || (activeAcc.method === 'upi' ? 'UPI on file' : 'Bank on file');
+              pStatusEl.className = 'badge ' + (activeAcc.status === 'verified' ? 'badge-success' : '');
+            } else {
+              pStatusEl.textContent = 'None on file';
+              pStatusEl.className = 'badge';
+            }
+          }
+        } catch {
+          const pStatusEl = document.getElementById('fa-profile-payout-status');
+          if (pStatusEl) {
+            pStatusEl.textContent = 'None on file';
+            pStatusEl.className = 'badge';
+          }
+        }
+
         await loadFaHistory(subjectType, data.id || id);
       } catch (e) {
         showAlert('Could not load profile: ' + e.message, false);
+      }
+    }
+
+    async function sendFaProfilePayoutLink() {
+      if (!faCallingSubject) return alert('No profile loaded');
+      try {
+        await api('/payout-accounts/links', {
+          method: 'POST',
+          body: { ownerType: faCallingSubject.type, ownerId: faCallingSubject.id },
+        });
+        showAlert('Payout details link sent via SMS.');
+      } catch (e) {
+        showAlert('Failed to send payout link: ' + e.message, false);
       }
     }
 

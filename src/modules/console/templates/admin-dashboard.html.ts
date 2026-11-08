@@ -343,6 +343,81 @@ export function renderAdminDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Reveal Payout Details Modal (CEO & Finance) -->
+  <div id="reveal-payout-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Payout Details (Decrypted for Payment)</h3>
+        <button type="button" class="btn-sm" onclick="closeRevealPayoutModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Audited access. Use these details to execute the payment in your bank or UPI application.</p>
+      <div style="background: #0f172a; padding: 12px; border-radius: 6px; margin-bottom: 14px; border: 1px solid var(--border);">
+        <div style="margin-bottom: 8px;">
+          <span style="font-size: 0.85rem; color: #94a3b8;">Receiver Name on File:</span>
+          <strong id="modal-reveal-name" style="display: block; font-size: 1.05rem; color: var(--text);">—</strong>
+        </div>
+        <div style="margin-bottom: 8px;">
+          <span style="font-size: 0.85rem; color: #94a3b8;">Payout Method / Type:</span>
+          <span id="modal-reveal-type" class="badge">—</span>
+        </div>
+        <div style="margin-bottom: 8px;">
+          <span style="font-size: 0.85rem; color: #94a3b8;">Full UPI ID / Account Number:</span>
+          <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+            <code id="modal-reveal-details" style="font-size: 1.1rem; color: #38bdf8; font-weight: bold; background: #1e293b; padding: 6px 10px; border-radius: 4px; display: inline-block;">—</code>
+          </div>
+        </div>
+        <div id="modal-reveal-ifsc-row" style="margin-bottom: 8px; display: none;">
+          <span style="font-size: 0.85rem; color: #94a3b8;">IFSC Code:</span>
+          <code id="modal-reveal-ifsc" style="font-size: 1rem; color: var(--text); background: #1e293b; padding: 4px 8px; border-radius: 4px; display: inline-block;">—</code>
+        </div>
+        <div style="font-size: 0.8rem; color: #64748b; margin-top: 8px;">
+          Masked Reference: <span id="modal-reveal-masked">—</span>
+        </div>
+      </div>
+      <div style="display: flex; justify-content: flex-end;">
+        <button type="button" class="btn-sm btn-secondary" onclick="closeRevealPayoutModal()">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Record Payout Transfer Modal (CEO & Finance) -->
+  <div id="record-payout-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Record Payout Transfer</h3>
+        <button type="button" class="btn-sm" onclick="closeRecordPayoutModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Record the completed bank or UPI transfer. Receiver name must match the account owner.</p>
+      <input type="hidden" id="record-payout-id">
+      <div style="background: #162032; padding: 10px 14px; border-radius: 6px; margin-bottom: 12px; display: flex; justify-content: space-between;">
+        <div>
+          <span style="font-size: 0.8rem; color: #94a3b8;">Payment Code</span>
+          <strong id="record-payout-code-text" style="display: block;">—</strong>
+        </div>
+        <div>
+          <span style="font-size: 0.8rem; color: #94a3b8;">Amount</span>
+          <strong id="record-payout-amount-text" style="display: block; color: var(--primary);">—</strong>
+        </div>
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Bank UTR (12 digits / transfer reference) *</label>
+        <input type="text" id="record-payout-utr" placeholder="e.g. 202611090001">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Name Shown in UPI / Bank App *</label>
+        <input type="text" id="record-payout-receiver-name" placeholder="Exact name displayed by UPI app or bank">
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Payment Date & Time *</label>
+        <input type="datetime-local" id="record-payout-paid-at">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeRecordPayoutModal()">Cancel</button>
+        <button type="button" class="btn-success btn-sm" onclick="submitRecordPayout()">Confirm & Record Payout</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1>Laboura Admin Dashboard</h1>
@@ -606,6 +681,115 @@ export function renderAdminDashboardHtml(): string {
 
     <!-- Payment Ledger View -->
     <div id="view-payments" class="tab-view hidden">
+      <!-- Money Owed (Waiting for Approval) Section -->
+      <div class="card" id="finance-money-owed-card">
+        <div class="card-title">
+          <span>Money Owed (Waiting for Approval)</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Outgoing refunds, referral payouts, and joining rewards awaiting approval by CEO or Finance (oldest first).</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Payment Code</th>
+                <th>Type</th>
+                <th>Payee / Subject</th>
+                <th>Amount</th>
+                <th>Created Date</th>
+                <th>Masked Account</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="money-owed-tbody">
+              <tr><td colspan="7" style="text-align: center;">Loading money owed...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Approved and Ready to Pay Section -->
+      <div class="card" id="finance-ready-to-pay-card">
+        <div class="card-title">
+          <span>Approved and Ready to Pay</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Approved payments ready for bank transfer or UPI payout. Finance reveals details at the moment of paying and records the UTR and receiver name.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Payment Code</th>
+                <th>Type</th>
+                <th>Payee / Subject</th>
+                <th>Amount</th>
+                <th>Approved Date</th>
+                <th>Approved By</th>
+                <th>Masked Account</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="ready-to-pay-tbody">
+              <tr><td colspan="8" style="text-align: center;">Loading ready to pay payments...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Payout Accounts in 48-Hour Wait Section -->
+      <div class="card" id="finance-cooling-accounts-card">
+        <div class="card-title">
+          <span>Payout Accounts in 48-Hour Wait (Cooling Period)</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Accounts recently created or updated cannot be paid until the 48-hour cooling period elapses.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Account Code</th>
+                <th>Owner Type & ID</th>
+                <th>Owner Name</th>
+                <th>Method</th>
+                <th>Masked Account</th>
+                <th>Cooling Until</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="cooling-accounts-tbody">
+              <tr><td colspan="7" style="text-align: center;">Loading cooling accounts...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Payout Fraud & Mismatch Flags Section -->
+      <div class="card" id="finance-payout-flags-card">
+        <div class="card-title">
+          <span>Payout Flags (Fraud & Mismatch)</span>
+          <button class="btn-sm" onclick="loadPayments()">Refresh Flags</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Flags for shared payout accounts, staff phone matches, or receiver name mismatches.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Flag Code</th>
+                <th>Kind</th>
+                <th>Subject</th>
+                <th>Details</th>
+                <th>Raised At</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="payout-flags-tbody">
+              <tr><td colspan="7" style="text-align: center;">Loading payout flags...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       <!-- Finance UPI & Bank Confirmation Section -->
       <div class="card" id="finance-bank-actions-card">
         <div class="card-title">
@@ -1018,6 +1202,28 @@ export function renderAdminDashboardHtml(): string {
       if (patternFlagsCard) {
         if (isLeadOrManager) patternFlagsCard.classList.remove('hidden');
         else patternFlagsCard.classList.add('hidden');
+      }
+
+      const isFinanceOrCeo = ['ceo', 'finance'].includes(payload.role);
+      const moneyOwedCard = document.getElementById('finance-money-owed-card');
+      if (moneyOwedCard) {
+        if (isFinanceOrCeo) moneyOwedCard.classList.remove('hidden');
+        else moneyOwedCard.classList.add('hidden');
+      }
+      const readyToPayCard = document.getElementById('finance-ready-to-pay-card');
+      if (readyToPayCard) {
+        if (isFinanceOrCeo) readyToPayCard.classList.remove('hidden');
+        else readyToPayCard.classList.add('hidden');
+      }
+      const coolingAccountsCard = document.getElementById('finance-cooling-accounts-card');
+      if (coolingAccountsCard) {
+        if (isFinanceOrCeo) coolingAccountsCard.classList.remove('hidden');
+        else coolingAccountsCard.classList.add('hidden');
+      }
+      const payoutFlagsCard = document.getElementById('finance-payout-flags-card');
+      if (payoutFlagsCard) {
+        if (isFinanceOrCeo) payoutFlagsCard.classList.remove('hidden');
+        else payoutFlagsCard.classList.add('hidden');
       }
 
       labouraShowApproverTabs();
@@ -1746,8 +1952,104 @@ export function renderAdminDashboardHtml(): string {
                 \`;
               }).join('') || '<tr><td colspan="7">No pending payments awaiting match</td></tr>';
             }
+
+            // Phase 18: Money Owed (Waiting for Approval)
+            const owed = (Array.isArray(pending) ? pending : [])
+              .filter(p => ['refund', 'referral_payout', 'joining_reward'].includes(p.type))
+              .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+            const owedTbody = document.getElementById('money-owed-tbody');
+            if (owedTbody) {
+              owedTbody.innerHTML = owed.map(p => \`
+                <tr>
+                  <td><strong>\${p.code}</strong></td>
+                  <td><span class="badge">\${p.type}</span></td>
+                  <td>\${p.subjectType}: \${p.subjectId}</td>
+                  <td>₹\${(p.amount / 100).toLocaleString('en-IN')} (\${p.amount} paise)</td>
+                  <td>\${new Date(p.createdAt).toLocaleString()}</td>
+                  <td><code>\${p.maskedPayoutAccount || p.payoutAccount?.maskedValue || '—'}</code></td>
+                  <td>
+                    <button class="btn-sm btn-success" onclick="approveMoneyOut('\${p.id}')">Approve</button>
+                  </td>
+                </tr>
+              \`).join('') || '<tr><td colspan="7" style="text-align: center;">No money owed waiting for approval</td></tr>';
+            }
           } catch (e) {
-            console.error('Error loading pending payments:', e);
+            console.error('Error loading pending payments / money owed:', e);
+          }
+
+          // Phase 18: Approved and Ready to Pay
+          try {
+            const approved = await api('/payments?status=approved');
+            const readyToPay = (Array.isArray(approved) ? approved : [])
+              .filter(p => ['refund', 'referral_payout', 'joining_reward'].includes(p.type))
+              .sort((a, b) => new Date(a.approvedAt || a.createdAt).getTime() - new Date(b.approvedAt || b.createdAt).getTime());
+            const readyTbody = document.getElementById('ready-to-pay-tbody');
+            if (readyTbody) {
+              readyTbody.innerHTML = readyToPay.map(p => \`
+                <tr>
+                  <td><strong>\${p.code}</strong></td>
+                  <td><span class="badge">\${p.type}</span></td>
+                  <td>\${p.subjectType}: \${p.subjectId}</td>
+                  <td>₹\${(p.amount / 100).toLocaleString('en-IN')} (\${p.amount} paise)</td>
+                  <td>\${p.approvedAt ? new Date(p.approvedAt).toLocaleString() : '—'}</td>
+                  <td>\${p.approvedByStaffId || '—'}</td>
+                  <td><code>\${p.maskedPayoutAccount || p.payoutAccount?.maskedValue || '—'}</code></td>
+                  <td>
+                    <button class="btn-sm" onclick="openRevealPayoutModal('\${p.id}')">Reveal</button>
+                    <button class="btn-sm btn-primary" onclick="openRecordPayoutModal('\${p.id}', '\${p.code}', \${p.amount})">Record payment</button>
+                  </td>
+                </tr>
+              \`).join('') || '<tr><td colspan="8" style="text-align: center;">No approved payments ready to pay</td></tr>';
+            }
+          } catch (e) {
+            console.error('Error loading ready to pay payments:', e);
+          }
+
+          // Phase 18: Accounts in 48-Hour Wait (Cooling Period)
+          try {
+            const cooling = await api('/payout-accounts/cooling');
+            const coolingTbody = document.getElementById('cooling-accounts-tbody');
+            if (coolingTbody) {
+              coolingTbody.innerHTML = (Array.isArray(cooling) ? cooling : []).map(c => \`
+                <tr>
+                  <td><strong>\${c.code}</strong></td>
+                  <td>\${c.ownerType}: \${c.ownerId}</td>
+                  <td>\${c.ownerNameAtEntry || '—'}</td>
+                  <td>\${c.method}</td>
+                  <td><code>\${c.maskedValue}</code></td>
+                  <td>\${new Date(c.activeFrom).toLocaleString()}</td>
+                  <td><span class="badge">\${c.status}</span></td>
+                </tr>
+              \`).join('') || '<tr><td colspan="7" style="text-align: center;">No payout accounts currently in cooling wait</td></tr>';
+            }
+          } catch (e) {
+            console.error('Error loading cooling accounts:', e);
+          }
+
+          // Phase 18: Payout Fraud & Mismatch Flags
+          try {
+            const flags = await api('/payments/review-flags?status=open');
+            const payoutFlags = (Array.isArray(flags) ? flags : []).filter(f =>
+              ['payout_shared_account', 'payout_matches_staff', 'payout_name_mismatch'].includes(f.kind)
+            );
+            const payoutFlagsTbody = document.getElementById('payout-flags-tbody');
+            if (payoutFlagsTbody) {
+              payoutFlagsTbody.innerHTML = payoutFlags.map(f => \`
+                <tr>
+                  <td><strong>\${f.code}</strong></td>
+                  <td><span class="badge">\${f.kind}</span></td>
+                  <td>\${f.subjectType}: \${f.subjectId}</td>
+                  <td><small>\${JSON.stringify(f.details || {})}</small></td>
+                  <td>\${new Date(f.raisedAt).toLocaleString()}</td>
+                  <td><span class="badge">\${f.status}</span></td>
+                  <td>
+                    <button class="btn-sm" onclick="promptResolvePayoutFlag('\${f.id}')">Resolve</button>
+                  </td>
+                </tr>
+              \`).join('') || '<tr><td colspan="7" style="text-align: center;">No open payout fraud or mismatch flags</td></tr>';
+            }
+          } catch (e) {
+            console.error('Error loading payout flags:', e);
           }
         }
 
@@ -1894,13 +2196,93 @@ export function renderAdminDashboardHtml(): string {
       }
     }
 
-    async function disbursePayment(id) {
+    // Phase 18: Finance & CEO Payout Actions
+    async function approveMoneyOut(paymentId) {
+      if (!confirm('Approve this payment for release?')) return;
       try {
-        const res = await api('/payments/' + id + '/disburse', { method: 'POST', body: {} });
-        showAlert('Payout disbursed successfully! Payment status: ' + res.status);
+        await api('/payments/' + paymentId + '/approve', { method: 'POST' });
+        showAlert('Payment approved successfully');
         loadPayments();
       } catch (e) {
-        showAlert(e.message, false);
+        showAlert('Approval failed: ' + e.message, false);
+      }
+    }
+
+    async function openRevealPayoutModal(paymentId) {
+      try {
+        const res = await api('/payments/' + paymentId + '/reveal-payout-details', { method: 'POST' });
+        document.getElementById('modal-reveal-name').textContent = res.accountOwnerName || '—';
+        document.getElementById('modal-reveal-type').textContent = res.accountType || '—';
+        document.getElementById('modal-reveal-details').textContent = res.upiId || res.accountNumber || '—';
+        const ifscRow = document.getElementById('modal-reveal-ifsc-row');
+        if (res.ifsc) {
+          ifscRow.style.display = 'block';
+          document.getElementById('modal-reveal-ifsc').textContent = res.ifsc;
+        } else {
+          ifscRow.style.display = 'none';
+        }
+        document.getElementById('modal-reveal-masked').textContent = res.masked || '—';
+        document.getElementById('reveal-payout-modal').classList.remove('hidden');
+      } catch (e) {
+        showAlert('Failed to reveal payout details: ' + e.message, false);
+      }
+    }
+
+    function closeRevealPayoutModal() {
+      document.getElementById('reveal-payout-modal').classList.add('hidden');
+      document.getElementById('modal-reveal-details').textContent = '—';
+      document.getElementById('modal-reveal-name').textContent = '—';
+    }
+
+    function openRecordPayoutModal(paymentId, code, amountPaise) {
+      document.getElementById('record-payout-id').value = paymentId;
+      document.getElementById('record-payout-code-text').textContent = code;
+      document.getElementById('record-payout-amount-text').textContent = '₹' + ((amountPaise || 0) / 100).toLocaleString('en-IN');
+      document.getElementById('record-payout-utr').value = '';
+      document.getElementById('record-payout-receiver-name').value = '';
+      document.getElementById('record-payout-paid-at').value = new Date().toISOString().slice(0, 16);
+      document.getElementById('record-payout-modal').classList.remove('hidden');
+    }
+
+    function closeRecordPayoutModal() {
+      document.getElementById('record-payout-modal').classList.add('hidden');
+    }
+
+    async function submitRecordPayout() {
+      const paymentId = document.getElementById('record-payout-id').value;
+      const bankUtr = document.getElementById('record-payout-utr').value.trim();
+      const receiverNameShown = document.getElementById('record-payout-receiver-name').value.trim();
+      const paidAt = document.getElementById('record-payout-paid-at').value;
+
+      if (!bankUtr || !receiverNameShown || !paidAt) {
+        return alert('Bank UTR, receiver name shown in bank app, and paid date are required');
+      }
+
+      try {
+        await api('/payments/' + paymentId + '/record-payout', {
+          method: 'POST',
+          body: { bankUtr, receiverNameShown, paidAt: new Date(paidAt).toISOString() },
+        });
+        showAlert('Payout recorded successfully');
+        closeRecordPayoutModal();
+        loadPayments();
+      } catch (e) {
+        showAlert('Recording payout failed: ' + e.message, false);
+      }
+    }
+
+    async function promptResolvePayoutFlag(flagId) {
+      const resolution = prompt('Enter resolution reason for this payout flag:');
+      if (!resolution || !resolution.trim()) return;
+      try {
+        await api('/payments/review-flags/' + flagId + '/resolve', {
+          method: 'POST',
+          body: { resolution: resolution.trim() },
+        });
+        showAlert('Payout flag resolved');
+        loadPayments();
+      } catch (e) {
+        showAlert('Resolving payout flag failed: ' + e.message, false);
       }
     }
 
