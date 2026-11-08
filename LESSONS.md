@@ -437,3 +437,19 @@ Format:
 **Cause:** 1) Defaulting to accept-on-missing-secret allowed attackers to bypass authentication by calling endpoints with unset secrets. 2) Mock implementations that are more permissive than production implementations create silent vulnerabilities if ever run in production. 3) Using `@Optional()` for required domain services reintroduced deprecated gateway fallbacks when UPI collection was mandatory.
 **Fix:** 1) All incoming webhook endpoints enforce HMAC-SHA256 signature validation against secrets of at least 32 characters, failing closed (401 Unauthorized) if the secret is unset, shorter than 32 characters, or if the signature is missing or mismatched. 2) Mock providers strictly mirror real providers and enforce HMAC validation. 3) `POST /payments/mock/simulate-webhook` returns 404 in production. 4) `UpiCollectionService` is a required constructor dependency in `JobSeekerService` and `PlacementService`, removing optional fallbacks.
 
+## Business replacement guarantee window naming in PricingPolicy
+**Symptom:** `Property 'businessGuaranteeDays' does not exist on type 'PricingPolicy'`.
+**Cause:** The 60-day business guarantee period column in `PricingPolicy` is named `replacementWindowDays`, matching data-design §16, not `businessGuaranteeDays`.
+**Fix:** Reference `policy.replacementWindowDays` across all placement and claim guarantee evaluations.
+
+## Placement guarantee refunds are driven by claim acceptance and replacement status
+**Symptom:** Placement refund tests failed trying to pass `approvedAmount` or expecting `refundAmount` on the returned payment record.
+**Cause:** `approveRefund` on `PlacementService` computes the refund amount automatically (100% of the root placement fee) via `evaluatePlacementRefundEligibility` when at least 15 days have elapsed since claim acceptance with no selected replacement candidate. The DTO accepts only `{ reason?: string, asOf?: string }` for audit and date-overrides, and returns the completed `Payment` record where `amount` holds the refund paise.
+**Fix:** Pass only `{ reason, asOf }` to `approveRefund`, and assert on `result.amount` and `result.status === 'completed'`.
+
+## Client scripts in HTML template literals require escaped interpolation
+**Symptom:** ESLint or TypeScript compile errors when writing inline JS string interpolations inside `.html.ts` template strings.
+**Cause:** Unescaped `${...}` inside a TypeScript template string is evaluated at server compile time rather than in the browser client runtime.
+**Fix:** Escape client-side interpolation as `\${...}` or use dataset attributes and standard string concatenation in console HTML templates.
+
+
