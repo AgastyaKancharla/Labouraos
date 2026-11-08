@@ -644,6 +644,39 @@ export class JobSeekerService {
       orderBy: { createdAt: 'desc' },
     });
 
+    const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
+      ? await this.prisma.consent.findFirst({
+          where: {
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
+            withdrawnAt: { not: null, gte: jobSeeker.paymentReceivedAt },
+          },
+        })
+      : null;
+
+    const openBypassFlag = this.prisma.reviewFlag
+      ? await this.prisma.reviewFlag.findFirst({
+          where: {
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            kind: 'bypass_suspected',
+            status: 'open',
+          },
+        })
+      : null;
+
+    const bypassFollowUp = this.prisma.followUpTask
+      ? await this.prisma.followUpTask.findFirst({
+          where: {
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            kind: 'refund_check',
+            answer: 'working_at_introduced_business',
+          },
+        })
+      : null;
+
     const eligibilityResult = evaluateJobSeekerRefundEligibility(
       {
         code: jobSeeker.code,
@@ -653,6 +686,9 @@ export class JobSeekerService {
         hasExistingRefund: Boolean(existingRefund),
         activationPaymentPaise: activationPayment?.amount,
         guaranteeDays: policy.jobSeekerGuaranteeDays,
+        hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
+        hasOpenBypassFlag: Boolean(openBypassFlag),
+        hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
       },
       now,
     );

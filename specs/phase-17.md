@@ -49,7 +49,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Remove** `POST /placements/:id/dropout`; leave a 404 test for every role.
 - Tests: a claim without an answered owner call is refused; a report on day 8 is auto-rejected; an unpaid fee is auto-rejected; a reject-list reason is auto-rejected; only Team Lead/Manager decide; a Manager overrule is recorded; the overdue flag fires once; the old endpoint is gone.
 
-### [ ] Task 3 — Replacements through interviews, and the guarantee rules
+### [x] Task 3 — Replacements through interviews, and the guarantee rules
 **Branch:** `phase-17/task-3-replacements` · **Migration folder:** `20261110120000_replacements_via_interviews`
 
 **Acceptance:**
@@ -62,7 +62,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Remove** the three replacement-candidate endpoints (`/placements/:id/replacement-candidates`, `/reject`, `/accept`); leave 404 tests. `clockPaused`, `clockPausedAt`, `replacementRejectionCount` and `eligibility` are no longer read anywhere.
 - Tests: a replacement interview needs no payment and the job seeker is `placed` at selection; a third replacement is refused; the second replacement leaving ends the guarantee with no refund; two replacement rejections end it with no refund; day 16 with no selection makes the fee refundable and approving it sets `refunded`; windows count from the root's joining even after two replacements; the old endpoints are gone; nothing reads the deprecated columns.
 
-### [ ] Task 4 — Follow-up calls, the refund check and catching bypass
+### [x] Task 4 — Follow-up calls, the refund check and catching bypass
 **Branch:** `phase-17/task-4-follow-ups` · **Migration folder:** `20261110130000_add_follow_up_task`
 
 **Acceptance:**

@@ -56,6 +56,9 @@ export class RefundService {
     let rejectedCandidateIdSet = new Set<string>();
     const refundedCandidateIdSet = new Set<string>();
     const candidatePaymentMap = new Map<string, number>();
+    const withdrawnConsentMap = new Map<string, Date>();
+    let openBypassCandidateIdSet = new Set<string>();
+    let bypassFollowUpCandidateIdSet = new Set<string>();
 
     if (candidates.length > 0) {
       const candidateIds = candidates.map((c) => c.id);
@@ -94,15 +97,68 @@ export class RefundService {
           candidatePaymentMap.set(p.jobSeekerId, p.amount);
         }
       }
+
+      // Check withdrawn essential consents
+      const withdrawnConsents = this.prisma.consent
+        ? await this.prisma.consent.findMany({
+            where: {
+              subjectType: 'job_seeker',
+              subjectId: { in: candidateIds },
+              purpose: { in: ['job_matching', 'profile_sharing', 'call_recording'] },
+              withdrawnAt: { not: null },
+            },
+            select: { subjectId: true, withdrawnAt: true },
+          })
+        : [];
+      for (const c of withdrawnConsents) {
+        if (c.withdrawnAt) {
+          const existing = withdrawnConsentMap.get(c.subjectId);
+          if (!existing || c.withdrawnAt > existing) {
+            withdrawnConsentMap.set(c.subjectId, c.withdrawnAt);
+          }
+        }
+      }
+
+      // Check open bypass_suspected flags
+      const openBypassFlags = this.prisma.reviewFlag
+        ? await this.prisma.reviewFlag.findMany({
+            where: {
+              subjectType: 'job_seeker',
+              subjectId: { in: candidateIds },
+              kind: 'bypass_suspected',
+              status: 'open',
+            },
+            select: { subjectId: true },
+          })
+        : [];
+      openBypassCandidateIdSet = new Set(openBypassFlags.map((f) => f.subjectId));
+
+      // Check completed refund_check follow-up tasks with answer working_at_introduced_business
+      const bypassFollowUps = this.prisma.followUpTask
+        ? await this.prisma.followUpTask.findMany({
+            where: {
+              subjectType: 'job_seeker',
+              subjectId: { in: candidateIds },
+              kind: 'refund_check',
+              answer: 'working_at_introduced_business',
+            },
+            select: { subjectId: true },
+          })
+        : [];
+      bypassFollowUpCandidateIdSet = new Set(bypassFollowUps.map((t) => t.subjectId));
     }
 
     const jobSeekerRows: RefundDueRow[] = [];
     for (const candidate of candidates) {
       const storedPaid = candidatePaymentMap.get(candidate.id);
-      // A stored activation payment is the refund. With no payment row, the
-      // amount is the fee in force (so a price change is visible) and is never
-      // a hard-coded literal. A later price change does not rewrite a stored payment.
       const paidAmount = storedPaid !== undefined ? storedPaid : policy.activationFeePaise;
+      const withdrawnAt = withdrawnConsentMap.get(candidate.id);
+      const hasWithdrawnEssentialConsent = Boolean(
+        withdrawnAt && candidate.paymentReceivedAt && withdrawnAt >= candidate.paymentReceivedAt,
+      );
+      const hasOpenBypassFlag = openBypassCandidateIdSet.has(candidate.id);
+      const hasWorkingAtIntroducedBusinessFollowUp = bypassFollowUpCandidateIdSet.has(candidate.id);
+
       const result = evaluateJobSeekerRefundEligibility(
         {
           code: candidate.code,
@@ -112,6 +168,9 @@ export class RefundService {
           hasExistingRefund: refundedCandidateIdSet.has(candidate.id),
           activationPaymentPaise: paidAmount,
           guaranteeDays,
+          hasWithdrawnEssentialConsent,
+          hasOpenBypassFlag,
+          hasWorkingAtIntroducedBusinessFollowUp,
         },
         now,
       );

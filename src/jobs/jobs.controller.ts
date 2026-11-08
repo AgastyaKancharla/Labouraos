@@ -15,6 +15,7 @@ import { AuditService } from '../common/audit/audit.service';
 import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
 import { PlacementCompletionJob } from './placement-completion.job';
 import { ClaimOverdueJob } from './claim-overdue.job';
+import { FollowUpJob } from './follow-up.job';
 
 @Controller('jobs')
 export class JobsController {
@@ -22,6 +23,7 @@ export class JobsController {
     private readonly noPickupEvaluationJob: NoPickupEvaluationJob,
     private readonly placementCompletionJob: PlacementCompletionJob,
     private readonly claimOverdueJob: ClaimOverdueJob,
+    private readonly followUpJob: FollowUpJob,
     private readonly auditService: AuditService,
   ) {}
 
@@ -89,6 +91,27 @@ export class JobsController {
       entityType: 'job',
       entityCode: 'claim-overdue',
       after: { raised: result.raised },
+      city: 'Bengaluru',
+    });
+
+    return result;
+  }
+
+  @Post('follow-up/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('job_seeker', 'write')
+  async runFollowUp(
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<{ created: number; missed: number }> {
+    const result = await this.followUpJob.process();
+
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'follow-up',
+      after: result,
       city: 'Bengaluru',
     });
 

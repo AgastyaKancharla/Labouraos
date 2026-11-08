@@ -24,6 +24,7 @@ export const SEEDED_PRICING_POLICY = {
   noBypassPenaltyPercent: 50,
   consentWithdrawalCallWindowMinutes: 60,
   duplicateBusinessRadiusMeters: 50,
+  followUpGraceDays: 2,
   walkInStart: '10:30',
   walkInEnd: '18:00',
 } as PricingPolicy;
