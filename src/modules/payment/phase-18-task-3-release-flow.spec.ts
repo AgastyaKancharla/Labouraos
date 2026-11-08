@@ -635,7 +635,7 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
       );
       expect(approvedDay15.status).toBe('approved');
 
-      // 3. On Day 16: create a second placement/refund to verify day 16 agreement
+      // 3. On Day 16: create a second placement to verify day 16 agreement
       const rootPlacement2 = await prisma.placement.create({
         data: {
           code: await idService.generateCode('placement'),
@@ -651,6 +651,11 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
       });
       placementIds.push(rootPlacement2.id);
 
+      const rowsDay16 = await refundService.getRefundsDue(staffIds['finance'], day16);
+      const matchDay16 = rowsDay16.find((r) => r.code === rootPlacement2.code);
+      expect(matchDay16).toBeDefined();
+      expect(matchDay16?.amount).toBe(3000000);
+
       const refundPayment2 = await prisma.payment.create({
         data: {
           code: await idService.generateCode('payment'),
@@ -665,11 +670,6 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
         },
       });
       paymentIds.push(refundPayment2.id);
-
-      const rowsDay16 = await refundService.getRefundsDue(staffIds['finance'], day16);
-      const matchDay16 = rowsDay16.find((r) => r.code === rootPlacement2.code);
-      expect(matchDay16).toBeDefined();
-      expect(matchDay16?.amount).toBe(3000000);
 
       const approvedDay16 = await paymentService.approvePayment(
         refundPayment2.id,
