@@ -10,6 +10,7 @@ import {
 } from '@nestjs/common';
 import { Request } from 'express';
 import { ReferralService } from './referral.service';
+import { ConsentLinkService } from '../consent/consent-link.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
@@ -22,7 +23,24 @@ import { CreateReferralDto } from './dto/create-referral.dto';
 @UseGuards(JwtAuthGuard, RbacGuard)
 @UseInterceptors(PiiMaskingInterceptor)
 export class ReferralController {
-  constructor(private readonly referralService: ReferralService) {}
+  constructor(
+    private readonly referralService: ReferralService,
+    private readonly consentLinkService: ConsentLinkService,
+  ) {}
+
+  @Post(':id/terms-links')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead', 'finance')
+  async createTermsLink(
+    @Param('id') referralId: string,
+    @Body() body: { language?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.consentLinkService.createReferralTermsLink(
+      referralId,
+      req.user.sub,
+      body?.language,
+    );
+  }
 
   @Post()
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')

@@ -110,6 +110,7 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
       pricingService,
       messagingService as unknown as MessagingService,
       reviewFlagService as unknown as ReviewFlagService,
+      { hasConsent: jest.fn() } as never,
     );
 
     upiService = new UpiCollectionService(

@@ -27,6 +27,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MAX_PAYOUT_ATTEMPTS, resolveWebhookTransition } from './payout-state';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
+import { ConsentService } from '../consent/consent.service';
 import { publicLink } from '../../common/public-link';
 
 @Injectable()
@@ -44,6 +45,7 @@ export class PaymentService {
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
+    private readonly consentService: ConsentService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -878,7 +880,63 @@ export class PaymentService {
       );
     }
 
+    if (payment.type === 'referral_payout') {
+      const referralId = payment.referralId || payment.subjectId;
+      const termsSigned = await this.consentService.hasConsent('referral', referralId, 'agreement_terms');
+      if (!termsSigned) {
+        throw new BadRequestException('Referral partner has not signed agreement terms');
+      }
+    }
+
     return this.dispatchPayout(payment, ['pending'], 'payout_release', actorId, options);
+  }
+
+  async approvePayment(paymentId: string, actorId: string) {
+    const payment = await this.loadPayoutPayment(paymentId);
+
+    if (payment.status !== 'pending') {
+      throw new BadRequestException(`Payment cannot be approved from status '${payment.status}'`);
+    }
+
+    if (payment.type === 'referral_payout') {
+      const referralId = payment.referralId || payment.subjectId;
+      const termsSigned = await this.consentService.hasConsent('referral', referralId, 'agreement_terms');
+      if (!termsSigned) {
+        throw new BadRequestException('Referral partner has not signed agreement terms');
+      }
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'approved',
+        approvedByStaffId: actorId,
+        approvedAt: now,
+      },
+    });
+
+    await recordStatusChange(this.prisma, {
+      subjectType: 'payment',
+      subjectId: payment.id,
+      fromStatus: payment.status,
+      toStatus: 'approved',
+      changedByStaffId: actorId,
+      reason: 'payment_approved',
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'payment_approved',
+      entityType: 'payment',
+      entityCode: payment.code,
+      before: { status: payment.status },
+      after: { status: 'approved', approvedByStaffId: actorId, approvedAt: now.toISOString() },
+      changedFields: ['status', 'approvedByStaffId', 'approvedAt'],
+      reason: 'Payment approved by CEO or Finance',
+    });
+
+    return updated;
   }
 
   /**

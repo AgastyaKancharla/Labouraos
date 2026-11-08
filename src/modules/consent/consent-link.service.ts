@@ -21,6 +21,10 @@ import {
   renderBusinessAgreementTerms,
   renderSignedAgreementDocument,
 } from './business-agreement.template';
+import {
+  REFERRAL_TERMS_VERSION,
+  renderReferralTerms,
+} from './referral-terms.template';
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
@@ -57,6 +61,21 @@ export type ConsentLinkTokenRecord = ConsentLinkTokenBase & (
         termsHash: string;
       };
     }
+  | {
+      subjectType: 'referral';
+      subjectId: string;
+      referralId: string;
+      partnerPhone: string;
+      partnerName: string;
+      createdByStaffId: string;
+      terms: {
+        referralPayoutPaise: number;
+        version: string;
+        language: AgreementLanguage;
+        termsHtml: string;
+        termsHash: string;
+      };
+    }
   | InterviewActionLinkRecord
 );
 
@@ -86,6 +105,16 @@ export type ConsentLinkDetails =
       candidateName: string;
       phone: string;
       preferredLanguage: string;
+    }
+  | {
+      valid: true;
+      subjectType: 'referral';
+      referralId: string;
+      partnerName: string;
+      maskedPhone: string;
+      preferredLanguage: AgreementLanguage;
+      termsHtml: string;
+      referralPayoutPaise: number;
     };
 
 @Injectable()
@@ -245,6 +274,54 @@ export class ConsentLinkService {
     return { success: true, token, expiresAt };
   }
 
+  async createReferralTermsLink(referralId: string, staffId: string, language: string = 'en') {
+    if (!['kn', 'hi', 'en'].includes(language)) {
+      throw new BadRequestException('language must be kn, hi, or en');
+    }
+    const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
+    if (!referral) throw new NotFoundException(`Referral '${referralId}' not found`);
+
+    const policy = await this.pricingService.current();
+    const referralPayoutPaise = policy.referralPayoutPaise;
+    const agreementLanguage = language as AgreementLanguage;
+    const termsHtml = renderReferralTerms(referralPayoutPaise, agreementLanguage);
+    const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
+    const token = randomBytes(32).toString('hex');
+    const now = this.clock.now();
+    const expiresAt = new Date(now.getTime() + this.ttlMs);
+
+    const record: ConsentLinkTokenRecord = {
+      token,
+      subjectType: 'referral',
+      subjectId: referral.id,
+      referralId: referral.id,
+      partnerPhone: referral.phone,
+      partnerName: referral.name,
+      createdByStaffId: staffId,
+      terms: {
+        referralPayoutPaise,
+        version: REFERRAL_TERMS_VERSION,
+        language: agreementLanguage,
+        termsHtml,
+        termsHash,
+      },
+      expiresAt,
+      usedAt: null,
+      createdAt: now,
+    };
+    this.tokens.set(token, record);
+
+    await this.messagingService.send({
+      channel: 'sms',
+      template: 'referral_terms_link',
+      subjectType: 'referral',
+      subjectId: referral.id,
+      variables: { token, link: publicLink(`/consent/${token}`) },
+    });
+
+    return { success: true, token, expiresAt };
+  }
+
   async getSignedAgreementDocument(businessId: string) {
     const agreement = await this.prisma.businessAgreement.findFirst({
       where: { businessId }, orderBy: { signedAt: 'desc' },
@@ -289,6 +366,21 @@ export class ConsentLinkService {
       };
     }
 
+    if (record.subjectType === 'referral') {
+      const referral = await this.prisma.referral.findUnique({ where: { id: record.referralId } });
+      if (!referral) throw new NotFoundException('Referral partner not found');
+      return {
+        valid: true,
+        subjectType: 'referral',
+        referralId: referral.id,
+        partnerName: referral.name,
+        maskedPhone: maskAgreementPhone(record.partnerPhone),
+        preferredLanguage: record.terms.language,
+        termsHtml: record.terms.termsHtml,
+        referralPayoutPaise: record.terms.referralPayoutPaise,
+      };
+    }
+
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: record.jobSeekerId },
     });
@@ -327,6 +419,10 @@ export class ConsentLinkService {
       const otp = await this.otpService.sendOtp(record.businessPhone);
       return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.businessPhone) };
     }
+    if (record.subjectType === 'referral') {
+      const otp = await this.otpService.sendOtp(record.partnerPhone);
+      return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.partnerPhone) };
+    }
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: record.jobSeekerId },
     });
@@ -354,6 +450,9 @@ export class ConsentLinkService {
     try {
       if (record.subjectType === 'business') {
         return await this.submitBusinessAgreement(record, dto);
+      }
+      if (record.subjectType === 'referral') {
+        return await this.submitReferralTerms(record, dto);
       }
       return await this.submitJobSeekerConsent(record, dto);
     } finally {
@@ -533,6 +632,75 @@ export class ConsentLinkService {
     return {
       success: true,
       agreementId: agreement.id,
+      signedAt,
+      grantedPurposes: requiredPurposes,
+    };
+  }
+
+  private async submitReferralTerms(
+    record: Extract<ConsentLinkTokenRecord, { subjectType: 'referral' }>,
+    dto: SubmitConsentDto,
+  ) {
+    const requiredPurposes = ['agreement_terms', 'call_recording'];
+    const purposes = Array.isArray(dto.purposes) ? dto.purposes : [];
+    if (
+      purposes.length !== requiredPurposes.length ||
+      requiredPurposes.some((p) => !purposes.includes(p))
+    ) {
+      throw new BadRequestException('Agreement terms and call recording consent are both required');
+    }
+
+    const otpValid = dto.otpCode
+      ? await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)
+      : false;
+    const otpBelongsToPartner = otpValid
+      ? await this.otpService.isVerified(dto.otpRequestId, record.partnerPhone)
+      : false;
+    if (!otpBelongsToPartner) {
+      throw new BadRequestException('Valid owner OTP is required to sign referral terms');
+    }
+
+    const referral = await this.prisma.referral.findUnique({ where: { id: record.referralId } });
+    if (!referral) throw new NotFoundException('Referral partner not found');
+
+    const signedAt = this.clock.now();
+    await this.prisma.$transaction(async (tx) => {
+      for (const purpose of requiredPurposes) {
+        await this.consentService.grant(
+          {
+            subjectType: 'referral',
+            subjectId: referral.id,
+            purpose,
+            noticeVersion: record.terms.version,
+            language: record.terms.language,
+            method: 'sms_link',
+            otpRequestId: dto.otpRequestId,
+          },
+          tx,
+        );
+      }
+    });
+
+    record.usedAt = signedAt;
+
+    await this.auditService.log({
+      actorId: record.createdByStaffId,
+      action: 'referral_terms_signed',
+      entityType: 'referral',
+      entityCode: referral.code,
+      before: { termsSigned: false },
+      after: {
+        termsSigned: true,
+        purposes: requiredPurposes,
+        otpRequestId: dto.otpRequestId,
+        version: record.terms.version,
+      },
+      changedFields: ['consents'],
+      reason: 'Referral partner signed terms and call recording consent via SMS link OTP',
+    });
+
+    return {
+      success: true,
       signedAt,
       grantedPurposes: requiredPurposes,
     };

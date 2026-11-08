@@ -141,6 +141,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       pricingService,
       messagingService as unknown as MessagingService,
       { raise: jest.fn(), resolve: jest.fn() } as unknown as ReviewFlagService,
+      { hasConsent: jest.fn() } as never,
     );
 
     upiCollectionService = new UpiCollectionService(
@@ -169,6 +170,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       pricingService,
       upiCollectionService,
       { raise: jest.fn(), resolve: jest.fn() } as unknown as ReviewFlagService,
+      { hasConsent: jest.fn() } as never,
     );
   });
 

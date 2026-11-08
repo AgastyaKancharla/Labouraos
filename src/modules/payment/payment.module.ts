@@ -13,6 +13,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { MessageModule } from '../message/message.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { UpiCollectionService } from './upi-collection.service';
+import { ConsentModule } from '../consent/consent.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UpiCollectionService } from './upi-collection.service';
     PricingModule,
     MessageModule,
     ReviewFlagModule,
+    ConsentModule,
   ],
   controllers: [PaymentController],
   providers: [

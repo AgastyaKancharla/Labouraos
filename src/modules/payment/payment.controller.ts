@@ -191,6 +191,17 @@ export class PaymentController {
     return this.paymentService.findById(id);
   }
 
+  @Post(':id/approve')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo', 'finance')
+  async approvePayment(
+    @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.approvePayment(id, req.user.sub);
+  }
+
   @Post(':id/disburse')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'write')
