@@ -16,6 +16,7 @@ import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
 import { PlacementCompletionJob } from './placement-completion.job';
 import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
+import { PatternFlagsJob } from './pattern-flags.job';
 
 @Controller('jobs')
 export class JobsController {
@@ -24,6 +25,7 @@ export class JobsController {
     private readonly placementCompletionJob: PlacementCompletionJob,
     private readonly claimOverdueJob: ClaimOverdueJob,
     private readonly followUpJob: FollowUpJob,
+    private readonly patternFlagsJob: PatternFlagsJob,
     private readonly auditService: AuditService,
   ) {}
 
@@ -111,6 +113,27 @@ export class JobsController {
       action: 'job.manual_trigger',
       entityType: 'job',
       entityCode: 'follow-up',
+      after: result,
+      city: 'Bengaluru',
+    });
+
+    return result;
+  }
+
+  @Post('pattern-flags/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('review_flag', 'write')
+  async runPatternFlags(
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    const result = await this.patternFlagsJob.process();
+
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'pattern-flags',
       after: result,
       city: 'Bengaluru',
     });
