@@ -40,9 +40,25 @@ function maskPhone(phone: string): string {
   return `+91 ******${digits.slice(-4)}`;
 }
 
+export const payoutLinkTokens = new Map<string, PayoutLinkTokenRecord>();
+
+export function hasActivePayoutLink(ownerType: string, ownerId: string, now = new Date()): boolean {
+  for (const record of payoutLinkTokens.values()) {
+    if (
+      record.ownerType === ownerType &&
+      record.ownerId === ownerId &&
+      !record.usedAt &&
+      record.expiresAt > now
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 @Injectable()
 export class PayoutAccountService {
-  private readonly tokens = new Map<string, PayoutLinkTokenRecord>();
+  private readonly tokens = payoutLinkTokens;
   private ttlMs = 24 * 60 * 60 * 1000; // 24 hours
 
   constructor(

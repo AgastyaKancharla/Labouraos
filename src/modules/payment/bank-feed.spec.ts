@@ -12,7 +12,6 @@ import { PaymentProvider } from './payment-provider.interface';
 import { MockBankFeedProvider } from './mock-bank-feed.provider';
 import { PaymentService } from './payment.service';
 import { PaymentController } from './payment.controller';
-import { PayoutAccountService } from '../payout-account/payout-account.service';
 
 type MockPrisma = {
   bankCredit: Record<string, jest.Mock>;
@@ -107,7 +106,6 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       pricingService,
       messagingService,
       reviewFlagService as unknown as ReviewFlagService,
-      {} as unknown as PayoutAccountService,
     );
   });
 

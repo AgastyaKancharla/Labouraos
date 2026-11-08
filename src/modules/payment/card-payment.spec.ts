@@ -10,7 +10,6 @@ import { BankFeedProvider } from './bank-feed-provider.interface';
 import { PaymentService } from './payment.service';
 import { PaymentController } from './payment.controller';
 import { UpiCollectionService } from './upi-collection.service';
-import { PayoutAccountService } from '../payout-account/payout-account.service';
 import { Response } from 'express';
 
 type MockPrisma = {
@@ -111,7 +110,6 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
       pricingService,
       messagingService as unknown as MessagingService,
       reviewFlagService as unknown as ReviewFlagService,
-      {} as unknown as PayoutAccountService,
     );
 
     upiService = new UpiCollectionService(

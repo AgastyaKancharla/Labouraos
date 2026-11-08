@@ -13,7 +13,6 @@ import { PricingModule } from '../pricing/pricing.module';
 import { MessageModule } from '../message/message.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { UpiCollectionService } from './upi-collection.service';
-import { PayoutAccountModule } from '../payout-account/payout-account.module';
 
 @Module({
   imports: [
@@ -23,7 +22,6 @@ import { PayoutAccountModule } from '../payout-account/payout-account.module';
     PricingModule,
     MessageModule,
     ReviewFlagModule,
-    PayoutAccountModule,
   ],
   controllers: [PaymentController],
   providers: [

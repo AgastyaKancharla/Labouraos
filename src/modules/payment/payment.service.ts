@@ -17,7 +17,12 @@ import { RecordPayoutDto } from './dto/record-payout.dto';
 import { matchReceiverName } from '../payout-account/name-matcher';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
-import { PayoutAccountService } from '../payout-account/payout-account.service';
+import { randomBytes } from 'crypto';
+import {
+  payoutLinkTokens,
+  hasActivePayoutLink,
+  PayoutLinkTokenRecord,
+} from '../payout-account/payout-account.service';
 import { decryptPayoutValue } from '../payout-account/payout-account-key';
 import {
   PAYMENT_PROVIDER,
@@ -48,7 +53,6 @@ export class PaymentService {
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
-    private readonly payoutAccountService: PayoutAccountService,
   ) {}
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -854,14 +858,93 @@ export class PaymentService {
     actorId: string,
     actorRole = 'system',
     now = new Date(),
-  ) {
-    return this.payoutAccountService.sendLinkIfNotOnRecord(
+  ): Promise<{ linkSent: boolean; reason?: string }> {
+    const existing = await this.prisma.payoutAccount.findFirst({
+      where: {
+        ownerType,
+        ownerId,
+        status: { not: 'superseded' },
+      },
+    });
+    if (existing) {
+      return { linkSent: false, reason: 'account_exists' };
+    }
+
+    if (hasActivePayoutLink(ownerType, ownerId, now)) {
+      return { linkSent: false, reason: 'link_already_active' };
+    }
+
+    let ownerName: string;
+    let phone: string;
+    if (ownerType === 'job_seeker') {
+      const js = await this.prisma.jobSeeker.findUnique({
+        where: { id: ownerId },
+        select: { id: true, name: true, phone: true },
+      });
+      if (!js) throw new NotFoundException(`Job seeker '${ownerId}' not found`);
+      ownerName = js.name;
+      phone = js.phone;
+    } else if (ownerType === 'referral') {
+      const ref = await this.prisma.referral.findUnique({
+        where: { id: ownerId },
+        select: { id: true, name: true, phone: true },
+      });
+      if (!ref) throw new NotFoundException(`Referral '${ownerId}' not found`);
+      ownerName = ref.name;
+      phone = ref.phone;
+    } else if (ownerType === 'business') {
+      const biz = await this.prisma.business.findUnique({
+        where: { id: ownerId },
+        select: { id: true, name: true, phone: true },
+      });
+      if (!biz) throw new NotFoundException(`Business '${ownerId}' not found`);
+      ownerName = biz.name;
+      phone = biz.phone;
+    } else {
+      throw new BadRequestException(`Invalid ownerType '${ownerType}'`);
+    }
+
+    const token = randomBytes(32).toString('hex');
+    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+
+    const record: PayoutLinkTokenRecord = {
+      token,
       ownerType,
       ownerId,
-      actorId,
-      actorRole,
-      now,
-    );
+      ownerName,
+      phone,
+      expiresAt,
+      usedAt: null,
+      createdAt: now,
+    };
+    payoutLinkTokens.set(token, record);
+
+    await this.messagingService.send({
+      channel: 'sms',
+      template: 'payout_details_link',
+      subjectType: ownerType,
+      subjectId: ownerId,
+      variables: {
+        token,
+        link: publicLink(`/payout-accounts/link/${token}`),
+      },
+    });
+
+    const auditStaffId = await this.fallbackActorId(actorId);
+
+    await this.auditService.log({
+      action: 'payout_link_created',
+      entityType: 'PayoutAccount',
+      entityCode: token.slice(0, 8),
+      actorId: auditStaffId ?? actorId,
+      after: {
+        ownerType,
+        ownerId,
+        actorRole,
+      },
+    });
+
+    return { linkSent: true };
   }
 
   /** Who audit rows for system-driven changes are attributed to (actorId must be a real staff row). */
