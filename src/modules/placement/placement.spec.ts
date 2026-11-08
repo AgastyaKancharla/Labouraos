@@ -699,15 +699,15 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   describe('Task 6: Replacement candidate endpoints removed (Phase 17 Task 3)', () => {
     it('returns 404 for every role on the removed replacement candidate endpoints', async () => {
       const tokens = [
-        { role: 'field_agent', token: faKoraToken },
-        { role: 'call_agent', token: caToken },
-        { role: 'team_lead', token: tlToken },
-        { role: 'manager', token: managerToken },
-        { role: 'ceo', token: ceoToken },
-        { role: 'finance', token: financeToken },
+        faKoraToken,
+        caToken,
+        teamLeadToken,
+        mgrToken,
+        ceoToken,
+        financeToken,
       ];
 
-      for (const { token } of tokens) {
+      for (const token of tokens) {
         // POST /placements/:id/replacement-candidates
         await request(app.getHttpServer())
           .post(`/placements/fake-placement-id/replacement-candidates`)

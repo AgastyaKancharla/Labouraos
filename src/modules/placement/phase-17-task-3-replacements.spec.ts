@@ -11,7 +11,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
 
 type MockPrisma = {
-  staff: { findUnique: jest.Mock; findFirst: jest.Mock };
+  staff: { findUnique: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
   placement: {
     findFirst: jest.Mock;
     findUnique: jest.Mock;
@@ -91,6 +91,7 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
           return allStaff.find((s) => s.id === where.id) ?? null;
         }),
         findFirst: jest.fn().mockResolvedValue(ceoStaff),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       placement: {
         findFirst: jest.fn().mockImplementation(async ({ where }: { where?: { id?: string; code?: string; OR?: Array<{ id?: string; code?: string }> } }) => {
