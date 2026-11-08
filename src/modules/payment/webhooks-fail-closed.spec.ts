@@ -557,16 +557,6 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
         payload: { gatewayReference: 'mock_gw_1', status: 'succeeded' },
       },
       {
-        name: 'payments/payout-webhook',
-        path: '/payments/payout-webhook',
-        secretEnv: 'PAYOUT_WEBHOOK_SECRET',
-        headerName: 'x-razorpay-signature',
-        payload: {
-          event: 'payout.processed',
-          payload: { payout: { entity: { id: 'pout_1', amount: 20000, status: 'processed' } } },
-        },
-      },
-      {
         name: 'telephony/webhook/call-status',
         path: '/telephony/webhook/call-status',
         secretEnv: 'TELEPHONY_WEBHOOK_SECRET',
@@ -657,5 +647,12 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
         });
       });
     }
+
+    it('removed route /payments/payout-webhook returns 404 (Phase 18 Task 3)', async () => {
+      await request(app.getHttpServer())
+        .post('/payments/payout-webhook')
+        .send({ event: 'payout.processed' })
+        .expect(404);
+    });
   });
 });

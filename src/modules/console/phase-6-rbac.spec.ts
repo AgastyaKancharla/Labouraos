@@ -264,15 +264,15 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
       expect(payment).toBeDefined();
 
       await request(app.getHttpServer())
-        .post(`/payments/${payment!.id}/disburse`)
+        .post(`/payments/${payment!.id}/record-payout`)
         .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({})
+        .send({ bankUtr: 'UTR123', receiverNameShown: 'Name' })
         .expect(403);
 
       await request(app.getHttpServer())
-        .post(`/payments/${payment!.id}/disburse`)
+        .post(`/payments/${payment!.id}/record-payout`)
         .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .send({})
+        .send({ bankUtr: 'UTR123', receiverNameShown: 'Name' })
         .expect(403);
     });
   });

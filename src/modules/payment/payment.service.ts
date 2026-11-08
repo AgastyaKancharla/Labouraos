@@ -1212,8 +1212,8 @@ export class PaymentService {
 
     // 5. Name matched -> mark paid & verify account
     const updated = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.update({
-        where: { id: payment.id },
+      const claimResult = await tx.payment.updateMany({
+        where: { id: payment.id, status: 'approved' },
         data: {
           status: 'succeeded',
           bankUtr,
@@ -1222,6 +1222,12 @@ export class PaymentService {
           paidByStaffId: actorId,
         },
       });
+
+      if (claimResult.count === 0) {
+        throw new BadRequestException('Payment is not approved or has already been paid');
+      }
+
+      const p = await tx.payment.findUniqueOrThrow({ where: { id: payment.id } });
 
       await tx.payoutAccount.update({
         where: { id: account.id },

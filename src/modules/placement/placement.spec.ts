@@ -957,7 +957,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       expect(resDay15.body.type).toBe('refund');
       expect(resDay15.body.amount).toBe(placementFee); // full 100% placement fee
       expect(resDay15.body.code).toMatch(/^PAY-\d{5}$/);
-      expect(resDay15.body.status).toBe('completed');
+      expect(resDay15.body.status).toBe('approved');
       expect(resDay15.body.placementId).toBe(placement.id);
 
       // DB check

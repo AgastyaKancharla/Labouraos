@@ -520,7 +520,7 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
         .set(as('finance'));
 
       expect(res.status).toBe(400);
-      expect(res.body.message).toMatch(/placed/i);
+      expect(res.body.message).toMatch(/placement|placed/i);
     });
   });
 
@@ -593,6 +593,22 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
       });
       placementIds.push(rootPlacement.id);
 
+      const day14 = new Date('2026-06-15T12:00:00.000Z');
+      const day15 = new Date('2026-06-16T12:00:00.000Z');
+      const day16 = new Date('2026-06-17T12:00:00.000Z');
+
+      // 1. On Day 14: absent from list
+      const rowsDay14 = await refundService.getRefundsDue(staffIds['finance'], day14);
+      const matchDay14 = rowsDay14.find((r) => r.code === rootPlacement.code);
+      expect(matchDay14).toBeUndefined();
+
+      // 2. On Day 15: present in list
+      const rowsDay15 = await refundService.getRefundsDue(staffIds['finance'], day15);
+      const matchDay15 = rowsDay15.find((r) => r.code === rootPlacement.code);
+      expect(matchDay15).toBeDefined();
+      expect(matchDay15?.amount).toBe(3000000);
+
+      // Create refund payment and verify Day 14 approval attempt is refused, but Day 15 approval succeeds
       const refundPayment = await prisma.payment.create({
         data: {
           code: await idService.generateCode('payment'),
@@ -608,24 +624,9 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
       });
       paymentIds.push(refundPayment.id);
 
-      const day14 = new Date('2026-06-15T12:00:00.000Z');
-      const day15 = new Date('2026-06-16T12:00:00.000Z');
-      const day16 = new Date('2026-06-17T12:00:00.000Z');
-
-      // 1. On Day 14: absent from list AND refused for approval
-      const rowsDay14 = await refundService.getRefundsDue(staffIds['finance'], day14);
-      const matchDay14 = rowsDay14.find((r) => r.code === rootPlacement.code);
-      expect(matchDay14).toBeUndefined();
-
       await expect(
         paymentService.approvePayment(refundPayment.id, staffIds['finance'], day14),
       ).rejects.toThrow(/not payable before 15 days/i);
-
-      // 2. On Day 15: present in list AND allowed for approval
-      const rowsDay15 = await refundService.getRefundsDue(staffIds['finance'], day15);
-      const matchDay15 = rowsDay15.find((r) => r.code === rootPlacement.code);
-      expect(matchDay15).toBeDefined();
-      expect(matchDay15?.amount).toBe(3000000);
 
       const approvedDay15 = await paymentService.approvePayment(
         refundPayment.id,
