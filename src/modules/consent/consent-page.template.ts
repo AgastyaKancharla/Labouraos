@@ -168,3 +168,59 @@ export function renderBusinessAgreementPageHtml(
 <button type="submit" id="btn-submit" class="btn">${labels.submit}</button></form></main>
 ${renderConsentOtpScript(token, language, 'Agreement signed successfully. Thank you.')}</body></html>`;
 }
+
+export function renderReferralTermsPageHtml(
+  token: string,
+  partnerName: string,
+  maskedPhone: string,
+  termsHtml: string,
+  language: 'kn' | 'hi' | 'en' = 'en',
+): string {
+  const labels = {
+    en: {
+      title: 'Referral Partner Terms',
+      partner: 'Partner Name',
+      terms: 'I agree to the referral partner terms',
+      recording: 'I consent to call recording',
+      sendOtp: 'Send OTP to registered phone',
+      submit: 'Sign Referral Terms',
+    },
+    hi: {
+      title: 'रेफरल पार्टनर शर्तें',
+      partner: 'पार्टनर का नाम',
+      terms: 'मैं रेफरल पार्टनर की शर्तों से सहमत हूँ',
+      recording: 'मैं कॉल रिकॉर्डिंग की सहमति देता/देती हूँ',
+      sendOtp: 'पंजीकृत फोन पर OTP भेजें',
+      submit: 'शर्तों पर हस्ताक्षर करें',
+    },
+    kn: {
+      title: 'ರೆಫರಲ್ ಪಾಲುದಾರರ ನಿಯಮಗಳು',
+      partner: 'ಪಾಲುದಾರರ ಹೆಸರು',
+      terms: 'ನಾನು ರೆಫರಲ್ ನಿಯಮಗಳಿಗೆ ಒಪ್ಪುತ್ತೇನೆ',
+      recording: 'ಕರೆ ರೆಕಾರ್ಡಿಂಗ್‌ಗೆ ನಾನು ಒಪ್ಪುತ್ತೇನೆ',
+      sendOtp: 'ನೋಂದಾಯಿತ ಫೋನ್‌ಗೆ OTP ಕಳುಹಿಸಿ',
+      submit: 'ನಿಯಮಗಳಿಗೆ ಸಹಿ ಮಾಡಿ',
+    },
+  }[language] || {
+    title: 'Referral Partner Terms',
+    partner: 'Partner Name',
+    terms: 'I agree to the referral partner terms',
+    recording: 'I consent to call recording',
+    sendOtp: 'Send OTP to registered phone',
+    submit: 'Sign Referral Terms',
+  };
+
+  return `<!DOCTYPE html>
+<html lang="${language}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${labels.title}</title>
+<style>body{font-family:system-ui,sans-serif;background:#f8fafc;margin:0;padding:20px;color:#1e293b}.container{max-width:680px;margin:auto;background:white;border-radius:12px;padding:24px;box-shadow:0 4px 6px #0001}article{line-height:1.6;border:1px solid #cbd5e1;border-radius:8px;padding:18px;margin:20px 0}.row{display:flex;gap:10px;margin:16px 0}.btn{width:100%;padding:12px;border:0;border-radius:8px;background:#2563eb;color:white;font-size:16px}.btn-secondary{width:auto;background:#e2e8f0;color:#1e293b}.msg-box{display:none;padding:12px;margin:16px 0}.msg-success{background:#dcfce7}.msg-error{background:#fee2e2}.otp-input,input[type=text]{padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:16px}.otp-input{width:100%;box-sizing:border-box}.otp-section{background:#f1f5f9;padding:16px;border-radius:8px;margin:20px 0}</style></head>
+<body><main class="container"><h1>${labels.title}</h1><p>${escapeHtml(partnerName)}</p><p>OTP phone: ${escapeHtml(maskedPhone)}</p>
+<div id="alert-box" class="msg-box"></div>${termsHtml}
+<form id="consent-form">
+<div class="row"><input type="checkbox" name="purposes" value="agreement_terms" required><label>${labels.terms}</label></div>
+<div class="row"><input type="checkbox" name="purposes" value="call_recording" required><label>${labels.recording}</label></div>
+<section class="otp-section"><button type="button" id="btn-send-otp" class="btn btn-secondary">${labels.sendOtp}</button>
+<div id="otp-input-container" style="display:none;margin-top:12px"><label>Enter the 6-digit OTP</label><input type="text" id="otp-code" class="otp-input" inputmode="numeric" maxlength="6" required></div></section>
+<button type="submit" id="btn-submit" class="btn">${labels.submit}</button></form></main>
+${renderConsentOtpScript(token, language, 'Referral terms signed successfully. Thank you.')}</body></html>`;
+}

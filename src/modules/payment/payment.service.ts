@@ -881,6 +881,63 @@ export class PaymentService {
     return this.dispatchPayout(payment, ['pending'], 'payout_release', actorId, options);
   }
 
+  async approvePayment(paymentId: string, actorId: string) {
+    const payment = await this.loadPayoutPayment(paymentId);
+
+    if (payment.status !== 'pending') {
+      throw new BadRequestException(`Payment cannot be approved from status '${payment.status}'`);
+    }
+
+    if (payment.type === 'referral_payout') {
+      const referralId = payment.referralId || payment.subjectId;
+      const termsConsent = await this.prisma.consent.findFirst({
+        where: {
+          subjectType: 'referral',
+          subjectId: referralId,
+          purpose: 'agreement_terms',
+          granted: true,
+          grantedAt: { not: null },
+          withdrawnAt: null,
+        },
+      });
+      if (!termsConsent) {
+        throw new BadRequestException('Referral partner has not signed agreement terms');
+      }
+    }
+
+    const now = new Date();
+    const updated = await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: {
+        status: 'approved',
+        approvedByStaffId: actorId,
+        approvedAt: now,
+      },
+    });
+
+    await recordStatusChange(this.prisma, {
+      subjectType: 'payment',
+      subjectId: payment.id,
+      fromStatus: payment.status,
+      toStatus: 'approved',
+      changedByStaffId: actorId,
+      reason: 'payment_approved',
+    });
+
+    await this.auditService.log({
+      actorId,
+      action: 'payment_approved',
+      entityType: 'payment',
+      entityCode: payment.code,
+      before: { status: payment.status },
+      after: { status: 'approved', approvedByStaffId: actorId, approvedAt: now.toISOString() },
+      changedFields: ['status', 'approvedByStaffId', 'approvedAt'],
+      reason: 'Payment approved by CEO or Finance',
+    });
+
+    return updated;
+  }
+
   /**
    * Re-sends a payout that definitively failed (or was reversed). CEO/Manager
    * only. It goes through the same atomic claim as a first disbursement, and

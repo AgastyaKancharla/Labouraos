@@ -22,6 +22,7 @@ import { ConsentWithdrawalService, AgentConsentWithdrawalDto } from './consent-w
 import {
   renderBusinessAgreementPageHtml,
   renderConsentPageHtml,
+  renderReferralTermsPageHtml,
 } from './consent-page.template';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -82,6 +83,15 @@ export class ConsentController {
           details.businessName,
           details.maskedPhone,
           details.agreementTermsHtml,
+          details.preferredLanguage as 'kn' | 'hi' | 'en',
+        );
+      }
+      if (details.subjectType === 'referral') {
+        return renderReferralTermsPageHtml(
+          token,
+          details.partnerName,
+          details.maskedPhone,
+          details.termsHtml,
           details.preferredLanguage as 'kn' | 'hi' | 'en',
         );
       }
