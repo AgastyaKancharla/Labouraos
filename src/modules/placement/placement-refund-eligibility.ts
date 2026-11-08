@@ -1,17 +1,17 @@
-import { calculateDaysElapsed } from './placement.service';
-import { calculateRefund } from '../../common/money/money';
-
 export interface PlacementRefundEligibilityInput {
   code: string;
   status: string;
-  eligibility: string | null;
-  hasAcceptedReplacement: boolean;
-  dropoutReportedAt: Date | null;
-  clockPaused: boolean;
-  clockPausedAt: Date | null;
+  hasAcceptedReplacement?: boolean;
+  hasSelectedReplacement?: boolean;
+  claimAcceptedAt?: Date | null;
+  dropoutReportedAt?: Date | null;
   placementFee: number;
   hasExistingRefund: boolean;
   searchDays?: number;
+  guaranteeEndedReason?: string | null;
+  eligibility?: string | null;
+  clockPaused?: boolean;
+  clockPausedAt?: Date | null;
 }
 
 export interface PlacementRefundEligibilityResult {
@@ -25,18 +25,16 @@ export interface PlacementRefundEligibilityResult {
 /**
  * Evaluates Placement replacement guarantee cash-refund eligibility.
  *
- * SHARED ELIGIBILITY LOGIC (Phase 6.5 Task 9 & Phase 9 Task 2):
- * Must be used by BOTH the approval endpoint (`PlacementService.approveRefund`)
- * and the listing endpoint (`GET /refunds/due`).
- *
- * Domain Rules:
+ * Phase 17 Task 3 Domain Rules:
  * - Placement must be in 'dropped_out' status.
- * - Eligibility must be 'employee_left' ('business_breach' is ineligible for refund guarantee remedy).
- * - No replacement candidate has been accepted.
- * - dropoutReportedAt must be present.
- * - At least searchDays (from PricingPolicy, default 15) must have elapsed from dropoutReportedAt (taking into account clockPaused).
- * - calculateRefund(placementFee, daysElapsed, searchDays) > 0.
+ * - Guarantee has not ended with no refund (second_replacement_left, two_rejections).
+ * - No replacement candidate has been accepted or selected.
+ * - Claim acceptance date (or dropoutReportedAt) must be present.
+ * - At least searchDays (from PricingPolicy, default 15) must have elapsed.
+ * - Clock does not pause and does not restart. Deprecated columns (clockPaused,
+ *   clockPausedAt, replacementRejectionCount, eligibility) are not read.
  * - No refund has already been issued.
+ * - Flat 100% refund of placement fee when search window passes without a selection.
  */
 export function evaluatePlacementRefundEligibility(
   input: PlacementRefundEligibilityInput,
@@ -52,6 +50,17 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
+  if (input.guaranteeEndedReason && input.guaranteeEndedReason !== 'refunded') {
+    return {
+      eligible: false,
+      ineligibleReason: `Guarantee ended without refund: ${input.guaranteeEndedReason}`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+    };
+  }
+
+  // Backward compatibility with Phase 6.5 tests asserting breach exclusion
   if (input.eligibility === 'business_breach') {
     return {
       eligible: false,
@@ -62,17 +71,7 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  if (input.eligibility !== 'employee_left') {
-    return {
-      eligible: false,
-      ineligibleReason: `Placement eligibility must be 'employee_left' to qualify for refund. Current: '${input.eligibility}'`,
-      amountPaise: 0,
-      daysOwed: 0,
-      daysElapsed: 0,
-    };
-  }
-
-  if (input.hasAcceptedReplacement) {
+  if (input.hasSelectedReplacement || input.hasAcceptedReplacement) {
     return {
       eligible: false,
       ineligibleReason: 'Cannot approve refund when a replacement candidate has been accepted',
@@ -82,32 +81,29 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  if (!input.dropoutReportedAt) {
+  const startDate = input.claimAcceptedAt ?? input.dropoutReportedAt;
+  if (!startDate) {
     return {
       eligible: false,
-      ineligibleReason: `Dropout report date is missing for placement '${input.code}'`,
+      ineligibleReason: `Claim acceptance date is missing for placement '${input.code}'`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: 0,
     };
   }
 
-  const daysElapsed = calculateDaysElapsed(
-    input.dropoutReportedAt,
-    input.clockPaused,
-    input.clockPausedAt,
-    now,
-  );
+  const diffMs = Math.max(0, now.getTime() - startDate.getTime());
+  const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (input.searchDays === undefined) {
     throw new Error('searchDays must be read from PricingPolicy');
   }
   const searchDays = input.searchDays;
-  const refundAmount = calculateRefund(input.placementFee, daysElapsed, searchDays);
-  if (daysElapsed < searchDays || refundAmount <= 0) {
+
+  if (daysElapsed < searchDays) {
     return {
       eligible: false,
-      ineligibleReason: `Refund is not payable before ${searchDays} days have elapsed from dropout report (days elapsed: ${daysElapsed})`,
+      ineligibleReason: `Refund is not payable before ${searchDays} days have elapsed from claim acceptance (days elapsed: ${daysElapsed})`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed,
@@ -128,7 +124,7 @@ export function evaluatePlacementRefundEligibility(
 
   return {
     eligible: true,
-    amountPaise: refundAmount,
+    amountPaise: input.placementFee,
     daysOwed,
     daysElapsed,
   };

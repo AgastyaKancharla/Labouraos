@@ -696,251 +696,39 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     });
   });
 
-  describe('Task 6: Replacement flow and the 2-rejection pause', () => {
-    it('allows offering replacement candidates and pauses clock on 3rd rejection, freezing elapsed days', async () => {
-      // 1. Create original candidate, placement, confirm, join, and dropout (employee_left)
-      const originalCandidate = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5RCDROP-${timestamp}`,
-          name: 'Original Dropped Candidate',
-          phone: `98${timestamp.toString().slice(-8)}7`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
+  describe('Task 6: Replacement candidate endpoints removed (Phase 17 Task 3)', () => {
+    it('returns 404 for every role on the removed replacement candidate endpoints', async () => {
+      const tokens = [
+        { role: 'field_agent', token: faKoraToken },
+        { role: 'call_agent', token: caToken },
+        { role: 'team_lead', token: tlToken },
+        { role: 'manager', token: managerToken },
+        { role: 'ceo', token: ceoToken },
+        { role: 'finance', token: financeToken },
+      ];
 
-      const placeRes = await createAwaitingPaymentFixture(koraVacancyId, originalCandidate.id, 2000000);
+      for (const { token } of tokens) {
+        // POST /placements/:id/replacement-candidates
+        await request(app.getHttpServer())
+          .post(`/placements/fake-placement-id/replacement-candidates`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ jobSeekerId: 'fake-js' })
+          .expect(404);
 
-      const placementId = placeRes.body.id;
+        // POST /placements/:id/replacement-candidates/:candidateId/reject
+        await request(app.getHttpServer())
+          .post(`/placements/fake-placement-id/replacement-candidates/fake-candidate/reject`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ reason: 'fake' })
+          .expect(404);
 
-      await markFixturePaymentSucceeded(placementId);
-
-      const plRow = await prisma.placement.findUniqueOrThrow({ where: { id: placementId } });
-      await createJoiningCallsFixture({
-        prisma,
-        idService: app.get(IdService),
-        placementId,
-        jobSeekerId: originalCandidate.id,
-        businessId: koraBusinessId,
-        callTime: plRow.joiningDate ?? new Date(),
-      });
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/joined`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({})
-        .expect(201);
-
-      const dropoutDate = new Date();
-      await prisma.placement.update({
-        where: { id: placementId },
-        data: {
-          status: 'dropped_out',
-          eligibility: 'employee_left',
-          dropoutReportedAt: dropoutDate,
-        },
-      });
-
-      // Create 3 replacement candidates
-      const rc1 = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5RC1-${timestamp}`,
-          name: 'Replacement Candidate 1',
-          phone: `98${timestamp.toString().slice(-8)}8`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-
-      const rc2 = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5RC2-${timestamp}`,
-          name: 'Replacement Candidate 2',
-          phone: `98${timestamp.toString().slice(-8)}9`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-
-      const rc3 = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-P5RC3-${timestamp}`,
-          name: 'Replacement Candidate 3',
-          phone: `99${timestamp.toString().slice(-8)}0`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-
-      // Area-scoping: Indiranagar FA cannot offer replacement on Koramangala placement
-      await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates`)
-        .set('Authorization', `Bearer ${faIndiToken}`)
-        .send({ jobSeekerId: rc1.id })
-        .expect(403);
-
-      // Offer Candidate 1
-      const offerRes1 = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ jobSeekerId: rc1.id })
-        .expect(201);
-
-      expect(offerRes1.body.status).toBe('offered');
-      const rc1Id = offerRes1.body.id;
-
-      // 1st Rejection
-      const rejRes1 = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates/${rc1Id}/reject`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({
-          reason: 'Lacks required tools',
-          rejectedAt: new Date(dropoutDate.getTime() + 2 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-        .expect(201);
-
-      expect(rejRes1.body.placement.replacementRejectionCount).toBe(1);
-      expect(rejRes1.body.placement.clockPaused).toBe(false);
-
-      // Offer Candidate 2
-      const offerRes2 = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ jobSeekerId: rc2.id })
-        .expect(201);
-
-      const rc2Id = offerRes2.body.id;
-
-      // 2nd Rejection: Still does not pause clock
-      const rejRes2 = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates/${rc2Id}/reject`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          reason: 'Salary expectation gap',
-          rejectedAt: new Date(dropoutDate.getTime() + 5 * 24 * 60 * 60 * 1000).toISOString(),
-        })
-        .expect(201);
-
-      expect(rejRes2.body.placement.replacementRejectionCount).toBe(2);
-      expect(rejRes2.body.placement.clockPaused).toBe(false);
-
-      // Offer Candidate 3
-      const offerRes3 = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({ jobSeekerId: rc3.id })
-        .expect(201);
-
-      const rc3Id = offerRes3.body.id;
-
-      // 3rd Rejection: Pauses the guarantee clock!
-      const pauseDate = new Date(dropoutDate.getTime() + 10 * 24 * 60 * 60 * 1000).toISOString(); // exactly 10 days after dropout report
-      const rejRes3 = await request(app.getHttpServer())
-        .post(`/placements/${placementId}/replacement-candidates/${rc3Id}/reject`)
-        .set('Authorization', `Bearer ${caToken}`)
-        .send({
-          reason: 'Did not match culture fit',
-          rejectedAt: pauseDate,
-        })
-        .expect(201);
-
-      expect(rejRes3.body.placement.replacementRejectionCount).toBe(3);
-      expect(rejRes3.body.placement.clockPaused).toBe(true);
-      expect(new Date(rejRes3.body.placement.clockPausedAt).toISOString()).toBe(pauseDate);
-
-      // Verify elapsed-day calculation freeze:
-      // Even 40 days later, elapsed days remain frozen at 10 days
-      const placementService = app.get(PlacementService);
-      const elapsedDaysFuture = await placementService.getPlacementDaysElapsed(
-        placementId,
-        new Date(dropoutDate.getTime() + 40 * 24 * 60 * 60 * 1000),
-      );
-      expect(elapsedDaysFuture).toBe(10);
-    });
-
-    it('records acceptedAt when replacement candidate is accepted', async () => {
-      const timestamp = Date.now();
-      const jsDropped = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-REPAC1-${timestamp}`,
-          name: 'Dropped Seeker',
-          phone: `91${timestamp.toString().slice(-8)}1`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'placed',
-        },
-      });
-
-      const jsReplacement = await prisma.jobSeeker.create({
-        data: {
-          code: `JS-REPAC2-${timestamp}`,
-          name: 'Replacement Seeker',
-          phone: `91${timestamp.toString().slice(-8)}2`,
-          tradeSkill: 'Electrician',
-          minSalary: 1800000,
-          maxSalary: 2400000,
-          preferredCallWindowStart: '10:00',
-          preferredCallWindowEnd: '18:00',
-          status: 'active',
-        },
-      });
-
-      const placement = await prisma.placement.create({
-        data: {
-          code: `PL-REPAC-${timestamp}`,
-          vacancyId: koraVacancyId,
-          jobSeekerId: jsDropped.id,
-          businessId: (await prisma.vacancy.findUnique({ where: { id: koraVacancyId } }))!.businessId,
-          agreedSalary: 2000000,
-          placementFee: 1000000,
-          gstAmount: 180000,
-          status: 'dropped_out',
-          eligibility: 'employee_left',
-          dropoutReportedAt: new Date(),
-        },
-      });
-
-      const offerRes = await request(app.getHttpServer())
-        .post(`/placements/${placement.id}/replacement-candidates`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ jobSeekerId: jsReplacement.id })
-        .expect(201);
-
-      const candidateId = offerRes.body.id;
-      const acceptTime = new Date('2026-11-10T12:00:00.000Z');
-
-      const acceptRes = await request(app.getHttpServer())
-        .post(`/placements/${placement.id}/replacement-candidates/${candidateId}/accept`)
-        .set('Authorization', `Bearer ${faKoraToken}`)
-        .send({ acceptedAt: acceptTime.toISOString() })
-        .expect(201);
-
-      expect(acceptRes.body.candidate.status).toBe('accepted');
-      expect(new Date(acceptRes.body.candidate.acceptedAt).toISOString()).toBe(acceptTime.toISOString());
-
-      const dbCandidate = await prisma.replacementCandidate.findUnique({
-        where: { id: candidateId },
-      });
-      expect(dbCandidate?.status).toBe('accepted');
-      expect(dbCandidate?.acceptedAt?.toISOString()).toBe(acceptTime.toISOString());
+        // POST /placements/:id/replacement-candidates/:candidateId/accept
+        await request(app.getHttpServer())
+          .post(`/placements/fake-placement-id/replacement-candidates/fake-candidate/accept`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({})
+          .expect(404);
+      }
     });
   });
 

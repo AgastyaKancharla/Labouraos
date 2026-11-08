@@ -80,9 +80,6 @@ export class InterviewService {
       include: { business: true },
     });
     if (!vacancy) throw new NotFoundException(`Vacancy '${dto.vacancyId}' not found`);
-    if (vacancy.replacementForPlacementId) {
-      throw new BadRequestException('Interviews in this phase are only available for fresh vacancies');
-    }
     if (vacancy.business.verificationStatus !== 'verified') {
       throw new BadRequestException('The business must be verified before an interview can be booked');
     }
@@ -217,6 +214,17 @@ export class InterviewService {
         changedByStaffId: actor.id,
         changedAt: now,
       });
+      if (vacancy.replacementForPlacementId) {
+        await tx.replacementCandidate.create({
+          data: {
+            placementId: vacancy.replacementForPlacementId,
+            jobSeekerId: seeker.id,
+            interviewId: interview.id,
+            status: 'offered',
+            offeredAt: now,
+          },
+        });
+      }
       return { interview, created: true };
     });
 
@@ -377,7 +385,6 @@ export class InterviewService {
       select: { id: true, replacementForPlacementId: true },
     });
     if (!vacancy) throw new NotFoundException('Vacancy not found');
-    if (vacancy.replacementForPlacementId) throw new BadRequestException('Interviews cannot be booked for replacement vacancies');
     const slots = await this.prisma.vacancyInterviewSlot.findMany({
       where: { vacancyId: vacancy.id, startsAt: { gt: this.clock.now() } },
       orderBy: { startsAt: 'asc' },
@@ -610,6 +617,64 @@ export class InterviewService {
         subjectType: 'interview', subjectId: interview.id, fromStatus: 'confirmed', toStatus: status,
         changedByStaffId: null, reason: 'Owner recorded the interview result by OTP', changedAt: now,
       });
+      if (interview.vacancy.replacementForPlacementId) {
+        if (input.result === 'not_selected') {
+          await tx.replacementCandidate.updateMany({
+            where: { interviewId: interview.id },
+            data: {
+              status: 'rejected',
+              rejectionReason: input.resultReason,
+              rejectedAt: now,
+            },
+          });
+          const droppedPlacement = await tx.placement.findUnique({
+            where: { id: interview.vacancy.replacementForPlacementId },
+          });
+          if (droppedPlacement) {
+            const rootId = droppedPlacement.rootPlacementId ?? droppedPlacement.id;
+            const replacementVacancies = await tx.vacancy.findMany({
+              where: {
+                OR: [
+                  { replacementForPlacementId: rootId },
+                  { replacementForPlacement: { rootPlacementId: rootId } },
+                ],
+              },
+              select: { id: true },
+            });
+            const vacancyIds = replacementVacancies.map((v) => v.id);
+            const notSelectedCount = await tx.interview.count({
+              where: {
+                vacancyId: { in: vacancyIds },
+                result: 'not_selected',
+              },
+            });
+            const policy = await this.pricingService.current();
+            if (notSelectedCount >= policy.maxReplacementRejections) {
+              const root = await tx.placement.findUnique({ where: { id: rootId } });
+              await tx.placement.update({
+                where: { id: rootId },
+                data: {
+                  status: 'guarantee_ended',
+                  guaranteeEndedReason: 'two_rejections',
+                },
+              });
+              await recordStatusChange(tx, {
+                subjectType: 'placement',
+                subjectId: rootId,
+                fromStatus: root?.status ?? 'dropped_out',
+                toStatus: 'guarantee_ended',
+                changedByStaffId: null,
+                changedAt: now,
+                reason: 'two_rejections',
+              });
+              await tx.vacancy.update({
+                where: { id: interview.vacancyId },
+                data: { status: 'closed' },
+              });
+            }
+          }
+        }
+      }
     });
     this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
     await this.auditService.log({
@@ -625,6 +690,27 @@ export class InterviewService {
     const placement = input.result === 'selected'
       ? await this.placements.createAwaitingPaymentFromInterview(interview.id, now)
       : null;
+    if (interview.vacancy.replacementForPlacementId && placement && joiningDate) {
+      const joiningText = new Intl.DateTimeFormat('en-IN', {
+        timeZone: 'Asia/Kolkata',
+        dateStyle: 'medium',
+      }).format(joiningDate);
+      for (const channel of ['whatsapp', 'sms'] as const) {
+        await this.messagingService.send({
+          channel,
+          template: 'joining_confirmed',
+          subjectType: 'job_seeker',
+          subjectId: interview.jobSeekerId,
+          relatedType: 'placement',
+          relatedId: placement.id,
+          variables: {
+            candidateName: interview.jobSeeker.name,
+            businessName: interview.business.name,
+            joiningDate: joiningText,
+          },
+        });
+      }
+    }
     return { id: interview.id, status, result: input.result, placement };
   }
 
