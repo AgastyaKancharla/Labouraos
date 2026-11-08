@@ -551,6 +551,8 @@ model Payment {
   confirmedAt       DateTime?
   approvedByStaffId String?
   approvedAt        DateTime?
+  paidAt            DateTime?
+  paidByStaffId     String?
   payoutAccountId   String?
   payoutAccount     PayoutAccount? @relation(fields: [payoutAccountId], references: [id], onDelete: SetNull)
   payerUtrHint      String?

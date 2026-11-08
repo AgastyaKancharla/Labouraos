@@ -60,17 +60,6 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  // Backward compatibility with Phase 6.5 tests asserting breach exclusion
-  if (input.eligibility === 'business_breach') {
-    return {
-      eligible: false,
-      ineligibleReason: "Placement with eligibility 'business_breach' is ineligible for refund guarantee remedy",
-      amountPaise: 0,
-      daysOwed: 0,
-      daysElapsed: 0,
-    };
-  }
-
   if (input.hasSelectedReplacement || input.hasAcceptedReplacement) {
     return {
       eligible: false,

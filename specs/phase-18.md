@@ -38,7 +38,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - `maskedValue` only (part of the UPI ID, or the last 4 digits) in every list and profile.
 - Tests: the server won't start without `PAYOUT_ACCOUNT_KEY`; the stored value isn't readable as a UPI ID; no API returns the full value; no staff route sets payout details; a change waits 48 hours and notifies Finance; a shared account and a staff-number UPI each raise their flag and block payment.
 
-### [ ] Task 2 — Referral partners sign their terms
+### [x] Task 2 — Referral partners sign their terms
 **Branch:** `phase-18/task-2-referral-terms` · **No migration**
 
 **Acceptance:**

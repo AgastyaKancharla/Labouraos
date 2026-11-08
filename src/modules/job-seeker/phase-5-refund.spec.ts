@@ -337,7 +337,7 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
       expect(refundRes.body.type).toBe('refund');
       expect(refundRes.body.amount).toBe(49900); // full ₹499 in paise
       expect(refundRes.body.code).toMatch(/^PAY-\d{5}$/);
-      expect(refundRes.body.status).toBe('completed');
+      expect(refundRes.body.status).toBe('approved');
 
       // Payment row exists in DB
       const dbPayment = await prisma.payment.findUnique({

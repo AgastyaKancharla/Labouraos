@@ -190,7 +190,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
         'staff-ceo',
       );
 
-      expect(refundResult.status).toBe('completed');
+      expect(refundResult.status).toBe('approved');
       expect(refundResult.amount).toBe(100000);
 
       // Agents cannot approve refunds

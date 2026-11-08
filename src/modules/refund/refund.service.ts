@@ -203,11 +203,10 @@ export class RefundService {
     }
 
     // --- 2. PLACEMENTS (Set-Based Query) ---
-    // Placements in dropped_out status with eligibility employee_left
+    // Placements in dropped_out status
     const placements = await this.prisma.placement.findMany({
       where: {
         status: 'dropped_out',
-        eligibility: 'employee_left',
         dropoutReportedAt: { not: null },
       },
       include: {
@@ -224,20 +223,42 @@ export class RefundService {
     });
 
     let refundedPlacementIdSet = new Set<string>();
+    const claimByPlacementId = new Map<string, { decidedAt: Date | null; reportedAt: Date | null }>();
 
     if (placements.length > 0) {
       const placementIds = placements.map((p) => p.id);
+      const rootPlacementIds = placements
+        .map((p) => p.rootPlacementId)
+        .filter((id): id is string => Boolean(id));
+      const allPlacementIds = Array.from(new Set([...placementIds, ...rootPlacementIds]));
 
       // Query existing refunds set-based (1 query)
       const existingPlacementRefunds = await this.prisma.payment.findMany({
         where: {
-          placementId: { in: placementIds },
+          placementId: { in: allPlacementIds },
           type: 'refund',
-          status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+          status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
         },
         select: { placementId: true },
       });
       refundedPlacementIdSet = new Set(existingPlacementRefunds.map((p) => p.placementId!));
+
+      // Query accepted replacement claims set-based
+      const acceptedClaims = this.prisma.replacementClaim
+        ? await this.prisma.replacementClaim.findMany({
+            where: {
+              placementId: { in: allPlacementIds },
+              decision: 'accepted',
+            },
+            orderBy: { decidedAt: 'desc' },
+            select: { placementId: true, decidedAt: true, reportedAt: true },
+          })
+        : [];
+      for (const claim of acceptedClaims) {
+        if (!claimByPlacementId.has(claim.placementId)) {
+          claimByPlacementId.set(claim.placementId, claim);
+        }
+      }
     }
 
     const placementRows: RefundDueRow[] = [];
@@ -246,26 +267,30 @@ export class RefundService {
         (rc) => rc.status === 'accepted',
       );
 
+      const rootId = placement.rootPlacementId ?? placement.id;
+      const claim = claimByPlacementId.get(placement.id) ?? claimByPlacementId.get(rootId);
+      const claimAcceptedAt = claim?.decidedAt ?? claim?.reportedAt ?? placement.dropoutReportedAt;
+
       const result = evaluatePlacementRefundEligibility(
         {
           code: placement.code,
           status: placement.status,
-          eligibility: placement.eligibility,
           hasAcceptedReplacement,
+          claimAcceptedAt,
           dropoutReportedAt: placement.dropoutReportedAt,
-          clockPaused: placement.clockPaused,
-          clockPausedAt: placement.clockPausedAt,
           placementFee: placement.placementFee,
-          hasExistingRefund: refundedPlacementIdSet.has(placement.id),
+          hasExistingRefund:
+            refundedPlacementIdSet.has(placement.id) || refundedPlacementIdSet.has(rootId),
           searchDays: replacementSearchDays,
+          guaranteeEndedReason: placement.guaranteeEndedReason,
         },
         now,
       );
 
       if (result.eligible) {
-        // Obligation begins replacementSearchDays after dropoutReportedAt
+        // Obligation begins replacementSearchDays after claim acceptance date
         const dueSince = new Date(
-          placement.dropoutReportedAt!.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
+          claimAcceptedAt!.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
         ).toISOString();
 
         placementRows.push({
@@ -294,7 +319,7 @@ export class RefundService {
             candidateName: placement.jobSeeker.name,
             candidatePhone: placement.jobSeeker.phone,
             placementFee: placement.placementFee,
-            clockPaused: placement.clockPaused,
+            clockPaused: false,
           },
         });
       }

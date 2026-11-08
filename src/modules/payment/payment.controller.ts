@@ -25,6 +25,7 @@ import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Response } from 'express';
 import { UpiCollectionService } from './upi-collection.service';
+import { RecordPayoutDto } from './dto/record-payout.dto';
 
 @Controller('payments')
 @UseInterceptors(PiiMaskingInterceptor)
@@ -202,55 +203,16 @@ export class PaymentController {
     return this.paymentService.approvePayment(id, req.user.sub);
   }
 
-  @Post(':id/disburse')
+  @Post(':id/record-payout')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'write')
   @RequireRoles('ceo', 'finance')
-  async disburse(
+  async recordPayout(
     @Param('id') id: string,
-    @Body() body: { simulateFailure?: boolean },
+    @Body() body: RecordPayoutDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.paymentService.disbursePayout(id, req.user.sub, body);
-  }
-
-  @Post(':id/retry-payout')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequirePermission('payment', 'write')
-  @RequireRoles('ceo', 'finance')
-  async retryPayout(
-    @Param('id') id: string,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.paymentService.retryPayout(id, req.user.sub);
-  }
-
-  @Post(':id/resolve-payout')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequirePermission('payment', 'write')
-  @RequireRoles('ceo', 'finance')
-  async resolvePayout(
-    @Param('id') id: string,
-    @Body() body: { outcome?: unknown; gatewayReference?: unknown; note?: unknown },
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.paymentService.resolvePayout(id, req.user.sub, body);
-  }
-
-  /**
-   * RazorpayX payout-status callback. Not behind JWT: it is authenticated by the
-   * HMAC signature over the raw body. Requires `rawBody: true` at app creation.
-   */
-  @Post('payout-webhook')
-  @HttpCode(HttpStatus.OK)
-  async payoutWebhook(
-    @Req() req: Request & { rawBody?: Buffer },
-    @Headers('x-razorpay-signature') signature?: string,
-    @Headers('x-razorpay-event-id') eventId?: string,
-  ) {
-    return this.paymentService.handlePayoutWebhook(req.rawBody, signature, eventId);
+    return this.paymentService.recordPayout(id, req.user.sub, body);
   }
 
   /**
