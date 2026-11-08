@@ -814,6 +814,23 @@ export class PlacementService {
       },
     });
 
+    if (!decision && !dto.exitCallRecordId && this.prisma.followUpTask) {
+      const taskCode = await this.idService.generateCode('follow_up_task');
+      await this.prisma.followUpTask.create({
+        data: {
+          code: taskCode,
+          kind: 'exit_call',
+          subjectType: 'job_seeker',
+          subjectId: placement.jobSeekerId,
+          relatedType: 'replacement_claim',
+          relatedId: claim.id,
+          dueAt: decisionDueAt,
+          assignedStaffId: placement.business.accountAgentId ?? actor.id,
+          status: 'pending',
+        },
+      });
+    }
+
     return claim;
   }
 

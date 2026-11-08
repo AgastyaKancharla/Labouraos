@@ -31,6 +31,7 @@ import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
 import { ConsentModule } from './modules/consent/consent.module';
 import { MapModule } from './modules/map/map.module';
+import { FollowUpModule } from './modules/follow-up/follow-up.module';
 
 @Module({
   imports: [
@@ -65,6 +66,7 @@ import { MapModule } from './modules/map/map.module';
     TargetModule,
     ConsentModule,
     MapModule,
+    FollowUpModule,
     HealthModule,
   ],
 })

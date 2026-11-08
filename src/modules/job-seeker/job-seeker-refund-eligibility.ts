@@ -8,6 +8,9 @@ export interface JobSeekerRefundEligibilityInput {
   hasExistingRefund: boolean;
   activationPaymentPaise?: number;
   guaranteeDays?: number;
+  hasWithdrawnEssentialConsent?: boolean;
+  hasOpenBypassFlag?: boolean;
+  hasWorkingAtIntroducedBusinessFollowUp?: boolean;
 }
 
 export interface JobSeekerRefundEligibilityResult {
@@ -76,6 +79,39 @@ export function evaluateJobSeekerRefundEligibility(
     return {
       eligible: false,
       ineligibleReason: `Job seeker '${input.code}' rejected a suitable offer and is not eligible for refund`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline: null,
+    };
+  }
+
+  if (input.hasWithdrawnEssentialConsent) {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' withdrew essential consent after paying and is not eligible for refund`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline: null,
+    };
+  }
+
+  if (input.hasOpenBypassFlag) {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' has an open bypass_suspected flag and refund is blocked`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline: null,
+    };
+  }
+
+  if (input.hasWorkingAtIntroducedBusinessFollowUp) {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' reported working at an introduced business and refund is blocked`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: 0,
