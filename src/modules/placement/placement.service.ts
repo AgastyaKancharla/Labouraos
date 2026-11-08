@@ -576,13 +576,20 @@ export class PlacementService {
       rootJoinedDate.getTime() + windowDays * 24 * 60 * 60 * 1000,
     );
 
-    if (
-      workerLeftOn.getTime() < rootJoinedDate.getTime() ||
-      workerLeftOn.getTime() > guaranteeExpiry.getTime()
-    ) {
+    if (workerLeftOn.getTime() < rootJoinedDate.getTime()) {
+      throw new BadRequestException(
+        `workerLeftOn cannot be earlier than joinedDate (${rootJoinedDate.toISOString()}); employee cannot leave before they started`,
+      );
+    }
+
+    if (workerLeftOn.getTime() > guaranteeExpiry.getTime()) {
       throw new BadRequestException(
         `Worker left outside the ${windowDays}-day replacement guarantee window`,
       );
+    }
+
+    if (workerLeftOn.getTime() > now.getTime()) {
+      throw new BadRequestException('workerLeftOn cannot be in the future');
     }
 
     if (!dto.callRecordId) {

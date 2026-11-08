@@ -8,6 +8,7 @@ import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { seededPricingService } from '../../test-support/seeded-pricing';
+import { ReportClaimDto } from './dto/report-claim.dto';
 
 interface MockPlacementRecord {
   id: string;
@@ -15,6 +16,8 @@ interface MockPlacementRecord {
   city: string;
   status: string;
   joinedDate: Date | null;
+  rootPlacementId: string | null;
+  paidAt: Date | null;
   clockPaused: boolean;
   clockPausedAt: Date | null;
   dropoutReportedAt: Date | null;
@@ -22,22 +25,25 @@ interface MockPlacementRecord {
   eligibility: string | null;
   placementFee: number;
   businessId: string;
-  business: { id: string; area: string };
+  business: { id: string; area: string; accountAgentId?: string };
   jobSeeker: { id: string };
   vacancy: { id: string };
   replacementCandidates: Array<{ status: string }>;
+  payments: Array<{ type: string; status: string }>;
 }
 
 const staffActor = {
   id: 'staff-1',
   role: 'call_agent',
   area: 'Indiranagar',
+  teamLeadId: 'tl-1',
 };
 
 const ceoActor = {
   id: 'ceo-1',
   role: 'ceo',
   area: null,
+  teamLeadId: null,
 };
 
 type MockTxCallback<T> = (tx: unknown) => Promise<T>;
@@ -49,7 +55,15 @@ interface MockPrismaForPlacement {
   };
   placement: {
     findFirst: jest.Mock<Promise<MockPlacementRecord | null>, []>;
+    findUnique: jest.Mock<Promise<MockPlacementRecord | null>, []>;
     update: jest.Mock<Promise<MockPlacementRecord>, [{ where: { id: string }; data: Partial<MockPlacementRecord> }]>;
+  };
+  callRecord: {
+    findUnique: jest.Mock;
+  };
+  replacementClaim: {
+    create: jest.Mock;
+    findMany: jest.Mock;
   };
   payment: {
     findFirst: jest.Mock<Promise<unknown | null>, []>;
@@ -57,7 +71,7 @@ interface MockPrismaForPlacement {
   };
 }
 
-describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Tracking (Anti-Fraud)', () => {
+describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left Date & Origin Tracking', () => {
   let placementService: PlacementService;
   let mockPrisma: MockPrismaForPlacement;
   let mockAuditService: { log: jest.Mock };
@@ -68,6 +82,13 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
   const serverNow = new Date('2026-06-20T10:00:00.000Z');
   let mockPlacement: MockPlacementRecord;
 
+  const validOwnerCall = {
+    id: 'call-owner-1',
+    answered: true,
+    subjectType: 'business',
+    subjectId: 'biz-1',
+  };
+
   beforeEach(() => {
     mockPlacement = {
       id: 'pl-1',
@@ -75,6 +96,8 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       city: 'Bengaluru',
       status: 'active',
       joinedDate: new Date(joinedDate),
+      rootPlacementId: null,
+      paidAt: new Date(joinedDate),
       clockPaused: false,
       clockPausedAt: null,
       dropoutReportedAt: null,
@@ -82,10 +105,11 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       eligibility: null,
       placementFee: 2500000,
       businessId: 'biz-1',
-      business: { id: 'biz-1', area: 'Indiranagar' },
+      business: { id: 'biz-1', area: 'Indiranagar', accountAgentId: 'fa-1' },
       jobSeeker: { id: 'js-1' },
       vacancy: { id: 'vac-1' },
       replacementCandidates: [],
+      payments: [{ type: 'placement_fee', status: 'succeeded' }],
     };
 
     mockPrisma = {
@@ -102,10 +126,23 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       },
       placement: {
         findFirst: jest.fn().mockImplementation(() => Promise.resolve(mockPlacement)),
+        findUnique: jest.fn().mockImplementation(() => Promise.resolve(mockPlacement)),
         update: jest.fn().mockImplementation(({ data }) => {
           mockPlacement = { ...mockPlacement, ...data };
           return Promise.resolve(mockPlacement);
         }),
+      },
+      callRecord: {
+        findUnique: jest.fn().mockResolvedValue(validOwnerCall),
+      },
+      replacementClaim: {
+        create: jest.fn().mockImplementation(({ data }) =>
+          Promise.resolve({
+            id: 'rcl-1',
+            ...data,
+          }),
+        ),
+        findMany: jest.fn().mockResolvedValue([]),
       },
       payment: {
         findFirst: jest.fn().mockResolvedValue(null),
@@ -118,7 +155,7 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
     };
 
     mockIdService = {
-      generateCode: jest.fn().mockResolvedValue('PAY-00001'),
+      generateCode: jest.fn().mockResolvedValue('RCL-00001'),
     };
 
     placementService = new PlacementService(
@@ -129,148 +166,91 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       {} as PaymentService,
       seededPricingService(),
       {} as UpiCollectionService,
-      {} as unknown as ReviewFlagService,
+      { raise: jest.fn(), resolve: jest.fn() } as unknown as ReviewFlagService,
     );
   });
 
   describe('1. Future Date Refusal (Zero-Tolerance Anti-Fraud)', () => {
-    it('refuses a dropoutReportedAt in the future relative to server time, and audits the refusal', async () => {
+    it('refuses a workerLeftOn in the future relative to server time', async () => {
       // 1 day after serverNow
       const futureDate = new Date(serverNow.getTime() + 24 * 60 * 60 * 1000);
 
+      const dto: ReportClaimDto = {
+        workerLeftOn: futureDate.toISOString(),
+        reason: 'resigned',
+        callRecordId: 'call-owner-1',
+      };
+
       await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'employee_left',
-            dropoutReportedAt: futureDate.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'employee_left',
-            dropoutReportedAt: futureDate.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
       ).rejects.toThrow(/cannot be in the future/);
-
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'placement_dropout_refused',
-          entityCode: 'PL-00001',
-          after: expect.objectContaining({
-            refusalReason: 'FUTURE_DROPOUT_DATE',
-            callerSupplied: true,
-          }),
-        }),
-      );
     });
 
     it('enforces strict zero-tolerance with NO grace period for clock skew (even 1ms into the future)', async () => {
       // Exactly 1 millisecond into the future
       const futureBy1ms = new Date(serverNow.getTime() + 1);
 
-      await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'employee_left',
-            dropoutReportedAt: futureBy1ms.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
-      ).rejects.toThrow(BadRequestException);
+      const dto: ReportClaimDto = {
+        workerLeftOn: futureBy1ms.toISOString(),
+        reason: 'resigned',
+        callRecordId: 'call-owner-1',
+      };
 
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'placement_dropout_refused',
-          after: expect.objectContaining({
-            refusalReason: 'FUTURE_DROPOUT_DATE',
-          }),
-        }),
-      );
+      await expect(
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
+      ).rejects.toThrow(BadRequestException);
     });
 
-    it('refuses future date for business_breach as well (real-world event cannot occur in the future)', async () => {
+    it('refuses future date for reject-list reasons as well (real-world event cannot occur in the future)', async () => {
       const futureDate = new Date(serverNow.getTime() + 3600 * 1000);
 
+      const dto: ReportClaimDto = {
+        workerLeftOn: futureDate.toISOString(),
+        reason: 'salary_unpaid', // reject-list reason (formerly business_breach)
+        callRecordId: 'call-owner-1',
+      };
+
       await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'business_breach',
-            dropoutReportedAt: futureDate.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
       ).rejects.toThrow(/cannot be in the future/);
     });
   });
 
   describe('2. Earlier than joinedDate Refusal (Employee cannot leave before they started)', () => {
-    it('refuses a dropoutReportedAt earlier than joinedDate, and audits the refusal', async () => {
+    it('refuses a workerLeftOn earlier than joinedDate', async () => {
       // 5 days before joinedDate
       const beforeJoined = new Date(joinedDate.getTime() - 5 * 24 * 60 * 60 * 1000);
 
+      const dto: ReportClaimDto = {
+        workerLeftOn: beforeJoined.toISOString(),
+        reason: 'resigned',
+        callRecordId: 'call-owner-1',
+      };
+
       await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'employee_left',
-            dropoutReportedAt: beforeJoined.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
       ).rejects.toThrow(BadRequestException);
 
       await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'employee_left',
-            dropoutReportedAt: beforeJoined.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
       ).rejects.toThrow(/cannot be earlier than joinedDate.*employee cannot leave before they started/);
-
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'placement_dropout_refused',
-          entityCode: 'PL-00001',
-          after: expect.objectContaining({
-            refusalReason: 'DROPOUT_BEFORE_JOINED_DATE',
-            callerSupplied: true,
-          }),
-        }),
-      );
     });
 
     it('refuses even 1 millisecond earlier than joinedDate', async () => {
       const beforeBy1ms = new Date(joinedDate.getTime() - 1);
 
+      const dto: ReportClaimDto = {
+        workerLeftOn: beforeBy1ms.toISOString(),
+        reason: 'resigned',
+        callRecordId: 'call-owner-1',
+      };
+
       await expect(
-        placementService.recordDropout(
-          'pl-1',
-          {
-            eligibility: 'employee_left',
-            dropoutReportedAt: beforeBy1ms.toISOString(),
-          },
-          'staff-1',
-          serverNow,
-        ),
+        placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
       ).rejects.toThrow(/cannot be earlier than joinedDate/);
     });
   });
@@ -280,9 +260,9 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       // Case A: Before joinedDate
       const beforeJoined = new Date(joinedDate.getTime() - 24 * 60 * 60 * 1000);
       try {
-        await placementService.recordDropout(
+        await placementService.reportClaim(
           'pl-1',
-          { eligibility: 'employee_left', dropoutReportedAt: beforeJoined.toISOString() },
+          { workerLeftOn: beforeJoined.toISOString(), reason: 'resigned', callRecordId: 'call-owner-1' },
           'staff-1',
           serverNow,
         );
@@ -290,23 +270,23 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
       } catch (err: unknown) {
         const error = err as BadRequestException;
         expect(error.message).toContain('employee cannot leave before they started');
-        expect(error.message).not.toContain('Replacement guarantee expired');
+        expect(error.message).not.toContain('replacement guarantee window');
       }
 
       // Case B: Past 60-day guarantee expiry (day 70)
       const serverLater = new Date('2026-09-01T10:00:00.000Z');
       const day70 = new Date(joinedDate.getTime() + 70 * 24 * 60 * 60 * 1000);
       try {
-        await placementService.recordDropout(
+        await placementService.reportClaim(
           'pl-1',
-          { eligibility: 'employee_left', dropoutReportedAt: day70.toISOString() },
+          { workerLeftOn: day70.toISOString(), reason: 'resigned', callRecordId: 'call-owner-1' },
           'staff-1',
           serverLater,
         );
         fail('Should have thrown');
       } catch (err: unknown) {
         const error = err as BadRequestException;
-        expect(error.message).toContain('Replacement guarantee expired');
+        expect(error.message).toContain('replacement guarantee window');
         expect(error.message).not.toContain('employee cannot leave before they started');
       }
     });
@@ -314,148 +294,78 @@ describe('Phase 6.5 Task 8: Validate Caller-Supplied Dropout Date & Origin Track
     it('distinguishes missing joinedDate error from date comparison errors', async () => {
       mockPlacement.joinedDate = null;
       try {
-        await placementService.recordDropout(
+        await placementService.reportClaim(
           'pl-1',
-          { eligibility: 'employee_left', dropoutReportedAt: '2026-06-10T10:00:00.000Z' },
+          { workerLeftOn: '2026-06-10T10:00:00.000Z', reason: 'resigned', callRecordId: 'call-owner-1' },
           'staff-1',
           serverNow,
         );
         fail('Should have thrown');
       } catch (err: unknown) {
         const error = err as BadRequestException;
-        expect(error.message).toContain('has no joinedDate recorded');
+        expect(error.message).toContain('has no recorded joinedDate');
         expect(error.message).not.toContain('cannot be in the future');
         expect(error.message).not.toContain('cannot be earlier than joinedDate');
       }
     });
   });
 
-  describe('4. Origin Flag Tracking (dropoutDateCallerSupplied)', () => {
-    it('sets dropoutDateCallerSupplied: true when caller supplies dropoutReportedAt', async () => {
-      const validCallerDate = new Date(joinedDate.getTime() + 10 * 24 * 60 * 60 * 1000); // June 11, 2026 (<= serverNow)
+  describe('4. Origin and Deadline Tracking (Replacing dropoutDateCallerSupplied)', () => {
+    // Note: In Phase 6.5, dropoutDateCallerSupplied tracked whether an agent typed a date or defaulted to server clock.
+    // In Phase 17 Task 2, workerLeftOn is ALWAYS mandatory and verified against an answered owner call.
+    // reportedWithinDeadline is automatically computed based on whether reportedAt is within claimReportDays (7 days).
+    it('sets reportedWithinDeadline: true when reported within 7 days of workerLeftOn', async () => {
+      const workerLeftOn = new Date('2026-06-15T10:00:00.000Z'); // 5 days before serverNow (June 20)
 
-      const result = await placementService.recordDropout(
+      const result = await placementService.reportClaim(
         'pl-1',
         {
-          eligibility: 'employee_left',
-          dropoutReportedAt: validCallerDate.toISOString(),
-          reason: 'Worker relocated',
+          workerLeftOn: workerLeftOn.toISOString(),
+          reason: 'resigned',
+          callRecordId: 'call-owner-1',
         },
         'staff-1',
         serverNow,
       );
 
-      expect(result.status).toBe('dropped_out');
-      expect(result.dropoutDateCallerSupplied).toBe(true);
-      expect(result.dropoutReportedAt).toEqual(validCallerDate);
-
-      // Verify audit log has callerSupplied recorded
+      expect(result.reportedWithinDeadline).toBe(true);
+      expect(result.feePaidInFull).toBe(true);
+      expect(result.decision).toBeNull(); // Pending TL/Manager decision
       expect(mockAuditService.log).toHaveBeenCalledWith(
         expect.objectContaining({
-          action: 'placement_dropout',
+          action: 'replacement_claim_reported',
           after: expect.objectContaining({
-            dropoutDateCallerSupplied: true,
+            reason: 'resigned',
           }),
         }),
       );
     });
 
-    it('sets dropoutDateCallerSupplied: false when caller omits dropoutReportedAt, defaulting to server clock', async () => {
-      const result = await placementService.recordDropout(
+    it('sets reportedWithinDeadline: false and auto-rejects when reported > 7 days after worker left', async () => {
+      const workerLeftOn = new Date('2026-06-10T10:00:00.000Z'); // 10 days before serverNow (June 20)
+
+      const result = await placementService.reportClaim(
         'pl-1',
         {
-          eligibility: 'employee_left',
-          reason: 'Worker left suddenly',
+          workerLeftOn: workerLeftOn.toISOString(),
+          reason: 'resigned',
+          callRecordId: 'call-owner-1',
         },
         'staff-1',
         serverNow,
       );
 
-      expect(result.status).toBe('dropped_out');
-      expect(result.dropoutDateCallerSupplied).toBe(false);
-      expect(result.dropoutReportedAt).toEqual(serverNow);
-
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'placement_dropout',
-          after: expect.objectContaining({
-            dropoutDateCallerSupplied: false,
-          }),
-        }),
-      );
+      expect(result.reportedWithinDeadline).toBe(false);
+      expect(result.decision).toBe('rejected');
+      expect(result.decisionReason).toContain('Reported 10 days after worker left; deadline is 7 days');
     });
   });
 
-  describe('5. Refund Review & Approval Visibility', () => {
-    it('returns dropoutDateCallerSupplied in approveRefund response and records it in audit log', async () => {
-      // Prepare placement in dropped_out status with caller-supplied date 16 days ago
-      const dropoutDate = new Date('2026-06-02T10:00:00.000Z');
-      mockPlacement.status = 'dropped_out';
-      mockPlacement.eligibility = 'employee_left';
-      mockPlacement.dropoutReportedAt = dropoutDate;
-      mockPlacement.dropoutDateCallerSupplied = true; // Caller typed this date in
-
-      // Approval date 16 days later (June 18)
-      const approvalDate = new Date('2026-06-18T10:00:00.000Z');
-
-      const refundResult = await placementService.approveRefund(
-        'pl-1',
-        { asOf: approvalDate.toISOString(), reason: 'Guaranteed cash refund' },
-        'ceo-1',
-      );
-
-      // The returned refund object clearly shows the caller-supplied origin flag
-      expect(refundResult).toBeDefined();
-      expect(refundResult.dropoutDateCallerSupplied).toBe(true);
-
-      // The audit log for refund_approved records dropoutDateCallerSupplied for CEO/Manager accountability
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'refund_approved',
-          entityCode: 'PL-00001',
-          actorId: 'ceo-1',
-          after: expect.objectContaining({
-            dropoutDateCallerSupplied: true,
-            daysElapsed: 16,
-          }),
-        }),
-      );
-    });
-
-    it('shows dropoutDateCallerSupplied: false when approving refund for server-defaulted dropout', async () => {
-      const dropoutDate = new Date('2026-06-02T10:00:00.000Z');
-      mockPlacement.status = 'dropped_out';
-      mockPlacement.eligibility = 'employee_left';
-      mockPlacement.dropoutReportedAt = dropoutDate;
-      mockPlacement.dropoutDateCallerSupplied = false; // Server-defaulted
-
-      const approvalDate = new Date('2026-06-18T10:00:00.000Z');
-
-      const refundResult = await placementService.approveRefund(
-        'pl-1',
-        { asOf: approvalDate.toISOString(), reason: 'Guaranteed cash refund' },
-        'ceo-1',
-      );
-
-      expect(refundResult.dropoutDateCallerSupplied).toBe(false);
-
-      expect(mockAuditService.log).toHaveBeenCalledWith(
-        expect.objectContaining({
-          action: 'refund_approved',
-          after: expect.objectContaining({
-            dropoutDateCallerSupplied: false,
-            daysElapsed: 16,
-          }),
-        }),
-      );
-    });
-
-    it('returns dropoutDateCallerSupplied on findById query for review prior to approval', async () => {
-      mockPlacement.dropoutDateCallerSupplied = true;
+  describe('5. Replacement Claim Query Visibility', () => {
+    it('returns placement record on findById query for review', async () => {
       const placement = await placementService.findById('pl-1', 'ceo-1');
-
       expect(placement).toBeDefined();
-      expect(placement.dropoutDateCallerSupplied).toBe(true);
+      expect(placement.id).toBe('pl-1');
     });
   });
 });
