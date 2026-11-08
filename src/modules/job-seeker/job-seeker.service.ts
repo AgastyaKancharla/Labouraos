@@ -742,6 +742,17 @@ export class JobSeekerService {
       },
     });
 
+    // Phase 18 Task 4: When a refund becomes owed and the receiver has no account, send link
+    if (this.paymentService?.sendPayoutDetailsLinkIfNoAccount) {
+      await this.paymentService.sendPayoutDetailsLinkIfNoAccount(
+        'job_seeker',
+        jobSeeker.id,
+        actor.id,
+        actor.role,
+        now,
+      );
+    }
+
     return payment;
   }
 

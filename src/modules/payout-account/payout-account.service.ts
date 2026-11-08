@@ -40,9 +40,25 @@ function maskPhone(phone: string): string {
   return `+91 ******${digits.slice(-4)}`;
 }
 
+export const payoutLinkTokens = new Map<string, PayoutLinkTokenRecord>();
+
+export function hasActivePayoutLink(ownerType: string, ownerId: string, now = new Date()): boolean {
+  for (const record of payoutLinkTokens.values()) {
+    if (
+      record.ownerType === ownerType &&
+      record.ownerId === ownerId &&
+      !record.usedAt &&
+      record.expiresAt > now
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
 @Injectable()
 export class PayoutAccountService {
-  private readonly tokens = new Map<string, PayoutLinkTokenRecord>();
+  private readonly tokens = payoutLinkTokens;
   private ttlMs = 24 * 60 * 60 * 1000; // 24 hours
 
   constructor(
@@ -124,11 +140,26 @@ export class PayoutAccountService {
       },
     });
 
+    let effectiveActorId = actorId;
+    if (this.prisma.staff?.findUnique) {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actorId },
+        select: { id: true },
+      });
+      if (!staff && this.prisma.staff?.findFirst) {
+        const fallbackStaff = await this.prisma.staff.findFirst({
+          where: { role: 'ceo' },
+          select: { id: true },
+        });
+        if (fallbackStaff) effectiveActorId = fallbackStaff.id;
+      }
+    }
+
     await this.auditService.log({
       action: 'payout_link_created',
       entityType: 'PayoutAccount',
       entityCode: token.slice(0, 8),
-      actorId,
+      actorId: effectiveActorId,
       after: {
         ownerType: dto.ownerType,
         ownerId: dto.ownerId,
@@ -136,6 +167,48 @@ export class PayoutAccountService {
     });
 
     return { linkSent: true };
+  }
+
+  hasActiveLink(ownerType: string, ownerId: string, now = new Date()): boolean {
+    for (const record of this.tokens.values()) {
+      if (
+        record.ownerType === ownerType &&
+        record.ownerId === ownerId &&
+        !record.usedAt &&
+        record.expiresAt > now
+      ) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async hasPayoutAccount(ownerType: string, ownerId: string): Promise<boolean> {
+    const account = await this.prisma.payoutAccount.findFirst({
+      where: {
+        ownerType,
+        ownerId,
+        status: { not: 'superseded' },
+      },
+    });
+    return Boolean(account);
+  }
+
+  async sendLinkIfNotOnRecord(
+    ownerType: 'referral' | 'job_seeker' | 'business',
+    ownerId: string,
+    actorId: string,
+    actorRole = 'system',
+    now = new Date(),
+  ): Promise<{ linkSent: boolean; reason?: string }> {
+    const hasAccount = await this.hasPayoutAccount(ownerType, ownerId);
+    if (hasAccount) {
+      return { linkSent: false, reason: 'account_exists' };
+    }
+    if (this.hasActiveLink(ownerType, ownerId, now)) {
+      return { linkSent: false, reason: 'link_already_active' };
+    }
+    return this.createPayoutLink(actorId, actorRole, { ownerType, ownerId }, now);
   }
 
   getLinkDetails(token: string) {

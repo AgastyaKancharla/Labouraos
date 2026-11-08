@@ -47,7 +47,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - No staff route can sign for a partner.
 - Tests: signing creates both consents with one OTP; an unsigned partner's payout can't be approved; no staff route signs.
 
-### [ ] Task 3 — Owed, approved, paid: one release flow for all money out
+### [x] Task 3 — Owed, approved, paid: one release flow for all money out
 **Branch:** `phase-18/task-3-release-flow` · **Migration folder:** `20261111110000_money_out_flow`
 
 **Acceptance:**
