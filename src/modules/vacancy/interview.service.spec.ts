@@ -8,6 +8,7 @@ describe('InterviewService booking', () => {
     vacancyInterviewSlot: { findUnique: Mock };
     interview: { findFirst: Mock; findUnique: Mock; findMany: Mock; count: Mock; create: Mock; update: Mock; updateMany: Mock };
     candidateIntroduction: { create: Mock };
+    replacementCandidate: { create: Mock; updateMany: Mock };
     statusHistory: { create: Mock };
   };
   type PrismaMock = {
@@ -78,6 +79,7 @@ describe('InterviewService booking', () => {
         update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'interview-id', ...data })),
       },
       candidateIntroduction: { create: jest.fn().mockResolvedValue({ id: 'intro-id' }) },
+      replacementCandidate: { create: jest.fn().mockResolvedValue({ id: 'rc-1' }), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       statusHistory: { create: jest.fn().mockResolvedValue({}) },
     };
     prisma = {
@@ -142,10 +144,18 @@ describe('InterviewService booking', () => {
       .rejects.toThrow('The interview slot has no remaining capacity');
   });
 
-  it('refuses replacement vacancies', async () => {
+  it('allows replacement vacancies and records replacement candidate history', async () => {
     prisma.vacancy.findFirst.mockResolvedValue({ ...vacancy, replacementForPlacementId: 'placement-id' });
-    await expect(service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1'))
-      .rejects.toThrow('only available for fresh vacancies');
+    await service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1');
+    expect(tx.replacementCandidate.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          placementId: 'placement-id',
+          jobSeekerId: 'seeker-id',
+          status: 'offered',
+        }),
+      }),
+    );
   });
 
   it('sends SMS and WhatsApp without business details, records an introduction, and uses the policy reply window', async () => {

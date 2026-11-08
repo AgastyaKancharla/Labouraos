@@ -18,6 +18,7 @@ type MockPrisma = {
   statusHistory: Record<string, jest.Mock>;
   replacementClaim: Record<string, jest.Mock>;
   reviewFlag: Record<string, jest.Mock>;
+  vacancy: Record<string, jest.Mock>;
   $transaction: jest.Mock;
 };
 
@@ -156,6 +157,10 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       reviewFlag: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockResolvedValue({ id: 'flag-1' }),
+      },
+      vacancy: {
+        create: jest.fn().mockResolvedValue({ id: 'vac-rep-1' }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue(basePlacement.vacancy),
       },
       $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma)),
     };

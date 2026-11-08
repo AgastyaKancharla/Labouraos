@@ -331,6 +331,7 @@ model Interview {
   candidateCheckAt         DateTime?
   cancelReason             String?
   placement                Placement?
+  replacementCandidates    ReplacementCandidate[]
   createdAt                DateTime              @default(now())
   updatedAt                DateTime              @updatedAt
 
@@ -408,6 +409,8 @@ model ReplacementCandidate {
   placement       Placement  @relation(fields: [placementId], references: [id], onDelete: Cascade)
   jobSeekerId     String
   jobSeeker       JobSeeker  @relation(fields: [jobSeekerId], references: [id], onDelete: Restrict)
+  interviewId     String?
+  interview       Interview? @relation(fields: [interviewId], references: [id], onDelete: SetNull)
   status          String     @default("offered") // offered, rejected, accepted
   rejectionReason String?
   offeredAt       DateTime   @default(now())
@@ -418,6 +421,7 @@ model ReplacementCandidate {
 
   @@index([placementId])
   @@index([jobSeekerId])
+  @@index([interviewId])
 }
 
 model ReplacementClaim {

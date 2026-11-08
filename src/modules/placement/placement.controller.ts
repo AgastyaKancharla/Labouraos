@@ -21,8 +21,6 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RecordJoinedDto } from './dto/record-joined.dto';
 import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
-import { CreateReplacementCandidateDto } from './dto/create-replacement-candidate.dto';
-import { RejectReplacementCandidateDto } from './dto/reject-replacement-candidate.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { ExportPlacementsQueryDto, formatPlacementsCsv } from './dto/export-placements.dto';
 
@@ -81,42 +79,6 @@ export class PlacementController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.placementService.decideClaim(id, claimId, dto, req.user.sub);
-  }
-
-  @Post(':id/replacement-candidates')
-  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('placement', 'write')
-  async offerReplacementCandidate(
-    @Param('id') id: string,
-    @Body() dto: CreateReplacementCandidateDto,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.placementService.offerReplacementCandidate(id, dto, req.user.sub);
-  }
-
-  @Post(':id/replacement-candidates/:candidateId/reject')
-  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('placement', 'write')
-  async rejectReplacementCandidate(
-    @Param('id') id: string,
-    @Param('candidateId') candidateId: string,
-    @Body() dto: RejectReplacementCandidateDto,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.placementService.rejectReplacementCandidate(id, candidateId, dto, req.user.sub);
-  }
-
-  @Post(':id/replacement-candidates/:candidateId/accept')
-  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('placement', 'write')
-  async acceptReplacementCandidate(
-    @Param('id') id: string,
-    @Param('candidateId') candidateId: string,
-    @Body() dto: { asOf?: string; acceptedAt?: string },
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    const now = dto?.acceptedAt || dto?.asOf ? new Date(dto.acceptedAt || dto.asOf!) : new Date();
-    return this.placementService.acceptReplacementCandidate(id, candidateId, req.user.sub, now);
   }
 
   @Post(':id/resend-payment')
