@@ -529,12 +529,14 @@ export class PlacementService {
     }
 
     // Phase 18 Task 4: Automatically send payout details link to worker if no account
-    await this.paymentService.sendPayoutDetailsLinkIfNoAccount(
-      'job_seeker',
-      updated.jobSeekerId,
-      actor.id,
-      actor.role,
-    );
+    if (this.paymentService?.sendPayoutDetailsLinkIfNoAccount) {
+      await this.paymentService.sendPayoutDetailsLinkIfNoAccount(
+        'job_seeker',
+        updated.jobSeekerId,
+        actor.id,
+        actor.role,
+      );
+    }
 
     return updated;
   }
@@ -1595,13 +1597,15 @@ export class PlacementService {
     });
 
     // Phase 18 Task 4: When a refund becomes owed and the receiver has no account, send link
-    await this.paymentService.sendPayoutDetailsLinkIfNoAccount(
-      'business',
-      placement.businessId,
-      actor.id,
-      actor.role,
-      now,
-    );
+    if (this.paymentService?.sendPayoutDetailsLinkIfNoAccount) {
+      await this.paymentService.sendPayoutDetailsLinkIfNoAccount(
+        'business',
+        placement.businessId,
+        actor.id,
+        actor.role,
+        now,
+      );
+    }
 
     return payment;
   }

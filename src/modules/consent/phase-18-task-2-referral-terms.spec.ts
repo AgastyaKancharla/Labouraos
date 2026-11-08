@@ -27,6 +27,7 @@ import { BANK_FEED_PROVIDER } from '../payment/bank-feed-provider.interface';
 import { MockPaymentProvider } from '../payment/mock-payment.provider';
 import { MockBankFeedProvider } from '../payment/mock-bank-feed.provider';
 import { ConsentClock } from './consent-clock';
+import { PayoutAccountService } from '../payout-account/payout-account.service';
 
 type MockPrismaService = {
   referral: { findUnique: jest.Mock };
@@ -182,6 +183,15 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           useValue: { renderPaymentPage: jest.fn(), getPaymentPage: jest.fn() },
         },
         PaymentService,
+        {
+          provide: PayoutAccountService,
+          useValue: {
+            sendLinkIfNotOnRecord: jest.fn().mockResolvedValue({ linkSent: true }),
+            createPayoutLink: jest.fn().mockResolvedValue({ linkSent: true }),
+            hasActiveLink: jest.fn().mockReturnValue(false),
+            hasPayoutAccount: jest.fn().mockResolvedValue(false),
+          },
+        },
         {
           provide: ReferralService,
           useValue: {

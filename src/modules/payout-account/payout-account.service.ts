@@ -125,16 +125,18 @@ export class PayoutAccountService {
     });
 
     let effectiveActorId = actorId;
-    const staff = await this.prisma.staff.findUnique({
-      where: { id: actorId },
-      select: { id: true },
-    });
-    if (!staff) {
-      const fallbackStaff = await this.prisma.staff.findFirst({
-        where: { role: 'ceo' },
+    if (this.prisma.staff?.findUnique) {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actorId },
         select: { id: true },
       });
-      if (fallbackStaff) effectiveActorId = fallbackStaff.id;
+      if (!staff && this.prisma.staff?.findFirst) {
+        const fallbackStaff = await this.prisma.staff.findFirst({
+          where: { role: 'ceo' },
+          select: { id: true },
+        });
+        if (fallbackStaff) effectiveActorId = fallbackStaff.id;
+      }
     }
 
     await this.auditService.log({
