@@ -280,6 +280,69 @@ export function renderAdminDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Claim Form Modal (Admin) -->
+  <div id="admin-claim-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Report Replacement Claim</h3>
+        <button type="button" class="btn-sm" onclick="closeAdminClaimModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Claim can only be reported after an answered call with the business owner.</p>
+      <input type="hidden" id="claim-placement-id">
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answered Owner Call Record ID *</label>
+        <input type="text" id="claim-call-record-id" placeholder="CR-00001 or Call Record UUID">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Worker Left On (Date) *</label>
+        <input type="date" id="claim-worker-left-on">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Reason *</label>
+        <select id="claim-reason">
+          <option value="resigned">Resigned / Left voluntarily</option>
+          <option value="absconded">Absconded / Stopped reporting</option>
+          <option value="misconduct">Misconduct / Behaviour issue</option>
+          <option value="performance">Unsatisfactory performance</option>
+          <option value="attendance">Chronic absenteeism</option>
+          <option value="business_closed">Business closed / Downsized</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Notes / Evidence</label>
+        <textarea id="claim-notes" rows="3" placeholder="Details of owner call and circumstances..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeAdminClaimModal()">Cancel</button>
+        <button type="button" class="btn-sm" onclick="submitAdminClaim()">Submit Claim</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Joining Confirmation Modal (Admin) -->
+  <div id="admin-joining-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Record Joining Confirmation</h3>
+        <button type="button" class="btn-sm" onclick="closeAdminJoiningModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Joining requires answered confirmation calls to both worker and business on or after the joining date.</p>
+      <input type="hidden" id="joining-placement-id">
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Worker Joining Call ID (Optional if logged)</label>
+        <input type="text" id="joining-worker-call-id" placeholder="Worker call ID">
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Business Joining Call ID (Optional if logged)</label>
+        <input type="text" id="joining-biz-call-id" placeholder="Business call ID">
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeAdminJoiningModal()">Cancel</button>
+        <button type="button" class="btn-sm" onclick="submitAdminJoining()">Confirm Joining</button>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1>Laboura Admin Dashboard</h1>
@@ -415,6 +478,32 @@ export function renderAdminDashboardHtml(): string {
         <div class="card-title"><span>Businesses waiting for approval</span></div>
         <div id="business-approval-queue">Loading businesses…</div>
       </div>
+
+      <!-- Pattern & Bypass Flags Card (Team Lead & Manager) -->
+      <div class="card hidden" id="pattern-flags-card" style="margin-top: 16px;">
+        <div class="card-title">
+          <span>Pattern & Bypass Flags with Evidence (Team Lead & Manager)</span>
+          <button class="btn-sm" onclick="loadPatternFlags()">Refresh Flags</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Bypass detections and daily pattern flags for rejections and activity stops.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Flag Code</th>
+                <th>Kind</th>
+                <th>Subject</th>
+                <th>Raised At</th>
+                <th>Evidence</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="pattern-flags-tbody">
+              <tr><td colspan="6" style="text-align: center;">Loading flags...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- Vacancies View -->
@@ -466,18 +555,49 @@ export function renderAdminDashboardHtml(): string {
                 <th>Code</th>
                 <th>Candidate</th>
                 <th>Business</th>
-                <th>Agreed Salary</th>
-                <th>Fee</th>
-                <th>GST</th>
                 <th>Status</th>
                 <th>Payment due</th>
                 <th>Payment status</th>
                 <th>Joined Date</th>
+                <th>Joining Checklist</th>
+                <th>Guarantee Days Left</th>
+                <th>Replacements Used</th>
+                <th>Rejections Used</th>
+                <th>Open Claim</th>
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody id="placements-tbody">
-              <tr><td colspan="11" style="text-align: center;">Loading...</td></tr>
+              <tr><td colspan="13" style="text-align: center;">Loading...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Replacement Claim Decisions Card (Team Lead & Manager) -->
+      <div class="card hidden" id="claim-decisions-card" style="margin-top: 16px;">
+        <div class="card-title">
+          <span>Replacement Claim Decisions (Team Lead & Manager)</span>
+          <button class="btn-sm" onclick="loadClaimDecisions()">Refresh Claims</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Decide replacement claims within 48 hours. Exit call recording required.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Claim Code</th>
+                <th>Placement</th>
+                <th>Candidate</th>
+                <th>Business</th>
+                <th>Worker Left On</th>
+                <th>Reason</th>
+                <th>Decision Due</th>
+                <th>Exit Call Recording</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="claim-decisions-tbody">
+              <tr><td colspan="9" style="text-align: center;">Loading pending claims...</td></tr>
             </tbody>
           </table>
         </div>
@@ -888,6 +1008,18 @@ export function renderAdminDashboardHtml(): string {
       if (['team_lead', 'manager', 'ceo'].includes(payload.role)) interviewTab.classList.remove('hidden');
       else interviewTab.classList.add('hidden');
 
+      const isLeadOrManager = ['team_lead', 'manager', 'ceo'].includes(payload.role);
+      const claimCard = document.getElementById('claim-decisions-card');
+      if (claimCard) {
+        if (isLeadOrManager) claimCard.classList.remove('hidden');
+        else claimCard.classList.add('hidden');
+      }
+      const patternFlagsCard = document.getElementById('pattern-flags-card');
+      if (patternFlagsCard) {
+        if (isLeadOrManager) patternFlagsCard.classList.remove('hidden');
+        else patternFlagsCard.classList.add('hidden');
+      }
+
       labouraShowApproverTabs();
       if (labouraIsApprover()) {
         loadLoginCodes().catch(function () {});
@@ -921,10 +1053,16 @@ export function renderAdminDashboardHtml(): string {
       if (tab === 'job-seekers') loadJobSeekers();
       else if (tab === 'referrals') loadReferrals();
       else if (tab === 'businesses') loadBusinesses();
-      else if (tab === 'business-reviews') loadBusinessReviewQueue();
+      else if (tab === 'business-reviews') {
+        loadBusinessReviewQueue();
+        if (currentUser && ['team_lead', 'manager', 'ceo'].includes(currentUser.role)) loadPatternFlags();
+      }
       else if (tab === 'vacancies') loadVacancies();
       else if (tab === 'interview-oversight') loadInterviewOversight();
-      else if (tab === 'placements') loadPlacements();
+      else if (tab === 'placements') {
+        loadPlacements();
+        if (currentUser && ['team_lead', 'manager', 'ceo'].includes(currentUser.role)) loadClaimDecisions();
+      }
       else if (tab === 'payments') loadPayments();
       else if (tab === 'pricing') loadPricing();
       else if (tab === 'login-codes') loadLoginCodes().catch(function (e) { showAlert(e.message, false); });
@@ -1294,22 +1432,203 @@ export function renderAdminDashboardHtml(): string {
             <td><strong>\${p.code}</strong></td>
             <td>\${p.jobSeeker ? p.jobSeeker.name : p.jobSeekerId}</td>
             <td>\${p.business ? p.business.name : p.businessId}</td>
-            <td>₹\${(p.agreedSalary/100).toLocaleString('en-IN')}</td>
-            <td>₹\${(p.placementFee/100).toLocaleString('en-IN')}</td>
-            <td>₹\${(p.gstAmount/100).toLocaleString('en-IN')}</td>
             <td><span class="badge">\${p.status}</span></td>
             <td>\${p.paymentDueAt ? new Date(p.paymentDueAt).toLocaleString('en-IN') : '—'}</td>
             <td>\${p.paidAt ? 'Paid' : p.status === 'awaiting_payment' && p.paymentDueAt && new Date(p.paymentDueAt).getTime() <= now ? 'Overdue' : p.status === 'awaiting_payment' ? 'Awaiting payment' : '—'}</td>
             <td>\${p.joinedDate ? new Date(p.joinedDate).toLocaleDateString() : '—'}</td>
             <td>
+              <div style="font-size: 0.8rem; line-height: 1.4;">
+                <div>\${p.joiningWorkerCallId ? '<span style="color:var(--success)">✓ Worker call</span>' : '<span style="color:var(--text-muted)">✗ Worker call</span>'}</div>
+                <div>\${p.joiningBusinessCallId ? '<span style="color:var(--success)">✓ Business call</span>' : '<span style="color:var(--text-muted)">✗ Business call</span>'}</div>
+                \${p.status === 'confirmed' ? \`<button class="btn-sm" style="margin-top:4px;" onclick="openJoiningModal('\${p.id}', '\${p.code}')">Record Joining</button>\` : ''}
+              </div>
+            </td>
+            <td>
+              \${p.guaranteeEndedReason ? \`<span class="badge" style="background:#ef4444;">Ended: \${p.guaranteeEndedReason}</span>\` : (p.guaranteeDaysLeft !== undefined && p.guaranteeDaysLeft !== null ? \`\${p.guaranteeDaysLeft} days left\` : (p.joinedDate ? \`\${Math.max(0, 60 - Math.floor((now - new Date(p.joinedDate).getTime()) / 86400000))} days left\` : '—'))}
+            </td>
+            <td>\${p.replacementNumber} / 2</td>
+            <td>\${p.rejectionsUsed || 0} / 2</td>
+            <td>
+              \${p.openClaim ? \`<span class="badge" style="background:#f59e0b;color:#000;">Pending · Due \${new Date(p.openClaim.decisionDueAt).toLocaleString('en-IN')}</span>\` : '<span style="color:var(--text-muted)">None</span>'}
+            </td>
+            <td>
               \${!p.paidAt && p.status === 'awaiting_payment' ? \`
                 <button class="btn-sm" onclick="resendPlacementPayment('\${p.id}')">Resend payment link</button>
-              \` : '—'}
+              \` : ''}
+              \${p.status === 'active' ? \`
+                <button class="btn-sm btn-secondary" onclick="openClaimModal('\${p.id}', '\${p.code}')">Report Claim</button>
+              \` : ''}
             </td>
           </tr>
-        \`).join('') || '<tr><td colspan="11">No placements found</td></tr>';
+        \`).join('') || '<tr><td colspan="13">No placements found</td></tr>';
       } catch (e) {
         console.error(e);
+      }
+    }
+
+    function openClaimModal(placementId, placementCode) {
+      document.getElementById('claim-placement-id').value = placementId;
+      document.getElementById('claim-call-record-id').value = '';
+      document.getElementById('claim-worker-left-on').value = new Date().toISOString().split('T')[0];
+      document.getElementById('claim-notes').value = '';
+      document.getElementById('admin-claim-modal').classList.remove('hidden');
+    }
+
+    function closeAdminClaimModal() {
+      document.getElementById('admin-claim-modal').classList.add('hidden');
+    }
+
+    async function submitAdminClaim() {
+      const placementId = document.getElementById('claim-placement-id').value;
+      const callRecordId = document.getElementById('claim-call-record-id').value.trim();
+      const workerLeftOn = document.getElementById('claim-worker-left-on').value;
+      const reason = document.getElementById('claim-reason').value;
+      const notes = document.getElementById('claim-notes').value.trim();
+
+      if (!callRecordId) return alert('Answered owner call record ID is required');
+      if (!workerLeftOn) return alert('Worker left date is required');
+
+      try {
+        await api('/placements/' + placementId + '/claims', {
+          method: 'POST',
+          body: { callRecordId, workerLeftOn, reason, notes: notes || undefined },
+        });
+        showAlert('Replacement claim submitted successfully');
+        closeAdminClaimModal();
+        loadPlacements();
+        if (currentUser && ['team_lead', 'manager', 'ceo'].includes(currentUser.role)) loadClaimDecisions();
+      } catch (e) {
+        showAlert('Claim submission failed: ' + e.message, false);
+      }
+    }
+
+    function openJoiningModal(placementId, placementCode) {
+      document.getElementById('joining-placement-id').value = placementId;
+      document.getElementById('joining-worker-call-id').value = '';
+      document.getElementById('joining-biz-call-id').value = '';
+      document.getElementById('admin-joining-modal').classList.remove('hidden');
+    }
+
+    function closeAdminJoiningModal() {
+      document.getElementById('admin-joining-modal').classList.add('hidden');
+    }
+
+    async function submitAdminJoining() {
+      const placementId = document.getElementById('joining-placement-id').value;
+      try {
+        await api('/placements/' + placementId + '/joined', { method: 'POST', body: {} });
+        showAlert('Joining recorded successfully');
+        closeAdminJoiningModal();
+        loadPlacements();
+      } catch (e) {
+        showAlert('Failed to record joining: ' + e.message, false);
+      }
+    }
+
+    async function loadClaimDecisions() {
+      const tbody = document.getElementById('claim-decisions-tbody');
+      if (!tbody) return;
+      try {
+        const claims = await api('/placements/claims/pending');
+        const now = Date.now();
+        tbody.innerHTML = claims.map(c => {
+          const isOverdue = new Date(c.decisionDueAt).getTime() <= now;
+          const exitRecording = c.exitCallRecordId
+            ? \`<button class="btn-sm" onclick="listenCall('\${c.exitCallRecordId}')">Listen Exit Call</button>\`
+            : '<span style="color:var(--danger)">Missing exit call</span>';
+          return \`
+            <tr>
+              <td><strong>\${c.code}</strong></td>
+              <td>\${c.placement ? c.placement.code : c.placementId}</td>
+              <td>\${c.placement && c.placement.jobSeeker ? c.placement.jobSeeker.name : '—'}</td>
+              <td>\${c.placement && c.placement.business ? c.placement.business.name : '—'}</td>
+              <td>\${c.workerLeftOn ? new Date(c.workerLeftOn).toLocaleDateString() : '—'}</td>
+              <td><span class="badge">\${c.reason}</span></td>
+              <td>
+                <span style="\${isOverdue ? 'color:var(--danger);font-weight:bold;' : ''}">
+                  \${new Date(c.decisionDueAt).toLocaleString('en-IN')}
+                  \${isOverdue ? ' (OVERDUE)' : ''}
+                </span>
+              </td>
+              <td>\${exitRecording}</td>
+              <td>
+                <button class="btn-sm btn-success" onclick="promptDecideClaim('\${c.placementId}', '\${c.id}', 'accepted')">Accept</button>
+                <button class="btn-sm btn-danger" onclick="promptDecideClaim('\${c.placementId}', '\${c.id}', 'rejected')">Reject</button>
+              </td>
+            </tr>
+          \`;
+        }).join('') || '<tr><td colspan="9" style="text-align: center;">No pending replacement claims</td></tr>';
+      } catch (e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="9" style="text-align: center; color: var(--danger);">Failed to load claims: ' + e.message + '</td></tr>';
+      }
+    }
+
+    async function promptDecideClaim(placementId, claimId, decision) {
+      const reason = prompt('Enter ' + decision + ' reason / notes:');
+      if (!reason) return;
+      try {
+        await api('/placements/' + placementId + '/claims/' + claimId + '/decide', {
+          method: 'POST',
+          body: { decision, decisionReason: reason },
+        });
+        showAlert('Claim ' + decision + ' successfully');
+        loadClaimDecisions();
+        loadPlacements();
+      } catch (e) {
+        showAlert('Claim decision failed: ' + e.message, false);
+      }
+    }
+
+    async function loadPatternFlags() {
+      const tbody = document.getElementById('pattern-flags-tbody');
+      if (!tbody) return;
+      try {
+        const flags = await api('/review-flags?status=open');
+        const patternKinds = ['bypass_suspected', 'business_many_rejections', 'business_stopped_after_interviews', 'agent_rejection_pattern', 'claim_decision_overdue'];
+        const patternFlags = flags.filter(f => patternKinds.includes(f.kind));
+        tbody.innerHTML = patternFlags.map(f => {
+          let evidence = '';
+          if (f.details) {
+            try {
+              const d = typeof f.details === 'string' ? JSON.parse(f.details) : f.details;
+              evidence = Object.entries(d).map(([k, v]) => \`\${k}: \${v}\`).join(' · ');
+            } catch {
+              evidence = String(f.details);
+            }
+          }
+          return \`
+            <tr>
+              <td><strong>\${f.code}</strong></td>
+              <td><span class="badge" style="background:#f59e0b;color:#000;">\${f.kind}</span></td>
+              <td>\${f.subjectType} · \${f.subjectId}</td>
+              <td>\${new Date(f.raisedAt).toLocaleString('en-IN')}</td>
+              <td style="font-size:0.85rem;">\${evidence || '—'}</td>
+              <td>
+                <button class="btn-sm" onclick="promptResolvePatternFlag('\${f.id}')">Resolve</button>
+              </td>
+            </tr>
+          \`;
+        }).join('') || '<tr><td colspan="6" style="text-align: center;">No open pattern or bypass flags</td></tr>';
+      } catch (e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger);">Failed to load flags: ' + e.message + '</td></tr>';
+      }
+    }
+
+    async function promptResolvePatternFlag(flagId) {
+      const resolution = prompt('Enter resolution ("cleared" or "confirmed"):', 'cleared');
+      if (!resolution) return;
+      const notes = prompt('Enter resolution notes:');
+      try {
+        await api('/review-flags/' + flagId + '/resolve', {
+          method: 'POST',
+          body: { resolution, notes: notes || undefined },
+        });
+        showAlert('Review flag resolved');
+        loadPatternFlags();
+      } catch (e) {
+        showAlert('Failed to resolve flag: ' + e.message, false);
       }
     }
 

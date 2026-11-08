@@ -224,6 +224,84 @@ export function renderFieldAgentAppHtml(): string {
     </div>
   </div>
 
+  <!-- Field Agent Follow-up Completion Modal -->
+  <div id="fa-follow-up-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Complete Follow-up Task</h3>
+        <button type="button" class="btn-sm" onclick="closeFaFollowUpModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Calls must be answered and recorded.</p>
+      <input type="hidden" id="fa-complete-task-id">
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answered Call Record ID *</label>
+        <input type="text" id="fa-follow-up-call-record-id" placeholder="CR-00001 or Call Record UUID">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answer *</label>
+        <select id="fa-follow-up-answer" onchange="onFaFollowUpAnswerChange()">
+          <option value="working_elsewhere">Working elsewhere</option>
+          <option value="not_working">Not working</option>
+          <option value="working_at_introduced_business">Working at introduced business</option>
+          <option value="no_answer">No answer</option>
+        </select>
+      </div>
+      <div class="form-group hidden" id="fa-follow-up-introduced-business-group" style="margin-bottom: 10px;">
+        <label>Introduced Business *</label>
+        <select id="fa-follow-up-introduced-business">
+          <option value="">Select introduced business...</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Notes</label>
+        <textarea id="fa-follow-up-notes" rows="3" placeholder="Candidate response details..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeFaFollowUpModal()">Cancel</button>
+        <button type="button" class="btn-sm" onclick="submitFaCompleteFollowUp()">Complete Task</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Field Agent Claim Form Modal -->
+  <div id="fa-claim-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 500px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 style="font-size: 1.15rem; margin: 0; color: var(--primary);">Report Replacement Claim</h3>
+        <button type="button" class="btn-sm" onclick="closeFaClaimModal()">✕ Close</button>
+      </div>
+      <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 12px;">Claim can only be reported after an answered call with the business owner.</p>
+      <input type="hidden" id="fa-claim-placement-id">
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Answered Owner Call Record ID *</label>
+        <input type="text" id="fa-claim-call-record-id" placeholder="CR-00001 or Call Record UUID">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Worker Left On (Date) *</label>
+        <input type="date" id="fa-claim-worker-left-on">
+      </div>
+      <div class="form-group" style="margin-bottom: 10px;">
+        <label>Reason *</label>
+        <select id="fa-claim-reason">
+          <option value="resigned">Resigned / Left voluntarily</option>
+          <option value="absconded">Absconded / Stopped reporting</option>
+          <option value="misconduct">Misconduct / Behaviour issue</option>
+          <option value="performance">Unsatisfactory performance</option>
+          <option value="attendance">Chronic absenteeism</option>
+          <option value="business_closed">Business closed / Downsized</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom: 12px;">
+        <label>Notes / Evidence</label>
+        <textarea id="fa-claim-notes" rows="3" placeholder="Owner statements and reason details..."></textarea>
+      </div>
+      <div style="display: flex; justify-content: flex-end; gap: 8px;">
+        <button type="button" class="btn-secondary btn-sm" onclick="closeFaClaimModal()">Cancel</button>
+        <button type="button" class="btn-sm" onclick="submitFaClaim()">Submit Claim</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Profile & Calling Modal -->
   <div id="fa-calling-modal" class="auth-overlay hidden">
     <div class="modal" style="max-width: 650px;">
@@ -328,6 +406,7 @@ export function renderFieldAgentAppHtml(): string {
     <button class="tab-btn" data-tab="vacancy-capture">Capture Vacancy</button>
     <button class="tab-btn" data-tab="shortlist-interview">Shortlist & Interview</button>
     <button class="tab-btn" data-tab="my-interviews">My Interviews</button>
+    <button class="tab-btn" data-tab="follow-ups">My Follow-ups</button>
     <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
   </nav>
 
@@ -593,6 +672,34 @@ export function renderFieldAgentAppHtml(): string {
       </div>
     </div>
 
+    <!-- My Follow-ups View -->
+    <div id="view-follow-ups" class="tab-view hidden">
+      <div class="card">
+        <div class="card-title">
+          <span>My Follow-up Tasks</span>
+          <button class="btn-sm" onclick="loadFaFollowUps()">Refresh</button>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 12px;">Calls must be answered and recorded. Record candidate status; if working at an introduced business, select which one.</p>
+        <div class="table-container">
+          <table>
+            <thead>
+              <tr>
+                <th>Task Code</th>
+                <th>Candidate</th>
+                <th>Kind</th>
+                <th>Due Date</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody id="fa-follow-ups-tbody">
+              <tr><td colspan="6" style="text-align: center;">Loading follow-up tasks...</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <script>
@@ -738,6 +845,7 @@ export function renderFieldAgentAppHtml(): string {
         }
         if (tab === 'visits') loadMyAssignments();
         if (tab === 'my-interviews') loadFieldInterviews();
+        if (tab === 'follow-ups') loadFaFollowUps();
       });
     });
 
@@ -1167,23 +1275,70 @@ export function renderFieldAgentAppHtml(): string {
             ' · Result due ' + new Date(interview.resultDueAt).toLocaleString('en-IN') +
             ' · Attendance visit ' + (interview.agentAttendanceRequired ? 'needed' : 'not needed'); card.appendChild(details);
           if (interview.placement) {
-            const pStatus = interview.placement.paidAt ? 'Paid' : interview.placement.status === 'awaiting_payment' && interview.placement.paymentDueAt && new Date(interview.placement.paymentDueAt).getTime() <= Date.now() ? 'Overdue' : interview.placement.status === 'awaiting_payment' ? 'Awaiting payment' : '—';
-            const placement = document.createElement('p'); placement.textContent = 'Placement ' + interview.placement.code + ' · ' + interview.placement.status +
-              (interview.placement.paymentDueAt ? ' · Payment due ' + new Date(interview.placement.paymentDueAt).toLocaleString('en-IN') : '') +
-              ' · ' + pStatus; card.appendChild(placement);
-            if (!interview.placement.paidAt && interview.placement.status === 'awaiting_payment') {
+            const p = interview.placement;
+            const pStatus = p.paidAt ? 'Paid' : p.status === 'awaiting_payment' && p.paymentDueAt && new Date(p.paymentDueAt).getTime() <= Date.now() ? 'Overdue' : p.status === 'awaiting_payment' ? 'Awaiting payment' : '—';
+            const workerCallCheck = p.joiningWorkerCallId ? '✓ Worker call' : '✗ Worker call';
+            const bizCallCheck = p.joiningBusinessCallId ? '✓ Business call' : '✗ Business call';
+            const guaranteeLeft = p.guaranteeEndedReason ? 'Ended: ' + p.guaranteeEndedReason : (p.guaranteeDaysLeft !== undefined && p.guaranteeDaysLeft !== null ? p.guaranteeDaysLeft + ' days left' : (p.joinedDate ? Math.max(0, 60 - Math.floor((Date.now() - new Date(p.joinedDate).getTime()) / 86400000)) + ' days left' : '—'));
+            const replacementsUsed = p.replacementNumber + ' / 2';
+            const rejectionsUsed = (p.rejectionsUsed || 0) + ' / 2';
+            const openClaimText = p.openClaim ? 'Pending (Due: ' + new Date(p.openClaim.decisionDueAt).toLocaleString('en-IN') + ')' : 'None';
+
+            const placement = document.createElement('p');
+            placement.innerHTML = 'Placement ' + p.code + ' · ' + p.status +
+              (p.paymentDueAt ? ' · Payment due ' + new Date(p.paymentDueAt).toLocaleString('en-IN') : '') +
+              ' · ' + pStatus + '<br>' +
+              'Joining checklist: ' + workerCallCheck + ', ' + bizCallCheck + '<br>' +
+              'Guarantee: ' + guaranteeLeft + ' · Replacements: ' + replacementsUsed + ' · Rejections: ' + rejectionsUsed + '<br>' +
+              'Open Claim: ' + openClaimText;
+            card.appendChild(placement);
+
+            const actionsDiv = document.createElement('div');
+            actionsDiv.style.display = 'flex';
+            actionsDiv.style.gap = '8px';
+            actionsDiv.style.marginTop = '6px';
+
+            if (!p.paidAt && p.status === 'awaiting_payment') {
               const resendBtn = document.createElement('button');
               resendBtn.className = 'btn-sm';
               resendBtn.textContent = 'Resend payment link';
               resendBtn.onclick = async () => {
                 try {
-                  await api('/placements/' + interview.placement.id + '/resend-payment', { method: 'POST' });
+                  await api('/placements/' + p.id + '/resend-payment', { method: 'POST' });
                   showAlert('Payment link resent to business');
                 } catch (e) {
                   showAlert(e.message, false);
                 }
               };
-              card.appendChild(resendBtn);
+              actionsDiv.appendChild(resendBtn);
+            }
+
+            if (p.status === 'confirmed') {
+              const joinBtn = document.createElement('button');
+              joinBtn.className = 'btn-sm';
+              joinBtn.textContent = 'Record Joining';
+              joinBtn.onclick = async () => {
+                try {
+                  await api('/placements/' + p.id + '/joined', { method: 'POST', body: {} });
+                  showAlert('Joining recorded');
+                  loadFieldInterviews();
+                } catch (e) {
+                  showAlert('Failed to record joining: ' + e.message, false);
+                }
+              };
+              actionsDiv.appendChild(joinBtn);
+            }
+
+            if (p.status === 'active') {
+              const claimBtn = document.createElement('button');
+              claimBtn.className = 'btn-sm btn-secondary';
+              claimBtn.textContent = 'Report Claim';
+              claimBtn.onclick = () => openFaClaimModal(p.id, p.code);
+              actionsDiv.appendChild(claimBtn);
+            }
+
+            if (actionsDiv.children.length > 0) {
+              card.appendChild(actionsDiv);
             }
           }
           if (interview.answeredOfferCallId) {
@@ -1348,6 +1503,134 @@ export function renderFieldAgentAppHtml(): string {
         }).join('');
       } catch (e) {
         tbody.innerHTML = '<tr><td colspan="6">Could not load history: ' + e.message + '</td></tr>';
+      }
+    }
+
+    function openFaClaimModal(placementId, placementCode) {
+      document.getElementById('fa-claim-placement-id').value = placementId;
+      document.getElementById('fa-claim-call-record-id').value = '';
+      document.getElementById('fa-claim-worker-left-on').value = new Date().toISOString().split('T')[0];
+      document.getElementById('fa-claim-notes').value = '';
+      document.getElementById('fa-claim-modal').classList.remove('hidden');
+    }
+
+    function closeFaClaimModal() {
+      document.getElementById('fa-claim-modal').classList.add('hidden');
+    }
+
+    async function submitFaClaim() {
+      const placementId = document.getElementById('fa-claim-placement-id').value;
+      const callRecordId = document.getElementById('fa-claim-call-record-id').value.trim();
+      const workerLeftOn = document.getElementById('fa-claim-worker-left-on').value;
+      const reason = document.getElementById('fa-claim-reason').value;
+      const notes = document.getElementById('fa-claim-notes').value.trim();
+
+      if (!callRecordId) return alert('Answered owner call record ID is required');
+      if (!workerLeftOn) return alert('Worker left date is required');
+
+      try {
+        await api('/placements/' + placementId + '/claims', {
+          method: 'POST',
+          body: { callRecordId, workerLeftOn, reason, notes: notes || undefined },
+        });
+        showAlert('Replacement claim submitted successfully');
+        closeFaClaimModal();
+        loadFieldInterviews();
+      } catch (e) {
+        showAlert('Claim submission failed: ' + e.message, false);
+      }
+    }
+
+    let faActiveFollowUpTaskId = null;
+
+    async function loadFaFollowUps() {
+      const tbody = document.getElementById('fa-follow-ups-tbody');
+      if (!tbody) return;
+      try {
+        const tasks = await api('/follow-up-tasks');
+        const now = Date.now();
+        tbody.innerHTML = tasks.map(function(t) {
+          const isOverdue = t.status === 'pending' && new Date(t.dueAt).getTime() <= now;
+          const statusDisplay = t.status === 'done' ? '<span class="badge" style="background:var(--success);">Completed</span>' : isOverdue ? '<span class="badge" style="background:var(--danger);">Overdue</span>' : '<span class="badge">' + t.status + '</span>';
+          const seekerText = t.jobSeeker ? t.jobSeeker.code + ' (' + t.jobSeeker.name + ')' : (t.jobSeekerId || '—');
+          const actionBtn = t.status === 'pending' ? '<button class="btn-sm" data-id="' + t.id + '" onclick="openFaCompleteFollowUpModal(this.dataset.id)">Complete Task</button>' : '—';
+          return '<tr>' +
+            '<td><strong>' + t.code + '</strong></td>' +
+            '<td>' + seekerText + '</td>' +
+            '<td><span class="badge">' + t.kind + '</span></td>' +
+            '<td>' + new Date(t.dueAt).toLocaleDateString() + '</td>' +
+            '<td>' + statusDisplay + '</td>' +
+            '<td>' + actionBtn + '</td>' +
+          '</tr>';
+        }).join('') || '<tr><td colspan="6" style="text-align: center;">No follow-up tasks found</td></tr>';
+      } catch (e) {
+        console.error(e);
+        tbody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: var(--danger);">Failed to load follow-ups: ' + e.message + '</td></tr>';
+      }
+    }
+
+    function openFaCompleteFollowUpModal(taskId) {
+      faActiveFollowUpTaskId = taskId;
+      document.getElementById('fa-complete-task-id').value = taskId;
+      document.getElementById('fa-follow-up-call-record-id').value = '';
+      document.getElementById('fa-follow-up-answer').value = 'working_elsewhere';
+      document.getElementById('fa-follow-up-introduced-business-group').classList.add('hidden');
+      document.getElementById('fa-follow-up-notes').value = '';
+      document.getElementById('fa-follow-up-modal').classList.remove('hidden');
+    }
+
+    function closeFaFollowUpModal() {
+      document.getElementById('fa-follow-up-modal').classList.add('hidden');
+      faActiveFollowUpTaskId = null;
+    }
+
+    async function onFaFollowUpAnswerChange() {
+      const answer = document.getElementById('fa-follow-up-answer').value;
+      const group = document.getElementById('fa-follow-up-introduced-business-group');
+      const select = document.getElementById('fa-follow-up-introduced-business');
+      if (answer === 'working_at_introduced_business') {
+        group.classList.remove('hidden');
+        select.innerHTML = '<option value="">Loading introduced businesses...</option>';
+        try {
+          const businesses = await api('/follow-up-tasks/' + faActiveFollowUpTaskId + '/introduced-businesses');
+          select.innerHTML = '<option value="">Select introduced business...</option>' + businesses.map(function(b) {
+            return '<option value="' + b.id + '">' + b.code + ' · ' + b.name + '</option>';
+          }).join('');
+        } catch (e) {
+          select.innerHTML = '<option value="">Failed to load businesses</option>';
+        }
+      } else {
+        group.classList.add('hidden');
+      }
+    }
+
+    async function submitFaCompleteFollowUp() {
+      const taskId = document.getElementById('fa-complete-task-id').value;
+      const callRecordId = document.getElementById('fa-follow-up-call-record-id').value.trim();
+      const answer = document.getElementById('fa-follow-up-answer').value;
+      const answerBusinessId = document.getElementById('fa-follow-up-introduced-business').value;
+      const notes = document.getElementById('fa-follow-up-notes').value.trim();
+
+      if (!callRecordId) return alert('Answered call record ID is required');
+      if (answer === 'working_at_introduced_business' && !answerBusinessId) {
+        return alert('Please select the introduced business');
+      }
+
+      try {
+        await api('/follow-up-tasks/' + taskId + '/complete', {
+          method: 'POST',
+          body: {
+            callRecordId,
+            answer,
+            answerBusinessId: answer === 'working_at_introduced_business' ? answerBusinessId : undefined,
+            notes: notes || undefined,
+          },
+        });
+        showAlert('Follow-up task completed successfully');
+        closeFaFollowUpModal();
+        loadFaFollowUps();
+      } catch (e) {
+        showAlert('Failed to complete follow-up: ' + e.message, false);
       }
     }
 
