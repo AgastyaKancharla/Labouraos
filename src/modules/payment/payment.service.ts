@@ -880,14 +880,6 @@ export class PaymentService {
       );
     }
 
-    if (payment.type === 'referral_payout') {
-      const referralId = payment.referralId || payment.subjectId;
-      const termsSigned = await this.consentService.hasConsent('referral', referralId, 'agreement_terms');
-      if (!termsSigned) {
-        throw new BadRequestException('Referral partner has not signed agreement terms');
-      }
-    }
-
     return this.dispatchPayout(payment, ['pending'], 'payout_release', actorId, options);
   }
 

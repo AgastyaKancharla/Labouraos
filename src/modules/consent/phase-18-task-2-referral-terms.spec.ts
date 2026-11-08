@@ -420,7 +420,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.message).toContain('Referral partner has not signed agreement terms');
     });
 
-    it('blocks disbursing a referral payout when agreement_terms is not signed', async () => {
+    it('blocks approving a referral payout when agreement_terms was withdrawn', async () => {
       const paymentId = 'pay-ref-001';
       mockPrisma.payment.findUnique.mockResolvedValue({
         id: paymentId,
@@ -433,11 +433,12 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         referralId,
       });
 
+      // Withdrawn consent in DB
       mockPrisma.consent.findFirst.mockResolvedValue(null);
 
       const res = await request(app.getHttpServer())
-        .post(`/payments/${paymentId}/disburse`)
-        .send({});
+        .post(`/payments/${paymentId}/approve`)
+        .send();
 
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('Referral partner has not signed agreement terms');
