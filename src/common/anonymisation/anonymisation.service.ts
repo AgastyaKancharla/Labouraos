@@ -54,7 +54,7 @@ export class AnonymisationService {
     await this.assertNoOpenDisputesOrMoney(subjectType, id);
 
     const now = new Date();
-    const changedFields: string[] = ['name', 'phone', 'anonymisedAt'];
+    const changedFields: string[] = ['name', 'phone', 'erasedAt', 'anonymisedAt'];
 
     switch (subjectType) {
       case 'job_seeker': {
