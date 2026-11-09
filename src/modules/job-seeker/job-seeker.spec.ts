@@ -91,28 +91,26 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   });
 
   afterAll(async () => {
-    if (prisma) {
-      // Clean up audit logs for our test actors
-      await prisma.auditLog.deleteMany({
-        where: {
-          actorId: { in: [callAgentId, fieldAgentId, financeId] },
-        },
-      });
-      // Delete test job seekers created during this suite
-      await prisma.jobSeeker.deleteMany({
-        where: {
-          phone: { contains: `${timestamp.toString().slice(-8)}` },
-        },
-      });
-      // Delete test staff
-      await prisma.staff.deleteMany({
-        where: {
-          id: { in: [callAgentId, fieldAgentId, financeId] },
-        },
-      });
-    }
-    if (app) {
-      await app.close();
+    try {
+      if (prisma) {
+        const testSeekers = await prisma.jobSeeker.findMany({
+          where: { phone: { contains: `${timestamp.toString().slice(-8)}` } },
+          select: { id: true },
+        });
+        await prisma.tradeSuggestionSubject.deleteMany({
+          where: { subjectType: 'job_seeker', subjectId: { in: testSeekers.map(({ id }) => id) } },
+        });
+        await prisma.tradeSuggestion.deleteMany({ where: { typedName: `Specialist-${timestamp}` } });
+        await prisma.auditLog.deleteMany({
+          where: { actorId: { in: [callAgentId, fieldAgentId, financeId] } },
+        });
+        await prisma.jobSeeker.deleteMany({
+          where: { phone: { contains: `${timestamp.toString().slice(-8)}` } },
+        });
+        await prisma.staff.deleteMany({ where: { id: { in: [callAgentId, fieldAgentId, financeId] } } });
+      }
+    } finally {
+      if (app) await app.close();
     }
   });
 
@@ -162,6 +160,53 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     });
     expect(auditLogs).toHaveLength(1);
     expect(auditLogs[0].actorId).toBe(callAgentId);
+  });
+
+  it('saves an Other trade immediately and queues a distinct suggestion', async () => {
+    const phone = `91${timestamp.toString().slice(-8)}2`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const tradeName = `Specialist-${timestamp}`;
+    const response = await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        phone,
+        otpRequestId,
+        tradeSkill: tradeName,
+        minSalary: 2000000,
+        maxSalary: 2500000,
+        preferredCallWindowStart: '09:30',
+        preferredCallWindowEnd: '18:00',
+        city: 'Bengaluru',
+      })
+      .expect(201);
+
+    expect(response.body.tradeSkill).toBe(tradeName);
+    expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: response.body.id, trade: tradeName } })).toBe(1);
+    const suggestion = await prisma.tradeSuggestion.findUnique({ where: { typedNameKey: tradeName.toLocaleLowerCase('en-IN') } });
+    expect(suggestion).toMatchObject({
+      typedName: tradeName,
+      status: 'waiting',
+      subjectType: 'job_seeker',
+      subjectId: response.body.id,
+    });
+  });
+
+  it('returns the migration-seeded managed trades with salary ranges and minimum wages', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/trades')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .expect(200);
+
+    expect(response.body).toHaveLength(16);
+    expect(response.body[0]).toMatchObject({
+      name: 'Housekeeping',
+      salaryMinPaise: 1600000,
+      salaryMaxPaise: 2300000,
+      minimumWageLevel: 'unskilled',
+      legalMinimumPaise: 2337600,
+    });
+    expect(response.body[0].effectiveFrom).toContain('2026-05-22');
   });
 
   it('allows a field_agent token to create a job seeker (201)', async () => {

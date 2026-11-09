@@ -114,6 +114,7 @@ describe('Phase 14 gate end-to-end proof', () => {
       findFirst: jest.fn().mockResolvedValue(vacancy),
       findMany: jest.fn().mockResolvedValue([vacancy]),
       },
+      trade: { findFirst: jest.fn().mockResolvedValue({ id: 'trade-electrician' }) },
       business: {
       findFirst: jest.fn().mockResolvedValue({ id: businessId, code: business.code }),
       findMany: jest.fn().mockResolvedValue([business]),

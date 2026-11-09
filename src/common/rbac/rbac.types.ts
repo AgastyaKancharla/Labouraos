@@ -14,6 +14,7 @@ export type Resource =
   | 'placement'
   | 'payment'
   | 'pricing'
+  | 'trade'
   | 'staff'
   | 'target';
 
@@ -35,6 +36,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     placement: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     payment: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     pricing: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
+    trade: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     staff: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     target: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
   },
@@ -46,6 +48,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     placement: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     payment: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
     pricing: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } }, // Manager is read-only for pricing
+    trade: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     staff: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     target: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
   },
@@ -57,6 +60,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     placement: { read: { allowed: true, scope: 'own_team' }, write: { allowed: true, scope: 'own_team' } },
     payment: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
+    trade: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
     staff: { read: { allowed: true, scope: 'own_team' }, write: { allowed: true, scope: 'own_team' } },
     target: { read: { allowed: true, scope: 'own_team' }, write: { allowed: false, scope: 'none' } },
   },
@@ -70,6 +74,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     placement: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     payment: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
+    trade: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
     staff: { read: { allowed: true, scope: 'own_only' }, write: { allowed: false, scope: 'none' } },
     target: { read: { allowed: true, scope: 'own_only' }, write: { allowed: false, scope: 'none' } },
   },
@@ -81,6 +86,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     placement: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'own_account' } },
     payment: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
+    trade: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
     staff: { read: { allowed: true, scope: 'own_only' }, write: { allowed: false, scope: 'none' } },
     target: { read: { allowed: true, scope: 'own_only' }, write: { allowed: false, scope: 'none' } },
   },
@@ -92,6 +98,7 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     placement: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
     payment: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
+    trade: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
     staff: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     target: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
   },

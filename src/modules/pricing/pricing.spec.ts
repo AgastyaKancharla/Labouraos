@@ -121,33 +121,29 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
   const createdPaymentCodes: string[] = [];
   const createdPaymentIds: string[] = [];
   const createdJobSeekerIds: string[] = [];
+  const createdTradeIds: string[] = [];
 
   afterAll(async () => {
-    if (prisma) {
-      if (createdPaymentIds.length > 0) {
-        await prisma.payment.deleteMany({
-          where: { id: { in: createdPaymentIds } },
+    try {
+      if (prisma) {
+        if (createdTradeIds.length > 0) {
+          await prisma.trade.deleteMany({ where: { id: { in: createdTradeIds } } });
+        }
+        if (createdPaymentIds.length > 0) {
+          await prisma.payment.deleteMany({ where: { id: { in: createdPaymentIds } } });
+        }
+        if (createdPaymentCodes.length > 0) {
+          await prisma.payment.deleteMany({ where: { code: { in: createdPaymentCodes } } });
+        }
+        if (createdJobSeekerIds.length > 0) {
+          await prisma.jobSeeker.deleteMany({ where: { id: { in: createdJobSeekerIds } } });
+        }
+        await prisma.pricingPolicy.deleteMany({
+          where: { id: { not: '00000000-0000-0000-0000-000000000001' } },
         });
       }
-      if (createdPaymentCodes.length > 0) {
-        await prisma.payment.deleteMany({
-          where: { code: { in: createdPaymentCodes } },
-        });
-      }
-      if (createdJobSeekerIds.length > 0) {
-        await prisma.jobSeeker.deleteMany({
-          where: { id: { in: createdJobSeekerIds } },
-        });
-      }
-      // Reset PricingPolicy so subsequent test suites see the default seeded policy
-      await prisma.pricingPolicy.deleteMany({
-        where: {
-          id: { not: '00000000-0000-0000-0000-000000000001' },
-        },
-      });
-    }
-    if (app) {
-      await app.close();
+    } finally {
+      if (app) await app.close();
     }
   });
 
@@ -200,6 +196,54 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
         referralPayoutPaise: 25000,
       })
       .expect(403);
+  });
+
+  it('allows only the CEO to update legal minimum wage versions', async () => {
+    const wagePayload = {
+      unskilledPaise: 2337600,
+      semiSkilledPaise: 2571400,
+      skilledPaise: 2828600,
+      highlySkilledPaise: 3111400,
+      effectiveFrom: '2026-05-22',
+    };
+
+    await request(app.getHttpServer())
+      .put('/pricing/legal-minimum-wages')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send(wagePayload)
+      .expect(403);
+    await request(app.getHttpServer())
+      .put('/pricing/legal-minimum-wages')
+      .set('Authorization', `Bearer ${caToken}`)
+      .send(wagePayload)
+      .expect(403);
+
+    const response = await request(app.getHttpServer())
+      .put('/pricing/legal-minimum-wages')
+      .set('Authorization', `Bearer ${ceoToken}`)
+      .send(wagePayload)
+      .expect(200);
+    expect(response.body.legalMinimumWageUnskilledPaise).toBe(2337600);
+    expect(response.body.legalMinimumWageSemiSkilledPaise).toBe(2571400);
+    expect(response.body.legalMinimumWageSkilledPaise).toBe(2828600);
+    expect(response.body.legalMinimumWageHighlySkilledPaise).toBe(3111400);
+  });
+
+  it('allows Managers to manage trade catalog entries', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/trades')
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({
+        name: `Manager Managed Trade ${timestamp}`,
+        salaryMinPaise: 1500000,
+        salaryMaxPaise: 2000000,
+        minimumWageLevel: 'unskilled',
+        sortOrder: 100,
+      })
+      .expect(201);
+
+    createdTradeIds.push(response.body.id as string);
+    expect(response.body).toMatchObject({ active: true, salaryMinPaise: 1500000, salaryMaxPaise: 2000000 });
   });
 
   it('allows CEO to update pricing & policy via PUT /pricing, inserting a new version without editing old row', async () => {

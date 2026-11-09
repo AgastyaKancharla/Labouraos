@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Prisma, PricingPolicy } from '@prisma/client';
 import { AuditService } from '../../common/audit/audit.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -79,6 +79,17 @@ export class PricingService {
         walkInEnd: updates.walkInEnd ?? before.walkInEnd,
         matchPageSize: updates.matchPageSize ?? before.matchPageSize,
         salaryDaysPerMonth: updates.salaryDaysPerMonth ?? before.salaryDaysPerMonth,
+        legalMinimumWageUnskilledPaise:
+          updates.legalMinimumWageUnskilledPaise ?? before.legalMinimumWageUnskilledPaise,
+        legalMinimumWageSemiSkilledPaise:
+          updates.legalMinimumWageSemiSkilledPaise ?? before.legalMinimumWageSemiSkilledPaise,
+        legalMinimumWageSkilledPaise:
+          updates.legalMinimumWageSkilledPaise ?? before.legalMinimumWageSkilledPaise,
+        legalMinimumWageHighlySkilledPaise:
+          updates.legalMinimumWageHighlySkilledPaise ?? before.legalMinimumWageHighlySkilledPaise,
+        legalMinimumWageEffectiveFrom: updates.legalMinimumWageEffectiveFrom
+          ? new Date(updates.legalMinimumWageEffectiveFrom)
+          : before.legalMinimumWageEffectiveFrom,
         matchingWeights:
           updates.matchingWeights === null || updates.matchingWeights === undefined
             ? (before.matchingWeights as Prisma.InputJsonValue)
@@ -114,5 +125,34 @@ export class PricingService {
     actorId: string,
   ): Promise<PricingPolicy> {
     return this.createVersion(updates, actorId);
+  }
+
+  async updateMinimumWages(input: {
+    unskilledPaise: number;
+    semiSkilledPaise: number;
+    skilledPaise: number;
+    highlySkilledPaise: number;
+    effectiveFrom: string;
+  }, actorId: string): Promise<PricingPolicy> {
+    const wageValues: Array<[string, number]> = [
+      ['unskilledPaise', input.unskilledPaise],
+      ['semiSkilledPaise', input.semiSkilledPaise],
+      ['skilledPaise', input.skilledPaise],
+      ['highlySkilledPaise', input.highlySkilledPaise],
+    ];
+    for (const [field, value] of wageValues) {
+      if (!Number.isSafeInteger(value) || value <= 0) {
+        throw new BadRequestException(`${field} must be a positive integer number of paise`);
+      }
+    }
+    const effectiveFrom = new Date(input.effectiveFrom);
+    if (Number.isNaN(effectiveFrom.getTime())) throw new BadRequestException('effectiveFrom must be a valid date');
+    return this.createVersion({
+      legalMinimumWageUnskilledPaise: input.unskilledPaise,
+      legalMinimumWageSemiSkilledPaise: input.semiSkilledPaise,
+      legalMinimumWageSkilledPaise: input.skilledPaise,
+      legalMinimumWageHighlySkilledPaise: input.highlySkilledPaise,
+      legalMinimumWageEffectiveFrom: effectiveFrom,
+    }, actorId);
   }
 }

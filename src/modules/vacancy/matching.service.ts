@@ -138,6 +138,21 @@ export class MatchingService {
       throw new ForbiddenException('Candidates are hidden until the business is verified');
     }
 
+    const listedTrade = await this.prisma.trade.findFirst({
+      where: { active: true, nameKey: vacancy.tradeSkill.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN') },
+      select: { id: true },
+    });
+    if (!listedTrade) {
+      return {
+        vacancyId: vacancy.id,
+        page: options.page,
+        pageSize: (await this.pricingService.current()).matchPageSize,
+        total: 0,
+        leftOut: { no_location: 0, no_travel_distance: 0, consent_missing: 0 },
+        matches: [],
+      };
+    }
+
     const policy = await this.pricingService.current();
     const weights = this.readWeights(policy.matchingWeights);
     const now = this.clock.now();

@@ -17,9 +17,10 @@ import { PricingModule } from '../pricing/pricing.module';
 import { CallModule } from '../call/call.module';
 import { BusinessVerificationModule } from '../business/business-verification.module';
 import { PlacementModule } from '../placement/placement.module';
+import { TradeModule } from '../trade/trade.module';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule, PlacementModule],
+  imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule, PlacementModule, TradeModule],
   controllers: [VacancyController, CandidateIntroductionController, InterviewController],
   providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService],
   exports: [VacancyService, CandidateIntroductionService, InterviewService],

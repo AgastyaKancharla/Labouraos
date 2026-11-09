@@ -14,6 +14,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { VACANCY_EXTRAS } from './vacancy.constants';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { normalizeTradeName, TradeService } from '../trade/trade.service';
 
 const IST_OFFSET_MINUTES = 330;
 
@@ -26,6 +27,7 @@ export class VacancyService {
     private readonly pricingService: PricingService,
     private readonly reviewFlagService: ReviewFlagService,
     private readonly editPolicyService: EditPolicyService,
+    private readonly tradeService: TradeService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -60,13 +62,24 @@ export class VacancyService {
 
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
-      data[key] = dto[key];
+      data[key] = key === 'tradeSkill' && typeof dto[key] === 'string'
+        ? normalizeTradeName(dto[key] as string)
+        : dto[key];
     }
 
     const updated = await this.prisma.vacancy.update({
       where: { id: record.id as string },
       data,
     });
+    if (typeof data.tradeSkill === 'string') {
+      await this.prisma.$transaction((tx) => this.tradeService.recordSuggestion(
+        tx,
+        data.tradeSkill as string,
+        editActor.id,
+        'vacancy',
+        updated.id,
+      ));
+    }
 
     await this.editPolicyService.logEdit({
       actorId: editActor.id,
@@ -165,7 +178,7 @@ export class VacancyService {
           city: business.city,
           businessId: business.id,
           capturedByStaffId: staff.id,
-          tradeSkill: dto.tradeSkill.trim(),
+          tradeSkill: normalizeTradeName(dto.tradeSkill),
           salaryMinPaise: dto.salaryMinPaise,
           salaryMaxPaise: dto.salaryMaxPaise ?? null,
           salaryPeriod: dto.salaryPeriod ?? null,
@@ -215,6 +228,7 @@ export class VacancyService {
         toStatus: 'open',
         changedByStaffId: staff.id,
       });
+      await this.tradeService.recordSuggestion(tx, v.tradeSkill, staff.id, 'vacancy', v.id);
 
       return v;
     });

@@ -46,6 +46,7 @@ import { withCurrentJobSeekerFields } from './job-seeker-legacy-read';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { ConsentClock } from '../consent/consent-clock';
+import { normalizeTradeName, TradeService } from '../trade/trade.service';
 import {
   CANDIDATE_PHOTO_LINK_TTL_SECONDS,
   CANDIDATE_PHOTO_STORAGE,
@@ -105,6 +106,7 @@ export class JobSeekerService {
     private readonly upiCollectionService: UpiCollectionService,
     private readonly editPolicyService: EditPolicyService,
     private readonly anonymisationService: AnonymisationService,
+    private readonly tradeService: TradeService,
     @Optional() private readonly consentService?: ConsentService,
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
@@ -171,7 +173,7 @@ export class JobSeekerService {
     if (dob) {
       validateJobSeekerAge(dob, status);
     }
-    const trade = typeof dto.tradeSkill === 'string' ? dto.tradeSkill.trim() : '';
+    const trade = typeof dto.tradeSkill === 'string' ? normalizeTradeName(dto.tradeSkill) : '';
     if (status === 'pending_activation' && !trade) {
       throw new BadRequestException(
         'A primary trade is required before a job seeker can reach pending_activation',
@@ -206,6 +208,7 @@ export class JobSeekerService {
             isPrimary: true,
           },
         });
+        await this.tradeService.recordSuggestion(tx, trade, actorId ?? null, 'job_seeker', created.id);
       }
 
       await recordStatusChange(tx, {
@@ -1073,7 +1076,7 @@ export class JobSeekerService {
       throw new BadRequestException('A job seeker cannot have more than 3 trades');
     }
 
-    const normalizedTrade = dto.trade.trim();
+    const normalizedTrade = normalizeTradeName(dto.trade);
     if (existingTrades.some((t) => t.trade.toLowerCase() === normalizedTrade.toLowerCase())) {
       throw new ConflictException(`Trade '${normalizedTrade}' already exists for this job seeker`);
     }
@@ -1090,13 +1093,17 @@ export class JobSeekerService {
       });
     }
 
-    const created = await this.prisma.jobSeekerTrade.create({
-      data: {
-        jobSeekerId,
-        trade: normalizedTrade,
-        yearsExperience: dto.yearsExperience ?? 0,
-        isPrimary,
-      },
+    const created = await this.prisma.$transaction(async (tx) => {
+      const row = await tx.jobSeekerTrade.create({
+        data: {
+          jobSeekerId,
+          trade: normalizedTrade,
+          yearsExperience: dto.yearsExperience ?? 0,
+          isPrimary,
+        },
+      });
+      await this.tradeService.recordSuggestion(tx, normalizedTrade, actorId ?? null, 'job_seeker', jobSeekerId);
+      return row;
     });
 
     if (actorId && actorId !== 'system') {
@@ -1150,7 +1157,7 @@ export class JobSeekerService {
     const data: Record<string, unknown> = {};
 
     if (dto.trade !== undefined) {
-      const normalized = dto.trade.trim();
+      const normalized = normalizeTradeName(dto.trade);
       if (!normalized) {
         throw new BadRequestException('Trade cannot be empty');
       }
@@ -1188,6 +1195,15 @@ export class JobSeekerService {
       where: { id: tradeId },
       data,
     });
+    if (typeof data.trade === 'string') {
+      await this.prisma.$transaction((tx) => this.tradeService.recordSuggestion(
+        tx,
+        data.trade as string,
+        actorId ?? null,
+        'job_seeker',
+        jobSeekerId,
+      ));
+    }
 
     if (actorId && actorId !== 'system') {
       await this.auditService.log({

@@ -8,6 +8,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
+import { TradeService } from '../trade/trade.service';
 
 describe('Activation charge requires a readable pricing policy', () => {
   it('fails activation when the pricing read fails instead of charging a default', async () => {
@@ -36,6 +37,7 @@ describe('Activation charge requires a readable pricing policy', () => {
       { createRequest } as unknown as UpiCollectionService,
       {} as unknown as EditPolicyService,
       {} as unknown as AnonymisationService,
+      {} as unknown as TradeService,
     );
 
     await expect(service.createActivationPayment('js-1')).rejects.toThrow(
