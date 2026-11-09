@@ -33,6 +33,14 @@ export class OtpService {
     private readonly prisma: PrismaService,
   ) {}
 
+  async sendOtp(phone: string): Promise<OtpSendResult>;
+  async sendOtp(
+    phone: string,
+    purpose: OtpPurpose,
+    actorId: string,
+    actorRole: string,
+    requestId?: string,
+  ): Promise<OtpSendResult | { alreadyRegistered: true; type?: string; code?: string }>;
   async sendOtp(
     phone: string,
     purpose: OtpPurpose = 'job_seeker',
@@ -46,15 +54,16 @@ export class OtpService {
     }
 
     const last4 = phoneDigits(phone).slice(-4);
-    if (!requestId && purpose !== 'vacancy_confirm') {
+    const staffId = actorId;
+    if (staffId && !requestId && purpose !== 'vacancy_confirm') {
       const duplicate = await this.findDuplicate(phone);
       if (duplicate) {
-        const visible = await this.canSeeRecord(duplicate, actorId, actorRole);
+        const visible = await this.canSeeRecord(duplicate, staffId, actorRole);
         const response = visible
           ? { alreadyRegistered: true as const, type: duplicate.type, code: duplicate.code }
           : { alreadyRegistered: true as const };
-        if (actorId) await this.auditService.log({
-          actorId,
+        await this.auditService.log({
+          actorId: staffId,
           action: 'otp.send_attempt',
           entityType: 'otp_request',
           entityCode: duplicate.code,
