@@ -79,7 +79,7 @@ describe('Phase 18 Task 3: removed payout routes return 404 and preserve histori
     await app.close();
   });
 
-  const makePayout = async (over: { status?: string; payoutAttempts?: number; gatewayReference?: string } = {}) => {
+  const makePayout = async (over: { status?: string; gatewayReference?: string } = {}) => {
     seq += 1;
     const referral = await prisma.referral.create({
       data: {
@@ -98,7 +98,6 @@ describe('Phase 18 Task 3: removed payout routes return 404 and preserve histori
         type: 'referral_payout',
         amount: 20000,
         status: over.status ?? 'failed',
-        payoutAttempts: over.payoutAttempts ?? 1,
         gatewayReference: over.gatewayReference ?? `gw_rr_${timestamp}_${seq}`,
         subjectType: 'referral',
         subjectId: referral.id,

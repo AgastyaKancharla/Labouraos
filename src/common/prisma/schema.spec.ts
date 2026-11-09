@@ -66,15 +66,12 @@ describe('Data Model Relationships', () => {
         name: 'Candidate Worker',
         phone: `+9199${String(timestamp).slice(-8)}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
         minSalary: 1800000, // paise
         maxSalary: 2500000, // paise
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         status: 'active',
         hitCount: 0,
-        kycStatus: 'verified',
-        kycReference: `KYC-REF-${timestamp}`,
         referredById: referral.id,
         registeredByStaffId: agent.id,
         paymentReceivedAt: paymentDate,
@@ -100,9 +97,8 @@ describe('Data Model Relationships', () => {
       data: {
         code: `BZ-${timestamp}`,
         name: 'TechPark Facilities',
-        contactName: 'Operations Head',
         phone: `+9180${String(timestamp).slice(-8)}`,
-        area: 'Koramangala',
+        locality: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -140,7 +136,6 @@ describe('Data Model Relationships', () => {
         gstAmount: 198000, // 18% of 1100000
         joinedDate: new Date(),
         status: 'active',
-        replacementRejectionCount: 0,
         city: 'Bengaluru',
       },
       include: {

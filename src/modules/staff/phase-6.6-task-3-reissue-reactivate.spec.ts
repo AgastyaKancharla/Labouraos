@@ -39,7 +39,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
   async function mkStaff(
     role: string,
-    extra: Partial<{ area: string; teamLeadId: string; status: string; totpEnabled: boolean; totpSecret: string | null }> = {},
+    extra: Partial<{ teamLeadId: string; status: string; totpEnabled: boolean; totpSecret: string | null }> = {},
   ): Promise<Actor> {
     const email = `p66_t3_${role}_${ts}_${cleanStaffIds.length}@laboura.local`;
     const staff = await prisma.staff.create({
@@ -70,7 +70,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
     manager = await mkStaff('manager');
     teamLead = await mkStaff('team_lead');
     callAgent = await mkStaff('call_agent');
-    fieldAgent = await mkStaff('field_agent', { area: `Area-T3-${ts}` });
+    fieldAgent = await mkStaff('field_agent');
     finance = await mkStaff('finance');
 
     const server = app.getHttpServer();
@@ -151,7 +151,6 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       expect(rowAfter.status).toBe('pending_invite');
       expect(rowAfter.totpEnabled).toBe(false);
       expect(rowAfter.totpSecret).toBeNull();
-      expect(rowAfter.registeredDeviceId).toBeNull();
       expect(rowAfter.passwordHash).not.toBe(rowBefore.passwordHash);
 
       // 4. Verify old password fails at login (401 Unauthorized)

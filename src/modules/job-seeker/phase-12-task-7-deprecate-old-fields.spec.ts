@@ -67,9 +67,6 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
         code: `JS-T7-${suffix}`,
         name: 'Legacy Field Candidate',
         phone: `+919${suffix.padEnd(10, '0').slice(0, 10)}`,
-        tradeSkill: 'Legacy Electrician',
-        kycStatus: 'verified',
-        kycReference: `legacy-ref-${suffix}`,
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
@@ -81,7 +78,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     return seeker;
   }
 
-  it('uses legacy trade and identity values only when the replacement tables have no rows', async () => {
+  it('returns pending identity status when no IdentityVerification exists', async () => {
     const seeker = await createLegacySeeker();
 
     const res = await request(app.getHttpServer())
@@ -89,9 +86,9 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
       .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
 
-    expect(res.body.tradeSkill).toBe('Legacy Electrician');
-    expect(res.body.kycStatus).toBe('verified');
-    expect(res.body.kycReference).toBe(`legacy-ref-${seeker.code.slice('JS-T7-'.length)}`);
+    expect(res.body.tradeSkill).toBeNull();
+    expect(res.body.kycStatus).toBe('pending');
+    expect(res.body.kycReference).toBeNull();
   });
 
   it('prefers JobSeekerTrade and the latest IdentityVerification over deprecated values', async () => {
@@ -142,8 +139,6 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     createdSeekerIds.push(noTrade.body.id);
     expect(noTrade.body.status).toBe('lead');
     expect(noTrade.body.tradeSkill).toBeNull();
-    const noTradeRecord = await prisma.jobSeeker.findUnique({ where: { id: noTrade.body.id } });
-    expect(noTradeRecord?.tradeSkill).toBeNull();
     expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: noTrade.body.id } })).toBe(0);
 
     const tradePhone = `+919${randomUUID().replace(/\D/g, '').slice(0, 10)}`;
@@ -168,10 +163,6 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     expect(await prisma.jobSeekerTrade.findFirst({
       where: { jobSeekerId: withTrade.body.id, trade: 'Painter', isPrimary: true },
     })).not.toBeNull();
-    const withTradeRecord = await prisma.jobSeeker.findUnique({ where: { id: withTrade.body.id } });
-    expect(withTradeRecord?.tradeSkill).toBeNull();
-    expect(withTradeRecord?.kycStatus).toBe('pending');
-    expect(withTradeRecord?.kycReference).toBeNull();
   });
 
   it('refuses pending_activation without a primary JobSeekerTrade row', async () => {

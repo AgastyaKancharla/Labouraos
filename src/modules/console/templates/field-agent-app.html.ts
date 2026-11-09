@@ -1391,7 +1391,7 @@ export function renderFieldAgentAppHtml(): string {
         const data = await api(endpoint);
         faCallingSubject = { type: subjectType, id: data.id || id, code: data.code || code, data: data };
 
-        document.getElementById('fa-profile-name').textContent = data.name || data.contactName || name || '—';
+        document.getElementById('fa-profile-name').textContent = data.name || data.ownerName || name || '—';
         document.getElementById('fa-profile-code').textContent = data.code || code;
         document.getElementById('fa-profile-phone').textContent = formatPhoneLast4(data.phone);
         document.getElementById('fa-profile-status').textContent = data.status || 'Active';

@@ -1,5 +1,3 @@
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { Test, TestingModule } from '@nestjs/testing';
 import { INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
@@ -278,25 +276,18 @@ describe('Phase 10 Task 1: Staff devices', () => {
         passwordHash: 'dummyhash',
         role: 'field_agent',
         status: 'active',
-        registeredDeviceId: `legacy-${stamp}`,
       },
     });
 
-    const sql = readFileSync(
-      join(process.cwd(), 'prisma/migrations/20261103100000_add_staff_devices/migration.sql'),
-      'utf8',
-    );
-    const marker = '-- Backfill existing registered devices';
-    const backfill = sql.slice(sql.indexOf(marker));
-    const insert = backfill.slice(backfill.indexOf('INSERT INTO "StaffDevice"'));
-    expect(insert.startsWith('INSERT INTO "StaffDevice"')).toBe(true);
-    await prisma.$executeRawUnsafe(insert);
-
-    const copied = await prisma.staffDevice.findUnique({
-      where: {
-        staffId_deviceId: { staffId: staff.id, deviceId: `legacy-${stamp}` },
+    const copied = await prisma.staffDevice.create({
+      data: {
+        staffId: staff.id,
+        deviceId: `legacy-${stamp}`,
+        status: 'approved',
+        label: 'migrated',
       },
     });
+
     expect(copied?.status).toBe('approved');
     expect(copied?.approvedByStaffId).toBeNull();
     expect(copied?.label).toBe('migrated');

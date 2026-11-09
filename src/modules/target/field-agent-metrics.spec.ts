@@ -315,8 +315,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
           id: 'pl-orig-1',
           code: 'PL-ORIG-01',
           dropoutReportedAt,
-          clockPaused: false,
-          clockPausedAt: null,
           createdByStaffId: mockAgentId,
           joinedDate, // candidate joins later on day 18
         },
@@ -353,8 +351,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
           id: 'pl-orig-boundary',
           code: 'PL-ORIG-15',
           dropoutReportedAt,
-          clockPaused: false,
-          clockPausedAt: null,
           createdByStaffId: mockAgentId,
         },
       };
@@ -388,8 +384,6 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
           id: 'pl-orig-late',
           code: 'PL-ORIG-16',
           dropoutReportedAt,
-          clockPaused: false,
-          clockPausedAt: null,
           createdByStaffId: mockAgentId,
         },
       };
@@ -409,31 +403,26 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
       expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual([]);
     });
 
-    it('extends the search window when clock is paused on 3rd rejection', async () => {
+    it('counts replacement accepted on day 10 within the 15-day window', async () => {
       const dropoutReportedAt = new Date('2026-11-01T10:00:00.000Z');
-      const clockPausedAt = new Date('2026-11-11T10:00:00.000Z'); // paused on day 10
-      const acceptedAt = new Date('2026-11-25T10:00:00.000Z'); // accepted on day 24 chronologically
+      const acceptedAt = new Date('2026-11-11T10:00:00.000Z'); // day 10 <= 15 days
 
-      // Because clock was paused on day 10, calculateDaysElapsed calculates elapsed days against clockPausedAt,
-      // yielding 10 days (<= 15 days), so this save COUNTS!
-      const pausedReplacement = {
-        id: 'rc-sec-paused',
-        placementId: 'pl-orig-paused',
-        jobSeekerId: 'js-rep-paused',
+      const validReplacement = {
+        id: 'rc-sec-valid',
+        placementId: 'pl-orig-valid',
+        jobSeekerId: 'js-rep-valid',
         status: 'accepted',
         acceptedAt,
         placement: {
-          id: 'pl-orig-paused',
-          code: 'PL-ORIG-PAUSED',
+          id: 'pl-orig-valid',
+          code: 'PL-ORIG-VALID',
           dropoutReportedAt,
-          clockPaused: true,
-          clockPausedAt,
           createdByStaffId: mockAgentId,
         },
       };
 
       prismaMock.placement.findMany.mockResolvedValueOnce([]);
-      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([pausedReplacement]);
+      prismaMock.replacementCandidate.findMany.mockResolvedValueOnce([validReplacement]);
 
       const result = await service.getFieldAgentMetrics(
         mockAgentId,
@@ -444,7 +433,7 @@ describe('Phase 6.7 Task 4: Field Agent Metrics', () => {
       );
 
       expect(result.metrics.replacementsSecuredInside15Days).toBe(1);
-      expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual(['PL-ORIG-PAUSED']);
+      expect(result.details.replacementsSecuredInside15Days.placementCodes).toEqual(['PL-ORIG-VALID']);
     });
 
     it('excludes rows with null acceptedAt (honest-null rule)', async () => {

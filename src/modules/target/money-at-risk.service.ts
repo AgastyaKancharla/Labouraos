@@ -180,7 +180,6 @@ export class MoneyAtRiskService {
         city: true,
         name: true,
         phone: true,
-        tradeSkill: true,
         trades: { select: { trade: true, isPrimary: true } },
         paymentReceivedAt: true,
         status: true,

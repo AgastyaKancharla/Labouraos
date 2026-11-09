@@ -48,7 +48,6 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         email: `fa_kora_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -61,7 +60,6 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         email: `fa_indi_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -151,7 +149,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .send({
         name: 'No OTP Cafe',
         phone,
-        area: 'Koramangala',
+        locality: 'Koramangala',
       });
     expect(resNoOtp.status).toBe(400);
 
@@ -162,7 +160,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Unverified Cafe',
         phone,
         otpRequestId: 'random_unverified_request_id',
-        area: 'Koramangala',
+        locality: 'Koramangala',
       });
     expect(resUnverifiedOtp.status).toBe(400);
   });
@@ -188,12 +186,10 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(res.body.id).toBeDefined();
     expect(res.body.code).toMatch(/^BZ-\d{5}$/);
     expect(res.body.name).toBe('Koramangala Bakers');
-    expect(res.body.area).toBeNull();
     expect(res.body.locality).toBe('Koramangala');
     expect(res.body.phone).toBe(maskPhoneLast4(phone));
     const storedBusiness = await prisma.business.findUnique({ where: { id: res.body.id } });
     expect(storedBusiness?.phone).toBe(phone);
-    expect(res.body.contactName).toBeNull();
     expect(res.body.additionalContactName).toBe('Ramesh Patel');
     expect(res.body.gstNumber).toBe('29ABCDE1234F1Z5');
     expect(res.body.phoneVerified).toBe(true);

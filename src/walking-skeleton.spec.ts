@@ -33,7 +33,6 @@ describe('End-to-End Walking Skeleton', () => {
         email: agentEmail,
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });

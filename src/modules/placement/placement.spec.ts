@@ -758,7 +758,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           placementFee: 1000000,
           gstAmount: 180000,
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
         },
       });
@@ -870,7 +869,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           placementFee: 1000000,
           gstAmount: 180000,
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
           replacementCandidates: {
             create: {
@@ -918,7 +916,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           placementFee,
           gstAmount: 216000,
           status: 'dropped_out',
-          eligibility: 'employee_left',
           dropoutReportedAt: startDate,
         },
       });
@@ -1020,7 +1017,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             placementFee,
             gstAmount: 180000,
             status: 'dropped_out',
-            eligibility: 'employee_left',
             dropoutReportedAt: new Date('2026-10-01T00:00:00.000Z'),
           },
         });

@@ -104,7 +104,7 @@ describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
     expect(html).toContain('payments');
     expect(html).toContain('refunds');
     expect(html).toContain('pricing');
-    expect(html).toContain('j.identityVerifications?.[0]?.status ?? j.kycStatus');
+    expect(html).toContain("j.identityVerifications?.[0]?.status ?? 'pending'");
     expect(html).toContain('business-introduction-panel');
     expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(currentUser?.role)");
     expect(html).toContain('/introductions');

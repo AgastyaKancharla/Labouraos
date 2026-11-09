@@ -484,8 +484,6 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
           placementFee: 1000000,
           hasExistingRefund: false,
           searchDays: 15,
-          clockPaused: true,
-          clockPausedAt: new Date('2026-10-22T10:00:00.000Z'),
         },
         day16,
       );

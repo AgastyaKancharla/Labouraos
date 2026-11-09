@@ -73,14 +73,11 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({
       businessType: 'retail', documentsStatus: 'documented', verificationStatus: 'lead',
-      locality: 'Basavanagudi', area: null, contactName: null, selfieUrl: null, selfieHash: null,
+      locality: 'Basavanagudi',
       additionalContactName: 'Account contact', ownerName: 'Business Owner',
     });
     const stored = await prisma.business.findUniqueOrThrow({ where: { id: response.body.id } });
-    expect(stored.area).toBeNull();
-    expect(stored.contactName).toBeNull();
-    expect(stored.selfieUrl).toBeNull();
-    expect(stored.selfieHash).toBeNull();
+    expect(stored.locality).toBe('Basavanagudi');
     const audit = await prisma.auditLog.findFirstOrThrow({
       where: { entityCode: response.body.code, action: 'business.created' },
     });
@@ -92,7 +89,7 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
       name: 'Household Employer', businessType: 'household', locality: 'Jayanagar',
     });
     expect(response.status).toBe(201);
-    expect(response.body).toMatchObject({ businessType: 'household', documentsStatus: 'no_documents', area: null });
+    expect(response.body).toMatchObject({ businessType: 'household', documentsStatus: 'no_documents' });
     expect(response.body.gstNumber).toBeNull();
     expect(response.body.licenceNumber).toBeNull();
     expect(response.body.udyamNumber).toBeNull();

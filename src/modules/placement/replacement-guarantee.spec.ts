@@ -19,12 +19,9 @@ interface MockPlacementRecord {
   joinedDate: Date | null;
   rootPlacementId: string | null;
   paidAt: Date | null;
-  clockPaused: boolean;
-  clockPausedAt: Date | null;
   dropoutReportedAt: Date | null;
-  eligibility: string | null;
   businessId: string;
-  business: { id: string; area: string; accountAgentId?: string };
+  business: { id: string; locality?: string; accountAgentId?: string };
   jobSeeker: { id: string };
   vacancy: { id: string };
   payments: Array<{ type: string; status: string }>;
@@ -33,7 +30,6 @@ interface MockPlacementRecord {
 const staffActor = {
   id: 'staff-1',
   role: 'call_agent',
-  area: 'Indiranagar',
   teamLeadId: 'tl-1',
 };
 
@@ -82,12 +78,9 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
       joinedDate: new Date(joinedDate),
       rootPlacementId: null,
       paidAt: new Date(joinedDate),
-      clockPaused: false,
-      clockPausedAt: null,
       dropoutReportedAt: null,
-      eligibility: null,
       businessId: 'biz-1',
-      business: { id: 'biz-1', area: 'Indiranagar', accountAgentId: 'fa-1' },
+      business: { id: 'biz-1', locality: 'Indiranagar', accountAgentId: 'fa-1' },
       jobSeeker: { id: 'js-1' },
       vacancy: { id: 'vac-1' },
       payments: [{ type: 'placement_fee', status: 'succeeded' }],
@@ -258,11 +251,7 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
   });
 
   describe('3. Clock Pause Invariance', () => {
-    it('proves a paused clock does not extend the 60-day guarantee window', async () => {
-      // Even if clockPaused existed on placement, every window is strictly counted from root joinedDate
-      mockPlacement.clockPaused = true;
-      mockPlacement.clockPausedAt = new Date(joinedDate.getTime() + 20 * 24 * 60 * 60 * 1000);
-
+    it('proves guarantee window is strictly counted from root joinedDate', async () => {
       const day61 = new Date(joinedDate.getTime() + 61 * 24 * 60 * 60 * 1000);
       const reportDate = new Date(day61.getTime() + 1 * 24 * 60 * 60 * 1000);
 

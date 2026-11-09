@@ -194,7 +194,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(res.body.code).toMatch(/^VC-\d{5}$/);
     expect(res.body.tradeSkill).toBe('Electrician');
     expect(res.body.salaryMinPaise).toBe(2200000);
-    expect(res.body.offeredSalary).toBeNull();
     expect(res.body.headcount).toBe(3);
     expect(res.body.status).toBe('open');
     expect(res.body.businessId).toBe(koramangalaBusinessId);
@@ -253,7 +252,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
 
       expect(created.body.tradeSkill).toBe('Electrician');
       expect(created.body.salaryMinPaise).toBe(2200000);
-      expect(created.body.offeredSalary).toBeNull();
       expect(created.body.interviewSlots).toHaveLength(1);
       expect(created.body.interviewSlots[0].startsAt).toBe(
         new Date('2026-12-05T11:15:00+05:30').toISOString(),

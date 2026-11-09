@@ -59,7 +59,6 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
         email: `ca_t8_${timestamp}@laboura.local`,
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -72,7 +71,6 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
         email: `fa_t8_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -122,19 +120,25 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
         name: 'Ramesh Seeker',
         phone: testPhone,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
         minSalary: 1800000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         status: 'active',
-        kycStatus: 'verified',
-        kycReference: testKycRef,
         paymentReceivedAt: new Date(),
         city: 'Bengaluru',
       },
     });
     testJobSeekerId = jobSeeker.id;
+    await prisma.identityVerification.create({
+      data: {
+        jobSeekerId: jobSeeker.id,
+        method: 'digilocker',
+        vendor: 'digilocker',
+        vendorReference: testKycRef,
+        status: 'verified',
+      },
+    });
   });
 
   afterAll(async () => {

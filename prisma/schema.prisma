@@ -14,18 +14,12 @@ model JobSeeker {
   name                      String
   phone                     String      @unique
   phoneVerified             Boolean     @default(false)
-  /// @deprecated moves to JobSeekerTrade
-  tradeSkill                String?
   minSalary                 Int         // paise
   maxSalary                 Int         // paise
   preferredCallWindowStart  String      // "09:00" IST
   preferredCallWindowEnd    String      // "21:00" IST
   status                    String      @default("lead") // lead, consented, pending_activation, active, paused, deactivated, placed
   hitCount                  Int         @default(0)
-  /// @deprecated moves to IdentityVerification
-  kycStatus                 String      @default("pending") // pending, verified, failed
-  /// @deprecated vendor reference ID only. NEVER raw national ID numbers.
-  kycReference              String?
   referredById              String?
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
   registeredByStaffId       String?
@@ -42,7 +36,6 @@ model JobSeeker {
   identityVerifications     IdentityVerification[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
-  erasedAt                  DateTime?
   anonymisedAt              DateTime?
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
@@ -83,7 +76,6 @@ model JobSeeker {
   pausedAt                  DateTime?
 
   @@index([city])
-  @@index([tradeSkill])
   @@index([status])
   @@index([status, paymentReceivedAt])
   @@index([registeredByStaffId])
@@ -161,20 +153,12 @@ model Business {
   city          String          @default("Bengaluru")
   name          String
   address       String?
-  /// @deprecated replaced by additionalContactName
-  contactName   String?
   phone         String          @unique
   phoneVerified Boolean         @default(false)
-  /// @deprecated replaced by locality; removed in the final clean-up migration
-  area          String?
   gstNumber     String?
   latitude      Float?
   longitude     Float?
   geofenceFlag  Boolean         @default(false)
-  /// @deprecated moved to BusinessVisit
-  selfieUrl     String?
-  /// @deprecated moved to BusinessVisit
-  selfieHash    String?
   legalName                String?
   ownerName                String?
   additionalContactName    String?
@@ -216,12 +200,11 @@ model Business {
   candidateIntroductionLinks CandidateIntroductionLink[]
   interviews                Interview[]
   followUpAnswerBusinesses  FollowUpTask[] @relation("FollowUpAnswerBusiness")
-  erasedAt      DateTime?
   anonymisedAt  DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 
-  @@index([city, area])
+  @@index([city])
   @@index([accountAgentId])
   @@index([verificationStatus])
 }
@@ -237,8 +220,6 @@ model Vacancy {
   replacementForPlacementId   String?     // null for fresh vacancies; links to dropped-out placement if replacement
   replacementForPlacement     Placement?  @relation("ReplacementPlacementVacancies", fields: [replacementForPlacementId], references: [id], onDelete: SetNull)
   tradeSkill                  String
-  /// @deprecated copied to salaryMinPaise in Phase 13
-  offeredSalary               Int?
   headcount                   Int         @default(1)
   description                 String?
   status                      String      @default("open") // open, filled, cancelled
@@ -380,14 +361,7 @@ model Placement {
   joinedDate                 DateTime?
   dropoutReportedAt          DateTime?
   dropoutDateCallerSupplied  Boolean     @default(false)
-  eligibility                String?     // employee_left, business_breach
-  /// @deprecated Phase 17 replacement rules no longer use pause state.
-  clockPaused                Boolean     @default(false)
-  /// @deprecated Phase 17 replacement rules no longer use pause state.
-  clockPausedAt              DateTime?
   status                     String      @default("awaiting_payment") // awaiting_payment, cancelled, confirmed, active, dropped_out, replaced, completed, guarantee_ended; legacy statuses remain readable
-  /// @deprecated Phase 17 replacement rules no longer use rejection counters.
-  replacementRejectionCount  Int         @default(0)
   replacementVacancies       Vacancy[]   @relation("ReplacementPlacementVacancies")
   replacementCandidates      ReplacementCandidate[]
   replacementClaims          ReplacementClaim[]
@@ -400,7 +374,6 @@ model Placement {
   @@index([jobSeekerId])
   @@index([businessId])
   @@index([status])
-  @@index([status, eligibility])
   @@index([createdByStaffId])
   @@index([joiningWorkerCallId])
   @@index([joiningBusinessCallId])
@@ -474,8 +447,6 @@ model Staff {
   teamLeadId        String?
   teamLead          Staff?           @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
   teamMembers       Staff[]          @relation("TeamHierarchy")
-  /// @deprecated Replaced by account-agent assignment; no application code reads it.
-  area              String?
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?
   worksFromOffice   Boolean          @default(false)
@@ -520,8 +491,6 @@ model Staff {
   assignedFollowUpTasks FollowUpTask[]
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
-  /// deprecated — replaced by StaffDevice. Not removed until login stops reading it.
-  registeredDeviceId String?
   status            String           @default("active") // pending_invite, active, deactivated
   inviteTokenHash   String?          @unique // SHA-256 of the one-time invite token; the raw token is never stored
   inviteExpiresAt   DateTime?
@@ -570,9 +539,6 @@ model Payment {
   placement         Placement?  @relation(fields: [placementId], references: [id], onDelete: SetNull)
   bankCredit        BankCredit?
   reactivation      Boolean     @default(false)
-  // How many times a payout has been sent to the gateway. Each attempt after the
-  // first gets its own idempotency key; attempt 1 uses the payment id alone.
-  payoutAttempts    Int         @default(0)
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 

@@ -173,7 +173,6 @@ export class RetentionService {
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         anonymisedAt: null,
-        erasedAt: null,
       },
       select: {
         id: true,
@@ -214,7 +213,6 @@ export class RetentionService {
     const businesses = await this.prisma.business.findMany({
       where: {
         anonymisedAt: null,
-        erasedAt: null,
       },
       select: {
         id: true,

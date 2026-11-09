@@ -50,7 +50,6 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
         email: `fa_afkora_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -62,7 +61,6 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
         email: `fa_afindi_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -111,7 +109,6 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .expect(201);
 
     expect(res.body.geofenceFlag).toBe(false);
-    expect(res.body.selfieHash).toBeNull();
 
     // Verify BusinessVisit was persisted
     const visits = await prisma.businessVisit.findMany({

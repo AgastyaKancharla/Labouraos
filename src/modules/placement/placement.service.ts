@@ -38,11 +38,18 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 
 export function calculateDaysElapsed(
   startDate: Date,
-  isPaused: boolean,
+  asOfOrIsPaused?: boolean | Date,
   pausedAt?: Date | null,
   asOf: Date = new Date(),
 ): number {
-  const effectiveEnd = isPaused && pausedAt ? pausedAt : asOf;
+  let effectiveEnd: Date;
+  if (typeof asOfOrIsPaused === 'boolean') {
+    effectiveEnd = asOfOrIsPaused && pausedAt ? pausedAt : asOf;
+  } else if (asOfOrIsPaused instanceof Date) {
+    effectiveEnd = asOfOrIsPaused;
+  } else {
+    effectiveEnd = asOf;
+  }
   const diffMs = Math.max(0, effectiveEnd.getTime() - startDate.getTime());
   return Math.floor(diffMs / (1000 * 60 * 60 * 24));
 }
@@ -1149,7 +1156,6 @@ export class PlacementService {
               salaryMinPaise: origVacancy.salaryMinPaise,
               salaryMaxPaise: origVacancy.salaryMaxPaise,
               salaryPeriod: origVacancy.salaryPeriod,
-              offeredSalary: origVacancy.offeredSalary,
               headcount: 1,
               description: origVacancy.description,
               locality: origVacancy.locality,
@@ -1744,7 +1750,7 @@ export class PlacementService {
       businessId: placement.business.id,
       businessCode: placement.business.code,
       businessName: placement.business.name,
-      contactName: placement.business.contactName ?? null,
+      contactName: placement.business.ownerName || placement.business.additionalContactName || null,
       contactPhone: placement.business.phone,
       gstin: placement.business.gstNumber ?? null,
       address: placement.business.address,

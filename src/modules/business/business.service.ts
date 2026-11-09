@@ -174,13 +174,10 @@ export class BusinessService {
     const selfieUrl = dto.visit?.selfieUrl?.trim() || dto.selfieUrl?.trim() || null;
 
     if (selfieHash) {
-      const duplicateInBusiness = await this.prisma.business.findFirst({
-        where: { selfieHash },
-      });
       const duplicateInVisit = await this.prisma.businessVisit.findFirst({
         where: { selfieHash },
       });
-      if (duplicateInBusiness || duplicateInVisit) {
+      if (duplicateInVisit) {
         throw new BadRequestException(
           'Duplicate selfie detected: image hash already used for another business record',
         );
@@ -583,19 +580,13 @@ export class BusinessService {
     }
 
     if (selfieHash) {
-      const duplicateInBusiness = await this.prisma.business.findFirst({
-        where: {
-          selfieHash,
-          id: { not: business.id },
-        },
-      });
       const duplicateInVisit = await this.prisma.businessVisit.findFirst({
         where: {
           selfieHash,
           businessId: { not: business.id },
         },
       });
-      if (duplicateInBusiness || duplicateInVisit) {
+      if (duplicateInVisit) {
         throw new BadRequestException(
           'Duplicate selfie detected: image hash already used for another business record',
         );
@@ -712,7 +703,6 @@ export class BusinessService {
         message: 'Business already erased',
         id: res.id,
         code: res.code,
-        erasedAt: res.anonymisedAt,
         anonymisedAt: res.anonymisedAt,
       };
     }

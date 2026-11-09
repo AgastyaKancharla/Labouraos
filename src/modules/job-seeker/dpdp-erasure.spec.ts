@@ -124,14 +124,11 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
         name: 'Ravi Shankar',
         phone: `94${String(timestamp).slice(-8)}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
         minSalary: 1800000,
         maxSalary: 2400000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         city: 'Bengaluru',
-        kycStatus: 'verified',
-        kycReference: 'OVSE_VENDOR_REF_12345',
         status: 'active',
         paymentReceivedAt: new Date(),
       },
@@ -162,13 +159,10 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
         name: 'Prime Retail Outlets Pvt Ltd',
         phone: `95${String(timestamp).slice(-8)}`,
         phoneVerified: true,
-        contactName: 'Mohan Das',
         address: '55 Brigade Road, Central Bengaluru',
-        area,
+        locality: area,
         city: 'Bengaluru',
         gstNumber: '29ABCDE5678F1Z9',
-        selfieUrl: 'https://storage.laboura.local/selfies/mohan.jpg',
-        selfieHash: 'hash_mohan_123',
       },
     });
     testBusinessId = bz.id;
@@ -295,10 +289,9 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     expect(updated).toBeDefined();
     expect(['Anonymised', 'ANONYMIZED_CANDIDATE']).toContain(updated?.name);
     expect(updated?.phone).toMatch(/^(ERASED|ANON|\+91000)/);
-    expect(updated?.anonymisedAt ?? updated?.erasedAt).toBeDefined();
+    expect(updated?.anonymisedAt).toBeDefined();
 
     // Verify non-identifying fields and relations are preserved
-    expect(updated?.tradeSkill).toBe('Electrician');
     expect(updated?.minSalary).toBe(1800000);
     expect(updated?.maxSalary).toBe(2400000);
     expect(updated?.city).toBe('Bengaluru');
@@ -322,7 +315,7 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     });
     expect(audit).toBeDefined();
     expect(audit?.reason).toBe('DPDP erasure request');
-    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'erasedAt']));
+    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'anonymisedAt']));
     expect((audit?.before as Record<string, unknown>)?.name).toBeUndefined();
     expect((audit?.after as Record<string, unknown>)?.name).toBeUndefined();
 
@@ -376,12 +369,10 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     expect(updated).toBeDefined();
     expect(updated?.phone).toMatch(/^(ERASED|ANON|\+91000)/);
     expect(updated?.gstNumber).toBeNull();
-    expect(updated?.selfieUrl).toBeNull();
-    expect(updated?.selfieHash).toBeNull();
-    expect(updated?.anonymisedAt ?? updated?.erasedAt).toBeDefined();
+    expect(updated?.anonymisedAt).toBeDefined();
 
-    // Area and city are preserved for analytics
-    expect(updated?.area).toBe(area);
+    // Locality and city are preserved for analytics
+    expect(updated?.locality).toBe(area);
     expect(updated?.city).toBe('Bengaluru');
 
     // Vacancies and placements tied to business stay intact
@@ -409,7 +400,7 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
     });
     expect(audit).toBeDefined();
     expect(audit?.reason).toBe('DPDP erasure request');
-    expect(audit?.changedFields).toEqual(expect.arrayContaining(['name', 'phone', 'contactName', 'address']));
+    expect(audit?.changedFields).toEqual(expect.arrayContaining(['phone', 'anonymisedAt', 'address']));
     expect((audit?.before as Record<string, unknown>)?.name).toBeUndefined();
     expect((audit?.after as Record<string, unknown>)?.name).toBeUndefined();
 

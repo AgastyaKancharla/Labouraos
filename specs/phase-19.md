@@ -52,7 +52,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Refused** (with the reason) while the subject has an open replacement claim, an open `bypass_suspected` flag, or money owed to or by them that is not yet paid (`pending` or `approved`).
 - Tests: anonymising a job seeker removes every listed field and deletes the photo and CV files; their placements and payments still add up in reports; running it twice changes nothing; a subject with an open claim or unpaid refund is refused; the `erase` endpoints now call this service.
 
-### [ ] Task 3 — The daily keeping-data job
+### [x] Task 3 — The daily keeping-data job
 **Branch:** `phase-19/task-3-retention-job` · **No migration**
 
 **Acceptance:**
