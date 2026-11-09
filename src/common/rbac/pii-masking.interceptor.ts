@@ -59,7 +59,7 @@ export function maskPii<T>(data: T, seen = new WeakSet<object>()): T {
         continue;
       }
       if (PII_KEYS.has(key) && value !== null && value !== undefined) {
-        masked[key] = '********';
+        masked[key] = value === '[changed]' ? value : '********';
       } else if (typeof value === 'object' && value !== null) {
         masked[key] = maskPii(value, seen);
       } else {
@@ -99,7 +99,7 @@ export function maskAgentPhones<T>(data: T, seen = new WeakSet<object>()): T {
         continue;
       }
       if (isAgentPhoneKey(key) && value !== null && value !== undefined) {
-        masked[key] = maskPhoneLast4(value);
+        masked[key] = value === '[changed]' ? value : maskPhoneLast4(value);
       } else if (typeof value === 'object' && value !== null) {
         masked[key] = maskAgentPhones(value, seen);
       } else {
