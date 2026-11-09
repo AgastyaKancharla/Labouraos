@@ -14,6 +14,8 @@ import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
 import { PatternFlagsJob } from './pattern-flags.job';
 import { JoiningRewardJob } from './joining-reward.job';
+import { RetentionCleanupJob } from './retention-cleanup.job';
+import { RetentionService } from '../modules/retention/retention.service';
 import { AuditService } from '../common/audit/audit.service';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
@@ -119,6 +121,19 @@ describe('Phase 6.5 Task 2: Manual Trigger Endpoint for No-Pickup Evaluation Swe
           { provide: FollowUpJob, useValue: { process: jest.fn().mockResolvedValue({ created: 0, missed: 0 }) } },
           { provide: PatternFlagsJob, useValue: { process: jest.fn().mockResolvedValue({ businessManyRejections: 0, businessStopped: 0, agentRejection: 0 }) } },
           { provide: JoiningRewardJob, useValue: { process: jest.fn().mockResolvedValue({ queued: 0 }) } },
+          {
+            provide: RetentionCleanupJob,
+            useValue: {
+              process: jest.fn().mockResolvedValue({
+                dryRun: false,
+                profilesAnonymised: { total: 0 },
+                recordingsDeleted: 0,
+                accessLogsDeleted: { total: 0 },
+                moneyRecordsDeleted: { total: 0 },
+              }),
+            },
+          },
+          { provide: RetentionService, useValue: { getLatestSummary: jest.fn().mockResolvedValue(null) } },
           { provide: AuditService, useValue: mockAuditService },
           { provide: PrismaService, useValue: mockPrisma },
           { provide: PricingService, useValue: { current: jest.fn() } },

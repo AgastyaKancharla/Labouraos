@@ -8,10 +8,10 @@ import { CallClock } from './call-clock';
 import { RecordingCopyJob } from './recording-copy.job';
 import {
   HttpRecordingDownloader,
-  MemoryRecordingStorage,
   RECORDING_DOWNLOADER,
   RECORDING_STORAGE,
   SupabaseRecordingStorage,
+  sharedMemoryRecordingStorage,
 } from './recording-storage';
 
 @Module({
@@ -26,7 +26,7 @@ import {
       useFactory: () =>
         process.env.RECORDING_STORAGE_MODE === 'supabase'
           ? new SupabaseRecordingStorage()
-          : new MemoryRecordingStorage(),
+          : sharedMemoryRecordingStorage,
     },
     {
       provide: RECORDING_DOWNLOADER,

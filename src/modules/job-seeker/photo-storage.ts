@@ -10,7 +10,8 @@ export interface CandidatePhotoStorage {
 export class MemoryCandidatePhotoStorage implements CandidatePhotoStorage {
   private readonly files = new Map<string, Buffer>();
 
-  async put(path: string, body: Buffer): Promise<void> {
+  async put(path: string, body: Buffer, contentType?: string): Promise<void> {
+    void contentType;
     this.files.set(path, Buffer.from(body));
   }
 

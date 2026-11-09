@@ -1,5 +1,7 @@
 import {
+  Body,
   Controller,
+  Get,
   Post,
   Req,
   UseGuards,
@@ -18,6 +20,8 @@ import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
 import { PatternFlagsJob } from './pattern-flags.job';
 import { JoiningRewardJob } from './joining-reward.job';
+import { RetentionCleanupJob } from './retention-cleanup.job';
+import { RetentionService, RetentionSummary } from '../modules/retention/retention.service';
 
 @Controller('jobs')
 export class JobsController {
@@ -28,6 +32,8 @@ export class JobsController {
     private readonly followUpJob: FollowUpJob,
     private readonly patternFlagsJob: PatternFlagsJob,
     private readonly joiningRewardJob: JoiningRewardJob,
+    private readonly retentionCleanupJob: RetentionCleanupJob,
+    private readonly retentionService: RetentionService,
     private readonly auditService: AuditService,
   ) {}
 
@@ -162,5 +168,41 @@ export class JobsController {
     });
 
     return result;
+  }
+
+  @Post('retention-cleanup/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('staff', 'write')
+  async runRetentionCleanup(
+    @Req() req: Request & { user: JwtPayload },
+    @Body() body?: { dryRun?: boolean },
+  ): Promise<RetentionSummary> {
+    const dryRun = Boolean(body?.dryRun);
+    const result = await this.retentionCleanupJob.process(new Date(), { dryRun });
+
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'retention-cleanup',
+      after: {
+        dryRun,
+        profilesAnonymised: result.profilesAnonymised.total,
+        recordingsDeleted: result.recordingsDeleted,
+        accessLogsDeleted: result.accessLogsDeleted.total,
+        moneyRecordsDeleted: result.moneyRecordsDeleted.total,
+      },
+      city: 'Bengaluru',
+    });
+
+    return result;
+  }
+
+  @Get('retention-cleanup/summary')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('ceo')
+  async getRetentionCleanupSummary(): Promise<RetentionSummary | null> {
+    return this.retentionService.getLatestSummary();
   }
 }

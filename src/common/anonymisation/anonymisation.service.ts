@@ -29,6 +29,19 @@ export class AnonymisationService {
     private readonly photoStorage: CandidatePhotoStorage,
   ) {}
 
+  async canAnonymise(
+    subjectType: AnonymisableSubjectType,
+    subjectId: string,
+  ): Promise<{ allowed: boolean; reason?: string }> {
+    try {
+      await this.assertNoOpenDisputesOrMoney(subjectType, subjectId);
+      return { allowed: true };
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      return { allowed: false, reason: message };
+    }
+  }
+
   async anonymise(
     subjectType: AnonymisableSubjectType,
     subjectId: string,

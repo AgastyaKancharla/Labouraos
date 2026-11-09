@@ -11,8 +11,8 @@ import { PricingModule } from '../pricing/pricing.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import {
   AGREEMENT_DOCUMENT_STORAGE,
-  MemoryAgreementDocumentStorage,
   SupabaseAgreementDocumentStorage,
+  sharedMemoryAgreementDocumentStorage,
 } from './agreement-document.storage';
 import { BusinessVerificationModule } from '../business/business-verification.module';
 
@@ -29,9 +29,9 @@ import { BusinessVerificationModule } from '../business/business-verification.mo
       useFactory: () =>
         process.env.AGREEMENT_STORAGE_MODE === 'supabase'
           ? new SupabaseAgreementDocumentStorage()
-          : new MemoryAgreementDocumentStorage(),
+          : sharedMemoryAgreementDocumentStorage,
     },
   ],
-  exports: [ConsentService, ConsentClock, ConsentLinkService],
+  exports: [ConsentService, ConsentClock, ConsentLinkService, AGREEMENT_DOCUMENT_STORAGE],
 })
 export class ConsentModule {}
