@@ -51,6 +51,47 @@ import {
   CandidatePhotoStorage,
 } from './photo-storage';
 
+const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
+  'name',
+  'phone',
+  'minSalary',
+  'maxSalary',
+  'preferredCallWindowStart',
+  'preferredCallWindowEnd',
+  'city',
+  'dateOfBirth',
+  'gender',
+  'whatsappPhone',
+  'locality',
+  'pincode',
+  'latitude',
+  'longitude',
+  'travelDistanceKm',
+  'preferredLocalities',
+  'willingToRelocate',
+  'needsAccommodation',
+  'salaryPeriod',
+  'availableFrom',
+  'lookingSince',
+  'shiftPreference',
+  'jobType',
+  'currentlyWorking',
+  'lastEmployer',
+  'lastRole',
+  'lastSalaryPaise',
+  'educationLevel',
+  'certificates',
+  'drivingLicenceType',
+  'ownVehicle',
+  'policeVerified',
+  'hasSmartphone',
+  'cvStoragePath',
+  'keySkills',
+  'qualification',
+  'currentSalaryPaise',
+  'pausedAt',
+]);
+
 @Injectable()
 export class JobSeekerService {
   constructor(
@@ -934,11 +975,18 @@ export class JobSeekerService {
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
 
+    const filteredDto: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(dto)) {
+      if (ALLOWED_JOB_SEEKER_UPDATE_FIELDS.has(key) && value !== undefined) {
+        filteredDto[key] = value;
+      }
+    }
+
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
       entityType: 'job_seeker',
       entityId: jobSeekerId,
-      updates: dto,
+      updates: filteredDto,
       reason,
     });
 
@@ -949,9 +997,9 @@ export class JobSeekerService {
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
       if (['dateOfBirth', 'availableFrom', 'lookingSince', 'pausedAt'].includes(key)) {
-        data[key] = dto[key] ? new Date(dto[key] as string) : null;
+        data[key] = filteredDto[key] ? new Date(filteredDto[key] as string) : null;
       } else {
-        data[key] = dto[key];
+        data[key] = filteredDto[key];
       }
     }
 

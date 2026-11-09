@@ -302,6 +302,13 @@ export class EditPolicyService {
       }
 
       if (entityType === 'business') {
+        const hasAccountOrCreator =
+          !!record.accountAgentId ||
+          !!record.leadCreatedByStaffId ||
+          !!record.verifiedByStaffId;
+        if (!hasAccountOrCreator) {
+          return { allowed: true, isMoneyInvolved: false };
+        }
         const isAccountOrCreator =
           record.accountAgentId === actor.id ||
           record.leadCreatedByStaffId === actor.id ||
@@ -317,7 +324,7 @@ export class EditPolicyService {
       }
 
       const creatorId = await this.getCreatorStaffId(entityType, record);
-      if (creatorId === actor.id) {
+      if (!creatorId || creatorId === actor.id) {
         return { allowed: true, isMoneyInvolved: false };
       }
       return {
