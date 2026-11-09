@@ -56,7 +56,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - The real OTP provider's verify works across two service instances sharing a database.
   - Every existing link and OTP test still passes.
 
-### [ ] Task 2 — The trade list, salary ranges and the legal minimum wage
+### [x] Task 2 — The trade list, salary ranges and the legal minimum wage
 **Branch:** `phase-20/task-2-trades` · **Migration folder:** `20261113100000_trades`
 
 **Acceptance:**
