@@ -226,6 +226,11 @@ export class BusinessService {
       duplicateRadiusMeters: policy.duplicateBusinessRadiusMeters,
     });
 
+    const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
+    if (!otpConsumed) {
+      throw new BadRequestException('This verified OTP request has already been used or expired');
+    }
+
     const business = await this.prisma.business.create({
       data: {
         code,

@@ -1,5 +1,5 @@
-import { Injectable, Logger } from '@nestjs/common';
-import { OtpProvider } from './otp.interface';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 
 export interface OtpRecord {
   requestId: string;
@@ -8,6 +8,20 @@ export interface OtpRecord {
   createdAt: number;
   expiresAt: number;
   verified: boolean;
+  used: boolean;
+  purpose: string;
+  attempts: number;
+  resendCount: number;
+  lastSentAt: number;
+}
+
+const RESEND_WAIT_MS = 30_000;
+const MAX_RESENDS = 3;
+const MAX_WRONG_ATTEMPTS = 5;
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
 }
 
 @Injectable()
@@ -33,8 +47,31 @@ export class MockOtpProvider implements OtpProvider {
     this.defaultTtlMs = ttlMs;
   }
 
-  async sendOtp(phone: string): Promise<{ requestId: string }> {
+  async sendOtp(phone: string, options?: OtpSendOptions): Promise<OtpSendResult> {
     const now = this.timeProvider();
+    const purpose = options?.purpose ?? 'job_seeker';
+
+    if (options?.requestId) {
+      const record = this.records.get(options.requestId);
+      if (!record || record.expiresAt < now || record.verified || record.used || record.attempts >= MAX_WRONG_ATTEMPTS) {
+        throw new BadRequestException('OTP request is no longer active; request a new code');
+      }
+      if (normalizePhone(record.phone) !== normalizePhone(phone) || record.purpose !== purpose) {
+        throw new BadRequestException('OTP resend must use the original phone number and purpose');
+      }
+      const resendAvailableAt = record.lastSentAt + RESEND_WAIT_MS;
+      if (now < resendAvailableAt) {
+        throw new BadRequestException(`Resend is available at ${new Date(resendAvailableAt).toISOString()}`);
+      }
+      if (record.resendCount >= MAX_RESENDS) {
+        throw new BadRequestException('The maximum of 3 OTP resends has been reached');
+      }
+      record.resendCount += 1;
+      record.lastSentAt = now;
+      this.logger.log(`[MOCK OTP] Resent OTP to ******${normalizePhone(phone).slice(-4)} (requestId: ${record.requestId})`);
+      return this.sendResult(record);
+    }
+
     const requestId = `otp_${Math.random().toString(36).substring(2, 10)}_${now}`;
     // 6-digit random code
     const code = Math.floor(100000 + Math.random() * 900000).toString();
@@ -46,10 +83,15 @@ export class MockOtpProvider implements OtpProvider {
       createdAt: now,
       expiresAt: now + this.defaultTtlMs,
       verified: false,
+      used: false,
+      purpose,
+      attempts: 0,
+      resendCount: 0,
+      lastSentAt: now,
     });
 
-    this.logger.log(`[MOCK OTP] Sent OTP to ${phone}: ${code} (requestId: ${requestId})`);
-    return { requestId };
+    this.logger.log(`[MOCK OTP] Sent OTP to ******${normalizePhone(phone).slice(-4)} (requestId: ${requestId})`);
+    return this.sendResult(this.records.get(requestId)!);
   }
 
   async verifyOtp(requestId: string, code: string): Promise<boolean> {
@@ -59,7 +101,7 @@ export class MockOtpProvider implements OtpProvider {
     }
 
     const now = this.timeProvider();
-    if (now > record.expiresAt) {
+    if (now > record.expiresAt || record.used || record.attempts >= MAX_WRONG_ATTEMPTS) {
       return false;
     }
 
@@ -69,6 +111,7 @@ export class MockOtpProvider implements OtpProvider {
     }
 
     if (record.code !== code) {
+      record.attempts += 1;
       return false;
     }
 
@@ -81,13 +124,26 @@ export class MockOtpProvider implements OtpProvider {
     if (!record) {
       return false;
     }
-    if (!record.verified) {
+    if (!record.verified || record.used || this.timeProvider() > record.expiresAt) {
       return false;
     }
-    if (phone && record.phone !== phone) {
+    if (phone && normalizePhone(record.phone) !== normalizePhone(phone)) {
       return false;
     }
     return true;
+  }
+
+  async consumeVerified(requestId: string, phone: string): Promise<boolean> {
+    if (!(await this.isVerified(requestId, phone))) return false;
+    const record = this.records.get(requestId);
+    if (!record || record.used) return false;
+    record.used = true;
+    return true;
+  }
+
+  async getPhoneLast4(requestId: string): Promise<string | null> {
+    const record = this.records.get(requestId);
+    return record ? normalizePhone(record.phone).slice(-4) : null;
   }
 
   getCode(requestId: string): string | undefined {
@@ -96,5 +152,13 @@ export class MockOtpProvider implements OtpProvider {
 
   clear(): void {
     this.records.clear();
+  }
+
+  private sendResult(record: OtpRecord): OtpSendResult {
+    return {
+      requestId: record.requestId,
+      resendAvailableAt: new Date(record.lastSentAt + RESEND_WAIT_MS).toISOString(),
+      resendsLeft: MAX_RESENDS - record.resendCount,
+    };
   }
 }

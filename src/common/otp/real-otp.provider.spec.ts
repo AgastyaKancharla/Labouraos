@@ -56,9 +56,28 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
           },
           findUnique: async ({ where }: { where: { requestId: string } }) => sessions.get(where.requestId) ?? null,
           update: async ({ where, data }: { where: { requestId: string }; data: Record<string, unknown> }) => {
-            const row = { ...sessions.get(where.requestId), ...data };
+            const prior = sessions.get(where.requestId) ?? {};
+            const nextData = { ...data };
+            for (const [key, value] of Object.entries(nextData)) {
+              if (typeof value === 'object' && value !== null && 'increment' in value) {
+                nextData[key] = Number(prior[key] ?? 0) + Number((value as { increment: number }).increment);
+              }
+            }
+            const row = { ...prior, ...nextData };
             sessions.set(where.requestId, row);
             return row;
+          },
+          updateMany: async ({ where, data }: { where: { requestId: string }; data: Record<string, unknown> }) => {
+            const prior = sessions.get(where.requestId);
+            if (!prior) return { count: 0 };
+            const nextData = { ...data };
+            for (const [key, value] of Object.entries(nextData)) {
+              if (typeof value === 'object' && value !== null && 'increment' in value) {
+                nextData[key] = Number(prior[key] ?? 0) + Number((value as { increment: number }).increment);
+              }
+            }
+            sessions.set(where.requestId, { ...prior, ...nextData });
+            return { count: 1 };
           },
         },
       } as unknown as PrismaService;
@@ -174,6 +193,31 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       // Replay/reuse rejected
       const replayVerify = await secondProvider.verifyOtp(requestId, '123456');
       expect(replayVerify).toBe(false);
+    });
+
+    it('resends the same request only after 30 seconds and records the resend count', async () => {
+      let now = new Date('2026-10-25T06:00:00.000Z');
+      const provider = new RealOtpProvider({
+        apiKey: 'test_auth_key_123',
+        fetchFn: mockFetch,
+        timeProvider: () => now,
+      });
+      attachSessionStore(provider);
+      const initial = await provider.sendOtp('9876543210', { purpose: 'job_seeker' });
+
+      await expect(provider.sendOtp('9876543210', {
+        purpose: 'job_seeker',
+        requestId: initial.requestId,
+      })).rejects.toThrow(/Resend is available/);
+      now = new Date(now.getTime() + 30_000);
+      const resent = await provider.sendOtp('9876543210', {
+        purpose: 'job_seeker',
+        requestId: initial.requestId,
+      });
+
+      expect(resent).toMatchObject({ requestId: initial.requestId, resendsLeft: 2 });
+      expect(capturedRequests[1].url).toContain('/otp/retry?');
+      expect(sessions.get(initial.requestId)?.resendCount).toBe(1);
     });
 
     it('handles vendor HTTP errors cleanly with informative message', async () => {

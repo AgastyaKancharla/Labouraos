@@ -92,7 +92,7 @@ describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-F
           .post('/otp/send')
           .set('Authorization', `Bearer ${login.body.accessToken}`)
           .set('X-Forwarded-For', `203.0.113.${i + 1}`)
-          .send({ phone: '9876543210' });
+          .send({ phone: '9876543210', purpose: 'job_seeker' });
         statuses.push(res.status);
       }
 

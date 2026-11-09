@@ -4,6 +4,8 @@ import { OTP_PROVIDER, OtpProvider } from './otp.interface';
 import { OtpModule } from './otp.module';
 import { AuthModule } from '../auth/auth.module';
 import { OtpService } from './otp.service';
+import { AuditService } from '../audit/audit.service';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('OTP Provider and Mock Implementation', () => {
   describe('MockOtpProvider', () => {
@@ -87,6 +89,103 @@ describe('OTP Provider and Mock Implementation', () => {
 
       expect(await provider.isVerified(requestId, '9876543210')).toBe(true);
       expect(await provider.isVerified(requestId, '9999999999')).toBe(false);
+    });
+
+    it('waits 30 seconds, permits exactly three resends, and blocks the fourth', async () => {
+      let now = 1_700_000_000_000;
+      const resendProvider = new MockOtpProvider({ ttlMs: 300_000, timeProvider: () => now });
+      const initial = await resendProvider.sendOtp('9876543210', { purpose: 'job_seeker' });
+      expect(initial.resendsLeft).toBe(3);
+      await expect(resendProvider.sendOtp('9876543210', { purpose: 'job_seeker', requestId: initial.requestId }))
+        .rejects.toThrow(/Resend is available/);
+
+      for (let resend = 1; resend <= 3; resend += 1) {
+        now += 30_000;
+        const result = await resendProvider.sendOtp('9876543210', {
+          purpose: 'job_seeker',
+          requestId: initial.requestId,
+        });
+        expect(result.requestId).toBe(initial.requestId);
+        expect(result.resendsLeft).toBe(3 - resend);
+      }
+      now += 30_000;
+      await expect(resendProvider.sendOtp('9876543210', {
+        purpose: 'job_seeker',
+        requestId: initial.requestId,
+      })).rejects.toThrow(/maximum of 3/);
+    });
+
+    it('locks an OTP request on the fifth wrong code and allows one record consumption', async () => {
+      const { requestId } = await provider.sendOtp('9876543210');
+      for (let attempt = 0; attempt < 5; attempt += 1) {
+        expect(await provider.verifyOtp(requestId, '000000')).toBe(false);
+      }
+      expect(await provider.verifyOtp(requestId, provider.getCode(requestId)!)).toBe(false);
+
+      const { requestId: secondRequestId } = await provider.sendOtp('9876543211');
+      expect(await provider.verifyOtp(secondRequestId, provider.getCode(secondRequestId)!)).toBe(true);
+      expect(await provider.consumeVerified(secondRequestId, '9876543211')).toBe(true);
+      expect(await provider.consumeVerified(secondRequestId, '9876543211')).toBe(false);
+      expect(await provider.isVerified(secondRequestId, '9876543211')).toBe(false);
+    });
+  });
+
+  describe('Phase 20 duplicate phone checks', () => {
+    it('returns the existing code to a visible staff member and sends no OTP', async () => {
+      const provider = { sendOtp: jest.fn() } as unknown as OtpProvider;
+      const prisma = {
+        jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'agent-1' }) },
+        business: { findFirst: jest.fn() },
+        referral: { findFirst: jest.fn() },
+        staff: { findUnique: jest.fn(), findFirst: jest.fn() },
+      } as unknown as PrismaService;
+      const auditLog = jest.fn().mockResolvedValue(undefined);
+      const audit = { log: auditLog } as unknown as AuditService;
+      const service = new OtpService(provider, audit, prisma);
+
+      await expect(service.sendOtp('9876543210', 'job_seeker', 'agent-1', 'call_agent'))
+        .resolves.toEqual({ alreadyRegistered: true, type: 'job_seeker', code: 'JS-01042' });
+      expect(provider.sendOtp).not.toHaveBeenCalled();
+      expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'otp.send_attempt',
+        after: expect.objectContaining({ phoneMasked: '******3210', alreadyRegistered: true }),
+      }));
+    });
+
+    it('does not reveal the code when a Team Lead cannot see the record', async () => {
+      const provider = { sendOtp: jest.fn() } as unknown as OtpProvider;
+      const prisma = {
+        jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'other-agent' }) },
+        business: { findFirst: jest.fn() },
+        referral: { findFirst: jest.fn() },
+        staff: { findUnique: jest.fn().mockResolvedValue({ id: 'lead-1', role: 'team_lead' }), findFirst: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
+      const service = new OtpService(provider, audit, prisma);
+
+      await expect(service.sendOtp('9876543210', 'job_seeker', 'lead-1', 'team_lead'))
+        .resolves.toEqual({ alreadyRegistered: true });
+      expect(provider.sendOtp).not.toHaveBeenCalled();
+    });
+
+    it('audits a rejected send without recording a raw phone or OTP', async () => {
+      const provider = { sendOtp: jest.fn().mockRejectedValue(new Error('provider unavailable')) } as unknown as OtpProvider;
+      const prisma = {
+        jobSeeker: { findFirst: jest.fn().mockResolvedValue(null) },
+        business: { findFirst: jest.fn().mockResolvedValue(null) },
+        referral: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const auditLog = jest.fn().mockResolvedValue(undefined);
+      const audit = { log: auditLog } as unknown as AuditService;
+      const service = new OtpService(provider, audit, prisma);
+
+      await expect(service.sendOtp('9876543210', 'vacancy_confirm', 'agent-1', 'call_agent'))
+        .rejects.toThrow('provider unavailable');
+      expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'otp.send_attempt',
+        after: { phoneMasked: '******3210', purpose: 'vacancy_confirm', isResend: false, failed: true },
+      }));
+      expect(JSON.stringify(auditLog.mock.calls)).not.toContain('9876543210');
     });
   });
 

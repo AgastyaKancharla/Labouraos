@@ -180,6 +180,11 @@ export class JobSeekerService {
       );
     }
 
+    const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
+    if (!otpConsumed) {
+      throw new BadRequestException('This verified OTP request has already been used or expired');
+    }
+
     const jobSeeker = await this.prisma.$transaction(async (tx) => {
       const created = await tx.jobSeeker.create({
         data: {

@@ -106,7 +106,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - Only the CEO changes the minimum wage figures.
   - Managers can manage trades but not money settings.
 
-### [ ] Task 3 — Checking a mobile number by OTP during the call
+### [x] Task 3 — Checking a mobile number by OTP during the call
 **Branch:** `phase-20/task-3-phone-check` · **Migration folder:** `20261113110000_phone_check`
 
 **Acceptance:**

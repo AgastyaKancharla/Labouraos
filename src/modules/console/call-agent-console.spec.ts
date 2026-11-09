@@ -113,7 +113,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     const otpSendRes = await request(app.getHttpServer())
       .post('/otp/send')
       .set('Authorization', `Bearer ${caToken}`)
-      .send({ phone })
+      .send({ phone, purpose: 'job_seeker' })
       .expect(201);
     const requestId = otpSendRes.body.requestId;
     const otpCode = (otpService.getProvider() as MockOtpProvider).getCode(requestId)!;
@@ -175,7 +175,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     const bizOtp = await request(app.getHttpServer())
       .post('/otp/send')
       .set('Authorization', `Bearer ${caToken}`)
-      .send({ phone: bizPhone })
+      .send({ phone: bizPhone, purpose: 'business_contact' })
       .expect(201);
     const bizOtpCode = (otpService.getProvider() as MockOtpProvider).getCode(bizOtp.body.requestId)!;
     await request(app.getHttpServer())
