@@ -145,6 +145,52 @@ model JobSeekerTrade {
   @@index([jobSeekerId])
 }
 
+model Trade {
+  id                         String   @id @default(uuid())
+  name                       String
+  nameKey                    String   @unique
+  salaryMinPaise             Int
+  salaryMaxPaise             Int
+  minimumWageLevel           String   @default("unskilled")
+  active                     Boolean  @default(true)
+  sortOrder                  Int      @default(0)
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  mappedSuggestions          TradeSuggestion[] @relation("TradeSuggestionMapped")
+
+  @@index([active, sortOrder])
+}
+
+model TradeSuggestion {
+  id                String   @id @default(uuid())
+  typedName         String
+  typedNameKey      String   @unique
+  typedByStaffId    String?
+  subjectType       String
+  subjectId         String
+  status            String   @default("waiting")
+  mappedToTradeId   String?
+  mappedToTrade     Trade?   @relation("TradeSuggestionMapped", fields: [mappedToTradeId], references: [id], onDelete: SetNull)
+  decidedByStaffId  String?
+  decidedAt         DateTime?
+  createdAt         DateTime @default(now())
+  subjects          TradeSuggestionSubject[]
+
+  @@index([status, createdAt])
+}
+
+model TradeSuggestionSubject {
+  id                 String          @id @default(uuid())
+  tradeSuggestionId  String
+  tradeSuggestion    TradeSuggestion @relation(fields: [tradeSuggestionId], references: [id], onDelete: Cascade)
+  subjectType        String
+  subjectId          String
+  createdAt          DateTime        @default(now())
+
+  @@unique([tradeSuggestionId, subjectType, subjectId])
+  @@index([subjectType, subjectId])
+}
+
 model JobSeekerLanguage {
   id          String    @id @default(uuid())
   jobSeekerId String
@@ -964,6 +1010,11 @@ model PricingPolicy {
   walkInEnd                    String    @default("18:00")
   matchPageSize                Int       @default(3)
   salaryDaysPerMonth           Int       @default(26)
+  legalMinimumWageUnskilledPaise     Int      @default(2337600)
+  legalMinimumWageSemiSkilledPaise   Int      @default(2571400)
+  legalMinimumWageSkilledPaise       Int      @default(2828600)
+  legalMinimumWageHighlySkilledPaise Int      @default(3111400)
+  legalMinimumWageEffectiveFrom      DateTime @default("2026-05-22T00:00:00.000Z") @db.Date
   matchingWeights              Json      @default("{\"clock\":30,\"distance\":20,\"experience\":15,\"salary\":15,\"reliability\":10,\"completeness\":5,\"pastResults\":5}")
   adultMinimumAge              Int       @default(18)
   followUpGraceDays            Int       @default(2)

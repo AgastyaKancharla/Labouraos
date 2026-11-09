@@ -6,6 +6,7 @@ import { PaymentModule } from '../payment/payment.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ConsentModule } from '../consent/consent.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
+import { TradeModule } from '../trade/trade.module';
 import {
   CANDIDATE_PHOTO_STORAGE,
   sharedCandidatePhotoStorage,
@@ -13,7 +14,7 @@ import {
 } from './photo-storage';
 
 @Module({
-  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule],
+  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule],
   controllers: [JobSeekerController, JobSeekerHitController],
   providers: [
     JobSeekerService,

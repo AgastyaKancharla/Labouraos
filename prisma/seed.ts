@@ -3,6 +3,17 @@ import * as bcrypt from 'bcrypt';
 
 const ALLOWED_ENVIRONMENTS = new Set(['development', 'test']);
 
+const PHASE_20_TRADES = [
+  ['Housekeeping', 1600000, 2300000], ['Cook', 1800000, 3000000],
+  ['Kitchen helper', 1500000, 2000000], ['Waiter', 1500000, 2200000],
+  ['Driver', 2000000, 3000000], ['Delivery rider', 2200000, 3500000],
+  ['Security guard', 1700000, 2400000], ['Electrician', 2100000, 3200000],
+  ['Plumber', 2000000, 3000000], ['Carpenter', 2000000, 3200000],
+  ['Painter', 1800000, 2800000], ['AC technician', 2000000, 3000000],
+  ['Helper / loader', 1500000, 2200000], ['Warehouse packer', 1900000, 2700000],
+  ['Retail staff', 1500000, 2200000], ['Caretaker / nanny', 1500000, 2300000],
+] as const;
+
 /**
  * Validates that database seeding is permitted in the current environment.
  *
@@ -70,6 +81,16 @@ export async function seed(prismaClient?: PrismaClient) {
   const passwordHash = await bcrypt.hash(defaultPassword, 10);
 
   try {
+    // Phase 20 Task 2: seed the managed trade list without overwriting CEO edits.
+    for (const [index, [name, salaryMinPaise, salaryMaxPaise]] of PHASE_20_TRADES.entries()) {
+      const nameKey = name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
+      await prisma.trade.upsert({
+        where: { nameKey },
+        update: {},
+        create: { name, nameKey, salaryMinPaise, salaryMaxPaise, sortOrder: index + 1 },
+      });
+    }
+
     // 0. PricingPolicy (Phase 9 Task 2)
     const existingPolicy = await prisma.pricingPolicy.findFirst();
     if (!existingPolicy) {

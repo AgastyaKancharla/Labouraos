@@ -87,6 +87,7 @@ describe('MatchingService', () => {
   const run = async (list = candidates, vacancyOverrides: Record<string, unknown> = {}) => {
     const prisma = {
       vacancy: { findFirst: jest.fn().mockResolvedValue(baseVacancy(vacancyOverrides)) },
+      trade: { findFirst: jest.fn().mockResolvedValue({ id: 'trade-electrician' }) },
       jobSeeker: { findMany: jest.fn().mockResolvedValue(list) },
       consent: { findMany: jest.fn().mockResolvedValue(consentRows) },
     } as unknown as PrismaService;
@@ -142,6 +143,32 @@ describe('MatchingService', () => {
     candidates = [baseCandidate('wrong-trade', { trades: [{ trade: 'Painter', yearsExperience: 2, isPrimary: true }], tradeSkill: null })];
     const result = await run();
     expect(result.matches).toHaveLength(0);
+  });
+
+  it('does not match a vacancy whose trade is not in the active managed list', async () => {
+    const prisma = {
+      vacancy: { findFirst: jest.fn().mockResolvedValue(baseVacancy({ tradeSkill: 'Barista' })) },
+      trade: { findFirst: jest.fn().mockResolvedValue(null) },
+      jobSeeker: { findMany: jest.fn() },
+      consent: { findMany: jest.fn() },
+    } as unknown as PrismaService;
+    const pricing = { current: jest.fn().mockResolvedValue(policy) } as unknown as PricingService;
+    const result = await new MatchingService(prisma, pricing, { now: () => now } as ConsentClock)
+      .match('vacancy-id', { page: 1 });
+    expect(result.matches).toHaveLength(0);
+    expect(result.total).toBe(0);
+  });
+
+  it('omits an unlisted-only job seeker until the typed trade is mapped to an active trade', async () => {
+    candidates = [baseCandidate('other-only', {
+      trades: [{ trade: 'Unlisted helper', yearsExperience: 2, isPrimary: true }],
+    })];
+    expect((await run()).matches).toHaveLength(0);
+
+    candidates = [baseCandidate('other-only', {
+      trades: [{ trade: 'Electrician', yearsExperience: 2, isPrimary: true }],
+    })];
+    expect((await run()).matches.map(({ jobSeekerId }) => jobSeekerId)).toEqual(['other-only']);
   });
 
   it('requires overlapping salary ranges after daily to monthly conversion', async () => {
@@ -267,6 +294,7 @@ describe('MatchingService', () => {
     ]);
     const prisma = {
       vacancy: { findFirst: jest.fn().mockResolvedValue(baseVacancy()) },
+      trade: { findFirst: jest.fn().mockResolvedValue({ id: 'trade-electrician' }) },
       jobSeeker: { findMany: jest.fn().mockResolvedValue(candidates) },
       consent: { findMany: jest.fn().mockResolvedValue(consentRows) },
     } as unknown as PrismaService;

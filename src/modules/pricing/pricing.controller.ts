@@ -14,6 +14,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { UpdateMinimumWagesDto } from './dto/update-minimum-wages.dto';
 
 @Controller('pricing')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -45,5 +46,15 @@ export class PricingController {
     @Req() req: Request & { user: JwtPayload },
   ): Promise<PricingPolicy> {
     return this.pricingService.createVersion(body, req.user.sub);
+  }
+
+  @Put('legal-minimum-wages')
+  @RequirePermission('pricing', 'write')
+  @RequireRoles('ceo')
+  async updateLegalMinimumWages(
+    @Body() body: UpdateMinimumWagesDto,
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<PricingPolicy> {
+    return this.pricingService.updateMinimumWages(body, req.user.sub);
   }
 }
