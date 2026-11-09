@@ -484,3 +484,8 @@ Format:
 **Symptom:** The audit history endpoint returned `"******"` instead of `"[changed]"` for a redacted phone value.
 **Cause:** The response PII interceptor masked the audit service's safe `"[changed]"` sentinel again as if it were a raw phone number.
 **Fix:** Preserve the sentinel in both finance and agent phone masking paths, and test that actual phone values remain masked.
+
+## Test phone number rejected by the Aadhaar guard
+**Symptom:** A gate test expected an edit-reason error but got the raw Aadhaar rejection.
+**Cause:** Concatenating an 8-character hexadecimal suffix into the phone fixture could produce exactly 12 digits, which the request validator correctly rejects.
+**Fix:** Generate a separate numeric suffix and make the API phone fixtures valid 10-digit numbers.

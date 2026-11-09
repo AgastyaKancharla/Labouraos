@@ -20,6 +20,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
   let photoStorage: MemoryCandidatePhotoStorage;
 
   const suffix = crypto.randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+  const phoneSuffix = crypto.randomInt(100000, 1000000).toString();
 
   const staffIds: string[] = [];
   const seekerIds: string[] = [];
@@ -155,7 +156,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
   describe('End-to-End Proof', () => {
     it('step 1: agent registers a job seeker and corrects a typo with no reason needed on first fill', async () => {
       seeker1Code = `JS-P19-${suffix}-1`;
-      const initialPhone = `98${suffix}11`;
+      const initialPhone = `98${phoneSuffix}11`;
 
       const seeker = await prisma.jobSeeker.create({
         data: {
@@ -205,7 +206,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
     });
 
     it('step 2: changes the phone later with a reason (refused without reason, succeeds with reason)', async () => {
-      const newPhone = `98${suffix}22`;
+      const newPhone = `98${phoneSuffix}22`;
 
       // 1. Changing an existing saved field without a reason is refused with 400
       const refusedRes = await request(app.getHttpServer())
@@ -316,8 +317,8 @@ describe('Phase 19 Gate End-to-End Proof', () => {
 
       // Assert raw phone numbers never appear anywhere in the audit log serialization
       const logJson = JSON.stringify(phoneUpdateLog);
-      expect(logJson).not.toContain(`98${suffix}11`);
-      expect(logJson).not.toContain(`98${suffix}22`);
+      expect(logJson).not.toContain(`98${phoneSuffix}11`);
+      expect(logJson).not.toContain(`98${phoneSuffix}22`);
     });
 
     it('step 5 & 6: clock moved forward 23 months and a day: dry run reports the job seeker, real run anonymises them, deletes their photo and a separate 13m recording, while placement and payment totals are unchanged', async () => {
