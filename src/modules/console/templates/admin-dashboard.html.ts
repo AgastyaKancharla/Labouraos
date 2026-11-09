@@ -418,6 +418,58 @@ export function renderAdminDashboardHtml(): string {
     </div>
   </div>
 
+  <!-- Record Edit Modal -->
+  <div id="record-edit-modal" class="auth-overlay hidden">
+    <div class="modal" style="max-width: 650px;">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+        <h3 id="record-edit-title" style="font-size: 1.15rem; margin: 0; color: var(--primary);">Edit Record</h3>
+        <button type="button" class="btn-sm" onclick="closeRecordEditModal()">✕ Close</button>
+      </div>
+
+      <!-- Locked notice -->
+      <div id="modal-edit-locked-notice" class="alert alert-danger hidden" style="margin-bottom: 12px; font-weight: 500;">
+        Locked — money involved, ask your Team Lead
+      </div>
+
+      <form id="record-edit-form" onsubmit="submitRecordEdit(event)">
+        <div id="record-edit-fields-container">
+          <!-- Dynamically populated fields -->
+        </div>
+
+        <!-- Reason box: shown only when saved value is changed -->
+        <div id="modal-edit-reason-container" class="form-group hidden" style="margin-top: 12px; background: #0f172a; padding: 10px; border-radius: 4px; border: 1px solid var(--border);">
+          <label style="color: #f59e0b; font-weight: 600; display: block; margin-bottom: 4px;">Reason for change (required for modifying saved values):</label>
+          <input type="text" id="modal-edit-reason" placeholder="e.g. Candidate requested corrected phone number" style="width: 100%;">
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px;">
+          <button type="button" class="btn-sm" onclick="closeRecordEditModal()">Cancel</button>
+          <button type="submit" id="btn-save-record-edit" class="btn-sm btn-success">Save Changes</button>
+        </div>
+      </form>
+
+      <!-- Change History Section (Team Leads and above only) -->
+      <div id="modal-change-history-section" class="hidden" style="margin-top: 20px; border-top: 1px solid var(--border); padding-top: 14px;">
+        <h4 style="font-size: 0.95rem; margin-bottom: 8px; color: var(--text);">Change History</h4>
+        <div class="table-container" style="max-height: 200px; overflow-y: auto;">
+          <table class="change-history-table" style="font-size: 0.8rem;">
+            <thead>
+              <tr>
+                <th>Who</th>
+                <th>When</th>
+                <th>Which Fields</th>
+                <th>Reason</th>
+              </tr>
+            </thead>
+            <tbody id="modal-change-history-tbody">
+              <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No changes recorded</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <header>
     <div>
       <h1>Laboura Admin Dashboard</h1>
@@ -442,6 +494,7 @@ export function renderAdminDashboardHtml(): string {
     <button class="tab-btn" data-tab="refunds">Refund Approvals</button>
     <!-- CEO-only Pricing Tab; Manager tokens cannot see this per AGENTS.md §7 and specs/phase-6.md Task 4 -->
     <button class="tab-btn hidden" id="tab-pricing" data-tab="pricing">Pricing & Policy (CEO)</button>
+    <button class="tab-btn hidden" id="tab-retention" data-tab="retention">Data Retention (CEO)</button>
     <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
     ${officeApproverHtml()}
   </nav>
@@ -1047,6 +1100,27 @@ export function renderAdminDashboardHtml(): string {
 
     ${officeApproverViewsHtml()}
 
+    <!-- Retention View (CEO only) -->
+    <div id="view-retention" class="tab-view hidden">
+      <div class="card" id="retention-summary-card">
+        <div class="card-title">
+          <span>Data Retention & Anonymisation Policy</span>
+          <div style="display: flex; gap: 8px;">
+            <button class="btn-sm" onclick="loadRetentionSummary()">Refresh</button>
+            <button class="btn-sm" id="btn-retention-dry-run" onclick="triggerRetentionDryRun()" style="background: #0284c7; color: white;">Run Dry Run</button>
+          </div>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.85rem; margin-bottom: 14px;">
+          Master Guide: Profiles kept 23 months after last activity; call recordings and login logs 12 months; money records 8 years. Dry runs preview counts without deleting or anonymising data.
+        </p>
+        <div id="retention-summary-content" style="background: #0f172a; padding: 14px; border-radius: 6px; border: 1px solid var(--border);">
+          <p style="color: var(--text-muted);">Loading retention status...</p>
+        </div>
+        <div id="retention-dry-run-result" style="display: none; margin-top: 14px; background: #1e293b; padding: 14px; border-radius: 6px; border: 1px solid var(--border);">
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <script>
@@ -1148,6 +1222,8 @@ export function renderAdminDashboardHtml(): string {
       document.getElementById('user-display').textContent = 'Not logged in';
       document.getElementById('user-role-badge').textContent = 'Guest';
       document.getElementById('tab-pricing').classList.add('hidden');
+      const retTab = document.getElementById('tab-retention');
+      if (retTab) retTab.classList.add('hidden');
       showLoginModal();
     });
 
@@ -1183,6 +1259,17 @@ export function renderAdminDashboardHtml(): string {
         pricingTab.classList.add('hidden');
         if (currentTab === 'pricing') {
           switchTab('job-seekers');
+        }
+      }
+      const retentionTab = document.getElementById('tab-retention');
+      if (retentionTab) {
+        if (payload.role === 'ceo') {
+          retentionTab.classList.remove('hidden');
+        } else {
+          retentionTab.classList.add('hidden');
+          if (currentTab === 'retention') {
+            switchTab('job-seekers');
+          }
         }
       }
       const reviewTab = document.getElementById('tab-business-reviews');
@@ -1271,6 +1358,7 @@ export function renderAdminDashboardHtml(): string {
       }
       else if (tab === 'payments') loadPayments();
       else if (tab === 'pricing') loadPricing();
+      else if (tab === 'retention') loadRetentionSummary();
       else if (tab === 'login-codes') loadLoginCodes().catch(function (e) { showAlert(e.message, false); });
       else if (tab === 'devices') loadDevices().catch(function (e) { showAlert(e.message, false); });
       else if (tab === 'staff') loadStaffList().catch(function (e) { showAlert(e.message, false); });
@@ -1299,6 +1387,7 @@ export function renderAdminDashboardHtml(): string {
             <td>\${j.identityVerifications?.[0]?.status ?? 'pending'}</td>
             <td>
               <button class="btn-sm btn-call" onclick="openAdminCalling('job_seeker', '\${j.id}', '\${j.code}')">Call</button>
+              <button class="btn-sm" onclick="openRecordEditModal('job_seeker', '\${j.id}', '\${j.code}')">Edit</button>
               \${j.status === 'lead' ? \`
                 <button class="btn-sm" onclick="resendSeekerPayment('\${j.id}')">Resend payment link</button>
               \` : ''}
@@ -1322,7 +1411,10 @@ export function renderAdminDashboardHtml(): string {
             <td>\${r.type}</td>
             <td>\${r.phoneVerified ? 'Yes' : 'No'}</td>
             <td>\${r.city}</td>
-            <td><button class="btn-sm btn-call" onclick="openAdminCalling('referral', '\${r.id}', '\${r.code}')">Call</button></td>
+            <td>
+              <button class="btn-sm btn-call" onclick="openAdminCalling('referral', '\${r.id}', '\${r.code}')">Call</button>
+              <button class="btn-sm" onclick="openRecordEditModal('referral', '\${r.id}', '\${r.code}')">Edit</button>
+            </td>
           </tr>
         \`).join('') || '<tr><td colspan="7">No referral partners found</td></tr>';
       } catch (e) {
@@ -1345,7 +1437,10 @@ export function renderAdminDashboardHtml(): string {
             <td>\${b.locality || ''}</td>
             <td>\${b.visits?.[0]?.selfieUrl || b.storefrontPhotoPath ? 'Yes' : 'Pending'}</td>
             <td>\${b.geofenceFlag ? 'FLAGGED' : 'Clean'}</td>
-            <td><button class="btn-sm btn-call" onclick="openAdminCalling('business', '\${b.id}', '\${b.code}')">Call</button></td>
+            <td>
+              <button class="btn-sm btn-call" onclick="openAdminCalling('business', '\${b.id}', '\${b.code}')">Call</button>
+              <button class="btn-sm" onclick="openRecordEditModal('business', '\${b.id}', '\${b.code}')">Edit</button>
+            </td>
             \${canViewIntroductions ? '<td><button class="btn-sm business-intro-button" data-business-id="' + b.id + '" data-business-code="' + b.code + '">Introductions</button></td>' : ''}
           </tr>
         \`).join('') || '<tr><td colspan="' + (canViewIntroductions ? 8 : 7) + '">No businesses found</td></tr>';
@@ -1658,6 +1753,7 @@ export function renderAdminDashboardHtml(): string {
               \${p.openClaim ? \`<span class="badge" style="background:#f59e0b;color:#000;">Pending · Due \${new Date(p.openClaim.decisionDueAt).toLocaleString('en-IN')}</span>\` : '<span style="color:var(--text-muted)">None</span>'}
             </td>
             <td>
+              <button class="btn-sm" onclick="openRecordEditModal('placement', '\${p.id}', '\${p.code}')">Edit</button>
               \${!p.paidAt && p.status === 'awaiting_payment' ? \`
                 <button class="btn-sm" onclick="resendPlacementPayment('\${p.id}')">Resend payment link</button>
               \` : ''}
@@ -2353,6 +2449,365 @@ export function renderAdminDashboardHtml(): string {
     }
 
     ${officeApproverJs()}
+
+    function escapeHtml(str) {
+      if (str === null || str === undefined) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
+    async function loadRetentionSummary() {
+      if (!currentUser || currentUser.role !== 'ceo') return;
+      const contentEl = document.getElementById('retention-summary-content');
+      contentEl.innerHTML = '<p style="color: var(--text-muted);">Loading latest retention summary...</p>';
+      try {
+        const summary = await api('/retention/summary');
+        if (!summary) {
+          contentEl.innerHTML = '<p style="color: var(--text-muted);">No retention run has been executed yet.</p>';
+          return;
+        }
+        contentEl.innerHTML = \`
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 12px;">
+            <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+              <span style="color: var(--text-muted); font-size: 0.8rem; display: block;">Last Executed</span>
+              <strong style="color: var(--text);">\${new Date(summary.executedAt).toLocaleString('en-IN')}</strong>
+            </div>
+            <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+              <span style="color: var(--text-muted); font-size: 0.8rem; display: block;">Mode</span>
+              <strong style="color: \${summary.dryRun ? '#38bdf8' : '#22c55e'};">\${summary.dryRun ? 'Dry Run (Simulation)' : 'Live Run'}</strong>
+            </div>
+            <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+              <span style="color: var(--text-muted); font-size: 0.8rem; display: block;">Profiles Anonymised</span>
+              <strong style="color: var(--text);">\${(summary.profilesAnonymised?.jobSeekers || 0) + (summary.profilesAnonymised?.businesses || 0) + (summary.profilesAnonymised?.referrals || 0)} (JS: \${summary.profilesAnonymised?.jobSeekers || 0}, BZ: \${summary.profilesAnonymised?.businesses || 0}, RF: \${summary.profilesAnonymised?.referrals || 0})</strong>
+            </div>
+            <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+              <span style="color: var(--text-muted); font-size: 0.8rem; display: block;">Recordings Deleted / Protected</span>
+              <strong style="color: var(--text);">\${summary.recordingsDeleted || 0} deleted / \${summary.recordingsProtected || 0} protected</strong>
+            </div>
+            <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+              <span style="color: var(--text-muted); font-size: 0.8rem; display: block;">Access Logs Deleted</span>
+              <strong style="color: var(--text);">\${(summary.accessLogsDeleted?.sessions || 0) + (summary.accessLogsDeleted?.loginCodes || 0)}</strong>
+            </div>
+            <div style="background: #1e293b; padding: 10px; border-radius: 4px;">
+              <span style="color: var(--text-muted); font-size: 0.8rem; display: block;">Money Records Deleted</span>
+              <strong style="color: var(--text);">\${(summary.moneyRecordsDeleted?.payments || 0) + (summary.moneyRecordsDeleted?.bankCredits || 0) + (summary.moneyRecordsDeleted?.invoices || 0) + (summary.moneyRecordsDeleted?.agreements || 0)}</strong>
+            </div>
+          </div>
+        \`;
+      } catch (e) {
+        contentEl.innerHTML = \`<p style="color: var(--danger);">Failed to load summary: \${e.message}</p>\`;
+      }
+    }
+
+    async function triggerRetentionDryRun() {
+      if (!currentUser || currentUser.role !== 'ceo') return;
+      const resultEl = document.getElementById('retention-dry-run-result');
+      const btn = document.getElementById('btn-retention-dry-run');
+      btn.disabled = true;
+      btn.textContent = 'Running Dry Run...';
+      resultEl.style.display = 'block';
+      resultEl.innerHTML = '<p style="color: var(--text-muted);">Simulating retention cleanup across database and storage...</p>';
+      try {
+        const res = await api('/retention/dry-run', { method: 'POST' });
+        resultEl.innerHTML = \`
+          <h4 style="color: #38bdf8; margin-top: 0; margin-bottom: 8px;">Dry Run Simulation Results</h4>
+          <p style="font-size: 0.9rem; color: var(--text-muted); margin-bottom: 10px;">Simulation completed cleanly. No data was deleted or altered.</p>
+          <ul style="font-size: 0.85rem; color: var(--text); line-height: 1.6; margin: 0; padding-left: 20px;">
+            <li><strong>Profiles that would be anonymised:</strong> \${(res.profilesAnonymised?.jobSeekers || 0) + (res.profilesAnonymised?.businesses || 0) + (res.profilesAnonymised?.referrals || 0)} (Job Seekers: \${res.profilesAnonymised?.jobSeekers || 0}, Businesses: \${res.profilesAnonymised?.businesses || 0}, Referrals: \${res.profilesAnonymised?.referrals || 0})</li>
+            <li><strong>Recordings that would be deleted:</strong> \${res.recordingsDeleted || 0} (\${res.recordingsProtected || 0} protected due to open claims/flags)</li>
+            <li><strong>Access logs that would be pruned:</strong> \${(res.accessLogsDeleted?.sessions || 0) + (res.accessLogsDeleted?.loginCodes || 0)}</li>
+            <li><strong>Money records that would be deleted (>8 yrs):</strong> \${(res.moneyRecordsDeleted?.payments || 0) + (res.moneyRecordsDeleted?.bankCredits || 0)}</li>
+          </ul>
+        \`;
+        showAlert('Retention dry run completed successfully');
+      } catch (e) {
+        resultEl.innerHTML = \`<p style="color: var(--danger);">Dry run failed: \${e.message}</p>\`;
+        showAlert('Dry run failed: ' + e.message, false);
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Run Dry Run';
+      }
+    }
+
+    let currentEditingEntityType = null;
+    let currentEditingId = null;
+    let currentEditingCode = null;
+    let currentInitialValues = {};
+
+    async function openRecordEditModal(entityType, id, code) {
+      currentEditingEntityType = entityType;
+      currentEditingId = id;
+      currentEditingCode = code || id;
+      currentInitialValues = {};
+
+      const modal = document.getElementById('record-edit-modal');
+      const title = document.getElementById('record-edit-title');
+      const container = document.getElementById('record-edit-fields-container');
+      const lockedNotice = document.getElementById('modal-edit-locked-notice');
+      const reasonContainer = document.getElementById('modal-edit-reason-container');
+      const reasonInput = document.getElementById('modal-edit-reason');
+      const saveBtn = document.getElementById('btn-save-record-edit');
+      const historySection = document.getElementById('modal-change-history-section');
+
+      title.textContent = 'Edit ' + (entityType.replace('_', ' ').toUpperCase()) + ' · ' + currentEditingCode;
+      lockedNotice.classList.add('hidden');
+      reasonContainer.classList.add('hidden');
+      reasonInput.value = '';
+      container.innerHTML = '<p style="color: var(--text-muted);">Loading record...</p>';
+      modal.classList.remove('hidden');
+
+      try {
+        let endpoint = '/job-seekers/' + encodeURIComponent(id);
+        if (entityType === 'business') endpoint = '/businesses/' + encodeURIComponent(id);
+        else if (entityType === 'referral') endpoint = '/referrals/' + encodeURIComponent(id);
+        else if (entityType === 'vacancy') endpoint = '/vacancies/' + encodeURIComponent(id);
+        else if (entityType === 'placement') endpoint = '/placements/' + encodeURIComponent(id);
+
+        const data = await api(endpoint);
+
+        // Check edit permission via /edit-policy/check
+        let isLocked = false;
+        try {
+          const perm = await api('/edit-policy/check?entityType=' + encodeURIComponent(entityType) + '&id=' + encodeURIComponent(id));
+          if (!perm.allowed && perm.reason && perm.reason.includes('Locked — money involved, ask your Team Lead')) {
+            isLocked = true;
+          }
+        } catch (err) {
+          if (err.message && err.message.includes('Locked — money involved, ask your Team Lead')) {
+            isLocked = true;
+          }
+        }
+
+        if (isLocked) {
+          lockedNotice.classList.remove('hidden');
+          saveBtn.disabled = true;
+        } else {
+          lockedNotice.classList.add('hidden');
+          saveBtn.disabled = false;
+        }
+
+        // Render form fields and record initial values
+        if (entityType === 'job_seeker') {
+          currentInitialValues = {
+            name: data.name || '',
+            phone: data.phone || '',
+            locality: data.locality || '',
+            minSalary: data.minSalary !== undefined ? data.minSalary : '',
+            maxSalary: data.maxSalary !== undefined ? data.maxSalary : '',
+          };
+          container.innerHTML = \`
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Name</label>
+              <input type="text" id="edit-field-name" value="\${escapeHtml(currentInitialValues.name)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Phone</label>
+              <input type="text" id="edit-field-phone" value="\${escapeHtml(currentInitialValues.phone)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Locality</label>
+              <input type="text" id="edit-field-locality" value="\${escapeHtml(currentInitialValues.locality)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div style="display: flex; gap: 8px; margin-bottom: 8px;">
+              <div class="form-group" style="flex: 1;">
+                <label>Min Salary (Paise)</label>
+                <input type="number" id="edit-field-minSalary" value="\${currentInitialValues.minSalary}" \${isLocked ? 'disabled' : ''}>
+              </div>
+              <div class="form-group" style="flex: 1;">
+                <label>Max Salary (Paise)</label>
+                <input type="number" id="edit-field-maxSalary" value="\${currentInitialValues.maxSalary}" \${isLocked ? 'disabled' : ''}>
+              </div>
+            </div>
+          \`;
+        } else if (entityType === 'business') {
+          currentInitialValues = {
+            name: data.name || '',
+            phone: data.phone || '',
+            locality: data.locality || '',
+            ownerName: data.ownerName || '',
+          };
+          container.innerHTML = \`
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Business Name</label>
+              <input type="text" id="edit-field-name" value="\${escapeHtml(currentInitialValues.name)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Owner Name</label>
+              <input type="text" id="edit-field-ownerName" value="\${escapeHtml(currentInitialValues.ownerName)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Phone</label>
+              <input type="text" id="edit-field-phone" value="\${escapeHtml(currentInitialValues.phone)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Locality</label>
+              <input type="text" id="edit-field-locality" value="\${escapeHtml(currentInitialValues.locality)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+          \`;
+        } else if (entityType === 'referral') {
+          currentInitialValues = {
+            name: data.name || '',
+            phone: data.phone || '',
+            city: data.city || '',
+          };
+          container.innerHTML = \`
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Referral Partner Name</label>
+              <input type="text" id="edit-field-name" value="\${escapeHtml(currentInitialValues.name)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Phone</label>
+              <input type="text" id="edit-field-phone" value="\${escapeHtml(currentInitialValues.phone)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>City</label>
+              <input type="text" id="edit-field-city" value="\${escapeHtml(currentInitialValues.city)}" \${isLocked ? 'disabled' : ''}>
+            </div>
+          \`;
+        } else {
+          currentInitialValues = {
+            notes: data.notes || '',
+          };
+          container.innerHTML = \`
+            <div class="form-group" style="margin-bottom: 8px;">
+              <label>Notes</label>
+              <textarea id="edit-field-notes" style="width: 100%; min-height: 80px;" \${isLocked ? 'disabled' : ''}>\${escapeHtml(currentInitialValues.notes)}</textarea>
+            </div>
+          \`;
+        }
+
+        // Attach listeners for Reason box
+        container.querySelectorAll('input, textarea').forEach(input => {
+          input.addEventListener('input', checkModalEditFieldsChanged);
+          input.addEventListener('change', checkModalEditFieldsChanged);
+        });
+
+        // History: visible to Team Leads and above only
+        const isLeadOrAbove = currentUser && ['team_lead', 'manager', 'ceo'].includes(currentUser.role);
+        if (isLeadOrAbove) {
+          historySection.classList.remove('hidden');
+          loadRecordChangeHistory(entityType, currentEditingCode);
+        } else {
+          historySection.classList.add('hidden');
+        }
+      } catch (e) {
+        container.innerHTML = '<p style="color: var(--danger);">Failed to load record: ' + e.message + '</p>';
+      }
+    }
+
+    function checkModalEditFieldsChanged() {
+      let savedValueChanged = false;
+      for (const [key, initialVal] of Object.entries(currentInitialValues)) {
+        const input = document.getElementById('edit-field-' + key);
+        if (!input) continue;
+        const currentVal = input.value.trim();
+        const initStr = (initialVal !== null && initialVal !== undefined) ? String(initialVal).trim() : '';
+        if (initStr !== '' && currentVal !== initStr) {
+          savedValueChanged = true;
+          break;
+        }
+      }
+      const reasonContainer = document.getElementById('modal-edit-reason-container');
+      if (savedValueChanged) {
+        reasonContainer.classList.remove('hidden');
+      } else {
+        reasonContainer.classList.add('hidden');
+      }
+    }
+
+    function closeRecordEditModal() {
+      document.getElementById('record-edit-modal').classList.add('hidden');
+      currentEditingEntityType = null;
+      currentEditingId = null;
+      currentEditingCode = null;
+      currentInitialValues = {};
+    }
+
+    async function submitRecordEdit(e) {
+      if (e) e.preventDefault();
+      if (!currentEditingEntityType || !currentEditingId) return;
+
+      const body = {};
+      let savedValueChanged = false;
+      for (const [key, initialVal] of Object.entries(currentInitialValues)) {
+        const input = document.getElementById('edit-field-' + key);
+        if (!input) continue;
+        const currentVal = input.value.trim();
+        const initStr = (initialVal !== null && initialVal !== undefined) ? String(initialVal).trim() : '';
+        if (currentVal !== initStr) {
+          if (initStr !== '') {
+            savedValueChanged = true;
+          }
+          if (key === 'minSalary' || key === 'maxSalary') {
+            body[key] = currentVal ? parseInt(currentVal, 10) : undefined;
+          } else {
+            body[key] = currentVal || undefined;
+          }
+        }
+      }
+
+      if (Object.keys(body).length === 0) {
+        showAlert('No changes detected', false);
+        return;
+      }
+
+      const reason = document.getElementById('modal-edit-reason').value.trim();
+      if (savedValueChanged) {
+        if (!reason) {
+          showAlert('A reason is required when changing an existing saved value', false);
+          return;
+        }
+        body.reason = reason;
+      } else if (reason) {
+        body.reason = reason;
+      }
+
+      try {
+        let endpoint = '/job-seekers/' + encodeURIComponent(currentEditingId);
+        if (currentEditingEntityType === 'business') endpoint = '/businesses/' + encodeURIComponent(currentEditingId);
+        else if (currentEditingEntityType === 'referral') endpoint = '/referrals/' + encodeURIComponent(currentEditingId);
+        else if (currentEditingEntityType === 'vacancy') endpoint = '/vacancies/' + encodeURIComponent(currentEditingId);
+        else if (currentEditingEntityType === 'placement') endpoint = '/placements/' + encodeURIComponent(currentEditingId);
+
+        await api(endpoint, { method: 'PATCH', body });
+        showAlert('Record updated successfully');
+        closeRecordEditModal();
+        if (currentTab === 'job-seekers') loadJobSeekers();
+        else if (currentTab === 'businesses') loadBusinesses();
+        else if (currentTab === 'referrals') loadReferrals();
+        else if (currentTab === 'vacancies') loadVacancies();
+        else if (currentTab === 'placements') loadPlacements();
+      } catch (err) {
+        showAlert('Update failed: ' + err.message, false);
+      }
+    }
+
+    async function loadRecordChangeHistory(entityType, code) {
+      const tbody = document.getElementById('modal-change-history-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading history...</td></tr>';
+      try {
+        const logs = await api('/audit-logs?entityType=' + encodeURIComponent(entityType) + '&entityCode=' + encodeURIComponent(code));
+        if (!logs || !logs.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No changes recorded</td></tr>';
+          return;
+        }
+        tbody.innerHTML = logs.map(l => \`
+          <tr>
+            <td><strong>\${escapeHtml(l.actor?.name || l.actor?.code || 'Staff')}</strong></td>
+            <td>\${new Date(l.createdAt).toLocaleString('en-IN')}</td>
+            <td><code style="color: #38bdf8;">\${escapeHtml(Array.isArray(l.changedFields) ? l.changedFields.join(', ') : '—')}</code></td>
+            <td>\${escapeHtml(l.reason || '—')}</td>
+          </tr>
+        \`).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color: var(--danger); text-align: center;">Failed to load history: ' + escapeHtml(err.message) + '</td></tr>';
+      }
+    }
 
     // Run on startup
     window.addEventListener('DOMContentLoaded', () => {

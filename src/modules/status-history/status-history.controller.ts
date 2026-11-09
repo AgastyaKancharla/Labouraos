@@ -10,7 +10,7 @@ export class StatusHistoryController {
   constructor(private readonly statusHistoryService: StatusHistoryService) {}
 
   @Get()
-  @RequireRoles('ceo', 'manager')
+  @RequireRoles('ceo', 'manager', 'team_lead')
   async getHistory(
     @Query('subjectType') subjectType?: string,
     @Query('subjectId') subjectId?: string,

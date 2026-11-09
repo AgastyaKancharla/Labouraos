@@ -2,7 +2,7 @@ import { Controller, Get, Param, Query, UseGuards } from '@nestjs/common';
 import { AuditService } from './audit.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RbacGuard } from '../rbac/rbac.guard';
-import { RequirePermission } from '../rbac/permissions.decorator';
+import { RequireRoles } from '../rbac/roles.decorator';
 
 @Controller('audit-logs')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -10,7 +10,7 @@ export class AuditController {
   constructor(private readonly auditService: AuditService) {}
 
   @Get()
-  @RequirePermission('staff', 'read')
+  @RequireRoles('ceo', 'manager', 'team_lead')
   async getAuditLogs(
     @Query('entityType') entityType?: string,
     @Query('entityCode') entityCode?: string,
@@ -19,7 +19,7 @@ export class AuditController {
   }
 
   @Get(':id')
-  @RequirePermission('staff', 'read')
+  @RequireRoles('ceo', 'manager', 'team_lead')
   async getAuditLogById(@Param('id') id: string) {
     return this.auditService.getLogById(id);
   }
