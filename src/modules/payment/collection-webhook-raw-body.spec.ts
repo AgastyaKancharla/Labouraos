@@ -51,7 +51,7 @@ describe('Phase 8: collection webhook (POST /payments/webhook) verifies the raw 
         name: 'Raw Body Seeker',
         phone: `97${String(timestamp).slice(-6)}${String(seq).padStart(2, '0')}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1800000,
         maxSalary: 2400000,
         preferredCallWindowStart: '09:00',

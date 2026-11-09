@@ -151,7 +151,7 @@ describe('Phase 6.5 Gate: End-to-End Proof for Daily No-Pickup Sweep', () => {
         name: 'Gate Proof Worker',
         phone: `91${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1800000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',

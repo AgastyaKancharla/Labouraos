@@ -61,7 +61,6 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
         email: `fa_p4_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -81,10 +80,10 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
       data: {
         code: `BZ-P4-${timestamp}`,
         name: 'Sensitive Business Corp',
-        contactName: 'Secret Contact',
+        ownerName: 'Secret Contact',
         phone: `96${timestamp.toString().slice(-8)}1`,
         phoneVerified: true,
-        area: 'Koramangala',
+        locality: 'Koramangala',
         city: 'Bengaluru',
         latitude: 12.9352,
         longitude: 77.6245,

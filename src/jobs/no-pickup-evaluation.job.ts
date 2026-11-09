@@ -200,7 +200,6 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
         code: true,
         name: true,
         phone: true,
-        tradeSkill: true,
         trades: { select: { trade: true, isPrimary: true } },
       },
       orderBy: { createdAt: 'asc' },

@@ -102,7 +102,7 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
         code: `JS-CW-${suffix}`,
         name: `Consent Seeker ${suffix}`,
         phone: `+9198${Math.floor(10000000 + Math.random() * 90000000)}`,
-        tradeSkill: "Electrician",
+        trades: { create: { trade: "Electrician", isPrimary: true } },
         minSalary: 1200000,
         maxSalary: 2200000,
         preferredCallWindowStart: "09:00",

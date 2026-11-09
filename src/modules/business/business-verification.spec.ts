@@ -120,7 +120,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
         code: `JS-VF-${suffix}`,
         name: `Verified Gate Candidate ${suffix}`,
         phone: `+9196${suffix.slice(0, 8)}`,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 2000000,
         maxSalary: 3000000,
         dateOfBirth: new Date('1995-01-01T00:00:00.000Z'),

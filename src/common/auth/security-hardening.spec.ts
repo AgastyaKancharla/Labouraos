@@ -181,8 +181,6 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
         },
       });
       expect(device.status).toBe('pending');
-      const staff = await prisma.staff.findUniqueOrThrow({ where: { id: fieldAgentStaff.id } });
-      expect(staff.registeredDeviceId).toBeNull();
     });
 
     it('a second device is also pending; a TOTP code does not approve it', async () => {

@@ -64,7 +64,7 @@ describe('Phase 12 Task 1 — Consent table and service', () => {
         code: `JS-CS-${randomSuffix}`,
         name: `Consent Seeker ${randomSuffix}`,
         phone: `+9191${phoneSuffix}`,
-        tradeSkill: 'Plumber',
+        trades: { create: { trade: 'Plumber', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',

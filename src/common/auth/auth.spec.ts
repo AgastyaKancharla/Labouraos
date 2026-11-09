@@ -37,7 +37,6 @@ describe('Staff Authentication', () => {
         email: testEmail,
         passwordHash,
         role: 'call_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });

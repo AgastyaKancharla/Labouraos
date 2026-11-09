@@ -1,7 +1,4 @@
 export interface JobSeekerLegacyReadSource {
-  tradeSkill?: string | null;
-  kycStatus?: string;
-  kycReference?: string | null;
   trades?: Array<{ trade: string; isPrimary: boolean }>;
   identityVerifications?: Array<{
     status: string;
@@ -9,20 +6,18 @@ export interface JobSeekerLegacyReadSource {
   }>;
 }
 
-/** Resolve deprecated response fields from their replacement tables first. */
+/** Resolve legacy response fields from their replacement tables. */
 export function withCurrentJobSeekerFields<T extends JobSeekerLegacyReadSource>(
   seeker: T,
 ): T & { tradeSkill: string | null; kycStatus: string; kycReference: string | null } {
-  const tradeSkill = seeker.trades?.length
-    ? seeker.trades.find((trade) => trade.isPrimary)?.trade ?? null
-    : seeker.tradeSkill ?? null;
+  const tradeSkill = seeker.trades?.find((trade) => trade.isPrimary)?.trade ?? null;
   const latestVerification = seeker.identityVerifications?.[0];
 
   return {
     ...seeker,
     tradeSkill,
-    kycStatus: latestVerification?.status ?? seeker.kycStatus ?? 'pending',
-    kycReference: latestVerification?.vendorReference ?? seeker.kycReference ?? null,
+    kycStatus: latestVerification?.status ?? 'pending',
+    kycReference: latestVerification?.vendorReference ?? null,
   };
 }
 
@@ -30,7 +25,7 @@ export function primaryJobSeekerTrade(seeker: JobSeekerLegacyReadSource): string
   if (seeker.trades?.length) {
     return seeker.trades.find((trade) => trade.isPrimary)?.trade ?? null;
   }
-  return seeker.tradeSkill ?? null;
+  return null;
 }
 
 export function withPrimaryJobSeekerTrade<T extends JobSeekerLegacyReadSource>(
@@ -47,5 +42,5 @@ export function jobSeekerHasTrade(
   if (seeker.trades?.length) {
     return seeker.trades.some((row) => row.trade.trim().toLowerCase() === normalizedTrade);
   }
-  return seeker.tradeSkill?.trim().toLowerCase() === normalizedTrade;
+  return false;
 }

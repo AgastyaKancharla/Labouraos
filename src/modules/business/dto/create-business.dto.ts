@@ -13,7 +13,6 @@ export class CreateBusinessDto {
   address?: string;
   locality?: string;
   contactPerson?: string;
-  contactName?: string;
   additionalContactName?: string;
   additionalContactPhone?: string;
   phone?: string;

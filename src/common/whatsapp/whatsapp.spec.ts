@@ -189,7 +189,7 @@ describe('WhatsApp Business API Provider (Phase 7 Task 3)', () => {
           name: 'Auto WhatsApp Worker',
           phone: `9188000${timestamp.toString().slice(-5)}`,
           phoneVerified: true,
-          tradeSkill: 'Plumber',
+          trades: { create: { trade: 'Plumber', isPrimary: true } },
           minSalary: 1500000,
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',

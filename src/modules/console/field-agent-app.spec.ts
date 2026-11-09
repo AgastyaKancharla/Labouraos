@@ -19,7 +19,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
   const koraArea = 'Koramangala';
 
   let faIndiToken: string;
-  const indiArea = 'Indiranagar';
 
   const timestamp = Date.now();
   const password = 'Password123!';
@@ -56,7 +55,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         email: `fa_indi_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: indiArea,
         city: 'Bengaluru',
       },
     });
@@ -170,7 +168,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         name: 'Urgent Seeker',
         phone,
         phoneVerified: true,
-        tradeSkill: 'Carpenter',
+        trades: { create: { trade: 'Carpenter', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
@@ -221,8 +219,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         selfieHash: `hash_kora_${timestamp}`,
       })
       .expect(201);
-
-    expect(bizKora.body.area).toBeNull();
 
     // The business becomes writable by the field agent as an account business.
     await prisma.business.update({

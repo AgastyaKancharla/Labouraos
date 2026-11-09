@@ -33,10 +33,10 @@ describe('Phase 18 Task 3: removed payout routes return 404 and preserve histori
       ['manager', 'manager'],
       ['finance', 'finance'],
       ['call_agent', 'call_agent'],
-      ['field_agent', 'field_agent', 'Indiranagar'],
+      ['field_agent', 'field_agent'],
       ['team_lead', 'team_lead'],
     ];
-    for (const [key, role, area] of roles) {
+    for (const [key, role] of roles) {
       const email = `${key}_prr_${timestamp}@laboura.local`;
       staffEmails.push(email);
       await prisma.staff.create({
@@ -46,7 +46,6 @@ describe('Phase 18 Task 3: removed payout routes return 404 and preserve histori
           email,
           passwordHash,
           role,
-          area: area ?? null,
           city: 'Bengaluru',
         },
       });
@@ -79,7 +78,7 @@ describe('Phase 18 Task 3: removed payout routes return 404 and preserve histori
     await app.close();
   });
 
-  const makePayout = async (over: { status?: string; payoutAttempts?: number; gatewayReference?: string } = {}) => {
+  const makePayout = async (over: { status?: string; gatewayReference?: string } = {}) => {
     seq += 1;
     const referral = await prisma.referral.create({
       data: {
@@ -98,7 +97,6 @@ describe('Phase 18 Task 3: removed payout routes return 404 and preserve histori
         type: 'referral_payout',
         amount: 20000,
         status: over.status ?? 'failed',
-        payoutAttempts: over.payoutAttempts ?? 1,
         gatewayReference: over.gatewayReference ?? `gw_rr_${timestamp}_${seq}`,
         subjectType: 'referral',
         subjectId: referral.id,

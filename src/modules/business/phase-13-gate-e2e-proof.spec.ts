@@ -185,7 +185,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
         name: `Gate Candidate ${suffix}`,
         phone: candidatePhone,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         dateOfBirth: new Date('1995-01-01T00:00:00.000Z'),
@@ -250,7 +250,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     const withdrawalCandidate = await prisma.jobSeeker.create({
       data: {
         code: `JS-P13-W-${suffix}`, name: `Withdrawal Candidate ${suffix}`, phone: withdrawalPhone,
-        phoneVerified: true, tradeSkill: 'Electrician', minSalary: 1000000, maxSalary: 3000000,
+        phoneVerified: true, trades: { create: { trade: 'Electrician', isPrimary: true } }, minSalary: 1000000, maxSalary: 3000000,
         preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00', status: 'active',
       },
     });

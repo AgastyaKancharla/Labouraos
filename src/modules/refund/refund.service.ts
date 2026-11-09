@@ -319,7 +319,6 @@ export class RefundService {
             candidateName: placement.jobSeeker.name,
             candidatePhone: placement.jobSeeker.phone,
             placementFee: placement.placementFee,
-            clockPaused: false,
           },
         });
       }

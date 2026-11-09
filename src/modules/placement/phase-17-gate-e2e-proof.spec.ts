@@ -488,7 +488,6 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
           salaryMinPaise: 180000,
           salaryMaxPaise: 220000,
           salaryPeriod: 'monthly',
-          offeredSalary: 200000,
           headcount: 1,
           description: 'Cook',
           locality: 'Indiranagar',

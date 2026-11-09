@@ -174,8 +174,6 @@ describe('Seed Data Script', () => {
       include: { replacementCandidates: true },
     });
     expect(pl4?.status).toBe('dropped_out');
-    expect(pl4?.replacementRejectionCount).toBe(3);
-    expect(pl4?.clockPaused).toBe(true);
     expect(pl4?.replacementCandidates).toHaveLength(3);
 
     // Assert Phase 6 seeded referral with completed, joined, paid-out placement

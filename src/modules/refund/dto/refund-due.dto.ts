@@ -19,7 +19,6 @@ export interface RefundDuePlacementDetails {
   candidateName: string;
   candidatePhone?: string;
   placementFee: number;
-  clockPaused: boolean;
 }
 
 export interface RefundDueRow {

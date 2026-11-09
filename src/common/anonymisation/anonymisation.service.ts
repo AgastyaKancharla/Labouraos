@@ -67,7 +67,7 @@ export class AnonymisationService {
     await this.assertNoOpenDisputesOrMoney(subjectType, id);
 
     const now = new Date();
-    const changedFields: string[] = ['name', 'phone', 'erasedAt', 'anonymisedAt'];
+    const changedFields: string[] = ['name', 'phone', 'anonymisedAt'];
 
     switch (subjectType) {
       case 'job_seeker': {
@@ -107,7 +107,6 @@ export class AnonymisationService {
             lastEmployer: null,
             lastRole: null,
             lastSalaryPaise: null,
-            erasedAt: now,
             anonymisedAt: now,
           },
         });
@@ -138,15 +137,11 @@ export class AnonymisationService {
             ownerName: null,
             additionalContactName: null,
             additionalContactPhone: null,
-            contactName: null,
             billingName: null,
             billingAddress: null,
             address: null,
             gstNumber: null,
             pan: null,
-            selfieUrl: null,
-            selfieHash: null,
-            erasedAt: now,
             anonymisedAt: now,
           },
         });
@@ -155,7 +150,6 @@ export class AnonymisationService {
           'ownerName',
           'additionalContactName',
           'additionalContactPhone',
-          'contactName',
           'billingName',
           'billingAddress',
           'address',

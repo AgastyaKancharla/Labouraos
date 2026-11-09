@@ -109,7 +109,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
         code: `JS-GATE-${stamp}`,
         name: 'Sunil Candidate',
         phone: testRawPhone,
-        tradeSkill: 'Plumber',
+        trades: { create: { trade: 'Plumber', isPrimary: true } },
         minSalary: 1200000,
         maxSalary: 2200000,
         preferredCallWindowStart: '09:00',

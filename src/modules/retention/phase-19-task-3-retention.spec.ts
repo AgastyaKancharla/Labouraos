@@ -310,7 +310,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           code: `BZ-CLM-${stamp}`,
           name: 'Claim Biz',
           phone: `+91995000${stamp.toString().slice(-4)}`,
-          contactName: 'Owner',
+          ownerName: 'Owner',
         },
       });
       bizIds.push(biz.id);

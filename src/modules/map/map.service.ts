@@ -8,7 +8,6 @@ type MappableSeeker = {
   id: string;
   latitude: number | null;
   longitude: number | null;
-  tradeSkill: string | null;
   trades: Array<{ trade: string; isPrimary: boolean }>;
 };
 
@@ -25,7 +24,7 @@ export class MapService {
 
     const coordinateFilter = coordinateWhere(bounds);
     const businesses = await this.prisma.business.findMany({
-      where: { ...coordinateFilter, erasedAt: null },
+      where: { ...coordinateFilter, anonymisedAt: null },
       select: {
         id: true,
         code: true,
@@ -76,7 +75,7 @@ export class MapService {
     const seekers: MappableSeeker[] = consentedIds.length
       ? await this.prisma.jobSeeker.findMany({
         where: { id: { in: consentedIds }, status: 'active', ...coordinateFilter },
-        select: { id: true, latitude: true, longitude: true, tradeSkill: true, trades: { select: { trade: true, isPrimary: true } } },
+        select: { id: true, latitude: true, longitude: true, trades: { select: { trade: true, isPrimary: true } } },
       })
       : [];
 
@@ -145,7 +144,7 @@ function aggregateCandidateCells(seekers: MappableSeeker[], tradeFilter?: string
     const key = `${latitude},${longitude}`;
     const cell = cells.get(key) ?? { latitude, longitude, count: 0, trades: [] };
     cell.count += 1;
-    const currentTrades = seeker.trades.length ? seeker.trades.map(({ trade }) => trade) : [seeker.tradeSkill].filter(isNonEmptyString);
+    const currentTrades = seeker.trades.map(({ trade }) => trade);
     for (const currentTrade of currentTrades) {
       const visibleTrade = tradeFilter
         ? currentTrade.trim().toLowerCase() === tradeFilter.trim().toLowerCase() ? currentTrade.trim() : null
@@ -162,10 +161,6 @@ function aggregateCandidateCells(seekers: MappableSeeker[], tradeFilter?: string
 
 function roundCoordinate(value: number): number {
   return Number(value.toFixed(2));
-}
-
-function isNonEmptyString(value: string | null): value is string {
-  return typeof value === 'string' && value.trim().length > 0;
 }
 
 function isValidTradeFilter(trade: string): boolean {

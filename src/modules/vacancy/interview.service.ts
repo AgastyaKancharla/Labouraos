@@ -875,7 +875,7 @@ export class InterviewService {
     const time = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
     }).format(interview.slotStartsAt);
-    const contactPerson = interview.business.additionalContactName || interview.business.ownerName || interview.business.contactName || '';
+    const contactPerson = interview.business.additionalContactName || interview.business.ownerName || '';
     const candidateMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
       this.messagingService.send({
         channel, template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,

@@ -1375,7 +1375,7 @@ export function renderCallAgentConsoleHtml(): string {
         const data = await api(endpoint);
         currentCallingSubject = { type: subjectType, id: data.id, code: data.code, data: data };
 
-        document.getElementById('profile-card-name').textContent = data.name || data.contactName || '—';
+        document.getElementById('profile-card-name').textContent = data.name || data.ownerName || '—';
         document.getElementById('profile-card-code').textContent = data.code || subjectId;
         document.getElementById('profile-card-phone').textContent = formatPhoneLast4(data.phone);
         document.getElementById('profile-card-status').textContent = data.status || 'Active';

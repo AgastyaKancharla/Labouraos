@@ -820,7 +820,6 @@ export class JobSeekerService {
         message: 'Job seeker already erased',
         id: res.id,
         code: res.code,
-        erasedAt: res.anonymisedAt,
         anonymisedAt: res.anonymisedAt,
       };
     }

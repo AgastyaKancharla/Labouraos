@@ -9,9 +9,6 @@ export interface PlacementRefundEligibilityInput {
   hasExistingRefund: boolean;
   searchDays?: number;
   guaranteeEndedReason?: string | null;
-  eligibility?: string | null;
-  clockPaused?: boolean;
-  clockPausedAt?: Date | null;
 }
 
 export interface PlacementRefundEligibilityResult {
@@ -31,8 +28,7 @@ export interface PlacementRefundEligibilityResult {
  * - No replacement candidate has been accepted or selected.
  * - Claim acceptance date (or dropoutReportedAt) must be present.
  * - At least searchDays (from PricingPolicy, default 15) must have elapsed.
- * - Clock does not pause and does not restart. Deprecated columns (clockPaused,
- *   clockPausedAt, replacementRejectionCount, eligibility) are not read.
+ * - Clock does not pause and does not restart.
  * - No refund has already been issued.
  * - Flat 100% refund of placement fee when search window passes without a selection.
  */

@@ -340,10 +340,7 @@ export class VacancyService {
         id: { in: consentedJobSeekerIds },
         city: vacancy.city,
         status: 'active',
-        OR: [
-          { trades: { some: { trade: { equals: vacancy.tradeSkill, mode: 'insensitive' } } } },
-          { trades: { none: {} }, tradeSkill: { equals: vacancy.tradeSkill, mode: 'insensitive' } },
-        ],
+        trades: { some: { trade: { equals: vacancy.tradeSkill, mode: 'insensitive' } } },
         minSalary: { lte: vacancy.salaryMinPaise },
         maxSalary: { gte: vacancy.salaryMinPaise },
       },

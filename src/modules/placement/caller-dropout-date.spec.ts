@@ -19,14 +19,11 @@ interface MockPlacementRecord {
   joinedDate: Date | null;
   rootPlacementId: string | null;
   paidAt: Date | null;
-  clockPaused: boolean;
-  clockPausedAt: Date | null;
   dropoutReportedAt: Date | null;
   dropoutDateCallerSupplied: boolean;
-  eligibility: string | null;
   placementFee: number;
   businessId: string;
-  business: { id: string; area: string; accountAgentId?: string };
+  business: { id: string; locality?: string; accountAgentId?: string };
   jobSeeker: { id: string };
   vacancy: { id: string };
   replacementCandidates: Array<{ status: string }>;
@@ -99,14 +96,11 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
       joinedDate: new Date(joinedDate),
       rootPlacementId: null,
       paidAt: new Date(joinedDate),
-      clockPaused: false,
-      clockPausedAt: null,
       dropoutReportedAt: null,
       dropoutDateCallerSupplied: false,
-      eligibility: null,
       placementFee: 2500000,
       businessId: 'biz-1',
-      business: { id: 'biz-1', area: 'Indiranagar', accountAgentId: 'fa-1' },
+      business: { id: 'biz-1', locality: 'Indiranagar', accountAgentId: 'fa-1' },
       jobSeeker: { id: 'js-1' },
       vacancy: { id: 'vac-1' },
       replacementCandidates: [],

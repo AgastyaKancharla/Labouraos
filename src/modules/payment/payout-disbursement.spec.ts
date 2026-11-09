@@ -89,7 +89,6 @@ describe('Phase 6 Task 2: Payout Disbursement', () => {
         email: `fa_p6_t2_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });

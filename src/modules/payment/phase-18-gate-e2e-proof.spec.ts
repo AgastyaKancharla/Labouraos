@@ -556,7 +556,6 @@ describe('Phase 18 Gate End-to-End Proof', () => {
           code: `BZ-P18-${suffix}-REF`,
           name: 'Bengaluru Tech Park Canteen',
           ownerName: 'Suresh Patel',
-          contactName: 'Suresh Patel',
           phone: bizPhone,
           verificationStatus: 'verified',
           city: 'Bengaluru',

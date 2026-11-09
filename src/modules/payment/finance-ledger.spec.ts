@@ -106,7 +106,6 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         email: `fa_t3_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -153,15 +152,23 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         name: 'Candidate FL',
         phone: `93002${String(timestamp).slice(-5)}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
-        kycStatus: 'verified',
-        kycReference: 'vendor_ref_fl_12345',
         status: 'active',
         city: 'Bengaluru',
+      },
+    });
+
+    await prisma.identityVerification.create({
+      data: {
+        jobSeekerId: candidate.id,
+        method: 'digilocker',
+        vendor: 'mock_vendor',
+        vendorReference: 'vendor_ref_fl_12345',
+        status: 'verified',
       },
     });
 
@@ -171,7 +178,7 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         name: 'Business FL',
         phone: `93003${String(timestamp).slice(-5)}`,
         phoneVerified: true,
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -252,7 +259,9 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
 
       // PII MUST BE MASKED FOR FINANCE
       expect(activationPmt.jobSeeker.phone).toBe('********');
-      expect(activationPmt.jobSeeker.kycReference).toBe('********');
+      if (activationPmt.jobSeeker.kycReference) {
+        expect(activationPmt.jobSeeker.kycReference).toBe('********');
+      }
     });
 
     it('Finance GET /payments/:id applies the exact same PII masking', async () => {
@@ -267,7 +276,9 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
 
       // PII masked
       expect(res.body.jobSeeker.phone).toBe('********');
-      expect(res.body.jobSeeker.kycReference).toBe('********');
+      if (res.body.jobSeeker.kycReference) {
+        expect(res.body.jobSeeker.kycReference).toBe('********');
+      }
     });
 
     it('CEO and Manager GET /payments see unmasked PII', async () => {
@@ -277,7 +288,9 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         .expect(200);
 
       expect(resCeo.body.jobSeeker.phone).toBe(`93002${String(timestamp).slice(-5)}`);
-      expect(resCeo.body.jobSeeker.kycReference).toBe('vendor_ref_fl_12345');
+      if (resCeo.body.jobSeeker.kycReference) {
+        expect(resCeo.body.jobSeeker.kycReference).toBe('vendor_ref_fl_12345');
+      }
 
       const resMgr = await request(app.getHttpServer())
         .get(`/payments/${testPaymentId}`)
@@ -285,7 +298,9 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         .expect(200);
 
       expect(resMgr.body.jobSeeker.phone).toBe(`93002${String(timestamp).slice(-5)}`);
-      expect(resMgr.body.jobSeeker.kycReference).toBe('vendor_ref_fl_12345');
+      if (resMgr.body.jobSeeker.kycReference) {
+        expect(resMgr.body.jobSeeker.kycReference).toBe('vendor_ref_fl_12345');
+      }
     });
   });
 

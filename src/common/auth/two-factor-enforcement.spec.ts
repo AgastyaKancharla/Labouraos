@@ -31,7 +31,6 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
         name: `TFA ${role}`,
         email,
         role,
-        area: role === 'field_agent' ? 'Koramangala' : null,
         passwordHash: await bcrypt.hash(password, 4),
         ...extra,
       },

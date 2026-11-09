@@ -50,10 +50,10 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
       ['manager', 'manager'],
       ['finance', 'finance'],
       ['call_agent', 'call_agent'],
-      ['field_agent', 'field_agent', 'Indiranagar'],
+      ['field_agent', 'field_agent'],
       ['team_lead', 'team_lead'],
     ];
-    for (const [key, role, area] of roles) {
+    for (const [key, role] of roles) {
       const email = `${key}_rf_${timestamp}@laboura.local`;
       staffEmails.push(email);
       const staff = await prisma.staff.create({
@@ -63,7 +63,6 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
           email,
           passwordHash,
           role,
-          area: area ?? null,
           city: 'Bengaluru',
         },
       });

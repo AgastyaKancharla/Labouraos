@@ -141,8 +141,6 @@ describe('Phase 9 Task 4: Field Agent Device ID Enforcement', () => {
 
     expect(res.status).toBe(401);
     expect(res.body.accessToken).toBeUndefined();
-    const updated = await prisma.staff.findUnique({ where: { id: fieldAgentStaff.id } });
-    expect(updated?.registeredDeviceId).toBeNull();
     const device = await prisma.staffDevice.findUniqueOrThrow({
       where: {
         staffId_deviceId: { staffId: fieldAgentStaff.id, deviceId: 'fa-registered-device-001' },

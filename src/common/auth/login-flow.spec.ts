@@ -33,7 +33,6 @@ describe('Phase 10 Task 4: staff-code login', () => {
         passwordHash: await bcrypt.hash(password, 4),
         role,
         status: 'active',
-        area: role === 'field_agent' ? 'Koramangala' : null,
         teamLeadId: (extra.teamLeadId as string) ?? null,
         worksFromOffice: (extra.worksFromOffice as boolean) ?? false,
         totpSecret: (extra.totpSecret as string) ?? null,

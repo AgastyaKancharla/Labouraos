@@ -67,7 +67,7 @@ const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * Explicit allow-list of columns returned to callers. passwordHash, totpSecret,
- * registeredDeviceId, inviteTokenHash and callRoutingPhone must never leave the service.
+ * inviteTokenHash and callRoutingPhone must never leave the service.
  */
 const STAFF_VIEW_SELECT = {
   id: true,
@@ -604,7 +604,6 @@ export class StaffService {
           inviteExpiresAt,
           totpSecret: null,
           totpEnabled: false,
-          registeredDeviceId: null,
         },
         select: STAFF_VIEW_SELECT,
       });
@@ -685,7 +684,6 @@ export class StaffService {
           passwordHash: placeholderHash,
           totpSecret: null,
           totpEnabled: false,
-          registeredDeviceId: null,
           inviteTokenHash: null,
           inviteExpiresAt: null,
         },

@@ -223,8 +223,7 @@ export class FieldAgentMetricsService {
     // margin protection, so it must measure the milestone that legally and operationally saves the margin.
     //
     // SHARED DAYS-ELAPSED LOGIC:
-    // Reuses calculateDaysElapsed() from placement.service.ts, which correctly freezes elapsed time
-    // when clockPaused is true (after 2 replacement rejections by the business).
+    // Reuses calculateDaysElapsed() from placement.service.ts.
     //
     // PERIOD TIMESTAMP: Scoped by replacementCandidate.acceptedAt falling within [startUtc, endUtc].
     // Null acceptedAt values are honest-null and excluded from metrics.
@@ -246,8 +245,6 @@ export class FieldAgentMetricsService {
             id: true,
             code: true,
             dropoutReportedAt: true,
-            clockPaused: true,
-            clockPausedAt: true,
             createdByStaffId: true,
           },
         },
@@ -263,11 +260,8 @@ export class FieldAgentMetricsService {
         continue;
       }
 
-      // calculateDaysElapsed uses effectiveEnd = clockPaused && clockPausedAt ? clockPausedAt : asOf
       const daysElapsed = calculateDaysElapsed(
         placement.dropoutReportedAt,
-        placement.clockPaused,
-        placement.clockPausedAt,
         rc.acceptedAt,
       );
 

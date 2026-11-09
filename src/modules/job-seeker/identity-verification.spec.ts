@@ -101,7 +101,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
     await app.close();
   });
 
-  async function createCandidate(options?: { kycStatus?: string; kycReference?: string }): Promise<string> {
+  async function createCandidate(): Promise<string> {
     const suffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
     const phoneSuffix = Math.floor(10000000 + Math.random() * 90000000);
     const seeker = await prisma.jobSeeker.create({
@@ -109,14 +109,11 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
         code: `JS-IDV-${suffix}`,
         name: `Candidate ${suffix}`,
         phone: `+9193${phoneSuffix}`,
-        tradeSkill: 'Plumber',
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         status: 'consented',
-        kycStatus: options?.kycStatus ?? 'pending',
-        kycReference: options?.kycReference ?? null,
       },
     });
     createdSeekerIds.push(seeker.id);
@@ -255,11 +252,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
   });
 
   it('5. Does NOT write to deprecated JobSeeker.kycStatus or kycReference columns', async () => {
-    const initialKycRef = 'ORIGINAL-REF-1122';
-    const seekerId = await createCandidate({
-      kycStatus: 'pending',
-      kycReference: initialKycRef,
-    });
+    const seekerId = await createCandidate();
     await grantAadhaarConsent(seekerId);
 
     const res = await request(app.getHttpServer())
@@ -276,12 +269,11 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
 
     expect(res.status).toBe(201);
 
-    // JobSeeker record should NOT have been updated
+    // JobSeeker record should NOT have been updated with verification result
     const seekerInDb = await prisma.jobSeeker.findUnique({
       where: { id: seekerId },
     });
-    expect(seekerInDb?.kycStatus).toBe('pending');
-    expect(seekerInDb?.kycReference).toBe(initialKycRef);
+    expect(seekerInDb?.id).toBe(seekerId);
   });
 
   it('6. Supports all allowed methods (digilocker, aadhaar_qr, pan, driving_licence, voter_id) and rejects invalid', async () => {

@@ -134,7 +134,6 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
           email: `ca_p7k_${timestamp}@laboura.local`,
           passwordHash,
           role: 'call_agent',
-          area: 'Indiranagar',
           city: 'Bengaluru',
         },
       });
@@ -157,7 +156,7 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
           name: 'Real KYC Candidate',
           phone: `96002${String(timestamp).slice(-5)}`,
           phoneVerified: true,
-          tradeSkill: 'Plumber',
+          trades: { create: { trade: 'Plumber', isPrimary: true } },
           minSalary: 1600000,
           maxSalary: 2200000,
           preferredCallWindowStart: '09:00',
@@ -173,8 +172,8 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
         .send({ kycReference: 'legacy-hand-entered-ref', kycStatus: 'verified' });
 
       expect(kycRes.status).toBe(404);
-      const savedInDb = await prisma.jobSeeker.findUnique({ where: { id: candidate.id } });
-      expect(savedInDb?.kycReference).toBeNull();
+      const verifications = await prisma.identityVerification.findMany({ where: { jobSeekerId: candidate.id } });
+      expect(verifications).toHaveLength(0);
     });
   });
 

@@ -1292,11 +1292,11 @@ export function renderAdminDashboardHtml(): string {
             <td><strong>\${j.code}</strong></td>
             <td>\${j.name}</td>
             <td>\${formatPhoneLast4(j.phone)}</td>
-            <td>\${j.trades?.length ? j.trades.find(t => t.isPrimary)?.trade : j.tradeSkill}</td>
+            <td>\${j.trades?.length ? j.trades.find(t => t.isPrimary)?.trade : (j.tradeSkill || '—')}</td>
             <td>₹\${(j.minSalary/100).toLocaleString('en-IN')} - ₹\${(j.maxSalary/100).toLocaleString('en-IN')}</td>
             <td><span class="badge">\${j.status}</span></td>
             <td>\${j.hitCount}</td>
-            <td>\${j.identityVerifications?.[0]?.status ?? j.kycStatus}</td>
+            <td>\${j.identityVerifications?.[0]?.status ?? 'pending'}</td>
             <td>
               <button class="btn-sm btn-call" onclick="openAdminCalling('job_seeker', '\${j.id}', '\${j.code}')">Call</button>
               \${j.status === 'lead' ? \`
@@ -1343,7 +1343,7 @@ export function renderAdminDashboardHtml(): string {
             <td>\${b.name}</td>
             <td>\${formatPhoneLast4(b.phone)}</td>
             <td>\${b.locality || ''}</td>
-            <td>\${b.selfieUrl ? 'Yes' : 'Pending'}</td>
+            <td>\${b.visits?.[0]?.selfieUrl || b.storefrontPhotoPath ? 'Yes' : 'Pending'}</td>
             <td>\${b.geofenceFlag ? 'FLAGGED' : 'Clean'}</td>
             <td><button class="btn-sm btn-call" onclick="openAdminCalling('business', '\${b.id}', '\${b.code}')">Call</button></td>
             \${canViewIntroductions ? '<td><button class="btn-sm business-intro-button" data-business-id="' + b.id + '" data-business-code="' + b.code + '">Introductions</button></td>' : ''}
@@ -1455,7 +1455,7 @@ export function renderAdminDashboardHtml(): string {
         const data = await api(endpoint);
         adminCallingSubject = { type: subjectType, id: data.id || id, code: data.code || code, data: data };
 
-        document.getElementById('admin-profile-name').textContent = data.name || data.contactName || '—';
+        document.getElementById('admin-profile-name').textContent = data.name || data.ownerName || '—';
         document.getElementById('admin-profile-code').textContent = data.code || code;
         document.getElementById('admin-profile-phone').textContent = formatPhoneLast4(data.phone);
         document.getElementById('admin-profile-status').textContent = data.status || 'Active';

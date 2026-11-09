@@ -310,7 +310,7 @@ describe('Phase 9 Task 7: Status History', () => {
           name: 'Sweep Candidate',
           phone: sweepPhone,
           phoneVerified: true,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1500000,
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',

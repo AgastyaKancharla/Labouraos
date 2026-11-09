@@ -72,7 +72,6 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         email: `ca_p66_${timestamp}@laboura.local`,
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -87,7 +86,6 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         email: `fa_p66_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -137,7 +135,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         name: 'Kora Tech',
         phone: `93${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
-        area: 'Koramangala',
+        locality: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -150,7 +148,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         name: 'Indi Enterprise',
         phone: `94${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -338,7 +336,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           name: 'Hit Test Seeker',
           phone,
           phoneVerified: true,
-          tradeSkill: 'Plumber',
+          trades: { create: { trade: 'Plumber', isPrimary: true } },
           minSalary: 1500000,
           maxSalary: 2000000,
           preferredCallWindowStart: '09:00',
@@ -477,7 +475,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
             name: `Matrix Candidate ${suffix}`,
             phone,
             phoneVerified: true,
-            tradeSkill: 'Painter',
+            trades: { create: { trade: 'Painter', isPrimary: true } },
             minSalary: 1400000,
             maxSalary: 2100000,
             preferredCallWindowStart: '09:00',

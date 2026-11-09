@@ -289,7 +289,6 @@ export async function seed(prismaClient?: PrismaClient) {
       create: {
         code: 'BZ-00001',
         name: 'Metro Facility Solutions',
-        contactName: 'Sunil Verma',
         phone: '+918011110001',
         phoneVerified: true,
         locality: 'Koramangala',
@@ -314,7 +313,6 @@ export async function seed(prismaClient?: PrismaClient) {
       create: {
         code: 'BZ-00002',
         name: 'Indira Retail Mart',
-        contactName: 'Rohit Shenoy',
         phone: '+918011110002',
         phoneVerified: true,
         locality: 'Indiranagar',
@@ -335,13 +333,10 @@ export async function seed(prismaClient?: PrismaClient) {
         latitude: 12.3051,
         longitude: 76.6551,
         geofenceFlag: true,
-        selfieUrl: 'https://storage.laboura.local/selfies/seed_bz3.jpg',
-        selfieHash: 'hash_seed_bz3_geofence',
       },
       create: {
         code: 'BZ-00003',
         name: 'Mysuru Industrial Fabrications',
-        contactName: 'Raghavendra K',
         phone: '+918211110003',
         phoneVerified: true,
         locality: 'Hebbal Industrial',
@@ -349,8 +344,6 @@ export async function seed(prismaClient?: PrismaClient) {
         latitude: 12.3051,
         longitude: 76.6551,
         geofenceFlag: true,
-        selfieUrl: 'https://storage.laboura.local/selfies/seed_bz3.jpg',
-        selfieHash: 'hash_seed_bz3_geofence',
       },
     });
 
@@ -755,14 +748,11 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { code: 'PL-00001' },
       update: {
         status: 'dropped_out',
-        eligibility: 'employee_left',
         joinedDate: new Date('2026-06-10T10:00:00.000Z'),
         dropoutReportedAt: new Date('2026-06-25T10:00:00.000Z'), // 6 days before 2026-07-01 (<= 15 days)
         agreedSalary: 2200000,
         placementFee: 1100000,
         gstAmount: 198000,
-        replacementRejectionCount: 0,
-        clockPaused: false,
       },
       create: {
         code: 'PL-00001',
@@ -774,11 +764,8 @@ export async function seed(prismaClient?: PrismaClient) {
         placementFee: 1100000,
         gstAmount: 198000,
         status: 'dropped_out',
-        eligibility: 'employee_left',
         joinedDate: new Date('2026-06-10T10:00:00.000Z'),
         dropoutReportedAt: new Date('2026-06-25T10:00:00.000Z'),
-        replacementRejectionCount: 0,
-        clockPaused: false,
       },
     });
 
@@ -844,7 +831,6 @@ export async function seed(prismaClient?: PrismaClient) {
         agreedSalary: 2000000,
         placementFee: 1000000,
         gstAmount: 180000,
-        clockPaused: false,
       },
       create: {
         code: 'PL-00002',
@@ -857,7 +843,6 @@ export async function seed(prismaClient?: PrismaClient) {
         gstAmount: 180000,
         status: 'active',
         joinedDate: new Date('2026-06-15T10:00:00.000Z'),
-        clockPaused: false,
       },
     });
 
@@ -922,14 +907,11 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { code: 'PL-00003' },
       update: {
         status: 'dropped_out',
-        eligibility: 'employee_left',
         joinedDate: new Date('2026-03-10T10:00:00.000Z'),
         dropoutReportedAt: new Date('2026-04-10T10:00:00.000Z'), // 82 days before 2026-07-01 (>60 days)
         agreedSalary: 1800000,
         placementFee: 900000,
         gstAmount: 162000,
-        replacementRejectionCount: 0,
-        clockPaused: false,
       },
       create: {
         code: 'PL-00003',
@@ -941,11 +923,8 @@ export async function seed(prismaClient?: PrismaClient) {
         placementFee: 900000,
         gstAmount: 162000,
         status: 'dropped_out',
-        eligibility: 'employee_left',
         joinedDate: new Date('2026-03-10T10:00:00.000Z'),
         dropoutReportedAt: new Date('2026-04-10T10:00:00.000Z'),
-        replacementRejectionCount: 0,
-        clockPaused: false,
       },
     });
 
@@ -1005,12 +984,8 @@ export async function seed(prismaClient?: PrismaClient) {
       where: { code: 'PL-00004' },
       update: {
         status: 'dropped_out',
-        eligibility: 'employee_left',
         joinedDate: new Date('2026-05-01T10:00:00.000Z'),
         dropoutReportedAt: new Date('2026-05-15T10:00:00.000Z'),
-        replacementRejectionCount: 3,
-        clockPaused: true,
-        clockPausedAt: new Date('2026-05-25T10:00:00.000Z'),
         agreedSalary: 2400000,
         placementFee: 1200000,
         gstAmount: 216000,
@@ -1025,12 +1000,8 @@ export async function seed(prismaClient?: PrismaClient) {
         placementFee: 1200000,
         gstAmount: 216000,
         status: 'dropped_out',
-        eligibility: 'employee_left',
         joinedDate: new Date('2026-05-01T10:00:00.000Z'),
         dropoutReportedAt: new Date('2026-05-15T10:00:00.000Z'),
-        replacementRejectionCount: 3,
-        clockPaused: true,
-        clockPausedAt: new Date('2026-05-25T10:00:00.000Z'),
       },
     });
 

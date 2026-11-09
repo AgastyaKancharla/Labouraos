@@ -127,7 +127,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
         code: `JS-T4-${randomSuffix}`,
         name: `Lead ${randomSuffix}`,
         phone: `+9194${phoneSuffix}`,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1400000,
         maxSalary: 2400000,
         preferredCallWindowStart: '09:00',

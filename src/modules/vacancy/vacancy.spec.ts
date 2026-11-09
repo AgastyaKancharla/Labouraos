@@ -44,7 +44,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         email: `fa_vkora_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -57,7 +56,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         email: `fa_vindi_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -103,7 +101,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       data: {
         code: `BZ-VKORA-${timestamp}`,
         name: 'Koramangala Cafe & Resto',
-        area: 'Koramangala',
+        locality: 'Koramangala',
         accountAgentId: faKora.id,
         city: 'Bengaluru',
         phone: `81${timestamp.toString().slice(-8)}`,
@@ -117,7 +115,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       data: {
         code: `BZ-VINDI-${timestamp}`,
         name: 'Indiranagar Retail Mart',
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         accountAgentId: faIndi.id,
         city: 'Bengaluru',
         phone: `82${timestamp.toString().slice(-8)}`,
@@ -194,7 +192,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(res.body.code).toMatch(/^VC-\d{5}$/);
     expect(res.body.tradeSkill).toBe('Electrician');
     expect(res.body.salaryMinPaise).toBe(2200000);
-    expect(res.body.offeredSalary).toBeNull();
     expect(res.body.headcount).toBe(3);
     expect(res.body.status).toBe('open');
     expect(res.body.businessId).toBe(koramangalaBusinessId);
@@ -253,7 +250,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
 
       expect(created.body.tradeSkill).toBe('Electrician');
       expect(created.body.salaryMinPaise).toBe(2200000);
-      expect(created.body.offeredSalary).toBeNull();
       expect(created.body.interviewSlots).toHaveLength(1);
       expect(created.body.interviewSlots[0].startsAt).toBe(
         new Date('2026-12-05T11:15:00+05:30').toISOString(),
