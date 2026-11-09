@@ -276,9 +276,9 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           code: `VC-CLM-${stamp}`,
           businessId: biz.id,
           tradeSkill: 'Security',
-          salaryMin: 1500000,
-          salaryMax: 2500000,
-          requiredCount: 1,
+          salaryMinPaise: 1500000,
+          salaryMaxPaise: 2500000,
+          headcount: 1,
         },
       });
 
@@ -358,7 +358,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           code: `ST-LOG-${stamp}`,
           name: 'Log Staff',
           role: 'call_agent',
-          phone: `+91996000${stamp.toString().slice(-4)}`,
+          passwordHash: 'dummy-hash',
         },
       });
 
