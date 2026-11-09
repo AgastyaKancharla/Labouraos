@@ -65,7 +65,7 @@ One task after another, in order, each on its own branch; build on the latest `m
   - Writes one summary per run (counts per category, no personal data) visible to the CEO, and a `dryRun` flag that reports what it *would* do without changing anything.
 - Tests: a job seeker inactive for 23 months and a day is anonymised, one inactive for 22 months isn't; a recent call resets the clock; a 13-month recording is deleted, one linked to an open claim isn't; 13-month sessions are deleted; a dry run changes nothing and reports the right counts; the job is idempotent.
 
-### [ ] Task 4 — The final clean-up: removing the old columns
+### [x] Task 4 — The final clean-up: removing the old columns
 **Branch:** `phase-19/task-4-final-cleanup` · **Migration folder:** `20261112110000_final_cleanup`
 
 **Acceptance:**

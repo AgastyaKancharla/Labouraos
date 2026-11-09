@@ -390,6 +390,62 @@ export function renderFieldAgentAppHtml(): string {
           </table>
         </div>
       </div>
+
+      <!-- Profile Edit Section -->
+      <div id="fa-edit-profile-section" style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+          <span style="font-size: 0.9rem; font-weight: bold; color: var(--primary);">Edit Profile</span>
+        </div>
+
+        <div id="fa-edit-locked-notice" class="alert alert-danger" style="display: none; margin-bottom: 8px; font-size: 0.85rem; font-weight: bold;">
+          Locked — money involved, ask your Team Lead
+        </div>
+
+        <div id="fa-edit-inputs-container">
+          <div class="form-group" style="margin-bottom: 6px;">
+            <label style="font-size: 0.8rem;">Name</label>
+            <input type="text" id="fa-edit-name" style="font-size: 0.85rem;">
+          </div>
+          <div class="form-group" style="margin-bottom: 6px;">
+            <label style="font-size: 0.8rem;">Phone</label>
+            <input type="text" id="fa-edit-phone" style="font-size: 0.85rem;">
+          </div>
+          <div class="form-group" style="margin-bottom: 6px;">
+            <label style="font-size: 0.8rem;">Locality</label>
+            <input type="text" id="fa-edit-locality" style="font-size: 0.85rem;">
+          </div>
+        </div>
+
+        <!-- Reason box: shown only when saved value is changed -->
+        <div id="fa-edit-reason-container" style="display: none; margin-top: 8px; background: #1e293b; padding: 8px; border-radius: 4px; border: 1px solid #f59e0b;">
+          <label style="color: #f59e0b; font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 4px;">Reason for change (required when changing saved values):</label>
+          <input type="text" id="fa-edit-reason" placeholder="e.g. Corrected candidate phone number" style="width: 100%; font-size: 0.85rem;">
+        </div>
+
+        <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+          <button type="button" id="fa-btn-save-edit" class="btn-sm btn-success" onclick="submitFaProfileEdit()">Save Profile</button>
+        </div>
+
+        <!-- Change History: Team Leads and above only -->
+        <div id="fa-change-history-section" style="display: none; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px;">
+          <h4 style="font-size: 0.85rem; margin-bottom: 6px; color: var(--text);">Change History</h4>
+          <div style="max-height: 150px; overflow-y: auto;">
+            <table class="change-history-table" style="font-size: 0.75rem; width: 100%;">
+              <thead>
+                <tr>
+                  <th>Who</th>
+                  <th>When</th>
+                  <th>Which Fields</th>
+                  <th>Reason</th>
+                </tr>
+              </thead>
+              <tbody id="fa-change-history-tbody">
+                <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No changes recorded</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -1418,6 +1474,81 @@ export function renderFieldAgentAppHtml(): string {
           }
         }
 
+        // Setup Edit Profile Section
+        let faInitialValues = {
+          name: data.name || data.ownerName || '',
+          phone: data.phone || '',
+          locality: data.locality || '',
+        };
+        window.faCurrentInitialValues = faInitialValues;
+
+        document.getElementById('fa-edit-name').value = faInitialValues.name;
+        document.getElementById('fa-edit-phone').value = faInitialValues.phone;
+        document.getElementById('fa-edit-locality').value = faInitialValues.locality;
+
+        const faReasonContainer = document.getElementById('fa-edit-reason-container');
+        const faReasonInput = document.getElementById('fa-edit-reason');
+        const faLockedNotice = document.getElementById('fa-edit-locked-notice');
+        const saveFaBtn = document.getElementById('fa-btn-save-edit');
+
+        faReasonContainer.style.display = 'none';
+        faReasonInput.value = '';
+
+        // Check edit lock via /edit-policy/check
+        let isFaLocked = false;
+        try {
+          const perm = await api('/edit-policy/check?entityType=' + encodeURIComponent(subjectType) + '&id=' + encodeURIComponent(data.id || id));
+          if (!perm.allowed && perm.reason && perm.reason.includes('Locked — money involved, ask your Team Lead')) {
+            isFaLocked = true;
+          }
+        } catch (err) {
+          if (err.message && err.message.includes('Locked — money involved, ask your Team Lead')) {
+            isFaLocked = true;
+          }
+        }
+
+        if (isFaLocked) {
+          faLockedNotice.style.display = 'block';
+          saveFaBtn.disabled = true;
+          document.getElementById('fa-edit-name').disabled = true;
+          document.getElementById('fa-edit-phone').disabled = true;
+          document.getElementById('fa-edit-locality').disabled = true;
+        } else {
+          faLockedNotice.style.display = 'none';
+          saveFaBtn.disabled = false;
+          document.getElementById('fa-edit-name').disabled = false;
+          document.getElementById('fa-edit-phone').disabled = false;
+          document.getElementById('fa-edit-locality').disabled = false;
+        }
+
+        function checkFaEditFieldsChanged() {
+          const init = window.faCurrentInitialValues || {};
+          const curName = document.getElementById('fa-edit-name').value.trim();
+          const curPhone = document.getElementById('fa-edit-phone').value.trim();
+          const curLocality = document.getElementById('fa-edit-locality').value.trim();
+
+          let savedChanged = false;
+          if (init.name && curName !== init.name) savedChanged = true;
+          if (init.phone && curPhone !== init.phone) savedChanged = true;
+          if (init.locality && curLocality !== init.locality) savedChanged = true;
+
+          faReasonContainer.style.display = savedChanged ? 'block' : 'none';
+        }
+
+        document.getElementById('fa-edit-name').oninput = checkFaEditFieldsChanged;
+        document.getElementById('fa-edit-phone').oninput = checkFaEditFieldsChanged;
+        document.getElementById('fa-edit-locality').oninput = checkFaEditFieldsChanged;
+
+        // Change History: visible to Team Leads and above only
+        const historySection = document.getElementById('fa-change-history-section');
+        const isLeadOrAbove = currentUser && ['team_lead', 'manager', 'ceo'].includes(currentUser.role);
+        if (isLeadOrAbove) {
+          historySection.style.display = 'block';
+          loadFaChangeHistory(subjectType, data.code || code || id);
+        } else {
+          historySection.style.display = 'none';
+        }
+
         await loadFaHistory(subjectType, data.id || id);
       } catch (e) {
         showAlert('Could not load profile: ' + e.message, false);
@@ -1672,6 +1803,80 @@ export function renderFieldAgentAppHtml(): string {
         loadFaFollowUps();
       } catch (e) {
         showAlert('Failed to complete follow-up: ' + e.message, false);
+      }
+    }
+
+    async function submitFaProfileEdit() {
+      if (!faCallingSubject) return alert('Load a profile first');
+      const init = window.faCurrentInitialValues || {};
+      const curName = document.getElementById('fa-edit-name').value.trim();
+      const curPhone = document.getElementById('fa-edit-phone').value.trim();
+      const curLocality = document.getElementById('fa-edit-locality').value.trim();
+
+      const body = {};
+      let savedChanged = false;
+      if (curName !== (init.name || '')) {
+        if (init.name) savedChanged = true;
+        body.name = curName || undefined;
+      }
+      if (curPhone !== (init.phone || '')) {
+        if (init.phone) savedChanged = true;
+        body.phone = curPhone || undefined;
+      }
+      if (curLocality !== (init.locality || '')) {
+        if (init.locality) savedChanged = true;
+        body.locality = curLocality || undefined;
+      }
+
+      if (Object.keys(body).length === 0) {
+        showAlert('No changes detected', false);
+        return;
+      }
+
+      const reason = document.getElementById('fa-edit-reason').value.trim();
+      if (savedChanged) {
+        if (!reason) {
+          showAlert('A reason is required when changing an existing saved value', false);
+          return;
+        }
+        body.reason = reason;
+      } else if (reason) {
+        body.reason = reason;
+      }
+
+      try {
+        let endpoint = '/job-seekers/' + encodeURIComponent(faCallingSubject.id);
+        if (faCallingSubject.type === 'business') endpoint = '/businesses/' + encodeURIComponent(faCallingSubject.id);
+        else if (faCallingSubject.type === 'referral') endpoint = '/referrals/' + encodeURIComponent(faCallingSubject.id);
+
+        await api(endpoint, { method: 'PATCH', body });
+        showAlert('Profile updated successfully');
+        await openFaCalling(faCallingSubject.type, faCallingSubject.id, faCallingSubject.code, curName);
+      } catch (err) {
+        showAlert('Update failed: ' + err.message, false);
+      }
+    }
+
+    async function loadFaChangeHistory(subjectType, code) {
+      const tbody = document.getElementById('fa-change-history-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading history...</td></tr>';
+      try {
+        const logs = await api('/audit-logs?entityType=' + encodeURIComponent(subjectType) + '&entityCode=' + encodeURIComponent(code));
+        if (!logs || !logs.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No changes recorded</td></tr>';
+          return;
+        }
+        tbody.innerHTML = logs.map(l => \`
+          <tr>
+            <td><strong>\${l.actor?.name || l.actor?.code || 'Staff'}</strong></td>
+            <td>\${new Date(l.createdAt).toLocaleString('en-IN')}</td>
+            <td><code style="color: #38bdf8;">\${Array.isArray(l.changedFields) ? l.changedFields.join(', ') : '—'}</code></td>
+            <td>\${l.reason || '—'}</td>
+          </tr>
+        \`).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color: var(--danger); text-align: center;">Failed to load history: ' + err.message + '</td></tr>';
       }
     }
 

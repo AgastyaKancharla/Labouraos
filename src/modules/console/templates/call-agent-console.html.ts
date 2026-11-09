@@ -712,6 +712,62 @@ export function renderCallAgentConsoleHtml(): string {
                   </tbody>
                 </table>
               </div>
+
+              <!-- Profile Edit Section -->
+              <div id="profile-edit-section" style="margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
+                  <span style="font-size: 0.9rem; font-weight: bold; color: var(--primary);">Edit Profile</span>
+                </div>
+
+                <div id="profile-edit-locked-notice" class="alert alert-danger" style="display: none; margin-bottom: 8px; font-size: 0.85rem; font-weight: bold;">
+                  Locked — money involved, ask your Team Lead
+                </div>
+
+                <div id="profile-edit-inputs-container">
+                  <div class="form-group" style="margin-bottom: 6px;">
+                    <label style="font-size: 0.8rem;">Name</label>
+                    <input type="text" id="profile-edit-name" style="font-size: 0.85rem;">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 6px;">
+                    <label style="font-size: 0.8rem;">Phone</label>
+                    <input type="text" id="profile-edit-phone" style="font-size: 0.85rem;">
+                  </div>
+                  <div class="form-group" style="margin-bottom: 6px;">
+                    <label style="font-size: 0.8rem;">Locality</label>
+                    <input type="text" id="profile-edit-locality" style="font-size: 0.85rem;">
+                  </div>
+                </div>
+
+                <!-- Reason box: shown only when saved value is changed -->
+                <div id="profile-edit-reason-container" style="display: none; margin-top: 8px; background: #1e293b; padding: 8px; border-radius: 4px; border: 1px solid #f59e0b;">
+                  <label style="color: #f59e0b; font-size: 0.8rem; font-weight: bold; display: block; margin-bottom: 4px;">Reason for change (required when changing saved values):</label>
+                  <input type="text" id="profile-edit-reason" placeholder="e.g. Corrected candidate phone number" style="width: 100%; font-size: 0.85rem;">
+                </div>
+
+                <div style="margin-top: 8px; display: flex; justify-content: flex-end;">
+                  <button type="button" id="btn-save-profile-edit" class="btn-sm btn-success" onclick="submitProfileEdit()">Save Profile</button>
+                </div>
+
+                <!-- Change History: Team Leads and above only -->
+                <div id="profile-change-history-section" style="display: none; margin-top: 14px; border-top: 1px solid var(--border); padding-top: 10px;">
+                  <h4 style="font-size: 0.85rem; margin-bottom: 6px; color: var(--text);">Change History</h4>
+                  <div style="max-height: 150px; overflow-y: auto;">
+                    <table class="change-history-table" style="font-size: 0.75rem; width: 100%;">
+                      <thead>
+                        <tr>
+                          <th>Who</th>
+                          <th>When</th>
+                          <th>Which Fields</th>
+                          <th>Reason</th>
+                        </tr>
+                      </thead>
+                      <tbody id="profile-change-history-tbody">
+                        <tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No changes recorded</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1418,6 +1474,81 @@ export function renderCallAgentConsoleHtml(): string {
           }
         }
 
+        // Setup Edit Profile Section
+        let profileInitialValues = {
+          name: data.name || data.ownerName || '',
+          phone: data.phone || '',
+          locality: data.locality || '',
+        };
+        window.currentProfileInitialValues = profileInitialValues;
+
+        document.getElementById('profile-edit-name').value = profileInitialValues.name;
+        document.getElementById('profile-edit-phone').value = profileInitialValues.phone;
+        document.getElementById('profile-edit-locality').value = profileInitialValues.locality;
+
+        const editReasonContainer = document.getElementById('profile-edit-reason-container');
+        const editReasonInput = document.getElementById('profile-edit-reason');
+        const editLockedNotice = document.getElementById('profile-edit-locked-notice');
+        const saveProfileBtn = document.getElementById('btn-save-profile-edit');
+
+        editReasonContainer.style.display = 'none';
+        editReasonInput.value = '';
+
+        // Check edit lock via /edit-policy/check
+        let isProfileLocked = false;
+        try {
+          const perm = await api('/edit-policy/check?entityType=' + encodeURIComponent(subjectType) + '&id=' + encodeURIComponent(data.id || subjectId));
+          if (!perm.allowed && perm.reason && perm.reason.includes('Locked — money involved, ask your Team Lead')) {
+            isProfileLocked = true;
+          }
+        } catch (err) {
+          if (err.message && err.message.includes('Locked — money involved, ask your Team Lead')) {
+            isProfileLocked = true;
+          }
+        }
+
+        if (isProfileLocked) {
+          editLockedNotice.style.display = 'block';
+          saveProfileBtn.disabled = true;
+          document.getElementById('profile-edit-name').disabled = true;
+          document.getElementById('profile-edit-phone').disabled = true;
+          document.getElementById('profile-edit-locality').disabled = true;
+        } else {
+          editLockedNotice.style.display = 'none';
+          saveProfileBtn.disabled = false;
+          document.getElementById('profile-edit-name').disabled = false;
+          document.getElementById('profile-edit-phone').disabled = false;
+          document.getElementById('profile-edit-locality').disabled = false;
+        }
+
+        function checkProfileEditFieldsChanged() {
+          const init = window.currentProfileInitialValues || {};
+          const curName = document.getElementById('profile-edit-name').value.trim();
+          const curPhone = document.getElementById('profile-edit-phone').value.trim();
+          const curLocality = document.getElementById('profile-edit-locality').value.trim();
+
+          let savedChanged = false;
+          if (init.name && curName !== init.name) savedChanged = true;
+          if (init.phone && curPhone !== init.phone) savedChanged = true;
+          if (init.locality && curLocality !== init.locality) savedChanged = true;
+
+          editReasonContainer.style.display = savedChanged ? 'block' : 'none';
+        }
+
+        document.getElementById('profile-edit-name').oninput = checkProfileEditFieldsChanged;
+        document.getElementById('profile-edit-phone').oninput = checkProfileEditFieldsChanged;
+        document.getElementById('profile-edit-locality').oninput = checkProfileEditFieldsChanged;
+
+        // Change History: visible to Team Leads and above only
+        const historySection = document.getElementById('profile-change-history-section');
+        const isLeadOrAbove = currentUser && ['team_lead', 'manager', 'ceo'].includes(currentUser.role);
+        if (isLeadOrAbove) {
+          historySection.style.display = 'block';
+          loadProfileChangeHistory(subjectType, data.code || subjectId);
+        } else {
+          historySection.style.display = 'none';
+        }
+
         document.getElementById('calling-profile-card').style.display = 'block';
 
         await loadProfileHistory(subjectType, data.id || subjectId);
@@ -1814,6 +1945,80 @@ export function renderCallAgentConsoleHtml(): string {
         loadMyFollowUps();
       } catch (e) {
         showAlert('Failed to complete follow-up: ' + e.message, false);
+      }
+    }
+
+    async function submitProfileEdit() {
+      if (!currentCallingSubject) return alert('Load a profile first');
+      const init = window.currentProfileInitialValues || {};
+      const curName = document.getElementById('profile-edit-name').value.trim();
+      const curPhone = document.getElementById('profile-edit-phone').value.trim();
+      const curLocality = document.getElementById('profile-edit-locality').value.trim();
+
+      const body = {};
+      let savedChanged = false;
+      if (curName !== (init.name || '')) {
+        if (init.name) savedChanged = true;
+        body.name = curName || undefined;
+      }
+      if (curPhone !== (init.phone || '')) {
+        if (init.phone) savedChanged = true;
+        body.phone = curPhone || undefined;
+      }
+      if (curLocality !== (init.locality || '')) {
+        if (init.locality) savedChanged = true;
+        body.locality = curLocality || undefined;
+      }
+
+      if (Object.keys(body).length === 0) {
+        showAlert('No changes detected', false);
+        return;
+      }
+
+      const reason = document.getElementById('profile-edit-reason').value.trim();
+      if (savedChanged) {
+        if (!reason) {
+          showAlert('A reason is required when changing an existing saved value', false);
+          return;
+        }
+        body.reason = reason;
+      } else if (reason) {
+        body.reason = reason;
+      }
+
+      try {
+        let endpoint = '/job-seekers/' + encodeURIComponent(currentCallingSubject.id);
+        if (currentCallingSubject.type === 'business') endpoint = '/businesses/' + encodeURIComponent(currentCallingSubject.id);
+        else if (currentCallingSubject.type === 'referral') endpoint = '/referrals/' + encodeURIComponent(currentCallingSubject.id);
+
+        await api(endpoint, { method: 'PATCH', body });
+        showAlert('Profile updated successfully');
+        await loadCallingProfile(currentCallingSubject.type, currentCallingSubject.id);
+      } catch (err) {
+        showAlert('Update failed: ' + err.message, false);
+      }
+    }
+
+    async function loadProfileChangeHistory(subjectType, code) {
+      const tbody = document.getElementById('profile-change-history-tbody');
+      if (!tbody) return;
+      tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">Loading history...</td></tr>';
+      try {
+        const logs = await api('/audit-logs?entityType=' + encodeURIComponent(subjectType) + '&entityCode=' + encodeURIComponent(code));
+        if (!logs || !logs.length) {
+          tbody.innerHTML = '<tr><td colspan="4" style="text-align: center; color: var(--text-muted);">No changes recorded</td></tr>';
+          return;
+        }
+        tbody.innerHTML = logs.map(l => \`
+          <tr>
+            <td><strong>\${l.actor?.name || l.actor?.code || 'Staff'}</strong></td>
+            <td>\${new Date(l.createdAt).toLocaleString('en-IN')}</td>
+            <td><code style="color: #38bdf8;">\${Array.isArray(l.changedFields) ? l.changedFields.join(', ') : '—'}</code></td>
+            <td>\${l.reason || '—'}</td>
+          </tr>
+        \`).join('');
+      } catch (err) {
+        tbody.innerHTML = '<tr><td colspan="4" style="color: var(--danger); text-align: center;">Failed to load history: ' + err.message + '</td></tr>';
       }
     }
 

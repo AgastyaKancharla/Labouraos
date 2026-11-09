@@ -4,9 +4,11 @@ import { AnonymisationModule } from '../../common/anonymisation/anonymisation.mo
 import { CallModule } from '../call/call.module';
 import { ConsentModule } from '../consent/consent.module';
 import { RetentionService } from './retention.service';
+import { RetentionController } from './retention.controller';
 
 @Module({
   imports: [PrismaModule, AnonymisationModule, CallModule, ConsentModule],
+  controllers: [RetentionController],
   providers: [RetentionService],
   exports: [RetentionService],
 })
