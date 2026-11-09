@@ -6,7 +6,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { refundGuaranteeDeadline, toRupees } from '../../common/money/money';
-import { calculateDaysElapsed } from '../placement/placement.service';
+import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { PricingService } from '../pricing/pricing.service';
 import { primaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
 import {
@@ -33,7 +33,7 @@ export interface MoneyAtRiskRow {
     dropoutReportedAt?: string;
     businessName?: string;
     placementFee?: number;
-    clockPaused?: boolean;
+    claimDecidedAt?: string;
   };
 }
 
@@ -71,8 +71,8 @@ export interface MoneyAtRiskResult {
  *    `placement-refund-eligibility.ts`):
  *    - Job Seekers: ₹499 paid, status not 'placed' or 'deactivated', no 'offer_rejected' hit,
  *      no existing refund payment.
- *    - Placements: status 'dropped_out', eligibility 'employee_left', no accepted replacement candidate,
- *      no existing refund payment, and uses `calculateDaysElapsed()` with `clockPaused` handling.
+ *    - Placements: status 'dropped_out', accepted replacement claim, no accepted replacement candidate,
+ *      no existing refund payment, and uses evaluatePlacementRefundEligibility() counting from decidedAt.
  *
  * 4. WINDOW CONSTANTS:
  *    - Candidates: approaching within 7 days (`CANDIDATE_AT_RISK_WINDOW_DAYS = 7`).
@@ -276,76 +276,113 @@ export class MoneyAtRiskService {
     }
 
     // --- 3. PLACEMENTS AT RISK ---
-    // Dropped-out placements with eligibility employee_left, approaching 15-day deadline
-    const placementWhere: Record<string, unknown> = {
-      status: 'dropped_out',
-      eligibility: 'employee_left',
-      dropoutReportedAt: { not: null },
+    // Dropped-out placements with accepted replacement claims approaching 15-day deadline from decidedAt
+    const claimWhere: Record<string, unknown> = {
+      decision: 'accepted',
+      decidedAt: { not: null },
     };
     if (filterStaffIds !== null) {
-      placementWhere.createdByStaffId = { in: filterStaffIds };
+      claimWhere.placement = { createdByStaffId: { in: filterStaffIds } };
     }
 
-    const placements = await this.prisma.placement.findMany({
-      where: placementWhere,
+    const acceptedClaims = await this.prisma.replacementClaim.findMany({
+      where: claimWhere,
       include: {
-        replacementCandidates: {
-          select: { status: true },
-        },
-        business: {
-          select: { name: true },
-        },
-        jobSeeker: {
-          select: { name: true, phone: true },
-        },
-        createdBy: {
-          select: { id: true, code: true, name: true },
+        placement: {
+          include: {
+            replacementCandidates: {
+              select: { status: true },
+            },
+            business: {
+              select: { name: true },
+            },
+            jobSeeker: {
+              select: { name: true, phone: true },
+            },
+            createdBy: {
+              select: { id: true, code: true, name: true },
+            },
+          },
         },
       },
+      orderBy: { decidedAt: 'desc' },
     });
+
+    const placementIds = acceptedClaims
+      .map((c) => c.placement?.id)
+      .filter((id): id is string => Boolean(id));
+    const rootPlacementIds = acceptedClaims
+      .map((c) => c.placement?.rootPlacementId)
+      .filter((id): id is string => Boolean(id));
+    const allPlacementIds = Array.from(new Set([...placementIds, ...rootPlacementIds]));
 
     let refundedPlacementIdSet = new Set<string>();
 
-    if (placements.length > 0) {
-      const placementIds = placements.map((p) => p.id);
-
+    if (allPlacementIds.length > 0) {
       const existingPlacementRefunds = await this.prisma.payment.findMany({
         where: {
-          placementId: { in: placementIds },
+          placementId: { in: allPlacementIds },
           type: 'refund',
-          status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+          status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
         },
         select: { placementId: true },
       });
       refundedPlacementIdSet = new Set(existingPlacementRefunds.map((p) => p.placementId!));
     }
 
+    const seenPlacementIds = new Set<string>();
     const placementRows: MoneyAtRiskRow[] = [];
 
-    for (const pl of placements) {
-      if (!pl.dropoutReportedAt) continue;
-      // Disqualifiers from shared eligibility
-      const hasAcceptedReplacement = pl.replacementCandidates.some((rc) => rc.status === 'accepted');
-      if (hasAcceptedReplacement) continue;
-      if (refundedPlacementIdSet.has(pl.id)) continue;
+    for (const claim of acceptedClaims) {
+      const pl = claim.placement;
+      if (!pl || seenPlacementIds.has(pl.id)) continue;
+      seenPlacementIds.add(pl.id);
 
-      const daysElapsed = calculateDaysElapsed(
-        pl.dropoutReportedAt,
-        pl.clockPaused,
-        pl.clockPausedAt,
+      const rootId = pl.rootPlacementId ?? pl.id;
+      const hasAcceptedReplacement = pl.replacementCandidates.some(
+        (rc) => rc.status === 'accepted',
+      );
+
+      const hasExistingRefund =
+        refundedPlacementIdSet.has(pl.id) || refundedPlacementIdSet.has(rootId);
+
+      const eligibilityResult = evaluatePlacementRefundEligibility(
+        {
+          code: pl.code,
+          status: pl.status,
+          hasAcceptedReplacement,
+          claimAcceptedAt: claim.decidedAt,
+          placementFee: pl.placementFee,
+          hasExistingRefund,
+          searchDays: replacementSearchDays,
+          guaranteeEndedReason: pl.guaranteeEndedReason,
+        },
         now,
       );
 
-      // search window from policy
+      // If already eligible (15 days have passed), it is owed/lost money on /refunds/due
+      if (eligibilityResult.eligible) {
+        continue;
+      }
+
+      // If ineligible for any reason other than searchDays window still elapsing, skip
+      if (
+        !eligibilityResult.ineligibleReason?.startsWith(
+          `Refund is not payable before ${replacementSearchDays} days have elapsed`,
+        )
+      ) {
+        continue;
+      }
+
+      const daysElapsed = eligibilityResult.daysElapsed;
       const daysRemaining = replacementSearchDays - daysElapsed;
 
-      // APPROACHING ONLY RULE: If search window has elapsed (daysRemaining <= 0), it is owed/lost money on /refunds/due
+      // APPROACHING ONLY RULE: If search window has elapsed (daysRemaining <= 0), it is owed on /refunds/due
       if (daysRemaining <= 0) continue;
 
       if (daysRemaining <= PLACEMENT_AT_RISK_WINDOW_DAYS) {
-        // Deadline is dropoutReportedAt + replacementSearchDays (adjusted for clock pause)
         const deadlineDate = new Date(
-          pl.dropoutReportedAt.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
+          claim.decidedAt!.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
         );
 
         placementRows.push({
@@ -362,9 +399,9 @@ export class MoneyAtRiskService {
           staffCode: pl.createdBy?.code ?? null,
           details: {
             businessName: pl.business.name,
-            dropoutReportedAt: pl.dropoutReportedAt.toISOString(),
+            dropoutReportedAt: pl.dropoutReportedAt ? pl.dropoutReportedAt.toISOString() : undefined,
             placementFee: pl.placementFee,
-            clockPaused: pl.clockPaused,
+            claimDecidedAt: claim.decidedAt!.toISOString(),
           },
         });
       }

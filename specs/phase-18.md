@@ -82,13 +82,13 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 18 Gate
 
-- [x] Payout details are entered only by the owner on their own phone by OTP; stored encrypted; never returned except to CEO/Finance at the moment of paying — by test
-- [x] A changed account can't be paid for 48 hours and Finance is told; shared accounts and staff-number UPIs are flagged and blocked — by test
-- [x] Every payment out is owed → approved → paid, by CEO or Finance only, with a unique UTR; nothing is paid automatically — by test
-- [x] A name that doesn't match the receiver blocks the payment and raises `payout_name_mismatch` — by test
-- [x] Referral payouts need the partner's signed terms — by test
-- [x] The payout-company routes are gone; the refunds-due list and approval use the same rule; nothing reads `clockPaused`, `clockPausedAt` or `eligibility` — by test
-- [x] **End-to-end proof, recorded in the report:** a worker joins and receives the payout link; they enter a UPI ID on their phone by OTP; 30 days later the ₹200 reward is owed; Finance approves it, reveals the UPI ID, records the UTR with the name the app showed → paid, account verified. A referral partner signs terms by OTP; their ₹200 is approved and paid the same way. A business owed a fee refund on day 16 enters a bank account; Finance types a different name → refused and flagged; with the right name → paid. A partner changes their UPI ID → a payment the next day is refused, and allowed after 48 hours.
+- [x] Payout details are entered only by the owner on their own phone by OTP; stored encrypted; never returned except to CEO/Finance at the moment of paying — by test `src/modules/payout-account/phase-18-task-1-payout-accounts.spec.ts` & `src/modules/payment/phase-18-gate-e2e-proof.spec.ts`
+- [x] A changed account can't be paid for 48 hours and Finance is told; shared accounts and staff-number UPIs are flagged and blocked — by test `src/modules/payout-account/phase-18-task-1-payout-accounts.spec.ts` & `src/modules/payment/phase-18-gate-e2e-proof.spec.ts`
+- [x] Every payment out is owed → approved → paid, by CEO or Finance only, with a unique UTR; nothing is paid automatically — by test `src/modules/payment/phase-18-task-3-release-flow.spec.ts` & `src/modules/payment/phase-18-gate-e2e-proof.spec.ts`
+- [x] A name that doesn't match the receiver blocks the payment and raises `payout_name_mismatch` — by test `src/modules/payment/phase-18-task-3-release-flow.spec.ts` & `src/modules/payment/phase-18-gate-e2e-proof.spec.ts`
+- [x] Referral payouts need the partner's signed terms — by test `src/modules/consent/phase-18-task-2-referral-terms.spec.ts` & `src/modules/payment/phase-18-gate-e2e-proof.spec.ts`
+- [x] The payout-company routes are gone; the refunds-due list and approval use the same rule; nothing reads `clockPaused`, `clockPausedAt` or `eligibility` — by test `src/modules/payment/phase-18-task-3-release-flow.spec.ts` & `src/modules/target/money-at-risk.spec.ts`
+- [x] **End-to-end proof, recorded in the report:** a worker joins and receives the payout link; they enter a UPI ID on their phone by OTP; 30 days later the ₹200 reward is owed; Finance approves it, reveals the UPI ID, records the UTR with the name the app showed → paid, account verified. A referral partner signs terms by OTP; their ₹200 is approved and paid the same way. A business owed a fee refund on day 16 enters a bank account; Finance types a different name → refused and flagged; with the right name → paid. A partner changes their UPI ID → a payment the next day is refused, and allowed after 48 hours. — by test `src/modules/payment/phase-18-gate-e2e-proof.spec.ts`
 - [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start the next phase.

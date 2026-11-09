@@ -51,6 +51,7 @@ export class SweepMonitoringService implements OnModuleInit, OnModuleDestroy {
           this.logger.error(`Periodic sweep staleness check error: ${msg}`);
         });
       }, intervalMs);
+      this.checkInterval?.unref?.();
     }
   }
 
