@@ -10,7 +10,11 @@ import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { APP_INTERCEPTOR } from '@nestjs/core';
 import { RbacGuard } from './rbac.guard';
-import { PiiMaskingInterceptor } from './pii-masking.interceptor';
+import {
+  maskAgentPhones,
+  maskPii,
+  PiiMaskingInterceptor,
+} from './pii-masking.interceptor';
 import { RequirePermission } from './permissions.decorator';
 import { PrismaService } from '../prisma/prisma.service';
 import { PrismaModule } from '../prisma/prisma.module';
@@ -86,6 +90,13 @@ describe('RBAC Guard and PII Masking', () => {
   let koramangalaBusinessId: string;
   let fieldAgentId: string;
   let visitAssignmentId: string;
+
+  it('preserves the audit redaction marker while masking phone values', () => {
+    expect(maskAgentPhones({ phone: '[changed]' })).toEqual({ phone: '[changed]' });
+    expect(maskAgentPhones({ phone: '+919876543210' })).toEqual({ phone: '******3210' });
+    expect(maskPii({ phone: '[changed]' })).toEqual({ phone: '[changed]' });
+    expect(maskPii({ phone: '+919876543210' })).toEqual({ phone: '********' });
+  });
 
   beforeAll(async () => {
     prisma = new PrismaService();

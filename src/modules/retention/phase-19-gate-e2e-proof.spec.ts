@@ -249,6 +249,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
           jobSeekerId: seeker1Id,
           city: 'Bengaluru',
           createdAt: baseDate,
+          updatedAt: baseDate,
         },
       });
       paymentIds.push(payment.id);
@@ -319,8 +320,8 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       expect(logJson).not.toContain(`98${suffix}22`);
     });
 
-    it('step 5 & 6: clock moved forward 23 months and a day: dry run reports the job seeker, real run anonymises them, deletes photo & 13m recordings, while placement and payment totals are unchanged', async () => {
-      // Setup candidate #1: photo in storage and 13-month-old recording
+    it('step 5 & 6: clock moved forward 23 months and a day: dry run reports the job seeker, real run anonymises them, deletes their photo and a separate 13m recording, while placement and payment totals are unchanged', async () => {
+      // Setup candidate #1: photo in storage. Their profile remains eligible for anonymisation.
       photoPath1 = `candidates/proof-${suffix}.jpg`;
       await photoStorage.put(photoPath1, Buffer.from('proof-photo-candidate-1'), 'image/jpeg');
 
@@ -373,7 +374,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       });
       placementIds.push(placement.id);
 
-      // 13-month-old recording for candidate #1
+      // 13-month-old recording for the business. A call against candidate #1 would reset their profile clock.
       const recDate13m = new Date(baseDate.getTime());
       recDate13m.setUTCMonth(recDate13m.getUTCMonth() + 10); // 13 months before the 23m+1d target date
       recordingPath1 = `recordings/call-candidate-1-${suffix}.mp3`;
@@ -385,8 +386,8 @@ describe('Phase 19 Gate End-to-End Proof', () => {
           provider: 'mock',
           providerCallId: `call-p19-1-${suffix}`,
           providerStatus: 'completed',
-          subjectType: 'job_seeker',
-          subjectId: seeker1Id,
+          subjectType: 'business',
+          subjectId: biz.id,
           recordingStoragePath: recordingPath1,
           startedAt: recDate13m,
           createdAt: recDate13m,
