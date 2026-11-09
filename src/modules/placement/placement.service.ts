@@ -33,6 +33,7 @@ import {
   InvoiceSupplier,
 } from './dto/gst-invoice.dto';
 import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/export-placements.dto';
+import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 
 export function calculateDaysElapsed(
@@ -57,7 +58,64 @@ export class PlacementService {
     private readonly pricingService: PricingService,
     private readonly upiCollectionService: UpiCollectionService,
     private readonly reviewFlags: ReviewFlagService,
+    private readonly editPolicyService: EditPolicyService,
   ) {}
+
+  async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
+    let editActor: EditActor;
+    if (typeof actor === 'string') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor },
+        select: { id: true, role: true, teamLeadId: true },
+      });
+      if (staff) {
+        editActor = { id: staff.id, role: staff.role, teamLeadId: staff.teamLeadId };
+      } else {
+        editActor = { id: actor, role: 'manager' };
+      }
+    } else {
+      editActor = actor;
+    }
+
+    const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+
+    const { record, diff } = await this.editPolicyService.assertCanEdit({
+      actor: editActor,
+      entityType: 'placement',
+      entityId: id,
+      updates: dto,
+      reason,
+    });
+
+    if (!diff || !diff.hasChange) {
+      return record;
+    }
+
+    const data: Record<string, unknown> = {};
+    for (const key of diff.changedFields) {
+      if (['joiningDate', 'joinedDate'].includes(key)) {
+        data[key] = dto[key] ? new Date(dto[key] as string) : null;
+      } else {
+        data[key] = dto[key];
+      }
+    }
+
+    const updated = await this.prisma.placement.update({
+      where: { id: record.id as string },
+      data,
+    });
+
+    await this.editPolicyService.logEdit({
+      actorId: editActor.id,
+      entityType: 'placement',
+      entityCode: record.code as string,
+      diff,
+      reason,
+      city: record.city as string | undefined,
+    });
+
+    return updated;
+  }
 
   private async getPolicy() {
     return this.pricingService.current();

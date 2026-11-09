@@ -8,6 +8,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
   staff: Record<string, jest.Mock>;
@@ -110,6 +111,7 @@ describe('Phase 17 Task 1: Joining Confirmed by Calls & Day 60 Completion', () =
       pricingService as unknown as PricingService,
       {} as unknown as UpiCollectionService,
       {} as unknown as ReviewFlagService,
+      {} as unknown as EditPolicyService,
     );
   });
 

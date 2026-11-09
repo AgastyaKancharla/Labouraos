@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -113,6 +114,21 @@ export class VacancyController {
     @Param('id') id: string,
   ) {
     return this.vacancyService.findById(id);
+  }
+
+  @Patch(':id')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('vacancy', 'write')
+  async update(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.vacancyService.update(id, body, {
+      id: req.user.sub,
+      role: req.user.role,
+      teamLeadId: req.user.teamLeadId,
+    });
   }
 }
 

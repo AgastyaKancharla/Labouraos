@@ -31,6 +31,19 @@ const PERSONAL_FIELDS = new Set([
   'kycdetails',
   'dateofbirth',
   'dob',
+  'additionalcontactname',
+  'additionalcontactphone',
+  'billingname',
+  'billingaddress',
+  'photostoragepath',
+  'cvstoragepath',
+  'lastemployer',
+  'upiid',
+  'bankaccount',
+  'ifsc',
+  'verifiedname',
+  'upiidencrypted',
+  'bankaccountencrypted',
 ]);
 
 export function isPersonalField(key: string): boolean {

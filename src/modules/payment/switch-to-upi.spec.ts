@@ -11,6 +11,7 @@ import { PaymentProvider } from './payment-provider.interface';
 import { BankFeedProvider } from './bank-feed-provider.interface';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { calculatePlacementFee, calculateGst } from '../../common/money/money';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
@@ -158,6 +159,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       paymentService,
       pricingService,
       upiCollectionService,
+      {} as unknown as EditPolicyService,
     );
 
     placementService = new PlacementService(
@@ -169,6 +171,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       pricingService,
       upiCollectionService,
       { raise: jest.fn(), resolve: jest.fn() } as unknown as ReviewFlagService,
+      {} as unknown as EditPolicyService,
     );
   });
 
