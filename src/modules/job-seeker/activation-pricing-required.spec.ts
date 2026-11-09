@@ -6,6 +6,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { PaymentService } from '../payment/payment.service';
 import { PricingService } from '../pricing/pricing.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 describe('Activation charge requires a readable pricing policy', () => {
   it('fails activation when the pricing read fails instead of charging a default', async () => {
@@ -32,6 +33,7 @@ describe('Activation charge requires a readable pricing policy', () => {
       { createCharge } as unknown as PaymentService,
       pricingService as unknown as PricingService,
       { createRequest } as unknown as UpiCollectionService,
+      {} as unknown as EditPolicyService,
     );
 
     await expect(service.createActivationPayment('js-1')).rejects.toThrow(

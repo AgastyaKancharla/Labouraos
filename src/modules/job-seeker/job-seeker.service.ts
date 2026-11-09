@@ -43,6 +43,7 @@ import {
 } from './dto/job-seeker-language.dto';
 import { normalizeHitReason } from './dto/record-hit.dto';
 import { withCurrentJobSeekerFields } from './job-seeker-legacy-read';
+import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { ConsentClock } from '../consent/consent-clock';
 import {
   CANDIDATE_PHOTO_LINK_TTL_SECONDS,
@@ -60,6 +61,7 @@ export class JobSeekerService {
     private readonly paymentService: PaymentService,
     private readonly pricingService: PricingService,
     private readonly upiCollectionService: UpiCollectionService,
+    private readonly editPolicyService: EditPolicyService,
     @Optional() private readonly consentService?: ConsentService,
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
@@ -912,80 +914,71 @@ export class JobSeekerService {
     });
   }
 
-  /**
-   * Updates profile fields from Phase 12 redesign.
-   * Never writes to deprecated columns (tradeSkill, kycStatus, kycReference).
-   */
-  async updateProfile(jobSeekerId: string, dto: UpdateJobSeekerProfileDto, actorId?: string) {
+  async update(jobSeekerId: string, dto: Record<string, unknown>, actor: EditActor | string) {
     assertNoRawAadhaar(dto);
 
-    const seeker = await this.prisma.jobSeeker.findUnique({
-      where: { id: jobSeekerId },
+    let editActor: EditActor;
+    if (typeof actor === 'string') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor },
+        select: { id: true, role: true, teamLeadId: true },
+      });
+      if (staff) {
+        editActor = { id: staff.id, role: staff.role, teamLeadId: staff.teamLeadId };
+      } else {
+        editActor = { id: actor, role: 'manager' };
+      }
+    } else {
+      editActor = actor;
+    }
+
+    const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+
+    const { record, diff } = await this.editPolicyService.assertCanEdit({
+      actor: editActor,
+      entityType: 'job_seeker',
+      entityId: jobSeekerId,
+      updates: dto,
+      reason,
     });
-    if (!seeker) {
-      throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+
+    if (!diff || !diff.hasChange) {
+      return withCurrentJobSeekerFields(record);
     }
 
     const data: Record<string, unknown> = {};
-
-    if (dto.dateOfBirth !== undefined) {
-      data.dateOfBirth = dto.dateOfBirth ? new Date(dto.dateOfBirth) : null;
-    }
-    if (dto.gender !== undefined) data.gender = dto.gender;
-    if (dto.whatsappPhone !== undefined) data.whatsappPhone = dto.whatsappPhone;
-    if (dto.locality !== undefined) data.locality = dto.locality;
-    if (dto.pincode !== undefined) data.pincode = dto.pincode;
-    if (dto.latitude !== undefined) data.latitude = dto.latitude;
-    if (dto.longitude !== undefined) data.longitude = dto.longitude;
-    if (dto.travelDistanceKm !== undefined) data.travelDistanceKm = dto.travelDistanceKm;
-    if (dto.preferredLocalities !== undefined) data.preferredLocalities = dto.preferredLocalities;
-    if (dto.willingToRelocate !== undefined) data.willingToRelocate = dto.willingToRelocate;
-    if (dto.needsAccommodation !== undefined) data.needsAccommodation = dto.needsAccommodation;
-    if (dto.salaryPeriod !== undefined) data.salaryPeriod = dto.salaryPeriod;
-    if (dto.availableFrom !== undefined) {
-      data.availableFrom = dto.availableFrom ? new Date(dto.availableFrom) : null;
-    }
-    if (dto.lookingSince !== undefined) {
-      data.lookingSince = dto.lookingSince ? new Date(dto.lookingSince) : null;
-    }
-    if (dto.shiftPreference !== undefined) data.shiftPreference = dto.shiftPreference;
-    if (dto.jobType !== undefined) data.jobType = dto.jobType;
-    if (dto.currentlyWorking !== undefined) data.currentlyWorking = dto.currentlyWorking;
-    if (dto.lastEmployer !== undefined) data.lastEmployer = dto.lastEmployer;
-    if (dto.lastRole !== undefined) data.lastRole = dto.lastRole;
-    if (dto.lastSalaryPaise !== undefined) data.lastSalaryPaise = dto.lastSalaryPaise;
-    if (dto.educationLevel !== undefined) data.educationLevel = dto.educationLevel;
-    if (dto.certificates !== undefined) data.certificates = dto.certificates;
-    if (dto.drivingLicenceType !== undefined) data.drivingLicenceType = dto.drivingLicenceType;
-    if (dto.ownVehicle !== undefined) data.ownVehicle = dto.ownVehicle;
-    if (dto.policeVerified !== undefined) data.policeVerified = dto.policeVerified;
-    if (dto.hasSmartphone !== undefined) data.hasSmartphone = dto.hasSmartphone;
-    if (dto.cvStoragePath !== undefined) data.cvStoragePath = dto.cvStoragePath;
-    if (dto.keySkills !== undefined) data.keySkills = dto.keySkills;
-    if (dto.qualification !== undefined) data.qualification = dto.qualification;
-    if (dto.currentSalaryPaise !== undefined) data.currentSalaryPaise = dto.currentSalaryPaise;
-    if (dto.pausedAt !== undefined) {
-      data.pausedAt = dto.pausedAt ? new Date(dto.pausedAt) : null;
+    for (const key of diff.changedFields) {
+      if (['dateOfBirth', 'availableFrom', 'lookingSince', 'pausedAt'].includes(key)) {
+        data[key] = dto[key] ? new Date(dto[key] as string) : null;
+      } else {
+        data[key] = dto[key];
+      }
     }
 
     const updated = await this.prisma.jobSeeker.update({
-      where: { id: jobSeekerId },
+      where: { id: record.id as string },
       data,
       include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
 
-    if (actorId && actorId !== 'system') {
-      await this.auditService.log({
-        actorId,
-        action: 'job_seeker.profile_updated',
-        entityType: 'job_seeker',
-        entityCode: seeker.code,
-        changedFields: Object.keys(data),
-        city: seeker.city,
-      });
-    }
+    await this.editPolicyService.logEdit({
+      actorId: editActor.id,
+      entityType: 'job_seeker',
+      entityCode: record.code as string,
+      diff,
+      reason,
+      city: record.city as string | undefined,
+    });
 
     return withCurrentJobSeekerFields(updated);
+  }
+
+  /**
+   * Updates profile fields from Phase 12 redesign.
+   * Never writes to deprecated columns (tradeSkill, kycStatus, kycReference).
+   */
+  async updateProfile(jobSeekerId: string, dto: UpdateJobSeekerProfileDto, actor?: EditActor | string) {
+    return this.update(jobSeekerId, dto as unknown as Record<string, unknown>, actor ?? 'system');
   }
 
   async uploadPhoto(jobSeekerId: string, photo: { buffer: Buffer; mimetype: string }, actorId: string) {

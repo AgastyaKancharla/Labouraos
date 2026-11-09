@@ -9,6 +9,7 @@ import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { seededPricingService } from '../../test-support/seeded-pricing';
 import { ReportClaimDto } from './dto/report-claim.dto';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 interface MockPlacementRecord {
   id: string;
@@ -167,6 +168,7 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
       seededPricingService(),
       {} as UpiCollectionService,
       { raise: jest.fn(), resolve: jest.fn() } as unknown as ReviewFlagService,
+      {} as unknown as EditPolicyService,
     );
   });
 

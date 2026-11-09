@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -147,6 +148,21 @@ export class PlacementController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     return this.placementService.findById(id, req.user.sub);
+  }
+
+  @Patch(':id')
+  @RequireRoles('ceo', 'manager', 'call_agent', 'field_agent', 'team_lead')
+  @RequirePermission('placement', 'write')
+  async update(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.placementService.update(id, body, {
+      id: req.user.sub,
+      role: req.user.role,
+      teamLeadId: req.user.teamLeadId,
+    });
   }
 
   @Get(':id/invoice')

@@ -45,6 +45,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
       { current: jest.fn().mockResolvedValue(policy) } as never,
       {} as never,
       {} as never,
+      {} as never,
     );
   }
 

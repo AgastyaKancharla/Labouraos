@@ -1,4 +1,8 @@
 export interface UpdateJobSeekerProfileDto {
+  [key: string]: unknown;
+  name?: string | null;
+  phone?: string | null;
+  reason?: string | null;
   dateOfBirth?: Date | string | null;
   gender?: string | null;
   whatsappPhone?: string | null;

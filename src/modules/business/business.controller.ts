@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   Res,
@@ -73,6 +74,21 @@ export class BusinessController {
     @Param('id') id: string,
   ) {
     return this.businessService.findById(id);
+  }
+
+  @Patch(':id')
+  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('business', 'write')
+  async update(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.businessService.update(id, body, {
+      id: req.user.sub,
+      role: req.user.role,
+      teamLeadId: req.user.teamLeadId,
+    });
   }
 
   @Get(':id/introductions')

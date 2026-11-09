@@ -10,6 +10,7 @@ import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
   staff: Record<string, jest.Mock>;
@@ -194,6 +195,7 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       pricingService as unknown as PricingService,
       {} as unknown as UpiCollectionService,
       reviewFlagService as unknown as ReviewFlagService,
+      {} as unknown as EditPolicyService,
     );
   });
 

@@ -10,6 +10,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { CreateReferralDto } from './dto/create-referral.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
+import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 
 @Injectable()
 export class ReferralService {
@@ -18,7 +19,62 @@ export class ReferralService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     private readonly otpService: OtpService,
+    private readonly editPolicyService: EditPolicyService,
   ) {}
+
+  async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
+    assertNoRawAadhaar(dto);
+
+    let editActor: EditActor;
+    if (typeof actor === 'string') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor },
+        select: { id: true, role: true, teamLeadId: true },
+      });
+      if (staff) {
+        editActor = { id: staff.id, role: staff.role, teamLeadId: staff.teamLeadId };
+      } else {
+        editActor = { id: actor, role: 'manager' };
+      }
+    } else {
+      editActor = actor;
+    }
+
+    const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+
+    const { record, diff } = await this.editPolicyService.assertCanEdit({
+      actor: editActor,
+      entityType: 'referral',
+      entityId: id,
+      updates: dto,
+      reason,
+    });
+
+    if (!diff || !diff.hasChange) {
+      return record;
+    }
+
+    const data: Record<string, unknown> = {};
+    for (const key of diff.changedFields) {
+      data[key] = dto[key];
+    }
+
+    const updated = await this.prisma.referral.update({
+      where: { id: record.id as string },
+      data,
+    });
+
+    await this.editPolicyService.logEdit({
+      actorId: editActor.id,
+      entityType: 'referral',
+      entityCode: record.code as string,
+      diff,
+      reason,
+      city: record.city as string | undefined,
+    });
+
+    return updated;
+  }
 
   async create(dto: CreateReferralDto, actorId: string) {
     assertNoRawAadhaar(dto);

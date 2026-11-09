@@ -13,6 +13,7 @@ import { CreateVacancyDto } from './dto/create-vacancy.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { VACANCY_EXTRAS } from './vacancy.constants';
+import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 
 const IST_OFFSET_MINUTES = 330;
 
@@ -24,7 +25,60 @@ export class VacancyService {
     private readonly auditService: AuditService,
     private readonly pricingService: PricingService,
     private readonly reviewFlagService: ReviewFlagService,
+    private readonly editPolicyService: EditPolicyService,
   ) {}
+
+  async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
+    let editActor: EditActor;
+    if (typeof actor === 'string') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor },
+        select: { id: true, role: true, teamLeadId: true },
+      });
+      if (staff) {
+        editActor = { id: staff.id, role: staff.role, teamLeadId: staff.teamLeadId };
+      } else {
+        editActor = { id: actor, role: 'manager' };
+      }
+    } else {
+      editActor = actor;
+    }
+
+    const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+
+    const { record, diff } = await this.editPolicyService.assertCanEdit({
+      actor: editActor,
+      entityType: 'vacancy',
+      entityId: id,
+      updates: dto,
+      reason,
+    });
+
+    if (!diff || !diff.hasChange) {
+      return record;
+    }
+
+    const data: Record<string, unknown> = {};
+    for (const key of diff.changedFields) {
+      data[key] = dto[key];
+    }
+
+    const updated = await this.prisma.vacancy.update({
+      where: { id: record.id as string },
+      data,
+    });
+
+    await this.editPolicyService.logEdit({
+      actorId: editActor.id,
+      entityType: 'vacancy',
+      entityCode: record.code as string,
+      diff,
+      reason,
+      city: record.city as string | undefined,
+    });
+
+    return updated;
+  }
 
   async create(businessId: string, dto: CreateVacancyDto, actorId: string) {
     if (!dto.tradeSkill || typeof dto.tradeSkill !== 'string' || !dto.tradeSkill.trim()) {

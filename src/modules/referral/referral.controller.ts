@@ -3,6 +3,7 @@ import {
   Controller,
   Get,
   Param,
+  Patch,
   Post,
   Req,
   UseGuards,
@@ -64,5 +65,20 @@ export class ReferralController {
   @RequirePermission('referral', 'read')
   async findById(@Param('id') id: string) {
     return this.referralService.findById(id);
+  }
+
+  @Patch(':id')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('referral', 'write')
+  async update(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.referralService.update(id, body, {
+      id: req.user.sub,
+      role: req.user.role,
+      teamLeadId: req.user.teamLeadId,
+    });
   }
 }

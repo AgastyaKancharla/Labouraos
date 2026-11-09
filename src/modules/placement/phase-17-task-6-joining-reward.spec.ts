@@ -7,6 +7,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
   placement: {
@@ -84,6 +85,7 @@ describe('Phase 17 Task 6: Joining reward queue', () => {
       pricingService,
       {} as UpiCollectionService,
       {} as ReviewFlagService,
+      {} as unknown as EditPolicyService,
     );
   });
 

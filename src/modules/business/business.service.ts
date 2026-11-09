@@ -25,6 +25,7 @@ import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo
 import { PricingService } from '../pricing/pricing.service';
 import { BusinessClock } from './business-clock';
 import { BusinessVerificationService } from './business-verification.service';
+import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 
 @Injectable()
 export class BusinessService {
@@ -39,7 +40,62 @@ export class BusinessService {
     private readonly verificationService: BusinessVerificationService,
     @Inject(GST_LOOKUP_PROVIDER) private readonly gstLookup: GstLookupProvider,
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStorage: BusinessPhotoStorage,
+    private readonly editPolicyService: EditPolicyService,
   ) {}
+
+  async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
+    assertNoRawAadhaar(dto);
+
+    let editActor: EditActor;
+    if (typeof actor === 'string') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor },
+        select: { id: true, role: true, teamLeadId: true },
+      });
+      if (staff) {
+        editActor = { id: staff.id, role: staff.role, teamLeadId: staff.teamLeadId };
+      } else {
+        editActor = { id: actor, role: 'manager' };
+      }
+    } else {
+      editActor = actor;
+    }
+
+    const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+
+    const { record, diff } = await this.editPolicyService.assertCanEdit({
+      actor: editActor,
+      entityType: 'business',
+      entityId: id,
+      updates: dto,
+      reason,
+    });
+
+    if (!diff || !diff.hasChange) {
+      return record;
+    }
+
+    const data: Record<string, unknown> = {};
+    for (const key of diff.changedFields) {
+      data[key] = dto[key];
+    }
+
+    const updated = await this.prisma.business.update({
+      where: { id: record.id as string },
+      data,
+    });
+
+    await this.editPolicyService.logEdit({
+      actorId: editActor.id,
+      entityType: 'business',
+      entityCode: record.code as string,
+      diff,
+      reason,
+      city: record.city as string | undefined,
+    });
+
+    return updated;
+  }
 
   async create(dto: CreateBusinessDto, actorId: string) {
     assertNoRawAadhaar(dto);

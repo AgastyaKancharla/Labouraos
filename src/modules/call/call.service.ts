@@ -26,6 +26,7 @@ import { CallClock } from './call-clock';
 import { isAgentOutcome, isCallPurpose } from './call-outcomes';
 import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
+import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 
 export interface CallActor {
   id: string;
@@ -46,7 +47,66 @@ export class CallService {
     private readonly clock: CallClock,
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
     @Inject(RECORDING_STORAGE) private readonly storage: RecordingStorage,
+    private readonly editPolicyService: EditPolicyService,
   ) {}
+
+  async updateNotes(
+    actor: EditActor | string,
+    id: string,
+    body: { notes?: string; agentOutcomeReason?: string; reason?: string },
+  ) {
+    let editActor: EditActor;
+    if (typeof actor === 'string') {
+      const staff = await this.prisma.staff.findUnique({
+        where: { id: actor },
+        select: { id: true, role: true, teamLeadId: true },
+      });
+      if (staff) {
+        editActor = { id: staff.id, role: staff.role, teamLeadId: staff.teamLeadId };
+      } else {
+        editActor = { id: actor, role: 'manager' };
+      }
+    } else {
+      editActor = actor;
+    }
+
+    const updates: Record<string, unknown> = {};
+    if (body.agentOutcomeReason !== undefined) {
+      updates.agentOutcomeReason = body.agentOutcomeReason;
+    }
+    if (body.notes !== undefined) {
+      updates.agentOutcomeReason = body.notes;
+    }
+
+    const { record, diff } = await this.editPolicyService.assertCanEdit({
+      actor: editActor,
+      entityType: 'call_record',
+      entityId: id,
+      updates: body as unknown as Record<string, unknown>,
+      reason: body.reason,
+    });
+
+    if (!diff || !diff.hasChange) {
+      return record;
+    }
+
+    const updated = await this.prisma.callRecord.update({
+      where: { id: record.id as string },
+      data: {
+        agentOutcomeReason: (updates.agentOutcomeReason as string) ?? (record.agentOutcomeReason as string | null),
+      },
+    });
+
+    await this.editPolicyService.logEdit({
+      actorId: editActor.id,
+      entityType: 'call_record',
+      entityCode: record.code as string,
+      diff,
+      reason: body.reason,
+    });
+
+    return updated;
+  }
 
   async applyWebhook(rawBody: Buffer | undefined, signature: string | undefined) {
     const secret = process.env.TELEPHONY_WEBHOOK_SECRET ?? '';

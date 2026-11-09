@@ -9,6 +9,7 @@ import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
+import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
   staff: { findUnique: jest.Mock; findFirst: jest.Mock; findMany: jest.Mock };
@@ -194,6 +195,7 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
       pricingService as unknown as PricingService,
       {} as unknown as UpiCollectionService,
       reviewFlagService as unknown as ReviewFlagService,
+      {} as unknown as EditPolicyService,
     );
   });
 

@@ -5,6 +5,7 @@ import {
   Get,
   Headers,
   Param,
+  Patch,
   Post,
   Query,
   Req,
@@ -87,5 +88,20 @@ export class CallController {
     @Req() req: AuthenticatedRequest,
   ) {
     return this.calls.recordOutcome({ id: req.user.sub, role: req.user.role }, id, body);
+  }
+
+  @Patch('calls/:id')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  updateNotes(
+    @Param('id') id: string,
+    @Body() body: { notes?: string; agentOutcomeReason?: string; reason?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.calls.updateNotes(
+      { id: req.user.sub, role: req.user.role, teamLeadId: req.user.teamLeadId },
+      id,
+      body,
+    );
   }
 }

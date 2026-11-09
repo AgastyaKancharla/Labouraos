@@ -163,6 +163,21 @@ export class JobSeekerController {
     return this.jobSeekerService.erase(id, req.user.sub);
   }
 
+  @Patch(':id')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async update(
+    @Param('id') id: string,
+    @Body() body: UpdateJobSeekerProfileDto,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.update(id, body, {
+      id: req.user.sub,
+      role: req.user.role,
+      teamLeadId: req.user.teamLeadId,
+    });
+  }
+
   @Patch(':id/profile')
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'write')
@@ -171,7 +186,11 @@ export class JobSeekerController {
     @Body() body: UpdateJobSeekerProfileDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.jobSeekerService.updateProfile(id, body, req.user.sub);
+    return this.jobSeekerService.update(id, body, {
+      id: req.user.sub,
+      role: req.user.role,
+      teamLeadId: req.user.teamLeadId,
+    });
   }
 
   @Post(':id/photo')
