@@ -153,7 +153,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     const otpRes = await request(app.getHttpServer())
       .post('/otp/send')
       .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({ phone })
+      .send({ phone, purpose: 'job_seeker' })
       .expect(201);
     const otpCode = (otpService.getProvider() as MockOtpProvider).getCode(otpRes.body.requestId)!;
     await request(app.getHttpServer())
@@ -198,7 +198,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     const otpKora = await request(app.getHttpServer())
       .post('/otp/send')
       .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({ phone: phoneKora })
+      .send({ phone: phoneKora, purpose: 'business_contact' })
       .expect(201);
     const codeKora = (otpService.getProvider() as MockOtpProvider).getCode(otpKora.body.requestId)!;
     await request(app.getHttpServer())

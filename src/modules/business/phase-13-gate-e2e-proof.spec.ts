@@ -101,7 +101,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
 
     const businessPhone = `9${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     const businessOtp = await request(server).post('/otp/send')
-      .set('Authorization', `Bearer ${callAgent.token}`).send({ phone: businessPhone }).expect(201);
+      .set('Authorization', `Bearer ${callAgent.token}`).send({ phone: businessPhone, purpose: 'business_contact' }).expect(201);
     const businessOtpCode = provider.getCode(businessOtp.body.requestId)!;
     await request(server).post('/otp/verify').set('Authorization', `Bearer ${callAgent.token}`)
       .send({ requestId: businessOtp.body.requestId, code: businessOtpCode }).expect(201);

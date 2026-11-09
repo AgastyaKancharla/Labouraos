@@ -20,7 +20,7 @@ Any authenticated staff member may request an OTP. Supported purposes are `job_s
 {"success":true,"requestId":"otp-request-id","resendAvailableAt":"2026-11-09T12:00:30.000Z","resendsLeft":3}
 ```
 
-**Duplicate response `200` examples:** a staff member allowed to see the record receives `{"alreadyRegistered":true,"type":"job_seeker","code":"JS-01042"}`; a staff member outside that record's access scope receives `{"alreadyRegistered":true}`.
+**Duplicate response `201` examples:** a staff member allowed to see the record receives `{"alreadyRegistered":true,"type":"job_seeker","code":"JS-01042"}`; a staff member outside that record's access scope receives `{"alreadyRegistered":true}`.
 
 **Resend request:** include the original `requestId` with the same `phone` and `purpose`. The original request ID is reused. A resend is refused before 30 seconds or after three resends.
 
