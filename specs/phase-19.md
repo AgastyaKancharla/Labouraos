@@ -75,7 +75,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - A test greps the source (outside migrations) and fails if any dropped column name is referenced.
 - Tests: the migration applies cleanly on a fresh database and on one with Phase 18 data; the whole suite passes with the columns gone; the grep test passes.
 
-### [ ] Task 5 — Screens
+### [x] Task 5 — Screens
 **Branch:** `phase-19/task-5-screens` · **No migration**
 
 **Acceptance (existing consoles, plain styling):**
@@ -88,12 +88,12 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ## Phase 19 Gate
 
-- [ ] Agents edit their own records until money is involved; then only Team Lead or above; changing a saved value needs a reason; personal values never appear in the history — by test
-- [ ] Payments, call results, recordings, consents, introductions, audit and status history can't be edited through any route — by test
-- [ ] One anonymise service, used by "anonymise now" and the daily job; it keeps the business figures and refuses while a claim, bypass flag or unpaid money is open — by test
-- [ ] Profiles are anonymised 23 months after last activity, recordings deleted after 12 months unless a dispute is open, logs after 12 months, money records after 8 years; dry run changes nothing — by test
-- [ ] Every old column is gone, nothing references them, and the kept columns are untouched — by test
-- [ ] **End-to-end proof, recorded in the report:** an agent registers a job seeker and corrects a typo with no reason needed on first fill; changes the phone later with a reason; after the ₹499 is confirmed the agent's next edit is refused and the Team Lead's succeeds with a reason; the history shows "[changed]" for the phone. With the clock moved forward 23 months and a day, a dry run reports the job seeker; the real run anonymises them, deletes their photo and their 13-month-old recordings, while the placement and payment totals in reports are unchanged. A second job seeker with an open claim is left alone.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] Agents edit their own records until money is involved; then only Team Lead or above; changing a saved value needs a reason; personal values never appear in the history — by test
+- [x] Payments, call results, recordings, consents, introductions, audit and status history can't be edited through any route — by test
+- [x] One anonymise service, used by "anonymise now" and the daily job; it keeps the business figures and refuses while a claim, bypass flag or unpaid money is open — by test
+- [x] Profiles are anonymised 23 months after last activity, recordings deleted after 12 months unless a dispute is open, logs after 12 months, money records after 8 years; dry run changes nothing — by test
+- [x] Every old column is gone, nothing references them, and the kept columns are untouched — by test
+- [x] **End-to-end proof, recorded in the report:** an agent registers a job seeker and corrects a typo with no reason needed on first fill; changes the phone later with a reason; after the ₹499 is confirmed the agent's next edit is refused and the Team Lead's succeeds with a reason; the history shows "[changed]" for the phone. With the clock moved forward 23 months and a day, a dry run reports the job seeker; the real run anonymises them, deletes their photo and their 13-month-old recordings, while the placement and payment totals in reports are unchanged. A second job seeker with an open claim is left alone.
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start anything else.
