@@ -4,7 +4,7 @@ import { AuditModule } from '../audit/audit.module';
 import { AnonymisationService } from './anonymisation.service';
 import {
   CANDIDATE_PHOTO_STORAGE,
-  MemoryCandidatePhotoStorage,
+  sharedCandidatePhotoStorage,
   SupabaseCandidatePhotoStorage,
 } from '../../modules/job-seeker/photo-storage';
 
@@ -18,7 +18,7 @@ import {
       useFactory: () =>
         process.env.CANDIDATE_PHOTO_STORAGE_MODE === 'supabase'
           ? new SupabaseCandidatePhotoStorage()
-          : new MemoryCandidatePhotoStorage(),
+          : sharedCandidatePhotoStorage,
     },
   ],
   exports: [AnonymisationService, CANDIDATE_PHOTO_STORAGE],

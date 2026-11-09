@@ -28,6 +28,8 @@ export class MemoryCandidatePhotoStorage implements CandidatePhotoStorage {
   }
 }
 
+export const sharedCandidatePhotoStorage = new MemoryCandidatePhotoStorage();
+
 /** Private Supabase bucket; the service role key stays on the server. */
 export class SupabaseCandidatePhotoStorage implements CandidatePhotoStorage {
   private readonly baseUrl = process.env.SUPABASE_URL?.replace(/\/$/, '') ?? '';
