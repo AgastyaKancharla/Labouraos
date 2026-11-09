@@ -44,7 +44,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
   let payment1Id = '';
 
   let photoPath1 = '';
-  let recordingPath1 = '';
+  let recordingPathBusiness = '';
   let recordingPath2 = '';
 
   let baseDate: Date;
@@ -377,8 +377,20 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       // 13-month-old recording for the business. A call against candidate #1 would reset their profile clock.
       const recDate13m = new Date(baseDate.getTime());
       recDate13m.setUTCMonth(recDate13m.getUTCMonth() + 10); // 13 months before the 23m+1d target date
-      recordingPath1 = `recordings/call-candidate-1-${suffix}.mp3`;
-      await recordingStorage.put(recordingPath1, Buffer.from('audio-candidate-1'), 'audio/mpeg');
+      const recordingBusiness = await prisma.business.create({
+        data: {
+          code: `BZ-G19-REC-${suffix}`,
+          name: 'Recording Retention Business',
+          phone: `97${suffix}01`,
+          ownerName: 'Recording Owner',
+          city: 'Bengaluru',
+          createdAt: baseDate,
+        },
+      });
+      businessIds.push(recordingBusiness.id);
+
+      recordingPathBusiness = `recordings/call-business-${suffix}.mp3`;
+      await recordingStorage.put(recordingPathBusiness, Buffer.from('audio-business'), 'audio/mpeg');
 
       const call1 = await prisma.callRecord.create({
         data: {
@@ -387,8 +399,8 @@ describe('Phase 19 Gate End-to-End Proof', () => {
           providerCallId: `call-p19-1-${suffix}`,
           providerStatus: 'completed',
           subjectType: 'business',
-          subjectId: biz.id,
-          recordingStoragePath: recordingPath1,
+          subjectId: recordingBusiness.id,
+          recordingStoragePath: recordingPathBusiness,
           startedAt: recDate13m,
           createdAt: recDate13m,
         },
@@ -515,7 +527,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       // 2. Candidate #1's 13-month-old recording is deleted from storage and marked deleted
       const call1Final = await prisma.callRecord.findUniqueOrThrow({ where: { id: call1.id } });
       expect(call1Final.recordingDeletedAt).not.toBeNull();
-      expect(recordingStorage.has(recordingPath1)).toBe(false);
+      expect(recordingStorage.has(recordingPathBusiness)).toBe(false);
 
       // 3. Placement and payment business totals are preserved
       const placement1Final = await prisma.placement.findUniqueOrThrow({ where: { id: placement.id } });
