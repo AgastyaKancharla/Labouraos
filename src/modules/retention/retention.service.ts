@@ -18,6 +18,7 @@ import {
   getCallRecordingRetentionCutoff,
   getMoneyRecordRetentionCutoff,
   getProfileRetentionCutoff,
+  TRANSIENT_LINK_RETENTION_DAYS,
 } from './retention.policy';
 
 export interface RetentionSummary {
@@ -43,6 +44,8 @@ export interface RetentionSummary {
     agreements: number;
     total: number;
   };
+  publicLinksDeleted: number;
+  otpSessionsDeleted: number;
 }
 
 export interface RetentionRunOptions {
@@ -93,6 +96,8 @@ export class RetentionService {
         agreements: 0,
         total: 0,
       },
+      publicLinksDeleted: 0,
+      otpSessionsDeleted: 0,
     };
 
     // 1. Profiles (> 23 months inactive)
@@ -107,6 +112,9 @@ export class RetentionService {
     // 4. Money records (> 8 years)
     await this.cleanupMoneyRecords(now, dryRun, summary);
 
+    // 5. Public links and OTP sessions (> 30 days after expiry)
+    await this.cleanupExpiredLinkData(now, dryRun, summary);
+
     // Persist run summary in JobRun
     try {
       await this.prisma.jobRun.create({
@@ -119,7 +127,9 @@ export class RetentionService {
             summary.profilesAnonymised.total +
             summary.recordingsDeleted +
             summary.accessLogsDeleted.total +
-            summary.moneyRecordsDeleted.total,
+            summary.moneyRecordsDeleted.total +
+            summary.publicLinksDeleted +
+            summary.otpSessionsDeleted,
           hitsRecorded: 0,
           details: {
             executedAt: summary.executedAt.toISOString(),
@@ -129,6 +139,8 @@ export class RetentionService {
             recordingsProtected: summary.recordingsProtected,
             accessLogsDeleted: summary.accessLogsDeleted,
             moneyRecordsDeleted: summary.moneyRecordsDeleted,
+            publicLinksDeleted: summary.publicLinksDeleted,
+            otpSessionsDeleted: summary.otpSessionsDeleted,
           },
         },
       });
@@ -159,7 +171,28 @@ export class RetentionService {
       recordingsProtected: Number(details.recordingsProtected),
       accessLogsDeleted: details.accessLogsDeleted as RetentionSummary['accessLogsDeleted'],
       moneyRecordsDeleted: details.moneyRecordsDeleted as RetentionSummary['moneyRecordsDeleted'],
+      publicLinksDeleted: Number(details.publicLinksDeleted ?? 0),
+      otpSessionsDeleted: Number(details.otpSessionsDeleted ?? 0),
     };
+  }
+
+  private async cleanupExpiredLinkData(now: Date, dryRun: boolean, summary: RetentionSummary): Promise<void> {
+    const cutoff = new Date(now.getTime() - TRANSIENT_LINK_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    if (dryRun) {
+      const [links, sessions] = await Promise.all([
+        this.prisma.publicLink.count({ where: { expiresAt: { lt: cutoff } } }),
+        this.prisma.otpSession.count({ where: { expiresAt: { lt: cutoff } } }),
+      ]);
+      summary.publicLinksDeleted = links;
+      summary.otpSessionsDeleted = sessions;
+      return;
+    }
+    const [links, sessions] = await this.prisma.$transaction([
+      this.prisma.publicLink.deleteMany({ where: { expiresAt: { lt: cutoff } } }),
+      this.prisma.otpSession.deleteMany({ where: { expiresAt: { lt: cutoff } } }),
+    ]);
+    summary.publicLinksDeleted = links.count;
+    summary.otpSessionsDeleted = sessions.count;
   }
 
   private async cleanupProfiles(

@@ -8,6 +8,7 @@ import {
   maskPayoutValue,
 } from './payout-account-key';
 import { encryptCallRoutingPhone } from '../staff/call-routing-key';
+import { PublicLinkStoreService } from '../../common/public-link-store.service';
 
 describe('Phase 18 Task 1: Payout Accounts', () => {
   const originalPayoutKey = process.env.PAYOUT_ACCOUNT_KEY;
@@ -90,6 +91,12 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
         create: jest.Mock;
         updateMany: jest.Mock;
       };
+      publicLink: {
+        create: jest.Mock;
+        findUnique: jest.Mock;
+        findFirst: jest.Mock;
+        updateMany: jest.Mock;
+      };
     };
     let mockMessagingService: { send: jest.Mock };
     let mockAuditService: { log: jest.Mock };
@@ -134,7 +141,27 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
           create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'pa-1', ...data })),
           updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         },
+        publicLink: {
+          create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'link-1', ...data })),
+          findUnique: jest.fn(),
+          findFirst: jest.fn().mockResolvedValue(null),
+          updateMany: jest.fn().mockImplementation(({ where, data }) => {
+            const rows = (mockPrisma as typeof mockPrisma & { publicLinkRows: Map<string, Record<string, unknown>> }).publicLinkRows;
+            const row = rows.get(where.tokenHash);
+            if (row) rows.set(where.tokenHash, { ...row, ...data });
+            return Promise.resolve({ count: row ? 1 : 0 });
+          }),
+        },
       };
+      (mockPrisma as typeof mockPrisma & { publicLinkRows: Map<string, unknown> }).publicLinkRows = new Map();
+      mockPrisma.publicLink.create.mockImplementation(({ data }) => {
+        const row = { id: 'link-1', createdAt: new Date(), openedAt: null, usedAt: null, revokedAt: null, ...data };
+        (mockPrisma as typeof mockPrisma & { publicLinkRows: Map<string, unknown> }).publicLinkRows.set(data.tokenHash, row);
+        return Promise.resolve({ id: row.id });
+      });
+      mockPrisma.publicLink.findUnique.mockImplementation(({ where }) => Promise.resolve(
+        (mockPrisma as typeof mockPrisma & { publicLinkRows: Map<string, unknown> }).publicLinkRows.get(where.tokenHash) ?? null,
+      ));
 
       mockMessagingService = {
         send: jest.fn().mockResolvedValue({ id: 'msg-1' }),
@@ -159,6 +186,7 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
 
       service = new PayoutAccountService(
         mockPrisma as never,
+        new PublicLinkStoreService(mockPrisma as never),
         mockPricingService as never,
         { generateCode: jest.fn().mockResolvedValue('PA-00001') } as never,
         mockAuditService as never,
@@ -200,7 +228,7 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
       });
 
       const token = mockMessagingService.send.mock.calls[0][0].variables.token;
-      const details = service.getLinkDetails(token);
+      const details = await service.getLinkDetails(token);
 
       expect(details.valid).toBe(true);
       expect(details.ownerType).toBe('referral');

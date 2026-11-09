@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PayoutAccount, Prisma } from '@prisma/client';
@@ -17,12 +18,7 @@ import { RecordPayoutDto } from './dto/record-payout.dto';
 import { matchReceiverName } from '../payout-account/name-matcher';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
-import { randomBytes } from 'crypto';
-import {
-  payoutLinkTokens,
-  hasActivePayoutLink,
-  PayoutLinkTokenRecord,
-} from '../payout-account/payout-account.service';
+import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { decryptPayoutValue } from '../payout-account/payout-account-key';
 import {
   PAYMENT_PROVIDER,
@@ -41,6 +37,7 @@ import { publicLink } from '../../common/public-link';
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
+  private readonly publicLinks: PublicLinkStoreService;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -53,7 +50,10 @@ export class PaymentService {
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
-  ) {}
+    @Optional() publicLinkStore?: PublicLinkStoreService,
+  ) {
+    this.publicLinks = publicLinkStore ?? new PublicLinkStoreService(prisma);
+  }
 
   private async getReferralPayoutPaise(): Promise<number> {
     const policy = await this.pricingService.current();
@@ -885,7 +885,7 @@ export class PaymentService {
       return { linkSent: false, reason: 'account_exists' };
     }
 
-    if (hasActivePayoutLink(ownerType, ownerId, now)) {
+    if (await this.publicLinks.hasActive('payout_details', ownerType, ownerId, now)) {
       return { linkSent: false, reason: 'link_already_active' };
     }
 
@@ -919,20 +919,11 @@ export class PaymentService {
       throw new BadRequestException(`Invalid ownerType '${ownerType}'`);
     }
 
-    const token = randomBytes(32).toString('hex');
     const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
-
-    const record: PayoutLinkTokenRecord = {
-      token,
-      ownerType,
-      ownerId,
-      ownerName,
-      phone,
-      expiresAt,
-      usedAt: null,
-      createdAt: now,
-    };
-    payoutLinkTokens.set(token, record);
+    const { token, id } = await this.publicLinks.create({
+      purpose: 'payout_details', subjectType: ownerType, subjectId: ownerId,
+      phone, expiresAt, metadata: { ownerName },
+    });
 
     await this.messagingService.send({
       channel: 'sms',
@@ -950,7 +941,7 @@ export class PaymentService {
     await this.auditService.log({
       action: 'payout_link_created',
       entityType: 'PayoutAccount',
-      entityCode: token.slice(0, 8),
+      entityCode: id,
       actorId: auditStaffId ?? actorId,
       after: {
         ownerType,

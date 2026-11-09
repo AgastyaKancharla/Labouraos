@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { ExecutionContext, INestApplication } from '@nestjs/common';
+import { BadRequestException, ExecutionContext, INestApplication } from '@nestjs/common';
 import * as request from 'supertest';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConsentLinkService } from './consent-link.service';
@@ -27,6 +27,8 @@ import { BANK_FEED_PROVIDER } from '../payment/bank-feed-provider.interface';
 import { MockPaymentProvider } from '../payment/mock-payment.provider';
 import { MockBankFeedProvider } from '../payment/mock-bank-feed.provider';
 import { ConsentClock } from './consent-clock';
+import { PublicLinkStoreService } from '../../common/public-link-store.service';
+import { createHash } from 'node:crypto';
 
 type MockPrismaService = {
   referral: { findUnique: jest.Mock };
@@ -48,6 +50,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
   let otpService: OtpService;
   let messagingService: MessagingService;
   let mockPrisma: MockPrismaService;
+  const publicLinks = new Map<string, Record<string, unknown>>();
 
   const mockStaffUser = {
     sub: 'staff-uuid-1',
@@ -74,6 +77,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
   });
 
   beforeEach(async () => {
+    publicLinks.clear();
     mockPrisma = {
       referral: {
         findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
@@ -116,6 +120,38 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       controllers: [ReferralController, ConsentController, PaymentController],
       providers: [
         { provide: PrismaService, useValue: mockPrisma },
+        {
+          provide: PublicLinkStoreService,
+          useValue: {
+            create: jest.fn().mockImplementation(async (input) => {
+              const token = createHash('sha256').update(`terms-link-${publicLinks.size + 1}-${Date.now()}`).digest('hex');
+              const id = `public-link-${publicLinks.size + 1}`;
+              publicLinks.set(token, {
+                id,
+                tokenHash: createHash('sha256').update(token).digest('hex'),
+                ...input,
+                usedAt: null,
+                revokedAt: null,
+                openedAt: null,
+                createdAt: new Date(),
+              });
+              return { token, id };
+            }),
+            findByToken: jest.fn().mockImplementation(async (token: string) => {
+              const row = publicLinks.get(token);
+              if (!row) throw new Error('Public link not found');
+              if (row.usedAt) throw new BadRequestException('Public link has already been used');
+              if ((row.expiresAt as Date).getTime() <= Date.now()) throw new BadRequestException('Public link has expired');
+              row.openedAt = row.openedAt ?? new Date();
+              return row;
+            }),
+            markUsed: jest.fn().mockImplementation(async (token: string) => {
+              const row = publicLinks.get(token);
+              if (row) row.usedAt = new Date();
+            }),
+            hashToken: jest.fn((token: string) => createHash('sha256').update(token).digest('hex')),
+          },
+        },
         ConsentClock,
         ConsentService,
         ConsentLinkService,

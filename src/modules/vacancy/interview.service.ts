@@ -232,7 +232,7 @@ export class InterviewService {
       return created.interview;
     }
 
-    const replyToken = this.consentLinks.createInterviewActionToken(
+    const replyToken = await this.consentLinks.createInterviewActionToken(
       created.interview.id,
       'candidate_reply',
       seeker.phone,
@@ -399,13 +399,13 @@ export class InterviewService {
 
   async respondFromLink(token: string, answer: 'yes' | 'no') {
     if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
-    const link = this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');
+    const link = await this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');
     const result = await this.applyCandidateReply(link.interviewId, answer === 'yes', null, null);
-    this.consentLinks.consumeInterviewActionToken(token, 'candidate_reply');
+    await this.consentLinks.consumeInterviewActionToken(token, 'candidate_reply');
     return result;
   }
 
-  validateCandidateReplyLink(token: string) {
+  async validateCandidateReplyLink(token: string) {
     return this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');
   }
 
@@ -551,16 +551,16 @@ export class InterviewService {
     return { requestsSent, dueNotices, overdueFlags, closed };
   }
 
-  validateOwnerResultLink(token: string) {
+  async validateOwnerResultLink(token: string) {
     return this.consentLinks.validateInterviewActionToken(token, 'owner_result');
   }
 
   async sendOwnerResultOtp(token: string) {
-    this.validateOwnerResultLink(token);
+    await this.validateOwnerResultLink(token);
     return this.consentLinks.sendOtp(token);
   }
 
-  validateCandidateCheckLink(token: string) {
+  async validateCandidateCheckLink(token: string) {
     return this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
   }
 
@@ -676,7 +676,7 @@ export class InterviewService {
         }
       }
     });
-    this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
+    await this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
     await this.auditService.log({
       actorId: interview.proposedByStaffId, action: 'interview.result_recorded', entityType: 'Interview',
       entityCode: interview.code, city: interview.business.city,
@@ -716,7 +716,7 @@ export class InterviewService {
 
   async submitCandidateOfferCheck(token: string, answer: 'yes' | 'no') {
     if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
-    const link = this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
+    const link = await this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
     const interview = await this.prisma.interview.findUnique({ where: { id: link.interviewId } });
     if (!interview || !interview.resultRecordedAt) throw new BadRequestException('The owner has not recorded a result yet');
     const now = this.clock.now();
@@ -725,7 +725,7 @@ export class InterviewService {
       data: { candidateCheckAnswer: answer === 'yes' ? 'offered_yes' : 'offered_no', candidateCheckAt: now },
     });
     if (updated.count !== 1) throw new BadRequestException('This candidate check link has already been used');
-    this.consentLinks.consumeInterviewActionToken(token, 'candidate_check');
+    await this.consentLinks.consumeInterviewActionToken(token, 'candidate_check');
     await this.raiseMismatchIfNeeded(interview.id, null);
     return { id: interview.id, candidateCheckAnswer: answer === 'yes' ? 'offered_yes' : 'offered_no' };
   }
@@ -741,7 +741,7 @@ export class InterviewService {
     });
     if (claimed.count !== 1) return;
     const linkExpiresAt = new Date(interview.slotEndsAt.getTime() + closeHours * 60 * 60 * 1000);
-    const token = this.consentLinks.createInterviewActionToken(
+    const token = await this.consentLinks.createInterviewActionToken(
       interview.id, 'owner_result', interview.business.phone, linkExpiresAt,
     );
     const link = publicLink(`/interviews/result/${token}`);
@@ -764,7 +764,7 @@ export class InterviewService {
     interview: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
   ) {
     const policy = await this.pricingService.current();
-    const token = this.consentLinks.createInterviewActionToken(
+    const token = await this.consentLinks.createInterviewActionToken(
       interview.id, 'candidate_check', interview.jobSeeker.phone,
       new Date(interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
     );

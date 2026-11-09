@@ -267,7 +267,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
       );
 
       // Verify active link exists for candidate
-      expect(payoutAccountService.hasActiveLink('job_seeker', candidate.id)).toBe(true);
+      expect(await payoutAccountService.hasActiveLink('job_seeker', candidate.id)).toBe(true);
 
       // If called again, does not send duplicate link
       const secondCallResult = await payoutAccountService.sendLinkIfNotOnRecord(
@@ -303,7 +303,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
         'system',
       );
 
-      expect(payoutAccountService.hasActiveLink('referral', partner.id)).toBe(true);
+      expect(await payoutAccountService.hasActiveLink('referral', partner.id)).toBe(true);
 
       // If partner already had an account, link would not be sent
       await prisma.payoutAccount.create({
@@ -376,7 +376,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
         expect.any(Date),
       );
 
-      expect(payoutAccountService.hasActiveLink('job_seeker', candidate.id)).toBe(true);
+      expect(await payoutAccountService.hasActiveLink('job_seeker', candidate.id)).toBe(true);
 
       sendSpy.mockRestore();
     });

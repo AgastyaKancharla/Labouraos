@@ -5,15 +5,18 @@ import { RealOtpProvider } from './real-otp.provider';
 import { OtpService } from './otp.service';
 import { OtpController } from './otp.controller';
 import { AuditModule } from '../audit/audit.module';
+import { PrismaModule } from '../prisma/prisma.module';
+import { PrismaService } from '../prisma/prisma.service';
 
 @Global()
 @Module({
-  imports: [AuditModule],
+  imports: [AuditModule, PrismaModule],
   controllers: [OtpController],
   providers: [
     {
       provide: OTP_PROVIDER,
-      useFactory: () => {
+      inject: [PrismaService],
+      useFactory: (prisma: PrismaService) => {
         const rawProvider =
           process.env.OTP_PROVIDER_MODE || process.env.OTP_PROVIDER;
         const providerName =
@@ -26,7 +29,9 @@ import { AuditModule } from '../audit/audit.module';
           providerName === 'msg91' ||
           providerName === 'dlt'
         ) {
-          return new RealOtpProvider();
+          const provider = new RealOtpProvider();
+          provider.setPrismaService(prisma);
+          return provider;
         }
         throw new Error(`Unsupported OTP provider: ${providerName}`);
       },

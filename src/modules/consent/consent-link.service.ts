@@ -4,8 +4,10 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { createHash, randomBytes } from 'crypto';
+import { createHash } from 'crypto';
+import { PublicLinkPurpose } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { ConsentClock } from './consent-clock';
 import { ConsentService } from './consent.service';
 import { MessagingService } from '../message/messaging.service';
@@ -119,12 +121,12 @@ export type ConsentLinkDetails =
 
 @Injectable()
 export class ConsentLinkService {
-  private readonly tokens = new Map<string, ConsentLinkTokenRecord>();
   private readonly processingTokens = new Set<string>();
   private ttlMs = 24 * 60 * 60 * 1000; // 24 hours
 
   constructor(
     private readonly prisma: PrismaService,
+    private readonly publicLinks: PublicLinkStoreService,
     private readonly clock: ConsentClock,
     private readonly consentService: ConsentService,
     private readonly messagingService: MessagingService,
@@ -144,37 +146,34 @@ export class ConsentLinkService {
     purpose: InterviewLinkPurpose,
     phone: string,
     expiresAt: Date,
-  ): string {
-    const token = randomBytes(32).toString('hex');
-    this.tokens.set(token, {
-      token,
-      subjectType: 'interview',
-      interviewId,
-      purpose,
-      phone,
-      expiresAt,
-      usedAt: null,
-      createdAt: this.clock.now(),
-    });
-    return token;
+  ): Promise<string> {
+    const linkPurpose: Record<InterviewLinkPurpose, PublicLinkPurpose> = {
+      candidate_reply: 'offer_reply',
+      candidate_check: 'interview_candidate_result',
+      owner_result: 'interview_owner_result',
+    };
+    return this.publicLinks.create({
+      purpose: linkPurpose[purpose], subjectType: 'interview', subjectId: interviewId,
+      phone, expiresAt, metadata: { interviewPurpose: purpose },
+    }).then(({ token }) => token);
   }
 
-  validateInterviewActionToken(token: string, purpose: InterviewLinkPurpose): InterviewActionLinkRecord {
-    const record = this.validateToken(token);
+  async validateInterviewActionToken(token: string, purpose: InterviewLinkPurpose): Promise<InterviewActionLinkRecord> {
+    const record = await this.validateToken(token);
     if (record.subjectType !== 'interview' || record.purpose !== purpose) {
       throw new BadRequestException('Invalid interview link token');
     }
     return record;
   }
 
-  consumeInterviewActionToken(token: string, purpose: InterviewLinkPurpose): InterviewActionLinkRecord {
-    const record = this.validateInterviewActionToken(token, purpose);
-    record.usedAt = this.clock.now();
+  async consumeInterviewActionToken(token: string, purpose: InterviewLinkPurpose): Promise<InterviewActionLinkRecord> {
+    const record = await this.validateInterviewActionToken(token, purpose);
+    await this.publicLinks.markUsed(token, this.clock.now());
     return record;
   }
 
   async verifyInterviewOwnerOtp(token: string, requestId: string, code: string): Promise<InterviewActionLinkRecord> {
-    const record = this.validateInterviewActionToken(token, 'owner_result');
+    const record = await this.validateInterviewActionToken(token, 'owner_result');
     const validCode = await this.otpService.verifyOtp(requestId, code);
     const belongsToOwner = validCode && await this.otpService.isVerified(requestId, record.phone);
     if (!belongsToOwner) throw new BadRequestException('Valid owner OTP is required to record an interview result');
@@ -189,20 +188,12 @@ export class ConsentLinkService {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
 
-    const token = randomBytes(32).toString('hex');
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
-
-    const record: ConsentLinkTokenRecord = {
-      token,
-      subjectType: 'job_seeker',
-      subjectId: seeker.id,
-      jobSeekerId: seeker.id,
-      expiresAt,
-      usedAt: null,
-      createdAt: now,
-    };
-    this.tokens.set(token, record);
+    const { token } = await this.publicLinks.create({
+      purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
+      phone: seeker.phone, expiresAt,
+    });
 
     // Send single-use link via SMS
     await this.messagingService.send({
@@ -241,28 +232,19 @@ export class ConsentLinkService {
     const agreementLanguage = language as AgreementLanguage;
     const termsHtml = renderBusinessAgreementTerms(numbers, agreementLanguage);
     const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
-    const token = randomBytes(32).toString('hex');
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
-    const record: ConsentLinkTokenRecord = {
-      token,
-      subjectType: 'business',
-      subjectId: business.id,
-      businessId: business.id,
-      businessPhone: business.phone,
-      createdByStaffId: staffId,
-      agreement: {
+    const { token } = await this.publicLinks.create({
+      purpose: 'business_agreement', subjectType: 'business', subjectId: business.id,
+      phone: business.phone, language, createdByStaffId: staffId, expiresAt,
+      metadata: { agreement: {
         ...numbers,
         version: BUSINESS_AGREEMENT_VERSION,
         language: agreementLanguage,
         termsHtml,
         termsHash,
-      },
-      expiresAt,
-      usedAt: null,
-      createdAt: now,
-    };
-    this.tokens.set(token, record);
+      } },
+    });
 
     await this.messagingService.send({
       channel: 'sms',
@@ -286,30 +268,19 @@ export class ConsentLinkService {
     const agreementLanguage = language as AgreementLanguage;
     const termsHtml = renderReferralTerms(referralPayoutPaise, agreementLanguage);
     const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
-    const token = randomBytes(32).toString('hex');
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + this.ttlMs);
-
-    const record: ConsentLinkTokenRecord = {
-      token,
-      subjectType: 'referral',
-      subjectId: referral.id,
-      referralId: referral.id,
-      partnerPhone: referral.phone,
-      partnerName: referral.name,
-      createdByStaffId: staffId,
-      terms: {
+    const { token } = await this.publicLinks.create({
+      purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
+      phone: referral.phone, language, createdByStaffId: staffId, expiresAt,
+      metadata: { partnerName: referral.name, terms: {
         referralPayoutPaise,
         version: REFERRAL_TERMS_VERSION,
         language: agreementLanguage,
         termsHtml,
         termsHash,
-      },
-      expiresAt,
-      usedAt: null,
-      createdAt: now,
-    };
-    this.tokens.set(token, record);
+      } },
+    });
 
     await this.messagingService.send({
       channel: 'sms',
@@ -333,22 +304,49 @@ export class ConsentLinkService {
     return { body, termsHash: agreement.termsHash };
   }
 
-  validateToken(token: string): ConsentLinkTokenRecord {
-    const record = this.tokens.get(token);
-    if (!record) {
-      throw new BadRequestException('Invalid consent link token');
+  async validateToken(token: string): Promise<ConsentLinkTokenRecord> {
+    let row: Awaited<ReturnType<PublicLinkStoreService['findByToken']>>;
+    try {
+      row = await this.publicLinks.findByToken(token, this.clock.now());
+    } catch (error: unknown) {
+      if (error instanceof NotFoundException) throw new BadRequestException('Invalid consent link token');
+      if (error instanceof BadRequestException) {
+        if (error.message === 'Public link has already been used') throw new BadRequestException('Consent link has already been used');
+        if (error.message === 'Public link has expired') throw new BadRequestException('Consent link has expired');
+      }
+      throw error;
     }
-    if (record.usedAt) {
-      throw new BadRequestException('Consent link has already been used');
+    const base = { token, expiresAt: row.expiresAt, usedAt: row.usedAt, createdAt: row.createdAt };
+    const metadata = (row.metadata ?? {}) as unknown as Record<string, unknown>;
+    if (row.subjectType === 'interview') {
+      const purposeByLink: Record<string, InterviewLinkPurpose> = {
+        offer_reply: 'candidate_reply',
+        interview_candidate_result: 'candidate_check',
+        interview_owner_result: 'owner_result',
+      };
+      const purpose = purposeByLink[row.purpose];
+      if (!purpose || !row.phone) throw new BadRequestException('Invalid interview link token');
+      return { ...base, subjectType: 'interview', interviewId: row.subjectId, purpose, phone: row.phone };
     }
-    if (this.clock.now().getTime() > record.expiresAt.getTime()) {
-      throw new BadRequestException('Consent link has expired');
+    if (row.purpose === 'business_agreement') {
+      return { ...base, subjectType: 'business', subjectId: row.subjectId, businessId: row.subjectId,
+        businessPhone: row.phone ?? '', createdByStaffId: row.createdByStaffId ?? '',
+        agreement: metadata.agreement as Extract<ConsentLinkTokenRecord, { subjectType: 'business' }>['agreement'] };
     }
-    return record;
+    if (row.purpose === 'referral_registration') {
+      return { ...base, subjectType: 'referral', subjectId: row.subjectId, referralId: row.subjectId,
+        partnerPhone: row.phone ?? '', partnerName: String(metadata.partnerName ?? ''),
+        createdByStaffId: row.createdByStaffId ?? '',
+        terms: metadata.terms as Extract<ConsentLinkTokenRecord, { subjectType: 'referral' }>['terms'] };
+    }
+    if (row.purpose === 'registration') {
+      return { ...base, subjectType: 'job_seeker', subjectId: row.subjectId, jobSeekerId: row.subjectId };
+    }
+    throw new BadRequestException('Invalid consent link token');
   }
 
   async getTokenDetails(token: string): Promise<ConsentLinkDetails> {
-    const record = this.validateToken(token);
+    const record = await this.validateToken(token);
     if (record.subjectType === 'interview') {
       throw new BadRequestException('This token is not a consent or agreement link');
     }
@@ -407,7 +405,7 @@ export class ConsentLinkService {
   }
 
   async sendOtp(token: string) {
-    const record = this.validateToken(token);
+    const record = await this.validateToken(token);
     if (record.subjectType === 'interview') {
       if (record.purpose !== 'owner_result') {
         throw new BadRequestException('This interview link does not require OTP');
@@ -439,7 +437,7 @@ export class ConsentLinkService {
   }
 
   async submitConsent(dto: SubmitConsentDto) {
-    const record = this.validateToken(dto.token);
+    const record = await this.validateToken(dto.token);
     if (record.subjectType === 'interview') {
       throw new BadRequestException('This token is not a consent or agreement link');
     }
@@ -508,7 +506,7 @@ export class ConsentLinkService {
     }
 
     // Mark token as used
-    record.usedAt = this.clock.now();
+    await this.publicLinks.markUsed(record.token, this.clock.now());
 
     // Move a lead forward after first consent, or reactivate a paused seeker once all required purposes are restored.
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);
@@ -568,7 +566,7 @@ export class ConsentLinkService {
     const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
     if (!business) throw new NotFoundException('Business not found');
 
-    const documentStoragePath = `business-agreements/${record.businessId}/${record.token}.html`;
+    const documentStoragePath = `business-agreements/${record.businessId}/${this.publicLinks.hashToken(record.token)}.html`;
     const document = renderSignedAgreementDocument(record.agreement.termsHtml);
     const documentBytes = Buffer.from(document, 'utf8');
     const documentHash = createHash('sha256').update(documentBytes).digest('hex');
@@ -612,7 +610,7 @@ export class ConsentLinkService {
       return created;
     });
 
-    record.usedAt = signedAt;
+    await this.publicLinks.markUsed(record.token, signedAt);
     await this.businessVerificationService.advanceToPendingTlCheckIfReady(business.id);
     await this.auditService.log({
       actorId: record.createdByStaffId,
@@ -681,7 +679,7 @@ export class ConsentLinkService {
       }
     });
 
-    record.usedAt = signedAt;
+    await this.publicLinks.markUsed(record.token, signedAt);
 
     await this.auditService.log({
       actorId: record.createdByStaffId,
