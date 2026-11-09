@@ -263,7 +263,7 @@ describe('Phase 7 Task 2: Real Payment Gateway & Payout API Integration', () => 
           name: 'Real Webhook Seeker',
           phone: `96001${String(timestamp).slice(-5)}`,
           phoneVerified: true,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '09:00',

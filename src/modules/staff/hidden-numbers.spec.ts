@@ -139,7 +139,7 @@ describe('Phase 11 Task 3: hidden numbers', () => {
         code: `JS-HN-${stamp}`,
         name: 'Hidden Candidate',
         phone: SEEKER_PHONE,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1000000,
         maxSalary: 2000000,
         preferredCallWindowStart: '10:00',

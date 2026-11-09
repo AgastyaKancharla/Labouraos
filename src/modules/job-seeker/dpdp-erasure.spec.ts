@@ -88,7 +88,6 @@ describe('Phase 8 Task 3: Manual DPDP Erasure Endpoints', () => {
         email: `fa_dpdp_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area,
         city: 'Bengaluru',
       },
     });

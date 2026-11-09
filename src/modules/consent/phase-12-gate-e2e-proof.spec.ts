@@ -73,7 +73,6 @@ describe('Phase 12 gate end-to-end proof', () => {
         role: 'field_agent',
         status: 'active',
         city: 'Bengaluru',
-        area: 'Koramangala',
       },
     });
     fieldAgent = {
@@ -341,7 +340,7 @@ describe('Phase 12 gate end-to-end proof', () => {
         name: `No Consent Candidate ${suffix}`,
         phone: `+9196${Math.floor(10000000 + Math.random() * 90000000)}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 2000000,
         maxSalary: 3000000,
         preferredCallWindowStart: '09:00',
@@ -369,7 +368,7 @@ describe('Phase 12 gate end-to-end proof', () => {
         code: `BZ-P12G-${suffix}`,
         name: `Gate Proof Business ${suffix}`,
         city: 'Bengaluru',
-        area: 'Koramangala',
+        locality: 'Koramangala',
         phone: `+9188${Math.floor(10000000 + Math.random() * 90000000)}`,
         verificationStatus: 'verified',
       },

@@ -118,7 +118,7 @@ describe('Phase 3 Task 1: Contact-Attempt Logging', () => {
         name: 'Contact Attempt Worker',
         phone: `93${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
-        tradeSkill: 'Plumber',
+        trades: { create: { trade: 'Plumber', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2200000,
         preferredCallWindowStart: '09:00',

@@ -51,7 +51,7 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
         code: `BZ-CARD-${timestamp}`,
         name: 'Card test business',
         city: 'Bengaluru',
-        contactName: 'Business owner',
+        ownerName: 'Business owner',
         phone: `918${String(timestamp).slice(-9)}`,
         phoneVerified: true,
         accountAgentId: staffIds.field_agent,

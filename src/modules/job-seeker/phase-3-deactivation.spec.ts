@@ -58,7 +58,7 @@ describe('Phase 3 Task 4: 3-Hit Deactivation and Refund Entitlement', () => {
         name: 'Deactivation Candidate',
         phone: `95${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
-        tradeSkill: 'Painter',
+        trades: { create: { trade: 'Painter', isPrimary: true } },
         minSalary: 1400000,
         maxSalary: 2000000,
         preferredCallWindowStart: '09:00',

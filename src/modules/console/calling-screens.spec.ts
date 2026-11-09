@@ -112,7 +112,6 @@ describe('Phase 11 Task 6: Calling screens', () => {
         role: 'field_agent',
         status: 'active',
         city: 'Bengaluru',
-        area: 'Koramangala',
         teamLeadId: lead.id,
         callRoutingPhone: encryptCallRoutingPhone('+919800000003'),
       },
@@ -156,7 +155,7 @@ describe('Phase 11 Task 6: Calling screens', () => {
         code: `JS-CS-${stamp}`,
         name: 'Candidate CS',
         phone: testSeekerPhone,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '10:00',
@@ -185,7 +184,7 @@ describe('Phase 11 Task 6: Calling screens', () => {
         code: `BZ-CS-${stamp}`,
         name: 'Business CS Services',
         phone: `+918${stamp.slice(-8)}2`,
-        area: 'Koramangala',
+        locality: 'Koramangala',
       },
     });
     bizIds.push(biz.id);

@@ -90,7 +90,7 @@ describe('Phase 3 Task 2: Hit Recording', () => {
         name: 'Hit Test Worker',
         phone: `94${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
-        tradeSkill: 'Carpenter',
+        trades: { create: { trade: 'Carpenter', isPrimary: true } },
         minSalary: 1600000,
         maxSalary: 2400000,
         preferredCallWindowStart: '09:00',

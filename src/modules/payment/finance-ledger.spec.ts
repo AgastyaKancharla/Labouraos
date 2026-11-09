@@ -106,7 +106,6 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         email: `fa_t3_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -153,15 +152,23 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         name: 'Candidate FL',
         phone: `93002${String(timestamp).slice(-5)}`,
         phoneVerified: true,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
-        kycStatus: 'verified',
-        kycReference: 'vendor_ref_fl_12345',
         status: 'active',
         city: 'Bengaluru',
+      },
+    });
+
+    await prisma.identityVerification.create({
+      data: {
+        jobSeekerId: candidate.id,
+        method: 'digilocker',
+        vendor: 'mock_vendor',
+        vendorReference: 'vendor_ref_fl_12345',
+        status: 'verified',
       },
     });
 
@@ -171,7 +178,7 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         name: 'Business FL',
         phone: `93003${String(timestamp).slice(-5)}`,
         phoneVerified: true,
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         city: 'Bengaluru',
       },
     });

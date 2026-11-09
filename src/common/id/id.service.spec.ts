@@ -96,7 +96,7 @@ describe('IdService & Unique ID Generation', () => {
               code,
               name: `Concurrent Business ${index}`,
               phone: `+9170${String(testTimestamp).slice(-6)}${String(index).padStart(2, '0')}`,
-              area: 'Koramangala',
+              locality: 'Koramangala',
               city: 'Bengaluru',
             },
           });

@@ -36,7 +36,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
   const timestamp = Date.now();
   const password = 'Password123!Secure';
   const koraArea = `Area-P5K-${timestamp}`;
-  const indiArea = `Area-P5I-${timestamp}`;
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({
@@ -56,7 +55,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         email: `fa_p5k_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: koraArea,
         city: 'Bengaluru',
       },
     });
@@ -68,7 +66,6 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         email: `fa_p5i_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: indiArea,
         city: 'Bengaluru',
       },
     });
@@ -149,7 +146,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
       data: {
         code: `BZ-P5K-${timestamp}`,
         name: 'Kora Tech Solutions',
-        area: koraArea,
+        locality: koraArea,
         accountAgentId: faKora.id,
         city: 'Bengaluru',
         phone: `91${timestamp.toString().slice(-8)}1`,
@@ -176,7 +173,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
         code: `JS-P5ACT-${timestamp}`,
         name: 'Active Candidate',
         phone: `92${timestamp.toString().slice(-8)}1`,
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1800000,
         maxSalary: 2400000,
         preferredCallWindowStart: '10:00',
@@ -359,7 +356,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     const candidate = await prisma.jobSeeker.create({
       data: {
         code: `JS-P15PAY-${timestamp}`, name: 'Interview Selected Candidate',
-        phone: `95${timestamp.toString().slice(-8)}9`, tradeSkill: 'Electrician',
+        phone: `95${timestamp.toString().slice(-8)}9`, trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1800000, maxSalary: 2400000,
         preferredCallWindowStart: '09:00', preferredCallWindowEnd: '18:00', status: 'active',
       },
@@ -478,7 +475,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
     const candidate = await prisma.jobSeeker.create({
       data: {
         code: `JS-P15DUE-${timestamp}`, name: 'Unpaid Interview Candidate',
-        phone: `96${timestamp.toString().slice(-8)}9`, tradeSkill: 'Electrician',
+        phone: `96${timestamp.toString().slice(-8)}9`, trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1800000, maxSalary: 2400000,
         preferredCallWindowStart: '09:00', preferredCallWindowEnd: '18:00', status: 'active',
       },
@@ -509,7 +506,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5JOIN-${timestamp}`,
           name: 'Joining Candidate',
           phone: `95${timestamp.toString().slice(-8)}4`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',
@@ -624,7 +621,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5DROP404-${timestamp}`,
           name: 'Dropout 404 Candidate',
           phone: `96${timestamp.toString().slice(-8)}5`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',
@@ -739,7 +736,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5REF1-${timestamp}`,
           name: 'Refund Candidate 1',
           phone: `92${timestamp.toString().slice(-8)}8`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',
@@ -797,7 +794,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5REF2-${timestamp}`,
           name: 'Refund Candidate 2',
           phone: `92${timestamp.toString().slice(-8)}9`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',
@@ -836,7 +833,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5REF3-${timestamp}`,
           name: 'Refund Candidate 3',
           phone: `92${timestamp.toString().slice(-8)}0`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',
@@ -850,7 +847,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5REF4-${timestamp}`,
           name: 'Replacement Candidate 4',
           phone: `92${timestamp.toString().slice(-8)}3`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',
@@ -894,7 +891,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5REF5-${timestamp}`,
           name: 'Refund Candidate 5',
           phone: `92${timestamp.toString().slice(-8)}4`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 2400000,
           maxSalary: 3000000,
           preferredCallWindowStart: '10:00',
@@ -997,7 +994,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
             code: `JS-P5REF${tc.suffix}-${timestamp}`,
             name: `Refund Candidate ${tc.suffix}`,
             phone: `81${timestamp.toString().slice(-8)}${tc.suffix}`,
-            tradeSkill: 'Electrician',
+            trades: { create: { trade: 'Electrician', isPrimary: true } },
             minSalary: 2000000,
             maxSalary: 2600000,
             preferredCallWindowStart: '10:00',
@@ -1056,7 +1053,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
           code: `JS-P5REFPAUSE-${timestamp}`,
           name: 'Paused Candidate',
           phone: `92${timestamp.toString().slice(-8)}5`,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2400000,
           preferredCallWindowStart: '10:00',

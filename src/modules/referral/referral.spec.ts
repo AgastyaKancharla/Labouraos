@@ -43,7 +43,6 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         email: `call_agent_rf_${timestamp}@laboura.local`,
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -56,7 +55,6 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         email: `field_agent_rf_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });

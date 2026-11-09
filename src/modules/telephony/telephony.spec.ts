@@ -107,7 +107,7 @@ describe('Telephony Module (Task 4)', () => {
           name: 'Ramesh Telephony Candidate',
           phone,
           phoneVerified: true,
-          tradeSkill: 'Electrician',
+          trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1500000,
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',

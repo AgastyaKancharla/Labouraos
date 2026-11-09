@@ -285,6 +285,7 @@ describe('Phase 10 Task 1: Staff devices', () => {
         deviceId: `legacy-${stamp}`,
         status: 'approved',
         label: 'migrated',
+        platform: 'android',
       },
     });
 

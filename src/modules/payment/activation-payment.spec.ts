@@ -42,7 +42,6 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
         email: `call_agent_ap_${timestamp}@laboura.local`,
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });

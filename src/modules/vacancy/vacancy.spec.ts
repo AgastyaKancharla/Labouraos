@@ -44,7 +44,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         email: `fa_vkora_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });
@@ -57,7 +56,6 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
         email: `fa_vindi_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -103,7 +101,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       data: {
         code: `BZ-VKORA-${timestamp}`,
         name: 'Koramangala Cafe & Resto',
-        area: 'Koramangala',
+        locality: 'Koramangala',
         accountAgentId: faKora.id,
         city: 'Bengaluru',
         phone: `81${timestamp.toString().slice(-8)}`,
@@ -117,7 +115,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       data: {
         code: `BZ-VINDI-${timestamp}`,
         name: 'Indiranagar Retail Mart',
-        area: 'Indiranagar',
+        locality: 'Indiranagar',
         accountAgentId: faIndi.id,
         city: 'Bengaluru',
         phone: `82${timestamp.toString().slice(-8)}`,

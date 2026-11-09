@@ -57,10 +57,10 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
       ['manager', 'manager'],
       ['finance', 'finance'],
       ['call_agent', 'call_agent'],
-      ['field_agent', 'field_agent', 'Indiranagar'],
+      ['field_agent', 'field_agent'],
       ['team_lead', 'team_lead'],
     ];
-    for (const [key, role, area] of roles) {
+    for (const [key, role] of roles) {
       const email = `${key}_t4_${timestamp}@laboura.local`;
       staffEmails.push(email);
       const staff = await prisma.staff.create({
@@ -70,7 +70,6 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
           email,
           passwordHash,
           role,
-          area: area ?? null,
           city: 'Bengaluru',
         },
       });
@@ -159,7 +158,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
         name,
         phone: nextPhone(),
         city: 'Bengaluru',
-        tradeSkill: 'Electrician',
+        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1800000,
         maxSalary: 2400000,
         preferredCallWindowStart: '09:00',

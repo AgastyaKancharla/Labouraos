@@ -44,7 +44,6 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         email: `call_agent_js_${timestamp}@laboura.local`,
         passwordHash,
         role: 'call_agent',
-        area: 'Indiranagar',
         city: 'Bengaluru',
       },
     });
@@ -58,7 +57,6 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         email: `field_agent_js_${timestamp}@laboura.local`,
         passwordHash,
         role: 'field_agent',
-        area: 'Koramangala',
         city: 'Bengaluru',
       },
     });

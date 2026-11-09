@@ -168,7 +168,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         name: 'Urgent Seeker',
         phone,
         phoneVerified: true,
-        tradeSkill: 'Carpenter',
+        trades: { create: { trade: 'Carpenter', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',

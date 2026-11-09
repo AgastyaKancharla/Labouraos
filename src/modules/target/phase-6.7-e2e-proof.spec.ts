@@ -156,7 +156,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       data: {
         code: businessCode,
         name: 'Tech Ventures Pvt Ltd',
-        contactName: 'Ramesh Gupta',
+        ownerName: 'Ramesh Gupta',
         phone: `+9198${String(timestamp).slice(-8)}0`,
         locality: koraArea,
         accountAgentId: fa1Id,

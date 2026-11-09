@@ -99,7 +99,7 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
         code: `JS-HIT-${suffix}`,
         name: `Hit Test Candidate ${suffix}`,
         phone: `+9195${phoneSuffix}`,
-        tradeSkill: 'Driver',
+        trades: { create: { trade: 'Driver', isPrimary: true } },
         minSalary: 1600000,
         maxSalary: 2600000,
         preferredCallWindowStart: '09:00',
