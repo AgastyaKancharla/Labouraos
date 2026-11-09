@@ -38,7 +38,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 - **Never editable by anyone, through any route:** `Payment`, `BankCredit` once matched, `CallRecord` provider fields and recordings, `Consent`, `CandidateIntroduction`, `AuditLog`, `StatusHistory`, `IdentityVerification` results, signed `BusinessAgreement`s. A test lists every update/patch/delete route in the app and asserts none of them can change these.
 - Tests: an agent edits their own job seeker before payment; the same edit after the ₹499 succeeds is refused for the agent and allowed for their Team Lead with a reason; a change without a reason is refused, a first fill without one is allowed; the audit entry shows `"[changed]"` for a phone change; the never-editable list holds across all routes.
 
-### [ ] Task 2 — One way to anonymise
+### [x] Task 2 — One way to anonymise
 **Branch:** `phase-19/task-2-anonymise` · **Migration folder:** `20261112100000_anonymised_at`
 
 **Acceptance:**

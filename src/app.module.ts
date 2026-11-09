@@ -35,6 +35,7 @@ import { ConsentModule } from './modules/consent/consent.module';
 import { MapModule } from './modules/map/map.module';
 import { FollowUpModule } from './modules/follow-up/follow-up.module';
 import { PayoutAccountModule } from './modules/payout-account/payout-account.module';
+import { RetentionModule } from './modules/retention/retention.module';
 
 @Module({
   imports: [
@@ -46,6 +47,7 @@ import { PayoutAccountModule } from './modules/payout-account/payout-account.mod
     AuditModule,
     EditPolicyModule,
     AnonymisationModule,
+    RetentionModule,
     OtpModule,
     KycModule,
     WhatsAppModule,

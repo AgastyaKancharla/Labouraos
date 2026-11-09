@@ -3,6 +3,7 @@ export const AGREEMENT_DOCUMENT_STORAGE = 'AGREEMENT_DOCUMENT_STORAGE';
 export interface AgreementDocumentStorage {
   put(path: string, body: Buffer, contentType: string): Promise<void>;
   get(path: string): Promise<Buffer | undefined>;
+  delete(path: string): Promise<void>;
 }
 
 export class MemoryAgreementDocumentStorage implements AgreementDocumentStorage {
@@ -16,7 +17,17 @@ export class MemoryAgreementDocumentStorage implements AgreementDocumentStorage 
     const body = this.documents.get(path);
     return body ? Buffer.from(body) : undefined;
   }
+
+  async delete(path: string): Promise<void> {
+    this.documents.delete(path);
+  }
+
+  has(path: string): boolean {
+    return this.documents.has(path);
+  }
 }
+
+export const sharedMemoryAgreementDocumentStorage = new MemoryAgreementDocumentStorage();
 
 /** Private Supabase Storage bucket; the service-role key stays on the server. */
 export class SupabaseAgreementDocumentStorage implements AgreementDocumentStorage {
@@ -52,5 +63,14 @@ export class SupabaseAgreementDocumentStorage implements AgreementDocumentStorag
     if (response.status === 404) return undefined;
     if (!response.ok) throw new Error(`Agreement read failed with status ${response.status}`);
     return Buffer.from(await response.arrayBuffer());
+  }
+
+  async delete(path: string): Promise<void> {
+    if (!this.baseUrl || !this.serviceKey) return;
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    await fetch(`${this.baseUrl}/storage/v1/object/${this.bucket}/${objectPath}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey },
+    });
   }
 }

@@ -7,6 +7,7 @@ export const RECORDING_LINK_TTL_SECONDS = 5 * 60;
 export interface RecordingStorage {
   put(path: string, body: Buffer, contentType: string): Promise<void>;
   signedUrl(path: string, expiresInSeconds: number): Promise<string>;
+  delete(path: string): Promise<void>;
 }
 
 export interface RecordingDownloader {
@@ -25,10 +26,16 @@ export class MemoryRecordingStorage implements RecordingStorage {
     return `memory://${path}?exp=${expiresAt}`;
   }
 
+  async delete(path: string): Promise<void> {
+    this.files.delete(path);
+  }
+
   has(path: string): boolean {
     return this.files.has(path);
   }
 }
+
+export const sharedMemoryRecordingStorage = new MemoryRecordingStorage();
 
 export class HttpRecordingDownloader implements RecordingDownloader {
   async download(url: string): Promise<Buffer> {
@@ -96,5 +103,14 @@ export class SupabaseRecordingStorage implements RecordingStorage {
       return data.signedURL;
     }
     return `${this.baseUrl}/storage/v1${data.signedURL}`;
+  }
+
+  async delete(path: string): Promise<void> {
+    if (!this.baseUrl || !this.serviceKey) return;
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    await fetch(`${this.baseUrl}/storage/v1/object/${this.bucket}/${objectPath}`, {
+      method: 'DELETE',
+      headers: this.headers(),
+    });
   }
 }
