@@ -121,10 +121,14 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
   const createdPaymentCodes: string[] = [];
   const createdPaymentIds: string[] = [];
   const createdJobSeekerIds: string[] = [];
+  const createdTradeIds: string[] = [];
 
   afterAll(async () => {
     try {
       if (prisma) {
+        if (createdTradeIds.length > 0) {
+          await prisma.trade.deleteMany({ where: { id: { in: createdTradeIds } } });
+        }
         if (createdPaymentIds.length > 0) {
           await prisma.payment.deleteMany({ where: { id: { in: createdPaymentIds } } });
         }
@@ -238,6 +242,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
       })
       .expect(201);
 
+    createdTradeIds.push(response.body.id as string);
     expect(response.body).toMatchObject({ active: true, salaryMinPaise: 1500000, salaryMaxPaise: 2000000 });
   });
 

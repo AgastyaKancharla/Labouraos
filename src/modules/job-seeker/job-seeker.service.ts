@@ -106,11 +106,11 @@ export class JobSeekerService {
     private readonly upiCollectionService: UpiCollectionService,
     private readonly editPolicyService: EditPolicyService,
     private readonly anonymisationService: AnonymisationService,
+    private readonly tradeService: TradeService,
     @Optional() private readonly consentService?: ConsentService,
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
-    @Optional() private readonly tradeService?: TradeService,
   ) {}
 
   private async getPolicy() {
@@ -208,7 +208,7 @@ export class JobSeekerService {
             isPrimary: true,
           },
         });
-        await this.tradeService?.recordSuggestion(tx, trade, actorId ?? null, 'job_seeker', created.id);
+        await this.tradeService.recordSuggestion(tx, trade, actorId ?? null, 'job_seeker', created.id);
       }
 
       await recordStatusChange(tx, {
@@ -1102,7 +1102,7 @@ export class JobSeekerService {
           isPrimary,
         },
       });
-      await this.tradeService?.recordSuggestion(tx, normalizedTrade, actorId ?? null, 'job_seeker', jobSeekerId);
+      await this.tradeService.recordSuggestion(tx, normalizedTrade, actorId ?? null, 'job_seeker', jobSeekerId);
       return row;
     });
 
@@ -1196,7 +1196,7 @@ export class JobSeekerService {
       data,
     });
     if (typeof data.trade === 'string') {
-      await this.prisma.$transaction((tx) => this.tradeService?.recordSuggestion(
+      await this.prisma.$transaction((tx) => this.tradeService.recordSuggestion(
         tx,
         data.trade as string,
         actorId ?? null,

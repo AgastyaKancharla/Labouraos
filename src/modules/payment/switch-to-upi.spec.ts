@@ -13,6 +13,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { calculatePlacementFee, calculateGst } from '../../common/money/money';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
+import { TradeService } from '../trade/trade.service';
 
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
@@ -162,6 +163,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       upiCollectionService,
       {} as unknown as EditPolicyService,
       {} as unknown as AnonymisationService,
+      {} as unknown as TradeService,
     );
 
     placementService = new PlacementService(

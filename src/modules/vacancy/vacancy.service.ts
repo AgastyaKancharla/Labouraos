@@ -1,7 +1,6 @@
 import {
   BadRequestException,
   ForbiddenException,
-  Optional,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
@@ -28,7 +27,7 @@ export class VacancyService {
     private readonly pricingService: PricingService,
     private readonly reviewFlagService: ReviewFlagService,
     private readonly editPolicyService: EditPolicyService,
-    @Optional() private readonly tradeService?: TradeService,
+    private readonly tradeService: TradeService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -73,7 +72,7 @@ export class VacancyService {
       data,
     });
     if (typeof data.tradeSkill === 'string') {
-      await this.prisma.$transaction((tx) => this.tradeService?.recordSuggestion(
+      await this.prisma.$transaction((tx) => this.tradeService.recordSuggestion(
         tx,
         data.tradeSkill as string,
         editActor.id,
@@ -229,7 +228,7 @@ export class VacancyService {
         toStatus: 'open',
         changedByStaffId: staff.id,
       });
-      await this.tradeService?.recordSuggestion(tx, v.tradeSkill, staff.id, 'vacancy', v.id);
+      await this.tradeService.recordSuggestion(tx, v.tradeSkill, staff.id, 'vacancy', v.id);
 
       return v;
     });
