@@ -6,6 +6,7 @@ import { AuthModule } from './common/auth/auth.module';
 import { RbacModule } from './common/rbac/rbac.module';
 import { AuditModule } from './common/audit/audit.module';
 import { EditPolicyModule } from './common/edit-policy/edit-policy.module';
+import { AnonymisationModule } from './common/anonymisation/anonymisation.module';
 import { OtpModule } from './common/otp/otp.module';
 import { KycModule } from './common/kyc/kyc.module';
 import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
@@ -44,6 +45,7 @@ import { PayoutAccountModule } from './modules/payout-account/payout-account.mod
     RbacModule,
     AuditModule,
     EditPolicyModule,
+    AnonymisationModule,
     OtpModule,
     KycModule,
     WhatsAppModule,
