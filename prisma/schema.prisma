@@ -148,6 +148,7 @@ model Referral {
   type          String      @default("individual") // individual, business
   jobSeekers    JobSeeker[]
   payments      Payment[]
+  anonymisedAt  DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
@@ -216,6 +217,7 @@ model Business {
   interviews                Interview[]
   followUpAnswerBusinesses  FollowUpTask[] @relation("FollowUpAnswerBusiness")
   erasedAt      DateTime?
+  anonymisedAt  DateTime?
   createdAt     DateTime        @default(now())
   updatedAt     DateTime        @updatedAt
 

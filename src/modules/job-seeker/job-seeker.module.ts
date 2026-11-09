@@ -8,7 +8,7 @@ import { ConsentModule } from '../consent/consent.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import {
   CANDIDATE_PHOTO_STORAGE,
-  MemoryCandidatePhotoStorage,
+  sharedCandidatePhotoStorage,
   SupabaseCandidatePhotoStorage,
 } from './photo-storage';
 
@@ -21,7 +21,7 @@ import {
       provide: CANDIDATE_PHOTO_STORAGE,
       useFactory: () => process.env.CANDIDATE_PHOTO_STORAGE_MODE === 'supabase'
         ? new SupabaseCandidatePhotoStorage()
-        : new MemoryCandidatePhotoStorage(),
+        : sharedCandidatePhotoStorage,
     },
   ],
   exports: [JobSeekerService, CANDIDATE_PHOTO_STORAGE],

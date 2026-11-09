@@ -25,7 +25,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 
 ---
 
-### [ ] Task 1 — Who can edit what, and why
+### [x] Task 1 — Who can edit what, and why
 **Branch:** `phase-19/task-1-edit-rules` · **No migration**
 
 **Acceptance:**

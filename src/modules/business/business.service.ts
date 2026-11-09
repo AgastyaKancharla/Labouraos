@@ -26,6 +26,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { BusinessClock } from './business-clock';
 import { BusinessVerificationService } from './business-verification.service';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 
 @Injectable()
 export class BusinessService {
@@ -41,6 +42,7 @@ export class BusinessService {
     @Inject(GST_LOOKUP_PROVIDER) private readonly gstLookup: GstLookupProvider,
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStorage: BusinessPhotoStorage,
     private readonly editPolicyService: EditPolicyService,
+    private readonly anonymisationService: AnonymisationService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -699,54 +701,25 @@ export class BusinessService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    const business = await this.prisma.business.findUnique({
-      where: { id },
-    });
-    if (!business) {
-      throw new NotFoundException(`Business '${id}' not found`);
-    }
-
-    // Idempotent: safe no-op if already erased
-    if (business.erasedAt) {
+    const res = await this.anonymisationService.anonymise(
+      'business',
+      id,
+      'DPDP erasure request',
+      actorId,
+    );
+    if (res.message.includes('already')) {
       return {
         message: 'Business already erased',
-        id: business.id,
-        code: business.code,
-        erasedAt: business.erasedAt,
+        id: res.id,
+        code: res.code,
+        erasedAt: res.anonymisedAt,
+        anonymisedAt: res.anonymisedAt,
       };
     }
 
-    const updated = await this.prisma.business.update({
-      where: { id: business.id },
-      data: {
-        name: 'ANONYMIZED_BUSINESS',
-        phone: `ERASED-${business.code}`,
-        contactName: 'Anonymized Contact',
-        address: 'Anonymized Address',
-        gstNumber: null,
-        selfieUrl: null,
-        selfieHash: null,
-        erasedAt: new Date(),
-      },
+    return this.prisma.business.findUniqueOrThrow({
+      where: { id: res.id },
     });
-
-    await this.auditService.log({
-      action: 'dpdp.erasure_requested',
-      entityType: 'business',
-      entityCode: business.code,
-      actorId: actor.id,
-      city: business.city,
-      reason: 'DPDP erasure request',
-      changedFields: ['name', 'phone', 'contactName', 'address', 'gstNumber', 'selfieUrl', 'selfieHash', 'erasedAt'],
-      before: {
-        erasedAt: null,
-      },
-      after: {
-        erasedAt: updated.erasedAt,
-      },
-    });
-
-    return updated;
   }
 }
 

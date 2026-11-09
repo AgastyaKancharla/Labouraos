@@ -44,6 +44,7 @@ import {
 import { normalizeHitReason } from './dto/record-hit.dto';
 import { withCurrentJobSeekerFields } from './job-seeker-legacy-read';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { ConsentClock } from '../consent/consent-clock';
 import {
   CANDIDATE_PHOTO_LINK_TTL_SECONDS,
@@ -103,6 +104,7 @@ export class JobSeekerService {
     private readonly pricingService: PricingService,
     private readonly upiCollectionService: UpiCollectionService,
     private readonly editPolicyService: EditPolicyService,
+    private readonly anonymisationService: AnonymisationService,
     @Optional() private readonly consentService?: ConsentService,
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
@@ -807,46 +809,27 @@ export class JobSeekerService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    const jobSeeker = await this.prisma.jobSeeker.findUnique({
-      where: { id },
-    });
-    if (!jobSeeker) {
-      throw new NotFoundException(`Job seeker '${id}' not found`);
-    }
-
-    // Idempotent: safe no-op if already erased
-    if (jobSeeker.erasedAt) {
+    const res = await this.anonymisationService.anonymise(
+      'job_seeker',
+      id,
+      'DPDP erasure request',
+      actorId,
+    );
+    if (res.message.includes('already')) {
       return {
         message: 'Job seeker already erased',
-        id: jobSeeker.id,
-        code: jobSeeker.code,
-        erasedAt: jobSeeker.erasedAt,
+        id: res.id,
+        code: res.code,
+        erasedAt: res.anonymisedAt,
+        anonymisedAt: res.anonymisedAt,
       };
     }
 
-    const updated = await this.prisma.jobSeeker.update({
-      where: { id: jobSeeker.id },
-      data: {
-        name: 'ANONYMIZED_CANDIDATE',
-        phone: `ERASED-${jobSeeker.code}`,
-        erasedAt: new Date(),
-      },
-      include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
-    });
-
-    await this.auditService.log({
-      action: 'dpdp.erasure_requested',
-      entityType: 'job_seeker',
-      entityCode: jobSeeker.code,
-      actorId: actor.id,
-      city: jobSeeker.city,
-      reason: 'DPDP erasure request',
-      changedFields: ['name', 'phone', 'erasedAt'],
-      before: {
-        erasedAt: null,
-      },
-      after: {
-        erasedAt: updated.erasedAt,
+    const updated = await this.prisma.jobSeeker.findUniqueOrThrow({
+      where: { id: res.id },
+      include: {
+        trades: true,
+        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
     });
 

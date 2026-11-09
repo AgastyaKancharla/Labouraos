@@ -4,6 +4,7 @@ export const CANDIDATE_PHOTO_LINK_TTL_SECONDS = 5 * 60;
 export interface CandidatePhotoStorage {
   put(path: string, body: Buffer, contentType: string): Promise<void>;
   signedUrl(path: string, expiresInSeconds: number): Promise<string>;
+  delete(path: string): Promise<void>;
 }
 
 export class MemoryCandidatePhotoStorage implements CandidatePhotoStorage {
@@ -18,10 +19,16 @@ export class MemoryCandidatePhotoStorage implements CandidatePhotoStorage {
     return `memory://candidate-photos/${path}?exp=${expiresAt}`;
   }
 
+  async delete(path: string): Promise<void> {
+    this.files.delete(path);
+  }
+
   has(path: string): boolean {
     return this.files.has(path);
   }
 }
+
+export const sharedCandidatePhotoStorage = new MemoryCandidatePhotoStorage();
 
 /** Private Supabase bucket; the service role key stays on the server. */
 export class SupabaseCandidatePhotoStorage implements CandidatePhotoStorage {
@@ -44,6 +51,17 @@ export class SupabaseCandidatePhotoStorage implements CandidatePhotoStorage {
       body: new Uint8Array(body),
     });
     if (!response.ok) throw new Error(`Candidate photo store failed with status ${response.status}`);
+  }
+
+  async delete(path: string): Promise<void> {
+    const objectPath = path.split('/').map(encodeURIComponent).join('/');
+    const response = await fetch(`${this.baseUrl}/storage/v1/object/${this.bucket}/${objectPath}`, {
+      method: 'DELETE',
+      headers: this.headers(),
+    });
+    if (!response.ok && response.status !== 404) {
+      // 404 is acceptable when file already gone
+    }
   }
 
   async signedUrl(path: string, expiresInSeconds: number): Promise<string> {
