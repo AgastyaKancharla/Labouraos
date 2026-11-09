@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Field Agent App</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ink:#0B1E4A; --ink-soft:#49588A; --bg:#EEF3FC; --surface:#FFFFFF; --border:#DCE4F3;
+    --blue-900:#0055C0; --blue-900-grad:linear-gradient(180deg,#0055C0 0%,#003593 100%); --blue-700:{{accent}}; --blue-100:#E3EDFB; --sky:#2F7FD1; --navy:#032B73;
+    --nav-text-soft:#CFE4FF; --nav-accent:#6EC3FF;
+    --cyan-raw:#02D0F8; --gold-raw:#FCCE00; --orange-raw:#FB6800; --red-raw:#FE2901;
+    --swoosh:linear-gradient(90deg,#0055C0 0%,#02D0F8 38%,#02D0F8 40%,#FCCE00 40%,#FB6800 76%,#FE2901 100%);
+    --green:#1C9A6C; --green-100:#E1F5EC; --amber:#92670A; --amber-100:#FFF4CC; --cyan:#0B6E82; --cyan-100:#DCF6FD; --critical:#B94E12; --critical-100:#FFE7D6;
+    --font-display:'Sora',system-ui,sans-serif; --font-body:'IBM Plex Sans',system-ui,sans-serif;
+    color-scheme:light;
+  }
+  body{margin:0;background:#EEF3FC}
+  .nav-icon{display:flex;flex-direction:column;align-items:center;gap:4px;font-size:10.5px;color:var(--nav-text-soft);font-weight:600}
+  .nav-icon.active{color:#fff}
+  .nav-icon.active svg{background:var(--nav-accent);color:#04245C;border-radius:9px;padding:4px 12px;box-sizing:content-box}
+  .tile{width:30px;height:30px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+</style>
+</helmet>
+
+<div style="width:390px; height:844px; box-sizing:border-box; background:var(--bg); font-family:var(--font-body); color:var(--ink); display:flex; flex-direction:column; overflow:hidden">
+
+  <header style="background:var(--blue-900-grad); padding:18px 20px 16px; display:flex; align-items:center; justify-content:space-between; box-sizing:border-box">
+    <div style="display:flex; align-items:center; gap:10px">
+      <img src="/_blob/1d00958c659633d9084465dc49c6bd37" alt="Laboura" style="width:30px;height:30px;border-radius:8px;object-fit:cover">
+      <div style="display:flex; flex-direction:column; line-height:1.1">
+        <span style="font-family:var(--font-display); font-weight:700; font-size:15px; color:#fff">Field Agent</span>
+        <span style="font-size:10px; color:var(--nav-accent)">Kiran Kumar · Koramangala</span>
+      </div>
+    </div>
+    <div style="width:30px;height:30px;border-radius:50%;background:var(--gold-raw);color:var(--navy);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px">KK</div>
+  </header>
+  <div style="height:4px; background:var(--swoosh); flex-shrink:0"></div>
+
+  <main style="flex:1; min-height:0; overflow-y:auto; padding:18px 18px 10px; box-sizing:border-box; display:flex; flex-direction:column; gap:16px">
+
+    <div style="display:flex; gap:10px">
+      <div style="flex:1; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px">
+        <span class="tile" style="background:var(--cyan-raw); color:var(--navy)"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3.3" stroke="currentColor" stroke-width="1.9"></circle><path d="M3.5 17c0-3.3 2.9-5.8 6.5-5.8s6.5 2.5 6.5 5.8" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path></svg></span>
+        <div>
+          <div style="font-family:var(--font-display); font-size:20px; font-weight:700; color:var(--ink)">6</div>
+          <div style="font-size:10.5px; color:var(--ink-soft); margin-top:2px">Captured today</div>
+        </div>
+      </div>
+      <div style="flex:1; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:8px">
+        <span class="tile" style="background:var(--gold-raw); color:var(--navy)"><svg width="16" height="16" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M3 15.5 8 10l3 3 6-7" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>
+        <div>
+          <div style="font-family:var(--font-display); font-size:20px; font-weight:700; color:var(--ink)">41 <span style="font-size:12px; font-weight:600; color:var(--ink-soft)">/ 60</span></div>
+          <div style="font-size:10.5px; color:var(--ink-soft); margin-top:2px">Monthly target</div>
+        </div>
+      </div>
+    </div>
+
+    <div style="height:6px; border-radius:999px; background:rgba(11,30,74,0.08); overflow:hidden; margin-top:-6px"><div style="width:68%; height:100%; border-radius:999px; background:linear-gradient(90deg,#FCCE00,#FB6800)"></div></div>
+
+    <button style="display:flex; align-items:center; justify-content:center; gap:10px; background:var(--blue-700); color:#fff; border:none; border-radius:14px; padding:16px; font-family:var(--font-display); font-size:15px; font-weight:700; cursor:pointer; box-shadow:0 6px 16px rgba(0,85,192,0.28)">
+      <svg width="19" height="19" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v14M3 10h14" stroke="#fff" stroke-width="2.1" stroke-linecap="round"></path></svg>
+      Capture new candidate
+    </button>
+
+    <div>
+      <div style="font-size:12px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px">Today's captures</div>
+
+      <div style="display:flex; flex-direction:column; gap:10px">
+        <div style="display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--cyan-100);color:var(--cyan);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:13px;flex-shrink:0">RG</div>
+          <div style="flex:1; min-width:0">
+            <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Ramesh Gowda</div>
+            <div style="font-size:11.5px; color:var(--ink-soft)">Electrician</div>
+          </div>
+          <span style="font-size:10.5px; font-weight:700; color:var(--green); background:var(--green-100); padding:3px 9px; border-radius:999px">Verified</span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--amber-100);color:var(--amber);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:13px;flex-shrink:0">LB</div>
+          <div style="flex:1; min-width:0">
+            <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Lakshmi Bai</div>
+            <div style="font-size:11.5px; color:var(--ink-soft)">Housekeeping</div>
+          </div>
+          <span style="font-size:10.5px; font-weight:700; color:var(--amber); background:var(--amber-100); padding:3px 9px; border-radius:999px">Pending KYC</span>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:12px; background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:12px 14px">
+          <div style="width:36px;height:36px;border-radius:50%;background:var(--critical-100);color:var(--critical);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:13px;flex-shrink:0">IS</div>
+          <div style="flex:1; min-width:0">
+            <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Imran Shaikh</div>
+            <div style="font-size:11.5px; color:var(--ink-soft)">Security guard</div>
+          </div>
+          <span style="font-size:10.5px; font-weight:700; color:var(--amber); background:var(--amber-100); padding:3px 9px; border-radius:999px">Pending KYC</span>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <div style="height:3px; background:var(--swoosh); flex-shrink:0"></div>
+  <nav style="display:flex; justify-content:space-around; padding:10px 10px 16px; background:var(--blue-900-grad); box-sizing:border-box">
+    <div class="nav-icon active">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 3v14M3 10h14" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"></path></svg>
+      Capture
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="3" y="3.5" width="14" height="13" rx="2" stroke="currentColor" stroke-width="1.7"></rect><path d="M6.3 7.5h7.4M6.3 10.5h7.4M6.3 13.5h4.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+      My captures
+    </div>
+    <div class="nav-icon">
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.8" r="3.3" stroke="currentColor" stroke-width="1.7"></circle><path d="M3.8 16.8c0-3.1 2.8-5.6 6.2-5.6s6.2 2.5 6.2 5.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+      Profile
+    </div>
+  </nav>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0055C0","options":["#0055C0","#0065E8","#0282E5","#032B73"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#0055C0' };
+  }
+}
+</script>
+</body>
+</html>

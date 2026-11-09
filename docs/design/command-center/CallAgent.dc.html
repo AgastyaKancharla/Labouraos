@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Call Agent Console</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --ink:#0B1E4A; --ink-soft:#49588A; --ink-faint:#8290B8; --bg:#EEF3FC; --surface:#FFFFFF; --border:#DCE4F3;
+    --blue-900:#0055C0; --blue-900-grad:linear-gradient(180deg,#0055C0 0%,#003593 100%); --blue-700:{{accent}}; --blue-100:#E3EDFB; --sky:#2F7FD1; --navy:#032B73;
+    --nav-text:#FFFFFF; --nav-text-soft:#CFE4FF; --nav-accent:#6EC3FF;
+    --cyan-raw:#02D0F8; --gold-raw:#FCCE00; --orange-raw:#FB6800; --red-raw:#FE2901;
+    --swoosh:linear-gradient(90deg,#0055C0 0%,#02D0F8 38%,#02D0F8 40%,#FCCE00 40%,#FB6800 76%,#FE2901 100%);
+    --red:#B94E12; --red-100:#FFE7D6; --green:#1C9A6C; --green-100:#E1F5EC; --amber:#92670A; --amber-100:#FFF4CC; --cyan:#0B6E82; --cyan-100:#DCF6FD; --tomato:#BB232B; --tomato-100:#FAE2E1;
+    --font-display:'Sora',system-ui,sans-serif; --font-body:'IBM Plex Sans',system-ui,sans-serif;
+    color-scheme:light;
+  }
+  body{margin:0;background:#EEF3FC}
+  a{color:#0055C0; text-decoration:none}
+  .queue-card{display:flex;align-items:center;gap:12px;padding:13px 14px;border-radius:12px;border:1px solid var(--border);background:var(--surface);box-shadow:0 1px 2px rgba(11,30,74,0.04)}
+  .queue-card.active{border-color:var(--cyan-raw);border-left-width:4px;padding-left:11px;box-shadow:0 4px 14px rgba(2,208,248,0.16)}
+  .outcome-btn{display:flex;flex-direction:column;align-items:center;gap:6px;padding:14px 8px;border-radius:12px;border:1px solid var(--border);background:var(--surface);font-family:var(--font-body);font-size:12.5px;font-weight:600;cursor:pointer}
+  .hstat{display:flex;flex-direction:column;align-items:center}
+  .hstat b{font-family:var(--font-display);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums}
+  .hstat span{font-size:10px;color:var(--nav-text-soft);text-transform:uppercase;letter-spacing:0.05em}
+</style>
+</helmet>
+
+<div style="display:flex; flex-direction:column; background:var(--bg); font-family:var(--font-body); color:var(--ink); min-width:0">
+
+  <header style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:14px; background:var(--blue-900-grad); padding:16px 32px; box-sizing:border-box">
+    <div style="display:flex; align-items:center; gap:12px">
+      <img src="/_blob/1d00958c659633d9084465dc49c6bd37" alt="Laboura" style="width:32px;height:32px;border-radius:8px;object-fit:cover">
+      <div style="display:flex; flex-direction:column; line-height:1.1">
+        <span style="font-family:var(--font-display); font-weight:700; font-size:15.5px; color:#fff">Call Agent Console</span>
+        <span style="font-size:10.5px; color:var(--nav-accent)">Today, 29 Oct</span>
+      </div>
+    </div>
+    <div style="display:flex; align-items:center; gap:22px; flex-wrap:wrap">
+      <div style="display:flex; gap:22px">
+        <div class="hstat"><b style="color:#fff">24</b><span>Calls</span></div>
+        <div class="hstat"><b style="color:var(--cyan-raw)">9</b><span>Connected</span></div>
+        <div class="hstat"><b style="color:var(--gold-raw)">3</b><span>Meetings set</span></div>
+      </div>
+      <div style="display:flex; align-items:center; gap:10px">
+        <div style="width:30px;height:30px;border-radius:50%;background:var(--gold-raw);color:var(--navy);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px">DN</div>
+        <span style="font-size:12.5px; color:#fff; font-weight:600">Deepa Nair</span>
+        <a href="#" style="font-size:11.5px; font-weight:600; color:#fff; background:var(--tomato); padding:4px 9px; border-radius:7px; margin-left:6px">Log out</a>
+      </div>
+    </div>
+  </header>
+  <div style="height:4px; background:var(--swoosh)"></div>
+
+  <div style="display:flex; flex-wrap:wrap; gap:20px; padding:26px 32px 48px; box-sizing:border-box; position:relative; overflow:hidden">
+
+    <img src="/_blob/ac2bb1a81ee64784dd1b22b2859b3924" alt="" aria-hidden="true" style="position:absolute; right:-70px; top:30px; width:560px; max-width:none; opacity:0.14; pointer-events:none">
+
+    <section style="position:relative; flex:1 1 320px; max-width:360px; min-width:280px; display:flex; flex-direction:column; gap:10px">
+      <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:2px">
+        <h2 style="margin:0; font-family:var(--font-display); font-size:14.5px; font-weight:700; color:var(--navy)">Today's queue</h2>
+        <span style="font-size:11.5px; font-weight:700; color:var(--navy); background:var(--gold-raw); padding:2px 9px; border-radius:999px">11 remaining</span>
+      </div>
+      <div style="height:6px; border-radius:999px; background:rgba(11,30,74,0.08); overflow:hidden; margin-bottom:4px"><div style="width:54%; height:100%; border-radius:999px; background:linear-gradient(90deg,#0055C0,#02D0F8)"></div></div>
+
+      <div class="queue-card active">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--cyan-raw);box-shadow:0 0 0 3px rgba(2,208,248,0.25);flex-shrink:0"></span>
+        <div style="flex:1; min-width:0">
+          <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Ramesh Gowda</div>
+          <div style="font-size:11.5px; color:var(--ink-soft)">Electrician · 98xxx xx412</div>
+        </div>
+        <span style="font-size:10.5px; font-weight:700; color:var(--cyan); background:var(--cyan-100); padding:3px 8px; border-radius:999px">Calling</span>
+      </div>
+
+      <div class="queue-card">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--gold-raw);flex-shrink:0"></span>
+        <div style="flex:1; min-width:0">
+          <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Suresh Patil</div>
+          <div style="font-size:11.5px; color:var(--ink-soft)">Plumber · 97xxx xx881</div>
+        </div>
+        <span style="font-size:10.5px; font-weight:700; color:var(--amber); background:var(--amber-100); padding:3px 8px; border-radius:999px">Callback</span>
+      </div>
+
+      <div class="queue-card">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--blue-900);flex-shrink:0"></span>
+        <div style="flex:1; min-width:0">
+          <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Lakshmi Bai</div>
+          <div style="font-size:11.5px; color:var(--ink-soft)">Housekeeping · 90xxx xx227</div>
+        </div>
+        <span style="font-size:11px; color:var(--ink-faint)">New</span>
+      </div>
+
+      <div class="queue-card">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--blue-900);flex-shrink:0"></span>
+        <div style="flex:1; min-width:0">
+          <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Imran Shaikh</div>
+          <div style="font-size:11.5px; color:var(--ink-soft)">Security guard · 96xxx xx053</div>
+        </div>
+        <span style="font-size:11px; color:var(--ink-faint)">New</span>
+      </div>
+
+      <div class="queue-card">
+        <span style="width:8px;height:8px;border-radius:50%;background:var(--blue-900);flex-shrink:0"></span>
+        <div style="flex:1; min-width:0">
+          <div style="font-size:13.5px; font-weight:600; color:var(--ink)">Pooja Nair</div>
+          <div style="font-size:11.5px; color:var(--ink-soft)">Delivery · 93xxx xx664</div>
+        </div>
+        <span style="font-size:11px; color:var(--ink-faint)">New</span>
+      </div>
+    </section>
+
+    <section style="position:relative; flex:1 1 420px; min-width:300px; background:var(--surface); border:1px solid var(--border); border-radius:18px; padding:26px 28px; display:flex; flex-direction:column; gap:20px; box-shadow:0 1px 2px rgba(11,30,74,0.05),0 1px 10px rgba(11,30,74,0.03)">
+
+      <div style="display:flex; align-items:flex-start; justify-content:space-between; flex-wrap:wrap; gap:10px">
+        <div style="display:flex; align-items:center; gap:14px">
+          <div style="width:46px;height:46px;border-radius:50%;background:var(--cyan-raw);color:var(--navy);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:15px;flex-shrink:0">RG</div>
+          <div>
+            <div style="font-family:var(--font-display); font-size:22px; font-weight:700; color:var(--navy)">Ramesh Gowda</div>
+            <div style="font-size:13px; color:var(--ink-soft); margin-top:3px">+91 98xxx xx412 · Electrician · 4 yrs experience</div>
+          </div>
+        </div>
+        <span style="font-size:11.5px; font-weight:700; color:var(--blue-900); background:var(--blue-100); padding:5px 12px; border-radius:999px">In queue — JS-00198</span>
+      </div>
+
+      <div style="background:var(--amber-100); border-left:4px solid var(--gold-raw); border-radius:10px; padding:14px 16px; font-size:12.5px; line-height:1.55; color:var(--ink)">
+        <strong style="color:var(--amber)">Script reminder —</strong> confirm availability this week, verify preferred work area, ask about expected salary range before offering a vacancy match.
+      </div>
+
+      <div>
+        <div style="font-size:11.5px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:10px">Call outcome</div>
+        <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:10px">
+          <button class="outcome-btn" style="color:var(--green); background:var(--green-100); border-color:rgba(28,154,108,0.40)">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.3" stroke="currentColor" stroke-width="1.7"></circle><path d="M6.8 10.1 9 12.3l4.2-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            Connected
+          </button>
+          <button class="outcome-btn" style="color:var(--amber); background:var(--amber-100); border-color:rgba(252,206,0,0.75)">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.3" stroke="currentColor" stroke-width="1.7"></circle><path d="M10 6.2v4l2.6 1.6" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            Callback later
+          </button>
+          <button class="outcome-btn" style="color:var(--ink-soft); background:#F1F5FC">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5.5 5.5 14.5 14.5M14.5 5.5 5.5 14.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+            No answer
+          </button>
+          <button class="outcome-btn" style="color:var(--tomato); background:var(--tomato-100); border-color:rgba(187,35,43,0.40)">
+            <svg width="18" height="18" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.3" stroke="currentColor" stroke-width="1.7"></circle><path d="M7.3 7.3 12.7 12.7M12.7 7.3 7.3 12.7" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+            Not interested
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <div style="font-size:11.5px; font-weight:700; color:var(--ink-soft); text-transform:uppercase; letter-spacing:0.05em; margin-bottom:8px">Notes</div>
+        <div style="border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:13px; color:var(--ink-soft); min-height:56px">Available from next Monday, prefers work within Koramangala / HSR Layout.</div>
+      </div>
+
+      <button style="align-self:flex-start; background:var(--blue-700); color:#fff; border:none; border-radius:10px; padding:12px 24px; font-family:var(--font-body); font-size:13.5px; font-weight:700; cursor:pointer; box-shadow:0 4px 12px rgba(0,85,192,0.25)">Save &amp; call next →</button>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0055C0","options":["#0055C0","#0065E8","#0282E5","#032B73"]}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#0055C0' };
+  }
+}
+</script>
+</body>
+</html>

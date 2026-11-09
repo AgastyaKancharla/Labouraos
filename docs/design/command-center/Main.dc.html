@@ -1,0 +1,566 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Admin — Command Center</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap">
+<style>
+  :root{
+    --bg:#EEF3FC; --sidebar:#0055C0; --sidebar-grad:linear-gradient(180deg,#0055C0 0%,#003593 100%); --panel:#FFFFFF; --panel-2:#F1F5FC; --line:#DCE4F3;
+    --royal:#0055C0; --navy:#032B73; --bright:{{accent}}; --sky:#2F7FD1;
+    --cyan-raw:#02D0F8; --gold-raw:#FCCE00; --orange-raw:#FB6800; --red-raw:#FE2901;
+    --cyan:#0B6E82; --amber:#92670A; --critical:#B94E12; --good:#1C9A6C; --tomato:#BB232B;
+    --swoosh:linear-gradient(90deg,#0055C0 0%,#02D0F8 38%,#02D0F8 40%,#FCCE00 40%,#FB6800 76%,#FE2901 100%);
+    --text:#0B1E4A; --text-soft:#49588A; --text-faint:#8290B8;
+    --nav-text:#FFFFFF; --nav-text-soft:#CFE4FF; --nav-text-faint:#9FC3F0; --nav-accent:#6EC3FF;
+    --amber-bg:#FFF4CC; --critical-bg:#FFE7D6; --good-bg:#E1F5EC; --sky-bg:#E3EDFB; --cyan-bg:#DCF6FD; --tomato-bg:#FAE2E1; --navy-bg:#E2E7F3;
+    --font-display:'Sora',system-ui,sans-serif; --font-body:'IBM Plex Sans',system-ui,sans-serif;
+    color-scheme:light;
+  }
+  body{margin:0;background:#EEF3FC}
+  a{color:#0055C0;text-decoration:none}
+  a:hover{color:#021C57}
+  .nav-label{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--nav-text-faint);font-weight:600;padding:14px 12px 6px}
+  .nav-item{display:flex;align-items:center;gap:11px;padding:9px 12px;border-radius:9px;color:var(--nav-text-soft);font-size:13px;font-weight:500}
+  .nav-item:hover{background:rgba(255,255,255,0.10);color:var(--nav-text)}
+  .nav-item.active{background:var(--nav-accent);color:#04245C;font-weight:600}
+  .nbadge{font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px}
+  .swoosh{height:4px;border-radius:999px;background:var(--swoosh)}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:16px;box-shadow:0 1px 2px rgba(11,30,74,0.05),0 1px 10px rgba(11,30,74,0.03)}
+  .h2{margin:0;font-family:var(--font-display);font-size:15px;font-weight:700;color:var(--navy)}
+  .eyebrow{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--text-faint);font-weight:600}
+  .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .warn{color:var(--amber);background:var(--amber-bg)}
+  .crit{color:var(--critical);background:var(--critical-bg)}
+  .good{color:var(--good);background:var(--good-bg)}
+  .info{color:var(--cyan);background:var(--cyan-bg)}
+  .danger{color:var(--tomato);background:var(--tomato-bg)}
+  .num-xl{font-family:var(--font-display);font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:-0.01em;color:var(--text)}
+  .num-l{font-family:var(--font-display);font-size:24px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+  .num-m{font-family:var(--font-display);font-size:18px;font-weight:700;font-variant-numeric:tabular-nums;color:var(--text)}
+  .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-top:6px}
+  .tile{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .t-royal{background:#0055C0;color:#fff}
+  .t-navy{background:#032B73;color:#fff}
+  .t-cyan{background:#02D0F8;color:#032B73}
+  .t-gold{background:#FCCE00;color:#032B73}
+  .t-orange{background:#FB6800;color:#fff}
+  .t-red{background:#FE2901;color:#fff}
+  .hero{position:relative;overflow:hidden;border-radius:16px;padding:22px 24px 26px;display:flex;flex-direction:column;gap:14px;color:#fff;background:linear-gradient(135deg,#032B73 0%,#0055C0 100%);box-shadow:0 10px 28px rgba(3,43,115,0.22)}
+  .hero:hover{color:#fff}
+  .money-grid{display:grid;grid-template-columns:minmax(0,1.6fr) repeat(3,minmax(0,1fr));gap:16px}
+  .two-col{display:grid;grid-template-columns:minmax(0,1.35fr) minmax(0,1fr);gap:16px;align-items:start}
+  .three-col{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px;align-items:stretch}
+  .vgrid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px}
+  .vcard{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:16px 16px 14px;display:flex;flex-direction:column;gap:11px;color:var(--text);box-shadow:0 1px 2px rgba(11,30,74,0.05);transition:border-color .15s,box-shadow .15s,transform .15s}
+  .vcard:hover{border-color:var(--royal);color:var(--text);box-shadow:0 6px 18px rgba(0,85,192,0.12);transform:translateY(-1px)}
+  .vhead{display:flex;align-items:center;gap:10px}
+  .vname{font-size:13px;font-weight:700;flex:1;min-width:0}
+  .arrow{color:var(--royal);font-size:14px}
+  .vline{font-size:11.5px;color:var(--text-soft);display:flex;align-items:center;gap:6px}
+  .stage{flex:1 1 130px;display:flex;flex-direction:column;gap:6px;padding:14px 14px 12px;border-radius:12px;background:rgba(0,85,192,0.045);border:1px solid var(--line);min-width:0}
+  .stage.goal-c{background:#fff;border-color:#02D0F8;box-shadow:0 0 0 3px rgba(2,208,248,0.12)}
+  .stage.goal-g{background:#fff;border-color:#FCCE00;box-shadow:0 0 0 3px rgba(252,206,0,0.16)}
+  .track{height:6px;border-radius:999px;background:rgba(11,30,74,0.08);overflow:hidden}
+  .fill{height:100%;border-radius:999px;background:var(--cyan-raw)}
+  .fill.warm{background:linear-gradient(90deg,#FCCE00,#FB6800)}
+  .row{display:flex;gap:12px;padding:11px 0;border-top:1px solid var(--line)}
+  .seg{font-family:var(--font-body);font-size:12.5px;font-weight:600;padding:7px 13px;border:none;border-radius:7px;background:transparent;color:var(--text-soft);cursor:pointer}
+  .seg.on{background:var(--royal);color:#fff}
+  .bars{display:flex;align-items:flex-end;gap:14px;height:150px}
+  .bar-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:6px;min-width:0}
+  .bar{width:100%;max-width:30px;border-radius:6px 6px 0 0;background:rgba(0,85,192,0.20)}
+  .blabel{font-size:10.5px;color:var(--text-faint)}
+  .bval{font-size:11px;font-weight:700;color:var(--text-soft);font-variant-numeric:tabular-nums}
+  .hbar-row{display:grid;grid-template-columns:96px minmax(0,1fr) 54px;gap:10px;align-items:center;font-size:12px}
+  .avatar{width:26px;height:26px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0;background:var(--sky-bg);color:var(--royal)}
+  .av-cyan{background:var(--cyan-bg);color:var(--cyan)}
+  .av-gold{background:var(--amber-bg);color:var(--amber)}
+  .av-orange{background:var(--critical-bg);color:var(--critical)}
+  .av-royal{background:var(--sky-bg);color:var(--royal)}
+  .av-navy{background:var(--navy-bg);color:var(--navy)}
+  .rule{padding:12px 14px;border-radius:10px;background:#fff;border:1px solid var(--line);border-left-width:4px}
+  @media (max-width:1100px){.money-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.three-col{grid-template-columns:1fr}}
+  @media (max-width:760px){.money-grid,.two-col{grid-template-columns:1fr}}
+</style>
+</helmet>
+
+<div style="display:flex; flex-wrap:wrap; background:var(--bg); font-family:var(--font-body); color:var(--text)">
+
+  <aside style="flex:0 1 248px; min-width:220px; box-sizing:border-box; background:var(--sidebar-grad); display:flex; flex-direction:column; padding:24px 14px; border-right:1px solid var(--line)">
+    <div style="display:flex; align-items:center; gap:11px; padding:0 8px 12px">
+      <img src="/_blob/1d00958c659633d9084465dc49c6bd37" alt="Laboura" style="width:40px;height:40px;border-radius:10px;object-fit:cover;flex-shrink:0">
+      <div style="display:flex; flex-direction:column; line-height:1.15">
+        <span style="font-family:var(--font-display); font-weight:800; font-size:18px; color:#fff; letter-spacing:0.02em">LABOURA</span>
+        <span style="font-size:10px; color:var(--nav-accent); letter-spacing:0.08em; text-transform:uppercase">Command Center</span>
+      </div>
+    </div>
+    <div class="swoosh" style="height:3px; margin:0 8px 6px"></div>
+
+    <nav style="display:flex; flex-direction:column; gap:2px" aria-label="Main">
+      <div class="nav-label">Overview</div>
+      <a href="#" class="nav-item active">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"></rect><rect x="11" y="2" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"></rect><rect x="2" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"></rect><rect x="11" y="11" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="1.7"></rect></svg>
+        Command Center
+      </a>
+
+      <div class="nav-label">Pipeline</div>
+      <a href="JobSeekers.dc.html" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3.3" stroke="currentColor" stroke-width="1.7"></circle><path d="M3.5 17c0-3.3 2.9-5.8 6.5-5.8s6.5 2.5 6.5 5.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+        Job Seekers
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2.3" stroke="currentColor" stroke-width="1.7"></circle><circle cx="15" cy="5" r="2.3" stroke="currentColor" stroke-width="1.7"></circle><circle cx="10" cy="15" r="2.3" stroke="currentColor" stroke-width="1.7"></circle><path d="M6.8 6.3 8.6 13M13.2 6.3 11.4 13" stroke="currentColor" stroke-width="1.7"></path></svg>
+        Referrals
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="6.5" width="15" height="10" rx="1.8" stroke="currentColor" stroke-width="1.7"></rect><path d="M7 6.5V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5" stroke="currentColor" stroke-width="1.7"></path></svg>
+        Businesses
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.8" width="12" height="15" rx="1.8" stroke="currentColor" stroke-width="1.7"></rect><path d="M7 7.2h6M7 10.3h6M7 13.4h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+        Vacancies
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.7"></circle><path d="M6.8 10.2 9 12.4l4.2-5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Placements
+      </a>
+
+      <div class="nav-label">Money</div>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="1.8" stroke="currentColor" stroke-width="1.7"></rect><path d="M2.5 8.2h15" stroke="currentColor" stroke-width="1.7"></path></svg>
+        Payments
+      </a>
+      <a href="#" class="nav-item" style="justify-content:space-between">
+        <span style="display:flex;align-items:center;gap:11px">
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 6 2.8 8.2 5 10.4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2.8 8.2h8.4a4.6 4.6 0 0 1 0 9.2H9" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg>
+          Refund Approvals
+        </span>
+        <span class="nbadge" style="background:var(--tomato);color:#fff">4</span>
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 5h12M4 10h12M4 15h12" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><circle cx="7" cy="5" r="1.7" fill="#0055C0" stroke="currentColor" stroke-width="1.5"></circle><circle cx="13" cy="10" r="1.7" fill="#0055C0" stroke="currentColor" stroke-width="1.5"></circle><circle cx="9" cy="15" r="1.7" fill="#0055C0" stroke="currentColor" stroke-width="1.5"></circle></svg>
+        Pricing &amp; Policy
+      </a>
+
+      <div class="nav-label">Operations</div>
+      <a href="#" class="nav-item" style="justify-content:space-between">
+        <span style="display:flex;align-items:center;gap:11px">
+          <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 3.5h4.6l1 2.6-2 1.7a10.6 10.6 0 0 0 4.6 4.6l1.7-2 2.6 1V16a1.5 1.5 0 0 1-1.6 1.5A13.5 13.5 0 0 1 4 5.1 1.5 1.5 0 0 1 4 3.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path></svg>
+          Call Center
+        </span>
+        <span class="nbadge" style="background:var(--gold-raw);color:var(--navy)">5</span>
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 17.5s5.5-5 5.5-9.3a5.5 5.5 0 0 0-11 0c0 4.3 5.5 9.3 5.5 9.3Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path><circle cx="10" cy="8.2" r="2" stroke="currentColor" stroke-width="1.6"></circle></svg>
+        Field Ops
+      </a>
+
+      <div class="nav-label">Admin</div>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="7.5" cy="7" r="2.8" stroke="currentColor" stroke-width="1.6"></circle><path d="M2.5 16.5c0-2.8 2.2-4.8 5-4.8s5 2 5 4.8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path><path d="M13 4.6a2.6 2.6 0 0 1 0 5M14.6 11.9c1.7.5 2.9 2.1 2.9 4.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>
+        Team &amp; Access
+      </a>
+      <a href="#" class="nav-item">
+        <svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 2.5 16 5v4.6c0 3.7-2.6 6.6-6 7.9-3.4-1.3-6-4.2-6-7.9V5l6-2.5Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"></path><path d="M7.3 10 9.2 11.8 12.8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+        Audit Log
+      </a>
+    </nav>
+
+    <div style="margin-top:auto; display:flex; align-items:center; gap:10px; padding:16px 8px 0; border-top:1px solid rgba(255,255,255,0.18)">
+      <div style="width:32px;height:32px;border-radius:50%;background:var(--gold-raw);color:var(--navy);display:flex;align-items:center;justify-content:center;font-family:var(--font-display);font-weight:700;font-size:12px;flex-shrink:0">AK</div>
+      <div style="display:flex;flex-direction:column;line-height:1.25;min-width:0;flex:1">
+        <span style="font-size:13px;font-weight:600;color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Agastya Kancharla</span>
+        <span style="font-size:10.5px;color:var(--nav-accent)">CEO · 2FA on</span>
+      </div>
+      <a href="#" style="font-size:11.5px;font-weight:600;color:#fff;background:var(--tomato);padding:4px 9px;border-radius:7px">Log out</a>
+    </div>
+  </aside>
+
+  <main style="flex:999 1 560px; min-width:0; box-sizing:border-box; position:relative; overflow:hidden; padding:0 36px 56px">
+
+    <div class="swoosh" style="border-radius:0 0 4px 4px; margin:0 -36px 26px"></div>
+
+    <img src="/_blob/ac2bb1a81ee64784dd1b22b2859b3924" alt="" aria-hidden="true" style="position:absolute; right:-70px; top:110px; width:640px; max-width:none; opacity:0.14; pointer-events:none">
+
+    <div style="position:relative; display:flex; flex-direction:column; gap:30px">
+
+      <div style="display:flex; align-items:flex-end; justify-content:space-between; flex-wrap:wrap; gap:16px">
+        <div style="min-width:0">
+          <div class="eyebrow" style="color:var(--royal)">Thursday, 30 Oct 2026 · Bengaluru</div>
+          <div style="display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:6px">
+            <h1 style="margin:0; font-family:var(--font-display); font-size:30px; font-weight:800; color:var(--navy); letter-spacing:-0.01em">Good evening, Agastya</h1>
+            <span class="pill" style="font-size:12px; padding:4px 11px; background:var(--gold-raw); color:var(--navy)">8 items need your review</span>
+          </div>
+          <p style="margin:6px 0 0; font-size:13.5px; color:var(--text-soft)">The whole business on one screen — every vertical, updated 2 minutes ago.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:10px; flex-wrap:wrap">
+          <div role="group" aria-label="Time period" style="display:flex; gap:2px; padding:3px; border-radius:10px; background:var(--panel); border:1px solid var(--line)">
+            <button class="seg">Today</button>
+            <button class="seg">This week</button>
+            <button class="seg on">This month</button>
+          </div>
+          <button style="display:flex;align-items:center;gap:7px;background:var(--bright);border:none;border-radius:9px;padding:9px 15px;font-family:var(--font-body);font-size:12.5px;font-weight:700;color:#fff;cursor:pointer">
+            <svg width="14" height="14" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M16.5 10a6.5 6.5 0 1 1-2-4.7M16.5 3.5V8h-4.5" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"></path></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <section style="display:flex; flex-direction:column; gap:12px">
+        <div class="eyebrow">Money · October</div>
+        <div class="money-grid">
+
+          <a href="#" class="hero">
+            <div style="display:flex; align-items:center; justify-content:space-between">
+              <span style="font-size:13px; font-weight:600; color:#CFE4FF">Net revenue</span>
+              <span class="pill" style="color:#02D0F8; background:rgba(2,208,248,0.16)">↑ 18% vs Sep</span>
+            </div>
+            <div style="font-family:var(--font-display); font-size:38px; font-weight:700; font-variant-numeric:tabular-nums; letter-spacing:-0.01em; color:#fff">₹4,67,745</div>
+            <div style="font-size:12px; color:#9FC3F0">Gross ₹4,79,680 − refunds paid ₹11,935 · excludes GST</div>
+            <div style="display:flex; height:8px; border-radius:999px; overflow:hidden; gap:3px">
+              <div style="width:67%; background:var(--cyan-raw); border-radius:999px"></div>
+              <div style="width:33%; background:var(--gold-raw); border-radius:999px"></div>
+            </div>
+            <div style="display:flex; gap:18px; flex-wrap:wrap; font-size:12px; color:#CFE4FF">
+              <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:var(--cyan-raw)"></span>Placement fees ₹3,20,000 · 40</span>
+              <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:var(--gold-raw)"></span>Activation fees ₹1,59,680 · 320</span>
+            </div>
+            <div class="swoosh" style="position:absolute; left:0; right:0; bottom:0; border-radius:0"></div>
+          </a>
+
+          <a href="#" class="panel" style="padding:18px 20px; display:flex; flex-direction:column; gap:10px; color:var(--text)">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px">
+              <span style="display:flex;align-items:center;gap:10px">
+                <span class="tile t-red"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 6 2.8 8.2 5 10.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2.8 8.2h8.4a4.6 4.6 0 0 1 0 9.2H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span>
+                <span style="font-size:13px; font-weight:600; color:var(--text-soft)">Refund exposure</span>
+              </span>
+              <span class="pill crit">Act</span>
+            </div>
+            <div class="num-xl">₹60,133</div>
+            <div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-soft)">
+              <span><span style="color:var(--critical); font-weight:700">₹19,878</span> awaiting your approval</span>
+              <span><span style="color:var(--amber); font-weight:700">₹40,255</span> at risk if not resolved</span>
+            </div>
+          </a>
+
+          <a href="#" class="panel" style="padding:18px 20px; display:flex; flex-direction:column; gap:10px; color:var(--text)">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px">
+              <span style="display:flex;align-items:center;gap:10px">
+                <span class="tile t-orange"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><circle cx="15" cy="5" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><circle cx="10" cy="15" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><path d="M6.8 6.3 8.6 13M13.2 6.3 11.4 13" stroke="currentColor" stroke-width="1.8"></path></svg></span>
+                <span style="font-size:13px; font-weight:600; color:var(--text-soft)">Payouts due</span>
+              </span>
+              <span class="pill danger">2 failed</span>
+            </div>
+            <div class="num-xl">₹1,200</div>
+            <div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-soft)">
+              <span>6 referral payouts · ₹200 each</span>
+              <span>Released on the day a candidate joins</span>
+            </div>
+          </a>
+
+          <a href="#" class="panel" style="padding:18px 20px; display:flex; flex-direction:column; gap:10px; color:var(--text)">
+            <div style="display:flex; align-items:center; justify-content:space-between; gap:8px">
+              <span style="display:flex;align-items:center;gap:10px">
+                <span class="tile t-gold"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.8" width="12" height="15" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M7 7.2h6M7 10.3h6M7 13.4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span>
+                <span style="font-size:13px; font-weight:600; color:var(--text-soft)">GST collected</span>
+              </span>
+              <span class="pill info">To remit</span>
+            </div>
+            <div class="num-xl">₹57,600</div>
+            <div style="display:flex; flex-direction:column; gap:4px; font-size:12px; color:var(--text-soft)">
+              <span>18% on 40 placement invoices</span>
+              <span>Ledger ready for export</span>
+            </div>
+          </a>
+
+        </div>
+      </section>
+
+      <section class="panel" style="padding:20px 22px; display:flex; flex-direction:column; gap:16px">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">
+          <h2 class="h2">Business pipeline · October</h2>
+          <span style="font-size:12px; color:var(--text-faint)">Each step shows conversion from the step before</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px">
+          <div class="eyebrow" style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:2px;background:var(--cyan-raw)"></span>Candidates</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Registered</span><span class="num-l">412</span><div class="track"><div class="fill" style="width:100%"></div></div><span style="font-size:11px;color:var(--text-faint)">OTP-verified</span></div>
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Paid ₹499</span><span class="num-l">320</span><div class="track"><div class="fill" style="width:78%"></div></div><span style="font-size:11px;color:var(--good);font-weight:600">78% converted</span></div>
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Offered a job</span><span class="num-l">96</span><div class="track"><div class="fill" style="width:23%"></div></div><span style="font-size:11px;color:var(--text-soft);font-weight:600">30%</span></div>
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Accepted</span><span class="num-l">52</span><div class="track"><div class="fill" style="width:13%"></div></div><span style="font-size:11px;color:var(--amber);font-weight:600">54% — 44 declined</span></div>
+            <div class="stage goal-c"><span style="font-size:12px;color:var(--text-soft)">Joined</span><span class="num-l" style="color:var(--cyan)">40</span><div class="track"><div class="fill" style="width:10%"></div></div><span style="font-size:11px;color:var(--good);font-weight:600">77%</span></div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:8px">
+          <div class="eyebrow" style="display:flex;align-items:center;gap:7px"><span style="width:8px;height:8px;border-radius:2px;background:linear-gradient(90deg,#FCCE00,#FB6800)"></span>Businesses</div>
+          <div style="display:flex; gap:8px; flex-wrap:wrap">
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Field visits</span><span class="num-l">88</span><div class="track"><div class="fill warm" style="width:100%"></div></div><span style="font-size:11px;color:var(--text-faint)">Geo-tagged + selfie</span></div>
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Vacancies captured</span><span class="num-l">58</span><div class="track"><div class="fill warm" style="width:66%"></div></div><span style="font-size:11px;color:var(--text-soft);font-weight:600">66%</span></div>
+            <div class="stage goal-g"><span style="font-size:12px;color:var(--text-soft)">Filled</span><span class="num-l" style="color:var(--amber)">40</span><div class="track"><div class="fill warm" style="width:45%"></div></div><span style="font-size:11px;color:var(--good);font-weight:600">69% fill rate</span></div>
+            <div class="stage"><span style="font-size:12px;color:var(--text-soft)">Dropouts</span><span class="num-l">5</span><div class="track"><div class="fill" style="width:6%; background:var(--red-raw)"></div></div><span style="font-size:11px;color:var(--critical);font-weight:600">4 replacing now</span></div>
+          </div>
+        </div>
+      </section>
+
+      <section style="display:flex; flex-direction:column; gap:12px">
+        <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">
+          <div class="eyebrow">Every vertical</div>
+          <span style="font-size:12px; color:var(--text-faint)">Click any card to open that vertical</span>
+        </div>
+        <div class="vgrid">
+
+          <a href="JobSeekers.dc.html" class="vcard">
+            <div class="vhead"><span class="tile t-cyan"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3.3" stroke="currentColor" stroke-width="1.8"></circle><path d="M3.5 17c0-3.3 2.9-5.8 6.5-5.8s6.5 2.5 6.5 5.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="vname">Job Seekers</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">128</span><span style="font-size:12px;color:var(--text-soft)">active in pool</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--critical)"></span>5 near 30-day refund deadline</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>3 at 2 of 3 hits</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>14 waiting on KYC</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-orange"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><circle cx="15" cy="5" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><circle cx="10" cy="15" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><path d="M6.8 6.3 8.6 13M13.2 6.3 11.4 13" stroke="currentColor" stroke-width="1.8"></path></svg></span><span class="vname">Referrals</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">22</span><span style="font-size:12px;color:var(--text-soft)">partners</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>9 referred candidates joined</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>6 payouts due · ₹1,200</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>15 individual · 7 business</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-royal"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="6.5" width="15" height="10" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M7 6.5V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5" stroke="currentColor" stroke-width="1.8"></path></svg></span><span class="vname">Businesses</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">54</span><span style="font-size:12px;color:var(--text-soft)">active clients</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>3 signed this month</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>1 visit flagged by geofence</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>Top area: Koramangala</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-gold"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.8" width="12" height="15" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M7 7.2h6M7 10.3h6M7 13.4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="vname">Vacancies</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">12</span><span style="font-size:12px;color:var(--text-soft)">open · 20 positions</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>3 open more than 15 days</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>2 are replacements</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>Avg time to fill: 9 days</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-navy"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.8"></circle><path d="M6.8 10.2 9 12.4l4.2-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></span><span class="vname">Placements</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">37</span><span style="font-size:12px;color:var(--text-soft)">working now</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--critical)"></span>4 in replacement window</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>1 clock paused (3rd rejection)</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>18 cleared the 60-day guarantee</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-gold"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M2.5 8.2h15" stroke="currentColor" stroke-width="1.8"></path></svg></span><span class="vname">Payments</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">₹5.37L</span><span style="font-size:12px;color:var(--text-soft)">received incl. GST</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--critical)"></span>2 payouts failed</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>3 still processing</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>360 settled</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-red"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 6 2.8 8.2 5 10.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2.8 8.2h8.4a4.6 4.6 0 0 1 0 9.2H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span class="vname">Refund Approvals</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">4</span><span style="font-size:12px;color:var(--text-soft)">waiting · ₹19,878</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--critical)"></span>2 business · ₹18,880</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--critical)"></span>2 job-seeker · ₹998</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>Oldest waiting 2 days</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-cyan"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M4 3.5h4.6l1 2.6-2 1.7a10.6 10.6 0 0 0 4.6 4.6l1.7-2 2.6 1V16a1.5 1.5 0 0 1-1.6 1.5A13.5 13.5 0 0 1 4 5.1 1.5 1.5 0 0 1 4 3.5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"></path></svg></span><span class="vname">Call Center</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">63</span><span style="font-size:12px;color:var(--text-soft)">calls today</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>38% connect rate</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>5 missed calls to return</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>18 of 60 lines in use</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-orange"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M10 17.5s5.5-5 5.5-9.3a5.5 5.5 0 0 0-11 0c0 4.3 5.5 9.3 5.5 9.3Z" stroke="currentColor" stroke-width="1.8" stroke-linejoin="round"></path><circle cx="10" cy="8.2" r="2" stroke="currentColor" stroke-width="1.7"></circle></svg></span><span class="vname">Field Ops</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">14</span><span style="font-size:12px;color:var(--text-soft)">visits today</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>9 vacancies captured this week</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>1 geofence mismatch</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>3 agents in the field</span>
+            </div>
+          </a>
+
+          <a href="#" class="vcard">
+            <div class="vhead"><span class="tile t-royal"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="7.5" cy="7" r="2.8" stroke="currentColor" stroke-width="1.7"></circle><path d="M2.5 16.5c0-2.8 2.2-4.8 5-4.8s5 2 5 4.8" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path><path d="M13 4.6a2.6 2.6 0 0 1 0 5M14.6 11.9c1.7.5 2.9 2.1 2.9 4.1" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"></path></svg></span><span class="vname">Team &amp; Access</span><span class="arrow">→</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span class="num-l">11</span><span style="font-size:12px;color:var(--text-soft)">staff accounts</span></div>
+            <div style="display:flex;flex-direction:column;gap:5px">
+              <span class="vline"><span class="dot" style="margin:0;background:var(--good)"></span>2FA on every account</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--amber)"></span>2 invites not accepted</span>
+              <span class="vline"><span class="dot" style="margin:0;background:var(--text-faint)"></span>7 signed in now</span>
+            </div>
+          </a>
+
+        </div>
+      </section>
+
+      <div class="two-col">
+        <section class="panel" style="padding:18px 22px 8px; min-width:0">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px">
+            <h2 class="h2">Needs your attention</h2>
+            <span style="font-size:12px; color:var(--text-faint)">Most urgent first</span>
+          </div>
+
+          <div class="row"><span class="dot" style="background:var(--red-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">4 refunds waiting for your approval — ₹19,878</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">2 business placement refunds · 2 job-seeker 30-day guarantee refunds</div></div><a href="#" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">Approve →</a></div>
+          <div class="row"><span class="dot" style="background:var(--red-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">2 referral payouts failed at the bank</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">RF-00014 · RF-00019 — retry or mark resolved</div></div><a href="#" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">Retry →</a></div>
+          <div class="row"><span class="dot" style="background:var(--orange-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">5 candidates within 5 days of their 30-day guarantee</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">No suitable offer yet — ₹2,495 refundable if the clock runs out</div></div><a href="JobSeekers.dc.html" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">See list →</a></div>
+          <div class="row"><span class="dot" style="background:var(--orange-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">4 placements searching for a replacement</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">₹37,760 becomes refundable from day 15 · 2 reach day 15 in 3 days</div></div><a href="#" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">Review →</a></div>
+          <div class="row"><span class="dot" style="background:var(--gold-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">1 guarantee clock paused</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">PL-00067 — business rejected a 3rd replacement candidate</div></div><a href="#" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">Review →</a></div>
+          <div class="row"><span class="dot" style="background:var(--gold-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">3 vacancies open more than 15 days</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">Koramangala · HSR Layout · Whitefield</div></div><a href="#" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">Review →</a></div>
+          <div class="row"><span class="dot" style="background:var(--gold-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">3 candidates one hit from deactivation</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">At 2 of 3 hits — a missed call or rejection deactivates them</div></div><a href="JobSeekers.dc.html" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">See list →</a></div>
+          <div class="row"><span class="dot" style="background:var(--gold-raw)"></span><div style="flex:1;min-width:0"><div style="font-size:13.5px;font-weight:600">1 field visit outside the business's location</div><div style="font-size:12px;color:var(--text-soft);margin-top:2px">BZ-00031 Sundar Dental Clinic — check the selfie and GPS</div></div><a href="#" style="font-size:12.5px;font-weight:600;align-self:center;flex-shrink:0">Review →</a></div>
+        </section>
+
+        <section class="panel" style="padding:18px 22px 8px; min-width:0">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:8px">
+            <h2 class="h2">Live activity</h2>
+            <a href="#" style="font-size:12px">Full audit log →</a>
+          </div>
+          <div class="row" style="padding:10px 0"><div class="avatar av-cyan">PS</div><div style="flex:1;min-width:0;font-size:12.5px">Priya Sharma approved refund for <b>PL-00052</b></div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">2m</span></div>
+          <div class="row" style="padding:10px 0"><div class="avatar av-gold">VR</div><div style="flex:1;min-width:0;font-size:12.5px">Vikram Rao confirmed <b>JS-00188</b> joined <b>PL-00091</b></div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">14m</span></div>
+          <div class="row" style="padding:10px 0"><div class="avatar" style="background:var(--good-bg);color:var(--good)">₹</div><div style="flex:1;min-width:0;font-size:12.5px">Activation fee ₹499 received — <b>JS-00214</b></div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">22m</span></div>
+          <div class="row" style="padding:10px 0"><div class="avatar av-royal">DN</div><div style="flex:1;min-width:0;font-size:12.5px">Deepa Nair logged 6 call attempts</div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">38m</span></div>
+          <div class="row" style="padding:10px 0"><div class="avatar av-orange">KK</div><div style="flex:1;min-width:0;font-size:12.5px">Kiran Kumar captured vacancy <b>VC-00118</b> at Koramangala</div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">1h</span></div>
+          <div class="row" style="padding:10px 0"><div class="avatar" style="background:var(--tomato-bg);color:var(--tomato)">!</div><div style="flex:1;min-width:0;font-size:12.5px">Hit 2 of 3 recorded for <b>JS-00161</b> — offer rejected</div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">1h</span></div>
+          <div class="row" style="padding:10px 0"><div class="avatar av-navy">AK</div><div style="flex:1;min-width:0;font-size:12.5px">You invited Meena R as Field Agent</div><span style="font-size:11px;color:var(--text-faint);flex-shrink:0">3h</span></div>
+        </section>
+      </div>
+
+      <div class="three-col">
+        <section class="panel" style="padding:18px 22px 16px; min-width:0; display:flex; flex-direction:column; gap:14px">
+          <div style="display:flex; align-items:baseline; justify-content:space-between"><h2 class="h2">Revenue by week</h2><span style="font-size:11.5px;color:var(--text-faint)">ex-GST</span></div>
+          <div class="bars">
+            <div class="bar-col"><span class="bval">₹0.92L</span><div class="bar" style="height:88px"></div><span class="blabel">22 Sep</span></div>
+            <div class="bar-col"><span class="bval">₹0.98L</span><div class="bar" style="height:93px"></div><span class="blabel">29 Sep</span></div>
+            <div class="bar-col"><span class="bval">₹1.04L</span><div class="bar" style="height:99px"></div><span class="blabel">6 Oct</span></div>
+            <div class="bar-col"><span class="bval">₹1.09L</span><div class="bar" style="height:104px"></div><span class="blabel">13 Oct</span></div>
+            <div class="bar-col"><span class="bval">₹1.18L</span><div class="bar" style="height:112px"></div><span class="blabel">20 Oct</span></div>
+            <div class="bar-col"><span class="bval" style="color:var(--royal)">₹1.26L</span><div class="bar" style="height:120px; background:linear-gradient(180deg,#02D0F8 0%,#0055C0 100%)"></div><span class="blabel" style="color:var(--text); font-weight:600">27 Oct</span></div>
+          </div>
+        </section>
+
+        <section class="panel" style="padding:18px 22px 16px; min-width:0; display:flex; flex-direction:column; gap:14px">
+          <div style="display:flex; align-items:baseline; justify-content:space-between"><h2 class="h2">Candidates joined by week</h2><span style="font-size:11.5px;color:var(--text-faint)">placements</span></div>
+          <div class="bars">
+            <div class="bar-col"><span class="bval">6</span><div class="bar" style="height:60px; background:rgba(252,206,0,0.40)"></div><span class="blabel">22 Sep</span></div>
+            <div class="bar-col"><span class="bval">8</span><div class="bar" style="height:80px; background:rgba(252,206,0,0.40)"></div><span class="blabel">29 Sep</span></div>
+            <div class="bar-col"><span class="bval">7</span><div class="bar" style="height:70px; background:rgba(252,206,0,0.40)"></div><span class="blabel">6 Oct</span></div>
+            <div class="bar-col"><span class="bval">9</span><div class="bar" style="height:90px; background:rgba(252,206,0,0.40)"></div><span class="blabel">13 Oct</span></div>
+            <div class="bar-col"><span class="bval">11</span><div class="bar" style="height:110px; background:rgba(252,206,0,0.40)"></div><span class="blabel">20 Oct</span></div>
+            <div class="bar-col"><span class="bval" style="color:var(--critical)">12</span><div class="bar" style="height:120px; background:linear-gradient(180deg,#FCCE00 0%,#FB6800 100%)"></div><span class="blabel" style="color:var(--text); font-weight:600">27 Oct</span></div>
+          </div>
+        </section>
+
+        <section class="panel" style="padding:18px 22px 16px; min-width:0; display:flex; flex-direction:column; gap:12px">
+          <div style="display:flex; align-items:baseline; justify-content:space-between"><h2 class="h2">Supply vs demand by trade</h2></div>
+          <div style="display:flex; gap:14px; font-size:11px; color:var(--text-soft)">
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:var(--cyan-raw)"></span>Candidates in pool</span>
+            <span style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:var(--orange-raw)"></span>Open positions</span>
+          </div>
+          <div style="display:flex; flex-direction:column; gap:9px">
+            <div class="hbar-row"><span style="color:var(--text-soft)">Housekeeping</span><div style="display:flex;flex-direction:column;gap:3px"><div style="height:6px;width:100%;border-radius:3px;background:var(--cyan-raw)"></div><div style="height:6px;width:6%;border-radius:3px;background:var(--orange-raw)"></div></div><span style="text-align:right;color:var(--text-soft);font-variant-numeric:tabular-nums">31 / 2</span></div>
+            <div class="hbar-row"><span style="color:var(--text-soft)">Delivery</span><div style="display:flex;flex-direction:column;gap:3px"><div style="height:6px;width:84%;border-radius:3px;background:var(--cyan-raw)"></div><div style="height:6px;width:3%;border-radius:3px;background:var(--orange-raw)"></div></div><span style="text-align:right;color:var(--text-soft);font-variant-numeric:tabular-nums">26 / 1</span></div>
+            <div class="hbar-row"><span style="color:var(--text-soft)">Electrician</span><div style="display:flex;flex-direction:column;gap:3px"><div style="height:6px;width:71%;border-radius:3px;background:var(--cyan-raw)"></div><div style="height:6px;width:13%;border-radius:3px;background:var(--orange-raw)"></div></div><span style="text-align:right;color:var(--text-soft);font-variant-numeric:tabular-nums">22 / 4</span></div>
+            <div class="hbar-row"><span style="color:var(--text-soft)">Security</span><div style="display:flex;flex-direction:column;gap:3px"><div style="height:6px;width:58%;border-radius:3px;background:var(--cyan-raw)"></div><div style="height:6px;width:10%;border-radius:3px;background:var(--orange-raw)"></div></div><span style="text-align:right;color:var(--text-soft);font-variant-numeric:tabular-nums">18 / 3</span></div>
+            <div class="hbar-row"><span style="color:var(--text);font-weight:600">Cook</span><div style="display:flex;flex-direction:column;gap:3px"><div style="height:6px;width:29%;border-radius:3px;background:var(--cyan-raw)"></div><div style="height:6px;width:19%;border-radius:3px;background:var(--orange-raw)"></div></div><span style="text-align:right;color:var(--critical);font-weight:700;font-variant-numeric:tabular-nums">9 / 6</span></div>
+            <div class="hbar-row"><span style="color:var(--text);font-weight:600">Plumber</span><div style="display:flex;flex-direction:column;gap:3px"><div style="height:6px;width:16%;border-radius:3px;background:var(--cyan-raw)"></div><div style="height:6px;width:13%;border-radius:3px;background:var(--orange-raw)"></div></div><span style="text-align:right;color:var(--critical);font-weight:700;font-variant-numeric:tabular-nums">5 / 4</span></div>
+          </div>
+          <div style="font-size:11.5px; color:var(--critical); margin-top:2px">Short on cooks and plumbers — recruit more before new vacancies land.</div>
+        </section>
+      </div>
+
+      <div class="two-col">
+        <section class="panel" style="padding:18px 22px 14px; min-width:0">
+          <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:10px"><h2 class="h2">Team performance today</h2><a href="#" style="font-size:12px">All staff →</a></div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:20px">
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <div class="eyebrow" style="margin-bottom:6px">Call agents · connects / calls</div>
+              <div class="row" style="padding:9px 0"><div class="avatar av-royal">DN</div><span style="flex:1;font-size:12.5px">Deepa Nair</span><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">9 / 22</span><span class="pill good" style="margin-left:6px">41%</span></div>
+              <div class="row" style="padding:9px 0"><div class="avatar av-cyan">RM</div><span style="flex:1;font-size:12.5px">Rahul M</span><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">8 / 21</span><span class="pill good" style="margin-left:6px">38%</span></div>
+              <div class="row" style="padding:9px 0"><div class="avatar av-gold">SK</div><span style="flex:1;font-size:12.5px">Sneha K</span><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">7 / 20</span><span class="pill warn" style="margin-left:6px">35%</span></div>
+            </div>
+            <div style="display:flex; flex-direction:column; gap:2px">
+              <div class="eyebrow" style="margin-bottom:6px">Field agents · vacancies this week</div>
+              <div class="row" style="padding:9px 0"><div class="avatar av-orange">KK</div><span style="flex:1;font-size:12.5px">Kiran Kumar</span><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">4</span><span style="font-size:11px;color:var(--text-faint);margin-left:6px">Koramangala</span></div>
+              <div class="row" style="padding:9px 0"><div class="avatar av-navy">AS</div><span style="flex:1;font-size:12.5px">Arun S</span><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">3</span><span style="font-size:11px;color:var(--text-faint);margin-left:6px">HSR Layout</span></div>
+              <div class="row" style="padding:9px 0"><div class="avatar av-cyan">MR</div><span style="flex:1;font-size:12.5px">Meena R</span><span style="font-size:12.5px;font-weight:700;font-variant-numeric:tabular-nums">2</span><span style="font-size:11px;color:var(--text-faint);margin-left:6px">Whitefield</span></div>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel" style="padding:18px 22px 16px; min-width:0; display:flex; flex-direction:column; gap:12px">
+          <div style="display:flex; align-items:center; justify-content:space-between"><h2 class="h2">Open vacancies by area</h2><span style="font-size:11.5px;color:var(--text-faint)">12 total</span></div>
+          <div class="hbar-row" style="grid-template-columns:110px minmax(0,1fr) 24px"><span style="color:var(--text-soft)">Koramangala</span><div style="height:8px;width:100%;border-radius:4px;background:linear-gradient(90deg,#FCCE00,#FB6800)"></div><span style="text-align:right;font-weight:700">4</span></div>
+          <div class="hbar-row" style="grid-template-columns:110px minmax(0,1fr) 24px"><span style="color:var(--text-soft)">HSR Layout</span><div style="height:8px;width:75%;border-radius:4px;background:linear-gradient(90deg,#FCCE00,#FB6800)"></div><span style="text-align:right;font-weight:700">3</span></div>
+          <div class="hbar-row" style="grid-template-columns:110px minmax(0,1fr) 24px"><span style="color:var(--text-soft)">Whitefield</span><div style="height:8px;width:50%;border-radius:4px;background:linear-gradient(90deg,#FCCE00,#FB6800)"></div><span style="text-align:right;font-weight:700">2</span></div>
+          <div class="hbar-row" style="grid-template-columns:110px minmax(0,1fr) 24px"><span style="color:var(--text-soft)">Indiranagar</span><div style="height:8px;width:50%;border-radius:4px;background:linear-gradient(90deg,#FCCE00,#FB6800)"></div><span style="text-align:right;font-weight:700">2</span></div>
+          <div class="hbar-row" style="grid-template-columns:110px minmax(0,1fr) 24px"><span style="color:var(--text-soft)">JP Nagar</span><div style="height:8px;width:25%;border-radius:4px;background:linear-gradient(90deg,#FCCE00,#FB6800)"></div><span style="text-align:right;font-weight:700">1</span></div>
+        </section>
+      </div>
+
+      <div class="two-col" style="grid-template-columns:minmax(0,1.35fr) minmax(0,1fr)">
+        <section class="panel" style="padding:18px 22px; min-width:0; display:flex; flex-direction:column; gap:12px">
+          <div style="display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px">
+            <h2 class="h2">Pricing &amp; policy in force</h2>
+            <div style="display:flex; align-items:center; gap:10px"><span style="font-size:11.5px;color:var(--text-faint)">Changed 20 Oct · only you can edit</span><a href="#" style="font-size:12px;font-weight:600">Edit →</a></div>
+          </div>
+          <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:10px">
+            <div class="rule" style="border-left-color:var(--cyan-raw)"><div class="num-m">₹499</div><div style="font-size:11.5px;color:var(--text-soft);margin-top:3px">Activation · 30-day guarantee</div></div>
+            <div class="rule" style="border-left-color:var(--royal)"><div class="num-m">50% + 18%</div><div style="font-size:11.5px;color:var(--text-soft);margin-top:3px">Placement fee + GST</div></div>
+            <div class="rule" style="border-left-color:var(--gold-raw)"><div class="num-m">60 / 15 days</div><div style="font-size:11.5px;color:var(--text-soft);margin-top:3px">Replacement / refund from</div></div>
+            <div class="rule" style="border-left-color:var(--orange-raw)"><div class="num-m">₹200</div><div style="font-size:11.5px;color:var(--text-soft);margin-top:3px">Referral payout on joining</div></div>
+          </div>
+        </section>
+
+        <section class="panel" style="padding:18px 22px; min-width:0; display:flex; flex-direction:column; gap:10px">
+          <div style="display:flex; align-items:center; justify-content:space-between"><h2 class="h2">System health</h2><span class="pill good">All running</span></div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; font-size:12.5px">
+            <span style="display:flex;align-items:center;gap:8px"><span class="dot" style="margin:0;background:var(--good)"></span>Database</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="dot" style="margin:0;background:var(--good)"></span>Job queue</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="dot" style="margin:0;background:var(--good)"></span>Payments gateway</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="dot" style="margin:0;background:var(--good)"></span>SMS &amp; OTP</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="dot" style="margin:0;background:var(--good)"></span>Telephony</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="dot" style="margin:0;background:var(--good)"></span>e-KYC</span>
+          </div>
+        </section>
+      </div>
+
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"accent":{"editor":"color","default":"#0055C0","options":["#0055C0","#0065E8","#0282E5","#032B73"]},"$preview":{"width":1440,"height":3260}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return { accent: this.props.accent ?? '#0055C0' };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,213 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Laboura design system</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Sora:wght@600;700;800&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500&display=swap">
+<style>
+  body{margin:0;background:#EEF3FC}
+  a{color:#0055C0;text-decoration:none}
+  a:hover{color:#021C57}
+  .sw{border-radius:12px;overflow:hidden;border:1px solid #DCE4F3;background:#FFFFFF;display:flex;flex-direction:column;box-shadow:0 1px 2px rgba(11,30,74,0.05)}
+  .sw-c{height:64px}
+  .sw-c.big{height:96px;display:flex;align-items:flex-end;padding:10px 12px;box-sizing:border-box}
+  .sw-t{padding:10px 12px;display:flex;flex-direction:column;gap:3px}
+  .sw-n{font-size:12.5px;font-weight:700;color:#0B1E4A}
+  .sw-h{font-family:'IBM Plex Mono',monospace;font-size:11px;color:#49588A}
+  .sw-u{font-size:11px;color:#8290B8;line-height:1.4}
+  .sw-x{display:flex;align-items:center;gap:6px;margin-top:6px;padding-top:8px;border-top:1px solid #EEF2FA;font-size:11px;color:#49588A}
+  .eyebrow{font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:#8290B8;font-weight:600}
+  .h2{margin:0;font-family:'Sora',system-ui,sans-serif;font-size:17px;font-weight:700;color:#032B73}
+  .pill{font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px;white-space:nowrap}
+  .panel{background:#FFFFFF;border:1px solid #DCE4F3;border-radius:16px;box-shadow:0 1px 2px rgba(11,30,74,0.05),0 1px 10px rgba(11,30,74,0.03)}
+  .swoosh{height:4px;border-radius:999px;background:linear-gradient(90deg,#0055C0 0%,#02D0F8 38%,#02D0F8 40%,#FCCE00 40%,#FB6800 76%,#FE2901 100%)}
+  .tile{width:34px;height:34px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+  .rule-n{font-family:'Sora',sans-serif;font-weight:700;color:#0055C0}
+</style>
+</helmet>
+
+<div style="width:1440px; height:1700px; box-sizing:border-box; position:relative; overflow:hidden; background:#EEF3FC; font-family:'IBM Plex Sans',system-ui,sans-serif; color:#0B1E4A; padding:0 56px 48px">
+
+  <div class="swoosh" style="border-radius:0 0 4px 4px; margin:0 -56px 44px"></div>
+
+  <img src="/_blob/ac2bb1a81ee64784dd1b22b2859b3924" alt="" aria-hidden="true" style="position:absolute; right:-60px; top:40px; width:560px; max-width:none; opacity:0.12; pointer-events:none">
+
+  <div style="position:relative; display:flex; flex-direction:column; gap:34px">
+
+    <div style="display:flex; align-items:center; gap:16px">
+      <img src="/_blob/1d00958c659633d9084465dc49c6bd37" alt="Laboura" style="width:56px;height:56px;border-radius:13px;object-fit:cover">
+      <div>
+        <h1 style="margin:0; font-family:'Sora',system-ui,sans-serif; font-size:30px; font-weight:800; color:#032B73">Laboura design system</h1>
+        <p style="margin:4px 0 0; font-size:14px; color:#49588A; max-width:860px">All seven colors in the logo, each with a job. Light, calm pages; the logo's royal-blue gradient for the sidebar, headers and bottom nav; the logo's own swoosh as the one signature accent. One sheet for the Admin Dashboard, Call Agent Console and Field Agent App.</p>
+      </div>
+    </div>
+
+    <section style="display:flex; flex-direction:column; gap:12px">
+      <div class="eyebrow">The seven logo colors &mdash; sampled from the badge</div>
+      <div style="display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:12px">
+        <div class="sw"><div class="sw-c big" style="background:linear-gradient(180deg,#0055C0 0%,#003593 100%)"><span style="font-size:11px;font-weight:700;color:#fff">Aa</span></div><div class="sw-t"><span class="sw-n">Royal gradient</span><span class="sw-h">#0055C0 &rarr; #003593</span><span class="sw-u">Badge background. Sidebar, headers, bottom nav, primary buttons.</span></div></div>
+        <div class="sw"><div class="sw-c big" style="background:#032B73"><span style="font-size:11px;font-weight:700;color:#fff">Aa</span></div><div class="sw-t"><span class="sw-n">Silhouette navy</span><span class="sw-h">#032B73</span><span class="sw-u">The three figures. Headings, hero card, Placements &amp; KYC tiles.</span></div></div>
+        <div class="sw"><div class="sw-c big" style="background:#FFFFFF;border-bottom:1px solid #DCE4F3"><span style="font-size:11px;font-weight:700;color:#032B73">Aa</span></div><div class="sw-t"><span class="sw-n">White</span><span class="sw-h">#FFFFFF</span><span class="sw-u">Wordmark &amp; handshake. Cards, panels, text on the chrome.</span></div></div>
+        <div class="sw"><div class="sw-c big" style="background:#02D0F8"><span style="font-size:11px;font-weight:700;color:#032B73">Aa</span></div><div class="sw-t"><span class="sw-n">Cyan</span><span class="sw-h">#02D0F8</span><span class="sw-u">The glowing globe. Live / candidates &mdash; Job Seekers, Call Center, pipeline bars.</span><span class="sw-x"><span style="width:10px;height:10px;border-radius:3px;background:#0B6E82"></span>Text on white: <b style="color:#0B6E82">#0B6E82</b></span></div></div>
+        <div class="sw"><div class="sw-c big" style="background:#FCCE00"><span style="font-size:11px;font-weight:700;color:#032B73">Aa</span></div><div class="sw-t"><span class="sw-n">Gold</span><span class="sw-h">#FCCE00</span><span class="sw-u">The hard hat. Money &amp; watch &mdash; Payments, Vacancies, hit counter, badges.</span><span class="sw-x"><span style="width:10px;height:10px;border-radius:3px;background:#92670A"></span>Text on white: <b style="color:#92670A">#92670A</b></span></div></div>
+        <div class="sw"><div class="sw-c big" style="background:#FB6800"><span style="font-size:11px;font-weight:700;color:#fff">Aa</span></div><div class="sw-t"><span class="sw-n">Orange</span><span class="sw-h">#FB6800</span><span class="sw-u">The handshake swoosh. Referrals, field ops, act-now status.</span><span class="sw-x"><span style="width:10px;height:10px;border-radius:3px;background:#B94E12"></span>Text on white: <b style="color:#B94E12">#B94E12</b></span></div></div>
+        <div class="sw"><div class="sw-c big" style="background:#FE2901"><span style="font-size:11px;font-weight:700;color:#fff">Aa</span></div><div class="sw-t"><span class="sw-n">Red-orange</span><span class="sw-h">#FE2901</span><span class="sw-u">The swoosh tip. Urgent dots, refunds, dropouts.</span><span class="sw-x"><span style="width:10px;height:10px;border-radius:3px;background:#BB232B"></span>Text on white: <b style="color:#BB232B">#BB232B</b></span></div></div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:minmax(0,2fr) minmax(0,3fr); gap:20px; margin-top:6px; align-items:center">
+        <div style="display:flex; flex-direction:column; gap:8px">
+          <div class="swoosh" style="height:10px"></div>
+          <div class="swoosh" style="height:4px"></div>
+        </div>
+        <div style="font-size:12.5px; color:#49588A; line-height:1.5"><b style="color:#032B73">The swoosh</b> &mdash; the logo's bottom wave as a strip: blue into cyan, then a clean break into gold &rarr; orange &rarr; red, exactly as the badge does at the handshake. Used once per surface: top of every page, under app headers, along the bottom of the revenue hero card.</div>
+      </div>
+    </section>
+
+    <section style="display:flex; flex-direction:column; gap:12px">
+      <div class="eyebrow">Supporting colors</div>
+      <div style="display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:12px">
+        <div class="sw"><div class="sw-c" style="background:#EEF3FC;border-bottom:1px solid #DCE4F3"></div><div class="sw-t"><span class="sw-n">Page bg</span><span class="sw-h">#EEF3FC</span><span class="sw-u">Content area</span></div></div>
+        <div class="sw"><div class="sw-c" style="background:#DCE4F3"></div><div class="sw-t"><span class="sw-n">Line</span><span class="sw-h">#DCE4F3</span><span class="sw-u">Borders, dividers</span></div></div>
+        <div class="sw"><div class="sw-c" style="background:#6EC3FF"></div><div class="sw-t"><span class="sw-n">Light blue</span><span class="sw-h">#6EC3FF</span><span class="sw-u">Active nav item on the chrome</span></div></div>
+        <div class="sw"><div class="sw-c" style="background:#2F7FD1"></div><div class="sw-t"><span class="sw-n">Sky</span><span class="sw-h">#2F7FD1</span><span class="sw-u">IDs read aloud (JS-00203), links</span></div></div>
+        <div class="sw"><div class="sw-c" style="background:#1C9A6C"></div><div class="sw-t"><span class="sw-n">Good</span><span class="sw-h">#1C9A6C</span><span class="sw-u">Success &mdash; verified, connected, settled</span></div></div>
+        <div class="sw"><div class="sw-c" style="background:#BB232B"></div><div class="sw-t"><span class="sw-n">Tomato</span><span class="sw-h">#BB232B</span><span class="sw-u">Client request &mdash; log out, reject, deactivate</span></div></div>
+      </div>
+    </section>
+
+    <div style="display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); gap:20px">
+      <section class="panel" style="padding:22px 26px; display:flex; flex-direction:column; gap:14px">
+        <h2 class="h2">Type</h2>
+        <div style="display:flex; align-items:baseline; gap:16px; border-bottom:1px solid #DCE4F3; padding-bottom:12px"><span style="font-family:'Sora',sans-serif; font-size:38px; font-weight:700; font-variant-numeric:tabular-nums">&#8377;4,67,745</span><span style="font-size:11.5px; color:#8290B8">Sora 700 &middot; 38 &mdash; the one number that matters most</span></div>
+        <div style="display:flex; align-items:baseline; gap:16px; border-bottom:1px solid #DCE4F3; padding-bottom:12px"><span style="font-family:'Sora',sans-serif; font-size:30px; font-weight:800; color:#032B73">Page title</span><span style="font-size:11.5px; color:#8290B8">Sora 800 &middot; 30 &middot; navy</span></div>
+        <div style="display:flex; align-items:baseline; gap:16px; border-bottom:1px solid #DCE4F3; padding-bottom:12px"><span style="font-family:'Sora',sans-serif; font-size:24px; font-weight:700">128</span><span style="font-size:11.5px; color:#8290B8">Sora 700 &middot; 24 &mdash; card numbers</span></div>
+        <div style="display:flex; align-items:baseline; gap:16px; border-bottom:1px solid #DCE4F3; padding-bottom:12px"><span style="font-family:'Sora',sans-serif; font-size:15px; font-weight:700; color:#032B73">Section heading</span><span style="font-size:11.5px; color:#8290B8">Sora 700 &middot; 15 &middot; navy</span></div>
+        <div style="display:flex; align-items:baseline; gap:16px; border-bottom:1px solid #DCE4F3; padding-bottom:12px"><span style="font-size:13.5px; color:#0B1E4A">Body text for rows and descriptions</span><span style="font-size:11.5px; color:#8290B8">IBM Plex Sans &middot; 13.5</span></div>
+        <div style="display:flex; align-items:baseline; gap:16px"><span class="eyebrow">Section label</span><span style="font-size:11.5px; color:#8290B8">Plex Sans 600 &middot; 10.5 caps</span></div>
+      </section>
+
+      <section class="panel" style="padding:22px 26px; display:flex; flex-direction:column; gap:12px">
+        <h2 class="h2">Rules for every screen</h2>
+        <div style="display:flex; flex-direction:column; gap:11px; font-size:13px; color:#49588A; line-height:1.5">
+          <div style="display:flex; gap:12px"><span class="rule-n">1</span><span><b style="color:#0B1E4A">Light pages, royal chrome.</b> Content stays light; only the sidebar, headers and bottom nav carry the logo's blue gradient.</span></div>
+          <div style="display:flex; gap:12px"><span class="rule-n">2</span><span><b style="color:#0B1E4A">Every logo color has a job.</b> Royal &amp; navy = structure, cyan = live / candidates, gold = money &amp; watch, orange = referrals &amp; act now, red = urgent. Each vertical keeps its color everywhere it appears.</span></div>
+          <div style="display:flex; gap:12px"><span class="rule-n">3</span><span><b style="color:#0B1E4A">Bright colors fill, deep colors write.</b> The vivid logo hues go on tiles, bars, dots, badges and the swoosh. Text on white always uses the deep version so it stays readable.</span></div>
+          <div style="display:flex; gap:12px"><span class="rule-n">4</span><span><b style="color:#0B1E4A">Small doses.</b> Color sits in 34px icon tiles, 4&ndash;8px bars and one hero card. Big areas stay white or pale blue &mdash; that's what keeps it professional.</span></div>
+          <div style="display:flex; gap:12px"><span class="rule-n">5</span><span><b style="color:#0B1E4A">One swoosh per surface.</b> Top of the page, under the app header, or the bottom of the hero &mdash; never stacked.</span></div>
+          <div style="display:flex; gap:12px"><span class="rule-n">6</span><span><b style="color:#0B1E4A">Status ladder.</b> Gold = watch, orange = act now, tomato = danger / reject, green = good, cyan = informational.</span></div>
+          <div style="display:flex; gap:12px"><span class="rule-n">7</span><span><b style="color:#0B1E4A">Rupees in Indian grouping</b> (&#8377;4,67,745, or &#8377;4.8L when tight); <b style="color:#0B1E4A">IDs</b> read aloud on calls always in sky blue.</span></div>
+        </div>
+      </section>
+    </div>
+
+    <section class="panel" style="padding:22px 26px; display:flex; flex-direction:column; gap:20px">
+      <h2 class="h2">Components</h2>
+      <div style="display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:28px">
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Buttons</span>
+          <button style="align-self:flex-start;background:#0055C0;border:none;border-radius:9px;padding:10px 16px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:700;color:#fff;cursor:pointer;box-shadow:0 4px 12px rgba(0,85,192,0.25)">+ Primary action</button>
+          <button style="align-self:flex-start;background:transparent;border:1px solid #DCE4F3;border-radius:9px;padding:10px 16px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:600;color:#0B1E4A;cursor:pointer">Secondary</button>
+          <button style="align-self:flex-start;background:#BB232B;border:none;border-radius:9px;padding:10px 16px;font-family:'IBM Plex Sans',sans-serif;font-size:13px;font-weight:700;color:#fff;cursor:pointer">Log out / Reject</button>
+          <a href="#" style="font-size:13px; font-weight:600">Text link &rarr;</a>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Icon tiles &mdash; one color per vertical</span>
+          <div style="display:grid; grid-template-columns:repeat(3,auto); gap:10px 14px; justify-content:start; font-size:11.5px; color:#49588A">
+            <span style="display:flex;align-items:center;gap:8px"><span class="tile" style="background:#02D0F8;color:#032B73"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="6.5" r="3.3" stroke="currentColor" stroke-width="1.8"></circle><path d="M3.5 17c0-3.3 2.9-5.8 6.5-5.8s6.5 2.5 6.5 5.8" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span>Seekers</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="tile" style="background:#FB6800;color:#fff"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="5" cy="5" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><circle cx="15" cy="5" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><circle cx="10" cy="15" r="2.3" stroke="currentColor" stroke-width="1.8"></circle><path d="M6.8 6.3 8.6 13M13.2 6.3 11.4 13" stroke="currentColor" stroke-width="1.8"></path></svg></span>Referrals</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="tile" style="background:#0055C0;color:#fff"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="6.5" width="15" height="10" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M7 6.5V5a2 2 0 0 1 2-2h2a2 2 0 0 1 2 2v1.5" stroke="currentColor" stroke-width="1.8"></path></svg></span>Business</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="tile" style="background:#FCCE00;color:#032B73"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="2.5" y="4.5" width="15" height="11" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M2.5 8.2h15" stroke="currentColor" stroke-width="1.8"></path></svg></span>Money</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="tile" style="background:#032B73;color:#fff"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><circle cx="10" cy="10" r="7.2" stroke="currentColor" stroke-width="1.8"></circle><path d="M6.8 10.2 9 12.4l4.2-5" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path></svg></span>Placed</span>
+            <span style="display:flex;align-items:center;gap:8px"><span class="tile" style="background:#FE2901;color:#fff"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><path d="M5 6 2.8 8.2 5 10.4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"></path><path d="M2.8 8.2h8.4a4.6 4.6 0 0 1 0 9.2H9" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span>Refunds</span>
+          </div>
+          <span style="font-size:11px;color:#8290B8">Light tiles (cyan, gold) take a navy icon; dark tiles take white.</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Status pills &amp; hit counter</span>
+          <div style="display:flex; flex-wrap:wrap; gap:8px">
+            <span class="pill" style="color:#1C9A6C;background:#E1F5EC">Verified</span>
+            <span class="pill" style="color:#92670A;background:#FFF4CC">Pending</span>
+            <span class="pill" style="color:#B94E12;background:#FFE7D6">2 days left</span>
+            <span class="pill" style="color:#0B6E82;background:#DCF6FD">Active</span>
+            <span class="pill" style="color:#49588A;background:#F1F5FC">12 days left</span>
+            <span class="pill" style="color:#BB232B;background:#FAE2E1">Deactivated</span>
+            <span class="pill" style="color:#032B73;background:#FCCE00">8 to review</span>
+          </div>
+          <div style="display:flex; align-items:center; gap:5px; margin-top:4px"><span style="width:10px;height:10px;border-radius:50%;background:#FCCE00;border:1.5px solid #D9A800;box-sizing:border-box"></span><span style="width:10px;height:10px;border-radius:50%;background:#FCCE00;border:1.5px solid #D9A800;box-sizing:border-box"></span><span style="width:10px;height:10px;border-radius:50%;border:1.5px solid #C3CEEA;box-sizing:border-box"></span><span style="font-size:11.5px;color:#49588A;margin-left:6px">2 of 3 hits</span></div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Navigation &mdash; royal gradient chrome</span>
+          <div style="background:linear-gradient(180deg,#0055C0 0%,#003593 100%); border-radius:12px; padding:10px; display:flex; flex-direction:column; gap:3px">
+            <div class="swoosh" style="height:3px; margin:0 2px 6px"></div>
+            <span style="padding:9px 12px;border-radius:9px;background:#6EC3FF;color:#04245C;font-size:13px;font-weight:600">Active page</span>
+            <span style="padding:9px 12px;border-radius:9px;background:rgba(255,255,255,0.10);color:#FFFFFF;font-size:13px">Hover</span>
+            <span style="padding:9px 12px;border-radius:9px;color:#CFE4FF;font-size:13px;display:flex;justify-content:space-between">Refunds <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:#BB232B;color:#fff">4</span></span>
+            <span style="padding:9px 12px;border-radius:9px;color:#CFE4FF;font-size:13px;display:flex;justify-content:space-between">Call Center <span style="font-size:11px;font-weight:700;padding:1px 7px;border-radius:999px;background:#FCCE00;color:#032B73">5</span></span>
+          </div>
+        </div>
+
+      </div>
+
+      <div style="display:grid; grid-template-columns:minmax(0,1.1fr) minmax(0,1fr) minmax(0,1.3fr); gap:24px; align-items:start">
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Hero card &mdash; one per page</span>
+          <div style="position:relative; overflow:hidden; border-radius:14px; padding:18px 20px 22px; color:#fff; background:linear-gradient(135deg,#032B73 0%,#0055C0 100%); display:flex; flex-direction:column; gap:10px">
+            <div style="display:flex;justify-content:space-between;align-items:center"><span style="font-size:12.5px;font-weight:600;color:#CFE4FF">Net revenue</span><span class="pill" style="color:#02D0F8;background:rgba(2,208,248,0.16)">&uarr; 18%</span></div>
+            <span style="font-family:'Sora',sans-serif;font-size:28px;font-weight:700">&#8377;4,67,745</span>
+            <div style="display:flex;height:7px;gap:3px"><div style="width:67%;background:#02D0F8;border-radius:999px"></div><div style="width:33%;background:#FCCE00;border-radius:999px"></div></div>
+            <div class="swoosh" style="position:absolute;left:0;right:0;bottom:0;border-radius:0"></div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Vertical card</span>
+          <a href="#" style="background:#FFFFFF;border:1px solid #0055C0;border-radius:14px;padding:16px;display:flex;flex-direction:column;gap:10px;color:#0B1E4A;box-shadow:0 6px 18px rgba(0,85,192,0.12)">
+            <div style="display:flex;align-items:center;gap:10px"><span class="tile" style="background:#FCCE00;color:#032B73"><svg width="17" height="17" viewBox="0 0 20 20" fill="none" aria-hidden="true"><rect x="4" y="2.8" width="12" height="15" rx="1.8" stroke="currentColor" stroke-width="1.8"></rect><path d="M7 7.2h6M7 10.3h6M7 13.4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"></path></svg></span><span style="font-size:13px;font-weight:700;flex:1">Vacancies</span><span style="color:#0055C0">&rarr;</span></div>
+            <div style="display:flex;align-items:baseline;gap:6px"><span style="font-family:'Sora',sans-serif;font-size:24px;font-weight:700">12</span><span style="font-size:12px;color:#49588A">open</span></div>
+            <span style="font-size:11.5px;color:#49588A;display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:#92670A"></span>3 open more than 15 days</span>
+          </a>
+          <span style="font-size:11px;color:#8290B8">Hover: royal border, soft lift</span>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:12px">
+          <span class="eyebrow">Charts &amp; attention rows</span>
+          <div style="display:flex; align-items:flex-end; gap:8px; height:64px">
+            <div style="flex:1;height:44%;border-radius:5px 5px 0 0;background:rgba(0,85,192,0.20)"></div>
+            <div style="flex:1;height:58%;border-radius:5px 5px 0 0;background:rgba(0,85,192,0.20)"></div>
+            <div style="flex:1;height:100%;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#02D0F8,#0055C0)"></div>
+            <div style="width:10px"></div>
+            <div style="flex:1;height:50%;border-radius:5px 5px 0 0;background:rgba(252,206,0,0.40)"></div>
+            <div style="flex:1;height:68%;border-radius:5px 5px 0 0;background:rgba(252,206,0,0.40)"></div>
+            <div style="flex:1;height:100%;border-radius:5px 5px 0 0;background:linear-gradient(180deg,#FCCE00,#FB6800)"></div>
+          </div>
+          <span style="font-size:11px;color:#8290B8">Past periods pale; the latest bar takes the full logo gradient.</span>
+          <div style="display:flex; gap:12px; padding:10px 0; border-top:1px solid #DCE4F3; border-bottom:1px solid #DCE4F3">
+            <span style="width:8px;height:8px;border-radius:50%;background:#FE2901;margin-top:6px;flex-shrink:0"></span>
+            <div style="flex:1"><div style="font-size:13px;font-weight:600;color:#0B1E4A">4 refunds waiting &mdash; &#8377;19,878</div><div style="font-size:11.5px;color:#49588A;margin-top:2px">Dot: red urgent &middot; orange act now &middot; gold watch</div></div>
+            <a href="#" style="font-size:12.5px;font-weight:600;align-self:center">Approve &rarr;</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1700}}'>
+class Component extends DCLogic {
+  renderVals() {
+    return {};
+  }
+}
+</script>
+</body>
+</html>
