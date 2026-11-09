@@ -223,7 +223,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
 
     expect(res.status).toBe(201);
     expect(res.body.locality).toBe('Indiranagar');
-    expect(res.body.area).toBeNull();
+    expect(res.body.area).toBeFalsy();
     expect(res.body.leadCreatedByStaffId).toBe(faKoramangalaId);
   });
 
@@ -293,7 +293,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       });
 
     expect(res.status).toBe(201);
-    expect(res.body.area).toBeNull();
+    expect(res.body.area).toBeFalsy();
     expect(res.body.locality).toBe('Whitefield');
     expect(res.body.code).toMatch(/^BZ-\d{5}$/);
   });

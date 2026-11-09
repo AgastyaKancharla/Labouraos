@@ -95,7 +95,6 @@ describe('Phase 12 Task 3 — JobSeekerTrade and JobSeekerLanguage', () => {
         code: `JS-T3-${randomSuffix}`,
         name: `Candidate ${randomSuffix}`,
         phone: `+9193${phoneSuffix}`,
-        trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 1500000,
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',

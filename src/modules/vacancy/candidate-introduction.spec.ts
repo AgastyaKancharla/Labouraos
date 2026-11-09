@@ -167,7 +167,7 @@ describe('CandidateIntroductionService', () => {
   it('lists introductions with only the business history fields and no candidate contact or location data', async () => {
     prisma.candidateIntroduction.findMany.mockResolvedValue([{
       vacancyId: 'vacancy-1', shownAt, rank: 2, channel: 'in_person',
-      jobSeeker: { name: 'Asha Kumar', trades: [{ trade: 'Electrician', isPrimary: true }], tradeSkill: 'Electrician' },
+      jobSeeker: { name: 'Asha Kumar', trades: [{ trade: 'Electrician', isPrimary: true }] },
       vacancy: { code: 'VC-00001' }, shownBy: { name: 'Field Agent One' },
     }]);
 
@@ -182,7 +182,7 @@ describe('CandidateIntroductionService', () => {
     expect(JSON.stringify(result)).not.toMatch(/phone|address|latitude|longitude|dateOfBirth|\bdob\b/i);
     expect(prisma.candidateIntroduction.findMany).toHaveBeenCalledWith(expect.objectContaining({
       where: { businessId: 'business-1' },
-      select: expect.objectContaining({ jobSeeker: expect.objectContaining({ select: { name: true, trades: { select: { trade: true, isPrimary: true } }, tradeSkill: true } }) }),
+      select: expect.objectContaining({ jobSeeker: expect.objectContaining({ select: { name: true, trades: { select: { trade: true, isPrimary: true } } } }) }),
     }));
   });
 });
