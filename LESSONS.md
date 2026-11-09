@@ -479,3 +479,8 @@ Format:
 **Symptom:** Running the automated 23-month profile retention cleanup risked erasing candidate profiles and 12-month-old call recordings that are actively subject to an open replacement claim.
 **Cause:** The 23-month inactivity rule measures from the last recorded activity. A candidate whose placement was disputed or dropped out might have had no customer-facing call or payment for >23 months while the claim remained open. Anonymising them would destroy identity details needed to resolve the claim, and deleting call recordings would purge evidence.
 **Fix:** In `AnonymisationService.assertNoOpenDisputesOrMoney` and `RetentionService`, check for open `ReplacementClaim`s (`decision: null` or accepted with active placement) or `dropped_out` placements. If present, refuse anonymisation and keep recordings protected (`recordingDeletedAt: null`).
+
+## Audit redaction marker masked as a phone number
+**Symptom:** The audit history endpoint returned `"******"` instead of `"[changed]"` for a redacted phone value.
+**Cause:** The response PII interceptor masked the audit service's safe `"[changed]"` sentinel again as if it were a raw phone number.
+**Fix:** Preserve the sentinel in both finance and agent phone masking paths, and test that actual phone values remain masked.
