@@ -109,6 +109,11 @@ export class ReferralService {
       throw new ConflictException(`Referral partner with phone '${phone}' already exists`);
     }
 
+    const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
+    if (!otpConsumed) {
+      throw new BadRequestException('This verified OTP request has already been used or expired');
+    }
+
     const code = await this.idService.generateCode('referral');
 
     const referral = await this.prisma.referral.create({

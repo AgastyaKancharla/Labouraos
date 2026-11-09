@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { OtpProvider } from './otp.interface';
+import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptCallRoutingPhone, encryptCallRoutingPhone } from '../../modules/staff/call-routing-key';
@@ -12,6 +12,15 @@ export interface RealOtpProviderOptions {
   baseUrl?: string;
   timeProvider?: () => Date;
   fetchFn?: typeof fetch;
+}
+
+const RESEND_WAIT_MS = 30_000;
+const MAX_RESENDS = 3;
+const MAX_WRONG_ATTEMPTS = 5;
+
+function normalizePhone(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
 }
 
 /**
@@ -90,7 +99,7 @@ export class RealOtpProvider implements OtpProvider {
     return this.dltEntityId;
   }
 
-  async sendOtp(phone: string): Promise<{ requestId: string }> {
+  async sendOtp(phone: string, options?: OtpSendOptions): Promise<OtpSendResult> {
     const now = this.timeProvider();
 
     // Enforce 09:00–21:00 IST window per TRAI regulations and Phase 7 Task 1 acceptance
@@ -100,9 +109,11 @@ export class RealOtpProvider implements OtpProvider {
       );
     }
 
-    const cleanPhone = phone.startsWith('+91')
-      ? phone.slice(3)
-      : phone.replace(/\D/g, '');
+    const cleanPhone = normalizePhone(phone);
+
+    if (options?.requestId) {
+      return this.resendOtp(options.requestId, cleanPhone, options.purpose ?? 'job_seeker', now);
+    }
 
     const payload = {
       template_id: this.dltTemplateId,
@@ -146,13 +157,18 @@ export class RealOtpProvider implements OtpProvider {
           requestId,
           phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
           phoneEncrypted: encryptCallRoutingPhone(cleanPhone),
+          purpose: options?.purpose ?? 'job_seeker',
           verified: false,
           lastSentAt: now,
           expiresAt: new Date(now.getTime() + 5 * 60 * 1000),
         },
       });
 
-      return { requestId };
+      return {
+        requestId,
+        resendAvailableAt: new Date(now.getTime() + RESEND_WAIT_MS).toISOString(),
+        resendsLeft: MAX_RESENDS,
+      };
     } catch (err: unknown) {
       if (err instanceof BadRequestException) {
         throw err;
@@ -171,7 +187,7 @@ export class RealOtpProvider implements OtpProvider {
       return false;
     }
 
-    if (session.verified) {
+    if (session.verified || session.usedAt || session.expiresAt <= this.timeProvider() || session.attempts >= MAX_WRONG_ATTEMPTS) {
       // Reject reuse of already verified session
       return false;
     }
@@ -193,6 +209,10 @@ export class RealOtpProvider implements OtpProvider {
       );
 
       if (!response.ok) {
+        await prisma.otpSession.update({
+          where: { requestId },
+          data: { attempts: { increment: 1 } },
+        });
         return false;
       }
 
@@ -206,6 +226,11 @@ export class RealOtpProvider implements OtpProvider {
         return true;
       }
 
+      await prisma.otpSession.update({
+        where: { requestId },
+        data: { attempts: { increment: 1 } },
+      });
+
       return false;
     } catch (err: unknown) {
       this.logger.error(`Error verifying OTP with vendor: ${String(err)}`);
@@ -217,15 +242,103 @@ export class RealOtpProvider implements OtpProvider {
     const prisma = this.prisma;
     if (!prisma) return false;
     const session = await prisma.otpSession.findUnique({ where: { requestId } });
-    if (!session || !session.verified) {
+    if (!session || !session.verified || session.usedAt || session.expiresAt <= this.timeProvider()) {
       return false;
     }
     if (phone) {
-      const cleanPhone = phone.startsWith('+91')
-        ? phone.slice(3)
-        : phone.replace(/\D/g, '');
+      const cleanPhone = normalizePhone(phone);
       return session.phoneHash === createHash('sha256').update(cleanPhone).digest('hex');
     }
     return true;
+  }
+
+  async consumeVerified(requestId: string, phone: string): Promise<boolean> {
+    const prisma = this.prisma;
+    if (!prisma) return false;
+    const now = this.timeProvider();
+    const cleanPhone = normalizePhone(phone);
+    const result = await prisma.otpSession.updateMany({
+      where: {
+        requestId,
+        phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
+        verified: true,
+        usedAt: null,
+        expiresAt: { gt: now },
+      },
+      data: { usedAt: now },
+    });
+    return result.count === 1;
+  }
+
+  async getPhoneLast4(requestId: string): Promise<string | null> {
+    const prisma = this.prisma;
+    if (!prisma) return null;
+    const session = await prisma.otpSession.findUnique({ where: { requestId } });
+    return session ? decryptCallRoutingPhone(session.phoneEncrypted).slice(-4) : null;
+  }
+
+  private async resendOtp(
+    requestId: string,
+    cleanPhone: string,
+    purpose: string,
+    now: Date,
+  ): Promise<OtpSendResult> {
+    const prisma = this.prisma;
+    if (!prisma) throw new BadRequestException('PrismaService is required for the real OTP provider');
+    const session = await prisma.otpSession.findUnique({ where: { requestId } });
+    if (!session || session.expiresAt <= now || session.verified || session.usedAt || session.attempts >= MAX_WRONG_ATTEMPTS) {
+      throw new BadRequestException('OTP request is no longer active; request a new code');
+    }
+    if (
+      session.phoneHash !== createHash('sha256').update(cleanPhone).digest('hex') ||
+      session.purpose !== purpose
+    ) {
+      throw new BadRequestException('OTP resend must use the original phone number and purpose');
+    }
+    const resendAvailableAt = new Date(session.lastSentAt.getTime() + RESEND_WAIT_MS);
+    if (now < resendAvailableAt) {
+      throw new BadRequestException(`Resend is available at ${resendAvailableAt.toISOString()}`);
+    }
+    if (session.resendCount >= MAX_RESENDS) {
+      throw new BadRequestException('The maximum of 3 OTP resends has been reached');
+    }
+
+    const updated = await prisma.otpSession.updateMany({
+      where: {
+        requestId,
+        verified: false,
+        usedAt: null,
+        attempts: { lt: MAX_WRONG_ATTEMPTS },
+        resendCount: { lt: MAX_RESENDS },
+        lastSentAt: { lte: new Date(now.getTime() - RESEND_WAIT_MS) },
+      },
+      data: { resendCount: { increment: 1 }, lastSentAt: now },
+    });
+    if (updated.count !== 1) {
+      throw new BadRequestException('OTP resend was already requested; wait 30 seconds before retrying');
+    }
+
+    const encoded = new URLSearchParams({
+      request_id: requestId,
+      mobile: `91${cleanPhone}`,
+      retrytype: 'text',
+    });
+    try {
+      const response = await this.fetchFn(`${this.baseUrl}/otp/retry?${encoded.toString()}`, {
+        method: 'GET',
+        headers: { authkey: this.apiKey },
+      });
+      if (!response.ok) {
+        throw new BadRequestException(`SMS vendor resend failed: ${await response.text()}`);
+      }
+      return {
+        requestId,
+        resendAvailableAt: new Date(now.getTime() + RESEND_WAIT_MS).toISOString(),
+        resendsLeft: MAX_RESENDS - session.resendCount - 1,
+      };
+    } catch (err: unknown) {
+      if (err instanceof BadRequestException) throw err;
+      throw new BadRequestException('SMS vendor resend request failed');
+    }
   }
 }

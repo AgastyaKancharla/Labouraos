@@ -162,6 +162,33 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     expect(auditLogs[0].actorId).toBe(callAgentId);
   });
 
+  it('does not let one verified OTP request create two job seekers', async () => {
+    const phone = `91${timestamp.toString().slice(-8)}3`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const payload = {
+      phone,
+      otpRequestId,
+      tradeSkill: 'Cook',
+      minSalary: 1800000,
+      maxSalary: 2400000,
+      preferredCallWindowStart: '09:30',
+      preferredCallWindowEnd: '18:00',
+      city: 'Bengaluru',
+    };
+
+    await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send(payload)
+      .expect(201);
+    await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send(payload)
+      .expect(400);
+    expect(await prisma.jobSeeker.count({ where: { phone } })).toBe(1);
+  });
+
   it('saves an Other trade immediately and queues a distinct suggestion', async () => {
     const phone = `91${timestamp.toString().slice(-8)}2`;
     const otpRequestId = await getVerifiedOtp(phone);

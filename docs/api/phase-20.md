@@ -2,6 +2,40 @@
 
 All routes require a staff bearer token unless marked otherwise. Responses below show representative payloads; paise amounts are integers.
 
+## Task 3 — Phone check by OTP
+
+### `POST /otp/send`
+
+Any authenticated staff member may request an OTP. Supported purposes are `job_seeker`, `business_contact`, `referral`, `vacancy_confirm` and `branch_contact`. For job seeker, business contact and referral flows, the service checks all existing job seeker, business main/additional contact and referral phone numbers first. A duplicate does not send an OTP. A branch contact is included once the Phase 20 branch model is installed (Task 7). `vacancy_confirm` skips duplicate lookup.
+
+**Initial request:**
+
+```json
+{"phone":"9876543210","purpose":"job_seeker"}
+```
+
+**Response `201` example:**
+
+```json
+{"success":true,"requestId":"otp-request-id","resendAvailableAt":"2026-11-09T12:00:30.000Z","resendsLeft":3}
+```
+
+**Duplicate response `200` examples:** a staff member allowed to see the record receives `{"alreadyRegistered":true,"type":"job_seeker","code":"JS-01042"}`; a staff member outside that record's access scope receives `{"alreadyRegistered":true}`.
+
+**Resend request:** include the original `requestId` with the same `phone` and `purpose`. The original request ID is reused. A resend is refused before 30 seconds or after three resends.
+
+**Errors:** `400` missing/invalid fields, wrong phone or purpose for the request, request expired/used/locked, resend too soon, or resend limit reached; `401` unauthenticated; `429` throttled.
+
+### `POST /otp/verify`
+
+Any authenticated staff member may submit a code returned by MSG91/mock mode.
+
+**Request:** `{"requestId":"otp-request-id","code":"123456"}`. **Response `200`:** `{"verified":true,"requestId":"otp-request-id"}`.
+
+Wrong codes count as attempts. The request is locked after five wrong codes. Sends and verification attempts are audited with only the phone's last four digits; the OTP itself is never audited.
+
+**Errors:** `400` wrong code, expired/used/locked request, or missing fields; `401` unauthenticated; `429` throttled.
+
 ## Task 2 — Managed trades and minimum wages
 
 ### `GET /trades`
