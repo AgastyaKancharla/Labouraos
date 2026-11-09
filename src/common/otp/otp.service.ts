@@ -75,7 +75,27 @@ export class OtpService {
     }
 
     const options: OtpSendOptions = { purpose, requestId };
-    const result = await this.provider.sendOtp(phone, options);
+    let result: OtpSendResult;
+    try {
+      result = await this.provider.sendOtp(phone, options);
+    } catch (error: unknown) {
+      if (actorId) {
+        await this.auditService.log({
+          actorId,
+          action: 'otp.send_attempt',
+          entityType: 'otp_request',
+          entityCode: requestId ?? 'unissued',
+          after: {
+            phoneMasked: `******${last4}`,
+            purpose,
+            isResend: Boolean(requestId),
+            failed: true,
+          },
+          city: 'Bengaluru',
+        });
+      }
+      throw error;
+    }
     if (actorId) await this.auditService.log({
       actorId,
       action: 'otp.send_attempt',

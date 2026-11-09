@@ -139,13 +139,14 @@ describe('OTP Provider and Mock Implementation', () => {
         referral: { findFirst: jest.fn() },
         staff: { findUnique: jest.fn(), findFirst: jest.fn() },
       } as unknown as PrismaService;
-      const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
+      const auditLog = jest.fn().mockResolvedValue(undefined);
+      const audit = { log: auditLog } as unknown as AuditService;
       const service = new OtpService(provider, audit, prisma);
 
       await expect(service.sendOtp('9876543210', 'job_seeker', 'agent-1', 'call_agent'))
         .resolves.toEqual({ alreadyRegistered: true, type: 'job_seeker', code: 'JS-01042' });
       expect(provider.sendOtp).not.toHaveBeenCalled();
-      expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({
+      expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({
         action: 'otp.send_attempt',
         after: expect.objectContaining({ phoneMasked: '******3210', alreadyRegistered: true }),
       }));
@@ -165,6 +166,26 @@ describe('OTP Provider and Mock Implementation', () => {
       await expect(service.sendOtp('9876543210', 'job_seeker', 'lead-1', 'team_lead'))
         .resolves.toEqual({ alreadyRegistered: true });
       expect(provider.sendOtp).not.toHaveBeenCalled();
+    });
+
+    it('audits a rejected send without recording a raw phone or OTP', async () => {
+      const provider = { sendOtp: jest.fn().mockRejectedValue(new Error('provider unavailable')) } as unknown as OtpProvider;
+      const prisma = {
+        jobSeeker: { findFirst: jest.fn().mockResolvedValue(null) },
+        business: { findFirst: jest.fn().mockResolvedValue(null) },
+        referral: { findFirst: jest.fn().mockResolvedValue(null) },
+      } as unknown as PrismaService;
+      const auditLog = jest.fn().mockResolvedValue(undefined);
+      const audit = { log: auditLog } as unknown as AuditService;
+      const service = new OtpService(provider, audit, prisma);
+
+      await expect(service.sendOtp('9876543210', 'vacancy_confirm', 'agent-1', 'call_agent'))
+        .rejects.toThrow('provider unavailable');
+      expect(auditLog).toHaveBeenCalledWith(expect.objectContaining({
+        action: 'otp.send_attempt',
+        after: { phoneMasked: '******3210', purpose: 'vacancy_confirm', isResend: false, failed: true },
+      }));
+      expect(JSON.stringify(auditLog.mock.calls)).not.toContain('9876543210');
     });
   });
 
