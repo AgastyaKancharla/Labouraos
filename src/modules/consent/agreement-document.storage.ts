@@ -9,7 +9,8 @@ export interface AgreementDocumentStorage {
 export class MemoryAgreementDocumentStorage implements AgreementDocumentStorage {
   private readonly documents = new Map<string, Buffer>();
 
-  async put(path: string, body: Buffer, _contentType?: string): Promise<void> {
+  async put(path: string, body: Buffer, contentType?: string): Promise<void> {
+    void contentType;
     this.documents.set(path, Buffer.from(body));
   }
 

@@ -17,7 +17,8 @@ export interface RecordingDownloader {
 export class MemoryRecordingStorage implements RecordingStorage {
   private readonly files = new Map<string, Buffer>();
 
-  async put(path: string, body: Buffer, _contentType?: string): Promise<void> {
+  async put(path: string, body: Buffer, contentType?: string): Promise<void> {
+    void contentType;
     this.files.set(path, Buffer.from(body));
   }
 
