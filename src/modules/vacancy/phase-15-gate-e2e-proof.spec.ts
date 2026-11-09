@@ -103,8 +103,8 @@ describe('Phase 15 gate end-to-end proof', () => {
     policy = await pricing.current();
 
     const originalCreateToken = links.createInterviewActionToken.bind(links);
-    jest.spyOn(links, 'createInterviewActionToken').mockImplementation((id, purpose, phone, expiresAt) => {
-      const token = originalCreateToken(id, purpose, phone, expiresAt);
+    jest.spyOn(links, 'createInterviewActionToken').mockImplementation(async (id, purpose, phone, expiresAt) => {
+      const token = await originalCreateToken(id, purpose, phone, expiresAt);
       actionTokens.set(`${id}:${purpose}`, token);
       return token;
     });

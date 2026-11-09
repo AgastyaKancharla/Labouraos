@@ -4,6 +4,7 @@ import { RealOtpProvider, isWithinTraiWindow } from './real-otp.provider';
 import { OtpModule } from './otp.module';
 import { AuthModule } from '../auth/auth.module';
 import { OTP_PROVIDER, OtpProvider } from './otp.interface';
+import { PrismaService } from '../prisma/prisma.service';
 
 describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', () => {
   describe('isWithinTraiWindow', () => {
@@ -37,9 +38,30 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
   describe('RealOtpProvider', () => {
     let capturedRequests: Array<{ url: string; options?: RequestInit }>;
     let mockFetch: typeof fetch;
+    let sessions: Map<string, Record<string, unknown>>;
+    let sessionDb: PrismaService;
+
+    const attachSessionStore = (provider: RealOtpProvider) => provider.setPrismaService(sessionDb);
 
     beforeEach(() => {
       capturedRequests = [];
+      process.env.CALL_ROUTING_KEY = 'phase20_call_routing_secret_key_32_chars_min!';
+      sessions = new Map();
+      sessionDb = {
+        otpSession: {
+          create: async ({ data }: { data: Record<string, unknown> }) => {
+            const row = { id: 'otp-row', attempts: 0, resendCount: 0, verified: false, ...data };
+            sessions.set(String(data.requestId), row);
+            return row;
+          },
+          findUnique: async ({ where }: { where: { requestId: string } }) => sessions.get(where.requestId) ?? null,
+          update: async ({ where, data }: { where: { requestId: string }; data: Record<string, unknown> }) => {
+            const row = { ...sessions.get(where.requestId), ...data };
+            sessions.set(where.requestId, row);
+            return row;
+          },
+        },
+      } as unknown as PrismaService;
       mockFetch = (async (url: string | URL | Request, init?: RequestInit) => {
         const urlStr = typeof url === 'string' ? url : url.toString();
         capturedRequests.push({ url: urlStr, options: init });
@@ -81,6 +103,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
         fetchFn: mockFetch,
         timeProvider: () => new Date('2026-10-25T02:00:00.000Z'), // 07:30 IST
       });
+      attachSessionStore(provider);
 
       await expect(provider.sendOtp('9876543210')).rejects.toThrow(
         BadRequestException,
@@ -100,6 +123,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
         fetchFn: mockFetch,
         timeProvider: () => new Date('2026-10-25T05:30:00.000Z'), // 11:00 IST
       });
+      attachSessionStore(provider);
 
       const res = await provider.sendOtp('+919876543210');
       expect(res.requestId).toBe('vendor_msg91_req_778899');
@@ -120,28 +144,35 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
     });
 
     it('verifies code successfully against the vendor API and rejects wrong codes and reuses', async () => {
-      const provider = new RealOtpProvider({
+      const firstProvider = new RealOtpProvider({
         apiKey: 'test_auth_key_123',
         fetchFn: mockFetch,
         timeProvider: () => new Date('2026-10-25T06:00:00.000Z'), // 11:30 IST
       });
+      const secondProvider = new RealOtpProvider({
+        apiKey: 'test_auth_key_123',
+        fetchFn: mockFetch,
+        timeProvider: () => new Date('2026-10-25T06:00:00.000Z'),
+      });
+      attachSessionStore(firstProvider);
+      attachSessionStore(secondProvider);
 
-      const { requestId } = await provider.sendOtp('9876543210');
+      const { requestId } = await firstProvider.sendOtp('9876543210');
 
       // Wrong code
-      const wrongVerify = await provider.verifyOtp(requestId, '999999');
+      const wrongVerify = await secondProvider.verifyOtp(requestId, '999999');
       expect(wrongVerify).toBe(false);
 
       // Correct code
-      const validVerify = await provider.verifyOtp(requestId, '123456');
+      const validVerify = await secondProvider.verifyOtp(requestId, '123456');
       expect(validVerify).toBe(true);
 
       // isVerified tracks phone
-      expect(await provider.isVerified(requestId, '9876543210')).toBe(true);
-      expect(await provider.isVerified(requestId, '9111111111')).toBe(false);
+      expect(await secondProvider.isVerified(requestId, '9876543210')).toBe(true);
+      expect(await secondProvider.isVerified(requestId, '9111111111')).toBe(false);
 
       // Replay/reuse rejected
-      const replayVerify = await provider.verifyOtp(requestId, '123456');
+      const replayVerify = await secondProvider.verifyOtp(requestId, '123456');
       expect(replayVerify).toBe(false);
     });
 
@@ -158,6 +189,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
         fetchFn: failingFetch,
         timeProvider: () => new Date('2026-10-25T06:00:00.000Z'),
       });
+      attachSessionStore(provider);
 
       await expect(provider.sendOtp('9876543210')).rejects.toThrow(
         /SMS vendor delivery failed: Insufficient SMS credits with DLT vendor/,

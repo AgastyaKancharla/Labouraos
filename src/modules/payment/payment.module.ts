@@ -7,6 +7,7 @@ import { RealPaymentProvider } from './real-payment.provider';
 import { BANK_FEED_PROVIDER } from './bank-feed-provider.interface';
 import { MockBankFeedProvider } from './mock-bank-feed.provider';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { PublicLinkStoreModule } from '../../common/public-link-store.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { IdModule } from '../../common/id/id.module';
 import { PricingModule } from '../pricing/pricing.module';
@@ -17,6 +18,7 @@ import { UpiCollectionService } from './upi-collection.service';
 @Module({
   imports: [
     PrismaModule,
+    PublicLinkStoreModule,
     AuditModule,
     IdModule,
     PricingModule,

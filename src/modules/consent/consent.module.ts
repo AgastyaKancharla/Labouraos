@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { PublicLinkStoreModule } from '../../common/public-link-store.module';
 import { MessageModule } from '../message/message.module';
 import { OtpModule } from '../../common/otp/otp.module';
 import { ConsentService } from './consent.service';
@@ -17,7 +18,7 @@ import {
 import { BusinessVerificationModule } from '../business/business-verification.module';
 
 @Module({
-  imports: [PrismaModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule],
+  imports: [PrismaModule, PublicLinkStoreModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule],
   controllers: [ConsentController],
   providers: [
     ConsentService,

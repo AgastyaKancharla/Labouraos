@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { PublicLinkStoreModule } from '../../common/public-link-store.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { IdModule } from '../../common/id/id.module';
 import { AuditModule } from '../../common/audit/audit.module';
@@ -14,6 +15,7 @@ import { ManualNameCheckProvider } from './manual-name-check.provider';
 @Module({
   imports: [
     PrismaModule,
+    PublicLinkStoreModule,
     PricingModule,
     IdModule,
     AuditModule,

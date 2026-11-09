@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { OtpProvider } from './otp.interface';
+import { createHash } from 'node:crypto';
+import { PrismaService } from '../prisma/prisma.service';
+import { decryptCallRoutingPhone, encryptCallRoutingPhone } from '../../modules/staff/call-routing-key';
 
 export interface RealOtpProviderOptions {
   apiKey?: string;
@@ -9,13 +12,6 @@ export interface RealOtpProviderOptions {
   baseUrl?: string;
   timeProvider?: () => Date;
   fetchFn?: typeof fetch;
-}
-
-export interface RealOtpSession {
-  requestId: string;
-  phone: string;
-  verified: boolean;
-  createdAt: number;
 }
 
 /**
@@ -44,7 +40,7 @@ export class RealOtpProvider implements OtpProvider {
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
   private timeProvider: () => Date;
-  private sessions = new Map<string, RealOtpSession>();
+  private prisma?: PrismaService;
 
   constructor(options?: RealOtpProviderOptions) {
     this.apiKey =
@@ -72,6 +68,10 @@ export class RealOtpProvider implements OtpProvider {
     ).replace(/\/$/, '');
     this.timeProvider = options?.timeProvider ?? (() => new Date());
     this.fetchFn = options?.fetchFn ?? globalThis.fetch;
+  }
+
+  setPrismaService(prisma: PrismaService): void {
+    this.prisma = prisma;
   }
 
   setTimeProvider(timeProvider: () => Date): void {
@@ -140,11 +140,16 @@ export class RealOtpProvider implements OtpProvider {
         data.request_id ||
         `req_sms_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
 
-      this.sessions.set(requestId, {
-        requestId,
-        phone: cleanPhone,
-        verified: false,
-        createdAt: now.getTime(),
+      if (!this.prisma) throw new Error('PrismaService is required for the real OTP provider');
+      await this.prisma.otpSession.create({
+        data: {
+          requestId,
+          phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
+          phoneEncrypted: encryptCallRoutingPhone(cleanPhone),
+          verified: false,
+          lastSentAt: now,
+          expiresAt: new Date(now.getTime() + 5 * 60 * 1000),
+        },
       });
 
       return { requestId };
@@ -159,7 +164,9 @@ export class RealOtpProvider implements OtpProvider {
   }
 
   async verifyOtp(requestId: string, code: string): Promise<boolean> {
-    const session = this.sessions.get(requestId);
+    const prisma = this.prisma;
+    if (!prisma) return false;
+    const session = await prisma.otpSession.findUnique({ where: { requestId } });
     if (!session) {
       return false;
     }
@@ -172,7 +179,7 @@ export class RealOtpProvider implements OtpProvider {
     try {
       const queryParams = new URLSearchParams({
         otp: code,
-        mobile: session.phone,
+        mobile: decryptCallRoutingPhone(session.phoneEncrypted),
       });
 
       const response = await this.fetchFn(
@@ -195,7 +202,7 @@ export class RealOtpProvider implements OtpProvider {
       };
 
       if (data.type === 'success' || data.message === 'OTP verified success') {
-        session.verified = true;
+        await prisma.otpSession.update({ where: { requestId }, data: { verified: true } });
         return true;
       }
 
@@ -207,7 +214,9 @@ export class RealOtpProvider implements OtpProvider {
   }
 
   async isVerified(requestId: string, phone?: string): Promise<boolean> {
-    const session = this.sessions.get(requestId);
+    const prisma = this.prisma;
+    if (!prisma) return false;
+    const session = await prisma.otpSession.findUnique({ where: { requestId } });
     if (!session || !session.verified) {
       return false;
     }
@@ -215,7 +224,7 @@ export class RealOtpProvider implements OtpProvider {
       const cleanPhone = phone.startsWith('+91')
         ? phone.slice(3)
         : phone.replace(/\D/g, '');
-      return session.phone === cleanPhone;
+      return session.phoneHash === createHash('sha256').update(cleanPhone).digest('hex');
     }
     return true;
   }

@@ -10,7 +10,6 @@ import { WHATSAPP_PROVIDER, WhatsAppProvider } from '../../common/whatsapp/whats
 import { OTP_PROVIDER } from '../../common/otp/otp.interface';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { PlacementService } from '../placement/placement.service';
-import { payoutLinkTokens } from '../payout-account/payout-account.service';
 import { encryptCallRoutingPhone } from '../staff/call-routing-key';
 
 describe('Phase 18 Gate End-to-End Proof', () => {
@@ -31,6 +30,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
   const paymentIds: string[] = [];
   const payoutAccountIds: string[] = [];
   const callRecordIds: string[] = [];
+  const sentPayoutTokens: Array<{ ownerType: string; ownerId: string; token: string }> = [];
 
   let ceoToken = '';
   let financeToken = '';
@@ -49,13 +49,11 @@ describe('Phase 18 Gate End-to-End Proof', () => {
   };
 
   const getLatestPayoutToken = (ownerType: string, ownerId: string): string => {
-    const records = Array.from(payoutLinkTokens.values())
-      .filter((t) => t.ownerType === ownerType && t.ownerId === ownerId && !t.usedAt)
-      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    const records = sentPayoutTokens.filter((t) => t.ownerType === ownerType && t.ownerId === ownerId);
     if (!records.length) {
       throw new Error(`No unused payout token found for ${ownerType} ${ownerId}`);
     }
-    return records[0].token;
+    return records[records.length - 1].token;
   };
 
   beforeAll(async () => {
@@ -64,7 +62,18 @@ describe('Phase 18 Gate End-to-End Proof', () => {
     process.env.CALL_ROUTING_KEY = 'phase18_call_routing_secret_key_32_chars_min!';
 
     const mockSms: SmsProvider = {
-      sendTemplate: async () => ({ messageId: `sms_${crypto.randomUUID()}`, status: 'sent' }),
+      sendTemplate: async (_phone, template, _dltTemplateId, variables) => {
+        const link = variables.link;
+        const match = template === 'payout_details_link' ? link?.match(/\/payout-accounts\/link\/([^/?#]+)/) : null;
+        if (match?.[1]) {
+          const owner = await prisma.publicLink.findFirst({
+            where: { tokenHash: crypto.createHash('sha256').update(match[1]).digest('hex') },
+            select: { subjectType: true, subjectId: true },
+          });
+          if (owner) sentPayoutTokens.push({ ownerType: owner.subjectType, ownerId: owner.subjectId, token: match[1] });
+        }
+        return { messageId: `sms_${crypto.randomUUID()}`, status: 'sent' };
+      },
     };
     const mockWa: WhatsAppProvider = {
       sendTemplateMessage: async () => ({

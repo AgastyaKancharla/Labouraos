@@ -3,6 +3,56 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
+enum PublicLinkPurpose {
+  registration
+  payment_only
+  referral_registration
+  business_agreement
+  interview_owner_result
+  interview_candidate_result
+  offer_reply
+  payout_details
+  vacancy_confirm
+}
+
+model PublicLink {
+  id                  String            @id @default(uuid())
+  tokenHash           String            @unique
+  purpose             PublicLinkPurpose
+  subjectType         String
+  subjectId           String
+  phone               String?
+  language            String?
+  expiresAt           DateTime
+  usedAt              DateTime?
+  revokedAt           DateTime?
+  openedAt            DateTime?
+  completedUserAgent  String?
+  completedIpHash     String?
+  createdByStaffId    String?
+  metadata            Json?
+  createdAt           DateTime          @default(now())
+
+  @@index([purpose, subjectType, subjectId, usedAt, revokedAt, expiresAt])
+  @@index([expiresAt])
+}
+
+model OtpSession {
+  id             String   @id @default(uuid())
+  requestId      String   @unique
+  phoneHash      String
+  phoneEncrypted String
+  verified       Boolean  @default(false)
+  attempts       Int      @default(0)
+  resendCount    Int      @default(0)
+  lastSentAt     DateTime
+  expiresAt      DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([expiresAt])
+}
+
 generator client {
   provider = "prisma-client-js"
 }
