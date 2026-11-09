@@ -18,6 +18,7 @@ import {
   getCallRecordingRetentionCutoff,
   getMoneyRecordRetentionCutoff,
   getProfileRetentionCutoff,
+  TRANSIENT_LINK_RETENTION_DAYS,
 } from './retention.policy';
 
 export interface RetentionSummary {
@@ -176,7 +177,7 @@ export class RetentionService {
   }
 
   private async cleanupExpiredLinkData(now: Date, dryRun: boolean, summary: RetentionSummary): Promise<void> {
-    const cutoff = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const cutoff = new Date(now.getTime() - TRANSIENT_LINK_RETENTION_DAYS * 24 * 60 * 60 * 1000);
     if (dryRun) {
       const [links, sessions] = await Promise.all([
         this.prisma.publicLink.count({ where: { expiresAt: { lt: cutoff } } }),

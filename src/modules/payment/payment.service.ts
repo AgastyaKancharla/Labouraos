@@ -5,6 +5,7 @@ import {
   Injectable,
   Logger,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { PayoutAccount, Prisma } from '@prisma/client';
@@ -36,10 +37,10 @@ import { publicLink } from '../../common/public-link';
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
+  private readonly publicLinks: PublicLinkStoreService;
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly publicLinks: PublicLinkStoreService,
     private readonly auditService: AuditService,
     private readonly idService: IdService,
     @Inject(PAYMENT_PROVIDER)
@@ -49,7 +50,10 @@ export class PaymentService {
     private readonly pricingService: PricingService,
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
-  ) {}
+    @Optional() publicLinkStore?: PublicLinkStoreService,
+  ) {
+    this.publicLinks = publicLinkStore ?? new PublicLinkStoreService(prisma);
+  }
 
   private async getReferralPayoutPaise(): Promise<number> {
     const policy = await this.pricingService.current();
