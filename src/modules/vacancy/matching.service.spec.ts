@@ -163,6 +163,10 @@ describe('MatchingService', () => {
     candidates = [baseCandidate('other-only', {
       trades: [{ trade: 'Unlisted helper', yearsExperience: 2, isPrimary: true }],
     })];
+    consentRows = [
+      { subjectId: 'other-only', purpose: 'job_matching', granted: true, grantedAt: now, withdrawnAt: null },
+      { subjectId: 'other-only', purpose: 'profile_sharing', granted: true, grantedAt: now, withdrawnAt: null },
+    ];
     expect((await run()).matches).toHaveLength(0);
 
     candidates = [baseCandidate('other-only', {
