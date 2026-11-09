@@ -35,8 +35,6 @@ describe('Phase 19 Gate End-to-End Proof', () => {
   let teamLeadToken = '';
   let agentToken = '';
 
-  let ceoId = '';
-  let teamLeadId = '';
   let agentId = '';
 
   let seeker1Id = '';
@@ -80,7 +78,6 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       },
     });
     staffIds.push(ceo.id);
-    ceoId = ceo.id;
     ceoToken = await jwt.signAsync({ sub: ceo.id, role: 'ceo', email: ceo.email, code: ceo.code });
 
     const tl = await prisma.staff.create({
@@ -94,7 +91,6 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       },
     });
     staffIds.push(tl.id);
-    teamLeadId = tl.id;
     teamLeadToken = await jwt.signAsync({ sub: tl.id, role: 'team_lead', email: tl.email, code: tl.code });
 
     const ag = await prisma.staff.create({
@@ -484,6 +480,12 @@ describe('Phase 19 Gate End-to-End Proof', () => {
 
       // --- DRY RUN ---
       const drySummary = await retentionService.runRetentionCleanup({ now: clock23m1d, dryRun: true });
+
+      // Verify CEO endpoint access
+      const ceoSummaryRes = await request(app.getHttpServer())
+        .get('/retention/summary')
+        .set('Authorization', `Bearer ${ceoToken}`);
+      expect(ceoSummaryRes.status).toBe(200);
 
       // Dry run reports candidate #1 for anonymisation
       expect(drySummary.profilesAnonymised.jobSeekers).toBeGreaterThanOrEqual(1);
