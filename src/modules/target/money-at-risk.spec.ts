@@ -14,6 +14,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     jobSeekerHit: { findMany: jest.Mock };
     placement: { findMany: jest.Mock };
     payment: { findMany: jest.Mock };
+    replacementClaim: { findMany: jest.Mock };
   };
 
   let service: MoneyAtRiskService;
@@ -115,6 +116,9 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         findMany: jest.fn().mockResolvedValue([]),
       },
       payment: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      replacementClaim: {
         findMany: jest.fn().mockResolvedValue([]),
       },
     };
@@ -251,7 +255,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     const fixedNow = new Date('2026-11-15T12:00:00.000Z');
 
     it('placement at 3 days out (day 12 of 15) is present, at 7 days out (day 8 of 15) is absent (5-day window)', async () => {
-      // Placement 1: dropped out 12 days ago -> 3 days remaining (PRESENT: <= 5 days)
+      // Placement 1: claim decided 12 days ago -> 3 days remaining (PRESENT: <= 5 days)
       const placement3DaysOut = {
         id: 'pl-3days',
         code: 'PL-00001',
@@ -259,9 +263,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         placementFee: 1000000, // ₹10,000 (1000000 paise)
         dropoutReportedAt: new Date(fixedNow.getTime() - 12 * 24 * 60 * 60 * 1000),
         status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: false,
-        clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
         business: { name: 'Acme Corp' },
@@ -269,7 +270,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
       };
 
-      // Placement 2: dropped out 8 days ago -> 7 days remaining (ABSENT: > 5 days)
+      // Placement 2: claim decided 8 days ago -> 7 days remaining (ABSENT: > 5 days)
       const placement7DaysOut = {
         id: 'pl-7days',
         code: 'PL-00002',
@@ -277,9 +278,6 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         placementFee: 1500000, // ₹15,000
         dropoutReportedAt: new Date(fixedNow.getTime() - 8 * 24 * 60 * 60 * 1000),
         status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: false,
-        clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
         business: { name: 'Beta Ltd' },
@@ -287,7 +285,20 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
       };
 
-      prismaMock.placement.findMany.mockResolvedValue([placement3DaysOut, placement7DaysOut]);
+      prismaMock.replacementClaim.findMany.mockResolvedValue([
+        {
+          id: 'clm-3d',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 12 * 24 * 60 * 60 * 1000),
+          placement: placement3DaysOut,
+        },
+        {
+          id: 'clm-7d',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 8 * 24 * 60 * 60 * 1000),
+          placement: placement7DaysOut,
+        },
+      ]);
 
       const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
 
@@ -300,25 +311,61 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       expect(result.rows[0].daysRemaining).toBe(3);
     });
 
+    it('a business refund 10 days after claim acceptance shows as at risk', async () => {
+      // 10 days after acceptance -> 15 - 10 = 5 days remaining (at risk)
+      const placement10DaysOut = {
+        id: 'pl-10d',
+        code: 'PL-CLAIM-10D',
+        city: 'Bengaluru',
+        placementFee: 1500000,
+        status: 'dropped_out',
+        createdByStaffId: mockFieldAgentId,
+        replacementCandidates: [],
+        business: { name: 'TenDay Corp' },
+        jobSeeker: { name: 'Worker 10D', phone: '+919900000010' },
+        createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
+      };
+
+      prismaMock.replacementClaim.findMany.mockResolvedValue([
+        {
+          id: 'clm-10d',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 10 * 24 * 60 * 60 * 1000),
+          placement: placement10DaysOut,
+        },
+      ]);
+
+      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+
+      expect(result.placementsCount).toBe(1);
+      expect(result.placementsAtRiskPaise).toBe(1500000);
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].code).toBe('PL-CLAIM-10D');
+      expect(result.rows[0].daysRemaining).toBe(5);
+    });
+
     it('excludes placement past day 15 (belongs on /refunds/due as lost money, not money at risk)', async () => {
-      // Dropped out 18 days ago -> day 18 (> 15 days)
+      // Claim decided 18 days ago -> day 18 (> 15 days)
       const placementPast15Days = {
         id: 'pl-past',
         code: 'PL-PAST',
         city: 'Bengaluru',
         placementFee: 1200000,
-        dropoutReportedAt: new Date(fixedNow.getTime() - 18 * 24 * 60 * 60 * 1000),
         status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: false,
-        clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
         business: { name: 'Past Corp' },
         jobSeeker: { name: 'Worker Past' },
       };
 
-      prismaMock.placement.findMany.mockResolvedValue([placementPast15Days]);
+      prismaMock.replacementClaim.findMany.mockResolvedValue([
+        {
+          id: 'clm-past',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 18 * 24 * 60 * 60 * 1000),
+          placement: placementPast15Days,
+        },
+      ]);
 
       const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
 
@@ -332,54 +379,26 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         code: 'PL-SECURED',
         city: 'Bengaluru',
         placementFee: 1200000,
-        dropoutReportedAt: new Date(fixedNow.getTime() - 12 * 24 * 60 * 60 * 1000), // 3 days left
         status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: false,
-        clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [{ status: 'accepted' }], // accepted replacement candidate
         business: { name: 'Secured Corp' },
         jobSeeker: { name: 'Worker Secured' },
       };
 
-      prismaMock.placement.findMany.mockResolvedValue([placementSecured]);
+      prismaMock.replacementClaim.findMany.mockResolvedValue([
+        {
+          id: 'clm-sec',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 12 * 24 * 60 * 60 * 1000),
+          placement: placementSecured,
+        },
+      ]);
 
       const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
 
       expect(result.placementsCount).toBe(0);
       expect(result.rows).toHaveLength(0);
-    });
-
-    it('clockPaused freezes elapsed time and extends the approaching window', async () => {
-      // Dropout reported 20 days ago, but clock paused on day 10
-      // calculateDaysElapsed calculates elapsed time as of day 10 -> elapsed = 10 days
-      // daysRemaining = 15 - 10 = 5 days (<= 5 days -> PRESENT!)
-      const pausedPlacement = {
-        id: 'pl-paused',
-        code: 'PL-PAUSED',
-        city: 'Bengaluru',
-        placementFee: 2000000,
-        dropoutReportedAt: new Date(fixedNow.getTime() - 20 * 24 * 60 * 60 * 1000),
-        status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: true,
-        clockPausedAt: new Date(fixedNow.getTime() - 10 * 24 * 60 * 60 * 1000), // paused 10 days after dropout
-        createdByStaffId: mockFieldAgentId,
-        replacementCandidates: [{ status: 'rejected' }, { status: 'rejected' }, { status: 'rejected' }],
-        business: { name: 'Paused Corp' },
-        jobSeeker: { name: 'Worker Paused' },
-        createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
-      };
-
-      prismaMock.placement.findMany.mockResolvedValue([pausedPlacement]);
-
-      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
-
-      expect(result.placementsCount).toBe(1);
-      expect(result.rows[0].code).toBe('PL-PAUSED');
-      expect(result.rows[0].daysRemaining).toBe(5);
-      expect(result.rows[0].amountPaise).toBe(2000000);
     });
   });
 
@@ -406,11 +425,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         code: 'PL-00002',
         city: 'Bengaluru',
         placementFee: 1200000,
-        dropoutReportedAt: new Date(fixedNow.getTime() - 13 * 24 * 60 * 60 * 1000),
         status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: false,
-        clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
         business: { name: 'Corp B' },
@@ -423,11 +438,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         code: 'PL-00005',
         city: 'Bengaluru',
         placementFee: 800000,
-        dropoutReportedAt: new Date(fixedNow.getTime() - 10 * 24 * 60 * 60 * 1000),
         status: 'dropped_out',
-        eligibility: 'employee_left',
-        clockPaused: false,
-        clockPausedAt: null,
         createdByStaffId: mockFieldAgentId,
         replacementCandidates: [],
         business: { name: 'Corp A' },
@@ -435,7 +446,20 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       };
 
       prismaMock.jobSeeker.findMany.mockResolvedValue([candidate4Days]);
-      prismaMock.placement.findMany.mockResolvedValue([placement2Days, placement5Days]);
+      prismaMock.replacementClaim.findMany.mockResolvedValue([
+        {
+          id: 'clm-2d',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 13 * 24 * 60 * 60 * 1000),
+          placement: placement2Days,
+        },
+        {
+          id: 'clm-5d',
+          decision: 'accepted',
+          decidedAt: new Date(fixedNow.getTime() - 10 * 24 * 60 * 60 * 1000),
+          placement: placement5Days,
+        },
+      ]);
 
       const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
 

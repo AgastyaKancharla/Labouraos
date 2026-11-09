@@ -452,6 +452,8 @@ export class PayoutAccountService {
 
     return {
       success: true,
+      id: account.id,
+      accountId: account.id,
       code: account.code,
       maskedValue: account.maskedValue,
       status: account.status,
