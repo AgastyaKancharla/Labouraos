@@ -34,6 +34,16 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
   let agreementStorage: MemoryAgreementDocumentStorage;
   let photoStorage: MemoryCandidatePhotoStorage;
 
+  const claimIds: string[] = [];
+  const placementIds: string[] = [];
+  const vacancyIds: string[] = [];
+  const bizIds: string[] = [];
+  const seekerIds: string[] = [];
+  const callIds: string[] = [];
+  const staffIds: string[] = [];
+  const sessionIds: string[] = [];
+  const agreementIds: string[] = [];
+
   const now = new Date('2026-11-09T10:00:00.000Z');
 
   beforeAll(async () => {
@@ -53,6 +63,33 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
 
   afterAll(async () => {
     try {
+      if (claimIds.length) {
+        await prisma.replacementClaim.deleteMany({ where: { id: { in: claimIds } } }).catch(() => {});
+      }
+      if (callIds.length) {
+        await prisma.callRecord.deleteMany({ where: { id: { in: callIds } } }).catch(() => {});
+      }
+      if (placementIds.length) {
+        await prisma.placement.deleteMany({ where: { id: { in: placementIds } } }).catch(() => {});
+      }
+      if (vacancyIds.length) {
+        await prisma.vacancy.deleteMany({ where: { id: { in: vacancyIds } } }).catch(() => {});
+      }
+      if (agreementIds.length) {
+        await prisma.businessAgreement.deleteMany({ where: { id: { in: agreementIds } } }).catch(() => {});
+      }
+      if (bizIds.length) {
+        await prisma.business.deleteMany({ where: { id: { in: bizIds } } }).catch(() => {});
+      }
+      if (seekerIds.length) {
+        await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } }).catch(() => {});
+      }
+      if (sessionIds.length) {
+        await prisma.staffSession.deleteMany({ where: { id: { in: sessionIds } } }).catch(() => {});
+      }
+      if (staffIds.length) {
+        await prisma.staff.deleteMany({ where: { id: { in: staffIds } } }).catch(() => {});
+      }
       if (app) {
         await app.close();
       }
@@ -148,6 +185,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           updatedAt: date23m1d,
         },
       });
+      seekerIds.push(jsOld.id);
 
       // Candidate 2: Inactive only 22m
       const jsRecent = await prisma.jobSeeker.create({
@@ -163,6 +201,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           updatedAt: date22m,
         },
       });
+      seekerIds.push(jsRecent.id);
 
       const summary = await retentionService.runRetentionCleanup({ now, dryRun: false });
 
@@ -202,8 +241,9 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           updatedAt: date24m,
         },
       });
+      seekerIds.push(jsWithCall.id);
 
-      await prisma.callRecord.create({
+      const recentCall = await prisma.callRecord.create({
         data: {
           code: `CR-RET-${stamp}`,
           provider: 'mock',
@@ -215,6 +255,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           createdAt: recentCallDate,
         },
       });
+      callIds.push(recentCall.id);
 
       await retentionService.runRetentionCleanup({ now, dryRun: false });
 
@@ -248,6 +289,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           recordingStoragePath: recPathUnprotected,
         },
       });
+      callIds.push(callUnprotected.id);
 
       // Protected 13m call linked to open claim
       const candidate = await prisma.jobSeeker.create({
@@ -261,6 +303,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           maxSalary: 2500000,
         },
       });
+      seekerIds.push(candidate.id);
 
       const biz = await prisma.business.create({
         data: {
@@ -270,6 +313,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           contactName: 'Owner',
         },
       });
+      bizIds.push(biz.id);
 
       const vacancy = await prisma.vacancy.create({
         data: {
@@ -281,6 +325,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           headcount: 1,
         },
       });
+      vacancyIds.push(vacancy.id);
 
       const placement = await prisma.placement.create({
         data: {
@@ -294,6 +339,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           gstAmount: 180000,
         },
       });
+      placementIds.push(placement.id);
 
       const callProtected = await prisma.callRecord.create({
         data: {
@@ -308,8 +354,9 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           relatedId: placement.id,
         },
       });
+      callIds.push(callProtected.id);
 
-      await prisma.replacementClaim.create({
+      const claim = await prisma.replacementClaim.create({
         data: {
           code: `RC-CLM-${stamp}`,
           placementId: placement.id,
@@ -322,6 +369,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           callRecordId: callProtected.id,
         },
       });
+      claimIds.push(claim.id);
 
       const summary = await retentionService.runRetentionCleanup({ now, dryRun: false });
 
@@ -361,6 +409,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           passwordHash: 'dummy-hash',
         },
       });
+      staffIds.push(staff.id);
 
       const oldSession = await prisma.staffSession.create({
         data: {
@@ -370,6 +419,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           createdAt: date13m,
         },
       });
+      sessionIds.push(oldSession.id);
 
       const recentSession = await prisma.staffSession.create({
         data: {
@@ -379,6 +429,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           createdAt: date1m,
         },
       });
+      sessionIds.push(recentSession.id);
 
       const summary = await retentionService.runRetentionCleanup({ now, dryRun: false });
 
@@ -419,6 +470,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           updatedAt: date24m,
         },
       });
+      seekerIds.push(js.id);
 
       const recPath = `recordings/dryrun-${stamp}.mp3`;
       await recordingStorage.put(recPath, Buffer.from('dryrun-audio'), 'audio/mpeg');
@@ -434,6 +486,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           recordingStoragePath: recPath,
         },
       });
+      callIds.push(call.id);
 
       const summary = await retentionService.runRetentionCleanup({ now, dryRun: true });
 
@@ -481,6 +534,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           phone: `+91998000${stamp.toString().slice(-4)}`,
         },
       });
+      bizIds.push(biz.id);
 
       const agreement = await prisma.businessAgreement.create({
         data: {
@@ -499,6 +553,7 @@ describe('Phase 19 Task 3: Daily Keeping-Data Job', () => {
           createdAt: date9y,
         },
       });
+      agreementIds.push(agreement.id);
 
       await retentionService.runRetentionCleanup({ now, dryRun: false });
 
