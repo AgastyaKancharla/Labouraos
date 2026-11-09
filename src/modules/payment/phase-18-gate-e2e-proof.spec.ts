@@ -48,6 +48,16 @@ describe('Phase 18 Gate End-to-End Proof', () => {
     return `98${String(Date.now()).slice(-4)}${String(seq).padStart(4, '0')}`;
   };
 
+  const getLatestPayoutToken = (ownerType: string, ownerId: string): string => {
+    const records = Array.from(payoutLinkTokens.values())
+      .filter((t) => t.ownerType === ownerType && t.ownerId === ownerId && !t.usedAt)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+    if (!records.length) {
+      throw new Error(`No unused payout token found for ${ownerType} ${ownerId}`);
+    }
+    return records[0].token;
+  };
+
   beforeAll(async () => {
     process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     process.env.PAYOUT_ACCOUNT_KEY = 'phase18_payout_account_secret_key_32_chars_min!';
@@ -179,6 +189,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
         await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
       }
       if (referralIds.length) {
+        await prisma.consent.deleteMany({ where: { subjectId: { in: referralIds } } });
         await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
       }
       if (staffIds.length) {
@@ -233,13 +244,15 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       });
       vacancyIds.push(vac.id);
 
+      const joiningDate = new Date();
       const placement = await prisma.placement.create({
         data: {
           code: `PL-P18-${suffix}-1`,
           businessId: biz.id,
           vacancyId: vac.id,
           jobSeekerId: seeker.id,
-          status: 'offered',
+          status: 'confirmed',
+          joiningDate,
           placementFee: 750000,
           gstAmount: 135000,
         },
@@ -259,8 +272,8 @@ describe('Phase 18 Gate End-to-End Proof', () => {
           staffId: callAgentId,
           subjectType: 'job_seeker',
           subjectId: seeker.id,
-          startedAt: new Date(),
-          endedAt: new Date(),
+          startedAt: joiningDate,
+          endedAt: joiningDate,
         },
       });
       callRecordIds.push(workerCall.id);
@@ -277,14 +290,13 @@ describe('Phase 18 Gate End-to-End Proof', () => {
           staffId: callAgentId,
           subjectType: 'business',
           subjectId: biz.id,
-          startedAt: new Date(),
-          endedAt: new Date(),
+          startedAt: joiningDate,
+          endedAt: joiningDate,
         },
       });
       callRecordIds.push(bizCall.id);
 
       // Confirm joining via placement service (triggers payout details link)
-      const joiningDate = new Date();
       await placementService.recordJoined(
         placement.id,
         { joinedDate: joiningDate.toISOString() },
@@ -293,11 +305,8 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       );
 
       // Verify payout link was queued for worker
-      const workerLinks = Array.from(payoutLinkTokens.values()).filter(
-        (t) => t.ownerType === 'job_seeker' && t.ownerId === seeker.id,
-      );
-      expect(workerLinks.length).toBeGreaterThan(0);
-      const linkToken = workerLinks[0].token;
+      const linkToken = getLatestPayoutToken('job_seeker', seeker.id);
+      expect(linkToken).toBeDefined();
 
       // 2. Worker enters UPI on phone via OTP
       const otpRes = await request(app.getHttpServer())
@@ -414,59 +423,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       });
       referralIds.push(partner.id);
 
-      // 2. Generate payout link and sign terms by OTP
-      const linkRes = await request(app.getHttpServer())
-        .post('/payout-accounts/links')
-        .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({ ownerType: 'referral', ownerId: partner.id })
-        .expect(201);
-
-      const token = linkRes.body.token;
-
-      // Attempting without signing terms fails
-      const otpRes = await request(app.getHttpServer())
-        .post('/payout-accounts/send-otp')
-        .send({ token })
-        .expect(200);
-
-      const otpCode = mockOtpProvider.getCode(otpRes.body.requestId)!;
-
-      await request(app.getHttpServer())
-        .post('/payout-accounts/submit')
-        .send({
-          token,
-          otpRequestId: otpRes.body.requestId,
-          otpCode,
-          method: 'upi',
-          upiId: 'anil.partner@okaxis',
-          termsSigned: false, // Refused because terms not signed
-        })
-        .expect(400);
-
-      // Re-send OTP for second submit attempt
-      const otpRes2 = await request(app.getHttpServer())
-        .post('/payout-accounts/send-otp')
-        .send({ token })
-        .expect(200);
-      const otpCode2 = mockOtpProvider.getCode(otpRes2.body.requestId)!;
-
-      // Signing terms succeeds
-      const submitRes = await request(app.getHttpServer())
-        .post('/payout-accounts/submit')
-        .send({
-          token,
-          otpRequestId: otpRes2.body.requestId,
-          otpCode: otpCode2,
-          method: 'upi',
-          upiId: 'anil.partner@okaxis',
-          termsSigned: true,
-        })
-        .expect(200);
-
-      const partnerAccId = submitRes.body.accountId;
-      payoutAccountIds.push(partnerAccId);
-
-      // 3. Candidate joins -> ₹200 referral payout queued
+      // 2. Candidate joins -> ₹200 referral payout queued
       const payoutPayment = await prisma.payment.create({
         data: {
           code: `PAY-REF-${suffix}-1`,
@@ -480,13 +437,78 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       });
       paymentIds.push(payoutPayment.id);
 
-      // 4. Finance approves
+      // Attempting to approve before terms are signed fails with 400
+      await request(app.getHttpServer())
+        .post(`/payments/${payoutPayment.id}/approve`)
+        .set('Authorization', `Bearer ${financeToken}`)
+        .expect(400);
+
+      // 3. Referral partner signs terms by OTP on their phone
+      const termsLinkRes = await request(app.getHttpServer())
+        .post(`/referrals/${partner.id}/terms-links`)
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({ language: 'en' })
+        .expect(201);
+
+      const termsToken = termsLinkRes.body.token;
+      expect(termsToken).toBeDefined();
+
+      const termsOtpRes = await request(app.getHttpServer())
+        .post('/consent/send-otp')
+        .send({ token: termsToken })
+        .expect(201);
+
+      const termsOtpCode = mockOtpProvider.getCode(termsOtpRes.body.requestId)!;
+      expect(termsOtpCode).toBeDefined();
+
+      await request(app.getHttpServer())
+        .post('/consent/submit')
+        .send({
+          token: termsToken,
+          otpRequestId: termsOtpRes.body.requestId,
+          otpCode: termsOtpCode,
+          purposes: ['agreement_terms', 'call_recording'],
+        })
+        .expect(201);
+
+      // 4. Referral partner enters UPI on phone via payout link + OTP
+      await request(app.getHttpServer())
+        .post('/payout-accounts/links')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({ ownerType: 'referral', ownerId: partner.id })
+        .expect(201);
+
+      const payoutToken = getLatestPayoutToken('referral', partner.id);
+
+      const otpRes = await request(app.getHttpServer())
+        .post('/payout-accounts/send-otp')
+        .send({ token: payoutToken })
+        .expect(200);
+
+      const otpCode = mockOtpProvider.getCode(otpRes.body.requestId)!;
+      expect(otpCode).toBeDefined();
+
+      const submitRes = await request(app.getHttpServer())
+        .post('/payout-accounts/submit')
+        .send({
+          token: payoutToken,
+          otpRequestId: otpRes.body.requestId,
+          otpCode,
+          method: 'upi',
+          upiId: 'anil.partner@okaxis',
+        })
+        .expect(200);
+
+      const partnerAccId = submitRes.body.accountId;
+      payoutAccountIds.push(partnerAccId);
+
+      // 5. Finance approves now that terms are signed
       await request(app.getHttpServer())
         .post(`/payments/${payoutPayment.id}/approve`)
         .set('Authorization', `Bearer ${financeToken}`)
         .expect(201);
 
-      // 5. Finance reveals UPI ID
+      // 6. Finance reveals UPI ID
       const reveal = await request(app.getHttpServer())
         .post(`/payments/${payoutPayment.id}/reveal-payout-details`)
         .set('Authorization', `Bearer ${financeToken}`)
@@ -494,7 +516,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
 
       expect(reveal.body.upiId).toBe('anil.partner@okaxis');
 
-      // 6. Finance records payment
+      // 7. Finance records payment
       const record = await request(app.getHttpServer())
         .post(`/payments/${payoutPayment.id}/record-payout`)
         .set('Authorization', `Bearer ${financeToken}`)
@@ -597,13 +619,13 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       });
 
       // Business enters bank account via payout link + OTP
-      const linkRes = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/payout-accounts/links')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({ ownerType: 'business', ownerId: biz.id })
         .expect(201);
 
-      const token = linkRes.body.token;
+      const token = getLatestPayoutToken('business', biz.id);
       const otpRes = await request(app.getHttpServer())
         .post('/payout-accounts/send-otp')
         .send({ token })
@@ -699,52 +721,66 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       });
       referralIds.push(partner.id);
 
+      // Sign agreement terms for partner so payments can be approved
+      await prisma.consent.create({
+        data: {
+          subjectType: 'referral',
+          subjectId: partner.id,
+          purpose: 'agreement_terms',
+          granted: true,
+          grantedAt: new Date(),
+          method: 'sms_link',
+          noticeVersion: 'v1.0',
+          language: 'en',
+        },
+      });
+
       // Initial account
-      const link1 = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/payout-accounts/links')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({ ownerType: 'referral', ownerId: partner.id })
         .expect(201);
 
+      const token1 = getLatestPayoutToken('referral', partner.id);
       const otp1 = await request(app.getHttpServer())
         .post('/payout-accounts/send-otp')
-        .send({ token: link1.body.token })
+        .send({ token: token1 })
         .expect(200);
 
       const sub1 = await request(app.getHttpServer())
         .post('/payout-accounts/submit')
         .send({
-          token: link1.body.token,
+          token: token1,
           otpRequestId: otp1.body.requestId,
           otpCode: mockOtpProvider.getCode(otp1.body.requestId)!,
           method: 'upi',
           upiId: 'deepak.old@okaxis',
-          termsSigned: true,
         })
         .expect(200);
       payoutAccountIds.push(sub1.body.accountId);
 
       // Now partner changes UPI ID
-      const link2 = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/payout-accounts/links')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({ ownerType: 'referral', ownerId: partner.id })
         .expect(201);
 
+      const token2 = getLatestPayoutToken('referral', partner.id);
       const otp2 = await request(app.getHttpServer())
         .post('/payout-accounts/send-otp')
-        .send({ token: link2.body.token })
+        .send({ token: token2 })
         .expect(200);
 
       const sub2 = await request(app.getHttpServer())
         .post('/payout-accounts/submit')
         .send({
-          token: link2.body.token,
+          token: token2,
           otpRequestId: otp2.body.requestId,
           otpCode: mockOtpProvider.getCode(otp2.body.requestId)!,
           method: 'upi',
           upiId: 'deepak.new@okaxis',
-          termsSigned: true,
         })
         .expect(200);
 
@@ -956,15 +992,17 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       });
       seekerIds.push(seeker.id);
 
-      const link = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post('/payout-accounts/links')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({ ownerType: 'job_seeker', ownerId: seeker.id })
         .expect(201);
 
+      const linkToken = getLatestPayoutToken('job_seeker', seeker.id);
+
       const otp = await request(app.getHttpServer())
         .post('/payout-accounts/send-otp')
-        .send({ token: link.body.token })
+        .send({ token: linkToken })
         .expect(200);
 
       // Staff phone in UPI handle
@@ -972,7 +1010,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       const submitRes = await request(app.getHttpServer())
         .post('/payout-accounts/submit')
         .send({
-          token: link.body.token,
+          token: linkToken,
           otpRequestId: otp.body.requestId,
           otpCode: mockOtpProvider.getCode(otp.body.requestId)!,
           method: 'upi',
