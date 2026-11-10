@@ -1,12 +1,6 @@
 export interface CreateJobSeekerDto {
   name: string;
   phone: string;
-  /** Legacy aliases are accepted only while the create service migrates existing clients. */
-  mobileNumber?: string;
-  tradeSkill?: string;
-  yearsExperience?: number;
-  preferredCallWindowStart?: string;
-  preferredCallWindowEnd?: string;
   otpRequestId: string;
   messageLanguage: 'kn' | 'hi' | 'en';
   bestTimeToCall: '09-12' | '12-15' | '15-18' | '18-21' | '09-21';

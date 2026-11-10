@@ -9,6 +9,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { calculatePlacementFee, calculateGst } from './common/money/money';
+import { completeJobSeekerRegistration } from './test-support/job-seeker-registration';
 
 export interface LatencyStats {
   count: number;
@@ -269,7 +270,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
       const res = await request(baseUrl)
         .post('/job-seekers')
         .set('Authorization', `Bearer ${token}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: `Worker Load Candidate ${i}`,
           phone,
           otpRequestId: requestId,
@@ -279,7 +280,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
           preferredCallWindowStart: '09:00',
           preferredCallWindowEnd: '18:00',
           city: 'Bengaluru',
-        });
+        }));
 
       metrics.jobSeekerOnboarding.push(Date.now() - opStart);
       expect(res.status).toBe(201);

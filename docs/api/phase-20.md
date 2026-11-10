@@ -36,6 +36,64 @@ Wrong codes count as attempts. The request is locked after five wrong codes. Sen
 
 **Errors:** `400` wrong code, expired/used/locked request, or missing fields; `401` unauthenticated; `429` throttled.
 
+## Task 4 — One job seeker registration form
+
+### `POST /job-seekers`
+
+Call agents, field agents, Team Leads, Managers and the CEO can create a lead with this single endpoint. The mobile number must have a verified, unused Task 3 OTP request. The request requires the candidate's full profile fields; drafts stay on the caller's device.
+
+**Request:**
+
+```json
+{
+  "name": "Asha Rao",
+  "phone": "9876543210",
+  "otpRequestId": "otp-request-id",
+  "messageLanguage": "kn",
+  "bestTimeToCall": "09-12",
+  "dateOfBirth": "1990-01-02",
+  "gender": "female",
+  "heardFrom": "walk_in",
+  "locality": "Indiranagar",
+  "pincode": "560038",
+  "latitude": 12.9784,
+  "longitude": 77.6408,
+  "travelDistanceKm": 10,
+  "trades": [
+    { "trade": "Housekeeping", "yearsExperience": 3 },
+    { "trade": "Cook", "yearsExperience": 1 }
+  ],
+  "availableFrom": "2026-11-10",
+  "lookingSince": "2026-11-01",
+  "minSalary": 2500000,
+  "maxSalary": 3000000,
+  "salaryPeriod": "monthly",
+  "shiftPreference": "day",
+  "jobType": "full_time",
+  "spokenLanguages": ["Kannada", "Hindi"]
+}
+```
+
+`bestTimeToCall` accepts `09-12`, `12-15`, `15-18`, `18-21` or `09-21`; it is stored as the selected start and end times. `trades` contains one to three distinct trade names, with the first as primary. Unlisted names save immediately and create a trade suggestion. Spoken-language rows set `speaks: true` and keep `reads` and `writes` false.
+
+Salary values are integer paise in the selected period. The guarantee floor is the lower of the monthly candidate minimum and the primary managed trade's monthly maximum. For an unlisted primary trade without a managed range, `guaranteeFloorPaise` is `null` and the registration can proceed through consent, selfie and ID, but terms and payment remain blocked. The status panel reports Payment as stuck with `Waiting for the new trade to be added in the Command Center`. A CEO or Manager adding or mapping the trade calculates the floor and unblocks payment. The first successful activation payment freezes the floor. A daily minimum is converted with `salaryDaysPerMonth`.
+
+**Response `201` example when the candidate minimum exceeds the primary trade range:**
+
+```json
+{
+  "code": "JS-01042",
+  "status": "lead",
+  "guaranteeFloorPaise": 2300000,
+  "warnings": ["salary_above_market"],
+  "salaryRange": { "minSalaryPaise": 1600000, "maxSalaryPaise": 2300000 }
+}
+```
+
+Otherwise `warnings` is an empty array; `salaryRange` is present when the primary trade has a managed range. A referral partner ID is optional when `heardFrom` is `referral_partner`; the referred candidate's mobile must differ from the partner's.
+
+**Errors:** `400` missing or invalid required fields, underage candidate, invalid referral, or unverified/used OTP; `401` unauthenticated; `403` role is not allowed; `409` duplicate job seeker mobile.
+
 ## Task 2 — Managed trades and minimum wages
 
 ### `GET /trades`

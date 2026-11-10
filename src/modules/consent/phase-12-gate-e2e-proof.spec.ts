@@ -12,6 +12,7 @@ import { CallClock } from '../call/call-clock';
 import { ConsentClock } from './consent-clock';
 import { ConsentService } from './consent.service';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 class GateClock extends CallClock {
   override now(): Date {
@@ -143,7 +144,7 @@ describe('Phase 12 gate end-to-end proof', () => {
     const registration = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${fieldAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         name: `Gate Candidate ${suffix}`,
         phone,
         otpRequestId: registrationOtp.requestId,
@@ -153,10 +154,10 @@ describe('Phase 12 gate end-to-end proof', () => {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         city: 'Bengaluru',
-      });
+      }));
     expect(registration.status).toBe(201);
     expect(registration.body.status).toBe('lead');
-    expect(registration.body.tradeSkill).toBeNull();
+    expect(registration.body.tradeSkill).toBe('Housekeeping');
     const jobSeekerId = registration.body.id as string;
     createdJobSeekerIds.push(jobSeekerId);
 

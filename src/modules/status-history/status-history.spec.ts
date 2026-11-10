@@ -8,6 +8,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('Phase 9 Task 7: Status History', () => {
   let app: INestApplication;
@@ -188,7 +189,7 @@ describe('Phase 9 Task 7: Status History', () => {
       const createRes = await request(app.getHttpServer())
         .post('/job-seekers')
         .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: 'History Seeker',
           phone,
           otpRequestId,
@@ -197,7 +198,7 @@ describe('Phase 9 Task 7: Status History', () => {
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',
           preferredCallWindowEnd: '18:00',
-        })
+        }))
         .expect(201);
 
       const jobSeekerId = createRes.body.id;

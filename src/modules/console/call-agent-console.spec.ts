@@ -11,6 +11,7 @@ import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('Phase 6 Task 5: Call Agent Console', () => {
   let app: INestApplication;
@@ -128,7 +129,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     const seekerRes = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${caToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         name: 'Shortlist Candidate',
         phone,
         tradeSkill: 'Electrician',
@@ -137,7 +138,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         otpRequestId: requestId,
-      })
+      }))
       .expect(201);
     const candidateId = seekerRes.body.id;
 

@@ -837,7 +837,10 @@ export class InterviewService {
       });
       return true;
     });
-    if (changed && !accepted) {
+    const belowGuaranteeFloor = changed && !accepted
+      ? await this.offerIsBelowGuaranteeFloor(interview)
+      : false;
+    if (changed && !accepted && !belowGuaranteeFloor) {
       await this.jobSeekerService.recordHit(interview.jobSeekerId, 'offer_declined', reason ?? undefined, 'system', undefined, {
         interviewId: interview.id, callRecordId: callRecordId ?? undefined,
       });
@@ -851,6 +854,25 @@ export class InterviewService {
     }
     if (accepted) await this.sendConfirmationDetails(interview, now);
     return { id: interview.id, status };
+  }
+
+  private async offerIsBelowGuaranteeFloor(interview: {
+    vacancy: { salaryMinPaise: number | null; salaryMaxPaise: number | null; salaryPeriod: string | null };
+    jobSeeker: { guaranteeFloorPaise: number | null; minSalary: number; salaryPeriod: string | null };
+  }): Promise<boolean> {
+    const { salaryMinPaise, salaryMaxPaise, salaryPeriod } = interview.vacancy;
+    if (salaryMinPaise === null) return false;
+    const policy = await this.pricingService.current();
+    const salaryAmount = salaryMaxPaise ?? salaryMinPaise;
+    const monthlyOffer = salaryPeriod === 'daily'
+      ? salaryAmount * policy.salaryDaysPerMonth
+      : salaryAmount;
+    const floor = interview.jobSeeker.guaranteeFloorPaise ?? (
+      interview.jobSeeker.salaryPeriod === 'daily'
+        ? interview.jobSeeker.minSalary * policy.salaryDaysPerMonth
+        : interview.jobSeeker.minSalary
+    );
+    return monthlyOffer < floor;
   }
 
   private async requiresAttendance(business: { id: string; documentsStatus: string | null }) {

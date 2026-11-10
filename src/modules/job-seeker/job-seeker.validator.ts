@@ -83,6 +83,9 @@ export function validateJobSeekerRegistration(
     throw new BadRequestException('One to three trades are required');
   }
   const trades = dto.trades.map((entry, index) => {
+    if (!entry || typeof entry !== 'object') {
+      throw new BadRequestException(`trades[${index}] is invalid`);
+    }
     const trade = typeof entry?.trade === 'string' ? entry.trade.trim().replace(/\s+/g, ' ') : '';
     if (!trade) throw new BadRequestException(`trades[${index}].trade is required`);
     if (!Number.isSafeInteger(entry.yearsExperience) || entry.yearsExperience < 0) {

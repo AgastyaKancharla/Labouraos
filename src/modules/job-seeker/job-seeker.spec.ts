@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   let app: INestApplication;
@@ -129,7 +130,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const res = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Electrician',
@@ -138,7 +139,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         preferredCallWindowStart: '09:30',
         preferredCallWindowEnd: '18:00',
         city: 'Bengaluru',
-      });
+      }));
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBeDefined();
@@ -148,8 +149,8 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     expect(res.body.tradeSkill).toBe('Electrician');
     expect(res.body.minSalary).toBe(2000000);
     expect(res.body.maxSalary).toBe(2500000);
-    expect(res.body.preferredCallWindowStart).toBe('09:30');
-    expect(res.body.preferredCallWindowEnd).toBe('18:00');
+    expect(res.body.preferredCallWindowStart).toBe('09:00');
+    expect(res.body.preferredCallWindowEnd).toBe('21:00');
 
     // Verify audit log entry was created
     const auditLogs = await prisma.auditLog.findMany({
@@ -165,7 +166,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   it('does not let one verified OTP request create two job seekers', async () => {
     const phone = `91${timestamp.toString().slice(-8)}3`;
     const otpRequestId = await getVerifiedOtp(phone);
-    const payload = {
+    const payload = completeJobSeekerRegistration({
       phone,
       otpRequestId,
       tradeSkill: 'Cook',
@@ -174,7 +175,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       preferredCallWindowStart: '09:30',
       preferredCallWindowEnd: '18:00',
       city: 'Bengaluru',
-    };
+    });
 
     await request(app.getHttpServer())
       .post('/job-seekers')
@@ -196,7 +197,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const response = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: tradeName,
@@ -205,10 +206,12 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         preferredCallWindowStart: '09:30',
         preferredCallWindowEnd: '18:00',
         city: 'Bengaluru',
-      })
+      }))
       .expect(201);
 
     expect(response.body.tradeSkill).toBe(tradeName);
+    expect(response.body.guaranteeFloorPaise).toBe(2000000);
+    expect(response.body.warnings).toEqual([]);
     expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: response.body.id, trade: tradeName } })).toBe(1);
     const suggestion = await prisma.tradeSuggestion.findUnique({ where: { typedNameKey: tradeName.toLocaleLowerCase('en-IN') } });
     expect(suggestion).toMatchObject({
@@ -217,6 +220,92 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       subjectType: 'job_seeker',
       subjectId: response.body.id,
     });
+  });
+
+  it('returns the market warning and stores the lower salary guarantee floor', async () => {
+    const phone = `91${timestamp.toString().slice(-8)}4`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send(completeJobSeekerRegistration({
+        name: 'Above Market Candidate',
+        phone,
+        otpRequestId,
+        trades: [
+          { trade: 'Housekeeping', yearsExperience: 3 },
+          { trade: 'Cook', yearsExperience: 1 },
+        ],
+        minSalary: 2500000,
+        maxSalary: 3000000,
+        spokenLanguages: ['Kannada', 'Hindi'],
+      }))
+      .expect(201);
+
+    expect(response.body.warnings).toEqual(['salary_above_market']);
+    expect(response.body.salaryRange).toEqual({ minSalaryPaise: 1600000, maxSalaryPaise: 2300000 });
+    expect(response.body.guaranteeFloorPaise).toBe(2300000);
+    expect(response.body.status).toBe('lead');
+    expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: response.body.id } })).toBe(2);
+    expect(await prisma.jobSeekerLanguage.findMany({ where: { jobSeekerId: response.body.id } })).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ language: 'Kannada', speaks: true, reads: false, writes: false }),
+        expect.objectContaining({ language: 'Hindi', speaks: true, reads: false, writes: false }),
+      ]),
+    );
+  });
+
+  it('leaves the guarantee floor unset for an unlisted primary trade until it is managed', async () => {
+    const phone = `91${timestamp.toString().slice(-8)}6`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send(completeJobSeekerRegistration({
+        name: 'Other Trade Candidate',
+        phone,
+        otpRequestId,
+        trades: [{ trade: 'Special Cook', yearsExperience: 2 }],
+        minSalary: 2500000,
+        maxSalary: 3000000,
+      }))
+      .expect(201);
+
+    expect(response.body.guaranteeFloorPaise).toBeNull();
+    expect(response.body.warnings).toEqual([]);
+    expect(response.body.salaryRange).toBeUndefined();
+    expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: response.body.id, trade: 'Special Cook' } })).toBe(1);
+    expect(await prisma.tradeSuggestionSubject.count({
+      where: { subjectType: 'job_seeker', subjectId: response.body.id },
+    })).toBe(1);
+  });
+
+  it.each([
+    ['name', { name: '' }, 'name is required'],
+    ['message language', { messageLanguage: 'ta' }, 'messageLanguage'],
+    ['call window', { bestTimeToCall: '08-12' }, 'bestTimeToCall'],
+    ['date of birth', { dateOfBirth: '2010-01-01' }, 'at least 18'],
+    ['gender', { gender: '' }, 'gender is required'],
+    ['heard-from source', { heardFrom: 'unknown' }, 'heardFrom'],
+    ['location pin', { longitude: 181 }, 'longitude'],
+    ['travel distance', { travelDistanceKm: 0 }, 'travelDistanceKm'],
+    ['trade list', { trades: [] }, 'One to three trades'],
+    ['availability date', { availableFrom: 'invalid' }, 'availableFrom'],
+    ['salary range', { minSalary: 3000000, maxSalary: 2000000 }, 'minSalary'],
+    ['shift preference', { shiftPreference: 'evening' }, 'shiftPreference'],
+    ['job type', { jobType: 'contract' }, 'jobType'],
+    ['spoken languages', { spokenLanguages: [] }, 'spoken language'],
+  ])('enforces required registration field group: %s', async (_group, changes, message) => {
+    const response = await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send(completeJobSeekerRegistration({
+        phone: `91${timestamp.toString().slice(-8)}5`,
+        otpRequestId: 'unused-validation-only',
+        ...changes,
+      }));
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain(message);
   });
 
   it('returns the migration-seeded managed trades with salary ranges and minimum wages', async () => {
@@ -243,7 +332,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const res = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${fieldAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Driver',
@@ -251,7 +340,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         maxSalary: 2200000,
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '17:00',
-      });
+      }));
 
     expect(res.status).toBe(201);
     expect(res.body.id).toBeDefined();
@@ -264,7 +353,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const res = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${financeToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Plumber',
@@ -272,7 +361,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         maxSalary: 2000000,
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '17:00',
-      });
+      }));
 
     expect(res.status).toBe(403);
   });
@@ -285,7 +374,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const res = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId: requestId,
         tradeSkill: 'Carpenter',
@@ -293,7 +382,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         maxSalary: 2000000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
-      });
+      }));
 
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('OTP');
@@ -307,35 +396,33 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const resEarly = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Electrician',
         minSalary: 2000000,
         maxSalary: 2500000,
-        preferredCallWindowStart: '08:30',
-        preferredCallWindowEnd: '18:00',
-      });
+        bestTimeToCall: 'invalid',
+      }));
 
     expect(resEarly.status).toBe(400);
-    expect(resEarly.body.message).toContain('09:00–21:00');
+    expect(resEarly.body.message).toContain('bestTimeToCall');
 
     // Too late: 21:30
     const resLate = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Electrician',
         minSalary: 2000000,
         maxSalary: 2500000,
-        preferredCallWindowStart: '10:00',
-        preferredCallWindowEnd: '21:30',
-      });
+        bestTimeToCall: 'invalid',
+      }));
 
     expect(resLate.status).toBe(400);
-    expect(resLate.body.message).toContain('09:00–21:00');
+    expect(resLate.body.message).toContain('bestTimeToCall');
   });
 
   it('rejects registration when minSalary > maxSalary or non-integers (400)', async () => {
@@ -346,7 +433,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const resInverted = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Painter',
@@ -354,7 +441,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         maxSalary: 2000000,
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '18:00',
-      });
+      }));
 
     expect(resInverted.status).toBe(400);
     expect(resInverted.body.message).toContain('minSalary');
@@ -363,7 +450,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const resFloat = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Painter',
@@ -371,7 +458,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         maxSalary: 25000.5,
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '18:00',
-      });
+      }));
 
     expect(resFloat.status).toBe(400);
     expect(resFloat.body.message).toContain('integer');
@@ -384,7 +471,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const res = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone,
         otpRequestId,
         tradeSkill: 'Driver',
@@ -393,7 +480,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '18:00',
         aadhaarNumber: '123456789012',
-      });
+      }));
 
     expect(res.status).toBe(400);
     expect(res.body.message).toContain('Aadhaar');
@@ -407,7 +494,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
     const createRes = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         name: 'Pending Seeker',
         phone: phone1,
         otpRequestId: otpRequestId1,
@@ -416,7 +503,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
-      });
+      }));
     const pendingId = createRes.body.id;
 
     const getPendingRes = await request(app.getHttpServer())

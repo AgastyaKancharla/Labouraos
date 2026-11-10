@@ -13,6 +13,7 @@ import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('Phase 6.7 Gate: End-to-End Proof', () => {
   let app: INestApplication;
@@ -333,7 +334,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
       .post('/job-seekers')
       .set('Authorization', `Bearer ${ca1Token}`)
       .set('X-Forwarded-For', freshIp())
-      .send({
+      .send(completeJobSeekerRegistration({
         name: 'E2E Worker Candidate',
         phone: candidatePhone,
         otpRequestId,
@@ -343,7 +344,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         city: 'Bengaluru',
-      });
+      }));
     expect(createCandidateRes.status).toBe(201);
     const candidateId = createCandidateRes.body.id;
     cleanJobSeekerIds.push(candidateId);

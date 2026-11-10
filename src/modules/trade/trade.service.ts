@@ -7,6 +7,15 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { PricingService } from '../pricing/pricing.service';
+
+type GuaranteeFloorChange = {
+  id: string;
+  code: string;
+  city: string;
+  beforePaise: number | null;
+  afterPaise: number | null;
+};
 
 export type MinimumWageLevel = 'unskilled' | 'semi_skilled' | 'skilled' | 'highly_skilled';
 
@@ -33,6 +42,7 @@ export class TradeService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly pricingService: PricingService,
   ) {}
 
   async listActive(policy: {
@@ -78,7 +88,7 @@ export class TradeService {
   async createTrade(input: CreateTradeInput, actorId: string, suggestionId?: string) {
     const data = this.validateTradeInput(input);
     const nameKey = tradeNameKey(data.name);
-    return this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       let created;
       try {
         created = await tx.trade.create({ data: { ...data, nameKey } });
@@ -99,19 +109,20 @@ export class TradeService {
         });
       }
 
-      return created;
-    }).then(async (created) => {
-      await this.auditService.log({
-        actorId,
-        action: suggestionId ? 'trade.suggestion_added' : 'trade.created',
-        entityType: 'trade',
-        entityCode: created.id,
-        after: created as unknown as Record<string, unknown>,
-        changedFields: ['name', 'salaryMinPaise', 'salaryMaxPaise', 'minimumWageLevel', 'active'],
-        city: 'Bengaluru',
-      });
-      return created;
+      const floorChanges = await this.recalculatePrimaryFloors(tx, created.name, created.salaryMaxPaise);
+      return { created, floorChanges };
     });
+    await this.auditTradeFloorChanges(actorId, result.floorChanges);
+    await this.auditService.log({
+      actorId,
+      action: suggestionId ? 'trade.suggestion_added' : 'trade.created',
+      entityType: 'trade',
+      entityCode: result.created.id,
+      after: result.created as unknown as Record<string, unknown>,
+      changedFields: ['name', 'salaryMinPaise', 'salaryMaxPaise', 'minimumWageLevel', 'active'],
+      city: 'Bengaluru',
+    });
+    return result.created;
   }
 
   async updateTrade(id: string, updates: Partial<CreateTradeInput> & { active?: boolean }, actorId: string) {
@@ -139,13 +150,20 @@ export class TradeService {
           data: { tradeSkill: next.name },
         });
       }
-      return next;
+      const floorChanges = await this.recalculatePrimaryFloors(
+        tx,
+        next.name,
+        next.active ? next.salaryMaxPaise : null,
+      );
+      return { next, floorChanges };
     }).catch((error: unknown) => {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         throw new ConflictException(`Trade '${validated.name}' already exists`);
       }
       throw error;
     });
+    const updated = result.next;
+    await this.auditTradeFloorChanges(actorId, result.floorChanges);
     await this.auditService.log({
       actorId,
       action: 'trade.updated',
@@ -191,8 +209,11 @@ export class TradeService {
         where: { id: suggestion.id },
         data: { status: 'mapped', mappedToTradeId: trade.id, decidedByStaffId: actorId, decidedAt: new Date() },
       });
-      return { suggestion: updated, seekerTradesRewritten: seekerTrades.count, vacanciesRewritten: vacancies.count };
+      const floorChanges = await this.recalculatePrimaryFloors(tx, trade.name, trade.salaryMaxPaise);
+      return { suggestion: updated, seekerTradesRewritten: seekerTrades.count, vacanciesRewritten: vacancies.count, floorChanges };
     });
+
+    await this.auditTradeFloorChanges(actorId, result.floorChanges);
 
     await this.auditService.log({
       actorId,
@@ -206,7 +227,8 @@ export class TradeService {
       reason: `Mapped '${suggestion.typedName}' to '${trade.name}'`,
       city: 'Bengaluru',
     });
-    return result;
+    const { floorChanges: _floorChanges, ...publicResult } = result;
+    return publicResult;
   }
 
   async dismissSuggestion(suggestionId: string, actorId: string) {
@@ -254,6 +276,56 @@ export class TradeService {
       create: { tradeSuggestionId: suggestion.id, subjectType, subjectId },
       update: {},
     });
+  }
+
+  private async recalculatePrimaryFloors(
+    tx: Prisma.TransactionClient,
+    tradeName: string,
+    salaryMaxPaise: number | null,
+  ): Promise<GuaranteeFloorChange[]> {
+    const policy = await this.pricingService.current();
+    const seekers = await tx.jobSeeker.findMany({
+      where: {
+        paymentReceivedAt: null,
+        trades: { some: { trade: { equals: tradeName, mode: 'insensitive' }, isPrimary: true } },
+      },
+      select: { id: true, code: true, city: true, minSalary: true, salaryPeriod: true, guaranteeFloorPaise: true },
+    });
+    const changes: GuaranteeFloorChange[] = [];
+    for (const seeker of seekers) {
+      const monthlyMinimum = seeker.salaryPeriod === 'daily'
+        ? seeker.minSalary * policy.salaryDaysPerMonth
+        : seeker.minSalary;
+      if (!Number.isSafeInteger(monthlyMinimum)) {
+        throw new BadRequestException(`Monthly salary conversion is outside the supported range for ${seeker.code}`);
+      }
+      const nextFloor = salaryMaxPaise === null ? null : Math.min(monthlyMinimum, salaryMaxPaise);
+      if (seeker.guaranteeFloorPaise === nextFloor) continue;
+      await tx.jobSeeker.update({ where: { id: seeker.id }, data: { guaranteeFloorPaise: nextFloor } });
+      changes.push({
+        id: seeker.id,
+        code: seeker.code,
+        city: seeker.city,
+        beforePaise: seeker.guaranteeFloorPaise,
+        afterPaise: nextFloor,
+      });
+    }
+    return changes;
+  }
+
+  private async auditTradeFloorChanges(actorId: string, changes: GuaranteeFloorChange[]) {
+    for (const change of changes) {
+      await this.auditService.log({
+        actorId,
+        action: 'job_seeker.guarantee_floor_recalculated',
+        entityType: 'job_seeker',
+        entityCode: change.code,
+        before: { guaranteeFloorPaise: change.beforePaise },
+        after: { guaranteeFloorPaise: change.afterPaise },
+        changedFields: ['guaranteeFloorPaise'],
+        city: change.city,
+      });
+    }
   }
 
   async listUnlistedReport() {

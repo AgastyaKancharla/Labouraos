@@ -191,8 +191,11 @@ describe('InterviewService booking', () => {
     candidateRespondedAt: null, slotStartsAt: slot.startsAt, callRecordId: null, offerMessageLogIds: ['msg-sms', 'msg-whatsapp'],
     agentAttendanceRequired: true, proposedByStaffId: 'call-1',
     business: { id: 'business-id', name: 'PRIVATE BUSINESS', address: 'PRIVATE ADDRESS', locality: 'Indiranagar', ownerName: 'Owner', additionalContactName: 'Manager', contactName: null },
-    jobSeeker: { id: 'seeker-id', name: 'Candidate Sample', photoStoragePath: null },
-    vacancy: { locality: 'Indiranagar' },
+    jobSeeker: {
+      id: 'seeker-id', name: 'Candidate Sample', photoStoragePath: null,
+      minSalary: 1600000, salaryPeriod: 'monthly', guaranteeFloorPaise: 1600000,
+    },
+    vacancy: { locality: 'Indiranagar', salaryMinPaise: 1600000, salaryMaxPaise: 1800000, salaryPeriod: 'monthly' },
   });
 
   it('a Yes link confirms and then sends business details to the candidate and only first name, photo and time to the owner', async () => {
@@ -225,6 +228,16 @@ describe('InterviewService booking', () => {
       interviewId: 'interview-id', callRecordId: undefined,
     });
     expect(messaging.send).toHaveBeenCalledTimes(0);
+  });
+
+  it('does not count declining an offer below the guarantee floor as a hit', async () => {
+    const interview = liveInterview();
+    interview.vacancy.salaryMinPaise = 1456000;
+    interview.vacancy.salaryMaxPaise = 1456000;
+    prisma.interview.findUnique.mockResolvedValue(interview);
+    const result = await service.respondFromLink('single-use-token', 'no');
+    expect(result.status).toBe('declined');
+    expect(hits.recordHit).not.toHaveBeenCalled();
   });
 
   it('accepts only an answered offer call and records the call id on a declined reply hit', async () => {

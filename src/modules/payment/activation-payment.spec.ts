@@ -8,6 +8,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { PaymentService } from './payment.service';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   let app: INestApplication;
@@ -89,7 +90,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     const res = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         name: `Seeker ${phoneSuffix}`,
         phone,
         otpRequestId: requestId,
@@ -98,7 +99,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
-      });
+      }));
 
     return res.body;
   }
@@ -132,6 +133,10 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
   it('webhook marks payment succeeded, activates job seeker, records paymentReceivedAt, and audit logs', async () => {
     const phoneSuffix = (timestamp + 1).toString().slice(-8);
     const seeker = await createPendingJobSeeker(phoneSuffix);
+    await prisma.jobSeeker.update({
+      where: { id: seeker.id },
+      data: { guaranteeFloorPaise: 2100000 },
+    });
 
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
@@ -175,6 +180,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     // 3. paymentReceivedAt (UTC) is recorded
     expect(updatedSeeker?.paymentReceivedAt).toBeDefined();
     expect(new Date(updatedSeeker!.paymentReceivedAt!).getTime()).toBeGreaterThan(beforeTime.getTime());
+    expect(updatedSeeker?.guaranteeFloorPaise).toBe(2100000);
 
     // 4. Audit log entry exists
     const logs = await prisma.auditLog.findMany({

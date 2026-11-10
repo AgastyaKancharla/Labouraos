@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('Referral Registration (Phase 2 Task 3)', () => {
   let app: INestApplication;
@@ -261,7 +262,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const failRes = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone: jsPhone1,
         otpRequestId: jsOtp1,
         tradeSkill: 'Painter',
@@ -270,7 +271,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '17:00',
         referredById: nonExistentId,
-      });
+      }));
 
     expect(failRes.status).toBe(400);
     expect(failRes.body.message).toContain('Referral partner');
@@ -282,7 +283,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const successRes = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         phone: jsPhone2,
         otpRequestId: jsOtp2,
         tradeSkill: 'Painter',
@@ -291,7 +292,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         preferredCallWindowStart: '10:00',
         preferredCallWindowEnd: '17:00',
         referredById: referralId,
-      });
+      }));
 
     expect(successRes.status).toBe(201);
     expect(successRes.body.referredById).toBe(referralId);

@@ -31,6 +31,7 @@ type MatchCandidate = {
   minSalary: number;
   maxSalary: number;
   salaryPeriod: string | null;
+  guaranteeFloorPaise: number | null;
   paymentReceivedAt: Date | null;
   dateOfBirth: Date | null;
   gender: string | null;
@@ -100,6 +101,7 @@ type CandidateMatch = {
   jobSeekerId: string;
   score: number;
   matchReasons: string[];
+  salaryWarning?: 'below_minimum_ask_him';
   photoStoragePath: string | null;
   card: {
     firstName: string;
@@ -188,6 +190,7 @@ export class MatchingService {
 
     const leftOut = { no_location: 0, no_travel_distance: 0, consent_missing: 0 };
     const matches: CandidateMatch[] = [];
+    const nearMisses: CandidateMatch[] = [];
     for (const rawSeeker of seekers) {
       const seeker: MatchCandidate = { ...rawSeeker, consents: consentsBySeeker.get(rawSeeker.id) ?? [] };
       if (seeker.status !== 'active') continue;
@@ -201,7 +204,8 @@ export class MatchingService {
         leftOut.consent_missing += 1;
         continue;
       }
-      if (!this.passesBeforeDistanceRules(seeker, vacancy, policy.salaryDaysPerMonth)) continue;
+      const salarySuitability = this.salarySuitability(seeker, vacancy, policy.salaryDaysPerMonth);
+      if (!salarySuitability || !this.passesBeforeDistanceRules(seeker, vacancy)) continue;
       if (seeker.latitude === null || seeker.longitude === null || vacancy.latitude === null || vacancy.longitude === null) {
         leftOut.no_location += 1;
         continue;
@@ -223,7 +227,11 @@ export class MatchingService {
         policy.maxHits,
         now,
       );
-      matches.push(match);
+      if (salarySuitability === 'near_miss') {
+        nearMisses.push({ ...match, salaryWarning: 'below_minimum_ask_him' });
+      } else {
+        matches.push(match);
+      }
     }
 
     matches.sort((a, b) => b.score - a.score || a.jobSeekerId.localeCompare(b.jobSeekerId));
@@ -243,30 +251,52 @@ export class MatchingService {
         },
       };
     }));
+    const pageNearMisses = await Promise.all(nearMisses.slice(offset, offset + pageSize).map(async (match) => {
+      const { photoStoragePath, ...publicMatch } = match;
+      const photoUrl = photoStoragePath
+        ? await this.requirePhotoStorage().signedUrl(photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS)
+        : null;
+      return {
+        ...publicMatch,
+        card: {
+          ...match.card,
+          photoUrl,
+          photoUrlExpiresInSeconds: photoUrl ? CANDIDATE_PHOTO_LINK_TTL_SECONDS : null,
+        },
+      };
+    }));
 
     return {
       vacancyId: vacancy.id,
       page: options.page,
       pageSize,
       total: matches.length,
+      nearMissesTotal: nearMisses.length,
       leftOut,
       matches: pageMatches,
+      nearMisses: pageNearMisses,
     };
+  }
+
+  private salarySuitability(
+    seeker: MatchCandidate,
+    vacancy: VacancyForMatching,
+    salaryDaysPerMonth: number,
+  ): 'suitable' | 'near_miss' | false {
+    if (vacancy.salaryMinPaise === null) return false;
+    const vacancyMax = monthlyAmount(vacancy.salaryMaxPaise ?? vacancy.salaryMinPaise, vacancy.salaryPeriod, salaryDaysPerMonth);
+    const guaranteeFloor = seeker.guaranteeFloorPaise ?? monthlyAmount(seeker.minSalary, seeker.salaryPeriod, salaryDaysPerMonth);
+    if (vacancyMax >= guaranteeFloor) return 'suitable';
+    if (vacancyMax >= Math.ceil(guaranteeFloor * 0.9)) return 'near_miss';
+    return false;
   }
 
   private passesBeforeDistanceRules(
     seeker: MatchCandidate,
     vacancy: VacancyForMatching,
-    salaryDaysPerMonth: number,
   ): boolean {
     if (!jobSeekerHasTrade(seeker, vacancy.tradeSkill)) return false;
     if (vacancy.salaryMinPaise === null) return false;
-    const vacancyMin = monthlyAmount(vacancy.salaryMinPaise, vacancy.salaryPeriod, salaryDaysPerMonth);
-    const vacancyMax = monthlyAmount(vacancy.salaryMaxPaise ?? vacancy.salaryMinPaise, vacancy.salaryPeriod, salaryDaysPerMonth);
-    const seekerMin = monthlyAmount(seeker.minSalary, seeker.salaryPeriod, salaryDaysPerMonth);
-    const seekerMax = monthlyAmount(seeker.maxSalary, seeker.salaryPeriod, salaryDaysPerMonth);
-    if (seekerMin > vacancyMax || seekerMax < vacancyMin) return false;
-
     if (this.hasLiveOffer(seeker.id, seeker)) return false;
     return true;
   }

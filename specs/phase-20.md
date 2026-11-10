@@ -125,7 +125,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - A role that can't see the record gets no code.
   - Resend before 30 seconds is refused.
   - The fourth resend is refused.
-  - The sixth wrong code kills the request.
+  - The fifth wrong code kills the request.
   - A verified request can't create two records.
 
 ### [ ] Task 4 — The one job seeker registration form
@@ -151,6 +151,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
 - **Salary warning:**
   - If the expected minimum is above the top of the primary trade's range, the response carries `warnings: ["salary_above_market"]` with the range. It still saves.
   - Store `guaranteeFloorPaise` = the lower of his monthly minimum and the top of the primary trade's range (Master Guide, "Market salary ranges and the guarantee"). For daily pay, convert with `salaryDaysPerMonth`.
+  - If the primary trade is an unlisted **Other** with no managed range, registration can continue through consent, selfie and ID, but the terms-and-payment step stays blocked until a CEO or Manager adds or maps the trade. The status panel shows Payment as `stuck` with the reason `Waiting for the new trade to be added in the Command Center`. Until then, `guaranteeFloorPaise` is unset. Once the trade is added or mapped, calculate the floor normally as the lower of the candidate's monthly minimum and the trade's top, then unblock payment.
   - It is recalculated if the trade or minimum changes before payment, and **frozen at payment** (it is part of the terms he agrees to).
   - The matching engine treats an offer at or above `guaranteeFloorPaise` as suitable for hits, and lists near-misses down to 10% below it marked `below_minimum_ask_him`. Turning one down is never a hit.
 - The record is created with status `lead`, and the job seeker gets a JS- ID. The response includes the code.
@@ -160,6 +161,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - Under 18 is refused.
   - A fourth trade is refused.
   - Other creates a suggestion.
+  - An unlisted primary Other has no guarantee floor and cannot proceed to payment until its trade is added or mapped; adding or mapping it calculates the floor and unblocks payment.
   - The salary warning appears and still saves.
   - The guarantee floor is the lower of the two and freezes at payment.
   - Matching counts an offer at the floor as suitable and lists a 9%-below offer as a near-miss, not a hit.
