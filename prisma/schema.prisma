@@ -302,7 +302,12 @@ model Business {
   ownerName                String?
   additionalContactName    String?
   additionalContactPhone   String?
+  familyName               String?
+  contactRole              String?
+  contactWhatsAppPhone     String?
+  contactLanguage          String?
   businessType             String?
+  employeeCountBand        String?
   employeeCount            Int?
   staffNeeded              String[]  @default([])
   licenceNumber            String?
@@ -314,9 +319,20 @@ model Business {
   gstStatus                String?
   gstCheckedAt             DateTime?
   yearsInOperation         Int?
+  yearsInOperationBand     String?
   hiringFrequency          String?
+  openingTime              String?
+  closingTime              String?
+  workingDays              String[]  @default([])
+  shopNumber               String?
+  street                   String?
+  landmark                 String?
+  pincode                  String?
   billingName              String?
   billingAddress           String?
+  billingEmail             String?
+  heardFrom                String?
+  fssaiNumber              String?
   storefrontPhotoPath      String?
   storefrontPhotoHash      String?
   storefrontPhotoLive      Boolean?
@@ -329,6 +345,7 @@ model Business {
   leadCreatedByStaffId     String?
   leadChannel              String?
   locality                 String?
+  branches      BusinessBranch[]
   vacancies     Vacancy[]
   placements    Placement[]
   payments      Payment[]
@@ -347,6 +364,32 @@ model Business {
   @@index([city])
   @@index([accountAgentId])
   @@index([verificationStatus])
+}
+
+model BusinessBranch {
+  id                   String    @id @default(uuid())
+  businessId           String
+  business             Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  name                 String
+  shopNumber           String?
+  street               String?
+  landmark             String?
+  address              String?
+  locality             String?
+  pincode              String?
+  latitude             Float?
+  longitude            Float?
+  contactPersonName    String
+  contactPersonRole    String
+  contactPersonPhone   String
+  contactWhatsAppPhone String?
+  contactLanguage      String?
+  vacancies            Vacancy[]
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  @@index([businessId])
+  @@index([contactPersonPhone])
 }
 
 model ReferralIdentityVerification {
@@ -375,6 +418,8 @@ model Vacancy {
   city                        String      @default("Bengaluru")
   businessId                  String
   business                    Business    @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  branchId                    String?
+  branch                      BusinessBranch? @relation(fields: [branchId], references: [id], onDelete: SetNull)
   capturedByStaffId           String?
   capturedBy                  Staff?      @relation(fields: [capturedByStaffId], references: [id], onDelete: SetNull)
   replacementForPlacementId   String?     // null for fresh vacancies; links to dropped-out placement if replacement
@@ -418,6 +463,7 @@ model Vacancy {
 
   @@index([city])
   @@index([businessId])
+  @@index([branchId])
   @@index([replacementForPlacementId])
   @@index([tradeSkill])
   @@index([status])
@@ -1265,6 +1311,7 @@ model BusinessAgreement {
   gstPercent             Int
   signedName             String
   signedPhone            String
+  signedRole             String?
   otpRequestId           String
   signedAt               DateTime
   documentStoragePath    String

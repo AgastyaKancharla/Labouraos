@@ -197,6 +197,8 @@ describe('Phase 9 Task 8: Review Flags', () => {
         .set('Authorization', `Bearer ${fieldAgent1Token}`)
         .send({
           name: 'Close Cafe',
+          contactPersonName: 'Close Contact',
+          contactPersonRole: 'owner',
           address: 'Koramangala 4th Block',
           phone,
           otpRequestId,
@@ -224,6 +226,8 @@ describe('Phase 9 Task 8: Review Flags', () => {
         .set('Authorization', `Bearer ${fieldAgent1Token}`)
         .send({
           name: 'Far Away Cafe',
+          contactPersonName: 'Far Contact',
+          contactPersonRole: 'owner',
           address: 'Koramangala 4th Block',
           phone,
           otpRequestId,

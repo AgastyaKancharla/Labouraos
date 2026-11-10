@@ -88,6 +88,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
         name: `Agreement Business ${suffix}`,
         phone: ownerPhone,
         phoneVerified: true,
+        ownerName: 'Owner Test',
+        contactRole: 'manager',
         leadCreatedByStaffId: staff.id,
         leadChannel: 'phone_call',
         verificationStatus: 'lead',
@@ -174,6 +176,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
       gstPercent: policyAtSend.gstPercent,
       signedName: 'Owner Test',
       signedPhone: `******${ownerPhone.replace(/\D/g, '').slice(-4)}`,
+      signedRole: 'manager',
       otpRequestId: otp.body.requestId,
     });
     expect(agreement.feePercent).not.toBe(changedPolicy.placementFeePercent);

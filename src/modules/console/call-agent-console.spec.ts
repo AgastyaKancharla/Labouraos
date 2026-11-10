@@ -192,6 +192,8 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
         name: 'Call Agent Biz Test',
         phone: bizPhone,
         area: 'Indiranagar',
+        contactPersonName: 'Call Contact',
+        contactPersonRole: 'owner',
         otpRequestId: bizOtp.body.requestId,
       })
       .expect(201);

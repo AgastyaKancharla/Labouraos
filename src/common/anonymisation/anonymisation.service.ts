@@ -137,12 +137,32 @@ export class AnonymisationService {
             ownerName: null,
             additionalContactName: null,
             additionalContactPhone: null,
+            familyName: null,
+            contactWhatsAppPhone: null,
             billingName: null,
             billingAddress: null,
+            billingEmail: null,
             address: null,
+            shopNumber: null,
+            street: null,
+            landmark: null,
             gstNumber: null,
             pan: null,
+            fssaiNumber: null,
+            legalName: null,
             anonymisedAt: now,
+          },
+        });
+        await this.prisma.businessBranch.updateMany({
+          where: { businessId: id },
+          data: {
+            contactPersonName: 'Anonymised',
+            contactPersonPhone: placeholderPhone,
+            contactWhatsAppPhone: null,
+            address: null,
+            shopNumber: null,
+            street: null,
+            landmark: null,
           },
         });
 
@@ -150,11 +170,17 @@ export class AnonymisationService {
           'ownerName',
           'additionalContactName',
           'additionalContactPhone',
+          'familyName',
+          'contactWhatsAppPhone',
           'billingName',
           'billingAddress',
+          'billingEmail',
           'address',
           'gstNumber',
           'pan',
+          'fssaiNumber',
+          'legalName',
+          'branchContact',
         );
         break;
       }

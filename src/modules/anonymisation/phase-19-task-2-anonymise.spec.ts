@@ -432,6 +432,15 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
         },
       });
       bizIds.push(bz.id);
+      await prisma.businessBranch.create({
+        data: {
+          businessId: bz.id,
+          name: 'Corner branch',
+          contactPersonName: 'Branch Manager',
+          contactPersonRole: 'manager',
+          contactPersonPhone: `97${suffix}57`,
+        },
+      });
 
       const res = await anonymisationService.anonymise('business', bz.id, 'Erase Corner Bakery');
       expect(res.message).toContain('anonymised successfully');
@@ -450,6 +459,9 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
       expect(updated.billingName).toBeNull();
       expect(updated.billingAddress).toBeNull();
       expect(updated.anonymisedAt).toBeDefined();
+      const branch = await prisma.businessBranch.findFirstOrThrow({ where: { businessId: bz.id } });
+      expect(branch.contactPersonName).toBe('Anonymised');
+      expect(branch.contactPersonPhone).not.toBe(`97${suffix}57`);
     });
 
     it('anonymises referral partner: sets placeholder name and phone, keeps code and city', async () => {

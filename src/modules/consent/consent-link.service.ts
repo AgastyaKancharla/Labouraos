@@ -669,6 +669,7 @@ export class ConsentLinkService {
           gstPercent: record.agreement.gstPercent,
           signedName,
           signedPhone: maskAgreementPhone(record.businessPhone),
+          signedRole: business.contactRole ?? 'owner',
           otpRequestId: dto.otpRequestId,
           signedAt,
           documentStoragePath,
@@ -703,8 +704,9 @@ export class ConsentLinkService {
         version: agreement.version,
         termsHash: agreement.termsHash,
         otpRequestId: agreement.otpRequestId,
+        signedRole: agreement.signedRole,
       },
-      changedFields: ['version', 'termsHash', 'otpRequestId', 'signedAt'],
+      changedFields: ['version', 'termsHash', 'otpRequestId', 'signedAt', 'signedRole'],
       reason: 'Business owner signed on the SMS link after OTP verification',
       city: business.city,
     });

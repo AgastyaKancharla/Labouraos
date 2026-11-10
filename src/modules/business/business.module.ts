@@ -14,6 +14,7 @@ import {
   SupabaseBusinessPhotoStorage,
 } from './storefront-photo.storage';
 import { PricingModule } from '../pricing/pricing.module';
+import { TradeModule } from '../trade/trade.module';
 import { ConsentModule } from '../consent/consent.module';
 import { BusinessVerificationModule } from './business-verification.module';
 
@@ -26,6 +27,7 @@ import { BusinessVerificationModule } from './business-verification.module';
     VacancyModule,
     ReviewFlagModule,
     PricingModule,
+    TradeModule,
     ConsentModule,
     BusinessVerificationModule,
   ],

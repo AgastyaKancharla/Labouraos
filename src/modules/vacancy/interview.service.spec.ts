@@ -20,6 +20,7 @@ describe('InterviewService booking', () => {
     callRecord: { findUnique: Mock; findFirst: Mock };
     messageLog: { findMany: Mock };
     reviewFlag: { findFirst: Mock };
+    businessBranch: { findUnique: Mock };
     $transaction: Mock;
   };
   const now = new Date('2026-11-06T09:00:00.000Z');
@@ -42,7 +43,7 @@ describe('InterviewService booking', () => {
   const previousPublicAppUrl = process.env.PUBLIC_APP_URL;
 
   const vacancy = {
-    id: 'vacancy-id', code: 'VC-00001', businessId: 'business-id', city: 'Bengaluru',
+    id: 'vacancy-id', code: 'VC-00001', businessId: 'business-id', city: 'Bengaluru', branchId: null as string | null,
     replacementForPlacementId: null, tradeSkill: 'cook', roleTitle: 'Cook', salaryMinPaise: 1600000,
     salaryMaxPaise: 1800000, salaryPeriod: 'monthly', shift: 'day', locality: 'Indiranagar',
     business: {
@@ -91,6 +92,7 @@ describe('InterviewService booking', () => {
       callRecord: { findUnique: jest.fn(), findFirst: jest.fn() },
       messageLog: { findMany: jest.fn().mockResolvedValue([{ channel: 'sms' }, { channel: 'whatsapp' }]) },
       reviewFlag: { findFirst: jest.fn().mockResolvedValue(null) },
+      businessBranch: { findUnique: jest.fn().mockResolvedValue(null) },
       $transaction: jest.fn().mockImplementation((callback: (client: TxMock) => unknown) => callback(tx)),
     };
     messaging = { send: jest.fn().mockImplementation(({ channel }) => Promise.resolve({ id: `msg-${channel}`, status: 'sent' })) };
@@ -394,6 +396,22 @@ describe('InterviewService booking', () => {
       data: expect.objectContaining({ status: 'no_result', candidateCheckAnswer: 'no_answer' }),
     }));
     expect(hits.recordHit).not.toHaveBeenCalled();
+  });
+
+  it('sends a branch vacancy interview result request and OTP to its branch contact', async () => {
+    const interview = confirmedInterview();
+    interview.vacancy = { ...vacancy, branchId: 'branch-1' };
+    prisma.interview.findMany.mockResolvedValue([interview]);
+    prisma.businessBranch.findUnique.mockResolvedValue({ contactPersonPhone: '+919999999999' });
+
+    await service.processResultDeadlines(new Date('2026-11-10T05:31:00.000Z'));
+
+    expect(linkService.createInterviewActionToken).toHaveBeenCalledWith(
+      'interview-id', 'owner_result', '+919999999999', expect.any(Date),
+    );
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({
+      template: 'interview_result_request', recipientPhone: '+919999999999',
+    }));
   });
 
   it('lists only the agent’s interviews and exposes a reply call only after an answered offer call', async () => {

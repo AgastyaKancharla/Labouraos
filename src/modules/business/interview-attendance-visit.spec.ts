@@ -21,7 +21,7 @@ describe('Interview attendance visit completion', () => {
     const service = new BusinessService(
       prisma as never, {} as never, { log: jest.fn().mockResolvedValue(undefined) } as never,
       {} as never, {} as never, {} as never, { now: () => new Date('2026-11-06T09:00:00.000Z') } as never,
-      {} as never, {} as never, {} as never, {} as never, {} as never,
+      {} as never, {} as never, {} as never, {} as never, {} as never, {} as never,
     );
 
     await service.recordVisit('business-id', {

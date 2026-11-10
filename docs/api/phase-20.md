@@ -349,6 +349,49 @@ Job seeker creation, additional job seeker trades, vacancy creation and trade ed
 }
 ```
 
+## Task 7 business form and branches
+
+`POST /businesses` is for field agents, call agents, Team Leads, Managers, and the CEO. The OTP-verified `phone` is the primary contact mobile. A new registration requires `contactPersonName` and `contactPersonRole` (`owner`, `manager`, `hr`, `supervisor`, `other`). `contactWhatsAppPhone` and `contactLanguage` (`kn`, `hi`, `en`) are optional. `heardFrom` uses the Task 4 closed list when it is sent. `employeeCountBand` is `1-5`, `6-20`, `21-50`, `51-200` or `200+` when it is sent. `yearsInOperationBand` is optional text: the registration form calls years running a band, and the allowed bands are not listed in the phase spec, so the API stores the supplied band. `openingTime` and `closingTime` are `HH:MM` when sent. `pincode` is six digits when sent. `billingEmail` is checked as an email address when sent.
+
+Business type accepts the managed values, including the earlier `restaurant`, `retail`, `factory`, `office`, `warehouse`, `household` and `other` values plus `restaurant_hotel`, `bakery`, `retail_shop`, `supermarket`, `apartment_society`, `hospital_clinic`, `construction`, `security_agency` and `salon`. Household businesses require `familyName`, store no legal name, and must omit GST, FSSAI, PAN and licence fields. Optional documents are `gstNumber` (checked online as today), `fssaiNumber`, `shopEstablishmentNumber`, `udyamNumber`, `licenceNumber` and `pan`. `noDocuments: true` stores `documentsStatus: "no_documents"` and refuses any of those numbers. That status is what raises the existing Team Lead extra-care check when the business later reaches verification. A business with no document numbers is also `no_documents`.
+
+Each `branches` entry requires a unique name, contact name, role and an independently OTP-verified `contactPersonPhone` with its own `otpRequestId`. The branch mobile must differ from the main contact and from other branches in the same request. Each `staffNeededRows` entry creates an incomplete vacancy with status `draft`. It requires trade, headcount, integer-paise salary bounds, shift and `startDate` (`YYYY-MM-DD`). `salaryPeriod` is `monthly` when omitted, or `daily`. `branchName` may name a branch in the same request; that draft then belongs to the branch. A listed trade does not create a trade suggestion. An unlisted trade saves immediately and creates one waiting suggestion. Interview result messages and placement payment links for a branch vacancy go to that branch contact. Signing the existing agreement records `signedRole` from the business contact role (`owner` when an older business has none).
+
+`GET /businesses` and `GET /businesses/:id` include `branches`. When a stored contact name, phone or role is empty, the response fills `contactPersonName`, `contactPersonPhone`, `contactPersonRole`, `additionalContactName` and `additionalContactPhone` from the owner name and business phone, with role `owner`. That is how a business saved before this form still loads. The migration also copies those owner fields onto existing rows.
+
+```json
+{
+  "name": "Indiranagar Cafe",
+  "phone": "+919876543210",
+  "otpRequestId": "verified-primary-otp",
+  "contactPersonName": "Asha Rao",
+  "contactPersonRole": "owner",
+  "contactWhatsAppPhone": "+919876543210",
+  "contactLanguage": "kn",
+  "businessType": "restaurant_hotel",
+  "locality": "Indiranagar",
+  "pincode": "560038",
+  "branches": [{
+    "name": "Whitefield outlet",
+    "locality": "Whitefield",
+    "contactPersonName": "Ravi Rao",
+    "contactPersonRole": "manager",
+    "contactPersonPhone": "+919876543211",
+    "otpRequestId": "verified-branch-otp"
+  }],
+  "staffNeededRows": [{
+    "trade": "Cook",
+    "headcount": 2,
+    "salaryMinPaise": 1800000,
+    "salaryMaxPaise": 2500000,
+    "shift": "day",
+    "startDate": "2026-12-01"
+  }]
+}
+```
+
+The response includes the created business with branches and `staffNeededRows` vacancies are returned in the `vacancies` relation. The endpoint returns `400` for missing contact identity/role, failed or consumed OTPs, invalid staff-needed rows, or household document fields; `409` for a duplicate business mobile; `401` for an unauthenticated caller; `403` for a role without business-write access. Interview result links and owner-result messages for a branch vacancy target that branch contact.
+
 `POST /referrals/:id/terms-links` resends the registration link and revokes any earlier active link. `GET /referral-registration/:token/status?requestId=...` returns registration progress only after OTP verification to the partner's registered number. `POST /consent/submit` records referral terms and call-recording consent. The same token then accepts live-camera `POST /referral-registration/:token/selfie`, provider-backed `POST /referral-registration/:token/id-check`, and partner-only `POST /referral-registration/:token/upi`; the UPI step requires a successful identity check and OTP. Completing UPI consumes the registration link.
 
 The staff registration status endpoint is `GET /referrals/:id/registration-status`. It returns terms, selfie, ID, and UPI state with timestamps and any safe reason. UPI identity review continues through the existing payout account and payout release flow.

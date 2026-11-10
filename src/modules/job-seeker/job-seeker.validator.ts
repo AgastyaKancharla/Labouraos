@@ -9,7 +9,7 @@ const REGISTRATION_WINDOWS = {
   '09-21': ['09:00', '21:00'],
 } as const;
 
-const HEARD_FROM_VALUES = [
+export const HEARD_FROM_VALUES = [
   'toll_free_missed_call', 'ad', 'referral_partner', 'field_visit',
   'social_media', 'walk_in', 'other',
 ] as const;

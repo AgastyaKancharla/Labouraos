@@ -112,6 +112,12 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
               `93${timestamp.toString().slice(-8)}`,
               `94${timestamp.toString().slice(-8)}`,
               `95${timestamp.toString().slice(-8)}`,
+              `96${timestamp.toString().slice(-8)}`,
+              `97${timestamp.toString().slice(-8)}`,
+              `98${timestamp.toString().slice(-8)}`,
+              `99${timestamp.toString().slice(-8)}`,
+              `90${timestamp.toString().slice(-8)}`,
+              `89${timestamp.toString().slice(-8)}`,
             ],
           },
         },
@@ -150,6 +156,8 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'No OTP Cafe',
         phone,
         locality: 'Koramangala',
+        contactPersonName: 'Asha Rao',
+        contactPersonRole: 'owner',
       });
     expect(resNoOtp.status).toBe(400);
 
@@ -161,8 +169,131 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         phone,
         otpRequestId: 'random_unverified_request_id',
         locality: 'Koramangala',
+        contactPersonName: 'Asha Rao',
+        contactPersonRole: 'owner',
       });
     expect(resUnverifiedOtp.status).toBe(400);
+  });
+
+  it('requires a contact person role for a new business registration', async () => {
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ name: 'Contact Role Required', phone: `96${timestamp.toString().slice(-8)}`, contactPersonName: 'Asha Rao' });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('Contact person role');
+  });
+
+  it('creates OTP-verified branch contacts and draft vacancies from staff-needed rows', async () => {
+    const phone = `97${timestamp.toString().slice(-8)}`;
+    const branchPhone = `98${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const branchOtpRequestId = await getVerifiedOtp(branchPhone);
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
+      .send({
+        name: 'Branch Test Cafe', phone, otpRequestId,
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        businessType: 'restaurant_hotel', locality: 'Koramangala',
+        branches: [{
+          name: 'Whitefield outlet', locality: 'Whitefield', contactPersonName: 'Ravi Rao',
+          contactPersonRole: 'manager', contactPersonPhone: branchPhone, otpRequestId: branchOtpRequestId,
+        }],
+        staffNeededRows: [
+          { trade: 'Cook', headcount: 2, salaryMinPaise: 1800000, salaryMaxPaise: 2500000, shift: 'day', startDate: '2026-12-01' },
+          { trade: `Banner tailor ${timestamp}`, branchName: 'Whitefield outlet', headcount: 1, salaryMinPaise: 1500000, salaryMaxPaise: 1800000, shift: 'day', startDate: '2026-12-02' },
+        ],
+      }).expect(201);
+
+    expect(response.body.branches).toHaveLength(1);
+    expect(response.body.vacancies).toHaveLength(2);
+    const cook = response.body.vacancies.find((row: { tradeSkill: string }) => row.tradeSkill === 'Cook');
+    const other = response.body.vacancies.find((row: { tradeSkill: string }) => row.tradeSkill.startsWith('Banner tailor'));
+    expect(cook).toMatchObject({ status: 'draft', headcount: 2, branchId: null });
+    const storedBranch = await prisma.businessBranch.findFirst({ where: { businessId: response.body.id } });
+    expect(other).toMatchObject({ status: 'draft', branchId: storedBranch?.id });
+    expect(await prisma.tradeSuggestionSubject.count({ where: { subjectId: cook.id } })).toBe(0);
+    expect(await prisma.tradeSuggestionSubject.count({ where: { subjectId: other.id } })).toBe(1);
+    await prisma.tradeSuggestionSubject.deleteMany({ where: { subjectId: other.id } });
+    await prisma.tradeSuggestion.deleteMany({ where: { typedName: `Banner tailor ${timestamp}` } });
+    expect(storedBranch?.contactPersonPhone).toBe(branchPhone);
+    const duplicateOtp = await otpService.sendOtp(branchPhone, 'branch_contact', faKoramangalaId, 'field_agent');
+    expect(duplicateOtp).toMatchObject({ alreadyRegistered: true, type: 'business', code: response.body.code });
+  });
+
+  it('stores household family name without legal or licensing documents', async () => {
+    const phone = `99${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
+      .send({
+        name: 'Rao Household', businessType: 'household', familyName: 'Rao', phone, otpRequestId,
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner', gstNumber: '29ABCDE1234F1Z5',
+      });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('cannot provide GST or licence');
+
+    const cleanPhone = `90${timestamp.toString().slice(-8)}`;
+    const cleanOtpRequestId = await getVerifiedOtp(cleanPhone);
+    const valid = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
+      .send({
+        name: 'Rao Household', businessType: 'household', familyName: 'Rao', phone: cleanPhone, otpRequestId: cleanOtpRequestId,
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+      }).expect(201);
+    expect(valid.body.familyName).toBe('Rao');
+    expect(valid.body.legalName).toBeNull();
+    expect(valid.body.gstNumber).toBeNull();
+    expect(valid.body.licenceNumber).toBeNull();
+    expect(valid.body.pan).toBeNull();
+    expect(valid.body.fssaiNumber).toBeNull();
+    expect(valid.body.documentsStatus).toBe('no_documents');
+  });
+
+  it('requires a contact person name and stores a no-documents business without licence numbers', async () => {
+    const missingName = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ name: 'No Contact Name', phone: `89${timestamp.toString().slice(-8)}`, contactPersonRole: 'owner' });
+    expect(missingName.status).toBe(400);
+    expect(missingName.body.message).toContain('Contact person name');
+
+    const phone = `96${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const refused = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Documents Refused', phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        noDocuments: true, gstNumber: '29ABCDE1234F1Z5',
+      });
+    expect(refused.status).toBe(400);
+
+    const cleanPhone = `89${timestamp.toString().slice(-8)}`;
+    const cleanOtp = await getVerifiedOtp(cleanPhone);
+    const saved = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'No Papers Cafe', phone: cleanPhone, otpRequestId: cleanOtp,
+        contactPersonName: 'Asha Rao', contactPersonRole: 'manager',
+        contactWhatsAppPhone: cleanPhone, contactLanguage: 'en',
+        businessType: 'bakery', legalName: 'No Papers Cafe LLP',
+        employeeCountBand: '6-20', yearsInOperationBand: '3-5', hiringFrequency: 'monthly',
+        openingTime: '09:00', closingTime: '21:00', workingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+        shopNumber: '12', street: '100 Feet Road', landmark: 'Near the metro', locality: 'Indiranagar', pincode: '560038',
+        billingEmail: 'accounts@nopapers.example', heardFrom: 'walk_in', noDocuments: true,
+      }).expect(201);
+    expect(saved.body).toMatchObject({
+      documentsStatus: 'no_documents', gstNumber: null, fssaiNumber: null, pan: null,
+      legalName: 'No Papers Cafe LLP', employeeCountBand: '6-20', yearsInOperationBand: '3-5',
+      openingTime: '09:00', closingTime: '21:00', pincode: '560038', billingEmail: 'accounts@nopapers.example',
+      heardFrom: 'walk_in', contactLanguage: 'en', contactPersonRole: 'manager',
+    });
+    expect(saved.body.workingDays).toEqual(['mon', 'tue', 'wed', 'thu', 'fri']);
   });
 
   it('field agent creates a business without writing the deprecated area or contact fields', async () => {
@@ -176,6 +307,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Koramangala Bakers',
         address: '80 Feet Road, 4th Block',
         contactPerson: 'Ramesh Patel',
+        contactPersonRole: 'owner',
         locality: 'Koramangala',
         phone,
         otpRequestId,
@@ -216,6 +348,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Indiranagar Boutique',
         address: '100 Feet Road',
         contactPerson: 'Sunita Rao',
+        contactPersonRole: 'manager',
         phone,
         otpRequestId,
         locality: 'Indiranagar',
@@ -239,6 +372,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Indiranagar Tech Labs',
         address: '12th Main Indiranagar',
         contactPerson: 'Deepak Verma',
+        contactPersonRole: 'hr',
         phone: phoneIndi,
         otpRequestId: otpIndi,
       });
@@ -287,6 +421,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Whitefield Logistics Hub',
         address: 'ITPL Main Road',
         contactPerson: 'Anil Deshmukh',
+        contactPersonRole: 'supervisor',
         phone,
         otpRequestId,
         locality: 'Whitefield',
@@ -296,5 +431,25 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(res.body.area).toBeFalsy();
     expect(res.body.locality).toBe('Whitefield');
     expect(res.body.code).toMatch(/^BZ-\d{5}$/);
+  });
+
+  it('loads an old business with the contact filled from the owner fields', async () => {
+    const created = await prisma.business.create({
+      data: {
+        code: `BZ-OLD-${timestamp}`,
+        name: 'Old Owner Cafe',
+        phone: `91${timestamp.toString().slice(-8)}`,
+        ownerName: 'Old Owner',
+        city: 'Bengaluru',
+      },
+    });
+    const response = await request(app.getHttpServer())
+      .get(`/businesses/${created.id}`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .expect(200);
+    expect(response.body.contactPersonName).toBe('Old Owner');
+    expect(response.body.contactPersonRole).toBe('owner');
+    expect(response.body.additionalContactName).toBe('Old Owner');
+    expect(response.body.additionalContactPhone).toBe(`91${timestamp.toString().slice(-8)}`);
   });
 });
