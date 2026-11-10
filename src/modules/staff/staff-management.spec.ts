@@ -565,6 +565,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
             'email',
             'id',
             'name',
+            'reportsToId',
             'role',
             'status',
             'teamLeadId',

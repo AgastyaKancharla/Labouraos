@@ -269,6 +269,10 @@ describe('Phase 10 Task 1: Staff devices', () => {
     await request(app.getHttpServer())
       .get(`/staff/${financeId}/devices`)
       .set('Authorization', `Bearer ${managerToken}`)
+      .expect(403);
+    await request(app.getHttpServer())
+      .get(`/staff/${financeId}/devices`)
+      .set('Authorization', `Bearer ${ceoToken}`)
       .expect(200);
   });
 
