@@ -19,6 +19,7 @@ describe('Phase 20 gate end-to-end proof', () => {
   let otp: OtpService;
   let callAgentToken: string;
   let fieldAgentToken: string;
+  let fieldAgentId: string;
 
   const stamp = `${Date.now().toString().slice(-6)}${randomUUID().slice(0, 4)}`;
   const password = 'Password123!Secure';
@@ -97,6 +98,7 @@ describe('Phase 20 gate end-to-end proof', () => {
         passwordHash, role: 'field_agent',
       },
     });
+    fieldAgentId = fieldAgent.id;
     staffIds.push(callAgent.id, fieldAgent.id);
     callAgentToken = (await enrolledLogin(server(), { email: callAgent.email, password }).expect(200)).body.accessToken;
     fieldAgentToken = (await enrolledLogin(server(), { email: fieldAgent.email, password }).expect(200)).body.accessToken;
@@ -354,6 +356,9 @@ describe('Phase 20 gate end-to-end proof', () => {
       .get(`/vacancies/${housekeeping.id}/shortlist`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .expect(400);
+    // A field agent may complete a vacancy only on a business where they are the account agent.
+    // Registration records who created the lead; it does not assign the account agent.
+    await prisma.business.update({ where: { id: bakery.body.id }, data: { accountAgentId: fieldAgentId } });
     const refusedWage = await request(server())
       .post(`/vacancies/${housekeeping.id}/submit-for-confirmation`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
