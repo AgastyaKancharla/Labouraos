@@ -320,9 +320,13 @@ export class AttendanceService {
     if (current.status !== 'available') return;
     const policy = await this.pricing.current();
     const idleAfterMs = (policy.idleAfterMinutes + IDLE_PROMPT_MINUTES) * 60 * 1000;
-    const since = day.lastHeartbeatAt ?? current.startedAt;
-    if (now.getTime() - since.getTime() >= idleAfterMs) {
-      await this.switchStatus(day.id, staffId, IDLE_STATUS, 'idle_detector', now);
+    const sinceMs = Math.max(
+      (day.lastHeartbeatAt ?? current.startedAt).getTime(),
+      current.startedAt.getTime(),
+    );
+    const idleAt = new Date(sinceMs + idleAfterMs);
+    if (now.getTime() >= idleAt.getTime()) {
+      await this.switchStatus(day.id, staffId, IDLE_STATUS, 'idle_detector', idleAt);
     }
   }
 
