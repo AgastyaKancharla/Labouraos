@@ -34,6 +34,17 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 
+/** What the bank feed webhook reports back for one credit. */
+export interface BankFeedWebhookResult {
+  received: boolean;
+  status?: string;
+  reason?: string;
+  alreadyProcessed?: boolean;
+  paymentId?: string;
+  refundPaymentId?: string;
+  bankCreditId?: string;
+}
+
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
@@ -342,7 +353,7 @@ export class PaymentService {
     return { received: true, status: 'succeeded', paymentId };
   }
 
-  async handleBankFeedWebhook(rawBody: Buffer | string | undefined, signature?: string) {
+  async handleBankFeedWebhook(rawBody: Buffer | string | undefined, signature?: string): Promise<BankFeedWebhookResult> {
     const verification = await this.bankFeedProvider.verifyWebhook(rawBody, signature);
     if (!verification.isValid || !verification.event) {
       throw new UnauthorizedException(
@@ -486,7 +497,7 @@ export class PaymentService {
     bankCreditId: string,
     bankUtr: string,
     amountPaise: number,
-  ) {
+  ): Promise<BankFeedWebhookResult> {
     const code = await this.idService.generateCode('payment');
     const refund = await this.prisma.$transaction(async (tx) => {
       const created = await tx.payment.create({
@@ -529,6 +540,7 @@ export class PaymentService {
     return {
       received: true,
       status: 'duplicate_refund_created',
+      reason: 'duplicate_activation_payment',
       paymentId: original.id,
       refundPaymentId: refund.id,
       bankCreditId,

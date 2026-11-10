@@ -78,6 +78,8 @@ model JobSeeker {
   registeredBy              Staff?      @relation("JobSeekerRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
   guaranteeFloorPaise       Int?        // frozen salary guarantee term once activation is paid
+  termsAcceptedAt           DateTime?   // when he ticked the exact terms on the registration link (Phase 20 Task 5)
+  termsAcceptedFloorPaise   Int?        // the salary floor shown when he agreed
   messageLanguage           String?
   heardFrom                 String?
   placements                Placement[]
@@ -727,7 +729,7 @@ model Payment {
   id                String      @id @default(uuid())
   code              String      @unique
   city              String      @default("Bengaluru")
-  type              String      // activation, placement_fee, referral_payout, refund, joining_reward
+  type              String      // activation, placement_fee, referral_payout, refund, joining_reward, duplicate_refund
   amount            Int         // paise
   status            String      @default("pending") // pending, processing, succeeded, completed, failed, reversed, refunded
   gatewayReference  String?     @unique

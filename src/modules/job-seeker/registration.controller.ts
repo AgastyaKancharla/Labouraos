@@ -70,6 +70,27 @@ export class RegistrationController {
     return this.jobSeekers.verifyIdentityWithProvider(link.subjectId, providerInput, 'system');
   }
 
+  @Get(':token/terms')
+  async getTerms(@Param('token') token: string, @Query('requestId') requestId: string) {
+    const link = await this.requireRegistrationLink(token);
+    if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    return this.jobSeekers.registrationTerms(link.subjectId);
+  }
+
+  @Post(':token/terms-and-payment')
+  async acceptTermsAndPay(
+    @Param('token') token: string,
+    @Body() body: { requestId?: string; acceptTerms?: boolean },
+  ) {
+    const link = await this.requireRegistrationLink(token);
+    if (!body.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    return this.jobSeekers.acceptTermsAndCreatePayment(link.subjectId, body.acceptTerms);
+  }
+
   @Post(':token/payment-only-link')
   async sendPaymentOnlyLink(
     @Param('token') token: string,
