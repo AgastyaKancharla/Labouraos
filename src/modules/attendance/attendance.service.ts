@@ -262,9 +262,9 @@ export class AttendanceService {
     return null;
   }
 
-  async closeForgottenDays(): Promise<{ closed: number }> {
+  async closeForgottenDays(staffId?: string): Promise<{ closed: number }> {
     const open = await this.prisma.attendanceDay.findMany({
-      where: { logoutAt: null },
+      where: { logoutAt: null, ...(staffId ? { staffId } : {}) },
       include: { segments: true },
     });
     let closed = 0;
