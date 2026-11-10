@@ -9,6 +9,7 @@ import { TELEPHONY_PROVIDER } from '../telephony/telephony.interface';
 import { MockTelephonyProvider } from '../telephony/mock-telephony.provider';
 import { CALL_ANNOUNCEMENT } from './call-announcement';
 import { CallClock } from './call-clock';
+import { openAvailableDay } from '../../test-support/available-day';
 
 const KEY = 'click_to_call_routing_key_32_characters';
 const ROUTING = '+919812345678';
@@ -95,6 +96,8 @@ describe('Phase 11 Task 4: click to call', () => {
     const callAgent = await makeStaff('call_agent');
     const otherAgent = await makeStaff('call_agent');
     const fieldAgent = await makeStaff('field_agent');
+    await openAvailableDay(app, callAgent.id);
+    await openAvailableDay(app, fieldAgent.id);
     const stamp = Date.now();
     const seeker = await prisma.jobSeeker.create({
       data: {

@@ -13,6 +13,7 @@ import { ConsentClock } from './consent-clock';
 import { ConsentService } from './consent.service';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { openAvailableDay } from '../../test-support/available-day';
 
 class GateClock extends CallClock {
   override now(): Date {
@@ -96,6 +97,7 @@ describe('Phase 12 gate end-to-end proof', () => {
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .send({ phone: '+919800077701' })
       .expect(200);
+    await openAvailableDay(app, fieldAgent.id);
   }, 120000);
 
   afterAll(async () => {
