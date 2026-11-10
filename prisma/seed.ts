@@ -176,6 +176,7 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Priya Sharma',
         role: 'manager',
         city: 'Bengaluru',
+        reportsToId: ceo.id,
       },
       create: {
         code: 'MGR-00001',
@@ -184,6 +185,7 @@ export async function seed(prismaClient?: PrismaClient) {
         passwordHash,
         role: 'manager',
         city: 'Bengaluru',
+        reportsToId: ceo.id,
       },
     });
 
@@ -194,6 +196,7 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Vikram Rao',
         role: 'team_lead',
         city: 'Bengaluru',
+        reportsToId: manager.id,
       },
       create: {
         code: 'TL-00001',
@@ -202,6 +205,7 @@ export async function seed(prismaClient?: PrismaClient) {
         passwordHash,
         role: 'team_lead',
         city: 'Bengaluru',
+        reportsToId: manager.id,
       },
     });
 
@@ -213,6 +217,7 @@ export async function seed(prismaClient?: PrismaClient) {
         role: 'call_agent',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
+        reportsToId: teamLead.id,
       },
       create: {
         code: 'CA-00001',
@@ -222,6 +227,7 @@ export async function seed(prismaClient?: PrismaClient) {
         role: 'call_agent',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
+        reportsToId: teamLead.id,
       },
     });
 
@@ -233,6 +239,7 @@ export async function seed(prismaClient?: PrismaClient) {
         role: 'field_agent',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
+        reportsToId: teamLead.id,
       },
       create: {
         code: 'FA-00001',
@@ -242,6 +249,7 @@ export async function seed(prismaClient?: PrismaClient) {
         role: 'field_agent',
         city: 'Bengaluru',
         teamLeadId: teamLead.id,
+        reportsToId: teamLead.id,
       },
     });
 
@@ -252,6 +260,7 @@ export async function seed(prismaClient?: PrismaClient) {
         name: 'Sneha Patel',
         role: 'finance',
         city: 'Bengaluru',
+        reportsToId: ceo.id,
       },
       create: {
         code: 'FIN-00001',
@@ -260,6 +269,7 @@ export async function seed(prismaClient?: PrismaClient) {
         passwordHash,
         role: 'finance',
         city: 'Bengaluru',
+        reportsToId: ceo.id,
       },
     });
 

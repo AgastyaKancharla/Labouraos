@@ -72,6 +72,12 @@ describe('Phase 10 Task 1: Staff devices', () => {
     const fa1 = await make('field_agent', 'FA1', tl1.id);
     const fa2 = await make('call_agent', 'CA2', tl2.id);
     const fin = await make('finance', 'FIN');
+    await prisma.staff.update({ where: { id: manager.id }, data: { reportsToId: ceo.id } });
+    await prisma.staff.update({ where: { id: tl1.id }, data: { reportsToId: manager.id } });
+    await prisma.staff.update({ where: { id: tl2.id }, data: { reportsToId: manager.id } });
+    await prisma.staff.update({ where: { id: fa1.id }, data: { reportsToId: tl1.id } });
+    await prisma.staff.update({ where: { id: fa2.id }, data: { reportsToId: tl2.id } });
+    await prisma.staff.update({ where: { id: fin.id }, data: { reportsToId: ceo.id } });
 
     ceoId = ceo.id;
     managerId = manager.id;

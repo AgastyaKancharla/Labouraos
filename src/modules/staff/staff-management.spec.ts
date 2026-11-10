@@ -151,7 +151,15 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
   /** Creates a hire through the API and tracks it for cleanup. */
   async function hire(role = 'call_agent', extra: Record<string, unknown> = {}) {
-    const res = await createViaApi(ceo, newHire(role, extra));
+    const line =
+      role === 'call_agent' || role === 'field_agent'
+        ? { teamLeadId: teamLead.id }
+        : role === 'team_lead'
+          ? { reportsToId: manager.id }
+          : role === 'manager' || role === 'finance'
+            ? { reportsToId: ceo.id }
+            : {};
+    const res = await createViaApi(ceo, newHire(role, { ...line, ...extra }));
     expect(res.status).toBe(201);
     createdStaffIds.push(res.body.staff.id);
     return {
@@ -257,7 +265,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
     it('invite expiry is exactly INVITE_TTL_MS after creation (injectable clock)', async () => {
       const at = new Date('2026-01-10T00:00:00.000Z');
       const result = await staffService.createStaff(
-        newHire('call_agent'),
+        newHire('call_agent', { teamLeadId: teamLead.id }),
         { sub: ceo.id, role: 'ceo' } as JwtPayload,
         at,
       );
@@ -267,7 +275,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
     });
 
     it('normalises the email to lower case', async () => {
-      const body = newHire('call_agent');
+      const body = newHire('call_agent', { teamLeadId: teamLead.id });
       const res = await createViaApi(ceo, {
         ...body,
         email: body.email.toUpperCase(),
@@ -309,7 +317,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
     });
 
     it('does not require or return a legacy area for a field agent', async () => {
-      const body = newHire('field_agent');
+      const body = newHire('field_agent', { teamLeadId: teamLead.id });
       const res = await createViaApi(ceo, body);
       createdStaffIds.push(res.body.staff?.id);
       expect(res.status).toBe(201);
@@ -319,7 +327,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
     it('rejects a duplicate email with 409', async () => {
       const h = await hire('call_agent');
       const res = await createViaApi(ceo, {
-        ...newHire('call_agent'),
+        ...newHire('call_agent', { teamLeadId: teamLead.id }),
         email: h.email,
       });
       expect(res.status).toBe(409);
@@ -358,7 +366,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
         expect(res.status).toBe(403);
       }
 
-      const ok = await createViaApi(ceo, newHire('manager'));
+      const ok = await createViaApi(ceo, newHire('manager', { reportsToId: ceo.id }));
       createdStaffIds.push(ok.body.staff?.id);
       expect(ok.status).toBe(201);
     });

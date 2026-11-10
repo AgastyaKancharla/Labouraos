@@ -84,12 +84,41 @@ export class StaffController {
     return this.staffService.listStaff(query, req.user);
   }
 
+  @Get('without-reporting-line')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'read')
+  @RequireRoles('ceo')
+  withoutReportingLine() {
+    return this.staffService.listWithoutReportingLine();
+  }
+
+  @Get('reporting-tree')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'read')
+  @RequireRoles('ceo', 'manager')
+  reportingTree(@Req() req: AuthenticatedRequest) {
+    return this.staffService.reportingTree(req.user);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'read')
   @RequireRoles('ceo', 'manager', 'team_lead')
   getById(@Param('id') id: string) {
     return this.staffService.getStaffById(id);
+  }
+
+  @Post(':id/reporting-line')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo', 'manager')
+  moveReportingLine(
+    @Param('id') id: string,
+    @Body()
+    body: { reportsToId?: string; reason?: string; moveOpenWork?: boolean },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.staffService.moveReportingLine(id, body, req.user);
   }
 
   @Put(':id/call-routing-phone')

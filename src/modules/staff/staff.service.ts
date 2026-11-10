@@ -24,7 +24,9 @@ import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
+import { ReportingScopeService } from './reporting-scope.service';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -76,6 +78,7 @@ const STAFF_VIEW_SELECT = {
   email: true,
   role: true,
   teamLeadId: true,
+  reportsToId: true,
   status: true,
   createdAt: true,
   deactivatedAt: true,
@@ -130,6 +133,7 @@ export class StaffService {
     private readonly auditService: AuditService,
     private readonly authService: AuthService,
     private readonly totpService: TotpService,
+    private readonly reportingScope: ReportingScopeService,
   ) {
     getCallRoutingKey();
   }
@@ -293,27 +297,27 @@ export class StaffService {
         `Only a CEO can create '${role}' accounts`,
       );
     }
-    const teamLeadId = dto.teamLeadId || undefined;
-    if (teamLeadId) {
-      if (!TEAM_MEMBER_ROLES.includes(role)) {
-        throw new BadRequestException(
-          'teamLeadId applies to call agents and field agents only',
-        );
-      }
-      const teamLead = await this.prisma.staff.findUnique({
-        where: { id: teamLeadId },
-        select: { role: true, status: true },
-      });
-      if (
-        !teamLead ||
-        teamLead.role !== 'team_lead' ||
-        teamLead.status !== STAFF_STATUS.ACTIVE
-      ) {
-        throw new BadRequestException(
-          'teamLeadId must reference an active team lead',
-        );
-      }
+    const requestedTeamLeadId = dto.teamLeadId || undefined;
+    const requestedReportsToId = dto.reportsToId || undefined;
+    if (requestedTeamLeadId && !TEAM_MEMBER_ROLES.includes(role)) {
+      throw new BadRequestException(
+        'teamLeadId applies to call agents and field agents only',
+      );
     }
+    if (
+      requestedTeamLeadId &&
+      requestedReportsToId &&
+      requestedTeamLeadId !== requestedReportsToId
+    ) {
+      throw new BadRequestException(
+        'teamLeadId and reportsToId must be the same person',
+      );
+    }
+    const lineId = await this.reportingScope.assertReportingLine(
+      role,
+      requestedReportsToId ?? requestedTeamLeadId ?? null,
+    );
+    const teamLeadId = TEAM_MEMBER_ROLES.includes(role) ? lineId : null;
 
     if (email) {
       const existing = await this.prisma.staff.findUnique({
@@ -343,6 +347,7 @@ export class StaffService {
         email,
         role,
         teamLeadId: teamLeadId ?? null,
+        reportsToId: lineId,
         passwordHash: placeholderHash,
         status: STAFF_STATUS.PENDING_INVITE,
         inviteTokenHash: hashInviteToken(inviteToken),
@@ -363,6 +368,7 @@ export class StaffService {
         email: staff.email,
         role: staff.role,
         teamLeadId: staff.teamLeadId,
+        reportsToId: staff.reportsToId,
         status: staff.status,
         inviteExpiresAt: inviteExpiresAt.toISOString(),
       },
@@ -822,6 +828,251 @@ export class StaffService {
       },
     });
     return { success: true };
+  }
+
+  /** Team Leads, Managers, Finance and agents who have no reporting line. CEO only. */
+  async listWithoutReportingLine(): Promise<StaffView[]> {
+    return this.prisma.staff.findMany({
+      where: {
+        reportsToId: null,
+        role: { in: ['call_agent', 'field_agent', 'team_lead', 'manager', 'finance'] },
+        status: { not: STAFF_STATUS.DEACTIVATED },
+      },
+      select: STAFF_VIEW_SELECT,
+      orderBy: [{ role: 'asc' }, { code: 'asc' }],
+    });
+  }
+
+  /**
+   * The reporting tree. The CEO sees everyone. A Manager sees their own part.
+   */
+  async reportingTree(actor: JwtPayload): Promise<{
+    viewerId: string;
+    people: StaffView[];
+  }> {
+    if (actor.role === 'ceo') {
+      const people = await this.prisma.staff.findMany({
+        where: { status: { not: STAFF_STATUS.DEACTIVATED } },
+        select: STAFF_VIEW_SELECT,
+        orderBy: [{ role: 'asc' }, { code: 'asc' }],
+      });
+      return { viewerId: actor.sub, people };
+    }
+    const under = await this.reportingScope.peopleUnder(actor.sub);
+    const people = await this.prisma.staff.findMany({
+      where: {
+        id: { in: [actor.sub, ...under] },
+        status: { not: STAFF_STATUS.DEACTIVATED },
+      },
+      select: STAFF_VIEW_SELECT,
+      orderBy: [{ role: 'asc' }, { code: 'asc' }],
+    });
+    return { viewerId: actor.sub, people };
+  }
+
+  /**
+   * Move someone onto a new reporting line.
+   * The CEO can move anyone. A Manager can move agents between Team Leads
+   * in their own teams. Open work moves with the person when the Team Lead
+   * changes, unless the caller sets moveOpenWork to false.
+   */
+  async moveReportingLine(
+    staffId: string,
+    body: { reportsToId?: string; reason?: string; moveOpenWork?: boolean },
+    actor: JwtPayload,
+  ): Promise<StaffView> {
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) {
+      throw new BadRequestException('A reason is required');
+    }
+    const target = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: {
+        id: true,
+        code: true,
+        role: true,
+        status: true,
+        teamLeadId: true,
+        reportsToId: true,
+      },
+    });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+    if (target.status === STAFF_STATUS.DEACTIVATED) {
+      throw new BadRequestException('A deactivated account cannot be moved');
+    }
+    const reportsToId = await this.reportingScope.assertReportingLine(
+      target.role,
+      body.reportsToId ?? null,
+    );
+    if (actor.role === 'manager') {
+      await this.assertManagerMayMove(actor.sub, target, reportsToId);
+    } else if (actor.role !== 'ceo') {
+      throw new ForbiddenException('Only the CEO or a Manager can move a reporting line');
+    }
+    const newTeamLeadId = TEAM_MEMBER_ROLES.includes(target.role) ? reportsToId : null;
+    const teamLeadChanged = (target.teamLeadId ?? null) !== (newTeamLeadId ?? null);
+    const moveOpenWork = body.moveOpenWork !== false;
+    const previousTeamLeadId = target.teamLeadId;
+
+    const moved = await this.prisma.$transaction(async (tx) => {
+      const updated = await tx.staff.update({
+        where: { id: target.id },
+        data: { reportsToId, teamLeadId: newTeamLeadId },
+        select: STAFF_VIEW_SELECT,
+      });
+      let openWork: {
+        followedThePerson: boolean;
+        targetCount: number;
+        followUpCount: number;
+        visitCount: number;
+        accountCount: number;
+      } = {
+        followedThePerson: true,
+        targetCount: 0,
+        followUpCount: 0,
+        visitCount: 0,
+        accountCount: 0,
+      };
+      if (teamLeadChanged && TEAM_MEMBER_ROLES.includes(target.role)) {
+        openWork = await this.transferOpenWork(tx, {
+          personId: target.id,
+          previousTeamLeadId,
+          moveWithPerson: moveOpenWork,
+          actorId: actor.sub,
+        });
+      }
+      await recordStatusChange(tx, {
+        subjectType: 'staff',
+        subjectId: target.id,
+        fromStatus: target.reportsToId ?? 'none',
+        toStatus: reportsToId ?? 'none',
+        changedByStaffId: actor.sub,
+        reason,
+      });
+      return { updated, openWork };
+    });
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.reporting_line_moved',
+      entityType: 'staff',
+      entityCode: target.code,
+      reason,
+      before: {
+        reportsToId: target.reportsToId,
+        teamLeadId: target.teamLeadId,
+      },
+      after: {
+        reportsToId,
+        teamLeadId: newTeamLeadId,
+        moveOpenWork,
+        openWork: moved.openWork,
+      },
+    });
+    return moved.updated;
+  }
+
+  private async assertManagerMayMove(
+    managerId: string,
+    target: { id: string; role: string; teamLeadId: string | null },
+    newReportsToId: string | null,
+  ): Promise<void> {
+    if (!TEAM_MEMBER_ROLES.includes(target.role) || !newReportsToId) {
+      throw new ForbiddenException(
+        'A Manager can move agents only between Team Leads in their own teams',
+      );
+    }
+    const under = await this.reportingScope.peopleUnder(managerId);
+    const agentInTree = under.includes(target.id);
+    const newLeadInTree = under.includes(newReportsToId);
+    const oldLeadInTree = target.teamLeadId ? under.includes(target.teamLeadId) : false;
+    if (!agentInTree || !newLeadInTree || !oldLeadInTree) {
+      throw new ForbiddenException(
+        'A Manager can move agents only between Team Leads in their own teams',
+      );
+    }
+  }
+
+  private async transferOpenWork(
+    tx: Prisma.TransactionClient,
+    input: {
+      personId: string;
+      previousTeamLeadId: string | null;
+      moveWithPerson: boolean;
+      actorId: string;
+    },
+  ): Promise<{
+    followedThePerson: boolean;
+    targetCount: number;
+    followUpCount: number;
+    visitCount: number;
+    accountCount: number;
+  }> {
+    const { year, month } = getCalendarPartsInTimezone(new Date());
+    const [targetCount, followUpCount, visitCount, accountCount] = await Promise.all([
+      tx.target.count({
+        where: { staffId: input.personId, year, month },
+      }),
+      tx.followUpTask.count({
+        where: { assignedStaffId: input.personId, status: 'pending' },
+      }),
+      tx.visitAssignment.count({
+        where: {
+          assignedStaffId: input.personId,
+          status: { notIn: ['done', 'cancelled', 'completed'] },
+        },
+      }),
+      tx.business.count({ where: { accountAgentId: input.personId } }),
+    ]);
+    if (input.moveWithPerson || !input.previousTeamLeadId) {
+      return {
+        followedThePerson: true,
+        targetCount,
+        followUpCount,
+        visitCount,
+        accountCount,
+      };
+    }
+    const leadId = input.previousTeamLeadId;
+    await tx.followUpTask.updateMany({
+      where: { assignedStaffId: input.personId, status: 'pending' },
+      data: { assignedStaffId: leadId },
+    });
+    await tx.visitAssignment.updateMany({
+      where: {
+        assignedStaffId: input.personId,
+        status: { notIn: ['done', 'cancelled', 'completed'] },
+      },
+      data: { assignedStaffId: leadId },
+    });
+    await tx.business.updateMany({
+      where: { accountAgentId: input.personId },
+      data: { accountAgentId: leadId },
+    });
+    const ownTarget = await tx.target.findUnique({
+      where: {
+        staffId_year_month: { staffId: input.personId, year, month },
+      },
+    });
+    if (ownTarget) {
+      const leadTarget = await tx.target.findUnique({
+        where: { staffId_year_month: { staffId: leadId, year, month } },
+      });
+      if (!leadTarget) {
+        await tx.target.update({
+          where: { id: ownTarget.id },
+          data: { staffId: leadId, updatedById: input.actorId },
+        });
+      }
+    }
+    return {
+      followedThePerson: false,
+      targetCount,
+      followUpCount,
+      visitCount,
+      accountCount,
+    };
   }
 
   /**

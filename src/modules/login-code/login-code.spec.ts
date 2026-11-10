@@ -113,6 +113,12 @@ describe('Phase 10 Task 3: Login codes', () => {
       const agent1 = await make('call_agent', 'CA1', tl1.id);
       const agent2 = await make('field_agent', 'FA2', tl2.id);
       const finance = await make('finance', 'FIN');
+      await prisma.staff.update({ where: { id: manager.id }, data: { reportsToId: ceo.id } });
+      await prisma.staff.update({ where: { id: tl1.id }, data: { reportsToId: manager.id } });
+      await prisma.staff.update({ where: { id: tl2.id }, data: { reportsToId: manager.id } });
+      await prisma.staff.update({ where: { id: agent1.id }, data: { reportsToId: tl1.id } });
+      await prisma.staff.update({ where: { id: agent2.id }, data: { reportsToId: tl2.id } });
+      await prisma.staff.update({ where: { id: finance.id }, data: { reportsToId: ceo.id } });
       const deviceFor = (staffId: string, deviceId: string) =>
         prisma.staffDevice.create({
           data: {

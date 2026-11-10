@@ -1,8 +1,10 @@
 import {
   BadRequestException,
   ForbiddenException,
+  Inject,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -16,6 +18,7 @@ import {
   loginCodeFor,
   loginCodesMatch,
 } from './login-code.crypto';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 export interface LoginCodeActor {
   id: string;
@@ -29,7 +32,14 @@ export class Clock {
   }
 }
 
-const staffBrief = { id: true, name: true, code: true, role: true, teamLeadId: true } as const;
+const staffBrief = {
+  id: true,
+  name: true,
+  code: true,
+  role: true,
+  teamLeadId: true,
+  reportsToId: true,
+} as const;
 
 @Injectable()
 export class LoginCodeService {
@@ -38,6 +48,8 @@ export class LoginCodeService {
     private readonly auditService: AuditService,
     private readonly pricingService: PricingService,
     private readonly clock: Clock,
+    @Optional() @Inject(ReportingScopeService)
+    private readonly reportingScope?: ReportingScopeService,
   ) {
     getLoginCodeSecret();
   }
@@ -89,7 +101,7 @@ export class LoginCodeService {
     this.assertApproverRole(approver);
     await this.expireDue(approver);
     const rows = await this.prisma.loginCodeRequest.findMany({
-      where: { status: 'pending', ...this.scopeWhere(approver) },
+      where: { status: 'pending', ...(await this.scopeWhere(approver)) },
       orderBy: { createdAt: 'asc' },
       include: { staff: { select: staffBrief }, staffDevice: { select: { id: true, label: true, platform: true } } },
     });
@@ -106,7 +118,7 @@ export class LoginCodeService {
   async reveal(requestId: string, approver: LoginCodeActor) {
     this.assertApproverRole(approver);
     const request = await this.requireRequest(requestId);
-    this.assertCanHandle(approver, request.staff);
+    await this.assertCanHandle(approver, request.staff);
     await this.refuseIfExpired(request);
     if (request.status === 'used' || request.status === 'refused' || request.status === 'expired') {
       throw new BadRequestException(`Login code request is ${request.status}`);
@@ -201,7 +213,7 @@ export class LoginCodeService {
       throw new BadRequestException('A reason is required to refuse a login code');
     }
     const request = await this.requireRequest(requestId);
-    this.assertCanHandle(approver, request.staff);
+    await this.assertCanHandle(approver, request.staff);
     if (request.status === 'used' || request.status === 'expired') {
       throw new BadRequestException(`Login code request is ${request.status}`);
     }
@@ -231,7 +243,7 @@ export class LoginCodeService {
     this.assertApproverRole(approver);
     const createdAt = this.range(from, to);
     const where: Prisma.LoginCodeRequestWhereInput = {
-      ...this.reportScope(approver),
+      ...(await this.reportScope(approver)),
       ...(createdAt ? { createdAt } : {}),
     };
     const rows = await this.prisma.loginCodeRequest.findMany({
@@ -300,7 +312,7 @@ export class LoginCodeService {
       where: {
         status: { in: ['pending', 'revealed'] },
         expiresAt: { lte: this.clock.now() },
-        ...this.scopeWhere(approver),
+        ...(await this.scopeWhere(approver)),
       },
       data: { status: 'expired' },
     });
@@ -319,31 +331,50 @@ export class LoginCodeService {
     }
   }
 
-  private scopeWhere(approver: LoginCodeActor): Prisma.LoginCodeRequestWhereInput {
-    if (approver.role === 'ceo' || approver.role === 'manager') {
+  private async scopeWhere(approver: LoginCodeActor): Promise<Prisma.LoginCodeRequestWhereInput> {
+    if (approver.role === 'ceo') {
       return {
         staffId: { not: approver.id },
         staff: { role: { in: [...LOGIN_CODE_ROLES] } },
       };
     }
+    if (approver.role === 'manager') {
+      const under = this.reportingScope
+        ? await this.reportingScope.peopleUnder(approver.id)
+        : [];
+      return {
+        staffId: { in: under },
+        staff: { role: { in: [...LOGIN_CODE_ROLES] } },
+      };
+    }
     return {
       staff: {
-        teamLeadId: approver.id,
         role: { in: ['call_agent', 'field_agent'] },
+        OR: [{ teamLeadId: approver.id }, { reportsToId: approver.id }],
       },
     };
   }
 
-  private reportScope(approver: LoginCodeActor): Prisma.LoginCodeRequestWhereInput {
+  private async reportScope(approver: LoginCodeActor): Promise<Prisma.LoginCodeRequestWhereInput> {
     if (approver.role === 'team_lead') {
-      return { staff: { teamLeadId: approver.id } };
+      return {
+        staff: {
+          OR: [{ teamLeadId: approver.id }, { reportsToId: approver.id }],
+        },
+      };
+    }
+    if (approver.role === 'manager') {
+      const under = this.reportingScope
+        ? await this.reportingScope.peopleUnder(approver.id)
+        : [];
+      return { staffId: { in: under } };
     }
     return {};
   }
 
-  private assertCanHandle(
+  private async assertCanHandle(
     approver: LoginCodeActor,
-    target: { id: string; role: string; teamLeadId: string | null },
+    target: { id: string; role: string; teamLeadId: string | null; reportsToId?: string | null },
   ) {
     if (approver.id === target.id) {
       throw new ForbiddenException('An approver cannot reveal or refuse their own login code');
@@ -355,13 +386,22 @@ export class LoginCodeService {
       return;
     }
     if (approver.role === 'manager') {
+      const allowed = this.reportingScope
+        ? await this.reportingScope.personIsUnder(approver.id, target.id)
+        : false;
+      if (!allowed) {
+        throw new ForbiddenException(
+          'A Manager can approve a login code only for someone in their reporting line',
+        );
+      }
       return;
     }
     if (approver.role === 'team_lead') {
       if (target.role === 'team_lead') {
         throw new ForbiddenException("A Team Lead's code is revealed by a Manager or the CEO");
       }
-      if (target.teamLeadId !== approver.id) {
+      const onTeam = target.teamLeadId === approver.id || target.reportsToId === approver.id;
+      if (!onTeam) {
         throw new ForbiddenException('A Team Lead can reveal codes only for their own team');
       }
       return;
