@@ -135,7 +135,7 @@ export class TradeService {
       minimumWageLevel: updates.minimumWageLevel ?? before.minimumWageLevel as MinimumWageLevel,
       sortOrder: updates.sortOrder ?? before.sortOrder,
     });
-    const updated = await this.prisma.$transaction(async (tx) => {
+    const result = await this.prisma.$transaction(async (tx) => {
       const next = await tx.trade.update({
         where: { id },
         data: { ...validated, nameKey: tradeNameKey(validated.name), ...(updates.active === undefined ? {} : { active: updates.active }) },
