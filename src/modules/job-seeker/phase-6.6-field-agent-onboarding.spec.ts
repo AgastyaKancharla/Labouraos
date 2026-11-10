@@ -630,6 +630,12 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           name: 'Field Onboarded Partner',
           phone,
           type: 'individual',
+          whatsappPhone: phone,
+          language: 'en',
+          individualRole: 'shop_staff',
+          locality: 'Indiranagar',
+          pincode: '560038',
+          heardFrom: 'field_visit',
           otpRequestId,
         });
 

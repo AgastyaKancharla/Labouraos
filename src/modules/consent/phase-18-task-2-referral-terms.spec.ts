@@ -149,6 +149,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
               const row = publicLinks.get(token);
               if (row) row.usedAt = new Date();
             }),
+            revokeActive: jest.fn().mockResolvedValue({ count: 0 }),
             hashToken: jest.fn((token: string) => createHash('sha256').update(token).digest('hex')),
           },
         },
@@ -254,7 +255,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
   });
 
   describe('1. Referral Terms Link Generation (POST /referrals/:id/terms-links)', () => {
-    it('creates a single-use token and sends SMS with referral_terms_link template', async () => {
+    it('creates a resumable token and sends SMS with referral terms and partner code', async () => {
       const res = await request(app.getHttpServer())
         .post(`/referrals/${referralId}/terms-links`)
         .send({ language: 'en' });
@@ -276,6 +277,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           variables: expect.objectContaining({
             token: res.body.token,
             link: expect.stringContaining(`/consent/${res.body.token}`),
+            referralCode: expect.any(String),
           }),
         }),
       );

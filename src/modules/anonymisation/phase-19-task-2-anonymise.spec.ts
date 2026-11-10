@@ -461,9 +461,19 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
           phone: `97${suffix}66`,
           type: 'individual',
           city: 'Bengaluru',
+          whatsappPhone: `98${suffix}66`,
+          language: 'kn',
+          individualRole: 'shop_staff',
+          locality: 'Indiranagar',
+          pincode: '560038',
+          latitude: 12.9784,
+          longitude: 77.6408,
+          photoStoragePath: `referrals/${rfCode}/profile-photo`,
+          photoTakenAt: new Date(),
         },
       });
       referralIds.push(rf.id);
+      await photoStorage.put(rf.photoStoragePath!, Buffer.from('selfie'), 'image/jpeg');
 
       const res = await anonymisationService.anonymise('referral', rf.id, 'Erase Partner');
       expect(res.message).toContain('anonymised successfully');
@@ -474,6 +484,16 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
       expect(updated.code).toBe(rfCode);
       expect(updated.type).toBe('individual');
       expect(updated.city).toBe('Bengaluru');
+      expect(updated.whatsappPhone).toBeNull();
+      expect(updated.locality).toBeNull();
+      expect(updated.pincode).toBeNull();
+      expect(updated.latitude).toBeNull();
+      expect(updated.longitude).toBeNull();
+      expect(updated.photoStoragePath).toBeNull();
+      expect(updated.photoTakenAt).toBeNull();
+      if (photoStorage instanceof MemoryCandidatePhotoStorage) {
+        expect(photoStorage.has(rf.photoStoragePath!)).toBe(false);
+      }
       expect(updated.anonymisedAt).toBeDefined();
     });
   });
