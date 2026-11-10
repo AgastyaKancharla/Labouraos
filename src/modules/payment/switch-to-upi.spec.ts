@@ -18,6 +18,7 @@ import { TradeService } from '../trade/trade.service';
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
   jobSeeker: Record<string, jest.Mock>;
+  identityVerification: Record<string, jest.Mock>;
   business: Record<string, jest.Mock>;
   placement: Record<string, jest.Mock>;
   interview: Record<string, jest.Mock>;
@@ -71,6 +72,9 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
         findUnique: jest.fn(),
         findFirst: jest.fn(),
         update: jest.fn(),
+      },
+      identityVerification: {
+        findFirst: jest.fn().mockResolvedValue(null),
       },
       business: {
         findUnique: jest.fn(),

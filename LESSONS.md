@@ -514,3 +514,8 @@ Format:
 **Symptom:** After the branch contact's OTP the shortlist is empty, or it returns 403.
 **Cause:** Matching shows candidates only for a verified business, and only when the vacancy has a latitude and longitude. A new business is a `lead`. A staff-needed draft copies the locality, not the shop or branch pin.
 **Fix:** The Phase 20 gate proof marks the bakery verified and sets the vacancy pin to the shop pin, then shows the shortlist stays closed until the contact's OTP. The draft itself does not gain a pin or a verified business.
+
+## Under-18 payment stop crashed the UPI activation unit test
+**Symptom:** `switch-to-upi.spec.ts` threw `Cannot read properties of undefined (reading 'findFirst')` inside `assertAdultBeforePayment`.
+**Cause:** `createActivationPayment` now reads the latest identity verification. That unit test builds `JobSeekerService` with a fake Prisma client that had no `identityVerification` model.
+**Fix:** The fake returns no identity row. No row is not an under-18 result, so the ₹499 UPI request is still created. A stored `isAdult: false` is what stops payment.
