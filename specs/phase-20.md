@@ -216,7 +216,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - The status panel shows the right state and reason at each point.
   - A gallery upload is refused.
 
-### [ ] Task 6 — Registering a referral partner
+### [x] Task 6 — Registering a referral partner
 **Branch:** `phase-20/task-6-referral-partners` · **Migration folder:** `20261113140000_referral_partner_form`
 
 **Acceptance:**

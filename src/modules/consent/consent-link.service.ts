@@ -135,6 +135,7 @@ export class ConsentLinkService {
   private readonly processingTokens = new Set<string>();
   private ttlMs = 24 * 60 * 60 * 1000; // 24 hours
   private registrationTtlMs = 48 * 60 * 60 * 1000;
+  private referralRegistrationTtlMs = 48 * 60 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -300,11 +301,12 @@ export class ConsentLinkService {
     const termsHtml = renderReferralTerms(referralPayoutPaise, agreementLanguage);
     const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
     const now = this.clock.now();
-    const expiresAt = new Date(now.getTime() + this.ttlMs);
+    await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
+    const expiresAt = new Date(now.getTime() + this.referralRegistrationTtlMs);
     const { token } = await this.publicLinks.create({
       purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
       phone: referral.phone, language, createdByStaffId: staffId, expiresAt,
-      metadata: { partnerName: referral.name, terms: {
+      metadata: { partnerName: referral.name, ownerName: referral.name, resumable: true, terms: {
         referralPayoutPaise,
         version: REFERRAL_TERMS_VERSION,
         language: agreementLanguage,
@@ -318,7 +320,7 @@ export class ConsentLinkService {
       template: 'referral_terms_link',
       subjectType: 'referral',
       subjectId: referral.id,
-      variables: { token, link: publicLink(`/consent/${token}`) },
+      variables: { token, link: publicLink(`/consent/${token}`), referralCode: referral.code },
     });
 
     return { success: true, token, expiresAt };
@@ -757,8 +759,6 @@ export class ConsentLinkService {
         );
       }
     });
-
-    await this.publicLinks.markUsed(record.token, signedAt);
 
     await this.auditService.log({
       actorId: record.createdByStaffId,

@@ -44,6 +44,20 @@ const PERSONAL_FIELDS = new Set([
   'verifiedname',
   'upiidencrypted',
   'bankaccountencrypted',
+  'locality',
+  'pincode',
+  'latitude',
+  'longitude',
+  'language',
+  'individualrole',
+  'partnerbusinesstype',
+  'partnerbusinessname',
+  'heardfrom',
+  'phototakenat',
+  'last4',
+  'namematches',
+  'isadult',
+  'vendorreference',
 ]);
 
 export function isPersonalField(key: string): boolean {

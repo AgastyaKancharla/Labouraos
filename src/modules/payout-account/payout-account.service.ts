@@ -56,6 +56,10 @@ export class PayoutAccountService {
     dto: CreatePayoutLinkDto,
     now = new Date(),
   ) {
+    const submittedFields = Object.keys(dto as unknown as Record<string, unknown>);
+    if (submittedFields.some((field) => !['ownerType', 'ownerId'].includes(field))) {
+      throw new BadRequestException('Staff may create a payout link but cannot submit payout account details');
+    }
     let ownerName = '';
     let phone = '';
 
@@ -194,8 +198,22 @@ export class PayoutAccountService {
     now = new Date(),
   ) {
     const record = await this.getPayoutLink(dto.token, now, false);
-    if (record.purpose !== 'payout_details' || !record.phone) throw new NotFoundException('Payout link token not found');
-    const ownerName = String((record.metadata as unknown as { ownerName?: string } | null)?.ownerName ?? '');
+    const isReferralRegistration = record.purpose === 'referral_registration' && record.subjectType === 'referral';
+    if ((record.purpose !== 'payout_details' && !isReferralRegistration) || !record.phone) throw new NotFoundException('Payout link token not found');
+    const metadataOwnerName = String((record.metadata as unknown as { ownerName?: string } | null)?.ownerName ?? '');
+    const ownerName = metadataOwnerName || (isReferralRegistration
+      ? (await this.prisma.referral.findUnique({ where: { id: record.subjectId }, select: { name: true } }))?.name ?? ''
+      : '');
+    if (isReferralRegistration) {
+      const [identity, terms, recording] = await Promise.all([
+        this.prisma.referralIdentityVerification.findFirst({ where: { referralId: record.subjectId }, orderBy: { createdAt: 'desc' } }),
+        this.prisma.consent.findFirst({ where: { subjectType: 'referral', subjectId: record.subjectId, purpose: 'agreement_terms', granted: true, withdrawnAt: null } }),
+        this.prisma.consent.findFirst({ where: { subjectType: 'referral', subjectId: record.subjectId, purpose: 'call_recording', granted: true, withdrawnAt: null } }),
+      ]);
+      if (!identity || identity.status !== 'verified' || identity.nameMatches !== true || identity.isAdult !== true || !terms || !recording) {
+        throw new BadRequestException('Referral terms, ID verification, and call-recording consent are required before UPI details');
+      }
+    }
 
     const validCode = await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
     if (!validCode) {

@@ -160,6 +160,14 @@ export class AnonymisationService {
       }
 
       case 'referral': {
+        const photoPath = record.photoStoragePath as string | null;
+        if (photoPath) {
+          try {
+            await this.photoStorage.delete(photoPath);
+          } catch {
+            // Ignore an already deleted profile photo.
+          }
+        }
         const placeholderPhone = `+91000${code.replace(/\D/g, '').padStart(7, '0')}`;
 
         await this.prisma.referral.update({
@@ -167,9 +175,37 @@ export class AnonymisationService {
           data: {
             name: 'Anonymised',
             phone: placeholderPhone,
+            whatsappPhone: null,
+            language: null,
+            individualRole: null,
+            businessId: null,
+            partnerBusinessType: null,
+            partnerBusinessName: null,
+            locality: null,
+            pincode: null,
+            latitude: null,
+            longitude: null,
+            heardFrom: null,
+            photoStoragePath: null,
+            photoTakenAt: null,
             anonymisedAt: now,
           },
         });
+        changedFields.push(
+          'whatsappPhone',
+          'language',
+          'individualRole',
+          'businessId',
+          'partnerBusinessType',
+          'partnerBusinessName',
+          'locality',
+          'pincode',
+          'latitude',
+          'longitude',
+          'heardFrom',
+          'photoStoragePath',
+          'photoTakenAt',
+        );
         break;
       }
     }

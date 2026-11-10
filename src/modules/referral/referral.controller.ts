@@ -30,7 +30,8 @@ export class ReferralController {
   ) {}
 
   @Post(':id/terms-links')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead', 'finance')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('referral', 'write')
   async createTermsLink(
     @Param('id') referralId: string,
     @Body() body: { language?: string },
@@ -50,7 +51,17 @@ export class ReferralController {
     @Body() body: CreateReferralDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.referralService.create(body, req.user.sub);
+    const referral = await this.referralService.create(body, req.user.sub);
+    const registration = await this.consentLinkService.createReferralTermsLink(
+      referral.id,
+      req.user.sub,
+      body.language,
+    );
+    return {
+      ...referral,
+      registrationLinkSent: registration.success,
+      registrationLinkExpiresAt: registration.expiresAt,
+    };
   }
 
   @Get()

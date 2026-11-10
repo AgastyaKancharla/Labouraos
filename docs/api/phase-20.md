@@ -329,3 +329,26 @@ Only the CEO may create a new legal-minimum-wage policy version. Amounts are mon
 ## Task 2 capture behavior
 
 Job seeker creation, additional job seeker trades, vacancy creation and trade edits retain a typed trade immediately. If it is not an active listed trade, a waiting suggestion is added or the existing normalized suggestion gains that subject. Matching returns no candidates for a vacancy whose trade is not active and listed.
+
+## Task 6 referral partner registration
+
+`POST /referrals` is for call agents, field agents, Team Leads, Managers, and the CEO. It requires a name, OTP-verified `phone`, `whatsappPhone`, `language` (`kn`, `hi`, `en`), `locality`, six-digit `pincode`, and `heardFrom` from the Task 4 closed list. Individual partners also require `individualRole`; business partners must link `businessId` or provide `partnerBusinessType` and `partnerBusinessName`. `latitude` and `longitude` are optional and must be sent together. The request rejects payout account details. A successful create sends the referral ID and a 48-hour registration link by SMS.
+
+```json
+{
+  "name": "Asha Rao",
+  "phone": "+919876543210",
+  "whatsappPhone": "+919876543210",
+  "language": "kn",
+  "type": "individual",
+  "individualRole": "shop_staff",
+  "locality": "Indiranagar",
+  "pincode": "560038",
+  "heardFrom": "field_visit",
+  "otpRequestId": "verified-otp-request-id"
+}
+```
+
+`POST /referrals/:id/terms-links` resends the registration link and revokes any earlier active link. `GET /referral-registration/:token/status?requestId=...` returns registration progress only after OTP verification to the partner's registered number. `POST /consent/submit` records referral terms and call-recording consent. The same token then accepts live-camera `POST /referral-registration/:token/selfie`, provider-backed `POST /referral-registration/:token/id-check`, and partner-only `POST /referral-registration/:token/upi`; the UPI step requires a successful identity check and OTP. Completing UPI consumes the registration link.
+
+The staff registration status endpoint is `GET /referrals/:id/registration-status`. It returns terms, selfie, ID, and UPI state with timestamps and any safe reason. UPI identity review continues through the existing payout account and payout release flow.

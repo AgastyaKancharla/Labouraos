@@ -201,6 +201,11 @@ describe('Audit Logging', () => {
         dateOfBirth: '1995-05-15',
         aadhaarNumber: '123456789012',
         aadhaarLast4: '9012',
+        locality: 'Indiranagar',
+        pincode: '560038',
+        latitude: 12.9784,
+        nameMatches: true,
+        last4: '4242',
         status: 'active',
         amount: 49900,
       },
@@ -218,6 +223,11 @@ describe('Audit Logging', () => {
         dateOfBirth: '1995-05-15',
         aadhaarNumber: '123456789012',
         aadhaarLast4: '9012',
+        locality: 'Koramangala',
+        pincode: '560034',
+        latitude: 12.9352,
+        nameMatches: false,
+        last4: '5678',
         status: 'active',
         amount: 49900,
       },
@@ -246,6 +256,11 @@ describe('Audit Logging', () => {
     expect(beforeObj.dateOfBirth).toBe('[changed]');
     expect(beforeObj.aadhaarNumber).toBe('[changed]');
     expect(beforeObj.aadhaarLast4).toBe('[changed]');
+    expect(beforeObj.locality).toBe('[changed]');
+    expect(beforeObj.pincode).toBe('[changed]');
+    expect(beforeObj.latitude).toBe('[changed]');
+    expect(beforeObj.nameMatches).toBe('[changed]');
+    expect(beforeObj.last4).toBe('[changed]');
 
     expect(afterObj.name).toBe('[changed]');
     expect(afterObj.phone).toBe('[changed]');
@@ -258,6 +273,11 @@ describe('Audit Logging', () => {
     expect(afterObj.dateOfBirth).toBe('[changed]');
     expect(afterObj.aadhaarNumber).toBe('[changed]');
     expect(afterObj.aadhaarLast4).toBe('[changed]');
+    expect(afterObj.locality).toBe('[changed]');
+    expect(afterObj.pincode).toBe('[changed]');
+    expect(afterObj.latitude).toBe('[changed]');
+    expect(afterObj.nameMatches).toBe('[changed]');
+    expect(afterObj.last4).toBe('[changed]');
 
     // Raw values are nowhere in the row
     const rowJson = JSON.stringify(log);

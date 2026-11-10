@@ -87,6 +87,15 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
 
   afterAll(async () => {
     if (prisma) {
+      const referrals = await prisma.referral.findMany({
+        where: { phone: { contains: `${timestamp.toString().slice(-8)}` } },
+        select: { id: true },
+      });
+      const referralIds = referrals.map((referral) => referral.id);
+      if (referralIds.length) {
+        await prisma.payoutAccount.deleteMany({ where: { ownerType: 'referral', ownerId: { in: referralIds } } });
+        await prisma.publicLink.deleteMany({ where: { subjectType: 'referral', subjectId: { in: referralIds } } });
+      }
       await prisma.auditLog.deleteMany({
         where: {
           actorId: { in: [callAgentId, fieldAgentId, financeId] },
@@ -132,6 +141,12 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         name: 'Rajesh Sharma',
         phone,
         type: 'individual',
+        whatsappPhone: phone,
+        language: 'en',
+        individualRole: 'shop_staff',
+        locality: 'Indiranagar',
+        pincode: '560038',
+        heardFrom: 'field_visit',
         otpRequestId,
         city: 'Bengaluru',
       });
@@ -142,6 +157,17 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(res.body.name).toBe('Rajesh Sharma');
     expect(res.body.phoneVerified).toBe(true);
     expect(res.body.type).toBe('individual');
+    expect(res.body.registrationLinkSent).toBe(true);
+    expect(res.body.registrationLinkExpiresAt).toBeDefined();
+    const registrationSms = await prisma.messageLog.findFirst({
+      where: { subjectType: 'referral', subjectId: res.body.id, template: 'referral_terms_link', status: 'sent' },
+    });
+    expect(registrationSms).not.toBeNull();
+    const registrationLink = await prisma.publicLink.findFirst({
+      where: { purpose: 'referral_registration', subjectId: res.body.id, revokedAt: null },
+    });
+    expect(registrationLink).not.toBeNull();
+    expect(Math.abs(registrationLink!.expiresAt.getTime() - registrationLink!.createdAt.getTime() - 48 * 60 * 60 * 1000)).toBeLessThan(1000);
 
     // Audit log check
     const auditLogs = await prisma.auditLog.findMany({
@@ -165,6 +191,13 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         name: 'Sharma Staffing Services',
         phone,
         type: 'business',
+        whatsappPhone: phone,
+        language: 'en',
+        partnerBusinessType: 'staffing',
+        partnerBusinessName: 'Sharma Staffing Services',
+        locality: 'Indiranagar',
+        pincode: '560038',
+        heardFrom: 'walk_in',
         otpRequestId,
       });
 
@@ -201,6 +234,12 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         name: 'FA Referral',
         phone: phoneFa,
         type: 'individual',
+        whatsappPhone: phoneFa,
+        language: 'kn',
+        individualRole: 'shop_owner',
+        locality: 'Jayanagar',
+        pincode: '560041',
+        heardFrom: 'field_visit',
         otpRequestId: otpRequestIdFa,
       });
     expect(faRes.status).toBe(201);
@@ -216,9 +255,20 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         name: 'Finance Referral',
         phone: phoneFi,
         type: 'individual',
+        whatsappPhone: phoneFi,
+        language: 'en',
+        individualRole: 'other',
+        locality: 'Jayanagar',
+        pincode: '560041',
+        heardFrom: 'other',
         otpRequestId: otpRequestIdFi,
       });
     expect(fiRes.status).toBe(403);
+    await request(app.getHttpServer())
+      .post(`/referrals/${faRes.body.id}/terms-links`)
+      .set('Authorization', `Bearer ${financeToken}`)
+      .send({ language: 'en' })
+      .expect(403);
   });
 
   it('rejects referral creation without verified OTP (400)', async () => {
@@ -232,6 +282,12 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         name: 'Unverified Referral',
         phone,
         type: 'individual',
+        whatsappPhone: phone,
+        language: 'en',
+        individualRole: 'other',
+        locality: 'Jayanagar',
+        pincode: '560041',
+        heardFrom: 'other',
         otpRequestId: requestId,
       });
 
@@ -239,9 +295,153 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(res.body.message).toContain('OTP');
   });
 
+  it('enforces each referral registration field and refuses staff-entered payout details', async () => {
+    const phone = `85${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const valid = {
+      name: 'Required Field Partner', phone, whatsappPhone: phone, language: 'en',
+      type: 'individual', individualRole: 'shop_staff', locality: 'Indiranagar',
+      pincode: '560038', heardFrom: 'field_visit', otpRequestId,
+    };
+    const missingFields: Array<keyof typeof valid> = [
+      'name', 'phone', 'whatsappPhone', 'language', 'type', 'individualRole', 'locality', 'pincode', 'heardFrom',
+    ];
+    for (const field of missingFields) {
+      const payload = { ...valid } as Record<string, unknown>;
+      delete payload[field];
+      const response = await request(app.getHttpServer())
+        .post('/referrals')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send(payload);
+      expect(response.status).toBe(400);
+    }
+
+    const incompleteBusiness = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ ...valid, type: 'business' });
+    expect(incompleteBusiness.status).toBe(400);
+    expect(incompleteBusiness.body.message).toContain('partnerBusinessType and partnerBusinessName');
+
+    const withPayout = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ ...valid, upiId: 'agent@bank' });
+    expect(withPayout.status).toBe(400);
+    expect(withPayout.body.message).toContain('entered by the referral partner');
+  });
+
+  it('keeps the registration link resumable through consent, selfie, ID, and partner-entered UPI', async () => {
+    const phone = `86${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const created = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Resuming Referral', phone, whatsappPhone: phone, language: 'en', type: 'individual',
+        individualRole: 'existing_worker', locality: 'Indiranagar', pincode: '560038',
+        heardFrom: 'field_visit', otpRequestId,
+      })
+      .expect(201);
+    const originalLink = await prisma.publicLink.findFirst({
+      where: { purpose: 'referral_registration', subjectId: created.body.id, revokedAt: null },
+    });
+    expect(originalLink).not.toBeNull();
+    const linkResponse = await request(app.getHttpServer())
+      .post(`/referrals/${created.body.id}/terms-links`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ language: 'en' })
+      .expect(201);
+    const revokedOriginalLink = await prisma.publicLink.findUnique({ where: { id: originalLink!.id } });
+    expect(revokedOriginalLink?.revokedAt).toBeInstanceOf(Date);
+    const token = linkResponse.body.token as string;
+
+    await request(app.getHttpServer())
+      .get(`/referral-registration/${token}/status`)
+      .expect(200)
+      .expect(({ body }) => expect(body.otpRequired).toBe(true));
+
+    const termsOtp = await otpService.sendOtp(phone);
+    const termsCode = (otpService.getProvider() as MockOtpProvider).getCode(termsOtp.requestId)!;
+    await request(app.getHttpServer())
+      .post('/consent/submit')
+      .send({ token, requestId: termsOtp.requestId, otpRequestId: termsOtp.requestId, otpCode: termsCode, purposes: ['agreement_terms', 'call_recording'], language: 'en' })
+      .expect(201);
+
+    const selfieOtp = await otpService.sendOtp(phone);
+    const selfieCode = (otpService.getProvider() as MockOtpProvider).getCode(selfieOtp.requestId)!;
+    await otpService.verifyOtp(selfieOtp.requestId, selfieCode);
+    await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/selfie`)
+      .field('requestId', selfieOtp.requestId)
+      .field('captureSource', 'live_camera')
+      .attach('photo', Buffer.from('camera-image'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+
+    const idOtp = await otpService.sendOtp(phone);
+    const idCode = (otpService.getProvider() as MockOtpProvider).getCode(idOtp.requestId)!;
+    await otpService.verifyOtp(idOtp.requestId, idCode);
+    const idResult = await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/id-check`)
+      .send({ requestId: idOtp.requestId, method: 'pan' })
+      .expect(201);
+    expect(idResult.body.status).toBe('verified');
+    expect(idResult.body.nextStep).toBe('upi');
+
+    const payoutOtp = await otpService.sendOtp(phone);
+    const payoutCode = (otpService.getProvider() as MockOtpProvider).getCode(payoutOtp.requestId)!;
+    await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/upi`)
+      .send({ otpRequestId: payoutOtp.requestId, otpCode: payoutCode, upiId: `resumeref${timestamp}@bank` })
+      .expect(201);
+
+    const completedLink = await prisma.publicLink.findFirst({
+      where: { purpose: 'referral_registration', subjectId: created.body.id, revokedAt: null },
+    });
+    expect(completedLink?.usedAt).toBeInstanceOf(Date);
+    const registrationStatus = await request(app.getHttpServer())
+      .get(`/referrals/${created.body.id}/registration-status`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .expect(200);
+    expect(registrationStatus.body.steps.terms.state).toBe('done');
+    expect(registrationStatus.body.steps.selfie.state).toBe('done');
+    expect(registrationStatus.body.steps.id.state).toBe('done');
+    expect(registrationStatus.body.steps.upi.state).toBe('in_progress');
+  });
+
+  it('does not let a referral partner refer themselves for a joining reward', async () => {
+    const phone = `87${timestamp.toString().slice(-8)}`;
+    const referralOtp = await getVerifiedOtp(phone);
+    const referral = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Self Referral Partner', phone, whatsappPhone: phone, language: 'en', type: 'individual',
+        individualRole: 'other', locality: 'Jayanagar', pincode: '560041', heardFrom: 'other', otpRequestId: referralOtp,
+      })
+      .expect(201);
+    const candidateOtp = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/job-seekers')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send(completeJobSeekerRegistration({
+        phone,
+        otpRequestId: candidateOtp,
+        tradeSkill: 'Painter',
+        minSalary: 1500000,
+        maxSalary: 2000000,
+        preferredCallWindowStart: '10:00',
+        preferredCallWindowEnd: '17:00',
+        heardFrom: 'referral_partner',
+        referredById: referral.body.id,
+      }));
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('cannot refer themselves');
+  });
+
   it('validates referredById when creating a job seeker: rejects invalid and links valid', async () => {
     // 1. Create a valid referral
-    const referralPhone = `86${timestamp.toString().slice(-8)}`;
+    const referralPhone = `91${timestamp.toString().slice(-8)}`;
     const refOtpId = await getVerifiedOtp(referralPhone);
     const refRes = await request(app.getHttpServer())
       .post('/referrals')
@@ -250,12 +450,18 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
         name: 'Referral Partner John',
         phone: referralPhone,
         type: 'individual',
+        whatsappPhone: referralPhone,
+        language: 'en',
+        individualRole: 'existing_worker',
+        locality: 'Indiranagar',
+        pincode: '560038',
+        heardFrom: 'field_visit',
         otpRequestId: refOtpId,
       });
     const referralId = refRes.body.id;
 
     // 2. Attempt to create a job seeker with non-existent referredById -> 400
-    const jsPhone1 = `87${timestamp.toString().slice(-8)}`;
+    const jsPhone1 = `92${timestamp.toString().slice(-8)}`;
     const jsOtp1 = await getVerifiedOtp(jsPhone1);
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
 
@@ -295,8 +501,6 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       }));
 
     expect(successRes.status).toBe(201);
-    expect(successRes.body.referredById).toBe(referralId);
-
     // Verify relation from referral side
     const refWithSeekers = await prisma.referral.findUnique({
       where: { id: referralId },

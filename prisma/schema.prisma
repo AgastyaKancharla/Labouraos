@@ -262,8 +262,23 @@ model Referral {
   phone         String      @unique
   phoneVerified Boolean     @default(false)
   type          String      @default("individual") // individual, business
+  whatsappPhone String?
+  language      String?
+  individualRole String?
+  businessId    String?
+  business      Business?   @relation("ReferralPartnerBusiness", fields: [businessId], references: [id], onDelete: SetNull)
+  partnerBusinessType String?
+  partnerBusinessName String?
+  locality      String?
+  pincode       String?
+  latitude      Float?
+  longitude     Float?
+  heardFrom     String?
+  photoStoragePath String?
+  photoTakenAt  DateTime?
   jobSeekers    JobSeeker[]
   payments      Payment[]
+  identityVerifications ReferralIdentityVerification[]
   anonymisedAt  DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -323,6 +338,7 @@ model Business {
   candidateIntroductions CandidateIntroduction[]
   candidateIntroductionLinks CandidateIntroductionLink[]
   interviews                Interview[]
+  referralPartners          Referral[] @relation("ReferralPartnerBusiness")
   followUpAnswerBusinesses  FollowUpTask[] @relation("FollowUpAnswerBusiness")
   anonymisedAt  DateTime?
   createdAt     DateTime        @default(now())
@@ -331,6 +347,26 @@ model Business {
   @@index([city])
   @@index([accountAgentId])
   @@index([verificationStatus])
+}
+
+model ReferralIdentityVerification {
+  id              String    @id @default(uuid())
+  referralId      String
+  referral        Referral  @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  method          String
+  vendor          String
+  vendorReference String
+  status          String
+  last4           String?
+  nameMatches     Boolean?
+  isAdult         Boolean?
+  verifiedAt      DateTime?
+  failureReason   String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([referralId, createdAt])
+  @@index([status])
 }
 
 model Vacancy {
