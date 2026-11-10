@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { Reflector } from '@nestjs/core';
@@ -393,7 +394,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
       const res = await request(app.getHttpServer())
         .post('/job-seekers')
         .set('Authorization', `Bearer ${lead1Token}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: 'Lead Created Candidate',
           phone,
           otpRequestId,
@@ -402,7 +403,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',
           preferredCallWindowEnd: '18:00',
-        });
+        }));
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBeDefined();

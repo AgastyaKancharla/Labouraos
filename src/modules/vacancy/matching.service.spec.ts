@@ -194,6 +194,31 @@ describe('MatchingService', () => {
     expect((await run(candidates, { licencesRequired: ['Forklift'] })).matches).toHaveLength(0);
   });
 
+  it('uses the guarantee floor for suitable offers and labels offers within 10% below it as near-misses', async () => {
+    const candidate = baseCandidate('salary-floor', {
+      minSalary: 2500000,
+      maxSalary: 3000000,
+      guaranteeFloorPaise: 2000000,
+    });
+    candidates = [candidate];
+    consentRows = ['job_matching', 'profile_sharing'].map((purpose) => ({
+      subjectId: 'salary-floor', purpose, granted: true, grantedAt: now, withdrawnAt: null,
+    }));
+
+    const atFloor = await run(candidates, { salaryMinPaise: 2000000, salaryMaxPaise: 2000000 });
+    expect(atFloor.matches.map(({ jobSeekerId }) => jobSeekerId)).toEqual(['salary-floor']);
+    expect(atFloor.nearMisses).toHaveLength(0);
+
+    const ninePercentBelow = await run(candidates, { salaryMinPaise: 1820000, salaryMaxPaise: 1820000 });
+    expect(ninePercentBelow.matches).toHaveLength(0);
+    expect(ninePercentBelow.nearMisses).toMatchObject([
+      { jobSeekerId: 'salary-floor', salaryWarning: 'below_minimum_ask_him' },
+    ]);
+
+    const belowNearMissWindow = await run(candidates, { salaryMinPaise: 1799999, salaryMaxPaise: 1799999 });
+    expect(belowNearMissWindow.nearMisses).toHaveLength(0);
+  });
+
   it('requires availability on or before the vacancy start date', async () => {
     candidates = [baseCandidate('late', { availableFrom: new Date('2026-12-01T00:00:00.000Z') })];
     const result = await run(candidates, { startDate: new Date('2026-11-20T00:00:00.000Z') });

@@ -14,8 +14,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
 import {
   assertNoRawAadhaar,
-  validateCallWindow,
-  validateSalaryRange,
+  validateJobSeekerRegistration,
 } from './job-seeker.validator';
 import {
   refundGuaranteeDeadline,
@@ -46,7 +45,7 @@ import { withCurrentJobSeekerFields } from './job-seeker-legacy-read';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { ConsentClock } from '../consent/consent-clock';
-import { normalizeTradeName, TradeService } from '../trade/trade.service';
+import { normalizeTradeName, tradeNameKey, TradeService } from '../trade/trade.service';
 import {
   CANDIDATE_PHOTO_LINK_TTL_SECONDS,
   CANDIDATE_PHOTO_STORAGE,
@@ -117,6 +116,59 @@ export class JobSeekerService {
     return this.pricingService.current();
   }
 
+  private async recalculateGuaranteeFloor(
+    jobSeekerId: string,
+    actorId: string,
+  ): Promise<{ guaranteeFloorPaise: number | null } | null> {
+    const policy = await this.getPolicy();
+    const change = await this.prisma.$transaction(async (tx) => {
+      const seeker = await tx.jobSeeker.findUnique({
+        where: { id: jobSeekerId },
+        include: { trades: true },
+      });
+      if (!seeker || seeker.paymentReceivedAt) return null;
+      const primaryTrade = seeker.trades.find((trade) => trade.isPrimary);
+      if (!primaryTrade) return null;
+      const listedTrade = await tx.trade.findUnique({
+        where: { nameKey: tradeNameKey(primaryTrade.trade) },
+        select: { active: true, salaryMaxPaise: true },
+      });
+      const monthlyMinimum = seeker.salaryPeriod === 'daily'
+        ? seeker.minSalary * policy.salaryDaysPerMonth
+        : seeker.minSalary;
+      if (!Number.isSafeInteger(monthlyMinimum)) {
+        throw new BadRequestException('Monthly salary conversion exceeds the supported integer range');
+      }
+      const floor = listedTrade?.active
+        ? Math.min(monthlyMinimum, listedTrade.salaryMaxPaise)
+        : null;
+      if (floor === seeker.guaranteeFloorPaise) return null;
+      const updated = await tx.jobSeeker.updateMany({
+        where: { id: seeker.id, paymentReceivedAt: null },
+        data: { guaranteeFloorPaise: floor },
+      });
+      if (updated.count !== 1) return null;
+      return {
+        code: seeker.code,
+        city: seeker.city,
+        beforePaise: seeker.guaranteeFloorPaise,
+        afterPaise: floor,
+      };
+    });
+    if (!change) return null;
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.guarantee_floor_recalculated',
+      entityType: 'job_seeker',
+      entityCode: change.code,
+      before: { guaranteeFloorPaise: change.beforePaise },
+      after: { guaranteeFloorPaise: change.afterPaise },
+      changedFields: ['guaranteeFloorPaise'],
+      city: change.city,
+    });
+    return { guaranteeFloorPaise: change.afterPaise };
+  }
+
   /**
    * ANTI-FRAUD NOTE: Candidate onboarding already carries mobile-number OTP verification,
    * which is the control that makes field-agent candidate capture safe.
@@ -124,30 +176,33 @@ export class JobSeekerService {
    */
   async create(dto: CreateJobSeekerDto, actorId: string) {
     assertNoRawAadhaar(dto);
-
-    const phone = (dto.phone ?? dto.mobileNumber)?.trim();
-    if (!phone) {
-      throw new BadRequestException('Mobile number is required');
-    }
-
-    validateCallWindow(dto.preferredCallWindowStart, dto.preferredCallWindowEnd);
-    validateSalaryRange(dto.minSalary, dto.maxSalary);
-
-    if (!dto.otpRequestId) {
-      throw new BadRequestException('otpRequestId is required: mobile number must pass OTP verification');
-    }
+    const policy = await this.getPolicy();
+    const now = this.consentClock?.now();
+    if (!now) throw new Error('ConsentClock is not configured');
+    const form = validateJobSeekerRegistration(
+      dto,
+      policy.adultMinimumAge,
+      now,
+    );
+    const phone = form.phone;
 
     const isVerified = await this.otpService.isVerified(dto.otpRequestId, phone);
     if (!isVerified) {
       throw new BadRequestException('Mobile number must pass OTP verification before registration');
     }
 
-    if (dto.referredById) {
+    if (dto.referredById && dto.heardFrom !== 'referral_partner') {
+      throw new BadRequestException('referredById can only be used when heardFrom is referral_partner');
+    }
+    if (dto.heardFrom === 'referral_partner' && dto.referredById) {
       const referral = await this.prisma.referral.findUnique({
         where: { id: dto.referredById },
       });
       if (!referral) {
         throw new BadRequestException(`Referral partner with id '${dto.referredById}' does not exist`);
+      }
+      if (referral.phone === phone) {
+        throw new BadRequestException('A referral partner cannot refer themselves');
       }
     }
 
@@ -157,8 +212,30 @@ export class JobSeekerService {
     if (existing) {
       throw new ConflictException(`Job seeker with phone '${phone}' already exists`);
     }
-
     const code = await this.idService.generateCode('job_seeker');
+
+    const primaryTrade = form.trades[0];
+    const managedTrade = await this.prisma.trade.findUnique({
+      where: { nameKey: tradeNameKey(primaryTrade.trade) },
+      select: { active: true, salaryMinPaise: true, salaryMaxPaise: true },
+    });
+    const salaryDaysPerMonth = policy.salaryDaysPerMonth;
+    const monthlyMinimum = dto.salaryPeriod === 'daily'
+      ? dto.minSalary * salaryDaysPerMonth
+      : dto.minSalary;
+    if (!Number.isSafeInteger(monthlyMinimum)) {
+      throw new BadRequestException('Monthly salary conversion exceeds the supported integer range');
+    }
+    const tradeSalaryRange = managedTrade?.active ? {
+      minSalaryPaise: managedTrade.salaryMinPaise,
+      maxSalaryPaise: managedTrade.salaryMaxPaise,
+    } : null;
+    const guaranteeFloorPaise = tradeSalaryRange
+      ? Math.min(monthlyMinimum, tradeSalaryRange.maxSalaryPaise)
+      : null;
+    const warnings = tradeSalaryRange && monthlyMinimum > tradeSalaryRange.maxSalaryPaise
+      ? ['salary_above_market'] as const
+      : [] as const;
 
     /**
      * RATIONALE FOR AGENT ATTRIBUTION (Phase 6.7 Task 1):
@@ -168,17 +245,7 @@ export class JobSeekerService {
      * a duplicate-selfie detection is only actionable if the record names who created it.
      * They are NOT for pay: agents are salaried, there is no commission.
      */
-    const status = (dto.status as string) || 'lead';
-    const dob = dto.dateOfBirth ? new Date(dto.dateOfBirth as string | Date) : null;
-    if (dob) {
-      validateJobSeekerAge(dob, status);
-    }
-    const trade = typeof dto.tradeSkill === 'string' ? normalizeTradeName(dto.tradeSkill) : '';
-    if (status === 'pending_activation' && !trade) {
-      throw new BadRequestException(
-        'A primary trade is required before a job seeker can reach pending_activation',
-      );
-    }
+    const status = 'lead';
 
     const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
     if (!otpConsumed) {
@@ -189,32 +256,55 @@ export class JobSeekerService {
       const created = await tx.jobSeeker.create({
         data: {
           code,
-          name: dto.name?.trim() || 'Job Seeker',
+          name: form.name,
           phone,
           phoneVerified: true,
           minSalary: dto.minSalary,
           maxSalary: dto.maxSalary,
-          preferredCallWindowStart: dto.preferredCallWindowStart,
-          preferredCallWindowEnd: dto.preferredCallWindowEnd,
+          preferredCallWindowStart: form.preferredCallWindowStart,
+          preferredCallWindowEnd: form.preferredCallWindowEnd,
           city: dto.city ?? 'Bengaluru',
           status,
-          dateOfBirth: dob,
+          dateOfBirth: form.dateOfBirth,
+          messageLanguage: dto.messageLanguage,
+          heardFrom: dto.heardFrom,
+          gender: dto.gender.trim(),
+          locality: dto.locality.trim(),
+          pincode: dto.pincode.trim(),
+          latitude: dto.latitude,
+          longitude: dto.longitude,
+          travelDistanceKm: dto.travelDistanceKm,
+          availableFrom: form.availableFrom,
+          lookingSince: form.lookingSince,
+          salaryPeriod: dto.salaryPeriod,
+          shiftPreference: dto.shiftPreference,
+          jobType: dto.jobType,
+          guaranteeFloorPaise,
           referredById: dto.referredById ?? null,
           registeredByStaffId: actorId ?? null,
         },
       });
 
-      if (trade) {
+      for (const [index, trade] of form.trades.entries()) {
         await tx.jobSeekerTrade.create({
           data: {
             jobSeekerId: created.id,
-            trade,
-            yearsExperience: dto.yearsExperience ?? 0,
-            isPrimary: true,
+            trade: normalizeTradeName(trade.trade),
+            yearsExperience: trade.yearsExperience,
+            isPrimary: index === 0,
           },
         });
-        await this.tradeService.recordSuggestion(tx, trade, actorId ?? null, 'job_seeker', created.id);
+        await this.tradeService.recordSuggestion(tx, trade.trade, actorId ?? null, 'job_seeker', created.id);
       }
+      await tx.jobSeekerLanguage.createMany({
+        data: form.spokenLanguages.map((language) => ({
+          jobSeekerId: created.id,
+          language,
+          speaks: true,
+          reads: false,
+          writes: false,
+        })),
+      });
 
       await recordStatusChange(tx, {
         subjectType: 'job_seeker',
@@ -236,11 +326,21 @@ export class JobSeekerService {
       action: 'job_seeker.create',
       entityType: 'job_seeker',
       entityCode: code,
-      after: jobSeeker as unknown as Record<string, unknown>,
+      after: { created: true, status: 'lead' },
+      changedFields: [
+        'name', 'phone', 'messageLanguage', 'bestTimeToCall', 'dateOfBirth', 'gender', 'heardFrom',
+        'locality', 'pincode', 'latitude', 'longitude', 'travelDistanceKm', 'trades', 'availableFrom',
+        'lookingSince', 'salaryRange', 'salaryPeriod', 'shiftPreference', 'jobType', 'spokenLanguages',
+        'referredById', 'guaranteeFloorPaise',
+      ],
       city: jobSeeker.city,
     });
 
-    return jobSeeker;
+    return {
+      ...jobSeeker,
+      warnings: [...warnings],
+      ...(tradeSalaryRange ? { salaryRange: tradeSalaryRange } : {}),
+    };
   }
 
   async findAll() {
@@ -999,6 +1099,12 @@ export class JobSeekerService {
       include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
 
+    let guaranteeFloorPaise = updated.guaranteeFloorPaise;
+    if (diff.changedFields.some((field) => ['minSalary', 'salaryPeriod'].includes(field))) {
+      const recalculated = await this.recalculateGuaranteeFloor(updated.id, editActor.id);
+      if (recalculated) guaranteeFloorPaise = recalculated.guaranteeFloorPaise;
+    }
+
     await this.editPolicyService.logEdit({
       actorId: editActor.id,
       entityType: 'job_seeker',
@@ -1008,7 +1114,7 @@ export class JobSeekerService {
       city: record.city as string | undefined,
     });
 
-    return withCurrentJobSeekerFields(updated);
+    return withCurrentJobSeekerFields({ ...updated, guaranteeFloorPaise });
   }
 
   /**
@@ -1111,6 +1217,10 @@ export class JobSeekerService {
       return row;
     });
 
+    if (isPrimary) {
+      await this.recalculateGuaranteeFloor(jobSeekerId, actorId ?? 'system');
+    }
+
     if (actorId && actorId !== 'system') {
       await this.auditService.log({
         actorId,
@@ -1209,6 +1319,9 @@ export class JobSeekerService {
         jobSeekerId,
       ));
     }
+    if (trade.isPrimary || dto.isPrimary === true || typeof data.trade === 'string') {
+      await this.recalculateGuaranteeFloor(jobSeekerId, actorId ?? 'system');
+    }
 
     if (actorId && actorId !== 'system') {
       await this.auditService.log({
@@ -1254,6 +1367,7 @@ export class JobSeekerService {
           data: { isPrimary: true },
         });
       }
+      await this.recalculateGuaranteeFloor(jobSeekerId, actorId ?? 'system');
     }
 
     if (actorId && actorId !== 'system') {

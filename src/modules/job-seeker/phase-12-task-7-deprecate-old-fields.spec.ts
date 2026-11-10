@@ -7,6 +7,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
 describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
   let app: INestApplication;
@@ -117,7 +118,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     expect(res.body.identityVerifications[0].status).toBe('failed');
   });
 
-  it('creates a lead with no trade, and writes an optional supplied trade only to JobSeekerTrade', async () => {
+  it('creates a lead with the required primary trade only in JobSeekerTrade', async () => {
     const phone = `+919${randomUUID().replace(/\D/g, '').slice(0, 10)}`;
     const { requestId } = await otpService.sendOtp(phone);
     const provider = otpService.getProvider() as MockOtpProvider;
@@ -126,7 +127,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     const noTrade = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         name: 'Lead without trade',
         phone,
         otpRequestId: requestId,
@@ -134,12 +135,12 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
-      })
+      }))
       .expect(201);
     createdSeekerIds.push(noTrade.body.id);
     expect(noTrade.body.status).toBe('lead');
-    expect(noTrade.body.tradeSkill).toBeNull();
-    expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: noTrade.body.id } })).toBe(0);
+    expect(noTrade.body.tradeSkill).toBe('Housekeeping');
+    expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: noTrade.body.id } })).toBe(1);
 
     const tradePhone = `+919${randomUUID().replace(/\D/g, '').slice(0, 10)}`;
     const otp = await otpService.sendOtp(tradePhone);
@@ -147,7 +148,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     const withTrade = await request(app.getHttpServer())
       .post('/job-seekers')
       .set('Authorization', `Bearer ${managerToken}`)
-      .send({
+      .send(completeJobSeekerRegistration({
         name: 'Lead with trade',
         phone: tradePhone,
         otpRequestId: otp.requestId,
@@ -156,7 +157,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
         maxSalary: 2500000,
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
-      })
+      }))
       .expect(201);
     createdSeekerIds.push(withTrade.body.id);
     expect(withTrade.body.tradeSkill).toBe('Painter');

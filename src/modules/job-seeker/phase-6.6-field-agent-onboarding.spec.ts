@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 
 describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => {
@@ -214,7 +215,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       const res = await request(app.getHttpServer())
         .post('/job-seekers')
         .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: 'Field Onboarded Seeker',
           phone,
           otpRequestId,
@@ -223,7 +224,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',
           preferredCallWindowEnd: '18:00',
-        });
+        }));
 
       expect(res.status).toBe(201);
       expect(res.body.id).toBeDefined();
@@ -244,7 +245,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       const res = await request(app.getHttpServer())
         .post('/job-seekers')
         .set('Authorization', `Bearer ${financeToken}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: 'Finance Imposter Seeker',
           phone,
           otpRequestId,
@@ -253,7 +254,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           maxSalary: 2500000,
           preferredCallWindowStart: '09:00',
           preferredCallWindowEnd: '18:00',
-        });
+        }));
 
       expect(res.status).toBe(403);
     });

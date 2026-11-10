@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 
 describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution', () => {
@@ -218,7 +219,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       const res = await request(app.getHttpServer())
         .post('/job-seekers')
         .set('Authorization', `Bearer ${callAgentToken}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: 'CA Onboarded Candidate',
           phone,
           otpRequestId,
@@ -228,7 +229,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
           preferredCallWindowStart: '09:00',
           preferredCallWindowEnd: '18:00',
           city: 'Bengaluru',
-        });
+        }));
 
       expect(res.status).toBe(201);
       cleanJobSeekerIds.push(res.body.id);
@@ -249,7 +250,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       const res = await request(app.getHttpServer())
         .post('/job-seekers')
         .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .send({
+        .send(completeJobSeekerRegistration({
           name: 'FA Onboarded Candidate',
           phone,
           otpRequestId,
@@ -259,7 +260,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
           preferredCallWindowStart: '10:00',
           preferredCallWindowEnd: '17:00',
           city: 'Bengaluru',
-        });
+        }));
 
       expect(res.status).toBe(201);
       cleanJobSeekerIds.push(res.body.id);
