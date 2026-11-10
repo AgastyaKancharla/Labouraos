@@ -94,6 +94,9 @@ describe('RBAC Guard and PII Masking', () => {
   it('preserves the audit redaction marker while masking phone values', () => {
     expect(maskAgentPhones({ phone: '[changed]' })).toEqual({ phone: '[changed]' });
     expect(maskAgentPhones({ phone: '+919876543210' })).toEqual({ phone: '******3210' });
+    expect(maskAgentPhones({ steps: { phone: { state: 'done', time: null } } })).toEqual({
+      steps: { phone: { state: 'done', time: null } },
+    });
     expect(maskPii({ phone: '[changed]' })).toEqual({ phone: '[changed]' });
     expect(maskPii({ phone: '+919876543210' })).toEqual({ phone: '********' });
   });

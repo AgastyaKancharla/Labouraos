@@ -489,3 +489,8 @@ Format:
 **Symptom:** A gate test expected an edit-reason error but got the raw Aadhaar rejection.
 **Cause:** Concatenating an 8-character hexadecimal suffix into the phone fixture could produce exactly 12 digits, which the request validator correctly rejects.
 **Fix:** Generate a separate numeric suffix and make the API phone fixtures valid 10-digit numbers.
+
+## Nested registration step named `phone` was masked as a phone number
+**Symptom:** The registration status response replaced the entire `steps.phone` object with a masked string for agent roles.
+**Cause:** `maskAgentPhones` masked every value under a phone-like key without checking whether the value was a scalar phone number or a nested status object.
+**Fix:** Apply phone masking only to scalar values and cover nested `steps.phone` objects with a regression test.
