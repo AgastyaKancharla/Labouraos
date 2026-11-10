@@ -512,10 +512,15 @@ Format:
 
 ## A confirmed staff-needed vacancy can still be invisible to matching
 **Symptom:** After the branch contact's OTP the shortlist is empty, or it returns 403.
-**Cause:** Matching shows candidates only for a verified business, and only when the vacancy has a latitude and longitude. A new business is a `lead`. A staff-needed draft copies the locality, not the shop or branch pin.
-**Fix:** The Phase 20 gate proof marks the bakery verified and sets the vacancy pin to the shop pin, then shows the shortlist stays closed until the contact's OTP. The draft itself does not gain a pin or a verified business. It also records the field agent as the account agent before the draft is completed: a field agent's vacancy write is refused unless they are the account agent, and registration does not assign one.
+**Cause:** Matching shows candidates only for a verified business, and only when the vacancy has a latitude and longitude. A new business stays a `lead` until the verification visit.
+**Fix:** The Phase 20 gate proof marks the bakery verified, then shows the shortlist stays closed until the contact's OTP. The draft's pin and the account agent now come from registration itself; see the later lesson.
 
 ## Under-18 payment stop crashed the UPI activation unit test
 **Symptom:** `switch-to-upi.spec.ts` threw `Cannot read properties of undefined (reading 'findFirst')` inside `assertAdultBeforePayment`.
 **Cause:** `createActivationPayment` now reads the latest identity verification. That unit test builds `JobSeekerService` with a fake Prisma client that had no `identityVerification` model.
 **Fix:** The fake returns no identity row. No row is not an under-18 result, so the ₹499 UPI request is still created. A stored `isAdult: false` is what stops payment.
+
+## A field agent who registers a business is its account agent, and drafts take the map pin
+**Symptom:** The field agent who had just registered a bakery was refused when completing its draft, and a confirmed staff-needed vacancy had no latitude or longitude.
+**Cause:** Registration stored who created the lead and left `accountAgentId` empty. A field agent may write vacancies only where they are the account agent. Staff-needed drafts copied the locality and not the pin.
+**Fix:** `POST /businesses` by a field agent sets `accountAgentId` and `accountAgentAssignedAt`. A call agent, Team Lead, Manager or CEO still leaves both empty until the verification visit. A staff-needed draft copies the branch pin when the branch has one, and otherwise the business pin.
