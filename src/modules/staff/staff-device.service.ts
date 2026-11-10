@@ -11,6 +11,7 @@ import {
   BELOW_MANAGER_ROLES,
   SELF_APPROVED_DEVICE_ROLES,
 } from './staff-device.constants';
+import { ReportingScopeService } from './reporting-scope.service';
 
 export interface DeviceActor {
   id: string;
@@ -23,6 +24,7 @@ const deviceStaffSelect = {
   name: true,
   role: true,
   teamLeadId: true,
+  reportsToId: true,
 } as const;
 
 @Injectable()
@@ -30,6 +32,7 @@ export class StaffDeviceService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    private readonly reportingScope: ReportingScopeService,
   ) {}
 
   async findApproved(staffId: string, deviceId: string): Promise<StaffDevice | null> {
@@ -125,7 +128,7 @@ export class StaffDeviceService {
 
   async listPending(approver: DeviceActor) {
     this.assertApproverRole(approver);
-    const where = this.pendingWhere(approver);
+    const where = await this.pendingWhere(approver);
     const devices = await this.prisma.staffDevice.findMany({
       where,
       orderBy: { requestedAt: 'asc' },
@@ -144,7 +147,7 @@ export class StaffDeviceService {
   async approve(deviceRowId: string, approver: DeviceActor) {
     this.assertApproverRole(approver);
     const device = await this.requireDevice(deviceRowId);
-    this.assertCanDecide(approver, device.staff);
+    await this.assertCanDecide(approver, device.staff);
 
     if (device.status === 'approved') {
       return device;
@@ -176,7 +179,7 @@ export class StaffDeviceService {
   async revoke(deviceRowId: string, approver: DeviceActor) {
     this.assertApproverRole(approver);
     const device = await this.requireDevice(deviceRowId);
-    this.assertCanDecide(approver, device.staff);
+    await this.assertCanDecide(approver, device.staff);
 
     const now = new Date();
     const { updated, sessionsEnded } = await this.prisma.$transaction(async (tx) => {
@@ -221,7 +224,7 @@ export class StaffDeviceService {
     if (!staff) {
       throw new NotFoundException(`Staff '${staffId}' not found`);
     }
-    if (!this.canList(actor, staff)) {
+    if (!(await this.canList(actor, staff))) {
       throw new ForbiddenException('You cannot view devices for this staff member');
     }
     const devices = await this.prisma.staffDevice.findMany({
@@ -238,26 +241,36 @@ export class StaffDeviceService {
     return devices;
   }
 
-  private pendingWhere(approver: DeviceActor): Prisma.StaffDeviceWhereInput {
+  private async pendingWhere(approver: DeviceActor): Promise<Prisma.StaffDeviceWhereInput> {
     const notSelf = { staffId: { not: approver.id } };
-    if (approver.role === 'ceo' || approver.role === 'manager') {
+    if (approver.role === 'ceo') {
       return {
         status: 'pending',
         ...notSelf,
         staff: { role: { in: [...BELOW_MANAGER_ROLES] } },
       };
     }
+    if (approver.role === 'manager') {
+      const under = await this.reportingScope.peopleUnder(approver.id);
+      return {
+        status: 'pending',
+        staffId: { in: under },
+        staff: { role: { in: [...BELOW_MANAGER_ROLES] } },
+      };
+    }
     return {
       status: 'pending',
       ...notSelf,
-      staff: { teamLeadId: approver.id },
+      staff: {
+        OR: [{ teamLeadId: approver.id }, { reportsToId: approver.id }],
+      },
     };
   }
 
-  private assertCanDecide(
+  private async assertCanDecide(
     approver: DeviceActor,
-    target: { id: string; role: string; teamLeadId: string | null },
-  ): void {
+    target: { id: string; role: string; teamLeadId: string | null; reportsToId?: string | null },
+  ): Promise<void> {
     if (approver.id === target.id) {
       throw new ForbiddenException('Nobody can approve or revoke their own device');
     }
@@ -270,15 +283,17 @@ export class StaffDeviceService {
       return;
     }
     if (approver.role === 'manager') {
-      if (!(BELOW_MANAGER_ROLES as readonly string[]).includes(target.role)) {
+      const allowed = await this.reportingScope.personIsUnder(approver.id, target.id);
+      if (!allowed || !(BELOW_MANAGER_ROLES as readonly string[]).includes(target.role)) {
         throw new ForbiddenException(
-          'A Manager can approve devices only for staff below Manager',
+          'A Manager can approve devices only for people in their reporting line',
         );
       }
       return;
     }
     if (approver.role === 'team_lead') {
-      if (target.teamLeadId !== approver.id) {
+      const onTeam = target.teamLeadId === approver.id || target.reportsToId === approver.id;
+      if (!onTeam) {
         throw new ForbiddenException(
           'A Team Lead can approve devices only for their own team',
         );
@@ -288,14 +303,23 @@ export class StaffDeviceService {
     throw new ForbiddenException('You cannot approve or revoke devices');
   }
 
-  private canList(actor: DeviceActor, staff: { id: string; role: string; teamLeadId: string | null }): boolean {
+  private async canList(
+    actor: DeviceActor,
+    staff: { id: string; role: string; teamLeadId: string | null; reportsToId?: string | null },
+  ): Promise<boolean> {
     if (actor.id === staff.id) {
       return true;
     }
-    if (actor.role === 'ceo' || actor.role === 'manager') {
+    if (actor.role === 'ceo') {
       return true;
     }
-    if (actor.role === 'team_lead' && staff.teamLeadId === actor.id) {
+    if (actor.role === 'manager') {
+      return this.reportingScope.personIsUnder(actor.id, staff.id);
+    }
+    if (
+      actor.role === 'team_lead' &&
+      (staff.teamLeadId === actor.id || staff.reportsToId === actor.id)
+    ) {
       return true;
     }
     return false;

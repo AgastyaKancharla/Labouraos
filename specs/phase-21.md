@@ -121,7 +121,7 @@ Also:
 
 ---
 
-### [ ] Task 1 — One reporting line for everyone
+### [x] Task 1 — One reporting line for everyone
 **Branch:** `phase-21/task-1-reporting-lines` · **Migration folder:** `20261114090000_reporting_lines`
 
 **Acceptance:**

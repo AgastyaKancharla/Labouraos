@@ -667,6 +667,12 @@ model Staff {
   teamLeadId        String?
   teamLead          Staff?           @relation("TeamHierarchy", fields: [teamLeadId], references: [id], onDelete: SetNull)
   teamMembers       Staff[]          @relation("TeamHierarchy")
+  /// Who this person reports to. Agents point at their Team Lead (kept in
+  /// step with teamLeadId). A Team Lead points at a Manager. A Manager or
+  /// Finance points at the CEO. The CEO points at nobody.
+  reportsToId       String?
+  reportsTo         Staff?           @relation("ReportingLine", fields: [reportsToId], references: [id], onDelete: SetNull)
+  directReports     Staff[]          @relation("ReportingLine")
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?
   worksFromOffice   Boolean          @default(false)
@@ -722,6 +728,7 @@ model Staff {
   @@index([city])
   @@index([role])
   @@index([teamLeadId])
+  @@index([reportsToId])
   @@index([lockedByStaffId])
 }
 

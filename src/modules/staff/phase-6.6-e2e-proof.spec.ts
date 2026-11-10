@@ -182,6 +182,27 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
     // STEP 4: Create a Team Lead and two agents under them
     // =========================================================================
     console.log('\n--- STEP 4: Create Team Lead 1, accept invite, enrol 2FA, and add 2 agents under them ---');
+    const ceoId = bootstrapRes.body.staff.id as string;
+    const createManagerRes = await request(app.getHttpServer())
+      .post('/staff')
+      .set('Authorization', `Bearer ${ceoFullToken}`)
+      .set('X-Forwarded-For', freshIp())
+      .send({
+        name: 'Manager 1',
+        email: 'manager1@laboura.local',
+        role: 'manager',
+        reportsToId: ceoId,
+      });
+    expect(createManagerRes.status).toBe(201);
+    const acceptManagerRes = await request(app.getHttpServer())
+      .post('/staff/accept-invite')
+      .set('X-Forwarded-For', freshIp())
+      .send({
+        token: createManagerRes.body.inviteToken,
+        password: 'Manager1Password2026!',
+      });
+    expect(acceptManagerRes.status).toBe(200);
+    const managerId = createManagerRes.body.staff.id as string;
     // 4a. Create Team Lead 1
     const createTl1Res = await request(app.getHttpServer())
       .post('/staff')
@@ -191,6 +212,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
         name: 'Team Lead 1',
         email: 'lead1@laboura.local',
         role: 'team_lead',
+        reportsToId: managerId,
       });
     expect(createTl1Res.status).toBe(201);
     const tl1Id = createTl1Res.body.staff.id;
@@ -262,6 +284,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
         name: 'Team Lead 2',
         email: 'lead2@laboura.local',
         role: 'team_lead',
+        reportsToId: managerId,
       });
     expect(createTl2Res.status).toBe(201);
     const tl2Id = createTl2Res.body.staff.id;

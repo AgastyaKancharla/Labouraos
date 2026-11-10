@@ -5,9 +5,10 @@ import { StaffDeviceService } from './staff-device.service';
 import { StaffService } from './staff.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IdModule } from '../../common/id/id.module';
+import { ReportingScopeModule } from './reporting-scope.module';
 
 @Module({
-  imports: [PrismaModule, IdModule],
+  imports: [PrismaModule, IdModule, ReportingScopeModule],
   controllers: [StaffController, StaffDeviceController],
   providers: [StaffService, StaffDeviceService],
   exports: [StaffService, StaffDeviceService],

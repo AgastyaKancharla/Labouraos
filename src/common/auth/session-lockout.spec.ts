@@ -308,7 +308,9 @@ describe('Phase 10 Task 5: sessions, lockout, lock and unlock', () => {
   it('a one-tap lock ends live sessions immediately and only unlock reverses it', async () => {
     const manager = await makeStaff('manager');
     const lead = await makeStaff('team_lead');
+    await prisma.staff.update({ where: { id: lead.id }, data: { reportsToId: manager.id } });
     const agent = await makeStaff('call_agent', { teamLeadId: lead.id });
+    await prisma.staff.update({ where: { id: agent.id }, data: { reportsToId: lead.id } });
     const finance = await makeStaff('finance');
     await approveDevice(agent.id, 'live-phone');
     const session = await openAgentSession(agent, 'live-phone', tokenFor(manager));

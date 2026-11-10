@@ -38,7 +38,7 @@ describe('CALL_ROUTING_KEY', () => {
     process.env.CALL_ROUTING_KEY = '';
     expect(() => getCallRoutingKey()).toThrow(/CALL_ROUTING_KEY environment variable is missing/);
     expect(
-      () => new StaffService({} as never, {} as never, {} as never, {} as never, {} as never),
+      () => new StaffService({} as never, {} as never, {} as never, {} as never, {} as never, {} as never),
     ).toThrow(/CALL_ROUTING_KEY/);
     await expect(
       Test.createTestingModule({ imports: [CallRoutingBootModule] }).compile(),

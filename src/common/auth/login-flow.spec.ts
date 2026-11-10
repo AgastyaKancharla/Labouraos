@@ -143,6 +143,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
       totpSecret: authenticator.generateSecret(),
       totpEnabled: true,
     });
+    await prisma.staff.update({ where: { id: lead.id }, data: { reportsToId: manager.id } });
     const managerToken = tokenFor(manager);
     const shown = await request(app.getHttpServer())
       .post(`/login-codes/${leadLogin.body.loginRequestId}/reveal`)
@@ -176,6 +177,14 @@ describe('Phase 10 Task 4: staff-code login', () => {
     const manager = await makeStaff('manager', {
       totpSecret: authenticator.generateSecret(),
       totpEnabled: true,
+    });
+    await prisma.staff.update({
+      where: { id: lead.id },
+      data: { reportsToId: manager.id },
+    });
+    await prisma.staff.update({
+      where: { id: agent.id },
+      data: { reportsToId: lead.id },
     });
 
     const waiting = await request(app.getHttpServer())
@@ -362,10 +371,20 @@ describe('Phase 10 Task 4: staff-code login', () => {
     expect(missing.status).toBe(400);
     expect(missing.body.message).toContain('email');
 
+    const managerForLead = await makeStaff('manager');
+    await prisma.staff.update({
+      where: { id: managerForLead.id },
+      data: { reportsToId: ceo.id },
+    });
+    const lead = await makeStaff('team_lead');
+    await prisma.staff.update({
+      where: { id: lead.id },
+      data: { reportsToId: managerForLead.id },
+    });
     const agent = await request(app.getHttpServer())
       .post('/staff')
       .set('Authorization', `Bearer ${ceoToken}`)
-      .send({ name: 'No Email Agent', role: 'call_agent' });
+      .send({ name: 'No Email Agent', role: 'call_agent', teamLeadId: lead.id });
     expect(agent.status).toBe(201);
     expect(agent.body.staff.email).toBeNull();
     createdIds.push(agent.body.staff.id);

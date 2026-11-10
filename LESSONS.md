@@ -524,3 +524,8 @@ Format:
 **Symptom:** The field agent who had just registered a bakery was refused when completing its draft, and a confirmed staff-needed vacancy had no latitude or longitude.
 **Cause:** Registration stored who created the lead and left `accountAgentId` empty. A field agent may write vacancies only where they are the account agent. Staff-needed drafts copied the locality and not the pin.
 **Fix:** `POST /businesses` by a field agent sets `accountAgentId` and `accountAgentAssignedAt`. A call agent, Team Lead, Manager or CEO still leaves both empty until the verification visit. A staff-needed draft copies the branch pin when the branch has one, and otherwise the business pin.
+
+## A Manager can act only on people in their reporting line
+**Symptom:** A Manager who used to reveal any login code, or approve any device, is now refused with 403.
+**Cause:** Phase 21 stores `reportsToId`. A call or field agent reports to an active Team Lead (`teamLeadId` is still written to the same person). A Team Lead reports to an active Manager. A Manager or Finance reports to the CEO. A Manager's login codes and devices are limited to `peopleUnder`. People with no line are handled by the CEO.
+**Fix:** Give the fixture the line before the Manager acts: the Team Lead's `reportsToId` is the Manager, and the agent's `reportsToId` is that Team Lead. Do not put the Manager back to "everyone".
