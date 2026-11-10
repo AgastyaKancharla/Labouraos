@@ -5,9 +5,10 @@ import { ConsentModule } from '../consent/consent.module';
 import { ReferralRegistrationController } from './referral-registration.controller';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
 import { PayoutAccountModule } from '../payout-account/payout-account.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 
 @Module({
-  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule],
+  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule],
   controllers: [ReferralController, ReferralRegistrationController],
   providers: [ReferralService],
   exports: [ReferralService],
