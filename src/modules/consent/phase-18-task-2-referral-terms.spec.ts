@@ -384,7 +384,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.message).toContain('Agreement terms and call recording consent are both required');
     });
 
-    it('signs both consents with one OTP, sharing the otpRequestId, and consumes the token', async () => {
+    it('signs both consents and keeps the link resumable for the later registration steps', async () => {
       const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
 
       const res = await request(app.getHttpServer())
@@ -419,7 +419,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(secondCreate.method).toBe('sms_link');
       expect(secondCreate.otpRequestId).toBe('otp-req-999');
 
-      // Reusing the same token fails
+      // The registration link remains valid after consent so the partner can resume at selfie, ID, and UPI.
       const repeatRes = await request(app.getHttpServer())
         .post('/consent/submit')
         .send({
@@ -428,8 +428,9 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           otpCode: '123456',
           purposes: ['agreement_terms', 'call_recording'],
         });
-      expect(repeatRes.status).toBe(400);
-      expect(repeatRes.body.message).toContain('Consent link has already been used');
+      expect(repeatRes.status).toBe(201);
+      expect(repeatRes.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording']);
+      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(4);
     });
   });
 
