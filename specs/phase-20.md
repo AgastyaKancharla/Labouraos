@@ -315,15 +315,15 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
 
 ## Phase 20 Gate
 
-- [ ] Every public link and real-provider OTP survives a restart; no raw token or phone is stored — by test
-- [ ] Trades come from the managed list; Other saves and is added or mapped by the CEO or a Manager; ranges and minimum wages are in force — by test
-- [ ] OTP resend waits 30 seconds, allows 3 resends, and a duplicate number opens the existing record instead of sending — by test
-- [ ] The job seeker form enforces the required fields; the guarantee floor is the lower of his minimum and the trade's top and freezes at payment — by test
-- [ ] One 48-hour link resumes consent → selfie → ID → payment; the payment-only link lasts 15 minutes and shows nothing private; a second payment is refunded — by test
-- [ ] Referral partners are registered by agents with an RF- ID and a resuming link ending in a name-checked UPI — by test
-- [ ] Businesses have a contact person, branches and staff-needed drafts; vacancies open only after the contact's OTP; below-minimum vacancies are warned and marked — by test
-- [ ] `docs/api/phase-20.md` documents every new endpoint
-- [ ] **End-to-end proof, recorded in the report:**
+- [x] Every public link and real-provider OTP survives a restart; no raw token or phone is stored — by test
+- [x] Trades come from the managed list; Other saves and is added or mapped by the CEO or a Manager; ranges and minimum wages are in force — by test
+- [x] OTP resend waits 30 seconds, allows 3 resends, and a duplicate number opens the existing record instead of sending — by test
+- [x] The job seeker form enforces the required fields; the guarantee floor is the lower of his minimum and the trade's top and freezes at payment — by test
+- [x] One 48-hour link resumes consent → selfie → ID → payment; the payment-only link lasts 15 minutes and shows nothing private; a second payment is refunded — by test
+- [x] Referral partners are registered by agents with an RF- ID and a resuming link ending in a name-checked UPI — by test
+- [x] Businesses have a contact person, branches and staff-needed drafts; vacancies open only after the contact's OTP; below-minimum vacancies are warned and marked — by test
+- [x] `docs/api/phase-20.md` documents every new endpoint
+- [x] **End-to-end proof, recorded in the report:**
   1. A call agent checks a new number by OTP, after a resend refused at 10 seconds and allowed at 31.
   2. The agent registers a housekeeper asking ₹25,000 (the range tops at ₹23,000): the warning shows and the floor is ₹23,000.
   3. The app restarts, and the registration link still works.
@@ -331,6 +331,6 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   5. The brother pays on a payment-only link. A duplicate payment is refunded automatically.
   6. A field agent registers a bakery with a second branch and two staff-needed rows. One draft is completed below the legal minimum (with the tick), and the branch contact confirms it by OTP. Only then does it appear in matching.
   7. A referral partner is registered and finishes their link with a UPI ID whose name matches.
-- [ ] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
+- [x] All earlier phase gate items still pass; CI green on `main`; every task branch was green before merging; `LESSONS.md` updated
 
 **When the gate passes: stop and report to Agastya.** Include commits, CI links, test counts, one line per task, any tests changed and why, and the end-to-end proof. Do not start anything else.

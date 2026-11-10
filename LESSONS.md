@@ -494,3 +494,23 @@ Format:
 **Symptom:** The registration status response replaced the entire `steps.phone` object with a masked string for agent roles.
 **Cause:** `maskAgentPhones` masked every value under a phone-like key without checking whether the value was a scalar phone number or a nested status object.
 **Fix:** Apply phone masking only to scalar values and cover nested `steps.phone` objects with a regression test.
+
+## The job-seeker consent page is the registration link
+**Symptom:** A restart used to kill every consent link, because the token lived only in server memory.
+**Cause:** Task 1 moved those tokens to `PublicLink`. The job-seeker registration link uses that store with purpose `registration` and a 48-hour life, and it still opens at `GET /consent/:token`. There is no second in-memory consent link for job seekers.
+**Fix:** Keep `GET /consent/:token` and `POST /consent/submit` for links already sent. Terms and the ₹499 payment are the later step, `GET /registration/:token/terms` and `POST /registration/:token/terms-and-payment`. Remove the old route only in a later phase, once every link sent before this change has expired.
+
+## Terms and payment stay closed until the earlier registration steps are done
+**Symptom:** `GET /registration/:token/terms` returns 400 even though the link and the OTP are valid.
+**Cause:** The terms step refuses, in order, until consent, the live-camera selfie and a verified ID with a matching name are stored. An unlisted primary Other has no guarantee floor, so the step stays on `Waiting for the new trade to be added in the Command Center`. An ID row with `isAdult: false` stops registration before any payment is created.
+**Fix:** Drive the link through those steps first. Do not call the activation-payment shortcut to get past an under-18 ID result; `createActivationPayment` uses the same stop.
+
+## A second bank credit for one activation is a duplicate refund, not a second payment
+**Symptom:** Two UPI credits carry the same activation reference. The second one must not activate the job seeker again.
+**Cause:** Once the activation payment is `succeeded`, a later credit for the same reference and the same amount is a duplicate. The bank feed returns `status: duplicate_refund_created` and inserts an already `approved` payment of type `duplicate_refund`. Posting the same bank UTR again is still an idempotent skip.
+**Fix:** Assert `duplicate_refund_created` and the approved `duplicate_refund` row. Do not treat that credit as `already_succeeded` unmatched.
+
+## A confirmed staff-needed vacancy can still be invisible to matching
+**Symptom:** After the branch contact's OTP the shortlist is empty, or it returns 403.
+**Cause:** Matching shows candidates only for a verified business, and only when the vacancy has a latitude and longitude. A new business is a `lead`. A staff-needed draft copies the locality, not the shop or branch pin.
+**Fix:** The Phase 20 gate proof marks the bakery verified and sets the vacancy pin to the shop pin, then shows the shortlist stays closed until the contact's OTP. The draft itself does not gain a pin or a verified business.
