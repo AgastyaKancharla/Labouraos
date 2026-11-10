@@ -317,6 +317,9 @@ export class BusinessService {
     const capturedChannel = staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
     const latitude = typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null);
     const longitude = typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null);
+    const accountAgent = staff.role === 'field_agent'
+      ? { accountAgentId: staff.id, accountAgentAssignedAt: this.clock.now() }
+      : {};
     const created = await this.prisma.$transaction(async (tx) => {
       const savedBusiness = await tx.business.create({
         data: {
@@ -363,6 +366,7 @@ export class BusinessService {
           verificationStatus: 'lead',
           leadCreatedByStaffId: staff.id,
           leadChannel: capturedChannel,
+          ...accountAgent,
           locality,
           latitude,
           longitude,
@@ -387,16 +391,23 @@ export class BusinessService {
       const draftVacancies: Array<{ code: string; headcount: number }> = [];
       for (const row of dto.staffNeededRows ?? []) {
         const vacancyCode = await this.idService.generateCode('vacancy');
+        const namedBranch = row.branchName?.trim()
+          ? (dto.branches ?? []).find((branch) => branch.name.trim() === row.branchName!.trim())
+          : undefined;
+        const branchId = namedBranch ? branchIds.get(namedBranch.name.trim()) ?? null : null;
+        const branchLatitude = namedBranch?.latitude;
+        const branchLongitude = namedBranch?.longitude;
+        const branchHasPin = typeof branchLatitude === 'number' && typeof branchLongitude === 'number';
         const vacancy = await tx.vacancy.create({ data: {
           code: vacancyCode, city, businessId: savedBusiness.id, capturedByStaffId: staff.id,
-          branchId: row.branchName?.trim() ? branchIds.get(row.branchName.trim()) ?? null : null,
+          branchId,
           tradeSkill: row.trade.trim(), headcount: row.headcount, status: 'draft',
           salaryMinPaise: row.salaryMinPaise, salaryMaxPaise: row.salaryMaxPaise,
           salaryPeriod: row.salaryPeriod === 'daily' ? 'daily' : 'monthly',
           shift: row.shift.trim(), startDate: new Date(`${row.startDate}T00:00:00.000Z`),
-          locality: row.branchName?.trim()
-            ? (dto.branches ?? []).find((branch) => branch.name.trim() === row.branchName?.trim())?.locality?.trim() || locality
-            : locality,
+          locality: namedBranch?.locality?.trim() || locality,
+          latitude: branchHasPin ? branchLatitude : latitude,
+          longitude: branchHasPin ? branchLongitude : longitude,
           capturedChannel,
         } });
         await this.tradeService.recordSuggestion(tx, row.trade.trim(), staff.id, 'vacancy', vacancy.id);
@@ -433,7 +444,7 @@ export class BusinessService {
       await this.auditService.log({
         actorId: staff.id, action: 'business.staff_need_draft_created', entityType: 'vacancy', entityCode: vacancy.code,
         after: { businessCode: business.code, headcount: vacancy.headcount, status: 'draft' },
-        changedFields: ['tradeSkill', 'headcount', 'salaryMinPaise', 'salaryMaxPaise', 'shift', 'startDate', 'status'],
+        changedFields: ['tradeSkill', 'headcount', 'salaryMinPaise', 'salaryMaxPaise', 'shift', 'startDate', 'status', 'latitude', 'longitude'],
         city,
       });
     }
@@ -469,6 +480,7 @@ export class BusinessService {
         verificationStatus: business.verificationStatus,
         leadChannel: business.leadChannel,
         leadCreatedByStaffId: business.leadCreatedByStaffId,
+        ...(business.accountAgentId ? { accountAgentId: business.accountAgentId, accountAgentAssignedAt: business.accountAgentAssignedAt?.toISOString() ?? null } : {}),
         gstVerified: business.gstVerified,
         gstStatus: business.gstStatus,
         ...(geofenceFlag ? { flags: ['GEOFENCE_MISMATCH'] } : {}),
@@ -479,6 +491,7 @@ export class BusinessService {
         'verificationStatus',
         'leadChannel',
         'leadCreatedByStaffId',
+        ...(business.accountAgentId ? ['accountAgentId', 'accountAgentAssignedAt'] : []),
         'gstVerified',
         'gstStatus',
         'locality',

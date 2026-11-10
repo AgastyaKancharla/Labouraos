@@ -118,6 +118,8 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
               `99${timestamp.toString().slice(-8)}`,
               `90${timestamp.toString().slice(-8)}`,
               `89${timestamp.toString().slice(-8)}`,
+              `75${timestamp.toString().slice(-8)}`,
+              `72${timestamp.toString().slice(-8)}`,
             ],
           },
         },
@@ -467,5 +469,72 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(response.body.contactPersonRole).toBe('owner');
     expect(response.body.additionalContactName).toBe('Old Owner');
     expect(response.body.additionalContactPhone).toBe(`91${timestamp.toString().slice(-8)}`);
+  });
+
+  it('makes the registering field agent the account agent, copies draft pins, and lets them complete the draft', async () => {
+    const phone = `75${timestamp.toString().slice(-8)}`;
+    const branchPhone = `74${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const branchOtpRequestId = await getVerifiedOtp(branchPhone);
+    const shop = { latitude: 12.9716, longitude: 77.5946 };
+    const branchPin = { latitude: 12.9254, longitude: 77.5938 };
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
+      .send({
+        name: 'Account Agent Bakery', phone, otpRequestId,
+        contactPersonName: 'Ravi Rao', contactPersonRole: 'owner',
+        businessType: 'bakery', locality: 'Indiranagar',
+        latitude: shop.latitude, longitude: shop.longitude,
+        branches: [{
+          name: 'Jayanagar counter', locality: 'Jayanagar',
+          latitude: branchPin.latitude, longitude: branchPin.longitude,
+          contactPersonName: 'Lakshmi Rao', contactPersonRole: 'manager',
+          contactPersonPhone: branchPhone, otpRequestId: branchOtpRequestId,
+        }],
+        staffNeededRows: [
+          {
+            trade: 'Housekeeping', branchName: 'Jayanagar counter', headcount: 1,
+            salaryMinPaise: 2000000, salaryMaxPaise: 2500000, shift: 'day', startDate: '2026-12-01',
+          },
+          {
+            trade: 'Cook', headcount: 1,
+            salaryMinPaise: 2500000, salaryMaxPaise: 3000000, shift: 'day', startDate: '2026-12-01',
+          },
+        ],
+      })
+      .expect(201);
+
+    expect(response.body.accountAgentId).toBe(faKoramangalaId);
+    const stored = await prisma.business.findUnique({ where: { id: response.body.id } });
+    expect(stored?.accountAgentId).toBe(faKoramangalaId);
+    expect(stored?.accountAgentAssignedAt).toBeInstanceOf(Date);
+    const branchDraft = response.body.vacancies.find((row: { tradeSkill: string }) => row.tradeSkill === 'Housekeeping');
+    const shopDraft = response.body.vacancies.find((row: { tradeSkill: string }) => row.tradeSkill === 'Cook');
+    expect(branchDraft).toMatchObject({ branchId: response.body.branches[0].id, ...branchPin });
+    expect(shopDraft).toMatchObject({ branchId: null, ...shop });
+
+    const completed = await request(app.getHttpServer())
+      .post(`/vacancies/${shopDraft.id}/submit-for-confirmation`)
+      .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
+      .send({})
+      .expect(201);
+    expect(completed.body.status).toBe('awaiting_confirmation');
+  });
+
+  it('leaves a call agent registration without an account agent', async () => {
+    const phone = `72${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Call Agent Lead Cafe', phone, otpRequestId,
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        locality: 'Koramangala',
+      })
+      .expect(201);
+    expect(response.body.accountAgentId).toBeNull();
+    expect(response.body.accountAgentAssignedAt).toBeNull();
   });
 });
