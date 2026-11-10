@@ -167,7 +167,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - Matching counts an offer at the floor as suitable and lists a 9%-below offer as a near-miss, not a hit.
   - Self-referral is refused.
 
-### [ ] Task 5 — The registration link that resumes
+### [x] Task 5 — The registration link that resumes
 **Branch:** `phase-20/task-5-registration-link` · **Migration folder:** `20261113130000_registration_link`
 
 **Acceptance:**
