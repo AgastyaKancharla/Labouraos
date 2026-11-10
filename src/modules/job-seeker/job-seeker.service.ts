@@ -30,7 +30,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { isJobSeekerStatus } from './job-seeker.status';
-import { validateJobSeekerAge } from './job-seeker.validator';
+import { calculateAge, validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 import {
   CreateJobSeekerTradeDto,
@@ -425,6 +425,7 @@ export class JobSeekerService {
     }
 
     const policy = await this.getPolicy();
+    await this.assertAdultBeforePayment(jobSeeker, policy.adultMinimumAge);
 
     const upiRequest = await this.upiCollectionService.createRequest({
       type: 'activation',
@@ -447,6 +448,88 @@ export class JobSeekerService {
       amountPaise: upiRequest.amountPaise,
       status: upiRequest.status,
     };
+  }
+
+  /** Under 18 stops registration before any payment (Master Guide, ID check). */
+  private async assertAdultBeforePayment(
+    jobSeeker: { id: string; dateOfBirth: Date | null },
+    adultMinimumAge: number,
+  ) {
+    const now = this.consentClock?.now() ?? new Date();
+    if (jobSeeker.dateOfBirth && calculateAge(jobSeeker.dateOfBirth, now) < adultMinimumAge) {
+      throw new BadRequestException('Registration stops before payment: the job seeker is under 18');
+    }
+    const latest = await this.prisma.identityVerification.findFirst({
+      where: { jobSeekerId: jobSeeker.id },
+      orderBy: { createdAt: 'desc' },
+      select: { isAdult: true },
+    });
+    if (latest?.isAdult === false) {
+      throw new BadRequestException('Registration stops before payment: the ID check shows the job seeker is under 18');
+    }
+  }
+
+  /**
+   * The registration link's last step (Phase 20 Task 5): the exact terms he agrees to before paying —
+   * trade, distance, shift and the salary floor. Refused until consent, selfie and ID are done, and while his
+   * only trade is an unlisted Other (no floor yet).
+   */
+  async registrationTerms(jobSeekerId: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+      include: { trades: true },
+    });
+    if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    const policy = await this.getPolicy();
+    if (!this.consentService || !(await this.consentService.hasAllRequired('job_seeker', seeker.id))) {
+      throw new BadRequestException('Consent comes first: finish the consent step');
+    }
+    if (!seeker.photoStoragePath) throw new BadRequestException('Take the selfie first');
+    const verification = await this.prisma.identityVerification.findFirst({
+      where: { jobSeekerId: seeker.id },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!verification || verification.status !== 'verified' || verification.nameMatches === false) {
+      throw new BadRequestException('Finish the ID check first');
+    }
+    await this.assertAdultBeforePayment(seeker, policy.adultMinimumAge);
+    if (seeker.guaranteeFloorPaise === null) {
+      throw new BadRequestException('Waiting for the new trade to be added in the Command Center');
+    }
+    const primary = seeker.trades.find((trade) => trade.isPrimary) ?? seeker.trades[0];
+    return {
+      jobSeekerCode: seeker.code,
+      trade: primary?.trade ?? null,
+      travelDistanceKm: seeker.travelDistanceKm,
+      shiftPreference: seeker.shiftPreference,
+      guaranteeFloorPaise: seeker.guaranteeFloorPaise,
+      guaranteeDays: policy.jobSeekerGuaranteeDays,
+      amountPaise: policy.activationFeePaise,
+      termsAcceptedAt: seeker.termsAcceptedAt,
+    };
+  }
+
+  /** He ticks to agree to the terms shown; the ₹499 payment request is then created (or the open one returned). */
+  async acceptTermsAndCreatePayment(jobSeekerId: string, acceptTerms: unknown) {
+    if (acceptTerms !== true) throw new BadRequestException('Tick to agree to the terms before paying');
+    const terms = await this.registrationTerms(jobSeekerId);
+    const now = this.consentClock?.now() ?? new Date();
+    await this.prisma.jobSeeker.updateMany({
+      where: { id: jobSeekerId, paymentReceivedAt: null },
+      data: { termsAcceptedAt: now, termsAcceptedFloorPaise: terms.guaranteeFloorPaise },
+    });
+    const seeker = await this.prisma.jobSeeker.findUniqueOrThrow({ where: { id: jobSeekerId } });
+    await this.auditService.log({
+      actorId: 'system',
+      action: 'job_seeker.terms_accepted',
+      entityType: 'job_seeker',
+      entityCode: seeker.code,
+      after: { termsAcceptedAt: now.toISOString(), guaranteeFloorPaise: terms.guaranteeFloorPaise },
+      changedFields: ['termsAcceptedAt', 'termsAcceptedFloorPaise'],
+      city: seeker.city,
+    });
+    const payment = await this.createActivationPayment(jobSeekerId);
+    return { terms: { ...terms, termsAcceptedAt: now }, payment };
   }
 
   async reactivate(jobSeekerId: string, actorId: string) {

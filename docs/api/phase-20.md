@@ -80,6 +80,40 @@ The public payment-only link sends OTP to its encrypted alternate number. The GE
 
 **Errors:** `400` expired/revoked link, OTP not verified, or payment no longer pending; `404` unknown link/payment.
 
+### `GET /registration/:token/terms`
+
+Public. The registration link's holder, after an OTP verified for the job seeker's own registered number (`requestId` query parameter). Returns the exact terms he is asked to tick: primary trade, travel distance, shift, guarantee floor, guarantee days and the ₹499 amount.
+
+**Response `200` example:**
+
+```json
+{"jobSeekerCode":"JS-01042","trade":"Housekeeping","travelDistanceKm":10,"shiftPreference":"day","guaranteeFloorPaise":1800000,"guaranteeDays":30,"amountPaise":49900,"termsAcceptedAt":null}
+```
+
+**Errors:** `400` invalid link, OTP not verified for the registered number, consent not finished (`Consent comes first`), selfie not taken (`Take the selfie first`), ID check not verified (`Finish the ID check first`), the ID check shows under 18, or the primary trade is still an unlisted Other (`Waiting for the new trade to be added in the Command Center`). No payment is created.
+
+### `POST /registration/:token/terms-and-payment`
+
+Public. Same OTP rule. Body `{"requestId":"otp-request-id","acceptTerms":true}`. He must tick `acceptTerms: true`. The server stores `termsAcceptedAt` and `termsAcceptedFloorPaise` (the floor he was shown) and creates the ₹499 activation payment, or returns the open one. The same under-18 stop runs before any payment row is created.
+
+**Response `201` example:**
+
+```json
+{"terms":{"jobSeekerCode":"JS-01042","trade":"Housekeeping","travelDistanceKm":10,"shiftPreference":"day","guaranteeFloorPaise":1800000,"guaranteeDays":30,"amountPaise":49900,"termsAcceptedAt":"2026-11-10T12:00:00.000Z"},"payment":{"paymentId":"payment-id","paymentCode":"PAY-00042","amountPaise":49900,"status":"pending","upiReference":"PAY-00042-abcd1234"}}
+```
+
+**Errors:** `400` the tick is missing (`Tick to agree to the terms before paying`), or any error from `GET /registration/:token/terms`.
+
+### `POST /payments/bank-feed/webhook` — a second activation credit
+
+No login. Signed with `x-bank-signature` over the raw body, as before. When the remark matches an activation payment that has already succeeded, for the same job seeker and the same amount, the credit is not recorded as a second activation. The response is `200`:
+
+```json
+{"received":true,"status":"duplicate_refund_created","reason":"duplicate_activation_payment","paymentId":"original-payment-id","refundPaymentId":"refund-payment-id","bankCreditId":"bank-credit-id"}
+```
+
+That creates a `duplicate_refund` payment for the same paise, already `approved` (`approvedAt` set), attributed to the job seeker. Finance sends it from the company account. The same bank UTR again is still an idempotent skip (`alreadyProcessed: true`).
+
 ## Task 3 — Phone check by OTP
 
 ### `POST /otp/send`
