@@ -395,3 +395,52 @@ The response includes the created business with branches and `staffNeededRows` v
 `POST /referrals/:id/terms-links` resends the registration link and revokes any earlier active link. `GET /referral-registration/:token/status?requestId=...` returns registration progress only after OTP verification to the partner's registered number. `POST /consent/submit` records referral terms and call-recording consent. The same token then accepts live-camera `POST /referral-registration/:token/selfie`, provider-backed `POST /referral-registration/:token/id-check`, and partner-only `POST /referral-registration/:token/upi`; the UPI step requires a successful identity check and OTP. Completing UPI consumes the registration link.
 
 The staff registration status endpoint is `GET /referrals/:id/registration-status`. It returns terms, selfie, ID, and UPI state with timestamps and any safe reason. UPI identity review continues through the existing payout account and payout release flow.
+
+`yearsInOperationBand` accepts only `under_1`, `1_3`, `3_10` or `10_plus`, and `hiringFrequency` only `rarely`, `every_few_months`, `every_month` or `every_week` (the lists on the approved business form). Any other value returns `400` naming the field. Values stored before this rule still load unchanged.
+
+## Task 8 — Every vacancy confirmed by OTP, and the minimum-wage warning
+
+A vacancy now moves through `draft` (an incomplete staff-needed row) → `awaiting_confirmation` (complete, waiting for the business's or branch's contact person) → `open`. Matching (`GET /vacancies/:id/shortlist`, `GET /vacancies/:id/candidates`), candidate introductions and interview booking return `400` for a `draft` or `awaiting_confirmation` vacancy. Vacancies that were already `open` stay `open`. "Vacancies captured" counts a vacancy only once it has been confirmed.
+
+The contact person is the branch contact when the vacancy has a `branchId`, otherwise the business's main contact.
+
+### `POST /businesses/:id/vacancies` and `POST /vacancies` (changed)
+
+Who: field agents (their account businesses), call agents (any business), Team Leads, Managers, CEO. New optional fields: `branchId` (must be a branch of the business, else `400`) and `ownerToldMinimumWage`. The vacancy is created as `awaiting_confirmation`. The contact person receives a confirmation code and a details SMS (`vacancy_confirm_details`: trade, how many, salary, shift, start date). The response adds:
+
+```json
+{
+  "status": "awaiting_confirmation",
+  "belowLegalMinimum": false,
+  "legalMinimumPaise": 2337600,
+  "confirmation": { "otpRequestId": "otp_…", "sentToLast4": "3310", "contactName": "Ganesh", "resendAvailableAt": "2026-11-10T10:00:30.000Z", "resendsLeft": 3 }
+}
+```
+
+If the code can't be sent, the vacancy is still saved and `confirmation` is `{ "error": "…" }`; send it again with the endpoint below.
+
+**Legal minimum wage:** if the monthly salary *from* (`salaryMinPaise`, or × `salaryDaysPerMonth` for `salaryPeriod: "daily"`) is below the legal minimum for the trade's level (unlisted trades use the unskilled figure), the request needs `ownerToldMinimumWage: true`. Without it the response is `400` with `{ "message": "…", "legalMinimumPaise": 2337600, "monthlySalaryFromPaise": 2000000, "level": "unskilled" }`. With it the vacancy is saved with `belowLegalMinimum: true`.
+
+### `POST /vacancies/:id/submit-for-confirmation`
+
+Who: field agents (own account businesses or drafts they captured), call agents, Team Leads, Managers, CEO. Completes a `draft`: checks trade, salary from, headcount, shift and start date (`400` listing what is missing) and the legal minimum (same rule, body `{ "ownerToldMinimumWage": true }`). It then moves the draft to `awaiting_confirmation` and sends the code. The response has the same shape as create. Returns `400` if the vacancy is not a draft.
+
+### `POST /vacancies/:id/confirmation/send-code`
+
+Body `{ "otpRequestId"?: string }`. Without `otpRequestId` it sends a fresh code (and the details SMS). With it, it resends: the resend waits 30 seconds, with at most 3 resends. The response is `{ otpRequestId, sentToLast4, contactName, resendAvailableAt, resendsLeft }`. Returns `400` unless the vacancy is `awaiting_confirmation`.
+
+### `POST /vacancies/:id/confirm`
+
+Body `{ "otpRequestId": string, "code": string, "method"?: "code_on_call" | "code_on_visit" }` (default `code_on_call`). The agent types the code the contact person reads out. On success the vacancy becomes `open` and records `confirmedAt`, `confirmationMethod`, `confirmedByName`, `confirmedByRole`, `confirmedPhoneLast4` and `confirmationRecordedByStaffId`. A status history row and a `vacancy.confirmed` audit entry are written. Returns `400` for a wrong or expired code, a code that was not sent to this vacancy's contact person, or a vacancy that is not awaiting confirmation.
+
+### `POST /vacancies/:id/confirmation-link`
+
+Sends the contact person a 48-hour link by SMS (`vacancy_confirm_link`) and revokes any earlier active link. The vacancy stays `awaiting_confirmation` until they confirm. The response is `{ success, expiresAt, sentToLast4 }`.
+
+### Public: `GET /vacancy-confirm/:token`, `POST /vacancy-confirm/:token/send-otp`, `POST /vacancy-confirm/:token`
+
+No login. `GET` returns the vacancy details only (business name, trade, how many, salary, shift, start date, status, `sentToLast4`, `expiresAt`) and no personal data. `send-otp` sends a code to the number the link was sent to; body `{ "otpRequestId"?: string }` resends. `POST` with `{ "otpRequestId", "code" }` confirms the vacancy (`confirmationMethod: "sms_link"`) and uses up the link. An expired, used or revoked link returns `400`.
+
+### `GET /vacancies/below-legal-minimum`
+
+Who: Team Leads (vacancies captured by their team or for their team's account businesses), Managers and the CEO. Other roles get `403`. Returns `[{ id, code, status, business: { id, code, name }, tradeSkill, salaryMinPaise, salaryPeriod, legalMinimumPaise, ownerToldMinimumWage, capturedByStaffId, createdAt }]`, newest first, excluding cancelled vacancies.

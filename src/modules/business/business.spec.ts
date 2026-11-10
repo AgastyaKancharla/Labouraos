@@ -282,18 +282,34 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         contactPersonName: 'Asha Rao', contactPersonRole: 'manager',
         contactWhatsAppPhone: cleanPhone, contactLanguage: 'en',
         businessType: 'bakery', legalName: 'No Papers Cafe LLP',
-        employeeCountBand: '6-20', yearsInOperationBand: '3-5', hiringFrequency: 'monthly',
+        employeeCountBand: '6-20', yearsInOperationBand: '3_10', hiringFrequency: 'every_month',
         openingTime: '09:00', closingTime: '21:00', workingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
         shopNumber: '12', street: '100 Feet Road', landmark: 'Near the metro', locality: 'Indiranagar', pincode: '560038',
         billingEmail: 'accounts@nopapers.example', heardFrom: 'walk_in', noDocuments: true,
       }).expect(201);
     expect(saved.body).toMatchObject({
       documentsStatus: 'no_documents', gstNumber: null, fssaiNumber: null, pan: null,
-      legalName: 'No Papers Cafe LLP', employeeCountBand: '6-20', yearsInOperationBand: '3-5',
+      legalName: 'No Papers Cafe LLP', employeeCountBand: '6-20', yearsInOperationBand: '3_10', hiringFrequency: 'every_month',
       openingTime: '09:00', closingTime: '21:00', pincode: '560038', billingEmail: 'accounts@nopapers.example',
       heardFrom: 'walk_in', contactLanguage: 'en', contactPersonRole: 'manager',
     });
     expect(saved.body.workingDays).toEqual(['mon', 'tue', 'wed', 'thu', 'fri']);
+  });
+
+  it('rejects years-running and hiring-frequency values outside the design lists', async () => {
+    for (const [field, value] of [['yearsInOperationBand', '3-5'], ['hiringFrequency', 'monthly']] as const) {
+      const phone = `87${(timestamp + value.length).toString().slice(-8)}`;
+      const otpRequestId = await getVerifiedOtp(phone);
+      const res = await request(app.getHttpServer())
+        .post('/businesses')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({
+          name: `Band Check ${field}`, phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+          locality: 'Indiranagar', [field]: value,
+        });
+      expect(res.status).toBe(400);
+      expect(JSON.stringify(res.body)).toContain(field);
+    }
   });
 
   it('field agent creates a business without writing the deprecated area or contact fields', async () => {

@@ -14,6 +14,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
 
 describe('Phase 6.7 Gate: End-to-End Proof', () => {
   let app: INestApplication;
@@ -399,11 +400,14 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         businessId,
         tradeSkill: 'Electrician',
         salaryMinPaise: 2000000,
+        ownerToldMinimumWage: true,
         description: 'Commercial electrician for tech park',
         city: 'Bengaluru',
       });
     expect(vacancyRes.status).toBe(201);
     const vacancyId = vacancyRes.body.id;
+    // Phase 20 Task 8: it counts as captured only once the contact person confirms it.
+    await confirmVacancyForTest(app, vacancyRes.body);
     cleanVacancyIds.push(vacancyId);
     console.log(`[Vacancy Captured] ID: ${vacancyId}, capturedByStaffId: ${ca1Id}`);
 
