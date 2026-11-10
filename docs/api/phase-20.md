@@ -2,6 +2,26 @@
 
 All routes require a staff bearer token unless marked otherwise. Responses below show representative payloads; paise amounts are integers.
 
+## Task 5 — ID provider recovery
+
+### `POST /consent/id-check-wait`
+
+Public registration link holder. The OTP must have been sent to and verified for the job seeker's own registered number.
+
+**Request:** `{"token":"registration-link-token","requestId":"otp-request-id","code":"123456"}`.
+
+**Response `201`:** `{"success":true,"waitingForRecovery":true}`.
+
+**Errors:** `400` invalid/expired link, wrong or unverified registered-number OTP, or ID service is not down.
+
+### `POST /jobs/kyc-recovery/run`
+
+CEO only; manually queues the worker's recovery probe. **Request:** no body. **Response `201`:** `{"jobId":"bullmq-job-id"}`.
+
+**Errors:** `401` unauthenticated; `403` caller is not CEO.
+
+`GET /system/status` and `GET /status` now include `idCheck: {"status":"up","lastChangedAt":"2026-11-10T12:00:00.000Z"}`. A down ID provider also appears as a degraded component.
+
 ## Task 3 — Phone check by OTP
 
 ### `POST /otp/send`

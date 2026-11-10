@@ -93,6 +93,13 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
       expect(res.status).toBe('verified');
       expect(res.vendorReference).toMatch(/^mock_kyc_ref_/);
     });
+
+    it('MockKycProvider health is up by default and has a test-only down switch', async () => {
+      const mockProvider = new MockKycProvider();
+      await expect(mockProvider.checkHealth()).resolves.toEqual({ healthy: true });
+      mockProvider.setHealthyForTests(false);
+      await expect(mockProvider.checkHealth()).resolves.toEqual({ healthy: false });
+    });
   });
 
   it('removes POST /job-seekers/:id/kyc for every staff role', async () => {

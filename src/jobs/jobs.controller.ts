@@ -22,6 +22,7 @@ import { PatternFlagsJob } from './pattern-flags.job';
 import { JoiningRewardJob } from './joining-reward.job';
 import { RetentionCleanupJob } from './retention-cleanup.job';
 import { RetentionService, RetentionSummary } from '../modules/retention/retention.service';
+import { KycRecoveryJob } from './kyc-recovery.job';
 
 @Controller('jobs')
 export class JobsController {
@@ -35,6 +36,7 @@ export class JobsController {
     private readonly retentionCleanupJob: RetentionCleanupJob,
     private readonly retentionService: RetentionService,
     private readonly auditService: AuditService,
+    private readonly kycRecoveryJob: KycRecoveryJob,
   ) {}
 
   /**
@@ -204,5 +206,22 @@ export class JobsController {
   @RequireRoles('ceo')
   async getRetentionCleanupSummary(): Promise<RetentionSummary | null> {
     return this.retentionService.getLatestSummary();
+  }
+
+  @Post('kyc-recovery/run')
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @RequireRoles('ceo')
+  @RequirePermission('job_seeker', 'write')
+  async runKycRecovery(@Req() req: Request & { user: JwtPayload }) {
+    const jobId = await this.kycRecoveryJob.triggerJob();
+    await this.auditService.log({
+      actorId: req.user.sub,
+      action: 'job.manual_trigger',
+      entityType: 'job',
+      entityCode: 'kyc-recovery',
+      after: { jobId: jobId ?? null },
+      city: 'Bengaluru',
+    });
+    return { jobId };
   }
 }

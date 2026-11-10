@@ -9,6 +9,7 @@ import { EditPolicyModule } from './common/edit-policy/edit-policy.module';
 import { AnonymisationModule } from './common/anonymisation/anonymisation.module';
 import { OtpModule } from './common/otp/otp.module';
 import { KycModule } from './common/kyc/kyc.module';
+import { KycHealthModule } from './common/kyc/kyc-health.module';
 import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { PaymentModule } from './modules/payment/payment.module';
@@ -50,6 +51,7 @@ import { RetentionModule } from './modules/retention/retention.module';
     RetentionModule,
     OtpModule,
     KycModule,
+    KycHealthModule,
     WhatsAppModule,
     JobSeekerModule,
     ReferralModule,

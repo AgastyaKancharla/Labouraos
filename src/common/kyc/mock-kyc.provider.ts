@@ -1,10 +1,19 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { KycProvider, KycVerificationResult } from './kyc.interface';
+import { KycHealthResult, KycProvider, KycVerificationResult } from './kyc.interface';
 import { assertNoRawAadhaar } from '../../modules/job-seeker/job-seeker.validator';
 
 @Injectable()
 export class MockKycProvider implements KycProvider {
   private readonly logger = new Logger(MockKycProvider.name);
+  private healthy = true;
+
+  setHealthyForTests(healthy: boolean): void {
+    this.healthy = healthy;
+  }
+
+  async checkHealth(): Promise<KycHealthResult> {
+    return { healthy: this.healthy };
+  }
 
   async verifyOfflineAadhaar(params: Record<string, unknown>): Promise<KycVerificationResult> {
     assertNoRawAadhaar(params);
@@ -14,6 +23,7 @@ export class MockKycProvider implements KycProvider {
         status: 'failed',
         vendorReference: `mock_kyc_fail_${Date.now()}`,
         error: 'Offline e-KYC validation failed at vendor',
+        failureType: 'person',
       };
     }
 

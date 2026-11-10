@@ -114,6 +114,11 @@ export class ConsentController {
     return this.consentLinkService.sendOtp(token);
   }
 
+  @Post('id-check-wait')
+  async requestIdCheckRecovery(@Body() body: { token: string; requestId: string; code: string }) {
+    return this.consentLinkService.requestIdCheckRecovery(body.token, body.requestId, body.code);
+  }
+
   /**
    * Public endpoint to verify OTP and submit consent purposes.
    * Advances job seeker status from lead to consented when all 5 required purposes are granted.

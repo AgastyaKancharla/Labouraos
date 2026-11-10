@@ -1,10 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { KycProvider, KycVerificationResult } from './kyc.interface';
+import { KycHealthResult, KycProvider, KycVerificationResult } from './kyc.interface';
 import { assertNoRawAadhaar } from '../../modules/job-seeker/job-seeker.validator';
 
 export interface RealKycProviderOptions {
   apiKey?: string;
   baseUrl?: string;
+  healthCheckUrl?: string;
   fetchFn?: typeof fetch;
 }
 
@@ -14,6 +15,7 @@ export class RealKycProvider implements KycProvider {
   private readonly apiKey: string;
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
+  private readonly healthCheckUrl: string;
 
   constructor(options?: RealKycProviderOptions) {
     this.apiKey =
@@ -27,7 +29,21 @@ export class RealKycProvider implements KycProvider {
       process.env.OVSE_API_URL ??
       'https://api.surepass.io/api/v1'
     ).replace(/\/$/, '');
+    this.healthCheckUrl = options?.healthCheckUrl ?? process.env.KYC_HEALTH_URL ?? `${this.baseUrl}/health`;
     this.fetchFn = options?.fetchFn ?? globalThis.fetch;
+  }
+
+  async checkHealth(): Promise<KycHealthResult> {
+    try {
+      const response = await this.fetchFn(this.healthCheckUrl, {
+        method: 'GET',
+        headers: { Authorization: `Bearer ${this.apiKey}` },
+        signal: AbortSignal.timeout(5000),
+      });
+      return { healthy: response.ok };
+    } catch {
+      return { healthy: false };
+    }
   }
 
   async verifyOfflineAadhaar(
@@ -53,6 +69,7 @@ export class RealKycProvider implements KycProvider {
           status: 'failed',
           vendorReference: `ovse_fail_${Date.now()}`,
           error: `e-KYC vendor error: ${errorText}`,
+          failureType: response.status >= 500 ? 'provider' : 'person',
         };
       }
 
@@ -95,6 +112,7 @@ export class RealKycProvider implements KycProvider {
         status: 'failed',
         vendorReference: `ovse_err_${Date.now()}`,
         error: `Network error connecting to e-KYC vendor: ${msg}`,
+        failureType: 'provider',
       };
     }
   }
