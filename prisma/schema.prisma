@@ -715,6 +715,7 @@ model Staff {
   claimsDecided     ReplacementClaim[] @relation("ClaimDecidedBy")
   claimsOverruled   ReplacementClaim[] @relation("ClaimOverruledBy")
   assignedFollowUpTasks FollowUpTask[]
+  attendanceDays    AttendanceDay[]
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   status            String           @default("active") // pending_invite, active, deactivated
@@ -1154,12 +1155,69 @@ model PricingPolicy {
   patternStopDays              Int       @default(30)
   patternAgentMinInterviews    Int       @default(10)
   patternAgentRejectionPercent Int       @default(80)
+  shiftStart                   String    @default("09:30")
+  shiftEnd                     String    @default("18:30")
+  productionHoursFullDay       Float     @default(8)
+  halfDayBelowHours            Float     @default(4.5)
+  dayToleranceMinutes          Int       @default(10)
+  lateGraceMinutes             Int       @default(10)
+  shortBreakMinutes            Int       @default(15)
+  lunchMinutes                 Int       @default(30)
+  idleAfterMinutes             Int       @default(10)
+  casualLeavePerMonth          Int       @default(1)
+  emergencyLeavePerMonth       Int       @default(1)
+  refundPriorityWindowDays     Int       @default(15)
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?
   setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)
   createdAt                    DateTime  @default(now())
 
   @@index([effectiveFrom])
+}
+
+model AttendanceDay {
+  id                String              @id @default(uuid())
+  staffId           String
+  staff             Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  /// IST calendar date. Stored as a date, not a timestamp.
+  date              DateTime            @db.Date
+  loginAt           DateTime
+  logoutAt          DateTime?
+  loginLat          Float?
+  loginLng          Float?
+  lateMinutes       Int                 @default(0)
+  productionSeconds Int                 @default(0)
+  breakSeconds      Int                 @default(0)
+  idleSeconds       Int                 @default(0)
+  dayType           String              @default("open") // full, half, absent, leave, open
+  closedReason      String?             // logout, auto_closed_no_logout
+  flagged           Boolean             @default(false)
+  lastHeartbeatAt   DateTime?
+  segments          AttendanceSegment[]
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
+
+  @@unique([staffId, date])
+  @@index([staffId])
+  @@index([date])
+}
+
+model AttendanceSegment {
+  id                String        @id @default(uuid())
+  staffId           String
+  dayId             String
+  day               AttendanceDay @relation(fields: [dayId], references: [id], onDelete: Cascade)
+  status            String
+  startedAt         DateTime
+  endedAt           DateTime?
+  source            String        // staff, phone_system, check_in, idle_detector, correction
+  approvedAt        DateTime?
+  approvedByStaffId String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+
+  @@index([dayId, startedAt])
+  @@index([staffId])
 }
 
 model StatusHistory {

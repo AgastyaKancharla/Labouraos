@@ -15,6 +15,7 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { UpdateMinimumWagesDto } from './dto/update-minimum-wages.dto';
+import { ATTENDANCE_SETTING_KEYS } from '../attendance/attendance.constants';
 
 @Controller('pricing')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -24,8 +25,14 @@ export class PricingController {
   @Get()
   @RequirePermission('pricing', 'read')
   @RequireRoles('ceo', 'manager')
-  async getPricing(): Promise<PricingPolicy> {
-    return this.pricingService.current();
+  async getPricing(@Req() req: Request & { user: JwtPayload }): Promise<PricingPolicy> {
+    const policy = await this.pricingService.current();
+    if (req.user.role !== 'manager') return policy;
+    const hidden = { ...policy } as PricingPolicy & Record<string, unknown>;
+    for (const key of ATTENDANCE_SETTING_KEYS) {
+      delete hidden[key];
+    }
+    return hidden;
   }
 
   @Post()

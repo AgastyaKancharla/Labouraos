@@ -27,6 +27,7 @@ import { isAgentOutcome, isCallPurpose } from './call-outcomes';
 import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { AttendanceService } from '../attendance/attendance.service';
 
 export interface CallActor {
   id: string;
@@ -48,6 +49,7 @@ export class CallService {
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
     @Inject(RECORDING_STORAGE) private readonly storage: RecordingStorage,
     private readonly editPolicyService: EditPolicyService,
+    private readonly attendance: AttendanceService,
   ) {}
 
   async updateNotes(
@@ -304,6 +306,9 @@ export class CallService {
       );
     }
     const agentPhone = decryptCallRoutingPhone(caller.callRoutingPhone);
+    if (!(await this.attendance.isAvailable(actor.id))) {
+      throw new BadRequestException('Calls are placed only while you are Available');
+    }
 
     const provider = this.telephony.getCapacity().vendor;
     const code = await this.idService.generateCode('call');

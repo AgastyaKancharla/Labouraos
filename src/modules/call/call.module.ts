@@ -5,6 +5,7 @@ import { ConsentModule } from '../consent/consent.module';
 import { CallController } from './call.controller';
 import { CallService } from './call.service';
 import { CallClock } from './call-clock';
+import { AttendanceModule } from '../attendance/attendance.module';
 import { RecordingCopyJob } from './recording-copy.job';
 import {
   HttpRecordingDownloader,
@@ -15,7 +16,7 @@ import {
 } from './recording-storage';
 
 @Module({
-  imports: [PrismaModule, TelephonyModule, ConsentModule],
+  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule],
   controllers: [CallController],
   providers: [
     CallService,

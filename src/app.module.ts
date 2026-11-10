@@ -36,6 +36,7 @@ import { ConsentModule } from './modules/consent/consent.module';
 import { MapModule } from './modules/map/map.module';
 import { FollowUpModule } from './modules/follow-up/follow-up.module';
 import { PayoutAccountModule } from './modules/payout-account/payout-account.module';
+import { AttendanceModule } from './modules/attendance/attendance.module';
 import { RetentionModule } from './modules/retention/retention.module';
 
 @Module({
@@ -77,6 +78,7 @@ import { RetentionModule } from './modules/retention/retention.module';
     MapModule,
     FollowUpModule,
     PayoutAccountModule,
+    AttendanceModule,
     HealthModule,
   ],
 })
