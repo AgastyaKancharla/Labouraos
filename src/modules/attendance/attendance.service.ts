@@ -317,6 +317,10 @@ export class AttendanceService {
       }
       return;
     }
+    if ((BREAK_STATUSES as readonly string[]).includes(current.status)) {
+      await this.raiseBreakOverrun(current, now);
+      return;
+    }
     if (current.status !== 'available') return;
     const policy = await this.pricing.current();
     const idleAfterMs = (policy.idleAfterMinutes + IDLE_PROMPT_MINUTES) * 60 * 1000;
