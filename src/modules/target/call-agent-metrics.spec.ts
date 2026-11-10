@@ -330,6 +330,8 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
       expect(prismaMock.vacancy.count).toHaveBeenCalledWith({
         where: {
           capturedByStaffId: mockAgentId,
+          // Phase 20 Task 8: only vacancies the contact person confirmed count.
+          status: { notIn: ['draft', 'awaiting_confirmation'] },
           createdAt: {
             gte: new Date('2026-10-31T18:30:00.000Z'),
             lte: new Date('2026-11-30T18:29:59.999Z'),
