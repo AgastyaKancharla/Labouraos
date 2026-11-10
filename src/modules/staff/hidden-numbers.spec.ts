@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { decryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
 import { StaffService } from './staff.service';
+import { openAvailableDay } from '../../test-support/available-day';
 
 @Injectable()
 class CallRoutingBoot {
@@ -294,6 +295,7 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     expect(auditPacked).not.toContain(ROUTING_PHONE);
     expect(auditPacked).not.toContain('9812345678');
 
+    await openAvailableDay(app, callAgent.id);
     const assignRes = await request(app.getHttpServer())
       .post(`/telephony/callbacks/${callback.id}/assign`)
       .set('Authorization', `Bearer ${tokenFor(callAgent)}`)

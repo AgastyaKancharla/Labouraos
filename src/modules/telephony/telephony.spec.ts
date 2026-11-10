@@ -1,6 +1,8 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { TelephonyController } from './telephony.controller';
+import { AttendanceModule } from '../attendance/attendance.module';
 import { TelephonyService } from './telephony.service';
+import { openAvailableDay } from '../../test-support/available-day';
 import { TELEPHONY_PROVIDER } from './telephony.interface';
 import { MockTelephonyProvider } from './mock-telephony.provider';
 import { RealTelephonyProvider, DPDP_CONSENT_ANNOUNCEMENT } from './real-telephony.provider';
@@ -30,7 +32,7 @@ describe('Telephony Module (Task 4)', () => {
   beforeAll(async () => {
     process.env.TELEPHONY_WEBHOOK_SECRET = TELEPHONY_SECRET;
     const moduleRef: TestingModule = await Test.createTestingModule({
-      imports: [PrismaModule, AuditModule, AuthModule, RbacModule],
+      imports: [PrismaModule, AuditModule, AuthModule, RbacModule, AttendanceModule],
       controllers: [TelephonyController],
       providers: [
         TelephonyService,
@@ -385,6 +387,8 @@ describe('Telephony Module (Task 4)', () => {
 
       const created = queueRes.body.find((t: { callId: string }) => t.callId === callId);
       expect(created).toBeDefined();
+
+      await openAvailableDay(app, callAgentStaffId);
 
       // Assign to current call agent
       const assignRes = await request(app.getHttpServer())
