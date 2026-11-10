@@ -77,6 +77,9 @@ model JobSeeker {
   registeredByStaffId       String?
   registeredBy              Staff?      @relation("JobSeekerRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   paymentReceivedAt         DateTime?   // when the ₹499 activation fee was received
+  guaranteeFloorPaise       Int?        // frozen salary guarantee term once activation is paid
+  messageLanguage           String?
+  heardFrom                 String?
   placements                Placement[]
   interviews                Interview[]
   candidateIntroductions    CandidateIntroduction[]

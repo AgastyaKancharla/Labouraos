@@ -1,4 +1,136 @@
 import { BadRequestException } from '@nestjs/common';
+import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
+
+const REGISTRATION_WINDOWS = {
+  '09-12': ['09:00', '12:00'],
+  '12-15': ['12:00', '15:00'],
+  '15-18': ['15:00', '18:00'],
+  '18-21': ['18:00', '21:00'],
+  '09-21': ['09:00', '21:00'],
+} as const;
+
+const HEARD_FROM_VALUES = [
+  'toll_free_missed_call', 'ad', 'referral_partner', 'field_visit',
+  'social_media', 'walk_in', 'other',
+] as const;
+
+const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;
+const JOB_TYPES = ['full_time', 'part_time', 'live_in'] as const;
+
+export type ValidatedJobSeekerRegistration = {
+  name: string;
+  phone: string;
+  preferredCallWindowStart: string;
+  preferredCallWindowEnd: string;
+  dateOfBirth: Date;
+  availableFrom: Date;
+  lookingSince: Date;
+  trades: Array<{ trade: string; yearsExperience: number }>;
+  spokenLanguages: string[];
+};
+
+export function validateJobSeekerRegistration(
+  dto: CreateJobSeekerDto,
+  adultMinimumAge: number,
+  now: Date,
+): ValidatedJobSeekerRegistration {
+  const requiredText: Array<[string, unknown]> = [
+    ['name', dto.name], ['phone', dto.phone], ['otpRequestId', dto.otpRequestId],
+    ['gender', dto.gender], ['locality', dto.locality], ['pincode', dto.pincode],
+  ];
+  for (const [field, value] of requiredText) {
+    if (typeof value !== 'string' || !value.trim()) {
+      throw new BadRequestException(`${field} is required`);
+    }
+  }
+  if (!['kn', 'hi', 'en'].includes(dto.messageLanguage)) {
+    throw new BadRequestException('messageLanguage must be kn, hi or en');
+  }
+  const window = REGISTRATION_WINDOWS[dto.bestTimeToCall];
+  if (!window) throw new BadRequestException('bestTimeToCall is invalid');
+  if (!HEARD_FROM_VALUES.includes(dto.heardFrom)) {
+    throw new BadRequestException('heardFrom is invalid');
+  }
+  if (!SHIFT_PREFERENCES.includes(dto.shiftPreference)) {
+    throw new BadRequestException('shiftPreference is invalid');
+  }
+  if (!JOB_TYPES.includes(dto.jobType)) {
+    throw new BadRequestException('jobType is invalid');
+  }
+  if (!['monthly', 'daily'].includes(dto.salaryPeriod)) {
+    throw new BadRequestException('salaryPeriod must be monthly or daily');
+  }
+
+  if (!Number.isFinite(dto.latitude) || dto.latitude < -90 || dto.latitude > 90) {
+    throw new BadRequestException('latitude must be between -90 and 90');
+  }
+  if (!Number.isFinite(dto.longitude) || dto.longitude < -180 || dto.longitude > 180) {
+    throw new BadRequestException('longitude must be between -180 and 180');
+  }
+  if (!Number.isSafeInteger(dto.travelDistanceKm) || dto.travelDistanceKm <= 0) {
+    throw new BadRequestException('travelDistanceKm must be a positive integer');
+  }
+
+  const dob = parseRegistrationDate(dto.dateOfBirth, 'dateOfBirth');
+  if (calculateAge(dob, now) < adultMinimumAge) {
+    throw new BadRequestException(`Job seeker must be at least ${adultMinimumAge} years old`);
+  }
+  const availableFrom = parseRegistrationDate(dto.availableFrom, 'availableFrom');
+  const lookingSince = parseRegistrationDate(dto.lookingSince, 'lookingSince');
+  validateSalaryRange(dto.minSalary, dto.maxSalary);
+
+  if (!Array.isArray(dto.trades) || dto.trades.length < 1 || dto.trades.length > 3) {
+    throw new BadRequestException('One to three trades are required');
+  }
+  const trades = dto.trades.map((entry, index) => {
+    const trade = typeof entry?.trade === 'string' ? entry.trade.trim().replace(/\s+/g, ' ') : '';
+    if (!trade) throw new BadRequestException(`trades[${index}].trade is required`);
+    if (!Number.isSafeInteger(entry.yearsExperience) || entry.yearsExperience < 0) {
+      throw new BadRequestException(`trades[${index}].yearsExperience must be a nonnegative integer`);
+    }
+    return { trade, yearsExperience: entry.yearsExperience };
+  });
+  const tradeKeys = trades.map(({ trade }) => trade.toLocaleLowerCase('en-IN'));
+  if (new Set(tradeKeys).size !== tradeKeys.length) {
+    throw new BadRequestException('A trade cannot be listed more than once');
+  }
+
+  if (!Array.isArray(dto.spokenLanguages) || dto.spokenLanguages.length === 0) {
+    throw new BadRequestException('At least one spoken language is required');
+  }
+  const spokenLanguages = dto.spokenLanguages.map((language, index) => {
+    if (typeof language !== 'string' || !language.trim()) {
+      throw new BadRequestException(`spokenLanguages[${index}] is required`);
+    }
+    return language.trim();
+  });
+  if (new Set(spokenLanguages.map((language) => language.toLocaleLowerCase('en-IN'))).size !== spokenLanguages.length) {
+    throw new BadRequestException('A spoken language cannot be listed more than once');
+  }
+
+  return {
+    name: dto.name.trim(),
+    phone: dto.phone.trim(),
+    preferredCallWindowStart: window[0],
+    preferredCallWindowEnd: window[1],
+    dateOfBirth: dob,
+    availableFrom,
+    lookingSince,
+    trades,
+    spokenLanguages,
+  };
+}
+
+function parseRegistrationDate(value: string, field: string): Date {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new BadRequestException(`${field} must be a valid YYYY-MM-DD date`);
+  }
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(parsed.getTime()) || parsed.toISOString().slice(0, 10) !== value) {
+    throw new BadRequestException(`${field} must be a valid YYYY-MM-DD date`);
+  }
+  return parsed;
+}
 
 export function assertNoRawAadhaar(data: unknown): void {
   if (!data || typeof data !== 'object') {
