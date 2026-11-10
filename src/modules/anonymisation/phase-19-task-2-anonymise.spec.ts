@@ -463,6 +463,7 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
           city: 'Bengaluru',
           whatsappPhone: `98${suffix}66`,
           language: 'kn',
+          heardFrom: 'field_visit',
           individualRole: 'shop_staff',
           locality: 'Indiranagar',
           pincode: '560038',
@@ -485,6 +486,8 @@ describe('Phase 19 Task 2: One way to anonymise', () => {
       expect(updated.type).toBe('individual');
       expect(updated.city).toBe('Bengaluru');
       expect(updated.whatsappPhone).toBeNull();
+      expect(updated.language).toBeNull();
+      expect(updated.heardFrom).toBeNull();
       expect(updated.locality).toBeNull();
       expect(updated.pincode).toBeNull();
       expect(updated.latitude).toBeNull();

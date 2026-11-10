@@ -441,7 +441,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
 
   it('validates referredById when creating a job seeker: rejects invalid and links valid', async () => {
     // 1. Create a valid referral
-    const referralPhone = `86${timestamp.toString().slice(-8)}`;
+    const referralPhone = `91${timestamp.toString().slice(-8)}`;
     const refOtpId = await getVerifiedOtp(referralPhone);
     const refRes = await request(app.getHttpServer())
       .post('/referrals')
@@ -461,7 +461,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const referralId = refRes.body.id;
 
     // 2. Attempt to create a job seeker with non-existent referredById -> 400
-    const jsPhone1 = `87${timestamp.toString().slice(-8)}`;
+    const jsPhone1 = `92${timestamp.toString().slice(-8)}`;
     const jsOtp1 = await getVerifiedOtp(jsPhone1);
     const nonExistentId = '00000000-0000-0000-0000-000000000000';
 

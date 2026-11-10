@@ -176,6 +176,7 @@ export class AnonymisationService {
             name: 'Anonymised',
             phone: placeholderPhone,
             whatsappPhone: null,
+            language: null,
             individualRole: null,
             businessId: null,
             partnerBusinessType: null,
@@ -184,6 +185,7 @@ export class AnonymisationService {
             pincode: null,
             latitude: null,
             longitude: null,
+            heardFrom: null,
             photoStoragePath: null,
             photoTakenAt: null,
             anonymisedAt: now,
@@ -191,6 +193,7 @@ export class AnonymisationService {
         });
         changedFields.push(
           'whatsappPhone',
+          'language',
           'individualRole',
           'businessId',
           'partnerBusinessType',
@@ -199,6 +202,7 @@ export class AnonymisationService {
           'pincode',
           'latitude',
           'longitude',
+          'heardFrom',
           'photoStoragePath',
           'photoTakenAt',
         );
