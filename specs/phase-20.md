@@ -246,7 +246,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - Self-referral earns nothing.
   - An agent can't submit a UPI ID through any staff route.
 
-### [ ] Task 7 — The business form and branches
+### [x] Task 7 — The business form and branches
 **Branch:** `phase-20/task-7-business-form` · **Migration folder:** `20261113150000_business_form`
 
 **Acceptance (Master Guide, "The registration form" for businesses):**
