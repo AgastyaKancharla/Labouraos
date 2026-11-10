@@ -21,6 +21,7 @@ export interface SendMessageInput {
   relatedType?: string | null;
   relatedId?: string | null;
   variables?: Record<string, string>;
+  recipientPhone?: string;
 }
 
 export interface MessageActor {
@@ -49,7 +50,7 @@ export class MessagingService {
       },
     });
 
-    const phone = await this.phoneFor(input.subjectType, input.subjectId);
+    const phone = input.recipientPhone ?? await this.phoneFor(input.subjectType, input.subjectId);
     if (!phone) {
       return this.mark(row.id, 'failed', null);
     }

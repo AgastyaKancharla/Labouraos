@@ -28,17 +28,28 @@ export class KycRecoveryService {
     }
   }
 
-  async markDown(): Promise<void> {
+  async markDown(now = new Date()): Promise<void> {
     const current = await this.prisma.kycServiceState.findUnique({ where: { id: ID_CHECK_STATE_ID } });
     if (current?.status === 'down') return;
     await this.prisma.kycServiceState.upsert({
       where: { id: ID_CHECK_STATE_ID },
-      create: { id: ID_CHECK_STATE_ID, status: 'down', lastChangedAt: new Date() },
-      update: { status: 'down', lastChangedAt: new Date() },
+      create: { id: ID_CHECK_STATE_ID, status: 'down', lastChangedAt: now },
+      update: { status: 'down', lastChangedAt: now },
     });
   }
 
   async requestRecovery(jobSeekerId: string, registrationLinkId?: string): Promise<void> {
+    const existing = await this.prisma.kycRecoveryRequest.findFirst({
+      where: { jobSeekerId, status: 'waiting' },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.kycRecoveryRequest.update({
+        where: { id: existing.id },
+        data: { registrationLinkId: registrationLinkId ?? null },
+      });
+      return;
+    }
     await this.prisma.kycRecoveryRequest.create({
       data: { jobSeekerId, registrationLinkId: registrationLinkId ?? null },
     });
@@ -49,7 +60,7 @@ export class KycRecoveryService {
     return state?.status === 'down';
   }
 
-  async checkAndRecover(): Promise<{ checked: boolean; healthy: boolean; notified: number }> {
+  async checkAndRecover(now = new Date()): Promise<{ checked: boolean; healthy: boolean; notified: number }> {
     const state = await this.prisma.kycServiceState.findUnique({ where: { id: ID_CHECK_STATE_ID } });
     if (!state || state.status !== 'down') return { checked: false, healthy: false, notified: 0 };
 
@@ -63,7 +74,7 @@ export class KycRecoveryService {
 
     const changed = await this.prisma.kycServiceState.updateMany({
       where: { id: ID_CHECK_STATE_ID, status: 'down' },
-      data: { status: 'up', lastChangedAt: new Date() },
+      data: { status: 'up', lastChangedAt: now },
     });
     if (changed.count !== 1) return { checked: true, healthy: true, notified: 0 };
 
@@ -86,11 +97,11 @@ export class KycRecoveryService {
           where: { id: request.registrationLinkId },
           select: { id: true, expiresAt: true, usedAt: true, revokedAt: true },
         });
-        if (!oldLink || oldLink.expiresAt.getTime() <= Date.now() || oldLink.revokedAt || oldLink.usedAt) {
+        if (!oldLink || oldLink.expiresAt.getTime() <= now.getTime() || oldLink.revokedAt || oldLink.usedAt) {
           if (oldLink && !oldLink.revokedAt) {
             await this.prisma.publicLink.updateMany({
               where: { id: oldLink.id, revokedAt: null },
-              data: { revokedAt: new Date() },
+              data: { revokedAt: now },
             });
           }
           const seeker = await this.prisma.jobSeeker.findUnique({
@@ -104,7 +115,8 @@ export class KycRecoveryService {
               subjectId: seeker.id,
               phone: seeker.phone,
               language: seeker.messageLanguage ?? 'en',
-              expiresAt: new Date(Date.now() + REGISTRATION_LINK_TTL_MS),
+              expiresAt: new Date(now.getTime() + REGISTRATION_LINK_TTL_MS),
+              metadata: { resumable: true },
             });
             link = publicLink(`/consent/${created.token}`);
             await this.prisma.kycRecoveryRequest.update({
@@ -124,7 +136,7 @@ export class KycRecoveryService {
       });
       await this.prisma.kycRecoveryRequest.update({
         where: { id: request.id },
-        data: { status: 'notified', notifiedAt: new Date() },
+        data: { status: 'notified', notifiedAt: now },
       });
       notified += 1;
     }

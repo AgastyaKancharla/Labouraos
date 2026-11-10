@@ -22,6 +22,64 @@ CEO only; manually queues the worker's recovery probe. **Request:** no body. **R
 
 `GET /system/status` and `GET /status` now include `idCheck: {"status":"up","lastChangedAt":"2026-11-10T12:00:00.000Z"}`. A down ID provider also appears as a degraded component.
 
+### `GET /job-seekers/:id/registration-status`
+
+Call agents, field agents, Team Leads, Managers and the CEO may read the registration progress panel for a job seeker.
+
+**Response `200` example:**
+
+```json
+{"jobSeekerId":"job-seeker-id","steps":{"phone":{"state":"done","time":"2026-11-10T10:00:00.000Z","reason":null},"consent":{"state":"in_progress","time":"2026-11-10T10:05:00.000Z","reason":null},"selfie":{"state":"not_started","time":null,"reason":null},"idCheck":{"state":"stuck","time":null,"reason":"ID check service is temporarily unavailable"},"payment":{"state":"not_started","time":null,"reason":null}},"registrationLinkExpiresAt":"2026-11-12T10:00:00.000Z","paymentOnlyLink":{"live":false,"expiresAt":null}}
+```
+
+**Errors:** `401` unauthenticated; `403` role is not allowed; `404` job seeker not found.
+
+### `POST /job-seekers/:id/identity-verification/provider`
+
+Call agents, field agents, Team Leads, Managers and the CEO may request provider verification after the candidate's identity-check consent is active. Provider-specific fields may be sent in the request, but raw Aadhaar numbers are always refused. The candidate name and date of birth are taken from the stored profile.
+
+**Request example:** `{"method":"digilocker","transactionId":"provider-transaction-id","otp":"123456"}`.
+
+**Response `201` example:** `{"jobSeekerId":"job-seeker-id","method":"digilocker","vendor":"configured_kyc_provider","status":"verified","last4":"4242","nameMatches":true,"isAdult":true}`.
+
+Provider/network errors persist the ID service as down. Personal verification results such as name mismatch and under-18 persist as the person's result without changing provider health.
+
+**Errors:** `400` missing consent, invalid method or raw Aadhaar input; `401` unauthenticated; `403` role is not allowed; `404` job seeker not found.
+
+### `POST /registration/:token/selfie`
+
+Public registration-link endpoint. The link's own registered number must have a verified OTP. Multipart form fields: `photo` (camera capture), `captureSource=live_camera`, and `requestId`. A gallery-marked upload is refused.
+
+**Response `201` example:** `{"jobSeekerId":"job-seeker-id","photoTakenAt":"2026-11-10T12:00:00.000Z","expiresInSeconds":300}`.
+
+**Errors:** `400` invalid link, missing registered-number OTP, gallery upload, or missing photo; `413` photo exceeds 5 MiB.
+
+### `POST /registration/:token/id-check`
+
+Public registration-link endpoint. Requires a verified OTP for the link's registered number and active identity-check consent. The request contains the provider's non-sensitive verification parameters and `requestId`; raw Aadhaar data is refused.
+
+**Request example:** `{"requestId":"otp-request-id","method":"digilocker","transactionId":"provider-transaction-id","otp":"123456"}`. **Response `201`:** the persisted verification result.
+
+**Errors:** `400` invalid link, missing OTP or consent, invalid method, or raw Aadhaar; provider/network failures are recorded as failed verification and mark the ID service down.
+
+### `POST /job-seekers/:id/payment-only-link`
+
+Call agents, field agents, Team Leads, Managers and the CEO may send a payment-only link to another number once an activation payment is pending. The number is encrypted in the public-link store and is not included in the response or audit log. A new link revokes the prior active link and expires after 15 minutes.
+
+**Request:** `{"phone":"9876543210"}`. **Response `201`:** `{"success":true,"expiresAt":"2026-11-10T12:15:00.000Z"}`.
+
+**Errors:** `400` no pending activation payment or the alternate number is invalid/same as the registered number; `401` unauthenticated; `403` role is not allowed; `404` job seeker not found.
+
+The job seeker may also request the same link from `POST /registration/:token/payment-only-link` with `{"requestId":"otp-request-id","phone":"9876543210"}` after verifying OTP on the registered number. The response and expiry are identical.
+
+### `POST /registration/payment/:token/send-otp` and `GET /registration/payment/:token`
+
+The public payment-only link sends OTP to its encrypted alternate number. The GET requires the verified `requestId` query parameter and returns only the job seeker's first name, JS code, exact payment and UPI details.
+
+**POST response `201`:** `{"success":true,"requestId":"otp-request-id","phone":"******3210"}`. **GET example:** `/registration/payment/token?requestId=otp-request-id`.
+
+**Errors:** `400` expired/revoked link, OTP not verified, or payment no longer pending; `404` unknown link/payment.
+
 ## Task 3 — Phone check by OTP
 
 ### `POST /otp/send`

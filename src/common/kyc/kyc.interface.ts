@@ -5,6 +5,9 @@ export interface KycVerificationResult {
   vendorReference: string;
   error?: string;
   failureType?: 'person' | 'provider';
+  last4?: string;
+  nameMatches?: boolean;
+  isAdult?: boolean;
 }
 
 export interface KycHealthResult {

@@ -24,6 +24,7 @@ export class MockKycProvider implements KycProvider {
         vendorReference: `mock_kyc_fail_${Date.now()}`,
         error: 'Offline e-KYC validation failed at vendor',
         failureType: 'person',
+      nameMatches: false,
       };
     }
 
@@ -33,6 +34,9 @@ export class MockKycProvider implements KycProvider {
     return {
       status: 'verified',
       vendorReference,
+      last4: '4242',
+      nameMatches: true,
+      isAdult: true,
     };
   }
 }

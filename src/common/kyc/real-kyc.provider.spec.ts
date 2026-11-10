@@ -105,7 +105,23 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
       const res = await provider.verifyOfflineAadhaar({ shareCode: '9999' });
       expect(res.status).toBe('failed');
       expect(res.vendorReference).toMatch(/^ovse_fail_/);
-      expect(res.error).toContain('Invalid OTP or expired session');
+      expect(res.error).toBe('e-KYC validation failed');
+      expect(res.failureType).toBe('person');
+      expect(res.error).not.toContain('Invalid OTP or expired session');
+    });
+
+    it('classifies 5xx responses as provider failures without storing response text', async () => {
+      const provider = new RealKycProvider({
+        fetchFn: (async () => ({
+          ok: false,
+          status: 503,
+          text: async () => 'sensitive vendor response',
+        }) as Response) as unknown as typeof fetch,
+      });
+      const result = await provider.verifyOfflineAadhaar({ shareCode: '9999' });
+      expect(result.failureType).toBe('provider');
+      expect(result.error).toBe('e-KYC provider is unavailable');
+      expect(result.error).not.toContain('sensitive vendor response');
     });
   });
 

@@ -251,6 +251,7 @@ model KycRecoveryRequest {
   updatedAt      DateTime @updatedAt
 
   @@index([status, requestedAt])
+  @@index([jobSeekerId, status])
 }
 
 model Referral {

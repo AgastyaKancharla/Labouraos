@@ -7,6 +7,7 @@ export interface RealKycProviderOptions {
   baseUrl?: string;
   healthCheckUrl?: string;
   fetchFn?: typeof fetch;
+  now?: () => Date;
 }
 
 @Injectable()
@@ -16,6 +17,7 @@ export class RealKycProvider implements KycProvider {
   private readonly baseUrl: string;
   private readonly fetchFn: typeof fetch;
   private readonly healthCheckUrl: string;
+  private readonly now: () => Date;
 
   constructor(options?: RealKycProviderOptions) {
     this.apiKey =
@@ -31,6 +33,7 @@ export class RealKycProvider implements KycProvider {
     ).replace(/\/$/, '');
     this.healthCheckUrl = options?.healthCheckUrl ?? process.env.KYC_HEALTH_URL ?? `${this.baseUrl}/health`;
     this.fetchFn = options?.fetchFn ?? globalThis.fetch;
+    this.now = options?.now ?? (() => new Date());
   }
 
   async checkHealth(): Promise<KycHealthResult> {
@@ -63,12 +66,11 @@ export class RealKycProvider implements KycProvider {
       });
 
       if (!response.ok) {
-        const errorText = await response.text();
-        this.logger.warn(`Licensed OVSE vendor returned status ${response.status}: ${errorText}`);
+        this.logger.warn(`Licensed OVSE vendor returned status ${response.status}`);
         return {
           status: 'failed',
           vendorReference: `ovse_fail_${Date.now()}`,
-          error: `e-KYC vendor error: ${errorText}`,
+          error: response.status >= 500 ? 'e-KYC provider is unavailable' : 'e-KYC validation failed',
           failureType: response.status >= 500 ? 'provider' : 'person',
         };
       }
@@ -81,6 +83,10 @@ export class RealKycProvider implements KycProvider {
           client_id?: string;
           status?: string;
           reference_id?: string;
+          full_name?: string;
+          aadhaar_number?: string;
+          date_of_birth?: string;
+          dob?: string;
           // Note: Vendor response might echo demographic details or raw fields
         };
       };
@@ -96,11 +102,25 @@ export class RealKycProvider implements KycProvider {
         data.data?.reference_id ||
         `ovse_ref_${Date.now()}`;
 
+      const vendorName = data.data?.full_name?.trim();
+      const candidateName = typeof params.candidateName === 'string' ? params.candidateName.trim() : '';
+      const nameMatches = vendorName && candidateName
+        ? vendorName.toLocaleLowerCase('en-IN') === candidateName.toLocaleLowerCase('en-IN')
+        : undefined;
+      const rawLast4 = data.data?.aadhaar_number?.replace(/\D/g, '').slice(-4);
+      const dateOfBirth = data.data?.date_of_birth ?? data.data?.dob;
+      const isAdult = dateOfBirth ? this.isAdult(dateOfBirth) : undefined;
+      const passedPersonChecks = nameMatches !== false && isAdult !== false;
+
       // CRITICAL: Strip ALL extra vendor echo fields. Store and return ONLY verification result and vendor reference.
       return {
-        status: isVerified ? 'verified' : 'failed',
+        status: isVerified && passedPersonChecks ? 'verified' : 'failed',
         vendorReference,
-        error: isVerified ? undefined : data.message || 'e-KYC validation failed',
+        error: isVerified && passedPersonChecks ? undefined : nameMatches === false ? 'Name mismatch' : isAdult === false ? 'Applicant is under 18' : data.message || 'e-KYC validation failed',
+        failureType: 'person',
+        ...(rawLast4 && /^\d{4}$/.test(rawLast4) ? { last4: rawLast4 } : {}),
+        ...(nameMatches !== undefined ? { nameMatches } : {}),
+        ...(isAdult !== undefined ? { isAdult } : {}),
       };
     } catch (err: unknown) {
       if (err instanceof BadRequestException) {
@@ -111,9 +131,19 @@ export class RealKycProvider implements KycProvider {
       return {
         status: 'failed',
         vendorReference: `ovse_err_${Date.now()}`,
-        error: `Network error connecting to e-KYC vendor: ${msg}`,
+        error: 'Network error connecting to e-KYC provider',
         failureType: 'provider',
       };
     }
+  }
+
+  private isAdult(value: string): boolean {
+    const dob = new Date(value);
+    if (Number.isNaN(dob.getTime())) return false;
+    const today = this.now();
+    let age = today.getUTCFullYear() - dob.getUTCFullYear();
+    const monthDiff = today.getUTCMonth() - dob.getUTCMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getUTCDate() < dob.getUTCDate())) age -= 1;
+    return age >= 18;
   }
 }
