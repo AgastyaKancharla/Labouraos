@@ -9,6 +9,7 @@ import { TELEPHONY_PROVIDER } from '../telephony/telephony.interface';
 import { RECORDING_STORAGE, MemoryRecordingStorage } from '../call/recording-storage';
 import { CallClock } from '../call/call-clock';
 import { JwtService } from '@nestjs/jwt';
+import { openAvailableDay } from '../../test-support/available-day';
 
 class MockCallClock extends CallClock {
   currentTime = new Date('2026-11-04T06:30:00.000Z'); // 12:00 PM IST (within 09:00 - 21:00)
@@ -147,6 +148,8 @@ describe('Phase 11 Task 6: Calling screens', () => {
     mgrToken = makeToken(mgr);
     ceoToken = makeToken(ceo);
     faToken = makeToken(fa);
+    await openAvailableDay(app, ca.id);
+    await openAvailableDay(app, fa.id);
 
     const stamp = Date.now().toString();
     testSeekerPhone = `+919${stamp.slice(-8)}1`;

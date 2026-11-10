@@ -494,7 +494,10 @@ describe('Security Fix: Fail-Closed Incoming Webhooks & Secret Enforcement', () 
           {
             provide: TelephonyService,
             useFactory: (provider, prisma) =>
-              new TelephonyService(provider, prisma),
+              new TelephonyService(provider, prisma, {
+                isAvailable: async () => true,
+                nextAvailableAgent: async () => null,
+              } as never),
             inject: [TELEPHONY_PROVIDER, PrismaService],
           },
           {

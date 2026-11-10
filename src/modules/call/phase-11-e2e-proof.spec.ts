@@ -11,6 +11,7 @@ import { RECORDING_STORAGE, MemoryRecordingStorage } from './recording-storage';
 import { encryptCallRoutingPhone } from '../staff/call-routing-key';
 import { NoPickupEvaluationJob } from '../../jobs/no-pickup-evaluation.job';
 import { signCallStatusBody } from './call-signature';
+import { openAvailableDay } from '../../test-support/available-day';
 
 class ControllableClock extends CallClock {
   current = new Date('2026-11-04T05:00:00.000Z'); // 10:30 IST
@@ -102,6 +103,7 @@ describe('Phase 11 Gate End-to-End Proof', () => {
     });
     createdStaffIds.push(ca.id);
     caToken = jwt.sign({ sub: ca.id, role: ca.role, code: ca.code, email: ca.email });
+    await openAvailableDay(app, ca.id);
 
     // 3. Job Seeker
     const seeker = await prisma.jobSeeker.create({

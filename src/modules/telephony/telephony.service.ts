@@ -16,6 +16,7 @@ import {
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
+import { AttendanceService } from '../attendance/attendance.service';
 
 @Injectable()
 export class TelephonyService {
@@ -23,6 +24,7 @@ export class TelephonyService {
     @Inject(TELEPHONY_PROVIDER)
     private readonly provider: TelephonyProvider,
     private readonly prisma: PrismaService,
+    private readonly attendance: AttendanceService,
   ) {}
 
   async handleInboundWebhook(
@@ -127,10 +129,19 @@ export class TelephonyService {
       }
     }
 
+    let assignTo = staffId;
+    if (!(await this.attendance.isAvailable(staffId))) {
+      const next = await this.attendance.nextAvailableAgent(staffId);
+      if (!next) {
+        return existing;
+      }
+      assignTo = next;
+    }
+
     return this.prisma.callbackTask.update({
       where: { id },
       data: {
-        assignedToStaffId: staffId,
+        assignedToStaffId: assignTo,
         status: 'assigned',
       },
       include: {

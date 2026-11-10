@@ -1,6 +1,6 @@
 # Phase 21 API — attendance and reporting lines
 
-Task 1. Later tasks add their routes here.
+Task 1 and Task 2. Later tasks add their routes here.
 
 ## GET /staff/without-reporting-line
 
@@ -74,3 +74,95 @@ The reason and the before/after line are stored in status history and in the aud
 Creating staff now requires the same line. An agent may send `teamLeadId` or `reportsToId` (they must be the same person when both are sent). Both columns are stored. A Team Lead sends `reportsToId` of an active Manager. A Manager or Finance sends `reportsToId` of the CEO. A CEO sends neither.
 
 Errors add: `400` "A call agent or field agent must report to an active Team Lead", "A Team Lead must report to an active Manager", "A Manager or Finance must report to the CEO", "The CEO reports to nobody".
+
+## Task 2 — the working day
+
+Times come from the server. A time sent in the request is ignored. One day per person: logging in again on a closed day is `400` "This day is already closed". Logging in when the day is already open returns today.
+
+A Manager reading `GET /pricing` no longer receives the attendance settings (`shiftStart`, `shiftEnd`, `productionHoursFullDay`, `halfDayBelowHours`, `dayToleranceMinutes`, `lateGraceMinutes`, `shortBreakMinutes`, `lunchMinutes`, `idleAfterMinutes`, `casualLeavePerMonth`, `emergencyLeavePerMonth`, `refundPriorityWindowDays`). The CEO still reads and writes them. Defaults are 09:30–18:30, 8 production hours, half day under 4.5, 10 minutes tolerance and late grace, 15-minute short break, 30-minute lunch, idle after 10 minutes, 1 casual and 1 emergency leave a month, refund priority 15 days.
+
+`POST /calls` is `400` "Calls are placed only while you are Available" when the caller is not Available. `POST /telephony/callbacks/:id/assign` does not give the callback to someone who is not Available. It assigns the next Available call or field agent, or leaves the callback pending when nobody is Available.
+
+### POST /attendance/login
+
+Who: any staff member, for themselves.
+
+Request: `{}`. A field agent must send `latitude` and `longitude`. Office staff may send them; they are not stored.
+
+Response `201`: today (see `GET /attendance/today`). `lateMinutes` is 0 at `shiftStart` plus the grace, and the minutes after `shiftStart` once grace has passed.
+
+Errors: `400` when a field agent sends no location, or the day is already closed.
+
+Example:
+
+```json
+{ "date": "2026-11-10", "status": "available", "loginAt": "2026-11-10T04:00:00.000Z", "logoutAt": null, "lateMinutes": 0, "productionSeconds": 0, "breakSeconds": 0, "idleSeconds": 0, "shortfallSeconds": 28800, "clocks": { "shiftStart": "09:30", "shiftEnd": "18:30", "now": "2026-11-10T04:00:00.000Z" }, "flagged": false, "closedReason": null, "dayType": "open" }
+```
+
+### POST /attendance/logout
+
+Who: any staff member, for themselves.
+
+Request: none.
+
+Response `201`: today, with `closedReason` `logout`. Session idle and the two-hour session limit do not call this.
+
+Errors: `400` "Log in before changing status" when the day is not open.
+
+### POST /attendance/status
+
+Who: any staff member, for themselves.
+
+Request: `{ "status": "available" }`. Allowed: `available`, `team_meeting`, `training`, `one_to_one`, `system_problem`, `short_break`, `lunch`.
+
+Response `201`: today.
+
+Errors: `400` when the status is `on_call`, `after_call_notes`, `on_visit`, `travelling` or `idle`, or when the day is not open.
+
+A short break past 15 minutes, or lunch past 30, raises a `break_overrun` review flag for the Team Lead.
+
+### POST /attendance/heartbeat
+
+Who: any staff member, for themselves. The screen sends one while the person is using it.
+
+Request: none.
+
+Response `201`: today. A heartbeat ends Idle and returns the person to Available.
+
+### GET /attendance/today
+
+Who: any staff member, for themselves.
+
+Request: none.
+
+Response `200`: the same shape as login. Before the first login, `status` and `loginAt` are null and `shortfallSeconds` is a full day. No heartbeat for 11 minutes (10 minutes idle, plus the screen's one minute) while Available marks Idle. After-call notes become Available after 2 minutes. A later look still starts Idle at that 11-minute mark.
+
+### POST /attendance/system-problem/:segmentId/approve
+
+Who: that person's Team Lead, a Manager over them, or the CEO. Not the person themselves.
+
+Request: none.
+
+Response `201`: `{ "approved": true }`. Until this, the system-problem time is not production. A repeat approve is a no-op.
+
+Errors: `403` for anyone else. `404` when the segment is not an open system problem.
+
+### POST /attendance/business-check-in
+
+Who: a field agent, for themselves. Sets On visit.
+
+Request: none. The day must already be open.
+
+Response `201`: today, `status` `on_visit`.
+
+### POST /attendance/business-check-out
+
+Who: a field agent, for themselves. Sets Travelling.
+
+Request: none.
+
+Response `201`: today, `status` `travelling`.
+
+The call-status webhook sets On call when `answeredAt` is first stored, and After-call notes when an answered call receives `endedAt`. A call that was never answered does not change the status.
+
+A nightly job closes any day still open, at the last segment or heartbeat, with `closedReason` `auto_closed_no_logout` and `flagged` true.

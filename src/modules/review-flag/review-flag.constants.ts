@@ -21,6 +21,7 @@ export const REVIEW_FLAG_KINDS = [
   'vacancy_captured_for_account_business',
   'claim_decision_overdue',
   'name_check',
+  'break_overrun',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

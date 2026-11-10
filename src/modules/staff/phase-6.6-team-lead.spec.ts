@@ -8,6 +8,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { openAvailableDay } from '../../test-support/available-day';
 import { RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { Reflector } from '@nestjs/core';
@@ -476,6 +477,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
 
   describe('5. Team Lead Work Reassignment Between Own Agents', () => {
     it('Team Lead can assign work to an agent on their own team', async () => {
+      await openAvailableDay(app, agent1Id);
       const res = await request(app.getHttpServer())
         .post(`/telephony/callbacks/${callbackTaskId}/assign`)
         .set('Authorization', `Bearer ${lead1Token}`)
@@ -488,6 +490,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
     });
 
     it('Team Lead can reassign work to another agent on their own team', async () => {
+      await openAvailableDay(app, agent2Id);
       const res = await request(app.getHttpServer())
         .post(`/telephony/callbacks/${callbackTaskId}/assign`)
         .set('Authorization', `Bearer ${lead1Token}`)
