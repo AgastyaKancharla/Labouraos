@@ -1,15 +1,16 @@
 /** Supplies the Phase 20 required fields to older integration fixtures. */
 export function completeJobSeekerRegistration(input: Record<string, unknown>): Record<string, unknown> {
+  const fields = { ...input };
+  delete fields.preferredCallWindowStart;
+  delete fields.preferredCallWindowEnd;
   const {
     tradeSkill,
     yearsExperience,
-    preferredCallWindowStart: _legacyStart,
-    preferredCallWindowEnd: _legacyEnd,
-    ...fields
-  } = input;
-  const referredById = fields.referredById;
-  const trades = Array.isArray(fields.trades)
-    ? fields.trades
+    ...registrationFields
+  } = fields;
+  const referredById = registrationFields.referredById;
+  const trades = Array.isArray(registrationFields.trades)
+    ? registrationFields.trades
     : [{
       trade: typeof tradeSkill === 'string' ? tradeSkill : 'Housekeeping',
       yearsExperience: typeof yearsExperience === 'number' ? yearsExperience : 0,
@@ -33,6 +34,6 @@ export function completeJobSeekerRegistration(input: Record<string, unknown>): R
     shiftPreference: 'any',
     jobType: 'full_time',
     spokenLanguages: ['Kannada'],
-    ...fields,
+    ...registrationFields,
   };
 }

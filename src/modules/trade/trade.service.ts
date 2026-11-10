@@ -227,8 +227,11 @@ export class TradeService {
       reason: `Mapped '${suggestion.typedName}' to '${trade.name}'`,
       city: 'Bengaluru',
     });
-    const { floorChanges: _floorChanges, ...publicResult } = result;
-    return publicResult;
+    return {
+      suggestion: result.suggestion,
+      seekerTradesRewritten: result.seekerTradesRewritten,
+      vacanciesRewritten: result.vacanciesRewritten,
+    };
   }
 
   async dismissSuggestion(suggestionId: string, actorId: string) {
