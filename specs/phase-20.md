@@ -128,7 +128,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - The fifth wrong code kills the request.
   - A verified request can't create two records.
 
-### [ ] Task 4 — The one job seeker registration form
+### [x] Task 4 — The one job seeker registration form
 **Branch:** `phase-20/task-4-job-seeker-form` · **Migration folder:** `20261113120000_job_seeker_form`
 
 **Acceptance:**
