@@ -310,11 +310,11 @@ export class AttendanceService {
     if (!day) return;
     const current = await this.openSegment(day.id);
     if (!current) return;
-    if (
-      current.status === 'after_call_notes' &&
-      now.getTime() - current.startedAt.getTime() >= AFTER_CALL_NOTES_MS
-    ) {
-      await this.switchStatus(day.id, staffId, 'available', 'phone_system', now);
+    if (current.status === 'after_call_notes') {
+      const backAt = new Date(current.startedAt.getTime() + AFTER_CALL_NOTES_MS);
+      if (now.getTime() >= backAt.getTime()) {
+        await this.switchStatus(day.id, staffId, 'available', 'phone_system', backAt);
+      }
       return;
     }
     if (current.status !== 'available') return;

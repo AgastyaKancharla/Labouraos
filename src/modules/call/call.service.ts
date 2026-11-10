@@ -156,6 +156,7 @@ export class CallService {
       });
       await this.copyIfCompleted(created.id, event);
       await this.recordContactAttemptIfFinal(created);
+      await this.reflectOnAttendance(null, created);
       return { id: created.id, code: created.code, unchanged: false };
     }
 
@@ -177,7 +178,28 @@ export class CallService {
     });
     await this.copyIfCompleted(existing.id, event);
     await this.recordContactAttemptIfFinal(updated);
+    await this.reflectOnAttendance(existing, updated);
     return { id: existing.id, code: existing.code, unchanged: false };
+  }
+
+  /**
+   * answeredAt starts On call. endedAt after an answer starts After-call notes.
+   * A repeat webhook does not reach here. A call that was never answered stays put.
+   */
+  private async reflectOnAttendance(
+    before: { staffId: string | null; answeredAt: Date | null; endedAt: Date | null } | null,
+    after: { staffId: string | null; answeredAt: Date | null; endedAt: Date | null },
+  ): Promise<void> {
+    if (!after.staffId) return;
+    const answeredNow = after.answeredAt !== null && before?.answeredAt == null;
+    const endedNow = after.endedAt !== null && before?.endedAt == null;
+    if (endedNow && after.answeredAt) {
+      await this.attendance.onCallEnded(after.staffId);
+      return;
+    }
+    if (answeredNow) {
+      await this.attendance.onCallAnswered(after.staffId);
+    }
   }
 
   private async recordContactAttemptIfFinal(call: CallRecord) {
