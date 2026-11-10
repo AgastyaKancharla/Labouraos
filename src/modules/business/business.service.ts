@@ -19,7 +19,14 @@ import {
 } from '../../common/geo/geo.util';
 import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
-import { BUSINESS_CONTACT_ROLES, BUSINESS_MESSAGE_LANGUAGES, BUSINESS_TYPES, EMPLOYEE_COUNT_BANDS } from './business.constants';
+import {
+  BUSINESS_CONTACT_ROLES,
+  BUSINESS_MESSAGE_LANGUAGES,
+  BUSINESS_TYPES,
+  EMPLOYEE_COUNT_BANDS,
+  HIRING_FREQUENCIES,
+  YEARS_RUNNING_BANDS,
+} from './business.constants';
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { TradeService } from '../trade/trade.service';
 import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
@@ -157,6 +164,8 @@ export class BusinessService {
       throw new BadRequestException('Household businesses require a familyName');
     }
     this.assertOptionalValue(dto.employeeCountBand, EMPLOYEE_COUNT_BANDS, 'employeeCountBand');
+    this.assertOptionalValue(dto.yearsInOperationBand, YEARS_RUNNING_BANDS, 'yearsInOperationBand');
+    this.assertOptionalValue(dto.hiringFrequency, HIRING_FREQUENCIES, 'hiringFrequency');
     this.assertOptionalValue(dto.heardFrom, HEARD_FROM_VALUES, 'heardFrom');
     this.assertOptionalValue(dto.contactLanguage, BUSINESS_MESSAGE_LANGUAGES, 'contactLanguage');
     this.assertOptionalTime(dto.openingTime, 'openingTime');

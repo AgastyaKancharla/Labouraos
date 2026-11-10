@@ -18,11 +18,13 @@ import { CallModule } from '../call/call.module';
 import { BusinessVerificationModule } from '../business/business-verification.module';
 import { PlacementModule } from '../placement/placement.module';
 import { TradeModule } from '../trade/trade.module';
+import { VacancyConfirmationService } from './vacancy-confirmation.service';
+import { VacancyConfirmController } from './vacancy-confirm.controller';
 
 @Module({
   imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule, PlacementModule, TradeModule],
-  controllers: [VacancyController, CandidateIntroductionController, InterviewController],
-  providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService],
-  exports: [VacancyService, CandidateIntroductionService, InterviewService],
+  controllers: [VacancyController, CandidateIntroductionController, InterviewController, VacancyConfirmController],
+  providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],
+  exports: [VacancyService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],
 })
 export class VacancyModule {}

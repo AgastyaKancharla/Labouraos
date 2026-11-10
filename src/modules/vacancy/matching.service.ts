@@ -3,6 +3,7 @@ import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { ConsentClock } from '../consent/consent-clock';
 import { PricingService } from '../pricing/pricing.service';
+import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
 import {
@@ -77,6 +78,7 @@ type MatchCandidate = {
 type VacancyForMatching = {
   id: string;
   code: string;
+  status: string;
   city: string;
   businessId: string;
   tradeSkill: string;
@@ -136,6 +138,9 @@ export class MatchingService {
       include: { business: true },
     })) as VacancyForMatching | null;
     if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyId}' not found`);
+    if (isUnconfirmedVacancyStatus(vacancy.status)) {
+      throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
+    }
     if (vacancy.business.verificationStatus !== 'verified') {
       throw new ForbiddenException('Candidates are hidden until the business is verified');
     }

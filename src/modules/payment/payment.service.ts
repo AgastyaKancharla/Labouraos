@@ -34,6 +34,17 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 
+/** What the bank feed webhook reports back for one credit. */
+export interface BankFeedWebhookResult {
+  received: boolean;
+  status?: string;
+  reason?: string;
+  alreadyProcessed?: boolean;
+  paymentId?: string;
+  refundPaymentId?: string;
+  bankCreditId?: string;
+}
+
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
@@ -342,7 +353,7 @@ export class PaymentService {
     return { received: true, status: 'succeeded', paymentId };
   }
 
-  async handleBankFeedWebhook(rawBody: Buffer | string | undefined, signature?: string) {
+  async handleBankFeedWebhook(rawBody: Buffer | string | undefined, signature?: string): Promise<BankFeedWebhookResult> {
     const verification = await this.bankFeedProvider.verifyWebhook(rawBody, signature);
     if (!verification.isValid || !verification.event) {
       throw new UnauthorizedException(
@@ -404,6 +415,16 @@ export class PaymentService {
       return { received: true, status: 'unmatched', reason: 'unknown_reference', bankCreditId: credit.id };
     }
 
+    if (
+      matchedPayment.type === 'activation'
+      && matchedPayment.method !== 'gateway_card'
+      && matchedPayment.status === 'succeeded'
+      && matchedPayment.jobSeekerId
+      && amountPaise === (matchedPayment.expectedAmountPaise ?? matchedPayment.amount)
+    ) {
+      return this.refundDuplicateActivationPayment(matchedPayment, credit.id, bankUtr, amountPaise);
+    }
+
     if (matchedPayment.method === 'gateway_card' || matchedPayment.status === 'succeeded') {
       await this.reviewFlagService.raise({
         kind: 'payment_mismatch',
@@ -463,6 +484,66 @@ export class PaymentService {
       status: 'succeeded',
       paymentId: matchedPayment.id,
       bankCreditId: credit.id,
+    };
+  }
+
+  /**
+   * Phase 20 Task 5: when a second ₹499 activation payment arrives for the same job seeker (for example he and his
+   * brother both pay), the later one is refunded automatically. The refund is created already approved — it needs no
+   * one's decision — and Finance sends it from the company account and records the UTR, like every refund.
+   */
+  private async refundDuplicateActivationPayment(
+    original: { id: string; code: string; city: string; jobSeekerId: string | null },
+    bankCreditId: string,
+    bankUtr: string,
+    amountPaise: number,
+  ): Promise<BankFeedWebhookResult> {
+    const code = await this.idService.generateCode('payment');
+    const refund = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.payment.create({
+        data: {
+          code,
+          city: original.city,
+          type: 'duplicate_refund',
+          amount: amountPaise,
+          status: 'approved',
+          approvedAt: new Date(),
+          subjectType: 'job_seeker',
+          subjectId: original.jobSeekerId!,
+          jobSeekerId: original.jobSeekerId,
+          payerUtrHint: bankUtr,
+        },
+      });
+      await tx.bankCredit.update({
+        where: { id: bankCreditId },
+        data: { status: 'matched', matchedPaymentId: created.id },
+      });
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: created.id,
+        fromStatus: null,
+        toStatus: 'approved',
+        changedByStaffId: 'system',
+        reason: 'duplicate_activation_payment',
+      });
+      return created;
+    });
+    await this.auditService.log({
+      actorId: 'system',
+      action: 'payment.duplicate_activation_refund_created',
+      entityType: 'Payment',
+      entityCode: refund.code,
+      after: { originalPaymentCode: original.code, amountPaise, bankUtr, status: 'approved' },
+      changedFields: ['type', 'amount', 'status'],
+      city: original.city,
+    });
+    return {
+      received: true,
+      status: 'duplicate_refund_created',
+      reason: 'duplicate_activation_payment',
+      paymentId: original.id,
+      refundPaymentId: refund.id,
+      bankCreditId,
     };
   }
 

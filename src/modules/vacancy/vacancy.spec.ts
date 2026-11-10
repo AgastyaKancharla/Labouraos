@@ -182,7 +182,8 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         tradeSkill: 'Electrician',
-        salaryMinPaise: 2200000, // ₹22,000 in paise
+        salaryMinPaise: 2200000, // ₹22,000 in paise — below the legal minimum, so the owner-told tick is needed
+        ownerToldMinimumWage: true,
         headcount: 3,
         description: 'Commercial wiring and panel installation',
       });
@@ -193,7 +194,9 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     expect(res.body.tradeSkill).toBe('Electrician');
     expect(res.body.salaryMinPaise).toBe(2200000);
     expect(res.body.headcount).toBe(3);
-    expect(res.body.status).toBe('open');
+    expect(res.body.status).toBe('awaiting_confirmation');
+    expect(res.body.belowLegalMinimum).toBe(true);
+    expect(res.body.confirmation.otpRequestId).toBeDefined();
     expect(res.body.businessId).toBe(koramangalaBusinessId);
 
     // Audit log check
@@ -245,6 +248,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
           genderRequirement: 'women',
           genderReason: 'Role requirement supplied by the business',
           walkInDate: '2026-12-05',
+          ownerToldMinimumWage: true,
         })
         .expect(201);
 
@@ -272,6 +276,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
       .send({
         tradeSkill: 'Electrician',
         salaryMinPaise: 2200000,
+        ownerToldMinimumWage: true,
         interviewType: 'scheduled',
         interviewSlots: [
           {
@@ -311,7 +316,7 @@ describe('Phase 4 Task 2: Vacancy Capture', () => {
     const created = await request(app.getHttpServer())
       .post(`/businesses/${koramangalaBusinessId}/vacancies`)
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({ tradeSkill: 'Electrician', salaryMinPaise: 2200000 })
+      .send({ tradeSkill: 'Electrician', salaryMinPaise: 2200000, ownerToldMinimumWage: true })
       .expect(201);
 
     const notice = await prisma.reviewFlag.findFirst({

@@ -458,6 +458,17 @@ model Vacancy {
   placements                  Placement[]
   candidateIntroductions     CandidateIntroduction[]
   candidateIntroductionLinks CandidateIntroductionLink[]
+  /// Phase 20 Task 8: who confirmed the vacancy, when and how (code_on_call, code_on_visit, sms_link)
+  confirmedAt                 DateTime?
+  confirmationMethod          String?
+  confirmedByName             String?
+  confirmedByRole             String?
+  confirmedPhoneLast4         String?
+  confirmationRecordedByStaffId String?
+  /// Legal minimum wage check (Phase 20 Task 8)
+  belowLegalMinimum           Boolean     @default(false)
+  ownerToldMinimumWage        Boolean     @default(false)
+  legalMinimumPaise           Int?
   createdAt                   DateTime    @default(now())
   updatedAt                   DateTime    @updatedAt
 
@@ -466,6 +477,7 @@ model Vacancy {
   @@index([branchId])
   @@index([replacementForPlacementId])
   @@index([tradeSkill])
+  @@index([belowLegalMinimum])
   @@index([status])
 }
 

@@ -12,6 +12,7 @@ import { BusinessClock } from './business-clock';
 import { ConsentClock } from '../consent/consent-clock';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
+import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
 
 class Phase13GateClock extends BusinessClock {
   nowValue = new Date();
@@ -210,9 +211,10 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
       .set('Authorization', `Bearer ${lead.token}`)
       .send({
         tradeSkill: 'Electrician', salaryMinPaise: 2000000, salaryMaxPaise: 2500000,
-        headcount: 1, interviewType: 'walk_in', walkInDate: '2026-11-06',
+        headcount: 1, interviewType: 'walk_in', walkInDate: '2026-11-06', ownerToldMinimumWage: true,
       }).expect(201);
     const vacancyId = vacancyResponse.body.id as string;
+    await confirmVacancyForTest(app, vacancyResponse.body);
     vacancyIds.push(vacancyId);
     await request(server).get(`/vacancies/${vacancyId}/shortlist`)
       .set('Authorization', `Bearer ${visitingAgent.token}`)

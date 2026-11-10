@@ -165,6 +165,8 @@ export class CallAgentMetricsService {
     const vacanciesCaptured = await this.prisma.vacancy.count({
       where: {
         capturedByStaffId: effectiveStaffId,
+        // Phase 20 Task 8: only vacancies the contact person confirmed count as captured.
+        status: { notIn: ['draft', 'awaiting_confirmation'] },
         createdAt: {
           gte: startUtc,
           lte: endUtc,

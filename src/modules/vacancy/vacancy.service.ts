@@ -15,6 +15,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { VACANCY_EXTRAS } from './vacancy.constants';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { normalizeTradeName, TradeService } from '../trade/trade.service';
+import { VacancyConfirmationService } from './vacancy-confirmation.service';
 
 const IST_OFFSET_MINUTES = 330;
 
@@ -28,6 +29,7 @@ export class VacancyService {
     private readonly reviewFlagService: ReviewFlagService,
     private readonly editPolicyService: EditPolicyService,
     private readonly tradeService: TradeService,
+    private readonly confirmationService: VacancyConfirmationService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -166,6 +168,22 @@ export class VacancyService {
       throw new ForbiddenException('Field agents may only add vacancies to their account businesses');
     }
 
+    let branchId: string | null = null;
+    if (dto.branchId) {
+      const branch = await this.prisma.businessBranch.findFirst({
+        where: { id: dto.branchId, businessId: business.id },
+        select: { id: true },
+      });
+      if (!branch) throw new BadRequestException('branchId must be a branch of this business');
+      branchId = branch.id;
+    }
+    const legalMinimum = await this.confirmationService.legalMinimumFields(
+      normalizeTradeName(dto.tradeSkill),
+      dto.salaryMinPaise,
+      dto.salaryPeriod,
+      dto.ownerToldMinimumWage,
+    );
+
     const policy = await this.pricingService.current();
     const interviewType = dto.interviewType ?? 'walk_in';
     const slots = this.buildInterviewSlots(dto, interviewType, policy.walkInStart, policy.walkInEnd);
@@ -213,7 +231,10 @@ export class VacancyService {
                 ? 'field_visit'
                 : null),
           interviewSlots: { create: slots },
-          status: 'open',
+          branchId,
+          ...legalMinimum,
+          // Phase 20 Task 8: a new vacancy waits for the contact person's OTP before it can be matched.
+          status: 'awaiting_confirmation',
         },
         include: {
           business: true,
@@ -225,7 +246,7 @@ export class VacancyService {
         subjectType: 'vacancy',
         subjectId: v.id,
         fromStatus: null,
-        toStatus: 'open',
+        toStatus: 'awaiting_confirmation',
         changedByStaffId: staff.id,
       });
       await this.tradeService.recordSuggestion(tx, v.tradeSkill, staff.id, 'vacancy', v.id);
@@ -252,7 +273,80 @@ export class VacancyService {
       });
     }
 
-    return vacancy;
+    const confirmation = await this.trySendConfirmationCode(vacancy.id, staff);
+    return { ...vacancy, confirmation };
+  }
+
+  /**
+   * Completes a draft (from the business form's staff-needed rows): checks the required fields and the legal
+   * minimum wage, moves it to awaiting_confirmation and sends the contact person the confirmation code.
+   */
+  async submitForConfirmation(vacancyRef: string, body: { ownerToldMinimumWage?: boolean }, actorId: string) {
+    const staff = await this.prisma.staff.findUnique({ where: { id: actorId } });
+    if (!staff) throw new NotFoundException(`Staff '${actorId}' not found`);
+    const vacancy = await this.prisma.vacancy.findFirst({
+      where: vacancyRef.startsWith('VC-') ? { code: vacancyRef } : { id: vacancyRef },
+      include: { business: true },
+    });
+    if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyRef}' not found`);
+    if (vacancy.status !== 'draft') {
+      throw new BadRequestException(`Only a draft vacancy can be completed (this one is ${vacancy.status})`);
+    }
+    if (staff.role === 'field_agent' && vacancy.business.accountAgentId !== staff.id && vacancy.capturedByStaffId !== staff.id) {
+      throw new ForbiddenException('Field agents may only complete vacancies for their account businesses');
+    }
+    const missing = [
+      ['tradeSkill', vacancy.tradeSkill?.trim()],
+      ['salaryMinPaise', vacancy.salaryMinPaise],
+      ['headcount', vacancy.headcount],
+      ['shift', vacancy.shift?.trim()],
+      ['startDate', vacancy.startDate],
+    ].filter(([, value]) => value === null || value === undefined || value === '').map(([field]) => field);
+    if (missing.length) {
+      throw new BadRequestException(`The draft is missing: ${missing.join(', ')}`);
+    }
+    const legalMinimum = await this.confirmationService.legalMinimumFields(
+      vacancy.tradeSkill,
+      vacancy.salaryMinPaise!,
+      vacancy.salaryPeriod,
+      body?.ownerToldMinimumWage,
+    );
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.vacancy.updateMany({
+        where: { id: vacancy.id, status: 'draft' },
+        data: { ...legalMinimum, status: 'awaiting_confirmation' },
+      });
+      if (changed.count !== 1) throw new BadRequestException('This draft was already completed');
+      await recordStatusChange(tx, {
+        subjectType: 'vacancy',
+        subjectId: vacancy.id,
+        fromStatus: 'draft',
+        toStatus: 'awaiting_confirmation',
+        changedByStaffId: staff.id,
+      });
+      return tx.vacancy.findUniqueOrThrow({ where: { id: vacancy.id }, include: { business: true } });
+    });
+    await this.auditService.log({
+      actorId: staff.id,
+      action: 'vacancy.draft_completed',
+      entityType: 'vacancy',
+      entityCode: updated.code,
+      before: { status: 'draft' },
+      after: { status: 'awaiting_confirmation', belowLegalMinimum: updated.belowLegalMinimum },
+      changedFields: ['status', 'belowLegalMinimum', 'ownerToldMinimumWage'],
+      city: updated.city,
+    });
+    const confirmation = await this.trySendConfirmationCode(updated.id, staff);
+    return { ...updated, confirmation };
+  }
+
+  /** Sending the code must never lose the saved vacancy: if it fails, the agent can send it again. */
+  private async trySendConfirmationCode(vacancyId: string, staff: { id: string; role: string }) {
+    try {
+      return await this.confirmationService.sendCode(vacancyId, { id: staff.id, role: staff.role });
+    } catch (error: unknown) {
+      return { error: error instanceof Error ? error.message : 'The confirmation code could not be sent' };
+    }
   }
 
   async findAll(actorId: string, filterStatus?: string) {
@@ -329,6 +423,9 @@ export class VacancyService {
     }
 
     if (vacancy.salaryMinPaise === null) return [];
+    if (vacancy.status === 'draft' || vacancy.status === 'awaiting_confirmation') {
+      throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
+    }
 
     if (vacancy.business.verificationStatus !== 'verified') {
       throw new ForbiddenException('Candidates are hidden until the business is verified');

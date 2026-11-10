@@ -236,6 +236,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         tradeSkill: 'Carpenter',
         salaryMinPaise: 2000000,
         headcount: 1,
+        ownerToldMinimumWage: true,
       })
       .expect(201);
     expect(vacKora.body.tradeSkill).toBe('Carpenter');

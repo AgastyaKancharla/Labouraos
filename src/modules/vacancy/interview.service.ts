@@ -8,6 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -80,6 +81,9 @@ export class InterviewService {
       include: { business: true },
     });
     if (!vacancy) throw new NotFoundException(`Vacancy '${dto.vacancyId}' not found`);
+    if (isUnconfirmedVacancyStatus(vacancy.status)) {
+      throw new BadRequestException('An interview can only be booked once the contact person confirms the vacancy');
+    }
     if (vacancy.business.verificationStatus !== 'verified') {
       throw new BadRequestException('The business must be verified before an interview can be booked');
     }

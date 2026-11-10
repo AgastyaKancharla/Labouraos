@@ -331,6 +331,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
           tradeSkill: 'Electrician',
           requiredWorkers: 2,
           salaryMinPaise: 2200000,
+          ownerToldMinimumWage: true,
           description: `Need 2 electricians in ${area}`,
           locality: area,
           city: 'Bengaluru',

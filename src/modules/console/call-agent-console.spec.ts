@@ -12,6 +12,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-placement-fixture';
 import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
 
 describe('Phase 6 Task 5: Call Agent Console', () => {
   let app: INestApplication;
@@ -208,9 +209,11 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
         tradeSkill: 'Electrician',
         salaryMinPaise: 2000000,
         headcount: 1,
+        ownerToldMinimumWage: true,
       })
       .expect(201);
     const vacancyId = vcRes.body.id;
+    await confirmVacancyForTest(app, vcRes.body);
 
     // 7. Shortlist retrieval returns the Phase 14 paginated matching result.
     const shortlistRes = await request(app.getHttpServer())

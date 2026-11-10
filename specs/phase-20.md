@@ -283,7 +283,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - Old businesses still load and their contact is filled from the owner fields.
   - The duplicate check finds a branch contact's number.
 
-### [ ] Task 8 — Every vacancy confirmed by OTP, and the minimum-wage warning
+### [x] Task 8 — Every vacancy confirmed by OTP, and the minimum-wage warning
 **Branch:** `phase-20/task-8-vacancy-confirm` · **Migration folder:** `20261113160000_vacancy_confirm`
 
 **Acceptance:**
