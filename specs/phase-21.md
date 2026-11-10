@@ -155,7 +155,7 @@ Also:
   - The CEO can.
   - People without a line are listed.
 
-### [ ] Task 2 — The working day: login, statuses and production time
+### [x] Task 2 — The working day: login, statuses and production time
 **Branch:** `phase-21/task-2-attendance-day` · **Migration folder:** `20261114100000_attendance_day`
 
 **Acceptance:**
