@@ -332,6 +332,9 @@ export class PlacementService {
     let paymentLink: string | null = null;
 
     if (!created.existing) {
+      const branch = created.placement.vacancy.branchId
+        ? await this.prisma.businessBranch.findUnique({ where: { id: created.placement.vacancy.branchId } })
+        : null;
       const upiRequest = await this.upiCollectionService.createRequest({
         type: 'placement_fee',
         subjectType: 'placement',
@@ -342,6 +345,7 @@ export class PlacementService {
         placementId: created.placement.id,
         notifySubjectType: 'business',
         notifySubjectId: created.placement.businessId,
+        notifyRecipientPhone: branch?.contactPersonPhone,
       });
       payment = await this.prisma.payment.findUnique({ where: { id: upiRequest.paymentId } });
       paymentLink = upiRequest.paymentLink;
@@ -405,6 +409,7 @@ export class PlacementService {
       },
       include: {
         business: true,
+        vacancy: true,
       },
     });
     if (!placement) {
@@ -423,7 +428,10 @@ export class PlacementService {
     if (!this.upiCollectionService) {
       throw new BadRequestException('UpiCollectionService is not configured');
     }
-    return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId);
+    const branch = placement.vacancy.branchId
+      ? await this.prisma.businessBranch.findUnique({ where: { id: placement.vacancy.branchId } })
+      : null;
+    return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId, branch?.contactPersonPhone);
   }
 
   async recordJoined(id: string, _dto?: RecordJoinedDto, actorId?: string, now = new Date()) {

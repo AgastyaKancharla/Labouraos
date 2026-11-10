@@ -593,7 +593,10 @@ export class InterviewService {
     if (!interview || interview.status !== 'confirmed' || interview.resultRecordedAt) {
       throw new BadRequestException('This interview is no longer awaiting an owner result');
     }
-    if (interview.business.phone !== link.phone) {
+    const resultPhone = interview.vacancy.branchId
+      ? (await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } }))?.contactPersonPhone
+      : interview.business.phone;
+    if (!resultPhone || resultPhone !== link.phone) {
       throw new BadRequestException('The owner phone changed after this result link was issued');
     }
     const now = this.clock.now();
@@ -741,8 +744,12 @@ export class InterviewService {
     });
     if (claimed.count !== 1) return;
     const linkExpiresAt = new Date(interview.slotEndsAt.getTime() + closeHours * 60 * 60 * 1000);
+    const branch = interview.vacancy.branchId
+      ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } })
+      : null;
+    const contactPhone = branch?.contactPersonPhone ?? interview.business.phone;
     const token = await this.consentLinks.createInterviewActionToken(
-      interview.id, 'owner_result', interview.business.phone, linkExpiresAt,
+      interview.id, 'owner_result', contactPhone, linkExpiresAt,
     );
     const link = publicLink(`/interviews/result/${token}`);
     const interviewTime = new Intl.DateTimeFormat('en-IN', {
@@ -751,6 +758,7 @@ export class InterviewService {
     const [ownerMessages] = await Promise.all([
       Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
         channel, template: 'interview_result_request', subjectType: 'business', subjectId: interview.businessId,
+        recipientPhone: contactPhone,
         relatedType: 'interview', relatedId: interview.id, variables: { link, interviewTime },
       }))),
       this.sendCandidateOfferCheck(interview),
@@ -897,7 +905,10 @@ export class InterviewService {
     const time = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
     }).format(interview.slotStartsAt);
-    const contactPerson = interview.business.additionalContactName || interview.business.ownerName || '';
+    const branch = interview.vacancy.branchId
+      ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } })
+      : null;
+    const contactPerson = branch?.contactPersonName || interview.business.additionalContactName || interview.business.ownerName || '';
     const candidateMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
       this.messagingService.send({
         channel, template: 'interview_booked', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
@@ -918,6 +929,7 @@ export class InterviewService {
     const ownerMessages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
       this.messagingService.send({
         channel, template: 'interview_candidate_for_owner', subjectType: 'business', subjectId: interview.businessId,
+        ...(branch ? { recipientPhone: branch.contactPersonPhone } : {}),
         relatedType: 'interview', relatedId: interview.id,
         variables: { firstName: interview.jobSeeker.name.trim().split(/\s+/)[0], photoLink, interviewTime: time },
       }),

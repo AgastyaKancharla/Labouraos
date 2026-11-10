@@ -20,6 +20,7 @@ export interface CreateUpiRequestInput {
   placementId?: string;
   notifySubjectType?: 'job_seeker' | 'business';
   notifySubjectId?: string;
+  notifyRecipientPhone?: string;
   reactivation?: boolean;
 }
 
@@ -143,7 +144,7 @@ export class UpiCollectionService {
     const notifySubjectType = input.notifySubjectType ?? (input.subjectType === 'job_seeker' ? 'job_seeker' : undefined);
     const notifySubjectId = input.notifySubjectId ?? (input.subjectType === 'job_seeker' ? input.subjectId : undefined);
     if (notifySubjectType && notifySubjectId) {
-      await this.sendPaymentLink(payment, notifySubjectType, notifySubjectId, link, payeeName);
+      await this.sendPaymentLink(payment, notifySubjectType, notifySubjectId, link, payeeName, input.notifyRecipientPhone);
     }
     return {
       paymentId: payment.id,
@@ -157,7 +158,7 @@ export class UpiCollectionService {
     };
   }
 
-  async resendRequest(paymentId: string, notifySubjectType?: 'job_seeker' | 'business', notifySubjectId?: string) {
+  async resendRequest(paymentId: string, notifySubjectType?: 'job_seeker' | 'business', notifySubjectId?: string, recipientPhone?: string) {
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
     if (!payment || payment.method !== 'upi_direct' || payment.gatewayReference !== null || payment.status !== 'pending' || !payment.upiReference || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Pending UPI payment request not found');
@@ -184,7 +185,7 @@ export class UpiCollectionService {
       }
     }
     if (subjectType && subjectId) {
-      await this.sendPaymentLink(payment, subjectType, subjectId, link, payeeName);
+      await this.sendPaymentLink(payment, subjectType, subjectId, link, payeeName, recipientPhone);
     }
     return { paymentId: payment.id, paymentLink: link, upiReference: payment.upiReference };
   }
@@ -195,6 +196,7 @@ export class UpiCollectionService {
     subjectId: string,
     link: string,
     payeeName: string,
+    recipientPhone?: string,
   ) {
     const variables = {
       link,
@@ -203,7 +205,7 @@ export class UpiCollectionService {
     };
     await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
       channel, template: 'payment_request', subjectType, subjectId,
-      relatedType: 'payment', relatedId: payment.id, variables,
+      relatedType: 'payment', relatedId: payment.id, variables, recipientPhone,
     })));
   }
 

@@ -165,6 +165,18 @@ export class OtpService {
         ownerStaffIds: [business.accountAgentId, business.leadCreatedByStaffId],
       };
     }
+    const branch = await this.prisma.businessBranch.findFirst({
+      where: { contactPersonPhone: { in: variants } },
+      select: { business: { select: { id: true, code: true, accountAgentId: true, leadCreatedByStaffId: true } } },
+    });
+    if (branch) {
+      return {
+        ...branch.business,
+        type: 'business',
+        resource: 'business' as const,
+        ownerStaffIds: [branch.business.accountAgentId, branch.business.leadCreatedByStaffId],
+      };
+    }
     const referral = await this.prisma.referral.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true },

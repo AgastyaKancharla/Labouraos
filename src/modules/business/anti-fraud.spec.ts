@@ -96,6 +96,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Safe Cafe Koramangala',
+        contactPersonName: 'Safe Contact',
+        contactPersonRole: 'owner',
         address: '100 80ft Road, Koramangala',
         phone,
         otpRequestId,
@@ -128,6 +130,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Mismatched Geofence Retail',
+        contactPersonName: 'Mismatch Contact',
+        contactPersonRole: 'owner',
         address: '50 4th Block, Koramangala',
         phone,
         otpRequestId,
@@ -170,6 +174,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Original Selfie Business',
+        contactPersonName: 'Original Contact',
+        contactPersonRole: 'owner',
         phone: phone1,
         otpRequestId: otp1,
         selfieUrl: 'https://cdn.laboura.local/selfies/orig.jpg',
@@ -186,6 +192,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Fraudulent Duplicate Selfie Business',
+        contactPersonName: 'Duplicate Contact',
+        contactPersonRole: 'owner',
         phone: phone2,
         otpRequestId: otp2,
         selfieUrl: 'https://cdn.laboura.local/selfies/duplicate.jpg',
@@ -206,6 +214,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Follow-up Visit Business',
+        contactPersonName: 'Visit Contact',
+        contactPersonRole: 'owner',
         phone,
         otpRequestId,
         latitude: KORA_LAT,
@@ -238,6 +248,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Other Business For Visit Test',
+        contactPersonName: 'Other Contact',
+        contactPersonRole: 'owner',
         phone: phoneOther,
         otpRequestId: otpOther,
         latitude: KORA_LAT,
@@ -265,6 +277,8 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Kora Area Business',
+        contactPersonName: 'Area Contact',
+        contactPersonRole: 'owner',
         phone,
         otpRequestId,
       })

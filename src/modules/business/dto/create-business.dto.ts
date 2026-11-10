@@ -6,9 +6,39 @@ export class VisitDto {
   visitedAt?: string | Date;
 }
 
+export class BusinessBranchDto {
+  name!: string;
+  shopNumber?: string;
+  street?: string;
+  landmark?: string;
+  address?: string;
+  locality?: string;
+  pincode?: string;
+  latitude?: number;
+  longitude?: number;
+  contactPersonName!: string;
+  contactPersonRole!: string;
+  contactPersonPhone!: string;
+  contactWhatsAppPhone?: string;
+  contactLanguage?: string;
+  otpRequestId!: string;
+}
+
+export class BusinessStaffNeedDto {
+  trade!: string;
+  headcount!: number;
+  salaryMinPaise!: number;
+  salaryMaxPaise!: number;
+  shift!: string;
+  startDate!: string;
+  branchName?: string;
+  salaryPeriod?: string;
+}
+
 export class CreateBusinessDto {
   name!: string;
   legalName?: string;
+  familyName?: string;
   ownerName?: string;
   address?: string;
   locality?: string;
@@ -22,14 +52,33 @@ export class CreateBusinessDto {
   businessType?: string;
   employeeCount?: number;
   staffNeeded?: string[];
+  staffNeededRows?: BusinessStaffNeedDto[];
+  branches?: BusinessBranchDto[];
+  contactPersonName?: string;
+  contactPersonRole?: string;
+  contactWhatsAppPhone?: string;
+  contactLanguage?: string;
+  employeeCountBand?: string;
+  yearsInOperationBand?: string;
+  openingTime?: string;
+  closingTime?: string;
+  workingDays?: string[];
+  shopNumber?: string;
+  street?: string;
+  landmark?: string;
+  pincode?: string;
   licenceNumber?: string;
   shopEstablishmentNumber?: string;
   udyamNumber?: string;
   pan?: string;
+  fssaiNumber?: string;
+  noDocuments?: boolean;
   yearsInOperation?: number;
   hiringFrequency?: string;
   billingName?: string;
   billingAddress?: string;
+  billingEmail?: string;
+  heardFrom?: string;
   city?: string;
   latitude?: number;
   longitude?: number;

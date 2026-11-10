@@ -19,7 +19,9 @@ import {
 } from '../../common/geo/geo.util';
 import { CreateBusinessDto, RecordVisitDto } from './dto/create-business.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
-import { BUSINESS_TYPES } from './business.constants';
+import { BUSINESS_CONTACT_ROLES, BUSINESS_MESSAGE_LANGUAGES, BUSINESS_TYPES, EMPLOYEE_COUNT_BANDS } from './business.constants';
+import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
+import { TradeService } from '../trade/trade.service';
 import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo.storage';
 import { PricingService } from '../pricing/pricing.service';
@@ -43,6 +45,7 @@ export class BusinessService {
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStorage: BusinessPhotoStorage,
     private readonly editPolicyService: EditPolicyService,
     private readonly anonymisationService: AnonymisationService,
+    private readonly tradeService: TradeService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -111,6 +114,12 @@ export class BusinessService {
       throw new BadRequestException('Mobile number is required');
     }
 
+    const contactName = (dto.contactPersonName ?? dto.additionalContactName ?? dto.contactPerson ?? dto.ownerName)?.trim();
+    if (!contactName) throw new BadRequestException('Contact person name is required');
+    if (!dto.contactPersonRole || !(BUSINESS_CONTACT_ROLES as readonly string[]).includes(dto.contactPersonRole)) {
+      throw new BadRequestException('Contact person role must be owner, manager, hr, supervisor or other');
+    }
+
     if (!dto.otpRequestId) {
       throw new BadRequestException(
         'otpRequestId is required: mobile number must pass OTP verification',
@@ -143,11 +152,72 @@ export class BusinessService {
       throw new BadRequestException('businessType is not one of the allowed business types');
     }
 
+    const isHousehold = businessType === 'household';
+    if (isHousehold && !dto.familyName?.trim()) {
+      throw new BadRequestException('Household businesses require a familyName');
+    }
+    this.assertOptionalValue(dto.employeeCountBand, EMPLOYEE_COUNT_BANDS, 'employeeCountBand');
+    this.assertOptionalValue(dto.heardFrom, HEARD_FROM_VALUES, 'heardFrom');
+    this.assertOptionalValue(dto.contactLanguage, BUSINESS_MESSAGE_LANGUAGES, 'contactLanguage');
+    this.assertOptionalTime(dto.openingTime, 'openingTime');
+    this.assertOptionalTime(dto.closingTime, 'closingTime');
+    this.assertOptionalPincode(dto.pincode);
+    this.assertOptionalEmail(dto.billingEmail);
+    this.assertWorkingDays(dto.workingDays);
+
+    const suppliedDocuments = [
+      dto.gstNumber, dto.licenceNumber, dto.shopEstablishmentNumber, dto.udyamNumber, dto.pan, dto.fssaiNumber,
+    ];
+    if ((isHousehold || dto.noDocuments === true) && suppliedDocuments.some((value) => value?.trim())) {
+      throw new BadRequestException(isHousehold
+        ? 'Household businesses cannot provide GST or licence documents'
+        : 'A no-documents business cannot include GST or licence numbers');
+    }
+
+    const branchNames = new Set<string>();
+    const seenPhones = new Set<string>([phoneDigits(phone)]);
+    const seenOtps = new Set<string>([dto.otpRequestId]);
+    for (const branch of dto.branches ?? []) {
+      if (!branch.name?.trim() || !branch.contactPersonName?.trim() ||
+          !(BUSINESS_CONTACT_ROLES as readonly string[]).includes(branch.contactPersonRole) ||
+          !branch.contactPersonPhone?.trim() || !branch.otpRequestId) {
+        throw new BadRequestException('Each branch requires a name, contact name, role and OTP-verified mobile');
+      }
+      this.assertOptionalValue(branch.contactLanguage, BUSINESS_MESSAGE_LANGUAGES, 'contactLanguage');
+      this.assertOptionalPincode(branch.pincode);
+      const branchPhone = phoneDigits(branch.contactPersonPhone);
+      if (seenPhones.has(branchPhone)) throw new BadRequestException('Each contact mobile must be different');
+      seenPhones.add(branchPhone);
+      if (seenOtps.has(branch.otpRequestId)) throw new BadRequestException('Each contact needs its own verified OTP');
+      seenOtps.add(branch.otpRequestId);
+      if (branchNames.has(branch.name.trim())) throw new BadRequestException('Branch names must be unique on one business');
+      branchNames.add(branch.name.trim());
+      if (!(await this.otpService.isVerified(branch.otpRequestId, branch.contactPersonPhone.trim()))) {
+        throw new BadRequestException('Branch contact mobile must pass OTP verification');
+      }
+    }
+    for (const row of dto.staffNeededRows ?? []) {
+      if (!row.trade?.trim() || !Number.isSafeInteger(row.headcount) || row.headcount < 1 ||
+          !Number.isSafeInteger(row.salaryMinPaise) || row.salaryMinPaise <= 0 ||
+          !Number.isSafeInteger(row.salaryMaxPaise) || row.salaryMaxPaise < row.salaryMinPaise ||
+          !row.shift?.trim() || !/^\d{4}-\d{2}-\d{2}$/.test(row.startDate ?? '') ||
+          !Number.isFinite(new Date(`${row.startDate}T00:00:00.000Z`).getTime())) {
+        throw new BadRequestException('Each staff-needed row requires trade, headcount, salary range, shift and valid start date');
+      }
+      if (row.salaryPeriod && row.salaryPeriod !== 'monthly' && row.salaryPeriod !== 'daily') {
+        throw new BadRequestException('salaryPeriod must be monthly or daily');
+      }
+      if (row.branchName?.trim() && !branchNames.has(row.branchName.trim())) {
+        throw new BadRequestException('staff-needed branchName must match a branch in this registration');
+      }
+    }
+
     const locality = dto.locality?.trim() || null;
-    const gstNumber = dto.gstNumber?.trim() || null;
-    const registrationNumbers = [gstNumber, dto.licenceNumber, dto.shopEstablishmentNumber, dto.udyamNumber, dto.pan]
-      .map((value) => value?.trim())
-      .filter((value): value is string => Boolean(value));
+    const hideDocuments = isHousehold || dto.noDocuments === true;
+    const gstNumber = hideDocuments ? null : (dto.gstNumber?.trim() || null);
+    const registrationNumbers = hideDocuments ? [] : [
+      gstNumber, dto.licenceNumber, dto.shopEstablishmentNumber, dto.udyamNumber, dto.pan, dto.fssaiNumber,
+    ].map((value) => value?.trim()).filter((value): value is string => Boolean(value));
     const documentsStatus = registrationNumbers.length > 0 ? 'documented' : 'no_documents';
 
     let gstLookupData: { gstVerified: boolean; gstLegalName: string | null; gstStatus: string; gstCheckedAt: Date } | null = null;
@@ -226,66 +296,136 @@ export class BusinessService {
       duplicateRadiusMeters: policy.duplicateBusinessRadiusMeters,
     });
 
-    const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
-    if (!otpConsumed) {
+    if (!(await this.otpService.consumeVerified(dto.otpRequestId, phone))) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }
+    for (const branch of dto.branches ?? []) {
+      if (!(await this.otpService.consumeVerified(branch.otpRequestId, branch.contactPersonPhone.trim()))) {
+        throw new BadRequestException('Branch contact OTP has already been used or expired');
+      }
+    }
 
-    const business = await this.prisma.business.create({
-      data: {
-        code,
-        name: dto.name.trim(),
-        address: dto.address?.trim() ?? null,
-        phone,
-        phoneVerified: true,
-        city,
-        legalName: dto.legalName?.trim() || null,
-        ownerName: dto.ownerName?.trim() || null,
-        additionalContactName: dto.additionalContactName?.trim() || dto.contactPerson?.trim() || null,
-        additionalContactPhone: dto.additionalContactPhone?.trim() || null,
-        businessType,
-        employeeCount: dto.employeeCount ?? null,
-        staffNeeded: dto.staffNeeded ?? [],
-        licenceNumber: dto.licenceNumber?.trim() || null,
-        shopEstablishmentNumber: dto.shopEstablishmentNumber?.trim() || null,
-        udyamNumber: dto.udyamNumber?.trim() || null,
-        pan: dto.pan?.trim() || null,
-        gstNumber,
-        ...(gstLookupData ?? { gstVerified: null, gstLegalName: null, gstStatus: null, gstCheckedAt: null }),
-        yearsInOperation: dto.yearsInOperation ?? null,
-        hiringFrequency: dto.hiringFrequency?.trim() || null,
-        billingName: dto.billingName?.trim() || null,
-        billingAddress: dto.billingAddress?.trim() || null,
-        documentsStatus,
-        verificationStatus: 'lead',
-        leadCreatedByStaffId: staff.id,
-        leadChannel: staff.role === 'field_agent' ? 'field_visit' : 'phone_call',
-        locality,
-        latitude: typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null),
-        longitude: typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null),
-        geofenceFlag,
-      },
-    });
-
-    if (
-      (visitLat !== undefined && visitLon !== undefined) ||
-      selfieUrl ||
-      selfieHash ||
-      dto.visit
-    ) {
-      await this.prisma.businessVisit.create({
+    const capturedChannel = staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
+    const latitude = typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null);
+    const longitude = typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null);
+    const created = await this.prisma.$transaction(async (tx) => {
+      const savedBusiness = await tx.business.create({
         data: {
-          businessId: business.id,
-          staffId: staff.id,
-          latitude: typeof visitLat === 'number' ? visitLat : (business.latitude ?? 0),
-          longitude: typeof visitLon === 'number' ? visitLon : (business.longitude ?? 0),
-          selfieUrl,
-          selfieHash,
+          code,
+          name: dto.name.trim(),
+          address: dto.address?.trim() ?? null,
+          phone,
+          phoneVerified: true,
+          city,
+          legalName: isHousehold ? null : (dto.legalName?.trim() || null),
+          familyName: isHousehold ? dto.familyName!.trim() : null,
+          ownerName: dto.ownerName?.trim() || null,
+          additionalContactName: contactName,
+          additionalContactPhone: phone,
+          contactRole: dto.contactPersonRole,
+          contactWhatsAppPhone: dto.contactWhatsAppPhone?.trim() || null,
+          contactLanguage: dto.contactLanguage?.trim() || null,
+          businessType,
+          employeeCountBand: dto.employeeCountBand?.trim() || null,
+          employeeCount: dto.employeeCount ?? null,
+          staffNeeded: [...(dto.staffNeeded ?? []), ...(dto.staffNeededRows ?? []).map((row) => `${row.trade.trim()} x${row.headcount}`)],
+          licenceNumber: hideDocuments ? null : (dto.licenceNumber?.trim() || null),
+          shopEstablishmentNumber: hideDocuments ? null : (dto.shopEstablishmentNumber?.trim() || null),
+          udyamNumber: hideDocuments ? null : (dto.udyamNumber?.trim() || null),
+          pan: hideDocuments ? null : (dto.pan?.trim() || null),
+          fssaiNumber: hideDocuments ? null : (dto.fssaiNumber?.trim() || null),
+          gstNumber,
+          ...(gstLookupData ?? { gstVerified: null, gstLegalName: null, gstStatus: null, gstCheckedAt: null }),
+          yearsInOperation: dto.yearsInOperation ?? null,
+          yearsInOperationBand: dto.yearsInOperationBand?.trim() || null,
+          hiringFrequency: dto.hiringFrequency?.trim() || null,
+          openingTime: dto.openingTime?.trim() || null,
+          closingTime: dto.closingTime?.trim() || null,
+          workingDays: dto.workingDays?.map((day) => day.trim()) ?? [],
+          shopNumber: dto.shopNumber?.trim() || null,
+          street: dto.street?.trim() || null,
+          landmark: dto.landmark?.trim() || null,
+          pincode: dto.pincode?.trim() || null,
+          billingName: dto.billingName?.trim() || null,
+          billingAddress: dto.billingAddress?.trim() || null,
+          billingEmail: dto.billingEmail?.trim() || null,
+          heardFrom: dto.heardFrom?.trim() || null,
+          documentsStatus,
+          verificationStatus: 'lead',
+          leadCreatedByStaffId: staff.id,
+          leadChannel: capturedChannel,
+          locality,
+          latitude,
+          longitude,
           geofenceFlag,
-          visitedAt: dto.visit?.visitedAt
-            ? new Date(dto.visit.visitedAt)
-            : (dto.visitedAt ? new Date(dto.visitedAt) : new Date()),
         },
+      });
+      const branchIds = new Map<string, string>();
+      for (const branch of dto.branches ?? []) {
+        const savedBranch = await tx.businessBranch.create({ data: {
+          businessId: savedBusiness.id,
+          name: branch.name.trim(), shopNumber: branch.shopNumber?.trim() || null,
+          street: branch.street?.trim() || null, landmark: branch.landmark?.trim() || null,
+          address: branch.address?.trim() || null, locality: branch.locality?.trim() || null,
+          pincode: branch.pincode?.trim() || null, latitude: branch.latitude ?? null,
+          longitude: branch.longitude ?? null, contactPersonName: branch.contactPersonName.trim(),
+          contactPersonRole: branch.contactPersonRole, contactPersonPhone: branch.contactPersonPhone.trim(),
+          contactWhatsAppPhone: branch.contactWhatsAppPhone?.trim() || null,
+          contactLanguage: branch.contactLanguage?.trim() || null,
+        } });
+        branchIds.set(branch.name.trim(), savedBranch.id);
+      }
+      const draftVacancies: Array<{ code: string; headcount: number }> = [];
+      for (const row of dto.staffNeededRows ?? []) {
+        const vacancyCode = await this.idService.generateCode('vacancy');
+        const vacancy = await tx.vacancy.create({ data: {
+          code: vacancyCode, city, businessId: savedBusiness.id, capturedByStaffId: staff.id,
+          branchId: row.branchName?.trim() ? branchIds.get(row.branchName.trim()) ?? null : null,
+          tradeSkill: row.trade.trim(), headcount: row.headcount, status: 'draft',
+          salaryMinPaise: row.salaryMinPaise, salaryMaxPaise: row.salaryMaxPaise,
+          salaryPeriod: row.salaryPeriod === 'daily' ? 'daily' : 'monthly',
+          shift: row.shift.trim(), startDate: new Date(`${row.startDate}T00:00:00.000Z`),
+          locality: row.branchName?.trim()
+            ? (dto.branches ?? []).find((branch) => branch.name.trim() === row.branchName?.trim())?.locality?.trim() || locality
+            : locality,
+          capturedChannel,
+        } });
+        await this.tradeService.recordSuggestion(tx, row.trade.trim(), staff.id, 'vacancy', vacancy.id);
+        draftVacancies.push({ code: vacancy.code, headcount: row.headcount });
+      }
+      if ((visitLat !== undefined && visitLon !== undefined) || selfieUrl || selfieHash || dto.visit) {
+        await tx.businessVisit.create({
+          data: {
+            businessId: savedBusiness.id,
+            staffId: staff.id,
+            latitude: typeof visitLat === 'number' ? visitLat : (latitude ?? 0),
+            longitude: typeof visitLon === 'number' ? visitLon : (longitude ?? 0),
+            selfieUrl,
+            selfieHash,
+            geofenceFlag,
+            visitedAt: dto.visit?.visitedAt
+              ? new Date(dto.visit.visitedAt)
+              : (dto.visitedAt ? new Date(dto.visitedAt) : new Date()),
+          },
+        });
+      }
+      return { business: savedBusiness, draftVacancies };
+    });
+    const business = created.business;
+    for (const branch of dto.branches ?? []) {
+      await this.auditService.log({
+        actorId: staff.id, action: 'business.branch_created', entityType: 'business', entityCode: business.code,
+        after: { branchCount: dto.branches?.length ?? 0, role: branch.contactPersonRole },
+        changedFields: ['branch.name', 'branch.locality', 'branch.contactPersonRole'],
+        city: business.city,
+      });
+    }
+    for (const vacancy of created.draftVacancies) {
+      await this.auditService.log({
+        actorId: staff.id, action: 'business.staff_need_draft_created', entityType: 'vacancy', entityCode: vacancy.code,
+        after: { businessCode: business.code, headcount: vacancy.headcount, status: 'draft' },
+        changedFields: ['tradeSkill', 'headcount', 'salaryMinPaise', 'salaryMaxPaise', 'shift', 'startDate', 'status'],
+        city,
       });
     }
 
@@ -333,11 +473,32 @@ export class BusinessService {
         'gstVerified',
         'gstStatus',
         'locality',
+        'contactRole',
+        'contactWhatsAppPhone',
+        'contactLanguage',
+        'employeeCountBand',
+        'yearsInOperationBand',
+        'hiringFrequency',
+        'openingTime',
+        'closingTime',
+        'workingDays',
+        'shopNumber',
+        'street',
+        'landmark',
+        'pincode',
+        'billingEmail',
+        'heardFrom',
+        'fssaiNumber',
+        'familyName',
+        'staffNeeded',
       ],
       city: business.city,
     });
 
-    return business;
+    return this.presentBusiness(await this.prisma.business.findUniqueOrThrow({
+      where: { id: business.id },
+      include: { branches: true, vacancies: true },
+    }));
   }
 
   async uploadStorefrontPhoto(businessId: string, photo: Buffer, contentType: string, actorId: string) {
@@ -494,22 +655,23 @@ export class BusinessService {
       ];
     }
 
-    return this.prisma.business.findMany({
+    const rows = await this.prisma.business.findMany({
       where,
       orderBy: { createdAt: 'desc' },
-      include: { vacancies: true },
+      include: { vacancies: true, branches: true },
     });
+    return rows.map((row) => this.presentBusiness(row));
   }
 
   async findById(id: string) {
     let business = await this.prisma.business.findUnique({
       where: { id },
-      include: { vacancies: true, visits: true, agreements: { select: { signedAt: true } } },
+      include: { vacancies: true, branches: true, visits: true, agreements: { select: { signedAt: true } } },
     });
     if (!business) {
       business = await this.prisma.business.findUnique({
         where: { code: id },
-        include: { vacancies: true, visits: true, agreements: { select: { signedAt: true } } },
+        include: { vacancies: true, branches: true, visits: true, agreements: { select: { signedAt: true } } },
       });
     }
     if (!business) {
@@ -518,7 +680,7 @@ export class BusinessService {
     const accountAgent = business.accountAgentId
       ? await this.prisma.staff.findUnique({ where: { id: business.accountAgentId }, select: { id: true, code: true, name: true } })
       : null;
-    return { ...business, accountAgentSummary: accountAgent };
+    return this.presentBusiness({ ...business, accountAgentSummary: accountAgent });
   }
 
   async recordVisit(businessId: string, dto: RecordVisitDto, actorId: string) {
@@ -712,9 +874,67 @@ export class BusinessService {
       };
     }
 
-    return this.prisma.business.findUniqueOrThrow({
+    return this.presentBusiness(await this.prisma.business.findUniqueOrThrow({
       where: { id: res.id },
-    });
+      include: { branches: true },
+    }));
   }
+
+  private presentBusiness<T extends {
+    ownerName: string | null;
+    phone: string;
+    additionalContactName: string | null;
+    additionalContactPhone: string | null;
+    contactRole: string | null;
+  }>(business: T) {
+    const contactPersonName = business.additionalContactName ?? business.ownerName;
+    const contactPersonPhone = business.additionalContactPhone ?? business.phone;
+    const contactPersonRole = business.contactRole ?? 'owner';
+    return {
+      ...business,
+      additionalContactName: contactPersonName,
+      additionalContactPhone: contactPersonPhone,
+      contactRole: contactPersonRole,
+      contactPersonName,
+      contactPersonRole,
+      contactPersonPhone,
+    };
+  }
+
+  private assertOptionalValue(value: string | undefined, allowed: readonly string[], field: string) {
+    if (value === undefined || value === null || value.trim() === '') return;
+    if (!allowed.includes(value.trim())) throw new BadRequestException(`${field} is invalid`);
+  }
+
+  private assertOptionalTime(value: string | undefined, field: string) {
+    if (!value?.trim()) return;
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(value.trim())) {
+      throw new BadRequestException(`${field} must be HH:MM`);
+    }
+  }
+
+  private assertOptionalPincode(value: string | undefined) {
+    if (value === undefined || value === null || value.trim() === '') return;
+    if (!/^\d{6}$/.test(value.trim())) throw new BadRequestException('pincode must be 6 digits');
+  }
+
+  private assertOptionalEmail(value: string | undefined) {
+    if (!value?.trim()) return;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim())) {
+      throw new BadRequestException('billingEmail is invalid');
+    }
+  }
+
+  private assertWorkingDays(value: string[] | undefined) {
+    if (value === undefined) return;
+    if (!Array.isArray(value) || value.length > 7 || value.some((day) => typeof day !== 'string' || !day.trim())) {
+      throw new BadRequestException('workingDays is invalid');
+    }
+  }
+}
+
+function phoneDigits(phone: string): string {
+  const digits = phone.replace(/\D/g, '');
+  return digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
 }
 

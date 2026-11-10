@@ -59,7 +59,10 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
     await otp.verifyOtp(otpRequest.requestId, code);
     const response = await request(app.getHttpServer()).post('/businesses')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ name: `Business ${suffix}`, phone, otpRequestId: otpRequest.requestId, ...input });
+      .send({
+        name: `Business ${suffix}`, phone, otpRequestId: otpRequest.requestId,
+        contactPersonName: 'Account contact', contactPersonRole: 'owner', ...input,
+      });
     if (response.body.id) businessIds.push(response.body.id as string);
     return response;
   }
@@ -86,7 +89,7 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
 
   it('allows a household with no registration numbers and stores no_documents', async () => {
     const response = await createBusiness({
-      name: 'Household Employer', businessType: 'household', locality: 'Jayanagar',
+      name: 'Household Employer', businessType: 'household', familyName: 'Employer Family', locality: 'Jayanagar',
     });
     expect(response.status).toBe(201);
     expect(response.body).toMatchObject({ businessType: 'household', documentsStatus: 'no_documents' });
