@@ -163,7 +163,9 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     expect(response.body.steps.payment.state).toBe('not_started');
     expect(response.body.registrationLinkExpiresAt).toBeDefined();
     const storedLink = await prisma.publicLink.findUnique({ where: { id: link.body.linkId } });
-    expect(storedLink?.expiresAt.getTime() - clock.now().getTime()).toBe(48 * 60 * 60 * 1000);
+    expect(storedLink).not.toBeNull();
+    if (!storedLink) throw new Error('Registration link was not stored');
+    expect(storedLink.expiresAt.getTime() - clock.now().getTime()).toBe(48 * 60 * 60 * 1000);
   });
 
   it('resending a registration link revokes the old link and issues a fresh 48-hour link', async () => {
@@ -178,7 +180,9 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     const newLink = await prisma.publicLink.findUnique({ where: { id: second.body.linkId } });
     expect(oldLink?.revokedAt).toBeDefined();
     expect(newLink?.revokedAt).toBeNull();
-    expect(newLink?.expiresAt.getTime() - clock.now().getTime()).toBe(48 * 60 * 60 * 1000);
+    expect(newLink).not.toBeNull();
+    if (!newLink) throw new Error('Replacement registration link was not stored');
+    expect(newLink.expiresAt.getTime() - clock.now().getTime()).toBe(48 * 60 * 60 * 1000);
   });
 
   it('POST /consent/links generates token and dispatches SMS; response never contains candidate phone', async () => {
