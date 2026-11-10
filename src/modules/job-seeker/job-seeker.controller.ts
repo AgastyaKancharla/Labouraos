@@ -100,11 +100,40 @@ export class JobSeekerController {
     return this.jobSeekerService.createIdentityVerification(id, body, req.user.sub);
   }
 
+  @Post(':id/identity-verification/provider')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async verifyIdentityWithProvider(
+    @Param('id') id: string,
+    @Body() body: Record<string, unknown>,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.verifyIdentityWithProvider(id, body, req.user.sub);
+  }
+
   @Get(':id/identity-verifications')
   @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead', 'finance')
   @RequirePermission('job_seeker', 'read')
   async listIdentityVerifications(@Param('id') id: string) {
     return this.jobSeekerService.getIdentityVerifications(id);
+  }
+
+  @Get(':id/registration-status')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'read')
+  async registrationStatus(@Param('id') id: string) {
+    return this.jobSeekerService.getRegistrationStatus(id);
+  }
+
+  @Post(':id/payment-only-link')
+  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
+  @RequirePermission('job_seeker', 'write')
+  async createPaymentOnlyLink(
+    @Param('id') id: string,
+    @Body('phone') phone: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.createPaymentOnlyLink(id, phone, req.user.sub);
   }
 
   @Post(':id/hits')

@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PublicLinkPurpose } from '@prisma/client';
@@ -13,7 +14,7 @@ import { ConsentService } from './consent.service';
 import { MessagingService } from '../message/messaging.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
-import { DEFAULT_NOTICE_VERSION } from './consent.constants';
+import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from './consent.constants';
 import { PricingService } from '../pricing/pricing.service';
 import {
   AgreementLanguage,
@@ -31,6 +32,7 @@ import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreemen
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { publicLink } from '../../common/public-link';
+import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 
 interface ConsentLinkTokenBase {
   token: string;
@@ -49,7 +51,7 @@ export interface InterviewActionLinkRecord extends ConsentLinkTokenBase {
 }
 
 export type ConsentLinkTokenRecord = ConsentLinkTokenBase & (
-  | { subjectType: 'job_seeker'; subjectId: string; jobSeekerId: string }
+  | { subjectType: 'job_seeker'; subjectId: string; jobSeekerId: string; resumable?: boolean }
   | {
       subjectType: 'business';
       subjectId: string;
@@ -107,6 +109,15 @@ export type ConsentLinkDetails =
       candidateName: string;
       phone: string;
       preferredLanguage: string;
+      currentStep: 'consent' | 'selfie' | 'id_check' | 'payment' | 'complete';
+      otpRequired: false;
+    }
+  | {
+      valid: true;
+      subjectType: 'job_seeker';
+      otpRequired: true;
+      maskedPhone: string;
+      preferredLanguage: string;
     }
   | {
       valid: true;
@@ -123,6 +134,7 @@ export type ConsentLinkDetails =
 export class ConsentLinkService {
   private readonly processingTokens = new Set<string>();
   private ttlMs = 24 * 60 * 60 * 1000; // 24 hours
+  private registrationTtlMs = 48 * 60 * 60 * 1000;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -135,10 +147,12 @@ export class ConsentLinkService {
     private readonly auditService: AuditService,
     private readonly businessVerificationService: BusinessVerificationService,
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
+    @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
 
   setTtlMs(ttlMs: number) {
     this.ttlMs = ttlMs;
+    this.registrationTtlMs = ttlMs;
   }
 
   createInterviewActionToken(
@@ -189,10 +203,11 @@ export class ConsentLinkService {
     }
 
     const now = this.clock.now();
-    const expiresAt = new Date(now.getTime() + this.ttlMs);
-    const { token } = await this.publicLinks.create({
+    const expiresAt = new Date(now.getTime() + this.registrationTtlMs);
+    await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
+    const { token, id } = await this.publicLinks.create({
       purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
-      phone: seeker.phone, expiresAt,
+      phone: seeker.phone, expiresAt, metadata: { resumable: true },
     });
 
     // Send single-use link via SMS
@@ -211,8 +226,24 @@ export class ConsentLinkService {
     return {
       success: true,
       token,
+      linkId: id,
       expiresAt,
     };
+  }
+
+  async requestIdCheckRecovery(token: string, requestId: string, code: string) {
+    const record = await this.validateToken(token);
+    if (record.subjectType !== 'job_seeker') throw new BadRequestException('A job seeker registration link is required');
+    if (!this.kycRecovery || !(await this.kycRecovery.isDown())) throw new BadRequestException('ID check service is available');
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: record.jobSeekerId } });
+    if (!seeker) throw new NotFoundException('Job seeker not found');
+    const verified = await this.otpService.verifyOtp(requestId, code);
+    if (!verified || !(await this.otpService.isVerified(requestId, seeker.phone))) {
+      throw new BadRequestException('Valid OTP to the registered mobile is required');
+    }
+    const link = await this.publicLinks.findByToken(token, this.clock.now());
+    await this.kycRecovery.requestRecovery(seeker.id, link.id);
+    return { success: true, waitingForRecovery: true };
   }
 
   async createAgreementLink(businessId: string, staffId: string, language: string = 'en') {
@@ -340,12 +371,18 @@ export class ConsentLinkService {
         terms: metadata.terms as Extract<ConsentLinkTokenRecord, { subjectType: 'referral' }>['terms'] };
     }
     if (row.purpose === 'registration') {
-      return { ...base, subjectType: 'job_seeker', subjectId: row.subjectId, jobSeekerId: row.subjectId };
+      return {
+        ...base,
+        subjectType: 'job_seeker',
+        subjectId: row.subjectId,
+        jobSeekerId: row.subjectId,
+        resumable: metadata.resumable === true,
+      };
     }
     throw new BadRequestException('Invalid consent link token');
   }
 
-  async getTokenDetails(token: string): Promise<ConsentLinkDetails> {
+  async getTokenDetails(token: string, requestId?: string): Promise<ConsentLinkDetails> {
     const record = await this.validateToken(token);
     if (record.subjectType === 'interview') {
       throw new BadRequestException('This token is not a consent or agreement link');
@@ -393,14 +430,52 @@ export class ConsentLinkService {
     const preferredLanguage = ['kn', 'hi', 'en'].includes(candidateLang)
       ? candidateLang
       : 'kn';
+    if (!requestId || !(await this.otpService.isVerified(requestId, seeker.phone))) {
+      return {
+        valid: true,
+        subjectType: 'job_seeker',
+        otpRequired: true,
+        maskedPhone: maskAgreementPhone(seeker.phone),
+        preferredLanguage,
+      };
+    }
+    const [consents, verification, payment] = await Promise.all([
+      this.prisma.consent.findMany({
+        where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
+        select: { purpose: true },
+      }),
+      this.prisma.identityVerification.findFirst({
+        where: { jobSeekerId: seeker.id },
+        orderBy: { createdAt: 'desc' },
+        select: { status: true, nameMatches: true, isAdult: true },
+      }),
+      this.prisma.payment.findFirst({
+        where: { jobSeekerId: seeker.id, type: 'activation', status: { in: ['succeeded', 'completed'] } },
+        select: { id: true },
+      }),
+    ]);
+    const hasAllConsent = JOB_SEEKER_REQUIRED_CONSENT_PURPOSES.every((purpose) =>
+      consents.some((consent) => consent.purpose === purpose),
+    );
+    const currentStep = !hasAllConsent
+      ? 'consent'
+      : !seeker.photoStoragePath
+        ? 'selfie'
+        : !verification || verification.status !== 'verified' || verification.nameMatches === false || verification.isAdult === false
+          ? 'id_check'
+          : !payment
+            ? 'payment'
+            : 'complete';
 
     return {
       valid: true,
       subjectType: 'job_seeker',
       jobSeekerId: seeker.id,
-      candidateName: seeker.name,
-      phone: seeker.phone,
+      candidateName: '',
+      phone: maskAgreementPhone(seeker.phone),
       preferredLanguage,
+      currentStep,
+      otpRequired: false,
     };
   }
 
@@ -432,7 +507,7 @@ export class ConsentLinkService {
     return {
       success: true,
       requestId: otp.requestId,
-      phone: seeker.phone,
+      phone: maskAgreementPhone(seeker.phone),
     };
   }
 
@@ -467,6 +542,10 @@ export class ConsentLinkService {
     });
     if (!seeker) {
       throw new NotFoundException('Job seeker not found');
+    }
+
+    if (record.resumable && await this.consentService.hasAllRequired('job_seeker', seeker.id)) {
+      throw new BadRequestException('Consent link has already been used');
     }
 
     // Verify OTP: either through otpCode or if already verified
@@ -506,7 +585,7 @@ export class ConsentLinkService {
     }
 
     // Mark token as used
-    await this.publicLinks.markUsed(record.token, this.clock.now());
+    if (!record.resumable) await this.publicLinks.markUsed(record.token, this.clock.now());
 
     // Move a lead forward after first consent, or reactivate a paused seeker once all required purposes are restored.
     const hasAll = await this.consentService.hasAllRequired('job_seeker', seeker.id);

@@ -51,6 +51,10 @@ import {
   CANDIDATE_PHOTO_STORAGE,
   CandidatePhotoStorage,
 } from './photo-storage';
+import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
+import { PublicLinkStoreService } from '../../common/public-link-store.service';
+import { MessagingService } from '../message/messaging.service';
+import { publicLink } from '../../common/public-link';
 
 const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'name',
@@ -110,6 +114,9 @@ export class JobSeekerService {
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
+    @Optional() private readonly kycRecovery?: KycRecoveryService,
+    @Optional() private readonly publicLinks?: PublicLinkStoreService,
+    @Optional() private readonly messagingService?: MessagingService,
   ) {}
 
   private async getPolicy() {
@@ -1165,6 +1172,127 @@ export class JobSeekerService {
     return { jobSeekerId: updated.id, photoTakenAt: updated.photoTakenAt, expiresInSeconds: CANDIDATE_PHOTO_LINK_TTL_SECONDS };
   }
 
+  async getRegistrationStatus(jobSeekerId: string) {
+    const seeker = await this.prisma.jobSeeker.findUnique({
+      where: { id: jobSeekerId },
+      include: {
+        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
+        payments: { where: { type: 'activation' }, orderBy: { createdAt: 'desc' }, take: 1 },
+      },
+    });
+    if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    const now = this.consentClock?.now() ?? new Date();
+    const [consents, link, paymentOnlyLink, idService] = await Promise.all([
+      this.prisma.consent.findMany({
+        where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
+        orderBy: { grantedAt: 'desc' },
+      }),
+      this.prisma.publicLink.findFirst({
+        where: { purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id, revokedAt: null, usedAt: null, expiresAt: { gt: now } },
+        orderBy: { createdAt: 'desc' },
+        select: { expiresAt: true },
+      }),
+      this.prisma.publicLink.findFirst({
+        where: { purpose: 'payment_only', subjectType: 'job_seeker', subjectId: seeker.id, revokedAt: null, usedAt: null, expiresAt: { gt: now } },
+        orderBy: { createdAt: 'desc' },
+        select: { expiresAt: true },
+      }),
+      this.prisma.kycServiceState.findUnique({ where: { id: 'id-check' } }),
+    ]);
+    const latestVerification = seeker.identityVerifications[0];
+    const latestPayment = seeker.payments[0];
+    const requiredConsents = ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'];
+    const consentCount = requiredConsents.filter((purpose) => consents.some((consent) => consent.purpose === purpose)).length;
+    const phone = { state: seeker.phoneVerified ? 'done' : 'not_started', time: seeker.phoneVerified ? seeker.createdAt : null, reason: null };
+    const consent = {
+      state: consentCount === requiredConsents.length ? 'done' : consentCount > 0 ? 'in_progress' : 'not_started',
+      time: consents[0]?.grantedAt ?? null,
+      reason: null,
+    };
+    const selfie = {
+      state: seeker.photoStoragePath ? 'done' : 'not_started',
+      time: seeker.photoTakenAt,
+      reason: null,
+    };
+    const idCheck = {
+      state: latestVerification?.status === 'verified' ? 'done' : idService?.status === 'down' ? 'stuck' : latestVerification ? 'in_progress' : 'not_started',
+      time: latestVerification?.verifiedAt ?? latestVerification?.createdAt ?? null,
+      reason: idService?.status === 'down' ? 'ID check service is temporarily unavailable' : latestVerification?.failureReason ?? null,
+    };
+    const payment = {
+      state: latestPayment?.status === 'succeeded' || latestPayment?.status === 'completed'
+        ? 'done'
+        : seeker.guaranteeFloorPaise === null
+          ? 'stuck'
+          : latestPayment?.status === 'pending'
+            ? 'in_progress'
+            : 'not_started',
+      time: latestPayment?.confirmedAt ?? latestPayment?.createdAt ?? null,
+      reason: seeker.guaranteeFloorPaise === null ? 'Waiting for the new trade to be added in the Command Center' : null,
+    };
+    return {
+      jobSeekerId: seeker.id,
+      steps: { phone, consent, selfie, idCheck, payment },
+      registrationLinkExpiresAt: link?.expiresAt ?? null,
+      paymentOnlyLink: { live: Boolean(paymentOnlyLink), expiresAt: paymentOnlyLink?.expiresAt ?? null },
+    };
+  }
+
+  async createPaymentOnlyLink(jobSeekerId: string, recipientPhone: string, actorId: string) {
+    if (!this.publicLinks || !this.messagingService) throw new BadRequestException('Payment-only links are not configured');
+    const phone = recipientPhone.trim();
+    const digits = phone.replace(/\D/g, '');
+    if (digits.length < 10 || digits.length > 15) throw new BadRequestException('A valid payment contact number is required');
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
+    if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    if (digits === seeker.phone.replace(/\D/g, '')) {
+      throw new BadRequestException('The payment-only link must use another number');
+    }
+    const payment = await this.prisma.payment.findFirst({
+      where: { jobSeekerId: seeker.id, type: 'activation', status: 'pending', expectedAmountPaise: { not: null } },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!payment) throw new BadRequestException('A pending activation payment is required before sending a payment-only link');
+
+    const now = this.consentClock?.now() ?? new Date();
+    await this.publicLinks.revokeActive('payment_only', 'job_seeker', seeker.id, now);
+    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+    const { token } = await this.publicLinks.create({
+      purpose: 'payment_only',
+      subjectType: 'job_seeker',
+      subjectId: seeker.id,
+      phone,
+      language: seeker.messageLanguage ?? 'en',
+      expiresAt,
+      createdByStaffId: actorId,
+      metadata: { paymentId: payment.id },
+    });
+    await this.messagingService.send({
+      channel: 'sms',
+      template: 'payment_only_link',
+      subjectType: 'job_seeker',
+      subjectId: seeker.id,
+      recipientPhone: phone,
+      variables: {
+        link: publicLink(`/registration/payment/${token}`),
+        firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,
+        code: seeker.code,
+        amountPaise: String(payment.expectedAmountPaise),
+      },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.payment_only_link_created',
+      entityType: 'job_seeker',
+      entityCode: seeker.code,
+      before: null,
+      after: { expiresAt: expiresAt.toISOString() },
+      changedFields: ['paymentOnlyLink'],
+      city: seeker.city,
+    });
+    return { success: true, expiresAt };
+  }
+
   // --- Trades (Phase 12 Task 3) ---
 
   async addTrade(jobSeekerId: string, dto: CreateJobSeekerTradeDto, actorId?: string) {
@@ -1661,6 +1789,42 @@ export class JobSeekerService {
       });
     }
 
+    return verification;
+  }
+
+  async verifyIdentityWithProvider(jobSeekerId: string, dto: Record<string, unknown>, actorId: string) {
+    assertNoRawAadhaar(dto);
+    if (!this.kycRecovery) throw new BadRequestException('KYC provider is not available');
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
+    if (!seeker) throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
+    if (!this.consentService || !(await this.consentService.hasConsent('job_seeker', seeker.id, 'aadhaar_verification'))) {
+      throw new BadRequestException('Consent for aadhaar_verification is required before identity verification can be requested');
+    }
+
+    const result = await this.kycRecovery.verify({
+      ...dto,
+      candidateName: seeker.name,
+      dateOfBirth: seeker.dateOfBirth?.toISOString().slice(0, 10),
+    });
+    const verification = await this.createIdentityVerification(jobSeekerId, {
+      method: dto.method ?? 'digilocker',
+      vendor: 'configured_kyc_provider',
+      vendorReference: result.vendorReference,
+      status: result.status,
+      last4: result.last4,
+      nameMatches: result.nameMatches,
+      isAdult: result.isAdult,
+      failureReason: result.error,
+    }, actorId);
+    if (result.nameMatches === false && this.reviewFlagService) {
+      await this.reviewFlagService.raise({
+        kind: 'name_check',
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        raisedForStaffId: seeker.registeredByStaffId,
+        details: { identityVerificationId: verification.id, reviewRequired: true },
+      });
+    }
     return verification;
   }
 

@@ -20,6 +20,7 @@ export const REVIEW_FLAG_KINDS = [
   'hit_reversed',
   'vacancy_captured_for_account_business',
   'claim_decision_overdue',
+  'name_check',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

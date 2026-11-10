@@ -98,7 +98,7 @@ export function maskAgentPhones<T>(data: T, seen = new WeakSet<object>()): T {
       if (key === 'callRoutingPhone') {
         continue;
       }
-      if (isAgentPhoneKey(key) && value !== null && value !== undefined) {
+      if (isAgentPhoneKey(key) && value !== null && value !== undefined && typeof value !== 'object') {
         masked[key] = value === '[changed]' ? value : maskPhoneLast4(value);
       } else if (typeof value === 'object' && value !== null) {
         masked[key] = maskAgentPhones(value, seen);

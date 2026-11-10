@@ -128,7 +128,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - The fifth wrong code kills the request.
   - A verified request can't create two records.
 
-### [ ] Task 4 — The one job seeker registration form
+### [x] Task 4 — The one job seeker registration form
 **Branch:** `phase-20/task-4-job-seeker-form` · **Migration folder:** `20261113120000_job_seeker_form`
 
 **Acceptance:**
@@ -167,7 +167,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - Matching counts an offer at the floor as suitable and lists a 9%-below offer as a near-miss, not a hit.
   - Self-referral is refused.
 
-### [ ] Task 5 — The registration link that resumes
+### [x] Task 5 — The registration link that resumes
 **Branch:** `phase-20/task-5-registration-link` · **Migration folder:** `20261113130000_registration_link`
 
 **Acceptance:**
@@ -180,7 +180,9 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
      - Use the existing `IdentityVerification` (mock provider) and keep only result, last 4 and 18+.
      - **Under 18 stops here**, before payment.
      - A name mismatch that looks like a spelling difference raises a `name_check` review flag (add it to the closed list in `review-flag.constants.ts`) for the agent's Team Lead, and the step waits.
-     - "Service down — tell me when it's back" stores a request. When the provider is healthy again (checked by the existing health job), an SMS goes out and the link resumes at the ID step.
+     - A provider or network failure (timeout, 5xx, connection error) marks the ID service **down**. A person's result (name mismatch, phone not linked, under 18) never marks the service down. Store the current `up`/`down` state and when it last changed, and expose both through the existing system status endpoint for the System Health screen.
+     - Add `checkHealth()` to `KycProvider`. The mock reports healthy by default, with a test-only switch to report down. Every 15 minutes, a scheduled worker job probes with `checkHealth()` while the ID service is down. The job must also be runnable through the existing manual job trigger.
+     - "Service down — tell me when it's back" stores a request. When the probe reports healthy, mark the service up, send the "ID check is working again" SMS once to each person who opted in, and resume their registration link at the ID step. If their old link expired, create a fresh link and revoke the old one.
   4. **Terms and ₹499:** the page shows his exact terms (trade, distance, shift, salary floor). He ticks to agree, then pays with the existing UPI collection flow.
 - **Resuming:**
   - Every step already done is skipped; nothing is asked twice.
@@ -206,7 +208,9 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   - The OTP always goes to the registered number.
   - Under 18 stops before payment.
   - Aadhaar failure offers the other IDs.
-  - "Service down" sends an SMS when it's back.
+  - A provider/network error marks the ID service down; a name mismatch does not.
+  - The recovery probe marks it up and sends one SMS per waiting person.
+  - An expired registration link is replaced on recovery and the old link is revoked.
   - The payment-only link shows no profile data and expires after 15 minutes.
   - A second payment is refunded automatically.
   - The status panel shows the right state and reason at each point.

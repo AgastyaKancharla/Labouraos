@@ -70,10 +70,11 @@ export class ConsentController {
   @Get(':token')
   async getConsentPage(
     @Param('token') token: string,
+    @Query('requestId') requestId: string | undefined,
     @Headers('accept') accept: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const details = await this.consentLinkService.getTokenDetails(token);
+    const details = await this.consentLinkService.getTokenDetails(token, requestId);
 
     if (accept && accept.includes('text/html')) {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
@@ -97,7 +98,7 @@ export class ConsentController {
       }
       return renderConsentPageHtml(
         token,
-        details.candidateName,
+        details.otpRequired ? undefined : details.candidateName,
         details.preferredLanguage as 'kn' | 'hi' | 'en',
       );
     }
@@ -112,6 +113,11 @@ export class ConsentController {
   @Post('send-otp')
   async sendOtp(@Body('token') token: string) {
     return this.consentLinkService.sendOtp(token);
+  }
+
+  @Post('id-check-wait')
+  async requestIdCheckRecovery(@Body() body: { token: string; requestId: string; code: string }) {
+    return this.consentLinkService.requestIdCheckRecovery(body.token, body.requestId, body.code);
   }
 
   /**

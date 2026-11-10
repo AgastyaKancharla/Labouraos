@@ -170,6 +170,8 @@ describe('Phase 8 Task 5: Observability, Structured Logging & Status Dashboard',
       expect(typeof res.body.uptimeFormatted).toBe('string');
       expect(res.body.version).toBe('0.1.0');
       expect(Array.isArray(res.body.components)).toBe(true);
+      expect(res.body.idCheck.status).toMatch(/^(up|down)$/);
+      expect(res.body.idCheck.lastChangedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
       const dbComp = res.body.components.find((c: { name: string }) =>
         c.name.includes('PostgreSQL'),

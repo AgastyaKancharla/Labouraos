@@ -144,6 +144,48 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     expect(CALL_PURPOSES).toContain('consent_explain');
   });
 
+  it('shows registration progress, current ID service state, and active link expiry to staff', async () => {
+    const candidateId = await createLeadCandidate();
+    const link = await request(app.getHttpServer())
+      .post('/consent/links')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ jobSeekerId: candidateId });
+
+    const response = await request(app.getHttpServer())
+      .get(`/job-seekers/${candidateId}/registration-status`)
+      .set('Authorization', `Bearer ${agentToken}`)
+      .expect(200);
+
+    expect(response.body.steps.phone.state).toBe('not_started');
+    expect(response.body.steps.consent.state).toBe('not_started');
+    expect(response.body.steps.selfie.state).toBe('not_started');
+    expect(response.body.steps.idCheck.state).toBe('not_started');
+    expect(response.body.steps.payment.state).toBe('stuck');
+    expect(response.body.steps.payment.reason).toBe('Waiting for the new trade to be added in the Command Center');
+    expect(response.body.registrationLinkExpiresAt).toBeDefined();
+    const storedLink = await prisma.publicLink.findUnique({ where: { id: link.body.linkId } });
+    expect(storedLink).not.toBeNull();
+    if (!storedLink) throw new Error('Registration link was not stored');
+    expect(storedLink.expiresAt.getTime() - clock.now().getTime()).toBe(48 * 60 * 60 * 1000);
+  });
+
+  it('resending a registration link revokes the old link and issues a fresh 48-hour link', async () => {
+    const candidateId = await createLeadCandidate();
+    const createLink = () => request(app.getHttpServer())
+      .post('/consent/links')
+      .set('Authorization', `Bearer ${agentToken}`)
+      .send({ jobSeekerId: candidateId });
+    const first = await createLink().expect(201);
+    const second = await createLink().expect(201);
+    const oldLink = await prisma.publicLink.findUnique({ where: { id: first.body.linkId } });
+    const newLink = await prisma.publicLink.findUnique({ where: { id: second.body.linkId } });
+    expect(oldLink?.revokedAt).toBeDefined();
+    expect(newLink?.revokedAt).toBeNull();
+    expect(newLink).not.toBeNull();
+    if (!newLink) throw new Error('Replacement registration link was not stored');
+    expect(newLink.expiresAt.getTime() - clock.now().getTime()).toBe(48 * 60 * 60 * 1000);
+  });
+
   it('POST /consent/links generates token and dispatches SMS; response never contains candidate phone', async () => {
     const candidateId = await createLeadCandidate();
 
@@ -189,7 +231,9 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
       .get(`/consent/${token}`)
       .set('Accept', 'application/json');
     expect(detailsRes.status).toBe(200);
-    expect(detailsRes.body.jobSeekerId).toBe(candidateId);
+    expect(detailsRes.body.otpRequired).toBe(true);
+    expect(detailsRes.body.maskedPhone).toMatch(/^\*+\d{4}$/);
+    expect(detailsRes.body.jobSeekerId).toBeUndefined();
 
     // 3. Request OTP
     const otpSendRes = await request(app.getHttpServer())
@@ -228,6 +272,14 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     // Confirm candidate status in database
     const updatedSeeker = await prisma.jobSeeker.findUnique({ where: { id: candidateId } });
     expect(updatedSeeker?.status).toBe('consented');
+
+    const resumedDetails = await request(app.getHttpServer())
+      .get(`/consent/${token}?requestId=${requestId}`)
+      .set('Accept', 'application/json');
+    expect(resumedDetails.status).toBe(200);
+    expect(resumedDetails.body.jobSeekerId).toBe(candidateId);
+    expect(resumedDetails.body.otpRequired).toBe(false);
+    expect(resumedDetails.body.currentStep).toBe('selfie');
 
     // Confirm consent records created
     const consents = await prisma.consent.findMany({ where: { subjectId: candidateId } });
@@ -308,8 +360,8 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
       .send({ jobSeekerId: candidateId });
     const token = linkRes.body.token;
 
-    // Fast-forward clock past 24 hours TTL
-    clock.advance(25 * 60 * 60 * 1000);
+    // Registration links remain valid for 48 hours.
+    clock.advance(49 * 60 * 60 * 1000);
 
     const getRes = await request(app.getHttpServer()).get(`/consent/${token}`);
     expect(getRes.status).toBe(400);

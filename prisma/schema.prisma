@@ -89,6 +89,7 @@ model JobSeeker {
   trades                    JobSeekerTrade[]
   languages                 JobSeekerLanguage[]
   identityVerifications     IdentityVerification[]
+  kycRecoveryRequests      KycRecoveryRequest[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
   anonymisedAt              DateTime?
@@ -229,6 +230,28 @@ model IdentityVerification {
 
   @@index([jobSeekerId])
   @@index([status])
+}
+
+model KycServiceState {
+  id            String   @id @default("id-check")
+  status        String   @default("up") // up, down
+  lastChangedAt DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+}
+
+model KycRecoveryRequest {
+  id             String   @id @default(uuid())
+  jobSeekerId    String
+  jobSeeker      JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  status         String   @default("waiting") // waiting, notifying, notified
+  registrationLinkId String?
+  requestedAt    DateTime @default(now())
+  notifiedAt     DateTime?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([status, requestedAt])
+  @@index([jobSeekerId, status])
 }
 
 model Referral {
