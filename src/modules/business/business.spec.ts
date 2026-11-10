@@ -117,6 +117,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
               `98${timestamp.toString().slice(-8)}`,
               `99${timestamp.toString().slice(-8)}`,
               `90${timestamp.toString().slice(-8)}`,
+              `89${timestamp.toString().slice(-8)}`,
             ],
           },
         },
@@ -245,7 +246,54 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       }).expect(201);
     expect(valid.body.familyName).toBe('Rao');
     expect(valid.body.legalName).toBeNull();
+    expect(valid.body.gstNumber).toBeNull();
+    expect(valid.body.licenceNumber).toBeNull();
+    expect(valid.body.pan).toBeNull();
+    expect(valid.body.fssaiNumber).toBeNull();
     expect(valid.body.documentsStatus).toBe('no_documents');
+  });
+
+  it('requires a contact person name and stores a no-documents business without licence numbers', async () => {
+    const missingName = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ name: 'No Contact Name', phone: `89${timestamp.toString().slice(-8)}`, contactPersonRole: 'owner' });
+    expect(missingName.status).toBe(400);
+    expect(missingName.body.message).toContain('Contact person name');
+
+    const phone = `96${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const refused = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Documents Refused', phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        noDocuments: true, gstNumber: '29ABCDE1234F1Z5',
+      });
+    expect(refused.status).toBe(400);
+
+    const cleanPhone = `89${timestamp.toString().slice(-8)}`;
+    const cleanOtp = await getVerifiedOtp(cleanPhone);
+    const saved = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'No Papers Cafe', phone: cleanPhone, otpRequestId: cleanOtp,
+        contactPersonName: 'Asha Rao', contactPersonRole: 'manager',
+        contactWhatsAppPhone: cleanPhone, contactLanguage: 'en',
+        businessType: 'bakery', legalName: 'No Papers Cafe LLP',
+        employeeCountBand: '6-20', yearsInOperationBand: '3-5', hiringFrequency: 'monthly',
+        openingTime: '09:00', closingTime: '21:00', workingDays: ['mon', 'tue', 'wed', 'thu', 'fri'],
+        shopNumber: '12', street: '100 Feet Road', landmark: 'Near the metro', locality: 'Indiranagar', pincode: '560038',
+        billingEmail: 'accounts@nopapers.example', heardFrom: 'walk_in', noDocuments: true,
+      }).expect(201);
+    expect(saved.body).toMatchObject({
+      documentsStatus: 'no_documents', gstNumber: null, fssaiNumber: null, pan: null,
+      legalName: 'No Papers Cafe LLP', employeeCountBand: '6-20', yearsInOperationBand: '3-5',
+      openingTime: '09:00', closingTime: '21:00', pincode: '560038', billingEmail: 'accounts@nopapers.example',
+      heardFrom: 'walk_in', contactLanguage: 'en', contactPersonRole: 'manager',
+    });
+    expect(saved.body.workingDays).toEqual(['mon', 'tue', 'wed', 'thu', 'fri']);
   });
 
   it('field agent creates a business without writing the deprecated area or contact fields', async () => {

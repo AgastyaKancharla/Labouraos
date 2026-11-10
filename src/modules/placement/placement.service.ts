@@ -332,8 +332,9 @@ export class PlacementService {
     let paymentLink: string | null = null;
 
     if (!created.existing) {
-      const branch = created.placement.vacancy.branchId
-        ? await this.prisma.businessBranch.findUnique({ where: { id: created.placement.vacancy.branchId } })
+      const branchId = created.placement.vacancy?.branchId;
+      const branch = branchId
+        ? await this.prisma.businessBranch.findUnique({ where: { id: branchId } })
         : null;
       const upiRequest = await this.upiCollectionService.createRequest({
         type: 'placement_fee',
@@ -428,8 +429,9 @@ export class PlacementService {
     if (!this.upiCollectionService) {
       throw new BadRequestException('UpiCollectionService is not configured');
     }
-    const branch = placement.vacancy.branchId
-      ? await this.prisma.businessBranch.findUnique({ where: { id: placement.vacancy.branchId } })
+    const branchId = placement.vacancy?.branchId;
+    const branch = branchId
+      ? await this.prisma.businessBranch.findUnique({ where: { id: branchId } })
       : null;
     return this.upiCollectionService.resendRequest(payment.id, 'business', placement.businessId, branch?.contactPersonPhone);
   }
