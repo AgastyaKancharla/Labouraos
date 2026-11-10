@@ -30,6 +30,8 @@ export function completeJobSeekerRegistration(input: Record<string, unknown>): R
     trades,
     availableFrom: '2026-11-10',
     lookingSince: '2026-11-01',
+    minSalary: 1500000,
+    maxSalary: 2000000,
     salaryPeriod: 'monthly',
     shiftPreference: 'any',
     jobType: 'full_time',

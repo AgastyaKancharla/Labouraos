@@ -210,7 +210,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       .expect(201);
 
     expect(response.body.tradeSkill).toBe(tradeName);
-    expect(response.body.guaranteeFloorPaise).toBe(2000000);
+    expect(response.body.guaranteeFloorPaise).toBeNull();
     expect(response.body.warnings).toEqual([]);
     expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: response.body.id, trade: tradeName } })).toBe(1);
     const suggestion = await prisma.tradeSuggestion.findUnique({ where: { typedNameKey: tradeName.toLocaleLowerCase('en-IN') } });

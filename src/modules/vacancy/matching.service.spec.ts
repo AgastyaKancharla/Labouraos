@@ -201,6 +201,9 @@ describe('MatchingService', () => {
       guaranteeFloorPaise: 2000000,
     });
     candidates = [candidate];
+    consentRows = ['job_matching', 'profile_sharing'].map((purpose) => ({
+      subjectId: 'salary-floor', purpose, granted: true, grantedAt: now, withdrawnAt: null,
+    }));
 
     const atFloor = await run(candidates, { salaryMinPaise: 2000000, salaryMaxPaise: 2000000 });
     expect(atFloor.matches.map(({ jobSeekerId }) => jobSeekerId)).toEqual(['salary-floor']);
