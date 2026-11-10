@@ -160,7 +160,8 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     expect(response.body.steps.consent.state).toBe('not_started');
     expect(response.body.steps.selfie.state).toBe('not_started');
     expect(response.body.steps.idCheck.state).toBe('not_started');
-    expect(response.body.steps.payment.state).toBe('not_started');
+    expect(response.body.steps.payment.state).toBe('stuck');
+    expect(response.body.steps.payment.reason).toBe('Waiting for the new trade to be added in the Command Center');
     expect(response.body.registrationLinkExpiresAt).toBeDefined();
     const storedLink = await prisma.publicLink.findUnique({ where: { id: link.body.linkId } });
     expect(storedLink).not.toBeNull();
