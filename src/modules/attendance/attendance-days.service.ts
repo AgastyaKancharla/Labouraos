@@ -12,7 +12,8 @@ import { PricingService } from '../pricing/pricing.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { AttendanceClock } from './attendance-clock';
 import { AttendanceService } from './attendance.service';
-import { classifyDay, deductibleShortfall, isWeeklyOff, monthRange } from './day-rules';
+import { classifyDay, deductibleShortfall, monthRange } from './day-rules';
+import { WorkingDaysService } from './working-days.service';
 
 /** Roles that mark attendance. The CEO does not (Master Guide, Attendance). */
 export const ATTENDANCE_ROLES = ['manager', 'team_lead', 'call_agent', 'field_agent', 'finance'];
@@ -59,6 +60,10 @@ export interface MonthSummary {
   shortfallSeconds: number;
   makeUpSeconds: number;
   deductibleShortfallSeconds: number;
+  /** Working days in the month: weekly days off and holidays left out. */
+  workingDays: number;
+  /** Public holidays in the month (paid days off, never absent). */
+  holidays: Array<{ date: string; name: string }>;
   days: DayRow[];
 }
 
@@ -76,6 +81,7 @@ export class AttendanceDaysService {
     private readonly audit: AuditService,
     private readonly attendance: AttendanceService,
     private readonly clock: AttendanceClock,
+    private readonly workingDays: WorkingDaysService,
   ) {}
 
   /**
@@ -236,6 +242,8 @@ export class AttendanceDaysService {
       shortfallSeconds: 0,
       makeUpSeconds: 0,
       deductibleShortfallSeconds: 0,
+      workingDays: 0,
+      holidays: [],
       days: rows,
     };
     for (const row of rows) {
@@ -271,6 +279,12 @@ export class AttendanceDaysService {
       summary.shortfallSeconds,
       summary.makeUpSeconds,
     );
+    const calendar = await this.workingDays.calendar(range.from, range.to);
+    summary.workingDays = calendar.workingDates.length;
+    summary.holidays = calendar.holidays.map((holiday) => ({
+      date: this.label(holiday.date),
+      name: holiday.name,
+    }));
     return summary;
   }
 
@@ -287,7 +301,7 @@ export class AttendanceDaysService {
 
   /**
    * Marks `absent` for everyone who marks attendance and has no day on that
-   * date: no login and no approved leave. Weekly days off are skipped, and so
+   * date: no login and no approved leave. Weekly days off and holidays are skipped, and so
    * are dates before the account was created. Runs nightly for yesterday.
    */
   async markAbsentDays(
@@ -295,9 +309,8 @@ export class AttendanceDaysService {
     staffIds?: string[],
   ): Promise<{ date: string; marked: number }> {
     const target = date ?? this.yesterday();
-    const policy = await this.pricing.current();
     const label = this.label(target);
-    if (isWeeklyOff(target, policy.weeklyOffDays)) {
+    if (await this.workingDays.isNonWorking(target)) {
       return { date: label, marked: 0 };
     }
     const endOfDate = new Date(target.getTime() + 24 * 3600 * 1000 - 5.5 * 3600 * 1000);

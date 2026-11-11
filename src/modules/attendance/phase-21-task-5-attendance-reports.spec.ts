@@ -274,6 +274,8 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
       staffCode: agentA3.code,
       name: agentA3.name,
       role: 'call_agent',
+      workingDays: 26,
+      holidays: 0,
       fullDays: 2,
       halfDays: 1,
       paidLeaveDays: 1,
@@ -291,6 +293,8 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
     expect(row.paidLeaveDays).toBe(summary.body.paidLeaveDays.total);
     expect(row.unpaidLeaveDays).toBe(summary.body.unpaidLeaveDays);
     expect(row.deductibleShortfallMinutes).toBe(Math.floor(summary.body.deductibleShortfallSeconds / 60));
+    expect(row.workingDays).toBe(summary.body.workingDays);
+    expect(row.holidays).toBe(summary.body.holidays.length);
     expect(row.paidDays).toBe(
       summary.body.fullDays + summary.body.halfDays * 0.5 + summary.body.paidLeaveDays.total,
     );
@@ -313,10 +317,10 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
     expect(res.headers['content-disposition']).toContain('attendance-month-sheet-2027-06.csv');
     const lines = res.text.trim().split('\n');
     expect(lines[0]).toBe(
-      'Staff code,Name,Role,Full days,Half days,Paid leave days,Absent days,Unpaid leave days,Paid days,Unpaid days,Deductible shortfall (minutes)',
+      'Staff code,Name,Role,Working days,Holidays,Full days,Half days,Paid leave days,Absent days,Unpaid leave days,Paid days,Unpaid days,Deductible shortfall (minutes)',
     );
     const line = lines.find((item) => item.startsWith(`${agentA3.code},`));
-    expect(line).toBe(`${agentA3.code},${agentA3.name},call_agent,2,1,1,1,0,3.5,1.5,9`);
+    expect(line).toBe(`${agentA3.code},${agentA3.name},call_agent,26,0,2,1,1,1,0,3.5,1.5,9`);
     expect(res.text).not.toContain(agentA3.email as string);
     expect(res.text).not.toContain('@');
     expect(res.text).not.toMatch(/₹|paise|salary/i);

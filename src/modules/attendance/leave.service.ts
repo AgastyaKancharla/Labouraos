@@ -5,7 +5,8 @@ import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { PricingService } from '../pricing/pricing.service';
 import { AttendanceClock } from './attendance-clock';
 import { ATTENDANCE_ROLES } from './attendance-days.service';
-import { isWeeklyOff, monthRange } from './day-rules';
+import { monthRange } from './day-rules';
+import { WorkingDaysService } from './working-days.service';
 
 export const LEAVE_KINDS = ['casual', 'emergency'] as const;
 export type LeaveKind = (typeof LEAVE_KINDS)[number];
@@ -25,7 +26,6 @@ export interface LeaveBalance {
   emergency: KindBalance;
 }
 
-const DAY_MS = 24 * 3600 * 1000;
 
 /** "YYYY-MM" of an IST calendar date stored at UTC midnight. */
 export function monthOf(date: Date): string {
@@ -49,6 +49,7 @@ export class LeaveService {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly clock: AttendanceClock,
+    private readonly workingDays: WorkingDaysService,
   ) {}
 
   todayIst(): Date {
@@ -144,15 +145,9 @@ export class LeaveService {
     };
   }
 
-  /** Whole days from..to, weekly days off left out. */
+  /** Whole days from..to, weekly days off and holidays left out. */
   async leaveDates(from: Date, to: Date): Promise<Date[]> {
-    const policy = await this.pricing.current();
-    const dates: Date[] = [];
-    for (let at = from.getTime(); at <= to.getTime(); at += DAY_MS) {
-      const date = new Date(at);
-      if (!isWeeklyOff(date, policy.weeklyOffDays)) dates.push(date);
-    }
-    return dates;
+    return (await this.workingDays.calendar(from, to)).workingDates;
   }
 
   /** Casual days on leave in a month (approved), and in pending requests. */
@@ -223,6 +218,51 @@ export class LeaveService {
       if (unpaid) unpaidDays += 1;
       else paidDays += 1;
     }
+    return { paidDays, unpaidDays };
+  }
+
+  /**
+   * Works out again which leave days of a request are paid, after its days
+   * changed (a holiday added or removed). Days in date order are paid while
+   * the balance, not counting this request, lasts; the rest are unpaid.
+   */
+  async reallocate(requestId: string): Promise<{ paidDays: number; unpaidDays: number }> {
+    const request = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id: requestId } });
+    const rows = await this.prisma.attendanceDay.findMany({
+      where: { leaveRequestId: requestId, dayType: 'leave' },
+      orderBy: { date: 'asc' },
+    });
+    await this.ensureAccrued(request.staffId);
+    const accruals = await this.prisma.leaveAccrual.findMany({ where: { staffId: request.staffId } });
+    const earned = accruals.reduce(
+      (sum, row) => sum + (request.kind === 'emergency' ? row.emergency : row.casual),
+      0,
+    );
+    const paidElsewhere = await this.prisma.attendanceDay.count({
+      where: {
+        staffId: request.staffId,
+        dayType: 'leave',
+        leaveKind: request.kind,
+        leaveUnpaid: false,
+        NOT: { leaveRequestId: requestId },
+      },
+    });
+    let left = Math.max(0, earned - paidElsewhere);
+    let paidDays = 0;
+    let unpaidDays = 0;
+    for (const row of rows) {
+      const unpaid = left <= 0;
+      if (!unpaid) left -= 1;
+      if (row.leaveUnpaid !== unpaid) {
+        await this.prisma.attendanceDay.update({ where: { id: row.id }, data: { leaveUnpaid: unpaid } });
+      }
+      if (unpaid) unpaidDays += 1;
+      else paidDays += 1;
+    }
+    await this.prisma.leaveRequest.update({
+      where: { id: requestId },
+      data: { paidDays, unpaidDays },
+    });
     return { paidDays, unpaidDays };
   }
 

@@ -7,6 +7,7 @@ import { MoneyAtRiskService } from './money-at-risk.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { WorkingDaysService } from '../attendance/working-days.service';
 import { BEHIND_PACE_START_DAY, BEHIND_PACE_THRESHOLD, MIN_REFUND_RATE_DENOMINATOR } from './target.constants';
 
 interface MockStaffRecord {
@@ -507,6 +508,58 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
   });
 
   describe('Behind-Pace Flagging Rules', () => {
+    it('counts pace in working days: weekly days off and public holidays are left out', async () => {
+      // November 2026: Sundays 1, 8, 15, 22, 29 and a holiday on the 10th → 24 working days.
+      // On the 15th, 11 working days have passed: expected pace = 30 × 11 / 24.
+      const holidays = new Set(['2026-11-10']);
+      const workingDays = {
+        calendar: async (from: Date, to: Date) => {
+          const workingDates: Date[] = [];
+          for (let at = from.getTime(); at <= to.getTime(); at += 24 * 3600 * 1000) {
+            const date = new Date(at);
+            if (date.getUTCDay() !== 0 && !holidays.has(date.toISOString().slice(0, 10))) {
+              workingDates.push(date);
+            }
+          }
+          return { workingDates, weeklyOffs: [], holidays: [] };
+        },
+      } as unknown as WorkingDaysService;
+      const withCalendar = new TargetOverviewService(
+        (service as unknown as { prisma: PrismaService }).prisma,
+        targetService,
+        callAgentMetricsService,
+        fieldAgentMetricsService,
+        moneyAtRiskService,
+        workingDays,
+      );
+      mockTargets[`${mockCallAgentId}-2026-11`] = {
+        id: 'tgt-ca-wd',
+        staffId: mockCallAgentId,
+        year: 2026,
+        month: 11,
+        candidatesActivated: 30,
+        refundRate: null,
+        vacanciesCaptured: null,
+        placementsClosed: null,
+        replacementsInside15Days: null,
+        repeatBusinesses: null,
+        createdAt: new Date('2026-11-01T00:00:00Z'),
+      };
+      mockCallAgentMetrics[mockCallAgentId] = {
+        staffId: mockCallAgentId,
+        metrics: { candidatesActivated: 11, vacanciesCaptured: 0, refundRate: null },
+        details: {},
+      };
+      const result = await withCalendar.getOverview(
+        { year: 2026, month: 11 },
+        callAgentUser,
+        new Date('2026-11-15T12:00:00+05:30'),
+      );
+      expect(result.agent?.metrics.candidatesActivated.expectedPace).toBeCloseTo((30 * 11) / 24, 6);
+      // 11 achieved is above 80% of 13.75, so not behind on working days.
+      expect(result.agent?.metrics.candidatesActivated.isBehindPace).toBe(false);
+    });
+
     it('an agent at 50% of expected pace on day 15 is flagged', async () => {
       // November has 30 days. Target = 30 candidates.
       // On day 15, expected pace = 30 * (15/30) = 15.

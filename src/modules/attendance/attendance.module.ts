@@ -10,14 +10,22 @@ import { AttendanceRequestHooks } from './attendance-request-hooks';
 import { LeaveService } from './leave.service';
 import { AttendanceReportsController } from './attendance-reports.controller';
 import { AttendanceReportsService } from './attendance-reports.service';
+import { WorkingDaysModule } from './working-days.module';
+import { HolidayController } from './holiday.controller';
+import { HolidayService } from './holiday.service';
 import { AttendanceClock } from './attendance-clock';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
 
 @Module({
-  imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule, MessageModule],
-  controllers: [AttendanceController, AttendanceRequestsController, AttendanceReportsController],
+  imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule, MessageModule, WorkingDaysModule],
+  controllers: [
+    AttendanceController,
+    AttendanceRequestsController,
+    AttendanceReportsController,
+    HolidayController,
+  ],
   providers: [
     AttendanceService,
     AttendanceDaysService,
@@ -26,6 +34,7 @@ import { AttendanceDaysService } from './attendance-days.service';
     AttendanceRequestsService,
     AttendanceRequestHooks,
     AttendanceReportsService,
+    HolidayService,
   ],
   exports: [
     AttendanceService,
@@ -35,6 +44,8 @@ import { AttendanceDaysService } from './attendance-days.service';
     AttendanceRequestsService,
     AttendanceRequestHooks,
     AttendanceReportsService,
+    HolidayService,
+    WorkingDaysModule,
   ],
 })
 export class AttendanceModule {}

@@ -39,6 +39,10 @@ export interface MonthSheetRow {
   staffCode: string;
   name: string;
   role: string;
+  /** Days in the month minus weekly days off and holidays. */
+  workingDays: number;
+  /** Public holidays in the month that fall on a working weekday (paid days off). */
+  holidays: number;
   fullDays: number;
   halfDays: number;
   paidLeaveDays: number;
@@ -221,7 +225,9 @@ export class AttendanceReportsService {
   /**
    * Month sheet for salaries, one row per person who marks attendance:
    * paid days = full + half × 0.5 + paid leave; unpaid days = absent +
-   * unpaid leave + half × 0.5; deductible shortfall in whole minutes.
+   * unpaid leave + half × 0.5; deductible shortfall in whole minutes; and
+   * the month's working days and holidays (holidays are paid days off and
+   * not working days, like weekly days off).
    * Built from the month summaries, so the two always agree. Finance and
    * the CEO only (enforced on the route). No rupee amounts (Phase 22).
    */
@@ -246,6 +252,8 @@ export class AttendanceReportsService {
         staffCode: summary.staff.code,
         name: summary.staff.name,
         role: summary.staff.role,
+        workingDays: summary.workingDays,
+        holidays: summary.holidays.length,
         fullDays: summary.fullDays,
         halfDays: summary.halfDays,
         paidLeaveDays: summary.paidLeaveDays.total,
@@ -271,6 +279,8 @@ export class AttendanceReportsService {
       'Staff code',
       'Name',
       'Role',
+      'Working days',
+      'Holidays',
       'Full days',
       'Half days',
       'Paid leave days',
@@ -287,6 +297,8 @@ export class AttendanceReportsService {
           row.staffCode,
           row.name,
           row.role,
+          row.workingDays,
+          row.holidays,
           row.fullDays,
           row.halfDays,
           row.paidLeaveDays,

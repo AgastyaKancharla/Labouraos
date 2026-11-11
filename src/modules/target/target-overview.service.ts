@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -11,6 +12,7 @@ import { FormattedTargetResponse, TargetService } from './target.service';
 import { CallAgentMetricsService } from './call-agent-metrics.service';
 import { FieldAgentMetricsService } from './field-agent-metrics.service';
 import { MoneyAtRiskResult, MoneyAtRiskService } from './money-at-risk.service';
+import { WorkingDaysService } from '../attendance/working-days.service';
 import {
   ALL_METRIC_KEYS,
   calculateProRatingFactor,
@@ -140,6 +142,7 @@ export class TargetOverviewService {
     private readonly callAgentMetricsService: CallAgentMetricsService,
     private readonly fieldAgentMetricsService: FieldAgentMetricsService,
     private readonly moneyAtRiskService: MoneyAtRiskService,
+    @Optional() private readonly workingDays?: WorkingDaysService,
   ) {}
 
   async getOverview(
@@ -508,8 +511,19 @@ export class TargetOverviewService {
         ? createdParts.day
         : 1;
 
-    const daysInPeriod = Math.max(0, daysInMonth - startDay + 1);
-    const daysElapsed = Math.min(daysInPeriod, Math.max(0, currentDay - startDay + 1));
+    let daysInPeriod = Math.max(0, daysInMonth - startDay + 1);
+    let daysElapsed = Math.min(daysInPeriod, Math.max(0, currentDay - startDay + 1));
+    // Pace counts working days only: weekly days off and public holidays are
+    // left out (Master Guide, Attendance: holidays and weekly offs behave the same).
+    if (this.workingDays && daysInPeriod > 0) {
+      const calendar = await this.workingDays.calendar(
+        new Date(Date.UTC(year, month - 1, startDay)),
+        new Date(Date.UTC(year, month - 1, daysInMonth)),
+      );
+      const working = calendar.workingDates.map((date) => date.getUTCDate());
+      daysInPeriod = working.length;
+      daysElapsed = working.filter((day) => day <= currentDay).length;
+    }
 
     // 4. Evaluate each metric
     const metrics = {} as Record<TargetMetricKey, PaceEvaluationResult>;

@@ -1297,6 +1297,19 @@ model AttendanceDay {
   @@index([date])
 }
 
+/// A public holiday: a paid day off for everyone, set by the CEO per year.
+/// Never absent, not a leave day, not a working day.
+model Holiday {
+  id               String   @id @default(uuid())
+  /// IST calendar date.
+  date             DateTime @unique @db.Date
+  name             String
+  createdByStaffId String?
+  updatedByStaffId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+}
+
 /// Leave days earned on the 1st of each month. One row per person per month.
 model LeaveAccrual {
   id        String   @id @default(uuid())
