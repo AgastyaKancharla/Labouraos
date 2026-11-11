@@ -1,0 +1,119 @@
+/*
+ * Design tokens — copied from the approved designs' :root blocks
+ * (cc-canvas/project/Main.dc.html for the office portals, and the shared
+ * block in the call agent, login and public phone screens). Both naming schemes exist in the designs;
+ * the portal names are canonical and the console/phone names are aliases so a
+ * snippet copied from either family works unchanged.
+ */
+:root {
+  /* Surfaces */
+  --bg: #eef3fc;
+  --panel: #ffffff;
+  --panel-2: #f1f5fc;
+  --line: #dce4f3;
+  --line-strong: #c3ceea;
+
+  /* Brand blues */
+  --royal: #0055c0;
+  --navy: #032b73;
+  --bright: #0055c0; /* the designs' {{accent}}; default value */
+  --sky: #2f7fd1;
+  --sidebar: #0055c0;
+  --sidebar-grad: linear-gradient(180deg, #0055c0 0%, #003593 100%);
+
+  /* Raw brand colours (fills, bars, tiles) */
+  --cyan-raw: #02d0f8;
+  --gold-raw: #fcce00;
+  --orange-raw: #fb6800;
+  --red-raw: #fe2901;
+
+  /* Text-safe status colours and their backgrounds */
+  --cyan: #0b6e82;
+  --amber: #92670a;
+  --critical: #b94e12;
+  --good: #1c9a6c;
+  --tomato: #bb232b;
+  --amber-bg: #fff4cc;
+  --critical-bg: #ffe7d6;
+  --good-bg: #e1f5ec;
+  --sky-bg: #e3edfb;
+  --cyan-bg: #dcf6fd;
+  --tomato-bg: #fae2e1;
+  --navy-bg: #e2e7f3;
+
+  /* The brand swoosh */
+  --swoosh: linear-gradient(90deg, #0055c0 0%, #02d0f8 38%, #02d0f8 40%, #fcce00 40%, #fb6800 76%, #fe2901 100%);
+
+  /* Text */
+  --text: #0b1e4a;
+  --text-soft: #49588a;
+  --text-faint: #8290b8;
+  --nav-text: #ffffff;
+  --nav-text-soft: #cfe4ff;
+  --nav-text-faint: #9fc3f0;
+  --nav-accent: #6ec3ff;
+
+  /* Type */
+  --font-display: 'Sora', system-ui, sans-serif;
+  --font-body: 'IBM Plex Sans', system-ui, sans-serif;
+
+  /* Spacing scale (the designs use 4/6/8/10/12/14/16/18/20/22/24/28/30/36) */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 30px;
+  --space-8: 36px;
+
+  /* Radii */
+  --radius-xs: 7px; /* segmented buttons, small badges */
+  --radius-sm: 9px; /* nav items, secondary buttons */
+  --radius-md: 10px; /* inputs, primary buttons, tile icons */
+  --radius-lg: 12px; /* stat tiles, stages */
+  --radius-xl: 14px; /* vertical cards, popovers */
+  --radius-2xl: 16px; /* panels, hero */
+  --radius-pill: 999px;
+
+  /* Shadows */
+  --shadow-panel: 0 1px 2px rgba(11, 30, 74, 0.05), 0 1px 10px rgba(11, 30, 74, 0.03);
+  --shadow-pop: 0 18px 40px rgba(3, 43, 115, 0.22);
+  --shadow-hero: 0 10px 28px rgba(3, 43, 115, 0.22);
+  --focus-ring: 0 0 0 3px rgba(2, 208, 248, 0.55);
+
+  /* Layout */
+  --sidebar-width: 248px;
+  --page-gutter: 36px;
+
+  /* Aliases used by the console / phone designs (call agent, login and public phone screens) */
+  --ink: var(--text);
+  --soft: var(--text-soft);
+  --faint: #5e6c96;
+  --surface: var(--panel);
+  --border: var(--line);
+  --blue: var(--royal);
+  --grad: var(--sidebar-grad);
+  --blue100: var(--sky-bg);
+  --navsoft: var(--nav-text-soft);
+  --navacc: var(--nav-accent);
+  --cyanraw: var(--cyan-raw);
+  --gold: var(--gold-raw);
+  --green: var(--good);
+  --green100: var(--good-bg);
+  --amber100: var(--amber-bg);
+  --cyan100: var(--cyan-bg);
+  --tomato100: var(--tomato-bg);
+  --crit: var(--critical);
+  --crit100: var(--critical-bg);
+  --fd: var(--font-display);
+  --fb: var(--font-body);
+
+  color-scheme: light;
+}
+
+@media (max-width: 760px) {
+  :root {
+    --page-gutter: 16px;
+  }
+}
