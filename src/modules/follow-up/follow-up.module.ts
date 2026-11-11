@@ -5,6 +5,7 @@ import { AuditModule } from '../../common/audit/audit.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { VacancyModule } from '../vacancy/vacancy.module';
+import { JobSeekerModule } from '../job-seeker/job-seeker.module';
 import { FollowUpService } from './follow-up.service';
 import { FollowUpController } from './follow-up.controller';
 
@@ -16,6 +17,7 @@ import { FollowUpController } from './follow-up.controller';
     PricingModule,
     ReviewFlagModule,
     VacancyModule,
+    JobSeekerModule,
   ],
   controllers: [FollowUpController],
   providers: [FollowUpService],

@@ -15,6 +15,7 @@ import {
   hashPayoutValue,
   maskPayoutValue,
 } from '../payout-account/payout-account-key';
+import { recordRefundCheck } from '../../test-support/refund-check';
 
 describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
   let app: INestApplication;
@@ -119,6 +120,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
       await prisma.callRecord.deleteMany({ where: { id: { in: callRecordIds } } });
       await prisma.vacancy.deleteMany({ where: { id: { in: vacancyIds } } });
       await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
+      await prisma.followUpTask.deleteMany({ where: { subjectId: { in: jobSeekerIds } } });
       await prisma.jobSeeker.deleteMany({ where: { id: { in: jobSeekerIds } } });
       await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
       await prisma.staffSession.deleteMany({ where: { staffId: { in: staff.map((s) => s.id) } } });
@@ -360,6 +362,7 @@ describe('Phase 18 Task 4: Collecting Payout Details and Paying', () => {
       });
 
       const sendSpy = jest.spyOn(paymentService, 'sendPayoutDetailsLinkIfNoAccount');
+      await recordRefundCheck(prisma, candidate.id);
 
       const refundPayment = await jobSeekerService.approveRefund(
         candidate.id,

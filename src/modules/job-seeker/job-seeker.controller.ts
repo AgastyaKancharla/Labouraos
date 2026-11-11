@@ -171,6 +171,20 @@ export class JobSeekerController {
     return this.jobSeekerService.reactivate(id, req.user.sub);
   }
 
+  @Post(':id/found-own-job')
+  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'write')
+  async recordFoundOwnJob(
+    @Param('id') id: string,
+    @Body() body: { reason?: string; callRecordId?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.jobSeekerService.recordFoundOwnJob(id, req.user.sub, {
+      reason: body?.reason,
+      callRecordId: body?.callRecordId,
+    });
+  }
+
   @Post(':id/refund')
   @RequireRoles('ceo', 'finance')
   @RequirePermission('payment', 'write')

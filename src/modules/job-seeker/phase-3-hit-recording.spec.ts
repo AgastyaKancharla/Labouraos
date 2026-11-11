@@ -130,7 +130,7 @@ describe('Phase 3 Task 2: Hit Recording', () => {
 
   it('rejects a no_pickup hit without the required logged attempts', async () => {
     await expect(
-      jobSeekerService.recordHit(testJobSeekerId, 'no_pickup', 'No pickup test', callAgentId),
+      jobSeekerService.recordHit(testJobSeekerId, 'no_pickup', 'No pickup test', 'system'),
     ).rejects.toThrow('Cannot record no_pickup hit');
 
     const jobSeeker = await prisma.jobSeeker.findUnique({
@@ -168,7 +168,7 @@ describe('Phase 3 Task 2: Hit Recording', () => {
 
     // Should still fail because PM no_pickup call is missing
     await expect(
-      jobSeekerService.recordHit(testJobSeekerId, 'no_pickup', 'Incomplete attempts', callAgentId),
+      jobSeekerService.recordHit(testJobSeekerId, 'no_pickup', 'Incomplete attempts', 'system'),
     ).rejects.toThrow('Cannot record no_pickup hit');
   });
 
@@ -187,17 +187,23 @@ describe('Phase 3 Task 2: Hit Recording', () => {
       },
     });
 
+    // Master Guide: "Not picked up" comes only from the phone system. Even with all three
+    // attempts logged, a call agent cannot record it; the automated sweep ('system') does.
+    await expect(
+      jobSeekerService.recordHit(testJobSeekerId, 'no_pickup', 'Typed by an agent', callAgentId),
+    ).rejects.toThrow('come only from the phone system');
+
     const result = await jobSeekerService.recordHit(
       testJobSeekerId,
       'no_pickup',
       'All 3 attempts verified',
-      callAgentId,
+      'system',
     );
 
     expect(result.id).toBeDefined();
     expect(result.reason).toBe('no_pickup');
     expect(result.note).toBe('All 3 attempts verified');
-    expect(result.recordedBy).toBe(callAgentId);
+    expect(result.recordedBy).toBe('system');
     expect(result.hitCount).toBe(1);
 
     const updatedJobSeeker = await prisma.jobSeeker.findUnique({
@@ -214,7 +220,6 @@ describe('Phase 3 Task 2: Hit Recording', () => {
     // Audit log was created
     const audit = await prisma.auditLog.findFirst({
       where: {
-        actorId: callAgentId,
         action: 'job_seeker.hit',
         entityCode: testJobSeekerCode,
       },

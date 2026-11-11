@@ -8,6 +8,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PricingService } from './pricing.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { recordRefundCheck } from '../../test-support/refund-check';
 
 describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
   let app: INestApplication;
@@ -136,6 +137,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
           await prisma.payment.deleteMany({ where: { code: { in: createdPaymentCodes } } });
         }
         if (createdJobSeekerIds.length > 0) {
+          await prisma.followUpTask.deleteMany({ where: { subjectId: { in: createdJobSeekerIds } } });
           await prisma.jobSeeker.deleteMany({ where: { id: { in: createdJobSeekerIds } } });
         }
         await prisma.pricingPolicy.deleteMany({
@@ -379,6 +381,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
 
     // Current price is 59900 (from previous test)
     // Approve refund for jsA: should refund 49900 (the amount actually paid)
+    await recordRefundCheck(prisma, jsA.id);
     const refundA = await jobSeekerService.approveRefund(jsA.id, { asOf: now.toISOString() }, ceoId);
     expect(refundA.amount).toBe(49900);
     if (refundA.code) createdPaymentCodes.push(refundA.code);
@@ -420,6 +423,7 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
     });
 
     // Approve refund for jsB: should refund 59900 (the amount actually paid)
+    await recordRefundCheck(prisma, jsB.id);
     const refundB = await jobSeekerService.approveRefund(jsB.id, { asOf: now.toISOString() }, ceoId);
     expect(refundB.amount).toBe(59900);
     if (refundB.code) createdPaymentCodes.push(refundB.code);

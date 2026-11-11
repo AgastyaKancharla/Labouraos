@@ -165,7 +165,7 @@ export class MoneyAtRiskService {
     // --- 2. CANDIDATES AT RISK ---
     // Candidates who paid activation fee, not placed, not deactivated, approaching 30-day deadline
     const candidateWhere: Record<string, unknown> = {
-      status: { notIn: ['placed', 'deactivated'] },
+      status: { notIn: ['placed', 'deactivated', 'closed'] },
       paymentReceivedAt: { not: null },
     };
     if (filterStaffIds !== null) {
@@ -202,6 +202,7 @@ export class MoneyAtRiskService {
           jobSeekerId: { in: candidateIds },
           reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
           reversedAt: null,
+          supersededAt: null,
         },
         select: { jobSeekerId: true },
       });
@@ -237,7 +238,7 @@ export class MoneyAtRiskService {
     for (const c of candidates) {
       if (!c.paymentReceivedAt) continue;
       // Disqualifiers from shared eligibility
-      if (c.status === 'placed' || c.status === 'deactivated') continue;
+      if (c.status === 'placed' || c.status === 'deactivated' || c.status === 'closed') continue;
       if (rejectedCandidateIdSet.has(c.id)) continue;
       if (refundedCandidateIdSet.has(c.id)) continue;
 

@@ -17,6 +17,7 @@ import { PaymentFilterDto } from './dto/payment-filter.dto';
 import { RecordPayoutDto } from './dto/record-payout.dto';
 import { matchReceiverName } from '../payout-account/name-matcher';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
+import { loadJobSeekerRefundGuards } from '../job-seeker/job-seeker-refund-guards';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { decryptPayoutValue } from '../payout-account/payout-account-key';
@@ -238,6 +239,13 @@ export class PaymentService {
             hitCount: payment.reactivation ? 0 : (payment.jobSeeker?.hitCount ?? 0),
           },
         });
+        if (payment.reactivation) {
+          // Paying ₹499 again starts a fresh guarantee: earlier hits stop counting.
+          await tx.jobSeekerHit.updateMany({
+            where: { jobSeekerId: payment.jobSeekerId, supersededAt: null },
+            data: { supersededAt: confirmedAt },
+          });
+        }
         await recordStatusChange(tx, {
           subjectType: 'job_seeker', subjectId: payment.jobSeekerId,
           fromStatus: payment.jobSeeker?.status ?? null, toStatus: 'active',
@@ -1097,13 +1105,7 @@ export class PaymentService {
           throw new NotFoundException(`Job seeker '${jsId}' not found`);
         }
 
-        const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
-          where: {
-            jobSeekerId: jobSeeker.id,
-            reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
-            reversedAt: null,
-          },
-        });
+        const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
         const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
           ? await this.prisma.consent.findFirst({
@@ -1149,13 +1151,16 @@ export class PaymentService {
             code: jobSeeker.code,
             paymentReceivedAt: jobSeeker.paymentReceivedAt,
             status: jobSeeker.status,
-            hasOfferRejectedHit: Boolean(hasOfferRejected),
+            hasOfferRejectedHit: guards.hasOfferRejectedHit,
             hasExistingRefund: false,
             activationPaymentPaise: activationPayment?.amount,
             guaranteeDays: policy.jobSeekerGuaranteeDays,
             hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
             hasOpenBypassFlag: Boolean(openBypassFlag),
             hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
+            refundCheckRecorded: guards.refundCheckRecorded,
+            refundCheckWorkingElsewhere: guards.refundCheckWorkingElsewhere,
+            hasOpenOfferReply: guards.hasOpenOfferReply,
           },
           now,
         );

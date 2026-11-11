@@ -6,6 +6,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { recordRefundCheck } from '../../test-support/refund-check';
 
 describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
   let app: INestApplication;
@@ -18,6 +19,10 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
   let callAgentToken: string;
   let fieldAgentToken: string;
   let financeToken: string;
+  let otherTeamLeadToken: string;
+  let teamLeadId: string;
+  let managerId: string;
+  let callAgentId: string;
 
   const createdStaffIds: string[] = [];
   const createdSeekerIds: string[] = [];
@@ -48,15 +53,24 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
         },
       });
       createdStaffIds.push(staff.id);
+      lastStaffId = staff.id;
       return jwt.sign({ sub: staff.id, role: staff.role, code: staff.code, email: staff.email });
     }
+    let lastStaffId = '';
 
     ceoToken = await createStaffUser('ceo', 'CEO-REV');
     managerToken = await createStaffUser('manager', 'MGR-REV');
+    managerId = lastStaffId;
     teamLeadToken = await createStaffUser('team_lead', 'TL-REV');
+    teamLeadId = lastStaffId;
     callAgentToken = await createStaffUser('call_agent', 'CA-REV');
+    callAgentId = lastStaffId;
     fieldAgentToken = await createStaffUser('field_agent', 'FA-REV');
     financeToken = await createStaffUser('finance', 'FIN-REV');
+    otherTeamLeadToken = await createStaffUser('team_lead', 'TL2-REV');
+    // The call agent registers the test job seekers and sits in the Team Lead's team.
+    await prisma.staff.update({ where: { id: teamLeadId }, data: { reportsToId: managerId } });
+    await prisma.staff.update({ where: { id: callAgentId }, data: { teamLeadId, reportsToId: teamLeadId } });
   });
 
   afterAll(async () => {
@@ -68,6 +82,9 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
       });
       await prisma.payment.deleteMany({
         where: { jobSeekerId: { in: createdSeekerIds } },
+      });
+      await prisma.followUpTask.deleteMany({
+        where: { subjectId: { in: createdSeekerIds } },
       });
       await prisma.jobSeekerHit.deleteMany({
         where: { jobSeekerId: { in: createdSeekerIds } },
@@ -91,6 +108,7 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
     status?: string;
     hitCount?: number;
     paymentReceivedAt?: Date | null;
+    registeredByStaffId?: string | null;
   }): Promise<string> {
     const suffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
     const phoneSuffix = Math.floor(10000000 + Math.random() * 90000000);
@@ -107,6 +125,7 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
         status: options?.status ?? 'active',
         hitCount: options?.hitCount ?? 0,
         paymentReceivedAt: options?.paymentReceivedAt ?? null,
+        registeredByStaffId: options?.registeredByStaffId === undefined ? callAgentId : options.registeredByStaffId,
       },
     });
     createdSeekerIds.push(seeker.id);
@@ -337,7 +356,10 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
       .set('Authorization', `Bearer ${teamLeadToken}`)
       .send({
         reversalReason: 'Interviewer was not present; candidate was turned away at gate',
-      });
+      })
+      .expect(201);
+    // The refund-check call is recorded before any ₹499 refund is approved.
+    await recordRefundCheck(prisma, seekerId);
 
     // Refund request should now SUCCEED
     const refundApprovedRes = await request(app.getHttpServer())
@@ -388,5 +410,93 @@ describe('Phase 12 Task 6 — JobSeekerHit Changes and Reversals', () => {
       .set('Authorization', `Bearer ${managerToken}`)
       .send({ reversalReason: 'Approved by manager' });
     expect(mgrRes.status).toBe(201);
+  });
+
+  it("7. A Team Lead can reverse hits only for job seekers handled by their own team", async () => {
+    const outsiderSeekerId = await createCandidate({ registeredByStaffId: null });
+    const hit = await prisma.jobSeekerHit.create({
+      data: { jobSeekerId: outsiderSeekerId, reason: 'offer_declined', recordedBy: 'system' },
+    });
+    await prisma.jobSeeker.update({ where: { id: outsiderSeekerId }, data: { hitCount: 1 } });
+
+    const noTeam = await request(app.getHttpServer())
+      .post(`/job-seeker-hits/${hit.id}/reverse`)
+      .set('Authorization', `Bearer ${teamLeadToken}`)
+      .send({ reversalReason: 'Not my team' });
+    expect(noTeam.status).toBe(403);
+    expect(noTeam.body.message).toContain('own team');
+
+    const ownSeekerId = await createCandidate();
+    const ownHit = await prisma.jobSeekerHit.create({
+      data: { jobSeekerId: ownSeekerId, reason: 'offer_declined', recordedBy: 'system' },
+    });
+    await prisma.jobSeeker.update({ where: { id: ownSeekerId }, data: { hitCount: 1 } });
+    const otherTeamLead = await request(app.getHttpServer())
+      .post(`/job-seeker-hits/${ownHit.id}/reverse`)
+      .set('Authorization', `Bearer ${otherTeamLeadToken}`)
+      .send({ reversalReason: 'Another team lead' });
+    expect(otherTeamLead.status).toBe(403);
+
+    const unchanged = await prisma.jobSeekerHit.findUniqueOrThrow({ where: { id: ownHit.id } });
+    expect(unchanged.reversedAt).toBeNull();
+  });
+
+  it('8. A third hit removal on one job seeker goes to the Manager', async () => {
+    const seekerId = await createCandidate({ hitCount: 3, status: 'deactivated' });
+    const hits = [];
+    for (const reason of ['offer_declined', 'offer_no_reply', 'interview_no_show']) {
+      hits.push(await prisma.jobSeekerHit.create({ data: { jobSeekerId: seekerId, reason, recordedBy: 'system' } }));
+    }
+
+    for (const hit of hits.slice(0, 2)) {
+      await request(app.getHttpServer())
+        .post(`/job-seeker-hits/${hit.id}/reverse`)
+        .set('Authorization', `Bearer ${teamLeadToken}`)
+        .send({ reversalReason: 'Wrongly recorded' })
+        .expect(201);
+    }
+
+    const third = await request(app.getHttpServer())
+      .post(`/job-seeker-hits/${hits[2].id}/reverse`)
+      .set('Authorization', `Bearer ${teamLeadToken}`)
+      .send({ reversalReason: 'Third one too' });
+    expect(third.status).toBe(403);
+    expect(third.body.message).toContain('goes to the Manager');
+    expect((await prisma.jobSeekerHit.findUniqueOrThrow({ where: { id: hits[2].id } })).reversedAt).toBeNull();
+
+    const requestFlags = await prisma.reviewFlag.findMany({
+      where: { kind: 'hit_reversal_needs_manager', subjectType: 'job_seeker_hit', subjectId: hits[2].id },
+    });
+    expect(requestFlags).toHaveLength(1);
+    expect((requestFlags[0].details as Record<string, unknown>).managerStaffId).toBe(managerId);
+
+    // Asking again does not raise a second request.
+    await request(app.getHttpServer())
+      .post(`/job-seeker-hits/${hits[2].id}/reverse`)
+      .set('Authorization', `Bearer ${teamLeadToken}`)
+      .send({ reversalReason: 'Third one too' })
+      .expect(403);
+    expect(await prisma.reviewFlag.count({
+      where: { kind: 'hit_reversal_needs_manager', subjectId: hits[2].id },
+    })).toBe(1);
+
+    const byManager = await request(app.getHttpServer())
+      .post(`/job-seeker-hits/${hits[2].id}/reverse`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ reversalReason: 'Manager reviewed the recording' });
+    expect(byManager.status).toBe(201);
+  });
+
+  it('9. A hit from an earlier guarantee (superseded by paying again) cannot be reversed', async () => {
+    const seekerId = await createCandidate();
+    const hit = await prisma.jobSeekerHit.create({
+      data: { jobSeekerId: seekerId, reason: 'offer_declined', recordedBy: 'system', supersededAt: new Date() },
+    });
+    const res = await request(app.getHttpServer())
+      .post(`/job-seeker-hits/${hit.id}/reverse`)
+      .set('Authorization', `Bearer ${managerToken}`)
+      .send({ reversalReason: 'Old cycle' });
+    expect(res.status).toBe(400);
+    expect(res.body.message).toContain('earlier guarantee');
   });
 });

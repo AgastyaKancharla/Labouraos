@@ -11,6 +11,13 @@ export interface JobSeekerRefundEligibilityInput {
   hasWithdrawnEssentialConsent?: boolean;
   hasOpenBypassFlag?: boolean;
   hasWorkingAtIntroducedBusinessFollowUp?: boolean;
+  /**
+   * Approval only (lists of refunds due leave these undefined): the refund-check call
+   * must be recorded, and no offer may still be waiting for his reply.
+   */
+  refundCheckRecorded?: boolean;
+  refundCheckWorkingElsewhere?: boolean;
+  hasOpenOfferReply?: boolean;
 }
 
 export interface JobSeekerRefundEligibilityResult {
@@ -33,9 +40,12 @@ export interface JobSeekerRefundEligibilityResult {
  * - Activation fee must have been paid (paymentReceivedAt != null).
  * - Must NOT be in 'placed' status (confirmed placement).
  * - Must NOT be in 'deactivated' status (3 hits deactivate with no refund entitlement).
+ * - Must NOT be 'closed' (found a job on his own: no refund).
  * - Must NOT have any 'offer_rejected' hit (rejecting a suitable offer forfeits guarantee).
  * - Refund can only be approved after guaranteeDays have elapsed from payment receipt (now > deadline).
  * - No refund has already been issued.
+ * - At approval: no offer still waiting for his reply, and the refund-check call recorded
+ *   (an answer of "working elsewhere" means a job found on his own: no refund).
  * - Stored activation payment amount is returned (old records never change).
  */
 export function evaluateJobSeekerRefundEligibility(
@@ -57,6 +67,17 @@ export function evaluateJobSeekerRefundEligibility(
     return {
       eligible: false,
       ineligibleReason: `Job seeker '${input.code}' has a confirmed placement and is not eligible for refund`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline: null,
+    };
+  }
+
+  if (input.status === 'closed') {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' found a job on his own; the profile is closed and carries no refund`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: 0,
@@ -139,6 +160,39 @@ export function evaluateJobSeekerRefundEligibility(
     return {
       eligible: false,
       ineligibleReason: `A refund has already been issued for job seeker '${input.code}'`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline,
+    };
+  }
+
+  if (input.hasOpenOfferReply) {
+    return {
+      eligible: false,
+      ineligibleReason: `An offer to job seeker '${input.code}' is still waiting for his reply (48 hours); the refund waits until it is answered`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline,
+    };
+  }
+
+  if (input.refundCheckRecorded === false) {
+    return {
+      eligible: false,
+      ineligibleReason: `The refund-check call for job seeker '${input.code}' ("are you working at a business Laboura introduced?") has not been recorded yet`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline,
+    };
+  }
+
+  if (input.refundCheckWorkingElsewhere) {
+    return {
+      eligible: false,
+      ineligibleReason: `Job seeker '${input.code}' said at the refund check that he is working elsewhere (a job found on his own) and is not eligible for refund`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: 0,

@@ -9,6 +9,7 @@ import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
+import { JobSeekerService } from './job-seeker.service';
 
 describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => {
   let app: INestApplication;
@@ -389,7 +390,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.message).toContain('Field agents may only record');
+      expect(res.body.message).toContain('come only from the phone system');
       expect(res.body.message).toContain('offer_rejected');
       expect(res.body.message).toContain('interview_no_show');
 
@@ -411,7 +412,9 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
       expect(after.role).toBe('field_agent');
     });
 
-    it("Call agent / Manager / CEO CAN record 'no_pickup' hit when qualifying attempts exist", async () => {
+    // Master Guide: "Not picked up" comes only from the phone system. Earlier this test let a
+    // call agent record it by hand; now staff are refused and only the automated sweep records it.
+    it("Call agent is refused 'no_pickup' even with qualifying attempts; the automated sweep records it", async () => {
       // Create required qualifying attempts (AM call no_pickup, PM call no_pickup, whatsapp)
       const now = new Date();
       await prisma.contactAttempt.createMany({
@@ -448,12 +451,19 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({
           reason: 'no_pickup',
-          note: 'Call agent legitimate no pickup hit',
+          note: 'Call agent trying to type a no pickup hit',
         });
+      expect(res.status).toBe(403);
+      expect(res.body.message).toContain('come only from the phone system');
 
-      expect(res.status).toBe(201);
-      expect(res.body.hitCount).toBe(3);
-      expect(res.body.status).toBe('deactivated');
+      const swept = await app.get(JobSeekerService).recordHit(
+        testSeekerId,
+        'no_pickup',
+        'Automated daily no-pickup evaluation',
+        'system',
+      );
+      expect(swept.hitCount).toBe(3);
+      expect(swept.status).toBe('deactivated');
     });
 
     it('Field agent can reactivate a deactivated candidate (POST /job-seekers/:id/reactivate)', async () => {
@@ -520,7 +530,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         return seeker;
       };
 
-      it('call_agent can record all 3 reasons: offer_rejected, interview_no_show, no_pickup', async () => {
+      it('call_agent can record offer_rejected and interview_no_show but is refused no_pickup', async () => {
         const s1 = await createActiveCandidateWithQualifyingAttempts('CA-OFFER');
         const resOffer = await request(app.getHttpServer())
           .post(`/job-seekers/${s1.id}/hits`)
@@ -540,10 +550,11 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           .post(`/job-seekers/${s3.id}/hits`)
           .set('Authorization', `Bearer ${callAgentToken}`)
           .send({ reason: 'no_pickup', note: 'CA recorded no_pickup' });
-        expect(resNoPick.status).toBe(201);
+        expect(resNoPick.status).toBe(403);
+        expect(resNoPick.body.message).toContain('come only from the phone system');
       });
 
-      it('manager can record all 3 reasons: offer_rejected, interview_no_show, no_pickup', async () => {
+      it('manager can record offer_rejected and interview_no_show but is refused no_pickup', async () => {
         const s1 = await createActiveCandidateWithQualifyingAttempts('MGR-OFFER');
         const resOffer = await request(app.getHttpServer())
           .post(`/job-seekers/${s1.id}/hits`)
@@ -563,10 +574,11 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           .post(`/job-seekers/${s3.id}/hits`)
           .set('Authorization', `Bearer ${managerToken}`)
           .send({ reason: 'no_pickup', note: 'MGR recorded no_pickup' });
-        expect(resNoPick.status).toBe(201);
+        expect(resNoPick.status).toBe(403);
+        expect(resNoPick.body.message).toContain('come only from the phone system');
       });
 
-      it('ceo can record all 3 reasons: offer_rejected, interview_no_show, no_pickup', async () => {
+      it('ceo can record offer_rejected and interview_no_show but is refused no_pickup', async () => {
         const s1 = await createActiveCandidateWithQualifyingAttempts('CEO-OFFER');
         const resOffer = await request(app.getHttpServer())
           .post(`/job-seekers/${s1.id}/hits`)
@@ -586,7 +598,8 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           .post(`/job-seekers/${s3.id}/hits`)
           .set('Authorization', `Bearer ${ceoToken}`)
           .send({ reason: 'no_pickup', note: 'CEO recorded no_pickup' });
-        expect(resNoPick.status).toBe(201);
+        expect(resNoPick.status).toBe(403);
+        expect(resNoPick.body.message).toContain('come only from the phone system');
       });
 
       it('field_agent can record witnessed reasons (offer_rejected, interview_no_show) but is refused no_pickup', async () => {
@@ -610,7 +623,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
           .set('Authorization', `Bearer ${fieldAgentToken}`)
           .send({ reason: 'no_pickup', note: 'FA recorded no_pickup' });
         expect(resNoPick.status).toBe(403);
-        expect(resNoPick.body.message).toContain('Field agents may only record');
+        expect(resNoPick.body.message).toContain('come only from the phone system');
       });
     });
   });

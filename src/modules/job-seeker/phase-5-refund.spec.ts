@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { isWithinRefundGuarantee } from '../../common/money/money';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
+import { recordRefundCheck } from '../../test-support/refund-check';
 
 describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
   let app: INestApplication;
@@ -126,6 +127,11 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
         },
       },
     });
+    const p5rSeekers = await prisma.jobSeeker.findMany({
+      where: { code: { startsWith: 'JS-P5R-' }, AND: { code: { endsWith: `-${timestamp}` } } },
+      select: { id: true },
+    });
+    await prisma.followUpTask.deleteMany({ where: { subjectId: { in: p5rSeekers.map((row) => row.id) } } });
     await prisma.jobSeeker.deleteMany({
       where: {
         code: {
@@ -326,8 +332,25 @@ describe('Phase 5 Task 8: Job seeker 30-day refund approval', () => {
         .send({ asOf: day20 })
         .expect(400);
 
-      // On day 31 (after 30 days elapsed): approved by Finance
+      // On day 31 without the refund-check call recorded: denied (Master Guide, "Refund check")
       const day31 = new Date(candidate!.paymentReceivedAt!.getTime() + 31 * 24 * 60 * 60 * 1000).toISOString();
+      const noCheck = await request(app.getHttpServer())
+        .post(`/job-seekers/${candidate!.id}/refund`)
+        .set('Authorization', `Bearer ${financeToken}`)
+        .send({ asOf: day31 })
+        .expect(400);
+      expect(noCheck.body.message).toContain('refund-check call');
+
+      // An answered refund check where he did not answer the question still does not count
+      await recordRefundCheck(prisma, candidate!.id, 'no_answer');
+      await request(app.getHttpServer())
+        .post(`/job-seekers/${candidate!.id}/refund`)
+        .set('Authorization', `Bearer ${financeToken}`)
+        .send({ asOf: day31 })
+        .expect(400);
+
+      // On day 31 (after 30 days elapsed) with the refund check recorded: approved by Finance
+      await recordRefundCheck(prisma, candidate!.id, 'not_working', new Date(Date.now() + 1000));
       const refundRes = await request(app.getHttpServer())
         .post(`/job-seekers/${candidate!.id}/refund`)
         .set('Authorization', `Bearer ${financeToken}`)

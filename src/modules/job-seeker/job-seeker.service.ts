@@ -21,6 +21,7 @@ import {
   isWithinRefundGuarantee,
 } from '../../common/money/money';
 import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
+import { loadJobSeekerRefundGuards } from './job-seeker-refund-guards';
 
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
@@ -540,7 +541,9 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
 
-    if (jobSeeker.status !== 'deactivated') {
+    // Deactivated after 3 hits, or closed after finding a job on his own: either way he
+    // comes back by paying ₹499 again, which starts a fresh guarantee.
+    if (jobSeeker.status !== 'deactivated' && jobSeeker.status !== 'closed') {
       throw new BadRequestException(
         `Job seeker must be deactivated to be reactivated. Current status: '${jobSeeker.status}'`,
       );
@@ -619,9 +622,12 @@ export class JobSeekerService {
       resolvedRole = actorStaff?.role;
     }
 
-    if (resolvedRole === 'field_agent' && reason === 'no_pickup') {
+    // "Not picked up" comes only from the phone system (Master Guide): the automated
+    // sweep records it from call-webhook and messaging attempts. No staff role can.
+    const isHumanActor = Boolean(actorId && actorId !== 'system');
+    if (isHumanActor && reason === 'no_pickup') {
       const refusalMessage =
-        "Field agents may only record 'offer_declined' (or 'offer_rejected'), 'offer_no_reply' or 'interview_no_show' hits. Recording 'no_pickup' hits is restricted to call agents and the automated sweep.";
+        "'Not picked up' hits come only from the phone system and the automated sweep. Staff may record only 'offer_declined' (or 'offer_rejected'), 'offer_no_reply' or 'interview_no_show' hits.";
 
       const jobSeeker = await this.prisma.jobSeeker.findUnique({
         where: { id: jobSeekerId },
@@ -830,6 +836,74 @@ export class JobSeekerService {
     });
   }
 
+  /**
+   * Master Guide (decided 9 Nov): a job seeker who finds a job on his own (not through
+   * Laboura) gets no refund; his profile is closed and he can come back later. Because
+   * this costs him the ₹499 refund it is backed by an answered, recorded call with him.
+   */
+  async recordFoundOwnJob(
+    jobSeekerId: string,
+    actorId: string,
+    input: { reason?: string | null; callRecordId?: string | null; followUpTaskId?: string | null },
+  ) {
+    const reason = input.reason?.trim();
+    if (!reason) throw new BadRequestException('A reason is required to record that he found a job on his own');
+    if (!input.callRecordId) {
+      throw new BadRequestException('callRecordId of an answered call with him is required: it backs the end of his refund');
+    }
+    const seeker = await this.prisma.jobSeeker.findFirst({
+      where: { OR: [{ id: jobSeekerId }, { code: jobSeekerId }] },
+    });
+    if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    if (['closed', 'placed', 'deactivated'].includes(seeker.status)) {
+      throw new BadRequestException(`Job seeker '${seeker.code}' is '${seeker.status}' and cannot be closed as found a job on his own`);
+    }
+    const call = await this.prisma.callRecord.findUnique({ where: { id: input.callRecordId } });
+    if (!call || call.subjectType !== 'job_seeker' || call.subjectId !== seeker.id || !call.answered) {
+      throw new BadRequestException('The call must be an answered call with this job seeker');
+    }
+
+    const now = this.consentClock?.now() ?? new Date();
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const moved = await tx.jobSeeker.updateMany({
+        where: { id: seeker.id, status: seeker.status },
+        data: { status: 'closed', foundOwnJobAt: now },
+      });
+      if (moved.count !== 1) throw new ConflictException('The job seeker changed while saving; try again');
+      await recordStatusChange(tx, {
+        subjectType: 'job_seeker',
+        subjectId: seeker.id,
+        fromStatus: seeker.status,
+        toStatus: 'closed',
+        changedByStaffId: actorId,
+        reason: 'found_own_job',
+        changedAt: now,
+      });
+      return tx.jobSeeker.findUniqueOrThrow({
+        where: { id: seeker.id },
+        include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      });
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'job_seeker.found_own_job',
+      entityType: 'job_seeker',
+      entityCode: seeker.code,
+      before: { status: seeker.status, foundOwnJobAt: null },
+      after: {
+        status: 'closed',
+        foundOwnJobAt: now.toISOString(),
+        refund: 'blocked',
+        callRecordId: call.id,
+        followUpTaskId: input.followUpTaskId ?? null,
+      },
+      changedFields: ['status', 'foundOwnJobAt'],
+      reason,
+      city: seeker.city,
+    });
+    return withCurrentJobSeekerFields(updated);
+  }
+
   async approveRefund(
     id: string,
     dto: ApproveJobSeekerRefundDto,
@@ -861,13 +935,7 @@ export class JobSeekerService {
       now = new Date();
     }
 
-    const hasOfferRejected = await this.prisma.jobSeekerHit.findFirst({
-      where: {
-        jobSeekerId: jobSeeker.id,
-        reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
-        reversedAt: null,
-      },
-    });
+    const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
     const existingRefund = await this.prisma.payment.findFirst({
       where: {
@@ -925,13 +993,16 @@ export class JobSeekerService {
         code: jobSeeker.code,
         paymentReceivedAt: jobSeeker.paymentReceivedAt,
         status: jobSeeker.status,
-        hasOfferRejectedHit: Boolean(hasOfferRejected),
+        hasOfferRejectedHit: guards.hasOfferRejectedHit,
         hasExistingRefund: Boolean(existingRefund),
         activationPaymentPaise: activationPayment?.amount,
         guaranteeDays: policy.jobSeekerGuaranteeDays,
         hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
         hasOpenBypassFlag: Boolean(openBypassFlag),
         hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
+        refundCheckRecorded: guards.refundCheckRecorded,
+        refundCheckWorkingElsewhere: guards.refundCheckWorkingElsewhere,
+        hasOpenOfferReply: guards.hasOpenOfferReply,
       },
       now,
     );
@@ -1095,6 +1166,9 @@ export class JobSeekerService {
     if (targetStatus === 'consented') {
       return this.transitionToConsented(jobSeekerId, actorId);
     }
+    if (targetStatus === 'closed') {
+      throw new BadRequestException("Use 'found a job on his own' to close a profile; it records why the refund ends");
+    }
 
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
@@ -1174,6 +1248,36 @@ export class JobSeekerService {
       return withCurrentJobSeekerFields(record);
     }
 
+    // Master Guide: if his number changes, the agent checks the NEW number by OTP, and
+    // the live registration link (which carries the old number) is switched off.
+    let phoneChange: { otpRequestId: string; phone: string } | null = null;
+    if (diff.changedFields.includes('phone')) {
+      const newPhone = typeof filteredDto.phone === 'string' ? filteredDto.phone.trim() : '';
+      if (!newPhone) throw new BadRequestException('A new mobile number is required');
+      const otpRequestId = typeof dto.phoneOtpRequestId === 'string' ? dto.phoneOtpRequestId
+        : typeof dto.otpRequestId === 'string' ? dto.otpRequestId : null;
+      if (!otpRequestId) {
+        throw new BadRequestException('Changing the mobile number needs an OTP check on the new number: send an OTP to it and pass phoneOtpRequestId');
+      }
+      if (!(await this.otpService.isVerified(otpRequestId, newPhone))) {
+        throw new BadRequestException('The new mobile number must pass OTP verification before it is saved');
+      }
+      const taken = await this.prisma.jobSeeker.findUnique({ where: { phone: newPhone }, select: { id: true, code: true } });
+      if (taken && taken.id !== record.id) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'Already registered — open it. A job seeker with this mobile number already exists',
+          existingJobSeekerCode: taken.code,
+        });
+      }
+      filteredDto.phone = newPhone;
+      phoneChange = { otpRequestId, phone: newPhone };
+    }
+    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone))) {
+      throw new BadRequestException('This verified OTP request has already been used or expired');
+    }
+
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
       if (['dateOfBirth', 'availableFrom', 'lookingSince', 'pausedAt'].includes(key)) {
@@ -1185,9 +1289,26 @@ export class JobSeekerService {
 
     const updated = await this.prisma.jobSeeker.update({
       where: { id: record.id as string },
-      data,
+      data: phoneChange ? { ...data, phoneVerified: true } : data,
       include: { trades: true, identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 } },
     });
+
+    if (phoneChange) {
+      const now = this.consentClock?.now() ?? new Date();
+      const revoked = this.publicLinks
+        ? await this.publicLinks.revokeActive('registration', 'job_seeker', updated.id, now)
+        : { count: 0 };
+      await this.auditService.log({
+        actorId: editActor.id,
+        action: 'job_seeker.phone_changed',
+        entityType: 'job_seeker',
+        entityCode: updated.code,
+        after: { phoneVerifiedByOtp: true, registrationLinksRevoked: revoked.count },
+        changedFields: ['phone', 'phoneVerified'],
+        reason: reason ?? 'Mobile number changed after OTP on the new number',
+        city: updated.city,
+      });
+    }
 
     let guaranteeFloorPaise = updated.guaranteeFloorPaise;
     if (diff.changedFields.some((field) => ['minSalary', 'salaryPeriod'].includes(field))) {
@@ -1945,6 +2066,20 @@ export class JobSeekerService {
     if (hit.reversedAt) {
       throw new BadRequestException(`Hit '${hitId}' has already been reversed`);
     }
+    if (hit.supersededAt) {
+      throw new BadRequestException(
+        `Hit '${hitId}' is from an earlier guarantee that was reset when he paid ₹499 again; it no longer counts`,
+      );
+    }
+
+    let role = actorRole;
+    if (!role) {
+      const actorStaff = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { role: true } });
+      role = actorStaff?.role;
+    }
+    if (role === 'team_lead') {
+      await this.assertTeamLeadMayReverseHit(hit, actorId, reversalReason.trim());
+    }
 
     const now = new Date();
     const policy = await this.getPolicy();
@@ -2031,6 +2166,59 @@ export class JobSeekerService {
       reason: normalizeHitReason(result.updatedHit.reason),
       jobSeeker: result.updatedJobSeeker,
     };
+  }
+
+  /**
+   * Master Guide: a Team Lead handles hit removals for their own team, and a third hit
+   * removal on one job seeker goes to the Manager. "Own team" is the team of the staff
+   * member who registered the job seeker (or the Team Lead themself).
+   */
+  private async assertTeamLeadMayReverseHit(
+    hit: { id: string; reason: string; jobSeekerId: string; jobSeeker: { id: string; code: string; registeredByStaffId: string | null } },
+    teamLeadId: string,
+    reversalReason: string,
+  ) {
+    const registrarId = hit.jobSeeker.registeredByStaffId;
+    const registrar = registrarId && registrarId !== teamLeadId
+      ? await this.prisma.staff.findUnique({ where: { id: registrarId }, select: { teamLeadId: true } })
+      : null;
+    const ownTeam = registrarId === teamLeadId || registrar?.teamLeadId === teamLeadId;
+    if (!ownTeam) {
+      throw new ForbiddenException('Team Leads may reverse hits only for job seekers handled by their own team');
+    }
+
+    const earlierReversals = await this.prisma.jobSeekerHit.count({
+      where: { jobSeekerId: hit.jobSeekerId, reversedAt: { not: null } },
+    });
+    if (earlierReversals < 2) return;
+
+    const teamLead = await this.prisma.staff.findUnique({ where: { id: teamLeadId }, select: { reportsToId: true } });
+    let flagCode: string | null = null;
+    if (this.reviewFlagService) {
+      const open = await this.prisma.reviewFlag.findFirst({
+        where: { kind: 'hit_reversal_needs_manager', subjectType: 'job_seeker_hit', subjectId: hit.id, status: 'open' },
+        select: { code: true },
+      });
+      flagCode = open?.code ?? (await this.reviewFlagService.raise({
+        kind: 'hit_reversal_needs_manager',
+        subjectType: 'job_seeker_hit',
+        subjectId: hit.id,
+        raisedForStaffId: teamLeadId,
+        details: {
+          jobSeekerId: hit.jobSeeker.id,
+          jobSeekerCode: hit.jobSeeker.code,
+          originalReason: hit.reason,
+          requestedByStaffId: teamLeadId,
+          managerStaffId: teamLead?.reportsToId ?? null,
+          reversalReason,
+          earlierReversals,
+        },
+      })).code;
+    }
+    throw new ForbiddenException(
+      `This would be hit removal number ${earlierReversals + 1} for job seeker ${hit.jobSeeker.code}: a third hit removal goes to the Manager` +
+        (flagCode ? ` (request ${flagCode} sent)` : ''),
+    );
   }
 
   async getHit(hitId: string) {
