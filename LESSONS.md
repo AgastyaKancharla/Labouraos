@@ -549,3 +549,9 @@ Format:
 **Symptom:** `row-level-security.spec.ts` fails naming a table.
 **Cause:** Supabase's automatic REST API can expose any table in `public` whose row level security is off. Migration `20261115040000_enable_row_level_security` covered every table that existed then; tables created later are not covered.
 **Fix:** In the migration that creates the table, add `ALTER TABLE "NewTable" ENABLE ROW LEVEL SECURITY;`. No policy is needed: Prisma connects as the owner and is not affected.
+
+## `npm install` in web/ fails with "Cannot read properties of null (reading 'edgesOut')"
+**Symptom:** Adding or updating a dependency in `web/` with npm 10 (Node 22) stops with that arborist error.
+**Cause:** An npm 10 bug while resolving Vitest's optional peer dependencies (it walks into Vite 8's optional devtools peers).
+**Fix:** Use the npm that ships with the pinned Node 24 (npm 11), or `npx npm@11 install` in `web/`. `npm ci` from the existing lockfile works with either version.
+
