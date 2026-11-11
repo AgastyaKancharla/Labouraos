@@ -71,6 +71,7 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
   });
 
   afterAll(async () => {
+    await prisma.staffDevice.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.staffSession.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: createdIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: createdIds } } });
@@ -178,6 +179,18 @@ describe('Phase 8: 2FA is mandatory — password-only tokens are scope-limited t
       await post('/staff/2fa/enable', limited.accessToken, {
         totpCode: await stableTotpCode(setup.body.secret),
       });
+      if (role !== 'ceo') {
+        // Enrolling does not approve a Manager's or Finance's device; the CEO
+        // does (decided 11 Nov). Stand in for that approval here.
+        const device = await prisma.staffDevice.findUniqueOrThrow({
+          where: { staffId_deviceId: { staffId: id, deviceId: 'tfa-test-device' } },
+        });
+        expect(device.status).toBe('pending');
+        await prisma.staffDevice.update({
+          where: { id: device.id },
+          data: { status: 'approved', approvedAt: new Date() },
+        });
+      }
       return { id, email, secret: setup.body.secret as string, limitedToken: limited.accessToken as string };
     }
 

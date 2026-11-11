@@ -39,9 +39,23 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
 
   async function mkStaff(
     role: string,
-    extra: Partial<{ teamLeadId: string; status: string; totpEnabled: boolean; totpSecret: string | null }> = {},
+    extra: Partial<{
+      teamLeadId: string;
+      reportsToId: string;
+      status: string;
+      totpEnabled: boolean;
+      totpSecret: string | null;
+    }> = {},
   ): Promise<Actor> {
     const email = `p66_t3_${role}_${ts}_${cleanStaffIds.length}@laboura.local`;
+    // A Manager acts only inside their own tree: agents sit under the shared
+    // Team Lead, who reports to the shared Manager.
+    const line =
+      (role === 'call_agent' || role === 'field_agent') && teamLead
+        ? { teamLeadId: teamLead.id, reportsToId: teamLead.id }
+        : role === 'team_lead' && manager
+          ? { reportsToId: manager.id }
+          : {};
     const staff = await prisma.staff.create({
       data: {
         code: `T3-${role.toUpperCase()}-${ts}-${cleanStaffIds.length}`,
@@ -49,6 +63,7 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         email,
         role,
         passwordHash: await bcrypt.hash(goodPassword, 4),
+        ...line,
         ...extra,
       },
     });
@@ -300,8 +315,25 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
       );
     });
 
-    it('non-executive roles (team_lead, call_agent, field_agent, finance) are refused re-issuing invites', async () => {
+    it('a Team Lead resets the password of an agent in their own team', async () => {
+      // Master Guide, Passwords and email: an agent's forgotten password is
+      // reset by their Team Lead, a Manager or the CEO.
       const target = await mkStaff('call_agent');
+      const res = await request(app.getHttpServer())
+        .post(`/staff/${target.id}/reissue-invite`)
+        .set('Authorization', `Bearer ${teamLeadToken}`)
+        .set('X-Forwarded-For', freshIp())
+        .send();
+      expect(res.status).toBe(200);
+      expect(res.body.inviteToken).toMatch(/^[0-9a-f]{64}$/);
+    });
+
+    it('non-executive roles are refused re-issuing invites outside their own team', async () => {
+      const otherLead = await mkStaff('team_lead');
+      const target = await mkStaff('call_agent', {
+        teamLeadId: otherLead.id,
+        reportsToId: otherLead.id,
+      });
 
       for (const token of [teamLeadToken, callAgentToken, fieldAgentToken, financeToken]) {
         const res = await request(app.getHttpServer())

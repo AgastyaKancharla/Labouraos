@@ -156,12 +156,17 @@ export class StaffController {
     return this.staffService.deactivateStaff(id, req.user);
   }
 
+  /**
+   * Reset: issues a fresh one-time invite so the person sets a new password.
+   * The CEO for anyone, a Manager inside their own tree, a Team Lead for
+   * their own agents (Master Guide, Passwords and email).
+   */
   @Post(':id/reissue-invite')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @RequirePermission('staff', 'write')
-  @RequireRoles('ceo', 'manager')
+  @RequireRoles('ceo', 'manager', 'team_lead')
   reissueInvite(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.staffService.reissueInvite(id, req.user);
   }

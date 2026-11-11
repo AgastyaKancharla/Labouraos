@@ -115,7 +115,9 @@ describe('Phase 8 Task 9: Staff account management', () => {
         })
       : null;
     const deviceId = 'staff-mgmt-device';
-    if (row && !['ceo', 'manager', 'finance'].includes(row.role)) {
+    // Only the CEO approves his own device; Managers and Finance need an
+    // approved device like everyone else (decided 11 Nov).
+    if (row && row.role !== 'ceo') {
       await prisma.staffDevice.upsert({
         where: { staffId_deviceId: { staffId: row.id, deviceId } },
         create: {
@@ -192,6 +194,11 @@ describe('Phase 8 Task 9: Staff account management', () => {
     callAgent = await mkStaff('call_agent');
     fieldAgent = await mkStaff('field_agent');
     finance = await mkStaff('finance');
+    // A Manager acts only inside their own tree, so the shared Team Lead
+    // reports to the shared Manager, and the Manager to the CEO.
+    await prisma.staff.update({ where: { id: manager.id }, data: { reportsToId: ceo.id } });
+    await prisma.staff.update({ where: { id: teamLead.id }, data: { reportsToId: manager.id } });
+    await prisma.staff.update({ where: { id: finance.id }, data: { reportsToId: ceo.id } });
     for (const a of [ceo, manager, teamLead, callAgent, fieldAgent, finance]) {
       tokens[a.id] = await mkToken(a);
     }

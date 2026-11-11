@@ -82,6 +82,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
         passwordHash,
         role: 'team_lead',
         city: 'Bengaluru',
+        reportsToId: mgr.id,
       },
     });
     teamLead1Id = tl1.id;
@@ -95,6 +96,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
         passwordHash,
         role: 'team_lead',
         city: 'Bengaluru',
+        reportsToId: mgr.id,
       },
     });
     teamLead2Id = tl2.id;
@@ -584,6 +586,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
           passwordHash: 'hash',
           role: 'call_agent',
           city: 'Bengaluru',
+          teamLeadId: teamLead1Id,
           createdAt: new Date('2027-11-20T10:00:00Z'), // Day 20 of 30-day month
         },
       });
@@ -631,6 +634,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
           passwordHash: 'hash',
           role: 'call_agent',
           city: 'Bengaluru',
+          teamLeadId: teamLead1Id,
           createdAt: new Date('2027-11-20T10:00:00Z'),
         },
       });
@@ -670,6 +674,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
           passwordHash: 'hash',
           role: 'field_agent',
           city: 'Bengaluru',
+          teamLeadId: teamLead1Id,
           createdAt: new Date('2027-11-30T10:00:00Z'), // Day 30 of 30-day month
         },
       });
@@ -705,6 +710,7 @@ describe('Phase 6.7 Task 2: Target Model and Setting Targets', () => {
           passwordHash: 'hash',
           role: 'call_agent',
           city: 'Bengaluru',
+          teamLeadId: teamLead1Id,
           createdAt: new Date('2027-11-20T10:00:00Z'),
         },
       });

@@ -610,6 +610,20 @@ export class StaffService {
       );
     }
     await this.assertInManagerTree(actor, target.id);
+    if (actor.role === 'team_lead') {
+      // A Team Lead resets passwords for their own agents only (Master Guide,
+      // Passwords and email). The re-issued invite is how a password is reset.
+      const ownAgent =
+        TEAM_MEMBER_ROLES.includes(target.role) &&
+        (target.teamLeadId === actor.sub || target.reportsToId === actor.sub);
+      if (!ownAgent) {
+        throw new ForbiddenException(
+          'A Team Lead can reset passwords only for agents in their own team',
+        );
+      }
+    } else if (actor.role !== 'ceo' && actor.role !== 'manager') {
+      throw new ForbiddenException('Only a Team Lead, Manager or the CEO can reset a password');
+    }
     if (target.status === STAFF_STATUS.DEACTIVATED) {
       throw new BadRequestException(
         'Cannot re-issue invite for a deactivated account. Reactivate the account first.',

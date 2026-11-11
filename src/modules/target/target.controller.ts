@@ -1,7 +1,6 @@
 import {
   Body,
   Controller,
-  ForbiddenException,
   Get,
   Param,
   Patch,
@@ -26,7 +25,6 @@ import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { CreateTargetDto } from './dto/create-target.dto';
 import { UpdateTargetDto } from './dto/update-target.dto';
-import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 @Controller('targets')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -39,20 +37,7 @@ export class TargetController {
     private readonly moneyAtRiskService: MoneyAtRiskService,
     private readonly targetOverviewService: TargetOverviewService,
     private readonly leaderboardService: LeaderboardService,
-    private readonly reportingScope: ReportingScopeService,
   ) {}
-
-  /** A Manager sets and changes targets only for people in their own tree. */
-  private async assertManagerTree(actor: JwtPayload, staffId: string | null | undefined) {
-    if (actor.role !== 'manager') {
-      return;
-    }
-    if (!staffId || !(await this.reportingScope.personIsUnder(actor.sub, staffId))) {
-      throw new ForbiddenException(
-        'A Manager can set targets only for staff in their own teams',
-      );
-    }
-  }
 
   @Get('leaderboard')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
@@ -160,8 +145,7 @@ export class TargetController {
     @Body() dto: CreateTargetDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    await this.assertManagerTree(req.user, dto?.staffId);
-    return this.targetService.setTarget(dto, req.user.sub);
+    return this.targetService.setTarget(dto, req.user.sub, undefined, req.user);
   }
 
   @Patch(':id')
@@ -172,10 +156,7 @@ export class TargetController {
     @Body() dto: UpdateTargetDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    if (req.user.role === 'manager') {
-      await this.assertManagerTree(req.user, await this.targetService.staffIdOfTarget(id));
-    }
-    return this.targetService.updateTarget(id, dto, req.user.sub);
+    return this.targetService.updateTarget(id, dto, req.user.sub, undefined, req.user);
   }
 
   @Get(':id')

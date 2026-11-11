@@ -58,6 +58,8 @@ describe('Phase 10 Task 5: sessions, lockout, lock and unlock', () => {
   async function loginManager() {
     const secret = authenticator.generateSecret();
     const manager = await makeStaff('manager', { totpSecret: secret, totpEnabled: true });
+    // A Manager's device is approved by the CEO before the Manager logs in on it.
+    await approveDevice(manager.id, `mgr-${manager.id}`);
     const res = await request(app.getHttpServer())
       .post('/auth/login')
       .send({

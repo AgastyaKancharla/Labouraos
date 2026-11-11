@@ -96,6 +96,8 @@ describe('Phase 10 Task 6: login and approval screens', () => {
     const lead = await makeStaff('team_lead');
     const manager = await makeStaff('manager');
     const ceo = await makeStaff('ceo');
+    // A Manager locks only people in their own tree.
+    await prisma.staff.update({ where: { id: lead.id }, data: { reportsToId: manager.id } });
     const agent = await makeStaff('call_agent', lead.id);
     const field = await makeStaff('field_agent');
     const finance = await makeStaff('finance');
