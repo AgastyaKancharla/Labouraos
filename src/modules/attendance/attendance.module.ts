@@ -3,15 +3,34 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { ReportingScopeModule } from '../staff/reporting-scope.module';
+import { MessageModule } from '../message/message.module';
+import { AttendanceRequestsController } from './attendance-requests.controller';
+import { AttendanceRequestsService } from './attendance-requests.service';
+import { AttendanceRequestHooks } from './attendance-request-hooks';
+import { LeaveService } from './leave.service';
 import { AttendanceClock } from './attendance-clock';
 import { AttendanceController } from './attendance.controller';
 import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
 
 @Module({
-  imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule],
-  controllers: [AttendanceController],
-  providers: [AttendanceService, AttendanceDaysService, AttendanceClock],
-  exports: [AttendanceService, AttendanceDaysService, AttendanceClock],
+  imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule, MessageModule],
+  controllers: [AttendanceController, AttendanceRequestsController],
+  providers: [
+    AttendanceService,
+    AttendanceDaysService,
+    AttendanceClock,
+    LeaveService,
+    AttendanceRequestsService,
+    AttendanceRequestHooks,
+  ],
+  exports: [
+    AttendanceService,
+    AttendanceDaysService,
+    AttendanceClock,
+    LeaveService,
+    AttendanceRequestsService,
+    AttendanceRequestHooks,
+  ],
 })
 export class AttendanceModule {}

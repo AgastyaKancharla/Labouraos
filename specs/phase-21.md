@@ -228,7 +228,7 @@ Also:
   - The month summary matches a hand-worked example.
   - A Team Lead can't see another team.
 
-### [ ] Task 4 — Leave and corrections
+### [x] Task 4 — Leave and corrections
 **Branch:** `phase-21/task-4-leave-corrections` · **Migration folder:** `20261114120000_leave_corrections`
 
 **Acceptance:**

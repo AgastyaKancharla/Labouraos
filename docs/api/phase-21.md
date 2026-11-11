@@ -1,6 +1,6 @@
 # Phase 21 API — attendance and reporting lines
 
-Tasks 1 to 3. Later tasks add their routes here.
+Tasks 1 to 4. Later tasks add their routes here.
 
 ## GET /staff/without-reporting-line
 
@@ -229,3 +229,110 @@ Errors: `400` wrong day type, no reason, day still open, or a leave day; `403` a
 Who: anyone who may see that person's month.
 
 Response `200`: `[ { "from": "half", "to": "full", "reason": "…", "changedByStaffId": "…", "changedAt": "…" } ]`, newest first.
+
+## Task 4 — leave and corrections
+
+Leave and corrections are asked for by everyone who marks attendance (Managers, Team Leads, agents, Finance). The CEO does not mark attendance and gets `403` on the asking routes.
+
+**Routing (live, along the reporting line):**
+
+| Who asks | Goes to | `routeReason` |
+|---|---|---|
+| Agent | their Team Lead | `team_lead` |
+| Agent, casual leave taking them past 3 planned days in a month | their Manager | `over_limit` ("More than 3 planned days in a month") |
+| Agent, their 3rd (or later) correction in a month | their Manager | `third_correction` ("Third correction this month") |
+| Team Lead | their Manager | `team_lead_own` |
+| Manager | the CEO | `manager_own` |
+| Finance | the CEO | `finance_own` |
+| Anyone with no line yet | the CEO | `no_line` |
+
+Emergency leave never counts towards the 3 planned days. Pending casual requests count, so the limit cannot be split across requests.
+
+**Escalation (no job; worked out when lists are read):** a request still with the Team Lead after 24 hours also shows for the Manager (`team_lead_24h`) and stays with the Team Lead. A request with the Manager for 48 hours (from when it reached them) also shows for the CEO (`manager_48h`). The first decision closes it for everyone; a later decision gets `409` with who decided. A forwarded request leaves the Team Lead and starts the Manager's clock.
+
+**Who decides:** the Team Lead while it is with them; a Manager over the person while it is with the Manager (before the 24 hours, `403` "This request is still with the Team Lead"); the CEO at any time. Nobody decides their own request. A reason is required.
+
+**Balances:** `casualLeavePerMonth` and `emergencyLeavePerMonth` are earned on the 1st of each month (a person created on the 1st earns that month; otherwise from the next 1st), with no limit on carry forward. The nightly job writes the accrual; reading a balance also fills any missing month.
+
+**Nothing is blocked:** at approval, the first days up to the paid balance are paid leave and the rest unpaid leave (`AttendanceDay` rows with `dayType` `leave`, `leaveKind`, `leaveUnpaid`). Weekly days off inside the range are not leave days. A day the person already worked is left alone.
+
+The person gets an SMS with each decision (`attendance_leave_decision` / `attendance_correction_decision`, to their routing phone; logged in `MessageLog` with `subjectType` `staff`).
+
+Bell hook: `AttendanceRequestHooks` (`requestRouted`, `requestForwarded`, `requestDecided`) is called at each step; it only logs until Task 6 adds the bells.
+
+### POST /attendance/leave
+
+Who: Manager, Team Lead, call agent, field agent, Finance — for themselves.
+
+Request: `{ "kind": "casual", "fromDate": "2027-05-03", "toDate": "2027-05-05", "reason": "Family function" }`. Whole days; `toDate` defaults to `fromDate`; at most three months.
+
+Response `201` (the request view, used by every list below):
+
+```json
+{
+  "kind": "leave", "id": "…", "staff": { "id": "…", "code": "CA-00007", "name": "Ravi", "role": "call_agent" },
+  "status": "pending", "reason": "Family function",
+  "where": "with_team_lead", "withTeamLead": true, "withManager": false, "withCeo": false,
+  "routedToRole": "team_lead", "routeReason": "team_lead", "routeReasonText": "Sent to the Team Lead",
+  "createdAt": "…", "forwarded": null, "decided": null, "canDecide": false,
+  "leaveKind": "casual", "fromDate": "2027-05-03", "toDate": "2027-05-05", "days": 3,
+  "paidDays": 0, "unpaidDays": 0,
+  "casualDaysTakenThisMonth": 0, "casualDaysPendingThisMonth": 0, "overturned": null
+}
+```
+
+`decided` is `{ at, by: { id, code, name, role }, role, reason }` once decided. `casualDaysTakenThisMonth` counts approved casual days in the month of `fromDate`.
+
+Errors: `400` kind not casual/emergency, missing reason, bad dates, all weekly days off; `403` the CEO.
+
+### GET /attendance/leave/balance?staffId=…
+
+Who: the person (default), their Team Lead, a Manager over them, Finance, the CEO.
+
+Response `200`: `{ "staffId": "…", "asOfMonth": "2027-05", "casual": { "earned": 5, "taken": 2, "paidTaken": 2, "unpaidTaken": 0, "left": 3 }, "emergency": { … } }`
+
+Errors: `403` anyone else.
+
+### POST /attendance/corrections
+
+Who: as for leave, for themselves.
+
+Request: `{ "date": "2027-05-10", "from": "09:30", "to": "10:15", "status": "available", "reason": "System was down, I was working 9:30 to 10:15" }`. `status` is `available` (default), `team_meeting`, `training` or `one_to_one`. Times are IST.
+
+Response `201`: the request view with `kind` `correction`, `date`, `startAt`, `endAt`, `segmentStatus`, `monthNumber` (this person's nth correction in that month).
+
+Errors: `400` missing reason, `to` not after `from`, time not yet passed, a leave day, or today with no login yet.
+
+When approved: the range becomes one segment with `source` `correction`; overlapping segments are trimmed, split or removed and kept on the correction (`replacedSegments`); the login time moves earlier if the range starts before it (late minutes are worked out again); an absent day becomes a worked day; the day is recalculated (a day changed with Change day keeps its day type).
+
+### POST /attendance/requests/:kind/:id/approve · …/reject
+
+`kind` is `leave` or `correction`. Who: see "Who decides". Request: `{ "reason": "Covered by the team" }`.
+
+Response `201`: the request view. Errors: `400` no reason; `403` not yours to decide, or your own; `404`; `409` already decided (`details.decidedBy` names who).
+
+### POST /attendance/requests/:kind/:id/forward
+
+Who: the person's Team Lead, while it is with them. Request: `{ "note": "Your call, busy week" }` (required). Response `201`: the request view, now with the Manager (`forwarded`).
+
+### POST /attendance/requests/leave/:id/overturn
+
+Who: a Manager over the person, for a Team Lead's decision; the CEO for any decision but their own. Once per request. Request: `{ "reason": "Wedding, approved" }` (required). Flips approved ↔ rejected: approving writes the leave days; rejecting removes future leave days and turns past ones back to absent. Response `201`: the view, with `overturned`. Corrections cannot be overturned.
+
+Errors: `400` no reason, not decided yet, already overturned, or a correction; `403` anyone else.
+
+### GET /attendance/requests/mine
+
+Who: anyone who marks attendance. Their own leave and corrections, newest first.
+
+### GET /attendance/requests/team
+
+Who: Team Lead (their team), Manager (their tree), CEO (everyone). Pending requests and those decided in the last 30 days, with `where`.
+
+### GET /attendance/requests/waiting
+
+Who: Team Lead, Manager, CEO. What is waiting for the caller, each with `whyWithYou` and `whyWithYouText`: for a Team Lead, their team's requests with them; for a Manager, requests in their tree that are with the Manager (`team_lead_own`, `forwarded`, `team_lead_24h`, `over_limit`, `third_correction`); for the CEO, requests sent or escalated to the CEO (`manager_own`, `finance_own`, `no_line`, `manager_48h`), and Manager-stage requests of people with no Manager.
+
+### GET /attendance/requests/decided
+
+Who: Team Lead, Manager, CEO. Requests in their scope decided since Monday (IST), by anyone, with who decided.
