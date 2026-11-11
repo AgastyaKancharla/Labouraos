@@ -1,6 +1,10 @@
-import { Controller, Get, Req, Res } from '@nestjs/common';
+import { Controller, Get, Req, Res, UseGuards } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RbacGuard } from '../rbac/rbac.guard';
+import { RequireRoles } from '../rbac/roles.decorator';
+import { Public } from '../rbac/public.decorator';
 
 export interface ComponentStatus {
   name: string;
@@ -26,15 +30,48 @@ export interface SystemStatusResponse {
   };
 }
 
+/** The only thing the public status answer says. */
+export interface PublicStatusResponse {
+  status: 'up' | 'down';
+}
+
 @Controller()
 export class SystemStatusController {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Public: a simple up or down for uptime monitors. Service names, hosts,
+   * versions and memory are on the CEO's details endpoint below.
+   */
   @Get(['system/status', 'status'])
+  @Public('uptime monitors need a plain up/down without logging in')
+  async getPublicStatus(): Promise<PublicStatusResponse> {
+    const report = await this.buildReport();
+    return { status: report.status === 'unhealthy' ? 'down' : 'up' };
+  }
+
+  /** The full System Health report, for the CEO (Master Guide, Command Center sidebar). */
+  @Get('system/status/details')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles('ceo')
   async getSystemStatus(
     @Req() req: Request,
     @Res({ passthrough: true }) res: Response,
   ): Promise<SystemStatusResponse | string> {
+    const data = await this.buildReport();
+
+    // If request accepts HTML or specifically asks for HTML, render dashboard
+    const acceptHeader = req.headers.accept || '';
+    const formatQuery = req.query.format;
+    if (acceptHeader.includes('text/html') || formatQuery === 'html') {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return this.renderHtmlDashboard(data);
+    }
+
+    return data;
+  }
+
+  private async buildReport(): Promise<SystemStatusResponse> {
     const components: ComponentStatus[] = [];
 
     let idCheck: SystemStatusResponse['idCheck'] = { status: 'up', lastChangedAt: null };
@@ -139,7 +176,7 @@ export class SystemStatusController {
     const uptimeSeconds = Math.floor(process.uptime());
     const mem = process.memoryUsage();
 
-    const data: SystemStatusResponse = {
+    return {
       status: overallStatus,
       timestamp: new Date().toISOString(),
       uptimeSeconds,
@@ -155,16 +192,6 @@ export class SystemStatusController {
         heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
       },
     };
-
-    // If request accepts HTML or specifically asks for HTML, render dashboard
-    const acceptHeader = req.headers.accept || '';
-    const formatQuery = req.query.format;
-    if (acceptHeader.includes('text/html') || formatQuery === 'html') {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return this.renderHtmlDashboard(data);
-    }
-
-    return data;
   }
 
   private checkTcpConnection(host: string, port: number, timeoutMs: number): Promise<void> {
