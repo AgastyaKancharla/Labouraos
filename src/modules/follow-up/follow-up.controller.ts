@@ -36,8 +36,8 @@ export class FollowUpController {
 
   @Get(':id/introduced-businesses')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
-  async getIntroducedBusinesses(@Param('id') id: string) {
-    return this.followUpService.getIntroducedBusinesses(id);
+  async getIntroducedBusinesses(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    return this.followUpService.getIntroducedBusinesses(id, this.actor(req.user));
   }
 
   @Post(':id/complete')

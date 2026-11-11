@@ -6,6 +6,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { VacancyModule } from '../vacancy/vacancy.module';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
+import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import { FollowUpService } from './follow-up.service';
 import { FollowUpController } from './follow-up.controller';
 
@@ -18,6 +19,7 @@ import { FollowUpController } from './follow-up.controller';
     ReviewFlagModule,
     VacancyModule,
     JobSeekerModule,
+    ReportingScopeModule,
   ],
   controllers: [FollowUpController],
   providers: [FollowUpService],
