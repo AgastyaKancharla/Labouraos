@@ -1,6 +1,17 @@
 import { BadRequestException } from '@nestjs/common';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
-import { requireIndianMobile } from '../../common/phone/indian-mobile';
+import { isIndianMobile, requireIndianMobile } from '../../common/phone/indian-mobile';
+
+/**
+ * A mobile number field may hold 91 and the 10 digits (919876543210), which is
+ * 12 digits like an Aadhaar number. It is let through only in a phone field and
+ * only when it is an Indian mobile; it is then saved as +91 and the 10 digits,
+ * never as the 12 typed. Every other field keeps the full Aadhaar check.
+ */
+function isMobileNumberField(key: string, value: string): boolean {
+  const lower = key.toLowerCase();
+  return (lower.endsWith('phone') || lower === 'mobilenumber') && isIndianMobile(value);
+}
 
 const REGISTRATION_WINDOWS = {
   '09-12': ['09:00', '12:00'],
@@ -149,6 +160,7 @@ export function assertNoRawAadhaar(data: unknown): void {
     }
     if (typeof value === 'string') {
       const trimmed = value.trim();
+      if (isMobileNumberField(key, trimmed)) continue;
       // Check 12 consecutive digits or 4-4-4 format
       if (/^\d{12}$/.test(trimmed) || /^\d{4}\s\d{4}\s\d{4}$/.test(trimmed) || /^\d{4}-\d{4}-\d{4}$/.test(trimmed)) {
         throw new BadRequestException('Raw Aadhaar numbers must never be submitted or stored');
