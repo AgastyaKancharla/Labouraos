@@ -535,6 +535,49 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
     });
   });
 
+  describe('approveRefund ignores a caller-supplied asOf outside test mode', () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+
+    afterEach(() => {
+      process.env.NODE_ENV = originalNodeEnv;
+      jest.useRealTimers();
+    });
+
+    it('does not let a future asOf release a refund early in production', async () => {
+      prisma.replacementClaim.findFirst = jest.fn().mockResolvedValue({
+        id: 'claim-1',
+        decision: 'accepted',
+        reportedAt: new Date('2026-10-20T10:00:00.000Z'),
+        decidedAt: new Date('2026-10-20T10:00:00.000Z'),
+      });
+      // The server clock says day 5 after the dropout report.
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      jest.setSystemTime(new Date('2026-10-25T10:00:00.000Z'));
+      process.env.NODE_ENV = 'production';
+
+      // The caller claims it is day 16.
+      await expect(
+        placementService.approveRefund('pl-root', { asOf: '2026-11-05T10:00:00.000Z' }, 'ceo-1'),
+      ).rejects.toThrow(/Refund is not payable before 15 days.*days elapsed: 5/);
+      expect(prisma.payment.create).not.toHaveBeenCalled();
+    });
+
+    it('still honours asOf in test mode, so tests can move the clock', async () => {
+      prisma.replacementClaim.findFirst = jest.fn().mockResolvedValue({
+        id: 'claim-1',
+        decision: 'accepted',
+        reportedAt: new Date('2026-10-20T10:00:00.000Z'),
+        decidedAt: new Date('2026-10-20T10:00:00.000Z'),
+      });
+      jest.useFakeTimers({ doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+      jest.setSystemTime(new Date('2026-10-25T10:00:00.000Z'));
+      process.env.NODE_ENV = 'test';
+
+      const payment = await placementService.approveRefund('pl-root', { asOf: '2026-11-05T10:00:00.000Z' }, 'ceo-1');
+      expect(payment.status).toBe('approved');
+    });
+  });
+
   describe('completeDay60Placements window counts from root joinedDate', () => {
     it('counts 60 days from root joinedDate even for replacement placement', async () => {
       const rootJoined = new Date('2026-09-01T10:00:00.000Z');

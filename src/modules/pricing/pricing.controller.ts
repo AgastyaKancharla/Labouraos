@@ -15,6 +15,7 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { UpdateMinimumWagesDto } from './dto/update-minimum-wages.dto';
+import { UpdateApprovalLimitsDto, UpdateCompanyDetailsDto } from './dto/money-settings.dto';
 import { ATTENDANCE_SETTING_KEYS } from '../attendance/attendance.constants';
 
 @Controller('pricing')
@@ -53,6 +54,34 @@ export class PricingController {
     @Req() req: Request & { user: JwtPayload },
   ): Promise<PricingPolicy> {
     return this.pricingService.createVersion(body, req.user.sub);
+  }
+
+  /** Finance reads its own limits (Finance portal: Approval limits). */
+  @Get('approval-limits')
+  @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'finance')
+  async getApprovalLimits() {
+    return this.pricingService.getApprovalLimits();
+  }
+
+  @Put('approval-limits')
+  @RequirePermission('pricing', 'write')
+  @RequireRoles('ceo')
+  async updateApprovalLimits(
+    @Body() body: UpdateApprovalLimitsDto,
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<PricingPolicy> {
+    return this.pricingService.updateApprovalLimits(body, req.user.sub);
+  }
+
+  @Put('company-details')
+  @RequirePermission('pricing', 'write')
+  @RequireRoles('ceo')
+  async updateCompanyDetails(
+    @Body() body: UpdateCompanyDetailsDto,
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<PricingPolicy> {
+    return this.pricingService.updateCompanyDetails(body, req.user.sub);
   }
 
   @Put('legal-minimum-wages')

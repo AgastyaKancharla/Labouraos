@@ -614,6 +614,7 @@ model Placement {
   replacementCandidates      ReplacementCandidate[]
   replacementClaims          ReplacementClaim[]
   payments                   Payment[]
+  tdsReceivables             TdsReceivable[]
   createdAt                  DateTime    @default(now())
   updatedAt                  DateTime    @updatedAt
 
@@ -767,7 +768,7 @@ model Payment {
   city              String      @default("Bengaluru")
   type              String      // activation, placement_fee, referral_payout, refund, joining_reward, duplicate_refund
   amount            Int         // paise
-  status            String      @default("pending") // pending, processing, succeeded, completed, failed, reversed, refunded
+  status            String      @default("pending") // pending, approved, processing, succeeded, completed, failed, reversed, refunded, rejected (refund the CEO turned down)
   gatewayReference  String?     @unique
   method            String      @default("upi_direct") // upi_direct, gateway_card
   upiReference      String?     @unique
@@ -794,7 +795,15 @@ model Payment {
   placementId       String?
   placement         Placement?  @relation(fields: [placementId], references: [id], onDelete: SetNull)
   bankCredit        BankCredit?
+  tdsReceivable     TdsReceivable?
   reactivation      Boolean     @default(false)
+  // Approval limits (guide: Finance portal). Set when a refund needs the CEO:
+  // above_finance_limit, goodwill (outside the rules) or sent_by_finance.
+  ceoApprovalReason String?
+  sentToCeoByStaffId String?
+  sentToCeoAt       DateTime?
+  outsideRules      Boolean     @default(false)
+  approvalNote      String?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -820,6 +829,7 @@ model BankCredit {
   status            String    @default("unmatched") // unmatched, matched, ignored
   matchedPaymentId  String?   @unique
   matchedPayment    Payment?  @relation(fields: [matchedPaymentId], references: [id], onDelete: SetNull)
+  tdsReceivable     TdsReceivable?
   ignoredReason     String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
@@ -840,6 +850,30 @@ model PayoutWebhookEvent {
   createdAt   DateTime @default(now())
 
   @@index([paymentId])
+}
+
+// A placement fee that arrived short because the business deducted TDS.
+// Finance records the short amount as "TDS deducted"; the certificate is then
+// collected from the business. The TDS rate is not fixed in code (the CA confirms it).
+model TdsReceivable {
+  id                String     @id @default(uuid())
+  city              String     @default("Bengaluru")
+  placementId       String
+  placement         Placement  @relation(fields: [placementId], references: [id], onDelete: Cascade)
+  paymentId         String     @unique
+  payment           Payment    @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  bankCreditId      String?    @unique
+  bankCredit        BankCredit? @relation(fields: [bankCreditId], references: [id], onDelete: SetNull)
+  amountPaise       Int
+  sectionNote       String
+  status            String     @default("certificate_due") // certificate_due, certificate_received
+  recordedByStaffId String
+  recordedAt        DateTime
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  @@index([placementId])
+  @@index([status])
 }
 
 model AuditLog {
@@ -1199,6 +1233,14 @@ model PricingPolicy {
   casualLeavePerMonth          Int       @default(1)
   emergencyLeavePerMonth       Int       @default(1)
   refundPriorityWindowDays     Int       @default(15)
+  // Approval limits (only the CEO changes them). Finance approves and pays up to
+  // these amounts; above them, or for any refund outside the rules, the CEO decides.
+  financeBusinessRefundLimitPaise Int    @default(1500000)
+  financeExpenseLimitPaise     Int       @default(1000000)
+  // Company details printed on GST invoices (entered by the CEO in Settings).
+  companyLegalName             String    @default("Laboura Private Limited")
+  companyGstin                 String?
+  companyAddress               String?
   effectiveFrom                DateTime  @default(now())
   setByStaffId                 String?
   setByStaff                   Staff?    @relation("PricingPolicySetBy", fields: [setByStaffId], references: [id], onDelete: SetNull)

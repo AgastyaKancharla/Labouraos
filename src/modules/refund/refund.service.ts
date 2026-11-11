@@ -270,7 +270,9 @@ export class RefundService {
 
       const rootId = placement.rootPlacementId ?? placement.id;
       const claim = claimByPlacementId.get(placement.id) ?? claimByPlacementId.get(rootId);
-      const claimAcceptedAt = claim?.decidedAt ?? claim?.reportedAt ?? placement.dropoutReportedAt;
+      const claimAcceptedAt = claim?.decidedAt ?? null;
+      // The 15-day clock starts at the dropout report, not the claim decision.
+      const dropoutReportedAt = claim?.reportedAt ?? placement.dropoutReportedAt;
 
       const result = evaluatePlacementRefundEligibility(
         {
@@ -278,7 +280,7 @@ export class RefundService {
           status: placement.status,
           hasAcceptedReplacement,
           claimAcceptedAt,
-          dropoutReportedAt: placement.dropoutReportedAt,
+          dropoutReportedAt,
           placementFee: placement.placementFee,
           hasExistingRefund:
             refundedPlacementIdSet.has(placement.id) || refundedPlacementIdSet.has(rootId),
@@ -289,9 +291,10 @@ export class RefundService {
       );
 
       if (result.eligible) {
-        // Obligation begins replacementSearchDays after claim acceptance date
+        // Obligation begins replacementSearchDays after the dropout report
+        const clockStart = (dropoutReportedAt ?? claimAcceptedAt)!;
         const dueSince = new Date(
-          claimAcceptedAt!.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
+          clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
         ).toISOString();
 
         placementRows.push({

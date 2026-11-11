@@ -72,7 +72,8 @@ export interface MoneyAtRiskResult {
  *    - Job Seekers: ₹499 paid, status not 'placed' or 'deactivated', no 'offer_rejected' hit,
  *      no existing refund payment.
  *    - Placements: status 'dropped_out', accepted replacement claim, no accepted replacement candidate,
- *      no existing refund payment, and uses evaluatePlacementRefundEligibility() counting from decidedAt.
+ *      no existing refund payment, and uses evaluatePlacementRefundEligibility() counting from the
+ *      dropout report (claim.reportedAt), as the guide's 15-day rule says.
  *
  * 4. WINDOW CONSTANTS:
  *    - Candidates: approaching within 7 days (`CANDIDATE_AT_RISK_WINDOW_DAYS = 7`).
@@ -352,6 +353,8 @@ export class MoneyAtRiskService {
           status: pl.status,
           hasAcceptedReplacement,
           claimAcceptedAt: claim.decidedAt,
+          // The 15-day clock starts at the dropout report, not the claim decision.
+          dropoutReportedAt: claim.reportedAt ?? pl.dropoutReportedAt,
           placementFee: pl.placementFee,
           hasExistingRefund,
           searchDays: replacementSearchDays,
@@ -381,8 +384,9 @@ export class MoneyAtRiskService {
       if (daysRemaining <= 0) continue;
 
       if (daysRemaining <= PLACEMENT_AT_RISK_WINDOW_DAYS) {
+        const clockStart = (claim.reportedAt ?? pl.dropoutReportedAt ?? claim.decidedAt)!;
         const deadlineDate = new Date(
-          claim.decidedAt!.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
+          clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
         );
 
         placementRows.push({

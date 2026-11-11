@@ -25,6 +25,8 @@ import { DecideClaimDto } from './dto/decide-claim.dto';
 import { isValidClaimReason, isRejectClaimReason } from './claim-reasons';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
+import { businessRefundNeedsCeo, ceoApprovalMessage } from '../../common/money/approval-limits';
+import { decisionTime } from '../../common/time/decision-time';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import {
   GstInvoiceResponse,
@@ -1311,7 +1313,8 @@ export class PlacementService {
       },
       orderBy: { decidedAt: 'desc' },
     });
-    const startDate = claim?.decidedAt ?? claim?.reportedAt ?? placement.dropoutReportedAt;
+    // The 15-day replacement clock starts at the dropout report, not the claim decision.
+    const startDate = claim?.reportedAt ?? placement.dropoutReportedAt ?? claim?.decidedAt;
     if (!startDate) {
       return 0;
     }
@@ -1526,14 +1529,13 @@ export class PlacementService {
         })
       : placement;
 
-    let now: Date;
-    if (dto?.asOf) {
-      now = new Date(dto.asOf);
-      if (isNaN(now.getTime())) {
-        throw new BadRequestException('asOf must be a valid date string');
-      }
-    } else {
-      now = new Date();
+    // A caller's asOf stands in for the clock only in tests; production uses the server clock.
+    const now = decisionTime(dto?.asOf);
+
+    const goodwill = dto?.goodwill === true;
+    const note = typeof dto?.reason === 'string' && dto.reason.trim() ? dto.reason.trim() : null;
+    if (goodwill && !note) {
+      throw new BadRequestException('A refund outside the rules (goodwill) needs a written reason');
     }
 
     const selectedReplacement = await this.prisma.placement.findFirst({
@@ -1556,6 +1558,39 @@ export class PlacementService {
         status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
       },
     });
+    const refundWithCeo =
+      existingRefund && existingRefund.status === 'pending' && existingRefund.ceoApprovalReason
+        ? existingRefund
+        : null;
+
+    if (refundWithCeo && actor.role !== 'ceo') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: 'refund_with_ceo',
+        message: `Refund ${refundWithCeo.code} is already with the CEO for approval.`,
+        paymentId: refundWithCeo.id,
+        paymentCode: refundWithCeo.code,
+      });
+    }
+
+    // Once the CEO has turned a refund down, Finance cannot approve one for the same
+    // placement on its own; only the CEO decides from then on.
+    if (actor.role !== 'ceo' && !refundWithCeo) {
+      const rejectedByCeo = await this.prisma.payment.findFirst({
+        where: { placementId: { in: [placement.id, rootId] }, type: 'refund', status: 'rejected' },
+      });
+      if (rejectedByCeo && dto?.sendToCeo !== true) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          code: 'refund_rejected_by_ceo',
+          message: `The CEO rejected refund ${rejectedByCeo.code} for this placement. Only the CEO can approve a refund for it now; send it to the CEO.`,
+          paymentId: rejectedByCeo.id,
+          paymentCode: rejectedByCeo.code,
+        });
+      }
+    }
 
     const claim = await this.prisma.replacementClaim.findFirst({
       where: {
@@ -1565,86 +1600,206 @@ export class PlacementService {
       orderBy: { decidedAt: 'desc' },
     });
 
-    const claimAcceptedAt = claim?.decidedAt ?? claim?.reportedAt ?? placement.dropoutReportedAt;
+    // Guide: "No replacement within 15 days of the dropout report" — the clock starts
+    // when the dropout was reported, not when the claim was decided.
+    const claimAcceptedAt = claim?.decidedAt ?? null;
+    const dropoutReportedAt = claim?.reportedAt ?? placement.dropoutReportedAt;
 
     const policy = await this.getPolicy();
-    const eligibilityResult = evaluatePlacementRefundEligibility(
-      {
-        code: rootPlacement.code,
-        status: placement.status,
-        hasAcceptedReplacement,
-        hasSelectedReplacement: Boolean(selectedReplacement),
-        claimAcceptedAt,
-        dropoutReportedAt: placement.dropoutReportedAt,
-        placementFee: rootPlacement.placementFee,
-        hasExistingRefund: Boolean(existingRefund),
-        searchDays: policy.replacementSearchDays,
-        guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
-      },
-      now,
-    );
+    const outsideRules = refundWithCeo ? refundWithCeo.outsideRules : goodwill;
+    let refundAmount: number;
+    let daysElapsed = 0;
 
-    if (!eligibilityResult.eligible) {
-      throw new BadRequestException(eligibilityResult.ineligibleReason!);
+    if (outsideRules) {
+      // A goodwill refund skips the guarantee rules, so check the basics here: the fee
+      // was paid, nothing has been refunded already, and the amount is within the fee.
+      if (existingRefund && !refundWithCeo) {
+        throw new BadRequestException(`A refund has already been issued for placement '${rootPlacement.code}'`);
+      }
+      if (!rootPlacement.paidAt) {
+        throw new BadRequestException(`The placement fee for '${rootPlacement.code}' has not been paid, so nothing can be refunded`);
+      }
+      refundAmount = refundWithCeo
+        ? refundWithCeo.amount
+        : dto?.amountPaise ?? rootPlacement.placementFee;
+      if (!Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > rootPlacement.placementFee) {
+        throw new BadRequestException(
+          `amountPaise must be a whole number of paise between 1 and the placement fee (${rootPlacement.placementFee})`,
+        );
+      }
+    } else {
+      const eligibilityResult = evaluatePlacementRefundEligibility(
+        {
+          code: rootPlacement.code,
+          status: placement.status,
+          hasAcceptedReplacement,
+          hasSelectedReplacement: Boolean(selectedReplacement),
+          claimAcceptedAt,
+          dropoutReportedAt,
+          placementFee: rootPlacement.placementFee,
+          hasExistingRefund: Boolean(existingRefund) && !refundWithCeo,
+          searchDays: policy.replacementSearchDays,
+          guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
+        },
+        now,
+      );
+
+      if (!eligibilityResult.eligible) {
+        throw new BadRequestException(eligibilityResult.ineligibleReason!);
+      }
+      refundAmount = eligibilityResult.amountPaise;
+      daysElapsed = eligibilityResult.daysElapsed;
     }
 
-    const refundAmount = eligibilityResult.amountPaise;
-    const daysElapsed = eligibilityResult.daysElapsed;
+    const limitPaise = policy.financeBusinessRefundLimitPaise;
+    const ceoReason = refundWithCeo
+      ? null
+      : businessRefundNeedsCeo({
+          actorRole: actor.role,
+          amountPaise: refundAmount,
+          limitPaise,
+          outsideRules,
+          sendToCeo: dto?.sendToCeo === true,
+        });
 
-    const paymentCode = await this.idService.generateCode('payment');
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.create({
-        data: {
-          code: paymentCode,
-          city: placement.city,
-          type: 'refund',
-          amount: refundAmount,
-          status: 'approved',
-          approvedByStaffId: actor.id,
-          approvedAt: now,
-          gatewayReference: null,
-          subjectType: 'placement',
-          subjectId: placement.id,
-          placementId: placement.id,
-          businessId: placement.businessId,
-        },
-      });
-
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: p.id,
-        fromStatus: null,
-        toStatus: 'approved',
-        changedByStaffId: actor.id,
-        reason: 'placement_guarantee_refund',
-      });
-
-      await tx.placement.update({
-        where: { id: rootId },
-        data: {
-          status: 'guarantee_ended',
-          guaranteeEndedReason: 'refunded',
-        },
-      });
-
-      if (placement.id !== rootId) {
-        await tx.placement.update({
-          where: { id: placement.id },
+    if (ceoReason) {
+      const sentCode = await this.idService.generateCode('payment');
+      const sent = await this.prisma.$transaction(async (tx) => {
+        const p = await tx.payment.create({
           data: {
-            status: 'guarantee_ended',
-            guaranteeEndedReason: 'refunded',
+            code: sentCode,
+            city: placement.city,
+            type: 'refund',
+            amount: refundAmount,
+            status: 'pending',
+            gatewayReference: null,
+            subjectType: 'placement',
+            subjectId: placement.id,
+            placementId: placement.id,
+            businessId: placement.businessId,
+            ceoApprovalReason: ceoReason,
+            sentToCeoByStaffId: actor.id,
+            sentToCeoAt: now,
+            outsideRules,
+            approvalNote: note,
+          },
+        });
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: p.id,
+          fromStatus: null,
+          toStatus: 'pending',
+          changedByStaffId: actor.id,
+          reason: `refund_sent_to_ceo_${ceoReason}`,
+        });
+        return p;
+      });
+
+      await this.auditService.log({
+        action: 'refund_sent_to_ceo',
+        entityType: 'Placement',
+        entityCode: rootPlacement.code,
+        actorId: actor.id,
+        city: placement.city,
+        after: {
+          paymentId: sent.id,
+          paymentCode: sent.code,
+          amount: sent.amount,
+          ceoApprovalReason: ceoReason,
+          financeLimitPaise: limitPaise,
+          outsideRules,
+          sentToCeoByStaffId: actor.id,
+        },
+        reason: note ?? undefined,
+      });
+
+      const message = ceoApprovalMessage(ceoReason, refundAmount, limitPaise, sent.code);
+      if (ceoReason === 'sent_by_finance') {
+        return { ...sent, message };
+      }
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: 'refund_sent_to_ceo',
+        message,
+        ceoApprovalReason: ceoReason,
+        paymentId: sent.id,
+        paymentCode: sent.code,
+      });
+    }
+
+    const paymentCode = refundWithCeo ? refundWithCeo.code : await this.idService.generateCode('payment');
+    const payment = await this.prisma.$transaction(async (tx) => {
+      let p;
+      if (refundWithCeo) {
+        const claimed = await tx.payment.updateMany({
+          where: { id: refundWithCeo.id, status: 'pending' },
+          data: { status: 'approved', approvedByStaffId: actor.id, approvedAt: now },
+        });
+        if (claimed.count !== 1) {
+          throw new BadRequestException(`Refund ${refundWithCeo.code} has already been decided`);
+        }
+        p = await tx.payment.findUniqueOrThrow({ where: { id: refundWithCeo.id } });
+      } else {
+        p = await tx.payment.create({
+          data: {
+            code: paymentCode,
+            city: placement.city,
+            type: 'refund',
+            amount: refundAmount,
+            status: 'approved',
+            approvedByStaffId: actor.id,
+            approvedAt: now,
+            gatewayReference: null,
+            subjectType: 'placement',
+            subjectId: placement.id,
+            placementId: placement.id,
+            businessId: placement.businessId,
+            outsideRules,
+            approvalNote: note,
           },
         });
       }
 
       await recordStatusChange(tx, {
-        subjectType: 'placement',
-        subjectId: rootId,
-        fromStatus: rootPlacement.status,
-        toStatus: 'guarantee_ended',
+        subjectType: 'payment',
+        subjectId: p.id,
+        fromStatus: refundWithCeo ? 'pending' : null,
+        toStatus: 'approved',
         changedByStaffId: actor.id,
-        reason: 'refunded',
+        reason: outsideRules ? 'goodwill_refund_approved_by_ceo' : 'placement_guarantee_refund',
       });
+
+      // A refund under the guarantee rules ends the guarantee. A goodwill refund is a
+      // CEO decision outside the rules and leaves the placement as it is.
+      if (!outsideRules) {
+        await tx.placement.update({
+          where: { id: rootId },
+          data: {
+            status: 'guarantee_ended',
+            guaranteeEndedReason: 'refunded',
+          },
+        });
+
+        if (placement.id !== rootId) {
+          await tx.placement.update({
+            where: { id: placement.id },
+            data: {
+              status: 'guarantee_ended',
+              guaranteeEndedReason: 'refunded',
+            },
+          });
+        }
+
+        await recordStatusChange(tx, {
+          subjectType: 'placement',
+          subjectId: rootId,
+          fromStatus: rootPlacement.status,
+          toStatus: 'guarantee_ended',
+          changedByStaffId: actor.id,
+          reason: 'refunded',
+        });
+      }
 
       return p;
     });
@@ -1664,9 +1819,15 @@ export class PlacementService {
         paymentCode: payment.code,
         amount: payment.amount,
         type: 'refund',
-        reason: dto?.reason ?? '60-day replacement guarantee cash refund',
+        reason: note ?? '60-day replacement guarantee cash refund',
         daysElapsed,
-        guaranteeEndedReason: 'refunded',
+        guaranteeEndedReason: outsideRules ? rootPlacement.guaranteeEndedReason : 'refunded',
+        approvedByStaffId: actor.id,
+        approvedByRole: actor.role,
+        financeLimitPaise: limitPaise,
+        outsideRules,
+        ceoApprovalReason: refundWithCeo?.ceoApprovalReason ?? null,
+        sentToCeoByStaffId: refundWithCeo?.sentToCeoByStaffId ?? null,
       },
     });
 
@@ -1748,10 +1909,12 @@ export class PlacementService {
     const cgstAmountPaise = Math.floor(totalTaxPaise / 2);
     const sgstAmountPaise = totalTaxPaise - cgstAmountPaise;
 
+    // Company details come from Settings (entered by the CEO). Environment values are
+    // only a fallback, used when the Settings value is empty.
     const supplier: InvoiceSupplier = {
-      legalName: process.env.COMPANY_LEGAL_NAME || 'Laboura Blue-Collar Technologies Pvt Ltd',
-      gstin: process.env.COMPANY_GSTIN || 'GSTIN_PENDING_REGISTRATION',
-      address: process.env.COMPANY_ADDRESS || 'Bengaluru, Karnataka, India',
+      legalName: policy.companyLegalName?.trim() || process.env.COMPANY_LEGAL_NAME?.trim() || 'Laboura Private Limited',
+      gstin: policy.companyGstin?.trim() || process.env.COMPANY_GSTIN || 'GSTIN_PENDING_REGISTRATION',
+      address: policy.companyAddress?.trim() || process.env.COMPANY_ADDRESS || 'Bengaluru, Karnataka, India',
       state: 'Karnataka',
       stateCode: '29',
     };
@@ -1781,7 +1944,12 @@ export class PlacementService {
       joinedDate: placement.joinedDate ? placement.joinedDate.toISOString() : null,
     };
 
-    const invoiceDate = (placement.joinedDate ?? placement.updatedAt ?? new Date()).toISOString();
+    // The invoice is dated on the day the fee was paid (the bank-confirmed payment),
+    // not the joining date.
+    const feePayment = (placement.payments ?? [])
+      .filter((p) => p.type === 'placement_fee' && ['succeeded', 'completed'].includes(p.status) && p.confirmedAt)
+      .sort((a, b) => a.confirmedAt!.getTime() - b.confirmedAt!.getTime())[0];
+    const invoiceDate = (feePayment?.confirmedAt ?? placement.paidAt ?? placement.updatedAt ?? new Date()).toISOString();
 
     return {
       invoiceNumber,

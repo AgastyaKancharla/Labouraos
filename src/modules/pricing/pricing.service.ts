@@ -108,6 +108,12 @@ export class PricingService {
             ? (before.matchingWeights as Prisma.InputJsonValue)
             : (updates.matchingWeights as Prisma.InputJsonValue),
         adultMinimumAge: updates.adultMinimumAge ?? before.adultMinimumAge,
+        financeBusinessRefundLimitPaise:
+          updates.financeBusinessRefundLimitPaise ?? before.financeBusinessRefundLimitPaise,
+        financeExpenseLimitPaise: updates.financeExpenseLimitPaise ?? before.financeExpenseLimitPaise,
+        companyLegalName: updates.companyLegalName ?? before.companyLegalName,
+        companyGstin: updates.companyGstin !== undefined ? updates.companyGstin : before.companyGstin,
+        companyAddress: updates.companyAddress !== undefined ? updates.companyAddress : before.companyAddress,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },
@@ -138,6 +144,59 @@ export class PricingService {
     actorId: string,
   ): Promise<PricingPolicy> {
     return this.createVersion(updates, actorId);
+  }
+
+  /**
+   * Approval limits (guide: Finance portal). Finance approves and pays a business
+   * refund up to `businessRefundLimitPaise` and an expense up to `expenseLimitPaise`;
+   * anything above, and any refund outside the rules, needs the CEO. Only the CEO
+   * calls this (enforced on the controller); every change is a new audited version.
+   */
+  async updateApprovalLimits(input: {
+    businessRefundLimitPaise: number;
+    expenseLimitPaise: number;
+  }, actorId: string): Promise<PricingPolicy> {
+    const values: Array<[string, number]> = [
+      ['businessRefundLimitPaise', input?.businessRefundLimitPaise],
+      ['expenseLimitPaise', input?.expenseLimitPaise],
+    ];
+    for (const [field, value] of values) {
+      if (!Number.isSafeInteger(value) || value < 0) {
+        throw new BadRequestException(`${field} must be a whole number of paise, zero or more`);
+      }
+    }
+    return this.createVersion({
+      financeBusinessRefundLimitPaise: input.businessRefundLimitPaise,
+      financeExpenseLimitPaise: input.expenseLimitPaise,
+    }, actorId);
+  }
+
+  async getApprovalLimits(): Promise<{ businessRefundLimitPaise: number; expenseLimitPaise: number }> {
+    const policy = await this.current();
+    return {
+      businessRefundLimitPaise: policy.financeBusinessRefundLimitPaise,
+      expenseLimitPaise: policy.financeExpenseLimitPaise,
+    };
+  }
+
+  /** Company legal name, GSTIN and address printed on GST invoices. CEO only. */
+  async updateCompanyDetails(input: {
+    legalName: string;
+    gstin?: string | null;
+    address?: string | null;
+  }, actorId: string): Promise<PricingPolicy> {
+    const legalName = typeof input?.legalName === 'string' ? input.legalName.trim() : '';
+    if (!legalName) throw new BadRequestException('legalName is required');
+    const gstin = typeof input.gstin === 'string' ? input.gstin.trim().toUpperCase() : null;
+    if (gstin && !/^[0-9]{2}[A-Z0-9]{13}$/.test(gstin)) {
+      throw new BadRequestException('gstin must be 15 characters: a 2-digit state code then 13 letters or digits');
+    }
+    const address = typeof input.address === 'string' ? input.address.trim() : null;
+    return this.createVersion({
+      companyLegalName: legalName,
+      companyGstin: gstin || null,
+      companyAddress: address || null,
+    }, actorId);
   }
 
   async updateMinimumWages(input: {

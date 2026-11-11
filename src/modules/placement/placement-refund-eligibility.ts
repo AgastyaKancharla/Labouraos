@@ -3,7 +3,9 @@ export interface PlacementRefundEligibilityInput {
   status: string;
   hasAcceptedReplacement?: boolean;
   hasSelectedReplacement?: boolean;
+  /** Legacy fallback only: used when no dropout report time is known. */
   claimAcceptedAt?: Date | null;
+  /** When the dropout was reported (the claim's reportedAt). Starts the 15-day clock. */
   dropoutReportedAt?: Date | null;
   placementFee: number;
   hasExistingRefund: boolean;
@@ -26,8 +28,10 @@ export interface PlacementRefundEligibilityResult {
  * - Placement must be in 'dropped_out' status.
  * - Guarantee has not ended with no refund (second_replacement_left, two_rejections).
  * - No replacement candidate has been accepted or selected.
- * - Claim acceptance date (or dropoutReportedAt) must be present.
- * - At least searchDays (from PricingPolicy, default 15) must have elapsed.
+ * - The dropout report time must be present.
+ * - At least searchDays (from PricingPolicy, default 15) must have elapsed since the
+ *   dropout was REPORTED (guide: "No replacement within 15 days of the dropout report"),
+ *   not since the claim was decided — the decision can take up to 48 hours.
  * - Clock does not pause and does not restart.
  * - No refund has already been issued.
  * - Flat 100% refund of placement fee when search window passes without a selection.
@@ -66,11 +70,11 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  const startDate = input.claimAcceptedAt ?? input.dropoutReportedAt;
+  const startDate = input.dropoutReportedAt ?? input.claimAcceptedAt;
   if (!startDate) {
     return {
       eligible: false,
-      ineligibleReason: `Claim acceptance date is missing for placement '${input.code}'`,
+      ineligibleReason: `Dropout report date is missing for placement '${input.code}'`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: 0,
@@ -88,7 +92,7 @@ export function evaluatePlacementRefundEligibility(
   if (daysElapsed < searchDays) {
     return {
       eligible: false,
-      ineligibleReason: `Refund is not payable before ${searchDays} days have elapsed from claim acceptance (days elapsed: ${daysElapsed})`,
+      ineligibleReason: `Refund is not payable before ${searchDays} days have elapsed from the dropout report (days elapsed: ${daysElapsed})`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed,

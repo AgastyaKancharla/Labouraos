@@ -175,19 +175,21 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
 
       const placementService = makePlacementService(mockPrisma);
 
-      // On day 14 (Oct 26): less than 15 days -> refund refused
+      // The 15 days count from the dropout REPORT (Oct 10), not the claim decision (Oct 12).
+      // On day 14 after the report (Oct 24): less than 15 days -> refund refused
       await expect(
         placementService.approveRefund(
           'pl-root',
-          { reason: 'no replacement', asOf: '2026-10-26T10:00:00Z' },
+          { reason: 'no replacement', asOf: '2026-10-24T10:00:00Z' },
           'staff-ceo',
         ),
       ).rejects.toThrow(/Refund is not payable before 15 days/);
 
-      // On day 16 (Oct 28): > 15 days -> CEO/Finance approves 100% refund
+      // On day 16 after the report (Oct 26) — only day 14 after the claim decision — the
+      // refund is due: CEO/Finance approves the 100% refund
       const refundResult = await placementService.approveRefund(
         'pl-root',
-        { reason: 'no replacement in 15 days', asOf: '2026-10-28T10:00:00Z' },
+        { reason: 'no replacement in 15 days', asOf: '2026-10-26T10:00:00Z' },
         'staff-ceo',
       );
 

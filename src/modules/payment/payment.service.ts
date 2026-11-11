@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   ConflictException,
+  ForbiddenException,
   Inject,
   Injectable,
   Logger,
@@ -8,7 +9,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { PayoutAccount, Prisma } from '@prisma/client';
+import { PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
@@ -19,6 +20,12 @@ import { matchReceiverName } from '../payout-account/name-matcher';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { loadJobSeekerRefundGuards } from '../job-seeker/job-seeker-refund-guards';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
+import { decisionTime } from '../../common/time/decision-time';
+import {
+  businessRefundNeedsCeo,
+  ceoApprovalMessage,
+  CeoApprovalReason,
+} from '../../common/money/approval-limits';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { decryptPayoutValue } from '../payout-account/payout-account-key';
 import {
@@ -458,6 +465,13 @@ export class PaymentService {
 
     const expectedAmount = matchedPayment.expectedAmountPaise ?? matchedPayment.amount;
     if (expectedAmount !== amountPaise) {
+      // A placement fee that arrives short may be the business deducting TDS. The
+      // TDS rate is not fixed in code, so Finance confirms it and records the short
+      // amount as "TDS deducted" (POST /payments/:id/confirm with tdsDeductedPaise).
+      const reason =
+        matchedPayment.type === 'placement_fee' && amountPaise < expectedAmount
+          ? 'short_possible_tds'
+          : 'amount_mismatch';
       await this.reviewFlagService.raise({
         kind: 'payment_mismatch',
         subjectType: 'payment',
@@ -467,10 +481,11 @@ export class PaymentService {
           bankUtr,
           expectedAmountPaise: expectedAmount,
           receivedAmountPaise: amountPaise,
-          reason: 'amount_mismatch',
+          shortByPaise: Math.max(0, expectedAmount - amountPaise),
+          reason,
         },
       });
-      return { received: true, status: 'unmatched', reason: 'amount_mismatch', bankCreditId: credit.id };
+      return { received: true, status: 'unmatched', reason, bankCreditId: credit.id };
     }
 
     await this.onPaymentSucceeded(matchedPayment.id, {
@@ -621,6 +636,8 @@ export class PaymentService {
     paymentId: string,
     bankCreditId: string,
     actorId: string,
+    tds?: { tdsDeductedPaise?: number; tdsNote?: string },
+    now = new Date(),
   ) {
     if (!bankCreditId) {
       throw new BadRequestException('bankCreditId is required');
@@ -649,11 +666,7 @@ export class PaymentService {
     }
 
     const expectedAmount = payment.expectedAmountPaise ?? payment.amount;
-    if (expectedAmount !== credit.amountPaise) {
-      throw new BadRequestException(
-        `Amount mismatch: payment expected ${expectedAmount} paise but credit has ${credit.amountPaise} paise`,
-      );
-    }
+    const tdsRecord = await this.checkTdsShortfall(payment, credit.amountPaise, expectedAmount, tds);
 
     const existingPaymentWithUtr = await this.prisma.payment.findFirst({
       where: { bankUtr: credit.bankUtr, NOT: { id: payment.id } },
@@ -677,6 +690,40 @@ export class PaymentService {
       },
     });
 
+    let tdsReceivable: TdsReceivable | null = null;
+    if (tdsRecord) {
+      tdsReceivable = await this.prisma.tdsReceivable.create({
+        data: {
+          city: payment.city,
+          placementId: tdsRecord.placementId,
+          paymentId: payment.id,
+          bankCreditId: credit.id,
+          amountPaise: tdsRecord.amountPaise,
+          sectionNote: tdsRecord.sectionNote,
+          status: 'certificate_due',
+          recordedByStaffId: actorId,
+          recordedAt: now,
+        },
+      });
+      await this.auditService.log({
+        actorId,
+        action: 'payment.tds_deducted_recorded',
+        entityType: 'Payment',
+        entityCode: payment.code,
+        after: {
+          paymentId: payment.id,
+          placementId: tdsRecord.placementId,
+          bankCreditId: credit.id,
+          expectedAmountPaise: expectedAmount,
+          receivedAmountPaise: credit.amountPaise,
+          tdsDeductedPaise: tdsRecord.amountPaise,
+          sectionNote: tdsRecord.sectionNote,
+          tdsReceivableId: tdsReceivable.id,
+        },
+        reason: 'Placement fee arrived short by TDS; recorded as TDS deducted, certificate to collect',
+      });
+    }
+
     await this.prisma.reviewFlag.updateMany({
       where: {
         kind: 'payment_mismatch',
@@ -688,7 +735,7 @@ export class PaymentService {
       },
       data: {
         status: 'resolved',
-        resolution: 'Matched manually by Finance',
+        resolution: tdsRecord ? 'Matched by Finance; short amount recorded as TDS deducted' : 'Matched manually by Finance',
         resolvedAt: new Date(),
         resolvedByStaffId: actorId,
       },
@@ -711,7 +758,78 @@ export class PaymentService {
       success: true,
       paymentId: payment.id,
       bankCreditId: credit.id,
+      ...(tdsReceivable ? { tdsDeductedPaise: tdsReceivable.amountPaise, tdsReceivableId: tdsReceivable.id } : {}),
     };
+  }
+
+  /**
+   * Guide (Finance, tax handling): a placement fee that arrives short by the TDS the
+   * business deducted is recorded as "TDS deducted", not as a mismatch. No TDS rate is
+   * fixed here (the CA confirms it): Finance states the amount, which must be exactly
+   * the short amount, and a free-text section/note.
+   */
+  private async checkTdsShortfall(
+    payment: { id: string; type: string; placementId: string | null },
+    receivedPaise: number,
+    expectedPaise: number,
+    tds?: { tdsDeductedPaise?: number; tdsNote?: string },
+  ): Promise<{ placementId: string; amountPaise: number; sectionNote: string } | null> {
+    const wantsTds = tds?.tdsDeductedPaise !== undefined && tds?.tdsDeductedPaise !== null;
+    if (expectedPaise === receivedPaise) {
+      if (wantsTds) {
+        throw new BadRequestException('The credit is the full amount, so there is no TDS to record');
+      }
+      return null;
+    }
+    if (!wantsTds) {
+      throw new BadRequestException(
+        `Amount mismatch: payment expected ${expectedPaise} paise but credit has ${receivedPaise} paise` +
+          (payment.type === 'placement_fee' && receivedPaise < expectedPaise
+            ? `. If the business deducted TDS, record the short ${expectedPaise - receivedPaise} paise as TDS deducted (tdsDeductedPaise and tdsNote).`
+            : ''),
+      );
+    }
+    if (payment.type !== 'placement_fee' || !payment.placementId) {
+      throw new BadRequestException('TDS deducted can only be recorded on a placement fee payment');
+    }
+    const shortBy = expectedPaise - receivedPaise;
+    if (shortBy <= 0) {
+      throw new BadRequestException('TDS deducted explains only a payment that arrived short');
+    }
+    const tdsPaise = Number(tds!.tdsDeductedPaise);
+    if (!Number.isSafeInteger(tdsPaise) || tdsPaise !== shortBy) {
+      throw new BadRequestException(
+        `TDS deducted must be exactly the short amount: ${shortBy} paise (expected ${expectedPaise}, received ${receivedPaise})`,
+      );
+    }
+    const sectionNote = typeof tds!.tdsNote === 'string' ? tds!.tdsNote.trim() : '';
+    if (!sectionNote) {
+      throw new BadRequestException('tdsNote is required: write the TDS section or a note from the business');
+    }
+    const placement = await this.prisma.placement.findUnique({ where: { id: payment.placementId } });
+    if (!placement) {
+      throw new NotFoundException(`Placement for payment '${payment.id}' not found`);
+    }
+    // TDS is deducted from the fee itself, so it can never reach the whole fee.
+    if (tdsPaise >= placement.placementFee) {
+      throw new BadRequestException('TDS deducted cannot be as large as the placement fee itself');
+    }
+    return { placementId: placement.id, amountPaise: tdsPaise, sectionNote };
+  }
+
+  /** TDS businesses deducted from placement fees: Finance collects each certificate. */
+  async listTdsReceivables(query?: { status?: string; placementId?: string }) {
+    const where: Prisma.TdsReceivableWhereInput = {};
+    if (query?.status) where.status = query.status;
+    if (query?.placementId) where.placementId = query.placementId;
+    return this.prisma.tdsReceivable.findMany({
+      where,
+      orderBy: { recordedAt: 'desc' },
+      include: {
+        placement: { select: { id: true, code: true, invoiceCode: true, businessId: true, placementFee: true, gstAmount: true } },
+        payment: { select: { id: true, code: true, amount: true, bankUtr: true, confirmedAt: true } },
+      },
+    });
   }
 
   async ignoreBankCredit(bankCreditId: string, reason: string, actorId: string) {
@@ -1078,7 +1196,26 @@ export class PaymentService {
       throw new BadRequestException(`Payment cannot be approved from status '${payment.status}'`);
     }
 
-    const now = asOf ? new Date(asOf) : new Date();
+    // A caller's asOf stands in for the clock only in tests; production uses the server clock.
+    const now = decisionTime(asOf);
+    // Who is approving matters only for refunds (approval limits).
+    const approver =
+      payment.type === 'refund' ? await this.prisma.staff.findUnique({ where: { id: actorId } }) : null;
+
+    // Approval limits: a refund that is with the CEO (above Finance's limit, outside
+    // the rules, or sent by Finance) can only be approved by the CEO.
+    if (payment.type === 'refund' && (payment.ceoApprovalReason || payment.outsideRules) && approver?.role !== 'ceo') {
+      throw new ForbiddenException({
+        statusCode: 403,
+        error: 'Forbidden',
+        code: 'refund_with_ceo',
+        message: `Refund ${payment.code} is with the CEO for approval.`,
+        paymentId: payment.id,
+        paymentCode: payment.code,
+      });
+    }
+
+    let endsGuaranteeForPlacement: { rootId: string; placementId: string; rootStatus: string } | null = null;
 
     if (payment.type === 'referral_payout') {
       const referralId = payment.referralId || payment.subjectId;
@@ -1207,7 +1344,9 @@ export class PaymentService {
           orderBy: { decidedAt: 'desc' },
         });
 
-        const claimAcceptedAt = claim?.decidedAt ?? claim?.reportedAt ?? placement.dropoutReportedAt;
+        // The 15-day clock starts at the dropout report, not the claim decision.
+        const claimAcceptedAt = claim?.decidedAt ?? null;
+        const dropoutReportedAt = claim?.reportedAt ?? placement.dropoutReportedAt;
         const policy = await this.pricingService.current();
 
         const eligibility = evaluatePlacementRefundEligibility(
@@ -1217,7 +1356,7 @@ export class PaymentService {
             hasAcceptedReplacement,
             hasSelectedReplacement: Boolean(selectedReplacement),
             claimAcceptedAt,
-            dropoutReportedAt: placement.dropoutReportedAt,
+            dropoutReportedAt,
             placementFee: rootPlacement.placementFee,
             hasExistingRefund: false,
             searchDays: policy.replacementSearchDays,
@@ -1226,9 +1365,24 @@ export class PaymentService {
           now,
         );
 
-        if (!eligibility.eligible) {
+        // A goodwill refund is outside the rules by definition; only the CEO gets here.
+        if (!eligibility.eligible && !payment.outsideRules) {
           throw new BadRequestException(eligibility.ineligibleReason!);
         }
+
+        // Approval limits: Finance approves a business refund up to the limit in Settings.
+        const ceoReason = businessRefundNeedsCeo({
+          actorRole: approver?.role ?? '',
+          amountPaise: payment.amount,
+          limitPaise: policy.financeBusinessRefundLimitPaise,
+          outsideRules: payment.outsideRules,
+        });
+        if (ceoReason) {
+          await this.sendRefundToCeo(payment, ceoReason, actorId, now, policy.financeBusinessRefundLimitPaise);
+        }
+        endsGuaranteeForPlacement = payment.outsideRules
+          ? null
+          : { rootId, placementId: placement.id, rootStatus: rootPlacement.status };
       }
     } else if (payment.type === 'joining_reward') {
       const placementId = payment.placementId;
@@ -1266,10 +1420,26 @@ export class PaymentService {
       entityType: 'payment',
       entityCode: payment.code,
       before: { status: payment.status },
-      after: { status: 'approved', approvedByStaffId: actorId, approvedAt: now.toISOString() },
+      after: {
+        status: 'approved',
+        approvedByStaffId: actorId,
+        ...(approver ? { approvedByRole: approver.role } : {}),
+        approvedAt: now.toISOString(),
+        amount: payment.amount,
+        ...(payment.ceoApprovalReason
+          ? { ceoApprovalReason: payment.ceoApprovalReason, sentToCeoByStaffId: payment.sentToCeoByStaffId }
+          : {}),
+        ...(payment.outsideRules ? { outsideRules: true } : {}),
+      },
       changedFields: ['status', 'approvedByStaffId', 'approvedAt'],
       reason: 'Payment approved by CEO or Finance',
     });
+
+    // A business refund under the guarantee rules ends the guarantee, the same as
+    // approving it from the placement.
+    if (endsGuaranteeForPlacement) {
+      await this.endGuaranteeAfterRefund(endsGuaranteeForPlacement, actorId);
+    }
 
     // Phase 18 Task 4: When a refund becomes owed/approved and receiver has no account, send link
     if (payment.type === 'refund') {
@@ -1300,7 +1470,136 @@ export class PaymentService {
     return updated;
   }
 
-  async recordPayout(paymentId: string, actorId: string, dto: RecordPayoutDto) {
+  /**
+   * Marks a business refund as waiting for the CEO and stops Finance with a clear
+   * message. Who sent it, when and why are kept on the payment and in the audit log.
+   */
+  private async sendRefundToCeo(
+    payment: { id: string; code: string; amount: number; status: string },
+    reason: CeoApprovalReason,
+    actorId: string,
+    now: Date,
+    limitPaise: number,
+  ): Promise<never> {
+    await this.prisma.payment.update({
+      where: { id: payment.id },
+      data: { ceoApprovalReason: reason, sentToCeoByStaffId: actorId, sentToCeoAt: now },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'refund_sent_to_ceo',
+      entityType: 'payment',
+      entityCode: payment.code,
+      before: { status: payment.status, ceoApprovalReason: null },
+      after: {
+        status: payment.status,
+        ceoApprovalReason: reason,
+        sentToCeoByStaffId: actorId,
+        amount: payment.amount,
+        financeLimitPaise: limitPaise,
+      },
+      changedFields: ['ceoApprovalReason', 'sentToCeoByStaffId', 'sentToCeoAt'],
+      reason: 'Refund above Finance approval limit sent to the CEO',
+    });
+    throw new ForbiddenException({
+      statusCode: 403,
+      error: 'Forbidden',
+      code: 'refund_sent_to_ceo',
+      message: ceoApprovalMessage(reason, payment.amount, limitPaise, payment.code),
+      ceoApprovalReason: reason,
+      paymentId: payment.id,
+      paymentCode: payment.code,
+    });
+  }
+
+  private async endGuaranteeAfterRefund(
+    target: { rootId: string; placementId: string; rootStatus: string },
+    actorId: string,
+  ) {
+    await this.prisma.$transaction(async (tx) => {
+      const ended = await tx.placement.updateMany({
+        where: { id: target.rootId, NOT: { status: 'guarantee_ended' } },
+        data: { status: 'guarantee_ended', guaranteeEndedReason: 'refunded' },
+      });
+      if (target.placementId !== target.rootId) {
+        await tx.placement.updateMany({
+          where: { id: target.placementId, NOT: { status: 'guarantee_ended' } },
+          data: { status: 'guarantee_ended', guaranteeEndedReason: 'refunded' },
+        });
+      }
+      if (ended.count === 1) {
+        await recordStatusChange(tx, {
+          subjectType: 'placement',
+          subjectId: target.rootId,
+          fromStatus: target.rootStatus,
+          toStatus: 'guarantee_ended',
+          changedByStaffId: actorId,
+          reason: 'refunded',
+        });
+      }
+    });
+  }
+
+  /** Refunds waiting for the CEO: above Finance's limit, outside the rules, or sent by Finance. */
+  async listRefundsWithCeo() {
+    return this.prisma.payment.findMany({
+      where: { type: 'refund', status: 'pending', ceoApprovalReason: { not: null } },
+      orderBy: { sentToCeoAt: 'asc' },
+      include: {
+        placement: { select: { id: true, code: true, placementFee: true, gstAmount: true, status: true } },
+        business: { select: { id: true, code: true, name: true } },
+      },
+    });
+  }
+
+  /** The CEO turns down a refund that was sent to them, with a reason. */
+  async rejectRefund(paymentId: string, actorId: string, reason: string, now = new Date()) {
+    if (!reason || !reason.trim()) {
+      throw new BadRequestException('A reason is required to reject a refund');
+    }
+    const approver = await this.prisma.staff.findUnique({ where: { id: actorId } });
+    if (approver?.role !== 'ceo') {
+      throw new ForbiddenException('Only the CEO can reject a refund sent for approval');
+    }
+    const payment = await this.loadPayoutPayment(paymentId);
+    if (payment.type !== 'refund' || payment.status !== 'pending') {
+      throw new BadRequestException(`Only a pending refund can be rejected. Current status: '${payment.status}'`);
+    }
+    const claimed = await this.prisma.payment.updateMany({
+      where: { id: payment.id, status: 'pending' },
+      data: { status: 'rejected' },
+    });
+    if (claimed.count !== 1) {
+      throw new BadRequestException(`Refund ${payment.code} has already been decided`);
+    }
+    await recordStatusChange(this.prisma, {
+      subjectType: 'payment',
+      subjectId: payment.id,
+      fromStatus: 'pending',
+      toStatus: 'rejected',
+      changedByStaffId: actorId,
+      reason: 'refund_rejected_by_ceo',
+      changedAt: now,
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'refund_rejected',
+      entityType: 'payment',
+      entityCode: payment.code,
+      before: { status: 'pending' },
+      after: {
+        status: 'rejected',
+        amount: payment.amount,
+        ceoApprovalReason: payment.ceoApprovalReason,
+        sentToCeoByStaffId: payment.sentToCeoByStaffId,
+      },
+      changedFields: ['status'],
+      reason: reason.trim(),
+    });
+    return this.prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
+  }
+
+  async recordPayout(paymentId: string, actorId: string, dto: RecordPayoutDto, now = new Date()) {
     if (!dto.bankUtr || !dto.bankUtr.trim()) {
       throw new BadRequestException('bankUtr is required');
     }
@@ -1310,7 +1609,15 @@ export class PaymentService {
 
     const bankUtr = dto.bankUtr.trim();
     const receiverNameShown = dto.receiverNameShown.trim();
-    const paidAtDate = dto.paidAt ? new Date(dto.paidAt) : new Date();
+    // paidAt is only what Finance says about when the money went. It is kept as a
+    // record, but the 48-hour wait is always checked against the server's own time.
+    const paidAtDate = dto.paidAt ? new Date(dto.paidAt) : now;
+    if (isNaN(paidAtDate.getTime())) {
+      throw new BadRequestException('paidAt must be a valid date');
+    }
+    if (paidAtDate.getTime() > now.getTime()) {
+      throw new BadRequestException('paidAt cannot be in the future');
+    }
 
     const payment = await this.loadPayoutPayment(paymentId);
 
@@ -1395,10 +1702,19 @@ export class PaymentService {
       throw new BadRequestException(`Payout account is flagged and cannot be paid`);
     }
 
-    // Cooling period check (48-hour wait): activeFrom must have passed
-    if (account.activeFrom.getTime() > paidAtDate.getTime()) {
+    // Cooling period check (48-hour wait after payout details change). Counted from
+    // when the details changed, against the server's clock — never a caller's paidAt.
+    // activeFrom is stamped by the server when the details change (change time + the
+    // cooling hours in Settings), so it is the moment the wait ends.
+    const waitEndsAt = account.activeFrom;
+    if (waitEndsAt.getTime() > now.getTime()) {
       throw new BadRequestException(
-        `Payout account is in cooling period (48-hour wait) until ${account.activeFrom.toISOString()}`,
+        `Payout account is in cooling period (48-hour wait) until ${waitEndsAt.toISOString()}`,
+      );
+    }
+    if (paidAtDate.getTime() < waitEndsAt.getTime()) {
+      throw new BadRequestException(
+        `paidAt is inside the 48-hour wait after the payout details changed (wait ended ${waitEndsAt.toISOString()})`,
       );
     }
 
@@ -1502,6 +1818,13 @@ export class PaymentService {
   }
 
   async revealPayoutDetails(paymentId: string, actorId: string, now = new Date()) {
+    // Decided 11 Nov: only the CEO and Finance may see the full UPI ID or account
+    // number, and every reveal is logged. Checked here as well as on the route, so no
+    // other caller of this service can reveal details.
+    const revealer = await this.prisma.staff.findUnique({ where: { id: actorId } });
+    if (!revealer || !['ceo', 'finance'].includes(revealer.role)) {
+      throw new ForbiddenException('Only the CEO or Finance can reveal full payout details');
+    }
     const payment = await this.loadPayoutPayment(paymentId);
 
     if (payment.status !== 'approved') {
@@ -1602,6 +1925,7 @@ export class PaymentService {
         payoutAccountId: account.id,
         method: account.method,
         maskedValue: account.maskedValue,
+        revealedByRole: revealer.role,
       },
       changedFields: [],
       reason: 'Payout details revealed to CEO or Finance for manual disbursement',
