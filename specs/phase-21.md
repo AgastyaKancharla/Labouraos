@@ -271,7 +271,7 @@ Also:
   - The third correction goes to the Manager.
   - Staff can't approve their own requests.
 
-### [ ] Task 5 — Attendance reports and the live board
+### [x] Task 5 — Attendance reports and the live board
 **Branch:** `phase-21/task-5-attendance-reports` · **Migration folder:** none expected
 
 **Acceptance:**
