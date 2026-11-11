@@ -168,13 +168,13 @@ describe('Phase 21 Task 2: the working day', () => {
       .set('Authorization', `Bearer ${tokenFor(ceo)}`)
       .expect(200);
     expect(ceoView.body.shiftStart).toBe('09:30');
-    const managerView = await request(app.getHttpServer())
+    // A Manager does not see pricing and policy settings at all (Master
+    // Guide, reconfirmed 11 Nov); this replaced the partial view that hid only
+    // the attendance keys.
+    await request(app.getHttpServer())
       .get('/pricing')
       .set('Authorization', `Bearer ${tokenFor(manager)}`)
-      .expect(200);
-    expect(managerView.body.shiftStart).toBeUndefined();
-    expect(managerView.body.lunchMinutes).toBeUndefined();
-    expect(managerView.body.activationFeePaise).toBe(ceoView.body.activationFeePaise);
+      .expect(403);
   });
 
   it('takes the login time from the server and marks late minutes from the shift start', async () => {

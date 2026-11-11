@@ -226,15 +226,22 @@ describe('Phase 11 Task 3: hidden numbers', () => {
       expect(JSON.stringify(callbackRes.body)).not.toContain(SEEKER_PHONE);
     }
 
+    // Only the CEO sees full numbers (Master Guide, People and roles): a
+    // Manager now gets the last 4 digits, like the agents. This replaces the
+    // earlier assertion that a Manager received full numbers.
     const managerPages = await readAll(tokenFor(manager));
-    expect(managerPages.seekerRes.body.phone).toBe(SEEKER_PHONE);
-    expect(managerPages.businessRes.body.phone).toBe(BUSINESS_PHONE);
-    expect(managerPages.referralRes.body.phone).toBe(REFERRAL_PHONE);
+    expect(managerPages.seekerRes.body.phone).toBe(maskPhoneLast4(SEEKER_PHONE));
+    expect(managerPages.businessRes.body.phone).toBe(maskPhoneLast4(BUSINESS_PHONE));
+    expect(managerPages.referralRes.body.phone).toBe(maskPhoneLast4(REFERRAL_PHONE));
     const managerTask = managerPages.callbackRes.body.find(
       (row: { id: string }) => row.id === callback.id,
     );
-    expect(managerTask.phone).toBe(CALLBACK_PHONE);
-    expect(managerTask.virtualNumber).toBe('18001234567');
+    expect(managerTask.phone).toBe(maskPhoneLast4(CALLBACK_PHONE));
+    expect(managerTask.virtualNumber).toBe(maskPhoneLast4('18001234567'));
+    for (const number of [SEEKER_PHONE, BUSINESS_PHONE, REFERRAL_PHONE, CALLBACK_PHONE]) {
+      expect(JSON.stringify(managerPages.seekerRes.body)).not.toContain(number);
+      expect(JSON.stringify(managerPages.callbackRes.body)).not.toContain(number);
+    }
 
     const ceoPages = await readAll(tokenFor(ceo));
     expect(ceoPages.seekerRes.status).toBe(200);

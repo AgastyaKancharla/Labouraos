@@ -3,11 +3,14 @@ import {
   ExecutionContext,
   Injectable,
   NestInterceptor,
+  Optional,
 } from '@nestjs/common';
 import { Observable } from 'rxjs';
-import { map } from 'rxjs/operators';
+import { mergeMap } from 'rxjs/operators';
 import { Request } from 'express';
 import { JwtPayload } from '../auth/jwt-payload.interface';
+import { AuditService } from '../audit/audit.service';
+import { seesMoney, stripMoney } from './money-visibility';
 
 const PII_KEYS = new Set([
   'phone',
@@ -17,7 +20,20 @@ const PII_KEYS = new Set([
   'candidatePhone',
 ]);
 
-const AGENT_PHONE_ROLES = new Set(['call_agent', 'field_agent', 'team_lead']);
+/**
+ * Roles that see only the last 4 digits of a phone number. Only the CEO sees
+ * full numbers (Master Guide, People and roles); Finance sees none at all.
+ */
+const AGENT_PHONE_ROLES = new Set(['call_agent', 'field_agent', 'team_lead', 'manager']);
+
+/** Roles that receive full phone numbers; every such answer is audit-logged. */
+const FULL_PHONE_ROLES = new Set(['ceo']);
+
+export const FULL_PHONE_VIEW_ACTION = 'pii.full_phone_viewed';
+export const FULL_PHONE_VIEW_ENTITY = 'full_phone_view';
+/** Upper bound on record references kept in one audit row. */
+const MAX_LOGGED_RECORDS = 5000;
+const FULL_PHONE_LOGGED = Symbol('fullPhoneViewLogged');
 
 /** Last 4 digits only, for example `******1234`. */
 export function maskPhoneLast4(value: unknown): string {
@@ -135,23 +151,130 @@ function omitCallRoutingPhone(data: unknown, seen = new WeakSet<object>()): void
   }
 }
 
+export interface FullPhoneRecordRef {
+  id?: string;
+  code?: string;
+  fields: string[];
+}
+
+function isFullPhoneKey(key: string): boolean {
+  return isAgentPhoneKey(key) && key.toLowerCase() !== 'virtualnumber';
+}
+
+function isFullPhoneValue(value: unknown): boolean {
+  if (typeof value !== 'string' && typeof value !== 'number') {
+    return false;
+  }
+  const text = String(value);
+  if (text.includes('*') || text === '[changed]') {
+    return false;
+  }
+  return text.replace(/\D/g, '').length >= 7;
+}
+
+/**
+ * Lists the records in a response that carry a full phone number, by id and
+ * code only. Phone numbers themselves never go into the audit log.
+ */
+export function collectFullPhoneRecords(
+  data: unknown,
+  found: FullPhoneRecordRef[] = [],
+  seen = new WeakSet<object>(),
+): FullPhoneRecordRef[] {
+  if (data === null || data === undefined || typeof data !== 'object') {
+    return found;
+  }
+  if (data instanceof Date || seen.has(data)) {
+    return found;
+  }
+  seen.add(data);
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      collectFullPhoneRecords(item, found, seen);
+    }
+    return found;
+  }
+  const record = data as Record<string, unknown>;
+  const fields = Object.entries(record)
+    .filter(([key, value]) => isFullPhoneKey(key) && isFullPhoneValue(value))
+    .map(([key]) => key);
+  if (fields.length > 0) {
+    const ref: FullPhoneRecordRef = { fields };
+    if (typeof record.id === 'string') ref.id = record.id;
+    if (typeof record.code === 'string') ref.code = record.code;
+    found.push(ref);
+  }
+  for (const value of Object.values(record)) {
+    if (value && typeof value === 'object') {
+      collectFullPhoneRecords(value, found, seen);
+    }
+  }
+  return found;
+}
+
 @Injectable()
 export class PiiMaskingInterceptor implements NestInterceptor {
+  constructor(@Optional() private readonly auditService?: AuditService) {}
+
   intercept(context: ExecutionContext, next: CallHandler): Observable<unknown> {
-    const request = context.switchToHttp().getRequest<Request & { user?: JwtPayload }>();
+    const request = context.switchToHttp().getRequest<
+      Request & { user?: JwtPayload; [FULL_PHONE_LOGGED]?: boolean }
+    >();
     const role = request.user?.role;
 
     return next.handle().pipe(
-      map((data: unknown) => {
+      mergeMap(async (data: unknown) => {
+        let out: unknown;
         if (role === 'finance') {
-          return maskPii(data);
+          out = maskPii(data);
+        } else if (role && AGENT_PHONE_ROLES.has(role)) {
+          out = maskAgentPhones(data);
+        } else {
+          omitCallRoutingPhone(data);
+          out = data;
+          if (role && FULL_PHONE_ROLES.has(role)) {
+            await this.logFullPhoneView(request, data);
+          }
         }
-        if (role && AGENT_PHONE_ROLES.has(role)) {
-          return maskAgentPhones(data);
+        if (!seesMoney(role)) {
+          out = stripMoney(out);
         }
-        omitCallRoutingPhone(data);
-        return data;
+        return out;
       }),
     );
+  }
+
+  /**
+   * One audit row per request that hands the CEO full phone numbers, listing
+   * which records they came from. The interceptor can run twice on one
+   * request (globally and on a controller), so the request is marked.
+   */
+  private async logFullPhoneView(
+    request: Request & { user?: JwtPayload; [FULL_PHONE_LOGGED]?: boolean },
+    data: unknown,
+  ): Promise<void> {
+    if (!this.auditService || !request.user || request[FULL_PHONE_LOGGED]) {
+      return;
+    }
+    const records = collectFullPhoneRecords(data);
+    if (records.length === 0) {
+      return;
+    }
+    request[FULL_PHONE_LOGGED] = true;
+    const routePath = (request.route as { path?: string } | undefined)?.path ?? request.path;
+    await this.auditService.log({
+      actorId: request.user.sub,
+      action: FULL_PHONE_VIEW_ACTION,
+      entityType: FULL_PHONE_VIEW_ENTITY,
+      entityCode: request.user.code ?? request.user.sub,
+      after: {
+        method: request.method,
+        route: routePath,
+        recordCount: records.length,
+        records: records.slice(0, MAX_LOGGED_RECORDS),
+        truncated: records.length > MAX_LOGGED_RECORDS,
+      },
+      changedFields: [],
+    });
   }
 }

@@ -17,6 +17,7 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
+import { seesMoney } from '../../common/rbac/money-visibility';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RecordJoinedDto } from './dto/record-joined.dto';
@@ -130,7 +131,9 @@ export class PlacementController {
       return rows;
     }
 
-    const csvData = formatPlacementsCsv(rows);
+    // A Manager may export lists but never sees money: the salary and fee
+    // columns are left out of the file (JSON answers are stripped globally).
+    const csvData = formatPlacementsCsv(rows, { includeMoney: seesMoney(req.user.role) });
     const dateStr = new Date().toISOString().split('T')[0];
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(
@@ -166,7 +169,7 @@ export class PlacementController {
   }
 
   @Get(':id/invoice')
-  @RequireRoles('ceo', 'manager', 'finance')
+  @RequireRoles('ceo', 'finance')
   @RequirePermission('placement', 'read')
   async getInvoice(
     @Param('id') id: string,

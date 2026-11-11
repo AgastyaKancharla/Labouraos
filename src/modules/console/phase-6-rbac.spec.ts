@@ -135,11 +135,12 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
       expect(res.body.referralPayoutPaise).toBe(20000);
     });
 
-    it('Manager is read-only for pricing (GET allowed, POST forbidden 403)', async () => {
+    it('Manager sees no pricing at all (GET and POST forbidden 403)', async () => {
+      // Master Guide, reconfirmed 11 Nov: no pricing or policy settings for a Manager.
       await request(app.getHttpServer())
         .get('/pricing')
         .set('Authorization', `Bearer ${managerToken}`)
-        .expect(200);
+        .expect(403);
 
       await request(app.getHttpServer())
         .post('/pricing')

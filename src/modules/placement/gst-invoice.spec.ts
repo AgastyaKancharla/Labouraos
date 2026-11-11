@@ -336,7 +336,7 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
   it('2. Invoice calculation handles uneven salary division without fractional paisa corruption', async () => {
     const res = await request(app.getHttpServer())
       .get(`/placements/${unevenSalaryPlacementId}/invoice`)
-      .set('Authorization', `Bearer ${mgrToken}`);
+      .set('Authorization', `Bearer ${financeToken}`);
 
     expect(res.status).toBe(200);
     const invoice = res.body;
@@ -432,7 +432,13 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
     expect(ceoRes.body.placement.candidatePhone).not.toBe('********');
   });
 
-  it('6. RBAC: Call Agent and Field Agent are DENIED access (403 Forbidden)', async () => {
+  it('6. RBAC: Manager, Call Agent and Field Agent are DENIED access (403 Forbidden)', async () => {
+    // A Manager sees no money (Master Guide, reconfirmed 11 Nov), so no invoices.
+    const mgrRes = await request(app.getHttpServer())
+      .get(`/placements/${confirmedPlacementId}/invoice`)
+      .set('Authorization', `Bearer ${mgrToken}`);
+    expect(mgrRes.status).toBe(403);
+
     const caRes = await request(app.getHttpServer())
       .get(`/placements/${confirmedPlacementId}/invoice`)
       .set('Authorization', `Bearer ${caToken}`);
