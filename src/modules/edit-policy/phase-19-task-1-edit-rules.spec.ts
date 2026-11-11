@@ -577,7 +577,11 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
           reason: 'Manager corrected placement salary',
         });
       expect(resMgr.status).toBe(200);
-      expect(resMgr.body.agreedSalary).toBe(2500000);
+      // The edit is saved, but a Manager's answer carries no money figure
+      // (Master Guide, reconfirmed 11 Nov), so the salary is read from the database.
+      expect(resMgr.body.agreedSalary).toBeUndefined();
+      const savedPl = await prisma.placement.findUniqueOrThrow({ where: { id: pl.id } });
+      expect(savedPl.agreedSalary).toBe(2500000);
     });
 
     it('referral partner editable until payout approved, locked once approved', async () => {

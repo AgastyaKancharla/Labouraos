@@ -468,7 +468,8 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(response.body.contactPersonName).toBe('Old Owner');
     expect(response.body.contactPersonRole).toBe('owner');
     expect(response.body.additionalContactName).toBe('Old Owner');
-    expect(response.body.additionalContactPhone).toBe(`91${timestamp.toString().slice(-8)}`);
+    // Only the CEO sees full numbers; a Manager gets the last 4 digits.
+    expect(response.body.additionalContactPhone).toBe(`******${timestamp.toString().slice(-4)}`);
   });
 
   it('makes the registering field agent the account agent, copies draft pins, and lets them complete the draft', async () => {

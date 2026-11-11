@@ -140,9 +140,14 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
       yearsExperience: 4,
       languages: ['Kannada'],
       distanceKm: 0,
-      expectedSalary: { minPaise: 1500000, maxPaise: 2000000 },
       matchReasons: expect.any(Array),
     });
+    if (role === 'manager') {
+      // A Manager's answers carry no rupee figure (Master Guide, reconfirmed 11 Nov).
+      expect(match.card).not.toHaveProperty('expectedSalary');
+    } else {
+      expect(match.card.expectedSalary).toEqual({ minPaise: 1500000, maxPaise: 2000000 });
+    }
     const cardJson = JSON.stringify(match.card);
     for (const forbidden of ['phone', 'whatsappPhone', 'lastName', 'address', 'dateOfBirth', 'aadhaar', 'Private locality name', 'Asha Rao']) {
       expect(cardJson.toLowerCase()).not.toContain(forbidden.toLowerCase());

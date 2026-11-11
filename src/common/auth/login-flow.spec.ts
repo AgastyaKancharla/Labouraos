@@ -408,6 +408,17 @@ describe('Phase 10 Task 4: staff-code login', () => {
   it('raises an odd-hour flag at 23:00 IST and not at 11:00 IST', async () => {
     const secret = authenticator.generateSecret();
     const manager = await makeStaff('manager', { totpSecret: secret, totpEnabled: true });
+    // A Manager's device is approved by the CEO before the Manager logs in on it.
+    await prisma.staffDevice.create({
+      data: {
+        staffId: manager.id,
+        deviceId: 'odd-hour-device',
+        label: 'Odd hour',
+        platform: 'web',
+        status: 'approved',
+        approvedAt: new Date(),
+      },
+    });
 
     now = new Date('2026-01-01T05:30:00.000Z');
     const daytime = await request(app.getHttpServer())

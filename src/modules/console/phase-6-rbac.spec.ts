@@ -193,26 +193,24 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
       }
     });
 
-    it('CEO and Manager read payments ledger unmasked', async () => {
+    it('CEO reads the payments ledger unmasked; a Manager is refused it', async () => {
       const resCeo = await request(app.getHttpServer())
         .get('/payments')
         .set('Authorization', `Bearer ${ceoToken}`)
         .expect(200);
 
-      const resMgr = await request(app.getHttpServer())
+      // A Manager sees no money at all (Master Guide, reconfirmed 11 Nov).
+      // This replaced the earlier "Manager reads the ledger unmasked" check.
+      await request(app.getHttpServer())
         .get('/payments')
         .set('Authorization', `Bearer ${managerToken}`)
-        .expect(200);
+        .expect(403);
 
       const pmtCeo = resCeo.body.find((p: PaymentRecord) => p.jobSeeker?.phone);
       if (pmtCeo) {
         expect(pmtCeo.jobSeeker?.phone).not.toBe('********');
       }
 
-      const pmtMgr = resMgr.body.find((p: PaymentRecord) => p.jobSeeker?.phone);
-      if (pmtMgr) {
-        expect(pmtMgr.jobSeeker?.phone).not.toBe('********');
-      }
     });
 
     it('Team Lead, Call Agent, and Field Agent are denied access to payments ledger (403)', async () => {

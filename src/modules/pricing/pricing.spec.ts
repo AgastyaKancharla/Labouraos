@@ -245,7 +245,12 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
       .expect(201);
 
     createdTradeIds.push(response.body.id as string);
-    expect(response.body).toMatchObject({ active: true, salaryMinPaise: 1500000, salaryMaxPaise: 2000000 });
+    expect(response.body).toMatchObject({ active: true });
+    // Saved as sent, but a Manager's answer carries no rupee figure (Master
+    // Guide, reconfirmed 11 Nov), so the range is checked in the database.
+    expect(response.body.salaryMinPaise).toBeUndefined();
+    const savedTrade = await prisma.trade.findUniqueOrThrow({ where: { id: response.body.id } });
+    expect(savedTrade).toMatchObject({ salaryMinPaise: 1500000, salaryMaxPaise: 2000000 });
   });
 
   it('allows CEO to update pricing & policy via PUT /pricing, inserting a new version without editing old row', async () => {

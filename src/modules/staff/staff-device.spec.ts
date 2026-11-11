@@ -182,10 +182,22 @@ describe('Phase 10 Task 1: Staff devices', () => {
       'Finance laptop',
       'web',
     );
+    // Decided 11 Nov: a Manager's or Finance's new device is approved by the
+    // CEO (and by nobody else); this replaced the earlier 403 for the CEO.
     await request(app.getHttpServer())
       .post(`/staff/devices/${financeDevice.id}/approve`)
-      .set('Authorization', `Bearer ${ceoToken}`)
+      .set('Authorization', `Bearer ${managerToken}`)
       .expect(403);
+    const financeApproved = await request(app.getHttpServer())
+      .post(`/staff/devices/${financeDevice.id}/approve`)
+      .set('Authorization', `Bearer ${ceoToken}`)
+      .expect(200);
+    expect(financeApproved.body.approvedByStaffId).toBe(ceoId);
+    const managerApproved = await request(app.getHttpServer())
+      .post(`/staff/devices/${managerDevice.id}/approve`)
+      .set('Authorization', `Bearer ${ceoToken}`)
+      .expect(200);
+    expect(managerApproved.body.status).toBe('approved');
 
     const leadApproved = await request(app.getHttpServer())
       .post(`/staff/devices/${ownLead.id}/approve`)
