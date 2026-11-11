@@ -1,6 +1,6 @@
 # Phase 21 API — attendance and reporting lines
 
-Task 1 and Task 2. Later tasks add their routes here.
+Tasks 1 to 3. Later tasks add their routes here.
 
 ## GET /staff/without-reporting-line
 
@@ -166,3 +166,66 @@ Response `201`: today, `status` `travelling`.
 The call-status webhook sets On call when `answeredAt` is first stored, and After-call notes when an answered call receives `endedAt`. A call that was never answered does not change the status.
 
 A nightly job closes any day still open, at the last segment or heartbeat, with `closedReason` `auto_closed_no_logout` and `flagged` true.
+
+## Task 3 — full days, half days, shortfall and the month
+
+When a day closes (logout or the nightly close), its `dayType` is set from production time, with the settings `productionHoursFullDay` (8), `halfDayBelowHours` (4.5) and `dayToleranceMinutes` (10):
+
+| Production | Day type | Shortfall |
+|---|---|---|
+| 8h − tolerance or more (7h 50m and up) | `full` | 0 |
+| under 4.5h − tolerance (under 4h 20m) | `half` | 0 |
+| in between | `full` | 8h − production |
+
+Production above 8h is make-up time (`makeUpSeconds`). The month's make-up reduces the month's shortfall; what is left is the deductible shortfall. Make-up never crosses into another month and is not paid.
+
+The nightly job (05:30 IST) also writes an `absent` day (`closedReason` `no_login`, no `loginAt`) for yesterday for everyone who marks attendance (not the CEO), is active, existed on that date, and has no day on it. Weekly days off (`weeklyOffDays`, Sunday to start, CEO setting hidden from Managers) are skipped. A day worked on a weekly day off is `off`: no shortfall, and all its production is make-up.
+
+`GET /attendance/today` on a closed day now returns the stored shortfall (0 on a half day).
+
+### GET /attendance/month?month=YYYY-MM&staffId=…
+
+Who: the person (`staffId` left out means yourself); their Team Lead; a Manager over them; Finance and the CEO for anyone. Days and minutes only, no money.
+
+Response `200`:
+
+```json
+{
+  "staff": { "id": "…", "code": "CA-00007", "name": "Ravi", "role": "call_agent" },
+  "month": "2027-02",
+  "fullDays": 4, "halfDays": 1, "absentDays": 1, "offDaysWorked": 0,
+  "paidLeaveDays": { "casual": 0, "emergency": 0, "total": 0 },
+  "unpaidLeaveDays": 0,
+  "lateLogins": { "count": 2, "days": [ { "date": "2027-02-02", "minutes": 15 }, { "date": "2027-02-06", "minutes": 30 } ] },
+  "productionSeconds": 127260, "breakSeconds": 1200, "breakOverSeconds": 300, "idleSeconds": 1140,
+  "shortfallSeconds": 4740, "makeUpSeconds": 4200, "deductibleShortfallSeconds": 540,
+  "days": [
+    { "id": "…", "date": "2027-02-01", "dayType": "full", "loginAt": "…", "logoutAt": "…", "lateMinutes": 0,
+      "productionSeconds": 28800, "breakSeconds": 0, "breakOverSeconds": 0, "idleSeconds": 0,
+      "shortfallSeconds": 0, "makeUpSeconds": 0, "flagged": false, "closedReason": "logout",
+      "leaveKind": null, "leaveUnpaid": false, "change": null }
+  ]
+}
+```
+
+`breakOverSeconds` is break time past the allowance, break by break (15 minutes a short break, 30 minutes lunch). Today's open day is listed with `dayType` `open` and does not count in the totals of days or shortfall.
+
+Errors: `400` "month must look like 2026-11"; `403` for anyone else; `404` unknown staff.
+
+### POST /attendance/days/:dayId/day-type
+
+Who: the person's Team Lead, a Manager over them, or the CEO. Never the person themselves (a Team Lead or Manager cannot change their own day).
+
+Request: `{ "dayType": "full", "reason": "System was down from 1 PM" }`. `dayType` is `full` or `half`; `reason` is required.
+
+A `full`, `half` or `absent` day can be changed. The change clears the day's shortfall (a changed full day counts as a whole day; a half day never carries shortfall) and keeps make-up time on a full day. It is kept: a later correction recalculates the clocks but not the day type. Every change is written to status history (`attendance_day`) and the audit log (`attendance.day_changed`).
+
+Response `201`: the day row (as in the month summary), with `change: { byStaffId, at, reason }`.
+
+Errors: `400` wrong day type, no reason, day still open, or a leave day; `403` anyone else; `404` unknown day.
+
+### GET /attendance/days/:dayId/history
+
+Who: anyone who may see that person's month.
+
+Response `200`: `[ { "from": "half", "to": "full", "reason": "…", "changedByStaffId": "…", "changedAt": "…" } ]`, newest first.

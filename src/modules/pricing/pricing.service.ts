@@ -90,6 +90,7 @@ export class PricingService {
         emergencyLeavePerMonth: updates.emergencyLeavePerMonth ?? before.emergencyLeavePerMonth,
         refundPriorityWindowDays:
           updates.refundPriorityWindowDays ?? before.refundPriorityWindowDays,
+        weeklyOffDays: updates.weeklyOffDays ?? before.weeklyOffDays,
         matchPageSize: updates.matchPageSize ?? before.matchPageSize,
         salaryDaysPerMonth: updates.salaryDaysPerMonth ?? before.salaryDaysPerMonth,
         legalMinimumWageUnskilledPaise:

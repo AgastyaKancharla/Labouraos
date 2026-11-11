@@ -199,7 +199,7 @@ Also:
   - A forgotten logout closes at the last activity and is flagged.
   - Times come from the server clock, never the request.
 
-### [ ] Task 3 — Full days, half days, shortfall and the month
+### [x] Task 3 — Full days, half days, shortfall and the month
 **Branch:** `phase-21/task-3-day-rules` · **Migration folder:** `20261114110000_day_rules`
 
 **Acceptance:**

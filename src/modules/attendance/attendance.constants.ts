@@ -53,6 +53,7 @@ export const ATTENDANCE_SETTING_KEYS = [
   'casualLeavePerMonth',
   'emergencyLeavePerMonth',
   'refundPriorityWindowDays',
+  'weeklyOffDays',
 ] as const;
 
 export function isStaffPickedStatus(status: string): boolean {
