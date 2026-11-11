@@ -6,6 +6,8 @@ export const JOB_SEEKER_STATUSES = [
   'paused',
   'deactivated',
   'placed',
+  /** Found a job on his own: profile closed, no refund; he can pay again to come back. */
+  'closed',
 ] as const;
 
 export type JobSeekerStatus = (typeof JOB_SEEKER_STATUSES)[number];

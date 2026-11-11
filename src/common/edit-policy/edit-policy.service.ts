@@ -273,6 +273,10 @@ export class EditPolicyService {
       return { allowed: true, isMoneyInvolved: isMoney };
     }
 
+    if (actor.role === 'team_lead' && entityType === 'business') {
+      return this.checkTeamLeadBusinessEdit(actor, record, isMoney);
+    }
+
     if (actor.role === 'team_lead') {
       const creatorId = await this.getCreatorStaffId(entityType, record);
       if (!creatorId || creatorId === actor.id) {
@@ -302,24 +306,23 @@ export class EditPolicyService {
       }
 
       if (entityType === 'business') {
-        const hasAccountOrCreator =
-          !!record.accountAgentId ||
-          !!record.leadCreatedByStaffId ||
-          !!record.verifiedByStaffId;
-        if (!hasAccountOrCreator) {
-          return { allowed: true, isMoneyInvolved: false };
+        // Master Guide: only the account agent, their Team Lead and management edit a
+        // business. The agent who created the lead has no edit right of their own, and a
+        // business with no account agent yet is edited by a Team Lead or above.
+        if (!record.accountAgentId) {
+          return {
+            allowed: false,
+            isMoneyInvolved: false,
+            reason: 'This business has no account agent yet: only a Team Lead or above can edit it',
+          };
         }
-        const isAccountOrCreator =
-          record.accountAgentId === actor.id ||
-          record.leadCreatedByStaffId === actor.id ||
-          record.verifiedByStaffId === actor.id;
-        if (isAccountOrCreator) {
+        if (record.accountAgentId === actor.id) {
           return { allowed: true, isMoneyInvolved: false };
         }
         return {
           allowed: false,
           isMoneyInvolved: false,
-          reason: 'Only the account agent or creator of this business can edit it',
+          reason: 'Only the account agent of this business, their Team Lead and management can edit it',
         };
       }
 
@@ -338,6 +341,37 @@ export class EditPolicyService {
       allowed: false,
       isMoneyInvolved: isMoney,
       reason: 'This role is not allowed to edit records',
+    };
+  }
+
+  /**
+   * A Team Lead edits a business when the account agent is in their team (or is the Team
+   * Lead). With no account agent yet, the Team Lead of the team that created the lead
+   * edits it; with no creator either, any Team Lead may.
+   */
+  private async checkTeamLeadBusinessEdit(
+    actor: EditActor,
+    record: Record<string, unknown>,
+    isMoney: boolean,
+  ): Promise<{ allowed: boolean; isMoneyInvolved: boolean; reason?: string }> {
+    const accountAgentId = (record.accountAgentId as string | null) ?? null;
+    const ownerId = accountAgentId ?? (record.leadCreatedByStaffId as string | null) ?? null;
+    if (!ownerId || ownerId === actor.id) {
+      return { allowed: true, isMoneyInvolved: isMoney };
+    }
+    const owner = await this.prisma.staff.findUnique({
+      where: { id: ownerId },
+      select: { teamLeadId: true },
+    });
+    if (owner?.teamLeadId === actor.id) {
+      return { allowed: true, isMoneyInvolved: isMoney };
+    }
+    return {
+      allowed: false,
+      isMoneyInvolved: isMoney,
+      reason: accountAgentId
+        ? "Only the account agent's Team Lead can edit this business"
+        : 'Only the Team Lead of the team that created this lead can edit it',
     };
   }
 

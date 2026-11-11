@@ -9,6 +9,7 @@ import { IdService } from '../../common/id/id.service';
 import { RetentionService } from './retention.service';
 import { RECORDING_STORAGE, MemoryRecordingStorage } from '../call/recording-storage';
 import { CANDIDATE_PHOTO_STORAGE, MemoryCandidatePhotoStorage } from '../job-seeker/photo-storage';
+import { verifiedOtpFor } from '../../test-support/verified-otp';
 
 describe('Phase 19 Gate End-to-End Proof', () => {
   let app: INestApplication;
@@ -227,6 +228,8 @@ describe('Phase 19 Gate End-to-End Proof', () => {
         .send({
           phone: newPhone,
           reason: 'Candidate requested update to primary phone number',
+          // Master Guide: a new number is checked by OTP before it is saved.
+          phoneOtpRequestId: await verifiedOtpFor(app, newPhone),
         });
 
       expect(allowedRes.status).toBe(200);

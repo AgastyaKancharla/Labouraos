@@ -44,7 +44,7 @@ export class RefundService {
 
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
-        status: { notIn: ['placed', 'deactivated'] },
+        status: { notIn: ['placed', 'deactivated', 'closed'] },
         paymentReceivedAt: {
           not: null,
           lte: maxPaymentDate,
@@ -69,6 +69,7 @@ export class RefundService {
           jobSeekerId: { in: candidateIds },
           reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
           reversedAt: null,
+          supersededAt: null,
         },
         select: { jobSeekerId: true },
       });

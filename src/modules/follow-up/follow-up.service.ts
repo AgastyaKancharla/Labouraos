@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -17,6 +18,7 @@ import {
   FollowUpKind,
 } from './follow-up.constants';
 import { CompleteFollowUpTaskDto } from './dto/complete-follow-up-task.dto';
+import { JobSeekerService } from '../job-seeker/job-seeker.service';
 
 export interface ListFollowUpTasksQuery {
   status?: string;
@@ -33,6 +35,7 @@ export class FollowUpService {
     private readonly pricingService: PricingService,
     private readonly reviewFlagService: ReviewFlagService,
     private readonly candidateIntroService: CandidateIntroductionService,
+    @Optional() private readonly jobSeekerService?: JobSeekerService,
   ) {}
 
   async listTasks(
@@ -147,6 +150,15 @@ export class FollowUpService {
 
     if (!FOLLOW_UP_ANSWERS.includes(dto.answer)) {
       throw new BadRequestException(`Invalid answer '${dto.answer}'`);
+    }
+    if (dto.foundOwnJob === true && (dto.answer !== 'working_elsewhere' || task.subjectType !== 'job_seeker')) {
+      throw new BadRequestException("foundOwnJob can only be recorded with the answer 'working_elsewhere' on a job seeker's follow-up");
+    }
+    if (dto.foundOwnJob === true) {
+      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: task.subjectId }, select: { status: true, code: true } });
+      if (!seeker || ['closed', 'placed', 'deactivated'].includes(seeker.status)) {
+        throw new BadRequestException(`Job seeker is '${seeker?.status ?? 'missing'}' and cannot be closed as found a job on his own`);
+      }
     }
 
     const policy = await this.pricingService.current();
@@ -263,7 +275,26 @@ export class FollowUpService {
       },
     });
 
-    return updated;
+    // "Working elsewhere" from a job seeker: offer to record that he found a job on his
+    // own (Master Guide, decided 9 Nov: profile closed, no refund), or record it now.
+    let foundOwnJobRecorded = false;
+    let offerFoundOwnJob = false;
+    if (dto.answer === 'working_elsewhere' && task.subjectType === 'job_seeker') {
+      if (dto.foundOwnJob === true) {
+        if (!this.jobSeekerService) throw new Error('JobSeekerService is not available');
+        await this.jobSeekerService.recordFoundOwnJob(task.subjectId, actorId, {
+          reason: dto.notes?.trim() || `Follow-up ${updated.code}: working elsewhere, found a job on his own`,
+          callRecordId: call.id,
+          followUpTaskId: updated.id,
+        });
+        foundOwnJobRecorded = true;
+      } else {
+        const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: task.subjectId }, select: { status: true } });
+        offerFoundOwnJob = Boolean(seeker && !['closed', 'placed', 'deactivated'].includes(seeker.status));
+      }
+    }
+
+    return { ...updated, offerFoundOwnJob, foundOwnJobRecorded };
   }
 
   async createScheduledTasks(now = new Date()): Promise<{ created: number; missed: number }> {
@@ -385,13 +416,15 @@ export class FollowUpService {
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         paymentReceivedAt: { not: null },
-        status: { notIn: ['placed', 'deactivated'] },
+        status: { notIn: ['placed', 'deactivated', 'closed'] },
       },
       include: {
         hits: {
           where: {
             reason: { in: ['offer_declined', 'offer_no_reply', 'interview_no_show', 'offer_rejected'] },
             reversedAt: null,
+            // Hits from an earlier guarantee (before he paid ₹499 again) no longer count.
+            supersededAt: null,
           },
         },
         registeredBy: true,
@@ -410,6 +443,8 @@ export class FollowUpService {
             kind: 'refund_check',
             subjectType: 'job_seeker',
             subjectId: candidate.id,
+            // One refund check per guarantee: paying again starts a new one.
+            createdAt: { gte: candidate.paymentReceivedAt! },
           },
         });
 

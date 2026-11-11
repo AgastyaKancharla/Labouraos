@@ -173,6 +173,28 @@ export class BusinessController {
     return this.verificationService.reject(businessId, req.user.sub, reason);
   }
 
+  @Post(':id/pause')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  pause(
+    @Param('id') businessId: string,
+    @Body('reason') reason: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.pause(businessId, req.user.sub, reason);
+  }
+
+  @Post(':id/unpause')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  @RequirePermission('business', 'write')
+  unpause(
+    @Param('id') businessId: string,
+    @Body('reason') reason: string,
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.verificationService.unpause(businessId, req.user.sub, reason);
+  }
+
   @Post(':id/account-agent')
   @RequireRoles('team_lead', 'manager', 'ceo')
   @RequirePermission('business', 'write')

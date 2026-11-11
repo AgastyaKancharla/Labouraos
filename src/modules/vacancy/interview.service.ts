@@ -27,6 +27,7 @@ import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePho
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PlacementService } from '../placement/placement.service';
+import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
 
 interface BookInterviewDto {
   vacancyId: string;
@@ -84,8 +85,11 @@ export class InterviewService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('An interview can only be booked once the contact person confirms the vacancy');
     }
-    if (vacancy.business.verificationStatus !== 'verified') {
-      throw new BadRequestException('The business must be verified before an interview can be booked');
+    const businessAccess = businessCandidateAccess(vacancy.business);
+    if (!businessAccess.allowed) {
+      throw new BadRequestException(businessAccess.reason === 'paused'
+        ? BUSINESS_PAUSED_MESSAGE
+        : 'The business must be verified before an interview can be booked');
     }
     if (actor.role === 'field_agent' && vacancy.business.accountAgentId !== actor.id) {
       throw new ForbiddenException('Field agents may only book interviews for their account businesses');

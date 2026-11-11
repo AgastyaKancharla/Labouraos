@@ -96,6 +96,7 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
       'paused',
       'deactivated',
       'placed',
+      'closed',
     ]);
   });
 
