@@ -68,6 +68,8 @@ export function staffInviteLink(token: string): string {
 }
 
 export interface InvitePreview {
+  /** 'reset' when the link is a password reset for an existing account. */
+  purpose: 'invite' | 'reset';
   name: string;
   code: string;
   role: string;
@@ -80,8 +82,42 @@ export interface InvitePreview {
 }
 
 type ResolvedInvite =
-  | { ok: true; staff: Staff; tokenHash: string }
+  | { ok: true; purpose: 'invite'; staff: Staff; tokenHash: string; expiresAt: Date }
+  | { ok: true; purpose: 'reset'; staff: Staff; tokenHash: string; expiresAt: Date; resetId: string }
   | { ok: false; reason: InviteProblem };
+
+export interface PasswordResetResult {
+  staff: StaffView;
+  /** Shown exactly once; only its SHA-256 hash is stored. */
+  resetToken: string;
+  /** The invite page link carrying the token, to send to the person. */
+  resetUrl: string;
+  expiresAt: Date;
+}
+
+export type PasswordResetState = 'waiting' | 'used' | 'expired' | 'replaced';
+
+export interface PasswordResetView {
+  id: string;
+  staff: { id: string; code: string; name: string; role: string };
+  issuedBy: { id: string; code: string; name: string; role: string };
+  createdAt: Date;
+  expiresAt: Date;
+  usedAt: Date | null;
+  cancelledAt: Date | null;
+  state: PasswordResetState;
+}
+
+/** Waiting, used, expired, or replaced by a newer reset / a deactivation. */
+export function passwordResetState(
+  row: { usedAt: Date | null; cancelledAt: Date | null; expiresAt: Date },
+  now: Date,
+): PasswordResetState {
+  if (row.usedAt) return 'used';
+  if (row.cancelledAt) return 'replaced';
+  if (row.expiresAt.getTime() <= now.getTime()) return 'expired';
+  return 'waiting';
+}
 
 export const STAFF_STATUS = {
   PENDING_INVITE: 'pending_invite',
@@ -134,6 +170,8 @@ const STAFF_VIEW_SELECT = {
   teamLeadId: true,
   reportsToId: true,
   status: true,
+  isIntern: true,
+  startsOn: true,
   createdAt: true,
   deactivatedAt: true,
 } satisfies Prisma.StaffSelect;
@@ -360,6 +398,23 @@ export class StaffService {
         `A Manager cannot create '${role}' accounts; only the CEO can`,
       );
     }
+    if (dto.intern !== undefined && typeof dto.intern !== 'boolean') {
+      throw new BadRequestException('intern must be true or false');
+    }
+    const isIntern = dto.intern === true;
+    if (isIntern && !TEAM_MEMBER_ROLES.includes(role)) {
+      throw new BadRequestException('Only call agents and field agents can be interns');
+    }
+    let startsOn: Date | null = null;
+    if (dto.startsOn !== undefined && dto.startsOn !== null && dto.startsOn !== '') {
+      if (typeof dto.startsOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dto.startsOn)) {
+        throw new BadRequestException('startsOn must be a date like 2026-11-16');
+      }
+      startsOn = new Date(`${dto.startsOn}T00:00:00.000Z`);
+      if (Number.isNaN(startsOn.getTime())) {
+        throw new BadRequestException('startsOn must be a valid date');
+      }
+    }
     const requestedTeamLeadId = dto.teamLeadId || undefined;
     const requestedReportsToId = dto.reportsToId || undefined;
     if (requestedTeamLeadId && !TEAM_MEMBER_ROLES.includes(role)) {
@@ -425,6 +480,8 @@ export class StaffService {
         status: STAFF_STATUS.PENDING_INVITE,
         inviteTokenHash: hashInviteToken(inviteToken),
         inviteExpiresAt,
+        isIntern,
+        startsOn,
       }),
       actor.sub,
     );
@@ -443,6 +500,8 @@ export class StaffService {
         teamLeadId: staff.teamLeadId,
         reportsToId: staff.reportsToId,
         status: staff.status,
+        isIntern: staff.isIntern,
+        startsOn: staff.startsOn ? staff.startsOn.toISOString().slice(0, 10) : null,
         inviteExpiresAt: inviteExpiresAt.toISOString(),
       },
     });
@@ -518,7 +577,26 @@ export class StaffService {
       if (!staff.inviteExpiresAt || staff.inviteExpiresAt <= now) {
         return { ok: false, reason: 'expired' };
       }
-      return { ok: true, staff, tokenHash };
+      return { ok: true, purpose: 'invite', staff, tokenHash, expiresAt: staff.inviteExpiresAt };
+    }
+    const reset = await this.prisma.staffPasswordReset.findUnique({
+      where: { tokenHash },
+      include: { staff: true },
+    });
+    if (reset) {
+      if (reset.usedAt) return { ok: false, reason: 'used' };
+      if (reset.cancelledAt || reset.staff.status !== STAFF_STATUS.ACTIVE) {
+        return { ok: false, reason: 'invalid' };
+      }
+      if (reset.expiresAt <= now) return { ok: false, reason: 'expired' };
+      return {
+        ok: true,
+        purpose: 'reset',
+        staff: reset.staff,
+        tokenHash,
+        expiresAt: reset.expiresAt,
+        resetId: reset.id,
+      };
     }
     const used = await this.prisma.staff.findUnique({
       where: { inviteUsedTokenHash: tokenHash },
@@ -540,11 +618,13 @@ export class StaffService {
     }
     const { staff } = invite;
     return {
+      purpose: invite.purpose,
       name: staff.name,
       code: staff.code,
       role: staff.role,
-      expiresAt: staff.inviteExpiresAt!,
-      authenticatorRequired: AUTHENTICATOR_ROLES.includes(staff.role),
+      expiresAt: invite.expiresAt,
+      // A password reset keeps the authenticator already set up.
+      authenticatorRequired: invite.purpose === 'invite' && AUTHENTICATOR_ROLES.includes(staff.role),
       passwordRules: { minLength: MIN_PASSWORD_LENGTH, maxBytes: MAX_PASSWORD_BYTES },
       signInAt: staff.role === 'field_agent' ? 'field_app' : 'web',
     };
@@ -564,6 +644,11 @@ export class StaffService {
       throw this.inviteProblem(invite.reason);
     }
     const { staff, tokenHash } = invite;
+    if (invite.purpose === 'reset') {
+      throw new BadRequestException(
+        'A password reset keeps the authenticator you already use',
+      );
+    }
     if (!AUTHENTICATOR_ROLES.includes(staff.role)) {
       throw new BadRequestException(
         'Only the CEO, Managers and Finance use an authenticator app',
@@ -609,6 +694,9 @@ export class StaffService {
     const invite = await this.resolveInvite(token, now);
     if (!invite.ok) {
       throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: invite.reason });
+    }
+    if (invite.purpose === 'reset') {
+      return this.completePasswordReset(invite.staff, invite.resetId, password, now);
     }
     const { staff, tokenHash } = invite;
 
@@ -721,6 +809,11 @@ export class StaffService {
           inviteExpiresAt: null,
         },
         select: STAFF_VIEW_SELECT,
+      });
+      // An unused password reset must not bring the account back either.
+      await tx.staffPasswordReset.updateMany({
+        where: { staffId, usedAt: null, cancelledAt: null },
+        data: { cancelledAt: now },
       });
       await recordStatusChange(tx, {
         subjectType: 'staff',
@@ -849,6 +942,183 @@ export class StaffService {
       inviteUrl: staffInviteLink(inviteToken),
       inviteExpiresAt,
     };
+  }
+
+  /**
+   * Reset password (Master Guide, Passwords and email): a Team Lead for their
+   * own agents, a Manager inside their own tree, the CEO for anyone. Works
+   * like a new invite link — the person opens it on the invite page and sets
+   * a new password. Until the link is used the old password keeps working;
+   * once it is used the old password stops working and every open session
+   * ends. A newer reset replaces an older unused one. The authenticator
+   * (CEO, Managers, Finance) is kept. Each reset is stored with who issued it.
+   */
+  async issuePasswordReset(
+    staffId: string,
+    actor: JwtPayload,
+    now: Date = new Date(),
+  ): Promise<PasswordResetResult> {
+    const target = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { ...STAFF_VIEW_SELECT, teamLeadId: true, reportsToId: true },
+    });
+    if (!target) {
+      throw new NotFoundException('Staff account not found');
+    }
+    if (target.id === actor.sub) {
+      throw new BadRequestException('You cannot reset your own password here');
+    }
+    if (actor.role === 'team_lead') {
+      const ownAgent =
+        TEAM_MEMBER_ROLES.includes(target.role) &&
+        (target.teamLeadId === actor.sub || target.reportsToId === actor.sub);
+      if (!ownAgent) {
+        throw new ForbiddenException(
+          'A Team Lead can reset passwords only for agents in their own team',
+        );
+      }
+    } else if (actor.role === 'manager') {
+      if (NOT_CREATED_BY_MANAGER.includes(target.role)) {
+        throw new ForbiddenException(
+          `A Manager cannot reset the password of a '${target.role}' account; only the CEO can`,
+        );
+      }
+      await this.assertInManagerTree(actor, target.id);
+    } else if (actor.role !== 'ceo') {
+      throw new ForbiddenException('Only a Team Lead, Manager or the CEO can reset a password');
+    }
+    if (target.status === STAFF_STATUS.DEACTIVATED) {
+      throw new BadRequestException('This account is deactivated. Reactivate it first.');
+    }
+    if (target.status === STAFF_STATUS.PENDING_INVITE) {
+      throw new BadRequestException(
+        'This person has not set a password yet. Send them a new invite instead.',
+      );
+    }
+
+    const resetToken = randomBytes(32).toString('hex');
+    const expiresAt = new Date(now.getTime() + INVITE_TTL_MS);
+    const reset = await this.prisma.$transaction(async (tx) => {
+      const replaced = await tx.staffPasswordReset.updateMany({
+        where: { staffId, usedAt: null, cancelledAt: null },
+        data: { cancelledAt: now },
+      });
+      const created = await tx.staffPasswordReset.create({
+        data: {
+          staffId,
+          issuedByStaffId: actor.sub,
+          tokenHash: hashInviteToken(resetToken),
+          expiresAt,
+          createdAt: now,
+        },
+        select: { id: true },
+      });
+      return { id: created.id, replaced: replaced.count };
+    });
+
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.password_reset_issued',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: null,
+      after: {
+        passwordResetId: reset.id,
+        issuedByStaffId: actor.sub,
+        expiresAt: expiresAt.toISOString(),
+        replacedEarlierResets: reset.replaced,
+      },
+    });
+
+    const staff: StaffView = {
+      id: target.id,
+      code: target.code,
+      name: target.name,
+      email: target.email,
+      role: target.role,
+      teamLeadId: target.teamLeadId,
+      reportsToId: target.reportsToId,
+      status: target.status,
+      isIntern: target.isIntern,
+      startsOn: target.startsOn,
+      createdAt: target.createdAt,
+      deactivatedAt: target.deactivatedAt,
+    };
+    return { staff, resetToken, resetUrl: staffInviteLink(resetToken), expiresAt };
+  }
+
+  /** The reset link was used: the new password replaces the old one, sessions end. */
+  private async completePasswordReset(
+    staff: Staff,
+    resetId: string,
+    password: string,
+    now: Date,
+  ): Promise<{ success: true; code: string; email: string | null }> {
+    const passwordHash = await this.authService.hashPassword(password);
+    const claimed = await this.prisma.$transaction(async (tx) => {
+      const used = await tx.staffPasswordReset.updateMany({
+        where: { id: resetId, usedAt: null, cancelledAt: null, expiresAt: { gt: now } },
+        data: { usedAt: now },
+      });
+      if (used.count !== 1) return false;
+      const updated = await tx.staff.updateMany({
+        where: { id: staff.id, status: STAFF_STATUS.ACTIVE },
+        // A lock from wrong passwords ends with the new password; a lock a
+        // Manager or the CEO put on the account (lockedByStaffId) stays.
+        data: { passwordHash, failedLoginCount: 0, lockedUntil: null },
+      });
+      if (updated.count !== 1) {
+        throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: 'invalid' });
+      }
+      return true;
+    });
+    if (!claimed) {
+      throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: 'used' });
+    }
+    const sessionsEnded = await this.authService.revokeAllSessionsForStaff(staff.id);
+    await this.auditService.log({
+      actorId: staff.id,
+      action: 'staff.password_reset_completed',
+      entityType: 'staff',
+      entityCode: staff.code,
+      before: { passwordResetId: resetId, usedAt: null },
+      after: { passwordResetId: resetId, usedAt: now.toISOString(), sessionsEnded },
+    });
+    return { success: true, code: staff.code, email: staff.email };
+  }
+
+  /**
+   * Who reset whose password, newest first. The CEO sees every reset; a
+   * Manager sees resets of people in their own tree.
+   */
+  async listPasswordResets(
+    actor: JwtPayload,
+    now: Date = new Date(),
+  ): Promise<PasswordResetView[]> {
+    let where: Prisma.StaffPasswordResetWhereInput = {};
+    if (actor.role === 'manager') {
+      const under = await this.reportingScope.peopleUnder(actor.sub);
+      where = { staffId: { in: under } };
+    } else if (actor.role !== 'ceo') {
+      throw new ForbiddenException('Only a Manager or the CEO can see password resets');
+    }
+    const person = { select: { id: true, code: true, name: true, role: true } };
+    const rows = await this.prisma.staffPasswordReset.findMany({
+      where,
+      include: { staff: person, issuedBy: person },
+      orderBy: { createdAt: 'desc' },
+      take: 500,
+    });
+    return rows.map((r) => ({
+      id: r.id,
+      staff: r.staff,
+      issuedBy: r.issuedBy,
+      createdAt: r.createdAt,
+      expiresAt: r.expiresAt,
+      usedAt: r.usedAt,
+      cancelledAt: r.cancelledAt,
+      state: passwordResetState(r, now),
+    }));
   }
 
   async reactivateStaff(

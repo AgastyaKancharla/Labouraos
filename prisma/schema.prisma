@@ -750,6 +750,10 @@ model Staff {
   /// A Team Lead's team name ("Team South"), set by the CEO on the Teams
   /// screen. Null for everyone else; a team is its Team Lead and their agents.
   teamName          String?
+  /// An intern (call or field agent) — carries the same targets as paid agents.
+  isIntern          Boolean          @default(false)
+  /// First working day, picked on "Add a staff member" (Manager portal).
+  startsOn          DateTime?        @db.Date
   failedLoginCount  Int              @default(0)
   lockedUntil       DateTime?
   lockedByStaffId   String?
@@ -805,6 +809,10 @@ model Staff {
   inviteUsedTokenHash String?        @unique
   deactivatedAt     DateTime?
   sessions          StaffSession[]
+  passwordResets    StaffPasswordReset[] @relation("PasswordResetFor")
+  passwordResetsIssued StaffPasswordReset[] @relation("PasswordResetIssuedBy")
+  coachingNotes     StaffCoachingNote[] @relation("CoachingNoteAbout")
+  coachingNotesWritten StaffCoachingNote[] @relation("CoachingNoteAuthor")
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -1997,4 +2005,43 @@ model OwnerFavourite {
 
   @@unique([vacancyId, jobSeekerId])
   @@index([jobSeekerId])
+}
+
+/// A password reset issued by a Team Lead (own agents), a Manager (own tree)
+/// or the CEO. Works like a new invite link: the person sets a new password
+/// on the invite page; the old password keeps working until the link is used.
+/// Kept so the CEO's audit can see who reset whom. Only the SHA-256 of the
+/// token is stored.
+model StaffPasswordReset {
+  id              String    @id @default(uuid())
+  staffId         String
+  staff           Staff     @relation("PasswordResetFor", fields: [staffId], references: [id], onDelete: Cascade)
+  issuedByStaffId String
+  issuedBy        Staff     @relation("PasswordResetIssuedBy", fields: [issuedByStaffId], references: [id], onDelete: Restrict)
+  tokenHash       String    @unique
+  expiresAt       DateTime
+  usedAt          DateTime?
+  /// Set when a newer reset replaced this one, or the account was deactivated.
+  cancelledAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  @@index([staffId, createdAt])
+  @@index([issuedByStaffId])
+}
+
+/// Coaching notes and written warnings about a staff member (Manager portal,
+/// MG-Agent and MG-TL). Seen by the person's Team Lead, Managers above them
+/// and the CEO. Only a Manager or the CEO gives a written warning.
+model StaffCoachingNote {
+  id            String   @id @default(uuid())
+  staffId       String
+  staff         Staff    @relation("CoachingNoteAbout", fields: [staffId], references: [id], onDelete: Cascade)
+  authorStaffId String
+  author        Staff    @relation("CoachingNoteAuthor", fields: [authorStaffId], references: [id], onDelete: Restrict)
+  /// note, written_warning
+  kind          String   @default("note")
+  text          String
+  createdAt     DateTime @default(now())
+
+  @@index([staffId, createdAt])
 }
