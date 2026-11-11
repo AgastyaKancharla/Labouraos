@@ -8,6 +8,7 @@ import {
   optionalIndianMobile,
   parseIndianMobile,
   phoneLast4,
+  vendorMobileNumber,
   phoneSearchDigits,
   phoneSearchTerm,
   requireIndianMobile,
@@ -118,6 +119,13 @@ describe('Indian mobile numbers: one stored format (+91 and 10 digits)', () => {
       expect(nationalMobileDigits('+91 98765 43210')).toBe('9876543210');
       expect(nationalMobileDigits('09876543210')).toBe('9876543210');
       expect(nationalMobileDigits('18001234567')).toBe('18001234567');
+    });
+
+    it('gives the SMS/OTP vendor the country code with no plus (MSG91: 919876543210)', () => {
+      for (const spelling of ['+919876543210', '9876543210', '+91 98765 43210', '09876543210', '919876543210']) {
+        expect(vendorMobileNumber(spelling)).toBe('919876543210');
+      }
+      expect(() => vendorMobileNumber('12345')).toThrow(BadRequestException);
     });
 
     it('treats two spellings of one number as the same number', () => {

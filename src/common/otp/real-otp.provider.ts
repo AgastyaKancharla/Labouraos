@@ -1,5 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
-import { nationalMobileDigits } from '../phone/indian-mobile';
+import { nationalMobileDigits, vendorMobileNumber } from '../phone/indian-mobile';
 import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../prisma/prisma.service';
@@ -116,7 +116,8 @@ export class RealOtpProvider implements OtpProvider {
 
     const payload = {
       template_id: this.dltTemplateId,
-      mobile: cleanPhone,
+      // MSG91 wants the country code with no plus: 919876543210.
+      mobile: vendorMobileNumber(cleanPhone),
       sender: this.senderId,
       entity_id: this.dltEntityId,
       otp_expiry: 5,
@@ -194,7 +195,7 @@ export class RealOtpProvider implements OtpProvider {
     try {
       const queryParams = new URLSearchParams({
         otp: code,
-        mobile: decryptCallRoutingPhone(session.phoneEncrypted),
+        mobile: vendorMobileNumber(decryptCallRoutingPhone(session.phoneEncrypted)),
       });
 
       const response = await this.fetchFn(
@@ -319,7 +320,7 @@ export class RealOtpProvider implements OtpProvider {
 
     const encoded = new URLSearchParams({
       request_id: requestId,
-      mobile: `91${cleanPhone}`,
+      mobile: vendorMobileNumber(cleanPhone),
       retrytype: 'text',
     });
     try {

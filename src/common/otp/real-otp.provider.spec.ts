@@ -156,7 +156,8 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       });
 
       const body = JSON.parse(req.options?.body as string);
-      expect(body.mobile).toBe('9876543210');
+      // MSG91 v5 wants the country code with no plus (was the 10 digits only).
+      expect(body.mobile).toBe('919876543210');
       expect(body.sender).toBe('LABOUR');
       expect(body.template_id).toBe('1007998877665544332');
       expect(body.entity_id).toBe('1001112233445566778');
@@ -190,6 +191,10 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       expect(await secondProvider.isVerified(requestId, '9876543210')).toBe(true);
       expect(await secondProvider.isVerified(requestId, '9111111111')).toBe(false);
 
+      // The vendor gets the number with country code and no plus.
+      const verifyUrl = new URL(capturedRequests.find((r) => r.url.includes('/otp/verify'))!.url);
+      expect(verifyUrl.searchParams.get('mobile')).toBe('919876543210');
+
       // Replay/reuse rejected
       const replayVerify = await secondProvider.verifyOtp(requestId, '123456');
       expect(replayVerify).toBe(false);
@@ -217,6 +222,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
 
       expect(resent).toMatchObject({ requestId: initial.requestId, resendsLeft: 2 });
       expect(capturedRequests[1].url).toContain('/otp/retry?');
+      expect(new URL(capturedRequests[1].url).searchParams.get('mobile')).toBe('919876543210');
       expect(sessions.get(initial.requestId)?.resendCount).toBe(1);
     });
 
