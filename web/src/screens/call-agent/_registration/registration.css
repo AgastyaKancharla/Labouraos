@@ -342,3 +342,22 @@
   flex-direction: column;
   gap: 6px;
 }
+.reg legend.sech {
+  margin-bottom: 14px;
+}
+.reg .reg-full .lb-prefixed {
+  max-width: 340px;
+}
+.reg .reg-full > .inrow > input[readonly] {
+  max-width: 300px;
+}
+.reg .inrow {
+  flex-wrap: wrap;
+}
+.reg .inrow > .lb-prefixed {
+  min-width: 130px;
+}
+.reg .fld select.lb-money-period {
+  width: auto;
+  flex: 0 0 auto;
+}
