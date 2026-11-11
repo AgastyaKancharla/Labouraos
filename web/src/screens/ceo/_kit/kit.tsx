@@ -296,7 +296,7 @@ export function Bars({ items, warm, format }: { items: readonly { label: string;
 
 export function HBar({ label, value, max, right, warm }: { label: ReactNode; value: number; max: number; right: ReactNode; warm?: boolean }) {
   return (
-    <div className="hbar-row">
+    <div className="hbar-row" style={{ marginBottom: 8 }}>
       <span>{label}</span>
       <div className="track">
         <div className={warm ? 'fill warm' : 'fill'} style={{ width: `${max > 0 ? Math.round((value / max) * 100) : 0}%` }} />
