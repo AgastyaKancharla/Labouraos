@@ -393,3 +393,42 @@ Response `200` (JSON): `{ "month": "2027-06", "rows": [ { "staffCode": "CA-00007
 With `format=csv`: `text/csv`, file `attendance-month-sheet-2027-06.csv`, columns `Staff code,Name,Role,Full days,Half days,Paid leave days,Absent days,Unpaid leave days,Paid days,Unpaid days,Deductible shortfall (minutes)`. No other personal data. A cell starting like a formula is written as text.
 
 Errors: `400` bad month; `403`.
+
+## Public holidays (owner decision, Master Guide Attendance)
+
+The CEO keeps the holiday list per year. A holiday is a paid day off for everyone and behaves exactly like a weekly day off (one helper, `WorkingDaysService`, answers "is this a working day?" for both):
+
+- nobody is marked absent on it;
+- leave that spans it does not use a leave day for it;
+- time worked on it is make-up (`dayType` `off`), never shortfall or a half day;
+- it is left out of target pace (expected pace counts working days only) and of the month's working days (`workingDays` on the month summary; the month sheet gets the same column).
+
+Changing the list re-works the affected dates automatically, from the 1st of the current month (IST) onward, past days included. Earlier months are closed and left alone. A date that becomes a holiday loses its absent rows and leave days (the leave request's paid/unpaid split is worked out again, so the day goes back to the balance); worked days become `off`. A date that becomes a working day again gets back the leave days of approved requests that cover it, worked days become full/half again, and a past date with no login and no leave is marked absent.
+
+Every change is audited (`attendance.holiday_added`, `attendance.holiday_changed`, `attendance.holiday_removed`, `attendance.holidays_set`).
+
+### GET /attendance/holidays?year=2027
+
+Who: any staff member. Response `200`: `{ "year": 2027, "holidays": [ { "id": "…", "date": "2027-01-26", "name": "Republic Day", "weekday": 2 } ] }`. `year` defaults to this year.
+
+### PUT /attendance/holidays/:year
+
+Who: the CEO only. Replaces that year's list. Request: `{ "holidays": [ { "date": "2027-01-26", "name": "Republic Day" } ] }`. Response `200`: the year's list.
+
+Errors: `400` a date outside the year, a date listed twice, a missing name or a bad date; `403` anyone else.
+
+### POST /attendance/holidays
+
+Who: the CEO only. Request: `{ "date": "2027-08-18", "name": "Local festival" }`. Response `201`: the holiday.
+
+Errors: `400` bad date or no name; `403`; `409` already a holiday.
+
+### PATCH /attendance/holidays/:id
+
+Who: the CEO only. Request: `{ "date"?: "2027-08-19", "name"?: "…" }`. Moving the date re-works both dates. Response `200`: the holiday. Errors: `400`, `403`, `404`, `409` the new date is already a holiday.
+
+### DELETE /attendance/holidays/:id
+
+Who: the CEO only. Response `200`: `{ "removed": true }`. Errors: `403`, `404`.
+
+`GET /attendance/month` also returns `workingDays` (days in the month minus weekly days off and holidays) and `holidays` (`[{ date, name }]`).

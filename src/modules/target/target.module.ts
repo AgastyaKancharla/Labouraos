@@ -10,9 +10,10 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ReportingScopeModule } from '../staff/reporting-scope.module';
+import { WorkingDaysModule } from '../attendance/working-days.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, PricingModule, ReportingScopeModule],
+  imports: [PrismaModule, AuditModule, PricingModule, ReportingScopeModule, WorkingDaysModule],
   controllers: [TargetController],
   providers: [
     TargetService,

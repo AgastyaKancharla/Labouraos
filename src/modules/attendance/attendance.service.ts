@@ -18,7 +18,8 @@ import {
   PRODUCTION_STATUSES,
   isStaffPickedStatus,
 } from './attendance.constants';
-import { classifyDay, isWeeklyOff } from './day-rules';
+import { classifyDay } from './day-rules';
+import { WorkingDaysService } from './working-days.service';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
 
@@ -45,6 +46,7 @@ export class AttendanceService {
     private readonly pricing: PricingService,
     private readonly reviewFlags: ReviewFlagService,
     private readonly clock: AttendanceClock,
+    private readonly workingDays: WorkingDaysService,
   ) {}
 
   async login(
@@ -318,7 +320,7 @@ export class AttendanceService {
     const result = classifyDay(
       totals.productionSeconds,
       policy,
-      isWeeklyOff(day.date, policy.weeklyOffDays),
+      await this.workingDays.isNonWorking(day.date),
     );
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
@@ -352,7 +354,7 @@ export class AttendanceService {
     const result = classifyDay(
       totals.productionSeconds,
       policy,
-      isWeeklyOff(day.date, policy.weeklyOffDays),
+      await this.workingDays.isNonWorking(day.date),
     );
     const changed = Boolean(day.dayTypeChangedAt);
     await this.prisma.attendanceDay.update({
