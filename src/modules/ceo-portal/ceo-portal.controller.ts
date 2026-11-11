@@ -10,6 +10,9 @@ import { CeoJobSeekersService } from './ceo-job-seekers.service';
 import { CeoBusinessesService } from './ceo-businesses.service';
 import { CeoPlacementsService } from './ceo-placements.service';
 import { CeoMoneyService } from './ceo-money.service';
+import { CeoTeamService, parseMonth } from './ceo-team.service';
+import { CeoOpsService } from './ceo-ops.service';
+import { CeoAdminService } from './ceo-admin.service';
 import { cleanOption, cleanSearch, parseOptionalRange, parsePage, parseRange } from './ceo-common';
 
 type AuthedRequest = Request & { user: JwtPayload };
@@ -33,6 +36,9 @@ export class CeoPortalController {
     private readonly businesses: CeoBusinessesService,
     private readonly placements: CeoPlacementsService,
     private readonly money: CeoMoneyService,
+    private readonly team: CeoTeamService,
+    private readonly ops: CeoOpsService,
+    private readonly admin: CeoAdminService,
   ) {}
 
   // Command Center and reports ------------------------------------------
@@ -244,5 +250,138 @@ export class CeoPortalController {
   @RequireRoles('ceo')
   refunds() {
     return this.money.refundsWithCeo();
+  }
+
+  // Team & access (part 2) ------------------------------------------------
+
+  @Get('team')
+  @RequireRoles('ceo')
+  teamList() {
+    return this.team.team(new Date());
+  }
+
+  @Get('teams')
+  @RequireRoles('ceo')
+  teamsList() {
+    return this.team.teams(new Date());
+  }
+
+  @Post('teams/:id')
+  @RequireRoles('ceo')
+  nameTeam(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { name?: unknown }) {
+    return this.team.setTeamName(req.user, id, body ?? {});
+  }
+
+  @Get('devices')
+  @RequireRoles('ceo')
+  devices() {
+    return this.team.devices(new Date());
+  }
+
+  @Get('access')
+  @RequireRoles('ceo')
+  access(@Query() q: Q) {
+    const range = parseOptionalRange(q.fromDate, q.toDate);
+    return this.team.access(new Date(), range.from, range.to);
+  }
+
+  @Get('targets')
+  @RequireRoles('ceo')
+  targetsBoard(@Query() q: Q) {
+    const now = new Date();
+    return this.team.targetsBoard(parseMonth(q.year, q.month, now), now);
+  }
+
+  @Post('targets/copy')
+  @RequireRoles('ceo')
+  copyTargets(@Req() req: AuthedRequest, @Body() body: { fromYear?: unknown; fromMonth?: unknown; toYear?: unknown; toMonth?: unknown }) {
+    return this.team.copyTargets(req.user, body ?? {}, new Date());
+  }
+
+  // Operations -----------------------------------------------------------
+
+  @Get('attendance')
+  @RequireRoles('ceo')
+  attendance(@Query() q: Q) {
+    const now = new Date();
+    return this.ops.attendance(parseRange(q.fromDate, q.toDate, now), now);
+  }
+
+  @Get('call-center')
+  @RequireRoles('ceo')
+  callCenter(@Req() req: AuthedRequest, @Query() q: Q) {
+    const now = new Date();
+    return this.ops.callCenter(req.user.sub, parseRange(q.fromDate, q.toDate, now), now);
+  }
+
+  @Get('field-ops')
+  @RequireRoles('ceo')
+  fieldOps(@Req() req: AuthedRequest, @Query() q: Q) {
+    const now = new Date();
+    return this.ops.fieldOps(req.user.sub, parseRange(q.fromDate, q.toDate, now), now);
+  }
+
+  @Get('check-ins')
+  @RequireRoles('ceo')
+  checkins(@Query() q: Q) {
+    const now = new Date();
+    return this.ops.checkins(parseRange(q.fromDate, q.toDate, now), now);
+  }
+
+  // Admin ----------------------------------------------------------------
+
+  @Get('audit')
+  @RequireRoles('ceo')
+  audit(@Query() q: Q) {
+    return this.admin.audit(parseOptionalRange(q.fromDate, q.toDate), parsePage(q.page, q.pageSize), {
+      search: cleanSearch(q.search),
+      who: cleanOption(q.who),
+      type: cleanOption(q.type),
+    });
+  }
+
+  @Get('flags')
+  @RequireRoles('ceo')
+  flags(@Query() q: Q) {
+    return this.admin.flags(
+      parsePage(q.page, q.pageSize),
+      { search: cleanSearch(q.search), status: cleanOption(q.status), severity: cleanOption(q.severity), kind: cleanOption(q.kind) },
+      new Date(),
+    );
+  }
+
+  @Get('privacy')
+  @RequireRoles('ceo')
+  privacy() {
+    return this.admin.privacy(new Date());
+  }
+
+  @Get('privacy/consents')
+  @RequireRoles('ceo')
+  consentRecords(@Query() q: Q) {
+    return this.admin.consentRecords(parseOptionalRange(q.fromDate, q.toDate), parsePage(q.page, q.pageSize), {
+      subjectType: cleanOption(q.subjectType),
+      purpose: cleanOption(q.purpose),
+      status: cleanOption(q.status),
+      search: cleanSearch(q.search),
+    });
+  }
+
+  @Get('system')
+  @RequireRoles('ceo')
+  system() {
+    return this.admin.system(new Date());
+  }
+
+  @Get('pricing/history')
+  @RequireRoles('ceo')
+  pricingHistory() {
+    return this.admin.pricingHistory(new Date());
+  }
+
+  @Get('pricing/minimum-wage')
+  @RequireRoles('ceo')
+  minimumWage() {
+    return this.admin.minimumWage();
   }
 }
