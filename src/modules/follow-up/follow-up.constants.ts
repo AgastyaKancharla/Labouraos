@@ -8,6 +8,8 @@ export const FOLLOW_UP_KINDS = [
   'exit_call',
   'repeat_business_day_30',
   'repeat_business_day_61',
+  // CEO "Remind the agent" on the close-to-a-refund list (priority call).
+  'refund_priority_call',
 ] as const;
 
 export type FollowUpKind = (typeof FOLLOW_UP_KINDS)[number];

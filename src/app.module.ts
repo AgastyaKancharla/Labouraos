@@ -40,9 +40,11 @@ import { AttendanceModule } from './modules/attendance/attendance.module';
 import { RetentionModule } from './modules/retention/retention.module';
 import { WebAppModule } from './modules/web-app/web-app.module';
 import { ScreensCallRegistrationModule } from './modules/screens-call-registration/screens-call-registration.module';
+import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
 
 @Module({
   imports: [
+    CeoPortalModule,
     ObservabilityModule,
     PrismaModule,
     IdModule,
