@@ -519,7 +519,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     });
     const ceoToken = jwt.sign({ sub: ceo.id, email: ceo.email, role: 'ceo', code: ceo.code, teamLeadId: null });
     try {
-      const partnerPhone = `86${timestamp.toString().slice(-8)}`;
+      const partnerPhone = `93${timestamp.toString().slice(-8)}`;
       const partner = await request(app.getHttpServer())
         .post('/referrals')
         .set('Authorization', `Bearer ${callAgentToken}`)
@@ -537,7 +537,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       expect(paused).toMatchObject({ pausedByStaffId: ceo.id, pauseReason: 'Sending fake candidates' });
       expect(await prismaRef.auditLog.count({ where: { action: 'referral.paused', entityCode: partner.body.code } })).toBe(1);
 
-      const seekerPhone = `85${timestamp.toString().slice(-8)}`;
+      const seekerPhone = `94${timestamp.toString().slice(-8)}`;
       const register = async () =>
         request(app.getHttpServer())
           .post('/job-seekers')
