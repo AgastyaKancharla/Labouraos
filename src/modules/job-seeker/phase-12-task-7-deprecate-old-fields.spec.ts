@@ -119,7 +119,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
   });
 
   it('creates a lead with the required primary trade only in JobSeekerTrade', async () => {
-    const phone = `+919${randomUUID().replace(/\D/g, '').slice(0, 10)}`;
+    const phone = `+919${randomUUID().replace(/\D/g, '').slice(0, 9)}`;
     const { requestId } = await otpService.sendOtp(phone);
     const provider = otpService.getProvider() as MockOtpProvider;
     await otpService.verifyOtp(requestId, provider.getCode(requestId)!);
@@ -142,7 +142,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     expect(noTrade.body.tradeSkill).toBe('Housekeeping');
     expect(await prisma.jobSeekerTrade.count({ where: { jobSeekerId: noTrade.body.id } })).toBe(1);
 
-    const tradePhone = `+919${randomUUID().replace(/\D/g, '').slice(0, 10)}`;
+    const tradePhone = `+919${randomUUID().replace(/\D/g, '').slice(0, 9)}`;
     const otp = await otpService.sendOtp(tradePhone);
     await otpService.verifyOtp(otp.requestId, provider.getCode(otp.requestId)!);
     const withTrade = await request(app.getHttpServer())
@@ -167,7 +167,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
   });
 
   it('refuses pending_activation without a primary JobSeekerTrade row', async () => {
-    const phone = `+919${randomUUID().replace(/\D/g, '').slice(0, 10)}`;
+    const phone = `+919${randomUUID().replace(/\D/g, '').slice(0, 9)}`;
     const { requestId } = await otpService.sendOtp(phone);
     const provider = otpService.getProvider() as MockOtpProvider;
     await otpService.verifyOtp(requestId, provider.getCode(requestId)!);

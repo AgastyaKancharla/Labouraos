@@ -39,6 +39,8 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
   const callIds: string[] = [];
   const staffIds: string[] = [];
   const suffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
+  // Mobile numbers must be +91 and 10 digits (no hex letters from the UUID).
+  const phoneDigits = `${String(Date.now()).slice(-4)}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 
   beforeAll(async () => {
     process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
@@ -97,7 +99,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
     farAgentToken = jwt.sign({ sub: farAgent.id, role: farAgent.role, code: farAgent.code, email: farAgent.email });
     nearestAgentToken = jwt.sign({ sub: nearestAgent.id, role: nearestAgent.role, code: nearestAgent.code, email: nearestAgent.email });
 
-    businessPhone = `+9197${suffix.slice(0, 8)}`;
+    businessPhone = `+9197${phoneDigits}`;
     const business = await prisma.business.create({
       data: {
         code: `BZ-VF-${suffix}`,
@@ -119,7 +121,7 @@ describe('Phase 13 Task 5 — verification visits and verified gate', () => {
       data: {
         code: `JS-VF-${suffix}`,
         name: `Verified Gate Candidate ${suffix}`,
-        phone: `+9196${suffix.slice(0, 8)}`,
+        phone: `+9196${phoneDigits}`,
         trades: { create: { trade: 'Electrician', isPrimary: true } },
         minSalary: 2000000,
         maxSalary: 3000000,

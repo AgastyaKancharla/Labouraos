@@ -235,7 +235,7 @@ describe('Phase 19 Gate End-to-End Proof', () => {
       expect(allowedRes.status).toBe(200);
 
       const inDb = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker1Id } });
-      expect(inDb.phone).toBe(newPhone);
+      expect(inDb.phone).toBe(`+91${newPhone}`);
     });
 
     it('step 3: after ₹499 is confirmed, the agent edit is refused and the Team Lead edit succeeds with a reason', async () => {

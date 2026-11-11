@@ -164,7 +164,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   });
 
   it('does not let one verified OTP request create two job seekers', async () => {
-    const phone = `91${timestamp.toString().slice(-8)}3`;
+    const phone = `9${timestamp.toString().slice(-8)}3`;
     const otpRequestId = await getVerifiedOtp(phone);
     const payload = completeJobSeekerRegistration({
       phone,
@@ -187,11 +187,11 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send(payload)
       .expect(400);
-    expect(await prisma.jobSeeker.count({ where: { phone } })).toBe(1);
+    expect(await prisma.jobSeeker.count({ where: { phone: `+91${phone}` } })).toBe(1);
   });
 
   it('saves an Other trade immediately and queues a distinct suggestion', async () => {
-    const phone = `91${timestamp.toString().slice(-8)}2`;
+    const phone = `9${timestamp.toString().slice(-8)}2`;
     const otpRequestId = await getVerifiedOtp(phone);
     const tradeName = `Specialist-${timestamp}`;
     const response = await request(app.getHttpServer())
@@ -223,7 +223,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   });
 
   it('returns the market warning and stores the lower salary guarantee floor', async () => {
-    const phone = `91${timestamp.toString().slice(-8)}4`;
+    const phone = `9${timestamp.toString().slice(-8)}4`;
     const otpRequestId = await getVerifiedOtp(phone);
     const response = await request(app.getHttpServer())
       .post('/job-seekers')
@@ -256,7 +256,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
   });
 
   it('leaves the guarantee floor unset for an unlisted primary trade until it is managed', async () => {
-    const phone = `91${timestamp.toString().slice(-8)}6`;
+    const phone = `9${timestamp.toString().slice(-8)}6`;
     const otpRequestId = await getVerifiedOtp(phone);
     const response = await request(app.getHttpServer())
       .post('/job-seekers')
@@ -300,7 +300,7 @@ describe('Job Seeker Registration (Phase 2 Task 2)', () => {
       .post('/job-seekers')
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send(completeJobSeekerRegistration({
-        phone: `91${timestamp.toString().slice(-8)}5`,
+        phone: `9${timestamp.toString().slice(-8)}5`,
         otpRequestId: 'unused-validation-only',
         ...changes,
       }));

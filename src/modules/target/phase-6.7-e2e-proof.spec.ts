@@ -176,7 +176,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         code: businessCode,
         name: 'Tech Ventures Pvt Ltd',
         ownerName: 'Ramesh Gupta',
-        phone: `+9198${String(timestamp).slice(-8)}0`,
+        phone: `+919${String(timestamp).slice(-8)}0`,
         locality: koraArea,
         accountAgentId: fa1Id,
         city: 'Bengaluru',
@@ -345,7 +345,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     // STEP 3: CA1 onboards a candidate and collects ₹499 activation fee
     // =========================================================================
     console.log('\n--- STEP 3: CA1 onboards candidate & collects ₹499 fee ---');
-    const candidatePhone = `+9192${String(timestamp).slice(-8)}1`;
+    const candidatePhone = `+919${String(timestamp).slice(-8)}1`;
     const otpRequestId = await getVerifiedOtp(candidatePhone);
 
     const createCandidateRes = await request(app.getHttpServer())

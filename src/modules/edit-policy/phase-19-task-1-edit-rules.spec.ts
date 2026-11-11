@@ -247,7 +247,7 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
 
       // Database has the actual unmasked phone, response has masked phone for agents
       const updated = await prisma.jobSeeker.findUnique({ where: { id: seekerId } });
-      expect(updated?.whatsappPhone).toBe(`98${suffix}01`);
+      expect(updated?.whatsappPhone).toBe(`+9198${suffix}01`);
     });
 
     it('agent changing a previously saved field without a reason is refused with 400', async () => {
