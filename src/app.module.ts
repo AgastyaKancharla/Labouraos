@@ -46,10 +46,12 @@ import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
 import { LiveModule } from './common/live/live.module';
 import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-call-agent.module';
 import { FieldAppModule } from './modules/field-app/field-app.module';
+import { FinanceModule } from './modules/finance/finance.module';
 
 @Module({
   imports: [
     CeoPortalModule,
+    FinanceModule,
     ObservabilityModule,
     PrismaModule,
     LiveModule,

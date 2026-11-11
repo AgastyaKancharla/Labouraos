@@ -625,6 +625,18 @@ export class NotificationSourcesService {
         }, { id: payment.id }),
       );
       await this.notifications.reconcileKind('refund_needs_ceo', drafts, paymentClear, now);
+
+      const expensesWithCeo = await this.prisma.expense.findMany({ where: { status: 'waiting_ceo' } });
+      const expenseDrafts = expensesWithCeo.flatMap((expense) =>
+        this.drafts(ceos, {
+          kind: 'expense_needs_ceo',
+          title: `Expense ${expense.code} needs your approval`,
+          body: `${formatINR(expense.amountPaise)} · ${expense.supplier} · above Finance's limit`,
+          subjectType: 'expense',
+          subjectId: expense.id,
+        }),
+      );
+      await this.notifications.reconcileKind('expense_needs_ceo', expenseDrafts, (row) => this.expenseClear(row), now);
     }
 
     if (who === 'finance' || who === 'all') {
@@ -659,7 +671,7 @@ export class NotificationSourcesService {
           body: `${formatINR(credit.amountPaise)} received ${istDateLabel(credit.receivedAt)}`,
           subjectType: 'bank_credit',
           subjectId: credit.id,
-        }),
+        }, { id: credit.id }),
       );
       await this.notifications.reconcileKind(
         'bank_credit_unmatched',
@@ -684,7 +696,29 @@ export class NotificationSourcesService {
         }),
       );
       await this.notifications.reconcileKind('payout_failed', failedDrafts, paymentClear, now);
+
+      const toPay = await this.prisma.expense.findMany({ where: { status: { in: ['waiting_finance', 'approved'] } } });
+      const toPayDrafts = toPay.flatMap((expense) =>
+        this.drafts(finance, {
+          kind: 'expense_to_pay',
+          title: expense.status === 'approved' ? `Bill ${expense.code} approved — pay it` : `Bill ${expense.code} to approve and pay`,
+          body: `${formatINR(expense.amountPaise)} · ${expense.supplier}`,
+          subjectType: 'expense',
+          subjectId: expense.id,
+        }),
+      );
+      await this.notifications.reconcileKind('expense_to_pay', toPayDrafts, (row) => this.expenseClear(row), now);
     }
+  }
+
+  /** Who finished an expense bell's work: whoever paid, approved or rejected it. */
+  private async expenseClear(row: Notification): Promise<ClearInfo> {
+    const expense = await this.prisma.expense.findUnique({ where: { id: row.subjectId } });
+    if (!expense) return { byStaffId: null, reason: 'expense_gone' };
+    return {
+      byStaffId: expense.paidByStaffId ?? expense.rejectedByStaffId ?? expense.approvedByStaffId ?? null,
+      reason: `expense_${expense.status}`,
+    };
   }
 
   // ------------------------------------------------------------ staff lines

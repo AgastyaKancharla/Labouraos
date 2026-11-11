@@ -11,7 +11,29 @@ const FETCHERS: Partial<Record<BadgeSource, () => Promise<number>>> = {
   'login-codes': async () => (await api.get<unknown[]>('/login-codes/pending')).length,
   'review-flags': async () => (await api.get<unknown[]>('/review-flags', { query: { status: 'open' } })).length,
   'refunds-due': async () => (await api.get<unknown[]>('/refunds/due')).length,
+  // Finance sidebar (GET /finance/counts, Finance and CEO only).
+  'bank-credits-unmatched': async () => (await financeCounts()).bankCreditsUnmatched,
+  'invoices-unpaid': async () => (await financeCounts()).invoicesUnpaid,
+  'payouts-due': async () => (await financeCounts()).payoutsDue,
+  'expenses-to-approve': async () => (await financeCounts()).expensesToApprove,
 };
+
+interface FinanceCounts {
+  bankCreditsUnmatched: number;
+  invoicesUnpaid: number;
+  payoutsDue: number;
+  expensesToApprove: number;
+}
+
+/** One request serves the four Finance badges refreshed together. */
+let financeCountsInFlight: { at: number; promise: Promise<FinanceCounts> } | null = null;
+function financeCounts(): Promise<FinanceCounts> {
+  const now = Date.now();
+  if (!financeCountsInFlight || now - financeCountsInFlight.at > 5_000) {
+    financeCountsInFlight = { at: now, promise: api.get<FinanceCounts>('/finance/counts') };
+  }
+  return financeCountsInFlight.promise;
+}
 
 export const BADGE_REFRESH_MS = 60_000;
 

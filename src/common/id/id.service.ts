@@ -18,7 +18,8 @@ export type EntityType =
   | 'call'
   | 'replacement_claim'
   | 'follow_up_task'
-  | 'payout_account';
+  | 'payout_account'
+  | 'expense';
 
 export const ENTITY_PREFIXES: Record<EntityType, string> = {
   job_seeker: 'JS',
@@ -38,6 +39,7 @@ export const ENTITY_PREFIXES: Record<EntityType, string> = {
   replacement_claim: 'RCL',
   follow_up_task: 'FUT',
   payout_account: 'PA',
+  expense: 'EXP',
 };
 
 export function formatCode(prefix: string, seq: number): string {
@@ -86,6 +88,7 @@ export class IdService implements OnModuleInit {
       CALL: 'CallRecord',
       RCL: 'ReplacementClaim',
       FUT: 'FollowUpTask',
+      EXP: 'Expense',
       // Staff codes are role-prefixed (see STAFF_CODE_PREFIX in staff.service)
       CEO: 'Staff',
       MGR: 'Staff',

@@ -24,6 +24,9 @@ export const NOTIFICATION_KINDS = [
   'refund_ready_to_pay',
   'bank_credit_unmatched',
   'payout_failed',
+  // Expenses & bills (Phase 22): above Finance's limit → the CEO; within it or approved → Finance pays.
+  'expense_needs_ceo',
+  'expense_to_pay',
   // Close to a refund (Task 7).
   'refund_priority',
   // Growth tasks for the Team Lead (N2, N3).
@@ -45,6 +48,8 @@ export const MONEY_KINDS: readonly NotificationKind[] = [
   'refund_ready_to_pay',
   'bank_credit_unmatched',
   'payout_failed',
+  'expense_needs_ceo',
+  'expense_to_pay',
 ];
 
 /** Master Guide: the Team Lead hears about an agent idle for more than 30 minutes. */
@@ -107,8 +112,10 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   no_reporting_line: { ceo: 'team', manager: 'staff' },
   refund_needs_ceo: { ceo: 'refunds' },
   refund_ready_to_pay: { finance: 'refunds/:id', ceo: 'refunds' },
-  bank_credit_unmatched: { finance: 'money-in/match', ceo: 'payments' },
+  bank_credit_unmatched: { finance: 'money-in/match?credit=:id', ceo: 'payments' },
   payout_failed: { finance: 'payouts', ceo: 'payments/out' },
+  expense_needs_ceo: { ceo: 'expenses' },
+  expense_to_pay: { finance: 'expenses?status=to_pay', ceo: 'expenses' },
   refund_priority: {
     call_agent: 'people/:id',
     team_lead: 'work',
