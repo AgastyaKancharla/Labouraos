@@ -18,6 +18,7 @@ import { JobSeekerService } from './job-seeker.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { Response as ExpressResponse } from 'express';
+import { Public } from '../../common/rbac/public.decorator';
 
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -39,6 +40,7 @@ export class RegistrationController {
   ) {}
 
   @Post(':token/selfie')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadSelfie(
     @Param('token') token: string,
@@ -57,6 +59,7 @@ export class RegistrationController {
   }
 
   @Post(':token/id-check')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async verifyIdentity(
     @Param('token') token: string,
     @Body() body: Record<string, unknown> & { requestId?: string },
@@ -71,6 +74,7 @@ export class RegistrationController {
   }
 
   @Get(':token/terms')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getTerms(@Param('token') token: string, @Query('requestId') requestId: string) {
     const link = await this.requireRegistrationLink(token);
     if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) {
@@ -80,6 +84,7 @@ export class RegistrationController {
   }
 
   @Post(':token/terms-and-payment')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async acceptTermsAndPay(
     @Param('token') token: string,
     @Body() body: { requestId?: string; acceptTerms?: boolean },
@@ -92,6 +97,7 @@ export class RegistrationController {
   }
 
   @Post(':token/payment-only-link')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async sendPaymentOnlyLink(
     @Param('token') token: string,
     @Body() body: { requestId?: string; phone?: string },
@@ -105,6 +111,7 @@ export class RegistrationController {
   }
 
   @Post('payment/:token/send-otp')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async sendPaymentOnlyOtp(@Param('token') token: string) {
     const link = await this.requirePaymentLink(token);
     const result = await this.otp.sendOtp(link.phone!);
@@ -112,6 +119,7 @@ export class RegistrationController {
   }
 
   @Get('payment/:token')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getPaymentOnlyPage(
     @Param('token') token: string,
     @Query('requestId') requestId: string,

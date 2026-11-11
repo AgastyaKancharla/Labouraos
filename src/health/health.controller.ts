@@ -1,11 +1,13 @@
 import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
 import { HealthService, WorkerHeartbeatStatus } from './health.service';
+import { Public } from '../common/rbac/public.decorator';
 
 @Controller('health')
 export class HealthController {
   constructor(private readonly healthService: HealthService) {}
 
   @Get()
+  @Public('liveness and readiness probes for the host and monitors')
   getHealth(): { status: string; upiCollection: string } {
     // Cheap liveness probe with NO external dependency checks.
     // Pointed to by Render's healthCheckPath so container boot and deploys never gate on dependency reachability.
@@ -17,6 +19,7 @@ export class HealthController {
   }
 
   @Get('ready')
+  @Public('liveness and readiness probes for the host and monitors')
   async getReadiness(): Promise<{
     status: string;
     postgres: string;

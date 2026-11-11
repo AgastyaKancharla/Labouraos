@@ -4,6 +4,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, Staff, Target } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -20,13 +21,33 @@ import {
   MetricEvaluationResult,
 } from './target.constants';
 import { isPastPeriod } from '../../common/time/period-boundary';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 @Injectable()
 export class TargetService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
+    @Optional() private readonly reportingScope?: ReportingScopeService,
   ) {}
+
+  /**
+   * A Manager sets and changes targets only for people in their own reporting
+   * tree (Master Guide: several Managers, each with their own teams).
+   */
+  private async assertManagerTree(actor: JwtPayload | undefined, staffId: string): Promise<void> {
+    if (actor?.role !== 'manager') {
+      return;
+    }
+    const allowed = this.reportingScope
+      ? await this.reportingScope.personIsUnder(actor.sub, staffId)
+      : false;
+    if (!allowed) {
+      throw new ForbiddenException(
+        'A Manager can set targets only for staff in their own teams',
+      );
+    }
+  }
 
   /**
    * DECISION 1 — ROLE RESTRICTION:
@@ -99,7 +120,12 @@ export class TargetService {
     }
   }
 
-  async setTarget(dto: CreateTargetDto, actorId: string, now: Date = new Date()) {
+  async setTarget(
+    dto: CreateTargetDto,
+    actorId: string,
+    now: Date = new Date(),
+    actor?: JwtPayload,
+  ) {
     // 1. Fetch staff and assert eligibility (Decision 1)
     const staff = await this.prisma.staff.findUnique({
       where: { id: dto.staffId },
@@ -111,6 +137,7 @@ export class TargetService {
       throw new BadRequestException(`Cannot set target for deactivated staff '${staff.code}'`);
     }
     this.assertEligibleRole(staff.role);
+    await this.assertManagerTree(actor, staff.id);
 
     // 2. Assert at least one non-null metric (Decision 2)
     this.assertAtLeastOneMetric(dto);
@@ -189,6 +216,7 @@ export class TargetService {
     dto: UpdateTargetDto,
     actorId: string,
     now: Date = new Date(),
+    actor?: JwtPayload,
   ) {
     const existing = await this.prisma.target.findUnique({
       where: { id },
@@ -197,6 +225,7 @@ export class TargetService {
     if (!existing) {
       throw new NotFoundException(`Target '${id}' not found`);
     }
+    await this.assertManagerTree(actor, existing.staffId);
 
     // Assert period not in the past (Decision 3)
     this.assertNotPastPeriod(existing.year, existing.month, now, existing.staff.city);

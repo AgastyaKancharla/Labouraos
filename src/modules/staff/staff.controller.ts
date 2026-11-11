@@ -27,6 +27,7 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
+import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -66,6 +67,7 @@ export class StaffController {
    *    audit logging with the sentinel 'bootstrap' actor remain intact.
    */
   @Post('bootstrap')
+  @Public('first CEO account on an empty database; needs STAFF_BOOTSTRAP_SECRET')
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   bootstrap(
@@ -137,6 +139,7 @@ export class StaffController {
    * identity with the one-time invite token. Throttled like login.
    */
   @Post('accept-invite')
+  @Public('new hire sets a password with the one-time invite token')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -153,12 +156,17 @@ export class StaffController {
     return this.staffService.deactivateStaff(id, req.user);
   }
 
+  /**
+   * Reset: issues a fresh one-time invite so the person sets a new password.
+   * The CEO for anyone, a Manager inside their own tree, a Team Lead for
+   * their own agents (Master Guide, Passwords and email).
+   */
   @Post(':id/reissue-invite')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @RequirePermission('staff', 'write')
-  @RequireRoles('ceo', 'manager')
+  @RequireRoles('ceo', 'manager', 'team_lead')
   reissueInvite(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.staffService.reissueInvite(id, req.user);
   }

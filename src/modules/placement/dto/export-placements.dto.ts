@@ -20,7 +20,11 @@ export interface RegulatoryPlacementExportRow {
   city: string;
 }
 
-export function formatPlacementsCsv(rows: RegulatoryPlacementExportRow[]): string {
+export function formatPlacementsCsv(
+  rows: RegulatoryPlacementExportRow[],
+  options: { includeMoney?: boolean } = {},
+): string {
+  const includeMoney = options.includeMoney !== false;
   const headers = [
     'Placement Code',
     'Joined Date',
@@ -29,8 +33,7 @@ export function formatPlacementsCsv(rows: RegulatoryPlacementExportRow[]): strin
     'Candidate Code',
     'Employer Code',
     'Employer Name',
-    'Monthly Salary (INR)',
-    'Placement Fee (INR)',
+    ...(includeMoney ? ['Monthly Salary (INR)', 'Placement Fee (INR)'] : []),
     'Status',
     'Locality',
     'City',
@@ -55,8 +58,9 @@ export function formatPlacementsCsv(rows: RegulatoryPlacementExportRow[]): strin
       escapeCsv(row.candidateCode),
       escapeCsv(row.employerCode),
       escapeCsv(row.employerName),
-      escapeCsv(row.monthlySalaryINR),
-      escapeCsv(row.placementFeeINR),
+      ...(includeMoney
+        ? [escapeCsv(row.monthlySalaryINR), escapeCsv(row.placementFeeINR)]
+        : []),
       escapeCsv(row.status),
       escapeCsv(row.locality),
       escapeCsv(row.city),

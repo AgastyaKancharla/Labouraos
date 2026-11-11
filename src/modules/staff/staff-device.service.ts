@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import {
   BELOW_MANAGER_ROLES,
+  CEO_APPROVED_DEVICE_ROLES,
   SELF_APPROVED_DEVICE_ROLES,
 } from './staff-device.constants';
 import { ReportingScopeService } from './reporting-scope.service';
@@ -247,7 +248,7 @@ export class StaffDeviceService {
       return {
         status: 'pending',
         ...notSelf,
-        staff: { role: { in: [...BELOW_MANAGER_ROLES] } },
+        staff: { role: { in: [...BELOW_MANAGER_ROLES, ...CEO_APPROVED_DEVICE_ROLES] } },
       };
     }
     if (approver.role === 'manager') {
@@ -276,8 +277,16 @@ export class StaffDeviceService {
     }
     if ((SELF_APPROVED_DEVICE_ROLES as readonly string[]).includes(target.role)) {
       throw new ForbiddenException(
-        'CEO, Manager and Finance devices are not approved by someone else',
+        'The CEO approves his own device with his authenticator code',
       );
+    }
+    if ((CEO_APPROVED_DEVICE_ROLES as readonly string[]).includes(target.role)) {
+      if (approver.role !== 'ceo') {
+        throw new ForbiddenException(
+          "Only the CEO can approve a Manager's or Finance's device",
+        );
+      }
+      return;
     }
     if (approver.role === 'ceo') {
       return;

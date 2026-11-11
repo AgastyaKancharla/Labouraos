@@ -61,6 +61,11 @@ export const STAFF_CODE_PREFIX: Record<Role, string> = {
 
 /** Roles whose accounts only a CEO may create or deactivate. */
 const CEO_ONLY_ROLES: readonly string[] = ['ceo', 'manager'];
+/**
+ * Roles a Manager can never create: CEO and Manager (Master Guide), and
+ * Finance, who reports to the CEO and sits outside every Manager's tree.
+ */
+const NOT_CREATED_BY_MANAGER: readonly string[] = ['ceo', 'manager', 'finance'];
 /** Roles that sit in a team and can therefore have a team lead. */
 const TEAM_MEMBER_ROLES: readonly string[] = ['call_agent', 'field_agent'];
 
@@ -297,6 +302,11 @@ export class StaffService {
         `Only a CEO can create '${role}' accounts`,
       );
     }
+    if (actor.role === 'manager' && NOT_CREATED_BY_MANAGER.includes(role)) {
+      throw new ForbiddenException(
+        `A Manager cannot create '${role}' accounts; only the CEO can`,
+      );
+    }
     const requestedTeamLeadId = dto.teamLeadId || undefined;
     const requestedReportsToId = dto.reportsToId || undefined;
     if (requestedTeamLeadId && !TEAM_MEMBER_ROLES.includes(role)) {
@@ -318,6 +328,16 @@ export class StaffService {
       requestedReportsToId ?? requestedTeamLeadId ?? null,
     );
     const teamLeadId = TEAM_MEMBER_ROLES.includes(role) ? lineId : null;
+    if (actor.role === 'manager') {
+      // A Manager adds people only inside their own tree: a Team Lead under
+      // themself, an agent under one of their own Team Leads.
+      const under = await this.reportingScope.peopleUnder(actor.sub);
+      if (!lineId || (lineId !== actor.sub && !under.includes(lineId))) {
+        throw new ForbiddenException(
+          'A Manager can add staff only inside their own teams',
+        );
+      }
+    }
 
     if (email) {
       const existing = await this.prisma.staff.findUnique({
@@ -526,6 +546,7 @@ export class StaffService {
         `Only a CEO can deactivate '${target.role}' accounts`,
       );
     }
+    await this.assertInManagerTree(actor, target.id);
     if (target.status === STAFF_STATUS.DEACTIVATED) {
       return { staff: target, sessionsRevoked: 0 };
     }
@@ -587,6 +608,21 @@ export class StaffService {
       throw new ForbiddenException(
         `Only a CEO can re-issue invites for '${target.role}' accounts`,
       );
+    }
+    await this.assertInManagerTree(actor, target.id);
+    if (actor.role === 'team_lead') {
+      // A Team Lead resets passwords for their own agents only (Master Guide,
+      // Passwords and email). The re-issued invite is how a password is reset.
+      const ownAgent =
+        TEAM_MEMBER_ROLES.includes(target.role) &&
+        (target.teamLeadId === actor.sub || target.reportsToId === actor.sub);
+      if (!ownAgent) {
+        throw new ForbiddenException(
+          'A Team Lead can reset passwords only for agents in their own team',
+        );
+      }
+    } else if (actor.role !== 'ceo' && actor.role !== 'manager') {
+      throw new ForbiddenException('Only a Team Lead, Manager or the CEO can reset a password');
     }
     if (target.status === STAFF_STATUS.DEACTIVATED) {
       throw new BadRequestException(
@@ -671,6 +707,7 @@ export class StaffService {
         `Only a CEO can reactivate '${target.role}' accounts`,
       );
     }
+    await this.assertInManagerTree(actor, target.id);
     if (target.status !== STAFF_STATUS.DEACTIVATED) {
       throw new BadRequestException(
         `Staff account is not deactivated (current status: '${target.status}')`,
@@ -744,6 +781,7 @@ export class StaffService {
     if (!target) {
       throw new NotFoundException('Staff account not found');
     }
+    await this.assertInManagerTree(actor, target.id);
 
     const before = {
       failedLoginCount: target.failedLoginCount,
@@ -799,6 +837,7 @@ export class StaffService {
         `Access denied: staff '${staffId}' is not part of your team`,
       );
     }
+    await this.assertInManagerTree(actor, target.id);
 
     await this.prisma.staff.update({
       where: { id: staffId },
@@ -828,6 +867,22 @@ export class StaffService {
       },
     });
     return { success: true };
+  }
+
+  /**
+   * A Manager acts only on people in their own reporting tree (Master Guide,
+   * "Several Managers can each be given their own teams"). The CEO acts on
+   * anyone; other roles are limited elsewhere.
+   */
+  private async assertInManagerTree(actor: JwtPayload, targetId: string): Promise<void> {
+    if (actor.role !== 'manager') {
+      return;
+    }
+    if (!(await this.reportingScope.personIsUnder(actor.sub, targetId))) {
+      throw new ForbiddenException(
+        'A Manager can act only on staff in their own teams',
+      );
+    }
   }
 
   /** Team Leads, Managers, Finance and agents who have no reporting line. CEO only. */

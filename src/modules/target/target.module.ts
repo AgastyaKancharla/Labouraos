@@ -9,9 +9,10 @@ import { TargetController } from './target.controller';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { ReportingScopeModule } from '../staff/reporting-scope.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, PricingModule],
+  imports: [PrismaModule, AuditModule, PricingModule, ReportingScopeModule],
   controllers: [TargetController],
   providers: [
     TargetService,

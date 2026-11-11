@@ -145,7 +145,7 @@ export class TargetController {
     @Body() dto: CreateTargetDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.targetService.setTarget(dto, req.user.sub);
+    return this.targetService.setTarget(dto, req.user.sub, undefined, req.user);
   }
 
   @Patch(':id')
@@ -156,7 +156,7 @@ export class TargetController {
     @Body() dto: UpdateTargetDto,
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.targetService.updateTarget(id, dto, req.user.sub);
+    return this.targetService.updateTarget(id, dto, req.user.sub, undefined, req.user);
   }
 
   @Get(':id')

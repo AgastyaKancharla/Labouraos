@@ -92,6 +92,21 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     });
     cleanStaffIds.push(mgr.id);
 
+    // A Manager sets targets only inside their own tree, so the agents who get
+    // targets sit under a Team Lead who reports to this Manager.
+    const lead = await prisma.staff.create({
+      data: {
+        code: `TL-E2E-${timestamp}`,
+        name: 'Team Lead E2E Proof',
+        email: `tl_e2e_${timestamp}@laboura.local`,
+        passwordHash,
+        role: 'team_lead',
+        city: 'Bengaluru',
+        reportsToId: mgr.id,
+      },
+    });
+    cleanStaffIds.push(lead.id);
+
     // 2. Call Agent 1 (Active)
     ca1Code = `CA-E2E-1-${timestamp}`;
     const ca1 = await prisma.staff.create({
@@ -102,6 +117,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         passwordHash,
         role: 'call_agent',
         city: 'Bengaluru',
+        teamLeadId: lead.id,
       },
     });
     ca1Id = ca1.id;
@@ -132,6 +148,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
         passwordHash,
         role: 'field_agent',
         city: 'Bengaluru',
+        teamLeadId: lead.id,
       },
     });
     fa1Id = fa1.id;

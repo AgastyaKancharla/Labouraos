@@ -195,13 +195,16 @@ Enforced server-side on every request, through the guard — never by hiding a b
 | Role | Job seekers / referrals | Businesses | Vacancies / placements | Payments | Pricing | Targets |
 | --- | --- | --- | --- | --- | --- | --- |
 | CEO | all | all | all | all; releases money | **only writer** | all |
-| Manager | all | all | all | read; **does not release money** | read | all |
+| Manager | all, phone numbers masked | all, masked | all | **none — no rupee figure anywhere** (reconfirmed 11 Nov) | **none** | own tree |
 | Team Lead | own team | own team's businesses | own team | none | none | own team |
 | Call Agent | create and edit | read all; create leads; add vacancies to any business | read all | none | none | own |
 | Field Agent | city-wide | read all; edit only where account agent | read all; act on own businesses | none | none | own |
 | Finance | read, personal data masked | read, masked | read | all; releases money | none | none |
 
-- **Agents never see full phone numbers.** Calls go through the calling system.
+- **Only the CEO sees full phone numbers**, and every answer that gives him one is audit-logged with the records it named. Agents, Team Leads and Managers see the last 4 digits; Finance sees none. Calls go through the calling system.
+- **Managers see no money:** money-only endpoints refuse them and every other answer has its money fields stripped (`src/common/rbac/money-visibility.ts`).
+- **A Manager acts only inside their own reporting tree** (create, lock, unlock, deactivate, re-issue, targets, audit log) and cannot create CEO, Manager or Finance accounts. A Team Lead reads only their own team's audit rows.
+- **Every route has a role guard or `@Public(reason)`**; `src/common/rbac/route-guard-coverage.spec.ts` fails the build otherwise.
 - **Nobody below Manager** can download or export lists.
 - Every sensitive write is audited with actor, time, reason and the fields that changed.
 
@@ -209,7 +212,7 @@ Enforced server-side on every request, through the guard — never by hiding a b
 - Staff log in with their **staff code** and password.
 - Every login by a non-management staff member needs a **6-digit code** from the login code screen, revealed by their Team Lead, a Manager or the CEO, and recorded. Codes are never stored.
 - CEO, Managers and Finance use an authenticator app (TOTP) instead.
-- **Approved devices only**, for every role, approved by a Team Lead or Manager.
+- **Approved devices only**, for every role, approved by a Team Lead or Manager. A Manager's or Finance's new device is approved by the CEO; the CEO approves his own with his authenticator code (decided 11 Nov).
 - **One login at a time.** Logout after 1 hour idle, 2 hours at most, or when the app or browser closes.
 - **5 wrong passwords** lock the account for 15 minutes or until unlocked by a Team Lead, Manager or CEO.
 - Office staff can log in only from the office network. No fixed login hours; logins at odd hours are flagged.

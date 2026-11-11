@@ -9,6 +9,7 @@ import { SMS_PROVIDER, SmsProvider } from '../message/sms.provider';
 import { WHATSAPP_PROVIDER, WhatsAppProvider } from '../../common/whatsapp/whatsapp.interface';
 import { PlacementService } from '../placement/placement.service';
 import { PricingService } from '../pricing/pricing.service';
+import { receiptToken } from './receipt-link';
 
 describe('Phase 16 Gate End-to-End Proof', () => {
   let app: INestApplication;
@@ -265,8 +266,12 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     expect(new Date(seekerActivated!.paymentReceivedAt!).getTime()).toBe(bankCreditTime.getTime());
 
     // Receipt link check for candidate (Task 5 acceptance)
-    const receiptRes = await request(app.getHttpServer())
+    // The receipt opens with the payer's signed link token, never by id alone.
+    await request(app.getHttpServer())
       .get(`/payments/${jsPaymentId}/receipt`)
+      .expect(401);
+    const receiptRes = await request(app.getHttpServer())
+      .get(`/payments/${jsPaymentId}/receipt?token=${receiptToken(jsPaymentId)}`)
       .expect(200);
     expect(receiptRes.body.paymentId).toBe(jsPaymentId);
     expect(receiptRes.body.amountPaise).toBe(49900);

@@ -23,7 +23,7 @@ export class RefundController {
   constructor(private readonly refundService: RefundService) {}
 
   @Get('due')
-  @RequireRoles('ceo', 'manager', 'finance')
+  @RequireRoles('ceo', 'finance')
   @RequirePermission('payment', 'read')
   async getRefundsDue(
     @Req() req: Request & { user: JwtPayload },

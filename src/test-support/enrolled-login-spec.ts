@@ -112,7 +112,10 @@ export function enrolledLogin(
       if (secret) {
         totpCode = await stableTotpCode(secret);
       }
-    } else {
+    }
+    // Only the CEO approves his own device with his authenticator code; every
+    // other role (Managers and Finance included) logs in on an approved device.
+    if (staff.role !== 'ceo') {
       await db().staffDevice.upsert({
         where: { staffId_deviceId: { staffId: staff.id, deviceId } },
         create: {

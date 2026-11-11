@@ -17,6 +17,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { CallService } from './call.service';
+import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload; rawBody?: Buffer };
 
@@ -25,6 +26,7 @@ export class CallController {
   constructor(private readonly calls: CallService) {}
 
   @Post('telephony/webhook/call-status')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   applyStatus(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-telephony-signature') sig1?: string,

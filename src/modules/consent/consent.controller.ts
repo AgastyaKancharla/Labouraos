@@ -24,6 +24,7 @@ import {
   renderConsentPageHtml,
   renderReferralTermsPageHtml,
 } from './consent-page.template';
+import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -68,6 +69,7 @@ export class ConsentController {
    * Public endpoint to render consent capture page or return token details.
    */
   @Get(':token')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getConsentPage(
     @Param('token') token: string,
     @Query('requestId') requestId: string | undefined,
@@ -111,11 +113,13 @@ export class ConsentController {
    * Public endpoint to request an OTP to the candidate's registered phone.
    */
   @Post('send-otp')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async sendOtp(@Body('token') token: string) {
     return this.consentLinkService.sendOtp(token);
   }
 
   @Post('id-check-wait')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async requestIdCheckRecovery(@Body() body: { token: string; requestId: string; code: string }) {
     return this.consentLinkService.requestIdCheckRecovery(body.token, body.requestId, body.code);
   }
@@ -125,6 +129,7 @@ export class ConsentController {
    * Advances job seeker status from lead to consented when all 5 required purposes are granted.
    */
   @Post('submit')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async submitConsent(@Body() body: SubmitConsentDto) {
     return this.consentLinkService.submitConsent(body);
   }

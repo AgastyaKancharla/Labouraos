@@ -3,6 +3,12 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdService } from '../id/id.service';
 
+/** Limits audit reads to actions by, or on, a set of staff. */
+export interface AuditScope {
+  actorIds: string[];
+  subjects: { entityType: string; entityCodes: string[] }[];
+}
+
 export interface CreateAuditLogParams {
   actorId: string;
   action: string;
@@ -145,9 +151,56 @@ export class AuditService {
     });
   }
 
-  async getLogs(filter?: { entityType?: string; entityCode?: string; actorId?: string }) {
+  /**
+   * The rows a viewer limited to `staffIds` may read: actions those people
+   * took, and actions taken on them (their staff record, devices, targets
+   * and login code requests).
+   */
+  async scopeForStaff(staffIds: string[]): Promise<AuditScope> {
+    const ids = [...new Set(staffIds)];
+    const [staff, devices, targets, loginRequests] = await Promise.all([
+      this.prisma.staff.findMany({ where: { id: { in: ids } }, select: { code: true } }),
+      this.prisma.staffDevice.findMany({ where: { staffId: { in: ids } }, select: { id: true } }),
+      this.prisma.target.findMany({ where: { staffId: { in: ids } }, select: { id: true } }),
+      this.prisma.loginCodeRequest.findMany({
+        where: { staffId: { in: ids } },
+        select: { id: true },
+      }),
+    ]);
+    return {
+      actorIds: ids,
+      subjects: [
+        { entityType: 'staff', entityCodes: staff.map((row) => row.code) },
+        { entityType: 'staff_device', entityCodes: devices.map((row) => row.id) },
+        { entityType: 'target', entityCodes: targets.map((row) => row.id) },
+        { entityType: 'login_code_request', entityCodes: loginRequests.map((row) => row.id) },
+      ],
+    };
+  }
+
+  private scopeWhere(scope: AuditScope): Prisma.AuditLogWhereInput {
+    return {
+      OR: [
+        { actorId: { in: scope.actorIds } },
+        ...scope.subjects
+          .filter((subject) => subject.entityCodes.length > 0)
+          .map((subject) => ({
+            entityType: subject.entityType,
+            entityCode: { in: subject.entityCodes },
+          })),
+      ],
+    };
+  }
+
+  async getLogs(
+    filter?: { entityType?: string; entityCode?: string; actorId?: string },
+    scope?: AuditScope | null,
+  ) {
+    const where: Prisma.AuditLogWhereInput = scope
+      ? { AND: [filter ?? {}, this.scopeWhere(scope)] }
+      : (filter ?? {});
     return this.prisma.auditLog.findMany({
-      where: filter,
+      where,
       orderBy: { createdAt: 'desc' },
       include: {
         actor: {
@@ -157,14 +210,21 @@ export class AuditService {
     });
   }
 
-  async getLogById(id: string) {
+  async getLogById(id: string, scope?: AuditScope | null) {
+    const include = {
+      actor: {
+        select: { id: true, code: true, name: true, role: true },
+      },
+    } as const;
+    if (scope) {
+      return this.prisma.auditLog.findFirst({
+        where: { AND: [{ id }, this.scopeWhere(scope)] },
+        include,
+      });
+    }
     return this.prisma.auditLog.findUnique({
       where: { id },
-      include: {
-        actor: {
-          select: { id: true, code: true, name: true, role: true },
-        },
-      },
+      include,
     });
   }
 }

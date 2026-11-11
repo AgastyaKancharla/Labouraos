@@ -26,6 +26,8 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Response } from 'express';
 import { UpiCollectionService } from './upi-collection.service';
 import { RecordPayoutDto } from './dto/record-payout.dto';
+import { PaymentReceiptGuard } from './payment-receipt.guard';
+import { Public } from '../../common/rbac/public.decorator';
 
 @Controller('payments')
 @UseInterceptors(PiiMaskingInterceptor)
@@ -36,6 +38,7 @@ export class PaymentController {
   ) {}
 
   @Get('request/:token')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async paymentRequestPage(
     @Param('token') token: string,
     @Headers('accept') accept: string | undefined,
@@ -49,7 +52,13 @@ export class PaymentController {
     return this.upiCollectionService.getPaymentPage(token);
   }
 
+  /**
+   * The payer opens this with the signed token from their receipt link; staff
+   * need a login with the CEO or Finance role (Managers see no money).
+   */
   @Get(':id/receipt')
+  @UseGuards(PaymentReceiptGuard)
+  @RequireRoles('ceo', 'finance')
   async getPaymentReceipt(@Param('id') id: string) {
     const payment = await this.paymentService.findById(id);
     return {
@@ -72,12 +81,14 @@ export class PaymentController {
   }
 
   @Post('request/:token/utr-hint')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @HttpCode(HttpStatus.OK)
   async savePaymentUtrHint(@Param('token') token: string, @Body('utr') utr: unknown) {
     return this.upiCollectionService.saveUtrHint(token, utr);
   }
 
   @Post('request/:token/card')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @HttpCode(HttpStatus.OK)
   async payByCard(
     @Param('token') token: string,
@@ -93,6 +104,7 @@ export class PaymentController {
   }
 
   @Post('bank-feed/webhook')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   @HttpCode(HttpStatus.OK)
   async bankFeedWebhook(
     @Req() req: Request & { rawBody?: Buffer },
@@ -220,7 +232,7 @@ export class PaymentController {
   @Get()
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'read')
-  @RequireRoles('ceo', 'manager', 'finance')
+  @RequireRoles('ceo', 'finance')
   async findAll(@Query() query: PaymentFilterDto) {
     return this.paymentService.findAll(query);
   }
@@ -228,7 +240,7 @@ export class PaymentController {
   @Get(':id')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'read')
-  @RequireRoles('ceo', 'manager', 'finance')
+  @RequireRoles('ceo', 'finance')
   async findById(@Param('id') id: string) {
     return this.paymentService.findById(id);
   }
@@ -273,6 +285,7 @@ export class PaymentController {
    * `rawBody: true` at app creation (see main.ts).
    */
   @Post('webhook')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   async webhook(
     @Body() body: Record<string, unknown>,
     @Req() req: Request & { rawBody?: Buffer },
@@ -285,6 +298,7 @@ export class PaymentController {
   }
 
   @Post('mock/simulate-webhook')
+  @Public('test-only mock webhook; refused when NODE_ENV is production')
   async simulateWebhook(@Body() body: Record<string, unknown>) {
     if (process.env.NODE_ENV === 'production') {
       throw new NotFoundException('Cannot POST /payments/mock/simulate-webhook in production');

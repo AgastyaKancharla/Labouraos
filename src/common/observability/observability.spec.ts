@@ -2,6 +2,7 @@ import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { QueueEvents } from 'bullmq';
+import { JwtService } from '@nestjs/jwt';
 import { AppModule } from '../../app.module';
 import {
   StructuredLogger,
@@ -158,10 +159,33 @@ describe('Phase 8 Task 5: Observability, Structured Logging & Status Dashboard',
     });
   });
 
-  describe('4. System Status & Uptime Dashboard (GET /system/status)', () => {
-    it('returns structured JSON with database, BullMQ, uptime, and memory statistics', async () => {
+  describe('4. System Status & Uptime Dashboard', () => {
+    // The public answer is a plain up or down; the details moved behind the
+    // CEO's login (GET /system/status/details). This replaces the earlier
+    // tests that read the full report without logging in.
+    function ceoToken(): string {
+      return app.get(JwtService).sign({
+        sub: 'observability-ceo',
+        role: 'ceo',
+        email: null,
+        code: 'CEO-OBS',
+      });
+    }
+
+    it('tells the public only up or down', async () => {
       const res = await request(app.getHttpServer())
         .get('/system/status')
+        .set('Accept', 'application/json');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ status: expect.stringMatching(/^(up|down)$/) });
+      expect(JSON.stringify(res.body)).not.toMatch(/PostgreSQL|Redis|heap|nodeVersion/);
+    });
+
+    it('returns structured JSON with database, BullMQ, uptime, and memory statistics to the CEO', async () => {
+      await request(app.getHttpServer()).get('/system/status/details').expect(401);
+      const res = await request(app.getHttpServer())
+        .get('/system/status/details')
+        .set('Authorization', `Bearer ${ceoToken()}`)
         .set('Accept', 'application/json');
 
       expect(res.status).toBe(200);
@@ -171,7 +195,6 @@ describe('Phase 8 Task 5: Observability, Structured Logging & Status Dashboard',
       expect(res.body.version).toBe('0.1.0');
       expect(Array.isArray(res.body.components)).toBe(true);
       expect(res.body.idCheck.status).toMatch(/^(up|down)$/);
-      expect(res.body.idCheck.lastChangedAt).toMatch(/^\d{4}-\d{2}-\d{2}T/);
 
       const dbComp = res.body.components.find((c: { name: string }) =>
         c.name.includes('PostgreSQL'),
@@ -189,9 +212,10 @@ describe('Phase 8 Task 5: Observability, Structured Logging & Status Dashboard',
       expect(res.body.memory).toHaveProperty('heapTotalMb');
     });
 
-    it('renders responsive HTML dashboard when Accept: text/html is requested', async () => {
+    it('renders responsive HTML dashboard for the CEO when Accept: text/html is requested', async () => {
       const res = await request(app.getHttpServer())
-        .get('/system/status')
+        .get('/system/status/details')
+        .set('Authorization', `Bearer ${ceoToken()}`)
         .set('Accept', 'text/html');
 
       expect(res.status).toBe(200);

@@ -281,7 +281,7 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
       }
     });
 
-    it('CEO and Manager GET /payments see unmasked PII', async () => {
+    it('CEO GET /payments sees unmasked PII; a Manager is refused', async () => {
       const resCeo = await request(app.getHttpServer())
         .get(`/payments/${testPaymentId}`)
         .set('Authorization', `Bearer ${ceoToken}`)
@@ -292,15 +292,12 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
         expect(resCeo.body.jobSeeker.kycReference).toBe('vendor_ref_fl_12345');
       }
 
-      const resMgr = await request(app.getHttpServer())
+      // A Manager sees no money at all (Master Guide, reconfirmed 11 Nov):
+      // the payments ledger refuses them. This replaced "Manager reads unmasked".
+      await request(app.getHttpServer())
         .get(`/payments/${testPaymentId}`)
         .set('Authorization', `Bearer ${managerToken}`)
-        .expect(200);
-
-      expect(resMgr.body.jobSeeker.phone).toBe(`93002${String(timestamp).slice(-5)}`);
-      if (resMgr.body.jobSeeker.kycReference) {
-        expect(resMgr.body.jobSeeker.kycReference).toBe('vendor_ref_fl_12345');
-      }
+        .expect(403);
     });
   });
 

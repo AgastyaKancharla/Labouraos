@@ -80,6 +80,18 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
 
     ceoStaff = staffAccounts['ceo'];
     managerStaff = staffAccounts['manager'];
+    // A Manager's device is approved by the CEO before the Manager logs in on it
+    // (decided 11 Nov); the CEO approves his own with his authenticator code.
+    await prisma.staffDevice.create({
+      data: {
+        staffId: managerStaff.id,
+        deviceId: `sec-${managerStaff.code}`,
+        label: 'Manager laptop',
+        platform: 'web',
+        status: 'approved',
+        approvedAt: new Date(),
+      },
+    });
     callAgentStaff = staffAccounts['call_agent'];
     fieldAgentStaff = staffAccounts['field_agent'];
   });

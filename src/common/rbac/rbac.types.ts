@@ -46,8 +46,11 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     business: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     vacancy: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     placement: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
-    payment: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } },
-    pricing: { read: { allowed: true, scope: 'all' }, write: { allowed: false, scope: 'none' } }, // Manager is read-only for pricing
+    // A Manager sees no money at all and no pricing or policy settings
+    // (Master Guide, reconfirmed 11 Nov). Money fields are also stripped from
+    // every other answer a Manager receives (money-visibility.ts).
+    payment: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
+    pricing: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
     trade: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     staff: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
     target: { read: { allowed: true, scope: 'all' }, write: { allowed: true, scope: 'all' } },
@@ -103,3 +106,13 @@ export const RBAC_MATRIX: Record<Role, Record<Resource, Record<Action, Permissio
     target: { read: { allowed: false, scope: 'none' }, write: { allowed: false, scope: 'none' } },
   },
 };
+
+/** Every staff role, for routes any logged-in staff member may use. */
+export const ALL_STAFF_ROLES: readonly Role[] = [
+  'ceo',
+  'manager',
+  'team_lead',
+  'call_agent',
+  'field_agent',
+  'finance',
+];

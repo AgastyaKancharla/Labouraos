@@ -15,6 +15,10 @@ import { AuthThrottlerGuard, LOGIN_CONNECTION_RATE_LIMIT, LOGIN_CONNECTION_TTL, 
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
 import { JwtPayload } from './jwt-payload.interface';
+import { Public } from '../rbac/public.decorator';
+import { RbacGuard } from '../rbac/rbac.guard';
+import { RequireRoles } from '../rbac/roles.decorator';
+import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 
 export { LOGIN_CONNECTION_RATE_LIMIT, LOGIN_RATE_LIMIT_PER_CONNECTION, LOGIN_CONNECTION_TTL };
 
@@ -27,6 +31,7 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
+  @Public('staff login: proves identity itself with code, password, device and second factor')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({
@@ -43,6 +48,7 @@ export class AuthController {
   }
 
   @Post('login/verify-code')
+  @Public('second login step: the one-time login code is the proof')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({
@@ -63,7 +69,8 @@ export class AuthController {
 
   @Post('refresh')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles(...ALL_STAFF_ROLES)
   @AllowTotpSetupScope()
   refresh(@Req() req: AuthenticatedRequest) {
     return this.authService.refresh(req.user);
@@ -71,7 +78,8 @@ export class AuthController {
 
   @Post('logout')
   @HttpCode(HttpStatus.OK)
-  @UseGuards(JwtAuthGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequireRoles(...ALL_STAFF_ROLES)
   @AllowTotpSetupScope()
   logout(@Req() req: AuthenticatedRequest) {
     return this.authService.logout(req.user);

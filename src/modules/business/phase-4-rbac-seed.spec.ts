@@ -153,14 +153,16 @@ describe('Phase 4 Task 6: RBAC PII Masking and Seed Verification', () => {
     expect(singleRes.body.business.phone).toBe('********');
   });
 
-  it('manager sees the full business number; a field agent sees only the last 4 digits', async () => {
+  // Only the CEO sees full numbers (Master Guide, People and roles); this
+  // replaced the earlier "manager sees the full number" check.
+  it('manager and field agent see only the last 4 digits of the business number', async () => {
     const mgrRes = await request(app.getHttpServer())
       .get(`/businesses/${testBusinessId}`)
       .set('Authorization', `Bearer ${managerToken}`)
       .expect(200);
 
-    expect(mgrRes.body.phone).not.toBe('********');
-    expect(mgrRes.body.phone).toMatch(/^96/);
+    expect(mgrRes.body.phone).toBe(maskPhoneLast4(`96${timestamp.toString().slice(-8)}1`));
+    expect(mgrRes.body.phone).not.toMatch(/^96/);
 
     const faRes = await request(app.getHttpServer())
       .get(`/businesses/${testBusinessId}`)
