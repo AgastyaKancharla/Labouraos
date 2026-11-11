@@ -1910,9 +1910,9 @@ export class PlacementService {
     const sgstAmountPaise = totalTaxPaise - cgstAmountPaise;
 
     // Company details come from Settings (entered by the CEO). Environment values are
-    // only a fallback for the GSTIN and address until Settings has them.
+    // only a fallback, used when the Settings value is empty.
     const supplier: InvoiceSupplier = {
-      legalName: policy.companyLegalName?.trim() || 'Laboura Private Limited',
+      legalName: policy.companyLegalName?.trim() || process.env.COMPANY_LEGAL_NAME?.trim() || 'Laboura Private Limited',
       gstin: policy.companyGstin?.trim() || process.env.COMPANY_GSTIN || 'GSTIN_PENDING_REGISTRATION',
       address: policy.companyAddress?.trim() || process.env.COMPANY_ADDRESS || 'Bengaluru, Karnataka, India',
       state: 'Karnataka',
