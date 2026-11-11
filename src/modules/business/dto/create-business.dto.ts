@@ -37,6 +37,11 @@ export class BusinessStaffNeedDto {
 
 export class CreateBusinessDto {
   name!: string;
+  /**
+   * Laboura Field: the shop visit (FA20–FA22) this business is registered
+   * from. Its GPS, name-board photo and proof selfie are the in-person proof.
+   */
+  fieldVisitId?: string;
   legalName?: string;
   familyName?: string;
   ownerName?: string;

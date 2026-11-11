@@ -563,6 +563,13 @@ model Interview {
   businessDetailsSentAt    DateTime?
   agentAttendanceRequired  Boolean               @default(false)
   attendanceVisitId        String?
+  /// Interview day: the field agent marked "candidate arrived" at the shop, with GPS.
+  candidateArrivedAt             DateTime?
+  candidateArrivedByStaffId      String?
+  candidateArrivedLatitude       Float?
+  candidateArrivedLongitude      Float?
+  candidateArrivedAccuracyMeters Float?
+  candidateArrivedDistanceMeters Float?
   result                   String?
   resultReason             String?
   resultOtpRequestId       String?
@@ -976,12 +983,18 @@ model JobSeekerHit {
 
 model BusinessVisit {
   id           String    @id @default(uuid())
-  businessId   String
-  business     Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Null while the shop is not (yet) registered: a "Visit a shop" visit
+  /// starts outside, before anyone knows whether the shop will sign up.
+  businessId   String?
+  business     Business? @relation(fields: [businessId], references: [id], onDelete: Cascade)
   staffId      String?
   staff        Staff?    @relation(fields: [staffId], references: [id], onDelete: SetNull)
   latitude     Float
   longitude    Float
+  /// GPS accuracy (metres) of the reading taken outside at the start.
+  accuracyMeters Float?
+  /// Proof selfie (verification visits and the "proof before onboarding" step):
+  /// storage path and SHA-256 of the uploaded bytes.
   selfieUrl    String?
   selfieHash   String?
   geofenceFlag Boolean   @default(false)
@@ -991,11 +1004,47 @@ model BusinessVisit {
   assignmentId String?
   assignment   VisitAssignment? @relation("VisitAssignmentBusinessVisit", fields: [assignmentId], references: [id], onDelete: SetNull)
   completedAssignment VisitAssignment? @relation("VisitAssignmentVisit")
+  /// Name on the shop board as the agent typed it (before registration).
+  shopName     String?
+  /// The earlier visit to the same unregistered shop this one returns to.
+  revisitOfVisitId String?
+  /// Live photo of the shop with its name board, taken outside before going in.
+  boardPhotoPath    String?
+  boardPhotoHash    String?
+  boardPhotoTakenAt DateTime?
+  /// Visit timer: from the board photo to stepping out / choosing the outcome.
+  startedAt         DateTime?
+  endedAt           DateTime?
+  durationSeconds   Int?
+  /// owner, manager, staff, no_one
+  spokeTo           String?
+  /// Optional shop phone the Team Lead may call to check (+91 and 10 digits).
+  contactPhone      String?
+  /// onboarded, interested_later, not_interested, owner_not_there
+  outcome           String?
+  /// Not interested: hires_family_friends, fee_too_high, no_staff_needed, other_agency, other
+  outcomeReason     String?
+  /// Come back on this IST date (interested later, owner not there).
+  revisitOn         DateTime? @db.Date
+  note              String?
+  outcomeRecordedAt DateTime?
+  /// Second GPS check with the proof selfie, and its distance from the start.
+  proofLatitude       Float?
+  proofLongitude      Float?
+  proofAccuracyMeters Float?
+  proofAt             DateTime?
+  proofDistanceMeters Float?
+  /// One of the faked-GPS checks failed (see visit-fraud.ts).
+  gpsSuspect        Boolean   @default(false)
   visitedAt    DateTime  @default(now())
   createdAt    DateTime  @default(now())
 
   @@index([businessId])
   @@index([selfieHash])
+  @@index([boardPhotoHash])
+  @@index([staffId, visitedAt])
+  @@index([revisitOfVisitId])
+  @@index([revisitOn])
 }
 
 model VisitAssignment {
@@ -1257,6 +1306,17 @@ model PricingPolicy {
   casualLeavePerMonth          Int       @default(1)
   emergencyLeavePerMonth       Int       @default(1)
   refundPriorityWindowDays     Int       @default(15)
+  // Shop-visit checks for the Team Lead (field agent app, decided 9 Nov). The
+  // guide names the checks; these numbers are settings, not rules.
+  /// A visit shorter than this is flagged as "very short".
+  visitShortMinutes            Int       @default(3)
+  /// Two visits further apart than this speed allows are flagged.
+  visitMaxTravelKmh            Int       @default(60)
+  /// The proof selfie must be taken within this distance of the board photo.
+  visitSameSpotMeters          Int       @default(100)
+  /// This many visits in the window with no onboarding is flagged.
+  visitNoOnboardingCount       Int       @default(15)
+  visitNoOnboardingDays        Int       @default(7)
   /// Weekly days off, 0 = Sunday … 6 = Saturday (IST). No absent day is
   /// marked on them; time worked on them is make-up time.
   weeklyOffDays                Int[]     @default([0])
@@ -1850,4 +1910,24 @@ model BankDayClose {
   closedAt          DateTime
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
+}
+
+/// Server side of the field app's offline queue: every queued write carries
+/// an Idempotency-Key. A repeat of a key already answered gets the saved
+/// answer back instead of saving the visit or photo twice.
+model IdempotencyRecord {
+  id             String    @id @default(uuid())
+  staffId        String
+  key            String
+  method         String
+  path           String
+  /// processing, done
+  state          String    @default("processing")
+  responseStatus Int?
+  responseBody   Json?
+  createdAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@unique([staffId, key])
+  @@index([createdAt])
 }

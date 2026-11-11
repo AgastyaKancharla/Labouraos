@@ -17,6 +17,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { TradeModule } from '../trade/trade.module';
 import { ConsentModule } from '../consent/consent.module';
 import { BusinessVerificationModule } from './business-verification.module';
+import { FieldVisitModule } from '../field-visit/field-visit.module';
 
 @Module({
   imports: [
@@ -30,6 +31,7 @@ import { BusinessVerificationModule } from './business-verification.module';
     TradeModule,
     ConsentModule,
     BusinessVerificationModule,
+    FieldVisitModule,
   ],
   controllers: [BusinessController],
   providers: [

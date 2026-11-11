@@ -5,6 +5,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { Prisma } from '@prisma/client';
@@ -13,6 +14,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { FieldVisitService } from '../field-visit/field-visit.service';
 import {
   calculateHaversineDistanceMeters,
   DEFAULT_GEOFENCE_RADIUS_METERS,
@@ -54,6 +56,7 @@ export class BusinessService {
     private readonly editPolicyService: EditPolicyService,
     private readonly anonymisationService: AnonymisationService,
     private readonly tradeService: TradeService,
+    @Optional() private readonly fieldVisits?: FieldVisitService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -162,6 +165,11 @@ export class BusinessService {
     });
     if (!staff) {
       throw new NotFoundException(`Staff '${actorId}' not found`);
+    }
+    const fieldVisitId = dto.fieldVisitId?.trim() || null;
+    if (fieldVisitId) {
+      if (!this.fieldVisits) throw new BadRequestException('Shop visits are not available');
+      await this.fieldVisits.assertCanRegisterFrom(staff.id, fieldVisitId);
     }
 
     const businessType = dto.businessType?.trim() || null;
@@ -442,7 +450,7 @@ export class BusinessService {
         await this.tradeService.recordSuggestion(tx, row.trade.trim(), staff.id, 'vacancy', vacancy.id);
         draftVacancies.push({ code: vacancy.code, headcount: row.headcount });
       }
-      if ((visitLat !== undefined && visitLon !== undefined) || selfieUrl || selfieHash || dto.visit) {
+      if (!fieldVisitId && ((visitLat !== undefined && visitLon !== undefined) || selfieUrl || selfieHash || dto.visit)) {
         await tx.businessVisit.create({
           data: {
             businessId: savedBusiness.id,
@@ -476,6 +484,10 @@ export class BusinessService {
         changedFields: ['tradeSkill', 'headcount', 'salaryMinPaise', 'salaryMaxPaise', 'shift', 'startDate', 'status', 'latitude', 'longitude'],
         city,
       });
+    }
+
+    if (fieldVisitId && this.fieldVisits) {
+      await this.fieldVisits.linkRegisteredBusiness(staff.id, fieldVisitId, business.id);
     }
 
     if (geofenceFlag) {
