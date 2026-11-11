@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Queue, Worker } from 'bullmq';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { AttendanceDaysService } from '../modules/attendance/attendance-days.service';
+import { LeaveService } from '../modules/attendance/leave.service';
 import { dailyInIndia } from './job-schedules';
 
 export const FORGOTTEN_LOGOUT_QUEUE = 'forgotten-logout';
@@ -9,7 +10,8 @@ export const FORGOTTEN_LOGOUT_SWEEP = 'close-forgotten-days';
 
 /**
  * Closes any day left open, then marks yesterday absent for anyone with no
- * login and no approved leave (weekly days off are skipped). 00:00 UTC is 05:30 IST, before the shift starts,
+ * login and no approved leave (weekly days off are skipped), and writes the
+ * month's leave accrual on the 1st (safe to repeat). 00:00 UTC is 05:30 IST, before the shift starts,
  * so a day still open from yesterday is closed and a new morning is not.
  */
 @Injectable()
@@ -21,6 +23,7 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly attendance: AttendanceService,
     private readonly days: AttendanceDaysService,
+    private readonly leave: LeaveService,
   ) {}
 
   private get connection() {
@@ -62,10 +65,11 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
     );
   }
 
-  async process(): Promise<{ closed: number; absent: number }> {
+  async process(): Promise<{ closed: number; absent: number; accrued: number }> {
     const { closed } = await this.attendance.closeForgottenDays();
     const { marked } = await this.days.markAbsentDays();
-    return { closed, absent: marked };
+    const { written } = await this.leave.accrueAll();
+    return { closed, absent: marked, accrued: written };
   }
 
   async onModuleInit(): Promise<void> {

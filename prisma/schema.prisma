@@ -722,6 +722,9 @@ model Staff {
   assignedVisitAssignments VisitAssignment[] @relation("VisitAssignmentAssigned")
   assignedVisitAssignmentsByMe VisitAssignment[] @relation("VisitAssignmentAssignedBy")
   auditLogs         AuditLog[]
+  leaveAccruals     LeaveAccrual[]
+  leaveRequests     LeaveRequest[]
+  attendanceCorrections AttendanceCorrection[]
   contactAttempts   ContactAttempt[]
   callbackTasks     CallbackTask[]
   targets           Target[]         @relation("StaffTargets")
@@ -1282,6 +1285,8 @@ model AttendanceDay {
   dayTypeChangedById String?
   dayTypeChangedAt  DateTime?
   dayTypeChangeReason String?
+  /// The approved leave request that made this a leave day.
+  leaveRequestId    String?
   lastHeartbeatAt   DateTime?
   segments          AttendanceSegment[]
   createdAt         DateTime            @default(now())
@@ -1290,6 +1295,89 @@ model AttendanceDay {
   @@unique([staffId, date])
   @@index([staffId])
   @@index([date])
+}
+
+/// Leave days earned on the 1st of each month. One row per person per month.
+model LeaveAccrual {
+  id        String   @id @default(uuid())
+  staffId   String
+  staff     Staff    @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  month     String   // YYYY-MM (IST)
+  casual    Int
+  emergency Int
+  createdAt DateTime @default(now())
+
+  @@unique([staffId, month])
+}
+
+/// A leave request. Routing follows the reporting line (Phase 21 Task 4).
+model LeaveRequest {
+  id                  String    @id @default(uuid())
+  staffId             String
+  staff               Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  kind                String    // casual, emergency
+  fromDate            DateTime  @db.Date
+  toDate              DateTime  @db.Date
+  /// Leave days in the range, weekly days off left out.
+  days                Int
+  reason              String
+  status              String    @default("pending") // pending, approved, rejected
+  /// Where it went first: team_lead, manager or ceo.
+  routedToRole        String
+  routedToStaffId     String?
+  /// team_lead, team_lead_own, over_limit, manager_own, finance_own, no_line
+  routeReason         String
+  forwardedAt         DateTime?
+  forwardedByStaffId  String?
+  forwardNote         String?
+  decidedAt           DateTime?
+  decidedByStaffId    String?
+  decidedByRole       String?
+  decisionReason      String?
+  paidDays            Int       @default(0)
+  unpaidDays          Int       @default(0)
+  overturnedAt        DateTime?
+  overturnedByStaffId String?
+  overturnReason      String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([staffId, status])
+  @@index([status, createdAt])
+}
+
+/// A request to change a time range of a day. Staff never edit their own times.
+model AttendanceCorrection {
+  id                  String    @id @default(uuid())
+  staffId             String
+  staff               Staff     @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  date                DateTime  @db.Date
+  startAt             DateTime
+  endAt               DateTime
+  /// The status the person says they were in (a production status).
+  segmentStatus       String    @default("available")
+  reason              String
+  /// The person's nth correction in that month, counting this one.
+  monthNumber         Int
+  status              String    @default("pending") // pending, approved, rejected
+  routedToRole        String
+  routedToStaffId     String?
+  /// team_lead, team_lead_own, third_correction, manager_own, finance_own, no_line
+  routeReason         String
+  forwardedAt         DateTime?
+  forwardedByStaffId  String?
+  forwardNote         String?
+  decidedAt           DateTime?
+  decidedByStaffId    String?
+  decidedByRole       String?
+  decisionReason      String?
+  /// The segments as they were before the correction was applied.
+  replacedSegments    Json?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([staffId, status])
+  @@index([status, createdAt])
 }
 
 model AttendanceSegment {

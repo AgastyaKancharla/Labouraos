@@ -58,7 +58,7 @@ const dailyJobs: Array<{
   },
   {
     name: 'forgottenLogout',
-    build: () => new ForgottenLogoutJob({} as never, {} as never),
+    build: () => new ForgottenLogoutJob({} as never, {} as never, {} as never),
     register: (job) => (job as ForgottenLogoutJob).schedule(),
   },
   {

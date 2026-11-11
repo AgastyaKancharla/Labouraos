@@ -476,7 +476,7 @@ export class AttendanceService {
     return new Date(latest);
   }
 
-  private lateMinutes(loginAt: Date, policy: PricingPolicy): number {
+  lateMinutes(loginAt: Date, policy: PricingPolicy): number {
     const parts = getCalendarPartsInTimezone(loginAt);
     const [startHour, startMinute] = policy.shiftStart.split(':').map((part) => Number(part));
     const loginMinutes = parts.hour * 60 + parts.minute;
