@@ -280,6 +280,61 @@ export class MatchingService {
    * Nearest first, then the better-paid job. Business names are never
    * returned: they stay hidden until he says yes to the offer.
    */
+  /**
+   * FA15x "No more matches": why there aren't more. Among active job seekers
+   * with this trade and consent who live within their own travel distance:
+   * how many there are, how many are left out by salary (their guaranteed
+   * floor is above the vacancy's top, beyond the near-miss band) and by
+   * shift, and what top salary would bring the salary ones in. Counts only:
+   * no names, no scores.
+   */
+  async whyNoMore(vacancyRef: string) {
+    const vacancy = (await this.prisma.vacancy.findFirst({
+      where: vacancyRef.startsWith('VC-') ? { code: vacancyRef } : { id: vacancyRef },
+      include: { business: true },
+    })) as VacancyForMatching | null;
+    if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyRef}' not found`);
+    const policy = await this.pricingService.current();
+    const pool = await this.loadCandidatePool({ status: 'active' });
+    let withinDistance = 0;
+    let salaryAbove = 0;
+    let shiftOnly = 0;
+    let highestFloor = 0;
+    const vacancyMax = vacancy.salaryMinPaise === null
+      ? 0
+      : monthlyAmount(vacancy.salaryMaxPaise ?? vacancy.salaryMinPaise, vacancy.salaryPeriod, policy.salaryDaysPerMonth);
+    for (const seeker of pool) {
+      if (!jobSeekerHasTrade(seeker, vacancy.tradeSkill)) continue;
+      const purposes = new Set(seeker.consents.filter((c) => c.granted && c.grantedAt && !c.withdrawnAt).map((c) => c.purpose));
+      if (!purposes.has('job_matching') || !purposes.has('profile_sharing')) continue;
+      if (seeker.latitude === null || seeker.longitude === null || vacancy.latitude === null || vacancy.longitude === null) continue;
+      if (seeker.travelDistanceKm === null) continue;
+      if (distanceInKm(seeker.latitude, seeker.longitude, vacancy.latitude, vacancy.longitude) > seeker.travelDistanceKm) continue;
+      withinDistance += 1;
+      if (vacancy.salaryMinPaise !== null && this.salarySuitability(seeker, vacancy, policy.salaryDaysPerMonth) === false) {
+        salaryAbove += 1;
+        const floor = seeker.guaranteeFloorPaise ?? monthlyAmount(seeker.minSalary, seeker.salaryPeriod, policy.salaryDaysPerMonth);
+        highestFloor = Math.max(highestFloor, floor);
+        continue;
+      }
+      if (seeker.shiftPreference !== 'any' && seeker.shiftPreference && vacancy.shift &&
+        seeker.shiftPreference.toLowerCase() !== vacancy.shift.toLowerCase()) {
+        shiftOnly += 1;
+      }
+    }
+    // Round the suggestion up to the next ₹1,000 (100,000 paise).
+    const raiseToPaise = salaryAbove > 0 ? Math.ceil(highestFloor / 100_000) * 100_000 : null;
+    return {
+      vacancyId: vacancy.id,
+      trade: vacancy.tradeSkill,
+      vacancyMaxPaise: vacancyMax,
+      withinDistance,
+      leftOutSalaryAbove: salaryAbove,
+      leftOutShift: shiftOnly,
+      raiseToPaise,
+    };
+  }
+
   async jobsForSeeker(jobSeekerRef: string, options: { page: number; vacancyId?: string }) {
     if (!Number.isInteger(options.page) || options.page < 1) {
       throw new BadRequestException('page must be a positive integer');

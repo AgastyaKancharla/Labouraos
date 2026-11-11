@@ -1,7 +1,8 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { InterviewService } from '../modules/vacancy/interview.service';
 import { PlacementService } from '../modules/placement/placement.service';
+import { FieldSellingService } from '../modules/field-selling/field-selling.service';
 import { INTERVAL_JOB_MS } from './job-schedules';
 
 export const INTERVIEW_REPLY_QUEUE = 'interview-reply-deadlines';
@@ -16,6 +17,7 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
   constructor(
     private readonly interviews: InterviewService,
     private readonly placements: PlacementService,
+    @Optional() private readonly fieldSelling?: FieldSellingService,
   ) {}
 
   private get connection() {
@@ -65,7 +67,10 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
     const replies = await this.interviews.processDueReplies();
     const results = await this.interviews.processResultDeadlines();
     const payments = await this.placements.processPaymentDeadlines();
-    return { replies, results, payments };
+    // Phone interviews (Laboura Field, FA15g): ring both sides at the set time.
+    if (!this.fieldSelling) return { replies, results, payments };
+    const phoneInterviews = await this.fieldSelling.processDuePhoneInterviews();
+    return { replies, results, payments, phoneInterviews };
   }
 
   async onModuleInit(): Promise<void> {

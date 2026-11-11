@@ -42,6 +42,7 @@ import { RefundPriorityModule } from './modules/refund-priority/refund-priority.
 import { RetentionModule } from './modules/retention/retention.module';
 import { WebAppModule } from './modules/web-app/web-app.module';
 import { ScreensCallRegistrationModule } from './modules/screens-call-registration/screens-call-registration.module';
+import { FieldSellingModule } from './modules/field-selling/field-selling.module';
 import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
 import { AreaModule } from './modules/area/area.module';
 import { LiveModule } from './common/live/live.module';
@@ -101,6 +102,7 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
     RefundPriorityModule,
     HealthModule,
     ScreensCallRegistrationModule,
+    FieldSellingModule,
     ScreensCallAgentModule,
     WebAppModule,
     FieldAppModule,

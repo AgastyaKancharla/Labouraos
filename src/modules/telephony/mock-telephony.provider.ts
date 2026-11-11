@@ -6,6 +6,7 @@ import {
   OutboundCallResult,
   TelephonyCapacity,
   TelephonyProvider,
+  ThreeWayCallParams,
 } from './telephony.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { mobileLookupValues, normaliseIndianMobile, phoneLast4 } from '../../common/phone/indian-mobile';
@@ -85,6 +86,19 @@ export class MockTelephonyProvider implements TelephonyProvider {
       recordingEnabled,
       consentAnnounced: recordingEnabled,
     };
+  }
+
+  lastThreeWay: ThreeWayCallParams | null = null;
+
+  supportsThreeWayCalls(): boolean {
+    return true;
+  }
+
+  async initiateThreeWayCall(params: ThreeWayCallParams): Promise<OutboundCallResult> {
+    this.lastThreeWay = params;
+    const callId = `three_way_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    this.logger.log(`[MOCK TELEPHONY] 3-way call initiated, recording: ${params.recordCall}, callId: ${callId}`);
+    return { callId, status: 'initiated', recordingEnabled: params.recordCall, consentAnnounced: params.recordCall };
   }
 
   getCapacity(): TelephonyCapacity {

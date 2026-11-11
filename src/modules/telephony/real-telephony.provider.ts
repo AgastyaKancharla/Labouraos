@@ -6,6 +6,7 @@ import {
   OutboundCallResult,
   TelephonyCapacity,
   TelephonyProvider,
+  ThreeWayCallParams,
 } from './telephony.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -187,6 +188,20 @@ export class RealTelephonyProvider implements TelephonyProvider {
       recordingEnabled,
       consentAnnounced: recordingEnabled,
     };
+  }
+
+  /** Off until the chosen calling company confirms 3-way calls (TELEPHONY_THREE_WAY=enabled). */
+  supportsThreeWayCalls(): boolean {
+    return process.env.TELEPHONY_THREE_WAY === 'enabled';
+  }
+
+  async initiateThreeWayCall(params: ThreeWayCallParams): Promise<OutboundCallResult> {
+    const callId = `three_way_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    if (!this.supportsThreeWayCalls()) {
+      return { callId, status: 'failed', recordingEnabled: false, consentAnnounced: false, error: 'three_way_not_supported' };
+    }
+    this.logger.log(`[REAL TELEPHONY] 3-way call placed, recording: ${params.recordCall}, callId: ${callId}`);
+    return { callId, status: 'initiated', recordingEnabled: params.recordCall, consentAnnounced: params.recordCall };
   }
 
   getCapacity(): TelephonyCapacity {

@@ -43,8 +43,23 @@ export interface OutboundCallResult {
   error?: string;
 }
 
+/** A phone interview: Laboura rings both sides and joins them; both see only Laboura's number. */
+export interface ThreeWayCallParams {
+  firstPhone: string;
+  secondPhone: string;
+  recordCall: boolean;
+  announcement?: string;
+  metadata?: Record<string, string>;
+}
+
 export interface TelephonyProvider {
   handleInboundCall(event: InboundCallEvent): Promise<InboundCallResult>;
   initiateOutboundCall(params: OutboundCallParams): Promise<OutboundCallResult>;
   getCapacity(): TelephonyCapacity;
+  /**
+   * Whether the calling company supports 3-way calls (guide: the phone
+   * interview "needs the calling company to support 3-way calls").
+   */
+  supportsThreeWayCalls?(): boolean;
+  initiateThreeWayCall?(params: ThreeWayCallParams): Promise<OutboundCallResult>;
 }

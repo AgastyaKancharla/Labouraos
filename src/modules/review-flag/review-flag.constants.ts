@@ -37,6 +37,10 @@ export const REVIEW_FLAG_KINDS = [
   'visit_gps_suspect',
   /** Many visits in the window and not one onboarding. */
   'visits_no_onboarding',
+  /** Laboura Field (decided 9 Nov): an owner's complaint on a call goes to the Team Lead with the recording. */
+  'owner_complaint',
+  /** FA11: the owner said on the joining call that the worker didn't come. */
+  'joining_no_show',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

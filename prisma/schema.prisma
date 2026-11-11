@@ -505,6 +505,7 @@ model Vacancy {
   placements                  Placement[]
   candidateIntroductions     CandidateIntroduction[]
   candidateIntroductionLinks CandidateIntroductionLink[]
+  ownerFavourites            OwnerFavourite[]
   /// Phase 20 Task 8: who confirmed the vacancy, when and how (code_on_call, code_on_visit, sms_link)
   confirmedAt                 DateTime?
   confirmationMethod          String?
@@ -586,6 +587,26 @@ model Interview {
   candidateCheckAnswer     String?
   candidateCheckAt         DateTime?
   cancelReason             String?
+  /// How the interview happens (guide, "Confirming in the shop", decided 9 Nov):
+  /// in_shop_call (the phone talk in the shop is the first interview), at_shop,
+  /// walk_in, or phone (Laboura calls both at the set time). Null on older bookings.
+  interviewType            String?
+  /// The field agent ticked "I will attend" when booking.
+  agentWillAttend          Boolean               @default(false)
+  /// In-shop confirmation: the agent handed his phone to the owner on the same recorded call.
+  handedToOwnerAt          DateTime?
+  /// The field agent who recorded the owner's decision in the shop (the owner confirmed it by OTP).
+  resultRecordedByStaffId  String?
+  /// Interview day: the attending agent marked "candidate arrived", with GPS.
+  candidateArrivedAt       DateTime?
+  arrivalLatitude          Float?
+  arrivalLongitude         Float?
+  arrivalAccuracyM         Float?
+  arrivalDistanceM         Int?
+  arrivalMarkedByStaffId   String?
+  /// Phone interview: when Laboura rang both sides, and the call record.
+  phoneInterviewDialledAt  DateTime?
+  phoneInterviewCallRecordId String?
   placement                Placement?
   replacementCandidates    ReplacementCandidate[]
   createdAt                DateTime              @default(now())
@@ -633,6 +654,10 @@ model Placement {
   joinedDate                 DateTime?
   dropoutReportedAt          DateTime?
   dropoutDateCallerSupplied  Boolean     @default(false)
+  /// FA11: the owner said on the joining call that the worker didn't come.
+  joiningNoShowReportedAt    DateTime?
+  /// FA11: how many times the owner moved the joining date on the joining call.
+  joiningMovedCount          Int         @default(0)
   status                     String      @default("awaiting_payment") // awaiting_payment, cancelled, confirmed, active, dropped_out, replaced, completed, guarantee_ended; legacy statuses remain readable
   replacementVacancies       Vacancy[]   @relation("ReplacementPlacementVacancies")
   replacementCandidates      ReplacementCandidate[]
@@ -1960,4 +1985,18 @@ model IdempotencyRecord {
 
   @@unique([staffId, key])
   @@index([createdAt])
+}
+
+/// The owner's favourite candidates for a vacancy (the heart on the field
+/// agent's match cards). Marked by the field agent in the shop.
+model OwnerFavourite {
+  id              String   @id @default(uuid())
+  vacancyId       String
+  vacancy         Vacancy  @relation(fields: [vacancyId], references: [id], onDelete: Cascade)
+  jobSeekerId     String
+  markedByStaffId String
+  createdAt       DateTime @default(now())
+
+  @@unique([vacancyId, jobSeekerId])
+  @@index([jobSeekerId])
 }
