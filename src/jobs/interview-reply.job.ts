@@ -1,5 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { InterviewService } from '../modules/vacancy/interview.service';
 import { PlacementService } from '../modules/placement/placement.service';
 import { FieldSellingService } from '../modules/field-selling/field-selling.service';
@@ -18,6 +20,8 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
     private readonly interviews: InterviewService,
     private readonly placements: PlacementService,
     @Optional() private readonly fieldSelling?: FieldSellingService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   private get connection() {
@@ -43,7 +47,7 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         INTERVIEW_REPLY_QUEUE,
-        async () => this.process(),
+        async () => recordJobRun(this.prisma, INTERVIEW_REPLY_SWEEP, () => this.process()),
         { connection: this.connection },
       );
       this.worker.on('error', (error) => this.logger.error(`Interview reply worker error: ${error.message}`));

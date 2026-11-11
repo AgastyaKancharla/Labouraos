@@ -1,5 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { KycRecoveryService } from '../common/kyc/kyc-recovery.service';
 import { INTERVAL_JOB_MS } from './job-schedules';
 
@@ -12,7 +14,11 @@ export class KycRecoveryJob implements OnModuleInit, OnModuleDestroy {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
 
-  constructor(private readonly recovery: KycRecoveryService) {}
+  constructor(
+    private readonly recovery: KycRecoveryService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
+  ) {}
 
   private get connection() {
     return {
@@ -35,7 +41,7 @@ export class KycRecoveryJob implements OnModuleInit, OnModuleDestroy {
 
   getWorker(): Worker {
     if (!this.worker) {
-      this.worker = new Worker(KYC_RECOVERY_QUEUE, async () => this.process(), { connection: this.connection });
+      this.worker = new Worker(KYC_RECOVERY_QUEUE, async () => recordJobRun(this.prisma, KYC_RECOVERY_SWEEP, () => this.process()), { connection: this.connection });
       this.worker.on('error', (error) => this.logger.error(`KYC recovery worker error: ${error.message}`));
     }
     return this.worker;

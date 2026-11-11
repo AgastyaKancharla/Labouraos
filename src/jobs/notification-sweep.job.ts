@@ -1,5 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { DaysToFirstInterviewService } from '../modules/growth/days-to-first-interview.service';
 import { DAYS_TO_FIRST_INTERVIEW_ALERT_DAYS } from '../modules/growth/growth.constants';
@@ -30,6 +32,8 @@ export class NotificationSweepJob implements OnModuleInit, OnModuleDestroy {
     private readonly notifications: NotificationService,
     private readonly daysToFirstInterview: DaysToFirstInterviewService,
     private readonly refundPriority: RefundPriorityService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   private get connection() {
@@ -53,7 +57,7 @@ export class NotificationSweepJob implements OnModuleInit, OnModuleDestroy {
 
   getWorker(): Worker {
     if (!this.worker) {
-      this.worker = new Worker(NOTIFICATION_SWEEP_QUEUE, async () => this.process(), {
+      this.worker = new Worker(NOTIFICATION_SWEEP_QUEUE, async () => recordJobRun(this.prisma, NOTIFICATION_SWEEP, () => this.process()), {
         connection: this.connection,
       });
       this.worker.on('error', (error) => this.logger.error(`Notification sweep worker error: ${error.message}`));

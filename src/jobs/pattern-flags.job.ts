@@ -1,5 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { PatternFlagService, PatternFlagResults } from '../modules/review-flag/pattern-flag.service';
 import { dailyInIndia } from './job-schedules';
 
@@ -12,7 +14,11 @@ export class PatternFlagsJob implements OnModuleInit, OnModuleDestroy {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
 
-  constructor(private readonly patternFlagService: PatternFlagService) {}
+  constructor(
+    private readonly patternFlagService: PatternFlagService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
+  ) {}
 
   private get connection() {
     return {
@@ -37,7 +43,7 @@ export class PatternFlagsJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         PATTERN_FLAGS_QUEUE,
-        async () => this.process(),
+        async () => recordJobRun(this.prisma, PATTERN_FLAGS_SWEEP, () => this.process()),
         { connection: this.connection },
       );
       this.worker.on('error', (error) => this.logger.error(`Pattern flags worker error: ${error.message}`));
