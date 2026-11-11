@@ -343,6 +343,18 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
       }
     });
 
+    it('builds the worker with the same API build as the web service (build:api), so it never runs stale code', () => {
+      const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', 'package.json'), 'utf8')) as {
+        scripts: Record<string, string>;
+      };
+      expect(worker().buildCommand).toBe('npm ci --include=dev && npx prisma generate && npm run build:api');
+      // The web service's full build starts with exactly the API build.
+      expect(pkg.scripts['build:api']).toBe('nest build');
+      expect(pkg.scripts.build.startsWith(`${pkg.scripts['build:api']} && `)).toBe(true);
+      expect(web().buildCommand).toMatch(/&& npm run build$/);
+      expect(pkg.scripts['start:worker']).toBe('node dist/worker');
+    });
+
     it('declares a paid, private Render Key Value with the noeviction policy BullMQ needs', () => {
       const kv = keyValue();
       expect(kv.name).toBe('laboura-redis');
