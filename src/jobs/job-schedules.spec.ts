@@ -18,6 +18,8 @@ import { NoPickupEvaluationJob } from './no-pickup-evaluation.job';
 import { PatternFlagsJob } from './pattern-flags.job';
 import { PlacementCompletionJob } from './placement-completion.job';
 import { RetentionCleanupJob } from './retention-cleanup.job';
+import { ShortageTasksJob } from './shortage-tasks.job';
+import { WinBackJob } from './win-back.job';
 
 type MockQueue = {
   upsertJobScheduler: jest.Mock;
@@ -88,6 +90,16 @@ const dailyJobs: Array<{
     name: 'followUp',
     build: () => new FollowUpJob({} as never),
     register: (job) => (job as FollowUpJob).schedule(),
+  },
+  {
+    name: 'shortageTasks',
+    build: () => new ShortageTasksJob({} as never),
+    register: (job) => (job as ShortageTasksJob).schedule(),
+  },
+  {
+    name: 'winBack',
+    build: () => new WinBackJob({} as never),
+    register: (job) => (job as WinBackJob).schedule(),
   },
 ];
 
@@ -174,6 +186,8 @@ describe('Daily jobs start only in the worker process', () => {
     { label: 'FollowUpJob', build: () => new FollowUpJob({} as never) },
     { label: 'PatternFlagsJob', build: () => new PatternFlagsJob({} as never) },
     { label: 'JoiningRewardJob', build: () => new JoiningRewardJob({} as never) },
+    { label: 'ShortageTasksJob', build: () => new ShortageTasksJob({} as never) },
+    { label: 'WinBackJob', build: () => new WinBackJob({} as never) },
   ];
 
   describe.each(previouslyUngated)('$label', ({ build }) => {

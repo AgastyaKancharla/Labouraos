@@ -212,7 +212,7 @@ export class ShortageTaskService {
     const leads = leadIds.length
       ? await this.prisma.staff.findMany({ where: { id: { in: leadIds } }, select: { id: true, code: true, name: true } })
       : [];
-    return tasks.map(({ openKey: _openKey, ...task }) => ({
+    return tasks.map((task) => ({
       ...task,
       openVacancies: task.vacancyIds.length,
       available: 0,

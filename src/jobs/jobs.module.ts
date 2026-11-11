@@ -24,12 +24,15 @@ import { KycRecoveryJob } from './kyc-recovery.job';
 import { AttendanceModule } from '../modules/attendance/attendance.module';
 import { ForgottenLogoutJob } from './forgotten-logout.job';
 import { WorkerHeartbeatService } from './worker-heartbeat.service';
+import { GrowthModule } from '../modules/growth/growth.module';
+import { ShortageTasksJob } from './shortage-tasks.job';
+import { WinBackJob } from './win-back.job';
 
 @Module({
-  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, KycHealthModule, AttendanceModule],
+  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, KycHealthModule, AttendanceModule, GrowthModule],
   controllers: [JobsController],
-  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, WorkerHeartbeatService],
-  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob],
+  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, WorkerHeartbeatService, ShortageTasksJob, WinBackJob],
+  exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, ShortageTasksJob, WinBackJob],
 })
 export class JobsModule {}
 
