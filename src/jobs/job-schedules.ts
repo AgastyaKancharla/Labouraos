@@ -8,7 +8,7 @@
  * 24 hours after whenever the worker first started, so the time of day drifts
  * with each fresh deploy.
  *
- * The two short-interval jobs (every minute, every 15 minutes) are the same in
+ * The short-interval jobs (every minute, 5 minutes, 15 minutes) are the same in
  * any time zone, so they keep a fixed interval.
  *
  * Times are staggered so the nightly jobs do not all hit the database at once.
@@ -54,4 +54,6 @@ export function cronInIndia(pattern: string): IndiaCronRepeat {
 export const INTERVAL_JOB_MS = {
   interviewReply: 60_000,
   kycRecovery: 15 * 60 * 1000,
+  /** Phase 21 Task 6: bells that change with the clock (escalation, idle, break overrun). */
+  notificationSweep: 5 * 60 * 1000,
 } as const;

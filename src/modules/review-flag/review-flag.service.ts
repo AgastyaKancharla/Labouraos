@@ -2,12 +2,15 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { NotificationSourcesService } from '../notification/notification-sources.service';
 import {
   REVIEW_FLAG_KINDS,
   ReviewFlagKind,
@@ -33,11 +36,24 @@ export interface ResolveReviewFlagDto {
 
 @Injectable()
 export class ReviewFlagService {
+  private readonly logger = new Logger(ReviewFlagService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly idService: IdService,
     private readonly auditService: AuditService,
+    @Optional() private readonly bells?: NotificationSourcesService,
   ) {}
+
+  /** Puts the flag on (or takes it off) the right bells. Never blocks the flag itself. */
+  private async syncBell(flagId: string): Promise<void> {
+    if (!this.bells) return;
+    try {
+      await this.bells.syncFlag(flagId);
+    } catch (error) {
+      this.logger.warn(`Bell for review flag ${flagId} failed: ${(error as Error).message}`);
+    }
+  }
 
   async raise(params: RaiseReviewFlagParams) {
     if (!REVIEW_FLAG_KINDS.includes(params.kind)) {
@@ -46,7 +62,7 @@ export class ReviewFlagService {
 
     const code = await this.idService.generateCode('review_flag');
 
-    return this.prisma.reviewFlag.create({
+    const flag = await this.prisma.reviewFlag.create({
       data: {
         code,
         kind: params.kind,
@@ -57,6 +73,8 @@ export class ReviewFlagService {
         status: 'open',
       },
     });
+    await this.syncBell(flag.id);
+    return flag;
   }
 
   async list(actor: { id: string; role: string }, query?: ListReviewFlagsQuery) {
@@ -183,6 +201,7 @@ export class ReviewFlagService {
         resolution: updated.resolution,
       },
     });
+    await this.syncBell(id);
 
     return updated;
   }
