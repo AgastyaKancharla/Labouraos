@@ -333,7 +333,9 @@ export class CeoOpsService {
       return {
         staff: agent,
         now: lv ? { status: lv.status, since: lv.since } : null,
-        lastVisit: last ? { business: last.business.name, area: last.business.locality, at: last.visitedAt.toISOString() } : null,
+        lastVisit: last
+          ? { business: last.business?.name ?? last.shopName ?? 'Unregistered shop', area: last.business?.locality ?? null, at: last.visitedAt.toISOString() }
+          : null,
         lastCheckInAt: ci?.checkedInAt.toISOString() ?? null,
         visits: mine.length,
         onboarded: onboarded.filter((b) => b.leadCreatedByStaffId === agent.id).length,

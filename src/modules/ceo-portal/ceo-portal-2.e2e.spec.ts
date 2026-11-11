@@ -26,6 +26,7 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
   let manager: StaffRow;
   let lead: StaffRow;
   let agent: StaffRow;
+  let fieldAgent: StaffRow;
   const tokens: Record<string, string> = {};
 
   async function makeStaff(role: string, reportsToId: string | null): Promise<StaffRow> {
@@ -62,12 +63,13 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
     await makeStaff('finance', ceo.id);
     lead = await makeStaff('team_lead', manager.id);
     agent = await makeStaff('call_agent', lead.id);
-    await makeStaff('field_agent', lead.id);
+    fieldAgent = await makeStaff('field_agent', lead.id);
   }, 120000);
 
   afterAll(async () => {
     if (!prisma) return;
     await prisma.target.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.businessVisit.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.area.deleteMany({ where: { id: { in: areaIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
@@ -95,6 +97,19 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
     '/ceo/pricing/minimum-wage',
     '/ceo/pricing/trades',
   ];
+
+  it('shows a visit to a shop that is not registered yet on Field operations', async () => {
+    // A "Visit a shop" visit starts outside, before the shop registers, so it has no business.
+    await prisma.businessVisit.create({
+      data: { staffId: fieldAgent.id, businessId: null, shopName: `W4C Tea Stall ${stamp}`, latitude: 12.9, longitude: 77.6 },
+    });
+    const res = await request(server()).get('/ceo/field-ops').set(as('ceo'));
+    expect(res.status).toBe(200);
+    const row = (res.body.rows as Array<{ staff: { id: string }; lastVisit: { business: string; area: string | null } | null }>).find(
+      (r) => r.staff.id === fieldAgent.id,
+    );
+    expect(row?.lastVisit).toEqual(expect.objectContaining({ business: `W4C Tea Stall ${stamp}`, area: null }));
+  });
 
   it('serves every part-2 screen to the CEO', async () => {
     for (const path of GET_ROUTES) {
