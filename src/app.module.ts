@@ -38,6 +38,7 @@ import { FollowUpModule } from './modules/follow-up/follow-up.module';
 import { PayoutAccountModule } from './modules/payout-account/payout-account.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { RetentionModule } from './modules/retention/retention.module';
+import { WebAppModule } from './modules/web-app/web-app.module';
 
 @Module({
   imports: [
@@ -80,6 +81,7 @@ import { RetentionModule } from './modules/retention/retention.module';
     PayoutAccountModule,
     AttendanceModule,
     HealthModule,
+    WebAppModule,
   ],
 })
 export class AppModule {}
