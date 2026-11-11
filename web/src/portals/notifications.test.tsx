@@ -1,0 +1,103 @@
+import { screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { describe, expect, it } from 'vitest';
+import { TopBar } from '../components/TopBar';
+import { mockApi, renderScreen, signInAs } from '../test/utils';
+import { toBellItems, type NotificationBellData } from './notifications';
+
+const bell: NotificationBellData = {
+  openCount: 2,
+  unseenCount: 1,
+  asOf: '2026-11-16T06:00:00.000Z',
+  latest: [
+    {
+      id: 'n1',
+      kind: 'leave_request',
+      title: 'Deepa Nair (CA-0042) asks for 1 day of casual leave',
+      body: 'Sent to the Team Lead',
+      link: '/team-lead/requests?kind=leave&id=r1',
+      subjectType: 'leave_request',
+      subjectId: 'r1',
+      status: 'open',
+      seen: false,
+      createdAt: '2026-11-16T05:00:00.000Z',
+      seenAt: null,
+      clearedAt: null,
+      clearedReason: null,
+      clearedBy: null,
+    },
+    {
+      id: 'n2',
+      kind: 'break_overrun',
+      title: 'Kiran Kumar (CA-0043): short break over 15 minutes',
+      body: null,
+      link: '/team-lead/attendance/live',
+      subjectType: 'attendance_segment',
+      subjectId: 's1',
+      status: 'open',
+      seen: true,
+      createdAt: '2026-11-16T04:00:00.000Z',
+      seenAt: '2026-11-16T04:10:00.000Z',
+      clearedAt: null,
+      clearedReason: null,
+      clearedBy: null,
+    },
+  ],
+  doneToday: [
+    {
+      id: 'n3',
+      kind: 'correction_request',
+      title: 'Asha (CA-0044) asks for a correction on 2026-11-15',
+      body: 'Sent to the Team Lead',
+      link: '/team-lead/requests?kind=correction&id=r2',
+      subjectType: 'attendance_correction',
+      subjectId: 'r2',
+      status: 'cleared',
+      seen: true,
+      createdAt: '2026-11-16T03:00:00.000Z',
+      seenAt: null,
+      clearedAt: '2026-11-16T03:30:00.000Z',
+      clearedReason: 'request_approved',
+      clearedBy: { id: 'staff-tl', code: 'TL-0003', name: 'Ravi Shankar', role: 'team_lead' },
+    },
+  ],
+};
+
+describe('toBellItems', () => {
+  it('lists open items first, then today’s done ones with who did them', () => {
+    const items = toBellItems(bell, (name) => `Done by ${name}`);
+    expect(items.map((i) => [i.id, i.state])).toEqual([
+      ['n1', 'open'],
+      ['n2', 'open'],
+      ['n3', 'cleared'],
+    ]);
+    expect(items[0].to).toBe('/team-lead/requests?kind=leave&id=r1');
+    expect(items[2].detail).toBe('Done by Ravi Shankar');
+  });
+
+  it('is empty before the first answer', () => {
+    expect(toBellItems(undefined, (n) => n)).toEqual([]);
+  });
+});
+
+describe('TopBar bell', () => {
+  it('shows the open count from GET /notifications/bell and marks them seen when opened', async () => {
+    const api = mockApi({ 'GET /notifications/bell': bell, 'POST /notifications/seen': { seen: 1, cleared: 0 } });
+    signInAs('team_lead');
+    renderScreen(<TopBar title="Home" />, { portal: 'team-lead', path: '/team-lead' });
+
+    const button = await screen.findByRole('button', { name: 'Notifications, 2 new' });
+    await userEvent.click(button);
+    const link = screen.getByRole('link', { name: /asks for 1 day of casual leave/ });
+    expect(link).toHaveAttribute('href', '/team-lead/requests?kind=leave&id=r1');
+    expect(screen.getByText('Done by Ravi Shankar')).toBeInTheDocument();
+    await waitFor(() => expect(api.calls('POST /notifications/seen')).toHaveLength(1));
+  });
+
+  it('does not ask for notifications when nobody is signed in', async () => {
+    const api = mockApi({ 'GET /notifications/bell': bell });
+    renderScreen(<TopBar title="Home" />, { portal: 'team-lead', path: '/team-lead' });
+    expect(await screen.findByRole('button', { name: 'Notifications' })).toBeInTheDocument();
+    expect(api.calls('GET /notifications/bell')).toHaveLength(0);
+  });
+});

@@ -1742,6 +1742,7 @@ model CallTask {
   @@unique([sourceCallRecordId, kind])
   @@index([staffId, status, dueAt])
   @@index([subjectType, subjectId, status])
+}
 
 /// Phase 21 Task 6: one bell item for one staff member. A notification clears
 /// by itself when the work behind it is done; who did it is recorded.
