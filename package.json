@@ -12,6 +12,7 @@
     "start:prod": "node dist/main",
     "start:worker": "node dist/worker",
     "start:worker:dev": "nest start --entryFile worker --watch",
+    "migrate:deploy": "prisma migrate deploy",
     "lint": "eslint \"{src,apps,libs,test}/**/*.ts\"",
     "test": "jest --runInBand",
     "test:watch": "jest --watch",
