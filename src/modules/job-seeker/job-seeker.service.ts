@@ -1304,7 +1304,8 @@ export class JobSeekerService {
         entityType: 'job_seeker',
         entityCode: updated.code,
         after: { phoneVerifiedByOtp: true, registrationLinksRevoked: revoked.count },
-        changedFields: ['phone', 'phoneVerified'],
+        // The number itself is logged (as "[changed]") by the job_seeker.update entry.
+        changedFields: ['phoneVerified'],
         reason: reason ?? 'Mobile number changed after OTP on the new number',
         city: updated.city,
       });

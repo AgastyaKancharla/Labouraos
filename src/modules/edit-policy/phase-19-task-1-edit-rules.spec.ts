@@ -5,6 +5,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { IdService } from '../../common/id/id.service';
+import { verifiedOtpFor } from '../../test-support/verified-otp';
 
 describe('Phase 19 Task 1: Who can edit what, and why', () => {
   let app: INestApplication;
@@ -270,6 +271,8 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
         .send({
           phone: newPhone,
           reason: 'Candidate updated primary SIM number',
+          // Master Guide: a new number is checked by OTP before it is saved.
+          phoneOtpRequestId: await verifiedOtpFor(app, newPhone),
         });
 
       expect(res.status).toBe(200);
