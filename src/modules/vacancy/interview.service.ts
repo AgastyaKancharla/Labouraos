@@ -673,7 +673,7 @@ export class InterviewService {
   }) {
     const link = await this.consentLinks.verifyInterviewOwnerOtp(token, input.otpRequestId, input.otpCode);
     const interview = await this.prisma.interview.findUnique({
-      where: { id: link.interviewId }, include: { business: true, vacancy: true },
+      where: { id: link.interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
     });
     if (!interview || interview.status !== 'confirmed' || interview.resultRecordedAt) {
       throw new BadRequestException('This interview is no longer awaiting an owner result');
@@ -688,7 +688,7 @@ export class InterviewService {
       otpRequestId: input.otpRequestId,
       recordedByStaffId: null,
       reason: 'Business owner verified by OTP on the business phone',
-    });
+    }, interview);
     await this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
     return result;
   }
@@ -707,6 +707,7 @@ export class InterviewService {
       selectedJoiningDate?: string;
     },
     meta: { otpRequestId: string | null; recordedByStaffId: string | null; reason: string },
+    preloaded?: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
   ) {
     if (!['selected', 'not_selected', 'candidate_no_show'].includes(input.result)) {
       throw new BadRequestException('result must be selected, not_selected or candidate_no_show');
@@ -721,7 +722,7 @@ export class InterviewService {
     if (input.result === 'selected' && (!joiningDate || !Number.isFinite(joiningDate.getTime()))) {
       throw new BadRequestException('selectedJoiningDate is required for a selected result');
     }
-    const interview = await this.prisma.interview.findUnique({
+    const interview = preloaded ?? await this.prisma.interview.findUnique({
       where: { id: interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
     });
     if (!interview || interview.status !== 'confirmed' || interview.resultRecordedAt) {
