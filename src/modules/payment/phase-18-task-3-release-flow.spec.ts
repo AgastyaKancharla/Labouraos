@@ -627,12 +627,23 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
         paymentService.approvePayment(refundPayment.id, staffIds['finance'], day14),
       ).rejects.toThrow(/not payable before 15 days/i);
 
+      // ₹30,000 is above Finance's ₹15,000 approval limit: Finance is stopped and the
+      // refund goes to the CEO, who approves it.
+      await expect(
+        paymentService.approvePayment(refundPayment.id, staffIds['finance'], day15),
+      ).rejects.toThrow(/sent to the CEO/i);
+      const sentToCeo = await prisma.payment.findUniqueOrThrow({ where: { id: refundPayment.id } });
+      expect(sentToCeo.status).toBe('pending');
+      expect(sentToCeo.ceoApprovalReason).toBe('above_finance_limit');
+      expect(sentToCeo.sentToCeoByStaffId).toBe(staffIds['finance']);
+
       const approvedDay15 = await paymentService.approvePayment(
         refundPayment.id,
-        staffIds['finance'],
+        staffIds['ceo'],
         day15,
       );
       expect(approvedDay15.status).toBe('approved');
+      expect(approvedDay15.approvedByStaffId).toBe(staffIds['ceo']);
 
       // 3. On Day 16: create a second placement to verify day 16 agreement
       const rootPlacement2 = await prisma.placement.create({
@@ -672,7 +683,7 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
 
       const approvedDay16 = await paymentService.approvePayment(
         refundPayment2.id,
-        staffIds['finance'],
+        staffIds['ceo'],
         day16,
       );
       expect(approvedDay16.status).toBe('approved');

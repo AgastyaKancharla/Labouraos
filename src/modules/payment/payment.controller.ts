@@ -164,16 +164,57 @@ export class PaymentController {
     return this.paymentService.resolvePaymentMismatchFlag(id, body.resolution, req.user.sub);
   }
 
+  /** TDS businesses deducted from placement fees, with each certificate's status. */
+  @Get('tds-receivables')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'finance')
+  async listTdsReceivables(
+    @Query('status') status?: string,
+    @Query('placementId') placementId?: string,
+  ) {
+    return this.paymentService.listTdsReceivables({ status, placementId });
+  }
+
+  /** Refunds waiting for the CEO: above Finance's limit, outside the rules, or sent by Finance. */
+  @Get('refunds/with-ceo')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'read')
+  @RequireRoles('ceo', 'finance')
+  async listRefundsWithCeo() {
+    return this.paymentService.listRefundsWithCeo();
+  }
+
+  @Post(':id/reject-refund')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo')
+  async rejectRefund(
+    @Param('id') id: string,
+    @Body() body: { reason: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.rejectRefund(id, req.user.sub, body?.reason);
+  }
+
+  /**
+   * Match a bank credit to a payment. A placement fee that arrived short because the
+   * business deducted TDS is confirmed by sending `tdsDeductedPaise` (exactly the short
+   * amount) and `tdsNote` (the TDS section or a note); no TDS rate is assumed.
+   */
   @Post(':id/confirm')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'write')
   @RequireRoles('ceo', 'finance')
   async confirmPayment(
     @Param('id') id: string,
-    @Body() body: { bankCreditId: string },
+    @Body() body: { bankCreditId: string; tdsDeductedPaise?: number; tdsNote?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.paymentService.confirmPaymentWithBankCredit(id, body.bankCreditId, req.user.sub);
+    return this.paymentService.confirmPaymentWithBankCredit(id, body.bankCreditId, req.user.sub, {
+      tdsDeductedPaise: body.tdsDeductedPaise,
+      tdsNote: body.tdsNote,
+    });
   }
 
   @Get()

@@ -638,6 +638,8 @@ describe('Phase 18 Gate End-to-End Proof', () => {
           reason: 'resigned',
           callRecordId: claimCall.id,
           decision: 'accepted',
+          // The 15-day refund clock counts from the dropout report, so the report is day 16 too.
+          reportedAt: new Date(Date.now() - 16 * 86400000),
           decidedAt: new Date(Date.now() - 16 * 86400000), // Day 16
           decisionDueAt: new Date(),
         },
