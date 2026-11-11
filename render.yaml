@@ -1,11 +1,32 @@
+# Laboura on Render. DEPLOY.md explains every step in the dashboard.
+#
+# Three services, all in Singapore next to the Supabase project:
+#   laboura-api    web service: API, webhooks and the staff consoles
+#   laboura-worker background worker: every scheduled job (BullMQ)
+#   laboura-redis  Render Key Value (Redis) for the job queue, private network only
+#
+# Database and uploaded files live in Supabase (see DEPLOY.md, Step 1).
+#
+# Values written here (value: ...) are put back every time Render syncs this
+# file. Values marked `sync: false` are asked for once, when the blueprint is
+# first created, and after that are changed only in the dashboard.
+
 services:
   - type: web
     name: laboura-api
     runtime: node
     plan: starter
     region: singapore
-    buildCommand: npm install && npm run build
-    preDeployCommand: npx prisma migrate deploy
+    # NODE_ENV=production is visible while building, which would make a plain
+    # `npm install` skip devDependencies (Nest CLI, TypeScript, Prisma) and the
+    # build would fail. --include=dev keeps them; prisma generate builds the
+    # database client from the pinned Prisma version.
+    #
+    # WEB APP BUILD STEP GOES HERE: when the web/ app is added, append its build
+    # to the end of this line, e.g. `... && npm run build && npm run build:web`.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    # Runs the pinned Prisma from node_modules (never downloads a newer one).
+    preDeployCommand: npm run migrate:deploy
     startCommand: npm run start:prod
     healthCheckPath: /health
     envVars:
@@ -13,33 +34,95 @@ services:
         value: production
       - key: PROCESS_ROLE
         value: web
-      - key: TRUSTED_PROXY_HOPS
+      # 1 = Render's own proxy. Use 2 once Cloudflare sits in front of Render.
+      - key: TRUST_PROXY_HOPS
         value: "1"
+
+      # --- Database (Supabase) ---
+      # Transaction pooler, port 6543:
+      #   ...pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=5&sslmode=require
       - key: DATABASE_URL
         sync: false
+      # Session pooler, port 5432 (used only to run migrations):
+      #   ...pooler.supabase.com:5432/postgres?sslmode=require
+      - key: DIRECT_URL
+        sync: false
+
+      # --- Job queue (Render Key Value, private network: plain connection, no password) ---
       - key: REDIS_HOST
-        sync: false
+        fromService:
+          type: keyvalue
+          name: laboura-redis
+          property: host
       - key: REDIS_PORT
-        sync: false
-      - key: REDIS_PASSWORD
-        sync: false
+        fromService:
+          type: keyvalue
+          name: laboura-redis
+          property: port
       - key: REDIS_TLS
+        value: "false"
+      # /health/ready answers 503 naming `worker` when the worker stops.
+      - key: WORKER_HEARTBEAT_CHECK
         value: "true"
+
+      # --- Secrets Render generates (never type these) ---
       - key: JWT_SECRET
         generateValue: true
+      - key: LOGIN_CODE_SECRET
+        generateValue: true
+      - key: STAFF_BOOTSTRAP_SECRET
+        generateValue: true
+      - key: CALL_ROUTING_KEY
+        generateValue: true
+      - key: PAYOUT_ACCOUNT_KEY
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: "15m"
+
+      # --- Must be filled before the first start (the server refuses to start without it) ---
       - key: PUBLIC_APP_URL
         sync: false
+
+      # --- Uploaded files (Supabase Storage). Production refuses to start otherwise. ---
+      - key: CANDIDATE_PHOTO_STORAGE_MODE
+        value: supabase
+      - key: BUSINESS_PHOTO_STORAGE_MODE
+        value: supabase
+      - key: AGREEMENT_STORAGE_MODE
+        value: supabase
+      - key: RECORDING_STORAGE_MODE
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      # --- Company details ---
       - key: COMPANY_UPI_VPA
         sync: false
       - key: COMPANY_UPI_PAYEE_NAME
         sync: false
-      - key: LOGIN_CODE_SECRET
-        generateValue: true
-      - key: JWT_EXPIRES_IN
-        value: "15m"
-      - key: STAFF_BOOTSTRAP_SECRET
-        generateValue: true
+      - key: COMPANY_LEGAL_NAME
+        sync: false
+      - key: COMPANY_GSTIN
+        sync: false
+      - key: COMPANY_ADDRESS
+        value: "Bengaluru, Karnataka, India"
+
+      # --- Access and alerts ---
+      - key: CLOUDFLARE_ACCESS_ENFORCED
+        value: "false"
+      - key: CLOUDFLARE_ACCESS_TEAM_DOMAIN
+        sync: false
+      - key: CLOUDFLARE_ACCESS_AUD
+        sync: false
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+
+      # --- Vendors: mock until each one is signed up (AGENTS.md section 3) ---
       - key: OTP_PROVIDER_MODE
+        value: mock
+      - key: SMS_PROVIDER_MODE
         value: mock
       - key: PAYMENT_PROVIDER_MODE
         value: mock
@@ -49,6 +132,35 @@ services:
         value: mock
       - key: KYC_PROVIDER_MODE
         value: mock
+      # SMS and OTP (MSG91 or another DLT-registered gateway)
+      - key: SMS_API_KEY
+        sync: false
+      - key: SMS_API_URL
+        sync: false
+      - key: DLT_SENDER_ID
+        sync: false
+      - key: DLT_TEMPLATE_ID
+        sync: false
+      - key: DLT_ENTITY_ID
+        sync: false
+      - key: SMS_DLT_TEMPLATE_IDS
+        sync: false
+      # WhatsApp (Meta Cloud API)
+      - key: WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      # Calling
+      - key: TELEPHONY_VENDOR
+        sync: false
+      - key: TOLL_FREE_NUMBER
+        sync: false
+      # Aadhaar e-KYC
+      - key: KYC_API_KEY
+        sync: false
+      - key: KYC_API_URL
+        sync: false
+      # Card payments and payouts (Razorpay / RazorpayX)
       - key: RAZORPAY_KEY_ID
         sync: false
       - key: RAZORPAY_KEY_SECRET
@@ -59,55 +171,16 @@ services:
         sync: false
       - key: RAZORPAYX_ACCOUNT_NUMBER
         sync: false
-      - key: WHATSAPP_API_KEY
-        sync: false
-      - key: WHATSAPP_PHONE_NUMBER_ID
-        sync: false
-      - key: WHATSAPP_BUSINESS_ACCOUNT_ID
-        sync: false
-      - key: TELEPHONY_API_KEY
-        sync: false
-      - key: TELEPHONY_VENDOR
-        sync: false
-      - key: TOLL_FREE_NUMBER
-        sync: false
-      - key: KYC_API_KEY
-        sync: false
-      - key: KYC_API_URL
-        sync: false
-      - key: CLOUDFLARE_ACCESS_ENFORCED
-        value: "false"
-      - key: CLOUDFLARE_ACCESS_TEAM_DOMAIN
-        sync: false
-      - key: CLOUDFLARE_ACCESS_AUD
-        sync: false
-      - key: ALERT_WEBHOOK_URL
-        sync: false
-      - key: COMPANY_LEGAL_NAME
-        sync: false
-      - key: COMPANY_GSTIN
-        sync: false
-      - key: COMPANY_ADDRESS
-        value: "Bengaluru, Karnataka, India"
-      - key: CALL_ROUTING_KEY
-        generateValue: true
-      - key: PAYOUT_ACCOUNT_KEY
-        generateValue: true
-      - key: TELEPHONY_WEBHOOK_SECRET
-        sync: false
-      - key: MESSAGE_WEBHOOK_SECRET
-        sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
-        sync: false
-      - key: RECORDINGS_BUCKET
-        sync: false
+      # Webhook signing secrets
       - key: BANK_FEED_WEBHOOK_SECRET
         sync: false
       - key: PAYMENT_WEBHOOK_SECRET
         sync: false
       - key: PAYOUT_WEBHOOK_SECRET
+        sync: false
+      - key: TELEPHONY_WEBHOOK_SECRET
+        sync: false
+      - key: MESSAGE_WEBHOOK_SECRET
         sync: false
 
   - type: worker
@@ -115,8 +188,12 @@ services:
     runtime: node
     plan: starter
     region: singapore
-    buildCommand: npm install && npm run build
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
     startCommand: npm run start:worker
+    # When a vendor is switched from mock to real, change its *_PROVIDER_MODE on
+    # BOTH services and copy its keys to the worker with fromService like the
+    # entries below: the worker sends WhatsApp and SMS messages and checks the
+    # KYC vendor.
     envVars:
       - key: NODE_ENV
         value: production
@@ -127,56 +204,33 @@ services:
           type: web
           name: laboura-api
           envVarKey: DATABASE_URL
+      - key: DIRECT_URL
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: DIRECT_URL
       - key: REDIS_HOST
         fromService:
-          type: web
-          name: laboura-api
-          envVarKey: REDIS_HOST
+          type: keyvalue
+          name: laboura-redis
+          property: host
       - key: REDIS_PORT
         fromService:
-          type: web
-          name: laboura-api
-          envVarKey: REDIS_PORT
-      - key: REDIS_PASSWORD
-        fromService:
-          type: web
-          name: laboura-api
-          envVarKey: REDIS_PASSWORD
+          type: keyvalue
+          name: laboura-redis
+          property: port
       - key: REDIS_TLS
-        fromService:
-          type: web
-          name: laboura-api
-          envVarKey: REDIS_TLS
+        value: "false"
       - key: JWT_SECRET
         fromService:
           type: web
           name: laboura-api
           envVarKey: JWT_SECRET
-      - key: PUBLIC_APP_URL
-        fromService:
-          type: web
-          name: laboura-api
-          envVarKey: PUBLIC_APP_URL
       - key: LOGIN_CODE_SECRET
         fromService:
           type: web
           name: laboura-api
           envVarKey: LOGIN_CODE_SECRET
-      - key: OTP_PROVIDER_MODE
-        value: mock
-      - key: PAYMENT_PROVIDER_MODE
-        value: mock
-      - key: WHATSAPP_PROVIDER_MODE
-        value: mock
-      - key: TELEPHONY_PROVIDER_MODE
-        value: mock
-      - key: KYC_PROVIDER_MODE
-        value: mock
-      - key: ALERT_WEBHOOK_URL
-        fromService:
-          type: web
-          name: laboura-api
-          envVarKey: ALERT_WEBHOOK_URL
       - key: CALL_ROUTING_KEY
         fromService:
           type: web
@@ -187,6 +241,19 @@ services:
           type: web
           name: laboura-api
           envVarKey: PAYOUT_ACCOUNT_KEY
+      - key: PUBLIC_APP_URL
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: PUBLIC_APP_URL
+      - key: CANDIDATE_PHOTO_STORAGE_MODE
+        value: supabase
+      - key: BUSINESS_PHOTO_STORAGE_MODE
+        value: supabase
+      - key: AGREEMENT_STORAGE_MODE
+        value: supabase
+      - key: RECORDING_STORAGE_MODE
+        value: supabase
       - key: SUPABASE_URL
         fromService:
           type: web
@@ -197,8 +264,41 @@ services:
           type: web
           name: laboura-api
           envVarKey: SUPABASE_SERVICE_ROLE_KEY
-      - key: RECORDINGS_BUCKET
+      - key: COMPANY_UPI_VPA
         fromService:
           type: web
           name: laboura-api
-          envVarKey: RECORDINGS_BUCKET
+          envVarKey: COMPANY_UPI_VPA
+      - key: COMPANY_UPI_PAYEE_NAME
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: COMPANY_UPI_PAYEE_NAME
+      - key: ALERT_WEBHOOK_URL
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: ALERT_WEBHOOK_URL
+      - key: OTP_PROVIDER_MODE
+        value: mock
+      - key: SMS_PROVIDER_MODE
+        value: mock
+      - key: PAYMENT_PROVIDER_MODE
+        value: mock
+      - key: WHATSAPP_PROVIDER_MODE
+        value: mock
+      - key: TELEPHONY_PROVIDER_MODE
+        value: mock
+      - key: KYC_PROVIDER_MODE
+        value: mock
+
+  # Job queue. Paid fixed plan: the free plan's command limit runs out because
+  # the worker checks the queue constantly. noeviction is required by BullMQ
+  # (an evicted key is a lost job). An empty ipAllowList means only Laboura's
+  # own Render services can connect, over the private network.
+  - type: keyvalue
+    name: laboura-redis
+    plan: starter
+    region: singapore
+    maxmemoryPolicy: noeviction
+    ipAllowList: []

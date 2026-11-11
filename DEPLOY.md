@@ -1,428 +1,405 @@
-# Production Deployment Guide — Laboura
+# Putting Laboura online (Render + Supabase)
 
-This guide explains how to deploy the Laboura Staffing Marketplace API and Background Worker to production using managed cloud providers.
+This guide is for someone who has never used a terminal. **No command line or terminal is required.** Every step is a click in a web browser, in the Render dashboard or the Supabase dashboard.
 
-This guide is written for non-technical operators and management. **No command line or terminal is required.** Everything is done entirely using web browser dashboards.
+Read each step to the end before you start clicking. Keep a password manager (or a private note) open: you will copy several long values from one website and paste them into another.
 
 ---
 
-## Architecture Overview
+## What you are building
 
-The system consists of four managed components:
-
-| Component | Provider | Role |
+| Part | Where | What it does |
 | --- | --- | --- |
-| **Web Service (`laboura-api`)** | Render | Serves the REST API, webhooks, and internal agent consoles |
-| **Background Worker (`laboura-worker`)** | Render | Executes recurring sweeps (midnight no-pickup evaluation) and queues via BullMQ |
-| **Relational Database** | Supabase | Managed PostgreSQL 17 database storing all business records |
-| **Message Queue / Cache** | Upstash | Managed Redis with TLS for BullMQ queues and job scheduling |
+| **Web service** `laboura-api` | Render, Singapore | The API, the webhooks and the staff consoles (`/admin`, `/call-agent`, `/field-agent`) |
+| **Background worker** `laboura-worker` | Render, Singapore | Every scheduled job: the midnight no-pickup check, payment deadlines, day-60 completions, refunds due, follow-up tasks, data clean-up |
+| **Job queue** `laboura-redis` | **Render Key Value**, Singapore | The queue the worker reads. It sits on Render's private network, so only the two services above can reach it |
+| **Database** | Supabase, Singapore | Every record (PostgreSQL) |
+| **Uploaded files** | Supabase Storage, Singapore | Candidate selfies, shop photos, signed agreements, call recordings |
 
-### How Database Migrations Are Handled (Schema Creation)
+The file `render.yaml` in the code describes the three Render parts. Render reads it and creates all three for you (a "Blueprint"). You never create the Render Key Value by hand.
 
-Render does not create database tables on its own. To ensure the database schema and all tables exist before any traffic is served, the deployment uses Render's **Pre-Deploy Command**:
+### Times
 
-```bash
-npx prisma migrate deploy
+Every daily job runs on **India time** (Asia/Kolkata): the no-pickup check and the forgotten-logout close at 00:00, payment and placement checks between 00:15 and 01:00, data clean-up at 02:00, and follow-up tasks at 06:00 so they are ready before the working day.
+
+### How the database tables get created
+
+Render does not create tables by itself. Before each new version starts taking requests, Render runs this **Pre-Deploy Command** on the web service:
+
+```text
+npm run migrate:deploy
 ```
 
-- **Where it runs**: On the `laboura-api` Web Service only.
-- **When it runs**: Automatically during every deployment, after the application compiles but *before* the new version begins receiving web requests.
-- **Why it does not run on the Worker**: The `laboura-worker` service has no pre-deploy step. This guarantees migrations run **sequentially from a single process**, preventing database locking or race conditions from concurrent migrations.
+It applies every database change (a "migration") that is not in the database yet, using the exact Prisma version pinned in the code. You do not run it yourself. It runs only on `laboura-api`, never on the worker, so two copies can never change the database at the same time.
+
+### What it costs each month
+
+Render web $7 + worker $7 + Key Value about $10, and Supabase Pro $25. Supabase must be on **Pro** before real data goes in, because Pro is what keeps daily backups.
 
 ---
 
-## Deployment Steps (In Order)
+## The steps, in order
 
-Follow these steps in exact sequential order:
-1. Create Database on Supabase
-2. Create Redis on Upstash
-3. Deploy Blueprint on Render
-4. Enter Environment Variables in Render
-5. Verify Deployment & Database Tables
-6. Create Initial CEO Account (Bootstrap & First Login 2FA Enrolment)
-7. Create Second CEO Account on a Different Device (Mandatory Immediate Redundancy)
-8. Last-Resort Emergency Manual Recovery (Agastya Only)
+1. Create the Supabase project
+2. Copy the two database addresses
+3. Create the four private file buckets and copy the storage keys
+4. Turn off the Supabase Data API
+5. Create everything on Render from the Blueprint
+6. Check that it is running
+7. Create the first CEO account
+8. Create a second CEO account on a different phone
+9. Before any real data: the go-live checklist
+10. Test one restore
+11. Emergency recovery (Agastya only)
 
----
-
-### Step 1: Create Database on Supabase
-
-1. Open your browser and navigate to **[https://supabase.com](https://supabase.com)**.
-2. Sign in or create an account.
-3. In the Supabase dashboard, click the green **New project** button.
-4. Fill in the project creation form:
-   - **Organization**: Choose your organization.
-   - **Name**: Enter `laboura-production`.
-   - **Database Password**: Click **Generate a password** or create a strong password. **Important:** Copy and save this password immediately in a password manager.
-   - **Region**: Select **Southeast Asia (Singapore)** (or the region closest to Bengaluru).
-5. Click **Create new project** and wait 1–2 minutes for the database to provision.
-6. Once provisioned, look at the left sidebar menu and click the **Project Settings** icon (gear icon at the bottom left).
-7. In the settings menu, click **Database**.
-8. Scroll down to the **Connection string** section.
-9. Click the **URI** tab.
-10. Ensure the mode is set to **Transaction** or **Session** (Port `5432` or `6543`).
-11. Copy the connection string displayed. It looks like:
-    ```text
-    postgresql://postgres.[project-ref]:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
-    ```
-12. Replace `[YOUR-PASSWORD]` in that string with the real password you saved in step 4.
-13. Keep this final connection string ready for Step 4. This is your `DATABASE_URL`.
+At the end: [all settings](#all-settings), [webhook addresses](#webhook-addresses-for-vendors), [moving an older Render setup over](#if-laboura-was-already-on-render-before-this-guide) and [troubleshooting](#troubleshooting).
 
 ---
 
-### Step 2: Create Redis on Upstash
+### Step 1: Create the Supabase project
 
-1. Open your browser and navigate to **[https://console.upstash.com](https://console.upstash.com)**.
-2. Sign in or create an account.
-3. On the Upstash dashboard, click the **Create Database** button.
-4. Fill in the form:
-   - **Name**: Enter `laboura-redis`.
-   - **Type**: Select **Regional**.
-   - **Region**: Select **ap-southeast-1 (Singapore)** (matching your Supabase region).
-   - **TLS (SSL)**: Ensure TLS is enabled.
-5. Click **Create**.
-6. On the database overview page, scroll down to the **Connect your database** section.
-7. Click the **ioredis** or **Node** tab.
-8. Locate the following four connection values:
-   - **Endpoint / Host**: (e.g. `ap1-xxxx.upstash.io`) → this is your `REDIS_HOST`.
-   - **Port**: `6379` → this is your `REDIS_PORT`.
-   - **Password**: Click the eye icon to reveal and copy → this is your `REDIS_PASSWORD`.
-   - **TLS**: Upstash requires TLS → your `REDIS_TLS` is `true`.
-9. Keep these four values ready for Step 4.
+1. Go to **[supabase.com/dashboard](https://supabase.com/dashboard)** and sign in.
+2. Click **New project**.
+3. Fill in the form:
+   - **Organization**: Laboura's organisation.
+   - **Project name**: `laboura-production`.
+   - **Database password**: click **Generate a password**. Copy it into your password manager now; Supabase will not show it again. If the password contains symbols such as `@ # / ? %`, generate again until it is only letters and numbers. Symbols break the database address in Step 2.
+   - **Region**: **Southeast Asia (Singapore)**. This must be Singapore, the same place as the Render services.
+   - If you see a checkbox called **Automatically expose new tables** (Data API), leave it **unticked**.
+4. Click **Create new project** and wait one or two minutes.
+5. Before real data goes in, move the organisation to the **Pro** plan: click the organisation name at the top left, then **Billing**, then change the plan to **Pro**.
 
 ---
 
-### Step 3: Deploy Blueprint on Render
+### Step 2: Copy the two database addresses
 
-1. Open your browser and navigate to **[https://dashboard.render.com](https://dashboard.render.com)**.
-2. Sign in or create an account.
-3. In the top right corner, click the blue **New +** button, then select **Blueprint**.
-4. Connect your GitHub repository containing Laboura (`Labouraos`).
-5. Render will automatically detect the [`render.yaml`](file:///home/agastyaone/Labouraos/render.yaml) file at the root of the repository.
-6. Render will show you a blueprint preview listing two services:
-   - **`laboura-api`** (Web Service)
-   - **`laboura-worker`** (Background Worker)
-7. Click **Apply**.
-8. Render will initialize both services. It will pause or highlight environment variables that need values.
+Laboura needs two addresses for the same database. Both come from the same screen.
 
----
-
-### Step 4: Configure Environment Variables in Render Dashboard
-
-1. In the Render Dashboard, click on the **`laboura-api`** service.
-2. Click the **Environment** tab on the left sidebar.
-3. Enter or verify the following variables:
-
-| Variable Name | Value to Enter | Description |
-| --- | --- | --- |
-| `NODE_ENV` | `production` | Production environment flag |
-| `PROCESS_ROLE` | `web` | **Critical:** Gates HTTP process from running worker sweeps |
-| `DATABASE_URL` | *Paste your Supabase URI from Step 1* | PostgreSQL connection string |
-| `REDIS_HOST` | *Paste Upstash Host from Step 2* | Redis hostname |
-| `REDIS_PORT` | `6379` | Redis port |
-| `REDIS_PASSWORD` | *Paste Upstash Password from Step 2* | Redis password |
-| `REDIS_TLS` | `true` | Enables TLS for Upstash |
-| `JWT_SECRET` | *Auto-generated or 32+ char secret* | Secret used to sign authentication tokens |
-| `PUBLIC_APP_URL` | *e.g. `https://app.laboura.in`* | Public web address of the app, used to create absolute links sent by SMS and WhatsApp |
-| `COMPANY_UPI_VPA` | *e.g. `laboura@bank`* | Company's UPI ID used to create payment links and QR codes; payment requests fail clearly while unset, but the server can start without it |
-| `COMPANY_UPI_PAYEE_NAME` | *e.g. `Laboura`* | Payee name displayed by UPI apps and on the public payment page; payment requests fail clearly while unset |
-| `LOGIN_CODE_SECRET` | *Auto-generated. Do not type one.* | Secret used to compute the 6-digit login code. See "Where to find LOGIN_CODE_SECRET" below |
-| `STAFF_BOOTSTRAP_SECRET` | *Auto-generated or random secret* | Secret required for initial CEO account creation |
-| `OTP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SMS gateway is active |
-| `PAYMENT_PROVIDER_MODE` | `mock` | Default mock mode (§3) until Razorpay keys are active |
-| `WHATSAPP_PROVIDER_MODE` | `mock` | Default mock mode (§3) until WhatsApp API is active |
-| `TELEPHONY_PROVIDER_MODE` | `mock` | Default mock mode (§3) until telephony vendor is active |
-| `KYC_PROVIDER_MODE` | `mock` | Default mock mode (§3) until SurePass keys are active |
-| `CALL_ROUTING_KEY` | *Auto-generated. Do not type one.* | 32-byte secret used to AES-256-GCM encrypt staff call routing phone numbers |
-| `PAYOUT_ACCOUNT_KEY` | *Auto-generated. Do not type one.* | 32-byte secret used to AES-256-GCM encrypt candidate, referral, and business payout accounts |
-| `BANK_FEED_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with the bank feed provider to sign bank credit notifications |
-| `PAYMENT_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Razorpay or the card payment provider to sign card collection webhooks |
-| `PAYOUT_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with RazorpayX or the payout bank to sign refund and reward transfer webhooks |
-| `TELEPHONY_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Exotel or calling provider to sign call event and missed call webhooks |
-| `MESSAGE_WEBHOOK_SECRET` | *32+ char shared secret* | Secret shared with Gupshup or WhatsApp/SMS provider to sign message delivery status webhooks |
-| `SUPABASE_URL` | *https://<project-ref>.supabase.co* | Supabase project URL from Supabase Settings > API |
-| `SUPABASE_SERVICE_ROLE_KEY` | *Supabase service_role secret key* | Secret service role API key from Supabase Settings > API |
-| `RECORDINGS_BUCKET` | `recordings` | Name of the private Supabase Storage bucket for call audio |
-| `COMPANY_LEGAL_NAME` | *e.g. Laboura Private Limited* | Registered company entity name used on GST invoices |
-| `COMPANY_GSTIN` | *e.g. 29AABCL1234F1ZQ* | 15-digit GSTIN used on tax invoices |
-| `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing) / `true` (live) | **Security boundary:** Enforces Cloudflare Access on office consoles |
-| `CLOUDFLARE_ACCESS_TEAM_DOMAIN` | *e.g. your-team.cloudflareaccess.com* | Cloudflare Zero Trust team domain |
-| `CLOUDFLARE_ACCESS_AUD` | *Audience Tag from Cloudflare Access* | Access Application AUD tag |
-
-> [!WARNING]
-> **CRITICAL SECURITY REQUIREMENT: CLOUDFLARE ACCESS BEFORE GO-LIVE**
->
-> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is set to `"false"`. This setting is **only acceptable for initial testing with synthetic / fake test data**.
->
-> **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker, or business data is entered into this system.**
->
-> When set to `"false"`, the browser office consoles (`/admin`, `/console/admin`, `/call-agent`, `/console/call-agent`) are not gated by Cloudflare Zero Trust. To enforce identity-gating before real data enters:
->
-> 1. In **Cloudflare Zero Trust** (`dash.teams.cloudflare.com`), navigate to **Access** > **Applications**.
-> 2. Create an **Access Application** for your domain covering the console paths (`/admin*`, `/console/admin*`, `/call-agent*`, `/console/call-agent*`).
-> 3. Define an Access Policy restricting login to your company's identity provider or authorized staff email domain.
-> 4. Copy the **Audience Tag (AUD)** from Application Settings.
-> 5. In the **Render Dashboard** -> **`laboura-api`** -> **Environment**:
->    - Set `CLOUDFLARE_ACCESS_ENFORCED` to `true`.
->    - Set `CLOUDFLARE_ACCESS_TEAM_DOMAIN` to your Cloudflare team domain (e.g. `your-team.cloudflareaccess.com`).
->    - Set `CLOUDFLARE_ACCESS_AUD` to the Audience Tag copied from step 4.
-> 6. Click **Save Changes**. The server will immediately reject requests to office consoles that lack a cryptographically valid `Cf-Access-Jwt-Assertion` token.
-
-4. Click **Save Changes** at the bottom of the Environment page.
-5. In the Render Dashboard, navigate to the **`laboura-worker`** service.
-6. In `laboura-worker`, the environment variables (`DATABASE_URL`, `REDIS_*`, `JWT_SECRET`, `LOGIN_CODE_SECRET`) are automatically linked from `laboura-api` by the blueprint (`fromService`). Confirm that `PROCESS_ROLE` shows `worker` and that `LOGIN_CODE_SECRET` is present. Both services must share that one secret. A code shown on the login code screen will not match if the two services have different secrets.
-
-#### Where to find `LOGIN_CODE_SECRET`
-
-You do not invent this value and you do not paste it into email or chat.
-
-1. In the Render Dashboard, open **`laboura-api`**.
-2. Click **Environment**.
-3. Find the row named `LOGIN_CODE_SECRET`. Render fills it in by itself the first time the blueprint is applied. Click the eye icon to look at it. Leave the value as Render generated it.
-4. Open **`laboura-worker`**, then **Environment**. The same name should already be listed, copied from `laboura-api`, in the same way `JWT_SECRET` is copied. If that row is missing, add an environment variable that takes its value from the `laboura-api` service's `LOGIN_CODE_SECRET`, then save.
-
-#### Where to find `CALL_ROUTING_KEY`
-
-Like `LOGIN_CODE_SECRET`, you do not invent `CALL_ROUTING_KEY` and never commit it to git:
-1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
-2. Find `CALL_ROUTING_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
-3. Open **`laboura-worker`** -> **Environment**. Verify that `CALL_ROUTING_KEY` is linked from `laboura-api`.
-
-#### Where to find `PAYOUT_ACCOUNT_KEY`
-
-Like `CALL_ROUTING_KEY`, you do not invent `PAYOUT_ACCOUNT_KEY` and never commit it to git:
-1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
-2. Find `PAYOUT_ACCOUNT_KEY`. Render generates a cryptographically random 32-byte secret when the blueprint is applied.
-3. Open **`laboura-worker`** -> **Environment**. Verify that `PAYOUT_ACCOUNT_KEY` is linked from `laboura-api`.
-
-#### How to configure Laboura's Business UPI Details (COMPANY_UPI_VPA and COMPANY_UPI_PAYEE_NAME)
-
-Every payment into Laboura (the candidate registration fee and the business placement fee) is collected via UPI straight into Laboura's current bank account using dynamically generated UPI links and QR codes.
-
-To enable UPI collection:
-1. In the Render Dashboard, open **`laboura-api`** -> **Environment**.
-2. Locate or add **`COMPANY_UPI_VPA`**:
-   - This is Laboura's official business UPI Virtual Payment Address (UPI ID) provided by your bank (for example, `laboura@icici` or `labouraservices@hdfcbank`).
-   - Every candidate and business UPI payment QR code directs money directly into this bank account.
-3. Locate or add **`COMPANY_UPI_PAYEE_NAME`**:
-   - This is the business name as registered with the bank (for example, `Laboura` or `Laboura Staffing`).
-   - Customers will see this exact name inside Google Pay, PhonePe, Paytm, or BHIM when confirming their payment.
-4. Click **Save Changes**.
-
-> [!NOTE]
-> **Optional at Server Startup**: These two variables are not required for the server to boot or for staff to log in. This allows setting up and testing the application before the company current account is officially opened. However, trying to generate a payment request without them will produce a clear error message, and `/health/ready` will show "UPI collection not configured" until both are set.
-
-#### How to Create the Private Call Recordings Bucket in Supabase Dashboard (No Terminal Required)
-
-All completed call audio recordings are saved to private Supabase Storage:
-1. Open your browser and navigate to **[https://supabase.com](https://supabase.com)** and open your project.
-2. In the left navigation menu, click the **Storage** icon (bucket icon).
-3. Click the green **New bucket** button at the top of the Storage screen.
-4. In the dialog:
-   - **Name**: Type `recordings`.
-   - **Public bucket**: Ensure the toggle is switched **OFF** (Private). Call recordings contain confidential audio and MUST NOT be publicly accessible.
-5. Click **Save bucket**.
-6. To get your Supabase Storage API keys:
-   - In Supabase, click **Project Settings** (gear icon) -> **API**.
-   - Copy the **Project URL** (e.g. `https://xxxx.supabase.co`) -> paste as `SUPABASE_URL` in Render.
-   - Under **Project API keys**, find `service_role` (click "Reveal") -> copy and paste as `SUPABASE_SERVICE_ROLE_KEY` in Render. Keep this key confidential.
-
-#### Webhook Addresses to Configure in Partner Dashboards
-
-When onboarding with bank, payment, telephony, and messaging partners, configure the following incoming webhook destination URLs in their respective developer portals. Every incoming webhook requires an HMAC-SHA256 signature calculated with a secret of at least 32 characters configured in Render:
-
-| Channel / Event | Webhook URL to Configure in Vendor Dashboard | Secret Name | Signature Header Expected |
-| --- | --- | --- | --- |
-| **Bank Feed Credits** | `https://<your-render-api-url>.onrender.com/payments/bank-feed/webhook` | `BANK_FEED_WEBHOOK_SECRET` | `X-Bank-Feed-Signature` or `X-Signature` |
-| **Card Payment Charges** | `https://<your-render-api-url>.onrender.com/payments/webhook` | `PAYMENT_WEBHOOK_SECRET` | `X-Razorpay-Signature` or `X-Payment-Signature` |
-| **Payout Disbursements** | `https://<your-render-api-url>.onrender.com/payments/payout-webhook` | `PAYOUT_WEBHOOK_SECRET` | `X-Razorpay-Signature` or `X-Payout-Signature` |
-| **Telephony Call Status** | `https://<your-render-api-url>.onrender.com/telephony/webhook/call-status` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
-| **Telephony Missed Calls** | `https://<your-render-api-url>.onrender.com/telephony/webhook/missed-call` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
-| **WhatsApp Message Delivery** | `https://<your-render-api-url>.onrender.com/messages/webhook/whatsapp` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature` or `X-Hub-Signature-256` |
-| **SMS Message Delivery** | `https://<your-render-api-url>.onrender.com/messages/webhook/sms` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature` or `X-Signature` |
-
-In each partner dashboard, configure the shared webhook signing secret to match the corresponding 32+ character secret entered in Render environment variables.
-
----
-
-### Step 5: Verify Deployment & Database Schema
-
-1. Go to the **`laboura-api`** service in Render and click the **Events** / **Logs** tab.
-2. Click on the latest deployment log.
-3. Observe the deployment phases:
-   - **Build phase**: `npm install && npm run build` compiles `dist/main.js` and `dist/worker.js`.
-   - **Pre-deploy phase**: Render runs `npx prisma migrate deploy`.
-     You will see:
-     ```text
-     Prisma schema loaded from prisma/schema.prisma
-     Datasource "db": PostgreSQL database
-     Applying migration `...`
-     All migrations have been successfully applied.
-     ```
-   - **Start phase**: Render runs `npm run start:prod` and prints:
-     ```text
-     Nest application successfully started
-     Listening on port ...
-     ```
-4. Verify the database tables in Supabase:
-   - Return to your **Supabase Dashboard** -> click the **Table Editor** icon (table grid icon on left sidebar).
-   - Confirm all tables exist: `JobSeeker`, `Business`, `Vacancy`, `Placement`, `Payment`, `Staff`, `AuditLog`, etc.
-5. Verify the Web Service health check:
-   - In your browser, open:
-     ```text
-     https://<your-render-api-url>.onrender.com/health
-     ```
-   - It will display:
-     ```json
-     {"status":"ok"}
-     ```
-6. Verify the Background Worker in Render:
-   - Click on the **`laboura-worker`** service -> **Logs**.
-   - Confirm it started cleanly:
-     ```json
-     {"level":"INFO","message":"Starting background worker application context...","context":"WorkerBootstrap"}
-     {"level":"INFO","message":"Worker application context initialized and running (PROCESS_ROLE=worker)","context":"WorkerBootstrap"}
-     ```
-   - BullMQ scheduler is registered against Redis.
-
----
-
-### Step 6: Initial CEO Account Bootstrap & First Login 2FA Enrolment
-
-Once the application is live, no staff accounts exist in the database. Use the bootstrap endpoint to create the CEO account.
-
-#### 1. Locate the Bootstrap Secret in Render
-1. Open the **Render Dashboard** (`https://dashboard.render.com`).
-2. Click on the **`laboura-api`** service.
-3. Click the **Environment** tab on the left sidebar.
-4. Locate `STAFF_BOOTSTRAP_SECRET`. Render auto-generates this secret on first blueprint deploy. Click the eye icon next to `STAFF_BOOTSTRAP_SECRET` to reveal and copy it.
-
-#### 2. Execute the Bootstrap Request
-You can call the bootstrap endpoint using **curl**, **Postman**, or **[ReqBin](https://reqbin.com)**.
-
-The secret can be passed either as the HTTP header `x-bootstrap-secret` or directly in the JSON request body (`secret` or `bootstrapSecret`):
-
-**Option A: Using curl with HTTP header**
-```bash
-curl -X POST https://<your-render-api-url>.onrender.com/staff/bootstrap \
-  -H "Content-Type: application/json" \
-  -H "x-bootstrap-secret: YOUR_COPIED_BOOTSTRAP_SECRET" \
-  -d '{
-    "name": "Chief Executive Officer",
-    "email": "ceo@laboura.in",
-    "password": "ReplaceWithSecurePassword123!"
-  }'
-```
-
-**Option B: Using JSON body in ReqBin / Postman**
-- Method: `POST`
-- URL: `https://<your-render-api-url>.onrender.com/staff/bootstrap`
-- Headers: `Content-Type: application/json`
-- Body (JSON):
-```json
-{
-  "name": "Chief Executive Officer",
-  "email": "ceo@laboura.in",
-  "password": "ReplaceWithSecurePassword123!",
-  "secret": "YOUR_COPIED_BOOTSTRAP_SECRET"
-}
-```
-
-The server responds with `201 Created`:
-```json
-{
-  "staff": {
-    "id": "...",
-    "code": "CEO-00001",
-    "name": "Chief Executive Officer",
-    "email": "ceo@laboura.in",
-    "role": "ceo",
-    "city": "Bengaluru",
-    "status": "active"
-  }
-}
-```
-
-> [!NOTE]
-> **2FA Enrolment on First Login**: For defense-in-depth, bootstrap does **not** return a TOTP secret in the HTTP response. The account is created with `totpEnabled: false`. The new CEO enrols 2FA on their very first login.
-
-#### 3. Complete 2FA Enrolment on First Login
-1. Open the Admin Dashboard in your browser:
+1. Open the `laboura-production` project.
+2. Click the **Connect** button at the top of the page. (In older dashboards: the gear icon **Project Settings** at the bottom left, then **Database**, then **Connection string**.)
+3. Choose the **Connection String** tab, type **URI**. You will see three blocks: **Direct connection**, **Transaction pooler** and **Session pooler**. Do **not** use "Direct connection": it only works over IPv6, which Render cannot reach.
+4. **`DATABASE_URL`, the Transaction pooler (port 6543).** Copy the address under **Transaction pooler**. It looks like:
    ```text
-   https://<your-render-api-url>.onrender.com/admin
+   postgresql://postgres.abcdefghijkl:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:6543/postgres
    ```
-2. Log in with the **staff code** from the bootstrap response (for example `CEO-00001`) and the password you chose. The email address is not a way to log in. Leave the authenticator box empty on this first attempt.
-3. The page asks you to enrol an authenticator app and shows a secret key. Type that key into Google Authenticator, Microsoft Authenticator, or Authy.
-4. Type the 6-digit code from the app and click **Verify & Enable 2FA**.
-5. Log in again with the same staff code, the same password, and a fresh 6-digit code from the app. That login approves this browser as the CEO's device. The CEO does not ask a Team Lead for a login code. A Manager and Finance use this same authenticator step. A Team Lead, call agent, or field agent instead waits on the page that says "Ask your Team Lead for your code" until someone reveals a code on the Login codes screen.
-
-#### 4. Add the office network range once the office opens
-
-Until you do this, nobody is treated as being on the office network, and no staff member is limited to it. Leave it that way until the office actually has an internet connection you want to allow.
-
-When the office opens, a CEO or a Manager adds the range from the browser. You need the range from the person who set up the office internet. It looks like `203.0.113.0/24` (IPv4) or an IPv6 range. Do not guess it.
-
-1. Log in to the Admin Dashboard as the CEO or a Manager.
-2. Open the browser's page menu and choose **Inspect** (or press F12). Open **Application** in Chrome, or **Storage** in Firefox. Under **Session storage**, click the Laboura site and copy the value named `laboura_token`. Close Inspect. That value is your login token. It lasts about 15 minutes. If a later step says unauthorized, log in again and copy it again.
-3. Open **[https://reqbin.com](https://reqbin.com)** in the browser.
-4. Method: `POST`. URL: `https://<your-render-api-url>.onrender.com/office-networks`.
-5. Header: `Authorization` with the value `Bearer ` followed by the token you copied. Header: `Content-Type` with the value `application/json`.
-6. Body:
-   ```json
-   { "label": "Bengaluru office", "cidr": "203.0.113.0/24" }
+   - Replace `[YOUR-PASSWORD]` (including the square brackets) with the password from Step 1.
+   - Add this to the very end, with no spaces:
+     ```text
+     ?pgbouncer=true&connection_limit=5&sslmode=require
+     ```
+   - The finished value ends in `:6543/postgres?pgbouncer=true&connection_limit=5&sslmode=require`. Save it as **DATABASE_URL**. This is what the running app uses. `pgbouncer=true` is required on port 6543: without it, requests fail with "prepared statement already exists".
+5. **`DIRECT_URL`, the Session pooler (port 5432).** Copy the address under **Session pooler**. It is the same address with port `5432`:
+   ```text
+   postgresql://postgres.abcdefghijkl:[YOUR-PASSWORD]@aws-0-ap-southeast-1.pooler.supabase.com:5432/postgres
    ```
-   Replace the example range with the real one. Send it. A successful reply means the range is saved.
-7. For each person who may log in only from the office, send another request. Method: `POST`. URL: `https://<your-render-api-url>.onrender.com/staff/<their staff id>/works-from-office`. Same headers. Body: `{ "worksFromOffice": true }`. Their staff id is the long id on their staff row, not the staff code. Until this is set, that person can still log in from outside the office.
+   - Replace `[YOUR-PASSWORD]` with the password.
+   - Add `?sslmode=require` to the end.
+   - Save it as **DIRECT_URL**. It is used only to apply database changes (migrations), which cannot run through the transaction pooler.
 
 ---
 
-### Step 7: Create a Second CEO Account on a Different Device (Mandatory Immediate Redundancy)
+### Step 3: Create the four private file buckets and copy the storage keys
 
-As the immediate next action after the first CEO enrols 2FA:
+Uploaded files are kept in Supabase Storage. Laboura needs four buckets, all **private**. They hold personal data (selfies, shop photos, signed agreements, recorded calls) and must never be public.
 
-1. Log into the Admin Dashboard (`https://<your-render-api-url>.onrender.com/admin`) with the primary CEO account.
-2. In the Staff Management section, invite a **second CEO account** (e.g. `ceo2@laboura.in` or a dedicated recovery executive address).
-3. From a **different physical device** (a secondary executive smartphone, tablet, or separate hardware authenticator), open the invitation link.
-4. Set the password and complete the 2FA QR code scan on that separate device's authenticator app.
-5. Verify successful login using the secondary credentials.
+1. In the project, click **Storage** in the left menu (the bucket icon).
+2. Click **New bucket**.
+3. **Name**: `candidate-photos`. Leave **Public bucket** switched **off**. Click **Create bucket** (or **Save**).
+4. Repeat for the other three, each with **Public bucket** off:
+   - `business-photos`
+   - `agreements`
+   - `recordings`
+5. Check that the Storage page lists exactly these four names, spelled exactly like this, none marked "Public".
+6. Copy the storage keys:
+   - Click **Project Settings** (gear icon), then **API** (in newer dashboards: **API Keys** and **Data API**).
+   - Copy the **Project URL** (like `https://abcdefghijkl.supabase.co`). Save it as **SUPABASE_URL**.
+   - Find the **service_role** key (sometimes called the **secret** key). Click **Reveal** and copy it. Save it as **SUPABASE_SERVICE_ROLE_KEY**. Treat it like a bank password: it can read every file. Never paste it into chat or email.
+
+The production server refuses to start unless all four `*_STORAGE_MODE` settings are `supabase` and both of these keys are filled in. `render.yaml` already sets the four modes to `supabase` on the web service and the worker; you only paste the two keys.
+
+---
+
+### Step 4: Turn off the Supabase Data API
+
+Supabase can publish every database table as a public web API (the "Data API"). Laboura does not use it: the app talks to the database directly. Leaving it on would let anyone holding the project's public key try to read tables. Two protections are in place; do both.
+
+1. **Turn the Data API off.** In the project, click **Integrations** in the left menu, then **Data API**. Switch **Enable Data API** off and confirm. (In older dashboards: **Project Settings**, then **API** or **Data API**, then the same switch.) File storage keeps working; it does not use the Data API.
+2. **Row level security is switched on by the code.** A database change in the code turns on **row level security** for every table, with no rules that let anyone in, so even if the Data API were switched back on it would return nothing. The app is not affected, because it connects as the owner of the tables. After Step 6, open **Advisors** in the left menu, then **Security Advisor**, and check that it shows no "RLS disabled in public" errors.
+
+Every new table added to the code later must also switch row level security on. The automated tests check this and fail if a new table forgets it.
+
+---
+
+### Step 5: Create everything on Render from the Blueprint
+
+1. Go to **[dashboard.render.com](https://dashboard.render.com)** and sign in.
+2. Click **New** (top right), then **Blueprint**.
+3. Connect GitHub if Render asks, and pick the repository **Labouraos**. Branch: **main**.
+4. **Blueprint name**: `laboura`.
+5. Render reads `render.yaml` and lists three things to create:
+   - `laboura-api` (Web Service, Singapore)
+   - `laboura-worker` (Background Worker, Singapore)
+   - `laboura-redis` (Key Value, Singapore)
+6. Render then asks for every setting that has no value in the file. Fill these in now. Leave a box empty only where the table says so.
+
+   | Setting | What to paste |
+   | --- | --- |
+   | `DATABASE_URL` | The transaction pooler address from Step 2 (port 6543, ending `?pgbouncer=true&connection_limit=5&sslmode=require`) |
+   | `DIRECT_URL` | The session pooler address from Step 2 (port 5432, ending `?sslmode=require`) |
+   | `PUBLIC_APP_URL` | The public web address of the app, used to create the links sent by SMS and WhatsApp. **The server refuses to start without it.** Until Laboura has its own domain, use the address Render gives the web service, `https://laboura-api.onrender.com` (Render shows the exact address at the top of the `laboura-api` page; if it differs, correct this setting afterwards). Must start with `https://`. |
+   | `SUPABASE_URL` | From Step 3 |
+   | `SUPABASE_SERVICE_ROLE_KEY` | From Step 3 |
+   | `COMPANY_LEGAL_NAME` | `Laboura Private Limited` |
+   | `COMPANY_GSTIN` | The 15-character GSTIN, once issued. Empty until then. |
+   | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Empty until the company current account opens. See [UPI details](#upi-details). |
+   | `ALERT_WEBHOOK_URL` | A Slack (or similar) incoming-webhook address for error alerts. Empty is allowed: alerts then only go to the logs. |
+   | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Empty for testing. Required before real data (Step 9). |
+   | Vendor keys (`SMS_*`, `DLT_*`, `WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`, `KYC_*`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | Empty until each vendor is signed up. Every vendor runs in mock mode until then. |
+
+7. Click **Deploy Blueprint** (some screens say **Apply**).
+8. Render creates the Key Value first, then builds and starts the web service and the worker. The first build takes several minutes.
+
+Settings that Render creates by itself, and that you never type, are `JWT_SECRET`, `LOGIN_CODE_SECRET`, `STAFF_BOOTSTRAP_SECRET`, `CALL_ROUTING_KEY` and `PAYOUT_ACCOUNT_KEY`. The worker copies the ones it needs from `laboura-api`. Both services must share the same `LOGIN_CODE_SECRET`, or a code shown on the login code screen will not match. `REDIS_HOST` and `REDIS_PORT` are filled in from `laboura-redis` automatically, with `REDIS_TLS` set to `false`: the private address does not use TLS and has no password.
 
 > [!IMPORTANT]
-> **Why this step is mandatory:** If only one CEO account exists and that phone is lost, damaged, or wiped before another account is provisioned, administrative access cannot be recovered through the software. Having a second CEO enrolled on an independent device eliminates this single point of failure.
+> **Settings written in `render.yaml` are put back every time Render syncs the Blueprint** (for example `NODE_ENV`, `PROCESS_ROLE`, the `*_STORAGE_MODE` and `*_PROVIDER_MODE` values). Changing one of those in the dashboard lasts only until the next sync. To switch a vendor from `mock` to `real`, ask Claude to change `render.yaml` on both services. The settings you pasted in step 6 are yours: Render never overwrites them.
 
 ---
 
-### Step 8: Last-Resort Emergency Manual Recovery (Agastya Only)
+### Step 6: Check that it is running
 
-If all CEO credentials and 2FA devices are lost simultaneously:
-
-- **Authorization:** Performed by **Agastya only**.
-- **Audit Requirement:** Must be documented and audit-logged afterwards.
-- **Procedure via Supabase Dashboard:**
-  1. Open the **Supabase Dashboard** (`https://supabase.com`) and navigate to `laboura-production`.
-  2. Click the **SQL Editor** on the left menu.
-  3. Execute the following SQL query to reset the 2FA state of the targeted CEO account:
-     ```sql
-     UPDATE "Staff"
-     SET "status" = 'active',
-         "totpSecret" = NULL,
-         "totpEnabled" = false
-     WHERE "email" = 'ceo@laboura.in';
-     ```
-  4. Revoke any existing active sessions:
-     ```sql
-     DELETE FROM "StaffSession"
-     WHERE "staffId" IN (SELECT "id" FROM "Staff" WHERE "email" = 'ceo@laboura.in');
-     ```
-  5. The CEO can now log in at `/admin` using their password. The system will detect `totpEnabled: false` and immediately guide them through the first-login TOTP 2FA enrolment flow to link their new authenticator device.
-  6. Log the recovery action and reason in the operational incident log.
+1. **The build and the database changes.** In Render, open **`laboura-api`**, then **Events**, and click the newest deploy. You should see, in order:
+   - Build: `npm ci --include=dev && npx prisma generate && npm run build` ending without errors.
+   - Pre-Deploy: `npm run migrate:deploy` printing `All migrations have been successfully applied.` (or `No pending migrations to apply.` on later deploys).
+   - Start: `Nest application successfully started`.
+2. **The web service is alive.** Open `https://<your laboura-api address>/health` in the browser. It shows `{"status":"ok", ...}`. Render itself watches this address and restarts the web service if it stops answering.
+3. **The database, the queue and the worker are all reachable.** Open `https://<your laboura-api address>/health/ready`. It shows `"status":"ready"`, `"postgres":"ok"`, `"redis":"ok"` and a `"worker"` section with `"status":"alive"`. If any of them fails, the page answers with an error that names which one (`postgres`, `redis` or `worker`). Point an uptime monitor (for example UptimeRobot, free) at this address so someone is told when it fails.
+4. **The worker.** Open **`laboura-worker`**, then **Logs**. Near the top:
+   ```text
+   Starting background worker application context...
+   Worker application context initialized and running (PROCESS_ROLE=worker)
+   ```
+   `PROCESS_ROLE` is what keeps the scheduled jobs in the worker only: it is `web` on `laboura-api` and `worker` on `laboura-worker`. Never change it. If the worker cannot reach the Key Value, it stops with "Worker cannot reach Redis" and Render restarts it. That is deliberate: a worker without its queue would run no jobs while looking healthy.
+5. **The tables.** In Supabase, open **Table Editor**. You should see tables such as `JobSeeker`, `Business`, `Vacancy`, `Placement`, `Payment`, `Staff`, `AuditLog`.
+6. **The security check.** In Supabase, open **Advisors**, then **Security Advisor**, and click **Rerun**. There must be no "RLS disabled in public" error.
 
 ---
 
-### Troubleshooting & Rollbacks
+### Step 7: Create the first CEO account
 
-- **Database Connection Error (`P1001`)**:
-  Verify the `DATABASE_URL` in the Render Environment tab. Ensure the password does not contain unescaped special characters (e.g. use `%23` for `#` if required in URI encoding).
-- **Redis Connection Warning**:
-  Confirm that `REDIS_TLS` is set to `true` when using Upstash. Upstash rejects non-TLS connections on port `6379`.
-- **Pre-Deploy Migration Failure**:
-  If a migration fails, Render halts deployment before switching web traffic. Check the deploy log in Render to view the specific Prisma migration error.
+When the app first starts, no staff accounts exist. A one-time "bootstrap" request creates the CEO. You send it from a web page called ReqBin, so no terminal is needed.
+
+1. **Copy the bootstrap secret.** In Render, open **`laboura-api`**, then **Environment**. Find `STAFF_BOOTSTRAP_SECRET` and click the eye icon to show it. Copy it.
+2. **Send the request.** Open **[reqbin.com](https://reqbin.com)**.
+   - Method: **POST**.
+   - Address: `https://<your laboura-api address>/staff/bootstrap`
+   - Open the **Content** (body) tab, choose **JSON**, and paste, replacing the three values:
+     ```json
+     {
+       "name": "Sanket",
+       "email": "ceo@laboura.in",
+       "password": "A-long-password-you-will-remember",
+       "secret": "PASTE-THE-BOOTSTRAP-SECRET-HERE"
+     }
+     ```
+   - Click **Send**. The answer is `201` and includes `"code": "CEO-00001"` (the staff code). Write the staff code down. This only works while no staff account exists.
+3. **Set up the authenticator app on the first login.** Open `https://<your laboura-api address>/admin`.
+   - Log in with the **staff code** (for example `CEO-00001`) and the password. Not the email. Leave the authenticator box empty this first time.
+   - The page shows a secret key. Add it to Google Authenticator, Microsoft Authenticator or Authy.
+   - Type the 6-digit code from the app and click **Verify & Enable 2FA**.
+   - Log in again with the staff code, the password and a fresh 6-digit code. That login also approves this browser as the CEO's device.
+
+Managers and Finance also use an authenticator app. Team Leads and agents instead wait on the "Ask your Team Lead for your code" page until someone reveals their code on the Login codes screen.
+
+#### Office network (once the office opens)
+
+Until an office network is added, nobody is limited to it. Add it only when the office has its own internet connection. You need the address range from whoever set it up (it looks like `203.0.113.0/24`); never guess it.
+
+1. Log in to `/admin` as the CEO or a Manager.
+2. Right-click the page, choose **Inspect**, open **Application** (Chrome) or **Storage** (Firefox), then **Session storage**, click the Laboura address and copy the value named `laboura_token`. Close Inspect. This token lasts about 15 minutes; if a later step says "unauthorized", log in again and copy it again.
+3. In **[reqbin.com](https://reqbin.com)**: method **POST**, address `https://<your laboura-api address>/office-networks`. In **Headers** add `Authorization` with the value `Bearer ` followed by the token. Body (JSON): `{ "label": "Bengaluru office", "cidr": "203.0.113.0/24" }` with the real range. Click **Send**.
+4. For each person who may log in only from the office: method **POST**, address `https://<your laboura-api address>/staff/<their staff id>/works-from-office`, same header, body `{ "worksFromOffice": true }`. The staff id is the long id on their staff row, not the staff code.
+
+---
+
+### Step 8: Create a second CEO account on a different phone
+
+Do this straight after Step 7. If the only CEO phone is lost before a second CEO exists, nobody can get back in through the software.
+
+1. Log in to `/admin` as the first CEO.
+2. In Staff, invite a second CEO account (for example `ceo2@laboura.in`).
+3. On a **different phone**, open the invitation link, set the password and add the authenticator code on that phone.
+4. Log in once with the second account to check it works.
+
+---
+
+### Step 9: Before any real data, the go-live checklist
+
+Up to here the system may hold only made-up test data. Tick every line before a real candidate, worker or business is entered.
+
+- [ ] Supabase is on the **Pro** plan (daily backups).
+- [ ] **Cloudflare Access is on.** `CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `true` before any real candidate, worker or business data is entered. See the box below.
+- [ ] Step 10 (test one restore) has been done once and written down.
+- [ ] `COMPANY_LEGAL_NAME`, `COMPANY_GSTIN` and `COMPANY_ADDRESS` are the real values, otherwise invoices print placeholders.
+- [ ] `ALERT_WEBHOOK_URL` is set, so errors reach a person and not only the logs.
+- [ ] An uptime monitor watches `/health/ready`.
+- [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
+- [ ] The four buckets exist and are private (Step 3).
+
+> [!WARNING]
+> **Cloudflare Access must be on before real data.**
+>
+> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office consoles (`/admin`, `/console/admin`, `/call-agent`, `/console/call-agent`) are not behind Cloudflare's identity check.
+>
+> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for your domain covering `/admin*`, `/console/admin*`, `/call-agent*` and `/console/call-agent*`. Leave `/field-agent` out: field agents use it from their phones.
+> 2. Add a policy that lets in only Laboura's staff email addresses.
+> 3. Copy the application's **Audience (AUD) tag**.
+> 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).
+> 5. In Render, `laboura-api`, **Environment**: set `CLOUDFLARE_ACCESS_TEAM_DOMAIN` (like `laboura.cloudflareaccess.com`) and `CLOUDFLARE_ACCESS_AUD` (the tag from step 3). Click **Save Changes**. With enforcement on and either value missing, the server refuses to start, so set both.
+> 6. Once Cloudflare sits in front of Render, ask Claude to change `TRUST_PROXY_HOPS` from `1` to `2`.
+
+#### UPI details
+
+Every payment into Laboura (the ₹499 registration and the business placement fee) is collected by UPI straight into the company current account, with a separate QR code or link per payment.
+
+1. In Render, open **`laboura-api`**, then **Environment**.
+2. `COMPANY_UPI_VPA`: the company's UPI ID from the bank, like `laboura@icici`.
+3. `COMPANY_UPI_PAYEE_NAME`: the name as registered with the bank. Payers see it in Google Pay, PhonePe, Paytm or BHIM.
+4. Click **Save Changes**. The worker copies both from `laboura-api`.
+
+> [!NOTE]
+> Neither is needed for the server to start or for staff to log in, so the server can start without it while the bank account is being opened. Creating a payment request without them fails with a clear message, and `/health` shows "UPI collection not configured" until both are set.
+
+---
+
+### Step 10: Test one restore
+
+A backup you have never restored is a hope, not a backup. Do this once before real data, and again every three months. It does not touch the live database.
+
+1. In Supabase, open the `laboura-production` project, then **Database**, then **Backups**.
+2. Open the **Restore to a New Project** tab. Pick the newest daily backup and click **Restore**. Supabase shows the cost of the new project first; it is charged only while the project exists.
+3. **Never** use the plain **Restore** button on the live project for a test: that replaces the live database and takes it offline.
+4. When the new project is ready, open its **SQL Editor** (in the browser), paste this and click **Run**:
+   ```sql
+   SELECT 'Staff' AS tbl, count(*) FROM "Staff" UNION ALL
+   SELECT 'JobSeeker', count(*) FROM "JobSeeker" UNION ALL
+   SELECT 'Business', count(*) FROM "Business" UNION ALL
+   SELECT 'Placement', count(*) FROM "Placement" UNION ALL
+   SELECT 'Payment', count(*) FROM "Payment";
+   ```
+5. Run the same in the live project's SQL Editor. The numbers should match (or the live ones be a little higher, from work done since the backup).
+6. Write down the date, the backup used, how long it took and the counts, and ask Claude to add them to the exercise record in `docs/DISASTER_RECOVERY.md`.
+7. Delete the scratch project: open it, **Project Settings**, **General**, **Delete project**.
+
+Database backups do not include uploaded files (photos, agreements, recordings). See `docs/DISASTER_RECOVERY.md`.
+
+---
+
+### Step 11: Emergency recovery (Agastya only)
+
+Only if every CEO login and every authenticator phone is lost at once. Done by **Agastya only**, written down and recorded in the incident log afterwards.
+
+1. In Supabase, open `laboura-production`, then **SQL Editor**.
+2. Run, with the right email:
+   ```sql
+   UPDATE "Staff"
+   SET "status" = 'active',
+       "totpSecret" = NULL,
+       "totpEnabled" = false
+   WHERE "email" = 'ceo@laboura.in';
+   ```
+3. Then end that person's open sessions:
+   ```sql
+   DELETE FROM "StaffSession"
+   WHERE "staffId" IN (SELECT "id" FROM "Staff" WHERE "email" = 'ceo@laboura.in');
+   ```
+4. The CEO logs in at `/admin` with the password and is taken through the authenticator set-up again.
+5. Record what was done and why in the incident log.
+
+---
+
+## All settings
+
+`laboura-api` holds every setting. The worker copies the ones it needs from `laboura-api` (shown in Render as "from laboura-api"), except the fixed values written in `render.yaml`.
+
+| Setting | Value | What it is |
+| --- | --- | --- |
+| `NODE_ENV` | `production` (fixed) | Production switches on the strict start-up checks |
+| `PROCESS_ROLE` | `web` / `worker` (fixed) | Keeps scheduled jobs in the worker only |
+| `TRUST_PROXY_HOPS` | `1` (fixed; `2` behind Cloudflare) | How many proxies sit in front of the app, so rate limits and the office-network rule see the real visitor address |
+| `DATABASE_URL` | Step 2, transaction pooler, port 6543 | The database address the app uses |
+| `DIRECT_URL` | Step 2, session pooler, port 5432 | The database address used for migrations |
+| `REDIS_HOST`, `REDIS_PORT` | From `laboura-redis` (automatic) | The job queue's private address |
+| `REDIS_TLS` | `false` (fixed) | The private Key Value address does not use TLS |
+| `WORKER_HEARTBEAT_CHECK` | `true` on web (fixed) | `/health/ready` reports the worker as failed when its heartbeat stops |
+| `JWT_SECRET` | Generated by Render | Signs login tokens |
+| `JWT_EXPIRES_IN` | `15m` (fixed) | How long a login token lasts |
+| `LOGIN_CODE_SECRET` | Generated by Render, shared with the worker | Computes the 6-digit login codes |
+| `STAFF_BOOTSTRAP_SECRET` | Generated by Render | Needed once, to create the first CEO (Step 7) |
+| `CALL_ROUTING_KEY` | Generated by Render, shared with the worker | Encrypts staff phone numbers used for call routing |
+| `PAYOUT_ACCOUNT_KEY` | Generated by Render, shared with the worker | Encrypts payout UPI and bank details |
+| `PUBLIC_APP_URL` | Your app's `https://` address | The public web address of the app, used in links sent by SMS and WhatsApp; required to start |
+| `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` on both services (fixed) | Keeps uploads in Supabase Storage; production refuses to start otherwise |
+| `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Step 3 | Lets the app read and write the four private buckets |
+| `COMPANY_LEGAL_NAME`, `COMPANY_GSTIN`, `COMPANY_ADDRESS` | Company details | Printed on GST invoices |
+| `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Bank UPI details | UPI payment links and QR codes |
+| `CLOUDFLARE_ACCESS_ENFORCED`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Step 9 | Identity check in front of the office consoles |
+| `ALERT_WEBHOOK_URL` | Slack-style webhook | Where error alerts are posted |
+| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`, `KYC_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
+| `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages |
+| `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |
+| `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER` | From the calling vendor | Calls |
+| `KYC_API_KEY`, `KYC_API_URL` | From the licensed Aadhaar vendor | Identity checks |
+| `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAYX_WEBHOOK_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER` | From Razorpay | Card payments (only when a payer picks a card) and payouts |
+| `BANK_FEED_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`, `PAYOUT_WEBHOOK_SECRET`, `TELEPHONY_WEBHOOK_SECRET`, `MESSAGE_WEBHOOK_SECRET` | At least 32 characters each, shared with the vendor | Proves an incoming webhook really came from the vendor |
+
+Bucket names default to `candidate-photos`, `business-photos`, `agreements` and `recordings`; you do not set them. `.env.example` in the code lists every setting with the same names.
+
+---
+
+## Webhook addresses for vendors
+
+When a vendor is signed up, give them the matching address below and agree a signing secret of at least 32 characters. Put the same secret in Render (`laboura-api`, **Environment**).
+
+| What | Address to give the vendor | Secret setting | Signature header the app accepts |
+| --- | --- | --- | --- |
+| Bank credits | `https://<your laboura-api address>/payments/bank-feed/webhook` | `BANK_FEED_WEBHOOK_SECRET` | `X-Bank-Signature`, `X-Bank-Feed-Signature`, `X-Signature` or `X-Webhook-Signature` |
+| Card payments | `https://<your laboura-api address>/payments/webhook` | `PAYMENT_WEBHOOK_SECRET` | `X-Razorpay-Signature`, `X-Signature` or `X-Webhook-Signature` |
+| Incoming calls | `https://<your laboura-api address>/telephony/inbound` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
+| Missed calls | `https://<your laboura-api address>/telephony/webhook/missed-call` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
+| Call status | `https://<your laboura-api address>/telephony/webhook/call-status` | `TELEPHONY_WEBHOOK_SECRET` | `X-Telephony-Signature` or `X-Signature` |
+| WhatsApp delivery | `https://<your laboura-api address>/messages/webhook/whatsapp` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature`, `X-Signature` or `X-Hub-Signature-256` |
+| SMS delivery | `https://<your laboura-api address>/messages/webhook/sms` | `MESSAGE_WEBHOOK_SECRET` | `X-Message-Signature` or `X-Signature` |
+
+---
+
+## If Laboura was already on Render before this guide
+
+An older version of the setup used a Redis service outside Render for the queue, and different setting names. When this version reaches the `main` branch, Render syncs the Blueprint and creates `laboura-redis`. Render does **not** add new "paste a value" settings to services that already exist, and does not remove old ones. So, once, by hand:
+
+1. Open **`laboura-api`**, then **Environment**:
+   - **Add** `DIRECT_URL` (Step 2, session pooler). Without it the database changes fail with "Environment variable not found: DIRECT_URL".
+   - **Change** `DATABASE_URL` to the transaction pooler address from Step 2 (port 6543 with `?pgbouncer=true&connection_limit=5&sslmode=require`).
+   - **Delete** `REDIS_PASSWORD` if it is there. The Key Value's private address has no password, and an old password from the previous Redis service makes every connection fail.
+   - **Delete** `TRUSTED_PROXY_HOPS`, `WHATSAPP_API_KEY`, `WHATSAPP_BUSINESS_ACCOUNT_ID`, `TELEPHONY_API_KEY` and `RECORDINGS_BUCKET` if they are there. They are old names the code no longer reads.
+   - Click **Save Changes**.
+2. Open **`laboura-worker`**, then **Environment**, and delete `REDIS_PASSWORD` there too. Check that `DIRECT_URL` shows "from laboura-api".
+3. Do Steps 3 and 4 if the four buckets or the Data API switch are not done yet.
+4. Open **Blueprints**, then `laboura`, and click **Manual Sync** if Render has not synced by itself.
+5. Do Step 6 to check everything.
+6. If the old services were made by hand rather than from this Blueprint, ask Claude before applying the Blueprint: the names would clash.
+7. The old Redis service outside Render can be closed once `/health/ready` shows `"redis":"ok"` and the worker as alive.
+
+---
+
+## Troubleshooting
+
+- **The build fails with "nest: not found" or "prisma: not found".** The build command must start with `npm ci --include=dev`. It is set in `render.yaml`; check nobody changed it in the dashboard (**Settings**, **Build Command**).
+- **The Pre-Deploy step fails.** Render stops before the new version takes any traffic; the old version keeps running. Open the deploy log. "Environment variable not found: DIRECT_URL": add `DIRECT_URL` (Step 2). "Can't reach database server": check `DIRECT_URL` uses the **session pooler** (port 5432), not "Direct connection".
+- **"prepared statement already exists".** `DATABASE_URL` is on port 6543 without `pgbouncer=true`. Add `?pgbouncer=true&connection_limit=5&sslmode=require` to the end.
+- **Database error P1001 or "password authentication failed".** The password in the address is wrong or contains symbols. Reset it to letters and numbers only (Supabase, **Project Settings**, **Database**, **Reset database password**) and update both `DATABASE_URL` and `DIRECT_URL`.
+- **The web service will not start: "PUBLIC_APP_URL environment variable is missing".** Fill in `PUBLIC_APP_URL` (Step 5).
+- **"Refusing to start in production: uploaded files would be kept in memory".** One of the four `*_STORAGE_MODE` settings is not `supabase`. They are fixed in `render.yaml`; a manual change in the dashboard caused this.
+- **"file storage is set to Supabase but SUPABASE_URL ... is empty".** Paste `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` (Step 3) on `laboura-api`.
+- **The worker keeps restarting with "Worker cannot reach Redis".** Check `laboura-redis` is running (Render dashboard) and that `REDIS_PASSWORD` is not set on the worker. `REDIS_TLS` must be `false`.
+- **`/health/ready` says `worker` failed.** The worker has not written its heartbeat for 2 minutes. Open `laboura-worker`, **Logs**, and look at the last lines.

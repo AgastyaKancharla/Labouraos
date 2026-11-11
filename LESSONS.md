@@ -324,7 +324,7 @@ Format:
 
 ## Five wrong passwords are throttled before the lock can be seen
 **Symptom:** The attempt after five wrong passwords returned 429, so the test never saw the locked-account message.
-**Cause:** `POST /auth/login` allows 5 requests a minute for one staff code and one IP. With `TRUSTED_PROXY_HOPS` at 0, changing `X-Forwarded-For` does not change that bucket.
+**Cause:** `POST /auth/login` allows 5 requests a minute for one staff code and one IP. With `TRUST_PROXY_HOPS` at 0, changing `X-Forwarded-For` does not change that bucket.
 **Fix:** The lockout test sets the trusted hop count to 1 and sends each attempt from a different `X-Forwarded-For`. The fifth wrong password is still 401 and sets `lockedUntil`. The correct password during the lock is refused with the unlock time.
 
 ## A UUID can look like a 12-digit Aadhaar number
@@ -529,3 +529,23 @@ Format:
 **Symptom:** A Manager who used to reveal any login code, or approve any device, is now refused with 403.
 **Cause:** Phase 21 stores `reportsToId`. A call or field agent reports to an active Team Lead (`teamLeadId` is still written to the same person). A Team Lead reports to an active Manager. A Manager or Finance reports to the CEO. A Manager's login codes and devices are limited to `peopleUnder`. People with no line are handled by the CEO.
 **Fix:** Give the fixture the line before the Manager acts: the Team Lead's `reportsToId` is the Manager, and the agent's `reportsToId` is that Team Lead. Do not put the Manager back to "everyone".
+
+## Render build fails with "nest: not found"
+**Symptom:** The first Render deploy stops in the build: `nest: not found` (or `prisma: not found`).
+**Cause:** `NODE_ENV=production` is a service setting, and Render exposes it while building, so a plain `npm install` skips devDependencies (Nest CLI, TypeScript, Prisma). `npx prisma migrate deploy` would then also fetch the newest Prisma, which rejects this schema.
+**Fix:** `buildCommand: npm ci --include=dev && npx prisma generate && npm run build`, and migrations through `npm run migrate:deploy`, which runs the pinned Prisma from node_modules.
+
+## Redis connections fail after moving to Render Key Value
+**Symptom:** The worker stops with "Worker cannot reach Redis"; `/health/ready` names `redis` or `worker`.
+**Cause:** The Key Value's private address is plain (no TLS) and has no password. A leftover `REDIS_TLS=true` or `REDIS_PASSWORD` from the old hosted Redis makes every connection fail.
+**Fix:** `REDIS_TLS=false`, no `REDIS_PASSWORD`, and `REDIS_HOST`/`REDIS_PORT` taken from the Key Value with `fromService` (render.yaml does this). Delete an old `REDIS_PASSWORD` by hand in the dashboard: a Blueprint sync does not remove it.
+
+## Supabase: one database, two addresses
+**Symptom:** "prepared statement already exists" on requests, or `prisma migrate deploy` hangs or fails on Supabase.
+**Cause:** The transaction pooler (port 6543) does not support prepared statements or migrations.
+**Fix:** `DATABASE_URL` is the transaction pooler with `?pgbouncer=true&connection_limit=5&sslmode=require`; `DIRECT_URL` (read by `directUrl` in schema.prisma) is the session pooler on port 5432 for migrations. CI sets both to the same local database.
+
+## A new table must switch on row level security
+**Symptom:** `row-level-security.spec.ts` fails naming a table.
+**Cause:** Supabase's automatic REST API can expose any table in `public` whose row level security is off. Migration `20261115040000_enable_row_level_security` covered every table that existed then; tables created later are not covered.
+**Fix:** In the migration that creates the table, add `ALTER TABLE "NewTable" ENABLE ROW LEVEL SECURITY;`. No policy is needed: Prisma connects as the owner and is not affected.
