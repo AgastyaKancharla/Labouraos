@@ -3,6 +3,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
   UnauthorizedException,
 } from '@nestjs/common';
 import {
@@ -17,6 +18,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 import { AttendanceService } from '../attendance/attendance.service';
+import { InboundCallRouter } from './inbound-call-router.service';
 
 @Injectable()
 export class TelephonyService {
@@ -25,6 +27,8 @@ export class TelephonyService {
     private readonly provider: TelephonyProvider,
     private readonly prisma: PrismaService,
     private readonly attendance: AttendanceService,
+    // Always provided by TelephonyModule; optional only for specs that build the service by hand.
+    @Optional() private readonly router?: InboundCallRouter,
   ) {}
 
   async handleInboundWebhook(
@@ -90,7 +94,13 @@ export class TelephonyService {
       recordingConsent,
     };
 
-    return this.provider.handleInboundCall(event);
+    const result = await this.provider.handleInboundCall(event);
+    if (!result.isDuplicate && this.router) {
+      // A repeated webhook never rings anyone twice.
+      const routing = await this.router.route(result.callbackTaskId, callId, callerPhone, payload);
+      return { ...result, routedToStaffId: routing.staffId };
+    }
+    return result;
   }
 
   async getCallbackQueue(filters?: { status?: string }) {

@@ -1713,3 +1713,31 @@ model WinBackEntry {
   @@index([status, addedAt])
   @@index([jobSeekerId])
 }
+
+/// A call the system has put back on an agent's list for a set time
+/// (Master Guide, "What happens when things don't go to plan"):
+/// - callback: the person asked to be called back at this date and time;
+/// - retry: the calling system reported no answer, so the call is tried again.
+/// Read by the call agent's work queue and "Call next".
+model CallTask {
+  id                 String    @id @default(uuid())
+  /// The agent whose list it goes on.
+  staffId            String
+  subjectType        String    // job_seeker, business, referral
+  subjectId          String
+  kind               String    // callback, retry
+  dueAt              DateTime
+  status             String    @default("open") // open, done, cancelled
+  /// The call that produced it. One task per call and kind, so a repeated
+  /// webhook never adds a second retry.
+  sourceCallRecordId String?
+  /// The call that closed it.
+  doneCallRecordId   String?
+  doneAt             DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@unique([sourceCallRecordId, kind])
+  @@index([staffId, status, dueAt])
+  @@index([subjectType, subjectId, status])
+}

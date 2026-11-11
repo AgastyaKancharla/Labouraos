@@ -28,6 +28,8 @@ import { isWithinClockWindow } from './call-window';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { CallFollowThroughService } from './call-follow-through.service';
+import { parseClock } from './call-window';
 
 export interface CallActor {
   id: string;
@@ -50,6 +52,7 @@ export class CallService {
     @Inject(RECORDING_STORAGE) private readonly storage: RecordingStorage,
     private readonly editPolicyService: EditPolicyService,
     private readonly attendance: AttendanceService,
+    private readonly followThrough: CallFollowThroughService,
   ) {}
 
   async updateNotes(
@@ -157,6 +160,7 @@ export class CallService {
       await this.copyIfCompleted(created.id, event);
       await this.recordContactAttemptIfFinal(created);
       await this.reflectOnAttendance(null, created);
+      await this.followThrough.onStatusChanged(null, created);
       return { id: created.id, code: created.code, unchanged: false };
     }
 
@@ -179,6 +183,7 @@ export class CallService {
     await this.copyIfCompleted(existing.id, event);
     await this.recordContactAttemptIfFinal(updated);
     await this.reflectOnAttendance(existing, updated);
+    await this.followThrough.onStatusChanged(existing, updated);
     return { id: existing.id, code: existing.code, unchanged: false };
   }
 
@@ -374,7 +379,7 @@ export class CallService {
   async recordOutcome(
     actor: CallActor,
     id: string,
-    input: { agentOutcome?: string; reason?: string },
+    input: { agentOutcome?: string; reason?: string; callbackAt?: string },
   ) {
     const row = await this.prisma.callRecord.findUnique({ where: { id } });
     if (!row) {
@@ -392,6 +397,14 @@ export class CallService {
     }
     const reason = typeof input.reason === 'string' && input.reason.trim() ? input.reason.trim() : null;
     const at = this.clock.now();
+    if (agentOutcome === 'rejected_offer' && !reason) {
+      throw new BadRequestException('A reason is required when he turns down the offer');
+    }
+    // "Call me back" needs a date and time, which puts the person back on the list then.
+    let callbackAt: Date | null = null;
+    if (agentOutcome === 'callback_requested') {
+      callbackAt = await this.validCallbackTime(input.callbackAt, at);
+    }
     await this.prisma.callRecord.update({
       where: { id: row.id },
       data: {
@@ -409,7 +422,55 @@ export class CallService {
       reason,
       changedFields: ['agentOutcome'],
     });
-    return { callRecordId: row.id, agentOutcome };
+    if (row.subjectType && row.subjectId) {
+      // Whatever he said, earlier callbacks and retries for him are done.
+      await this.prisma.callTask.updateMany({
+        where: {
+          subjectType: row.subjectType,
+          subjectId: row.subjectId,
+          status: 'open',
+          OR: [{ sourceCallRecordId: null }, { sourceCallRecordId: { not: row.id } }],
+        },
+        data: { status: 'done', doneAt: at, doneCallRecordId: row.id },
+      });
+      if (callbackAt) {
+        await this.prisma.callTask.upsert({
+          where: { sourceCallRecordId_kind: { sourceCallRecordId: row.id, kind: 'callback' } },
+          create: {
+            staffId: actor.id,
+            subjectType: row.subjectType,
+            subjectId: row.subjectId,
+            kind: 'callback',
+            dueAt: callbackAt,
+            sourceCallRecordId: row.id,
+          },
+          update: { dueAt: callbackAt, status: 'open', doneAt: null, doneCallRecordId: null },
+        });
+      }
+    }
+    return { callRecordId: row.id, agentOutcome, ...(callbackAt ? { callbackAt: callbackAt.toISOString() } : {}) };
+  }
+
+  /** A callback must be in the future and inside the calling hours (IST). */
+  private async validCallbackTime(value: string | undefined, now: Date): Promise<Date> {
+    const when = typeof value === 'string' ? new Date(value) : null;
+    if (!when || Number.isNaN(when.getTime())) {
+      throw new BadRequestException('"Call me back" needs a date and time');
+    }
+    if (when.getTime() <= now.getTime()) {
+      throw new BadRequestException('The callback time must be in the future');
+    }
+    const policy = await this.pricing.current();
+    const parts = getCalendarPartsInTimezone(when, 'Asia/Kolkata');
+    const minute = parts.hour * 60 + parts.minute;
+    const start = parseClock(policy.callingHoursStart);
+    const end = parseClock(policy.callingHoursEnd);
+    if (start === null || end === null || minute < start || minute > end) {
+      throw new BadRequestException(
+        `Callbacks can only be set between ${policy.callingHoursStart} and ${policy.callingHoursEnd}`,
+      );
+    }
+    return when;
   }
 
   async getOne(actor: CallActor, id: string) {

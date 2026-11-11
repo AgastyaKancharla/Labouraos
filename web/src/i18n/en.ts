@@ -2,6 +2,7 @@
    (TypeScript refuses to build until all three have the same keys). */
 import { registrationEn } from './registration';
 
+import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 export const en = {
   "app.name": "Laboura",
   "common.loading": "Loading…",
@@ -569,6 +570,7 @@ export const en = {
   "screen.P05b-PayFee": "Pay the fee",
   "screen.P06-DidTheyOffer": "Did they offer you the job?",
   ...registrationEn,
+  ...callAgentEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

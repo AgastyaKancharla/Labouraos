@@ -1,17 +1,19 @@
 import { Module } from '@nestjs/common';
+import { LiveModule } from '../../common/live/live.module';
 import { TelephonyController } from './telephony.controller';
 import { TelephonyService } from './telephony.service';
 import { TELEPHONY_PROVIDER } from './telephony.interface';
 import { MockTelephonyProvider } from './mock-telephony.provider';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { RealTelephonyProvider } from './real-telephony.provider';
+import { InboundCallRouter } from './inbound-call-router.service';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditModule } from '../../common/audit/audit.module';
 import { AuditService } from '../../common/audit/audit.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AttendanceModule],
+  imports: [PrismaModule, AuditModule, AttendanceModule, LiveModule],
   controllers: [TelephonyController],
   providers: [
     {
@@ -35,7 +37,8 @@ import { AuditService } from '../../common/audit/audit.service';
       inject: [PrismaService, AuditService],
     },
     TelephonyService,
+    InboundCallRouter,
   ],
-  exports: [TelephonyService, TELEPHONY_PROVIDER],
+  exports: [TelephonyService, TELEPHONY_PROVIDER, InboundCallRouter],
 })
 export class TelephonyModule {}

@@ -29,6 +29,8 @@ export interface TopBarProps {
   onPeriodChange?: (period: Period) => void;
   /** Search is on every staff screen; turn off only where the design has none. */
   showSearch?: boolean;
+  /** Keep the h1 for screen readers and the tab title, but don't show it (designs with no visible heading, e.g. CA03 Home). */
+  titleHidden?: boolean;
   notifications?: { items: NotificationItem[]; count: number };
 }
 
@@ -42,6 +44,7 @@ export function TopBar({
   period,
   onPeriodChange,
   showSearch = true,
+  titleHidden = false,
   notifications,
 }: TopBarProps) {
   const t = useT();
@@ -65,7 +68,7 @@ export function TopBar({
             </Link>
           )}
           {eyebrow && <div className="eyebrow lb-topbar__eyebrow">{eyebrow}</div>}
-          <div className="lb-topbar__h1row">
+          <div className={titleHidden ? 'sr-only' : 'lb-topbar__h1row'}>
             <h1 className="lb-topbar__h1">{title}</h1>
             {titleBadge}
           </div>

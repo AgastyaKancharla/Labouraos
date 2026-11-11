@@ -258,6 +258,98 @@ export class MatchingService {
     return result;
   }
 
+  /**
+   * The other direction of the same rules: open vacancies that suit one job
+   * seeker (the call agent's "Best matching jobs" and "Book an interview").
+   * A vacancy is listed only if the seeker passes that vacancy's own Step 1
+   * filters (evaluate(), nothing relaxed; salary near misses are left out).
+   * Nearest first, then the better-paid job. Business names are never
+   * returned: they stay hidden until he says yes to the offer.
+   */
+  async jobsForSeeker(jobSeekerRef: string, options: { page: number; vacancyId?: string }) {
+    if (!Number.isInteger(options.page) || options.page < 1) {
+      throw new BadRequestException('page must be a positive integer');
+    }
+    const policy = await this.pricingService.current();
+    const pageSize = policy.matchPageSize;
+    const now = this.clock.now();
+    const [seeker] = await this.loadCandidatePool(
+      jobSeekerRef.startsWith('JS-') ? { code: jobSeekerRef } : { id: jobSeekerRef },
+    );
+    if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerRef}' not found`);
+    const empty = (reason: string) => ({ jobSeekerId: seeker.id, page: options.page, pageSize, total: 0, blockedReason: reason, jobs: [] });
+    if (seeker.status !== 'active') return empty('not_active');
+    const purposes = new Set(seeker.consents.filter((c) => c.granted && c.grantedAt && !c.withdrawnAt).map((c) => c.purpose));
+    if (!purposes.has('job_matching') || !purposes.has('profile_sharing')) return empty('consent_missing');
+    if (this.hasLiveOffer(seeker.id, seeker)) return empty('live_offer');
+    if (seeker.latitude === null || seeker.longitude === null) return empty('no_location');
+    if (seeker.travelDistanceKm === null) return empty('no_travel_distance');
+    const listedTrades = new Set(
+      (await this.prisma.trade.findMany({ where: { active: true }, select: { nameKey: true } })).map((row) => row.nameKey),
+    );
+    const seekerTrades = seeker.trades.map((t) => tradeKey(t.trade)).filter((key) => listedTrades.has(key));
+    if (seekerTrades.length === 0) return empty('no_listed_trade');
+
+    const weights = this.readWeights(policy.matchingWeights);
+    const vacancies = await this.prisma.vacancy.findMany({
+      where: { status: 'open', latitude: { not: null }, longitude: { not: null }, ...(options.vacancyId ? { id: options.vacancyId } : {}) },
+      include: {
+        business: true,
+        interviewSlots: {
+          where: { startsAt: { gt: now } },
+          orderBy: { startsAt: 'asc' },
+          take: 6,
+          include: { interviews: { where: { status: { in: ['offered', 'confirmed'] } }, select: { id: true } } },
+        },
+      },
+    });
+    const suitable: Array<{ vacancy: (typeof vacancies)[number]; distanceKm: number; monthlyMax: number }> = [];
+    for (const row of vacancies) {
+      const vacancy = row as unknown as VacancyForMatching;
+      if (!seekerTrades.includes(tradeKey(vacancy.tradeSkill))) continue;
+      if (!businessCandidateAccess(vacancy.business).allowed) continue;
+      const { matches } = this.evaluate(vacancy, [seeker], policy, weights, now);
+      if (matches.length === 0) continue;
+      const distanceKm = distanceInKm(seeker.latitude, seeker.longitude, vacancy.latitude!, vacancy.longitude!);
+      const monthlyMax = monthlyAmount(vacancy.salaryMaxPaise ?? vacancy.salaryMinPaise ?? 0, vacancy.salaryPeriod, policy.salaryDaysPerMonth);
+      suitable.push({ vacancy: row, distanceKm, monthlyMax });
+    }
+    suitable.sort((a, b) =>
+      a.distanceKm - b.distanceKm || b.monthlyMax - a.monthlyMax || a.vacancy.code.localeCompare(b.vacancy.code));
+    const offset = (options.page - 1) * pageSize;
+    const round = (km: number) => Math.round(km * 10) / 10;
+    const jobs = suitable.slice(offset, offset + pageSize).map(({ vacancy, distanceKm }) => ({
+      vacancyId: vacancy.id,
+      vacancyCode: vacancy.code,
+      trade: vacancy.tradeSkill,
+      roleTitle: vacancy.roleTitle,
+      locality: vacancy.locality,
+      businessType: vacancy.business.businessType,
+      salaryMinPaise: monthlyAmount(vacancy.salaryMinPaise ?? 0, vacancy.salaryPeriod, policy.salaryDaysPerMonth),
+      salaryMaxPaise: monthlyAmount(vacancy.salaryMaxPaise ?? vacancy.salaryMinPaise ?? 0, vacancy.salaryPeriod, policy.salaryDaysPerMonth),
+      shift: vacancy.shift,
+      workingHours: vacancy.workingHours,
+      weeklyOff: vacancy.weeklyOff,
+      extras: vacancy.extras,
+      interviewType: vacancy.interviewType,
+      distanceKm: round(distanceKm),
+      suitability: {
+        sameTrade: true,
+        salaryInRange: true,
+        distanceKm: round(distanceKm),
+        travelDistanceKm: seeker.travelDistanceKm,
+        shift: vacancy.shift ?? seeker.shiftPreference,
+      },
+      slots: vacancy.interviewSlots.map((slot) => ({
+        id: slot.id,
+        startsAt: slot.startsAt.toISOString(),
+        endsAt: slot.endsAt.toISOString(),
+        placesLeft: slot.capacity === null ? null : Math.max(0, slot.capacity - slot.interviews.length),
+      })),
+    }));
+    return { jobSeekerId: seeker.id, page: options.page, pageSize, total: suitable.length, blockedReason: null, jobs };
+  }
+
   private async loadCandidatePool(seekerWhere: Prisma.JobSeekerWhereInput): Promise<MatchCandidate[]> {
     const seekers = (await this.prisma.jobSeeker.findMany({
       where: seekerWhere,

@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LiveModule } from '../../common/live/live.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { TelephonyModule } from '../telephony/telephony.module';
 import { ConsentModule } from '../consent/consent.module';
@@ -7,6 +8,9 @@ import { CallService } from './call.service';
 import { CallClock } from './call-clock';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { RecordingCopyJob } from './recording-copy.job';
+import { CallFollowThroughService } from './call-follow-through.service';
+import { MessageModule } from '../message/message.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import {
   HttpRecordingDownloader,
   RECORDING_DOWNLOADER,
@@ -16,11 +20,12 @@ import {
 } from './recording-storage';
 
 @Module({
-  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule],
+  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule, MessageModule, ReviewFlagModule, LiveModule],
   controllers: [CallController],
   providers: [
     CallService,
     CallClock,
+    CallFollowThroughService,
     RecordingCopyJob,
     {
       provide: RECORDING_STORAGE,
