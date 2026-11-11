@@ -519,12 +519,24 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     });
     const ceoToken = jwt.sign({ sub: ceo.id, email: ceo.email, role: 'ceo', code: ceo.code, teamLeadId: null });
     try {
-      const partnerPhone = `93${timestamp.toString().slice(-8)}`;
+      // A mobile no other row uses: '9' + 9 random digits, checked against partners and job seekers.
+      const unusedMobile = async (): Promise<string> => {
+        for (;;) {
+          const candidate = `9${String(Math.floor(Math.random() * 1e9)).padStart(9, '0')}`;
+          const variants = [candidate, `91${candidate}`, `+91${candidate}`];
+          const [r, j] = await Promise.all([
+            prismaRef.referral.count({ where: { phone: { in: variants } } }),
+            prismaRef.jobSeeker.count({ where: { phone: { in: variants } } }),
+          ]);
+          if (!r && !j) return candidate;
+        }
+      };
+      const partnerPhone = await unusedMobile();
       const partner = await request(app.getHttpServer())
         .post('/referrals')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({
-          name: 'Paused Partner', phone: partnerPhone, whatsappPhone: partnerPhone, language: 'en', type: 'individual',
+          name: `Paused Partner ${partnerPhone.slice(-4)}`, phone: partnerPhone, whatsappPhone: partnerPhone, language: 'en', type: 'individual',
           individualRole: 'other', locality: 'Jayanagar', pincode: '560041', heardFrom: 'other', otpRequestId: await getVerifiedOtp(partnerPhone),
         })
         .expect(201);
@@ -537,7 +549,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       expect(paused).toMatchObject({ pausedByStaffId: ceo.id, pauseReason: 'Sending fake candidates' });
       expect(await prismaRef.auditLog.count({ where: { action: 'referral.paused', entityCode: partner.body.code } })).toBe(1);
 
-      const seekerPhone = `94${timestamp.toString().slice(-8)}`;
+      const seekerPhone = await unusedMobile();
       const register = async () =>
         request(app.getHttpServer())
           .post('/job-seekers')
@@ -553,6 +565,8 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       expect(accepted.status).toBe(201);
       await prismaRef.jobSeekerTrade.deleteMany({ where: { jobSeekerId: accepted.body.id } });
       await prismaRef.jobSeeker.deleteMany({ where: { id: accepted.body.id } }).catch(() => undefined);
+      await prismaRef.publicLink.deleteMany({ where: { subjectType: 'referral', subjectId: id } }).catch(() => undefined);
+      await prismaRef.referral.deleteMany({ where: { id } }).catch(() => undefined);
     } finally {
       await prismaRef.auditLog.deleteMany({ where: { actorId: ceo.id } });
       await prismaRef.staff.delete({ where: { id: ceo.id } }).catch(() => undefined);
