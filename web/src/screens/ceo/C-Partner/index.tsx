@@ -16,6 +16,7 @@ import { PAYMENT_STATUS, SEEKER_STATUS } from '../_kit/labels';
 
 /** Referral partner page — design C-Partner.dc.html. */
 interface Detail {
+  paused?: { at: string; reason: string | null } | null;
   id: string;
   code: string;
   name: string;
@@ -62,7 +63,29 @@ export default function PartnerDetail() {
         back={back}
         title={`${d.name} · ${d.code}`}
         subtitle={`${c.referred} referred · ${c.registered} registered · ${c.joined} joined · ${formatINR(c.earnedPaise)} earned · ${formatINR(c.duePaise)} due.`}
+        titleBadge={d.paused ? <StatusPill tone="danger">Paused</StatusPill> : undefined}
         actions={
+          <>
+          {d.paused ? (
+            <ActionButton
+              label="Unpause partner"
+              title={`Unpause ${d.name}`}
+              description="Agents can register new referrals from this partner again."
+              reason={{ label: 'Note (optional)', required: false }}
+              run={({ reason }) => api.post(`/referrals/${d.id}/unpause`, { reason: reason || undefined })}
+              success={`${d.name} is unpaused`}
+            />
+          ) : (
+            <ActionButton
+              label="Pause partner"
+              variant="danger"
+              title={`Pause ${d.name}`}
+              description="New referrals naming this partner are refused until you unpause. Money already earned is still paid."
+              reason
+              run={({ reason }) => api.post(`/referrals/${d.id}/pause`, { reason })}
+              success={`${d.name} is paused`}
+            />
+          )}
           <ActionButton
             label="Release due payouts"
             variant="primary"
@@ -74,8 +97,14 @@ export default function PartnerDetail() {
             }}
             success="Payouts approved — Finance pays them today"
           />
+          </>
         }
       />
+      {d.paused && (
+        <div className="panel" role="status" style={{ padding: '12px 18px', borderLeft: '4px solid var(--red-raw)' }}>
+          <strong>Paused {formatDateIST(d.paused.at)}</strong> — {d.paused.reason ?? 'no reason recorded'}. New referrals from this partner are refused; money already earned is still paid.
+        </div>
+      )}
       <div className="two-col">
         <Card title="Partner">
           <Kv

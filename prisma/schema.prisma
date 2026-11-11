@@ -311,6 +311,11 @@ model Referral {
   jobSeekers    JobSeeker[]
   payments      Payment[]
   identityVerifications ReferralIdentityVerification[]
+  /// Paused by the CEO (guide, Referral partners): new referrals naming this
+  /// partner are refused; money already earned is still paid. Unpause restores.
+  pausedAt      DateTime?
+  pausedByStaffId String?
+  pauseReason   String?
   anonymisedAt  DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
@@ -724,6 +729,9 @@ model Staff {
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?
   worksFromOffice   Boolean          @default(false)
+  /// A Team Lead's team name ("Team South"), set by the CEO on the Teams
+  /// screen. Null for everyone else; a team is its Team Lead and their agents.
+  teamName          String?
   failedLoginCount  Int              @default(0)
   lockedUntil       DateTime?
   lockedByStaffId   String?
@@ -1383,6 +1391,28 @@ model AttendanceDay {
 
 /// A public holiday: a paid day off for everyone, set by the CEO per year.
 /// Never absent, not a leave day, not a working day.
+/// Bengaluru areas agents pick on every form (guide, Forms: "Areas: picked
+/// from a list of Bengaluru areas that the CEO and Managers manage in the
+/// Command Center"). Never deleted: a duplicate is merged into another area
+/// (records move to its name) and switched off.
+model Area {
+  id               String   @id @default(uuid())
+  name             String
+  /// Lower-case name with spaces collapsed; unique so "HSR layout" and "HSR Layout" are one area.
+  nameKey          String   @unique
+  pincode          String?
+  latitude         Float?
+  longitude        Float?
+  active           Boolean  @default(true)
+  mergedIntoId     String?
+  createdByStaffId String?
+  updatedByStaffId String?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([active])
+}
+
 model Holiday {
   id               String   @id @default(uuid())
   /// IST calendar date.

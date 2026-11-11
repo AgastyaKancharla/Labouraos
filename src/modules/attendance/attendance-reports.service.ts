@@ -175,6 +175,8 @@ export class AttendanceReportsService {
           .map((row) => ({ date: row.date, minutes: row.lateMinutes })),
       },
       days: rows.map((row) => ({
+        /** The day's id, for "Change day" (POST /attendance/days/:dayId/day-type). */
+        id: row.id,
         date: row.date,
         dayType: row.dayType,
         loginAt: row.loginAt,
@@ -187,6 +189,8 @@ export class AttendanceReportsService {
         shortfallSeconds: row.shortfallSeconds,
         makeUpSeconds: row.makeUpSeconds,
         hoursLostSeconds: row.shortfallSeconds + row.idleSeconds,
+        leaveKind: row.leaveKind,
+        change: row.change,
       })),
       totals,
     };

@@ -92,4 +92,20 @@ export class ReferralController {
       teamLeadId: req.user.teamLeadId,
     });
   }
+
+  /** Pause a partner: CEO only, reason required, audited (guide, Referral partners). */
+  @Post(':id/pause')
+  @RequireRoles('ceo')
+  @RequirePermission('referral', 'write')
+  async pause(@Param('id') id: string, @Body('reason') reason: unknown, @Req() req: Request & { user: JwtPayload }) {
+    return this.referralService.pause(id, req.user.sub, reason);
+  }
+
+  /** Unpause: the partner takes new referrals again. CEO only, audited. */
+  @Post(':id/unpause')
+  @RequireRoles('ceo')
+  @RequirePermission('referral', 'write')
+  async unpause(@Param('id') id: string, @Body('reason') reason: unknown, @Req() req: Request & { user: JwtPayload }) {
+    return this.referralService.unpause(id, req.user.sub, reason);
+  }
 }

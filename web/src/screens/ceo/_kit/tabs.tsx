@@ -1,3 +1,4 @@
+import './ceo.css';
 import { LinkTabs } from '../../../components/Tabs';
 import { useScreenPath } from '../../../portals/PortalContext';
 
@@ -39,6 +40,78 @@ export function PaymentTabs() {
         { to: to('C-Payments'), label: 'Money in' },
         { to: to('C-Payments-Out'), label: 'Money out' },
         { to: to('C-Payments-GST'), label: 'GST & invoices' },
+      ]}
+    />
+  );
+}
+
+export function TeamTabs() {
+  const to = useScreenPath();
+  return (
+    <LinkTabs
+      label="Team & access"
+      items={[
+        { to: to('C-Team'), label: 'Staff & roles' },
+        { to: to('C-Teams'), label: 'Teams' },
+        { to: to('C-Team-Salaries'), label: 'Salaries' },
+        { to: to('C-Team-Devices'), label: 'Devices & logins' },
+      ]}
+    />
+  );
+}
+
+export function AttendanceTabs({ personId }: { personId?: string }) {
+  const to = useScreenPath();
+  return (
+    <LinkTabs
+      label="Attendance"
+      items={[
+        { to: to('C-Team-Attendance'), label: 'Today', end: true },
+        { to: to('C-Att-Live'), label: 'Live board' },
+        { to: to('C-Team-Leave'), label: 'Leave & corrections' },
+        ...(personId ? [{ to: to('C-Att-Person', { staffId: personId }), label: "One person's report" }] : []),
+      ]}
+    />
+  );
+}
+
+export function TargetTabs() {
+  const to = useScreenPath();
+  return (
+    <LinkTabs
+      label="Targets"
+      items={[
+        { to: to('C-Team-Targets'), label: 'Targets' },
+        { to: to('C-Leaderboard'), label: 'Leaderboard' },
+      ]}
+    />
+  );
+}
+
+export function AuditTabs() {
+  const to = useScreenPath();
+  return (
+    <LinkTabs
+      label="Audit"
+      items={[
+        { to: to('C-Audit'), label: 'Activity' },
+        { to: to('C-Audit-Flags'), label: 'Flags' },
+      ]}
+    />
+  );
+}
+
+export function PricingTabs() {
+  const to = useScreenPath();
+  return (
+    <LinkTabs
+      label="Pricing & policy"
+      items={[
+        { to: to('C-Pricing'), label: 'Prices & rules', end: true },
+        { to: to('C-Pricing-Trades'), label: 'Trades & salary ranges' },
+        { to: to('C-Pricing-Areas'), label: 'Areas' },
+        { to: to('C-Pricing-MinWage'), label: 'Legal minimum wage' },
+        { to: to('C-Pricing-Data'), label: 'Keeping data' },
       ]}
     />
   );

@@ -24,7 +24,8 @@ function makeService(prisma: Record<string, unknown>, registration?: unknown) {
   };
   const pricing = { current: jest.fn().mockResolvedValue({ jobSeekerGuaranteeDays: 30 }) };
   const clock = { now: () => NOW };
-  return new ScreensCallRegistrationService(prisma as never, jobSeekers as never, pricing as never, clock as never);
+  const areas = { options: jest.fn().mockResolvedValue([...BENGALURU_AREAS]) };
+  return new ScreensCallRegistrationService(prisma as never, jobSeekers as never, pricing as never, clock as never, areas as never);
 }
 
 const seekerRow = {
@@ -62,11 +63,11 @@ function seekerPrisma(overrides: Record<string, unknown> = {}) {
 }
 
 describe('ScreensCallRegistrationService', () => {
-  it('serves the Bengaluru area list with a pincode and pin for each area', () => {
+  it('serves the managed Bengaluru area list with a pincode and pin for each area', async () => {
     const service = makeService({});
-    const { areas, city } = service.options();
+    const { areas, city } = await service.options();
     expect(city).toBe('Bengaluru');
-    expect(areas).toBe(BENGALURU_AREAS);
+    expect(areas).toEqual(BENGALURU_AREAS);
     for (const area of areas) {
       expect(area.pincode).toMatch(/^560\d{3}$/);
       expect(area.latitude).toBeGreaterThan(12.7);

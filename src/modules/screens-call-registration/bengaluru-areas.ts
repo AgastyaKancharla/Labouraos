@@ -3,11 +3,11 @@
  * picked from a list of Bengaluru areas that the CEO and Managers manage in
  * the Command Center").
  *
- * The Command Center screen that manages this list (C-Pricing-Areas) has no
- * table behind it yet, so this is the starting list. Each area carries a
- * typical pincode and the centre point the map pin starts from; the agent
- * can change both. Replace this constant with the managed list when it
- * exists — the endpoint's answer keeps the same shape.
+ * This is the starting list only: migration 20261115150000_areas_and_team_names
+ * copied it into the Area table, which the CEO and Managers manage on
+ * C-Pricing-Areas and every form reads (AreaService.options). Each area
+ * carries a typical pincode and the centre point the map pin starts from;
+ * the agent can change both.
  */
 export interface BengaluruArea {
   name: string;

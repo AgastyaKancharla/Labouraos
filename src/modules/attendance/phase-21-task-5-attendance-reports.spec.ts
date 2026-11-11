@@ -222,6 +222,8 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
     const res = await get(leadA, `/attendance/report?staffId=${agentA3.id}&from=2027-06-08&to=2027-06-09`);
     expect(res.status).toBe(200);
     expect(res.body.lateLogins).toEqual({ count: 1, days: [{ date: '2027-06-08', minutes: 20 }] });
+    // Each day carries its id (for Change day) and any change made to it.
+    expect(res.body.days.every((row: { id: string; change: unknown }) => typeof row.id === 'string' && 'change' in row)).toBe(true);
     expect(res.body.days.map((row: { date: string; productionSeconds: number }) => [row.date, row.productionSeconds])).toEqual([
       ['2027-06-08', 7 * HOUR + 40 * MIN],
       ['2027-06-09', 8 * HOUR + 11 * MIN],

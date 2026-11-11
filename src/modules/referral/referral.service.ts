@@ -223,4 +223,54 @@ export class ReferralService {
     }
     return referral;
   }
+
+  /**
+   * Pause a partner (CEO only — enforced on the route; guide, Referral
+   * partners). A reason is required and the change is audited. While paused,
+   * new referrals naming this partner are refused (JobSeekerService.create);
+   * payouts already earned are still paid.
+   */
+  async pause(id: string, actorId: string, reason: unknown) {
+    const text = typeof reason === 'string' ? reason.trim() : '';
+    if (!text) throw new BadRequestException('A reason is required to pause a partner');
+    const partner = await this.prisma.referral.findUnique({ where: { id } });
+    if (!partner) throw new NotFoundException(`Referral partner '${id}' not found`);
+    if (partner.pausedAt) throw new BadRequestException(`${partner.code} is already paused`);
+    const updated = await this.prisma.referral.update({
+      where: { id },
+      data: { pausedAt: new Date(), pausedByStaffId: actorId, pauseReason: text },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'referral.paused',
+      entityType: 'referral',
+      entityCode: partner.code,
+      before: { pausedAt: null },
+      after: { pausedAt: updated.pausedAt?.toISOString(), pauseReason: text },
+      reason: text,
+    });
+    return updated;
+  }
+
+  /** Unpause: the partner takes new referrals again. Audited. */
+  async unpause(id: string, actorId: string, reason?: unknown) {
+    const partner = await this.prisma.referral.findUnique({ where: { id } });
+    if (!partner) throw new NotFoundException(`Referral partner '${id}' not found`);
+    if (!partner.pausedAt) throw new BadRequestException(`${partner.code} is not paused`);
+    const updated = await this.prisma.referral.update({
+      where: { id },
+      data: { pausedAt: null, pausedByStaffId: null, pauseReason: null },
+    });
+    const text = typeof reason === 'string' && reason.trim() ? reason.trim() : undefined;
+    await this.auditService.log({
+      actorId,
+      action: 'referral.unpaused',
+      entityType: 'referral',
+      entityCode: partner.code,
+      before: { pausedAt: partner.pausedAt.toISOString(), pauseReason: partner.pauseReason },
+      after: { pausedAt: null },
+      ...(text ? { reason: text } : {}),
+    });
+    return updated;
+  }
 }

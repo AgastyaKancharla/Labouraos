@@ -7,9 +7,9 @@ import { PricingService } from '../pricing/pricing.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { tradeNameKey } from '../trade/trade.service';
 import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
-import { BENGALURU_AREAS } from './bengaluru-areas';
 import { phoneSearchTerm } from '../../common/phone/indian-mobile';
 import { readPublicLinkPhone } from '../../common/public-link-store.service';
+import { AreaService } from '../area/area.service';
 
 /**
  * Read endpoints for the call agent console's registration screens
@@ -53,11 +53,15 @@ export class ScreensCallRegistrationService {
     private readonly jobSeekers: JobSeekerService,
     private readonly pricing: PricingService,
     private readonly clock: ConsentClock,
+    private readonly areas: AreaService,
   ) {}
 
-  /** Areas list for every registration form; the pincode fills the city. */
-  options() {
-    return { city: 'Bengaluru', areas: BENGALURU_AREAS };
+  /**
+   * Areas list for every registration form; the pincode fills the city. Read
+   * from the Areas list the CEO and Managers manage (C-Pricing-Areas).
+   */
+  async options() {
+    return { city: 'Bengaluru', areas: await this.areas.options() };
   }
 
   private async findSeeker(ref: string) {
