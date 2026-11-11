@@ -2,8 +2,11 @@
  * Which payment provider is bound (AGENTS.md §3: PAYMENT_PROVIDER_MODE, with
  * the older PAYMENT_PROVIDER as a fallback; `mock` when unset).
  */
+const MODE_SETTING = 'PAYMENT_PROVIDER_MODE';
+const LEGACY_MODE_SETTING = 'PAYMENT_PROVIDER';
+
 export function paymentProviderMode(env: NodeJS.ProcessEnv = process.env): string {
-  const raw = env.PAYMENT_PROVIDER_MODE || env.PAYMENT_PROVIDER;
+  const raw = env[MODE_SETTING] || env[LEGACY_MODE_SETTING];
   return raw && raw !== 'undefined' ? raw : 'mock';
 }
 
