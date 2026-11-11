@@ -14,6 +14,7 @@ import { calculatePlacementFee, calculateGst } from '../../common/money/money';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { TradeService } from '../trade/trade.service';
+import { receiptToken } from './receipt-link';
 
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
@@ -271,7 +272,9 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           template: 'payment_receipt',
           subjectType: 'job_seeker',
           subjectId: 'js-1',
-          variables: { link: 'https://app.laboura.in/payments/pay-1/receipt' },
+          variables: {
+            link: `https://app.laboura.in/payments/pay-1/receipt?token=${receiptToken('pay-1')}`,
+          },
         }),
       );
     });

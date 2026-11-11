@@ -41,6 +41,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
+import { receiptLink } from './receipt-link';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -332,11 +333,11 @@ export class PaymentService {
           reactivation: transition.payment.reactivation,
         }, city: transition.updatedSeeker.city,
       });
-      const receiptLink = publicLink(`/payments/${paymentId}/receipt`);
+      const paymentReceiptLink = receiptLink(paymentId);
       await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
         channel, template: 'payment_receipt', subjectType: 'job_seeker',
         subjectId: transition.updatedSeeker!.id, relatedType: 'payment', relatedId: paymentId,
-        variables: { link: receiptLink },
+        variables: { link: paymentReceiptLink },
       })));
     }
     if (transition.placementTransition) {
