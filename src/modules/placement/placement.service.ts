@@ -26,6 +26,7 @@ import { isValidClaimReason, isRejectClaimReason } from './claim-reasons';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
 import { businessRefundNeedsCeo, ceoApprovalMessage } from '../../common/money/approval-limits';
+import { decisionTime } from '../../common/time/decision-time';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import {
   GstInvoiceResponse,
@@ -1528,15 +1529,8 @@ export class PlacementService {
         })
       : placement;
 
-    let now: Date;
-    if (dto?.asOf) {
-      now = new Date(dto.asOf);
-      if (isNaN(now.getTime())) {
-        throw new BadRequestException('asOf must be a valid date string');
-      }
-    } else {
-      now = new Date();
-    }
+    // A caller's asOf stands in for the clock only in tests; production uses the server clock.
+    const now = decisionTime(dto?.asOf);
 
     const goodwill = dto?.goodwill === true;
     const note = typeof dto?.reason === 'string' && dto.reason.trim() ? dto.reason.trim() : null;

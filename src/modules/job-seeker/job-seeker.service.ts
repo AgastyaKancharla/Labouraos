@@ -8,6 +8,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { decisionTime } from '../../common/time/decision-time';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
@@ -925,15 +926,8 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${id}' not found`);
     }
 
-    let now: Date;
-    if (dto?.asOf) {
-      now = new Date(dto.asOf);
-      if (isNaN(now.getTime())) {
-        throw new BadRequestException('asOf must be a valid date string');
-      }
-    } else {
-      now = new Date();
-    }
+    // A caller's asOf stands in for the clock only in tests; production uses the server clock.
+    const now = decisionTime(dto?.asOf);
 
     const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 

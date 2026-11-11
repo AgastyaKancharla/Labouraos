@@ -20,6 +20,7 @@ import { matchReceiverName } from '../payout-account/name-matcher';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { loadJobSeekerRefundGuards } from '../job-seeker/job-seeker-refund-guards';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
+import { decisionTime } from '../../common/time/decision-time';
 import {
   businessRefundNeedsCeo,
   ceoApprovalMessage,
@@ -1195,7 +1196,8 @@ export class PaymentService {
       throw new BadRequestException(`Payment cannot be approved from status '${payment.status}'`);
     }
 
-    const now = asOf ? new Date(asOf) : new Date();
+    // A caller's asOf stands in for the clock only in tests; production uses the server clock.
+    const now = decisionTime(asOf);
     // Who is approving matters only for refunds (approval limits).
     const approver =
       payment.type === 'refund' ? await this.prisma.staff.findUnique({ where: { id: actorId } }) : null;
