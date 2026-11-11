@@ -14,10 +14,10 @@ import { isApiError } from '../../../lib/api/errors';
 import { formatDayMonthIST, formatTimeIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
-import { qk, type BusinessStatus } from '../_registration/api';
+import { qk, useScriptTerms, type BusinessStatus } from '../_registration/api';
 import { StepLegend, StepRow } from '../_registration/kit';
 import { CONTACT_ROLES } from '../_registration/options';
-import { BUSINESS_SCRIPT, type ScriptLanguage } from '../_registration/scripts';
+import { businessScript, type ScriptLanguage } from '../_registration/scripts';
 import '../_registration/registration.css';
 
 /**
@@ -29,6 +29,7 @@ import '../_registration/registration.css';
  */
 export default function BusinessSaved() {
   const t = useT();
+  const scriptTerms = useScriptTerms();
   const to = useScreenPath();
   const toast = useToast();
   const queryClient = useQueryClient();
@@ -163,7 +164,9 @@ export default function BusinessSaved() {
       </Card>
       <Modal open={preview} onClose={() => setPreview(false)} title={t('reg.biz.previewAgreement')}>
         <div className="script" lang={b.contactLanguage ?? 'en'} style={{ whiteSpace: 'pre-line' }}>
-          {BUSINESS_SCRIPT[(['kn', 'hi', 'en'].includes(b.contactLanguage ?? '') ? b.contactLanguage : 'en') as ScriptLanguage]}
+          {scriptTerms
+            ? businessScript(scriptTerms)[(['kn', 'hi', 'en'].includes(b.contactLanguage ?? '') ? b.contactLanguage : 'en') as ScriptLanguage]
+            : t('common.loading')}
         </div>
         <p className="muted">{t('reg.biz.previewNote')}</p>
       </Modal>

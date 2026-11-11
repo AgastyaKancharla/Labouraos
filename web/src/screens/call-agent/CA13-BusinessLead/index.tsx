@@ -13,7 +13,7 @@ import { istDateKey } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
-import { errorDetail, findTrade, useTrades } from '../_registration/api';
+import { errorDetail, findTrade, useScriptTerms, useTrades } from '../_registration/api';
 import {
   AlreadyRegistered,
   choiceOptions,
@@ -41,7 +41,7 @@ import {
   YEARS_RUNNING,
 } from '../_registration/options';
 import { isAboveMarket, isBelowLegalMinimum } from '../_registration/salary';
-import { BUSINESS_SCRIPT } from '../_registration/scripts';
+import { businessScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import {
   businessBody,
@@ -63,6 +63,7 @@ import {
  */
 export default function RegisterBusiness() {
   const t = useT();
+  const scriptTerms = useScriptTerms();
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -340,7 +341,7 @@ export default function RegisterBusiness() {
           </Button>
         </fieldset>
 
-        <ExplainScript n={household ? 5 : 6} title={t('reg.biz.explain')} scripts={BUSINESS_SCRIPT} language={form.language} note={t('reg.biz.explainNote')} />
+        <ExplainScript n={household ? 5 : 6} title={t('reg.biz.explain')} scripts={scriptTerms ? businessScript(scriptTerms) : null} language={form.language} note={t('reg.biz.explainNote')} />
 
         {saveError && (
           <div className="warn" role="alert">

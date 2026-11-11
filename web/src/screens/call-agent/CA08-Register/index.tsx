@@ -14,7 +14,7 @@ import { ageOn, istDateKey } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
-import { errorDetail, findTrade, useFormOptions, useTrades } from '../_registration/api';
+import { errorDetail, findTrade, useFormOptions, useScriptTerms, useTrades } from '../_registration/api';
 import {
   AlreadyRegistered,
   ChipPicker,
@@ -43,7 +43,7 @@ import {
   YEARS,
 } from '../_registration/options';
 import { guaranteeFloorPaise, isAboveMarket } from '../_registration/salary';
-import { JOB_SEEKER_CONSENT_SCRIPT } from '../_registration/scripts';
+import { jobSeekerConsentScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import { createBody, EMPTY_FORM, profileBody, tradeName, validate, type FieldError, type JobSeekerForm, type TradeRow } from './payload';
 
@@ -80,6 +80,7 @@ const ERROR_TEXT: Record<FieldError, MessageKey> = {
 
 export default function RegisterJobSeeker() {
   const t = useT();
+  const scriptTerms = useScriptTerms();
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -406,7 +407,7 @@ export default function RegisterJobSeeker() {
         <ExplainScript
           n={7}
           title={t(`reg.js.explain.${pronoun}`)}
-          scripts={JOB_SEEKER_CONSENT_SCRIPT}
+          scripts={scriptTerms ? jobSeekerConsentScript(scriptTerms) : null}
           language={form.messageLanguage}
           note={t('reg.js.explainNote')}
         />

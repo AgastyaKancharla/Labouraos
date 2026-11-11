@@ -57,11 +57,31 @@ export class ScreensCallRegistrationService {
   ) {}
 
   /**
-   * Areas list for every registration form; the pincode fills the city. Read
-   * from the Areas list the CEO and Managers manage (C-Pricing-Areas).
+   * Areas list for every registration form (the pincode fills the city), read
+   * from the Areas list the CEO and Managers manage (C-Pricing-Areas), plus
+   * the Settings values the read-aloud scripts quote (CA08, CA13, CA15): the
+   * ₹499 fee, the placement-fee percentage, GST, the referral reward and the
+   * guarantee periods, from the current PricingPolicy so the scripts never
+   * hard-code them. A Manager gets the rupee amounts stripped like every
+   * other money field.
    */
   async options() {
-    return { city: 'Bengaluru', areas: await this.areas.options() };
+    const [areas, policy] = await Promise.all([this.areas.options(), this.pricing.current()]);
+    return {
+      city: 'Bengaluru',
+      areas,
+      scriptTerms: {
+        activationFeePaise: policy.activationFeePaise,
+        referralPayoutPaise: policy.referralPayoutPaise,
+        placementFeePercent: policy.placementFeePercent,
+        gstPercent: policy.gstPercent,
+        jobSeekerGuaranteeDays: policy.jobSeekerGuaranteeDays,
+        replacementWindowDays: policy.replacementWindowDays,
+        maxFreeReplacements: policy.maxFreeReplacements,
+        noBypassMonths: policy.noBypassMonths,
+        noBypassPenaltyPercent: policy.noBypassPenaltyPercent,
+      },
+    };
   }
 
   private async findSeeker(ref: string) {

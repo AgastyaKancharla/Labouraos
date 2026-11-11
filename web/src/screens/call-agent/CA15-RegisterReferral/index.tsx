@@ -10,7 +10,7 @@ import { useT } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
 import { isApiError } from '../../../lib/api/errors';
 import { useScreenPath } from '../../../portals/PortalContext';
-import { errorDetail, type BusinessHit } from '../_registration/api';
+import { errorDetail, useScriptTerms, type BusinessHit } from '../_registration/api';
 import {
   AlreadyRegistered,
   choiceOptions,
@@ -24,7 +24,7 @@ import {
   type MobileState,
 } from '../_registration/kit';
 import { BUSINESS_TYPES, HEARD_FROM, INDIVIDUAL_ROLES, MESSAGE_LANGUAGES } from '../_registration/options';
-import { REFERRAL_SCRIPT } from '../_registration/scripts';
+import { referralScript } from '../_registration/scripts';
 import { useDraft } from '../_registration/useDraft';
 import { EMPTY_REFERRAL, referralBody, referralErrors, type ReferralForm } from './payload';
 
@@ -36,6 +36,7 @@ import { EMPTY_REFERRAL, referralBody, referralErrors, type ReferralForm } from 
  */
 export default function RegisterReferral() {
   const t = useT();
+  const scriptTerms = useScriptTerms();
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -175,7 +176,7 @@ export default function RegisterReferral() {
           </div>
         </fieldset>
 
-        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={REFERRAL_SCRIPT} language={form.language} note={t('reg.ref.explainNote')} />
+        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={scriptTerms ? referralScript(scriptTerms) : null} language={form.language} note={t('reg.ref.explainNote')} />
 
         {saveError && (
           <div className="warn" role="alert">

@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { api } from '../../../lib/api/client';
 import { isApiError } from '../../../lib/api/errors';
+import type { ScriptTerms } from './scripts';
 
 /** Shapes of the reads in src/modules/screens-call-registration and the existing endpoints these screens use. */
 export interface Area {
@@ -150,9 +151,15 @@ export const qk = {
 export function useFormOptions() {
   return useQuery({
     queryKey: qk.options,
-    queryFn: () => api.get<{ city: string; areas: Area[] }>('/screens/call-registration/options'),
-    staleTime: 60 * 60_000,
+    queryFn: () => api.get<{ city: string; areas: Area[]; scriptTerms?: ScriptTerms }>('/screens/call-registration/options'),
+    // Short, so a change in Settings reaches the scripts the agent reads out.
+    staleTime: 5 * 60_000,
   });
+}
+
+/** Fees, percentages and periods for the read-aloud scripts, from Settings (null while loading). */
+export function useScriptTerms(): ScriptTerms | null {
+  return useFormOptions().data?.scriptTerms ?? null;
 }
 
 export function useTrades() {

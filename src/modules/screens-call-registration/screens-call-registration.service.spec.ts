@@ -75,6 +75,28 @@ describe('ScreensCallRegistrationService', () => {
     }
   });
 
+  it('gives the read-aloud scripts their fees and periods from the current Settings, never fixed values', async () => {
+    const policy = {
+      activationFeePaise: 59900,
+      referralPayoutPaise: 25000,
+      placementFeePercent: 40,
+      gstPercent: 12,
+      jobSeekerGuaranteeDays: 45,
+      replacementWindowDays: 90,
+      maxFreeReplacements: 3,
+      noBypassMonths: 18,
+      noBypassPenaltyPercent: 25,
+    };
+    const pricing = { current: jest.fn().mockResolvedValue(policy) };
+    const areas = { options: jest.fn().mockResolvedValue([]) };
+    const service = new ScreensCallRegistrationService({} as never, {} as never, pricing as never, { now: () => NOW } as never, areas as never);
+    expect((await service.options()).scriptTerms).toEqual(policy);
+
+    // Settings changed: the next answer carries the new values.
+    pricing.current.mockResolvedValue({ ...policy, activationFeePaise: 49900, placementFeePercent: 50, gstPercent: 18 });
+    expect((await service.options()).scriptTerms).toMatchObject({ activationFeePaise: 49900, placementFeePercent: 50, gstPercent: 18 });
+  });
+
   it('fills the city from a Bengaluru pincode only', () => {
     expect(cityForPincode('560076')).toBe('Bengaluru');
     expect(cityForPincode('600001')).toBeNull();
