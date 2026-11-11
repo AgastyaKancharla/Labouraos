@@ -1,0 +1,82 @@
+/* The public referral partner terms page (screens/public/P-ReferralTerms).
+   Written from the Master Guide's referral rules (what earns, when it is paid,
+   payout details) and the partner pause rule already built; no legal terms
+   beyond those. Amounts come from Settings through {reward}, {fee}, {hours}.
+   Kannada and Hindi need a native speaker's review. */
+
+export const referralTermsEn = {
+  'screen.P-ReferralTerms': 'Referral partner terms',
+  'rterms.intro': 'The rules for Laboura referral partners, in plain words. You agree to them with an OTP on your registration link.',
+  'rterms.earn.title': 'What earns money',
+  'rterms.earn.join': 'You earn {reward} when a job seeker you referred joins a job through Laboura.',
+  'rterms.earn.notPay': 'You do not earn when they register or pay their {fee} — only when they join.',
+  'rterms.earn.business': 'For now only job seekers who join earn the reward. Payment for referring businesses has not been decided yet.',
+  'rterms.earn.self': 'You never earn for referring yourself.',
+  'rterms.paid.title': 'When you are paid',
+  'rterms.paid.queued': 'The reward is queued on the day the person joins. The CEO or Finance releases it, and payouts are sent every day.',
+  'rterms.paid.how': 'It is sent by UPI, or to your bank account, from Laboura’s company account — only to details in your own name, checked against the name on your ID.',
+  'rterms.paid.linked': 'Each payout is linked to the exact joining it is for.',
+  'rterms.details.title': 'Your payout details',
+  'rterms.details.add': 'You add your UPI ID (or bank account) yourself, on your own phone, with an OTP.',
+  'rterms.details.change': 'Changing them needs an OTP on your registered phone, then a {hours}-hour wait before the next payout, and Finance is told. This stops anyone quietly putting in their own UPI.',
+  'rterms.pause.title': 'Pausing a partner',
+  'rterms.pause.who': 'The CEO can pause a partner, with a written reason.',
+  'rterms.pause.effect': 'While you are paused, new referrals naming you are not accepted. Money you have already earned is still paid.',
+  'rterms.calls.title': 'Calls and your details',
+  'rterms.calls.recorded': 'Calls with Laboura are recorded; you agree to this when you sign the terms.',
+  'rterms.calls.id': 'We check your ID and keep only the result — never your Aadhaar number.',
+  'rterms.version': 'Terms version {version}. Questions? Ask the Laboura agent who registered you.',
+  'rterms.open': 'Open the full referral partner terms',
+} as const;
+
+export type ReferralTermsKey = keyof typeof referralTermsEn;
+
+export const referralTermsKn: Record<ReferralTermsKey, string> = {
+  'screen.P-ReferralTerms': 'ರೆಫರಲ್ ಪಾಲುದಾರರ ನಿಯಮಗಳು',
+  'rterms.intro': 'Laboura ರೆಫರಲ್ ಪಾಲುದಾರರ ನಿಯಮಗಳು, ಸರಳ ಮಾತುಗಳಲ್ಲಿ. ನಿಮ್ಮ ನೋಂದಣಿ ಲಿಂಕ್‌ನಲ್ಲಿ OTP ಮೂಲಕ ನೀವು ಇವುಗಳಿಗೆ ಒಪ್ಪುತ್ತೀರಿ.',
+  'rterms.earn.title': 'ಯಾವುದಕ್ಕೆ ಹಣ ಸಿಗುತ್ತದೆ',
+  'rterms.earn.join': 'ನೀವು ರೆಫರ್ ಮಾಡಿದ ಉದ್ಯೋಗಾಕಾಂಕ್ಷಿ Laboura ಮೂಲಕ ಕೆಲಸಕ್ಕೆ ಸೇರಿದಾಗ ನಿಮಗೆ {reward} ಸಿಗುತ್ತದೆ.',
+  'rterms.earn.notPay': 'ಅವರು ನೋಂದಾಯಿಸಿದಾಗ ಅಥವಾ {fee} ಪಾವತಿಸಿದಾಗ ಹಣ ಸಿಗುವುದಿಲ್ಲ — ಕೆಲಸಕ್ಕೆ ಸೇರಿದಾಗ ಮಾತ್ರ.',
+  'rterms.earn.business': 'ಸದ್ಯಕ್ಕೆ ಕೆಲಸಕ್ಕೆ ಸೇರುವ ಉದ್ಯೋಗಾಕಾಂಕ್ಷಿಗಳಿಗೆ ಮಾತ್ರ ಬಹುಮಾನ. ವ್ಯಾಪಾರಗಳನ್ನು ರೆಫರ್ ಮಾಡಿದ್ದಕ್ಕೆ ಪಾವತಿ ಇನ್ನೂ ನಿರ್ಧಾರವಾಗಿಲ್ಲ.',
+  'rterms.earn.self': 'ನಿಮ್ಮನ್ನೇ ರೆಫರ್ ಮಾಡಿಕೊಂಡರೆ ಎಂದೂ ಹಣ ಸಿಗುವುದಿಲ್ಲ.',
+  'rterms.paid.title': 'ಯಾವಾಗ ಪಾವತಿ',
+  'rterms.paid.queued': 'ಆ ವ್ಯಕ್ತಿ ಕೆಲಸಕ್ಕೆ ಸೇರಿದ ದಿನವೇ ಬಹುಮಾನ ಸರತಿಗೆ ಸೇರುತ್ತದೆ. ಸಿಇಒ ಅಥವಾ ಫೈನಾನ್ಸ್ ಅದನ್ನು ಬಿಡುಗಡೆ ಮಾಡುತ್ತಾರೆ, ಪಾವತಿಗಳನ್ನು ಪ್ರತಿದಿನ ಕಳುಹಿಸಲಾಗುತ್ತದೆ.',
+  'rterms.paid.how': 'Laboura ಕಂಪನಿ ಖಾತೆಯಿಂದ UPI ಅಥವಾ ನಿಮ್ಮ ಬ್ಯಾಂಕ್ ಖಾತೆಗೆ ಕಳುಹಿಸಲಾಗುತ್ತದೆ — ನಿಮ್ಮ ಸ್ವಂತ ಹೆಸರಿನಲ್ಲಿರುವ ವಿವರಗಳಿಗೆ ಮಾತ್ರ, ನಿಮ್ಮ ಗುರುತಿನ ಚೀಟಿಯ ಹೆಸರಿನೊಂದಿಗೆ ಹೋಲಿಸಿ.',
+  'rterms.paid.linked': 'ಪ್ರತಿ ಪಾವತಿಯು ಅದು ಯಾವ ಸೇರ್ಪಡೆಗಾಗಿ ಎಂಬುದಕ್ಕೆ ಜೋಡಣೆಯಾಗಿರುತ್ತದೆ.',
+  'rterms.details.title': 'ನಿಮ್ಮ ಪಾವತಿ ವಿವರಗಳು',
+  'rterms.details.add': 'ನಿಮ್ಮ UPI ID (ಅಥವಾ ಬ್ಯಾಂಕ್ ಖಾತೆ) ಅನ್ನು ನೀವೇ, ನಿಮ್ಮ ಸ್ವಂತ ಫೋನ್‌ನಲ್ಲಿ, OTP ಮೂಲಕ ಸೇರಿಸುತ್ತೀರಿ.',
+  'rterms.details.change': 'ಅವುಗಳನ್ನು ಬದಲಾಯಿಸಲು ನಿಮ್ಮ ನೋಂದಾಯಿತ ಫೋನ್‌ಗೆ OTP ಬೇಕು, ನಂತರ ಮುಂದಿನ ಪಾವತಿಗೆ ಮೊದಲು {hours} ಗಂಟೆ ಕಾಯಬೇಕು, ಮತ್ತು ಫೈನಾನ್ಸ್‌ಗೆ ತಿಳಿಸಲಾಗುತ್ತದೆ. ಯಾರೂ ಗುಟ್ಟಾಗಿ ತಮ್ಮ UPI ಹಾಕದಂತೆ ಇದು ತಡೆಯುತ್ತದೆ.',
+  'rterms.pause.title': 'ಪಾಲುದಾರರನ್ನು ತಡೆಹಿಡಿಯುವುದು',
+  'rterms.pause.who': 'ಸಿಇಒ ಲಿಖಿತ ಕಾರಣದೊಂದಿಗೆ ಪಾಲುದಾರರನ್ನು ತಡೆಹಿಡಿಯಬಹುದು.',
+  'rterms.pause.effect': 'ನಿಮ್ಮನ್ನು ತಡೆಹಿಡಿದಿರುವಾಗ, ನಿಮ್ಮ ಹೆಸರಿನ ಹೊಸ ರೆಫರಲ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ. ನೀವು ಈಗಾಗಲೇ ಗಳಿಸಿದ ಹಣವನ್ನು ಪಾವತಿಸಲಾಗುತ್ತದೆ.',
+  'rterms.calls.title': 'ಕರೆಗಳು ಮತ್ತು ನಿಮ್ಮ ವಿವರಗಳು',
+  'rterms.calls.recorded': 'Laboura ಜೊತೆಗಿನ ಕರೆಗಳು ರೆಕಾರ್ಡ್ ಆಗುತ್ತವೆ; ನಿಯಮಗಳಿಗೆ ಸಹಿ ಮಾಡುವಾಗ ನೀವು ಇದಕ್ಕೆ ಒಪ್ಪುತ್ತೀರಿ.',
+  'rterms.calls.id': 'ನಾವು ನಿಮ್ಮ ಗುರುತಿನ ಚೀಟಿಯನ್ನು ಪರಿಶೀಲಿಸಿ ಫಲಿತಾಂಶ ಮಾತ್ರ ಇಡುತ್ತೇವೆ — ಆಧಾರ್ ನಂಬರ್ ಎಂದೂ ಇಡುವುದಿಲ್ಲ.',
+  'rterms.version': 'ನಿಯಮಗಳ ಆವೃತ್ತಿ {version}. ಪ್ರಶ್ನೆಗಳಿದ್ದರೆ ನಿಮ್ಮನ್ನು ನೋಂದಾಯಿಸಿದ Laboura ಏಜೆಂಟ್ ಅವರನ್ನು ಕೇಳಿ.',
+  'rterms.open': 'ರೆಫರಲ್ ಪಾಲುದಾರರ ಪೂರ್ಣ ನಿಯಮಗಳನ್ನು ತೆರೆಯಿರಿ',
+};
+
+export const referralTermsHi: Record<ReferralTermsKey, string> = {
+  'screen.P-ReferralTerms': 'रेफ़रल पार्टनर की शर्तें',
+  'rterms.intro': 'Laboura रेफ़रल पार्टनर के नियम, आसान शब्दों में। आप अपने रजिस्ट्रेशन लिंक पर OTP से इन्हें मानते हैं।',
+  'rterms.earn.title': 'किस बात के पैसे मिलते हैं',
+  'rterms.earn.join': 'आपके रेफ़र किए हुए किसी नौकरी ढूँढने वाले के Laboura के ज़रिए नौकरी जॉइन करने पर आपको {reward} मिलते हैं।',
+  'rterms.earn.notPay': 'उनके रजिस्टर करने या {fee} देने पर पैसे नहीं मिलते — सिर्फ़ जॉइन करने पर।',
+  'rterms.earn.business': 'अभी इनाम सिर्फ़ जॉइन करने वाले नौकरी ढूँढने वालों पर है। बिज़नेस रेफ़र करने का भुगतान अभी तय नहीं हुआ है।',
+  'rterms.earn.self': 'ख़ुद को रेफ़र करने पर कभी पैसे नहीं मिलते।',
+  'rterms.paid.title': 'भुगतान कब होता है',
+  'rterms.paid.queued': 'जिस दिन व्यक्ति जॉइन करता है, उसी दिन इनाम कतार में जुड़ जाता है। सीईओ या फ़ाइनेंस उसे जारी करते हैं, और भुगतान हर दिन भेजे जाते हैं।',
+  'rterms.paid.how': 'यह Laboura के कंपनी खाते से UPI से या आपके बैंक खाते में भेजा जाता है — सिर्फ़ आपके अपने नाम वाले विवरण पर, आपकी आईडी के नाम से मिलाकर।',
+  'rterms.paid.linked': 'हर भुगतान उसी जॉइनिंग से जुड़ा होता है जिसके लिए वह है।',
+  'rterms.details.title': 'आपके भुगतान विवरण',
+  'rterms.details.add': 'आप अपनी UPI ID (या बैंक खाता) ख़ुद, अपने फ़ोन पर, OTP से जोड़ते हैं।',
+  'rterms.details.change': 'इन्हें बदलने के लिए आपके रजिस्टर्ड फ़ोन पर OTP चाहिए, फिर अगले भुगतान से पहले {hours} घंटे इंतज़ार, और फ़ाइनेंस को बताया जाता है। इससे कोई चुपके से अपनी UPI नहीं डाल सकता।',
+  'rterms.pause.title': 'पार्टनर को रोकना',
+  'rterms.pause.who': 'सीईओ लिखित कारण के साथ किसी पार्टनर को रोक सकते हैं।',
+  'rterms.pause.effect': 'जब तक आप रुके हुए हैं, आपके नाम से नए रेफ़रल स्वीकार नहीं होते। जो पैसे आप कमा चुके हैं, वे फिर भी दिए जाते हैं।',
+  'rterms.calls.title': 'कॉल और आपकी जानकारी',
+  'rterms.calls.recorded': 'Laboura के साथ कॉल रिकॉर्ड होती हैं; शर्तें मानते समय आप इसकी सहमति देते हैं।',
+  'rterms.calls.id': 'हम आपकी आईडी जाँचकर सिर्फ़ नतीजा रखते हैं — आधार नंबर कभी नहीं।',
+  'rterms.version': 'शर्तों का संस्करण {version}। कोई सवाल? जिस Laboura एजेंट ने आपको रजिस्टर किया, उनसे पूछें।',
+  'rterms.open': 'रेफ़रल पार्टनर की पूरी शर्तें खोलें',
+};

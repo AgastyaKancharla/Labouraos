@@ -2,6 +2,7 @@
 import type { Messages } from './en';
 import { registrationKn } from './registration';
 import { staffInviteKn } from './staffInvite';
+import { referralTermsKn } from './referralTerms';
 import { callAgentKn } from '../screens/call-agent/_lib/i18n.kn';
 
 export const kn: Messages = {
@@ -573,5 +574,6 @@ export const kn: Messages = {
   "screen.P06-DidTheyOffer": "ಅವರು ನಿಮಗೆ ಕೆಲಸದ ಆಫರ್ ಕೊಟ್ಟರೇ?",
   ...registrationKn,
   ...staffInviteKn,
+  ...referralTermsKn,
   ...callAgentKn,
 };

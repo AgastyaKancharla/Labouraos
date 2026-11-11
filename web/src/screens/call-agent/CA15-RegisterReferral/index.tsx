@@ -176,7 +176,15 @@ export default function RegisterReferral() {
           </div>
         </fieldset>
 
-        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={scriptTerms ? referralScript(scriptTerms) : null} language={form.language} note={t('reg.ref.explainNote')} />
+        <ExplainScript n={3} title={t('reg.ref.explain')} scripts={scriptTerms ? referralScript(scriptTerms) : null} language={form.language} note={
+            <>
+              {t('reg.ref.explainNote')}{' '}
+              <a href={`${import.meta.env.BASE_URL}p/referral-terms?lang=${form.language || 'kn'}`} target="_blank" rel="noopener noreferrer">
+                {t('rterms.open')}
+              </a>
+            </>
+          }
+        />
 
         {saveError && (
           <div className="warn" role="alert">

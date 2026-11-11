@@ -168,5 +168,7 @@ export const publicScreens: readonly ScreenDef[] = [
   { id: 'P05-InterviewResult', path: 'interview-result/:token', title: 'screen.P05-InterviewResult' },
   { id: 'P05b-PayFee', path: 'fee/:token', title: 'screen.P05b-PayFee' },
   { id: 'P06-DidTheyOffer', path: 'did-they-offer/:token', title: 'screen.P06-DidTheyOffer' },
+  // No design file: the referral partner terms, linked from the partner's registration link.
+  { id: 'P-ReferralTerms', path: 'referral-terms', title: 'screen.P-ReferralTerms' },
 ];
 
