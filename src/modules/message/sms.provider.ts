@@ -1,3 +1,5 @@
+import { isIndianMobile, vendorMobileNumber } from '../../common/phone/indian-mobile';
+
 export const SMS_PROVIDER = 'SMS_PROVIDER';
 
 export interface SmsSendResult {
@@ -55,6 +57,9 @@ export class RealSmsProvider implements SmsProvider {
         error: 'SMS provider is not configured',
       };
     }
+    if (!isIndianMobile(phone)) {
+      return { messageId: '', status: 'failed', error: 'not an Indian mobile number' };
+    }
     const response = await fetch(apiUrl, {
       method: 'POST',
       headers: {
@@ -62,7 +67,8 @@ export class RealSmsProvider implements SmsProvider {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        to: phone,
+        // Same DLT gateway as the OTPs: country code, no plus (919876543210).
+        to: vendorMobileNumber(phone),
         template,
         dltTemplateId,
         variables,

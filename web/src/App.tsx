@@ -8,6 +8,7 @@ import { ToastProvider } from './components/Toast';
 import { I18nProvider } from './i18n/I18nProvider';
 import { isApiError } from './lib/api/errors';
 import { PORTALS } from './portals';
+import AcceptInvite from './screens/auth/AcceptInvite';
 import StaffSignIn from './screens/auth/StaffSignIn';
 import { FieldAgentNotice } from './screens/shared/FieldAgentNotice';
 import { NotFound } from './screens/shared/NotFound';
@@ -56,6 +57,8 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<StaffSignIn />} />
+      {/* Public (outside Cloudflare Access, like every /app/p page): field agents open their invite on their phone. */}
+      <Route path="/p/invite/:token" element={<AcceptInvite />} />
       <Route
         path="/field-agent"
         element={

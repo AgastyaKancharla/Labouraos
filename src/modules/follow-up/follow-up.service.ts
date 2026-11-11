@@ -24,6 +24,7 @@ import {
 } from './follow-up.constants';
 import { CompleteFollowUpTaskDto } from './dto/complete-follow-up-task.dto';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 export interface ListFollowUpTasksQuery {
   status?: string;
@@ -41,7 +42,15 @@ export class FollowUpService {
     private readonly reviewFlagService: ReviewFlagService,
     private readonly candidateIntroService: CandidateIntroductionService,
     @Optional() private readonly jobSeekerService?: JobSeekerService,
+    @Optional() private readonly reportingScope?: ReportingScopeService,
   ) {}
+
+  /** Everyone below a Team Lead or Manager in the reporting line. */
+  private async peopleUnder(staffId: string): Promise<string[]> {
+    if (this.reportingScope) return this.reportingScope.peopleUnder(staffId);
+    const team = await this.prisma.staff.findMany({ where: { teamLeadId: staffId }, select: { id: true } });
+    return team.map((m) => m.id);
+  }
 
   async listTasks(
     actor: { id: string; role: string; teamLeadId?: string | null },
@@ -90,7 +99,17 @@ export class FollowUpService {
     });
   }
 
-  async getIntroducedBusinesses(taskId: string) {
+  /**
+   * The businesses this job seeker was introduced to, for the follow-up call
+   * (CA04b, "Working at a business we introduced?").
+   *
+   * Ownership: the CEO and the agent the task is assigned to see every
+   * introduction. Otherwise an agent sees only the businesses they introduced
+   * themselves, and a Team Lead or Manager only those introduced by someone
+   * in their reporting scope (or all of them when the task's agent is in
+   * that scope). Nothing in scope → 403, so a task id is not a way in.
+   */
+  async getIntroducedBusinesses(taskId: string, actor: { id: string; role: string }) {
     const task = await this.prisma.followUpTask.findUnique({
       where: { id: taskId },
     });
@@ -98,8 +117,24 @@ export class FollowUpService {
       throw new NotFoundException(`FollowUpTask '${taskId}' not found`);
     }
 
+    // null = every introduction; otherwise only those shown by these staff.
+    let shownBy: string[] | null;
+    if (actor.role === 'ceo' || task.assignedStaffId === actor.id) {
+      shownBy = null;
+    } else if (actor.role === 'team_lead' || actor.role === 'manager') {
+      const scope = [actor.id, ...(await this.peopleUnder(actor.id))];
+      shownBy = task.assignedStaffId && scope.includes(task.assignedStaffId) ? null : scope;
+    } else if (actor.role === 'call_agent' || actor.role === 'field_agent') {
+      shownBy = [actor.id];
+    } else {
+      throw new ForbiddenException('Access denied');
+    }
+
     const introductions = await this.prisma.candidateIntroduction.findMany({
-      where: { jobSeekerId: task.subjectId },
+      where: {
+        jobSeekerId: task.subjectId,
+        ...(shownBy ? { shownByStaffId: { in: shownBy } } : {}),
+      },
       select: {
         business: {
           select: { id: true, code: true, name: true, city: true, locality: true },
@@ -107,6 +142,9 @@ export class FollowUpService {
       },
       distinct: ['businessId'],
     });
+    if (shownBy && introductions.length === 0) {
+      throw new ForbiddenException('This follow-up is not yours or your team’s');
+    }
 
     return introductions.map((i) => i.business);
   }

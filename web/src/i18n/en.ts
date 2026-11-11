@@ -1,6 +1,8 @@
 /* English — the source of every key. Add new keys here first, then to kn.ts and hi.ts
    (TypeScript refuses to build until all three have the same keys). */
 import { registrationEn } from './registration';
+import { staffInviteEn } from './staffInvite';
+import { referralTermsEn } from './referralTerms';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 export const en = {
@@ -571,6 +573,8 @@ export const en = {
   "screen.P05b-PayFee": "Pay the fee",
   "screen.P06-DidTheyOffer": "Did they offer you the job?",
   ...registrationEn,
+  ...staffInviteEn,
+  ...referralTermsEn,
   ...callAgentEn,
 } as const;
 

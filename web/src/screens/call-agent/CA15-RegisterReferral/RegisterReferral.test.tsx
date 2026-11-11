@@ -41,6 +41,16 @@ describe('Register a referral partner (CA15)', () => {
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
+  it('links the public referral partner terms in the partner’s language', async () => {
+    mockApi(routes());
+    signInAs('call_agent');
+    sessionStorage.setItem('laboura.draft.referral.staff-ca', JSON.stringify(form));
+    renderScreen(<RegisterReferral />, { portal: 'call-agent', path: '/call-agent/register/referral' });
+    const link = await screen.findByRole('link', { name: 'Open the full referral partner terms' });
+    expect(link.getAttribute('href')).toMatch(/\/p\/referral-terms\?lang=kn$/);
+    expect(link).toHaveAttribute('target', '_blank');
+  });
+
   it('a business partner links a registered business or gives its name and type', () => {
     expect(referralBody({ ...form, type: 'business', business: { id: 'b1' } as never }, 'otp')).toMatchObject({ type: 'business', businessId: 'b1' });
     expect(referralBody({ ...form, type: 'business', partnerBusinessName: 'Ganesh Stores', partnerBusinessType: 'retail_shop' }, 'otp')).toMatchObject({

@@ -1,5 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { AttendanceService } from '../modules/attendance/attendance.service';
 import { AttendanceDaysService } from '../modules/attendance/attendance-days.service';
 import { LeaveService } from '../modules/attendance/leave.service';
@@ -24,6 +26,8 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
     private readonly attendance: AttendanceService,
     private readonly days: AttendanceDaysService,
     private readonly leave: LeaveService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   private get connection() {
@@ -49,7 +53,7 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         FORGOTTEN_LOGOUT_QUEUE,
-        async () => this.process(),
+        async () => recordJobRun(this.prisma, FORGOTTEN_LOGOUT_SWEEP, () => this.process()),
         { connection: this.connection },
       );
       this.worker.on('error', (error) => this.logger.error(`Forgotten logout worker error: ${error.message}`));

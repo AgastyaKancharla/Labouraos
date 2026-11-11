@@ -24,7 +24,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
-import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { AcceptInviteDto, InviteTokenDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { Public } from '../../common/rbac/public.decorator';
@@ -138,6 +138,24 @@ export class StaffController {
    * Public by design: the new hire has no password or session yet and proves
    * identity with the one-time invite token. Throttled like login.
    */
+  @Post('accept-invite/preview')
+  @Public('invite page: shows whose invite the one-time token is, before a password exists')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60000 } })
+  previewInvite(@Body() dto: InviteTokenDto) {
+    return this.staffService.previewInvite(dto);
+  }
+
+  @Post('accept-invite/authenticator')
+  @Public('invite page: management sets up the authenticator with the one-time invite token')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  setupInviteAuthenticator(@Body() dto: InviteTokenDto) {
+    return this.staffService.setupInviteAuthenticator(dto);
+  }
+
   @Post('accept-invite')
   @Public('new hire sets a password with the one-time invite token')
   @HttpCode(HttpStatus.OK)

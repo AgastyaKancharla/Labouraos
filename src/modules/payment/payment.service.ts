@@ -43,6 +43,7 @@ import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 import { receiptLink } from './receipt-link';
 import { invoiceLink } from '../placement/invoice-link';
+import { mockPaymentToolsAllowed } from './payment-mode';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -2060,8 +2061,8 @@ export class PaymentService {
   }
 
   async simulateMockWebhook(body: Record<string, unknown>) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new NotFoundException('Cannot simulate webhook in production');
+    if (!mockPaymentToolsAllowed()) {
+      throw new NotFoundException('Cannot simulate webhook: payments are not in mock mode');
     }
     const gatewayReference = String(body.gatewayReference || body.reference || '');
     const status = body.status === 'failed' ? 'failed' : 'succeeded';

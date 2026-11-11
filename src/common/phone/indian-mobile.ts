@@ -68,10 +68,28 @@ export function normaliseIndianMobile(value: string | null | undefined): string 
   return parseIndianMobile(value) ?? value.trim();
 }
 
-/** The 10 national digits (what the SMS vendor and the OTP hash use), or the bare digits when it does not parse. */
+/** The 10 national digits (what the OTP hash uses), or the bare digits when it does not parse. The vendor gets vendorMobileNumber(). */
 export function nationalMobileDigits(value: string): string {
   const canonical = parseIndianMobile(value);
   return canonical ? canonical.slice(3) : String(value ?? '').replace(/\D/g, '');
+}
+
+/**
+ * The number as the SMS/OTP vendor (MSG91, API v5) expects it: country code
+ * and the 10 digits, no plus and no spaces — `919876543210`. Anything that is
+ * not an Indian mobile is refused, so a bad number never reaches the vendor.
+ */
+export function vendorMobileNumber(value: string): string {
+  const canonical = parseIndianMobile(value);
+  if (!canonical) {
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      message: INDIAN_MOBILE_MESSAGE,
+      field: 'phone',
+    });
+  }
+  return canonical.slice(1);
 }
 
 /** True when both values are the same Indian mobile, whatever spelling each uses. */

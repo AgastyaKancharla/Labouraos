@@ -1,6 +1,8 @@
 /* Hindi (हिंदी) — same keys as en.ts. Have a native speaker review new strings. */
 import type { Messages } from './en';
 import { registrationHi } from './registration';
+import { staffInviteHi } from './staffInvite';
+import { referralTermsHi } from './referralTerms';
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 
 export const hi: Messages = {
@@ -571,6 +573,8 @@ export const hi: Messages = {
   "screen.P05b-PayFee": "फ़ीस भरें",
   "screen.P06-DidTheyOffer": "क्या उन्होंने आपको नौकरी ऑफ़र की?",
   ...registrationHi,
+  ...staffInviteHi,
+  ...referralTermsHi,
   // The call agent console is Kannada and English only (decided 11 Nov); the search bar is in every portal.
   ...callAgentEn,
   'search.suggestions': 'मिलान',

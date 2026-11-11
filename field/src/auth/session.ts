@@ -11,7 +11,9 @@ import type { KeyValueStore } from '@/lib/storage/types';
  * - 1 hour without activity (guide: "Automatic logout after 1 hour"),
  * - 2 hours after login (guide: "every login lasts at most 2 hours"),
  * - the access token expired (it lives 15 minutes and is refreshed while
- *   the app is in use).
+ *   the app is in use) — unless the session has a refresh token: then the
+ *   app asks POST /auth/field/refresh for a new one when it is reopened, and
+ *   the server answers with the idle or 2-hour reason once a limit passed.
  */
 export const SESSION_STORAGE_KEY = 'laboura_field_session';
 export const IDLE_LIMIT_MS = 60 * 60 * 1000;
@@ -38,6 +40,11 @@ export interface Session {
   loginAt: number;
   /** Last tap or keypress, ms since epoch. */
   lastActivityAt: number;
+  /**
+   * Single-use refresh token from the login (field agents). Restores the
+   * session after the app was closed; replaced on every refresh.
+   */
+  refreshToken?: string | null;
 }
 
 export type SignOutReason = 'logout' | 'idle' | 'max_length' | 'revoked' | 'expired' | 'unauthorized';
@@ -82,8 +89,14 @@ export function decodeJwt(token: string): JwtClaims | null {
 export function sessionLimitReached(session: Session, now: number): SignOutReason | null {
   if (now - session.loginAt > MAX_SESSION_MS) return 'max_length';
   if (now - session.lastActivityAt > IDLE_LIMIT_MS) return 'idle';
-  if (now >= session.tokenExpiresAt) return 'expired';
+  // With a refresh token an expired access token is renewed, not the end.
+  if (now >= session.tokenExpiresAt && !session.refreshToken) return 'expired';
   return null;
+}
+
+/** True when the access token has run out or is about to (within `marginMs`). */
+export function tokenNeedsRefresh(session: Session, now: number, marginMs: number): boolean {
+  return session.tokenExpiresAt - now <= marginMs;
 }
 
 /** Maps the API's 401 messages to a reason the sign-in screen can explain. */
@@ -143,7 +156,12 @@ export class SessionStore {
   }
 
   /** Starts a session from the login response. */
-  async start(token: string, staff: StaffIdentity, sessionId: string | null): Promise<Session> {
+  async start(
+    token: string,
+    staff: StaffIdentity,
+    sessionId: string | null,
+    refreshToken: string | null = null,
+  ): Promise<Session> {
     const now = this.now();
     const exp = decodeJwt(token)?.exp;
     const session: Session = {
@@ -153,17 +171,23 @@ export class SessionStore {
       tokenExpiresAt: exp ? exp * 1000 : now + 15 * 60 * 1000,
       loginAt: now,
       lastActivityAt: now,
+      refreshToken,
     };
     await this.save(session);
     this.emit(session);
     return session;
   }
 
-  /** Swaps in a refreshed token for the same person. */
-  async replaceToken(token: string): Promise<void> {
+  /** Swaps in a refreshed token (and the next refresh token) for the same person. */
+  async replaceToken(token: string, refreshToken?: string): Promise<void> {
     if (!this.session) return;
     const exp = decodeJwt(token)?.exp;
-    const next = { ...this.session, token, tokenExpiresAt: exp ? exp * 1000 : this.now() + 15 * 60 * 1000 };
+    const next: Session = {
+      ...this.session,
+      token,
+      tokenExpiresAt: exp ? exp * 1000 : this.now() + 15 * 60 * 1000,
+      ...(refreshToken ? { refreshToken } : {}),
+    };
     await this.save(next);
     this.emit(next);
   }

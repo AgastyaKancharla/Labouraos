@@ -100,20 +100,38 @@ export class RetentionService {
       otpSessionsDeleted: 0,
     };
 
-    // 1. Profiles (> 23 months inactive)
-    await this.cleanupProfiles(now, dryRun, summary);
+    try {
+      // 1. Profiles (> 23 months inactive)
+      await this.cleanupProfiles(now, dryRun, summary);
 
-    // 2. Call recordings (> 12 months)
-    await this.cleanupRecordings(now, dryRun, summary);
+      // 2. Call recordings (> 12 months)
+      await this.cleanupRecordings(now, dryRun, summary);
 
-    // 3. Login and access logs (> 12 months)
-    await this.cleanupAccessLogs(now, dryRun, summary);
+      // 3. Login and access logs (> 12 months)
+      await this.cleanupAccessLogs(now, dryRun, summary);
 
-    // 4. Money records (> 8 years)
-    await this.cleanupMoneyRecords(now, dryRun, summary);
+      // 4. Money records (> 8 years)
+      await this.cleanupMoneyRecords(now, dryRun, summary);
 
-    // 5. Public links and OTP sessions (> 30 days after expiry)
-    await this.cleanupExpiredLinkData(now, dryRun, summary);
+      // 5. Public links and OTP sessions (> 30 days after expiry)
+      await this.cleanupExpiredLinkData(now, dryRun, summary);
+    } catch (err: unknown) {
+      // A run that fails part-way is recorded too (start, finish, error), like every scheduled job.
+      try {
+        await this.prisma.jobRun.create({
+          data: {
+            jobName: RETENTION_JOB_NAME,
+            startedAt,
+            finishedAt: new Date(),
+            outcome: 'failed',
+            details: { dryRun, error: err instanceof Error ? err.message : String(err) },
+          },
+        });
+      } catch (logErr: unknown) {
+        this.logger.warn(`Failed to store retention cleanup JobRun: ${logErr instanceof Error ? logErr.message : String(logErr)}`);
+      }
+      throw err;
+    }
 
     // Persist run summary in JobRun
     try {

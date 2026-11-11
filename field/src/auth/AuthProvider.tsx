@@ -4,9 +4,10 @@ import { sessionStore as defaultStore } from '@/api';
 import { useApi } from '@/api/ApiProvider';
 import type { ApiClient } from '@/api/client';
 import { authApi, isAwaitingCode, type AwaitingCodeResponse } from '@/api/endpoints/auth';
+import { isApiError } from '@/api/errors';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import { getDeviceId } from './device';
-import { SessionStore, type Session, type SignOutReason } from './session';
+import { reasonFromMessage, SessionStore, tokenNeedsRefresh, type Session, type SignOutReason } from './session';
 
 /** Refresh the 15-minute access token when less than this is left. */
 export const REFRESH_WHEN_LEFT_MS = 5 * 60 * 1000;
@@ -59,6 +60,42 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const refreshing = useRef(false);
 
+  /**
+   * Gets a fresh access token. Field agents use their refresh token, which
+   * also works after the token ran out while the app was closed; the server
+   * refuses once the 1-hour idle or 2-hour limit has passed and the phone
+   * shows that reason. Anyone else (no refresh token) uses the bearer refresh.
+   */
+  const refreshNow = useCallback(async () => {
+    const current = store.get();
+    if (!current || refreshing.current) return;
+    refreshing.current = true;
+    try {
+      if (current.refreshToken && current.sessionId) {
+        const result = await auth.fieldRefresh({
+          sessionId: current.sessionId,
+          refreshToken: current.refreshToken,
+          deviceId: await getDeviceId(storage),
+        });
+        await store.replaceToken(result.accessToken, result.refreshToken);
+      } else {
+        const result = await auth.refresh();
+        await store.replaceToken(result.accessToken);
+      }
+    } catch (error) {
+      // 401: the session is over, say why. Network: try again next minute.
+      if (isApiError(error) && error.status === 401) {
+        const body = error.body as { reason?: string; details?: { reason?: string } } | undefined;
+        const given = body?.details?.reason ?? body?.reason;
+        const reason: SignOutReason =
+          given === 'idle' || given === 'max_length' ? given : given ? 'revoked' : reasonFromMessage(error.message);
+        await store.clear(reason);
+      }
+    } finally {
+      refreshing.current = false;
+    }
+  }, [auth, store, storage]);
+
   // Follow the store: 401s from any request clear it, and so do limits.
   useEffect(() => {
     const unsubscribe = store.subscribe((next, reason) => {
@@ -71,31 +108,29 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       const [loaded, id] = await Promise.all([store.load(), getDeviceId(storage)]);
       if (cancelled) return;
       setDeviceId(id);
-      setSession(loaded);
-      setStatus(loaded ? 'signedIn' : 'signedOut');
+      // Reopened after a while: restore the session before any screen asks
+      // for data with a token that has run out.
+      if (loaded && tokenNeedsRefresh(loaded, now(), REFRESH_WHEN_LEFT_MS)) await refreshNow();
+      if (cancelled) return;
+      const current = store.get();
+      setSession(current);
+      setStatus(current ? 'signedIn' : 'signedOut');
     })();
     return () => {
       cancelled = true;
       unsubscribe();
     };
+    // Runs once per store: refreshNow and now are stable for a given store.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store, storage]);
 
   const maintain = useCallback(async () => {
     const current = store.get();
     if (!current) return;
     if (await store.enforceLimits()) return;
-    if (refreshing.current) return;
-    if (current.tokenExpiresAt - now() > REFRESH_WHEN_LEFT_MS) return;
-    refreshing.current = true;
-    try {
-      const result = await auth.refresh();
-      await store.replaceToken(result.accessToken);
-    } catch {
-      // Network: try again next minute. 401: the client already signed out.
-    } finally {
-      refreshing.current = false;
-    }
-  }, [auth, store, now]);
+    if (!tokenNeedsRefresh(current, now(), REFRESH_WHEN_LEFT_MS)) return;
+    await refreshNow();
+  }, [store, now, refreshNow]);
 
   // Check limits and refresh every minute, and whenever the app comes back.
   useEffect(() => {
@@ -125,7 +160,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
         return { kind: 'awaiting_code' };
       }
       setSignOutReason(null);
-      await store.start(response.accessToken, response.staff, response.sessionId ?? null);
+      await store.start(response.accessToken, response.staff, response.sessionId ?? null, response.refreshToken ?? null);
       return { kind: 'signed_in' };
     },
     [auth, deviceId, storage, store],
@@ -137,7 +172,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       const response = await auth.verifyCode(pendingLogin.loginRequestId, code);
       setSignOutReason(null);
       setPendingLogin(null);
-      await store.start(response.accessToken, response.staff, response.sessionId ?? null);
+      await store.start(response.accessToken, response.staff, response.sessionId ?? null, response.refreshToken ?? null);
     },
     [auth, pendingLogin, store],
   );

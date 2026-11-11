@@ -4,6 +4,9 @@ import {
   JOB_SEEKER_OPTIONAL_CONSENT_PURPOSES,
 } from './consent.constants';
 
+/** The public referral partner terms page in the web app (web/src/screens/public/P-ReferralTerms). */
+export const REFERRAL_TERMS_PAGE_PATH = '/app/p/referral-terms';
+
 function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
@@ -184,6 +187,7 @@ export function renderReferralTermsPageHtml(
       recording: 'I consent to call recording',
       sendOtp: 'Send OTP to registered phone',
       submit: 'Sign Referral Terms',
+      fullTerms: 'Read the full referral partner terms',
     },
     hi: {
       title: 'रेफरल पार्टनर शर्तें',
@@ -192,6 +196,7 @@ export function renderReferralTermsPageHtml(
       recording: 'मैं कॉल रिकॉर्डिंग की सहमति देता/देती हूँ',
       sendOtp: 'पंजीकृत फोन पर OTP भेजें',
       submit: 'शर्तों पर हस्ताक्षर करें',
+      fullTerms: 'रेफ़रल पार्टनर की पूरी शर्तें पढ़ें',
     },
     kn: {
       title: 'ರೆಫರಲ್ ಪಾಲುದಾರರ ನಿಯಮಗಳು',
@@ -200,6 +205,7 @@ export function renderReferralTermsPageHtml(
       recording: 'ಕರೆ ರೆಕಾರ್ಡಿಂಗ್‌ಗೆ ನಾನು ಒಪ್ಪುತ್ತೇನೆ',
       sendOtp: 'ನೋಂದಾಯಿತ ಫೋನ್‌ಗೆ OTP ಕಳುಹಿಸಿ',
       submit: 'ನಿಯಮಗಳಿಗೆ ಸಹಿ ಮಾಡಿ',
+      fullTerms: 'ರೆಫರಲ್ ಪಾಲುದಾರರ ಪೂರ್ಣ ನಿಯಮಗಳನ್ನು ಓದಿ',
     },
   }[language] || {
     title: 'Referral Partner Terms',
@@ -208,6 +214,7 @@ export function renderReferralTermsPageHtml(
     recording: 'I consent to call recording',
     sendOtp: 'Send OTP to registered phone',
     submit: 'Sign Referral Terms',
+    fullTerms: 'Read the full referral partner terms',
   };
 
   return `<!DOCTYPE html>
@@ -216,6 +223,7 @@ export function renderReferralTermsPageHtml(
 <style>body{font-family:system-ui,sans-serif;background:#f8fafc;margin:0;padding:20px;color:#1e293b}.container{max-width:680px;margin:auto;background:white;border-radius:12px;padding:24px;box-shadow:0 4px 6px #0001}article{line-height:1.6;border:1px solid #cbd5e1;border-radius:8px;padding:18px;margin:20px 0}.row{display:flex;gap:10px;margin:16px 0}.btn{width:100%;padding:12px;border:0;border-radius:8px;background:#2563eb;color:white;font-size:16px}.btn-secondary{width:auto;background:#e2e8f0;color:#1e293b}.msg-box{display:none;padding:12px;margin:16px 0}.msg-success{background:#dcfce7}.msg-error{background:#fee2e2}.otp-input,input[type=text]{padding:10px;border:1px solid #cbd5e1;border-radius:6px;font-size:16px}.otp-input{width:100%;box-sizing:border-box}.otp-section{background:#f1f5f9;padding:16px;border-radius:8px;margin:20px 0}</style></head>
 <body><main class="container"><h1>${labels.title}</h1><p>${escapeHtml(partnerName)}</p><p>OTP phone: ${escapeHtml(maskedPhone)}</p>
 <div id="alert-box" class="msg-box"></div>${termsHtml}
+<p><a id="full-terms" href="${REFERRAL_TERMS_PAGE_PATH}?lang=${language}" target="_blank" rel="noopener">${labels.fullTerms}</a></p>
 <form id="consent-form">
 <div class="row"><input type="checkbox" name="purposes" value="agreement_terms" required><label>${labels.terms}</label></div>
 <div class="row"><input type="checkbox" name="purposes" value="call_recording" required><label>${labels.recording}</label></div>

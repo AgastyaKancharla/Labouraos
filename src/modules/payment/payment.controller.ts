@@ -30,6 +30,7 @@ import { PaymentReceiptGuard } from './payment-receipt.guard';
 import { Public } from '../../common/rbac/public.decorator';
 import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { renderReceiptPage } from './receipt-page';
+import { mockPaymentToolsAllowed } from './payment-mode';
 
 @Controller('payments')
 @UseInterceptors(PiiMaskingInterceptor)
@@ -321,10 +322,10 @@ export class PaymentController {
   }
 
   @Post('mock/simulate-webhook')
-  @Public('test-only mock webhook; refused when NODE_ENV is production')
+  @Public('test-only mock webhook; 404 unless payments are in mock mode, and always in production')
   async simulateWebhook(@Body() body: Record<string, unknown>) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new NotFoundException('Cannot POST /payments/mock/simulate-webhook in production');
+    if (!mockPaymentToolsAllowed()) {
+      throw new NotFoundException('Cannot POST /payments/mock/simulate-webhook');
     }
     return this.paymentService.simulateMockWebhook(body);
   }

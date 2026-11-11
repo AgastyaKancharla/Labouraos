@@ -1,5 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { ShortageTaskService, ShortageSweepResult } from '../modules/growth/shortage-task.service';
 import { dailyInIndia } from './job-schedules';
 
@@ -12,7 +14,11 @@ export class ShortageTasksJob implements OnModuleInit, OnModuleDestroy {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
 
-  constructor(private readonly shortageTasks: ShortageTaskService) {}
+  constructor(
+    private readonly shortageTasks: ShortageTaskService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
+  ) {}
 
   private get connection() {
     return {
@@ -37,7 +43,7 @@ export class ShortageTasksJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         SHORTAGE_TASKS_QUEUE,
-        async () => this.process(),
+        async () => recordJobRun(this.prisma, SHORTAGE_TASKS_SWEEP, () => this.process()),
         { connection: this.connection },
       );
       this.worker.on('error', (error) => this.logger.error(`Shortage tasks worker error: ${error.message}`));

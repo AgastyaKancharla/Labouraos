@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { Button, ButtonLink } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
+import { Skeleton } from '../../../components/Skeleton';
 import { MobileField, OtpVerification, PincodeField, SelectField, TextField, useStaffOtp } from '../../../components/fields';
 import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
@@ -74,7 +75,8 @@ export function ExplainScript({
 }: {
   n: number;
   title: ReactNode;
-  scripts: Record<ScriptLanguage, string>;
+  /** null while the Settings values are loading. */
+  scripts: Record<ScriptLanguage, string> | null;
   language: string;
   note: ReactNode;
 }) {
@@ -92,9 +94,13 @@ export function ExplainScript({
           </button>
         ))}
       </div>
-      <div className="script" lang={lang}>
-        {scripts[lang]}
-      </div>
+      {scripts ? (
+        <div className="script" lang={lang}>
+          {scripts[lang]}
+        </div>
+      ) : (
+        <Skeleton height={96} />
+      )}
       <span className="sub">{note}</span>
     </fieldset>
   );

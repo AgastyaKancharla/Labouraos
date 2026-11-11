@@ -188,7 +188,10 @@ services:
     runtime: node
     plan: starter
     region: singapore
-    buildCommand: npm ci --include=dev && npx prisma generate && npm run build
+    # Same API build as the web service (`build:api`, the `nest build` that
+    # `npm run build` starts with), so dist/worker.js always matches the API's
+    # code; the worker needs no web/ or field/ app.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build:api
     startCommand: npm run start:worker
     # When a vendor is switched from mock to real, change its *_PROVIDER_MODE on
     # BOTH services and copy its keys to the worker with fromService like the

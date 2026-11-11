@@ -360,7 +360,8 @@ describe('Phase 17 Task 4: Follow-up calls, the refund check and catching bypass
         { business: { id: 'bz-2', code: 'BZ-00002', name: 'Biz 2' } },
       ]);
 
-      const list = await service.getIntroducedBusinesses('task-1');
+      // The CEO sees every introduction (ownership is checked since the 11 Nov fixes).
+      const list = await service.getIntroducedBusinesses('task-1', { id: 'ceo-1', role: 'ceo' });
       expect(list).toEqual([
         { id: 'bz-1', code: 'BZ-00001', name: 'Biz 1' },
         { id: 'bz-2', code: 'BZ-00002', name: 'Biz 2' },

@@ -10,7 +10,7 @@ import {
 import { Request } from 'express';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
-import { LoginDto, LoginResult, VerifyLoginCodeDto } from './dto/login.dto';
+import { FieldRefreshDto, LoginDto, LoginResult, VerifyLoginCodeDto } from './dto/login.dto';
 import { AuthThrottlerGuard, LOGIN_CONNECTION_RATE_LIMIT, LOGIN_CONNECTION_TTL, LOGIN_RATE_LIMIT_PER_CONNECTION } from './auth-throttler.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
@@ -74,6 +74,21 @@ export class AuthController {
   @AllowTotpSetupScope()
   refresh(@Req() req: AuthenticatedRequest) {
     return this.authService.refresh(req.user);
+  }
+
+  /**
+   * Laboura Field: reopening the app restores the session kept on the phone.
+   * No bearer token (it may have run out while the app was closed): the
+   * single-use refresh token, the session id and the approved phone's id are
+   * the proof, and the 1-hour idle and 2-hour limits still apply.
+   */
+  @Post('field/refresh')
+  @Public('Laboura Field restores a session with its single-use refresh token; idle and 2-hour limits still apply')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
+  refreshField(@Body() body: FieldRefreshDto) {
+    return this.authService.refreshFieldSession(body);
   }
 
   @Post('logout')

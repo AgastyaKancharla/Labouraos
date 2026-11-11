@@ -1,5 +1,7 @@
-import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { PrismaService } from '../common/prisma/prisma.service';
+import { recordJobRun } from './job-run-recorder';
 import { PlacementService } from '../modules/placement/placement.service';
 import { dailyInIndia } from './job-schedules';
 
@@ -12,7 +14,11 @@ export class PlacementCompletionJob implements OnModuleInit, OnModuleDestroy {
   private queue: Queue | null = null;
   private worker: Worker | null = null;
 
-  constructor(private readonly placements: PlacementService) {}
+  constructor(
+    private readonly placements: PlacementService,
+    /** Records a JobRun row for every scheduled run (optional only for unit tests). */
+    @Optional() private readonly prisma?: PrismaService,
+  ) {}
 
   private get connection() {
     return {
@@ -37,7 +43,7 @@ export class PlacementCompletionJob implements OnModuleInit, OnModuleDestroy {
     if (!this.worker) {
       this.worker = new Worker(
         PLACEMENT_COMPLETION_QUEUE,
-        async () => this.process(),
+        async () => recordJobRun(this.prisma, PLACEMENT_COMPLETION_SWEEP, () => this.process()),
         { connection: this.connection },
       );
       this.worker.on('error', (error) => this.logger.error(`Placement completion worker error: ${error.message}`));
