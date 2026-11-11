@@ -94,7 +94,7 @@ function Calling({ card, vacancyId }: { card: CandidateCard; vacancyId: string }
   });
 
   const agent = (session?.staff.name ?? '').split(/\s+/)[0] ?? '';
-  const shift = card.vacancy.shift && SHIFT_KEYS[card.vacancy.shift] ? t(SHIFT_KEYS[card.vacancy.shift]) : '';
+  const shift = card.vacancy.shift && SHIFT_KEYS[card.vacancy.shift] ? t(SHIFT_KEYS[card.vacancy.shift]).toLowerCase() : '';
   const salary = `${formatRupees(card.vacancy.salaryMinPaise)}–${formatRupees(card.vacancy.salaryMaxPaise ?? card.vacancy.salaryMinPaise).replace('₹', '')}`;
   const elapsed = startedAt ? formatCountdown(now - startedAt) : '0:00';
   const answered = status.data?.answered === true;

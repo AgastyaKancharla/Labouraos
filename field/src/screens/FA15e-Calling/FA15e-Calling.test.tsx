@@ -27,7 +27,7 @@ describe('FA15e Calling the job seeker', () => {
     const { route, calls } = api();
     await renderWithApp(<CallingScreen />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('ask-owner'));
-    expect(screen.getByTestId('script')).toHaveTextContent(/Namaskara Manjunath, this is Kiran from Laboura\. We found a cook job for you near BTM Layout: Day shift, ₹16,000–20,000 a month/);
+    expect(screen.getByTestId('script')).toHaveTextContent(/Namaskara Manjunath, this is Kiran from Laboura\. We found a cook job for you near BTM Layout: day shift, ₹16,000–20,000 a month/);
     await fireEvent.press(screen.getByTestId('place-call'));
     await waitFor(() => screen.getByTestId('on-call'));
     expect(calls).toContainEqual({ method: 'POST', path: '/field-selling/calls', body: { vacancyId: 'vac-1', jobSeekerId: 'js-1' } });
