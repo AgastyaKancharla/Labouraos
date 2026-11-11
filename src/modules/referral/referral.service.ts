@@ -135,7 +135,12 @@ export class ReferralService {
       where: { phone },
     });
     if (existing) {
-      throw new ConflictException(`Referral partner with phone '${phone}' already exists`);
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Already registered — open it. A referral partner with this mobile number already exists',
+        existingReferralCode: existing.code,
+      });
     }
 
     const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);

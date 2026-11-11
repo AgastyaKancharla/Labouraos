@@ -99,6 +99,9 @@ const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'pausedAt',
 ]);
 
+/** Who pays through a payment-only link (design CA08e "Who is it?"). Never personal data beyond the relation. */
+export const PAYMENT_PAYER_RELATIONS = ['brother', 'sister', 'parent', 'spouse', 'friend', 'other'] as const;
+
 @Injectable()
 export class JobSeekerService {
   constructor(
@@ -219,7 +222,14 @@ export class JobSeekerService {
       where: { phone },
     });
     if (existing) {
-      throw new ConflictException(`Job seeker with phone '${phone}' already exists`);
+      // Guide (Forms): a number already registered shows "Already registered — open it"
+      // instead of creating a second record, so the answer names the existing record.
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Already registered — open it. A job seeker with this mobile number already exists',
+        existingJobSeekerCode: existing.code,
+      });
     }
     const code = await this.idService.generateCode('job_seeker');
 
@@ -1437,9 +1447,12 @@ export class JobSeekerService {
     };
   }
 
-  async createPaymentOnlyLink(jobSeekerId: string, recipientPhone: string, actorId: string) {
+  async createPaymentOnlyLink(jobSeekerId: string, recipientPhone: string, actorId: string, relation?: string) {
     if (!this.publicLinks || !this.messagingService) throw new BadRequestException('Payment-only links are not configured');
-    const phone = recipientPhone.trim();
+    if (relation !== undefined && relation !== null && !(PAYMENT_PAYER_RELATIONS as readonly string[]).includes(relation)) {
+      throw new BadRequestException(`relation must be one of: ${PAYMENT_PAYER_RELATIONS.join(', ')}`);
+    }
+    const phone = (recipientPhone ?? '').trim();
     const digits = phone.replace(/\D/g, '');
     if (digits.length < 10 || digits.length > 15) throw new BadRequestException('A valid payment contact number is required');
     const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
@@ -1464,7 +1477,7 @@ export class JobSeekerService {
       language: seeker.messageLanguage ?? 'en',
       expiresAt,
       createdByStaffId: actorId,
-      metadata: { paymentId: payment.id },
+      metadata: { paymentId: payment.id, ...(relation ? { relation } : {}) },
     });
     await this.messagingService.send({
       channel: 'sms',
@@ -1485,7 +1498,7 @@ export class JobSeekerService {
       entityType: 'job_seeker',
       entityCode: seeker.code,
       before: null,
-      after: { expiresAt: expiresAt.toISOString() },
+      after: { expiresAt: expiresAt.toISOString(), ...(relation ? { relation } : {}) },
       changedFields: ['paymentOnlyLink'],
       city: seeker.city,
     });
