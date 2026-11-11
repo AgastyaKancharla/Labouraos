@@ -1,10 +1,11 @@
-import { Body, Controller, Get, Param, Post, Req, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Post, Query, Req, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { AttendanceService } from './attendance.service';
+import { AttendanceDaysService } from './attendance-days.service';
 
 const STAFF_ROLES = ['ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance'] as const;
 
@@ -13,7 +14,10 @@ type Authed = Request & { user: JwtPayload };
 @Controller('attendance')
 @UseGuards(JwtAuthGuard, RbacGuard)
 export class AttendanceController {
-  constructor(private readonly attendance: AttendanceService) {}
+  constructor(
+    private readonly attendance: AttendanceService,
+    private readonly days: AttendanceDaysService,
+  ) {}
 
   @Post('login')
   @RequireRoles(...STAFF_ROLES)
@@ -66,5 +70,37 @@ export class AttendanceController {
   async businessCheckOut(@Req() req: Authed) {
     await this.attendance.noteBusinessCheckOut(req.user.sub);
     return this.attendance.today(req.user.sub);
+  }
+
+  /** Month summary for one person. Defaults to the caller. */
+  @Get('month')
+  @RequireRoles(...STAFF_ROLES)
+  month(
+    @Req() req: Authed,
+    @Query('month') month?: string,
+    @Query('staffId') staffId?: string,
+  ) {
+    return this.days.monthSummary(
+      { id: req.user.sub, role: req.user.role },
+      staffId || req.user.sub,
+      month ?? '',
+    );
+  }
+
+  /** Change day: a Team Lead (own team), a Manager (own tree) or the CEO. */
+  @Post('days/:dayId/day-type')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  changeDay(
+    @Req() req: Authed,
+    @Param('dayId') dayId: string,
+    @Body() body: { dayType?: string; reason?: string },
+  ) {
+    return this.days.changeDayType({ id: req.user.sub, role: req.user.role }, dayId, body ?? {});
+  }
+
+  @Get('days/:dayId/history')
+  @RequireRoles(...STAFF_ROLES)
+  dayHistory(@Req() req: Authed, @Param('dayId') dayId: string) {
+    return this.days.dayHistory({ id: req.user.sub, role: req.user.role }, dayId);
   }
 }

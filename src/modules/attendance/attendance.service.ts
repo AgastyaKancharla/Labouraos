@@ -18,6 +18,7 @@ import {
   PRODUCTION_STATUSES,
   isStaffPickedStatus,
 } from './attendance.constants';
+import { classifyDay, isWeeklyOff } from './day-rules';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
 
@@ -60,7 +61,7 @@ export class AttendanceService {
     if (existing?.logoutAt) {
       throw new BadRequestException('This day is already closed');
     }
-    if (existing) {
+    if (existing?.loginAt) {
       return this.today(staffId);
     }
     let loginLat: number | null = null;
@@ -73,6 +74,26 @@ export class AttendanceService {
       loginLng = body.longitude as number;
     }
     const lateMinutes = this.lateMinutes(now, policy);
+    if (existing) {
+      // A day marked absent or leave before the person logged in becomes a
+      // working day. The leave fields stay so the leave flow can see them.
+      await this.prisma.attendanceDay.update({
+        where: { id: existing.id },
+        data: {
+          loginAt: now,
+          loginLat,
+          loginLng,
+          lateMinutes,
+          lastHeartbeatAt: now,
+          dayType: 'open',
+          closedReason: null,
+          segments: {
+            create: { staffId, status: 'available', startedAt: now, source: 'staff' },
+          },
+        },
+      });
+      return this.today(staffId);
+    }
     await this.prisma.attendanceDay.create({
       data: {
         staffId,
@@ -139,8 +160,8 @@ export class AttendanceService {
       where: { staffId_date: { staffId, date: this.istDate(now) } },
       include: { segments: { orderBy: { startedAt: 'asc' } } },
     });
-    if (!day) {
-      return this.emptyToday(now, policy);
+    if (!day || !day.loginAt) {
+      return { ...this.emptyToday(now, policy), dayType: day?.dayType ?? 'open' };
     }
     const totals = this.totals(day.segments, now);
     if (!day.logoutAt) {
@@ -160,10 +181,9 @@ export class AttendanceService {
       productionSeconds: day.logoutAt ? day.productionSeconds : totals.productionSeconds,
       breakSeconds: day.logoutAt ? day.breakSeconds : totals.breakSeconds,
       idleSeconds: day.logoutAt ? day.idleSeconds : totals.idleSeconds,
-      shortfallSeconds: Math.max(
-        0,
-        fullSeconds - (day.logoutAt ? day.productionSeconds : totals.productionSeconds),
-      ),
+      shortfallSeconds: day.logoutAt
+        ? day.shortfallSeconds
+        : Math.max(0, fullSeconds - totals.productionSeconds),
       clocks: {
         shiftStart: policy.shiftStart,
         shiftEnd: policy.shiftEnd,
@@ -264,7 +284,7 @@ export class AttendanceService {
 
   async closeForgottenDays(staffId?: string): Promise<{ closed: number }> {
     const open = await this.prisma.attendanceDay.findMany({
-      where: { logoutAt: null, ...(staffId ? { staffId } : {}) },
+      where: { logoutAt: null, dayType: 'open', ...(staffId ? { staffId } : {}) },
       include: { segments: true },
     });
     let closed = 0;
@@ -294,13 +314,54 @@ export class AttendanceService {
       where: { dayId },
     });
     const totals = this.totals(segments, at);
+    const policy = await this.pricing.current();
+    const result = classifyDay(
+      totals.productionSeconds,
+      policy,
+      isWeeklyOff(day.date, policy.weeklyOffDays),
+    );
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
       data: {
         ...totals,
+        ...result,
         logoutAt: at,
         closedReason,
         flagged,
+      },
+    });
+  }
+
+  /**
+   * Adds the clocks up again from the segments, after a correction. A closed
+   * day gets its day type again from the new production, unless a Team Lead
+   * or Manager changed it; then the change stays.
+   */
+  async recalculateDay(dayId: string): Promise<void> {
+    const day = await this.prisma.attendanceDay.findUniqueOrThrow({
+      where: { id: dayId },
+      include: { segments: true },
+    });
+    const end = day.logoutAt ?? this.clock.now();
+    const totals = this.totals(day.segments, end);
+    if (!day.logoutAt) {
+      await this.prisma.attendanceDay.update({ where: { id: dayId }, data: totals });
+      return;
+    }
+    const policy = await this.pricing.current();
+    const result = classifyDay(
+      totals.productionSeconds,
+      policy,
+      isWeeklyOff(day.date, policy.weeklyOffDays),
+    );
+    const changed = Boolean(day.dayTypeChangedAt);
+    await this.prisma.attendanceDay.update({
+      where: { id: dayId },
+      data: {
+        ...totals,
+        dayType: changed ? day.dayType : result.dayType,
+        shortfallSeconds: changed ? 0 : result.shortfallSeconds,
+        makeUpSeconds: changed && day.dayType === 'half' ? 0 : result.makeUpSeconds,
       },
     });
   }
@@ -406,7 +467,7 @@ export class AttendanceService {
   }
 
   private lastActivity(day: AttendanceDay & { segments: AttendanceSegment[] }): Date {
-    let latest = day.loginAt.getTime();
+    let latest = (day.loginAt ?? day.createdAt).getTime();
     if (day.lastHeartbeatAt) latest = Math.max(latest, day.lastHeartbeatAt.getTime());
     for (const segment of day.segments) {
       latest = Math.max(latest, segment.startedAt.getTime());
@@ -425,7 +486,7 @@ export class AttendanceService {
     return lateBy;
   }
 
-  private istDate(now: Date): Date {
+  istDate(now: Date): Date {
     const parts = getCalendarPartsInTimezone(now);
     return new Date(Date.UTC(parts.year, parts.month - 1, parts.day));
   }
@@ -461,7 +522,7 @@ export class AttendanceService {
 
   private findOpenDay(staffId: string, now: Date): Promise<AttendanceDay | null> {
     return this.prisma.attendanceDay.findFirst({
-      where: { staffId, date: this.istDate(now), logoutAt: null },
+      where: { staffId, date: this.istDate(now), logoutAt: null, dayType: 'open' },
     });
   }
 

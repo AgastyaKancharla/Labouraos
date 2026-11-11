@@ -555,3 +555,7 @@ Format:
 **Cause:** An npm 10 bug while resolving Vitest's optional peer dependencies (it walks into Vite 8's optional devtools peers).
 **Fix:** Use the npm that ships with the pinned Node 24 (npm 11), or `npx npm@11 install` in `web/`. `npm ci` from the existing lockfile works with either version.
 
+## An attendance day with no login is not an open day
+**Symptom:** After absent and leave days were stored as `AttendanceDay` rows, a person on leave could look "logged in" and the nightly job tried to close their leave day.
+**Cause:** "Open" was tested as `logoutAt: null`. An absent or leave row has no login and no logout, so it matched.
+**Fix:** An open day is `dayType: 'open'` (set at login, replaced when the day closes). Absent and leave rows have `loginAt: null`; a login on such a row turns it into a working day.

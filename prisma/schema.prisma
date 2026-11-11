@@ -1233,6 +1233,9 @@ model PricingPolicy {
   casualLeavePerMonth          Int       @default(1)
   emergencyLeavePerMonth       Int       @default(1)
   refundPriorityWindowDays     Int       @default(15)
+  /// Weekly days off, 0 = Sunday … 6 = Saturday (IST). No absent day is
+  /// marked on them; time worked on them is make-up time.
+  weeklyOffDays                Int[]     @default([0])
   // Approval limits (only the CEO changes them). Finance approves and pays up to
   // these amounts; above them, or for any refund outside the rules, the CEO decides.
   financeBusinessRefundLimitPaise Int    @default(1500000)
@@ -1255,7 +1258,8 @@ model AttendanceDay {
   staff             Staff               @relation(fields: [staffId], references: [id], onDelete: Cascade)
   /// IST calendar date. Stored as a date, not a timestamp.
   date              DateTime            @db.Date
-  loginAt           DateTime
+  /// Null on a day with no login: an absent day or a leave day.
+  loginAt           DateTime?
   logoutAt          DateTime?
   loginLat          Float?
   loginLng          Float?
@@ -1263,9 +1267,21 @@ model AttendanceDay {
   productionSeconds Int                 @default(0)
   breakSeconds      Int                 @default(0)
   idleSeconds       Int                 @default(0)
-  dayType           String              @default("open") // full, half, absent, leave, open
-  closedReason      String?             // logout, auto_closed_no_logout
+  dayType           String              @default("open") // full, half, absent, leave, off, open
+  closedReason      String?             // logout, auto_closed_no_logout, no_login
   flagged           Boolean             @default(false)
+  /// Production below the full-day line on a full day. Zero on a half day,
+  /// inside the tolerance, and after a Team Lead or Manager changes the day.
+  shortfallSeconds  Int                 @default(0)
+  /// Production above the full-day line. Reduces the month's shortfall.
+  makeUpSeconds     Int                 @default(0)
+  /// On a leave day: casual or emergency, and whether it is beyond the paid balance.
+  leaveKind         String?
+  leaveUnpaid       Boolean             @default(false)
+  /// Set when a Team Lead or Manager changes the day to full or half.
+  dayTypeChangedById String?
+  dayTypeChangedAt  DateTime?
+  dayTypeChangeReason String?
   lastHeartbeatAt   DateTime?
   segments          AttendanceSegment[]
   createdAt         DateTime            @default(now())
