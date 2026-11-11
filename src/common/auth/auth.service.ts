@@ -44,6 +44,11 @@ export interface StaffSessionView {
 const ACCESS_SESSION_MS = 15 * 60 * 1000;
 
 const MANAGEMENT_ROLES = ['ceo', 'manager', 'finance'] as const;
+/**
+ * Only the CEO approves his own new device with his authenticator code. A
+ * Manager's or Finance's new device waits for the CEO (decided 11 Nov).
+ */
+const SELF_APPROVING_DEVICE_ROLES = ['ceo'] as const;
 const LOGIN_CODE_ROLES = ['team_lead', 'call_agent', 'field_agent'] as const;
 
 const INVALID_CREDENTIALS = 'Invalid staff code or password';
@@ -308,7 +313,13 @@ export class AuthService {
     if (sessionId) {
       const session = await this.prisma.staffSession.findUnique({ where: { id: sessionId } });
       if (session && session.staffId === staffId && session.deviceId) {
-        await this.selfApproveDevice(staff, session.deviceId);
+        if (this.selfApprovesDevice(staff)) {
+          await this.selfApproveDevice(staff, session.deviceId);
+        } else {
+          // Enrolling the authenticator does not approve the device: it is
+          // put in front of the CEO, who approves it.
+          await this.ensurePendingDevice(staff.id, session.deviceId);
+        }
       }
     }
 
@@ -438,9 +449,20 @@ export class AuthService {
       throw new UnauthorizedException('Invalid TOTP code');
     }
     if (deviceStatus !== 'approved') {
+      if (!this.selfApprovesDevice(staff)) {
+        await this.ensurePendingDevice(staff.id, deviceId);
+        await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
+          reason: 'device_pending',
+        });
+        throw new UnauthorizedException('This device is waiting for approval by the CEO');
+      }
       await this.selfApproveDevice(staff, deviceId);
     }
     return this.issueSession(staff, deviceId, metadata, null, false);
+  }
+
+  private selfApprovesDevice(staff: Staff): boolean {
+    return (SELF_APPROVING_DEVICE_ROLES as readonly string[]).includes(staff.role);
   }
 
   private async issueSession(

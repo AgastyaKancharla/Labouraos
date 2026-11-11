@@ -82,6 +82,17 @@ describe('Phase 10 Task 4: staff-code login', () => {
       totpEnabled: true,
     });
     const totpCode = authenticator.generate(manager.totpSecret!);
+    // A Manager's device is approved by the CEO before the Manager logs in on it.
+    await prisma.staffDevice.create({
+      data: {
+        staffId: manager.id,
+        deviceId: 'case-device',
+        label: 'Case',
+        platform: 'web',
+        status: 'approved',
+        approvedAt: new Date(),
+      },
+    });
 
     const loggedIn = await request(app.getHttpServer())
       .post('/auth/login')
@@ -217,31 +228,102 @@ describe('Phase 10 Task 4: staff-code login', () => {
     expect(verified.body.sessionId).toBeDefined();
   });
 
-  it('approves a manager device when the TOTP code is valid', async () => {
+  it('lets the CEO approve his own new device with his authenticator code', async () => {
     const secret = authenticator.generateSecret();
-    const manager = await makeStaff('manager', { totpSecret: secret, totpEnabled: true });
+    const ceo = await makeStaff('ceo', { totpSecret: secret, totpEnabled: true });
 
     const loggedIn = await request(app.getHttpServer())
       .post('/auth/login')
       .send({
-        staffCode: manager.code,
+        staffCode: ceo.code,
         password,
-        deviceId: 'manager-laptop',
+        deviceId: 'ceo-laptop',
         totpCode: authenticator.generate(secret),
       });
     expect(loggedIn.status).toBe(200);
     expect(loggedIn.body.totpEnrollmentRequired).toBeUndefined();
 
     const device = await prisma.staffDevice.findUniqueOrThrow({
-      where: { staffId_deviceId: { staffId: manager.id, deviceId: 'manager-laptop' } },
+      where: { staffId_deviceId: { staffId: ceo.id, deviceId: 'ceo-laptop' } },
     });
     expect(device.status).toBe('approved');
-    expect(device.approvedByStaffId).toBe(manager.id);
+    expect(device.approvedByStaffId).toBe(ceo.id);
     const audit = await prisma.auditLog.findFirst({
       where: { entityCode: device.id, action: 'staff_device.self_approved_totp' },
     });
     expect(audit).not.toBeNull();
   });
+
+  // Decided 11 Nov (guide, Other controls → Devices): a Manager's or
+  // Finance's new device is approved by the CEO, not by their own TOTP code.
+  // This replaces the earlier test that let a Manager self-approve.
+  it.each(['manager', 'finance'])(
+    "keeps a %s's new device waiting until the CEO approves it",
+    async (role) => {
+      const secret = authenticator.generateSecret();
+      const person = await makeStaff(role, { totpSecret: secret, totpEnabled: true });
+      const ceo = await makeStaff('ceo');
+      const otherManager = await makeStaff('manager');
+      await prisma.staff.update({ where: { id: person.id }, data: { reportsToId: ceo.id } });
+      const deviceId = `${role}-laptop`;
+
+      const refused = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          staffCode: person.code,
+          password,
+          deviceId,
+          totpCode: authenticator.generate(secret),
+        });
+      expect(refused.status).toBe(401);
+      expect(refused.body.message).toBe('This device is waiting for approval by the CEO');
+      expect(refused.body.accessToken).toBeUndefined();
+
+      const pending = await prisma.staffDevice.findUniqueOrThrow({
+        where: { staffId_deviceId: { staffId: person.id, deviceId } },
+      });
+      expect(pending.status).toBe('pending');
+      expect(
+        await prisma.auditLog.count({
+          where: { entityCode: pending.id, action: 'staff_device.self_approved_totp' },
+        }),
+      ).toBe(0);
+
+      // Nobody but the CEO decides it: not another Manager, not the person.
+      await request(app.getHttpServer())
+        .post(`/staff/devices/${pending.id}/approve`)
+        .set('Authorization', `Bearer ${tokenFor(otherManager)}`)
+        .expect(403);
+      await request(app.getHttpServer())
+        .post(`/staff/devices/${pending.id}/approve`)
+        .set('Authorization', `Bearer ${tokenFor(person)}`)
+        .expect(403);
+
+      const queue = await request(app.getHttpServer())
+        .get('/staff/devices/pending')
+        .set('Authorization', `Bearer ${tokenFor(ceo)}`)
+        .expect(200);
+      expect(queue.body.map((row: { id: string }) => row.id)).toContain(pending.id);
+
+      const approved = await request(app.getHttpServer())
+        .post(`/staff/devices/${pending.id}/approve`)
+        .set('Authorization', `Bearer ${tokenFor(ceo)}`);
+      expect([200, 201]).toContain(approved.status);
+      expect(approved.body.status).toBe('approved');
+      expect(approved.body.approvedByStaffId).toBe(ceo.id);
+
+      const loggedIn = await request(app.getHttpServer())
+        .post('/auth/login')
+        .send({
+          staffCode: person.code,
+          password,
+          deviceId,
+          totpCode: authenticator.generate(secret),
+        });
+      expect(loggedIn.status).toBe(200);
+      expect(loggedIn.body.accessToken).toBeDefined();
+    },
+  );
 
   it('lets a CEO who has not enrolled TOTP enrol and then log in', async () => {
     const ceo = await makeStaff('ceo');
