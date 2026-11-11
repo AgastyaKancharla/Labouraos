@@ -1,4 +1,5 @@
 import { Module } from '@nestjs/common';
+import { LiveModule } from '../../common/live/live.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { TelephonyModule } from '../telephony/telephony.module';
 import { ConsentModule } from '../consent/consent.module';
@@ -19,7 +20,7 @@ import {
 } from './recording-storage';
 
 @Module({
-  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule, MessageModule, ReviewFlagModule],
+  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule, MessageModule, ReviewFlagModule, LiveModule],
   controllers: [CallController],
   providers: [
     CallService,

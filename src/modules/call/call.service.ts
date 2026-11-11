@@ -448,7 +448,7 @@ export class CallService {
         });
       }
     }
-    return { callRecordId: row.id, agentOutcome, callbackAt: callbackAt?.toISOString() ?? null };
+    return { callRecordId: row.id, agentOutcome, ...(callbackAt ? { callbackAt: callbackAt.toISOString() } : {}) };
   }
 
   /** A callback must be in the future and inside the calling hours (IST). */
