@@ -37,6 +37,7 @@ import { MapModule } from './modules/map/map.module';
 import { FollowUpModule } from './modules/follow-up/follow-up.module';
 import { PayoutAccountModule } from './modules/payout-account/payout-account.module';
 import { AttendanceModule } from './modules/attendance/attendance.module';
+import { NotificationModule } from './modules/notification/notification.module';
 import { RetentionModule } from './modules/retention/retention.module';
 import { WebAppModule } from './modules/web-app/web-app.module';
 import { ScreensCallRegistrationModule } from './modules/screens-call-registration/screens-call-registration.module';
@@ -87,6 +88,7 @@ import { FieldAppModule } from './modules/field-app/field-app.module';
     FollowUpModule,
     PayoutAccountModule,
     AttendanceModule,
+    NotificationModule,
     HealthModule,
     ScreensCallRegistrationModule,
     ScreensCallAgentModule,

@@ -760,6 +760,8 @@ model Staff {
   claimsOverruled   ReplacementClaim[] @relation("ClaimOverruledBy")
   assignedFollowUpTasks FollowUpTask[]
   attendanceDays    AttendanceDay[]
+  notifications     Notification[]   @relation("NotificationRecipient")
+  notificationsCleared Notification[] @relation("NotificationClearedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
   status            String           @default("active") // pending_invite, active, deactivated
@@ -1740,4 +1742,32 @@ model CallTask {
   @@unique([sourceCallRecordId, kind])
   @@index([staffId, status, dueAt])
   @@index([subjectType, subjectId, status])
+
+/// Phase 21 Task 6: one bell item for one staff member. A notification clears
+/// by itself when the work behind it is done; who did it is recorded.
+model Notification {
+  id               String    @id @default(uuid())
+  recipientStaffId String
+  recipient        Staff     @relation("NotificationRecipient", fields: [recipientStaffId], references: [id], onDelete: Cascade)
+  /// Closed list in src/modules/notification/notification.constants.ts.
+  kind             String
+  title            String
+  body             String?
+  /// In-app path (web app, without /app) where the work is done.
+  link             String?
+  subjectType      String
+  subjectId        String
+  /// "recipient|kind|subjectType|subjectId" while open, null once cleared:
+  /// at most one open notification per recipient, kind and subject.
+  openKey          String?   @unique
+  seenAt           DateTime?
+  createdAt        DateTime  @default(now())
+  clearedAt        DateTime?
+  clearedByStaffId String?
+  clearedBy        Staff?    @relation("NotificationClearedBy", fields: [clearedByStaffId], references: [id], onDelete: SetNull)
+  clearedReason    String?
+
+  @@index([recipientStaffId, clearedAt])
+  @@index([kind, clearedAt])
+  @@index([subjectType, subjectId])
 }
