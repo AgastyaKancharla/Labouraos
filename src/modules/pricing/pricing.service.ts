@@ -116,6 +116,14 @@ export class PricingService {
         companyLegalName: updates.companyLegalName ?? before.companyLegalName,
         companyGstin: updates.companyGstin !== undefined ? updates.companyGstin : before.companyGstin,
         companyAddress: updates.companyAddress !== undefined ? updates.companyAddress : before.companyAddress,
+        followUpGraceDays: updates.followUpGraceDays ?? before.followUpGraceDays,
+        patternWindowDays: updates.patternWindowDays ?? before.patternWindowDays,
+        patternBusinessMinInterviews:
+          updates.patternBusinessMinInterviews ?? before.patternBusinessMinInterviews,
+        patternStopDays: updates.patternStopDays ?? before.patternStopDays,
+        patternAgentMinInterviews: updates.patternAgentMinInterviews ?? before.patternAgentMinInterviews,
+        patternAgentRejectionPercent:
+          updates.patternAgentRejectionPercent ?? before.patternAgentRejectionPercent,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },
