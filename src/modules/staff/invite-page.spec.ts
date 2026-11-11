@@ -15,6 +15,12 @@ import {
   staffInvitePath,
 } from './staff.service';
 
+
+/** The reason a refusal gives: in `details` behind main.ts's GlobalExceptionFilter, at the top level in tests. */
+function reasonOf(body: { reason?: string; details?: { reason?: string } }): string | undefined {
+  return body.details?.reason ?? body.reason;
+}
+
 /**
  * The invite page (web: /app/p/invite/:token). A new hire sees whose invite
  * it is, sets a password that meets the API's rules, sets up the
@@ -167,7 +173,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
       const res = await preview(token);
       expect(res.status).toBe(404);
       expect(res.body.message).toBe(INVITE_PROBLEM_MESSAGE.invalid);
-      expect(res.body.details.reason).toBe('invalid');
+      expect(reasonOf(res.body)).toBe('invalid');
     }
   });
 
@@ -183,7 +189,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
     expect(res.body.message).toBe(INVITE_PROBLEM_MESSAGE.expired);
     const acc = await accept({ token: h.token, password: goodPassword });
     expect(acc.status).toBe(400);
-    expect(acc.body.details.reason).toBe('expired');
+    expect(reasonOf(acc.body)).toBe('expired');
   });
 
   it('a used invite: 410 "already used", and a second accept says used', async () => {
@@ -193,12 +199,12 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
     const res = await preview(h.token);
     expect(res.status).toBe(410);
     expect(res.body.message).toBe(INVITE_PROBLEM_MESSAGE.used);
-    expect(res.body.details.reason).toBe('used');
+    expect(reasonOf(res.body)).toBe('used');
 
     const again = await accept({ token: h.token, password: 'Another-Password-22' });
     expect(again.status).toBe(400);
     expect(again.body.message).toBe('Invalid or expired invite token');
-    expect(again.body.details.reason).toBe('used');
+    expect(reasonOf(again.body)).toBe('used');
   });
 
   it('management: set up the authenticator on the invite page, a wrong code changes nothing, the right one turns it on', async () => {
@@ -215,7 +221,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
     const wrongCode = authenticator.generate(setup.body.secret) === '000000' ? '111111' : '000000';
     const wrong = await accept({ token: h.token, password: goodPassword, totpCode: wrongCode });
     expect(wrong.status).toBe(400);
-    expect(wrong.body.details.reason).toBe('totp_invalid');
+    expect(reasonOf(wrong.body)).toBe('totp_invalid');
     expect((await prisma.staff.findUniqueOrThrow({ where: { id: h.id } })).status).toBe('pending_invite');
 
     const ok = await accept({
@@ -254,7 +260,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
   it('the authenticator set-up refuses an unknown token', async () => {
     const res = await setupAuthenticator('a'.repeat(64));
     expect(res.status).toBe(404);
-    expect(res.body.details.reason).toBe('invalid');
+    expect(reasonOf(res.body)).toBe('invalid');
   });
 
   it('a re-issued invite gives a fresh link; the old token is then not valid', async () => {

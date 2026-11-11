@@ -9,6 +9,12 @@ import { applyTrustProxy } from '../http/trust-proxy';
 import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 import { PricingService } from '../../modules/pricing/pricing.service';
 
+
+/** The reason a refusal gives: in `details` behind main.ts's GlobalExceptionFilter, at the top level in tests. */
+function reasonOf(body: { reason?: string; details?: { reason?: string } }): string | undefined {
+  return body.details?.reason ?? body.reason;
+}
+
 /**
  * Laboura Field session restore (guide decision): closing the field app does
  * not log the agent out, but the 1-hour idle limit and the 2-hour limit still
@@ -152,7 +158,7 @@ describe('Laboura Field: session restore with a refresh token', () => {
     const res = await refresh({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
     expect(res.status).toBe(401);
     expect(res.body.message).toBe('Session ended after being idle');
-    expect(res.body.details.reason).toBe('idle');
+    expect(reasonOf(res.body)).toBe('idle');
     const row = await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } });
     expect(row.endedReason).toBe('idle');
     expect(row.revokedAt).not.toBeNull();
@@ -166,7 +172,7 @@ describe('Laboura Field: session restore with a refresh token', () => {
     const res = await refresh({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
     expect(res.status).toBe(401);
     expect(res.body.message).toBe('Session has reached its maximum length');
-    expect(res.body.details.reason).toBe('max_length');
+    expect(reasonOf(res.body)).toBe('max_length');
     expect((await prisma.staffSession.findUniqueOrThrow({ where: { id: s.sessionId } })).endedReason).toBe('max_length');
   });
 
@@ -180,7 +186,7 @@ describe('Laboura Field: session restore with a refresh token', () => {
     await request(app.getHttpServer()).post('/auth/logout').set('Authorization', `Bearer ${s.accessToken}`).expect(200);
     const res = await refresh({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
     expect(res.status).toBe(401);
-    expect(res.body.details.reason).toBe('revoked');
+    expect(reasonOf(res.body)).toBe('revoked');
   });
 
   it('refuses a locked account', async () => {
@@ -189,6 +195,6 @@ describe('Laboura Field: session restore with a refresh token', () => {
     now = minutes(5);
     const res = await refresh({ sessionId: s.sessionId, refreshToken: s.refreshToken, deviceId: s.deviceId });
     expect(res.status).toBe(401);
-    expect(res.body.details.reason).toBe('locked');
+    expect(reasonOf(res.body)).toBe('locked');
   });
 });

@@ -85,13 +85,10 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
     } catch (error) {
       // 401: the session is over, say why. Network: try again next minute.
       if (isApiError(error) && error.status === 401) {
-        const details = (error.body as { details?: { reason?: string } } | undefined)?.details;
+        const body = error.body as { reason?: string; details?: { reason?: string } } | undefined;
+        const given = body?.details?.reason ?? body?.reason;
         const reason: SignOutReason =
-          details?.reason === 'idle' || details?.reason === 'max_length'
-            ? details.reason
-            : details?.reason
-              ? 'revoked'
-              : reasonFromMessage(error.message);
+          given === 'idle' || given === 'max_length' ? given : given ? 'revoked' : reasonFromMessage(error.message);
         await store.clear(reason);
       }
     } finally {
