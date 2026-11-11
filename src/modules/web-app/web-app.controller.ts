@@ -2,6 +2,7 @@ import { Controller, Get, NotFoundException, Req, Res, ServiceUnavailableExcepti
 import { Request, Response } from 'express';
 import { CloudflareAccessGuard } from '../../common/auth/cloudflare-access.guard';
 import { resolveWebAppFile, resolveWebDistDir } from './web-app.files';
+import { Public } from '../../common/rbac/public.decorator';
 
 /**
  * Serves the React app (web/) at /app: its static files, and index.html for
@@ -19,12 +20,14 @@ import { resolveWebAppFile, resolveWebDistDir } from './web-app.files';
 @Controller()
 export class WebAppController {
   @Get(['app/p', 'app/p/*path', 'app/assets/*path', 'app/favicon.png', 'app/logo-mark.png'])
+  @Public('static files of the public job seeker pages; they hold no data')
   servePublic(@Req() req: Request, @Res() res: Response): void {
     this.send(req, res);
   }
 
   @Get(['app', 'app/*path'])
   @UseGuards(CloudflareAccessGuard)
+  @Public('static staff app files behind Cloudflare Access; every data call needs a staff login')
   serveStaff(@Req() req: Request, @Res() res: Response): void {
     this.send(req, res);
   }
