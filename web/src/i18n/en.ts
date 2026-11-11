@@ -21,6 +21,7 @@ export const en = {
   "common.notificationsTitle": "Notifications · {count} new",
   "common.noNotifications": "Nothing needs you right now.",
   "common.seeAllNotifications": "See all notifications →",
+  "common.notificationDoneBy": "Done by {name}",
   "common.skipToContent": "Skip to main content",
   "common.openMenu": "Open menu",
   "common.closeMenu": "Close menu",

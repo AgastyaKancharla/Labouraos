@@ -1,6 +1,6 @@
 # Phase 21 API — attendance and reporting lines
 
-Tasks 1 to 5. Later tasks add their routes here.
+Tasks 1 to 6. Later tasks add their routes here.
 
 ## GET /staff/without-reporting-line
 
@@ -433,3 +433,142 @@ Who: the CEO only. Request: `{ "date"?: "2027-08-19", "name"?: "…" }`. Moving 
 Who: the CEO only. Response `200`: `{ "removed": true }`. Errors: `403`, `404`.
 
 `GET /attendance/month` also returns `workingDays` (days in the month minus weekly days off and holidays) and `holidays` (`[{ date, name }]`).
+
+## Task 6 — notification bells
+
+Every staff role has a bell with only its own notifications. A notification
+says where the work is done (`link`, a path inside the web app, without
+`/app`) and **clears by itself** when that work is done, whoever did it and
+from whichever screen; `clearedBy` and `clearedReason` record it. There is
+never more than one open notification per person, kind and record.
+
+Kinds (closed list) and who gets them:
+
+| Kind | Who | Clears when |
+| --- | --- | --- |
+| `leave_request`, `correction_request` | The approver it is with now: the Team Lead; the Manager when it is over a limit, forwarded, a Team Lead's own, or unanswered by the Team Lead for 24 hours (it stays with the Team Lead too); the CEO for a Manager's or Finance's own, a request with no line, or unanswered by the Manager for 48 hours | It is decided (`request_approved` / `request_rejected`, by the decider), or it leaves that person (`forwarded`, by the Team Lead) |
+| `request_decided` | The person who asked (informational) | They mark it seen (`seen`) |
+| `break_overrun` | The person's Team Lead, when a short break passes 15 minutes or lunch 30 (Settings) | The break ends (`break_ended`, by the person) |
+| `system_problem` | The person's Team Lead | It is approved (`approved`, by the approver) |
+| `agent_idle` | The agent's Team Lead, after more than 30 minutes Idle | The agent is back (`idle_ended`) or the day closes |
+| `review_flag` | For a flag about an agent: their Team Lead and Manager; about a Team Lead: their Manager; about a Manager or Finance: the CEO; about nobody in particular: the Managers. Money flags (payment overdue/mismatch, payout checks): the CEO and Finance. "Vacancy added to your business": the account agent | The flag is resolved or dismissed (`flag_resolved` / `flag_dismissed`, by the resolver) |
+| `hit_reversed` | The CEO and the Manager of whoever reversed the hit (informational) | Seen, or the flag is resolved |
+| `hit_reversal_needs_manager` | The Team Lead's Manager | The flag is resolved |
+| `in_person_onboarding_review` | The account agent's Team Lead | The Team Lead verifies the business (flag resolved) |
+| `no_reporting_line` | The CEO; also the Managers for agents and Team Leads | A line is set (`line_set`) or the account is deactivated |
+| `refund_needs_ceo` | The CEO: refunds above Finance's limit, outside the rules, or sent by Finance | Approved or rejected (`payment_approved` / `payment_rejected`, by the approver) |
+| `refund_ready_to_pay` | Finance: refunds within their limit waiting, and approved refunds to pay | Paid (`payment_succeeded`, by who paid) or turned down |
+| `bank_credit_unmatched` | Finance | Matched or ignored (`credit_matched` / `credit_ignored`) |
+| `payout_failed` | Finance | The payout succeeds (`payment_succeeded`) |
+| `refund_priority` | Task 7 | Task 7 |
+| `first_interview_overdue` | N2: the registering agent's Team Lead, for a paid job seeker with no interview 10+ days after paying | An interview is booked, or he leaves the guarantee |
+| `shortage_task` | N3: the Team Lead the shortage task is assigned to | The task closes (`supply_appeared` / `no_open_vacancies`) |
+
+Money kinds carry rupee amounts and go only to the CEO and Finance — never to a
+Manager. Bells about job seekers name them by code only.
+
+**How they stay current.** The screens' actions (a request routed, forwarded,
+decided or overturned; a status change; a flag raised or resolved) update the
+bells at once. A background job (`notification-sweep`, every 5 minutes) and every
+bell read (at most every 15 seconds per role) re-check what changes with the
+clock alone: escalation after 24 and 48 hours, idle agents, breaks running
+over, money waiting, people without a line. Each change made in the web
+process is also pushed to the recipient's open screens on the live channel
+(`GET /live/events`, event `notification`, data `{ kind, change: "opened" | "cleared" }`),
+so the bell reloads at once; the web app also reads the bell every 30 seconds,
+which brings the changes the background worker makes.
+
+### GET /notifications/bell
+
+Who: every staff role (CEO, Manager, Team Lead, Finance, call agent, field agent). Only the caller's own notifications.
+
+Request: none.
+
+Response `200`:
+
+- `openCount` — open notifications;
+- `unseenCount` — open and not yet seen;
+- `latest` — the latest 20 open, newest first;
+- `doneToday` — cleared since midnight IST, latest first, with who did it;
+- `asOf`.
+
+Each notification: `id`, `kind`, `title`, `body`, `link`, `subjectType`, `subjectId`, `status` (`open` / `cleared`), `seen`, `createdAt`, `seenAt`, `clearedAt`, `clearedReason`, `clearedBy` (`{ id, code, name, role }` or null).
+
+Errors: `401` without a staff login.
+
+Example:
+
+```json
+{
+  "openCount": 3,
+  "unseenCount": 1,
+  "latest": [
+    {
+      "id": "6c1f…",
+      "kind": "leave_request",
+      "title": "Deepa Nair (CA-00042) asks for 1 day of casual leave",
+      "body": "Sent to the Team Lead",
+      "link": "/team-lead/requests?kind=leave&id=9b2e…",
+      "subjectType": "leave_request",
+      "subjectId": "9b2e…",
+      "status": "open",
+      "seen": false,
+      "createdAt": "2026-11-20T04:12:00.000Z",
+      "seenAt": null,
+      "clearedAt": null,
+      "clearedReason": null,
+      "clearedBy": null
+    }
+  ],
+  "doneToday": [
+    {
+      "id": "0a7d…",
+      "kind": "break_overrun",
+      "title": "Kiran Kumar (CA-00043): short break over 15 minutes",
+      "status": "cleared",
+      "clearedAt": "2026-11-20T06:02:00.000Z",
+      "clearedReason": "break_ended",
+      "clearedBy": { "id": "…", "code": "CA-00043", "name": "Kiran Kumar", "role": "call_agent" }
+    }
+  ],
+  "asOf": "2026-11-20T06:30:00.000Z"
+}
+```
+
+### GET /notifications?status=open|cleared|all&kind=…&limit=50&before=…
+
+Who: every staff role; only the caller's own.
+
+Request (query, all optional): `status` (default `all`), `kind` (one from the list above), `limit` (1–200, default 50), `before` (ISO time: only notifications created before it, for paging).
+
+Response `200`: `{ "openCount": 3, "unseenCount": 1, "total": 41, "items": [ …notifications, newest first ], "asOf": "…" }`.
+
+Errors: `400` unknown `status` or `kind`, bad `limit` or `before`; `401`.
+
+Example: `GET /notifications?status=cleared&kind=leave_request&limit=2` →
+
+```json
+{ "openCount": 3, "unseenCount": 1, "total": 12, "items": [ { "id": "…", "kind": "leave_request", "status": "cleared", "clearedReason": "request_approved", "clearedBy": { "id": "…", "code": "TL-00003", "name": "Ravi Shankar", "role": "team_lead" } } ], "asOf": "…" }
+```
+
+### POST /notifications/seen
+
+Who: every staff role.
+
+Request: `{ "ids"?: ["…"] }` — the given notifications of the caller, or every open one when `ids` is left out. Ids that are not the caller's are ignored.
+
+Seen is not cleared: the notification stays open until its work is done. The exception is the informational kinds (`request_decided`, `hit_reversed`): reading them is the work, so they clear (`seen`, by the reader).
+
+Response `201`: `{ "seen": 2, "cleared": 1 }`.
+
+Errors: `400` `ids` is not a list of strings; `401`.
+
+### POST /notifications/:id/seen
+
+Who: every staff role. Marks one of the caller's notifications as seen.
+
+Response `201`: the notification.
+
+Errors: `404` no such notification for the caller (someone else's id is "not found", never "forbidden"); `401`.
+
+Example: `POST /notifications/6c1f…/seen` → `{ "id": "6c1f…", "status": "open", "seen": true, "seenAt": "2026-11-20T06:31:00.000Z", … }`

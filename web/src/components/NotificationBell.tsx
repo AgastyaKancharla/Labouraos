@@ -4,8 +4,21 @@ import { useT } from '../i18n/I18nProvider';
 import type { NotificationItem } from '../portals/notifications';
 import { UiIcon } from './Icon';
 
-/** Bell with the red count and the popover list from the designs. */
-export function NotificationBell({ items, count, allPath }: { items: NotificationItem[]; count: number; allPath?: string }) {
+/**
+ * Bell with the red count and the popover list from the designs. `onOpen`
+ * runs when the list opens (the portal hook marks the notifications as seen).
+ */
+export function NotificationBell({
+  items,
+  count,
+  allPath,
+  onOpen,
+}: {
+  items: NotificationItem[];
+  count: number;
+  allPath?: string;
+  onOpen?: () => void;
+}) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const panelId = useId();
@@ -43,7 +56,10 @@ export function NotificationBell({ items, count, allPath }: { items: Notificatio
         aria-label={count > 0 ? t('common.notificationsCount', { count }) : t('common.notifications')}
         aria-expanded={open}
         aria-controls={panelId}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => {
+          if (!open) onOpen?.();
+          setOpen((o) => !o);
+        }}
       >
         <UiIcon name="bell" />
         {count > 0 && <span className="lb-bell__count">{count}</span>}

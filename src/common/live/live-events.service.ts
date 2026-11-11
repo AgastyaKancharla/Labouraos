@@ -13,12 +13,14 @@ import { Observable, Subject, filter, map } from 'rxjs';
  *   without waiting for its next poll.
  * - `registration_step`: kept for the registration screens (ticks turning
  *   green); publish with the same service.
+ * - `notification`: one of this person's bell notifications opened or
+ *   cleared, so the bell reloads now instead of at its next 30-second poll.
  *
  * Delivery is in-process: the web service runs as one instance on Render and
  * every webhook that feeds this channel arrives there. Screens also poll as a
  * fallback, so a missed event only costs a few seconds, never data.
  */
-export type LiveEventType = 'incoming_call' | 'call_status' | 'registration_step';
+export type LiveEventType = 'incoming_call' | 'call_status' | 'registration_step' | 'notification';
 
 export interface LiveEvent {
   type: LiveEventType;

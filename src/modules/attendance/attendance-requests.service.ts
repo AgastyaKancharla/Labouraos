@@ -383,6 +383,7 @@ export class AttendanceRequestsService {
       reason,
     });
     await this.smsDecision('leave', id, next);
+    await this.hooks.requestOverturned('leave', id);
     return this.view('leave', await this.load('leave', id), actor, now);
   }
 

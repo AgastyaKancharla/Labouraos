@@ -4,6 +4,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import { MessageModule } from '../message/message.module';
+import { NotificationModule } from '../notification/notification.module';
 import { AttendanceRequestsController } from './attendance-requests.controller';
 import { AttendanceRequestsService } from './attendance-requests.service';
 import { AttendanceRequestHooks } from './attendance-request-hooks';
@@ -19,7 +20,7 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
 
 @Module({
-  imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule, MessageModule, WorkingDaysModule],
+  imports: [PrismaModule, PricingModule, ReviewFlagModule, ReportingScopeModule, MessageModule, WorkingDaysModule, NotificationModule],
   controllers: [
     AttendanceController,
     AttendanceRequestsController,

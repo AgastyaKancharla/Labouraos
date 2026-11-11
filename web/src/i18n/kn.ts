@@ -21,6 +21,7 @@ export const kn: Messages = {
   "common.notificationsTitle": "ಸೂಚನೆಗಳು · {count} ಹೊಸದು",
   "common.noNotifications": "ಈಗ ನಿಮಗಾಗಿ ಏನೂ ಬಾಕಿ ಇಲ್ಲ.",
   "common.seeAllNotifications": "ಎಲ್ಲಾ ಸೂಚನೆಗಳನ್ನು ನೋಡಿ →",
+  "common.notificationDoneBy": "{name} ಮುಗಿಸಿದರು",
   "common.skipToContent": "ಮುಖ್ಯ ವಿಷಯಕ್ಕೆ ಹೋಗಿ",
   "common.openMenu": "ಮೆನು ತೆರೆಯಿರಿ",
   "common.closeMenu": "ಮೆನು ಮುಚ್ಚಿ",

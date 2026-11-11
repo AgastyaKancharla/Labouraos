@@ -21,6 +21,7 @@ export const hi: Messages = {
   "common.notificationsTitle": "सूचनाएँ · {count} नई",
   "common.noNotifications": "अभी आपके लिए कुछ नहीं है।",
   "common.seeAllNotifications": "सभी सूचनाएँ देखें →",
+  "common.notificationDoneBy": "{name} ने पूरा किया",
   "common.skipToContent": "मुख्य सामग्री पर जाएँ",
   "common.openMenu": "मेनू खोलें",
   "common.closeMenu": "मेनू बंद करें",

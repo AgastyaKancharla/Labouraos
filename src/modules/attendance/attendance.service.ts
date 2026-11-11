@@ -2,12 +2,15 @@ import {
   BadRequestException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { AttendanceDay, AttendanceSegment, PricingPolicy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { AttendanceClock } from './attendance-clock';
 import {
@@ -41,13 +44,43 @@ export interface TodayView {
 
 @Injectable()
 export class AttendanceService {
+  private readonly logger = new Logger(AttendanceService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly reviewFlags: ReviewFlagService,
     private readonly clock: AttendanceClock,
     private readonly workingDays: WorkingDaysService,
+    @Optional() private readonly bells?: NotificationSourcesService,
   ) {}
+
+  /** A bell never blocks attendance: failures are logged, not thrown. */
+  private async bell(label: string, run: (bells: NotificationSourcesService) => Promise<unknown>) {
+    if (!this.bells) return;
+    try {
+      await run(this.bells);
+    } catch (error) {
+      this.logger.warn(`Bell "${label}" failed: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Applies the automatic statuses (back from after-call notes, idle, break
+   * overrun alerts) for everyone whose day is open now. The notification
+   * sweep calls it, because an idle agent's own screen sends nothing.
+   */
+  async refreshOpenDays(): Promise<{ refreshed: number }> {
+    const now = this.clock.now();
+    const open = await this.prisma.attendanceDay.findMany({
+      where: { date: this.istDate(now), logoutAt: null, dayType: 'open', loginAt: { not: null } },
+      select: { staffId: true },
+    });
+    for (const day of open) {
+      await this.applyAutomatic(day.staffId, now);
+    }
+    return { refreshed: open.length };
+  }
 
   async login(
     staffId: string,
@@ -223,6 +256,9 @@ export class AttendanceService {
         data: { approvedAt: this.clock.now(), approvedByStaffId: actorId },
       });
     }
+    await this.bell('system problem approved', (bells) =>
+      bells.syncSystemProblem(segment.id, this.clock.now()),
+    );
     return { approved: true };
   }
 
@@ -407,9 +443,12 @@ export class AttendanceService {
     const current = await this.openSegment(dayId);
     if (current?.status === status && !current.endedAt) return;
     if (current) await this.endSegment(current, now);
-    await this.prisma.attendanceSegment.create({
+    const created = await this.prisma.attendanceSegment.create({
       data: { staffId, dayId, status, startedAt: now, source },
     });
+    if (status === 'system_problem') {
+      await this.bell('system problem', (bells) => bells.syncSystemProblem(created.id, now));
+    }
   }
 
   private async endSegment(segment: AttendanceSegment, at: Date): Promise<void> {
@@ -419,7 +458,11 @@ export class AttendanceService {
       data: { endedAt },
     });
     if ((BREAK_STATUSES as readonly string[]).includes(segment.status)) {
-      await this.raiseBreakOverrun(segment, endedAt);
+      await this.raiseBreakOverrun({ ...segment, endedAt }, endedAt);
+      await this.bell('break ended', (bells) => bells.closeBreak(segment.id, segment.staffId, endedAt));
+    }
+    if (segment.status === IDLE_STATUS) {
+      await this.bell('idle ended', (bells) => bells.closeIdle(segment.id, segment.staffId, endedAt));
     }
   }
 
@@ -443,6 +486,9 @@ export class AttendanceService {
       raisedForStaffId: leadId,
       details: { status: segment.status, minutes, allowanceMinutes },
     });
+    await this.bell('break overrun', (bells) =>
+      bells.openBreakOverrun(segment, minutes, allowanceMinutes, endedAt),
+    );
   }
 
   private totals(segments: AttendanceSegment[], now: Date): {

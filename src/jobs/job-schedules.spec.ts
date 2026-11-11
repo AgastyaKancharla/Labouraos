@@ -20,6 +20,7 @@ import { PlacementCompletionJob } from './placement-completion.job';
 import { RetentionCleanupJob } from './retention-cleanup.job';
 import { ShortageTasksJob } from './shortage-tasks.job';
 import { WinBackJob } from './win-back.job';
+import { NotificationSweepJob } from './notification-sweep.job';
 
 type MockQueue = {
   upsertJobScheduler: jest.Mock;
@@ -155,8 +156,8 @@ describe('Background job schedules run on India time', () => {
     expect(next.toISOString()).toBe('2026-11-16T00:30:00.000Z');
   });
 
-  it('keeps the two short-interval jobs on fixed intervals', () => {
-    expect(INTERVAL_JOB_MS).toEqual({ interviewReply: 60_000, kycRecovery: 900_000 });
+  it('keeps the short-interval jobs on fixed intervals', () => {
+    expect(INTERVAL_JOB_MS).toEqual({ interviewReply: 60_000, kycRecovery: 900_000, notificationSweep: 300_000 });
   });
 
   it('no job file schedules with a raw 24-hour interval or an inline pattern', () => {
@@ -188,6 +189,10 @@ describe('Daily jobs start only in the worker process', () => {
     { label: 'JoiningRewardJob', build: () => new JoiningRewardJob({} as never) },
     { label: 'ShortageTasksJob', build: () => new ShortageTasksJob({} as never) },
     { label: 'WinBackJob', build: () => new WinBackJob({} as never) },
+    {
+      label: 'NotificationSweepJob',
+      build: () => new NotificationSweepJob({} as never, {} as never, {} as never, {} as never),
+    },
   ];
 
   describe.each(previouslyUngated)('$label', ({ build }) => {

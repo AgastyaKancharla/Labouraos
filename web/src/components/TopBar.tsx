@@ -31,7 +31,7 @@ export interface TopBarProps {
   showSearch?: boolean;
   /** Keep the h1 for screen readers and the tab title, but don't show it (designs with no visible heading, e.g. CA03 Home). */
   titleHidden?: boolean;
-  notifications?: { items: NotificationItem[]; count: number };
+  notifications?: { items: NotificationItem[]; count: number; onOpen?: () => void };
 }
 
 export function TopBar({
@@ -80,6 +80,7 @@ export function TopBar({
             <NotificationBell
               items={bell.items}
               count={bell.count}
+              onOpen={bell.onOpen}
               allPath={notificationsScreen ? `${portal.root}/${notificationsScreen.path}` : undefined}
             />
           )}
