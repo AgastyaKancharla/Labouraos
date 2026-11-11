@@ -184,6 +184,18 @@ export class TargetService {
     return this.formatTargetResponse(target);
   }
 
+  /** The staff member a target belongs to; NotFound when there is no such target. */
+  async staffIdOfTarget(id: string): Promise<string> {
+    const target = await this.prisma.target.findUnique({
+      where: { id },
+      select: { staffId: true },
+    });
+    if (!target) {
+      throw new NotFoundException(`Target '${id}' not found`);
+    }
+    return target.staffId;
+  }
+
   async updateTarget(
     id: string,
     dto: UpdateTargetDto,
