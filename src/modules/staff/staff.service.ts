@@ -2,10 +2,12 @@ import {
   BadRequestException,
   ConflictException,
   ForbiddenException,
+  GoneException,
+  HttpException,
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
-import { Prisma } from '@prisma/client';
+import { Prisma, Staff } from '@prisma/client';
 import {
   createHash,
   randomBytes,
@@ -20,7 +22,7 @@ import { TotpService } from '../../common/auth/totp.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Role } from '../../common/rbac/rbac.types';
 import { CreateStaffDto } from './dto/create-staff.dto';
-import { AcceptInviteDto } from './dto/accept-invite.dto';
+import { AcceptInviteDto, InviteTokenDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
@@ -28,12 +30,58 @@ import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
 import { requireIndianMobile } from '../../common/phone/indian-mobile';
 import { ReportingScopeService } from './reporting-scope.service';
+import { publicLink } from '../../common/public-link';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
 export const MIN_PASSWORD_LENGTH = 12;
 /** bcrypt silently ignores bytes beyond 72, so longer passwords are rejected. */
 export const MAX_PASSWORD_BYTES = 72;
+
+/** Roles that sign in with an authenticator app instead of a login code. */
+export const AUTHENTICATOR_ROLES: readonly string[] = ['ceo', 'manager', 'finance'];
+
+/** Why an invite link cannot be used. The invite page shows each one plainly. */
+export type InviteProblem = 'invalid' | 'expired' | 'used';
+
+export const INVITE_PROBLEM_MESSAGE: Record<InviteProblem, string> = {
+  invalid: 'This invite link is not valid. Ask the person who added you to send a new one.',
+  expired: 'This invite has expired. Ask the person who added you to send a new one.',
+  used: 'This invite has already been used. Sign in with the password you set.',
+};
+
+/** Kept for accept-invite so old clients keep matching on it; `reason` says which. */
+const ACCEPT_INVITE_REFUSED = 'Invalid or expired invite token';
+
+/**
+ * Where the invite page lives in the web app. It sits under /app/p (public,
+ * outside Cloudflare Access) because field agents accept their invite from
+ * their phone, outside the office network.
+ */
+export function staffInvitePath(token: string): string {
+  return `/app/p/invite/${encodeURIComponent(token)}`;
+}
+
+/** The link the person who added a hire sends them (shown once, with the token). */
+export function staffInviteLink(token: string): string {
+  return publicLink(staffInvitePath(token));
+}
+
+export interface InvitePreview {
+  name: string;
+  code: string;
+  role: string;
+  expiresAt: Date;
+  /** CEO, Manager and Finance set up an authenticator app before finishing. */
+  authenticatorRequired: boolean;
+  passwordRules: { minLength: number; maxBytes: number };
+  /** Field agents sign in on Laboura Field; everyone else on the web sign-in. */
+  signInAt: 'field_app' | 'web';
+}
+
+type ResolvedInvite =
+  | { ok: true; staff: Staff; tokenHash: string }
+  | { ok: false; reason: InviteProblem };
 
 export const STAFF_STATUS = {
   PENDING_INVITE: 'pending_invite',
@@ -98,6 +146,8 @@ export interface CreateStaffResult {
   staff: StaffView;
   /** Shown exactly once; only its SHA-256 hash is stored. */
   inviteToken: string;
+  /** The invite page link carrying the token, to send to the hire. */
+  inviteUrl: string;
   inviteExpiresAt: Date;
 }
 
@@ -105,6 +155,8 @@ export interface ReissueInviteResult {
   staff: StaffView;
   /** Shown exactly once; only its SHA-256 hash is stored. */
   inviteToken: string;
+  /** The invite page link carrying the token, to send to the person. */
+  inviteUrl: string;
   inviteExpiresAt: Date;
 }
 
@@ -395,7 +447,7 @@ export class StaffService {
       },
     });
 
-    return { staff, inviteToken, inviteExpiresAt };
+    return { staff, inviteToken, inviteUrl: staffInviteLink(inviteToken), inviteExpiresAt };
   }
 
   async listStaff(
@@ -445,15 +497,103 @@ export class StaffService {
     return staff;
   }
 
+  /**
+   * Finds the account an invite token belongs to, or says plainly why it
+   * cannot be used. Tokens are 256-bit random values, so telling "used" from
+   * "not valid" gives nothing away to someone guessing.
+   */
+  private async resolveInvite(rawToken: unknown, now: Date): Promise<ResolvedInvite> {
+    const token = typeof rawToken === 'string' ? rawToken.trim() : '';
+    if (!token) {
+      return { ok: false, reason: 'invalid' };
+    }
+    const tokenHash = hashInviteToken(token);
+    const staff = await this.prisma.staff.findUnique({
+      where: { inviteTokenHash: tokenHash },
+    });
+    if (staff) {
+      if (staff.status !== STAFF_STATUS.PENDING_INVITE) {
+        return { ok: false, reason: 'invalid' };
+      }
+      if (!staff.inviteExpiresAt || staff.inviteExpiresAt <= now) {
+        return { ok: false, reason: 'expired' };
+      }
+      return { ok: true, staff, tokenHash };
+    }
+    const used = await this.prisma.staff.findUnique({
+      where: { inviteUsedTokenHash: tokenHash },
+      select: { id: true },
+    });
+    return { ok: false, reason: used ? 'used' : 'invalid' };
+  }
+
+  private inviteProblem(reason: InviteProblem): HttpException {
+    const body = { message: INVITE_PROBLEM_MESSAGE[reason], reason };
+    return reason === 'invalid' ? new NotFoundException(body) : new GoneException(body);
+  }
+
+  /** What the invite page shows before the hire sets a password. */
+  async previewInvite(dto: InviteTokenDto, now: Date = new Date()): Promise<InvitePreview> {
+    const invite = await this.resolveInvite(dto?.token, now);
+    if (!invite.ok) {
+      throw this.inviteProblem(invite.reason);
+    }
+    const { staff } = invite;
+    return {
+      name: staff.name,
+      code: staff.code,
+      role: staff.role,
+      expiresAt: staff.inviteExpiresAt!,
+      authenticatorRequired: AUTHENTICATOR_ROLES.includes(staff.role),
+      passwordRules: { minLength: MIN_PASSWORD_LENGTH, maxBytes: MAX_PASSWORD_BYTES },
+      signInAt: staff.role === 'field_agent' ? 'field_app' : 'web',
+    };
+  }
+
+  /**
+   * CEO, Managers and Finance: starts the authenticator set-up on the invite
+   * page. The secret is kept on the pending account and turned on only when
+   * accept-invite brings a matching code. Calling it again replaces it.
+   */
+  async setupInviteAuthenticator(
+    dto: InviteTokenDto,
+    now: Date = new Date(),
+  ): Promise<{ secret: string; otpauthUrl: string }> {
+    const invite = await this.resolveInvite(dto?.token, now);
+    if (!invite.ok) {
+      throw this.inviteProblem(invite.reason);
+    }
+    const { staff, tokenHash } = invite;
+    if (!AUTHENTICATOR_ROLES.includes(staff.role)) {
+      throw new BadRequestException(
+        'Only the CEO, Managers and Finance use an authenticator app',
+      );
+    }
+    const { secret, otpauthUrl } = this.totpService.generateSetup(staff.email ?? staff.code);
+    const updated = await this.prisma.staff.updateMany({
+      where: {
+        id: staff.id,
+        inviteTokenHash: tokenHash,
+        status: STAFF_STATUS.PENDING_INVITE,
+      },
+      data: { totpSecret: secret, totpEnabled: false },
+    });
+    if (updated.count !== 1) {
+      throw this.inviteProblem('invalid');
+    }
+    return { secret, otpauthUrl };
+  }
+
   async acceptInvite(
     dto: AcceptInviteDto,
     now: Date = new Date(),
   ): Promise<{ success: true; code: string; email: string | null }> {
     const token = typeof dto?.token === 'string' ? dto.token.trim() : '';
     const password = typeof dto?.password === 'string' ? dto.password : '';
+    const totpCode = typeof dto?.totpCode === 'string' ? dto.totpCode.trim() : '';
 
     if (!token) {
-      throw new BadRequestException('Invalid or expired invite token');
+      throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: 'invalid' });
     }
     if (password.length < MIN_PASSWORD_LENGTH) {
       throw new BadRequestException(
@@ -466,18 +606,28 @@ export class StaffService {
       );
     }
 
-    const tokenHash = hashInviteToken(token);
-    const staff = await this.prisma.staff.findUnique({
-      where: { inviteTokenHash: tokenHash },
-    });
-    // Unknown, already-used, expired and deactivated all look the same.
-    if (
-      !staff ||
-      staff.status !== STAFF_STATUS.PENDING_INVITE ||
-      !staff.inviteExpiresAt ||
-      staff.inviteExpiresAt <= now
-    ) {
-      throw new BadRequestException('Invalid or expired invite token');
+    const invite = await this.resolveInvite(token, now);
+    if (!invite.ok) {
+      throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: invite.reason });
+    }
+    const { staff, tokenHash } = invite;
+
+    // The authenticator set up on the invite page is turned on with the
+    // password, in the same update, only when its first code is right.
+    let enableTotp = false;
+    if (totpCode) {
+      if (!AUTHENTICATOR_ROLES.includes(staff.role)) {
+        throw new BadRequestException(
+          'Only the CEO, Managers and Finance use an authenticator app',
+        );
+      }
+      if (!staff.totpSecret || !this.totpService.verify(totpCode, staff.totpSecret)) {
+        throw new BadRequestException({
+          message: 'The authenticator code is not right. Check the app and try again.',
+          reason: 'totp_invalid',
+        });
+      }
+      enableTotp = true;
     }
 
     const passwordHash = await this.authService.hashPassword(password);
@@ -491,12 +641,15 @@ export class StaffService {
           inviteTokenHash: tokenHash,
           status: STAFF_STATUS.PENDING_INVITE,
           inviteExpiresAt: { gt: now },
+          ...(enableTotp ? { totpSecret: staff.totpSecret } : {}),
         },
         data: {
           passwordHash,
           status: STAFF_STATUS.ACTIVE,
           inviteTokenHash: null,
           inviteExpiresAt: null,
+          inviteUsedTokenHash: tokenHash,
+          ...(enableTotp ? { totpEnabled: true } : {}),
         },
       });
       if (c.count === 1) {
@@ -512,7 +665,7 @@ export class StaffService {
       return c;
     });
     if (claimed.count !== 1) {
-      throw new BadRequestException('Invalid or expired invite token');
+      throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: 'used' });
     }
 
     await this.auditService.log({
@@ -520,8 +673,12 @@ export class StaffService {
       action: 'staff.invite_accepted',
       entityType: 'staff',
       entityCode: staff.code,
-      before: { status: STAFF_STATUS.PENDING_INVITE },
-      after: { status: STAFF_STATUS.ACTIVE },
+      before: enableTotp
+        ? { status: STAFF_STATUS.PENDING_INVITE, totpEnabled: false }
+        : { status: STAFF_STATUS.PENDING_INVITE },
+      after: enableTotp
+        ? { status: STAFF_STATUS.ACTIVE, totpEnabled: true }
+        : { status: STAFF_STATUS.ACTIVE },
     });
 
     return { success: true, code: staff.code, email: staff.email };
@@ -689,6 +846,7 @@ export class StaffService {
     return {
       staff: updatedStaff,
       inviteToken,
+      inviteUrl: staffInviteLink(inviteToken),
       inviteExpiresAt,
     };
   }

@@ -1254,6 +1254,18 @@ th[aria-sort='descending'] .lb-sort {
 .lb-auth-card .muted {
   margin: 0;
 }
+.lb-invite__lang {
+  display: flex;
+  justify-content: flex-end;
+  margin: -8px -8px -4px 0;
+}
+.lb-invite__who {
+  margin: 0;
+}
+.lb-invite__who .mono {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+}
 .lb-qr {
   align-self: center;
   image-rendering: pixelated;

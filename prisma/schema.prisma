@@ -800,6 +800,9 @@ model Staff {
   status            String           @default("active") // pending_invite, active, deactivated
   inviteTokenHash   String?          @unique // SHA-256 of the one-time invite token; the raw token is never stored
   inviteExpiresAt   DateTime?
+  /// SHA-256 of the last invite token that was redeemed, so the invite page can
+  /// say "already used" instead of "not valid". Never a usable credential.
+  inviteUsedTokenHash String?        @unique
   deactivatedAt     DateTime?
   sessions          StaffSession[]
   createdAt         DateTime         @default(now())
@@ -1199,6 +1202,8 @@ model StaffSession {
   id                 String            @id @default(uuid())
   staffId            String
   staff              Staff             @relation(fields: [staffId], references: [id], onDelete: Cascade)
+  /// Laboura Field only: SHA-256 of the refresh token that restores the session
+  /// when the app is reopened. Office sessions never get one.
   tokenHash          String?
   deviceId           String?
   ipAddress          String?
