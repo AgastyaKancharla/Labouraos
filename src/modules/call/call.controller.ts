@@ -86,7 +86,7 @@ export class CallController {
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   outcome(
     @Param('id') id: string,
-    @Body() body: { agentOutcome?: string; reason?: string },
+    @Body() body: { agentOutcome?: string; reason?: string; callbackAt?: string },
     @Req() req: AuthenticatedRequest,
   ) {
     return this.calls.recordOutcome({ id: req.user.sub, role: req.user.role }, id, body);

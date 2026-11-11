@@ -7,6 +7,9 @@ import { CallService } from './call.service';
 import { CallClock } from './call-clock';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { RecordingCopyJob } from './recording-copy.job';
+import { CallFollowThroughService } from './call-follow-through.service';
+import { MessageModule } from '../message/message.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import {
   HttpRecordingDownloader,
   RECORDING_DOWNLOADER,
@@ -16,11 +19,12 @@ import {
 } from './recording-storage';
 
 @Module({
-  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule],
+  imports: [PrismaModule, TelephonyModule, ConsentModule, AttendanceModule, MessageModule, ReviewFlagModule],
   controllers: [CallController],
   providers: [
     CallService,
     CallClock,
+    CallFollowThroughService,
     RecordingCopyJob,
     {
       provide: RECORDING_STORAGE,

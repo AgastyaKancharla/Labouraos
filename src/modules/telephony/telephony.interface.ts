@@ -15,6 +15,8 @@ export interface InboundCallResult {
   isDuplicate: boolean;
   consentAnnounced: boolean;
   consentAuditLogId?: string;
+  /** The agent whose screen the call popped up on (none when nobody is Available). */
+  routedToStaffId?: string | null;
 }
 
 export interface TelephonyCapacity {

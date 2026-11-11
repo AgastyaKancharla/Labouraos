@@ -24,6 +24,8 @@ export const REVIEW_FLAG_KINDS = [
   'claim_decision_overdue',
   'name_check',
   'break_overrun',
+  /** A follow-up call went unanswered 3 times; the Team Lead is told (guide, 9 Nov). */
+  'follow_up_unanswered',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];
