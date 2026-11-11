@@ -1,6 +1,6 @@
 # Phase 21 API — attendance and reporting lines
 
-Tasks 1 to 6. Later tasks add their routes here.
+Tasks 1 to 7.
 
 ## GET /staff/without-reporting-line
 
@@ -460,7 +460,7 @@ Kinds (closed list) and who gets them:
 | `refund_ready_to_pay` | Finance: refunds within their limit waiting, and approved refunds to pay | Paid (`payment_succeeded`, by who paid) or turned down |
 | `bank_credit_unmatched` | Finance | Matched or ignored (`credit_matched` / `credit_ignored`) |
 | `payout_failed` | Finance | The payout succeeds (`payment_succeeded`) |
-| `refund_priority` | Task 7 | Task 7 |
+| `refund_priority` | Task 7: the agent working on someone in the close-to-refund window (who registered the job seeker, or the business's account agent), their Team Lead and their Manager. No rupees | He leaves the window (`offer_made`, by who booked the interview; `replacement_found`; `left_window`) |
 | `first_interview_overdue` | N2: the registering agent's Team Lead, for a paid job seeker with no interview 10+ days after paying | An interview is booked, or he leaves the guarantee |
 | `shortage_task` | N3: the Team Lead the shortage task is assigned to | The task closes (`supply_appeared` / `no_open_vacancies`) |
 
@@ -572,3 +572,90 @@ Response `201`: the notification.
 Errors: `404` no such notification for the caller (someone else's id is "not found", never "forbidden"); `401`.
 
 Example: `POST /notifications/6c1f…/seen` → `{ "id": "6c1f…", "status": "open", "seen": true, "seenAt": "2026-11-20T06:31:00.000Z", … }`
+
+## Task 7 — close to a refund: the 15-day priority
+
+Finding a job takes about a week, so the warning starts `refundPriorityWindowDays`
+(Settings, default 15) days before a refund falls due. Everyone inside the window
+is a **priority**:
+
+- **Job seekers:** paid, the 30-day guarantee runs out within the window, no
+  suitable offer yet (no interview booked since paying, cancelled ones aside), the
+  refund not already ended (declined, no reply, no-show) or paid, not placed,
+  deactivated or closed.
+- **Businesses:** a dropped-out placement whose refund falls due within the window
+  (counted from the dropout report, `replacementSearchDays`), claim not turned
+  down, no accepted replacement, no refund yet.
+
+Days left are whole days rounded up (4 days and 1 hour is 5). Buckets: `0-5`,
+`6-10`, `11-15`. `MoneyAtRiskService` (`GET /targets/money-at-risk`) uses the same
+window from the policy for both of its lists; the old 7- and 5-day constants are
+gone.
+
+**Listed first wherever work is planned:** the call agent's Call next and work
+list (`GET /call-work/queue`, `GET /call-work/home`: `priority: true`, `daysLeft`), and matching
+(`GET /vacancies/:id/shortlist`: each match carries `priority` and `daysLeft`; a
+priority candidate is shown before others with an equal match and never pushed
+past a better match or someone who passes the filters). The bells
+(`refund_priority`, Task 6) open when someone enters the window and clear when
+he leaves it; the notification sweep checks every 5 minutes.
+
+### GET /close-to-refund?who=&bucket=&teamLeadId=&agentId=&format=
+
+Who:
+
+| Role | Sees | Rupees | CSV |
+| --- | --- | --- | --- |
+| CEO | everyone | yes | yes |
+| Finance | everyone, names left out (personal data masked) | yes | yes |
+| Manager | people worked by anyone in their tree | no | yes, without rupees |
+| Team Lead | their team's people | no | no |
+| Call / field agent | their own people | no | no |
+
+Request (query, all optional): `who` (`job_seekers`, `businesses`, `all`), `bucket`
+(`0-5`, `6-10`, `11-15`), `teamLeadId` (that Team Lead's team), `agentId`,
+`format=csv` (a download instead of JSON).
+
+Response `200`:
+
+- `windowDays`, `asOf`;
+- `buckets`: `[{ bucket, count, jobSeekers, businesses, atStakePaise? }]`;
+- `totals`: `{ count, jobSeekers, businesses, atStakePaise? }`;
+- `rows`, soonest first: `kind` (`job_seeker` / `business`), `id` (job seeker id, or the placement id), `code` (JS-… or the placement code), `name`, `trade`, `daysLeft`, `bucket`, `deadline`, `priority: true`, `agent` (`{ id, code, name }`), `businessId`, `businessName`, `atStakePaise` (CEO and Finance only: the ₹499 paid, or the placement fee).
+
+`atStakePaise` is left out entirely for Managers, Team Leads and agents.
+
+CSV columns: Kind, Code, Name (not for Finance), Trade, Days left, Bucket, Deadline, Agent code, Agent, At stake (Rs) (CEO and Finance only).
+
+Errors: `400` unknown `who` or `bucket`; `403` a team or agent outside the caller's scope, or a CSV for anyone below Manager; `401`.
+
+Example (Team Lead): `GET /close-to-refund?bucket=0-5` →
+
+```json
+{
+  "asOf": "2026-11-20T06:30:00.000Z",
+  "windowDays": 15,
+  "buckets": [
+    { "bucket": "0-5", "count": 1, "jobSeekers": 1, "businesses": 0 },
+    { "bucket": "6-10", "count": 0, "jobSeekers": 0, "businesses": 0 },
+    { "bucket": "11-15", "count": 0, "jobSeekers": 0, "businesses": 0 }
+  ],
+  "totals": { "count": 1, "jobSeekers": 1, "businesses": 0 },
+  "rows": [
+    {
+      "kind": "job_seeker",
+      "id": "4f0c…",
+      "code": "JS-00198",
+      "name": "Ramesh Gowda",
+      "trade": "Electrician",
+      "daysLeft": 3,
+      "bucket": "0-5",
+      "deadline": "2026-11-23T05:10:00.000Z",
+      "priority": true,
+      "agent": { "id": "…", "code": "CA-00042", "name": "Deepa Nair" },
+      "businessId": null,
+      "businessName": null
+    }
+  ]
+}
+```

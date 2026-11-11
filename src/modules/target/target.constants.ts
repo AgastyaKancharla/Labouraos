@@ -101,17 +101,8 @@ export const BEHIND_PACE_THRESHOLD = 0.8;
  */
 export const BEHIND_PACE_START_DAY = 8;
 
-/**
- * Window in days for job seeker candidates approaching their 30-day refund deadline.
- * A candidate whose guarantee matures within 7 days is approaching deadline and at risk.
- */
-export const CANDIDATE_AT_RISK_WINDOW_DAYS = 7;
-
-/**
- * Window in days for dropped-out placements approaching their 15-day replacement deadline.
- * A replacement vacancy whose 15-day window matures within 5 days is approaching deadline and at risk.
- */
-export const PLACEMENT_AT_RISK_WINDOW_DAYS = 5;
+// The close-to-refund window (both lists) is `refundPriorityWindowDays` in the
+// pricing policy (Settings, default 15) — Phase 21 Task 7. No constant here.
 
 /**
  * Returns total days in a given calendar month (UTC).

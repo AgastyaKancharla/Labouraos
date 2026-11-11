@@ -191,7 +191,7 @@ describe('Daily jobs start only in the worker process', () => {
     { label: 'WinBackJob', build: () => new WinBackJob({} as never) },
     {
       label: 'NotificationSweepJob',
-      build: () => new NotificationSweepJob({} as never, {} as never, {} as never, {} as never),
+      build: () => new NotificationSweepJob({} as never, {} as never, {} as never, {} as never, {} as never),
     },
   ];
 
