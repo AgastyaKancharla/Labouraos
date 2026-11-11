@@ -472,8 +472,11 @@ decided or overturned; a status change; a flag raised or resolved) update the
 bells at once. A background job (`notification-sweep`, every 5 minutes) and every
 bell read (at most every 15 seconds per role) re-check what changes with the
 clock alone: escalation after 24 and 48 hours, idle agents, breaks running
-over, money waiting, people without a line. No server push exists yet: the web
-app reads the bell every 30 seconds.
+over, money waiting, people without a line. Each change made in the web
+process is also pushed to the recipient's open screens on the live channel
+(`GET /live/events`, event `notification`, data `{ kind, change: "opened" | "cleared" }`),
+so the bell reloads at once; the web app also reads the bell every 30 seconds,
+which brings the changes the background worker makes.
 
 ### GET /notifications/bell
 

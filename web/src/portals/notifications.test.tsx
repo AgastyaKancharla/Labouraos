@@ -1,8 +1,9 @@
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { TopBar } from '../components/TopBar';
-import { mockApi, renderScreen, signInAs } from '../test/utils';
+import { sessionStore } from '../auth/session';
+import { TEST_STAFF, fakeJwt, mockApi, renderScreen, signInAs } from '../test/utils';
 import { toBellItems, type NotificationBellData } from './notifications';
 
 const bell: NotificationBellData = {
@@ -99,5 +100,43 @@ describe('TopBar bell', () => {
     renderScreen(<TopBar title="Home" />, { portal: 'team-lead', path: '/team-lead' });
     expect(await screen.findByRole('button', { name: 'Notifications' })).toBeInTheDocument();
     expect(api.calls('GET /notifications/bell')).toHaveLength(0);
+  });
+
+  it('reloads at once when the live channel says a notification changed', async () => {
+    let bellCalls = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: RequestInfo | URL) => {
+        const url = new URL(String(input), 'http://localhost');
+        if (url.pathname === '/notifications/bell') {
+          bellCalls += 1;
+          const body = { ...bell, openCount: bellCalls === 1 ? 2 : 3 };
+          return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+        }
+        if (url.pathname === '/live/events') {
+          // Sent once the first bell answer is in, so the reload is the event's doing.
+          await waitFor(() => expect(bellCalls).toBe(1));
+          const stream = new ReadableStream<Uint8Array>({
+            start(controller) {
+              controller.enqueue(
+                new TextEncoder().encode('event: notification\nid: 1\ndata: {"kind":"leave_request","change":"opened"}\n\n'),
+              );
+            },
+          });
+          return new Response(stream, { status: 200, headers: { 'Content-Type': 'text/event-stream' } });
+        }
+        return new Response(JSON.stringify({ statusCode: 501 }), { status: 501 });
+      }),
+    );
+    // A token of its own: the live channel ignores a token an earlier test's 501 blocked.
+    sessionStore.set({
+      token: fakeJwt({ sub: TEST_STAFF.team_lead.id, role: 'team_lead', test: 'live-bell' }),
+      staff: TEST_STAFF.team_lead,
+      expiresAt: Date.now() + 15 * 60 * 1000,
+      totpSetupOnly: false,
+    });
+    renderScreen(<TopBar title="Home" />, { portal: 'team-lead', path: '/team-lead' });
+    expect(await screen.findByRole('button', { name: 'Notifications, 3 new' })).toBeInTheDocument();
+    expect(bellCalls).toBe(2);
   });
 });

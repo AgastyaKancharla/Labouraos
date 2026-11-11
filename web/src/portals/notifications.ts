@@ -4,12 +4,15 @@ import { sessionStore } from '../auth/session';
 import { useT } from '../i18n/I18nProvider';
 import { api } from '../lib/api/client';
 import { formatDateTimeIST } from '../lib/format/date';
+import { useLiveEvent } from '../lib/live/liveChannel';
 import type { PortalKey } from './index';
 
 /**
  * Items for the notification bell in the top bar (designs: "Notifications ·
  * 8 new" popover), from `GET /notifications/bell` (Phase 21 Task 6). Every
- * portal's bell fills in from here; it refreshes every 30 seconds. Each item
+ * portal's bell fills in from here. It reloads at once when the live channel
+ * says one of the person's notifications opened or cleared, and every 30
+ * seconds anyway (changes made by the background worker arrive that way). Each item
  * links to the screen where its work is done; done items show struck through
  * with who did them.
  */
@@ -97,6 +100,9 @@ export function usePortalNotifications(portal: PortalKey): {
   const seen = useMutation({
     mutationFn: () => api.post<{ seen: number; cleared: number }>('/notifications/seen'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
+  });
+  useLiveEvent('notification', () => {
+    if (enabled) void queryClient.invalidateQueries({ queryKey: notificationKeys.bell });
   });
   const { mutate } = seen;
   const unseen = bell.data?.unseenCount ?? 0;

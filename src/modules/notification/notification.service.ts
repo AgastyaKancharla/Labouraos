@@ -1,6 +1,7 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Notification, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { LiveEventsService } from '../../common/live/live-events.service';
 import { getCalendarPartsInTimezone, localCalendarToUtc } from '../../common/time/period-boundary';
 import {
   BELL_LATEST_LIMIT,
@@ -68,7 +69,24 @@ export class NotificationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: NotificationClock,
+    @Optional() private readonly live?: LiveEventsService,
   ) {}
+
+  /**
+   * Tells the recipients' open screens that their bell changed (live channel).
+   * Only reaches screens served by this process; the bell's 30-second poll
+   * covers changes made by the background worker.
+   */
+  private ping(recipients: Iterable<string>, kind: string, change: 'opened' | 'cleared'): void {
+    if (!this.live) return;
+    for (const staffId of new Set(recipients)) {
+      try {
+        this.live.publish(staffId, 'notification', { kind, change });
+      } catch {
+        // The live channel is a nicety; the poll still brings the change.
+      }
+    }
+  }
 
   now(): Date {
     return this.clock.now();
@@ -95,7 +113,7 @@ export class NotificationService {
       if (before) return null;
     }
     try {
-      return await this.prisma.notification.create({
+      const created = await this.prisma.notification.create({
         data: {
           recipientStaffId: draft.recipientStaffId,
           kind: draft.kind,
@@ -108,6 +126,8 @@ export class NotificationService {
           createdAt: now,
         },
       });
+      this.ping([created.recipientStaffId], created.kind, 'opened');
+      return created;
     } catch (error) {
       if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {
         // Someone else opened the same one a moment ago.
@@ -140,16 +160,23 @@ export class NotificationService {
     info: ClearInfo,
     now: Date = this.clock.now(),
   ): Promise<number> {
+    const scope: Prisma.NotificationWhereInput = {
+      clearedAt: null,
+      subjectType: where.subjectType,
+      subjectId: where.subjectId,
+      ...(where.kind ? { kind: where.kind } : {}),
+      ...(where.recipientStaffId ? { recipientStaffId: where.recipientStaffId } : {}),
+    };
+    const open = await this.prisma.notification.findMany({
+      where: scope,
+      select: { id: true, recipientStaffId: true, kind: true },
+    });
+    if (open.length === 0) return 0;
     const result = await this.prisma.notification.updateMany({
-      where: {
-        clearedAt: null,
-        subjectType: where.subjectType,
-        subjectId: where.subjectId,
-        ...(where.kind ? { kind: where.kind } : {}),
-        ...(where.recipientStaffId ? { recipientStaffId: where.recipientStaffId } : {}),
-      },
+      where: { id: { in: open.map((row) => row.id) }, clearedAt: null },
       data: this.clearData(info, now),
     });
+    for (const row of open) this.ping([row.recipientStaffId], row.kind, 'cleared');
     return result.count;
   }
 
@@ -177,14 +204,15 @@ export class NotificationService {
     const wanted = new Set(drafts.map((draft) => openKeyOf(draft)));
     const open = await this.prisma.notification.findMany({
       where: { kind, subjectType, subjectId, clearedAt: null },
-      select: { id: true, openKey: true },
+      select: { id: true, openKey: true, recipientStaffId: true },
     });
-    const stale = open.filter((row) => !row.openKey || !wanted.has(row.openKey)).map((row) => row.id);
+    const stale = open.filter((row) => !row.openKey || !wanted.has(row.openKey));
     if (stale.length > 0) {
       await this.prisma.notification.updateMany({
-        where: { id: { in: stale }, clearedAt: null },
+        where: { id: { in: stale.map((row) => row.id) }, clearedAt: null },
         data: this.clearData(info, now),
       });
+      this.ping(stale.map((row) => row.recipientStaffId), kind, 'cleared');
     }
     for (const draft of drafts) {
       await this.open(draft, now);
@@ -217,6 +245,7 @@ export class NotificationService {
         where: { id: row.id, clearedAt: null },
         data: this.clearData(info, now),
       });
+      if (done.count > 0) this.ping([row.recipientStaffId], kind, 'cleared');
       cleared += done.count;
     }
     let opened = 0;
