@@ -360,6 +360,7 @@ describe('Approval limits (FN-Limits)', () => {
     signInAs('ceo');
     renderScreen(<ApprovalLimits />, { portal: 'finance', path: '/finance/limits', now: NOW });
     const save = await screen.findByRole('button', { name: 'Save limits' });
+    await waitFor(() => expect(screen.getByDisplayValue('15,000')).toBeInTheDocument());
     await userEvent.click(save);
     await waitFor(() => expect(api.calls('PUT /pricing/approval-limits')[0].body).toEqual({ businessRefundLimitPaise: 1500000, expenseLimitPaise: 1000000 }));
   });

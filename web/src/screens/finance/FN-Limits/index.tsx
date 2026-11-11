@@ -41,7 +41,11 @@ export default function ApprovalLimits() {
     }
   }, [query.data]);
   const save = useMutation({
-    mutationFn: () => api.put('/pricing/approval-limits', { businessRefundLimitPaise: refund, expenseLimitPaise: expense }),
+    mutationFn: () =>
+      api.put('/pricing/approval-limits', {
+        businessRefundLimitPaise: refund ?? query.data?.businessRefundLimitPaise,
+        expenseLimitPaise: expense ?? query.data?.expenseLimitPaise,
+      }),
     onSuccess: () => {
       toast.success('Limits saved · logged in the audit log');
       void queryClient.invalidateQueries();
