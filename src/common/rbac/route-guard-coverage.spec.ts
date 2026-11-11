@@ -35,6 +35,7 @@ interface RouteInfo {
   paths: string[];
   guards: unknown[];
   hasRoles: boolean;
+  roles: string[];
   publicReason: string | undefined;
 }
 
@@ -102,6 +103,7 @@ function routesOf(controller: Type<unknown>): RouteInfo[] {
       ],
       hasRoles:
         (Array.isArray(roles) && roles.length > 0) || Boolean(methodPermission ?? classPermission),
+      roles: Array.isArray(roles) ? (roles as string[]) : [],
       // Only a marker on the route itself counts, so a new route added to a
       // controller of public pages is not public by accident.
       publicReason: Reflect.getMetadata(PUBLIC_ROUTE_KEY, handler) as string | undefined,
@@ -140,6 +142,24 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
       .filter((route) => route.publicReason !== undefined && !route.publicReason.trim())
       .map(describeRoute);
     expect(blank).toEqual([]);
+  });
+
+  it('never lets a Manager onto a money route (payments, refunds, pricing, invoices)', () => {
+    // A Manager sees no money at all (Master Guide, reconfirmed 11 Nov).
+    // Resending a payment link shows no amount (answers to a Manager are
+    // stripped of money fields), so it is the one exception.
+    const allowedForManager = new Set(['PaymentController.resendPayment']);
+    const moneyControllers = new Set(['PaymentController', 'RefundController', 'PricingController']);
+    const leaks = routes
+      .filter(
+        (route) =>
+          moneyControllers.has(route.controller) ||
+          route.paths.some((path) => /invoice|receipt|refund|payout/i.test(path)),
+      )
+      .filter((route) => route.roles.includes('manager'))
+      .map((route) => `${route.controller}.${route.handler}`)
+      .filter((name) => !allowedForManager.has(name));
+    expect(leaks).toEqual([]);
   });
 
   it('keeps money, audit and staff routes behind a login', () => {

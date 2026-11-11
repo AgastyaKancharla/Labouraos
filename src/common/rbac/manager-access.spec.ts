@@ -160,6 +160,10 @@ describe('Access matches the Master Guide (Managers, CEO, audit, receipts)', () 
         `/payments/${payment.id}`,
         '/refunds/due',
         '/pricing',
+        '/pricing/approval-limits',
+        '/payments/refunds/with-ceo',
+        '/payments/tds-receivables',
+        `/payments/${payment.id}/receipt`,
         `/placements/${payment.id}/invoice`,
       ]) {
         const res = await request(server()).get(path).set('Authorization', `Bearer ${mgr}`);
