@@ -385,12 +385,13 @@ One row per person who marks attendance (active, or with days in that month), bu
 - `paidDays` = full days + half days × 0.5 + paid leave days
 - `unpaidDays` = absent days + unpaid leave days + half days × 0.5
 - `deductibleShortfallMinutes` = the month's deductible shortfall, in whole minutes (part minutes dropped)
+- `workingDays` = days in the month minus weekly days off and holidays; `holidays` = holidays on working weekdays. Holidays are paid days off but not working days, so they are not added to `paidDays`; Phase 22 uses `workingDays` for the salary division.
 
 No rupee amounts (Phase 22). Every read is audited (`attendance.month_sheet_read`).
 
-Response `200` (JSON): `{ "month": "2027-06", "rows": [ { "staffCode": "CA-00007", "name": "Ravi", "role": "call_agent", "fullDays": 2, "halfDays": 1, "paidLeaveDays": 1, "absentDays": 1, "unpaidLeaveDays": 0, "paidDays": 3.5, "unpaidDays": 1.5, "deductibleShortfallMinutes": 9 } ] }`
+Response `200` (JSON): `{ "month": "2027-06", "rows": [ { "staffCode": "CA-00007", "name": "Ravi", "role": "call_agent", "workingDays": 26, "holidays": 0, "fullDays": 2, "halfDays": 1, "paidLeaveDays": 1, "absentDays": 1, "unpaidLeaveDays": 0, "paidDays": 3.5, "unpaidDays": 1.5, "deductibleShortfallMinutes": 9 } ] }`
 
-With `format=csv`: `text/csv`, file `attendance-month-sheet-2027-06.csv`, columns `Staff code,Name,Role,Full days,Half days,Paid leave days,Absent days,Unpaid leave days,Paid days,Unpaid days,Deductible shortfall (minutes)`. No other personal data. A cell starting like a formula is written as text.
+With `format=csv`: `text/csv`, file `attendance-month-sheet-2027-06.csv`, columns `Staff code,Name,Role,Working days,Holidays,Full days,Half days,Paid leave days,Absent days,Unpaid leave days,Paid days,Unpaid days,Deductible shortfall (minutes)`. No other personal data. A cell starting like a formula is written as text.
 
 Errors: `400` bad month; `403`.
 
@@ -401,7 +402,7 @@ The CEO keeps the holiday list per year. A holiday is a paid day off for everyon
 - nobody is marked absent on it;
 - leave that spans it does not use a leave day for it;
 - time worked on it is make-up (`dayType` `off`), never shortfall or a half day;
-- it is left out of target pace (expected pace counts working days only) and of the month's working days (`workingDays` on the month summary; the month sheet gets the same column).
+- it is left out of target pace (expected pace counts working days only) and of the month's working days (`workingDays` and `holidays` on the month summary and the month sheet).
 
 Changing the list re-works the affected dates automatically, from the 1st of the current month (IST) onward, past days included. Earlier months are closed and left alone. A date that becomes a holiday loses its absent rows and leave days (the leave request's paid/unpaid split is worked out again, so the day goes back to the balance); worked days become `off`. A date that becomes a working day again gets back the leave days of approved requests that cover it, worked days become full/half again, and a past date with no login and no leave is marked absent.
 

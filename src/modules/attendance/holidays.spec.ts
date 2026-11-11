@@ -226,6 +226,11 @@ describe('Public holidays', () => {
     const month = await get(lead, `/attendance/month?month=2027-08&staffId=${worker.id}`).expect(200);
     expect(month.body.workingDays).toBe(25);
     expect(month.body.holidays).toEqual([{ date: '2027-08-11', name: 'Test holiday' }]);
+    const sheet = await get(finance, '/attendance/month-sheet?month=2027-08').expect(200);
+    const sheetRow = sheet.body.rows.find((row: { staffCode: string }) => row.staffCode === worker.code);
+    expect(sheetRow).toMatchObject({ workingDays: 25, holidays: 1, fullDays: 0, halfDays: 0, absentDays: 0 });
+    const csv = await get(finance, '/attendance/month-sheet?month=2027-08&format=csv').expect(200);
+    expect(csv.text.split('\n')[0]).toContain('Role,Working days,Holidays,Full days');
     const calendar = await workingDays.calendar(d('2027-08-01'), d('2027-08-31'));
     expect(calendar.workingDates.map((date) => date.toISOString().slice(0, 10))).not.toContain('2027-08-11');
     expect(await workingDays.reasonFor(d('2027-08-11'))).toBe('holiday');
