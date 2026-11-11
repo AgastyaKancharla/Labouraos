@@ -1580,6 +1580,24 @@ export class PlacementService {
       });
     }
 
+    // Once the CEO has turned a refund down, Finance cannot approve one for the same
+    // placement on its own; only the CEO decides from then on.
+    if (actor.role !== 'ceo' && !refundWithCeo) {
+      const rejectedByCeo = await this.prisma.payment.findFirst({
+        where: { placementId: { in: [placement.id, rootId] }, type: 'refund', status: 'rejected' },
+      });
+      if (rejectedByCeo && dto?.sendToCeo !== true) {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          code: 'refund_rejected_by_ceo',
+          message: `The CEO rejected refund ${rejectedByCeo.code} for this placement. Only the CEO can approve a refund for it now; send it to the CEO.`,
+          paymentId: rejectedByCeo.id,
+          paymentCode: rejectedByCeo.code,
+        });
+      }
+    }
+
     const claim = await this.prisma.replacementClaim.findFirst({
       where: {
         placement: { OR: [{ id: rootId }, { rootPlacementId: rootId }] },
