@@ -114,6 +114,7 @@ export function Loading() {
 export function problemKey(error: unknown): MessageKey {
   if (!isApiError(error)) return 'pub.error.generic';
   if (error.isNetworkError) return 'pub.error.offline';
+  if (error.status === 429) return 'pub.error.tooMany';
   const message = error.message.toLowerCase();
   if (/\b(otp|code)\b/.test(message)) return 'pub.error.code';
   if (message.includes('expired')) return 'pub.error.expired';

@@ -34,6 +34,7 @@ import { BusinessVerificationService } from '../business/business-verification.s
 import { publicLink } from '../../common/public-link';
 import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
+import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 
 interface ConsentLinkTokenBase {
   token: string;
@@ -154,6 +155,7 @@ export class ConsentLinkService {
     private readonly auditService: AuditService,
     private readonly businessVerificationService: BusinessVerificationService,
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
+    private readonly otpLimiter: PublicOtpLimiter,
     @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
 
@@ -561,34 +563,29 @@ export class ConsentLinkService {
 
   async sendOtp(token: string) {
     const record = await this.validateToken(token);
+    let phone: string;
     if (record.subjectType === 'interview') {
       if (record.purpose !== 'owner_result') {
         throw new BadRequestException('This interview link does not require OTP');
       }
-      const otp = await this.otpService.sendOtp(record.phone);
-      return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.phone) };
+      phone = record.phone;
+    } else if (record.subjectType === 'business') {
+      phone = record.businessPhone;
+    } else if (record.subjectType === 'referral') {
+      phone = record.partnerPhone;
+    } else {
+      const seeker = await this.prisma.jobSeeker.findUnique({
+        where: { id: record.jobSeekerId },
+      });
+      if (!seeker) {
+        throw new NotFoundException('Job seeker not found');
+      }
+      phone = seeker.phone;
     }
-    if (record.subjectType === 'business') {
-      const otp = await this.otpService.sendOtp(record.businessPhone);
-      return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.businessPhone) };
-    }
-    if (record.subjectType === 'referral') {
-      const otp = await this.otpService.sendOtp(record.partnerPhone);
-      return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(record.partnerPhone) };
-    }
-    const seeker = await this.prisma.jobSeeker.findUnique({
-      where: { id: record.jobSeekerId },
-    });
-    if (!seeker) {
-      throw new NotFoundException('Job seeker not found');
-    }
-
-    const otp = await this.otpService.sendOtp(seeker.phone);
-    return {
-      success: true,
-      requestId: otp.requestId,
-      phone: maskAgreementPhone(seeker.phone),
-    };
+    // Every public "Send code" costs an SMS: limited per link and per phone on the server.
+    await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), phone, this.clock.now());
+    const otp = await this.otpService.sendOtp(phone);
+    return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(phone) };
   }
 
   async submitConsent(dto: SubmitConsentDto) {

@@ -83,4 +83,14 @@ describe('P00-Open / P02r-Resume', () => {
     expect(await screen.findByText(/Something went wrong on our side/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Try again' })).toBeInTheDocument();
   });
+
+  it('explains when the server refuses another code (429)', async () => {
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: { ...locked, language: null },
+      'POST /consent/send-otp': apiError(429, 'A code was just sent. Wait 30 seconds before asking for another.'),
+    });
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: 'Send code to ******2345' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Too many codes have been asked for');
+  });
 });

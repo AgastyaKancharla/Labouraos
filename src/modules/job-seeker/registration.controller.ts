@@ -23,6 +23,7 @@ import { Public } from '../../common/rbac/public.decorator';
 import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { RegistrationJourneyService } from './registration-journey.service';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
+import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { publicLanguage, shortNameOf } from './registration-journey';
 
 const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
@@ -41,6 +42,7 @@ export class RegistrationController {
     private readonly prisma: PrismaService,
     private readonly upi: UpiCollectionService,
     private readonly journey: RegistrationJourneyService,
+    private readonly otpLimiter: PublicOtpLimiter,
     @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
 
@@ -166,6 +168,7 @@ export class RegistrationController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async sendPaymentOnlyOtp(@Param('token') token: string) {
     const link = await this.requirePaymentLink(token);
+    await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
     const result = await this.otp.sendOtp(link.phone!);
     return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt };
   }

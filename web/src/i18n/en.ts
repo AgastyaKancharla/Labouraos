@@ -45,6 +45,7 @@ export const en = {
   "pub.error.offline": "No internet right now. Check your connection and try again.",
   "pub.error.server": "Something went wrong on our side. Please try again in a minute.",
   "pub.error.code": "That code is wrong or has run out. Check the SMS, or ask for a new code.",
+  "pub.error.tooMany": "Too many codes have been asked for. Please wait a little and try again, or ask your Laboura agent.",
   "pub.error.generic": "That didn't work. Please try again.",
   "pub.otp.send": "Send code to {phone}",
   "pub.otp.sentTo": "Code sent to {phone}",

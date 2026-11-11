@@ -52,6 +52,18 @@ model PublicLink {
   @@index([expiresAt])
 }
 
+/// One code sent from a public page (registration, payment-only, agreement, owner result, referral terms),
+/// so the server can limit them per link and per phone (PublicOtpLimiter). Rows older than 24 hours are removed.
+model PublicOtpSend {
+  id        String   @id @default(uuid())
+  linkKey   String
+  phoneHash String
+  sentAt    DateTime @default(now())
+
+  @@index([linkKey, sentAt])
+  @@index([phoneHash, sentAt])
+}
+
 model OtpSession {
   id             String   @id @default(uuid())
   requestId      String   @unique
