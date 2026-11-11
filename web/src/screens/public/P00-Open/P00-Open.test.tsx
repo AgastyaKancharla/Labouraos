@@ -1,4 +1,4 @@
-import { screen } from '@testing-library/react';
+import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { apiError, mockApi, renderScreen } from '../../../test/utils';
 import { openStatus, TOKEN, verifiedInThisTab } from '../shared/testData';
@@ -16,7 +16,8 @@ describe('P00-Open / P02r-Resume', () => {
     });
     render();
     expect(await screen.findByRole('heading', { name: 'ನಿಮ್ಮ ನೋಂದಣಿ ಪೂರ್ಣಗೊಳಿಸಿ' })).toBeInTheDocument();
-    expect(document.documentElement.lang).toBe('kn');
+    // The page language is set by an effect after the first paint; wait for it rather than race it.
+    await waitFor(() => expect(document.documentElement.lang).toBe('kn'));
     await userEvent.click(screen.getByRole('button', { name: 'EN' }));
     expect(screen.getByText('4. Pay ₹499')).toBeInTheDocument();
     expect(screen.queryByText(/Kavya/)).not.toBeInTheDocument();
