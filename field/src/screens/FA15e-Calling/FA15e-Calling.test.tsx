@@ -15,7 +15,7 @@ const api = () =>
     '/screens/field-selling/candidates/js-1?vacancyId=vac-1': candidate,
     'POST /field-selling/calls': { callRecordId: 'call-1' },
     '/calls/call-1': { id: 'call-1', answered: true, providerStatus: 'in-progress' },
-    'POST /field-selling/calls/call-1/answer': (init) => ({
+    'POST /field-selling/calls/call-1/answer': (init: RequestInit) => ({
       status: 201,
       body: { interviewId: 'iv-1', status: JSON.parse(String(init.body)).answer === 'yes' ? 'confirmed' : 'declined', hit: false },
     }),

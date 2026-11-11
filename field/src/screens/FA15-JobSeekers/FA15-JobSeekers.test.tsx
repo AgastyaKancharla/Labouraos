@@ -10,7 +10,7 @@ beforeEach(() => jest.clearAllMocks());
 describe('FA15 Job seekers tab', () => {
   it('suggests registered businesses as he types two letters, and opens the matches of the one picked', async () => {
     const { route, calls } = routeTable({
-      '/screens/field-selling/businesses': (_init, url) => ({
+      '/screens/field-selling/businesses': (_init: RequestInit, url: string) => ({
         status: 200,
         body: new URL(url).searchParams.get('q')
           ? { query: 'An', results: [hit(), hit({ id: 'biz-2', code: 'BZ-0144', name: 'Anand Bakery', openVacancies: 1 })] }
