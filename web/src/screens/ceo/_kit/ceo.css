@@ -59,3 +59,6 @@
   .ceo-form-row > * { flex: 1 1 100%; }
   .ceo-rule-row { grid-template-columns: 1fr; }
 }
+/* Grid children with wide tables must be allowed to shrink so the table scrolls inside the card. */
+.two-col > *, .three-col > * { min-width: 0; }
+.ceo-rule-row > * { min-width: 0; }

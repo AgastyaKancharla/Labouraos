@@ -1,3 +1,4 @@
+import './ceo.css';
 import { LinkTabs } from '../../../components/Tabs';
 import { useScreenPath } from '../../../portals/PortalContext';
 
