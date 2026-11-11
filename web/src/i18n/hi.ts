@@ -1,5 +1,6 @@
 /* Hindi (हिंदी) — same keys as en.ts. Have a native speaker review new strings. */
 import type { Messages } from './en';
+import { registrationHi } from './registration';
 
 export const hi: Messages = {
   "app.name": "Laboura",
@@ -339,4 +340,5 @@ export const hi: Messages = {
   "screen.P05-InterviewResult": "इंटरव्यू का नतीजा",
   "screen.P05b-PayFee": "फ़ीस भरें",
   "screen.P06-DidTheyOffer": "क्या उन्होंने आपको नौकरी ऑफ़र की?",
+  ...registrationHi,
 };
