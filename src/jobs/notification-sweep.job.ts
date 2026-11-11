@@ -5,6 +5,7 @@ import { DaysToFirstInterviewService } from '../modules/growth/days-to-first-int
 import { DAYS_TO_FIRST_INTERVIEW_ALERT_DAYS } from '../modules/growth/growth.constants';
 import { NotificationService } from '../modules/notification/notification.service';
 import { NotificationSourcesService } from '../modules/notification/notification-sources.service';
+import { RefundPriorityService } from '../modules/refund-priority/refund-priority.service';
 import { INTERVAL_JOB_MS } from './job-schedules';
 
 export const NOTIFICATION_SWEEP_QUEUE = 'notification-sweep';
@@ -28,6 +29,7 @@ export class NotificationSweepJob implements OnModuleInit, OnModuleDestroy {
     private readonly sources: NotificationSourcesService,
     private readonly notifications: NotificationService,
     private readonly daysToFirstInterview: DaysToFirstInterviewService,
+    private readonly refundPriority: RefundPriorityService,
   ) {}
 
   private get connection() {
@@ -71,7 +73,9 @@ export class NotificationSweepJob implements OnModuleInit, OnModuleDestroy {
     const attendance = await this.sources.safely('attendance refresh', () => this.attendance.refreshOpenDays());
     const sources = await this.sources.syncAll(now);
     const firstInterview = await this.sources.safely('first interview', () => this.syncFirstInterview(now));
-    return { attendance, sources, firstInterview };
+    // Task 7: someone entering the close-to-refund window gets on the bells; leaving it clears them.
+    const refundPriority = await this.sources.safely('refund priority', () => this.refundPriority.syncBells(now));
+    return { attendance, sources, firstInterview, refundPriority };
   }
 
   /**

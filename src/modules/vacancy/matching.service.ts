@@ -6,6 +6,7 @@ import { PricingPolicy, PricingService } from '../pricing/pricing.service';
 import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
+import { compareMatches, refundPriorityOf } from '../refund-priority/refund-priority.rules';
 import {
   BUSINESS_PAUSED_MESSAGE,
   businessCandidateAccess,
@@ -75,8 +76,8 @@ type MatchCandidate = {
   hits: Array<{ reason: string; reversedAt: Date | null }>;
   placements: Array<{ businessId: string; status: string; replacementCandidates: Array<{ status: string }> }>;
   replacementCandidateOffers: Array<{ status: string; placement: { businessId: string } }>;
-  payments: Array<{ type: string; status: string }>;
-  interviews: Array<{ status: string; businessId: string; result: string | null }>;
+  payments: Array<{ type: string; status: string; createdAt: Date }>;
+  interviews: Array<{ status: string; businessId: string; result: string | null; offerSentAt: Date | null }>;
   consents: Array<{ purpose: string; granted: boolean; grantedAt: Date | null; withdrawnAt: Date | null }>;
 };
 
@@ -107,6 +108,9 @@ type VacancyForMatching = {
 type CandidateMatch = {
   jobSeekerId: string;
   score: number;
+  /** Close to a refund (Phase 21 Task 7): shown before others with an equal match. */
+  priority?: boolean;
+  daysLeft?: number | null;
   matchReasons: string[];
   salaryWarning?: 'below_minimum_ask_him';
   photoStoragePath: string | null;
@@ -174,7 +178,17 @@ export class MatchingService {
     const pool = (await this.loadCandidatePool({ status: 'active' })).filter((seeker) => seeker.status === 'active');
     const { matches, nearMisses, leftOut } = this.evaluate(vacancy, pool, policy, weights, now);
 
-    matches.sort((a, b) => b.score - a.score || a.jobSeekerId.localeCompare(b.jobSeekerId));
+    // Close to a refund: a priority candidate goes before others with an equal match.
+    const byId = new Map(pool.map((seeker) => [seeker.id, seeker]));
+    for (const match of matches) {
+      const seeker = byId.get(match.jobSeekerId);
+      const marker = seeker
+        ? refundPriorityOf(seeker, now, policy.jobSeekerGuaranteeDays, policy.refundPriorityWindowDays)
+        : { priority: false, daysLeft: null };
+      match.priority = marker.priority;
+      match.daysLeft = marker.priority ? marker.daysLeft : null;
+    }
+    matches.sort(compareMatches);
     const pageSize = policy.matchPageSize;
     const offset = (options.page - 1) * pageSize;
     const pageMatches = await Promise.all(matches.slice(offset, offset + pageSize).map(async (match) => {
@@ -359,9 +373,9 @@ export class MatchingService {
         // Only hits of the current guarantee: paying ₹499 again supersedes earlier ones.
         hits: { where: { supersededAt: null }, select: { reason: true, reversedAt: true } },
         placements: { include: { replacementCandidates: { select: { status: true } } } },
-        interviews: { select: { status: true, businessId: true, result: true } },
+        interviews: { select: { status: true, businessId: true, result: true, offerSentAt: true } },
         replacementCandidateOffers: { include: { placement: { select: { businessId: true } } } },
-        payments: { select: { type: true, status: true } },
+        payments: { select: { type: true, status: true, createdAt: true } },
       },
     })) as unknown as MatchCandidate[];
     const activeConsents = await this.prisma.consent.findMany({

@@ -29,9 +29,10 @@ import { ShortageTasksJob } from './shortage-tasks.job';
 import { WinBackJob } from './win-back.job';
 import { NotificationSweepJob } from './notification-sweep.job';
 import { NotificationModule } from '../modules/notification/notification.module';
+import { RefundPriorityModule } from '../modules/refund-priority/refund-priority.module';
 
 @Module({
-  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, KycHealthModule, AttendanceModule, GrowthModule, NotificationModule],
+  imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, KycHealthModule, AttendanceModule, GrowthModule, NotificationModule, RefundPriorityModule],
   controllers: [JobsController],
   providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, WorkerHeartbeatService, ShortageTasksJob, WinBackJob, NotificationSweepJob],
   exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, KycRecoveryJob, ForgottenLogoutJob, ShortageTasksJob, WinBackJob, NotificationSweepJob],
