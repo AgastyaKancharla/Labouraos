@@ -22,7 +22,7 @@ const FULL_DAY_SECONDS = 8 * 3600;
 
 function hm(seconds: number): string {
   const m = Math.floor(seconds / 60);
-  return m >= 60 ? `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m` : `${m}m`;
+  return `${Math.floor(m / 60)}h ${String(m % 60).padStart(2, '0')}m`;
 }
 
 /**
@@ -87,10 +87,14 @@ export default function CheckedInScreen() {
               {change.error ? <Text variant="small" color={colors.tomato}>{isApiError(change.error) ? change.error.message : t('common.error')}</Text> : null}
             </Card>
             <Card>
-              <Text variant="label">{t('fa04.production')}</Text>
-              <Text variant="bodyStrong" testID="fa04-production">
-                {t('fa04.ofHours', { done: hm(today.data.productionSeconds), total: '8h' })}
-              </Text>
+              <ListRow
+                title={t('fa04.production')}
+                trailing={
+                  <Text variant="bodyStrong" testID="fa04-production">
+                    {t('fa04.ofHours', { done: hm(today.data.productionSeconds), total: '8h' })}
+                  </Text>
+                }
+              />
               <ProgressBar value={today.data.productionSeconds / FULL_DAY_SECONDS} />
               <View style={styles.gap} />
               <ListRow title={t('fa04.breaks')} trailing={<Text variant="bodyStrong">{hm(today.data.breakSeconds)}</Text>} />
@@ -107,7 +111,7 @@ export default function CheckedInScreen() {
           <ListRow title={t('fa04.recorded')} trailing={<Text variant="small">{t('fa04.recordedValue')}</Text>} last />
         </Card>
         <Text variant="muted">{t('fa04.privacy')}</Text>
-        <Button label={t('fa04.seeVisits')} variant="secondary" onPress={() => router.push(routes.visits)} testID="fa04-see-visits" />
+        <Button label={t('fa04.seeVisits')} onPress={() => router.push(routes.visits)} testID="fa04-see-visits" />
       </Screen>
     </View>
   );

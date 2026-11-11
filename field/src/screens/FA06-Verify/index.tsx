@@ -169,12 +169,12 @@ export default function VerifyScreen() {
           <Text variant="muted">{t('fa06.agreementText')}</Text>
           {!b.agreement ? <Button label={t('fa06.sendAgreement')} variant="secondary" loading={busy === 'agreement'} onPress={() => void sendAgreement()} testID="fa06-agreement" /> : null}
         </Card>
-        <Banner tone="info" message={t('fa06.help')} />
+        <Text variant="muted">{t('fa06.help')}</Text>
         {problem ? <Banner tone="error" message={problem} testID="fa06-problem" /> : null}
-        <Button label={t('fa06.complete')} variant="success" disabled={!boardDone || !selfieDone || !otp} loading={busy === 'complete'} onPress={() => void complete()} testID="fa06-complete" />
+        <Button label={t('fa06.complete')} disabled={!boardDone || !selfieDone || !otp} loading={busy === 'complete'} onPress={() => void complete()} testID="fa06-complete" />
         <Button
           label={t('fa06.couldntFinish')}
-          variant="danger"
+          variant="secondary"
           onPress={() => (boardDone ? router.push({ pathname: routes.visitOutcome, params: { id: visitId } }) : router.replace(routes.visits))}
           testID="fa06-couldnt"
         />

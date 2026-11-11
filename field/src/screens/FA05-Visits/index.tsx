@@ -77,7 +77,7 @@ export default function VisitsScreen() {
                   subtitle={r.note ? t('fa05.ownerSaid', { note: r.note }) : r.locality ?? undefined}
                   trailing={
                     <StatusChip
-                      tone={r.when === 'overdue' ? 'tomato' : 'crit'}
+                      tone={r.when === 'overdue' ? 'tomato' : 'amber'}
                       label={r.when === 'overdue' && r.revisitOn ? t('fa05.overdueSince', { date: formatDateKey(r.revisitOn) }) : t('fa05.comeBackToday')}
                     />
                   }
@@ -112,7 +112,7 @@ export default function VisitsScreen() {
                       ) : v.needsOutcome ? (
                         <StatusChip tone="amber" label={t('fa05.outcomeNeeded')} />
                       ) : (
-                        <StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome === 'not_interested' ? 'neutral' : 'cyan'} label={t(outcomeKey(v.outcome))} />
+                        <StatusChip tone={v.outcome === 'onboarded' ? 'green' : v.outcome === 'not_interested' ? 'crit' : v.outcome === 'owner_not_there' ? 'amber' : 'cyan'} label={t(outcomeKey(v.outcome))} />
                       )
                     }
                     onPress={() =>

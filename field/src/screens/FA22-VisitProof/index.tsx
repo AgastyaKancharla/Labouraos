@@ -83,15 +83,15 @@ export default function VisitProofScreen() {
         <StepHeader step={3} label={t('fa22.step')} />
         <Card title={t('fa22.selfieTitle')}>
           <View style={[styles.photoBox, done && styles.photoDone]}>
-            <Icon name="camera" size={28} color={done ? colors.green : colors.blue} />
-            <Text variant="bodyStrong" align="center">
+            <Icon name="camera" size={34} color={done ? colors.cyanRaw : colors.white} />
+            <Text variant="h2" align="center" color={colors.white}>
               {t('fa22.selfieHint')}
             </Text>
-            <Text variant="muted" align="center">
+            <Text variant="small" align="center" color={colors.navSoft}>
               {t('fa22.frontCamera')}
             </Text>
             {selfie && selfie.stamp.latitude !== null && selfie.stamp.longitude !== null ? (
-              <Text variant="tiny" align="center">
+              <Text variant="tiny" align="center" color={colors.navSoft}>
                 {`${formatCoordinates({ latitude: selfie.stamp.latitude, longitude: selfie.stamp.longitude })} · ${formatStampIst(selfie.stamp.takenAt)}`}
               </Text>
             ) : null}
@@ -141,11 +141,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 6,
     padding: 18,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.navAccent,
-    borderRadius: radius.lg,
-    backgroundColor: colors.blue100,
+    paddingVertical: 48,
+    borderRadius: radius.card,
+    backgroundColor: colors.navy,
   },
-  photoDone: { borderColor: colors.green, backgroundColor: colors.green100 },
+  photoDone: { backgroundColor: colors.ink },
 });

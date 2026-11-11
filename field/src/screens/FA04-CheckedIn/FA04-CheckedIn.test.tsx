@@ -28,7 +28,7 @@ describe('FA04 Checked in', () => {
     });
     await waitFor(() => screen.getByTestId('fa04-logged-in'));
     expect(screen.getByTestId('fa04-logged-in')).toHaveTextContent(/Logged in at 9:12 AM · on time/);
-    expect(screen.getByTestId('fa04-production')).toHaveTextContent('12m of 8h');
+    expect(screen.getByTestId('fa04-production')).toHaveTextContent('0h 12m of 8h');
     await waitFor(() => expect(screen.getByTestId('fa04-location')).toHaveTextContent(/12.91160, 77.63890.*±12 m.*Only now, at visits and at calls/));
     await fireEvent.press(screen.getByTestId('fa04-status'));
     expect(screen.getByTestId('fa04-status-on_visit').props.accessibilityState.disabled).toBe(true);

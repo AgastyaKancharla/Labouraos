@@ -141,11 +141,11 @@ function Talk({ visit }: { visit: VisitDraft }) {
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="fa21-problem" /> : null}
         <Text variant="label">{t('fa21.howDidItGo')}</Text>
-        <Button label={t('fa21.onboardNow')} variant="success" loading={busy} onPress={() => void onboardNow()} testID="fa21-onboard" />
+        <Button label={t('fa21.onboardNow')} loading={busy} onPress={() => void onboardNow()} testID="fa21-onboard" />
         <Button label={t('fa21.comeBack')} variant="secondary" onPress={() => other('interested_later')} testID="fa21-come-back" />
         <Button label={t('fa21.notInterested')} variant="secondary" onPress={() => other('not_interested')} testID="fa21-not-interested" />
         <Button label={t('fa21.ownerNotThere')} variant="secondary" onPress={() => other('owner_not_there')} testID="fa21-owner-not-there" />
-        <Button label={t('fa21.openPitch')} variant="navy" onPress={() => router.push(routes.feeCalculator)} testID="fa21-pitch" />
+        <Button label={t('fa21.openPitch')} variant="secondary" onPress={() => router.push(routes.feeCalculator)} testID="fa21-pitch" />
       </Screen>
     </View>
   );

@@ -79,7 +79,8 @@ if (result.status === 'queued') showToast(t('fa03.waitingToSend')); // sent late
 
 - Photos: `fields` + `files` instead of `json` (multipart). Use `stampFormFields(photo.stamp)` for the time/GPS fields and `{ field: 'photo', name: 'shop.jpg', type: 'image/jpeg', uri: photo.uri }` for the file.
 - A server refusal (4xx) while sending at once is thrown back to the form; one that happens later marks the item *failed* and Home shows it.
-- Every queued request carries `Idempotency-Key: <item id>`. **Backend endpoints that accept queued writes should treat a repeated key as a no-op** (not done on the server yet).
+- Every queued request carries `Idempotency-Key: <item id>`. The server answers a repeated key with the saved first answer (header `Idempotent-Replay: true`) and saves nothing twice (`src/common/idempotency/`, every signed-in POST/PUT/PATCH).
+- A record that later queued steps refer to gets its id on the phone (`newId()` in `src/lib/uuid.ts`), like shop visits: `POST /field-visits` with `id`, then `/field-visits/<id>/outcome` and `/proof` wait in order behind it.
 - **Steps that need the other person live — OTPs, calls, payment links, login — are never queued.** Wrap them in `queue.live(() => …)`, which throws `NeedsSignalError` without signal; show `t('common.needsSignal')`. The queue refuses those paths (`LIVE_ONLY_PATTERNS`).
 - The phone keeps a queued item only until it is sent (the guide says the app keeps nothing on the phone otherwise).
 
@@ -101,9 +102,13 @@ if (result.status === 'queued') showToast(t('fa03.waitingToSend')); // sent late
 - Files ending in `.web.test.ts(x)` run as the web app (jsdom); the rest run as the phone app.
 - Give important elements a `testID`; tests should read like the guide's rules.
 
-## What FA03 Home still needs from the backend
+## Shop visits (FA20–FA22, FA06, FA06c) and the field reads
 
-Real now: attendance (`GET /attendance/today`, `POST /attendance/login` with GPS), placements this month (`GET /targets/dashboard`), the offline queue row. Placeholders until endpoints exist: today's five numbers (shops visited, onboarded, vacancies added, candidates shown, interviews booked), alerts, and to-dos (revisits due, joinings, check-ins).
+- `POST /field-visits` (multipart: live name-board photo + GPS + phone-made `id`, optional `businessId` / `assignmentId` / `revisitOfVisitId`) starts the visit and its timer; a photo used before is refused (409) and flagged to the Team Lead.
+- `POST /field-visits/:id/outcome` — onboarded / interested_later (+ `revisitOn`) / not_interested (+ `reason`) / owner_not_there (+ `revisitOn`), or `onboard_now` (closes the timer, outcome set when the business is registered with `fieldVisitId`).
+- `POST /field-visits/:id/proof` (multipart selfie + GPS, within the "same spot" setting of the board photo), `POST /field-visits/:id/verify` (owner's OTP, live), `POST /field-visits/interviews/:id/arrived` (interview day, GPS at the shop).
+- Reads: `GET /field-work/home` (today's five numbers, alerts, to-dos, check-in point), `/field-work/visits`, `/field-work/map?lat&lng[&radius]`, `/field-work/businesses/:id`, `/field-work/targets`.
+- Team Lead checks raised as review flags (they ring the Team Lead's bell): `visit_short`, `visits_too_far_apart`, `visit_photo_reused`, `visit_gps_suspect`, `visits_no_onboarding`; the numbers are settings in `PricingPolicy` (`visit*`).
 
 ## Sign-in and the session
 

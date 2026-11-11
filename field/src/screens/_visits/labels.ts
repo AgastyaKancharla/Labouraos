@@ -49,8 +49,8 @@ export function verificationKey(status: string | null, paused: boolean): Message
 
 export const STATUS_COLORS: Record<string, string> = {
   onboarded: '#1C9A6C',
-  revisit_due: '#B94E12',
+  revisit_due: '#F2C200',
   interested: '#0B6E82',
-  not_interested: '#5E6C96',
+  not_interested: '#E5352B',
   lead: '#92670A',
 };

@@ -109,15 +109,15 @@ export default function VisitStartScreen() {
           </View>
           {location.errorKey ? <Button label={t('common.retry')} variant="secondary" onPress={() => void read()} /> : null}
           <View style={styles.photoBox}>
-            <Icon name="camera" size={28} color={colors.blue} />
-            <Text variant="bodyStrong" align="center">
+            <Icon name="camera" size={34} color={colors.white} />
+            <Text variant="h2" align="center" color={colors.white}>
               {t('fa20.pointAt')}
             </Text>
-            <Text variant="muted" align="center">
+            <Text variant="small" align="center" color={colors.navSoft}>
               {t('fa20.cameraOnly')}
             </Text>
             {fix ? (
-              <Text variant="tiny" align="center">
+              <Text variant="tiny" align="center" color={colors.navSoft}>
                 {`${formatCoordinates(fix)} · ${formatStampIst(openedAt)}`}
               </Text>
             ) : null}
@@ -162,15 +162,13 @@ export default function VisitStartScreen() {
 const styles = StyleSheet.create({
   flex: { flex: 1, backgroundColor: colors.bg },
   flex1: { flex: 1 },
-  gps: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10 },
+  gps: { flexDirection: 'row', alignItems: 'center', gap: 8, marginBottom: 10, padding: 10, borderRadius: radius.md, backgroundColor: colors.green100 },
   photoBox: {
     alignItems: 'center',
     gap: 6,
     padding: 18,
-    borderWidth: 2,
-    borderStyle: 'dashed',
-    borderColor: colors.navAccent,
-    borderRadius: radius.lg,
-    backgroundColor: colors.blue100,
+    paddingVertical: 48,
+    borderRadius: radius.card,
+    backgroundColor: colors.navy,
   },
 });

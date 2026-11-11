@@ -69,15 +69,17 @@ export default function MapScreen() {
             me={{ latitude: fix.latitude, longitude: fix.longitude, accuracy: fix.accuracy }}
             markers={shops.map((s) => ({ key: s.id, latitude: s.latitude, longitude: s.longitude, color: STATUS_COLORS[s.status] ?? colors.soft, label: s.name }))}
             attribution={t('fa13.attribution')}
+            height={380}
+            zoom={15}
             testID="fa13-map"
           />
         ) : null}
-        <View style={styles.legend}>
+        <Card compact style={styles.legend}>
           <Legend color={colors.blue} label={t('fa13.you')} />
           {(['onboarded', 'revisit_due', 'interested', 'not_interested'] as const).map((s) => (
             <Legend key={s} color={STATUS_COLORS[s]} label={t(statusKey(s))} />
           ))}
-        </View>
+        </Card>
         <Card title={t('fa13.near')} testID="fa13-near">
           {!fix ? null : q.isPending ? (
             <LoadingState compact />
@@ -91,7 +93,7 @@ export default function MapScreen() {
                 key={s.id}
                 title={s.name}
                 subtitle={[t(statusKey(s.status)), formatDistance(s.distanceMeters)].join(' · ')}
-                trailing={<StatusChip tone={s.status === 'revisit_due' ? 'crit' : 'blue'} label={s.status === 'revisit_due' ? t('fa13.visit') : t('fa13.open')} />}
+                trailing={<StatusChip tone={s.status === 'revisit_due' ? 'amber' : 'blue'} label={s.status === 'revisit_due' ? t('fa13.visit') : t('fa13.open')} />}
                 onPress={() => open(s)}
                 last={i === near.length - 1}
                 testID={`fa13-shop-${s.id}`}

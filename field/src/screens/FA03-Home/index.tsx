@@ -191,7 +191,7 @@ function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
     return (
       <ListRow
         title={t('fa03.alertSigned', { name: alert.business.name })}
-        trailing={alert.canShowCandidates ? <StatusChip tone="blue" label={t('fa03.showCandidates')} /> : <StatusChip tone="green" label={t('fa03.signed')} />}
+        trailing={alert.canShowCandidates ? <StatusChip tone="green" label={t('fa03.showCandidates')} /> : <StatusChip tone="green" label={t('fa03.signed')} />}
         onPress={() =>
           alert.canShowCandidates
             ? router.push({ pathname: routes.jobSeekers, params: { businessId: alert.business.id } })
@@ -206,7 +206,7 @@ function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
   return (
     <ListRow
       title={t('fa03.alertResult', { name: alert.business.name })}
-      trailing={<StatusChip tone={alert.result === 'selected' ? 'green' : 'neutral'} label={t(resultKey)} />}
+      trailing={<StatusChip tone={alert.result === 'selected' ? 'blue' : 'neutral'} label={t(resultKey)} />}
       onPress={() => router.push(`${routes.business}/${alert.business.id}`)}
       last={last}
       testID={`alert-result-${alert.interviewId}`}
@@ -217,7 +217,7 @@ function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
 function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
   const { t } = useI18n();
   const whenLabel = todo.when === 'today' ? t('date.today') : todo.when === 'tomorrow' ? t('date.tomorrow') : t('fa03.overdue', { date: formatDateKey(todo.due) });
-  const chip = <StatusChip tone={todo.when === 'overdue' ? 'tomato' : todo.when === 'today' ? 'crit' : 'neutral'} label={whenLabel} />;
+  const chip = <StatusChip tone={todo.when === 'overdue' ? 'tomato' : todo.when === 'today' ? 'amber' : 'neutral'} label={whenLabel} />;
   if (todo.kind === 'revisit') {
     return (
       <ListRow

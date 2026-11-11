@@ -190,9 +190,6 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
     const canResend = !m.sentAt || now - m.sentAt > 30_000;
     return (
       <View style={styles.block}>
-        <Text variant="small" style={styles.label}>
-          {label}
-        </Text>
         <View style={styles.mobileRow}>
           <View style={styles.prefix}>
             <Text variant="bodyStrong">+91</Text>
