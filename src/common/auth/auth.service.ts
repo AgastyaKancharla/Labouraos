@@ -8,6 +8,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Staff } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
@@ -52,6 +53,36 @@ const SELF_APPROVING_DEVICE_ROLES = ['ceo'] as const;
 const LOGIN_CODE_ROLES = ['team_lead', 'call_agent', 'field_agent'] as const;
 
 const INVALID_CREDENTIALS = 'Invalid staff code or password';
+
+/**
+ * Laboura Field keeps the session on the phone, so closing the app does not
+ * log the agent out (guide decision). Only field agents get a refresh token;
+ * office sessions keep ending when the browser closes.
+ */
+export const FIELD_SESSION_ROLES: readonly string[] = ['field_agent'];
+export const FIELD_SESSION_REFUSED = 'Session not found';
+
+export function hashRefreshToken(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
+
+function sameHash(a: string, b: string): boolean {
+  const left = Buffer.from(a, 'hex');
+  const right = Buffer.from(b, 'hex');
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+export interface FieldRefreshInput {
+  sessionId?: string;
+  refreshToken?: string;
+  deviceId?: string;
+}
+
+export interface FieldRefreshResult {
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+}
 
 export interface LoginMetadata {
   ip?: string;
@@ -381,6 +412,83 @@ export class AuthService {
     return { accessToken, sessionId: session.id };
   }
 
+  /**
+   * Laboura Field: a new access token for a session kept on the phone, also
+   * after the 15-minute token has run out while the app was closed. The
+   * session's own limits still decide: 1 hour without activity and 2 hours
+   * after login (PricingPolicy idleLogoutMinutes / maxSessionMinutes). A
+   * refresh is not activity, so it never moves the idle clock. The refresh
+   * token is single use: each refresh hands out the next one.
+   */
+  async refreshFieldSession(input: FieldRefreshInput): Promise<FieldRefreshResult> {
+    const sessionId = typeof input?.sessionId === 'string' ? input.sessionId.trim() : '';
+    const refreshToken = typeof input?.refreshToken === 'string' ? input.refreshToken.trim() : '';
+    const deviceId = typeof input?.deviceId === 'string' ? input.deviceId.trim() : '';
+    const refuse = (message: string, reason: string) =>
+      new UnauthorizedException({ message, reason });
+    if (!sessionId || !refreshToken || !deviceId) {
+      throw refuse(FIELD_SESSION_REFUSED, 'unknown');
+    }
+    const session = await this.prisma.staffSession.findUnique({
+      where: { id: sessionId },
+      include: { staff: true },
+    });
+    const presented = hashRefreshToken(refreshToken);
+    if (
+      !session ||
+      !session.tokenHash ||
+      !sameHash(session.tokenHash, presented) ||
+      session.deviceId !== deviceId ||
+      !FIELD_SESSION_ROLES.includes(session.staff.role)
+    ) {
+      throw refuse(FIELD_SESSION_REFUSED, 'unknown');
+    }
+    if (session.revokedAt || session.endedReason) {
+      throw refuse('Session has been revoked', 'revoked');
+    }
+    const staff = session.staff;
+    if (staff.status !== 'active') {
+      await this.endSession(session.id, 'revoked');
+      throw refuse('Account is not active', 'revoked');
+    }
+    if (this.isAccountLocked(staff)) {
+      await this.endSession(session.id, 'locked');
+      throw refuse(this.lockedMessage(staff), 'locked');
+    }
+    const now = this.clock.now();
+    const policy = await this.pricingService.current();
+    const end = sessionLifetimeEnd(session, now, policy.idleLogoutMinutes);
+    if (end) {
+      await this.endSession(session.id, end);
+      throw refuse(sessionEndMessage(end), end);
+    }
+
+    const next = randomBytes(32).toString('hex');
+    // Conditional on the presented token so two refreshes with the same one
+    // cannot both succeed.
+    const rotated = await this.prisma.staffSession.updateMany({
+      where: { id: session.id, tokenHash: session.tokenHash, revokedAt: null },
+      data: {
+        tokenHash: hashRefreshToken(next),
+        expiresAt: new Date(now.getTime() + ACCESS_SESSION_MS),
+      },
+    });
+    if (rotated.count !== 1) {
+      throw refuse(FIELD_SESSION_REFUSED, 'unknown');
+    }
+    const accessToken = await this.signAccessToken(
+      {
+        sub: staff.id,
+        role: staff.role,
+        email: staff.email,
+        code: staff.code,
+        teamLeadId: staff.teamLeadId,
+      },
+      session.id,
+    );
+    return { accessToken, refreshToken: next, sessionId: session.id };
+  }
+
   async logout(actor: JwtPayload): Promise<{ success: boolean }> {
     if (actor.sid) {
       await this.endSession(actor.sid, 'logout');
@@ -477,9 +585,14 @@ export class AuthService {
     const expiresAt = new Date(now.getTime() + ACCESS_SESSION_MS);
     const absoluteExpiresAt = new Date(now.getTime() + minutesToMs(policy.maxSessionMinutes));
     await this.endOpenSessions(staff.id, 'replaced');
+    const refreshToken =
+      !totpSetup && deviceId && FIELD_SESSION_ROLES.includes(staff.role)
+        ? randomBytes(32).toString('hex')
+        : null;
     const session = await this.prisma.staffSession.create({
       data: {
         staffId: staff.id,
+        tokenHash: refreshToken ? hashRefreshToken(refreshToken) : null,
         deviceId,
         ipAddress: metadata?.ip || null,
         userAgent: metadata?.userAgent || null,
@@ -515,6 +628,7 @@ export class AuthService {
     return {
       accessToken,
       sessionId: session.id,
+      ...(refreshToken ? { refreshToken } : {}),
       ...(totpSetup ? { totpEnrollmentRequired: true } : {}),
       staff: {
         id: staff.id,

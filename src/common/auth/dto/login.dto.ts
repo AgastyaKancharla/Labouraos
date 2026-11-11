@@ -20,6 +20,11 @@ export class VerifyLoginCodeDto {
 export class LoginResponseDto {
   accessToken!: string;
   sessionId?: string;
+  /**
+   * Laboura Field (field agents) only: restores the session when the app is
+   * reopened, through POST /auth/field/refresh. Single use; rotated on refresh.
+   */
+  refreshToken?: string;
   /** True when the token is limited to TOTP enrolment (management, not enrolled yet). */
   totpEnrollmentRequired?: boolean;
   staff!: {
@@ -39,3 +44,9 @@ export class AwaitingCodeResponseDto {
 }
 
 export type LoginResult = LoginResponseDto | AwaitingCodeResponseDto;
+
+export class FieldRefreshDto {
+  sessionId?: string;
+  refreshToken?: string;
+  deviceId?: string;
+}

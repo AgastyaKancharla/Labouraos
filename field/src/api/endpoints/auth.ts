@@ -12,6 +12,8 @@ export interface AwaitingCodeResponse {
 export interface TokenResponse {
   accessToken: string;
   sessionId?: string;
+  /** Field agents: restores the session when the app is reopened (single use). */
+  refreshToken?: string;
   totpEnrollmentRequired?: boolean;
   staff: StaffIdentity & { email: string | null };
 }
@@ -26,6 +28,18 @@ export interface LoginBody {
   totpCode?: string;
 }
 
+export interface FieldRefreshBody {
+  sessionId: string;
+  refreshToken: string;
+  deviceId: string;
+}
+
+export interface FieldRefreshResponse {
+  accessToken: string;
+  refreshToken: string;
+  sessionId: string;
+}
+
 export function isAwaitingCode(response: LoginResponse): response is AwaitingCodeResponse {
   return (response as AwaitingCodeResponse).status === 'awaiting_code';
 }
@@ -35,5 +49,12 @@ export const authApi = (api: ApiClient) => ({
   verifyCode: (loginRequestId: string, code: string) =>
     api.post<TokenResponse>('/auth/login/verify-code', { loginRequestId, code }, { auth: false }),
   refresh: () => api.post<{ accessToken: string; sessionId: string }>('/auth/refresh'),
+  /**
+   * No bearer token (it may have run out while the app was closed). The
+   * server keeps the 1-hour idle and 2-hour limits and answers 401 with
+   * `details.reason` ('idle', 'max_length', 'revoked', 'locked', 'unknown').
+   */
+  fieldRefresh: (body: FieldRefreshBody) =>
+    api.post<FieldRefreshResponse>('/auth/field/refresh', body, { auth: false }),
   logout: () => api.post<{ success: boolean }>('/auth/logout'),
 });
