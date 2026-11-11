@@ -1,0 +1,177 @@
+/* The public phone pages (P00…P06): pieces the shared design.css doesn't have. */
+
+.lb-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.lb-steps__bar {
+  display: flex;
+  gap: 6px;
+}
+.lb-steps__bar span {
+  flex: 1;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--border);
+}
+.lb-steps__bar span.on {
+  background: var(--blue);
+}
+.lb-steps__bar span.done {
+  background: var(--green);
+}
+
+.lb-pub-h2 {
+  margin: 0;
+  font-family: var(--fd);
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--navy);
+}
+.lb-pub-muted {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: var(--soft);
+}
+.lb-pub-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lb-pub-row-col {
+  flex-direction: column;
+  align-items: flex-start !important;
+  gap: 2px;
+}
+.lb-pub-row-col .sub {
+  font-weight: 400;
+}
+
+/* Large tap targets: every choice is a whole 48 px row. */
+.lb-pub-opt {
+  align-items: flex-start;
+  min-height: 48px;
+  cursor: pointer;
+  font-size: 14px;
+}
+.lb-pub-opt input {
+  width: 22px;
+  height: 22px;
+  margin: 1px 0 0;
+  flex: 0 0 22px;
+  accent-color: var(--blue);
+}
+.lb-pub-opt__text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.lb-pub-opt__text .sub {
+  font-weight: 400;
+}
+.lb-pub-opt:focus-within {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px;
+}
+
+.lb-pub-grid2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.lb-pub .btn,
+.lb-pub-btn {
+  min-height: 48px;
+  font-size: 15px;
+}
+
+.lb-pub-link {
+  background: none;
+  border: 0;
+  padding: 8px 0;
+  color: var(--blue);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  min-height: 44px;
+}
+.lb-pub-link:disabled {
+  color: var(--soft);
+  cursor: default;
+}
+
+/* Selfie: camera inside the oval guide (P01c). */
+.lb-camera {
+  position: relative;
+  aspect-ratio: 3 / 4;
+  border-radius: 18px;
+  overflow: hidden;
+  background: linear-gradient(160deg, #1b2d5c, #0b1e4a);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.lb-camera video,
+.lb-camera img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.lb-camera video {
+  transform: scaleX(-1);
+}
+.lb-camera__oval {
+  position: relative;
+  width: 62%;
+  aspect-ratio: 3 / 4;
+  border: 3px dashed var(--navacc, #6ec3ff);
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+/* UPI QR (P02, P02s, P05b). */
+.lb-qr {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.lb-qr img {
+  width: min(64vw, 220px);
+  height: auto;
+  background: #fff;
+  padding: 8px;
+  border-radius: 8px;
+  outline: 1px solid var(--border);
+}
+.lb-qr--waiting {
+  min-height: 120px;
+  justify-content: center;
+  text-align: center;
+}
+
+.lb-pub-terms {
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--ink);
+  max-height: 50vh;
+  overflow: auto;
+}
+.lb-pub-terms summary {
+  font-weight: 700;
+  color: var(--blue);
+  cursor: pointer;
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+}
+.lb-pub-center {
+  text-align: center;
+}

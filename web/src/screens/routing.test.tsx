@@ -119,7 +119,7 @@ describe('routes and guards', () => {
   });
 
   it('public pages need no sign-in and show the language switcher', async () => {
-    mockApi({});
+    mockApi({ 'GET /registration/abc123/status': { otpRequired: true, maskedPhone: '******2345', language: null, registrationComplete: false } });
     renderAt('/p/register/abc123');
     expect(await screen.findByRole('heading', { name: 'Complete your registration' })).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'ಕನ್ನಡ' }));

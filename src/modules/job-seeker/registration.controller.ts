@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  Optional,
   Param,
   Post,
   Query,
@@ -21,6 +22,7 @@ import { Response as ExpressResponse } from 'express';
 import { Public } from '../../common/rbac/public.decorator';
 import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { RegistrationJourneyService } from './registration-journey.service';
+import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { publicLanguage, shortNameOf } from './registration-journey';
 
 const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
@@ -39,7 +41,26 @@ export class RegistrationController {
     private readonly prisma: PrismaService,
     private readonly upi: UpiCollectionService,
     private readonly journey: RegistrationJourneyService,
+    @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
+
+  /**
+   * "I'll wait — SMS me when it's back" (P01e): only while the ID service is down.
+   * He already proved his number on this link, so no second code is asked.
+   */
+  @Post(':token/id-check-wait')
+  @Public(TOKEN_PAGE)
+  async waitForIdService(@Param('token') token: string, @Body() body: { requestId?: string }) {
+    const link = await this.requireRegistrationLink(token);
+    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone!))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    if (!this.kycRecovery || !(await this.kycRecovery.isDown())) {
+      throw new BadRequestException('ID check service is available');
+    }
+    await this.kycRecovery.requestRecovery(link.subjectId, link.id);
+    return { success: true, waitingForRecovery: true };
+  }
 
   /**
    * Where the registration link stands (web page P00/P02r and every step after it).
