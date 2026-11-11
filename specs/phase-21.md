@@ -321,8 +321,10 @@ Also:
   - Each kind clears when its work is done and records who.
   - A Team Lead never gets another team's notifications.
 
-### [ ] Task 7 — Close to a refund: the 15-day priority
+### [x] Task 7 — Close to a refund: the 15-day priority
 **Branch:** `phase-21/task-7-refund-priority` · **Migration folder:** none expected
+
+*Built 11 Nov on `build/p21-task-7` (no migration). Endpoint: `docs/api/phase-21.md` § Task 7. Call next already put priority people first (call agent work queue, PR #108, `work-queue.spec.ts`); matching now does among equal matches. There is no Team Lead work-list or Manager pipeline endpoint yet: the close-to-refund list serves both (a Team Lead's team, a Manager's tree with bucket counts).*
 
 **Acceptance:**
 - **`MoneyAtRiskService` uses `refundPriorityWindowDays`** (default 15) from the policy for both lists. Remove the hard-coded 7- and 5-day constants.
