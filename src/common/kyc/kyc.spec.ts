@@ -45,18 +45,18 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
   });
 
   describe('MockKycProvider & Provider Selection', () => {
-    const originalEnv = process.env.KYC_PROVIDER;
+    const originalEnv = process.env.KYC_PROVIDER_MODE;
 
     afterEach(() => {
       if (originalEnv === undefined) {
-        delete process.env.KYC_PROVIDER;
+        delete process.env.KYC_PROVIDER_MODE;
       } else {
-        process.env.KYC_PROVIDER = originalEnv;
+        process.env.KYC_PROVIDER_MODE = originalEnv;
       }
     });
 
-    it('defaults to MockKycProvider when KYC_PROVIDER is unset', async () => {
-      delete process.env.KYC_PROVIDER;
+    it('defaults to MockKycProvider when KYC_PROVIDER_MODE is unset', async () => {
+      delete process.env.KYC_PROVIDER_MODE;
 
       const moduleRef = await Test.createTestingModule({
         imports: [KycModule],
@@ -66,8 +66,8 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
       expect(provider).toBeInstanceOf(MockKycProvider);
     });
 
-    it('selects MockKycProvider when KYC_PROVIDER=mock', async () => {
-      process.env.KYC_PROVIDER = 'mock';
+    it('selects MockKycProvider when KYC_PROVIDER_MODE=mock', async () => {
+      process.env.KYC_PROVIDER_MODE = 'mock';
 
       const moduleRef = await Test.createTestingModule({
         imports: [KycModule],
@@ -78,7 +78,7 @@ describe('Offline Aadhaar e-KYC Stub (Phase 2 Task 7)', () => {
     });
 
     it('throws error when unsupported KYC_PROVIDER is specified', async () => {
-      process.env.KYC_PROVIDER = 'unknown_kyc';
+      process.env.KYC_PROVIDER_MODE = 'unknown_kyc';
 
       await expect(
         Test.createTestingModule({

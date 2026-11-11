@@ -17,8 +17,7 @@ import { AuditService } from '../../common/audit/audit.service';
     {
       provide: TELEPHONY_PROVIDER,
       useFactory: (prisma: PrismaService, auditService: AuditService) => {
-        const rawProvider =
-          process.env.TELEPHONY_PROVIDER_MODE || process.env.TELEPHONY_PROVIDER;
+        const rawProvider = process.env.TELEPHONY_PROVIDER_MODE;
         const providerName =
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {

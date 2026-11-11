@@ -10,8 +10,7 @@ import { KycService } from './kyc.service';
     {
       provide: KYC_PROVIDER,
       useFactory: () => {
-        const rawProvider =
-          process.env.KYC_PROVIDER_MODE || process.env.KYC_PROVIDER;
+        const rawProvider = process.env.KYC_PROVIDER_MODE;
         const providerName =
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {

@@ -12,8 +12,7 @@ import { AuditModule } from '../audit/audit.module';
     {
       provide: WHATSAPP_PROVIDER,
       useFactory: () => {
-        const rawProvider =
-          process.env.WHATSAPP_PROVIDER_MODE || process.env.WHATSAPP_PROVIDER;
+        const rawProvider = process.env.WHATSAPP_PROVIDER_MODE;
         const providerName =
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {

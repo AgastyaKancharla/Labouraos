@@ -194,18 +194,18 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
   });
 
   describe('KycModule provider selection with KYC_PROVIDER env flag', () => {
-    const originalEnv = process.env.KYC_PROVIDER;
+    const originalEnv = process.env.KYC_PROVIDER_MODE;
 
     afterEach(() => {
       if (originalEnv === undefined) {
-        delete process.env.KYC_PROVIDER;
+        delete process.env.KYC_PROVIDER_MODE;
       } else {
-        process.env.KYC_PROVIDER = originalEnv;
+        process.env.KYC_PROVIDER_MODE = originalEnv;
       }
     });
 
-    it('instantiates RealKycProvider when KYC_PROVIDER=real or surepass', async () => {
-      process.env.KYC_PROVIDER = 'real';
+    it('instantiates RealKycProvider when KYC_PROVIDER_MODE=real or surepass', async () => {
+      process.env.KYC_PROVIDER_MODE = 'real';
 
       const moduleRef = await Test.createTestingModule({
         imports: [KycModule],
@@ -214,7 +214,7 @@ describe('Phase 7 Task 3: Real Aadhaar e-KYC Vendor Integration', () => {
       const provider = moduleRef.get<KycProvider>(KYC_PROVIDER);
       expect(provider).toBeInstanceOf(RealKycProvider);
 
-      process.env.KYC_PROVIDER = 'surepass';
+      process.env.KYC_PROVIDER_MODE = 'surepass';
       const moduleRefSurepass = await Test.createTestingModule({
         imports: [KycModule],
       }).compile();

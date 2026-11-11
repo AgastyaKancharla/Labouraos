@@ -55,12 +55,10 @@ export class RealOtpProvider implements OtpProvider {
     this.apiKey =
       options?.apiKey ??
       process.env.SMS_API_KEY ??
-      process.env.OTP_API_KEY ??
       'dummy_sms_api_key';
     this.senderId =
       options?.senderId ??
       process.env.DLT_SENDER_ID ??
-      process.env.SMS_SENDER_ID ??
       'LABOUR';
     this.dltTemplateId =
       options?.dltTemplateId ??

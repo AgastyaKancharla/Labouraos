@@ -34,15 +34,11 @@ describe('Provider Switching and Config (Task 1)', () => {
 
   beforeEach(() => {
     delete process.env.OTP_PROVIDER_MODE;
-    delete process.env.OTP_PROVIDER;
     delete process.env.PAYMENT_PROVIDER_MODE;
     delete process.env.PAYMENT_PROVIDER;
     delete process.env.KYC_PROVIDER_MODE;
-    delete process.env.KYC_PROVIDER;
     delete process.env.TELEPHONY_PROVIDER_MODE;
-    delete process.env.TELEPHONY_PROVIDER;
     delete process.env.WHATSAPP_PROVIDER_MODE;
-    delete process.env.WHATSAPP_PROVIDER;
   });
 
   afterAll(() => {

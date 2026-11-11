@@ -17,8 +17,7 @@ import { PrismaService } from '../prisma/prisma.service';
       provide: OTP_PROVIDER,
       inject: [PrismaService],
       useFactory: (prisma: PrismaService) => {
-        const rawProvider =
-          process.env.OTP_PROVIDER_MODE || process.env.OTP_PROVIDER;
+        const rawProvider = process.env.OTP_PROVIDER_MODE;
         const providerName =
           rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
         if (providerName === 'mock') {
