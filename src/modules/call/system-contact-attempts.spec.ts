@@ -375,14 +375,18 @@ describe('Phase 11 Task 5: system contact attempts', () => {
       }),
     );
 
-    // Verify 2 attempts exist prior to sweep: AM and PM
+    // Master Guide ("What happens when things don't go to plan"): an unanswered
+    // call is logged by the calling system and a WhatsApp goes out straight away
+    // (once a day). So before the sweep there are 3 attempts: AM call, the
+    // WhatsApp sent after it, and the PM call. (This test used to expect the
+    // WhatsApp only from the nightly sweep.)
     const preSweepAttempts = await prisma.contactAttempt.findMany({
       where: { jobSeekerId: seeker.id },
     });
-    expect(preSweepAttempts).toHaveLength(2);
+    expect(preSweepAttempts).toHaveLength(3);
+    expect(preSweepAttempts.filter((a) => a.channel === 'whatsapp')).toHaveLength(1);
 
-    // Run sweep: it will notice AM + PM without WhatsApp, dispatch WhatsApp via MessagingService,
-    // which creates the 3rd attempt, and record the hit!
+    // Run sweep: AM + PM unanswered plus the WhatsApp on the same day record the hit.
     const sweepResult = await sweepJob.evaluateNoPickups();
     expect(sweepResult.hitsRecorded).toBeGreaterThanOrEqual(1);
 

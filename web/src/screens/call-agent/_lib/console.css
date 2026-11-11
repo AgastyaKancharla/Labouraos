@@ -158,3 +158,19 @@
     right: 16px;
   }
 }
+.lb-ca .grid3 .stat {
+  border: 0;
+  padding: 0;
+  background: none;
+  box-shadow: none;
+}
+.lb-console .lb-search {
+  width: min(460px, 100%);
+}
+.lb-ca .scroll {
+  overflow-x: auto;
+  max-width: 100%;
+}
+.lb-ca-table td {
+  white-space: normal;
+}

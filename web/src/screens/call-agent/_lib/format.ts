@@ -38,7 +38,8 @@ export function durationHM(seconds: number): string {
   const total = Math.max(0, Math.round(seconds / 60));
   const h = Math.floor(total / 60);
   const m = total % 60;
-  return h > 0 ? `${h}h ${m}m` : `${m}m`;
+  if (h > 0) return m === 0 ? `${h}h` : `${h}h ${m}m`;
+  return `${m}m`;
 }
 
 /** "03:12" */

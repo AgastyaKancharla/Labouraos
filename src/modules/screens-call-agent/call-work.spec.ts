@@ -73,7 +73,8 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
     phones.push(phone);
     const seeker = await prisma.jobSeeker.create({
       data: {
-        code: `JS-CW${String(stamp).slice(-6)}${n}`,
+        // Real ID format (JS- and digits) so the search reads it as an ID.
+        code: `JS-9${String(stamp).slice(-3)}${n}`,
         name: data.name,
         phone,
         minSalary: 1500000,
