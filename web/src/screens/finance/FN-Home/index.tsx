@@ -11,7 +11,7 @@ import { TopBar } from '../../../components/TopBar';
 import { useT } from '../../../i18n/I18nProvider';
 import { api } from '../../../lib/api/client';
 import { canExportLists, downloadTextFile, toCsv } from '../../../lib/csv';
-import { formatLongDateIST, formatMonthIST, formatTimeIST, istPartOfDay } from '../../../lib/format/date';
+import { formatMonthIST, formatTimeIST, istPartOfDay } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
@@ -51,6 +51,8 @@ export interface HomeResponse {
   today: { id: string; at: string; direction: 'credit' | 'debit'; amountPaise: number; what: string; status: string; reference: string | null; source: string }[];
   limits: { businessRefundLimitPaise: number; expenseLimitPaise: number; referralTdsYearlyLimitPaise: number };
 }
+
+const SHORT_DAY = new Intl.DateTimeFormat('en-IN', { weekday: 'short', day: 'numeric', month: 'short', timeZone: 'Asia/Kolkata' });
 
 interface TodoRow extends Count {
   what: string;
@@ -109,7 +111,7 @@ export default function MoneyToday() {
   return (
     <div className="lb-page">
       <TopBar
-        eyebrow={`Finance · ${formatLongDateIST(now).replace(/,? \d{4}$/, '')}`}
+        eyebrow={`Finance · ${SHORT_DAY.format(now).replace(',', '')}`}
         title={name ? t(`greeting.${istPartOfDay(now)}`, { name }) : 'Money today'}
         subtitle="Money in, money out and what needs paying today."
         showSearch={false}

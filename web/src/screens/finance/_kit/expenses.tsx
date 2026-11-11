@@ -45,8 +45,14 @@ export interface ExpensesResponse {
   summary: { spentPaise: number; billsPaise: number; autoPaise: number; budgetPaise: number; toPayCount: number; dueNowPaise: number; waitingCeoCount: number; waitingCeoPaise: number; limitPaise: number };
 }
 
-export function approvalText(r: ExpenseRow, limitPaise: number): string {
+export function approvalText(r: ExpenseRow, limitPaise: number, viewer: 'finance' | 'ceo' = 'finance'): string {
   const by = (p: { name: string; role: string } | null) => (p ? (p.role === 'ceo' ? 'CEO' : p.name) : '');
+  if (viewer === 'ceo') {
+    if (r.status === 'waiting_finance') return 'Waiting · Finance';
+    if (r.status === 'waiting_ceo') return 'Waiting for you';
+    if (r.status === 'approved') return `Approved by ${by(r.approvedBy)} · to pay`;
+    if (r.status === 'paid') return `Approved by ${by(r.approvedBy)} · paid`;
+  }
   switch (r.status) {
     case 'waiting_finance':
       return 'To approve · within your limit';

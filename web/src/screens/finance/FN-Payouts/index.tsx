@@ -137,6 +137,7 @@ function RowActions({ r }: { r: PayoutRow }) {
           run={(v) => api.post(`/finance/payouts/${r.id}/pay`, { utr: v.utr, receiverNameShown: v.receiverNameShown })}
           success={`${r.code} paid and recorded`}
         />
+        {r.status === 'approved' && (
         <FormAction
           label="It failed"
           size="compact"
@@ -144,8 +145,8 @@ function RowActions({ r }: { r: PayoutRow }) {
           fields={[{ name: 'reason', kind: 'text', label: 'What the bank said', required: true, placeholder: 'Account closed, name mismatch…' }]}
           run={(v) => api.post(`/finance/payouts/${r.id}/failed`, { reason: v.reason })}
           success="Recorded as failed"
-          disabled={r.status !== 'approved'}
         />
+        )}
       </span>
     );
   }

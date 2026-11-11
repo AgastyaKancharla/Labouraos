@@ -169,7 +169,7 @@ export default function CeoExpenses() {
       header: 'Status',
       cell: (r) => (
         <>
-          <StatusPill tone={r.status === 'paid' || r.status === 'approved' ? 'good' : r.status === 'rejected' ? 'crit' : r.status === 'waiting_ceo' ? 'warn' : 'info'}>{r.status === 'waiting_ceo' ? 'Waiting for you' : approvalText(r, limit)}</StatusPill>
+          <StatusPill tone={r.status === 'paid' || r.status === 'approved' ? 'good' : r.status === 'rejected' ? 'crit' : r.status === 'waiting_ceo' ? 'warn' : 'info'}>{approvalText(r, limit, 'ceo')}</StatusPill>
           <ExpenseActions r={r} role={session?.staff.role} limitPaise={limit} />
         </>
       ),
@@ -187,14 +187,16 @@ export default function CeoExpenses() {
           <>
             <AddExpense />
             {p && <SetBudgets month={p.period.month} categories={p.categories} />}
-            {canExportLists(session?.staff.role) && (
-              <Button onClick={downloadPnl} disabled={!p}>
-                Download P&amp;L (Excel)
-              </Button>
-            )}
           </>
         }
       />
+      {canExportLists(session?.staff.role) && (
+        <div className="fin-foot" style={{ justifyContent: 'flex-end' }}>
+          <Button onClick={downloadPnl} disabled={!p}>
+            Download P&amp;L (Excel)
+          </Button>
+        </div>
+      )}
       {profit.isError ? (
         <ErrorState error={profit.error} onRetry={() => void profit.refetch()} />
       ) : (
@@ -258,8 +260,8 @@ export default function CeoExpenses() {
           <Card flush>
             <DataTable
               columns={[
-                { key: 'category', header: 'Category', cell: (c: Profit['categories'][number]) => EXPENSE_CATEGORY[c.category] ?? c.category },
-                { key: 'how', header: "How it's added", cell: (c: Profit['categories'][number]) => HOW_ADDED[c.category] ?? 'Bill', hideOnPhone: true },
+                { key: 'category', header: 'Category', cell: (c: Profit['categories'][number]) => (c.category === 'total' ? <strong>Total</strong> : (EXPENSE_CATEGORY[c.category] ?? c.category)) },
+                { key: 'how', header: "How it's added", cell: (c: Profit['categories'][number]) => (c.category === 'total' ? '' : (HOW_ADDED[c.category] ?? 'Bill')), hideOnPhone: true },
                 { key: 'budget', header: 'Budget', cell: (c: Profit['categories'][number]) => formatINR(c.budgetPaise) },
                 { key: 'actual', header: 'Actual', cell: (c: Profit['categories'][number]) => <strong>{formatINR(c.actualPaise)}</strong> },
                 { key: 'vs', header: 'vs budget', cell: (c: Profit['categories'][number]) => <VsBudget budget={c.budgetPaise} actual={c.actualPaise} /> },
