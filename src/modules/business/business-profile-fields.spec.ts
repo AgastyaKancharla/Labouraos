@@ -111,18 +111,61 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
     expect(response.body.gstCheckedAt).toBeTruthy();
   });
 
-  it('raises duplicate_business flags for repeated registration numbers and nearby similar names only', async () => {
-    const source = await createBusiness({ name: 'Acme Coffee Shop', gstNumber: '29DUPGST0001Z5', licenceNumber: 'LIC-DUP-12', latitude: 12.95, longitude: 77.60 });
-    const gstMatch = await createBusiness({ name: 'Other Shop', gstNumber: '29DUPGST0001Z5' });
-    const licenceMatch = await createBusiness({ name: 'Another Shop', licenceNumber: 'LIC-DUP-12' });
-    const nearbyNameMatch = await createBusiness({ name: 'ACME coffee shop central', latitude: 12.95, longitude: 77.60 });
-    const distantNameMatch = await createBusiness({ name: 'Acme coffee shop east', latitude: 12.952, longitude: 77.60 });
-    expect([source, gstMatch, licenceMatch, nearbyNameMatch, distantNameMatch].every((row) => row.status === 201)).toBe(true);
+  // Master Guide: the same GST or licence number shows "Already registered — open it"
+  // instead of creating a second record. Earlier this test let the duplicates be created
+  // and only flagged; now they are refused before saving. A nearby similar name is still
+  // only flagged for the Team Lead.
+  it('refuses repeated GST and licence numbers with the existing code, and flags nearby similar names only', async () => {
+    const tag = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+    const gst = `29DUP${tag}Z5`;
+    const licence = `LIC-DUP-${tag}`;
+    const fssai = `FSSAI-${tag}`;
+    const source = await createBusiness({ name: `Acme Coffee Shop ${tag}`, gstNumber: gst, licenceNumber: licence, fssaiNumber: fssai, latitude: 12.95, longitude: 77.60 });
+    expect(source.status).toBe(201);
+    const before = await prisma.business.count();
+
+    const gstMatch = await createBusiness({ name: 'Other Shop', gstNumber: ` ${gst.toLowerCase()} ` });
+    expect(gstMatch.status).toBe(409);
+    expect(gstMatch.body).toMatchObject({ existingBusinessCode: source.body.code, matchedOn: ['gst_number'] });
+    expect(gstMatch.body.message).toContain('Already registered');
+
+    const licenceMatch = await createBusiness({ name: 'Another Shop', licenceNumber: licence });
+    expect(licenceMatch.status).toBe(409);
+    expect(licenceMatch.body).toMatchObject({ existingBusinessCode: source.body.code, matchedOn: ['licence_number'] });
+
+    const fssaiMatch = await createBusiness({ name: 'Food Shop', fssaiNumber: fssai });
+    expect(fssaiMatch.status).toBe(409);
+    expect(fssaiMatch.body.existingBusinessCode).toBe(source.body.code);
+    expect(await prisma.business.count()).toBe(before);
+
+    const nearbyNameMatch = await createBusiness({ name: `ACME coffee shop ${tag} central`, latitude: 12.95, longitude: 77.60 });
+    const distantNameMatch = await createBusiness({ name: `Acme coffee shop ${tag} east`, latitude: 12.952, longitude: 77.60 });
+    expect([nearbyNameMatch, distantNameMatch].every((row) => row.status === 201)).toBe(true);
 
     const flags = await prisma.reviewFlag.findMany({
-      where: { kind: 'duplicate_business', subjectId: { in: [gstMatch.body.id, licenceMatch.body.id, nearbyNameMatch.body.id, distantNameMatch.body.id] } },
+      where: { kind: 'duplicate_business', subjectId: { in: [nearbyNameMatch.body.id, distantNameMatch.body.id] } },
     });
-    expect(flags.map((flag) => flag.subjectId).sort()).toEqual([gstMatch.body.id, licenceMatch.body.id, nearbyNameMatch.body.id].sort());
+    expect(flags.map((flag) => flag.subjectId)).toEqual([nearbyNameMatch.body.id]);
+  });
+
+  it('answers a repeated mobile number with the existing business code', async () => {
+    const phone = `+9198${String(Date.now()).slice(-8)}`;
+    const register = async (name: string) => {
+      const otpRequest = await otp.sendOtp(phone);
+      const code = (otp.getProvider() as MockOtpProvider).getCode(otpRequest.requestId)!;
+      await otp.verifyOtp(otpRequest.requestId, code);
+      const response = await request(app.getHttpServer()).post('/businesses')
+        .set('Authorization', `Bearer ${agentToken}`)
+        .send({ name, phone, otpRequestId: otpRequest.requestId, contactPersonName: 'Contact', contactPersonRole: 'owner' });
+      if (response.body.id) businessIds.push(response.body.id as string);
+      return response;
+    };
+    const first = await register('Phone Owner Shop');
+    expect(first.status).toBe(201);
+    const again = await register('Same Phone Shop');
+    expect(again.status).toBe(409);
+    expect(again.body.existingBusinessCode).toBe(first.body.code);
+    expect(again.body.message).toContain('Already registered');
   });
 
   it('stores storefront photos privately, hashes them, marks web uploads not live, and flags reused photos', async () => {

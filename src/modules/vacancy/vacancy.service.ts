@@ -16,6 +16,7 @@ import { VACANCY_EXTRAS } from './vacancy.constants';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { normalizeTradeName, TradeService } from '../trade/trade.service';
 import { VacancyConfirmationService } from './vacancy-confirmation.service';
+import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
 
 const IST_OFFSET_MINUTES = 330;
 
@@ -427,8 +428,11 @@ export class VacancyService {
       throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
     }
 
-    if (vacancy.business.verificationStatus !== 'verified') {
-      throw new ForbiddenException('Candidates are hidden until the business is verified');
+    const businessAccess = businessCandidateAccess(vacancy.business);
+    if (!businessAccess.allowed) {
+      throw new ForbiddenException(businessAccess.reason === 'paused'
+        ? BUSINESS_PAUSED_MESSAGE
+        : 'Candidates are hidden until the business is verified');
     }
 
     const matchingConsents = await this.prisma.consent.findMany({

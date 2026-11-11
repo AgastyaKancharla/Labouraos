@@ -255,6 +255,8 @@ export class BusinessVerificationService {
   }
 
   async advanceToPendingTlCheckIfReady(businessId: string, changedByStaffId?: string | null) {
+    const inPerson = await this.completeInPersonOnboardingIfReady(businessId, changedByStaffId);
+    if (inPerson) return inPerson;
     const transition = await this.prisma.$transaction(async (tx) => {
       const business = await tx.business.findUnique({ where: { id: businessId } });
       if (!business || business.verificationStatus !== 'pending_visit') return null;
@@ -349,6 +351,146 @@ export class BusinessVerificationService {
     return { verificationStatus: 'pending_tl_check' };
   }
 
+  /**
+   * Same-visit selling (Master Guide, decided 9 Nov): a business the field agent
+   * registered at the shop is onboarded in person once it has
+   * - the field agent's visit at registration with GPS inside the geofence and the visit photo,
+   * - the storefront photo, and
+   * - the agreement signed by the contact person's OTP.
+   * It then moves to `pending_tl_check` with `inPersonOnboardedAt` set, so candidates
+   * can be shown and interviews booked straight away; the Team Lead reviews it the
+   * same day and can pause it.
+   */
+  private async completeInPersonOnboardingIfReady(businessId: string, changedByStaffId?: string | null) {
+    const now = this.clock.now();
+    const transition = await this.prisma.$transaction(async (tx) => {
+      const business = await tx.business.findUnique({ where: { id: businessId } });
+      if (!business || business.verificationStatus !== 'lead' || business.inPersonOnboardedAt) return null;
+      if (business.leadChannel !== 'field_visit' || !business.accountAgentId) return null;
+      if (business.accountAgentId !== business.leadCreatedByStaffId) return null;
+      if (!business.storefrontPhotoPath) return null;
+      const visit = await tx.businessVisit.findFirst({
+        where: {
+          businessId,
+          staffId: business.accountAgentId,
+          geofenceFlag: false,
+          selfieUrl: { not: null },
+          selfieHash: { not: null },
+        },
+        orderBy: { visitedAt: 'desc' },
+      });
+      if (!visit) return null;
+      const agreement = await tx.businessAgreement.findFirst({ where: { businessId }, select: { id: true } });
+      if (!agreement) return null;
+      const moved = await tx.business.updateMany({
+        where: { id: businessId, verificationStatus: 'lead', inPersonOnboardedAt: null },
+        data: { verificationStatus: 'pending_tl_check', inPersonOnboardedAt: now },
+      });
+      if (moved.count !== 1) return null;
+      await recordStatusChange(tx, {
+        subjectType: 'business',
+        subjectId: businessId,
+        fromStatus: 'lead',
+        toStatus: 'pending_tl_check',
+        changedByStaffId: changedByStaffId ?? business.accountAgentId,
+        reason: 'Onboarded in person: GPS-checked visit, storefront photo and agreement signed by OTP',
+        changedAt: now,
+      });
+      return { business, visit, agreementId: agreement.id };
+    });
+    if (!transition) return null;
+
+    const { business, visit } = transition;
+    const accountAgentId = business.accountAgentId!;
+    await this.reviewFlagService.raise({
+      kind: 'in_person_onboarding_review',
+      subjectType: 'business',
+      subjectId: businessId,
+      raisedForStaffId: accountAgentId,
+      details: { businessCode: business.code, visitId: visit.id, agreementId: transition.agreementId },
+    });
+    if (business.documentsStatus === 'no_documents') {
+      const openFlag = await this.prisma.reviewFlag.findFirst({
+        where: { subjectType: 'business', subjectId: businessId, kind: 'no_documents_check', status: 'open' },
+      });
+      if (!openFlag) {
+        await this.reviewFlagService.raise({
+          kind: 'no_documents_check',
+          subjectType: 'business',
+          subjectId: businessId,
+          raisedForStaffId: accountAgentId,
+          details: { verificationVisitId: visit.id },
+        });
+      }
+    }
+    await this.auditService.log({
+      actorId: changedByStaffId ?? accountAgentId,
+      action: 'business.in_person_onboarding_completed',
+      entityType: 'business',
+      entityCode: business.code,
+      before: { verificationStatus: 'lead', inPersonOnboardedAt: null },
+      after: { verificationStatus: 'pending_tl_check', inPersonOnboardedAt: now.toISOString(), agreementId: transition.agreementId },
+      changedFields: ['verificationStatus', 'inPersonOnboardedAt'],
+      reason: 'Onboarded in person: candidates allowed before the Team Lead review',
+      city: business.city,
+    });
+    return { verificationStatus: 'pending_tl_check', inPersonOnboardedAt: now };
+  }
+
+  /** A Team Lead (own team), Manager or CEO pauses a business: no matching and no new interviews. */
+  async pause(businessId: string, actorId: string, reason: string) {
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason) throw new BadRequestException('A reason is required to pause a business');
+    const actor = await this.requireReviewActor(actorId);
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    await this.assertTeamLeadOwnsBusiness(actor, business.leadCreatedByStaffId, business.accountAgentId);
+    if (business.pausedAt) throw new BadRequestException('This business is already paused');
+    const now = this.clock.now();
+    const updated = await this.prisma.business.update({
+      where: { id: businessId },
+      data: { pausedAt: now, pausedByStaffId: actorId, pauseReason: trimmedReason },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'business.paused',
+      entityType: 'business',
+      entityCode: business.code,
+      before: { pausedAt: null, pausedByStaffId: null },
+      after: { pausedAt: now.toISOString(), pausedByStaffId: actorId, verificationStatus: business.verificationStatus },
+      changedFields: ['pausedAt', 'pausedByStaffId', 'pauseReason'],
+      reason: trimmedReason,
+      city: business.city,
+    });
+    return updated;
+  }
+
+  async unpause(businessId: string, actorId: string, reason: string) {
+    const trimmedReason = reason?.trim();
+    if (!trimmedReason) throw new BadRequestException('A reason is required to unpause a business');
+    const actor = await this.requireReviewActor(actorId);
+    const business = await this.prisma.business.findUnique({ where: { id: businessId } });
+    if (!business) throw new NotFoundException(`Business '${businessId}' not found`);
+    await this.assertTeamLeadOwnsBusiness(actor, business.leadCreatedByStaffId, business.accountAgentId);
+    if (!business.pausedAt) throw new BadRequestException('This business is not paused');
+    const updated = await this.prisma.business.update({
+      where: { id: businessId },
+      data: { pausedAt: null, pausedByStaffId: null, pauseReason: null },
+    });
+    await this.auditService.log({
+      actorId,
+      action: 'business.unpaused',
+      entityType: 'business',
+      entityCode: business.code,
+      before: { pausedAt: business.pausedAt.toISOString(), pausedByStaffId: business.pausedByStaffId },
+      after: { pausedAt: null, pausedByStaffId: null },
+      changedFields: ['pausedAt', 'pausedByStaffId', 'pauseReason'],
+      reason: trimmedReason,
+      city: business.city,
+    });
+    return updated;
+  }
+
   async approve(businessId: string, actorId: string, accountAgentId?: string) {
     const actor = await this.requireReviewActor(actorId);
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
@@ -387,26 +529,34 @@ export class BusinessVerificationService {
       }
     }
 
-    const visit = await this.prisma.businessVisit.findFirst({
-      where: {
-        businessId,
-        purpose: 'verification',
-        assignmentId: { not: null },
-        ownerOtpRequestId: { not: null },
-        selfieUrl: { not: null },
-      },
-      orderBy: { visitedAt: 'desc' },
-    });
-    if (!visit?.staffId) throw new BadRequestException('A completed verification visit by a field agent is required');
-    const completedAssignment = await this.prisma.visitAssignment.findFirst({
-      where: { id: visit.assignmentId!, status: 'done', visitId: visit.id, purpose: 'verification' },
-    });
-    if (!completedAssignment) {
-      throw new BadRequestException('A completed verification visit by its assigned field agent is required');
+    // An in-person onboarded business already has its visit proof from registration;
+    // every other business needs the assigned verification visit.
+    let visitStaffId: string;
+    if (business.inPersonOnboardedAt && business.accountAgentId) {
+      visitStaffId = business.accountAgentId;
+    } else {
+      const visit = await this.prisma.businessVisit.findFirst({
+        where: {
+          businessId,
+          purpose: 'verification',
+          assignmentId: { not: null },
+          ownerOtpRequestId: { not: null },
+          selfieUrl: { not: null },
+        },
+        orderBy: { visitedAt: 'desc' },
+      });
+      if (!visit?.staffId) throw new BadRequestException('A completed verification visit by a field agent is required');
+      const completedAssignment = await this.prisma.visitAssignment.findFirst({
+        where: { id: visit.assignmentId!, status: 'done', visitId: visit.id, purpose: 'verification' },
+      });
+      if (!completedAssignment) {
+        throw new BadRequestException('A completed verification visit by its assigned field agent is required');
+      }
+      visitStaffId = visit.staffId;
     }
     const agreement = await this.prisma.businessAgreement.findFirst({ where: { businessId } });
     if (!agreement) throw new BadRequestException('A signed business agreement is required before approval');
-    const finalAccountAgentId = accountAgentId ?? visit.staffId;
+    const finalAccountAgentId = accountAgentId ?? visitStaffId;
     const accountAgent = await this.prisma.staff.findUnique({ where: { id: finalAccountAgentId } });
     if (!accountAgent) throw new NotFoundException('Account agent not found');
     if (accountAgent.city !== business.city) {
@@ -438,6 +588,18 @@ export class BusinessVerificationService {
       return row;
     });
 
+    if (business.inPersonOnboardedAt) {
+      const reviewFlag = await this.prisma.reviewFlag.findFirst({
+        where: { subjectType: 'business', subjectId: businessId, kind: 'in_person_onboarding_review', status: 'open' },
+      });
+      if (reviewFlag) {
+        await this.reviewFlagService.resolve(
+          reviewFlag.id,
+          { id: actorId, role: actor.role },
+          { status: 'resolved', resolution: 'Team Lead reviewed the in-person onboarding and approved it' },
+        );
+      }
+    }
     if (business.documentsStatus === 'no_documents') {
       const flag = await this.prisma.reviewFlag.findFirst({
         where: { subjectType: 'business', subjectId: businessId, kind: 'no_documents_check', status: 'open' },

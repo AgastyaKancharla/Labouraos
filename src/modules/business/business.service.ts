@@ -144,7 +144,13 @@ export class BusinessService {
       where: { phone },
     });
     if (existing) {
-      throw new ConflictException('A business with this mobile number already exists');
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Already registered — open it. A business with this mobile number already exists',
+        existingBusinessCode: existing.code,
+        matchedOn: ['phone'],
+      });
     }
 
     const staff = await this.prisma.staff.findUnique({
@@ -290,20 +296,37 @@ export class BusinessService {
       }
     }
 
-    const code = await this.idService.generateCode('business');
-    const city = dto.city?.trim() ?? staff.city ?? 'Bengaluru';
     const policy = await this.pricingService.current();
     const duplicateMatches = await this.findDuplicateMatches({
       name: dto.name.trim(),
       gstNumber,
-      licenceNumber: dto.licenceNumber?.trim() || null,
-      shopEstablishmentNumber: dto.shopEstablishmentNumber?.trim() || null,
-      udyamNumber: dto.udyamNumber?.trim() || null,
+      licenceNumber: hideDocuments ? null : (dto.licenceNumber?.trim() || null),
+      shopEstablishmentNumber: hideDocuments ? null : (dto.shopEstablishmentNumber?.trim() || null),
+      udyamNumber: hideDocuments ? null : (dto.udyamNumber?.trim() || null),
+      fssaiNumber: hideDocuments ? null : (dto.fssaiNumber?.trim() || null),
       photoHash: null,
       latitude: typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null),
       longitude: typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null),
       duplicateRadiusMeters: policy.duplicateBusinessRadiusMeters,
     });
+    // Same GST or licence number: refuse before anything is saved and point at the
+    // existing business ("Already registered — open it"). A nearby similar name is
+    // only flagged for the Team Lead.
+    for (const [matchedBusinessId, matchTypes] of duplicateMatches) {
+      const documentMatches = [...matchTypes].filter((type) => REGISTRATION_NUMBER_MATCHES.has(type));
+      if (documentMatches.length === 0) continue;
+      const matched = await this.prisma.business.findUnique({ where: { id: matchedBusinessId }, select: { code: true } });
+      if (!matched) continue;
+      throw new ConflictException({
+        statusCode: 409,
+        error: 'Conflict',
+        message: 'Already registered — open it. A business with this GST or licence number already exists',
+        existingBusinessCode: matched.code,
+        matchedOn: documentMatches,
+      });
+    }
+    const code = await this.idService.generateCode('business');
+    const city = dto.city?.trim() ?? staff.city ?? 'Bengaluru';
 
     if (!(await this.otpService.consumeVerified(dto.otpRequestId, phone))) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
@@ -573,6 +596,11 @@ export class BusinessService {
       changedFields: ['storefrontPhotoPath', 'storefrontPhotoHash', 'storefrontPhotoLive'],
       city: business.city,
     });
+    // The storefront photo may be the last piece of an in-person onboarding.
+    const onboarding = await this.verificationService.advanceToPendingTlCheckIfReady(business.id, actorId);
+    if (onboarding && 'inPersonOnboardedAt' in onboarding) {
+      return this.prisma.business.findUniqueOrThrow({ where: { id: business.id } });
+    }
     return updated;
   }
 
@@ -582,6 +610,7 @@ export class BusinessService {
     licenceNumber: string | null;
     shopEstablishmentNumber: string | null;
     udyamNumber: string | null;
+    fssaiNumber?: string | null;
     photoHash: string | null;
     latitude: number | null;
     longitude: number | null;
@@ -598,6 +627,7 @@ export class BusinessService {
         licenceNumber: true,
         shopEstablishmentNumber: true,
         udyamNumber: true,
+        fssaiNumber: true,
         storefrontPhotoHash: true,
         latitude: true,
         longitude: true,
@@ -615,6 +645,7 @@ export class BusinessService {
       ['licenceNumber', input.licenceNumber, 'licence_number'],
       ['shopEstablishmentNumber', input.shopEstablishmentNumber, 'shop_establishment_number'],
       ['udyamNumber', input.udyamNumber, 'udyam_number'],
+      ['fssaiNumber', input.fssaiNumber ?? null, 'fssai_number'],
       ['storefrontPhotoHash', input.photoHash, 'storefront_photo_hash'],
     ] as const;
     for (const candidate of candidates) {
@@ -954,6 +985,11 @@ export class BusinessService {
     }
   }
 }
+
+/** Matches on a registration number refuse the new business; other matches only raise a flag. */
+const REGISTRATION_NUMBER_MATCHES = new Set([
+  'gst_number', 'licence_number', 'shop_establishment_number', 'udyam_number', 'fssai_number',
+]);
 
 function phoneDigits(phone: string): string {
   const digits = phone.replace(/\D/g, '');

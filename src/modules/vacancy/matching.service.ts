@@ -7,6 +7,11 @@ import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
 import {
+  BUSINESS_PAUSED_MESSAGE,
+  businessCandidateAccess,
+  BusinessCandidateAccessInput,
+} from '../business/business-candidate-access';
+import {
   CANDIDATE_PHOTO_LINK_TTL_SECONDS,
   CANDIDATE_PHOTO_STORAGE,
   CandidatePhotoStorage,
@@ -96,7 +101,7 @@ type VacancyForMatching = {
   ageMax: number | null;
   genderRequirement: string | null;
   shift: string | null;
-  business: { verificationStatus: string | null };
+  business: BusinessCandidateAccessInput;
 };
 
 type CandidateMatch = {
@@ -141,8 +146,11 @@ export class MatchingService {
     if (isUnconfirmedVacancyStatus(vacancy.status)) {
       throw new BadRequestException('Candidates are shown only after the contact person confirms this vacancy by OTP');
     }
-    if (vacancy.business.verificationStatus !== 'verified') {
-      throw new ForbiddenException('Candidates are hidden until the business is verified');
+    const access = businessCandidateAccess(vacancy.business);
+    if (!access.allowed) {
+      throw new ForbiddenException(access.reason === 'paused'
+        ? BUSINESS_PAUSED_MESSAGE
+        : 'Candidates are hidden until the business is verified');
     }
 
     const listedTrade = await this.prisma.trade.findFirst({
@@ -168,7 +176,8 @@ export class MatchingService {
       include: {
         trades: true,
         languages: true,
-        hits: { select: { reason: true, reversedAt: true } },
+        // Only hits of the current guarantee: paying ₹499 again supersedes earlier ones.
+        hits: { where: { supersededAt: null }, select: { reason: true, reversedAt: true } },
         placements: { include: { replacementCandidates: { select: { status: true } } } },
         interviews: { select: { status: true, businessId: true, result: true } },
         replacementCandidateOffers: { include: { placement: { select: { businessId: true } } } },
@@ -329,7 +338,7 @@ export class MatchingService {
     if (seeker.shiftPreference !== 'any' && (
       !seeker.shiftPreference || seeker.shiftPreference.toLowerCase() !== vacancy.shift?.toLowerCase()
     )) return false;
-    if (vacancy.business.verificationStatus !== 'verified') return false;
+    if (!businessCandidateAccess(vacancy.business).allowed) return false;
     return true;
   }
 
