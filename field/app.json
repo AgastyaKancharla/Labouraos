@@ -1,0 +1,61 @@
+{
+  "expo": {
+    "name": "Laboura Field",
+    "slug": "laboura-field",
+    "scheme": "laboura-field",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "backgroundColor": "#EEF3FC",
+    "primaryColor": "#0055C0",
+    "ios": {
+      "bundleIdentifier": "in.laboura.field",
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "Laboura Field takes live photos of shops and visit selfies as proof of the visit.",
+        "NSLocationWhenInUseUsageDescription": "Laboura Field saves your location only at login, at a shop visit and at a call."
+      }
+    },
+    "android": {
+      "package": "in.laboura.field",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0055C0"
+      },
+      "permissions": ["CAMERA", "ACCESS_FINE_LOCATION", "ACCESS_COARSE_LOCATION"],
+      "blockedPermissions": ["READ_MEDIA_IMAGES", "READ_EXTERNAL_STORAGE", "RECORD_AUDIO"]
+    },
+    "web": {
+      "output": "single",
+      "bundler": "metro",
+      "name": "Laboura Field",
+      "shortName": "Laboura Field",
+      "themeColor": "#0055C0",
+      "backgroundColor": "#EEF3FC",
+      "favicon": "./assets/favicon.png"
+    },
+    "experiments": {
+      "baseUrl": "/field"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-font",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Laboura Field takes live photos of shops and visit selfies as proof of the visit.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false
+        }
+      ],
+      [
+        "expo-location",
+        {
+          "locationWhenInUsePermission": "Laboura Field saves your location only at login, at a shop visit and at a call."
+        }
+      ]
+    ]
+  }
+}

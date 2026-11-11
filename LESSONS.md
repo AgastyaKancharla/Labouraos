@@ -559,3 +559,13 @@ Format:
 **Symptom:** After absent and leave days were stored as `AttendanceDay` rows, a person on leave could look "logged in" and the nightly job tried to close their leave day.
 **Cause:** "Open" was tested as `logoutAt: null`. An absent or leave row has no login and no logout, so it matched.
 **Fix:** An open day is `dayType: 'open'` (set at login, replaced when the day closes). Absent and leave rows have `loginAt: null`; a login on such a row turns it into a working day.
+
+## Field app (field/) Jest run never exits after the tests pass
+**Symptom:** `npm run field:test` prints all tests passed, then "Jest did not exit one second after the test run has completed" and hangs until CI times out.
+**Cause:** TanStack Query keeps a finished mutation for its `gcTime` (5 minutes by default) with a real timer; the phone test project runs in Node, so that timer keeps the process alive.
+**Fix:** The test QueryClient (`field/src/test/render.tsx`) sets `gcTime: 0` for queries and mutations. Use `renderWithApp()` instead of building your own client in tests.
+
+## Field app tests: "`render` function has not been called"
+**Symptom:** `screen.getByTestId` throws right after `render(...)` in `field/` tests.
+**Cause:** React Native Testing Library 14 made `render`, `fireEvent.press` and `fireEvent.changeText` async.
+**Fix:** `await render(...)`, `await fireEvent.press(...)`.

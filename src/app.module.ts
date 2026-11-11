@@ -43,6 +43,7 @@ import { ScreensCallRegistrationModule } from './modules/screens-call-registrati
 import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
 import { LiveModule } from './common/live/live.module';
 import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-call-agent.module';
+import { FieldAppModule } from './modules/field-app/field-app.module';
 
 @Module({
   imports: [
@@ -90,6 +91,7 @@ import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-cal
     ScreensCallRegistrationModule,
     ScreensCallAgentModule,
     WebAppModule,
+    FieldAppModule,
   ],
 })
 export class AppModule {}

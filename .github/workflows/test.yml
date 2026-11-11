@@ -47,6 +47,7 @@ jobs:
           cache-dependency-path: |
             package-lock.json
             web/package-lock.json
+            field/package-lock.json
 
       - name: Install dependencies
         run: npm ci
@@ -83,6 +84,19 @@ jobs:
 
       - name: Build web app
         run: npm run web:build
+
+      # Laboura Field, the Expo phone app (field/), with its own lockfile.
+      - name: Install field app dependencies
+        run: npm run field:install
+
+      - name: Lint field app
+        run: npm run field:lint
+
+      - name: Test field app
+        run: npm run field:test
+
+      - name: Build field app (installable web app)
+        run: npm run field:build-web
 
       - name: Run tests
         env:
