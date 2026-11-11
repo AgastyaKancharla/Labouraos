@@ -35,15 +35,8 @@ export class StaffSessionController {
     @Req() req: AuthenticatedRequest,
     @Query('staffId') queryStaffId?: string,
   ): Promise<StaffSessionView[]> {
-    const actor = req.user;
-    let targetStaffId = actor.sub;
-
-    // Privileged roles can view any staff member's active sessions
-    if (queryStaffId && (actor.role === 'ceo' || actor.role === 'manager')) {
-      targetStaffId = queryStaffId;
-    }
-
-    return this.authService.listSessions(targetStaffId, actor.sid);
+    // The CEO sees anyone's sessions; a Manager only their own reporting tree (403 otherwise).
+    return this.authService.listSessionsFor(req.user, queryStaffId);
   }
 
   @Post('sessions/:id/revoke')

@@ -25,6 +25,7 @@ import { isOddHourIst } from '../../modules/login-code/login-code.crypto';
 import { OfficeNetworkService } from '../../modules/office-network/office-network.service';
 import { ReviewFlagService } from '../../modules/review-flag/review-flag.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
+import { ReportingScopeService } from '../../modules/staff/reporting-scope.service';
 import {
   minutesToMs,
   sessionEndMessage,
@@ -108,7 +109,35 @@ export class AuthService {
     private readonly reviewFlagService: ReviewFlagService,
     private readonly pricingService: PricingService,
     private readonly clock: AuthClock,
+    private readonly reportingScope: ReportingScopeService,
   ) {}
+
+  /**
+   * Whose sessions the actor may see and end: their own; the CEO anyone's;
+   * a Manager only people in their own reporting tree (Master Guide: a
+   * Manager acts only inside their own tree). Everyone else only their own.
+   */
+  private async assertMaySeeSessionsOf(actor: JwtPayload, staffId: string): Promise<void> {
+    if (staffId === actor.sub || actor.role === 'ceo') return;
+    if (actor.role === 'manager' && (await this.reportingScope.personIsUnder(actor.sub, staffId))) return;
+    throw new ForbiddenException(
+      actor.role === 'manager'
+        ? 'A Manager can see and end sessions only for staff in their own reporting tree'
+        : 'Cannot revoke sessions belonging to other staff members',
+    );
+  }
+
+  /** GET /staff/sessions: the actor's own, or ?staffId= for the CEO and a Manager (own tree only). */
+  async listSessionsFor(actor: JwtPayload, queryStaffId?: string): Promise<StaffSessionView[]> {
+    const wanted = queryStaffId?.trim();
+    let target = actor.sub;
+    // Below Manager a staffId is ignored, as before: they only ever see their own.
+    if (wanted && (actor.role === 'ceo' || actor.role === 'manager')) {
+      await this.assertMaySeeSessionsOf(actor, wanted);
+      target = wanted;
+    }
+    return this.listSessions(target, actor.sid);
+  }
 
   async hashPassword(password: string): Promise<string> {
     const saltRounds = 10;
@@ -507,13 +536,7 @@ export class AuthService {
       throw new NotFoundException('Session not found');
     }
 
-    const isSelf = session.staffId === actor.sub;
-    const isPrivileged = actor.role === 'ceo' || actor.role === 'manager';
-    if (!isSelf && !isPrivileged) {
-      throw new ForbiddenException(
-        'Cannot revoke sessions belonging to other staff members',
-      );
-    }
+    await this.assertMaySeeSessionsOf(actor, session.staffId);
 
     if (session.revokedAt) {
       return { success: true, message: 'Session already revoked' };
