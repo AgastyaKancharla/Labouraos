@@ -27,6 +27,7 @@ import { MatchingService } from '../vacancy/matching.service';
 import { InterviewService, NOT_SELECTED_REASONS } from '../vacancy/interview.service';
 import { isUnconfirmedVacancyStatus } from '../vacancy/vacancy-confirmation.service';
 import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
+import { FieldVisitService } from '../field-visit/field-visit.service';
 
 export interface SellingActor {
   id: string;
@@ -119,6 +120,7 @@ export class FieldSellingService {
     private readonly reviewFlags: ReviewFlagService,
     private readonly matching: MatchingService,
     private readonly interviews: InterviewService,
+    private readonly fieldVisits: FieldVisitService,
     @Inject(TELEPHONY_PROVIDER) private readonly telephony: TelephonyProvider,
   ) {}
 
@@ -561,25 +563,14 @@ export class FieldSellingService {
       ? metresBetween(body.latitude, body.longitude, interview.business.latitude, interview.business.longitude)
       : null;
     if (body.arrived) {
-      if (interview.candidateArrivedAt) return { interviewId, arrivedAt: interview.candidateArrivedAt, distanceM: interview.arrivalDistanceM };
       if (now.getTime() < interview.slotStartsAt.getTime() - ARRIVAL_EARLY_MINUTES * 60_000 ||
         istDateKey(now) !== istDateKey(interview.slotStartsAt)) {
         throw new BadRequestException('Arrival can be marked only on the interview day, from an hour before');
       }
-      await this.prisma.interview.update({
-        where: { id: interviewId },
-        data: {
-          candidateArrivedAt: now, arrivalLatitude: body.latitude, arrivalLongitude: body.longitude,
-          arrivalAccuracyM: typeof body.accuracyM === 'number' ? body.accuracyM : null, arrivalDistanceM: distance,
-          arrivalMarkedByStaffId: actor.id,
-        },
+      // The field visits module owns "candidate arrived" (GPS at the shop, distance from the pin).
+      return this.fieldVisits.candidateArrived(actor.id, interviewId, {
+        latitude: body.latitude, longitude: body.longitude, accuracy: body.accuracyM,
       });
-      await this.audit.log({
-        actorId: actor.id, action: 'interview.candidate_arrived', entityType: 'Interview', entityCode: interview.code,
-        city: interview.business.city, after: { candidateArrivedAt: now.toISOString(), arrivalDistanceM: distance },
-        changedFields: ['candidateArrivedAt', 'arrivalDistanceM'],
-      });
-      return { interviewId, arrivedAt: now, distanceM: distance };
     }
     if (interview.candidateArrivedAt) throw new BadRequestException('He was already marked as arrived');
     if (now.getTime() < interview.slotEndsAt.getTime()) {
@@ -589,8 +580,6 @@ export class FieldSellingService {
       where: { id: interviewId, status: 'confirmed', resultRecordedAt: null },
       data: {
         status: 'no_show', result: 'candidate_no_show', resultRecordedAt: now, resultRecordedByStaffId: actor.id,
-        arrivalLatitude: body.latitude, arrivalLongitude: body.longitude, arrivalDistanceM: distance,
-        arrivalMarkedByStaffId: actor.id,
       },
     });
     if (changed.count !== 1) throw new BadRequestException('This interview already has a result');
@@ -601,7 +590,7 @@ export class FieldSellingService {
     await this.jobSeekers.recordHit(interview.jobSeekerId, 'interview_no_show', undefined, 'system', undefined, { interviewId });
     await this.audit.log({
       actorId: actor.id, action: 'interview.no_show_marked', entityType: 'Interview', entityCode: interview.code,
-      city: interview.business.city, after: { status: 'no_show', arrivalDistanceM: distance }, changedFields: ['status', 'result'],
+      city: interview.business.city, after: { status: 'no_show', distanceFromShopMeters: distance }, changedFields: ['status', 'result'],
     });
     return { interviewId, noShow: true, distanceM: distance };
   }

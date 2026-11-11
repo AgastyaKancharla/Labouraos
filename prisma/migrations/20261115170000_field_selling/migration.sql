@@ -3,12 +3,6 @@ ALTER TABLE "Interview" ADD COLUMN "interviewType" TEXT,
   ADD COLUMN "agentWillAttend" BOOLEAN NOT NULL DEFAULT false,
   ADD COLUMN "handedToOwnerAt" TIMESTAMP(3),
   ADD COLUMN "resultRecordedByStaffId" TEXT,
-  ADD COLUMN "candidateArrivedAt" TIMESTAMP(3),
-  ADD COLUMN "arrivalLatitude" DOUBLE PRECISION,
-  ADD COLUMN "arrivalLongitude" DOUBLE PRECISION,
-  ADD COLUMN "arrivalAccuracyM" DOUBLE PRECISION,
-  ADD COLUMN "arrivalDistanceM" INTEGER,
-  ADD COLUMN "arrivalMarkedByStaffId" TEXT,
   ADD COLUMN "phoneInterviewDialledAt" TIMESTAMP(3),
   ADD COLUMN "phoneInterviewCallRecordId" TEXT;
 

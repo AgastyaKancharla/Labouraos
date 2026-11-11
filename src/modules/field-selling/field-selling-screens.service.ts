@@ -371,7 +371,7 @@ export class FieldSellingScreensService {
       firstWithBusiness: attendanceVisits === 0,
       handedToOwnerAt: interview.handedToOwnerAt,
       candidateArrivedAt: interview.candidateArrivedAt,
-      arrivalDistanceM: interview.arrivalDistanceM,
+      arrivalDistanceM: interview.candidateArrivedDistanceMeters,
       candidateCheckAnswer: interview.candidateCheckAnswer,
       resultRequestSentAt: interview.resultRequestSentAt,
       selectedSalaryPaise: interview.selectedSalaryPaise,

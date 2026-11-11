@@ -597,13 +597,6 @@ model Interview {
   handedToOwnerAt          DateTime?
   /// The field agent who recorded the owner's decision in the shop (the owner confirmed it by OTP).
   resultRecordedByStaffId  String?
-  /// Interview day: the attending agent marked "candidate arrived", with GPS.
-  candidateArrivedAt       DateTime?
-  arrivalLatitude          Float?
-  arrivalLongitude         Float?
-  arrivalAccuracyM         Float?
-  arrivalDistanceM         Int?
-  arrivalMarkedByStaffId   String?
   /// Phone interview: when Laboura rang both sides, and the call record.
   phoneInterviewDialledAt  DateTime?
   phoneInterviewCallRecordId String?

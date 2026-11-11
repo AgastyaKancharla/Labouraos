@@ -1,11 +1,14 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
-import { router } from 'expo-router';
+import { router, useLocalSearchParams } from 'expo-router';
 import { kiran, renderWithApp } from '@/test/render';
 import { hit, routeTable } from '@/test/selling-fixtures';
 import JobSeekersScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
-beforeEach(() => jest.clearAllMocks());
+beforeEach(() => {
+  jest.clearAllMocks();
+  (useLocalSearchParams as jest.Mock).mockReturnValue({});
+});
 
 describe('FA15 Job seekers tab', () => {
   it('suggests registered businesses as he types two letters, and opens the matches of the one picked', async () => {
@@ -40,5 +43,11 @@ describe('FA15 Job seekers tab', () => {
     await waitFor(() => screen.getByTestId('business-search-register'));
     await fireEvent.press(screen.getByTestId('business-search-register'));
     expect(router.push).toHaveBeenCalledWith('/visit/start');
+  });
+
+  it('opened for one business (from the business page or Home) goes straight to its matches', async () => {
+    (useLocalSearchParams as jest.Mock).mockReturnValue({ businessId: 'biz-1', vacancyId: 'vac-1' });
+    await renderWithApp(<JobSeekersScreen />, { signedInAs: kiran });
+    expect(screen.getByTestId('redirect')).toHaveTextContent('/job-seekers/biz-1?vacancyId=vac-1');
   });
 });

@@ -60,5 +60,5 @@ export const sellingRoutes = {
   seekerSaved: (jobSeekerId: string) => `/job-seeker/${e(jobSeekerId)}/saved`, // FA10b
   seekerProgress: (jobSeekerId: string) => `/job-seeker/${e(jobSeekerId)}`, // FA10c
   joining: (placementId: string) => `/placement/${e(placementId)}/joining`, // FA11
-  callOwner: (businessId: string) => `/call-owner/${e(businessId)}`, // FA18
+  callOwner: (businessId: string) => `/call-owner${q({ businessId })}`, // FA18
 } as const;

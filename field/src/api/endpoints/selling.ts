@@ -1,4 +1,5 @@
 import type { ApiClient } from '../client';
+import type { Area, Trade } from './registration';
 
 /**
  * Laboura Field selling: src/modules/field-selling (reads under
@@ -328,7 +329,7 @@ export const sellingApi = (api: ApiClient) => ({
   meet: (interviewId: string, body: BookBody) => api.post<BookResult>(`/field-selling/interviews/${enc(interviewId)}/meet`, body),
   book: (body: BookBody & { vacancyId: string; jobSeekerId: string }) => api.post<BookResult>('/field-selling/interviews', body),
   arrival: (interviewId: string, body: { arrived: boolean; latitude: number; longitude: number; accuracyM?: number }) =>
-    api.post<{ interviewId: string; arrivedAt?: string; noShow?: boolean; distanceM: number | null }>(`/field-selling/interviews/${enc(interviewId)}/arrival`, body),
+    api.post<{ interviewId: string; candidateArrivedAt?: string | null; noShow?: boolean; distanceMeters?: number | null; distanceM?: number | null }>(`/field-selling/interviews/${enc(interviewId)}/arrival`, body),
   placeCall: (body: { subjectType: 'business' | 'job_seeker'; subjectId: string; purpose: string; relatedType?: string; relatedId?: string }) =>
     api.post<{ callRecordId: string }>('/calls', body),
   recordJoined: (placementId: string) => api.post(`/placements/${enc(placementId)}/joined`, {}),
@@ -345,7 +346,7 @@ export const sellingApi = (api: ApiClient) => ({
   // Job seeker registration — the same endpoints as the call agent's form (CA08).
   formOptions: () => api.get<{ city: string; areas: Area[] }>('/screens/call-registration/options'),
   sendOtp: (phone: string, previousRequestId?: string) =>
-    api.post<OtpSendResult>('/otp/send', { phone, purpose: 'job_seeker', requestId: previousRequestId }),
+    api.post<SeekerOtpSendResult>('/otp/send', { phone, purpose: 'job_seeker', requestId: previousRequestId }),
   verifyOtp: (requestId: string, code: string) => api.post('/otp/verify', { requestId, code }),
   createJobSeeker: (body: Record<string, unknown>) => api.post<{ id: string; code: string }>('/job-seekers', body),
   updateProfile: (id: string, body: Record<string, unknown>) => api.patch(`/job-seekers/${enc(id)}/profile`, body),
@@ -357,14 +358,10 @@ export const sellingApi = (api: ApiClient) => ({
     api.get<{ partner: { id: string; code: string; name: string } | null }>('/screens/call-registration/referral-partners', { query: { q } }),
 });
 
-export interface Area {
-  name: string;
-  pincode: string;
-  latitude: number;
-  longitude: number;
-}
 
-export type OtpSendResult =
+
+/** POST /otp/send for a job seeker: a request, or "already registered" (with the code when visible). */
+export type SeekerOtpSendResult =
   | { requestId: string; resendAvailableAt?: string; resendsLeft?: number }
   | { alreadyRegistered: true; type?: string; code?: string };
 
@@ -392,15 +389,6 @@ export interface JobSeekerStatus {
   paymentReceivedAt: string | null;
 }
 
-/** GET /trades: the CEO's trade list with the market range and legal minimum. */
-export interface Trade {
-  id: string;
-  name: string;
-  salaryMinPaise: number;
-  salaryMaxPaise: number;
-  minimumWageLevel: string;
-  legalMinimumPaise: number;
-}
 
 export interface CreatedVacancy {
   id: string;

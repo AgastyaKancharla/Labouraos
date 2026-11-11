@@ -341,7 +341,8 @@ describe('Laboura Field selling (in-shop confirmation)', () => {
     clock.current = istInstant(tomorrow, '10:55');
     const arrived = await request(server()).post(`/field-selling/interviews/${bookedRow.id}/arrival`).set('Authorization', `Bearer ${token}`)
       .send(arrivalBody).expect(201);
-    expect(arrived.body.distanceM).toBeLessThan(30);
+    expect(arrived.body.distanceMeters).toBeLessThan(30);
+    expect(await prisma.interview.findUniqueOrThrow({ where: { id: bookedRow.id } })).toMatchObject({ candidateArrivedByStaffId: agent.id });
     await request(server()).post(`/field-selling/interviews/${bookedRow.id}/arrival`).set('Authorization', `Bearer ${token}`)
       .send({ arrived: false, latitude: 12.9717, longitude: 77.5946 }).expect(400);
 

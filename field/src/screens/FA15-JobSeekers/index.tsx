@@ -1,5 +1,5 @@
 import { StyleSheet, View } from 'react-native';
-import { router } from 'expo-router';
+import { Redirect, router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
@@ -9,7 +9,7 @@ import { useI18n } from '@/i18n';
 import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { BusinessRow, BusinessTypeAhead, Empty } from '../_selling';
+import { BusinessRow, BusinessTypeAhead, Empty, useParam } from '../_selling';
 
 /**
  * FA15 — Job seekers tab. Type two letters and matching registered businesses
@@ -19,6 +19,14 @@ import { BusinessRow, BusinessTypeAhead, Empty } from '../_selling';
  * "Sign first" instead of candidates.
  */
 export default function JobSeekersScreen() {
+  // FA08 / FA06b / Home open this tab for one business: go straight to its matches.
+  const businessId = useParam('businessId');
+  const vacancyId = useParam('vacancyId');
+  if (businessId) return <Redirect href={sellingRoutes.matches(businessId, vacancyId || undefined)} />;
+  return <Pick />;
+}
+
+function Pick() {
   const { t } = useI18n();
   const { selling } = useEndpoints();
   const mine = useQuery({ queryKey: queryKeys.sellingBusinesses(''), queryFn: () => selling.businesses('') });
