@@ -266,7 +266,7 @@ export class MatchingService {
    * Nearest first, then the better-paid job. Business names are never
    * returned: they stay hidden until he says yes to the offer.
    */
-  async jobsForSeeker(jobSeekerRef: string, options: { page: number }) {
+  async jobsForSeeker(jobSeekerRef: string, options: { page: number; vacancyId?: string }) {
     if (!Number.isInteger(options.page) || options.page < 1) {
       throw new BadRequestException('page must be a positive integer');
     }
@@ -292,7 +292,7 @@ export class MatchingService {
 
     const weights = this.readWeights(policy.matchingWeights);
     const vacancies = await this.prisma.vacancy.findMany({
-      where: { status: 'open', latitude: { not: null }, longitude: { not: null } },
+      where: { status: 'open', latitude: { not: null }, longitude: { not: null }, ...(options.vacancyId ? { id: options.vacancyId } : {}) },
       include: {
         business: true,
         interviewSlots: {

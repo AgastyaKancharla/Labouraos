@@ -12,6 +12,7 @@ import { PortalContext } from '../portals/PortalContext';
 import { NavBadge } from './Badge';
 import { FamilyContext } from './family';
 import { NavIcon, UiIcon } from './Icon';
+import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatcher';
 
 /**
  * The frame around every screen. Three variants, one per design family:
@@ -208,6 +209,7 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
       <main id="main" className="wrap lb-console__main" tabIndex={-1}>
         {children}
       </main>
+      {portal.key === 'call-agent' && <IncomingCallWatcher />}
     </div>
   );
 }

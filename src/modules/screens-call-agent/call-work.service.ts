@@ -1018,10 +1018,10 @@ export class CallWorkService {
     return rows.sort((a, b) => String(b.at).localeCompare(String(a.at))).slice(0, 40);
   }
 
-  async jobs(ref: string, page: number) {
+  async jobs(ref: string, page: number, vacancyId?: string) {
     const { type, id } = await this.resolveRef(ref);
     if (type !== 'job_seeker') throw new NotFoundException('Matching jobs are only for job seekers');
-    return this.matching.jobsForSeeker(id, { page });
+    return this.matching.jobsForSeeker(id, { page, vacancyId });
   }
 
   // ---------------------------------------------------------------- on call

@@ -1275,3 +1275,57 @@ th[aria-sort='descending'] .lb-sort {
   font-size: 13.5px;
   color: var(--text-soft);
 }
+
+/* ---------- search suggestions (SearchBox) ---------- */
+.lb-search {
+  position: relative;
+}
+.lb-search__list {
+  position: absolute;
+  z-index: 40;
+  top: calc(100% + 6px);
+  left: 0;
+  right: 0;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  background: #fff;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 12px 32px rgba(11, 30, 74, 0.14);
+  max-height: 360px;
+  overflow-y: auto;
+}
+.lb-search__list li {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  cursor: pointer;
+  color: var(--text);
+}
+.lb-search__list li.is-active,
+.lb-search__list li:hover {
+  background: rgba(0, 85, 192, 0.07);
+}
+.lb-search__name {
+  font-weight: 600;
+  font-size: 13.5px;
+}
+.lb-search__meta {
+  font-size: 12px;
+  color: var(--text-soft);
+}
+.lb-search__all {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--royal) !important;
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+}
+.lb-search__empty {
+  font-size: 12.5px;
+  color: var(--text-soft);
+  cursor: default !important;
+}

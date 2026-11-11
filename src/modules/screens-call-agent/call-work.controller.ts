@@ -49,8 +49,8 @@ export class CallWorkController {
 
   @Get('people/:ref/jobs')
   @RequireRoles('call_agent')
-  jobs(@Param('ref') ref: string, @Query('page') page?: string) {
-    return this.work.jobs(ref, page ? Number.parseInt(page, 10) || 1 : 1);
+  jobs(@Param('ref') ref: string, @Query('page') page?: string, @Query('vacancy') vacancy?: string) {
+    return this.work.jobs(ref, page ? Number.parseInt(page, 10) || 1 : 1, vacancy || undefined);
   }
 
   @Get('calls/:id')
