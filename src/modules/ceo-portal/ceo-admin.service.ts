@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PricingPolicy, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
+import { tradeNameKey } from '../trade/trade.service';
 import { DAILY_JOB_PATTERNS } from '../../jobs/job-schedules';
 import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { DateRange, PageRequest, Paged, contains, dateFilter, istDayKey, istStartOfDay, istStartOfMonth } from './ceo-common';
@@ -495,5 +496,27 @@ export class CeoAdminService {
       belowMinimum: below,
       belowMinimumOwnerTold: belowOwnerTold,
     };
+  }
+
+  /**
+   * C-Pricing-Trades: per trade (by normalised name), job seekers in the pool
+   * (active, any of their trades) and open vacancies.
+   */
+  async tradeCounts() {
+    const [seekerTrades, vacancies] = await Promise.all([
+      this.prisma.jobSeekerTrade.findMany({ where: { jobSeeker: { status: 'active' } }, select: { trade: true, jobSeekerId: true } }),
+      this.prisma.vacancy.groupBy({ by: ['tradeSkill'], where: { status: 'open' }, _sum: { headcount: true } }),
+    ]);
+    const key = (s: string) => tradeNameKey(s);
+    const pool = new Map<string, Set<string>>();
+    for (const t of seekerTrades) {
+      const set = pool.get(key(t.trade)) ?? new Set<string>();
+      set.add(t.jobSeekerId);
+      pool.set(key(t.trade), set);
+    }
+    const open = new Map<string, number>();
+    for (const v of vacancies) open.set(key(v.tradeSkill), (open.get(key(v.tradeSkill)) ?? 0) + (v._sum.headcount ?? 0));
+    const keys = [...new Set([...pool.keys(), ...open.keys()])];
+    return { rows: keys.map((k) => ({ nameKey: k, candidates: pool.get(k)?.size ?? 0, openVacancies: open.get(k) ?? 0 })) };
   }
 }

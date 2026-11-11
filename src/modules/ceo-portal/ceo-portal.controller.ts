@@ -384,4 +384,10 @@ export class CeoPortalController {
   minimumWage() {
     return this.admin.minimumWage();
   }
+
+  @Get('pricing/trades')
+  @RequireRoles('ceo')
+  tradeCounts() {
+    return this.admin.tradeCounts();
+  }
 }

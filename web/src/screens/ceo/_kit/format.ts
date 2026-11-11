@@ -44,3 +44,25 @@ export function initials(name: string): string {
     .map((p) => p[0]?.toUpperCase() ?? '')
     .join('');
 }
+
+export const LIVE_STATUS: Record<string, { label: string; tone: 'good' | 'info' | 'warn' | 'danger' | 'muted' | 'crit' }> = {
+  available: { label: 'Available', tone: 'good' },
+  on_call: { label: 'On call', tone: 'info' },
+  after_call_notes: { label: 'After-call notes', tone: 'info' },
+  on_visit: { label: 'On visit', tone: 'info' },
+  travelling: { label: 'Travelling', tone: 'info' },
+  team_meeting: { label: 'Team meeting', tone: 'muted' },
+  training: { label: 'Training', tone: 'muted' },
+  one_to_one: { label: 'One-to-one', tone: 'muted' },
+  system_problem: { label: 'System problem', tone: 'warn' },
+  short_break: { label: 'Short break', tone: 'warn' },
+  lunch: { label: 'Lunch', tone: 'warn' },
+  idle: { label: 'Idle', tone: 'warn' },
+  on_leave: { label: 'On leave', tone: 'muted' },
+  logged_out: { label: 'Logged out', tone: 'muted' },
+  not_logged_in: { label: 'Not logged in', tone: 'danger' },
+};
+
+export function liveLabel(status: string | null | undefined): { label: string; tone: 'good' | 'info' | 'warn' | 'danger' | 'muted' | 'crit' } {
+  return (status && LIVE_STATUS[status]) || { label: status ? status.replace(/_/g, ' ') : '—', tone: 'muted' };
+}

@@ -93,6 +93,7 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
     '/ceo/system',
     '/ceo/pricing/history',
     '/ceo/pricing/minimum-wage',
+    '/ceo/pricing/trades',
   ];
 
   it('serves every part-2 screen to the CEO', async () => {
