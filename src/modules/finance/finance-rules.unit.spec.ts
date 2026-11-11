@@ -165,7 +165,7 @@ describe('Finance rules (Phase 22 Part A)', () => {
       const r = profitAndLoss({ activationPaise: 15968000, placementFeePaise: 32000000, refundsPaise: 1193500, expensesPaise: 55091000, placements: 40 });
       expect(r.netRevenuePaise).toBe(46774500);
       expect(r.profitPaise).toBe(-8316500);
-      expect(r.costPerPlacementPaise).toBe(1377275);
+      expect(r.costPerPlacementPaise).toBe(1377300);
       // ₹8,000 average fee: ₹5,50,910 of costs need 69 placements' fees.
       expect(r.breakEvenPlacements).toBe(69);
     });

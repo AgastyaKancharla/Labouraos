@@ -543,7 +543,7 @@ export class ExpenseService {
     const channels = HEARD_FROM_VALUES.map((channel) => {
       const spentPaise = channelSpend.get(channel) ?? 0;
       const placed = placedBy.get(channel) ?? 0;
-      return { channel, spentPaise, placed, perPlacementPaise: placed > 0 ? Math.round(spentPaise / placed) : null };
+      return { channel, spentPaise, placed, perPlacementPaise: placed > 0 ? Math.round(spentPaise / placed / 100) * 100 : null };
     }).filter((c) => c.spentPaise > 0 || c.placed > 0);
     const policy = await this.pricing.current();
     return {

@@ -56,6 +56,7 @@ export class FinancePayoutsService {
     if (filters.who === 'referral') and.push({ type: 'referral_payout' });
     if (filters.who === 'job_seeker') and.push({ OR: [{ type: 'joining_reward' }, { type: { in: ['refund', 'duplicate_refund'] }, jobSeekerId: { not: null } }] });
     if (filters.who === 'business') and.push({ type: 'refund', jobSeekerId: null });
+    if (filters.who === 'refunds') and.push({ type: { in: ['refund', 'duplicate_refund'] } });
     if (filters.search) {
       and.push({
         OR: [
@@ -121,6 +122,7 @@ export class FinancePayoutsService {
         code: p.code,
         type: p.type,
         to,
+        owner,
         placement: p.placement ? { id: p.placement.id, code: p.placement.code, workerName: p.placement.jobSeeker?.name ?? null } : null,
         amountPaise: p.amount,
         status: p.status,

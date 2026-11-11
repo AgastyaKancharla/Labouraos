@@ -276,7 +276,8 @@ export function profitAndLoss(input: {
     netRevenuePaise,
     expensesPaise: input.expensesPaise,
     profitPaise,
-    costPerPlacementPaise: input.placements > 0 ? Math.round(input.expensesPaise / input.placements) : null,
+    // A derived figure for reading, kept to whole rupees.
+    costPerPlacementPaise: input.placements > 0 ? Math.round(input.expensesPaise / input.placements / 100) * 100 : null,
     // Placements needed for fees alone to cover the period's expenses, at the period's average fee.
     breakEvenPlacements: averageFeePaise > 0 ? Math.ceil(input.expensesPaise / averageFeePaise) : null,
   };

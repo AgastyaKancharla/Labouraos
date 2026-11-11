@@ -95,7 +95,8 @@ describe('routes and guards', () => {
   it('renders every portal home for its role', async () => {
     const cases = [
       ['team_lead', '/team-lead', 'My team'],
-      ['finance', '/finance', 'Money today'],
+      // Money today (FN-Home) greets the Finance person by name.
+      ['finance', '/finance', /^Good (morning|afternoon|evening), Nisha$/],
       ['call_agent', '/call-agent', 'Home'],
     ] as const;
     for (const [role, path, title] of cases) {
