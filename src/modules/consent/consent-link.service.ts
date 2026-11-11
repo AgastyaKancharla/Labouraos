@@ -32,6 +32,7 @@ import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreemen
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { publicLink } from '../../common/public-link';
+import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 
 interface ConsentLinkTokenBase {
@@ -101,6 +102,11 @@ export type ConsentLinkDetails =
       maskedPhone: string;
       preferredLanguage: AgreementLanguage;
       agreementTermsHtml: string;
+      /** Pre-fills "Your full name" (P04); the signer can change it. */
+      ownerName: string | null;
+      /** The numbers frozen when the link was sent, for the summary cards (P04). */
+      terms: { feePercent: number; gstPercent: number; noBypassMonths: number; noBypassPenaltyPercent: number };
+      guarantee: { replacementWindowDays: number; maxFreeReplacements: number; replacementSearchDays: number };
     }
   | {
       valid: true;
@@ -219,7 +225,7 @@ export class ConsentLinkService {
       subjectId: seeker.id,
       variables: {
         token,
-        link: publicLink(`/consent/${token}`),
+        link: publicPageLink('registration', token),
       },
     });
 
@@ -283,7 +289,7 @@ export class ConsentLinkService {
       template: 'agreement_link',
       subjectType: 'business',
       subjectId: business.id,
-      variables: { token, link: publicLink(`/consent/${token}`) },
+      variables: { token, link: publicPageLink('businessAgreement', token) },
     });
     return { success: true, token, expiresAt };
   }
@@ -335,6 +341,60 @@ export class ConsentLinkService {
     const body = await this.agreementStorage.get(agreement.documentStoragePath);
     if (!body) throw new NotFoundException('The signed agreement document is unavailable');
     return { body, termsHash: agreement.termsHash };
+  }
+
+  /**
+   * Which new public page an old /consent/:token link opens in a browser:
+   * the registration link (P00…) or the business agreement (P04). Referral
+   * partner terms have no new page yet and keep the old one (null).
+   */
+  async publicPageForToken(token: string): Promise<PublicPage | null> {
+    const row = await this.prisma.publicLink.findUnique({
+      where: { tokenHash: this.publicLinks.hashToken(token) },
+      select: { purpose: true },
+    });
+    if (!row) return 'registration';
+    if (row.purpose === 'registration') return 'registration';
+    if (row.purpose === 'business_agreement') return 'businessAgreement';
+    return null;
+  }
+
+  /**
+   * After the owner signs, the agreement link is used up. For the rest of its
+   * life it still shows that it was signed (P04b) and gives the signed copy.
+   */
+  async signedAgreementForLink(token: string) {
+    const row = await this.prisma.publicLink.findUnique({ where: { tokenHash: this.publicLinks.hashToken(token) } });
+    if (!row || row.purpose !== 'business_agreement' || row.revokedAt || !row.usedAt) {
+      throw new NotFoundException('No signed agreement for this link');
+    }
+    if (row.expiresAt.getTime() <= this.clock.now().getTime()) {
+      throw new BadRequestException('Consent link has expired');
+    }
+    const documentStoragePath = `business-agreements/${row.subjectId}/${row.tokenHash}.html`;
+    const [agreement, business] = await Promise.all([
+      this.prisma.businessAgreement.findFirst({
+        where: { businessId: row.subjectId, documentStoragePath },
+        select: { signedAt: true, signedName: true, documentStoragePath: true },
+      }),
+      this.prisma.business.findUnique({ where: { id: row.subjectId }, select: { name: true } }),
+    ]);
+    if (!agreement || !business) throw new NotFoundException('No signed agreement for this link');
+    const metadata = (row.metadata ?? {}) as { agreement?: { language?: string } };
+    return {
+      signedAt: agreement.signedAt,
+      signedName: agreement.signedName,
+      businessName: business.name,
+      preferredLanguage: metadata.agreement?.language ?? row.language ?? 'en',
+      documentStoragePath: agreement.documentStoragePath,
+    };
+  }
+
+  async signedAgreementDocumentForLink(token: string) {
+    const signed = await this.signedAgreementForLink(token);
+    const body = await this.agreementStorage.get(signed.documentStoragePath);
+    if (!body) throw new NotFoundException('The signed agreement document is unavailable');
+    return { body, businessName: signed.businessName };
   }
 
   async validateToken(token: string): Promise<ConsentLinkTokenRecord> {
@@ -392,6 +452,7 @@ export class ConsentLinkService {
     if (record.subjectType === 'business') {
       const business = await this.prisma.business.findUnique({ where: { id: record.businessId } });
       if (!business) throw new NotFoundException('Business not found');
+      const policy = await this.pricingService.current();
       return {
         valid: true,
         subjectType: 'business',
@@ -400,6 +461,18 @@ export class ConsentLinkService {
         maskedPhone: maskAgreementPhone(record.businessPhone),
         preferredLanguage: record.agreement.language,
         agreementTermsHtml: record.agreement.termsHtml,
+        ownerName: business.ownerName ?? null,
+        terms: {
+          feePercent: record.agreement.feePercent,
+          gstPercent: record.agreement.gstPercent,
+          noBypassMonths: record.agreement.noBypassMonths,
+          noBypassPenaltyPercent: record.agreement.noBypassPenaltyPercent,
+        },
+        guarantee: {
+          replacementWindowDays: policy.replacementWindowDays,
+          maxFreeReplacements: policy.maxFreeReplacements,
+          replacementSearchDays: policy.replacementSearchDays,
+        },
       };
     }
 

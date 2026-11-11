@@ -2,12 +2,24 @@ import { BadRequestException, Injectable, NotFoundException, Optional } from '@n
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
-import { publicLink } from '../../common/public-link';
+import { publicPageLink } from '../../common/public-pages';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { PaymentService } from './payment.service';
+import { receiptToken } from './receipt-link';
+import { invoicePath } from '../placement/invoice-link';
+
+const PUBLIC_LANGUAGES: Record<string, 'kn' | 'hi' | 'en'> = {
+  kn: 'kn', kannada: 'kn', hi: 'hi', hindi: 'hi', en: 'en', english: 'en',
+};
+
+function publicLanguageOf(value: string | null | undefined): 'kn' | 'hi' | 'en' | null {
+  return value ? PUBLIC_LANGUAGES[value.trim().toLowerCase()] ?? null : null;
+}
+
+export type PublicPaymentState = 'pending' | 'confirming' | 'received' | 'closed';
 
 export interface CreateUpiRequestInput {
   type: string;
@@ -140,7 +152,7 @@ export class UpiCollectionService {
       upiReference: payment.upiReference!,
       expectedAmountPaise: payment.expectedAmountPaise!,
     });
-    const link = publicLink(`/payments/request/${encodeURIComponent(payment.upiReference!)}`);
+    const link = publicPageLink('payment', payment.upiReference!);
     const notifySubjectType = input.notifySubjectType ?? (input.subjectType === 'job_seeker' ? 'job_seeker' : undefined);
     const notifySubjectId = input.notifySubjectId ?? (input.subjectType === 'job_seeker' ? input.subjectId : undefined);
     if (notifySubjectType && notifySubjectId) {
@@ -166,7 +178,7 @@ export class UpiCollectionService {
     const { payeeName } = this.buildUpiUri({
       code: payment.code, upiReference: payment.upiReference, expectedAmountPaise: payment.expectedAmountPaise,
     });
-    const link = publicLink(`/payments/request/${encodeURIComponent(payment.upiReference)}`);
+    const link = publicPageLink('payment', payment.upiReference);
     let subjectType = notifySubjectType;
     let subjectId = notifySubjectId;
     if (!subjectType || !subjectId) {
@@ -226,6 +238,65 @@ export class UpiCollectionService {
       upiReference: payment.upiReference,
       upiUri: uri,
       qrSvg: buildUpiQr(uri).svg,
+    };
+  }
+
+  /**
+   * The public payment page (P05b) by UPI reference: the state of the money and,
+   * for a placement fee, the breakdown the owner is paying (50% fee + 18% GST)
+   * and the deadline. It never says "paid" until the money is in Laboura's bank:
+   * a payer's UPI reference hint only moves it to "confirming".
+   */
+  async getPublicSummary(token: string) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { upiReference: token },
+      include: {
+        jobSeeker: { select: { name: true, code: true, messageLanguage: true } },
+        placement: {
+          select: {
+            id: true, agreedSalary: true, placementFee: true, gstAmount: true, feePercentAtCreation: true,
+            gstPercentAtCreation: true, paymentDueAt: true,
+            jobSeeker: { select: { name: true } },
+            business: { select: { name: true, contactLanguage: true } },
+          },
+        },
+      },
+    });
+    if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee'].includes(payment.type)) {
+      throw new NotFoundException('Payment request not found');
+    }
+    const state: PublicPaymentState = ['succeeded', 'completed'].includes(payment.status)
+      ? 'received'
+      : payment.status === 'pending'
+        ? payment.payerUtrHint ? 'confirming' : 'pending'
+        : 'closed';
+    const firstName = (name: string | undefined) => name?.trim().split(/\s+/)[0] ?? null;
+    const placement = payment.placement;
+    return {
+      type: payment.type as 'activation' | 'placement_fee',
+      state,
+      amountPaise: payment.expectedAmountPaise,
+      upiReference: payment.upiReference,
+      confirmedAt: state === 'received' ? payment.confirmedAt : null,
+      language: publicLanguageOf(placement?.business.contactLanguage ?? payment.jobSeeker?.messageLanguage),
+      jobSeeker: payment.type === 'activation' && payment.jobSeeker
+        ? { firstName: firstName(payment.jobSeeker.name), code: payment.jobSeeker.code }
+        : null,
+      placement: placement
+        ? {
+          candidateFirstName: firstName(placement.jobSeeker.name),
+          businessName: placement.business.name,
+          agreedSalaryPaise: placement.agreedSalary,
+          feePercent: placement.feePercentAtCreation,
+          placementFeePaise: placement.placementFee,
+          gstPercent: placement.gstPercentAtCreation,
+          gstPaise: placement.gstAmount,
+          paymentDueAt: placement.paymentDueAt,
+        }
+        : null,
+      pay: state === 'pending' || state === 'confirming' ? await this.getPaymentPage(token) : null,
+      receipt: state === 'received' ? { paymentId: payment.id, token: receiptToken(payment.id) } : null,
+      invoicePath: state === 'received' && placement ? invoicePath(placement.id) : null,
     };
   }
 

@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { InterviewService } from './interview.service';
+import { InterviewService, publicOwnerResult } from './interview.service';
 
 describe('InterviewService booking', () => {
   type Mock = jest.Mock;
@@ -454,5 +454,94 @@ describe('InterviewService booking', () => {
     const rows = await service.listSlots('VC-00001', 'call-1');
 
     expect(rows).toEqual([{ ...slot, booked: 1, remainingCapacity: 1 }]);
+  });
+
+  describe('public phone pages (P03, P03b, P05, P06)', () => {
+    it('shows the offer without the business name or address, with the reply deadline', async () => {
+      prisma.interview.findUnique.mockResolvedValue({
+        ...liveInterview(), slotEndsAt: slot.endsAt,
+        vacancy: { ...vacancy, salaryMinPaise: 1600000, salaryMaxPaise: 1800000 },
+        jobSeeker: { ...liveInterview().jobSeeker, messageLanguage: 'kn' },
+      });
+      const details = await service.candidateReplyDetails('single-use-token');
+      expect(details).toMatchObject({
+        firstName: 'Candidate', job: 'Cook', area: 'Indiranagar', salaryMinPaise: 1600000, salaryMaxPaise: 1800000,
+        salaryPeriod: 'monthly', shift: 'day', awaitingReply: true, belowGuaranteeFloor: false, language: 'kn',
+      });
+      expect(JSON.stringify(details)).not.toContain('PRIVATE');
+    });
+
+    it('a Yes answer returns the booked business, address, time and contact (P03b)', async () => {
+      prisma.interview.findUnique.mockResolvedValue({ ...liveInterview(), slotEndsAt: slot.endsAt, vacancy: { ...vacancy } });
+      const result = await service.respondFromLink('single-use-token', 'yes');
+      expect(result).toMatchObject({
+        status: 'confirmed',
+        booked: { businessName: 'PRIVATE BUSINESS', address: 'PRIVATE ADDRESS', area: 'Indiranagar', contactPerson: 'Manager' },
+      });
+    });
+
+    it('a No answer returns no business details', async () => {
+      prisma.interview.findUnique.mockResolvedValue(liveInterview());
+      const result = await service.respondFromLink('single-use-token', 'no');
+      expect(result).not.toHaveProperty('booked');
+    });
+
+    it('lets the candidate answer "Did they offer you the job?" before the owner records a result', async () => {
+      prisma.interview.findUnique.mockResolvedValue({
+        ...confirmedInterview(), resultRequestSentAt: now, resultRecordedAt: null, candidateCheckAnswer: 'no_answer',
+      });
+      await expect(service.submitCandidateOfferCheck('single-use-token', 'yes')).resolves.toMatchObject({ candidateCheckAnswer: 'offered_yes' });
+      expect(prisma.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        where: { id: 'interview-id', candidateCheckAnswer: 'no_answer' },
+      }));
+      expect(reviewFlags.raise).not.toHaveBeenCalled();
+
+      prisma.interview.findUnique.mockResolvedValue({ ...confirmedInterview(), resultRequestSentAt: null, resultRecordedAt: null });
+      await expect(service.submitCandidateOfferCheck('single-use-token', 'yes')).rejects.toThrow('not waiting for your answer');
+    });
+
+    it('keeps the candidate\'s earlier "yes" when the owner then says not selected, and flags it for the Team Lead', async () => {
+      prisma.interview.findUnique
+        .mockResolvedValueOnce({ ...confirmedInterview(), candidateCheckAnswer: 'offered_yes' })
+        .mockResolvedValue({
+          ...confirmedInterview(), status: 'completed', result: 'not_selected', resultRecordedAt: now, candidateCheckAnswer: 'offered_yes',
+        });
+      await service.submitOwnerResult('single-use-token', {
+        otpRequestId: 'otp-request-id', otpCode: '123456', result: 'not_selected', resultReason: 'skills',
+      });
+      expect(tx.interview.updateMany).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ candidateCheckAnswer: 'offered_yes' }),
+      }));
+      expect(reviewFlags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'interview_result_mismatch' }));
+    });
+
+    it('shows the owner who, where and the deadline, and the reason list (P05)', async () => {
+      linkService.validateInterviewActionToken.mockReturnValue({ interviewId: 'interview-id', phone: '+911234568812' });
+      prisma.interview.findUnique.mockResolvedValue({
+        ...confirmedInterview(), business: { ...confirmedInterview().business, contactLanguage: 'hi' },
+      });
+      const details = await service.ownerResultDetails('single-use-token');
+      expect(details).toMatchObject({
+        candidateFirstName: 'Candidate', businessName: 'PRIVATE BUSINESS', maskedPhone: '******8812',
+        awaitingResult: true, language: 'hi', vacancySalaryMinPaise: 1600000,
+      });
+      expect(details.reasons).toContain('skills');
+      expect(JSON.stringify(details)).not.toContain('+919876543210');
+    });
+
+    it('the public owner result never carries the candidate record, only his first name', () => {
+      const out = publicOwnerResult({
+        id: 'i', status: 'completed', result: 'selected',
+        placement: {
+          id: 'pl', status: 'awaiting_payment', agreedSalary: 1600000,
+          jobSeeker: { name: 'Ramesh Kumar', phone: '+919876543210' }, business: { phone: '+911111111111' }, vacancy: {}, payments: [],
+          payment: { upiReference: 'PAY-1-ab' },
+        },
+      });
+      expect(out.placement).toMatchObject({ id: 'pl', candidateFirstName: 'Ramesh', payment: { upiReference: 'PAY-1-ab' } });
+      expect(JSON.stringify(out)).not.toContain('+91');
+      expect(JSON.stringify(out)).not.toContain('Kumar');
+      expect(publicOwnerResult({ id: 'i', placement: null }).placement).toBeNull();
+    });
   });
 });

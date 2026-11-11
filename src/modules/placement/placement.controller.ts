@@ -1,7 +1,9 @@
 import {
   Body,
   Controller,
+  ForbiddenException,
   Get,
+  Headers,
   Param,
   Patch,
   Post,
@@ -25,6 +27,39 @@ import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { ExportPlacementsQueryDto, formatPlacementsCsv } from './dto/export-placements.dto';
+import { Public } from '../../common/rbac/public.decorator';
+import { wantsHtml } from '../../common/public-pages';
+import { isValidInvoiceToken } from './invoice-link';
+import { renderInvoicePage } from './invoice-page';
+
+/**
+ * The business's copy of its GST invoice, opened from the signed link sent
+ * after it paid (public, read-only). A placement id without the token opens
+ * nothing; staff use GET /placements/:id/invoice with their login.
+ */
+@Controller('placements')
+export class PlacementInvoiceCopyController {
+  constructor(private readonly placementService: PlacementService) {}
+
+  @Get(':id/invoice/copy')
+  @Public('token page: the business opens its own invoice with the signed link token')
+  async invoiceCopy(
+    @Param('id') id: string,
+    @Query('token') token: string | undefined,
+    @Headers('accept') accept: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
+    if (!isValidInvoiceToken(id, token)) throw new ForbiddenException('This invoice link is not valid');
+    const invoice = await this.placementService.getInvoiceForBusiness(id);
+    res.setHeader('Cache-Control', 'private, no-store');
+    res.setHeader('X-Robots-Tag', 'noindex');
+    if (wantsHtml(accept)) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      return renderInvoicePage(invoice);
+    }
+    return invoice;
+  }
+}
 
 @Controller('vacancies/:id/placements')
 @UseGuards(JwtAuthGuard, RbacGuard)

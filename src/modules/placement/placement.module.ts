@@ -8,11 +8,11 @@ import { PaymentModule } from '../payment/payment.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { PlacementService } from './placement.service';
-import { PlacementController, VacancyPlacementController } from './placement.controller';
+import { PlacementController, PlacementInvoiceCopyController, VacancyPlacementController } from './placement.controller';
 
 @Module({
   imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule, PricingModule, ReviewFlagModule],
-  controllers: [VacancyPlacementController, PlacementController],
+  controllers: [PlacementInvoiceCopyController, VacancyPlacementController, PlacementController],
   providers: [PlacementService],
   exports: [PlacementService],
 })

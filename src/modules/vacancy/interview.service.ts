@@ -20,7 +20,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { localCalendarToUtc, getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { formatINR } from '../../common/money/money';
 import { MatchingService } from './matching.service';
-import { publicLink } from '../../common/public-link';
+import { publicPageLink } from '../../common/public-pages';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { CallService } from '../call/call.service';
 import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
@@ -28,6 +28,29 @@ import { BusinessVerificationService } from '../business/business-verification.s
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PlacementService } from '../placement/placement.service';
 import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
+
+/** The fixed reasons an owner picks for "not selected" (P05). */
+export const NOT_SELECTED_REASONS = ['skills', 'experience', 'communication', 'salary_expectation', 'not_suitable', 'other'] as const;
+
+function firstNameOf(name: string): string {
+  return name.trim().split(/\s+/)[0] ?? name.trim();
+}
+
+/**
+ * The owner result as the public page returns it: the placement and its
+ * payment, without the nested candidate, business and vacancy records — the
+ * candidate's number and details reach the business only after it pays.
+ */
+export function publicOwnerResult<T extends { placement: unknown }>(result: T) {
+  const placement = result.placement as (Record<string, unknown> & { jobSeeker?: { name?: string } }) | null;
+  if (!placement) return { ...result, placement: null };
+  const { jobSeeker, business: _business, vacancy: _vacancy, payments: _payments, ...rest } = placement;
+  void _business; void _vacancy; void _payments;
+  return {
+    ...result,
+    placement: { ...rest, candidateFirstName: jobSeeker?.name ? firstNameOf(jobSeeker.name) : null },
+  };
+}
 
 interface BookInterviewDto {
   vacancyId: string;
@@ -246,7 +269,7 @@ export class InterviewService {
       seeker.phone,
       replyDueAt,
     );
-    const link = publicLink(`/interviews/reply/${replyToken}`);
+    const link = publicPageLink('offerReply', replyToken);
     const interviewDay = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata',
       dateStyle: 'medium',
@@ -417,6 +440,73 @@ export class InterviewService {
     return this.consentLinks.validateInterviewActionToken(token, 'candidate_reply');
   }
 
+  /**
+   * What the offer page (P03) shows before he replies: job, area, salary,
+   * shift, interview time and the reply deadline — never the business name or
+   * address (those come only after he says yes).
+   */
+  async candidateReplyDetails(token: string) {
+    const link = await this.validateCandidateReplyLink(token);
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: link.interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
+    });
+    if (!interview) throw new NotFoundException('Interview not found');
+    return {
+      firstName: firstNameOf(interview.jobSeeker.name),
+      job: interview.vacancy.roleTitle?.trim() || interview.vacancy.tradeSkill,
+      area: interview.vacancy.locality || interview.business.locality || '',
+      salaryMinPaise: interview.vacancy.salaryMinPaise,
+      salaryMaxPaise: interview.vacancy.salaryMaxPaise ?? interview.vacancy.salaryMinPaise,
+      salaryPeriod: interview.vacancy.salaryPeriod ?? 'monthly',
+      shift: interview.vacancy.shift ?? null,
+      slotStartsAt: interview.slotStartsAt,
+      slotEndsAt: interview.slotEndsAt,
+      replyDueAt: interview.replyDueAt,
+      awaitingReply: interview.status === 'offered' && !interview.candidateRespondedAt,
+      /** Saying no to an offer below his guaranteed salary floor is never a hit. */
+      belowGuaranteeFloor: await this.offerIsBelowGuaranteeFloor(interview),
+      language: interview.jobSeeker.messageLanguage ?? null,
+    };
+  }
+
+  /** What the owner's result page (P05) shows: who, where, when, and the deadline. */
+  async ownerResultDetails(token: string) {
+    const link = await this.validateOwnerResultLink(token);
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: link.interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
+    });
+    if (!interview) throw new NotFoundException('Interview not found');
+    return {
+      candidateFirstName: firstNameOf(interview.jobSeeker.name),
+      businessName: interview.business.name,
+      job: interview.vacancy.roleTitle?.trim() || interview.vacancy.tradeSkill,
+      slotStartsAt: interview.slotStartsAt,
+      slotEndsAt: interview.slotEndsAt,
+      resultDueAt: interview.resultDueAt,
+      vacancySalaryMinPaise: interview.vacancy.salaryPeriod === 'daily' ? null : interview.vacancy.salaryMinPaise,
+      maskedPhone: `******${link.phone.replace(/\D/g, '').slice(-4)}`,
+      awaitingResult: interview.status === 'confirmed' && !interview.resultRecordedAt,
+      reasons: NOT_SELECTED_REASONS,
+      language: interview.business.contactLanguage ?? null,
+    };
+  }
+
+  /** What "Did they offer you the job?" (P06) shows: his first name and the business. */
+  async candidateCheckDetails(token: string) {
+    const link = await this.validateCandidateCheckLink(token);
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: link.interviewId }, include: { business: true, jobSeeker: true },
+    });
+    if (!interview) throw new NotFoundException('Interview not found');
+    return {
+      firstName: firstNameOf(interview.jobSeeker.name),
+      businessName: interview.business.name,
+      slotStartsAt: interview.slotStartsAt,
+      answered: interview.candidateCheckAnswer === 'offered_yes' || interview.candidateCheckAnswer === 'offered_no',
+      language: interview.jobSeeker.messageLanguage ?? null,
+    };
+  }
+
   async respondFromCall(
     interviewId: string,
     callRecordId: string,
@@ -584,8 +674,7 @@ export class InterviewService {
     if (!['selected', 'not_selected', 'candidate_no_show'].includes(input.result)) {
       throw new BadRequestException('result must be selected, not_selected or candidate_no_show');
     }
-    const reasons = ['skills', 'experience', 'communication', 'salary_expectation', 'not_suitable', 'other'];
-    if (input.result === 'not_selected' && !reasons.includes(input.resultReason ?? '')) {
+    if (input.result === 'not_selected' && !(NOT_SELECTED_REASONS as readonly string[]).includes(input.resultReason ?? '')) {
       throw new BadRequestException('resultReason must be from the not-selected reason list');
     }
     if (input.result === 'selected' && (!Number.isSafeInteger(input.selectedSalaryPaise) || (input.selectedSalaryPaise ?? 0) <= 0)) {
@@ -620,7 +709,10 @@ export class InterviewService {
           resultRecordedAt: now,
           selectedSalaryPaise: input.result === 'selected' ? input.selectedSalaryPaise : null,
           selectedJoiningDate: input.result === 'selected' ? joiningDate : null,
-          candidateCheckAnswer: 'no_answer',
+          // The candidate may have answered "Did they offer you the job?" first; keep that answer.
+          candidateCheckAnswer: interview.candidateCheckAnswer === 'offered_yes' || interview.candidateCheckAnswer === 'offered_no'
+            ? interview.candidateCheckAnswer
+            : 'no_answer',
         },
       });
       if (updated.count !== 1) throw new BadRequestException('This interview is no longer awaiting an owner result');
@@ -695,6 +787,9 @@ export class InterviewService {
       changedFields: ['status', 'result', 'resultReason', 'resultOtpRequestId', 'resultRecordedAt', 'selectedSalaryPaise', 'selectedJoiningDate'],
       reason: 'Business owner verified by OTP on the business phone',
     });
+    if (input.result === 'not_selected') {
+      await this.raiseMismatchIfNeeded(interview.id, interview.proposedByStaffId);
+    }
     if (input.result === 'candidate_no_show') {
       await this.jobSeekerService.recordHit(interview.jobSeekerId, 'interview_no_show', undefined, 'system', undefined, { interviewId: interview.id });
     }
@@ -729,7 +824,10 @@ export class InterviewService {
     if (!['yes', 'no'].includes(answer)) throw new BadRequestException('answer must be yes or no');
     const link = await this.consentLinks.validateInterviewActionToken(token, 'candidate_check');
     const interview = await this.prisma.interview.findUnique({ where: { id: link.interviewId } });
-    if (!interview || !interview.resultRecordedAt) throw new BadRequestException('The owner has not recorded a result yet');
+    // He is asked at the same moment as the owner (Master Guide, "Stopping bypass"), so he may answer first.
+    if (!interview || (!interview.resultRequestSentAt && !interview.resultRecordedAt)) {
+      throw new BadRequestException('This interview is not waiting for your answer yet');
+    }
     const now = this.clock.now();
     const updated = await this.prisma.interview.updateMany({
       where: { id: interview.id, candidateCheckAnswer: 'no_answer' },
@@ -759,7 +857,7 @@ export class InterviewService {
     const token = await this.consentLinks.createInterviewActionToken(
       interview.id, 'owner_result', contactPhone, linkExpiresAt,
     );
-    const link = publicLink(`/interviews/result/${token}`);
+    const link = publicPageLink('interviewResult', token);
     const interviewTime = new Intl.DateTimeFormat('en-IN', {
       timeZone: 'Asia/Kolkata', dateStyle: 'medium', timeStyle: 'short',
     }).format(interview.slotStartsAt);
@@ -784,7 +882,7 @@ export class InterviewService {
       interview.id, 'candidate_check', interview.jobSeeker.phone,
       new Date(interview.slotEndsAt.getTime() + policy.interviewResultCloseHours * 60 * 60 * 1000),
     );
-    const link = publicLink(`/interviews/check/${token}`);
+    const link = publicPageLink('offerCheck', token);
     const messages = await Promise.all((['sms', 'whatsapp'] as const).map((channel) =>
       this.messagingService.send({
         channel, template: 'candidate_offer_check', subjectType: 'job_seeker', subjectId: interview.jobSeekerId,
@@ -869,7 +967,23 @@ export class InterviewService {
       );
     }
     if (accepted) await this.sendConfirmationDetails(interview, now);
-    return { id: interview.id, status };
+    if (!accepted) return { id: interview.id, status };
+    const branch = interview.vacancy.branchId
+      ? await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } })
+      : null;
+    // Only now, after he said yes, does he get the business name and address (P03b).
+    return {
+      id: interview.id,
+      status,
+      booked: {
+        businessName: interview.business.name,
+        address: interview.business.address ?? '',
+        area: interview.vacancy.locality ?? interview.business.locality ?? '',
+        slotStartsAt: interview.slotStartsAt,
+        slotEndsAt: interview.slotEndsAt,
+        contactPerson: branch?.contactPersonName || interview.business.additionalContactName || interview.business.ownerName || '',
+      },
+    };
   }
 
   private async offerIsBelowGuaranteeFloor(interview: {

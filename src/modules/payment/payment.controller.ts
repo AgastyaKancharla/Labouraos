@@ -28,6 +28,8 @@ import { UpiCollectionService } from './upi-collection.service';
 import { RecordPayoutDto } from './dto/record-payout.dto';
 import { PaymentReceiptGuard } from './payment-receipt.guard';
 import { Public } from '../../common/rbac/public.decorator';
+import { publicPageLink, wantsHtml } from '../../common/public-pages';
+import { renderReceiptPage } from './receipt-page';
 
 @Controller('payments')
 @UseInterceptors(PiiMaskingInterceptor)
@@ -44,12 +46,20 @@ export class PaymentController {
     @Headers('accept') accept: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    if (accept?.includes('text/html')) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return this.upiCollectionService.renderPaymentPage(token);
+    // Links already sent by SMS open the new phone page (P05b) in a browser.
+    if (wantsHtml(accept)) {
+      res.redirect(302, publicPageLink('payment', token));
+      return;
     }
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return this.upiCollectionService.getPaymentPage(token);
+  }
+
+  /** The public payment page's data (P05b): state, amount, the fee breakdown and the UPI QR while it is unpaid. */
+  @Get('request/:token/summary')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async paymentRequestSummary(@Param('token') token: string) {
+    return this.upiCollectionService.getPublicSummary(token);
   }
 
   /**
@@ -59,8 +69,20 @@ export class PaymentController {
   @Get(':id/receipt')
   @UseGuards(PaymentReceiptGuard)
   @RequireRoles('ceo', 'finance')
-  async getPaymentReceipt(@Param('id') id: string) {
+  async getPaymentReceipt(
+    @Param('id') id: string,
+    @Headers('accept') accept: string | undefined,
+    @Res({ passthrough: true }) res: Response,
+  ) {
     const payment = await this.paymentService.findById(id);
+    if (wantsHtml(accept)) {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.setHeader('Cache-Control', 'private, no-store');
+      return renderReceiptPage({
+        paymentCode: payment.code, amountPaise: payment.amount, status: payment.status,
+        confirmedAt: payment.confirmedAt, type: payment.type,
+      });
+    }
     return {
       paymentId: payment.id,
       paymentCode: payment.code,

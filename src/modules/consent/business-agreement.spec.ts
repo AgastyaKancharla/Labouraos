@@ -134,15 +134,26 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     expect(agreementMessage).not.toBeNull();
     expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
       template: 'agreement_link',
-      variables: { token: link.body.token, link: `https://app.laboura.in/consent/${link.body.token}` },
+      variables: { token: link.body.token, link: `https://app.laboura.in/app/p/agreement/${link.body.token}` },
     }));
 
-    const page = await request(app.getHttpServer())
+    // A browser opening the old link goes to the new phone page (P04); the page reads the
+    // frozen numbers as JSON.
+    const redirect = await request(app.getHttpServer())
       .get(`/consent/${link.body.token}`)
       .set('Accept', 'text/html')
+      .expect(302);
+    expect(redirect.headers.location).toBe(`https://app.laboura.in/app/p/agreement/${link.body.token}`);
+    const page = await request(app.getHttpServer())
+      .get(`/consent/${link.body.token}`)
+      .set('Accept', 'application/json')
       .expect(200);
-    expect(page.text).toContain(`${policyAtSend.placementFeePercent}%`);
-    expect(page.text).toContain(`${policyAtSend.gstPercent}%`);
+    expect(page.body.agreementTermsHtml).toContain(`${policyAtSend.placementFeePercent}%`);
+    expect(page.body.agreementTermsHtml).toContain(`${policyAtSend.gstPercent}%`);
+    expect(page.body.terms).toMatchObject({
+      feePercent: policyAtSend.placementFeePercent,
+      gstPercent: policyAtSend.gstPercent,
+    });
 
     currentSpy.mockResolvedValue(changedPolicy);
     const otp = await request(app.getHttpServer())

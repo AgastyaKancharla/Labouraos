@@ -19,11 +19,8 @@ import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { ConsentLinkService, SubmitConsentDto } from './consent-link.service';
 import { ConsentWithdrawalService, AgentConsentWithdrawalDto } from './consent-withdrawal.service';
-import {
-  renderBusinessAgreementPageHtml,
-  renderConsentPageHtml,
-  renderReferralTermsPageHtml,
-} from './consent-page.template';
+import { renderReferralTermsPageHtml } from './consent-page.template';
+import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -76,37 +73,54 @@ export class ConsentController {
     @Headers('accept') accept: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
+    // Links already sent by SMS open the new phone pages (/app/p/...) in a browser.
+    if (wantsHtml(accept)) {
+      const page = await this.consentLinkService.publicPageForToken(token);
+      if (page) {
+        res.redirect(302, publicPageLink(page, token));
+        return;
+      }
+    }
     const details = await this.consentLinkService.getTokenDetails(token, requestId);
 
-    if (accept && accept.includes('text/html')) {
+    if (wantsHtml(accept) && details.subjectType === 'referral') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      if (details.subjectType === 'business') {
-        return renderBusinessAgreementPageHtml(
-          token,
-          details.businessName,
-          details.maskedPhone,
-          details.agreementTermsHtml,
-          details.preferredLanguage as 'kn' | 'hi' | 'en',
-        );
-      }
-      if (details.subjectType === 'referral') {
-        return renderReferralTermsPageHtml(
-          token,
-          details.partnerName,
-          details.maskedPhone,
-          details.termsHtml,
-          details.preferredLanguage as 'kn' | 'hi' | 'en',
-        );
-      }
-      return renderConsentPageHtml(
+      return renderReferralTermsPageHtml(
         token,
-        details.otpRequired ? undefined : details.candidateName,
+        details.partnerName,
+        details.maskedPhone,
+        details.termsHtml,
         details.preferredLanguage as 'kn' | 'hi' | 'en',
       );
     }
 
     res.setHeader('Content-Type', 'application/json; charset=utf-8');
     return details;
+  }
+
+  /** After signing, the used agreement link still shows it was signed (P04b). */
+  @Get(':token/signed')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async signedAgreement(@Param('token') token: string) {
+    const signed = await this.consentLinkService.signedAgreementForLink(token);
+    return {
+      signedAt: signed.signedAt,
+      signedName: signed.signedName,
+      businessName: signed.businessName,
+      preferredLanguage: signed.preferredLanguage,
+    };
+  }
+
+  /** The signed copy, as stored when the owner signed (read-only). */
+  @Get(':token/signed/copy')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async signedAgreementCopy(@Param('token') token: string, @Res() res: Response) {
+    const copy = await this.consentLinkService.signedAgreementDocumentForLink(token);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="laboura-agreement.html"');
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Content-Security-Policy', "default-src 'none'; style-src 'unsafe-inline'");
+    res.send(copy.body);
   }
 
   /**

@@ -15,6 +15,7 @@ import { EditPolicyService } from '../../common/edit-policy/edit-policy.service'
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { TradeService } from '../trade/trade.service';
 import { receiptToken } from './receipt-link';
+import { invoiceToken } from '../placement/invoice-link';
 
 type MockPrisma = {
   payment: Record<string, jest.Mock>;
@@ -220,7 +221,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(res.amount).toBe(49900);
       expect(res.gatewayReference).toBeNull();
       expect(res.upiReference).toBe('PAY-00001-1234abcd');
-      expect(res.paymentLink).toContain('/payments/request/PAY-00001-1234abcd');
+      expect(res.paymentLink).toContain('/app/p/fee/PAY-00001-1234abcd');
       expect(messagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: 'sms',
@@ -392,7 +393,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(result.gstAmount).toBe(expectedGst);
       expect(result.payment?.amount).toBe(expectedTotal);
       expect(result.payment?.upiReference).toBe('PAY-00003-plfee1234');
-      expect(result.payment?.paymentLink).toContain('/payments/request/PAY-00003-plfee1234');
+      expect(result.payment?.paymentLink).toContain('/app/p/fee/PAY-00003-plfee1234');
 
       // Assert sent to business owner via SMS and WhatsApp
       expect(messagingService.send).toHaveBeenCalledWith(
@@ -402,7 +403,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectId: 'biz-1',
           variables: expect.objectContaining({
             amount: '9440.00',
-            link: expect.stringContaining('/payments/request/PAY-00003-plfee1234'),
+            link: expect.stringContaining('/app/p/fee/PAY-00003-plfee1234'),
           }),
         }),
       );
@@ -477,7 +478,8 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectType: 'business',
           subjectId: 'biz-1',
           variables: {
-            link: 'https://app.laboura.in/placements/pl-1/invoice',
+            // The business's own signed, read-only invoice copy — not the staff-only route.
+            link: `https://app.laboura.in/placements/pl-1/invoice/copy?token=${invoiceToken('pl-1')}`,
             invoiceCode: 'INV-00001',
           },
         }),

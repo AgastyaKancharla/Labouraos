@@ -66,7 +66,8 @@ describe('UpiCollectionService', () => {
     expect(params.searchParams.get('tn')).toBe('PAY-00042');
     expect(params.searchParams.get('tr')).toBe(payment.upiReference);
     expect(params.searchParams.get('cu')).toBe('INR');
-    expect(result.paymentLink).toBe(`https://app.laboura.in/payments/request/${payment.upiReference}`);
+    // The SMS and WhatsApp link opens the public phone page (P05b); /payments/request/... redirects there.
+    expect(result.paymentLink).toBe(`https://app.laboura.in/app/p/fee/${payment.upiReference}`);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         method: 'upi_direct', status: 'pending', amount: 49900,
@@ -146,5 +147,61 @@ describe('UpiCollectionService', () => {
     expect(page).toContain('Pay by card');
     expect(page).toContain('Payment is confirmed once it reaches Laboura\'s bank');
     expect(page).not.toMatch(/type=["']file["']/i);
+  });
+
+  describe('public payment summary (P05b)', () => {
+    const originalSecret = process.env.JWT_SECRET;
+    beforeEach(() => {
+      process.env.JWT_SECRET = 'test-secret-that-is-at-least-32-characters';
+    });
+    afterAll(() => {
+      if (originalSecret === undefined) delete process.env.JWT_SECRET;
+      else process.env.JWT_SECRET = originalSecret;
+    });
+
+    const placementPayment = {
+      ...payment, type: 'placement_fee', expectedAmountPaise: 944000, amount: 944000, subjectType: 'placement',
+      jobSeekerId: null, jobSeeker: null, placementId: 'placement-1', payerUtrHint: null, confirmedAt: null,
+      placement: {
+        id: 'placement-1', agreedSalary: 1600000, placementFee: 800000, gstAmount: 144000,
+        feePercentAtCreation: 50, gstPercentAtCreation: 18, paymentDueAt: new Date('2026-11-12T09:30:00Z'),
+        jobSeeker: { name: 'Ramesh Kumar' }, business: { name: 'Sri Sai Hotel', contactLanguage: 'Kannada' },
+      },
+    };
+
+    it('shows the fee breakdown, the deadline and the QR while unpaid, with no candidate details beyond the first name', async () => {
+      findUnique.mockResolvedValue(placementPayment);
+      const summary = await service.getPublicSummary(payment.upiReference);
+      expect(summary).toMatchObject({
+        type: 'placement_fee', state: 'pending', amountPaise: 944000, language: 'kn', receipt: null, invoicePath: null,
+        placement: {
+          candidateFirstName: 'Ramesh', businessName: 'Sri Sai Hotel', agreedSalaryPaise: 1600000,
+          feePercent: 50, placementFeePaise: 800000, gstPercent: 18, gstPaise: 144000,
+        },
+      });
+      expect(summary.pay?.upiUri).toContain('am=9440.00');
+      expect(JSON.stringify(summary)).not.toContain('Kumar');
+    });
+
+    it('says "confirming" — never "received" — when the payer only typed a UPI reference', async () => {
+      findUnique.mockResolvedValue({ ...placementPayment, payerUtrHint: '123456789012' });
+      expect((await service.getPublicSummary(payment.upiReference)).state).toBe('confirming');
+    });
+
+    it('says "received" only once the bank confirmed it, with a signed receipt and invoice link and no QR', async () => {
+      findUnique.mockResolvedValue({ ...placementPayment, status: 'succeeded', confirmedAt: new Date('2026-11-11T06:00:00Z') });
+      const summary = await service.getPublicSummary(payment.upiReference);
+      expect(summary.state).toBe('received');
+      expect(summary.pay).toBeNull();
+      expect(summary.receipt).toEqual({ paymentId: payment.id, token: expect.any(String) });
+      expect(summary.invoicePath).toMatch(/^\/placements\/placement-1\/invoice\/copy\?token=/);
+    });
+
+    it('refuses references that are not UPI collection requests', async () => {
+      findUnique.mockResolvedValue({ ...placementPayment, type: 'refund' });
+      await expect(service.getPublicSummary('x')).rejects.toThrow(/not found/);
+      findUnique.mockResolvedValue(null);
+      await expect(service.getPublicSummary('x')).rejects.toThrow(/not found/);
+    });
   });
 });

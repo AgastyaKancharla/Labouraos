@@ -1852,7 +1852,18 @@ export class PlacementService {
     if (!actor) {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
+    return this.buildInvoice(id, actor.id);
+  }
 
+  /**
+   * The business's own copy, opened from the signed link sent after it paid
+   * (invoice-link.ts). Same invoice as staff see; the token was checked by the caller.
+   */
+  async getInvoiceForBusiness(id: string): Promise<GstInvoiceResponse> {
+    return this.buildInvoice(id, 'system');
+  }
+
+  private async buildInvoice(id: string, actorId: string): Promise<GstInvoiceResponse> {
     const placement = await this.prisma.placement.findFirst({
       where: { id },
       include: {
@@ -1887,7 +1898,7 @@ export class PlacementService {
         action: 'placement.invoice_generated',
         entityType: 'placement',
         entityCode: placement.code,
-        actorId: actor.id,
+        actorId,
         city: placement.city,
         after: {
           invoiceCode: invoiceNumber,
