@@ -14,6 +14,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { MessageModule } from '../message/message.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { UpiCollectionService } from './upi-collection.service';
+import { paymentProviderMode } from './payment-mode';
 
 @Module({
   imports: [
@@ -30,10 +31,7 @@ import { UpiCollectionService } from './upi-collection.service';
     {
       provide: PAYMENT_PROVIDER,
       useFactory: () => {
-        const rawProvider =
-          process.env.PAYMENT_PROVIDER_MODE || process.env.PAYMENT_PROVIDER;
-        const providerName =
-          rawProvider && rawProvider !== 'undefined' ? rawProvider : 'mock';
+        const providerName = paymentProviderMode();
         if (providerName === 'mock') {
           return new MockPaymentProvider();
         }
