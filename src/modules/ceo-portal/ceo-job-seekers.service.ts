@@ -19,6 +19,7 @@ import {
   refundBucket,
   sumPaise,
 } from './ceo-common';
+import { phoneSearchDigits } from '../../common/phone/indian-mobile';
 
 /** Statuses of a job seeker who registered but has not paid yet. */
 export const NOT_PAID_STATUSES = ['lead', 'consented', 'pending_activation'];
@@ -105,7 +106,7 @@ export class CeoJobSeekersService {
     if (created) and.push({ createdAt: created });
     if (query.search) {
       const s = query.search;
-      const digits = s.replace(/\D/g, '');
+      const digits = phoneSearchDigits(s);
       and.push({
         OR: [
           { name: contains(s) },

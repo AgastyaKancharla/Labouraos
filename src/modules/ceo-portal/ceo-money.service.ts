@@ -15,6 +15,7 @@ import {
   istDayKey,
   sumPaise,
 } from './ceo-common';
+import { phoneSearchDigits } from '../../common/phone/indian-mobile';
 
 export interface MoneyTotals {
   activationPaise: number;
@@ -427,7 +428,7 @@ export class CeoMoneyService {
   async referrals(range: Partial<DateRange>, page: PageRequest, filters: { search?: string; type?: string; payout?: string; checks?: string }) {
     const and: Prisma.ReferralWhereInput[] = [{ anonymisedAt: null }];
     if (filters.search) {
-      const digits = filters.search.replace(/\D/g, '');
+      const digits = phoneSearchDigits(filters.search);
       and.push({ OR: [{ name: contains(filters.search) }, { code: contains(filters.search) }, ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : [])] });
     }
     if (filters.type) and.push({ type: filters.type });

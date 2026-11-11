@@ -120,3 +120,13 @@ export function phoneSearchTerm(
   if (/^\d{4,9}$/.test(compact)) return { kind: 'suffix', digits: compact };
   return null;
 }
+
+/**
+ * Digits for a "phone contains" search box: a full number in any spelling
+ * becomes its 10 national digits (so "09876543210" finds +919876543210);
+ * anything else keeps its bare digits (last 4, partial numbers).
+ */
+export function phoneSearchDigits(query: string): string {
+  const canonical = parseIndianMobile(query);
+  return canonical ? canonical.slice(3) : String(query ?? '').replace(/\D/g, '');
+}

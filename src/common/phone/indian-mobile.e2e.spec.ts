@@ -21,6 +21,8 @@ describe('Indian mobile numbers are one format end to end', () => {
   let prisma: PrismaService;
   let callAgentId: string;
   let callAgentToken: string;
+  let ceoId: string;
+  let ceoToken: string;
   const seekerIds: string[] = [];
   const businessIds: string[] = [];
   const referralIds: string[] = [];
@@ -63,6 +65,19 @@ describe('Indian mobile numbers are one format end to end', () => {
     });
     callAgentId = agent.id;
     callAgentToken = jwt.sign({ sub: agent.id, role: agent.role, code: agent.code, email: agent.email });
+    const ceo = await prisma.staff.create({
+      data: {
+        code: `PHC-${suffix}`,
+        name: 'Phone Format CEO',
+        email: `phc-${suffix}@laboura.local`,
+        passwordHash: await bcrypt.hash('Phone-Format-Password-1', 4),
+        role: 'ceo',
+        status: 'active',
+        city: 'Bengaluru',
+      },
+    });
+    ceoId = ceo.id;
+    ceoToken = jwt.sign({ sub: ceo.id, role: ceo.role, code: ceo.code, email: ceo.email, teamLeadId: null });
   }, 120000);
 
   afterAll(async () => {
@@ -75,8 +90,8 @@ describe('Indian mobile numbers are one format end to end', () => {
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
     await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
-    await prisma.auditLog.deleteMany({ where: { actorId: callAgentId } });
-    await prisma.staff.deleteMany({ where: { id: callAgentId } });
+    await prisma.auditLog.deleteMany({ where: { actorId: { in: [callAgentId, ceoId] } } });
+    await prisma.staff.deleteMany({ where: { id: { in: [callAgentId, ceoId] } } });
     await app.close();
   });
 
@@ -224,6 +239,20 @@ describe('Indian mobile numbers are one format end to end', () => {
         .set(auth());
       expect(found.status).toBe(200);
       expect(found.body.partner).toMatchObject({ code: stored.code, phone: `******${ten.slice(-4)}` });
+    }
+  });
+
+  it('finds a job seeker in the CEO list by the full number in any spelling', async () => {
+    const ten = freshMobile();
+    const first = await registerSeeker(ten);
+    expect(first.status).toBe(201);
+    for (const search of [`0${ten}`, spaced(ten), `91${ten}`, ten]) {
+      const list = await request(app.getHttpServer())
+        .get('/ceo/job-seekers')
+        .query({ search })
+        .set('Authorization', `Bearer ${ceoToken}`);
+      expect(list.status).toBe(200);
+      expect((list.body.rows as Array<{ id: string }>).map((row) => row.id)).toContain(first.body.id);
     }
   });
 

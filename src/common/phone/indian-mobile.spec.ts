@@ -8,6 +8,7 @@ import {
   optionalIndianMobile,
   parseIndianMobile,
   phoneLast4,
+  phoneSearchDigits,
   phoneSearchTerm,
   requireIndianMobile,
   sameIndianMobile,
@@ -153,6 +154,14 @@ describe('Indian mobile numbers: one stored format (+91 and 10 digits)', () => {
       expect(phoneSearchTerm('Sri Sai')).toBeNull();
       expect(phoneSearchTerm('JS-00042')).toBeNull();
       expect(phoneSearchTerm('')).toBeNull();
+    });
+
+    it('gives a "phone contains" search the 10 national digits for a full number in any spelling', () => {
+      expect(phoneSearchDigits('09876543210')).toBe('9876543210');
+      expect(phoneSearchDigits('+91 98765 43210')).toBe('9876543210');
+      expect(phoneSearchDigits('919876543210')).toBe('9876543210');
+      expect(phoneSearchDigits('3210')).toBe('3210');
+      expect(phoneSearchDigits('JS-00042')).toBe('00042');
     });
   });
 });
