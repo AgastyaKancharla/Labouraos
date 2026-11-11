@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { ALL_STAFF_ROLES } from '../../common/rbac/rbac.types';
+import { parseIndianMobile } from '../../common/phone/indian-mobile';
 
 export type SearchType = 'job_seeker' | 'business' | 'referral' | 'vacancy' | 'placement';
 export const SEARCH_TYPES: readonly SearchType[] = ['job_seeker', 'business', 'referral', 'vacancy', 'placement'];
@@ -42,6 +43,10 @@ export function parseSearchQuery(raw: string): ParsedQuery | null {
     const code = number.length > 0 && number.length < 5 ? `${prefix}-${number.padStart(5, '0')}` : `${prefix}-${number}`;
     return { kind: 'id', idType: PREFIX_TYPE[prefix], code };
   }
+  // A full mobile in any spelling (9876543210, +91 98765 43210, 919876543210,
+  // 09876543210) matches the 10 digits of the number saved as +919876543210.
+  const mobile = parseIndianMobile(q);
+  if (mobile) return { kind: 'phone', digits: mobile.slice(3) };
   const digitsOnly = q.replace(/[\s()+-]/g, '');
   if (/^\d+$/.test(digitsOnly)) {
     if (digitsOnly.length < 4) return null;

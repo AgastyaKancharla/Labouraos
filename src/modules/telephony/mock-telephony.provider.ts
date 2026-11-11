@@ -8,7 +8,7 @@ import {
   TelephonyProvider,
 } from './telephony.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { mobileLookupValues, normaliseIndianMobile } from '../../common/phone/indian-mobile';
+import { mobileLookupValues, normaliseIndianMobile, phoneLast4 } from '../../common/phone/indian-mobile';
 
 @Injectable()
 export class MockTelephonyProvider implements TelephonyProvider {
@@ -58,7 +58,7 @@ export class MockTelephonyProvider implements TelephonyProvider {
     });
 
     this.logger.log(
-      `[MOCK TELEPHONY] Created callback task ${task.id} for phone ${event.callerPhone} (callId: ${event.callId})`,
+      `[MOCK TELEPHONY] Created callback task ${task.id} for phone ******${phoneLast4(event.callerPhone)} (callId: ${event.callId})`,
     );
 
     return {

@@ -273,6 +273,10 @@ describe('Telephony Module (Task 4)', () => {
       expect(details.announcement).toBe(DPDP_CONSENT_ANNOUNCEMENT);
       expect(details.recordingUrl).toBe(recordingUrl);
       expect(details.consented).toBe(true);
+      // Personal data never goes into the audit log: the caller is kept as the last 4 digits only.
+      expect(details.callerPhone).toBeUndefined();
+      expect(details.callerPhoneMasked).toBe(`******${phone.slice(-4)}`);
+      expect(JSON.stringify(auditLog)).not.toContain(phone.slice(3));
 
       // Verify CallbackTask retains recordingUrl
       const task = await prisma.callbackTask.findUnique({

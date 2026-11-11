@@ -30,6 +30,7 @@ const PERSONAL_FIELDS = new Set([
   'whatsappphone',
   'contactphone',
   'candidatephone',
+  'callerphone',
   'callroutingphone',
   'email',
   'address',

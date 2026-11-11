@@ -11,7 +11,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 
 import { CALL_ANNOUNCEMENT } from '../call/call-announcement';
-import { mobileLookupValues, normaliseIndianMobile } from '../../common/phone/indian-mobile';
+import { mobileLookupValues, normaliseIndianMobile, phoneLast4 } from '../../common/phone/indian-mobile';
 
 export interface RealTelephonyProviderOptions {
   apiKey?: string;
@@ -100,7 +100,8 @@ export class RealTelephonyProvider implements TelephonyProvider {
             noticeGiven: true,
             announcement: DPDP_CONSENT_ANNOUNCEMENT,
             recordingUrl: retainedRecordingUrl,
-            callerPhone: event.callerPhone,
+            // Personal data never goes into the audit log: last 4 digits only.
+            callerPhoneMasked: `******${phoneLast4(event.callerPhone)}`,
             virtualNumber: event.virtualNumber ?? this.virtualNumber,
             timestamp: event.timestamp ?? new Date(),
           },
@@ -137,7 +138,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
     });
 
     this.logger.log(
-      `[REAL TELEPHONY] Enqueued callback task ${task.id} for caller ${event.callerPhone} (callId: ${event.callId})`,
+      `[REAL TELEPHONY] Enqueued callback task ${task.id} for caller ******${phoneLast4(event.callerPhone)} (callId: ${event.callId})`,
     );
 
     return {
