@@ -9,10 +9,7 @@ import { refundGuaranteeDeadline, toRupees } from '../../common/money/money';
 import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { PricingService } from '../pricing/pricing.service';
 import { primaryJobSeekerTrade } from '../job-seeker/job-seeker-legacy-read';
-import {
-  CANDIDATE_AT_RISK_WINDOW_DAYS,
-  PLACEMENT_AT_RISK_WINDOW_DAYS,
-} from './target.constants';
+import { OFFER_STATUSES } from '../refund-priority/refund-priority.rules';
 
 export interface MoneyAtRiskRow {
   type: 'job_seeker' | 'placement';
@@ -75,9 +72,11 @@ export interface MoneyAtRiskResult {
  *      no existing refund payment, and uses evaluatePlacementRefundEligibility() counting from the
  *      dropout report (claim.reportedAt), as the guide's 15-day rule says.
  *
- * 4. WINDOW CONSTANTS:
- *    - Candidates: approaching within 7 days (`CANDIDATE_AT_RISK_WINDOW_DAYS = 7`).
- *    - Placements: approaching within 5 days (`PLACEMENT_AT_RISK_WINDOW_DAYS = 5`).
+ * 4. WINDOW FROM SETTINGS (Phase 21 Task 7):
+ *    Both lists use `refundPriorityWindowDays` from the pricing policy (default 15):
+ *    - Candidates: paid, 30-day guarantee running out within the window, no
+ *      suitable offer yet (no interview booked since paying, cancelled ones aside).
+ *    - Placements: refund due within the window, no replacement found.
  *
  * 5. LIVE COMPUTATION, NEVER STORED:
  *    Computed fresh on every request; never stored in columns.
@@ -107,6 +106,7 @@ export class MoneyAtRiskService {
     const policy = await this.pricingService.current();
     const guaranteeDays = policy.jobSeekerGuaranteeDays;
     const replacementSearchDays = policy.replacementSearchDays;
+    const windowDays = policy.refundPriorityWindowDays;
 
     // 1. Server-side RBAC scoping
     if (actor) {
@@ -193,6 +193,7 @@ export class MoneyAtRiskService {
 
     let rejectedCandidateIdSet = new Set<string>();
     const refundedCandidateIdSet = new Set<string>();
+    const offeredSince = new Map<string, Date[]>();
     const candidatePaymentMap = new Map<string, number>();
 
     if (candidates.length > 0) {
@@ -208,6 +209,15 @@ export class MoneyAtRiskService {
         select: { jobSeekerId: true },
       });
       rejectedCandidateIdSet = new Set(rejectedHits.map((h) => h.jobSeekerId));
+
+      // A suitable offer made since paying: no longer close to a refund.
+      const offers = await this.prisma.interview.findMany({
+        where: { jobSeekerId: { in: candidateIds }, status: { in: OFFER_STATUSES } },
+        select: { jobSeekerId: true, offerSentAt: true },
+      });
+      for (const offer of offers) {
+        offeredSince.set(offer.jobSeekerId, [...(offeredSince.get(offer.jobSeekerId) ?? []), offer.offerSentAt]);
+      }
 
       // Query candidate payments (refunds and activations) in a single set-based query
       const candidatePayments = await this.prisma.payment.findMany({
@@ -242,6 +252,8 @@ export class MoneyAtRiskService {
       if (c.status === 'placed' || c.status === 'deactivated' || c.status === 'closed') continue;
       if (rejectedCandidateIdSet.has(c.id)) continue;
       if (refundedCandidateIdSet.has(c.id)) continue;
+      const paidAt = c.paymentReceivedAt;
+      if ((offeredSince.get(c.id) ?? []).some((sentAt) => sentAt >= paidAt)) continue;
 
       const deadline = refundGuaranteeDeadline(c.paymentReceivedAt, guaranteeDays);
       const diffMs = deadline.getTime() - now.getTime();
@@ -251,7 +263,7 @@ export class MoneyAtRiskService {
 
       const daysRemaining = Math.ceil(diffMs / (24 * 60 * 60 * 1000));
 
-      if (daysRemaining <= CANDIDATE_AT_RISK_WINDOW_DAYS && daysRemaining > 0) {
+      if (daysRemaining <= windowDays && daysRemaining > 0) {
         const storedPaid = candidatePaymentMap.get(c.id);
         const amountPaise = storedPaid !== undefined ? storedPaid : policy.activationFeePaise;
         const amountRupees = toRupees(amountPaise);
@@ -383,7 +395,7 @@ export class MoneyAtRiskService {
       // APPROACHING ONLY RULE: If search window has elapsed (daysRemaining <= 0), it is owed on /refunds/due
       if (daysRemaining <= 0) continue;
 
-      if (daysRemaining <= PLACEMENT_AT_RISK_WINDOW_DAYS) {
+      if (daysRemaining <= windowDays) {
         const clockStart = (claim.reportedAt ?? pl.dropoutReportedAt ?? claim.decidedAt)!;
         const deadlineDate = new Date(
           clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,

@@ -15,6 +15,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
     placement: { findMany: jest.Mock };
     payment: { findMany: jest.Mock };
     replacementClaim: { findMany: jest.Mock };
+    interview: { findMany: jest.Mock };
   };
 
   let service: MoneyAtRiskService;
@@ -121,6 +122,9 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       replacementClaim: {
         findMany: jest.fn().mockResolvedValue([]),
       },
+      interview: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
     };
 
     policy = { ...SEEDED_PRICING_POLICY };
@@ -133,9 +137,11 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
   describe('Candidate Money at Risk (Day-30 Approaching Window)', () => {
     const fixedNow = new Date('2026-11-15T12:00:00.000Z');
 
-    it('candidate at 6 days out is present, at 8 days out is absent (7-day window)', async () => {
+    // Phase 21 Task 7 changed this test: the window is refundPriorityWindowDays
+    // from the policy (15), no longer the hard-coded 7 days the guide replaced.
+    it('candidate at 15 days out is present, at 16 days out is absent (15-day window from the policy)', async () => {
       // 30 days from paymentReceivedAt:
-      // Candidate 1: paid Oct 22 -> deadline Nov 21 -> 6 days out (PRESENT)
+      // Candidate 1: paid 15 days ago -> 15 days out (PRESENT)
       const candidate6DaysOut = {
         id: 'js-6days',
         code: 'JS-00001',
@@ -143,13 +149,13 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Approaching Candidate',
         phone: '+919900000001',
         tradeSkill: 'Electrician',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 24 * 24 * 60 * 60 * 1000), // 24 days ago -> 6 days left
+        paymentReceivedAt: new Date(fixedNow.getTime() - 15 * 24 * 60 * 60 * 1000), // 15 days ago -> 15 days left
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
       };
 
-      // Candidate 2: paid Oct 24 -> deadline Nov 23 -> 8 days out (ABSENT: > 7 days)
+      // Candidate 2: paid 14 days ago -> 16 days out (ABSENT: > 15 days)
       const candidate8DaysOut = {
         id: 'js-8days',
         code: 'JS-00002',
@@ -157,7 +163,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         name: 'Far Away Candidate',
         phone: '+919900000002',
         tradeSkill: 'Plumber',
-        paymentReceivedAt: new Date(fixedNow.getTime() - 22 * 24 * 60 * 60 * 1000), // 22 days ago -> 8 days left
+        paymentReceivedAt: new Date(fixedNow.getTime() - 14 * 24 * 60 * 60 * 1000), // 14 days ago -> 16 days left
         status: 'active',
         registeredByStaffId: mockCallAgentId,
         registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
@@ -173,9 +179,61 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       expect(result.totalAtRiskRupees).toBe(499);
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0].code).toBe('JS-00001');
-      expect(result.rows[0].daysRemaining).toBe(6);
+      expect(result.rows[0].daysRemaining).toBe(15);
       expect(result.rows[0].amountPaise).toBe(49900);
       expect(result.rows[0].amountRupees).toBe(499);
+    });
+
+    it('takes the window from the policy, not a constant', async () => {
+      policy.refundPriorityWindowDays = 7;
+      const seeker = (id: string, daysAgo: number) => ({
+        id,
+        code: id.toUpperCase(),
+        city: 'Bengaluru',
+        name: 'Candidate',
+        phone: '+919900000009',
+        paymentReceivedAt: new Date(fixedNow.getTime() - daysAgo * 24 * 60 * 60 * 1000),
+        status: 'active',
+        registeredByStaffId: mockCallAgentId,
+        registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
+      });
+      prismaMock.jobSeeker.findMany.mockResolvedValue([seeker('js-7', 23), seeker('js-8', 22)]);
+      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+      expect(result.rows.map((r) => r.daysRemaining)).toEqual([7]);
+    });
+
+    it('drops a candidate once a suitable offer is made after he paid', async () => {
+      const paidAt = new Date(fixedNow.getTime() - 20 * 24 * 60 * 60 * 1000);
+      prismaMock.jobSeeker.findMany.mockResolvedValue([
+        {
+          id: 'js-offered',
+          code: 'JS-OFF',
+          city: 'Bengaluru',
+          name: 'Offered',
+          phone: '+919900000010',
+          paymentReceivedAt: paidAt,
+          status: 'active',
+          registeredByStaffId: mockCallAgentId,
+          registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
+        },
+        {
+          id: 'js-old-offer',
+          code: 'JS-OLD',
+          city: 'Bengaluru',
+          name: 'Offer before paying again',
+          phone: '+919900000011',
+          paymentReceivedAt: paidAt,
+          status: 'active',
+          registeredByStaffId: mockCallAgentId,
+          registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
+        },
+      ]);
+      prismaMock.interview.findMany.mockResolvedValue([
+        { jobSeekerId: 'js-offered', offerSentAt: new Date(paidAt.getTime() + 3600_000) },
+        { jobSeekerId: 'js-old-offer', offerSentAt: new Date(paidAt.getTime() - 3600_000) },
+      ]);
+      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+      expect(result.rows.map((r) => r.code)).toEqual(['JS-OLD']);
     });
 
     it('excludes candidate already past deadline (belongs on /refunds/due as lost money, not money at risk)', async () => {
@@ -254,8 +312,11 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
   describe('Placement Money at Risk (Day-15 Approaching Window)', () => {
     const fixedNow = new Date('2026-11-15T12:00:00.000Z');
 
-    it('placement at 3 days out (day 12 of 15) is present, at 7 days out (day 8 of 15) is absent (5-day window)', async () => {
-      // Placement 1: claim decided 12 days ago -> 3 days remaining (PRESENT: <= 5 days)
+    // Phase 21 Task 7 changed this test: the window is refundPriorityWindowDays
+    // from the policy (15 by default, so the whole 15-day search is inside it),
+    // no longer the hard-coded 5 days the guide replaced.
+    it('placement at 3 days out is present; at 7 days out it is present with the 15-day window and absent with a 5-day one', async () => {
+      // Placement 1: claim decided 12 days ago -> 3 days remaining (PRESENT)
       const placement3DaysOut = {
         id: 'pl-3days',
         code: 'PL-00001',
@@ -270,7 +331,7 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
       };
 
-      // Placement 2: claim decided 8 days ago -> 7 days remaining (ABSENT: > 5 days)
+      // Placement 2: claim decided 8 days ago -> 7 days remaining (PRESENT at 15, ABSENT at 5)
       const placement7DaysOut = {
         id: 'pl-7days',
         code: 'PL-00002',
@@ -300,6 +361,11 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
         },
       ]);
 
+      const wide = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+      expect(wide.placementsCount).toBe(2);
+      expect(wide.rows.map((r) => r.daysRemaining)).toEqual([3, 7]);
+
+      policy.refundPriorityWindowDays = 5;
       const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
 
       expect(result.placementsCount).toBe(1);

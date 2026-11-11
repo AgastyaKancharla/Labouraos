@@ -15,6 +15,7 @@ export const SEEDED_PRICING_POLICY = {
   maxHits: 3,
   replacementWindowDays: 60,
   replacementSearchDays: 15,
+  refundPriorityWindowDays: 15,
   maxFreeReplacements: 2,
   maxReplacementRejections: 2,
   claimReportDays: 7,
