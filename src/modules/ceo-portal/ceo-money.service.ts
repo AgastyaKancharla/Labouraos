@@ -537,6 +537,7 @@ export class CeoMoneyService {
       businessName: p.partnerBusinessName,
       area: p.locality,
       createdAt: p.createdAt.toISOString(),
+      paused: p.pausedAt ? { at: p.pausedAt.toISOString(), reason: p.pauseReason } : null,
       registeredBy: registeredBy?.actor?.name ?? null,
       terms: consent ? { granted: consent.granted && !consent.withdrawnAt, at: consent.grantedAt?.toISOString() ?? null } : null,
       identity: p.identityVerifications[0] ? { status: p.identityVerifications[0].status, method: p.identityVerifications[0].method, nameMatches: p.identityVerifications[0].nameMatches } : null,

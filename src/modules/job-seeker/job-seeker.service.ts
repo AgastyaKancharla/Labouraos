@@ -222,6 +222,12 @@ export class JobSeekerService {
       if (sameIndianMobile(referral.phone, phone)) {
         throw new BadRequestException('A referral partner cannot refer themselves');
       }
+      if (referral.pausedAt) {
+        // Guide, Referral partners: a paused partner's new referrals are refused.
+        throw new BadRequestException(
+          `Referral partner ${referral.code} is paused by the CEO and cannot take new referrals. Register this person without the partner, or ask the CEO.`,
+        );
+      }
     }
 
     const existing = await this.prisma.jobSeeker.findFirst({

@@ -1,3 +1,4 @@
+import { JwtService } from '@nestjs/jwt';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
@@ -508,5 +509,53 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     });
     expect(refWithSeekers?.jobSeekers).toHaveLength(1);
     expect(refWithSeekers?.jobSeekers[0].id).toBe(successRes.body.id);
+  });
+
+  it('lets only the CEO pause a partner, with a reason; refuses new referrals naming him while paused; unpause restores', async () => {
+    const prismaRef = app.get(PrismaService);
+    const jwt = app.get(JwtService);
+    const ceo = await prismaRef.staff.create({
+      data: { code: `CEO-RF-${timestamp}`, name: 'CEO RF', email: `ceo_rf_${timestamp}@laboura.local`, passwordHash: 'x', role: 'ceo', city: 'Bengaluru' },
+    });
+    const ceoToken = jwt.sign({ sub: ceo.id, email: ceo.email, role: 'ceo', code: ceo.code, teamLeadId: null });
+    try {
+      const partnerPhone = `86${timestamp.toString().slice(-8)}`;
+      const partner = await request(app.getHttpServer())
+        .post('/referrals')
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({
+          name: 'Paused Partner', phone: partnerPhone, whatsappPhone: partnerPhone, language: 'en', type: 'individual',
+          individualRole: 'other', locality: 'Jayanagar', pincode: '560041', heardFrom: 'other', otpRequestId: await getVerifiedOtp(partnerPhone),
+        })
+        .expect(201);
+      const id = partner.body.id;
+      await request(app.getHttpServer()).post(`/referrals/${id}/pause`).set('Authorization', `Bearer ${callAgentToken}`).send({ reason: 'x' }).expect(403);
+      await request(app.getHttpServer()).post(`/referrals/${id}/pause`).set('Authorization', `Bearer ${financeToken}`).send({ reason: 'x' }).expect(403);
+      await request(app.getHttpServer()).post(`/referrals/${id}/pause`).set('Authorization', `Bearer ${ceoToken}`).send({}).expect(400);
+      await request(app.getHttpServer()).post(`/referrals/${id}/pause`).set('Authorization', `Bearer ${ceoToken}`).send({ reason: 'Sending fake candidates' }).expect(201);
+      const paused = await prismaRef.referral.findUnique({ where: { id } });
+      expect(paused).toMatchObject({ pausedByStaffId: ceo.id, pauseReason: 'Sending fake candidates' });
+      expect(await prismaRef.auditLog.count({ where: { action: 'referral.paused', entityCode: partner.body.code } })).toBe(1);
+
+      const seekerPhone = `85${timestamp.toString().slice(-8)}`;
+      const register = async () =>
+        request(app.getHttpServer())
+          .post('/job-seekers')
+          .set('Authorization', `Bearer ${callAgentToken}`)
+          .send(completeJobSeekerRegistration({ phone: seekerPhone, otpRequestId: await getVerifiedOtp(seekerPhone), heardFrom: 'referral_partner', referredById: id }));
+      const refused = await register();
+      expect(refused.status).toBe(400);
+      expect(refused.body.message).toContain('is paused by the CEO');
+
+      await request(app.getHttpServer()).post(`/referrals/${id}/unpause`).set('Authorization', `Bearer ${ceoToken}`).send({}).expect(201);
+      expect((await prismaRef.referral.findUnique({ where: { id } }))?.pausedAt).toBeNull();
+      const accepted = await register();
+      expect(accepted.status).toBe(201);
+      await prismaRef.jobSeekerTrade.deleteMany({ where: { jobSeekerId: accepted.body.id } });
+      await prismaRef.jobSeeker.deleteMany({ where: { id: accepted.body.id } }).catch(() => undefined);
+    } finally {
+      await prismaRef.auditLog.deleteMany({ where: { actorId: ceo.id } });
+      await prismaRef.staff.delete({ where: { id: ceo.id } }).catch(() => undefined);
+    }
   });
 });

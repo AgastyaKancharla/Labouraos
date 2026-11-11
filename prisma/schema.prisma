@@ -311,6 +311,11 @@ model Referral {
   jobSeekers    JobSeeker[]
   payments      Payment[]
   identityVerifications ReferralIdentityVerification[]
+  /// Paused by the CEO (guide, Referral partners): new referrals naming this
+  /// partner are refused; money already earned is still paid. Unpause restores.
+  pausedAt      DateTime?
+  pausedByStaffId String?
+  pauseReason   String?
   anonymisedAt  DateTime?
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
