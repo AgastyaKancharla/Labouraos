@@ -4,7 +4,7 @@ import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
 import { referralTermsHi } from './referralTerms';
-import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
+import { callAgentHi } from '../screens/call-agent/_lib/i18n.hi';
 
 export const hi: Messages = {
   "app.name": "Laboura",
@@ -576,10 +576,7 @@ export const hi: Messages = {
   ...registrationHi,
   ...staffInviteHi,
   ...referralTermsHi,
-  // The call agent console is Kannada and English only (decided 11 Nov); the search bar is in every portal.
-  ...callAgentEn,
-  'search.suggestions': 'मिलान',
-  'search.noMatch': 'अभी कोई मिलान नहीं — सब में खोजने के लिए Enter दबाएँ',
-  'search.seeAll': '“{q}” के सभी नतीजे',
+  // Call agent console and the search bar (in every portal): Kannada, English and Hindi (owner decision, 11 Nov).
+  ...callAgentHi,
   ...payslipHi,
 };

@@ -1,7 +1,8 @@
 /**
  * English strings for the call agent console's daily-work screens and the
- * search bar. Spread into src/i18n/en.ts. Kannada is in i18n.kn.ts; the agent
- * apps are Kannada and English only (decided 11 Nov), so hi.ts reuses these.
+ * search bar. Spread into src/i18n/en.ts. Kannada is in i18n.kn.ts and Hindi
+ * in i18n.hi.ts: Kannada, English and Hindi stay everywhere they are offered
+ * (owner decision, 11 Nov), so both are real translations, never copies.
  */
 export const callAgentEn = {
   'search.suggestions': 'Matches',
