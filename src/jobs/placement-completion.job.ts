@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { PlacementService } from '../modules/placement/placement.service';
+import { dailyInIndia } from './job-schedules';
 
 export const PLACEMENT_COMPLETION_QUEUE = 'placement-completion';
 export const PLACEMENT_COMPLETION_SWEEP = 'daily-placement-completion';
@@ -47,7 +48,7 @@ export class PlacementCompletionJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'daily-placement-completion-scheduler',
-      { every: 86_400_000 },
+      dailyInIndia('placementCompletion'),
       { name: PLACEMENT_COMPLETION_SWEEP },
     );
   }

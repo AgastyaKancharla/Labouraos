@@ -242,18 +242,18 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
   });
 
   describe('OtpModule integration with OTP_PROVIDER env flag', () => {
-    const originalEnv = process.env.OTP_PROVIDER;
+    const originalEnv = process.env.OTP_PROVIDER_MODE;
 
     afterEach(() => {
       if (originalEnv === undefined) {
-        delete process.env.OTP_PROVIDER;
+        delete process.env.OTP_PROVIDER_MODE;
       } else {
-        process.env.OTP_PROVIDER = originalEnv;
+        process.env.OTP_PROVIDER_MODE = originalEnv;
       }
     });
 
-    it('instantiates RealOtpProvider when OTP_PROVIDER=real or msg91', async () => {
-      process.env.OTP_PROVIDER = 'real';
+    it('instantiates RealOtpProvider when OTP_PROVIDER_MODE=real or msg91', async () => {
+      process.env.OTP_PROVIDER_MODE = 'real';
 
       const moduleRef: TestingModule = await Test.createTestingModule({
         imports: [AuthModule, OtpModule],
@@ -262,7 +262,7 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       const provider = moduleRef.get<OtpProvider>(OTP_PROVIDER);
       expect(provider).toBeInstanceOf(RealOtpProvider);
 
-      process.env.OTP_PROVIDER = 'msg91';
+      process.env.OTP_PROVIDER_MODE = 'msg91';
       const moduleRefMsg91 = await Test.createTestingModule({
         imports: [AuthModule, OtpModule],
       }).compile();

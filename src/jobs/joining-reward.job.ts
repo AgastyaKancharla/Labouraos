@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { PlacementService } from '../modules/placement/placement.service';
+import { dailyInIndia } from './job-schedules';
 
 export const JOINING_REWARD_QUEUE = 'joining-reward';
 export const JOINING_REWARD_SWEEP = 'daily-joining-reward';
@@ -47,7 +48,7 @@ export class JoiningRewardJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'daily-joining-reward-scheduler',
-      { every: 86_400_000 },
+      dailyInIndia('joiningReward'),
       {
         name: JOINING_REWARD_SWEEP,
         opts: {
@@ -80,11 +81,15 @@ export class JoiningRewardJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Only the worker process runs jobs and registers schedulers. The web
+    // process may still build the queue on demand to enqueue a manual run.
+    if (process.env.PROCESS_ROLE !== 'worker') return;
     try {
-      this.getWorker();
       await this.schedule();
+      this.getWorker();
     } catch (error) {
       this.logger.warn(`Could not initialize JoiningRewardJob BullMQ worker: ${(error as Error).message}`);
+      await this.onModuleDestroy();
     }
   }
 

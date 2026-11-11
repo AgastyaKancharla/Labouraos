@@ -57,10 +57,13 @@ jobs:
           /usr/lib/postgresql/17/bin/pg_dump --version
           echo "/usr/lib/postgresql/17/bin" >> "$GITHUB_PATH"
 
+      # schema.prisma reads DIRECT_URL for migrations (Supabase session
+      # pooler in production). In CI it is the same local database.
       - name: Deploy database migrations
         env:
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
-        run: npx prisma migrate deploy
+          DIRECT_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
+        run: npm run migrate:deploy
 
       - name: Run linter
         run: npm run lint
@@ -69,6 +72,7 @@ jobs:
         env:
           NODE_ENV: test
           DATABASE_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
+          DIRECT_URL: "postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public"
           JWT_SECRET: "ci_jwt_secret_testing_only_32_characters_minimum"
           LOGIN_CODE_SECRET: "ci_login_code_secret_testing_only_32_characters"
           CALL_ROUTING_KEY: "ci_call_routing_key_testing_only_32_characters"

@@ -5,9 +5,11 @@ import { GlobalExceptionFilter } from './common/observability/global-exception.f
 import { AlertService } from './common/observability/alert.service';
 import { applyTrustProxy } from './common/http/trust-proxy';
 import { getPublicAppUrl } from './common/public-link';
+import { assertDurableUploadStorage } from './common/storage/durable-storage';
 
 export async function bootstrap() {
   getPublicAppUrl();
+  assertDurableUploadStorage();
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     // Webhook signatures are computed over the exact bytes the gateway sent

@@ -190,18 +190,18 @@ describe('OTP Provider and Mock Implementation', () => {
   });
 
   describe('Module and Provider Selection', () => {
-    const originalEnv = process.env.OTP_PROVIDER;
+    const originalEnv = process.env.OTP_PROVIDER_MODE;
 
     afterEach(() => {
       if (originalEnv === undefined) {
-        delete process.env.OTP_PROVIDER;
+        delete process.env.OTP_PROVIDER_MODE;
       } else {
-        process.env.OTP_PROVIDER = originalEnv;
+        process.env.OTP_PROVIDER_MODE = originalEnv;
       }
     });
 
-    it('defaults to MockOtpProvider when OTP_PROVIDER env is not set', async () => {
-      delete process.env.OTP_PROVIDER;
+    it('defaults to MockOtpProvider when OTP_PROVIDER_MODE env is not set', async () => {
+      delete process.env.OTP_PROVIDER_MODE;
 
       const moduleRef: TestingModule = await Test.createTestingModule({
         imports: [AuthModule, OtpModule],
@@ -214,8 +214,8 @@ describe('OTP Provider and Mock Implementation', () => {
       expect(service).toBeDefined();
     });
 
-    it('selects MockOtpProvider when OTP_PROVIDER=mock', async () => {
-      process.env.OTP_PROVIDER = 'mock';
+    it('selects MockOtpProvider when OTP_PROVIDER_MODE=mock', async () => {
+      process.env.OTP_PROVIDER_MODE = 'mock';
 
       const moduleRef: TestingModule = await Test.createTestingModule({
         imports: [AuthModule, OtpModule],
@@ -225,8 +225,8 @@ describe('OTP Provider and Mock Implementation', () => {
       expect(provider).toBeInstanceOf(MockOtpProvider);
     });
 
-    it('throws an error if an unsupported OTP_PROVIDER is specified', async () => {
-      process.env.OTP_PROVIDER = 'unknown_provider';
+    it('throws an error if an unsupported OTP_PROVIDER_MODE is specified', async () => {
+      process.env.OTP_PROVIDER_MODE = 'unknown_provider';
 
       await expect(
         Test.createTestingModule({

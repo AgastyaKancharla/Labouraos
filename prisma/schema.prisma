@@ -1,6 +1,21 @@
+// Supabase (see DEPLOY.md):
+//   DATABASE_URL = transaction pooler, port 6543, with
+//                  ?pgbouncer=true&connection_limit=5&sslmode=require
+//                  (what the running app uses).
+//   DIRECT_URL   = session pooler, port 5432, with ?sslmode=require
+//                  (what `prisma migrate deploy` uses; the transaction pooler
+//                  cannot run migrations).
+// Locally and in CI both point at the same database.
+//
+// Every table in the public schema must have row level security enabled (no
+// policies), so Supabase's automatic REST API cannot read it. Prisma connects
+// as the table owner and is not affected. A migration that creates a table
+// must also run: ALTER TABLE "NewTable" ENABLE ROW LEVEL SECURITY;
+// src/common/prisma/row-level-security.spec.ts fails CI if one is missed.
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
 }
 
 enum PublicLinkPurpose {

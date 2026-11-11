@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { AttendanceService } from '../modules/attendance/attendance.service';
+import { dailyInIndia } from './job-schedules';
 
 export const FORGOTTEN_LOGOUT_QUEUE = 'forgotten-logout';
 export const FORGOTTEN_LOGOUT_SWEEP = 'close-forgotten-days';
@@ -51,7 +52,7 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'nightly-forgotten-logout',
-      { pattern: '0 0 * * *' },
+      dailyInIndia('forgottenLogout'),
       { name: FORGOTTEN_LOGOUT_SWEEP },
     );
   }

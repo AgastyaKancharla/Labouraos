@@ -155,7 +155,7 @@ describe('Phase 6.5 Task 1: Schedule No-Pickup Sweep Startup Registration', () =
   });
 
   describe('3. Scheduler Registration & Idempotency', () => {
-    it('registers scheduler with pattern 0 0 * * * when PROCESS_ROLE is worker', async () => {
+    it('registers scheduler with pattern 0 0 * * * in India time when PROCESS_ROLE is worker', async () => {
       process.env.PROCESS_ROLE = 'worker';
 
       const job = new NoPickupEvaluationJob(
@@ -176,6 +176,7 @@ describe('Phase 6.5 Task 1: Schedule No-Pickup Sweep Startup Registration', () =
 
           expect(dailyScheduler).toBeDefined();
           expect(dailyScheduler?.pattern).toBe('0 0 * * *');
+          expect(dailyScheduler?.tz).toBe('Asia/Kolkata');
 
           await job.removeJobScheduler('daily-no-pickup-evaluation-scheduler');
         } finally {
@@ -203,7 +204,7 @@ describe('Phase 6.5 Task 1: Schedule No-Pickup Sweep Startup Registration', () =
 
         expect(mockQueue.upsertJobScheduler).toHaveBeenCalledWith(
           'daily-no-pickup-evaluation-scheduler',
-          { pattern: '0 0 * * *' },
+          { pattern: '0 0 * * *', tz: 'Asia/Kolkata' },
           { name: NO_PICKUP_EVALUATION_JOB },
         );
 

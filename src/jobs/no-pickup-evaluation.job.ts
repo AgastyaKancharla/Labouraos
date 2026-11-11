@@ -21,6 +21,7 @@ import {
 } from '../common/observability/request-context';
 import { StructuredLogger } from '../common/observability/structured-logger.service';
 import { primaryJobSeekerTrade } from '../modules/job-seeker/job-seeker-legacy-read';
+import { cronInIndia, DAILY_JOB_PATTERNS } from './job-schedules';
 
 export const NO_PICKUP_EVALUATION_QUEUE = 'no-pickup-evaluation';
 export const NO_PICKUP_EVALUATION_JOB = 'daily-no-pickup-evaluation';
@@ -146,11 +147,13 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     return this.worker;
   }
 
-  async scheduleDailyJob(pattern = '0 0 * * *'): Promise<void> {
+  async scheduleDailyJob(
+    pattern: string = DAILY_JOB_PATTERNS.noPickupEvaluation,
+  ): Promise<void> {
     const queue = this.getQueue();
     await queue.upsertJobScheduler(
       'daily-no-pickup-evaluation-scheduler',
-      { pattern },
+      cronInIndia(pattern),
       {
         name: NO_PICKUP_EVALUATION_JOB,
       },

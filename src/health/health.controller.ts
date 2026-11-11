@@ -1,5 +1,5 @@
 import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
-import { HealthService } from './health.service';
+import { HealthService, WorkerHeartbeatStatus } from './health.service';
 
 @Controller('health')
 export class HealthController {
@@ -26,10 +26,13 @@ export class HealthController {
       hoursElapsed: number | null;
       lastCompletedAt: string | null;
     };
+    worker?: WorkerHeartbeatStatus;
   }> {
     // Quick readiness probe checking PostgreSQL and Redis with a 2-second timeout.
     // Pointed to by monitoring and alert systems; returns 503 naming which dependency failed.
     // Note: Sweep staleness is reported in body as informational and never forces a 503.
+    // With WORKER_HEARTBEAT_CHECK=true (set on Render's web service) a missing
+    // background-worker heartbeat also answers 503, naming `worker`.
     const result = await this.healthService.checkReadiness();
     if (!result.ready) {
       throw new HttpException(
@@ -48,6 +51,7 @@ export class HealthController {
       postgres: 'ok',
       redis: 'ok',
       ...(result.sweep ? { sweep: result.sweep } : {}),
+      ...(result.worker ? { worker: result.worker } : {}),
     };
   }
 }

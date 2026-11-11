@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { FollowUpService } from '../modules/follow-up/follow-up.service';
+import { dailyInIndia } from './job-schedules';
 
 export const FOLLOW_UP_QUEUE = 'follow-up';
 export const FOLLOW_UP_SWEEP = 'daily-follow-up';
@@ -47,7 +48,7 @@ export class FollowUpJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'daily-follow-up-scheduler',
-      { every: 86_400_000 },
+      dailyInIndia('followUp'),
       {
         name: FOLLOW_UP_SWEEP,
         opts: {
@@ -79,11 +80,15 @@ export class FollowUpJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Only the worker process runs jobs and registers schedulers. The web
+    // process may still build the queue on demand to enqueue a manual run.
+    if (process.env.PROCESS_ROLE !== 'worker') return;
     try {
-      this.getWorker();
       await this.schedule();
+      this.getWorker();
     } catch (error) {
       this.logger.warn(`Could not initialize FollowUpJob BullMQ worker: ${(error as Error).message}`);
+      await this.onModuleDestroy();
     }
   }
 

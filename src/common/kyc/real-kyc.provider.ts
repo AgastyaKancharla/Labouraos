@@ -23,12 +23,10 @@ export class RealKycProvider implements KycProvider {
     this.apiKey =
       options?.apiKey ??
       process.env.KYC_API_KEY ??
-      process.env.OVSE_API_KEY ??
       'dummy_ovse_api_key';
     this.baseUrl = (
       options?.baseUrl ??
       process.env.KYC_API_URL ??
-      process.env.OVSE_API_URL ??
       'https://api.surepass.io/api/v1'
     ).replace(/\/$/, '');
     this.healthCheckUrl = options?.healthCheckUrl ?? process.env.KYC_HEALTH_URL ?? `${this.baseUrl}/health`;
