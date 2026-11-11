@@ -1,6 +1,6 @@
 # Phase 21 API — attendance and reporting lines
 
-Tasks 1 to 4. Later tasks add their routes here.
+Tasks 1 to 5. Later tasks add their routes here.
 
 ## GET /staff/without-reporting-line
 
@@ -336,3 +336,60 @@ Who: Team Lead, Manager, CEO. What is waiting for the caller, each with `whyWith
 ### GET /attendance/requests/decided
 
 Who: Team Lead, Manager, CEO. Requests in their scope decided since Monday (IST), by anyone, with who decided.
+
+## Task 5 — attendance reports and the live board
+
+Who sees whom follows the reporting line: a Team Lead their team, a Manager their tree, the CEO everyone. Only people who mark attendance are listed (not the CEO). No money in any of these answers.
+
+### GET /attendance/live
+
+Who: Team Lead (their team), Manager (their tree), CEO (everyone). Finance and agents `403`.
+
+Response `200`:
+
+```json
+{
+  "asOf": "2027-06-07T04:30:00.000Z",
+  "counts": { "short_break": 1, "idle": 1, "not_logged_in": 1, "overBreak": 1 },
+  "people": [
+    { "staff": { "id": "…", "code": "CA-00007", "name": "Ravi", "role": "call_agent" },
+      "status": "short_break", "since": "2027-06-07T04:10:00.000Z", "loginAt": "…", "lateMinutes": 0,
+      "productionSeconds": 600, "breakSeconds": 1200, "breakOverSeconds": 300,
+      "overBreak": true, "idle": false, "idleSeconds": 0 }
+  ]
+}
+```
+
+`status` is the current status, or `not_logged_in`, `logged_out` or `on_leave`. `overBreak` is true while a short break is past 15 minutes or lunch past 30 (shown red). Reading the board applies the automatic statuses (Idle, end of after-call notes) first.
+
+### GET /attendance/report?staffId=…&from=YYYY-MM-DD&to=YYYY-MM-DD
+
+Who: the person (default), their Team Lead, a Manager over them, Finance, the CEO. Any range up to 92 days.
+
+Response `200`: `{ staff, from, to, lateLogins: { count, days: [ { date, minutes } ] }, days: [ { date, dayType, loginAt, logoutAt, lateMinutes, productionSeconds, breakSeconds, breakOverSeconds, idleSeconds, shortfallSeconds, makeUpSeconds, hoursLostSeconds } ], totals: { productionSeconds, breakOverSeconds, idleSeconds, shortfallSeconds, makeUpSeconds, hoursLostSeconds, lateLogins, absentDays } }`. Hours lost = shortfall + idle.
+
+Errors: `400` bad or reversed dates, range over 92 days; `403`; `404`.
+
+### GET /attendance/team-summary?from=…&to=…
+
+Who: Team Lead (their team), Manager (their tree), CEO and Finance (everyone).
+
+Response `200`: `{ from, to, people: [ { staff, productionSeconds, hoursLostSeconds, lateLogins, absentDays } ], total: { people, productionSeconds, hoursLostSeconds, lateLogins, absentDays } }`.
+
+### GET /attendance/month-sheet?month=YYYY-MM[&format=csv]
+
+Who: Finance and the CEO only. Managers, Team Leads and agents `403`.
+
+One row per person who marks attendance (active, or with days in that month), built from the same month summaries as `GET /attendance/month`:
+
+- `paidDays` = full days + half days × 0.5 + paid leave days
+- `unpaidDays` = absent days + unpaid leave days + half days × 0.5
+- `deductibleShortfallMinutes` = the month's deductible shortfall, in whole minutes (part minutes dropped)
+
+No rupee amounts (Phase 22). Every read is audited (`attendance.month_sheet_read`).
+
+Response `200` (JSON): `{ "month": "2027-06", "rows": [ { "staffCode": "CA-00007", "name": "Ravi", "role": "call_agent", "fullDays": 2, "halfDays": 1, "paidLeaveDays": 1, "absentDays": 1, "unpaidLeaveDays": 0, "paidDays": 3.5, "unpaidDays": 1.5, "deductibleShortfallMinutes": 9 } ] }`
+
+With `format=csv`: `text/csv`, file `attendance-month-sheet-2027-06.csv`, columns `Staff code,Name,Role,Full days,Half days,Paid leave days,Absent days,Unpaid leave days,Paid days,Unpaid days,Deductible shortfall (minutes)`. No other personal data. A cell starting like a formula is written as text.
+
+Errors: `400` bad month; `403`.

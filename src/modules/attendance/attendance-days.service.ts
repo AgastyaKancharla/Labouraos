@@ -218,13 +218,7 @@ export class AttendanceDaysService {
       select: { id: true, code: true, name: true, role: true },
     });
     if (!staff) throw new NotFoundException('Staff account not found');
-    const policy = await this.pricing.current();
-    const days = await this.prisma.attendanceDay.findMany({
-      where: { staffId, date: { gte: range.from, lte: range.to } },
-      include: { segments: true },
-      orderBy: { date: 'asc' },
-    });
-    const rows = days.map((day) => this.dayRow(day, policy));
+    const rows = await this.rowsBetween(staffId, range.from, range.to);
     const summary: MonthSummary = {
       staff,
       month,
@@ -278,6 +272,17 @@ export class AttendanceDaysService {
       summary.makeUpSeconds,
     );
     return summary;
+  }
+
+  /** Day rows for one person between two IST dates (inclusive), oldest first. */
+  async rowsBetween(staffId: string, from: Date, to: Date): Promise<DayRow[]> {
+    const policy = await this.pricing.current();
+    const days = await this.prisma.attendanceDay.findMany({
+      where: { staffId, date: { gte: from, lte: to } },
+      include: { segments: true },
+      orderBy: { date: 'asc' },
+    });
+    return days.map((day) => this.dayRow(day, policy));
   }
 
   /**
