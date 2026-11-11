@@ -147,8 +147,10 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
   it('never lets a Manager onto a money route (payments, refunds, pricing, invoices)', () => {
     // A Manager sees no money at all (Master Guide, reconfirmed 11 Nov).
     // Resending a payment link shows no amount (answers to a Manager are
-    // stripped of money fields), so it is the one exception.
-    const allowedForManager = new Set(['PaymentController.resendPayment']);
+    // stripped of money fields), so it is an exception. So is the close-to-refund
+    // list (Phase 21 Task 7): the guide gives Managers their tree's list and
+    // counts without rupees, and the service leaves every rupee field out.
+    const allowedForManager = new Set(['PaymentController.resendPayment', 'RefundPriorityController.list']);
     const moneyControllers = new Set(['PaymentController', 'RefundController', 'PricingController']);
     const leaks = routes
       .filter(
