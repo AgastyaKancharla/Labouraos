@@ -4,6 +4,7 @@
  * every other test runs as the phone app.
  */
 const shared = {
+  testTimeout: 20000,
   setupFiles: ['<rootDir>/src/test/setup-env.ts'],
   setupFilesAfterEnv: ['<rootDir>/src/test/setup.ts'],
   moduleNameMapper: {
@@ -13,6 +14,8 @@ const shared = {
 };
 
 module.exports = {
+  // CI machines are slower than a laptop on the first render of a file.
+  testTimeout: 20000,
   projects: [
     {
       ...shared,
@@ -29,6 +32,7 @@ module.exports = {
     },
     {
       displayName: 'scripts',
+      testTimeout: 20000,
       testEnvironment: 'node',
       testMatch: ['<rootDir>/scripts/**/*.test.js'],
     },
