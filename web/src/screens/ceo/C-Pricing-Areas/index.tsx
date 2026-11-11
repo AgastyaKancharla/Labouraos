@@ -73,6 +73,7 @@ export default function Areas() {
         actions={
           <>
             <Button variant="primary" onClick={() => setEditing('new')}>+ Add area</Button>
+            {rows && (
             <ActionButton
               label="Merge areas"
               title="Merge a duplicate into another area"
@@ -88,6 +89,7 @@ export default function Areas() {
               success={(res) => `Merged · ${Object.values((res as { moved: Record<string, number> }).moved).reduce((s, v) => s + v, 0)} records moved`}
               disabled={active.length < 2}
             />
+            )}
           </>
         }
       />

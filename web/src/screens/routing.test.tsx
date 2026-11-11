@@ -77,6 +77,7 @@ describe('routes and guards', () => {
       'GET /login-codes/pending': [{ id: 1 }, { id: 2 }],
       'GET /review-flags': [{ id: 1 }],
       'GET /refunds/due': [],
+      'GET /ceo/access': { summary: { waiting: 2, codesToday: 0, locked: 0, invitesPending: 0 }, locked: [], invites: [], codes: [] },
     });
     renderAt('/ceo/login-codes');
     const nav = await screen.findByRole('navigation', { name: 'Main' });
@@ -89,7 +90,8 @@ describe('routes and guards', () => {
     expect(await within(within(nav).getByRole('link', { name: /Flags/ })).findByText('1')).toBeInTheDocument();
     // Refund Approvals has no badge when nothing is due.
     expect(within(within(nav).getByRole('link', { name: /Refund Approvals/ })).queryByText(/\d/)).toBeNull();
-    expect(screen.getByRole('heading', { name: 'Login codes', level: 1 })).toBeInTheDocument();
+    // The Login codes screen is built now (lazy-loaded), so wait for its heading.
+    expect(await screen.findByRole('heading', { name: 'Login codes', level: 1 })).toBeInTheDocument();
   });
 
   it('renders every portal home for its role', async () => {

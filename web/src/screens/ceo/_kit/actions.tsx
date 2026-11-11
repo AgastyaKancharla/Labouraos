@@ -40,9 +40,11 @@ export function ActionButton({
   const [picked, setPicked] = useState(choice?.initial ?? choice?.options[0]?.value ?? '');
   const toast = useToast();
   const queryClient = useQueryClient();
+  // Options can arrive after the button first renders; fall back to the first one then.
+  const chosen = choice && choice.options.some((o) => o.value === picked) ? picked : (choice?.initial ?? choice?.options[0]?.value ?? '');
   const reasonCfg = reason === true ? { label: 'Reason', required: true } : reason || null;
   const mutation = useMutation({
-    mutationFn: () => run({ reason: text.trim(), choice: picked }),
+    mutationFn: () => run({ reason: text.trim(), choice: chosen }),
     onSuccess: (result) => {
       toast.success(typeof success === 'function' ? success(result) : success);
       setOpen(false);
@@ -67,14 +69,14 @@ export function ActionButton({
             <Button onClick={() => setOpen(false)} disabled={mutation.isPending}>
               Cancel
             </Button>
-            <Button variant={variant === 'secondary' ? 'primary' : variant} onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={missingReason || (choice ? !picked : false)}>
+            <Button variant={variant === 'secondary' ? 'primary' : variant} onClick={() => mutation.mutate()} loading={mutation.isPending} disabled={missingReason || (choice ? !chosen : false)}>
               {confirmLabel ?? title}
             </Button>
           </>
         }
       >
         {description && <p style={{ marginTop: 0 }}>{description}</p>}
-        {choice && <SelectField label={choice.label} value={picked} onChange={setPicked} options={choice.options} />}
+        {choice && <SelectField label={choice.label} value={chosen} onChange={setPicked} options={choice.options} />}
         {reasonCfg && <TextField label={reasonCfg.label} value={text} onChange={setText} required={reasonCfg.required} />}
       </Modal>
     </>
