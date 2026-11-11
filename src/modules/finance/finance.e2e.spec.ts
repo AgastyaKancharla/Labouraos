@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { NotificationSourcesService } from '../notification/notification-sources.service';
 
 /**
  * Phase 22 Part A against a real database: only Finance and the CEO reach the
@@ -76,6 +77,7 @@ describe('Finance back office (Phase 22 Part A)', () => {
     if (limitsBefore.expense) {
       await request(server()).put('/pricing/approval-limits').set(as('ceo')).send({ businessRefundLimitPaise: limitsBefore.business, expenseLimitPaise: limitsBefore.expense });
     }
+    await prisma.notification.deleteMany({ where: { recipientStaffId: { in: staffIds } } });
     await prisma.expense.deleteMany({ where: { enteredByStaffId: { in: staffIds } } });
     await prisma.expenseBudget.deleteMany({ where: { setByStaffId: { in: staffIds } } });
     await prisma.bankDayClose.deleteMany({ where: { closedByStaffId: { in: staffIds } } });
@@ -168,6 +170,26 @@ describe('Finance back office (Phase 22 Part A)', () => {
       const paid = await request(server()).post(`/finance/expenses/${created.body.id}/pay`).set(as('finance')).send({ paidFrom: 'bank_transfer', reference: `NEFT${stamp}` }).expect(200);
       expect(paid.body.status).toBe('paid');
       await request(server()).post(`/finance/expenses/${created.body.id}/pay`).set(as('finance')).send({ paidFrom: 'bank_transfer', reference: `NEFT${stamp}` }).expect(400);
+    });
+
+    it("rings the CEO's bell for an expense above the limit and Finance's for a bill to pay; each clears when done", async () => {
+      const sources = app.get(NotificationSourcesService);
+      const big = await addExpense('finance', 1200000, { category: 'calling' }).expect(201);
+      const small = await addExpense('finance', 90000, { category: 'office_other' }).expect(201);
+      await sources.syncMoney(new Date());
+      const open = async (kind: string, id: string, staff: string) =>
+        prisma.notification.count({ where: { kind, subjectType: 'expense', subjectId: id, recipientStaffId: staff, clearedAt: null } });
+      expect(await open('expense_needs_ceo', big.body.id, ceoId)).toBe(1);
+      expect(await open('expense_to_pay', small.body.id, financeId)).toBe(1);
+      const managers = await prisma.staff.findMany({ where: { id: { in: staffIds }, role: 'manager' }, select: { id: true } });
+      expect(await prisma.notification.count({ where: { subjectType: 'expense', recipientStaffId: { in: managers.map((m) => m.id) } } })).toBe(0);
+      await request(server()).post(`/finance/expenses/${big.body.id}/reject`).set(as('ceo')).send({ reason: 'Duplicate bill' }).expect(200);
+      await request(server()).post(`/finance/expenses/${small.body.id}/approve`).set(as('finance')).send({ pay: { paidFrom: 'cash', reference: `V${stamp}` } }).expect(200);
+      await sources.syncMoney(new Date());
+      expect(await open('expense_needs_ceo', big.body.id, ceoId)).toBe(0);
+      expect(await open('expense_to_pay', small.body.id, financeId)).toBe(0);
+      const cleared = await prisma.notification.findFirst({ where: { kind: 'expense_to_pay', subjectId: small.body.id, recipientStaffId: financeId } });
+      expect(cleared).toMatchObject({ clearedByStaffId: financeId, clearedReason: 'expense_paid' });
     });
 
     it('no bill, no approval: the bill can be attached afterwards', async () => {

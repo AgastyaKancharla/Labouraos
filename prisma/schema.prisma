@@ -1781,6 +1781,8 @@ model Notification {
   @@index([recipientStaffId, clearedAt])
   @@index([kind, clearedAt])
   @@index([subjectType, subjectId])
+}
+
 /// Phase 22 (Finance back office, part A): a bill or expense entered by Finance
 /// or the CEO with the bill attached. Finance approves up to its limit in
 /// Settings; above it the CEO decides. Salaries, payouts, rewards and refunds
