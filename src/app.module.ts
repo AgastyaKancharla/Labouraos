@@ -43,6 +43,7 @@ import { RetentionModule } from './modules/retention/retention.module';
 import { WebAppModule } from './modules/web-app/web-app.module';
 import { ScreensCallRegistrationModule } from './modules/screens-call-registration/screens-call-registration.module';
 import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
+import { AreaModule } from './modules/area/area.module';
 import { LiveModule } from './common/live/live.module';
 import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-call-agent.module';
 import { FieldAppModule } from './modules/field-app/field-app.module';
@@ -52,6 +53,7 @@ import { FinanceModule } from './modules/finance/finance.module';
   imports: [
     CeoPortalModule,
     FinanceModule,
+    AreaModule,
     ObservabilityModule,
     PrismaModule,
     LiveModule,
