@@ -35,4 +35,18 @@ export const queryKeys = {
   leaderboard: ['targets', 'leaderboard'] as const,
   registrationOptions: ['registration', 'options'] as const,
   trades: ['trades'] as const,
+  // Laboura Field selling (FA10–FA19)
+  sellingSettings: ['selling', 'settings'] as const,
+  sellingBusinesses: (q: string) => ['selling', 'businesses', q] as const,
+  sellingBusiness: (id: string) => ['selling', 'business', id] as const,
+  sellingMatches: (vacancyId: string, page: number) => ['selling', 'matches', vacancyId, page] as const,
+  sellingNoMore: (vacancyId: string) => ['selling', 'no-more', vacancyId] as const,
+  sellingCandidate: (id: string, vacancyId: string) => ['selling', 'candidate', id, vacancyId] as const,
+  sellingInterview: (id: string) => ['selling', 'interview', id] as const,
+  sellingPlacement: (id: string) => ['selling', 'placement', id] as const,
+  sellingRecent: ['selling', 'recent-vacancies'] as const,
+  sellingBooking: (vacancyId: string, jobSeekerId: string) => ['selling', 'booking', vacancyId, jobSeekerId] as const,
+  call: (id: string) => ['calls', id] as const,
+  formOptions: ['registration', 'options'] as const,
+  seekerStatus: (id: string) => ['registration', 'job-seeker', id] as const,
 };

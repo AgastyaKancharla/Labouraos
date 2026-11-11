@@ -1,4 +1,5 @@
 import type { Messages } from './en';
+import { sellingKn } from './selling.kn';
 
 /**
  * Kannada. Same keys as en.ts (TypeScript refuses a missing or extra key).
@@ -6,6 +7,7 @@ import type { Messages } from './en';
  * To be checked by a native speaker before launch.
  */
 export const kn: Messages = {
+  ...sellingKn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'ಫೀಲ್ಡ್ ಏಜೆಂಟ್',

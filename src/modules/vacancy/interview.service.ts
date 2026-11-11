@@ -672,6 +672,43 @@ export class InterviewService {
     selectedJoiningDate?: string;
   }) {
     const link = await this.consentLinks.verifyInterviewOwnerOtp(token, input.otpRequestId, input.otpCode);
+    const interview = await this.prisma.interview.findUnique({
+      where: { id: link.interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
+    });
+    if (!interview || interview.status !== 'confirmed' || interview.resultRecordedAt) {
+      throw new BadRequestException('This interview is no longer awaiting an owner result');
+    }
+    const resultPhone = interview.vacancy.branchId
+      ? (await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } }))?.contactPersonPhone
+      : interview.business.phone;
+    if (!resultPhone || !sameIndianMobile(resultPhone, link.phone)) {
+      throw new BadRequestException('The owner phone changed after this result link was issued');
+    }
+    const result = await this.applyOwnerResult(interview.id, input, {
+      otpRequestId: input.otpRequestId,
+      recordedByStaffId: null,
+      reason: 'Business owner verified by OTP on the business phone',
+    }, interview);
+    await this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
+    return result;
+  }
+
+  /**
+   * Records the owner's result once the owner has proved it by OTP — from the
+   * result link (P05) or in the shop on the field agent's phone (FA15f/FA15s,
+   * decided 9 Nov). Selected creates the placement and sends the fee link at once.
+   */
+  async applyOwnerResult(
+    interviewId: string,
+    input: {
+      result: 'selected' | 'not_selected' | 'candidate_no_show';
+      resultReason?: string;
+      selectedSalaryPaise?: number;
+      selectedJoiningDate?: string;
+    },
+    meta: { otpRequestId: string | null; recordedByStaffId: string | null; reason: string },
+    preloaded?: Prisma.InterviewGetPayload<{ include: { business: true; jobSeeker: true; vacancy: true } }>,
+  ) {
     if (!['selected', 'not_selected', 'candidate_no_show'].includes(input.result)) {
       throw new BadRequestException('result must be selected, not_selected or candidate_no_show');
     }
@@ -685,17 +722,11 @@ export class InterviewService {
     if (input.result === 'selected' && (!joiningDate || !Number.isFinite(joiningDate.getTime()))) {
       throw new BadRequestException('selectedJoiningDate is required for a selected result');
     }
-    const interview = await this.prisma.interview.findUnique({
-      where: { id: link.interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
+    const interview = preloaded ?? await this.prisma.interview.findUnique({
+      where: { id: interviewId }, include: { business: true, jobSeeker: true, vacancy: true },
     });
     if (!interview || interview.status !== 'confirmed' || interview.resultRecordedAt) {
       throw new BadRequestException('This interview is no longer awaiting an owner result');
-    }
-    const resultPhone = interview.vacancy.branchId
-      ? (await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } }))?.contactPersonPhone
-      : interview.business.phone;
-    if (!resultPhone || !sameIndianMobile(resultPhone, link.phone)) {
-      throw new BadRequestException('The owner phone changed after this result link was issued');
     }
     const now = this.clock.now();
     const status = input.result === 'candidate_no_show' ? 'no_show' : 'completed';
@@ -706,8 +737,9 @@ export class InterviewService {
           status,
           result: input.result,
           resultReason: input.result === 'not_selected' ? input.resultReason : null,
-          resultOtpRequestId: input.otpRequestId,
+          resultOtpRequestId: meta.otpRequestId,
           resultRecordedAt: now,
+          resultRecordedByStaffId: meta.recordedByStaffId,
           selectedSalaryPaise: input.result === 'selected' ? input.selectedSalaryPaise : null,
           selectedJoiningDate: input.result === 'selected' ? joiningDate : null,
           // The candidate may have answered "Did they offer you the job?" first; keep that answer.
@@ -719,7 +751,7 @@ export class InterviewService {
       if (updated.count !== 1) throw new BadRequestException('This interview is no longer awaiting an owner result');
       await recordStatusChange(tx, {
         subjectType: 'interview', subjectId: interview.id, fromStatus: 'confirmed', toStatus: status,
-        changedByStaffId: null, reason: 'Owner recorded the interview result by OTP', changedAt: now,
+        changedByStaffId: meta.recordedByStaffId, reason: 'Owner recorded the interview result by OTP', changedAt: now,
       });
       if (interview.vacancy.replacementForPlacementId) {
         if (input.result === 'not_selected') {
@@ -780,13 +812,12 @@ export class InterviewService {
         }
       }
     });
-    await this.consentLinks.consumeInterviewActionToken(token, 'owner_result');
     await this.auditService.log({
-      actorId: interview.proposedByStaffId, action: 'interview.result_recorded', entityType: 'Interview',
+      actorId: meta.recordedByStaffId ?? interview.proposedByStaffId, action: 'interview.result_recorded', entityType: 'Interview',
       entityCode: interview.code, city: interview.business.city,
       after: { status, result: input.result, resultReason: input.resultReason ?? null, selectedSalaryPaise: input.selectedSalaryPaise ?? null, selectedJoiningDate: joiningDate?.toISOString() ?? null },
       changedFields: ['status', 'result', 'resultReason', 'resultOtpRequestId', 'resultRecordedAt', 'selectedSalaryPaise', 'selectedJoiningDate'],
-      reason: 'Business owner verified by OTP on the business phone',
+      reason: meta.reason,
     });
     if (input.result === 'not_selected') {
       await this.raiseMismatchIfNeeded(interview.id, interview.proposedByStaffId);
@@ -1006,7 +1037,8 @@ export class InterviewService {
     return monthlyOffer < floor;
   }
 
-  private async requiresAttendance(business: { id: string; documentsStatus: string | null }) {
+  /** First interview with this business, "No documents", or a rejection-pattern flag → the field agent attends. */
+  async requiresAttendance(business: { id: string; documentsStatus: string | null }) {
     if (business.documentsStatus === 'no_documents') return true;
     const [previousInterview, openFlag] = await Promise.all([
       this.prisma.interview.count({ where: { businessId: business.id } }),

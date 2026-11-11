@@ -6,6 +6,12 @@ export function Redirect({ href }: { href: string }) {
 }
 export const useRouter = () => router;
 
-/** Tests set the route's query: `searchParams.current = { id: 'v-1' }`. */
+/** Tests set the route's query: `searchParams.current = { id: 'v-1' }` (or `(useLocalSearchParams as jest.Mock).mockReturnValue(…)`). */
 export const searchParams: { current: Record<string, string | undefined> } = { current: {} };
-export const useLocalSearchParams = () => searchParams.current;
+export const useLocalSearchParams = jest.fn(() => searchParams.current);
+export function Stack() {
+  return null;
+}
+Stack.Screen = function StackScreen() {
+  return null;
+};

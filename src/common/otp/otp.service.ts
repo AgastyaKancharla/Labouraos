@@ -11,7 +11,12 @@ export const OTP_PURPOSES = [
   'referral',
   'vacancy_confirm',
   'branch_contact',
+  /** The owner confirms an interview result in the shop (selected: salary and joining date; not selected: reason). */
+  'interview_result',
 ] as const;
+
+/** Purposes that confirm something for an existing record, so the "already registered" check is skipped. */
+const CONFIRMATION_PURPOSES: readonly string[] = ['vacancy_confirm', 'interview_result'];
 
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
 
@@ -49,7 +54,7 @@ export class OtpService {
 
     const last4 = phoneLast4(phone);
     const staffId = actorId;
-    if (staffId && !requestId && purpose !== 'vacancy_confirm') {
+    if (staffId && !requestId && !CONFIRMATION_PURPOSES.includes(purpose)) {
       const duplicate = await this.findDuplicate(phone);
       if (duplicate) {
         const visible = await this.canSeeRecord(duplicate, staffId, actorRole);

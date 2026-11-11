@@ -11,6 +11,8 @@ export const CALL_PURPOSES = [
   'refund_check',
   'joining_confirmation',
   'general',
+  /** A phone interview: Laboura rings the owner and the candidate and joins them (3-way). */
+  'phone_interview',
 ] as const;
 
 export const AGENT_OUTCOMES = [
