@@ -28,6 +28,7 @@ import { MockPaymentProvider } from '../payment/mock-payment.provider';
 import { MockBankFeedProvider } from '../payment/mock-bank-feed.provider';
 import { ConsentClock } from './consent-clock';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
+import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { createHash } from 'node:crypto';
 
 type MockPrismaService = {
@@ -120,6 +121,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       controllers: [ReferralController, ConsentController, PaymentController],
       providers: [
         { provide: PrismaService, useValue: mockPrisma },
+        { provide: PublicOtpLimiter, useValue: { claimSend: jest.fn().mockResolvedValue(undefined) } },
         {
           provide: PublicLinkStoreService,
           useValue: {

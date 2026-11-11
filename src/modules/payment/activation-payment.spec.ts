@@ -114,7 +114,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     expect(res.status).toBe(201);
     expect(res.body.paymentId).toBeDefined();
     expect(res.body.paymentCode).toMatch(/^PAY-\d{5}$/);
-    expect(res.body.paymentLink).toContain('/payments/request/');
+    expect(res.body.paymentLink).toContain('/app/p/fee/');
     expect(res.body.upiReference).toBeDefined();
     expect(res.body.amount).toBe(49900); // 49900 paise
     expect(res.body.status).toBe('pending');

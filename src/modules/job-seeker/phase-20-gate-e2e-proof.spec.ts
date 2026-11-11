@@ -213,7 +213,16 @@ describe('Phase 20 gate end-to-end proof', () => {
     const linkOtp = await request(server()).post('/consent/send-otp').send({ token }).expect(201);
     const linkCode = provider().getCode(linkOtp.body.requestId);
     if (!linkCode) throw new Error('Link OTP was not stored');
-    await otp.verifyOtp(linkOtp.body.requestId, linkCode);
+    // The page (P00) shows nothing about him until he types the code sent to his own number.
+    const locked = await request(server()).get(`/registration/${token}/status`).expect(200);
+    expect(locked.body).toMatchObject({ otpRequired: true, maskedPhone: expect.stringMatching(/^\*+\d{4}$/) });
+    expect(locked.body.firstName).toBeUndefined();
+    await request(server()).post(`/registration/${token}/verify-otp`).send({ requestId: linkOtp.body.requestId, code: '000000' }).expect(400);
+    const verified = await request(server())
+      .post(`/registration/${token}/verify-otp`)
+      .send({ requestId: linkOtp.body.requestId, code: linkCode })
+      .expect(201);
+    expect(verified.body).toMatchObject({ otpRequired: false, firstName: 'Asha', currentStep: 'consent' });
     const requestId = linkOtp.body.requestId as string;
 
     // 4. Consent, selfie, Aadhaar name mismatch, then PAN.
@@ -261,7 +270,14 @@ describe('Phase 20 gate end-to-end proof', () => {
     const brotherOtp = await request(server()).post(`/registration/payment/${paymentToken}/send-otp`).expect(201);
     const brotherCode = provider().getCode(brotherOtp.body.requestId);
     if (!brotherCode) throw new Error('Brother OTP was not stored');
-    await otp.verifyOtp(brotherOtp.body.requestId, brotherCode);
+    const info = await request(server()).get(`/registration/payment/${paymentToken}/info`).expect(200);
+    expect(info.body).toMatchObject({ maskedPhone: expect.stringMatching(/^\*+\d{4}$/) });
+    expect(JSON.stringify(info.body)).not.toContain('Asha');
+    const brotherVerified = await request(server())
+      .post(`/registration/payment/${paymentToken}/verify-otp`)
+      .send({ requestId: brotherOtp.body.requestId, code: brotherCode })
+      .expect(201);
+    expect(brotherVerified.body).toMatchObject({ firstName: 'Asha', amountPaise: 49900 });
     const page = await request(server())
       .get(`/registration/payment/${paymentToken}`)
       .query({ requestId: brotherOtp.body.requestId })
@@ -282,6 +298,9 @@ describe('Phase 20 gate end-to-end proof', () => {
     expect(paid.body).toMatchObject({ received: true, status: 'succeeded', paymentId: terms.body.payment.paymentId });
     const active = await prisma.jobSeeker.findUnique({ where: { id: registered.body.id } });
     expect(active).toMatchObject({ status: 'active', guaranteeFloorPaise: 2300000 });
+    const done = await request(server()).get(`/registration/${token}/status`).query({ requestId }).expect(200);
+    expect(done.body).toMatchObject({ currentStep: 'complete', payment: { state: 'confirmed' } });
+    expect(done.body.payment.guaranteeEndsAt).toBeTruthy();
 
     const duplicate = await postCredit(`UTR-P20G-2-${stamp}`, upiReference);
     expect(duplicate.body).toMatchObject({

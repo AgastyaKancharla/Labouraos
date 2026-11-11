@@ -212,7 +212,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     expect(msg?.channel).toBe('sms');
     expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
       template: 'consent_link',
-      variables: { token: res.body.token, link: `https://app.laboura.in/consent/${res.body.token}` },
+      variables: { token: res.body.token, link: `https://app.laboura.in/app/p/register/${res.body.token}` },
     }));
   });
 
@@ -428,14 +428,13 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
       .send({ jobSeekerId: candidateId });
     const token = linkRes.body.token;
 
+    // Links already sent keep working: a browser is sent to the new registration page.
     const htmlRes = await request(app.getHttpServer())
       .get(`/consent/${token}`)
       .set('Accept', 'text/html');
 
-    expect(htmlRes.status).toBe(200);
-    expect(htmlRes.text).toContain('<!DOCTYPE html>');
-    expect(htmlRes.text).toContain('Laboura Candidate Consent');
-    expect(htmlRes.text).toContain('Send OTP via SMS');
+    expect(htmlRes.status).toBe(302);
+    expect(htmlRes.headers.location).toBe(`https://app.laboura.in/app/p/register/${token}`);
   });
 
   it('Field Agent can generate consent links, but Finance is strictly denied (403)', async () => {

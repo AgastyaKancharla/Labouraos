@@ -4,6 +4,7 @@ import {
   Controller,
   Get,
   Headers,
+  Optional,
   Param,
   Post,
   Query,
@@ -19,14 +20,17 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 import { Response as ExpressResponse } from 'express';
 import { Public } from '../../common/rbac/public.decorator';
+import { publicPageLink, wantsHtml } from '../../common/public-pages';
+import { RegistrationJourneyService } from './registration-journey.service';
+import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
+import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
+import { publicLanguage, shortNameOf } from './registration-journey';
+
+const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
 
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
   return `******${digits.slice(-4)}`;
-}
-
-function escapeHtml(value: string): string {
-  return value.replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[char]!);
 }
 
 @Controller('registration')
@@ -37,7 +41,49 @@ export class RegistrationController {
     private readonly jobSeekers: JobSeekerService,
     private readonly prisma: PrismaService,
     private readonly upi: UpiCollectionService,
+    private readonly journey: RegistrationJourneyService,
+    private readonly otpLimiter: PublicOtpLimiter,
+    @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
+
+  /**
+   * "I'll wait — SMS me when it's back" (P01e): only while the ID service is down.
+   * He already proved his number on this link, so no second code is asked.
+   */
+  @Post(':token/id-check-wait')
+  @Public(TOKEN_PAGE)
+  async waitForIdService(@Param('token') token: string, @Body() body: { requestId?: string }) {
+    const link = await this.requireRegistrationLink(token);
+    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone!))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    if (!this.kycRecovery || !(await this.kycRecovery.isDown())) {
+      throw new BadRequestException('ID check service is available');
+    }
+    await this.kycRecovery.requestRecovery(link.subjectId, link.id);
+    return { success: true, waitingForRecovery: true };
+  }
+
+  /**
+   * Where the registration link stands (web page P00/P02r and every step after it).
+   * Without a verified OTP to his own number it shows only the masked number and language.
+   */
+  @Get(':token/status')
+  @Public(TOKEN_PAGE)
+  async status(@Param('token') token: string, @Query('requestId') requestId?: string) {
+    const link = await this.requireRegistrationLink(token);
+    const verified = Boolean(requestId) && (await this.otp.isVerified(requestId!, link.phone!));
+    return this.journey.status(link.subjectId, verified);
+  }
+
+  /** He types the code sent to his own number (P00); the answer is where he stands. */
+  @Post(':token/verify-otp')
+  @Public(TOKEN_PAGE)
+  async verifyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
+    const link = await this.requireRegistrationLink(token);
+    await this.verifyCode(body, link.phone!);
+    return this.journey.status(link.subjectId, true);
+  }
 
   @Post(':token/selfie')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
@@ -110,26 +156,53 @@ export class RegistrationController {
     return this.jobSeekers.createPaymentOnlyLink(link.subjectId, body.phone, 'system');
   }
 
+  /** Before the payer's OTP (P02s): only the masked number the code goes to, the language and how long the link lasts. */
+  @Get('payment/:token/info')
+  @Public(TOKEN_PAGE)
+  async paymentOnlyInfo(@Param('token') token: string) {
+    const link = await this.requirePaymentLink(token);
+    return { maskedPhone: maskPhone(link.phone!), language: publicLanguage(link.language), expiresAt: link.expiresAt };
+  }
+
   @Post('payment/:token/send-otp')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async sendPaymentOnlyOtp(@Param('token') token: string) {
     const link = await this.requirePaymentLink(token);
+    await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
     const result = await this.otp.sendOtp(link.phone!);
-    return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!) };
+    return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt };
   }
 
+  /** The payer types the code; the answer is the payment page. */
+  @Post('payment/:token/verify-otp')
+  @Public(TOKEN_PAGE)
+  async verifyPaymentOnlyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
+    const link = await this.requirePaymentLink(token);
+    await this.verifyCode(body, link.phone!);
+    return this.paymentOnlyDetails(link);
+  }
+
+  /** Old payment-only URL: a browser goes to the new page (P02s); an API client gets the details after the payer's OTP. */
   @Get('payment/:token')
-  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  @Public(TOKEN_PAGE)
   async getPaymentOnlyPage(
     @Param('token') token: string,
     @Query('requestId') requestId: string,
     @Headers('accept') accept: string | undefined,
     @Res({ passthrough: true }) res: ExpressResponse,
   ) {
+    if (wantsHtml(accept)) {
+      res.redirect(302, publicPageLink('paymentOnly', token));
+      return;
+    }
     const link = await this.requirePaymentLink(token);
     if (!requestId || !(await this.otp.isVerified(requestId, link.phone!))) {
       throw new BadRequestException('OTP to the payment contact number is required');
     }
+    return this.paymentOnlyDetails(link);
+  }
+
+  private async paymentOnlyDetails(link: Awaited<ReturnType<PublicLinkStoreService['findByToken']>>) {
     const metadata = link.metadata as { paymentId?: unknown } | null;
     const paymentId = typeof metadata?.paymentId === 'string' ? metadata.paymentId : '';
     const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
@@ -142,17 +215,25 @@ export class RegistrationController {
     });
     if (!seeker) throw new BadRequestException('Job seeker not found');
     const paymentDetails = await this.upi.getPaymentPage(payment.upiReference);
-    const details = {
+    return {
       firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,
+      displayName: shortNameOf(seeker.name),
       jobSeekerCode: seeker.code,
       amountPaise: payment.expectedAmountPaise,
+      linkExpiresAt: link.expiresAt,
+      language: publicLanguage(link.language),
       payment: paymentDetails,
     };
-    if (accept?.includes('text/html')) {
-      res.setHeader('Content-Type', 'text/html; charset=utf-8');
-      return `<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Job seeker payment</title><main><h1>Payment for ${escapeHtml(details.firstName)} (${escapeHtml(details.jobSeekerCode)})</h1><p>₹${escapeHtml(paymentDetails.amount)}</p>${paymentDetails.qrSvg}<a href="${escapeHtml(paymentDetails.upiUri)}">Pay with UPI</a></main></html>`;
+  }
+
+  private async verifyCode(body: { requestId?: string; code?: string }, phone: string) {
+    if (!body?.requestId || !body.code || !/^\d{4,8}$/.test(body.code)) {
+      throw new BadRequestException('Type the code from the SMS');
     }
-    return details;
+    const ok = await this.otp.verifyOtp(body.requestId, body.code);
+    if (!ok || !(await this.otp.isVerified(body.requestId, phone))) {
+      throw new BadRequestException('Wrong or expired code. Check the SMS or ask for a new code.');
+    }
   }
 
   private async requireRegistrationLink(token: string) {

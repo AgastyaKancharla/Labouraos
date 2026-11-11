@@ -3,7 +3,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { KycService } from './kyc.service';
 import { PublicLinkStoreService } from '../public-link-store.service';
 import { MessagingService } from '../../modules/message/messaging.service';
-import { publicLink } from '../public-link';
+import { publicPageLink } from '../public-pages';
 
 const ID_CHECK_STATE_ID = 'id-check';
 const REGISTRATION_LINK_TTL_MS = 48 * 60 * 60 * 1000;
@@ -118,7 +118,7 @@ export class KycRecoveryService {
               expiresAt: new Date(now.getTime() + REGISTRATION_LINK_TTL_MS),
               metadata: { resumable: true },
             });
-            link = publicLink(`/consent/${created.token}`);
+            link = publicPageLink('registration', created.token);
             await this.prisma.kycRecoveryRequest.update({
               where: { id: request.id },
               data: { registrationLinkId: created.id },

@@ -42,6 +42,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 import { receiptLink } from './receipt-link';
+import { invoiceLink } from '../placement/invoice-link';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -359,11 +360,11 @@ export class PaymentService {
           variables: { joiningDate },
         })));
       }
-      const invoiceLink = publicLink(`/placements/${placement.id}/invoice`);
+      const placementInvoiceLink = invoiceLink(placement.id);
       await Promise.all((['sms', 'whatsapp'] as const).map((channel) => this.messagingService.send({
         channel, template: 'placement_invoice', subjectType: 'business',
         subjectId: placement.businessId, relatedType: 'placement', relatedId: placement.id,
-        variables: { link: invoiceLink, invoiceCode },
+        variables: { link: placementInvoiceLink, invoiceCode },
       })));
     }
     return { received: true, status: 'succeeded', paymentId };

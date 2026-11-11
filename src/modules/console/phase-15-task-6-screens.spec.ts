@@ -41,13 +41,18 @@ describe('Phase 15 Task 6 screens', () => {
     expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(payload.role)");
   });
 
-  it('keeps business name and address off the candidate offer view before confirmation', async () => {
+  it('opens the new offer page (P03) in a browser and gives API clients only the offer details', async () => {
+    process.env.PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://app.laboura.in';
+    const details = { firstName: 'Ramesh', job: 'Electrician', area: 'HSR Layout' };
     const controller = new InterviewController({
-      validateCandidateReplyLink: jest.fn(),
+      candidateReplyDetails: jest.fn().mockResolvedValue(details),
     } as never);
-    const html = await controller.replyPage('single-use-token');
-    expect(html).toContain('Can you attend this interview?');
-    expect(html).not.toContain('businessName');
-    expect(html).not.toContain('address');
+    const redirect = jest.fn();
+    await controller.replyPage('single-use-token', 'text/html', { redirect } as never);
+    expect(redirect).toHaveBeenCalledWith(302, expect.stringMatching(/\/app\/p\/offer\/single-use-token$/));
+    const json = await controller.replyPage('single-use-token', 'application/json', { redirect: jest.fn() } as never);
+    expect(json).toEqual(details);
+    expect(JSON.stringify(json)).not.toContain('businessName');
+    expect(JSON.stringify(json)).not.toContain('address');
   });
 });

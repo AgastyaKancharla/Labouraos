@@ -194,14 +194,18 @@ describe('Phase 12 gate end-to-end proof', () => {
     });
     expect(sms.channel).toBe('sms');
 
+    // The SMS link opens the new registration page (P00); an old /consent link redirects there.
     const openedPage = await request(app.getHttpServer())
       .get(`/consent/${consentLink.body.token}`)
       .set('Accept', 'text/html')
+      .expect(302);
+    expect(openedPage.headers.location).toBe(`https://app.laboura.in/app/p/register/${consentLink.body.token}`);
+    const lockedDetails = await request(app.getHttpServer())
+      .get(`/consent/${consentLink.body.token}`)
+      .set('Accept', 'application/json')
       .expect(200);
-    expect(openedPage.text).toContain('Verify via OTP on your registered mobile');
-    for (const purpose of JOB_SEEKER_REQUIRED_CONSENT_PURPOSES) {
-      expect(openedPage.text).toContain(`id="chk-${purpose}"`);
-    }
+    expect(lockedDetails.body).toMatchObject({ otpRequired: true });
+    expect(JOB_SEEKER_REQUIRED_CONSENT_PURPOSES).toHaveLength(5);
 
     const seekerOtp = await request(app.getHttpServer())
       .post('/consent/send-otp')

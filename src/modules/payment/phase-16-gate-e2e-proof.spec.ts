@@ -190,7 +190,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
 
     expect(actRes.body).toBeDefined();
     expect(actRes.body.amountPaise).toBe(49900);
-    expect(actRes.body.paymentLink).toContain('/payments/request/');
+    expect(actRes.body.paymentLink).toContain('/app/p/fee/');
     expect(actRes.body.upiReference).toMatch(new RegExp(`^${actRes.body.paymentCode}-`));
     expect(actRes.body.upiUri).toContain('upi://pay?');
     expect(actRes.body.upiUri).toContain('pa=laboura%40icici');
@@ -212,15 +212,19 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     const seekerPaymentsCount = await prisma.payment.count({ where: { jobSeekerId: seeker.id } });
     expect(seekerPaymentsCount).toBe(1);
 
-    // Candidate visits payment page
+    // Candidate opens the old payment URL: the browser goes to the new phone page (P05b),
+    // which reads the summary — exact amount, reference and the UPI QR, no upload field.
     const pageRes = await request(app.getHttpServer())
       .get(`/payments/request/${encodeURIComponent(jsUpiRef)}`)
       .set('Accept', 'text/html')
+      .expect(302);
+    expect(pageRes.headers.location).toBe(`https://app.laboura.in/app/p/fee/${encodeURIComponent(jsUpiRef)}`);
+    const summaryRes = await request(app.getHttpServer())
+      .get(`/payments/request/${encodeURIComponent(jsUpiRef)}/summary`)
       .expect(200);
-
-    expect(pageRes.text).toContain('<meta name="viewport" content="width=device-width, initial-scale=1">');
-    expect(pageRes.text).toContain('Pay with a UPI app');
-    expect(pageRes.text).not.toContain('type="file"');
+    expect(summaryRes.body).toMatchObject({ type: 'activation', state: 'pending', amountPaise: 49900, upiReference: jsUpiRef });
+    expect(summaryRes.body.pay.upiUri).toContain('am=499.00');
+    expect(JSON.stringify(summaryRes.body)).not.toContain('type="file"');
 
     // Candidate enters 12-digit UTR hint (nothing changes)
     await request(app.getHttpServer())

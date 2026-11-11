@@ -249,17 +249,22 @@ describe('Phase 15 gate end-to-end proof', () => {
     const offerSms = sentSms.slice(offerSmsStart).filter(({ template }) => template === 'interview_offer');
     expect(offerSms).toHaveLength(candidates.length);
     expect(offerSms.every(({ variables }) => !JSON.stringify(variables).includes(business.name) && !JSON.stringify(variables).includes(business.address!))).toBe(true);
-    expect(offerSms.every(({ variables }) => variables.link.startsWith('https://app.laboura.in/interviews/reply/'))).toBe(true);
+    expect(offerSms.every(({ variables }) => variables.link.startsWith('https://app.laboura.in/app/p/offer/'))).toBe(true);
     expect(sentWhatsApp.slice(offerWaStart).filter(({ template }) => template === 'interview_offer')).toHaveLength(candidates.length);
     expect(await prisma.candidateIntroduction.count({ where: { vacancyId, channel: 'interview' } })).toBe(candidates.length);
 
     const candidateReplyToken = actionTokens.get(`${booked[0].id}:candidate_reply`)!;
-    await request(server).get(`/interviews/reply/${candidateReplyToken}`).expect(200).expect((response) => {
-      expect(response.text).toContain('Can you attend this interview?');
+    await request(server).get(`/interviews/reply/${candidateReplyToken}`).set('Accept', 'text/html').expect(302).expect((response) => {
+      expect(response.headers.location).toBe(`https://app.laboura.in/app/p/offer/${candidateReplyToken}`);
+    });
+    await request(server).get(`/interviews/reply/${candidateReplyToken}`).set('Accept', 'application/json').expect(200).expect((response) => {
+      expect(response.body.awaitingReply).toBe(true);
       expect(response.text).not.toContain(business.name);
       expect(response.text).not.toContain(business.address);
     });
-    await request(server).post(`/interviews/reply/${candidateReplyToken}`).send({ answer: 'yes' }).expect(201);
+    await request(server).post(`/interviews/reply/${candidateReplyToken}`).send({ answer: 'yes' }).expect(201).expect((response) => {
+      expect(response.body.booked.businessName).toBe(business.name);
+    });
     const confirmed = await prisma.interview.findUniqueOrThrow({ where: { id: booked[0].id } });
     expect(confirmed.status).toBe('confirmed');
     const bookedMessages = sentWhatsApp.filter(({ template, phone }) => template === 'interview_booked' && phone === candidates[0].phone);
@@ -288,6 +293,7 @@ describe('Phase 15 gate end-to-end proof', () => {
       otpRequestId: otpResponse.body.requestId, otpCode, result: 'selected',
       selectedSalaryPaise: 1600000, selectedJoiningDate: joiningDate.toISOString(),
     }).expect(201);
+    expect(JSON.stringify(resultResponse.body)).not.toContain(candidates[0].phone);
     const placement = resultResponse.body.placement as { id: string; status: string; agreedSalary: number; placementFee: number; gstAmount: number; feePercentAtCreation: number; gstPercentAtCreation: number; payment: { id: string; gatewayReference: string; amount: number; upiReference?: string } };
     placementIds.push(placement.id);
     paymentIds.push(placement.payment.id);
@@ -300,8 +306,8 @@ describe('Phase 15 gate end-to-end proof', () => {
     expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: candidates[0].id } })).status).toBe('active');
 
     const candidateCheckToken = actionTokens.get(`${booked[0].id}:candidate_check`)!;
-    await request(server).get(`/interviews/check/${candidateCheckToken}`).expect(200).expect((response) => {
-      expect(response.text).toContain('Did the business offer you the job?');
+    await request(server).get(`/interviews/check/${candidateCheckToken}`).set('Accept', 'application/json').expect(200).expect((response) => {
+      expect(response.body).toMatchObject({ businessName: business.name, answered: false });
     });
     await request(server).post(`/interviews/check/${candidateCheckToken}`).send({ answer: 'yes' }).expect(201);
     expect((await prisma.interview.findUniqueOrThrow({ where: { id: booked[0].id } })).candidateCheckAnswer).toBe('offered_yes');

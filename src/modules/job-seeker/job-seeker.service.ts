@@ -56,7 +56,7 @@ import {
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
-import { publicLink } from '../../common/public-link';
+import { publicPageLink } from '../../common/public-pages';
 
 const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'name',
@@ -513,7 +513,9 @@ export class JobSeekerService {
       jobSeekerCode: seeker.code,
       trade: primary?.trade ?? null,
       travelDistanceKm: seeker.travelDistanceKm,
+      locality: seeker.locality ?? null,
       shiftPreference: seeker.shiftPreference,
+      jobType: seeker.jobType ?? null,
       guaranteeFloorPaise: seeker.guaranteeFloorPaise,
       guaranteeDays: policy.jobSeekerGuaranteeDays,
       amountPaise: policy.activationFeePaise,
@@ -1486,7 +1488,7 @@ export class JobSeekerService {
       subjectId: seeker.id,
       recipientPhone: phone,
       variables: {
-        link: publicLink(`/registration/payment/${token}`),
+        link: publicPageLink('paymentOnly', token),
         firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,
         code: seeker.code,
         amountPaise: String(payment.expectedAmountPaise),
