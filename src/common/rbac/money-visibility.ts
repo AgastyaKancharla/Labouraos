@@ -110,7 +110,13 @@ export function stripMoney<T>(data: T, seen = new WeakSet<object>()): T {
   seen.add(data);
   const out: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
-    if (isMoneyKey(key) && !isJobSalaryKey(key)) {
+    if (isJobSalaryKey(key)) {
+      // A job salary may be a number or a range object ({ minPaise, maxPaise });
+      // keep it whole.
+      out[key] = value;
+      continue;
+    }
+    if (isMoneyKey(key)) {
       continue;
     }
     out[key] = stripMoney(value, seen);
