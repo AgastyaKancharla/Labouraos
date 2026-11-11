@@ -59,7 +59,9 @@ export class LeaveService {
 
   /**
    * Writes the month's accrual for every month whose 1st has come since the
-   * account was created (a person created on the 1st earns that month).
+   * account was created. No leave is earned in the joining month, even for a
+   * person created on the 1st (Master Guide, decided 11 Nov): the first
+   * accrual is on the 1st of the following month.
    * Safe to run again: one row per person per month.
    */
   async ensureAccrued(staffId: string): Promise<number> {
@@ -70,7 +72,7 @@ export class LeaveService {
     if (!staff || !ATTENDANCE_ROLES.includes(staff.role) || staff.status !== 'active') return 0;
     const created = getCalendarPartsInTimezone(staff.createdAt);
     let month = `${created.year}-${String(created.month).padStart(2, '0')}`;
-    if (created.day !== 1) month = nextMonth(month);
+    month = nextMonth(month);
     const current = monthOf(this.todayIst());
     const existing = new Set(
       (
