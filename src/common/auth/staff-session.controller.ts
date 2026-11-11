@@ -16,13 +16,17 @@ import { AuthService, StaffSessionView } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtPayload } from './jwt-payload.interface';
 import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
+import { RbacGuard } from '../rbac/rbac.guard';
+import { RequireRoles } from '../rbac/roles.decorator';
+import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 
 interface AuthenticatedRequest extends Request {
   user: JwtPayload;
 }
 
 @Controller('staff')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RbacGuard)
+@RequireRoles(...ALL_STAFF_ROLES)
 export class StaffSessionController {
   constructor(private readonly authService: AuthService) {}
 

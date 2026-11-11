@@ -5,12 +5,14 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { MessagingService } from './messaging.service';
+import { Public } from '../../common/rbac/public.decorator';
 
 @Controller()
 export class MessageController {
   constructor(private readonly messaging: MessagingService) {}
 
   @Post('messages/webhook/whatsapp')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   whatsapp(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-message-signature') sig1?: string,
@@ -22,6 +24,7 @@ export class MessageController {
   }
 
   @Post('messages/webhook/sms')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   sms(
     @Req() req: Request & { rawBody?: Buffer },
     @Headers('x-message-signature') sig1?: string,

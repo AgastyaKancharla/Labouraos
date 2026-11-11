@@ -26,6 +26,7 @@ import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
+import { Public } from '../../common/rbac/public.decorator';
 
 @Controller()
 export class ReferralRegistrationController {
@@ -43,6 +44,7 @@ export class ReferralRegistrationController {
   ) {}
 
   @Get('referral-registration/:token/status')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getLinkStatus(@Param('token') token: string, @Query('requestId') requestId: string | undefined) {
     const link = await this.requireLink(token);
     if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) {
@@ -52,6 +54,7 @@ export class ReferralRegistrationController {
   }
 
   @Post('referral-registration/:token/selfie')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadSelfie(
     @Param('token') token: string,
@@ -85,6 +88,7 @@ export class ReferralRegistrationController {
   }
 
   @Post('referral-registration/:token/id-check')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async verifyIdentity(@Param('token') token: string, @Body() body: Record<string, unknown> & { requestId?: string }) {
     const link = await this.requireVerifiedLink(token, body.requestId);
     assertNoRawAadhaar(body);
@@ -128,6 +132,7 @@ export class ReferralRegistrationController {
   }
 
   @Post('referral-registration/:token/upi')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async submitUpi(
     @Param('token') token: string,
     @Body() body: { otpRequestId?: string; otpCode?: string; method?: 'upi'; upiId?: string },

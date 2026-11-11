@@ -6,9 +6,13 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { AuthThrottlerGuard } from '../auth/auth-throttler.guard';
 import { OTP_PURPOSES, OtpPurpose } from './otp.service';
+import { RbacGuard } from '../rbac/rbac.guard';
+import { RequireRoles } from '../rbac/roles.decorator';
+import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 
 @Controller('otp')
-@UseGuards(JwtAuthGuard, AuthThrottlerGuard)
+@UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+@RequireRoles(...ALL_STAFF_ROLES)
 export class OtpController {
   constructor(private readonly otpService: OtpService) {}
 

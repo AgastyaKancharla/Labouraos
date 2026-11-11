@@ -19,6 +19,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PayoutAccountService } from './payout-account.service';
 import { CreatePayoutLinkDto } from './dto/create-payout-link.dto';
 import { SubmitPayoutAccountDto } from './dto/submit-payout-account.dto';
+import { Public } from '../../common/rbac/public.decorator';
 
 @Controller('payout-accounts')
 @UseInterceptors(PiiMaskingInterceptor)
@@ -40,17 +41,20 @@ export class PayoutAccountController {
   }
 
   @Get('link/:token')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getLinkDetails(@Param('token') token: string) {
     return this.payoutAccountService.getLinkDetails(token);
   }
 
   @Post('send-otp')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @HttpCode(HttpStatus.OK)
   async sendOtp(@Body('token') token: string) {
     return this.payoutAccountService.sendOtp(token);
   }
 
   @Post('submit')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   @HttpCode(HttpStatus.OK)
   async submitPayoutAccount(@Body() dto: SubmitPayoutAccountDto) {
     return this.payoutAccountService.submitPayoutAccount(dto);

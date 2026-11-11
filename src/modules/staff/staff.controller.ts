@@ -27,6 +27,7 @@ import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
+import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -66,6 +67,7 @@ export class StaffController {
    *    audit logging with the sentinel 'bootstrap' actor remain intact.
    */
   @Post('bootstrap')
+  @Public('first CEO account on an empty database; needs STAFF_BOOTSTRAP_SECRET')
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   bootstrap(
@@ -137,6 +139,7 @@ export class StaffController {
    * identity with the one-time invite token. Throttled like login.
    */
   @Post('accept-invite')
+  @Public('new hire sets a password with the one-time invite token')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })

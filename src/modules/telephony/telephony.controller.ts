@@ -16,12 +16,14 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
+import { Public } from '../../common/rbac/public.decorator';
 
 @Controller('telephony')
 export class TelephonyController {
   constructor(private readonly telephonyService: TelephonyService) {}
 
   @Post('inbound')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   async handleInboundWebhook(
     @Body() body: Record<string, unknown>,
     @Req() req: Request & { rawBody?: Buffer },
@@ -33,6 +35,7 @@ export class TelephonyController {
   }
 
   @Post('webhook/missed-call')
+  @Public('webhook: the sender is checked by its signature, not a staff login')
   async handleMissedCallWebhook(
     @Body() body: Record<string, unknown>,
     @Req() req: Request & { rawBody?: Buffer },

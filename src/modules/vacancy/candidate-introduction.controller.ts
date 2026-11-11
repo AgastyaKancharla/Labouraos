@@ -1,12 +1,14 @@
 import { Controller, Get, Headers, Param, Res } from '@nestjs/common';
 import { Response } from 'express';
 import { CandidateIntroductionService } from './candidate-introduction.service';
+import { Public } from '../../common/rbac/public.decorator';
 
 @Controller('candidate-introductions')
 export class CandidateIntroductionController {
   constructor(private readonly introductions: CandidateIntroductionService) {}
 
   @Get(':token')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async redeem(
     @Param('token') token: string,
     @Headers('accept') accept: string | undefined,
