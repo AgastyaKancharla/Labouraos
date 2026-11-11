@@ -4,6 +4,7 @@ import { LiveEventsService } from '../../common/live/live-events.service';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { AttendanceService } from '../attendance/attendance.service';
 import { decryptCallRoutingPhone } from '../staff/call-routing-key';
+import { isIndianMobile, nationalMobileDigits } from '../../common/phone/indian-mobile';
 
 export type CallerType = 'job_seeker' | 'business' | 'referral';
 
@@ -21,9 +22,13 @@ export interface InboundRouting {
   caller: IdentifiedCaller | null;
 }
 
-/** Last 10 digits, so +91 98765 43210, 919876543210 and 9876543210 match. */
+/**
+ * The 10 national digits, so +91 98765 43210, 919876543210, 09876543210 and
+ * 9876543210 match the number saved as +919876543210 (src/common/phone).
+ * A number that is not an Indian mobile keeps its last 10 digits.
+ */
 export function tenDigits(phone: string): string {
-  return phone.replace(/\D/g, '').slice(-10);
+  return isIndianMobile(phone) ? nationalMobileDigits(phone) : String(phone ?? '').replace(/\D/g, '').slice(-10);
 }
 
 /**

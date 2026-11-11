@@ -125,7 +125,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       data: {
         code: `BZ-T1K-${timestamp}`,
         name: 'Kora Biz T1',
-        phone: `+9181${String(timestamp).slice(-8)}1`,
+        phone: `+918${String(timestamp).slice(-8)}1`,
         phoneVerified: true,
         locality: koraArea,
         accountAgentId: fa.id,
@@ -139,7 +139,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
       data: {
         code: `BZ-T1I-${timestamp}`,
         name: 'Indi Biz T1',
-        phone: `+9181${String(timestamp).slice(-8)}2`,
+        phone: `+918${String(timestamp).slice(-8)}2`,
         phoneVerified: true,
         locality: indiArea,
         accountAgentId: fa2.id,
@@ -213,7 +213,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
 
   describe('Job Seeker Attribution', () => {
     it('creating a job seeker as Call Agent records acting staff in registeredByStaffId', async () => {
-      const phone = `+9191${String(timestamp).slice(-8)}1`;
+      const phone = `+919${String(timestamp).slice(-8)}1`;
       const otpRequestId = await getVerifiedOtp(phone);
 
       const res = await request(app.getHttpServer())
@@ -244,7 +244,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
     });
 
     it('creating a job seeker as Field Agent records acting staff in registeredByStaffId', async () => {
-      const phone = `+9191${String(timestamp).slice(-8)}2`;
+      const phone = `+919${String(timestamp).slice(-8)}2`;
       const otpRequestId = await getVerifiedOtp(phone);
 
       const res = await request(app.getHttpServer())
@@ -284,7 +284,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         data: {
           code: `JS-T1PLC-1-${timestamp}`,
           name: 'Ready Candidate 1',
-          phone: `+9191${String(timestamp).slice(-8)}3`,
+          phone: `+919${String(timestamp).slice(-8)}3`,
           trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2500000,
@@ -301,7 +301,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         data: {
           code: `JS-T1PLC-2-${timestamp}`,
           name: 'Ready Candidate 2',
-          phone: `+9191${String(timestamp).slice(-8)}4`,
+          phone: `+919${String(timestamp).slice(-8)}4`,
           trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2500000,
@@ -347,7 +347,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         data: {
           code: `JS-T1UNATTR-${timestamp}`,
           name: 'Legacy Unattributed Worker',
-          phone: `+9191${String(timestamp).slice(-8)}5`,
+          phone: `+919${String(timestamp).slice(-8)}5`,
           trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2500000,
@@ -418,7 +418,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         data: {
           code: `JS-T1TMP-${timestamp}`,
           name: 'Temp Attributed Worker',
-          phone: `+9191${String(timestamp).slice(-8)}6`,
+          phone: `+919${String(timestamp).slice(-8)}6`,
           trades: { create: { trade: 'Electrician', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2500000,
@@ -529,7 +529,7 @@ describe('Phase 6.7 Task 1: Agent Attribution and own_captured scope resolution'
         data: {
           code: `JS-T1LEAK-${timestamp}`,
           name: 'Area Test Worker',
-          phone: `+9191${String(timestamp).slice(-8)}7`,
+          phone: `+919${String(timestamp).slice(-8)}7`,
           trades: { create: { trade: 'Plumber', isPrimary: true } },
           minSalary: 1800000,
           maxSalary: 2500000,

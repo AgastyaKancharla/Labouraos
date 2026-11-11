@@ -166,7 +166,7 @@ describe('Phase 15 gate end-to-end proof', () => {
     staffIds.push(callAgent.id);
     staffToken = jwt.sign({ sub: callAgent.id, role: callAgent.role, code: callAgent.code, email: callAgent.email });
 
-    businessPhone = `9${String(Math.floor(100000000 + Math.random() * 900000000))}`;
+    businessPhone = `+919${String(Math.floor(100000000 + Math.random() * 900000000))}`;
     const business = await prisma.business.create({
       data: {
         code: `BZ-P15-${suffix}`, name: `Phase 15 Verified Electrical Shop ${suffix}`,
@@ -210,7 +210,8 @@ describe('Phase 15 gate end-to-end proof', () => {
     });
 
     const candidates = await Promise.all(['Selected', 'NoReply', 'NoResult'].map(async (label, index) => {
-      const phone = `8${String(100000000 + Number.parseInt(suffix.slice(-7), 16) + index).slice(-9)}`;
+      // Saved in the one stored format (+91 and 10 digits), as the API saves every number.
+      const phone = `+918${String(100000000 + Number.parseInt(suffix.slice(-7), 16) + index).slice(-9)}`;
       const seeker = await prisma.jobSeeker.create({
         data: {
           code: `JS-P15-${label}-${suffix}`, name: `Phase 15 ${label} Candidate`, phone, phoneVerified: true,

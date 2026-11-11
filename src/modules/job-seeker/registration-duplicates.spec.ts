@@ -50,7 +50,7 @@ function jobSeekerService(prisma: Record<string, unknown>, extra: { publicLinks?
 describe('Duplicate registrations name the existing record', () => {
   it('answers a second job seeker with the same number with existingJobSeekerCode', async () => {
     const { service, otp } = jobSeekerService({
-      jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 's1', code: 'JS-01042', phone: '9845012345' }) },
+      jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 's1', code: 'JS-01042', phone: '+919845012345' }) },
     });
     const error = await service.create(registration, 'staff-1').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(ConflictException);
@@ -63,7 +63,7 @@ describe('Duplicate registrations name the existing record', () => {
   });
 
   it('answers a second referral partner with the same number with existingReferralCode', async () => {
-    const prisma = { referral: { findUnique: jest.fn().mockResolvedValue({ id: 'r1', code: 'RF-00042' }) } };
+    const prisma = { referral: { findFirst: jest.fn().mockResolvedValue({ id: 'r1', code: 'RF-00042' }) } };
     const otp = { isVerified: jest.fn().mockResolvedValue(true), consumeVerified: jest.fn() };
     const service = new ReferralService(prisma as never, {} as never, { log: jest.fn() } as never, otp as never, {} as never);
     const error = await service
@@ -75,6 +75,53 @@ describe('Duplicate registrations name the existing record', () => {
     expect(error).toBeInstanceOf(ConflictException);
     expect((error as ConflictException).getResponse()).toMatchObject({ existingReferralCode: 'RF-00042' });
     expect(otp.consumeVerified).not.toHaveBeenCalled();
+  });
+});
+
+describe('Duplicate checks see one number in every spelling', () => {
+  it.each(['9845012345', '+91 98450 12345', '919845012345', '09845012345'])(
+    'looks for an existing job seeker saved as +919845012345 when the number is typed as %j',
+    async (typed) => {
+      const findFirst = jest.fn().mockResolvedValue({ id: 's1', code: 'JS-01042', phone: '+919845012345' });
+      const { service, otp } = jobSeekerService({ jobSeeker: { findFirst } });
+      const error = await service.create({ ...registration, phone: typed }, 'staff-1').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(ConflictException);
+      expect((error as ConflictException).getResponse()).toMatchObject({ existingJobSeekerCode: 'JS-01042' });
+      const where = findFirst.mock.calls[0][0].where as { phone: { in: string[] } };
+      expect(where.phone.in[0]).toBe('+919845012345');
+      // OTP is checked against the saved format too.
+      expect(otp.isVerified).toHaveBeenCalledWith('otp-1', '+919845012345');
+    },
+  );
+
+  it('refuses a number that is not a 10-digit Indian mobile before any lookup', async () => {
+    const findFirst = jest.fn();
+    const { service, otp } = jobSeekerService({ jobSeeker: { findFirst } });
+    for (const typed of ['98450123', '1234567890', '+1 415 555 0101', '98450123456']) {
+      const error = await service.create({ ...registration, phone: typed }, 'staff-1').catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(BadRequestException);
+      expect((error as BadRequestException).getResponse()).toMatchObject({ message: 'Enter a 10-digit mobile number' });
+    }
+    expect(findFirst).not.toHaveBeenCalled();
+    expect(otp.isVerified).not.toHaveBeenCalled();
+  });
+
+  it('looks for an existing referral partner by the saved format and saves both numbers that way', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const create = jest.fn().mockImplementation(({ data }) => ({ id: 'r9', ...data }));
+    const prisma = { referral: { findFirst, create } };
+    const otp = { isVerified: jest.fn().mockResolvedValue(true), consumeVerified: jest.fn().mockResolvedValue(true) };
+    const service = new ReferralService(
+      prisma as never, { generateCode: jest.fn().mockResolvedValue('RF-00099') } as never, { log: jest.fn() } as never, otp as never, {} as never,
+    );
+    await service.create({
+      name: 'Raju Kumar', phone: '99456 70011', type: 'individual', individualRole: 'auto_driver', whatsappPhone: '099456-70012',
+      language: 'kn', locality: 'Madiwala', pincode: '560068', heardFrom: 'walk_in', otpRequestId: 'otp-2',
+    }, 'staff-1');
+    expect(findFirst.mock.calls[0][0].where.phone.in[0]).toBe('+919945670011');
+    expect(create).toHaveBeenCalledWith(expect.objectContaining({
+      data: expect.objectContaining({ phone: '+919945670011', whatsappPhone: '+919945670012' }),
+    }));
   });
 });
 
@@ -109,6 +156,17 @@ describe('Payment link to another number records who it is (CA08e)', () => {
     const { service } = jobSeekerService(prisma(), { publicLinks, messaging: { send: jest.fn() } });
     await service.createPaymentOnlyLink('s1', '9886041207', 'staff-1');
     expect(publicLinks.create).toHaveBeenCalledWith(expect.objectContaining({ metadata: { paymentId: 'p1' } }));
+  });
+
+  it('saves the payer number as +91 and 10 digits and refuses the job seeker\'s own number in another spelling', async () => {
+    const publicLinks = { revokeActive: jest.fn(), create: jest.fn().mockResolvedValue({ token: 'tok' }) };
+    const messaging = { send: jest.fn() };
+    const { service } = jobSeekerService(prisma(), { publicLinks, messaging });
+    await service.createPaymentOnlyLink('s1', '098860-41207', 'staff-1');
+    expect(publicLinks.create).toHaveBeenCalledWith(expect.objectContaining({ phone: '+919886041207' }));
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ recipientPhone: '+919886041207' }));
+    await expect(service.createPaymentOnlyLink('s1', '+91 98450 12345', 'staff-1')).rejects.toThrow('The payment-only link must use another number');
+    await expect(service.createPaymentOnlyLink('s1', '12345', 'staff-1')).rejects.toThrow('Enter a 10-digit mobile number');
   });
 
   it('refuses a relation outside the fixed list', async () => {

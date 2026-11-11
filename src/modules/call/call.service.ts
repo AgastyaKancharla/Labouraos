@@ -16,6 +16,7 @@ import { Role, RBAC_MATRIX } from '../../common/rbac/rbac.types';
 import { PricingService } from '../pricing/pricing.service';
 import { TELEPHONY_PROVIDER, TelephonyProvider } from '../telephony/telephony.interface';
 import { decryptCallRoutingPhone } from '../staff/call-routing-key';
+import { normaliseIndianMobile } from '../../common/phone/indian-mobile';
 import { CallStatusEvent, toCallStatusEvent } from './call-status.event';
 import { canAdvanceCallStatus, FINAL_CALL_STATUSES } from './call-status';
 import { callStatusSignatureMatches } from './call-signature';
@@ -332,7 +333,7 @@ export class CallService {
         'Set the phone the calling system rings before placing a call',
       );
     }
-    const agentPhone = decryptCallRoutingPhone(caller.callRoutingPhone);
+    const agentPhone = normaliseIndianMobile(decryptCallRoutingPhone(caller.callRoutingPhone));
     if (!(await this.attendance.isAvailable(actor.id))) {
       throw new BadRequestException('Calls are placed only while you are Available');
     }
@@ -359,7 +360,8 @@ export class CallService {
 
     const result = await this.telephony.initiateOutboundCall({
       agentPhone,
-      customerPhone: subject.phone,
+      // Both legs dialled in the one stored format (+91 and 10 digits).
+      customerPhone: normaliseIndianMobile(subject.phone),
       recordCall: true,
       ringAgentFirst: true,
       announcement: CALL_ANNOUNCEMENT,

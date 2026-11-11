@@ -1,6 +1,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ageInYears, ScreensCallRegistrationService } from './screens-call-registration.service';
 import { BENGALURU_AREAS, cityForPincode } from './bengaluru-areas';
+import { encryptCallRoutingPhone } from '../staff/call-routing-key';
 
 const NOW = new Date('2026-11-11T05:30:00.000Z'); // 11:00 IST
 
@@ -136,10 +137,12 @@ describe('ScreensCallRegistrationService', () => {
     });
 
     it('reports who else was sent the payment link, with the relation', async () => {
+      // PublicLink.phone holds AES-GCM ciphertext: the answer is the decrypted number
+      // in the one stored format, which the interceptor then masks to its last 4 digits.
       const prisma = seekerPrisma();
       prisma.publicLink.findMany.mockResolvedValue([
         {
-          phone: '9886041207',
+          phone: encryptCallRoutingPhone('9886041207'),
           metadata: { paymentId: 'p1', relation: 'brother' },
           usedAt: null,
           revokedAt: null,
@@ -148,7 +151,23 @@ describe('ScreensCallRegistrationService', () => {
         },
       ]);
       const result = await makeService(prisma).jobSeeker(seekerRow.id);
-      expect(result.paymentOnlyLink).toMatchObject({ payerPhone: '9886041207', relation: 'brother', live: true, used: false });
+      expect(result.paymentOnlyLink).toMatchObject({ payerPhone: '+919886041207', relation: 'brother', live: true, used: false });
+    });
+
+    it('reads an older payment link that holds the plain number in the same format', async () => {
+      const prisma = seekerPrisma();
+      prisma.publicLink.findMany.mockResolvedValue([
+        {
+          phone: '98860 41207',
+          metadata: { paymentId: 'p1' },
+          usedAt: null,
+          revokedAt: null,
+          expiresAt: new Date(NOW.getTime() + 10 * 60_000),
+          createdAt: new Date(NOW.getTime() - 5 * 60_000),
+        },
+      ]);
+      const result = await makeService(prisma).jobSeeker(seekerRow.id);
+      expect(result.paymentOnlyLink).toMatchObject({ payerPhone: '+919886041207', relation: null });
     });
 
     it('shows an active job seeker with the 30-day end date once the bank confirmed the ₹499', async () => {
@@ -266,6 +285,40 @@ describe('ScreensCallRegistrationService', () => {
       expect.objectContaining({ where: { phone: { in: expect.arrayContaining(['9945670011', '+919945670011']) } } }),
     );
     await expect(service.findReferralPartner('Raju')).resolves.toBeNull();
+  });
+
+  it.each(['9945670011', '+919945670011', '+91 99456 70011', '919945670011', '09945670011'])(
+    'finds a referral partner saved as +919945670011 when the number is typed as %j',
+    async (typed) => {
+      const findFirst = jest.fn().mockResolvedValue(null);
+      await makeService({ referral: { findFirst } }).findReferralPartner(typed);
+      const where = findFirst.mock.calls[0][0].where as { phone: { in: string[] } };
+      expect(where.phone.in[0]).toBe('+919945670011');
+      expect(where.phone.in).toEqual(expect.arrayContaining(['+919945670011', '9945670011']));
+    },
+  );
+
+  it('does not treat a short or malformed number as a referral partner search', async () => {
+    const findFirst = jest.fn();
+    const service = makeService({ referral: { findFirst } });
+    await expect(service.findReferralPartner('12345678901')).resolves.toBeNull();
+    await expect(service.findReferralPartner('0011')).resolves.toBeNull();
+    expect(findFirst).not.toHaveBeenCalled();
+  });
+
+  it('searches businesses by a full number in any spelling, or by its last digits', async () => {
+    const findMany = jest.fn().mockResolvedValue([]);
+    const service = makeService({ business: { findMany } });
+    for (const typed of ['9900054321', '+91 99000 54321', '09900054321']) {
+      await service.searchBusinesses(typed);
+      const or = findMany.mock.calls.at(-1)[0].where.OR as Array<Record<string, unknown>>;
+      expect(or).toContainEqual({ phone: { in: expect.arrayContaining(['+919900054321']) } });
+      expect(or.some((clause) => JSON.stringify(clause).includes('endsWith'))).toBe(false);
+    }
+    await service.searchBusinesses('4321');
+    expect(findMany.mock.calls.at(-1)[0].where.OR).toContainEqual({ phone: { endsWith: '4321' } });
+    await service.searchBusinesses('Sri Sai');
+    expect(JSON.stringify(findMany.mock.calls.at(-1)[0].where.OR)).not.toContain('phone');
   });
 
   it('searches businesses by name and says whether candidates can be shown', async () => {

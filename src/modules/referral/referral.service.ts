@@ -11,6 +11,7 @@ import { OtpService } from '../../common/otp/otp.service';
 import { CreateReferralDto } from './dto/create-referral.dto';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { mobileLookupValues, requireIndianMobile } from '../../common/phone/indian-mobile';
 
 @Injectable()
 export class ReferralService {
@@ -41,6 +42,9 @@ export class ReferralService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+    // Saved and compared as +91 and 10 digits, like every other write.
+    if (dto.phone !== undefined) dto.phone = requireIndianMobile(dto.phone, 'phone');
+    if (dto.whatsappPhone !== undefined) dto.whatsappPhone = requireIndianMobile(dto.whatsappPhone, 'whatsappPhone');
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
@@ -88,10 +92,11 @@ export class ReferralService {
       throw new BadRequestException('Name is required');
     }
 
-    const phone = (dto.phone ?? dto.mobileNumber)?.trim();
-    if (!phone) {
+    const typedPhone = (dto.phone ?? dto.mobileNumber)?.trim();
+    if (!typedPhone) {
       throw new BadRequestException('Mobile number is required');
     }
+    const phone = requireIndianMobile(typedPhone, 'phone');
 
     const type = dto.type;
     if (!type) throw new BadRequestException("type is required and must be either 'individual' or 'business'");
@@ -101,6 +106,7 @@ export class ReferralService {
 
     if (!['kn', 'hi', 'en'].includes(dto.language)) throw new BadRequestException('language must be kn, hi, or en');
     if (!dto.whatsappPhone?.trim()) throw new BadRequestException('WhatsApp number is required');
+    const whatsappPhone = requireIndianMobile(dto.whatsappPhone, 'whatsappPhone');
     if (!dto.locality?.trim()) throw new BadRequestException('Locality is required');
     if (!/^\d{6}$/.test(dto.pincode ?? '')) throw new BadRequestException('A valid 6-digit pincode is required');
     if (!['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'].includes(dto.heardFrom)) {
@@ -131,8 +137,8 @@ export class ReferralService {
       throw new BadRequestException('Mobile number must pass OTP verification before registration');
     }
 
-    const existing = await this.prisma.referral.findUnique({
-      where: { phone },
+    const existing = await this.prisma.referral.findFirst({
+      where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
       throw new ConflictException({
@@ -158,7 +164,7 @@ export class ReferralService {
         phoneVerified: true,
         type,
         city: dto.city ?? 'Bengaluru',
-        whatsappPhone: dto.whatsappPhone.trim(),
+        whatsappPhone,
         language: dto.language,
         individualRole: type === 'individual' ? dto.individualRole : null,
         businessId: type === 'business' ? dto.businessId ?? null : null,

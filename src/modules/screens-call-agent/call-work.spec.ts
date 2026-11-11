@@ -248,6 +248,13 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
     const byFull = await request(app.getHttpServer()).get(`/search?q=${encodeURIComponent(nearRefund.phone)}`).set(auth).expect(200);
     expect(byFull.body.kind).toBe('phone');
     expect(byFull.body.results.some((r: { id: string }) => r.id === nearRefund.id)).toBe(true);
+    // Any spelling of the number finds the person saved as +91 and 10 digits.
+    const ten = nearRefund.phone.slice(-10);
+    for (const typed of [ten, `0${ten}`, `91${ten}`, `+91 ${ten.slice(0, 5)} ${ten.slice(5)}`]) {
+      const res = await request(app.getHttpServer()).get(`/search?q=${encodeURIComponent(typed)}`).set(auth).expect(200);
+      expect(res.body.kind).toBe('phone');
+      expect(res.body.results.some((r: { id: string }) => r.id === nearRefund.id)).toBe(true);
+    }
 
     const byCode = await request(app.getHttpServer()).get(`/search?q=${nearRefund.code.toLowerCase()}`).set(auth).expect(200);
     expect(byCode.body.results.map((r: { id: string }) => r.id)).toEqual([nearRefund.id]);
@@ -307,6 +314,23 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
         .get(`/call-work/incoming/${task.id}`)
         .set('Authorization', `Bearer ${tokenFor(idleAgent)}`)
         .expect(403);
+
+      // The phone system may send the caller as 0XXXXXXXXXX or 91XXXXXXXXXX: same person, same agent.
+      const ten = nearRefund.phone.slice(-10);
+      for (const [index, from] of [`0${ten}`, `91${ten}`].entries()) {
+        const spelledRaw = JSON.stringify({ CallSid: `cw-in-${stamp}-spelling-${index}`, From: from, To: '18001234567' });
+        const spelled = await request(app.getHttpServer())
+          .post('/telephony/inbound')
+          .set('Content-Type', 'application/json')
+          .set('x-telephony-signature', sign(spelledRaw))
+          .send(spelledRaw)
+          .expect(201);
+        expect(spelled.body.routedToStaffId).toBe(agent.id);
+        const spelledTask = await prisma.callbackTask.findUniqueOrThrow({ where: { callId: `cw-in-${stamp}-spelling-${index}` } });
+        expect(spelledTask).toMatchObject({ phone: nearRefund.phone, jobSeekerId: nearRefund.id, assignedToStaffId: agent.id });
+      }
+      const routedIncoming = mine.messages.filter((m) => m.type === 'incoming_call' && m.data.subjectId === nearRefund.id);
+      expect(routedIncoming).toHaveLength(3);
 
       // The calling company names the agent it rang (rule 1).
       const unknownRaw = JSON.stringify({ CallSid: `cw-unknown-${stamp}`, From: '+919000000017', agentCode: agent.code });

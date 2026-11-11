@@ -8,6 +8,8 @@ import { ConsentClock } from '../consent/consent-clock';
 import { tradeNameKey } from '../trade/trade.service';
 import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { BENGALURU_AREAS } from './bengaluru-areas';
+import { phoneSearchTerm } from '../../common/phone/indian-mobile';
+import { readPublicLinkPhone } from '../../common/public-link-store.service';
 
 /**
  * Read endpoints for the call agent console's registration screens
@@ -33,11 +35,6 @@ export function ageInYears(dateOfBirth: Date, now: Date): number {
   return age;
 }
 
-function phoneVariants(raw: string): string[] {
-  const digits = raw.replace(/\D/g, '');
-  const ten = digits.length === 12 && digits.startsWith('91') ? digits.slice(2) : digits;
-  return [...new Set([raw.trim(), ten, `91${ten}`, `+91${ten}`])];
-}
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
@@ -151,7 +148,7 @@ export class ScreensCallRegistrationService {
       registrationLinkExpiresAt: registration.registrationLinkExpiresAt,
       paymentOnlyLink: otherPayerLink
         ? {
-            payerPhone: otherPayerLink.phone,
+            payerPhone: readPublicLinkPhone(otherPayerLink.phone),
             relation: relationFrom(otherPayerLink.metadata),
             sentAt: otherPayerLink.createdAt,
             expiresAt: otherPayerLink.expiresAt,
@@ -277,10 +274,13 @@ export class ScreensCallRegistrationService {
   async findReferralPartner(query: string) {
     const q = (query ?? '').trim();
     if (!q) return null;
+    // A full number in any spelling (9876543210, +91 98765 43210, 09876543210) finds the
+    // partner saved as +919876543210.
+    const phoneTerm = phoneSearchTerm(q);
     const where = /^rf-/i.test(q)
       ? { code: q.toUpperCase() }
-      : /^\+?\d[\d\s-]{9,}$/.test(q)
-        ? { phone: { in: phoneVariants(q) } }
+      : phoneTerm?.kind === 'exact'
+        ? { phone: { in: phoneTerm.values } }
         : null;
     if (!where) return null;
     const partner = await this.prisma.referral.findFirst({ where, select: { id: true, code: true, name: true, phone: true } });
@@ -291,7 +291,7 @@ export class ScreensCallRegistrationService {
   async searchBusinesses(query: string, actor?: ScreenActor) {
     const q = (query ?? '').trim();
     if (q.length < 2) return [];
-    const digits = q.replace(/\D/g, '');
+    const phoneTerm = phoneSearchTerm(q);
     // A Team Lead reads only their own team's businesses (People and roles).
     const teamScope = actor?.role === 'team_lead'
       ? await this.teamScope(actor.id)
@@ -302,7 +302,9 @@ export class ScreensCallRegistrationService {
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
           { code: { equals: q.toUpperCase() } },
-          ...(digits.length >= 4 && digits.length === q.replace(/\s/g, '').length ? [{ phone: { endsWith: digits } }] : []),
+          // A full number in any spelling matches exactly; 4 or more bare digits match the end.
+          ...(phoneTerm?.kind === 'exact' ? [{ phone: { in: phoneTerm.values } }] : []),
+          ...(phoneTerm?.kind === 'suffix' ? [{ phone: { endsWith: phoneTerm.digits } }] : []),
         ],
       },
       orderBy: { name: 'asc' },

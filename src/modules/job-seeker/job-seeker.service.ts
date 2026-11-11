@@ -57,6 +57,12 @@ import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
 import { publicPageLink } from '../../common/public-pages';
+import {
+  mobileLookupValues,
+  optionalIndianMobile,
+  requireIndianMobile,
+  sameIndianMobile,
+} from '../../common/phone/indian-mobile';
 
 const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'name',
@@ -213,13 +219,13 @@ export class JobSeekerService {
       if (!referral) {
         throw new BadRequestException(`Referral partner with id '${dto.referredById}' does not exist`);
       }
-      if (referral.phone === phone) {
+      if (sameIndianMobile(referral.phone, phone)) {
         throw new BadRequestException('A referral partner cannot refer themselves');
       }
     }
 
-    const existing = await this.prisma.jobSeeker.findUnique({
-      where: { phone },
+    const existing = await this.prisma.jobSeeker.findFirst({
+      where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
       // Guide (Forms): a number already registered shows "Already registered — open it"
@@ -1241,6 +1247,14 @@ export class JobSeekerService {
         filteredDto[key] = value;
       }
     }
+    // Numbers are compared and saved as +91 and 10 digits, so "9876543210" for a
+    // saved "+919876543210" is no change (and needs no OTP).
+    if (typeof filteredDto.phone === 'string' && filteredDto.phone.trim()) {
+      filteredDto.phone = requireIndianMobile(filteredDto.phone, 'phone');
+    }
+    if ('whatsappPhone' in filteredDto) {
+      filteredDto.whatsappPhone = optionalIndianMobile(filteredDto.whatsappPhone, 'whatsappPhone');
+    }
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
@@ -1268,7 +1282,10 @@ export class JobSeekerService {
       if (!(await this.otpService.isVerified(otpRequestId, newPhone))) {
         throw new BadRequestException('The new mobile number must pass OTP verification before it is saved');
       }
-      const taken = await this.prisma.jobSeeker.findUnique({ where: { phone: newPhone }, select: { id: true, code: true } });
+      const taken = await this.prisma.jobSeeker.findFirst({
+        where: { phone: { in: mobileLookupValues(newPhone) }, id: { not: record.id as string } },
+        select: { id: true, code: true },
+      });
       if (taken && taken.id !== record.id) {
         throw new ConflictException({
           statusCode: 409,
@@ -1454,12 +1471,10 @@ export class JobSeekerService {
     if (relation !== undefined && relation !== null && !(PAYMENT_PAYER_RELATIONS as readonly string[]).includes(relation)) {
       throw new BadRequestException(`relation must be one of: ${PAYMENT_PAYER_RELATIONS.join(', ')}`);
     }
-    const phone = (recipientPhone ?? '').trim();
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length < 10 || digits.length > 15) throw new BadRequestException('A valid payment contact number is required');
+    const phone = requireIndianMobile(recipientPhone, 'phone');
     const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
     if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
-    if (digits === seeker.phone.replace(/\D/g, '')) {
+    if (sameIndianMobile(phone, seeker.phone)) {
       throw new BadRequestException('The payment-only link must use another number');
     }
     const payment = await this.prisma.payment.findFirst({

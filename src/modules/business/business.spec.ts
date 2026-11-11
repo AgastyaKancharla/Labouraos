@@ -103,26 +103,24 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
 
   afterAll(async () => {
     if (prisma) {
+      // Numbers are saved as +91 and 10 digits; clean up both spellings.
+      const typedPhones = [
+        `91${timestamp.toString().slice(-8)}`,
+        `92${timestamp.toString().slice(-8)}`,
+        `93${timestamp.toString().slice(-8)}`,
+        `94${timestamp.toString().slice(-8)}`,
+        `95${timestamp.toString().slice(-8)}`,
+        `96${timestamp.toString().slice(-8)}`,
+        `97${timestamp.toString().slice(-8)}`,
+        `98${timestamp.toString().slice(-8)}`,
+        `99${timestamp.toString().slice(-8)}`,
+        `90${timestamp.toString().slice(-8)}`,
+        `89${timestamp.toString().slice(-8)}`,
+        `75${timestamp.toString().slice(-8)}`,
+        `72${timestamp.toString().slice(-8)}`,
+      ];
       await prisma.business.deleteMany({
-        where: {
-          phone: {
-            in: [
-              `91${timestamp.toString().slice(-8)}`,
-              `92${timestamp.toString().slice(-8)}`,
-              `93${timestamp.toString().slice(-8)}`,
-              `94${timestamp.toString().slice(-8)}`,
-              `95${timestamp.toString().slice(-8)}`,
-              `96${timestamp.toString().slice(-8)}`,
-              `97${timestamp.toString().slice(-8)}`,
-              `98${timestamp.toString().slice(-8)}`,
-              `99${timestamp.toString().slice(-8)}`,
-              `90${timestamp.toString().slice(-8)}`,
-              `89${timestamp.toString().slice(-8)}`,
-              `75${timestamp.toString().slice(-8)}`,
-              `72${timestamp.toString().slice(-8)}`,
-            ],
-          },
-        },
+        where: { phone: { in: [...typedPhones, ...typedPhones.map((phone) => `+91${phone}`)] } },
       });
       await prisma.auditLog.deleteMany({
         where: {
@@ -219,7 +217,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(await prisma.tradeSuggestionSubject.count({ where: { subjectId: other.id } })).toBe(1);
     await prisma.tradeSuggestionSubject.deleteMany({ where: { subjectId: other.id } });
     await prisma.tradeSuggestion.deleteMany({ where: { typedName: `Banner tailor ${timestamp}` } });
-    expect(storedBranch?.contactPersonPhone).toBe(branchPhone);
+    expect(storedBranch?.contactPersonPhone).toBe(`+91${branchPhone}`);
     const duplicateOtp = await otpService.sendOtp(branchPhone, 'branch_contact', faKoramangalaId, 'field_agent');
     expect(duplicateOtp).toMatchObject({ alreadyRegistered: true, type: 'business', code: response.body.code });
   });
@@ -339,7 +337,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(res.body.locality).toBe('Koramangala');
     expect(res.body.phone).toBe(maskPhoneLast4(phone));
     const storedBusiness = await prisma.business.findUnique({ where: { id: res.body.id } });
-    expect(storedBusiness?.phone).toBe(phone);
+    expect(storedBusiness?.phone).toBe(`+91${phone}`);
     expect(res.body.additionalContactName).toBe('Ramesh Patel');
     expect(res.body.gstNumber).toBe('29ABCDE1234F1Z5');
     expect(res.body.phoneVerified).toBe(true);

@@ -16,6 +16,13 @@ describe('reading the search bar', () => {
     expect(parseSearchQuery('123')).toBeNull();
   });
 
+  it.each(['9876543210', '+919876543210', '+91 98765 43210', '919876543210', '09876543210', '98765-43210'])(
+    'reads the mobile typed as %j as the 10 digits of the saved +919876543210',
+    (typed) => {
+      expect(parseSearchQuery(typed)).toEqual({ kind: 'phone', digits: '9876543210' });
+    },
+  );
+
   it('reads anything else as a name, from 2 letters', () => {
     expect(parseSearchQuery('  Ramesh   Gowda ')).toEqual({ kind: 'name', name: 'Ramesh Gowda' });
     expect(parseSearchQuery('R')).toBeNull();

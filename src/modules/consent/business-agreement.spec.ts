@@ -44,6 +44,8 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
   let businessId: string;
   let ownerPhone: string;
   const suffix = randomUUID().replace(/-/g, '').slice(0, 10).toUpperCase();
+  // Mobile numbers must be +91 and 10 digits (no hex letters from the UUID).
+  const phoneDigits = `${String(Date.now()).slice(-4)}${String(Math.floor(Math.random() * 10000)).padStart(4, '0')}`;
 
   beforeAll(async () => {
     process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
@@ -81,7 +83,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     staffId = staff.id;
     agentToken = jwt.sign({ sub: staff.id, role: staff.role, code: staff.code, email: staff.email });
 
-    ownerPhone = `+9198${suffix.slice(0, 8)}`;
+    ownerPhone = `+9198${phoneDigits}`;
     const business = await prisma.business.create({
       data: {
         code: `BZ-AG-${suffix}`,

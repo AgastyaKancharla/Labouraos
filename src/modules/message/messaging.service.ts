@@ -12,6 +12,7 @@ import { canAdvanceMessageStatus } from './message-status';
 import { dltTemplateId, SMS_PROVIDER, SmsProvider } from './sms.provider';
 import { callStatusSignatureMatches } from '../call/call-signature';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
+import { normaliseIndianMobile } from '../../common/phone/indian-mobile';
 
 export interface SendMessageInput {
   channel: 'sms' | 'whatsapp';
@@ -50,7 +51,8 @@ export class MessagingService {
       },
     });
 
-    const phone = input.recipientPhone ?? await this.phoneFor(input.subjectType, input.subjectId);
+    // Sent to the one stored format (+91 and 10 digits); a WhatsApp send then carries the country code.
+    const phone = normaliseIndianMobile(input.recipientPhone ?? await this.phoneFor(input.subjectType, input.subjectId));
     if (!phone) {
       return this.mark(row.id, 'failed', null);
     }

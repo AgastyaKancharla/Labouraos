@@ -1,4 +1,5 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
+import { nationalMobileDigits } from '../phone/indian-mobile';
 import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 
 export interface OtpRecord {
@@ -19,9 +20,9 @@ const RESEND_WAIT_MS = 30_000;
 const MAX_RESENDS = 3;
 const MAX_WRONG_ATTEMPTS = 5;
 
+/** The 10 national digits: every spelling of one mobile is the same OTP owner. */
 function normalizePhone(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  return digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
+  return nationalMobileDigits(phone);
 }
 
 @Injectable()

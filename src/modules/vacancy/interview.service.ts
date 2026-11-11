@@ -28,6 +28,7 @@ import { BusinessVerificationService } from '../business/business-verification.s
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PlacementService } from '../placement/placement.service';
 import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
+import { sameIndianMobile } from '../../common/phone/indian-mobile';
 
 /** The fixed reasons an owner picks for "not selected" (P05). */
 export const NOT_SELECTED_REASONS = ['skills', 'experience', 'communication', 'salary_expectation', 'not_suitable', 'other'] as const;
@@ -693,7 +694,7 @@ export class InterviewService {
     const resultPhone = interview.vacancy.branchId
       ? (await this.prisma.businessBranch.findUnique({ where: { id: interview.vacancy.branchId } }))?.contactPersonPhone
       : interview.business.phone;
-    if (!resultPhone || resultPhone !== link.phone) {
+    if (!resultPhone || !sameIndianMobile(resultPhone, link.phone)) {
       throw new BadRequestException('The owner phone changed after this result link was issued');
     }
     const now = this.clock.now();

@@ -88,7 +88,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
   }
 
   it('allows business creation within geofence without setting geofenceFlag', async () => {
-    const phone = `93${timestamp.toString().slice(-8)}1`;
+    const phone = `9${timestamp.toString().slice(-8)}1`;
     const otpRequestId = await getVerifiedOtp(phone);
 
     const res = await request(app.getHttpServer())
@@ -122,7 +122,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
   });
 
   it('flags rather than blocks business creation when visit is outside geofence radius', async () => {
-    const phone = `93${timestamp.toString().slice(-8)}2`;
+    const phone = `9${timestamp.toString().slice(-8)}2`;
     const otpRequestId = await getVerifiedOtp(phone);
 
     const res = await request(app.getHttpServer())
@@ -166,7 +166,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const reusedHash = `hash-reused-${timestamp}`;
 
     // First business created with reusedHash
-    const phone1 = `93${timestamp.toString().slice(-8)}3`;
+    const phone1 = `9${timestamp.toString().slice(-8)}3`;
     const otp1 = await getVerifiedOtp(phone1);
 
     await request(app.getHttpServer())
@@ -184,7 +184,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .expect(201);
 
     // Second business attempted with the SAME selfieHash -> rejected
-    const phone2 = `93${timestamp.toString().slice(-8)}4`;
+    const phone2 = `9${timestamp.toString().slice(-8)}4`;
     const otp2 = await getVerifiedOtp(phone2);
 
     const res = await request(app.getHttpServer())
@@ -205,7 +205,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
   });
 
   it('handles post-creation visit recording with geofence check and duplicate detection', async () => {
-    const phone = `93${timestamp.toString().slice(-8)}5`;
+    const phone = `9${timestamp.toString().slice(-8)}5`;
     const otpRequestId = await getVerifiedOtp(phone);
 
     // Create business without visit
@@ -240,7 +240,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     expect(visitRes.body.geofenceFlag).toBe(true);
 
     // Reusing the same selfie on a different business visit -> rejected
-    const phoneOther = `93${timestamp.toString().slice(-8)}6`;
+    const phoneOther = `9${timestamp.toString().slice(-8)}6`;
     const otpOther = await getVerifiedOtp(phoneOther);
 
     const otherBizRes = await request(app.getHttpServer())
@@ -269,7 +269,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
   });
 
   it('rejects field agent recording a visit on a business in another area (403)', async () => {
-    const phone = `93${timestamp.toString().slice(-8)}7`;
+    const phone = `9${timestamp.toString().slice(-8)}7`;
     const otpRequestId = await getVerifiedOtp(phone);
 
     const bizRes = await request(app.getHttpServer())

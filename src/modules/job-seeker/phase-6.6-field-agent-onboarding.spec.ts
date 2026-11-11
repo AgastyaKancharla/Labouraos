@@ -285,7 +285,7 @@ describe('Phase 6.6 Task 2: Field Agent Candidate & Referral Onboarding', () => 
         .get(`/job-seekers/${createdSeekerId}`)
         .set('Authorization', `Bearer ${ceoToken}`);
       expect(ceoRes.status).toBe(200);
-      expect(ceoRes.body.phone).toBe(createdSeekerPhone);
+      expect(ceoRes.body.phone).toBe(`+91${createdSeekerPhone}`);
     });
 
     it('Field agent can create activation payment (POST /job-seekers/:id/activation-payment)', async () => {

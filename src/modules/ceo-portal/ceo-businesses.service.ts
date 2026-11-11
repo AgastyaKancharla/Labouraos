@@ -16,6 +16,7 @@ import {
   percent,
   sumPaise,
 } from './ceo-common';
+import { phoneSearchDigits } from '../../common/phone/indian-mobile';
 
 export interface ListQuery {
   range: Partial<DateRange>;
@@ -54,7 +55,7 @@ export class CeoBusinessesService {
     const created = dateFilter(q.range);
     if (created) and.push({ createdAt: created });
     if (q.search) {
-      const digits = q.search.replace(/\D/g, '');
+      const digits = phoneSearchDigits(q.search);
       and.push({
         OR: [
           { name: contains(q.search) },

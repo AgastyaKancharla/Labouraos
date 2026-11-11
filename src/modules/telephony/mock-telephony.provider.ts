@@ -8,6 +8,7 @@ import {
   TelephonyProvider,
 } from './telephony.interface';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { mobileLookupValues, normaliseIndianMobile, phoneLast4 } from '../../common/phone/indian-mobile';
 
 @Injectable()
 export class MockTelephonyProvider implements TelephonyProvider {
@@ -38,19 +39,15 @@ export class MockTelephonyProvider implements TelephonyProvider {
       : null;
 
     // Look up caller in JobSeeker pool by phone
+    // Every spelling of the caller's number matches the job seeker saved as +91 and 10 digits.
     const candidate = await this.prisma.jobSeeker.findFirst({
-      where: {
-        OR: [
-          { phone: event.callerPhone },
-          { phone: `+91${event.callerPhone.replace(/^\+91/, '')}` },
-        ],
-      },
+      where: { phone: { in: mobileLookupValues(event.callerPhone) } },
     });
 
     const task = await this.prisma.callbackTask.create({
       data: {
         callId: event.callId,
-        phone: event.callerPhone,
+        phone: normaliseIndianMobile(event.callerPhone),
         callerName: candidate?.name ?? null,
         jobSeekerId: candidate?.id ?? null,
         virtualNumber: event.virtualNumber ?? '18001234567',
@@ -61,7 +58,7 @@ export class MockTelephonyProvider implements TelephonyProvider {
     });
 
     this.logger.log(
-      `[MOCK TELEPHONY] Created callback task ${task.id} for phone ${event.callerPhone} (callId: ${event.callId})`,
+      `[MOCK TELEPHONY] Created callback task ${task.id} for phone ******${phoneLast4(event.callerPhone)} (callId: ${event.callId})`,
     );
 
     return {
