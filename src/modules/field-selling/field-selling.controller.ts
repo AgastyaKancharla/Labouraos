@@ -144,8 +144,9 @@ export class FieldSellingController {
 
   @Post('field-selling/vacancies/:id/favourites/:jobSeekerId')
   @RequireRoles(...SELLERS)
-  like(@Req() req: Req, @Param('id') id: string, @Param('jobSeekerId') jobSeekerId: string) {
-    return this.selling.setFavourite(actorOf(req), id, jobSeekerId, true);
+  like(@Req() req: Req, @Param('id') id: string, @Param('jobSeekerId') jobSeekerId: string, @Body() body?: { liked?: boolean }) {
+    // { liked: false } removes the heart (the phone's offline queue sends POST only).
+    return this.selling.setFavourite(actorOf(req), id, jobSeekerId, body?.liked !== false);
   }
 
   @Delete('field-selling/vacancies/:id/favourites/:jobSeekerId')

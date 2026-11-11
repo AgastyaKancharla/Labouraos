@@ -6,6 +6,7 @@ import { targetsApi } from './endpoints/targets';
 import { fieldWorkApi } from './endpoints/fieldWork';
 import { visitsApi } from './endpoints/visits';
 import { registrationApi } from './endpoints/registration';
+import { sellingApi } from './endpoints/selling';
 import { api as appApi } from './index';
 
 const ApiContext = createContext<ApiClient>(appApi);
@@ -33,6 +34,7 @@ export function useEndpoints() {
       fieldWork: fieldWorkApi(api),
       visits: visitsApi(api),
       registration: registrationApi(api),
+      selling: sellingApi(api),
     }),
     [api],
   );

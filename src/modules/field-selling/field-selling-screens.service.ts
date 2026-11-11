@@ -72,6 +72,8 @@ export class FieldSellingScreensService {
       callingHoursEnd: policy.callingHoursEnd,
       interviewResultDeadline: policy.interviewResultDeadline,
       placementPaymentDueHours: policy.placementPaymentDueHours,
+      maxFreeReplacements: policy.maxFreeReplacements,
+      replacementWindowDays: policy.replacementWindowDays,
       threeWayCalls: Boolean(this.telephony.supportsThreeWayCalls?.()),
       notSelectedReasons: NOT_SELECTED_REASONS,
     };

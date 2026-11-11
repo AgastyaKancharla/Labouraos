@@ -30,3 +30,35 @@ export const routes = {
 } as const;
 
 export type RoutePath = (typeof routes)[keyof typeof routes];
+
+const q = (params: Record<string, string | undefined>) => {
+  const parts = Object.entries(params)
+    .filter(([, v]) => v !== undefined && v !== '')
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v as string)}`);
+  return parts.length ? `?${parts.join('&')}` : '';
+};
+const e = encodeURIComponent;
+
+/**
+ * Laboura Field selling flow (FA10–FA19, FA11, FA14, FA18). The Job seekers
+ * and Vacancies flows live inside their tabs, so the tab bar stays visible.
+ */
+export const sellingRoutes = {
+  matches: (businessId: string, vacancyId?: string, view?: 'list' | 'map') => `/job-seekers/${e(businessId)}${q({ vacancyId, view })}`, // FA15b / FA15c
+  candidate: (jobSeekerId: string, vacancyId: string) => `/job-seekers/candidate/${e(jobSeekerId)}${q({ vacancyId })}`, // FA15d
+  call: (vacancyId: string, jobSeekerId: string) => `/job-seekers/call${q({ vacancyId, jobSeekerId })}`, // FA15e
+  owner: (interviewId: string) => `/job-seekers/interview/${e(interviewId)}/owner`, // FA15f
+  selected: (interviewId: string) => `/job-seekers/interview/${e(interviewId)}/selected`, // FA15s
+  booked: (interviewId: string) => `/job-seekers/interview/${e(interviewId)}/booked`, // FA15h
+  interviewDay: (interviewId: string) => `/job-seekers/interview/${e(interviewId)}/day`, // FA16
+  book: (vacancyId: string, jobSeekerId: string, fromInterviewId?: string) =>
+    `/job-seekers/book${q({ vacancyId, jobSeekerId, from: fromInterviewId })}`, // FA15g
+  paid: (placementId: string) => `/job-seekers/placement/${e(placementId)}`, // FA15q
+  noMore: (vacancyId: string, businessId: string) => `/job-seekers/no-more/${e(vacancyId)}${q({ businessId })}`, // FA15x
+  addVacancy: (businessId?: string) => `/vacancies/new${q({ businessId })}`, // FA17
+  confirmVacancy: (vacancyId: string) => `/vacancies/confirm/${e(vacancyId)}`, // FA17b
+  seekerSaved: (jobSeekerId: string) => `/job-seeker/${e(jobSeekerId)}/saved`, // FA10b
+  seekerProgress: (jobSeekerId: string) => `/job-seeker/${e(jobSeekerId)}`, // FA10c
+  joining: (placementId: string) => `/placement/${e(placementId)}/joining`, // FA11
+  callOwner: (businessId: string) => `/call-owner/${e(businessId)}`, // FA18
+} as const;
