@@ -4,7 +4,8 @@
   "description": "Laboura Staffing Marketplace API",
   "private": true,
   "scripts": {
-    "build": "nest build",
+    "build": "nest build && npm run web:install && npm run web:build",
+    "build:api": "nest build",
     "dev": "nest start --watch",
     "start": "nest start",
     "start:dev": "nest start --watch",
@@ -20,7 +21,12 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest --config ./test/jest-e2e.json",
     "test:load": "jest src/load-test.spec.ts --runInBand",
-    "seed": "NODE_ENV=development ts-node prisma/seed.ts"
+    "seed": "NODE_ENV=development ts-node prisma/seed.ts",
+    "web:install": "npm ci --prefix web --include=dev --no-audit --no-fund",
+    "web:dev": "npm run dev --prefix web",
+    "web:build": "npm run build --prefix web",
+    "web:test": "npm test --prefix web",
+    "web:lint": "npm run lint --prefix web"
   },
   "prisma": {
     "seed": "NODE_ENV=development ts-node prisma/seed.ts"
