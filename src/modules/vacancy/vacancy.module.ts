@@ -25,6 +25,6 @@ import { VacancyConfirmController } from './vacancy-confirm.controller';
   imports: [PrismaModule, IdModule, AuditModule, ReviewFlagModule, ConsentModule, JobSeekerModule, MessageModule, PricingModule, CallModule, BusinessVerificationModule, PlacementModule, TradeModule],
   controllers: [VacancyController, CandidateIntroductionController, InterviewController, VacancyConfirmController],
   providers: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],
-  exports: [VacancyService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],
+  exports: [VacancyService, MatchingService, CandidateIntroductionService, InterviewService, VacancyConfirmationService],
 })
 export class VacancyModule {}

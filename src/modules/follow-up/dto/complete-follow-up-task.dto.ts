@@ -1,8 +1,9 @@
-import { FollowUpAnswer } from '../follow-up.constants';
+import { FollowUpAnswer, RepeatBusinessAnswer } from '../follow-up.constants';
 
 export class CompleteFollowUpTaskDto {
   callRecordId!: string;
-  answer!: FollowUpAnswer;
+  /** A repeat-business task takes one of REPEAT_BUSINESS_ANSWERS; every other task one of FOLLOW_UP_ANSWERS. */
+  answer!: FollowUpAnswer | RepeatBusinessAnswer;
   answerBusinessId?: string;
   notes?: string;
   /**

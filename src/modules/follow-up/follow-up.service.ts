@@ -15,7 +15,12 @@ import { CandidateIntroductionService } from '../vacancy/candidate-introduction.
 import {
   ALLOWED_FOLLOW_UP_CALL_PURPOSES,
   FOLLOW_UP_ANSWERS,
+  FollowUpAnswer,
   FollowUpKind,
+  isRepeatBusinessKind,
+  REPEAT_BUSINESS_ANSWERS,
+  REPEAT_BUSINESS_CHECK_IN_DAYS,
+  RepeatBusinessAnswer,
 } from './follow-up.constants';
 import { CompleteFollowUpTaskDto } from './dto/complete-follow-up-task.dto';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
@@ -148,7 +153,13 @@ export class FollowUpService {
       );
     }
 
-    if (!FOLLOW_UP_ANSWERS.includes(dto.answer)) {
+    if (isRepeatBusinessKind(task.kind)) {
+      if (!REPEAT_BUSINESS_ANSWERS.includes(dto.answer as RepeatBusinessAnswer)) {
+        throw new BadRequestException(
+          `Invalid answer '${dto.answer}' for a repeat-business call; use one of ${REPEAT_BUSINESS_ANSWERS.join(', ')}`,
+        );
+      }
+    } else if (!FOLLOW_UP_ANSWERS.includes(dto.answer as FollowUpAnswer)) {
       throw new BadRequestException(`Invalid answer '${dto.answer}'`);
     }
     if (dto.foundOwnJob === true && (dto.answer !== 'working_elsewhere' || task.subjectType !== 'job_seeker')) {
@@ -481,6 +492,104 @@ export class FollowUpService {
       }
     }
 
+    created += await this.createRepeatBusinessTasks(now, policy);
+
     return { created, missed: missedResult.count };
+  }
+
+  /**
+   * N4 repeat-business reminders (confirmed 11 Nov). For the business's account agent
+   * (or whoever created the placement when the business has none):
+   * - day 30 after each employee joins (replacements included);
+   * - the day after the 60-day guarantee ends, once per guarantee (the first
+   *   employee's joining date starts it; replacements share the clock), only when
+   *   the guarantee ran its course: not ended early or refunded, and no worker in
+   *   the chain left and still unresolved.
+   * Idempotent: one task per kind per placement. A reminder whose grace period has
+   * already passed (for example a joining long before this feature) is not created.
+   */
+  private async createRepeatBusinessTasks(
+    now: Date,
+    policy: { followUpGraceDays: number; replacementWindowDays: number },
+  ): Promise<number> {
+    const dayMs = 24 * 60 * 60 * 1000;
+    const graceMs = policy.followUpGraceDays * dayMs;
+    const guaranteeCompleteDays = policy.replacementWindowDays + 1;
+    let created = 0;
+
+    const joined = await this.prisma.placement.findMany({
+      where: {
+        joinedDate: { not: null },
+        status: { in: ['confirmed', 'active', 'completed', 'replaced'] },
+      },
+      include: { business: true },
+    });
+
+    for (const placement of joined) {
+      const joinedDate = placement.joinedDate!;
+      const elapsedMs = now.getTime() - joinedDate.getTime();
+      const assignedStaffId = placement.business?.accountAgentId ?? placement.createdByStaffId ?? null;
+
+      const day30Due = new Date(joinedDate.getTime() + REPEAT_BUSINESS_CHECK_IN_DAYS * dayMs);
+      if (
+        ['confirmed', 'active', 'completed'].includes(placement.status) &&
+        elapsedMs >= REPEAT_BUSINESS_CHECK_IN_DAYS * dayMs &&
+        now.getTime() <= day30Due.getTime() + graceMs
+      ) {
+        if (await this.createRepeatTaskOnce('repeat_business_day_30', placement, day30Due, assignedStaffId)) {
+          created++;
+        }
+      }
+
+      const isRoot = !placement.rootPlacementId || placement.rootPlacementId === placement.id;
+      const day61Due = new Date(joinedDate.getTime() + guaranteeCompleteDays * dayMs);
+      if (
+        isRoot &&
+        !placement.guaranteeEndedReason &&
+        elapsedMs >= guaranteeCompleteDays * dayMs &&
+        now.getTime() <= day61Due.getTime() + graceMs
+      ) {
+        const unresolved = await this.prisma.placement.findFirst({
+          where: {
+            OR: [{ id: placement.id }, { rootPlacementId: placement.id }],
+            status: { in: ['dropped_out', 'guarantee_ended'] },
+          },
+          select: { id: true },
+        });
+        if (!unresolved && (await this.createRepeatTaskOnce('repeat_business_day_61', placement, day61Due, assignedStaffId))) {
+          created++;
+        }
+      }
+    }
+
+    return created;
+  }
+
+  private async createRepeatTaskOnce(
+    kind: 'repeat_business_day_30' | 'repeat_business_day_61',
+    placement: { id: string; businessId: string },
+    dueAt: Date,
+    assignedStaffId: string | null,
+  ): Promise<boolean> {
+    const existing = await this.prisma.followUpTask.findFirst({
+      where: { kind, relatedType: 'placement', relatedId: placement.id },
+      select: { id: true },
+    });
+    if (existing) return false;
+    const code = await this.idService.generateCode('follow_up_task');
+    await this.prisma.followUpTask.create({
+      data: {
+        code,
+        kind,
+        subjectType: 'business',
+        subjectId: placement.businessId,
+        relatedType: 'placement',
+        relatedId: placement.id,
+        dueAt,
+        assignedStaffId,
+        status: 'pending',
+      },
+    });
+    return true;
   }
 }

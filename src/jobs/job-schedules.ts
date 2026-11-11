@@ -28,6 +28,10 @@ export const DAILY_JOB_PATTERNS = {
   retentionCleanup: '0 2 * * *',
   /** Before the working day, so agents see today's follow-up tasks at login. */
   followUp: '0 6 * * *',
+  /** N3: after the follow-ups, so Team Leads see today's shortage tasks at login. */
+  shortageTasks: '15 6 * * *',
+  /** N5: the win-back call list is ready before calling starts at 9 AM. */
+  winBack: '30 6 * * *',
 } as const;
 
 export type DailyJobName = keyof typeof DAILY_JOB_PATTERNS;
