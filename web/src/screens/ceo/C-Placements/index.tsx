@@ -36,7 +36,7 @@ interface Summary {
   working: number;
   joinedThisMonth: number;
   inReplacementSearch: number;
-  clockPaused: number;
+  pausedAfterRejections: number;
   cleared: number;
   stillWorkingAtDay60Percent: number;
   feePercent: number;
@@ -93,7 +93,7 @@ export default function PlacementsList() {
         <StatTile label="Working now" value={s?.working ?? '—'} tone="navy" loading={loading} />
         <StatTile label="Joined this month" value={s?.joinedThisMonth ?? '—'} tone="good" loading={loading} />
         <StatTile label="In replacement search" value={s?.inReplacementSearch ?? '—'} tone="orange" loading={loading} to={to('C-Claims')} />
-        <StatTile label="Clock paused" value={s?.clockPaused ?? '—'} tone="red" loading={loading} />
+        <StatTile label="Clock paused" value={s?.pausedAfterRejections ?? '—'} tone="red" loading={loading} />
         <StatTile label="Cleared the 60-day guarantee" value={s?.cleared ?? '—'} tone="cyan" loading={loading} />
         <StatTile label="Still working at day 60" value={s ? `${s.stillWorkingAtDay60Percent}%` : '—'} tone="good" loading={loading} />
       </StatGrid>

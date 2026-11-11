@@ -112,7 +112,7 @@ export class CeoPlacementsService {
         working,
         joinedThisMonth,
         inReplacementSearch: inSearch.length,
-        clockPaused: paused,
+        pausedAfterRejections: paused,
         cleared,
         stillWorkingAtDay60Percent: percent(stillWorking60, reachedDay60),
         feePercent: policy.placementFeePercent,

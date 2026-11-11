@@ -240,7 +240,7 @@ export class CeoJobSeekersService {
         payments: { orderBy: { createdAt: 'desc' } },
         interviews: {
           orderBy: { offerSentAt: 'desc' },
-          include: { business: { select: { id: true, code: true, name: true, locality: true } }, vacancy: { select: { code: true, tradeSkill: true } } },
+          include: { business: { select: { id: true, code: true, name: true, locality: true } }, vacancy: true },
         },
         placements: { orderBy: { createdAt: 'desc' }, include: { business: { select: { id: true, name: true, code: true } } } },
       },

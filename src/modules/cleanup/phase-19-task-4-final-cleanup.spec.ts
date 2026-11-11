@@ -92,10 +92,10 @@ describe('Phase 19 Task 4: The final clean-up — removing the old columns', () 
       expect(block).not.toMatch(/^\s*registeredDeviceId\s+/m);
     });
 
-    it('Placement does not contain clockPaused, clockPausedAt, replacementRejectionCount, or eligibility', () => {
+    it('Placement does not contain guaranteePaused, guaranteePausedAt, replacementRejectionCount, or eligibility', () => {
       const block = getModelBlock('Placement');
-      expect(block).not.toMatch(/^\s*clockPaused\s+/m);
-      expect(block).not.toMatch(/^\s*clockPausedAt\s+/m);
+      expect(block).not.toMatch(/^\s*guaranteePaused\s+/m);
+      expect(block).not.toMatch(/^\s*guaranteePausedAt\s+/m);
       expect(block).not.toMatch(/^\s*replacementRejectionCount\s+/m);
       expect(block).not.toMatch(/^\s*eligibility\s+/m);
       expect(block).not.toMatch(/@@index\(\[status,\s*eligibility\]\)/);
@@ -168,8 +168,8 @@ describe('Phase 19 Task 4: The final clean-up — removing the old columns', () 
       expect(content).toContain('DROP COLUMN IF EXISTS "registeredDeviceId"');
 
       // Placement drops
-      expect(content).toContain('DROP COLUMN IF EXISTS "clockPaused"');
-      expect(content).toContain('DROP COLUMN IF EXISTS "clockPausedAt"');
+      expect(content).toContain('DROP COLUMN IF EXISTS "guaranteePaused"');
+      expect(content).toContain('DROP COLUMN IF EXISTS "guaranteePausedAt"');
       expect(content).toContain('DROP COLUMN IF EXISTS "replacementRejectionCount"');
       expect(content).toContain('DROP COLUMN IF EXISTS "eligibility"');
       expect(content).toContain('DROP INDEX IF EXISTS "Placement_status_eligibility_idx"');
@@ -204,8 +204,8 @@ describe('Phase 19 Task 4: The final clean-up — removing the old columns', () 
 
     it('no application source references unique dropped column names', () => {
       const uniqueDropped = [
-        'clockPaused',
-        'clockPausedAt',
+        'guaranteePaused',
+        'guaranteePausedAt',
         'replacementRejectionCount',
         'offeredSalary',
         'payoutAttempts',
@@ -338,7 +338,7 @@ describe('Phase 19 Task 4: The final clean-up — removing the old columns', () 
       });
       createdVacancyIds.push(vacancy.id);
 
-      // Create Placement keeping dropoutReportedAt, dropoutDateCallerSupplied, without clockPaused, replacementRejectionCount, eligibility
+      // Create Placement keeping dropoutReportedAt, dropoutDateCallerSupplied, without guaranteePaused, replacementRejectionCount, eligibility
       const placement = await prisma.placement.create({
         data: {
           code: `PL-T4-${ts}`,

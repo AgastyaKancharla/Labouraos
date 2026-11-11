@@ -470,11 +470,11 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
       expect(result.ineligibleReason).toContain('Guarantee ended without refund: two_rejections');
     });
 
-    it('does not read deprecated columns: clockPaused, replacementRejectionCount, eligibility', () => {
+    it('does not read deprecated columns: guaranteePaused, replacementRejectionCount, eligibility', () => {
       const claimAcceptedAt = new Date('2026-10-20T10:00:00.000Z');
       const day16 = new Date('2026-11-05T10:00:00.000Z');
 
-      // Even if clockPaused=true was historically passed, day 16 remains eligible
+      // Even if guaranteePaused=true was historically passed, day 16 remains eligible
       const result = evaluatePlacementRefundEligibility(
         {
           code: 'PL-00001',

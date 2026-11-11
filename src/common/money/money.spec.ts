@@ -217,7 +217,7 @@ describe('Money Module', () => {
     });
 
     it('proves a paused clock does not extend the 60-day replacement guarantee window', () => {
-      // Placement clockPaused applies to the 15-day candidate search window after dropout,
+      // Placement guaranteePaused applies to the 15-day candidate search window after dropout,
       // never extending the initial 60-day guarantee from joinedDate.
       const day61WithPriorPause = new Date(joinedDate.getTime() + 61 * 24 * 60 * 60 * 1000);
       expect(isWithinReplacementGuarantee(joinedDate, day61WithPriorPause)).toBe(false);
