@@ -232,6 +232,7 @@ Remove the default value for `JWT_SECRET`. If it is missing or shorter than 32 c
 | drivingLicenceType, ownVehicle, policeVerified, hasSmartphone | **new**, optional |
 | cvStoragePath, keySkills[], qualification, currentSalaryPaise | **new**, white-collar, optional |
 | pausedAt | **new** — consent withdrawn |
+| foundOwnJobAt | **new** (Master Guide 9 Nov) — he found a job on his own: status `closed`, no ₹499 refund; he comes back by paying ₹499 again |
 | anonymisedAt | replaces `erasedAt` meaning (§13) |
 | tradeSkill | **deprecated** — moves to `JobSeekerTrade` |
 | kycStatus, kycReference | **deprecated** — move to `IdentityVerification` |
@@ -265,9 +266,10 @@ Profile completeness is computed on read from the optional fields; not stored.
 | reason | closed list: `no_pickup`, `offer_declined`, `offer_no_reply`, `interview_no_show` (replaces `offer_rejected`) |
 | interviewId | **new** — the offer or interview it came from |
 | callRecordId | **new** — the recording that backs it |
-| reversedAt, reversedByStaffId, reversalReason | **new** — team lead reversal; raises a `hit_reversed` ReviewFlag to CEO and Manager |
+| reversedAt, reversedByStaffId, reversalReason | **new** — team lead reversal; raises a `hit_reversed` ReviewFlag to CEO and Manager. A Team Lead reverses only for job seekers registered by their own team; a third reversal on one job seeker goes to the Manager (`hit_reversal_needs_manager` flag) |
+| supersededAt | **new** — set on every earlier hit when he pays ₹499 again after deactivation: the hits and the 30-day clock start fresh |
 
-A reversed hit doesn't count towards `maxHits` or refund rules. **Any** non-reversed hit of kind `offer_declined`, `offer_no_reply` or `interview_no_show` ends the refund (change 13).
+A reversed or superseded hit doesn't count towards `maxHits`, refund rules or matching. `no_pickup` hits come only from the automated sweep, never from staff. **Any** non-reversed hit of kind `offer_declined`, `offer_no_reply` or `interview_no_show` ends the refund (change 13).
 
 ### `ContactAttempt` — changes
 Kept for the 3-hit no-pickup rule, but **created only by the system**: from a `CallRecord` webhook (calls) or a `MessageLog` send (WhatsApp/SMS). New columns `callRecordId`, `messageLogId`. The agent endpoint that types `picked_up`/`no_pickup` is removed (change 9).
@@ -301,7 +303,10 @@ Kept for the 3-hit no-pickup rule, but **created only by the system**: from a `C
 | area | **deprecated** |
 | selfieUrl / selfieHash | moved to `BusinessVisit` only |
 
-Rule: no candidate is shown to a business unless `verificationStatus = verified`.
+| inPersonOnboardedAt | **new** (Master Guide 9 Nov) — field agent registered it at the shop: GPS-checked visit, storefront photo and agreement signed by OTP; it moves to `pending_tl_check` and may be shown candidates straight away |
+| pausedAt, pausedByStaffId, pauseReason | **new** — a Team Lead (own team) or above paused it: no matching and no new interviews until unpaused |
+
+Rule: no candidate is shown to a business unless `verificationStatus = verified`, or it is `pending_tl_check` with `inPersonOnboardedAt` set — and never while `pausedAt` is set. A second business with the same GST or licence number (licence, Shop & Establishment, Udyam, FSSAI) or the same phone is refused with 409 and the existing `BZ-` code ("Already registered — open it").
 
 ### `BusinessAgreement` — new
 `businessId`, `version`, `termsHash`, `noBypassMonths`, `noBypassPenaltyPercent`, `feePercent`, `signedName`, `signedPhone` (masked copy), `otpRequestId`, `signedAt`, `documentStoragePath`. A business can't be `verified` without a signed agreement.

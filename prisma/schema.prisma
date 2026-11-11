@@ -85,7 +85,7 @@ model JobSeeker {
   maxSalary                 Int         // paise
   preferredCallWindowStart  String      // "09:00" IST
   preferredCallWindowEnd    String      // "21:00" IST
-  status                    String      @default("lead") // lead, consented, pending_activation, active, paused, deactivated, placed
+  status                    String      @default("lead") // lead, consented, pending_activation, active, paused, deactivated, placed, closed
   hitCount                  Int         @default(0)
   referredById              String?
   referredBy                Referral?   @relation(fields: [referredById], references: [id], onDelete: SetNull)
@@ -147,6 +147,9 @@ model JobSeeker {
   qualification             String?
   currentSalaryPaise        Int?
   pausedAt                  DateTime?
+  /// When staff recorded that he found a job on his own (not through Laboura).
+  /// The profile is closed (status "closed") and the ₹499 refund is blocked.
+  foundOwnJobAt             DateTime?
 
   @@index([city])
   @@index([status])
@@ -362,6 +365,16 @@ model Business {
   leadCreatedByStaffId     String?
   leadChannel              String?
   locality                 String?
+  /// Set when the field agent who registered the business at the shop has
+  /// the GPS-checked visit, the storefront photo and the agreement signed by
+  /// OTP. Candidates and interviews are then allowed the same day, before the
+  /// Team Lead's review (Master Guide, decided 9 Nov).
+  inPersonOnboardedAt      DateTime?
+  /// A Team Lead (or above) paused the business: no matching and no new
+  /// interviews until it is unpaused.
+  pausedAt                 DateTime?
+  pausedByStaffId          String?
+  pauseReason              String?
   branches      BusinessBranch[]
   vacancies     Vacancy[]
   placements    Placement[]
@@ -889,6 +902,9 @@ model JobSeekerHit {
   reversedByStaffId String?
   reversedByStaff   Staff?           @relation("JobSeekerHitReversedBy", fields: [reversedByStaffId], references: [id], onDelete: SetNull)
   reversalReason    String?
+  /// Set when he paid ₹499 again after deactivation: hits from the earlier
+  /// guarantee no longer count towards hits, the refund or matching.
+  supersededAt      DateTime?
   contactAttempts   ContactAttempt[]
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
@@ -897,6 +913,7 @@ model JobSeekerHit {
   @@index([recordedAt])
   @@index([jobSeekerId, reason])
   @@index([reversedAt])
+  @@index([jobSeekerId, supersededAt])
 }
 
 model BusinessVisit {
