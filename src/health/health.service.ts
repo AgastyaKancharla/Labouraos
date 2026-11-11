@@ -1,7 +1,21 @@
 import { Injectable, Logger } from '@nestjs/common';
 import * as net from 'node:net';
 import * as tls from 'node:tls';
+import Redis from 'ioredis';
 import { PrismaService } from '../common/prisma/prisma.service';
+import {
+  redisClientOptions,
+  WORKER_HEARTBEAT_CHECK_SETTING,
+  WORKER_HEARTBEAT_KEY,
+  WorkerHeartbeatValue,
+} from '../common/redis/worker-heartbeat';
+
+export interface WorkerHeartbeatStatus {
+  status: 'alive' | 'missing' | 'unreachable';
+  lastBeatAt: string | null;
+  secondsAgo: number | null;
+  error?: string;
+}
 
 export interface ReadinessCheckResult {
   ready: boolean;
@@ -12,6 +26,12 @@ export interface ReadinessCheckResult {
     hoursElapsed: number | null;
     lastCompletedAt: string | null;
   };
+  worker?: WorkerHeartbeatStatus;
+}
+
+/** True when this process should treat a missing worker heartbeat as not ready. */
+export function workerHeartbeatCheckEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[WORKER_HEARTBEAT_CHECK_SETTING] === 'true';
 }
 
 @Injectable()
@@ -24,10 +44,12 @@ export class HealthService {
     const failed: string[] = [];
     const errors: Record<string, string> = {};
 
-    const [dbResult, redisResult, sweep] = await Promise.all([
+    const checkWorker = workerHeartbeatCheckEnabled();
+    const [dbResult, redisResult, sweep, worker] = await Promise.all([
       this.checkDatabase(timeoutMs),
       this.checkRedis(timeoutMs),
       this.checkSweepInfo(),
+      checkWorker ? this.checkWorkerHeartbeat(timeoutMs) : Promise.resolve(undefined),
     ]);
 
     if (!dbResult.healthy) {
@@ -40,12 +62,70 @@ export class HealthService {
       errors.redis = redisResult.error ?? 'Redis connection failed or timed out';
     }
 
+    if (worker && worker.status !== 'alive') {
+      failed.push('worker');
+      errors.worker =
+        worker.status === 'missing'
+          ? 'No heartbeat from the background worker in the last 2 minutes'
+          : `Could not read the worker heartbeat: ${worker.error ?? 'Redis unreachable'}`;
+    }
+
     return {
       ready: failed.length === 0,
       failed,
       errors,
       sweep,
+      ...(worker ? { worker } : {}),
     };
+  }
+
+  /** Reads the heartbeat the worker writes to Redis every 30 seconds. */
+  async checkWorkerHeartbeat(
+    timeoutMs = 2000,
+    now: Date = new Date(),
+  ): Promise<WorkerHeartbeatStatus> {
+    const client = new Redis({
+      ...redisClientOptions(),
+      connectTimeout: timeoutMs,
+      lazyConnect: true,
+      maxRetriesPerRequest: 0,
+      retryStrategy: () => null,
+    });
+    client.on('error', () => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const raw = await Promise.race([
+        client.connect().then(() => client.get(WORKER_HEARTBEAT_KEY)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Redis did not answer within ${timeoutMs}ms`)),
+            timeoutMs,
+          );
+        }),
+      ]);
+      if (!raw) {
+        return { status: 'missing', lastBeatAt: null, secondsAgo: null };
+      }
+      let lastBeatAt: string | null = null;
+      try {
+        lastBeatAt = (JSON.parse(raw) as WorkerHeartbeatValue).at ?? null;
+      } catch {
+        lastBeatAt = null;
+      }
+      const beatMs = lastBeatAt ? Date.parse(lastBeatAt) : NaN;
+      return {
+        status: 'alive',
+        lastBeatAt,
+        secondsAgo: Number.isNaN(beatMs) ? null : Math.max(0, Math.round((now.getTime() - beatMs) / 1000)),
+      };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Readiness worker heartbeat check failed: ${msg}`);
+      return { status: 'unreachable', lastBeatAt: null, secondsAgo: null, error: msg };
+    } finally {
+      if (timer) clearTimeout(timer);
+      client.disconnect();
+    }
   }
 
   async checkSweepInfo(): Promise<

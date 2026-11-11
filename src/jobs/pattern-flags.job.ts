@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { PatternFlagService, PatternFlagResults } from '../modules/review-flag/pattern-flag.service';
+import { dailyInIndia } from './job-schedules';
 
 export const PATTERN_FLAGS_QUEUE = 'pattern-flags';
 export const PATTERN_FLAGS_SWEEP = 'daily-pattern-flags';
@@ -47,7 +48,7 @@ export class PatternFlagsJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'daily-pattern-flags-scheduler',
-      { every: 86_400_000 },
+      dailyInIndia('patternFlags'),
       {
         name: PATTERN_FLAGS_SWEEP,
         opts: {
@@ -79,11 +80,15 @@ export class PatternFlagsJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Only the worker process runs jobs and registers schedulers. The web
+    // process may still build the queue on demand to enqueue a manual run.
+    if (process.env.PROCESS_ROLE !== 'worker') return;
     try {
-      this.getWorker();
       await this.schedule();
+      this.getWorker();
     } catch (error) {
       this.logger.warn(`Could not initialize PatternFlagsJob BullMQ worker: ${(error as Error).message}`);
+      await this.onModuleDestroy();
     }
   }
 

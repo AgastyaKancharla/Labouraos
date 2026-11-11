@@ -25,7 +25,7 @@ describe('Placement completion deadline scheduler', () => {
     await job.onModuleInit();
     expect(upsertJobScheduler).toHaveBeenCalledWith(
       'daily-placement-completion-scheduler',
-      { every: 86_400_000 },
+      { pattern: '15 0 * * *', tz: 'Asia/Kolkata' },
       { name: PLACEMENT_COMPLETION_SWEEP },
     );
     expect(getWorker).toHaveBeenCalledTimes(1);

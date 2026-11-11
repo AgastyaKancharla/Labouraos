@@ -12,6 +12,13 @@ export interface AlertPayload {
   metadata?: Record<string, unknown>;
 }
 
+/**
+ * How many recent alerts are kept in memory for tests and the system status
+ * screen. The process runs for weeks, so the list is trimmed to the newest
+ * ones instead of growing for ever.
+ */
+export const MAX_KEPT_ALERTS = 200;
+
 @Injectable()
 export class AlertService {
   private readonly logger = new Logger(AlertService.name);
@@ -48,6 +55,9 @@ export class AlertService {
     };
 
     this.dispatchedAlerts.push(alert);
+    if (this.dispatchedAlerts.length > MAX_KEPT_ALERTS) {
+      this.dispatchedAlerts.splice(0, this.dispatchedAlerts.length - MAX_KEPT_ALERTS);
+    }
 
     if (!this.webhookUrl) {
       this.logger.warn(

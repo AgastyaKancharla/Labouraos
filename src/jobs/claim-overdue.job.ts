@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { PlacementService } from '../modules/placement/placement.service';
+import { dailyInIndia } from './job-schedules';
 
 export const CLAIM_OVERDUE_QUEUE = 'claim-overdue';
 export const CLAIM_OVERDUE_SWEEP = 'daily-claim-overdue';
@@ -47,7 +48,7 @@ export class ClaimOverdueJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'daily-claim-overdue-scheduler',
-      { every: 86_400_000 },
+      dailyInIndia('claimOverdue'),
       {
         name: CLAIM_OVERDUE_SWEEP,
         opts: {
@@ -66,11 +67,15 @@ export class ClaimOverdueJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Only the worker process runs jobs and registers schedulers. The web
+    // process may still build the queue on demand to enqueue a manual run.
+    if (process.env.PROCESS_ROLE !== 'worker') return;
     try {
-      this.getWorker();
       await this.schedule();
+      this.getWorker();
     } catch (error) {
       this.logger.warn(`Could not initialize ClaimOverdueJob BullMQ worker: ${(error as Error).message}`);
+      await this.onModuleDestroy();
     }
   }
 

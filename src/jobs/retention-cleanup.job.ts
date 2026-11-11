@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { RetentionService, RetentionSummary } from '../modules/retention/retention.service';
+import { dailyInIndia } from './job-schedules';
 
 export const RETENTION_CLEANUP_QUEUE = 'retention-cleanup';
 export const RETENTION_CLEANUP_SWEEP = 'daily-retention-cleanup';
@@ -49,7 +50,7 @@ export class RetentionCleanupJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'daily-retention-cleanup-scheduler',
-      { every: 86_400_000 },
+      dailyInIndia('retentionCleanup'),
       { name: RETENTION_CLEANUP_SWEEP },
     );
   }

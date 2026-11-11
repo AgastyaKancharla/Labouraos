@@ -2,9 +2,11 @@ import { NestFactory } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { StructuredLogger } from './common/observability/structured-logger.service';
 import { getPublicAppUrl } from './common/public-link';
+import { assertDurableUploadStorage } from './common/storage/durable-storage';
 
 export async function bootstrapWorker() {
   getPublicAppUrl();
+  assertDurableUploadStorage();
   process.env.PROCESS_ROLE = 'worker';
 
   const logger = new StructuredLogger('WorkerBootstrap');
@@ -26,5 +28,11 @@ export async function bootstrapWorker() {
 }
 
 if (require.main === module) {
-  void bootstrapWorker();
+  bootstrapWorker().catch((error: unknown) => {
+    // Exit so Render shows the worker as failed and restarts it, instead of a
+    // process that stays up while running no background job.
+    const message = error instanceof Error ? error.stack ?? error.message : String(error);
+    new StructuredLogger('WorkerBootstrap').error(`Worker failed to start: ${message}`, undefined, 'WorkerBootstrap');
+    process.exit(1);
+  });
 }

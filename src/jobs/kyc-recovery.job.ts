@@ -1,6 +1,7 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
 import { KycRecoveryService } from '../common/kyc/kyc-recovery.service';
+import { INTERVAL_JOB_MS } from './job-schedules';
 
 export const KYC_RECOVERY_QUEUE = 'kyc-recovery';
 export const KYC_RECOVERY_SWEEP = 'probe-id-check-recovery';
@@ -43,7 +44,7 @@ export class KycRecoveryJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'kyc-recovery-scheduler',
-      { every: 15 * 60 * 1000 },
+      { every: INTERVAL_JOB_MS.kycRecovery },
       { name: KYC_RECOVERY_SWEEP },
     );
   }

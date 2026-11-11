@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Queue, Worker } from 'bullmq';
 import { InterviewService } from '../modules/vacancy/interview.service';
 import { PlacementService } from '../modules/placement/placement.service';
+import { INTERVAL_JOB_MS } from './job-schedules';
 
 export const INTERVIEW_REPLY_QUEUE = 'interview-reply-deadlines';
 export const INTERVIEW_REPLY_SWEEP = 'process-due-interview-replies';
@@ -51,7 +52,7 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
   async schedule(): Promise<void> {
     await this.getQueue().upsertJobScheduler(
       'interview-reply-deadline-scheduler',
-      { every: 60_000 },
+      { every: INTERVAL_JOB_MS.interviewReply },
       { name: INTERVIEW_REPLY_SWEEP },
     );
   }
