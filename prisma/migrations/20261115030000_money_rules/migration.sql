@@ -33,6 +33,10 @@ CREATE TABLE "TdsReceivable" (
     CONSTRAINT "TdsReceivable_pkey" PRIMARY KEY ("id")
 );
 
+-- Supabase exposes public tables through its REST API; RLS with no policies hides
+-- this one there while Prisma (the owner) keeps full access.
+ALTER TABLE "TdsReceivable" ENABLE ROW LEVEL SECURITY;
+
 CREATE UNIQUE INDEX "TdsReceivable_paymentId_key" ON "TdsReceivable"("paymentId");
 CREATE UNIQUE INDEX "TdsReceivable_bankCreditId_key" ON "TdsReceivable"("bankCreditId");
 CREATE INDEX "TdsReceivable_placementId_idx" ON "TdsReceivable"("placementId");
