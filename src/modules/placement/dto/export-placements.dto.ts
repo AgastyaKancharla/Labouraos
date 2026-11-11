@@ -33,7 +33,9 @@ export function formatPlacementsCsv(
     'Candidate Code',
     'Employer Code',
     'Employer Name',
-    ...(includeMoney ? ['Monthly Salary (INR)', 'Placement Fee (INR)'] : []),
+    // The employee's salary is a job detail every role may see; the fee is company money.
+    'Monthly Salary (INR)',
+    ...(includeMoney ? ['Placement Fee (INR)'] : []),
     'Status',
     'Locality',
     'City',
@@ -58,9 +60,8 @@ export function formatPlacementsCsv(
       escapeCsv(row.candidateCode),
       escapeCsv(row.employerCode),
       escapeCsv(row.employerName),
-      ...(includeMoney
-        ? [escapeCsv(row.monthlySalaryINR), escapeCsv(row.placementFeeINR)]
-        : []),
+      escapeCsv(row.monthlySalaryINR),
+      ...(includeMoney ? [escapeCsv(row.placementFeeINR)] : []),
       escapeCsv(row.status),
       escapeCsv(row.locality),
       escapeCsv(row.city),

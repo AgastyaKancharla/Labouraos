@@ -5,7 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { isMoneyKey } from './money-visibility';
+import { isJobSalaryKey, isMoneyKey } from './money-visibility';
 import { FULL_PHONE_VIEW_ACTION, FULL_PHONE_VIEW_ENTITY } from './pii-masking.interceptor';
 import { receiptToken } from '../../modules/payment/receipt-link';
 
@@ -21,7 +21,7 @@ function moneyKeysIn(value: unknown, path = '$', found: string[] = []): string[]
     value.forEach((item, index) => moneyKeysIn(item, `${path}[${index}]`, found));
   } else if (value && typeof value === 'object') {
     for (const [key, child] of Object.entries(value as Record<string, unknown>)) {
-      if (isMoneyKey(key)) found.push(`${path}.${key}`);
+      if (isMoneyKey(key) && !isJobSalaryKey(key)) found.push(`${path}.${key}`);
       moneyKeysIn(child, `${path}.${key}`, found);
     }
   }
@@ -191,6 +191,9 @@ describe('Access matches the Master Guide (Managers, CEO, audit, receipts)', () 
         .expect(200);
       expect(mgrSeeker.body.code).toBe(seeker.code);
       expect(moneyKeysIn(mgrSeeker.body)).toEqual([]);
+      // Job-related salary is a work detail a Manager sees (decided 11 Nov).
+      expect(mgrSeeker.body.minSalary).toBe(1500000);
+      expect(mgrSeeker.body.maxSalary).toBe(2000000);
 
       const mgrRisk = await request(server())
         .get('/targets/money-at-risk')
@@ -213,14 +216,14 @@ describe('Access matches the Master Guide (Managers, CEO, audit, receipts)', () 
       expect(ceoSeeker.body.minSalary).toBe(1500000);
     });
 
-    it('leaves the salary and fee columns out of a Manager export', async () => {
+    it('keeps the salary column but leaves the fee out of a Manager export', async () => {
       const mgrCsv = await request(server())
         .get('/placements/export')
         .set('Authorization', `Bearer ${tokenFor(managerA)}`)
         .expect(200);
       const header = mgrCsv.text.split('\n')[0];
       expect(header).toContain('Placement Code');
-      expect(header).not.toContain('Salary');
+      expect(header).toContain('Monthly Salary (INR)');
       expect(header).not.toContain('Fee');
 
       const ceoCsv = await request(server())

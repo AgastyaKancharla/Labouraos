@@ -246,9 +246,8 @@ describe('Pricing & Policy Module (Phase 9 Task 2)', () => {
 
     createdTradeIds.push(response.body.id as string);
     expect(response.body).toMatchObject({ active: true });
-    // Saved as sent, but a Manager's answer carries no rupee figure (Master
-    // Guide, reconfirmed 11 Nov), so the range is checked in the database.
-    expect(response.body.salaryMinPaise).toBeUndefined();
+    // A trade's salary range is a job detail a Manager sees (decided 11 Nov).
+    expect(response.body.salaryMinPaise).toBe(1500000);
     const savedTrade = await prisma.trade.findUniqueOrThrow({ where: { id: response.body.id } });
     expect(savedTrade).toMatchObject({ salaryMinPaise: 1500000, salaryMaxPaise: 2000000 });
   });

@@ -1,6 +1,6 @@
 import { CallHandler, ExecutionContext } from '@nestjs/common';
 import { lastValueFrom, of } from 'rxjs';
-import { HIDDEN_AMOUNT_TEXT, isMoneyKey, seesMoney, stripMoney } from './money-visibility';
+import { HIDDEN_AMOUNT_TEXT, isJobSalaryKey, isMoneyKey, seesMoney, stripMoney } from './money-visibility';
 import {
   collectFullPhoneRecords,
   FULL_PHONE_VIEW_ACTION,
@@ -25,6 +25,17 @@ function handlerReturning(data: unknown): CallHandler {
 }
 
 describe('Managers see no money (money-visibility)', () => {
+  it('lets job-related salary through but never fees, payments or staff pay', () => {
+    for (const key of ['minSalary', 'maxSalary', 'salaryMinPaise', 'salaryMaxPaise', 'agreedSalary', 'selectedSalaryPaise', 'expectedSalary', 'monthlySalaryINR']) {
+      expect(isJobSalaryKey(key)).toBe(true);
+    }
+    for (const key of ['placementFee', 'placementFeeINR', 'amountPaise', 'activationFeePaise', 'totalAtRiskRupees', 'netPayPaise', 'staffMonthlyPayPaise', 'grossSalaryPaise']) {
+      expect(isJobSalaryKey(key)).toBe(false);
+    }
+    const out = stripMoney({ minSalary: 1500000, agreedSalary: 2000000, placementFee: 1000000, amountPaise: 49900 });
+    expect(out).toEqual({ minSalary: 1500000, agreedSalary: 2000000 });
+  });
+
   it('recognises every money field name used in the code', () => {
     for (const key of [
       'amount',
@@ -105,7 +116,8 @@ describe('PiiMaskingInterceptor: phones and money by role', () => {
     )) as Record<string, unknown>;
     expect(out.phone).toBe('******3210');
     expect((out.business as Record<string, unknown>).contactPhone).toBe('******2222');
-    expect(out).not.toHaveProperty('minSalary');
+    // Job-related salary is a work detail a Manager sees (decided 11 Nov).
+    expect(out.minSalary).toBe(1500000);
     expect(JSON.stringify(out)).not.toContain('9876543210');
     expect(audit.log).not.toHaveBeenCalled();
   });
