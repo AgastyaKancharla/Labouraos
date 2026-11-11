@@ -26,6 +26,7 @@ import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
+import { requireIndianMobile } from '../../common/phone/indian-mobile';
 import { ReportingScopeService } from './reporting-scope.service';
 
 /** How long a one-time invite token stays redeemable. */
@@ -1185,10 +1186,8 @@ export class StaffService {
    * the response never contains the number.
    */
   async setCallRoutingPhone(staffId: string, phone: string, actor: JwtPayload) {
-    const trimmed = typeof phone === 'string' ? phone.trim() : '';
-    if (!/^\+?[0-9]{10,15}$/.test(trimmed)) {
-      throw new BadRequestException('A phone number is required');
-    }
+    // The calling system rings an Indian mobile, saved as +91 and 10 digits.
+    const trimmed = requireIndianMobile(phone, 'phone');
 
     const target = await this.prisma.staff.findUnique({
       where: { id: staffId },

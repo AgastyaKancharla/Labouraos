@@ -11,6 +11,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 
 import { CALL_ANNOUNCEMENT } from '../call/call-announcement';
+import { mobileLookupValues, normaliseIndianMobile } from '../../common/phone/indian-mobile';
 
 export interface RealTelephonyProviderOptions {
   apiKey?: string;
@@ -114,15 +115,10 @@ export class RealTelephonyProvider implements TelephonyProvider {
     }
 
     // 3. Candidate Lookup: Match incoming caller phone against registered JobSeeker pool
-    const cleanPhone = event.callerPhone.replace(/\D/g, '');
+    // Every spelling of the caller's number matches the job seeker saved as +91 and 10 digits.
+    const callerPhone = normaliseIndianMobile(event.callerPhone);
     const candidate = await this.prisma.jobSeeker.findFirst({
-      where: {
-        OR: [
-          { phone: event.callerPhone },
-          { phone: cleanPhone },
-          { phone: `+91${cleanPhone.replace(/^91/, '')}` },
-        ],
-      },
+      where: { phone: { in: mobileLookupValues(event.callerPhone) } },
     });
 
     // 4. Create single CallbackTask in PostgreSQL
@@ -130,7 +126,7 @@ export class RealTelephonyProvider implements TelephonyProvider {
     const task = await this.prisma.callbackTask.create({
       data: {
         callId: event.callId,
-        phone: event.callerPhone,
+        phone: callerPhone,
         callerName: candidate?.name ?? null,
         jobSeekerId: candidate?.id ?? null,
         virtualNumber: event.virtualNumber ?? this.virtualNumber,

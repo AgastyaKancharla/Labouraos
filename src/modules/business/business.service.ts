@@ -28,6 +28,7 @@ import {
   YEARS_RUNNING_BANDS,
 } from './business.constants';
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
+import { mobileLookupValues, optionalIndianMobile, requireIndianMobile } from '../../common/phone/indian-mobile';
 import { TradeService } from '../trade/trade.service';
 import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo.storage';
@@ -74,6 +75,7 @@ export class BusinessService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+    normaliseBusinessPhoneFields(dto);
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
@@ -116,10 +118,12 @@ export class BusinessService {
       throw new BadRequestException('Name is required');
     }
 
-    const phone = (dto.phone ?? dto.mobileNumber)?.trim();
-    if (!phone) {
+    const typedPhone = (dto.phone ?? dto.mobileNumber)?.trim();
+    if (!typedPhone) {
       throw new BadRequestException('Mobile number is required');
     }
+    const phone = requireIndianMobile(typedPhone, 'phone');
+    const contactWhatsAppPhone = optionalIndianMobile(dto.contactWhatsAppPhone, 'contactWhatsAppPhone') ?? null;
 
     const contactName = (dto.contactPersonName ?? dto.additionalContactName ?? dto.contactPerson ?? dto.ownerName)?.trim();
     if (!contactName) throw new BadRequestException('Contact person name is required');
@@ -140,8 +144,8 @@ export class BusinessService {
       );
     }
 
-    const existing = await this.prisma.business.findUnique({
-      where: { phone },
+    const existing = await this.prisma.business.findFirst({
+      where: { phone: { in: mobileLookupValues(phone) } },
     });
     if (existing) {
       throw new ConflictException({
@@ -190,7 +194,7 @@ export class BusinessService {
     }
 
     const branchNames = new Set<string>();
-    const seenPhones = new Set<string>([phoneDigits(phone)]);
+    const seenPhones = new Set<string>([phone]);
     const seenOtps = new Set<string>([dto.otpRequestId]);
     for (const branch of dto.branches ?? []) {
       if (!branch.name?.trim() || !branch.contactPersonName?.trim() ||
@@ -200,7 +204,9 @@ export class BusinessService {
       }
       this.assertOptionalValue(branch.contactLanguage, BUSINESS_MESSAGE_LANGUAGES, 'contactLanguage');
       this.assertOptionalPincode(branch.pincode);
-      const branchPhone = phoneDigits(branch.contactPersonPhone);
+      const branchPhone = requireIndianMobile(branch.contactPersonPhone, 'branches.contactPersonPhone');
+      branch.contactPersonPhone = branchPhone;
+      branch.contactWhatsAppPhone = optionalIndianMobile(branch.contactWhatsAppPhone, 'branches.contactWhatsAppPhone') ?? undefined;
       if (seenPhones.has(branchPhone)) throw new BadRequestException('Each contact mobile must be different');
       seenPhones.add(branchPhone);
       if (seenOtps.has(branch.otpRequestId)) throw new BadRequestException('Each contact needs its own verified OTP');
@@ -358,7 +364,7 @@ export class BusinessService {
           additionalContactName: contactName,
           additionalContactPhone: phone,
           contactRole: dto.contactPersonRole,
-          contactWhatsAppPhone: dto.contactWhatsAppPhone?.trim() || null,
+          contactWhatsAppPhone,
           contactLanguage: dto.contactLanguage?.trim() || null,
           businessType,
           employeeCountBand: dto.employeeCountBand?.trim() || null,
@@ -991,8 +997,11 @@ const REGISTRATION_NUMBER_MATCHES = new Set([
   'gst_number', 'licence_number', 'shop_establishment_number', 'udyam_number', 'fssai_number',
 ]);
 
-function phoneDigits(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  return digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
+/** A business edit saves its numbers as +91 and 10 digits, like every other write. */
+function normaliseBusinessPhoneFields(dto: Record<string, unknown>) {
+  if (dto.phone !== undefined) dto.phone = requireIndianMobile(dto.phone, 'phone');
+  for (const field of ['additionalContactPhone', 'contactWhatsAppPhone'] as const) {
+    if (field in dto) dto[field] = optionalIndianMobile(dto[field], field);
+  }
 }
 

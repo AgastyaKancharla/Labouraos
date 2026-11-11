@@ -3,6 +3,24 @@ import { createHash, randomBytes } from 'node:crypto';
 import { PublicLinkPurpose, Prisma } from '@prisma/client';
 import { PrismaService } from './prisma/prisma.service';
 import { decryptCallRoutingPhone, encryptCallRoutingPhone } from '../modules/staff/call-routing-key';
+import { normaliseIndianMobile } from './phone/indian-mobile';
+
+/**
+ * The number on a public link, readable: the column holds AES-GCM ciphertext,
+ * so a direct Prisma read must decrypt it before masking or display. Older or
+ * hand-written rows that hold the plain number are returned as they are.
+ * Either way the answer is in the one stored format (+91 and 10 digits).
+ */
+export function readPublicLinkPhone(stored: string | null | undefined): string | null {
+  if (!stored) return null;
+  let plain = stored;
+  try {
+    plain = decryptCallRoutingPhone(stored);
+  } catch {
+    plain = stored;
+  }
+  return normaliseIndianMobile(plain);
+}
 
 export interface CreatePublicLinkInput {
   purpose: PublicLinkPurpose;
@@ -33,7 +51,7 @@ export class PublicLinkStoreService {
         purpose: input.purpose,
         subjectType: input.subjectType,
         subjectId: input.subjectId,
-        phone: input.phone ? encryptCallRoutingPhone(input.phone) : null,
+        phone: input.phone ? encryptCallRoutingPhone(normaliseIndianMobile(input.phone)) : null,
         language: input.language ?? null,
         expiresAt: input.expiresAt,
         createdByStaffId: input.createdByStaffId ?? null,
@@ -59,7 +77,7 @@ export class PublicLinkStoreService {
         data: { openedAt: now },
       });
     }
-    return { ...row, phone: row.phone ? decryptCallRoutingPhone(row.phone) : null };
+    return { ...row, phone: row.phone ? normaliseIndianMobile(decryptCallRoutingPhone(row.phone)) : null };
   }
 
   async markUsed(token: string, now = new Date(), context: PublicLinkContext = {}): Promise<void> {

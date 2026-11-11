@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { WhatsAppMessageResult, WhatsAppProvider } from './whatsapp.interface';
+import { parseIndianMobile } from '../phone/indian-mobile';
 
 export const APPROVED_TEMPLATES = [
   'call_attempt_notice',
@@ -66,7 +67,9 @@ export class RealWhatsAppProvider implements WhatsAppProvider {
     }
 
     // 2. Format phone to E.164 (without leading + for Meta API)
-    const cleanPhone = phone.replace(/\D/g, '');
+    // An Indian mobile in any spelling goes out as 91 and the 10 digits.
+    const indian = parseIndianMobile(phone);
+    const cleanPhone = indian ? indian.slice(1) : phone.replace(/\D/g, '');
 
     const bodyPayload = {
       messaging_product: 'whatsapp',

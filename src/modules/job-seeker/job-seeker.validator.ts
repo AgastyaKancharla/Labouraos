@@ -1,5 +1,6 @@
 import { BadRequestException } from '@nestjs/common';
 import { CreateJobSeekerDto } from './dto/create-job-seeker.dto';
+import { requireIndianMobile } from '../../common/phone/indian-mobile';
 
 const REGISTRATION_WINDOWS = {
   '09-12': ['09:00', '12:00'],
@@ -43,6 +44,7 @@ export function validateJobSeekerRegistration(
       throw new BadRequestException(`${field} is required`);
     }
   }
+  const phone = requireIndianMobile(dto.phone);
   if (!['kn', 'hi', 'en'].includes(dto.messageLanguage)) {
     throw new BadRequestException('messageLanguage must be kn, hi or en');
   }
@@ -113,7 +115,7 @@ export function validateJobSeekerRegistration(
 
   return {
     name: dto.name.trim(),
-    phone: dto.phone.trim(),
+    phone,
     preferredCallWindowStart: window[0],
     preferredCallWindowEnd: window[1],
     dateOfBirth: dob,

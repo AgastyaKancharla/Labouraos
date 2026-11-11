@@ -2,6 +2,7 @@ import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
 import { RBAC_MATRIX, Role } from '../rbac/rbac.types';
+import { mobileLookupValues, phoneLast4, requireIndianMobile } from '../phone/indian-mobile';
 import { OTP_PROVIDER, OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
 
 export const OTP_PURPOSES = [
@@ -14,15 +15,6 @@ export const OTP_PURPOSES = [
 
 export type OtpPurpose = (typeof OTP_PURPOSES)[number];
 
-function phoneDigits(phone: string): string {
-  const digits = phone.replace(/\D/g, '');
-  return digits.startsWith('91') && digits.length === 12 ? digits.slice(2) : digits;
-}
-
-function phoneVariants(phone: string): string[] {
-  const digits = phoneDigits(phone);
-  return [...new Set([phone.trim(), digits, `91${digits}`, `+91${digits}`])];
-}
 
 @Injectable()
 export class OtpService {
@@ -42,18 +34,20 @@ export class OtpService {
     requestId?: string,
   ): Promise<OtpSendResult | { alreadyRegistered: true; type?: string; code?: string }>;
   async sendOtp(
-    phone: string,
+    rawPhone: string,
     purpose: OtpPurpose = 'job_seeker',
     actorId?: string,
     actorRole = '',
     requestId?: string,
   ): Promise<OtpSendResult | { alreadyRegistered: true; type?: string; code?: string }> {
-    if (!phone?.trim()) throw new BadRequestException('Phone number is required');
+    if (typeof rawPhone !== 'string' || !rawPhone.trim()) throw new BadRequestException('Phone number is required');
+    // One format everywhere: the code goes to, and is checked against, +91 and 10 digits.
+    const phone = requireIndianMobile(rawPhone);
     if (!(OTP_PURPOSES as readonly string[]).includes(purpose)) {
       throw new BadRequestException('purpose must be one of the supported OTP purposes');
     }
 
-    const last4 = phoneDigits(phone).slice(-4);
+    const last4 = phoneLast4(phone);
     const staffId = actorId;
     if (staffId && !requestId && purpose !== 'vacancy_confirm') {
       const duplicate = await this.findDuplicate(phone);
@@ -142,7 +136,7 @@ export class OtpService {
   }
 
   private async findDuplicate(phone: string) {
-    const variants = phoneVariants(phone);
+    const variants = mobileLookupValues(phone);
     const seeker = await this.prisma.jobSeeker.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true, registeredByStaffId: true },
