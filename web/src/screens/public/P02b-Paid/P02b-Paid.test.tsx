@@ -38,7 +38,7 @@ describe('P02b-Paid', () => {
     });
     render();
     expect(await screen.findByText('Registration complete · ₹499 received')).toBeInTheDocument();
-    expect(screen.getByText('9 Nov, 11:20 am')).toBeInTheDocument();
+    expect(screen.getByText('9 Nov, 11:20 AM')).toBeInTheDocument();
     expect(screen.getByText('9 Dec')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'View receipt' })).toHaveAttribute('href', '/payments/pay-1/receipt?token=rt');
   });

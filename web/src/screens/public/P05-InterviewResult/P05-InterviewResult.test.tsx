@@ -25,7 +25,7 @@ describe('P05-InterviewResult', () => {
     });
     const { container } = render();
     expect(await screen.findByRole('heading', { name: "How did Ramesh's interview go?" })).toBeInTheDocument();
-    expect(screen.getByText(/at Sri Sai Hotel · please answer by 8:00 pm/)).toBeInTheDocument();
+    expect(screen.getByText(/at Sri Sai Hotel · please answer by 8:00 PM/)).toBeInTheDocument();
     expect(screen.queryByLabelText(/request id/i)).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('radio', { name: 'Selected' }));
     const salary = screen.getByRole('textbox', { name: /Monthly salary you'll pay/ });

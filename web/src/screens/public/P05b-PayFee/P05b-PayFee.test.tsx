@@ -25,7 +25,7 @@ describe('P05b-PayFee', () => {
     expect(screen.getByText('GST 18%')).toBeInTheDocument();
     expect(screen.getByText('₹1,440')).toBeInTheDocument();
     expect(screen.getByText('₹9,440')).toBeInTheDocument();
-    expect(screen.getByText(/Thu,? 12 Nov, 3:00 pm/)).toBeInTheDocument();
+    expect(screen.getByText(/Thu,? 12 Nov, 3:00 PM/)).toBeInTheDocument();
     const pay = screen.getByRole('link', { name: 'Pay ₹9,440 by UPI' });
     expect(pay).toHaveAttribute('href', 'upi://pay?am=9440.00');
     await userEvent.click(pay);

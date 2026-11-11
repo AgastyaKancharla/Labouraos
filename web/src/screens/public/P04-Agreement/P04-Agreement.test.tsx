@@ -41,7 +41,7 @@ describe('P04-Agreement / P04b-Signed', () => {
       token: 'atok', otpRequestId: 'areq', otpCode: '802291', signedName: 'Shankar Rao', purposes: ['agreement_terms', 'call_recording'],
     });
     expect(await screen.findByText('Agreement signed, Shankar Rao')).toBeInTheDocument();
-    expect(screen.getByText('9 Nov, 12:40 pm')).toBeInTheDocument();
+    expect(screen.getByText('9 Nov, 12:40 PM')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Download' })).toHaveAttribute('href', '/consent/atok/signed/copy');
     expect(screen.getByText(/Team Lead will call you/)).toBeInTheDocument();
   });

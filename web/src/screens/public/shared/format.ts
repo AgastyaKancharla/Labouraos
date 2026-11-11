@@ -25,7 +25,8 @@ export function shortDate(value: string | Date, language: Language): string {
 
 /** "10:30 AM" */
 export function timeLabel(value: string | Date, language: Language): string {
-  return fmt(value, language, { hour: 'numeric', minute: '2-digit', hour12: true });
+  const text = fmt(value, language, { hour: 'numeric', minute: '2-digit', hour12: true });
+  return language === 'en' ? text.replace(/\b(am|pm)\b/, (m) => m.toUpperCase()) : text;
 }
 
 /** "9 Nov, 11:20 AM" */

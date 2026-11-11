@@ -218,6 +218,9 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       guaranteeFloorPaise: 1800000,
       amountPaise: 49900,
     });
+    // The payment page (P02) names his area and job type in the "suitable" line.
+    expect(shown.body).toHaveProperty('locality');
+    expect(shown.body).toHaveProperty('jobType');
 
     const unticked = await request(server())
       .post(`/registration/${seeker.token}/terms-and-payment`)

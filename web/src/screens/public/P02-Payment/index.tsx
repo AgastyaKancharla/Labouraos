@@ -23,6 +23,12 @@ const SHIFT: Record<string, MessageKey> = {
   any: 'pub.shift.any',
 };
 
+const JOB_TYPE: Record<string, MessageKey> = {
+  full_time: 'pub.job.fullTime',
+  part_time: 'pub.job.partTime',
+  live_in: 'pub.job.liveIn',
+};
+
 export default function Payment() {
   const { t } = useI18n();
   const { token, requestId, status, query, backToStart } = useStepGuard('payment');
@@ -111,8 +117,13 @@ export default function Payment() {
   const tr = terms.data;
   const suitable = [
     tr.trade,
-    tr.travelDistanceKm !== null ? t('pub.pay.withinKm', { km: tr.travelDistanceKm }) : null,
+    tr.travelDistanceKm !== null
+      ? tr.locality
+        ? t('pub.pay.withinKmOf', { km: tr.travelDistanceKm, area: tr.locality })
+        : t('pub.pay.withinKm', { km: tr.travelDistanceKm })
+      : null,
     tr.shiftPreference ? t(SHIFT[tr.shiftPreference] ?? 'pub.shift.any') : null,
+    tr.jobType && JOB_TYPE[tr.jobType] ? t(JOB_TYPE[tr.jobType]!) : null,
     t('pub.pay.atLeast', { amount: rupees(tr.guaranteeFloorPaise) }),
   ]
     .filter(Boolean)
@@ -137,9 +148,10 @@ export default function Payment() {
       </div>
       <Choice
         checked={accepted}
-        disabled={accepted || accepting}
+        disabled={accepting}
         onChange={(checked) => {
-          if (checked) void accept();
+          // Once agreed it is recorded; the box stays ticked.
+          if (checked && !accepted) void accept();
         }}
         title={t('pub.pay.agree')}
       />

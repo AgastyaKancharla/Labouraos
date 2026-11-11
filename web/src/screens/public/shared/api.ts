@@ -51,7 +51,9 @@ export interface RegistrationTerms {
   jobSeekerCode: string;
   trade: string | null;
   travelDistanceKm: number | null;
+  locality: string | null;
   shiftPreference: string | null;
+  jobType: string | null;
   guaranteeFloorPaise: number;
   guaranteeDays: number;
   amountPaise: number;
