@@ -1,5 +1,6 @@
 /* Kannada (ಕನ್ನಡ) — same keys as en.ts. Have a native speaker review new strings. */
 import type { Messages } from './en';
+import { registrationKn } from './registration';
 
 export const kn: Messages = {
   "app.name": "Laboura",
@@ -339,4 +340,5 @@ export const kn: Messages = {
   "screen.P05-InterviewResult": "ಸಂದರ್ಶನದ ಫಲಿತಾಂಶ",
   "screen.P05b-PayFee": "ಶುಲ್ಕ ಪಾವತಿಸಿ",
   "screen.P06-DidTheyOffer": "ಅವರು ನಿಮಗೆ ಕೆಲಸದ ಆಫರ್ ಕೊಟ್ಟರೇ?",
+  ...registrationKn,
 };

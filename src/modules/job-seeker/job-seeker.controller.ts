@@ -132,8 +132,9 @@ export class JobSeekerController {
     @Param('id') id: string,
     @Body('phone') phone: string,
     @Req() req: Request & { user: JwtPayload },
+    @Body('relation') relation?: string,
   ) {
-    return this.jobSeekerService.createPaymentOnlyLink(id, phone, req.user.sub);
+    return this.jobSeekerService.createPaymentOnlyLink(id, phone, req.user.sub, relation);
   }
 
   @Post(':id/hits')

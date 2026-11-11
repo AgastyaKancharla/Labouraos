@@ -39,6 +39,7 @@ import { PayoutAccountModule } from './modules/payout-account/payout-account.mod
 import { AttendanceModule } from './modules/attendance/attendance.module';
 import { RetentionModule } from './modules/retention/retention.module';
 import { WebAppModule } from './modules/web-app/web-app.module';
+import { ScreensCallRegistrationModule } from './modules/screens-call-registration/screens-call-registration.module';
 
 @Module({
   imports: [
@@ -81,6 +82,7 @@ import { WebAppModule } from './modules/web-app/web-app.module';
     PayoutAccountModule,
     AttendanceModule,
     HealthModule,
+    ScreensCallRegistrationModule,
     WebAppModule,
   ],
 })
