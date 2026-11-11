@@ -349,10 +349,15 @@ export class ConsentLinkService {
    * partner terms have no new page yet and keep the old one (null).
    */
   async publicPageForToken(token: string): Promise<PublicPage | null> {
-    const row = await this.prisma.publicLink.findUnique({
-      where: { tokenHash: this.publicLinks.hashToken(token) },
-      select: { purpose: true },
-    });
+    let row: { purpose: string } | null;
+    try {
+      row = await this.prisma.publicLink.findUnique({
+        where: { tokenHash: this.publicLinks.hashToken(token) },
+        select: { purpose: true },
+      });
+    } catch {
+      return null; // can't tell: keep the old behaviour for this request
+    }
     if (!row) return 'registration';
     if (row.purpose === 'registration') return 'registration';
     if (row.purpose === 'business_agreement') return 'businessAgreement';

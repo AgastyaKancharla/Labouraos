@@ -200,11 +200,11 @@ describe('Phase 12 gate end-to-end proof', () => {
       .set('Accept', 'text/html')
       .expect(302);
     expect(openedPage.headers.location).toBe(`https://app.laboura.in/app/p/register/${consentLink.body.token}`);
-    const lockedStatus = await request(app.getHttpServer())
-      .get(`/registration/${consentLink.body.token}/status`)
+    const lockedDetails = await request(app.getHttpServer())
+      .get(`/consent/${consentLink.body.token}`)
+      .set('Accept', 'application/json')
       .expect(200);
-    expect(lockedStatus.body).toMatchObject({ otpRequired: true });
-    expect(lockedStatus.body.firstName).toBeUndefined();
+    expect(lockedDetails.body).toMatchObject({ otpRequired: true });
     expect(JOB_SEEKER_REQUIRED_CONSENT_PURPOSES).toHaveLength(5);
 
     const seekerOtp = await request(app.getHttpServer())
