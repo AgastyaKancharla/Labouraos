@@ -290,8 +290,10 @@ Also:
   - A Manager can't download the salary sheet.
   - The CSV has no personal data beyond name, staff code and role.
 
-### [ ] Task 6 — Notification bells
+### [x] Task 6 — Notification bells
 **Branch:** `phase-21/task-6-notifications` · **Migration folder:** `20261114130000_notifications`
+
+*Built 11 Nov on `build/p21-task-6` (migration `20261115130000_notifications`, the swarm build's range). Endpoints: `docs/api/phase-21.md` § Task 6.*
 
 **Acceptance:**
 - New table `Notification`: `recipientStaffId`, `kind` (closed list), `title`, `body`, `link` (where the work is done), `subjectType`, `subjectId`, `createdAt`, `clearedAt`, `clearedByStaffId`, `clearedReason`.
