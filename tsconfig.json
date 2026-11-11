@@ -22,5 +22,5 @@
     "alwaysStrict": true,
     "noFallthroughCasesInSwitch": true
   },
-  "exclude": ["node_modules", "dist", "web"]
+  "exclude": ["node_modules", "dist", "web", "field"]
 }

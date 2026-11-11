@@ -4,7 +4,7 @@
   "description": "Laboura Staffing Marketplace API",
   "private": true,
   "scripts": {
-    "build": "nest build && npm run web:install && npm run web:build",
+    "build": "nest build && npm run web:install && npm run web:build && npm run field:install && npm run field:build-web",
     "build:api": "nest build",
     "dev": "nest start --watch",
     "start": "nest start",
@@ -26,7 +26,12 @@
     "web:dev": "npm run dev --prefix web",
     "web:build": "npm run build --prefix web",
     "web:test": "npm test --prefix web",
-    "web:lint": "npm run lint --prefix web"
+    "web:lint": "npm run lint --prefix web",
+    "field:install": "npm ci --prefix field --include=dev --no-audit --no-fund",
+    "field:dev": "npm run web --prefix field",
+    "field:lint": "npm run lint --prefix field",
+    "field:test": "npm test --prefix field",
+    "field:build-web": "npm run build:web --prefix field"
   },
   "prisma": {
     "seed": "NODE_ENV=development ts-node prisma/seed.ts"
