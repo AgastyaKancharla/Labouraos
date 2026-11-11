@@ -174,7 +174,9 @@ describe('Phase 21 Task 4: leave and corrections', () => {
     expect(midBalance.body.casual).toMatchObject({ earned: 5, taken: 0, left: 5 });
     expect(midBalance.body.emergency).toMatchObject({ earned: 5, taken: 0, left: 5 });
     const firstBalance = await get(first, '/attendance/leave/balance').expect(200);
-    expect(firstBalance.body.casual.earned).toBe(3);
+    // No leave in the joining month, even when joining on the 1st (decided 11 Nov):
+    // created 1 March earns on 1 April and 1 May.
+    expect(firstBalance.body.casual.earned).toBe(2);
 
     const asked = await leave(mid, 'casual', '2027-05-12', '2027-05-13');
     expect(asked.status).toBe(201);
