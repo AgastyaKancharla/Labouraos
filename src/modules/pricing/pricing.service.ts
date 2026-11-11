@@ -91,6 +91,11 @@ export class PricingService {
         refundPriorityWindowDays:
           updates.refundPriorityWindowDays ?? before.refundPriorityWindowDays,
         weeklyOffDays: updates.weeklyOffDays ?? before.weeklyOffDays,
+        visitShortMinutes: updates.visitShortMinutes ?? before.visitShortMinutes,
+        visitMaxTravelKmh: updates.visitMaxTravelKmh ?? before.visitMaxTravelKmh,
+        visitSameSpotMeters: updates.visitSameSpotMeters ?? before.visitSameSpotMeters,
+        visitNoOnboardingCount: updates.visitNoOnboardingCount ?? before.visitNoOnboardingCount,
+        visitNoOnboardingDays: updates.visitNoOnboardingDays ?? before.visitNoOnboardingDays,
         matchPageSize: updates.matchPageSize ?? before.matchPageSize,
         salaryDaysPerMonth: updates.salaryDaysPerMonth ?? before.salaryDaysPerMonth,
         legalMinimumWageUnskilledPaise:

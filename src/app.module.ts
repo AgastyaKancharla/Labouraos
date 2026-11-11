@@ -47,6 +47,9 @@ import { LiveModule } from './common/live/live.module';
 import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-call-agent.module';
 import { FieldAppModule } from './modules/field-app/field-app.module';
 import { FinanceModule } from './modules/finance/finance.module';
+import { FieldVisitModule } from './modules/field-visit/field-visit.module';
+import { ScreensFieldModule } from './modules/screens-field/screens-field.module';
+import { IdempotencyModule } from './common/idempotency/idempotency.module';
 
 @Module({
   imports: [
@@ -54,6 +57,7 @@ import { FinanceModule } from './modules/finance/finance.module';
     FinanceModule,
     ObservabilityModule,
     PrismaModule,
+    IdempotencyModule,
     LiveModule,
     IdModule,
     AuthModule,
@@ -98,6 +102,8 @@ import { FinanceModule } from './modules/finance/finance.module';
     ScreensCallAgentModule,
     WebAppModule,
     FieldAppModule,
+    FieldVisitModule,
+    ScreensFieldModule,
   ],
 })
 export class AppModule {}

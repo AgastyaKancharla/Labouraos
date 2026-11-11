@@ -3,6 +3,9 @@ import type { ApiClient } from './client';
 import { attendanceApi } from './endpoints/attendance';
 import { authApi } from './endpoints/auth';
 import { targetsApi } from './endpoints/targets';
+import { fieldWorkApi } from './endpoints/fieldWork';
+import { visitsApi } from './endpoints/visits';
+import { registrationApi } from './endpoints/registration';
 import { api as appApi } from './index';
 
 const ApiContext = createContext<ApiClient>(appApi);
@@ -27,6 +30,9 @@ export function useEndpoints() {
       auth: authApi(api),
       attendance: attendanceApi(api),
       targets: targetsApi(api),
+      fieldWork: fieldWorkApi(api),
+      visits: visitsApi(api),
+      registration: registrationApi(api),
     }),
     [api],
   );

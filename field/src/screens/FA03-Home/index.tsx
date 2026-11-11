@@ -11,23 +11,26 @@ import { formatDayIst, formatShiftTime, formatTimeIst } from '@/lib/format';
 import { routes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
-import { isLocationError, placementsProgress, useAttendanceLogin, useAttendanceToday, useTargetDashboard } from './useHome';
+import { isLocationError, placementsProgress, useAttendanceLogin, useAttendanceToday, useFieldHome, useTargetDashboard } from './useHome';
+import type { HomeAlert, HomeTodo } from '@/api/endpoints';
+import { formatDateKey } from '../_visits/format';
 
 /**
  * FA03 — Home. Login and status, search, today's numbers, the four quick
  * buttons, alerts (with the "waiting to send" row), to-dos and placements
  * this month.
  *
- * Real data: attendance (GET /attendance/today, POST /attendance/login with
- * GPS), placements this month (GET /targets/dashboard), the offline queue.
- * Placeholders until their endpoints exist: the five "Today" numbers,
- * alerts and to-dos (see field/README.md, "What FA03 still needs").
+ * Data: attendance (GET /attendance/today, POST /attendance/login with GPS,
+ * then the check-in point), today's five numbers, alerts and to-dos
+ * (GET /field-work/home), placements this month (GET /targets/dashboard),
+ * and the offline queue's "waiting to send" row.
  */
 export default function HomeScreen() {
   const { t, tn } = useI18n();
   const { session } = useAuth();
   const today = useAttendanceToday();
   const targets = useTargetDashboard();
+  const home = useFieldHome();
   const login = useAttendanceLogin();
   const queue = useOfflineQueue();
 
@@ -36,10 +39,13 @@ export default function HomeScreen() {
   const subtitle = `${name} · ${formatDayIst(today.data?.clocks.now ?? openedAt)}`;
   const progress = placementsProgress(targets.data);
   const placeholder = t('common.placeholderValue');
+  const n = (value: number | undefined) => (value === undefined ? placeholder : String(value));
+  const counts = home.data?.today;
 
   function refresh() {
     void today.refetch();
     void targets.refetch();
+    void home.refetch();
     void queue.flush();
   }
 
@@ -104,16 +110,14 @@ export default function HomeScreen() {
         <Card title={t('fa03.today')} compact>
           <StatStrip
             items={[
-              { key: 'shops', value: placeholder, label: t('fa03.shopsVisited') },
-              { key: 'onboarded', value: placeholder, label: t('fa03.onboarded') },
-              { key: 'vacancies', value: placeholder, label: t('fa03.vacancies') },
-              { key: 'shown', value: placeholder, label: t('fa03.shown') },
-              { key: 'interviews', value: placeholder, label: t('fa03.interviews') },
+              { key: 'shops', value: n(counts?.shopsVisited), label: t('fa03.shopsVisited') },
+              { key: 'onboarded', value: n(counts?.onboarded), label: t('fa03.onboarded') },
+              { key: 'vacancies', value: n(counts?.vacanciesAdded), label: t('fa03.vacancies') },
+              { key: 'shown', value: n(counts?.candidatesShown), label: t('fa03.shown') },
+              { key: 'interviews', value: n(counts?.interviewsBooked), label: t('fa03.interviews') },
             ]}
           />
-          <Text variant="tiny" align="center" style={styles.note} testID="today-placeholder-note">
-            {t('common.notAvailableYet')}
-          </Text>
+          {home.isError ? <ErrorState error={home.error} onRetry={() => void home.refetch()} compact /> : null}
         </Card>
 
         <View style={styles.grid}>
@@ -130,6 +134,9 @@ export default function HomeScreen() {
         </View>
 
         <Card title={t('fa03.alerts')}>
+          {(home.data?.alerts ?? []).map((alert, i) => (
+            <AlertRow key={`${alert.kind}-${alert.business.id}-${i}`} alert={alert} last={i === (home.data?.alerts.length ?? 0) - 1 && queue.summary.total === 0} />
+          ))}
           {queue.summary.total > 0 ? (
             <ListRow
               title={queue.summary.failed > 0 ? t('fa03.waitingToSendFailed') : t('fa03.waitingToSend')}
@@ -149,13 +156,16 @@ export default function HomeScreen() {
               last
               testID="queue-row"
             />
-          ) : (
+          ) : (home.data?.alerts.length ?? 0) === 0 ? (
             <EmptyState compact message={t('fa03.noAlerts')} />
-          )}
+          ) : null}
         </Card>
 
-        <Card title={t('fa03.todo')}>
-          <EmptyState compact message={t('fa03.noTodos')} />
+        <Card title={t('fa03.todo')} testID="todo-card">
+          {(home.data?.todos ?? []).length === 0 ? <EmptyState compact message={t('fa03.noTodos')} /> : null}
+          {(home.data?.todos ?? []).map((todo, i) => (
+            <TodoRow key={`${todo.kind}-${i}`} todo={todo} last={i === (home.data?.todos.length ?? 0) - 1} />
+          ))}
         </Card>
 
         {progress ? (
@@ -173,6 +183,73 @@ export default function HomeScreen() {
       </Screen>
     </View>
   );
+}
+
+function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
+  const { t } = useI18n();
+  if (alert.kind === 'agreement_signed') {
+    return (
+      <ListRow
+        title={t('fa03.alertSigned', { name: alert.business.name })}
+        trailing={alert.canShowCandidates ? <StatusChip tone="green" label={t('fa03.showCandidates')} /> : <StatusChip tone="green" label={t('fa03.signed')} />}
+        onPress={() =>
+          alert.canShowCandidates
+            ? router.push({ pathname: routes.jobSeekers, params: { businessId: alert.business.id } })
+            : router.push(`${routes.business}/${alert.business.id}`)
+        }
+        last={last}
+        testID={`alert-signed-${alert.business.id}`}
+      />
+    );
+  }
+  const resultKey = alert.result === 'selected' ? 'result.selected' : alert.result === 'no_show' ? 'result.no_show' : 'result.not_selected';
+  return (
+    <ListRow
+      title={t('fa03.alertResult', { name: alert.business.name })}
+      trailing={<StatusChip tone={alert.result === 'selected' ? 'blue' : 'neutral'} label={t(resultKey)} />}
+      onPress={() => router.push(`${routes.business}/${alert.business.id}`)}
+      last={last}
+      testID={`alert-result-${alert.interviewId}`}
+    />
+  );
+}
+
+function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
+  const { t } = useI18n();
+  const whenLabel = todo.when === 'today' ? t('date.today') : todo.when === 'tomorrow' ? t('date.tomorrow') : t('fa03.overdue', { date: formatDateKey(todo.due) });
+  const chip = <StatusChip tone={todo.when === 'overdue' ? 'tomato' : todo.when === 'today' ? 'amber' : 'neutral'} label={whenLabel} />;
+  if (todo.kind === 'revisit') {
+    return (
+      <ListRow
+        title={t('fa03.todoRevisit', { name: todo.name })}
+        subtitle={todo.outcome === 'owner_not_there' ? t('fa03.todoOwnerAway') : t('fa03.todoComeBack')}
+        trailing={chip}
+        onPress={() =>
+          router.push({ pathname: routes.visitStart, params: todo.businessId ? { businessId: todo.businessId, name: todo.name } : { revisitOf: todo.visitId, name: todo.name } })
+        }
+        last={last}
+        testID={`todo-revisit-${todo.visitId}`}
+      />
+    );
+  }
+  if (todo.kind === 'joining') {
+    return (
+      <ListRow
+        title={t('fa03.todoJoining', { candidate: todo.candidateFirstName, name: todo.name })}
+        trailing={chip}
+        onPress={() => router.push(`${routes.business}/${todo.businessId}`)}
+        last={last}
+        testID={`todo-joining-${todo.placementId}`}
+      />
+    );
+  }
+  const title =
+    todo.taskKind === 'placement_check_in_day_7'
+      ? t('fa03.todoDay7', { name: todo.name })
+      : todo.taskKind === 'placement_check_in_day_30'
+        ? t('fa03.todoDay30', { name: todo.name })
+        : t('fa03.todoFollowUp', { name: todo.name });
+  return <ListRow title={title} trailing={chip} last={last} testID={`todo-check-${todo.taskId}`} />;
 }
 
 const STATUS_KEYS = {

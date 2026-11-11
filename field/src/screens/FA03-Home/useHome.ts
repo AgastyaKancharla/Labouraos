@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
-import type { AttendanceToday, TargetDashboard } from '@/api/endpoints';
+import type { AttendanceToday, FieldHome, TargetDashboard } from '@/api/endpoints';
 import { queryKeys } from '@/api/queryClient';
 import { useAuth } from '@/auth/AuthProvider';
 import { readLocation } from '@/device/location/location';
@@ -13,6 +13,17 @@ export function useAttendanceToday() {
   return useQuery<AttendanceToday>({
     queryKey: queryKeys.attendanceToday,
     queryFn: () => endpoints.attendance.today(),
+  });
+}
+
+/** Today's five numbers, alerts, to-dos and the check-in point (GET /field-work/home). */
+export function useFieldHome() {
+  const { session } = useAuth();
+  const endpoints = useEndpoints();
+  return useQuery<FieldHome>({
+    queryKey: queryKeys.fieldHome,
+    queryFn: () => endpoints.fieldWork.home(),
+    enabled: session?.staff.role === 'field_agent',
   });
 }
 
@@ -39,10 +50,18 @@ export function useAttendanceLogin() {
   return useMutation<AttendanceToday, Error>({
     mutationFn: async () => {
       const fix = await readLocation(locationProvider);
-      return endpoints.attendance.login({ latitude: fix.latitude, longitude: fix.longitude });
+      const today = await endpoints.attendance.login({ latitude: fix.latitude, longitude: fix.longitude });
+      // The day's check-in point with its accuracy (guide: "Check-in: at the start
+      // of the day the app records the agent's GPS location"); used by the Team
+      // Lead to send the nearest agent. Best effort: the login already counts.
+      await endpoints.visits
+        .checkIn({ latitude: fix.latitude, longitude: fix.longitude, accuracyMeters: Math.round(fix.accuracy) })
+        .catch(() => undefined);
+      return today;
     },
     onSuccess: (today) => {
       client.setQueryData(queryKeys.attendanceToday, today);
+      void client.invalidateQueries({ queryKey: queryKeys.fieldHome });
     },
   });
 }

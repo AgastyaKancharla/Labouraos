@@ -26,6 +26,17 @@ export const REVIEW_FLAG_KINDS = [
   'break_overrun',
   /** A follow-up call went unanswered 3 times; the Team Lead is told (guide, 9 Nov). */
   'follow_up_unanswered',
+  // Shop visits (field agent app, decided 9 Nov): checks for the Team Lead.
+  /** Inside the shop for less than the "very short visit" setting. */
+  'visit_short',
+  /** Two shops too far apart for the time between the visits. */
+  'visits_too_far_apart',
+  /** A name-board photo or selfie that was already used (the upload is refused too). */
+  'visit_photo_reused',
+  /** GPS that looks faked (no accuracy, identical readings, photo stamp elsewhere). */
+  'visit_gps_suspect',
+  /** Many visits in the window and not one onboarding. */
+  'visits_no_onboarding',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

@@ -15,4 +15,5 @@ export { Swoosh } from './Swoosh';
 export { TabBar, type TabItem } from './TabBar';
 export { Text, type TextVariant } from './Text';
 export { TextField } from './TextField';
+export { TileMap, type MapMarker } from './TileMap';
 export { TopBar } from './TopBar';

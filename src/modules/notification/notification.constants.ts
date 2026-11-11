@@ -158,6 +158,11 @@ export function notificationLink(
 /** Plain words for a review flag kind, for the bell title. */
 const FLAG_TITLES: Record<string, string> = {
   duplicate_business: 'Possible duplicate business',
+  visit_short: 'Very short shop visit',
+  visits_too_far_apart: 'Two shops too far apart for the time',
+  visit_photo_reused: 'Same visit photo used twice',
+  visit_gps_suspect: 'Visit GPS looks faked',
+  visits_no_onboarding: 'Many visits, no onboarding',
   gps_mismatch: 'Location does not match',
   no_documents_check: 'No-documents business to check',
   in_person_onboarding_review: 'In-person onboarding to review',
