@@ -2,6 +2,9 @@ import { api } from '../index';
 import { attendanceApi } from './attendance';
 import { authApi } from './auth';
 import { targetsApi } from './targets';
+import { fieldWorkApi } from './fieldWork';
+import { visitsApi } from './visits';
+import { registrationApi } from './registration';
 
 /**
  * Typed endpoint groups bound to the app's API client. Add one file per
@@ -11,8 +14,14 @@ export const endpoints = {
   auth: authApi(api),
   attendance: attendanceApi(api),
   targets: targetsApi(api),
+  fieldWork: fieldWorkApi(api),
+  visits: visitsApi(api),
+  registration: registrationApi(api),
 };
 
 export * from './attendance';
 export * from './auth';
 export * from './targets';
+export * from './fieldWork';
+export * from './visits';
+export * from './registration';

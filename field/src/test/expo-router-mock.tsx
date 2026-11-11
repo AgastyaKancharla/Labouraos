@@ -5,3 +5,7 @@ export function Redirect({ href }: { href: string }) {
   return <Text testID="redirect">{href}</Text>;
 }
 export const useRouter = () => router;
+
+/** Tests set the route's query: `searchParams.current = { id: 'v-1' }`. */
+export const searchParams: { current: Record<string, string | undefined> } = { current: {} };
+export const useLocalSearchParams = () => searchParams.current;

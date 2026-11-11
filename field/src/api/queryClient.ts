@@ -26,4 +26,13 @@ export function createQueryClient(): QueryClient {
 export const queryKeys = {
   attendanceToday: ['attendance', 'today'] as const,
   targetDashboard: ['targets', 'dashboard'] as const,
+  fieldHome: ['field-work', 'home'] as const,
+  fieldVisits: ['field-work', 'visits'] as const,
+  fieldTargets: ['field-work', 'targets'] as const,
+  fieldMap: (lat: number, lng: number) => ['field-work', 'map', lat.toFixed(4), lng.toFixed(4)] as const,
+  fieldBusiness: (ref: string) => ['field-work', 'business', ref] as const,
+  visit: (id: string) => ['field-visits', id] as const,
+  leaderboard: ['targets', 'leaderboard'] as const,
+  registrationOptions: ['registration', 'options'] as const,
+  trades: ['trades'] as const,
 };

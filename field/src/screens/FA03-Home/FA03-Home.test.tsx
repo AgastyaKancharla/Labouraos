@@ -86,13 +86,45 @@ describe('FA03 Home', () => {
     expect(fetchImpl.mock.calls.some(([url]) => String(url).endsWith('/attendance/login'))).toBe(false);
   });
 
-  it('shows the late login, placements this month and the placeholder counters', async () => {
+  it('shows the late login and placements this month; today\'s numbers wait for the server', async () => {
     await renderWithApp(<HomeScreen />, { signedInAs: kiran, route: api({ ...loggedIn, lateMinutes: 12 }) });
     await waitFor(() => screen.getByTestId('placements-card'));
     expect(screen.getByTestId('attendance-logged-in')).toHaveTextContent(/12 min late/);
     expect(screen.getByTestId('placements-card')).toHaveTextContent(/9.*\/ 12/);
+    // No /field-work/home answer: a dash, never an invented number.
     expect(screen.getByTestId('stat-shops')).toHaveTextContent(/^—shops visited$/);
-    expect(screen.getByTestId('today-placeholder-note')).toBeTruthy();
+  });
+
+  it('shows today\'s five numbers, alerts and to-dos counted by the server', async () => {
+    const home = {
+      now: '2026-11-09T06:00:00Z',
+      today: { shopsVisited: 3, onboarded: 1, vacanciesAdded: 2, candidatesShown: 3, interviewsBooked: 1 },
+      alerts: [
+        { kind: 'agreement_signed', at: '2026-11-09T05:00:00Z', business: { id: 'b-1', code: 'BZ-00291', name: 'Green Leaf Café' }, canShowCandidates: true },
+        { kind: 'interview_result', at: '2026-11-09T04:00:00Z', business: { id: 'b-2', code: 'BZ-00300', name: 'Sri Sai Hotel' }, interviewId: 'i-1', result: 'selected' },
+      ],
+      todos: [
+        { kind: 'revisit', due: '2026-11-09', when: 'today', visitId: 'v-1', businessId: null, name: 'Lakshmi Tiffins', outcome: 'interested_later' },
+        { kind: 'joining', due: '2026-11-09', when: 'today', placementId: 'p-1', code: 'PL-1', candidateFirstName: 'Arjun', businessId: 'b-3', name: 'Metro Mart' },
+        { kind: 'check_in', due: '2026-11-10', when: 'tomorrow', taskId: 't-1', code: 'FU-1', taskKind: 'placement_check_in_day_7', name: 'Kavitha' },
+      ],
+      checkIn: null,
+    };
+    await renderWithApp(<HomeScreen />, {
+      signedInAs: kiran,
+      route: api(loggedIn, (url) => (url.endsWith('/field-work/home') ? { status: 200, body: home } : undefined)),
+    });
+    await waitFor(() => expect(screen.getByTestId('stat-shops')).toHaveTextContent(/^3shops visited$/));
+    expect(screen.getByTestId('stat-onboarded')).toHaveTextContent(/^1onboarded$/);
+    expect(screen.getByTestId('stat-vacancies')).toHaveTextContent(/^2vacancies$/);
+    expect(screen.getByTestId('stat-interviews')).toHaveTextContent(/^1interview$/);
+    expect(screen.getByTestId('alert-signed-b-1')).toHaveTextContent(/Green Leaf Café signed the agreement.*Show candidates/);
+    expect(screen.getByTestId('alert-result-i-1')).toHaveTextContent(/Interview result in · Sri Sai Hotel.*Selected/);
+    expect(screen.getByTestId('todo-revisit-v-1')).toHaveTextContent(/Revisit · Lakshmi Tiffins.*Today/);
+    expect(screen.getByTestId('todo-joining-p-1')).toHaveTextContent(/Confirm joining · Arjun at Metro Mart/);
+    expect(screen.getByTestId('todo-check-t-1')).toHaveTextContent(/Day-7 check-in · Kavitha.*Tomorrow/);
+    await fireEvent.press(screen.getByTestId('todo-revisit-v-1'));
+    expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/start', params: { revisitOf: 'v-1', name: 'Lakshmi Tiffins' } });
   });
 
   it('shows "Saved on phone, sends when signal returns" with the photo count', async () => {
