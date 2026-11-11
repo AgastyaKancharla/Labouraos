@@ -821,6 +821,9 @@ model Payment {
   sentToCeoAt       DateTime?
   outsideRules      Boolean     @default(false)
   approvalNote      String?
+  // Phase 22: a payout the bank refused (account closed, name mismatch…), recorded by Finance.
+  payoutFailureReason String?
+  payoutFailedAt    DateTime?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -848,6 +851,10 @@ model BankCredit {
   matchedPayment    Payment?  @relation(fields: [matchedPaymentId], references: [id], onDelete: SetNull)
   tdsReceivable     TdsReceivable?
   ignoredReason     String?
+  // Phase 22: unclaimed money is returned to the same UPI ID, never kept.
+  returnedUtr       String?   @unique
+  returnedAt        DateTime?
+  returnedByStaffId String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1257,6 +1264,9 @@ model PricingPolicy {
   // these amounts; above them, or for any refund outside the rules, the CEO decides.
   financeBusinessRefundLimitPaise Int    @default(1500000)
   financeExpenseLimitPaise     Int       @default(1000000)
+  // Referral payouts are commission: Finance is warned before a partner's
+  // yearly total crosses this TDS limit (guide, tax handling; CA to confirm).
+  referralTdsYearlyLimitPaise  Int       @default(2000000)
   // Company details printed on GST invoices (entered by the CEO in Settings).
   companyLegalName             String    @default("Laboura Private Limited")
   companyGstin                 String?
@@ -1771,4 +1781,71 @@ model Notification {
   @@index([recipientStaffId, clearedAt])
   @@index([kind, clearedAt])
   @@index([subjectType, subjectId])
+/// Phase 22 (Finance back office, part A): a bill or expense entered by Finance
+/// or the CEO with the bill attached. Finance approves up to its limit in
+/// Settings; above it the CEO decides. Salaries, payouts, rewards and refunds
+/// are never entered here — they are read from payroll and payments.
+model Expense {
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  city               String    @default("Bengaluru")
+  category           String    // rent, calling, sms_whatsapp, id_checks, hosting, ads_marketing, field_travel, office_other
+  supplier           String
+  description        String
+  adChannel          String?   // ads_marketing only
+  amountPaise        Int       // what was paid, GST included
+  gstPaise           Int       @default(0)
+  billDate           DateTime
+  paidFrom           String?   // bank_transfer, upi, card, cash
+  billPath           String?
+  billFileName       String?
+  billContentType    String?
+  status             String    @default("waiting_finance") // waiting_finance, waiting_ceo, approved, paid, rejected
+  needsCeo           Boolean   @default(false)
+  enteredByStaffId   String
+  approvedByStaffId  String?
+  approvedAt         DateTime?
+  rejectedByStaffId  String?
+  rejectedAt         DateTime?
+  rejectionReason    String?
+  paidByStaffId      String?
+  paidAt             DateTime?
+  paymentReference   String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status])
+  @@index([billDate])
+  @@index([category])
+}
+
+/// Phase 22: the CEO's monthly budget for one expense category (month = IST yyyy-mm).
+model ExpenseBudget {
+  id           String   @id @default(uuid())
+  month        String
+  category     String
+  amountPaise  Int
+  setByStaffId String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([month, category])
+}
+
+/// Phase 22: one IST day of the bank account closed by Finance — our books
+/// against the bank statement's closing balance.
+model BankDayClose {
+  id                String   @id @default(uuid())
+  day               String   @unique // IST yyyy-mm-dd
+  openingPaise      Int
+  inPaise           Int
+  outPaise          Int
+  booksClosingPaise Int
+  bankClosingPaise  Int
+  differencePaise   Int
+  note              String?
+  closedByStaffId   String
+  closedAt          DateTime
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 }

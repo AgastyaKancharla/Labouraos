@@ -95,9 +95,10 @@ export class PaymentController {
     };
   }
 
+  /** Finance re-sends an unpaid placement fee's link from Invoices ("Send reminder"). */
   @Post(':id/resend')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent')
+  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
   async resendPayment(@Param('id') id: string) {
     return this.upiCollectionService.resendRequest(id);
   }
