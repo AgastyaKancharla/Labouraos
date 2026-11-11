@@ -1532,3 +1532,55 @@ model PayoutAccount {
 
 
 
+/// N3 (confirmed 11 Nov): a trade and area where open vacancies have no matching
+/// available job seeker. One open task per trade and area for the Team Lead; the
+/// daily sweep closes it by itself when supply appears.
+model ShortageTask {
+  id                 String    @id @default(uuid())
+  /// "tradeKey|areaKey" while the task is open, null once closed: at most one open task per trade and area.
+  openKey            String?   @unique
+  city               String    @default("Bengaluru")
+  tradeKey           String
+  trade              String
+  areaKey            String
+  area               String
+  status             String    @default("open") // open, closed
+  /// Positions still open on the vacancies with no match (sum of headcount).
+  openPositions      Int
+  vacancyIds         String[]  @default([])
+  assignedTeamLeadId String?
+  title              String
+  openedAt           DateTime
+  lastCheckedAt      DateTime
+  closedAt           DateTime?
+  closedReason       String?   // supply_appeared, no_open_vacancies
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([status, assignedTeamLeadId])
+  @@index([tradeKey, areaKey])
+}
+
+/// N5 (confirmed 11 Nov): a refunded or deactivated job seeker matched by a new or
+/// reopened vacancy, on the call agents' list to register again.
+model WinBackEntry {
+  id                String    @id @default(uuid())
+  /// The job seeker's id while the entry is open, null once closed: one open entry per person.
+  openKey           String?   @unique
+  jobSeekerId       String
+  /// The vacancy that put him on the list.
+  vacancyId         String
+  reason            String    // refunded, deactivated
+  status            String    @default("open") // open, re_registered, declined, closed
+  addedAt           DateTime
+  closedAt          DateTime?
+  closedReason      String?   // re_registered, said_no, consent_withdrawn, no_longer_eligible
+  closedByStaffId   String?
+  callRecordId      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+
+  @@unique([jobSeekerId, vacancyId])
+  @@index([status, addedAt])
+  @@index([jobSeekerId])
+}

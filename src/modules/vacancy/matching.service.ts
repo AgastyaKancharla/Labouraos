@@ -2,7 +2,7 @@ import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundEx
 import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { ConsentClock } from '../consent/consent-clock';
-import { PricingService } from '../pricing/pricing.service';
+import { PricingPolicy, PricingService } from '../pricing/pricing.service';
 import { isUnconfirmedVacancyStatus } from './vacancy-confirmation.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { jobSeekerHasTrade } from '../job-seeker/job-seeker-legacy-read';
@@ -154,7 +154,7 @@ export class MatchingService {
     }
 
     const listedTrade = await this.prisma.trade.findFirst({
-      where: { active: true, nameKey: vacancy.tradeSkill.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN') },
+      where: { active: true, nameKey: tradeKey(vacancy.tradeSkill) },
       select: { id: true },
     });
     if (!listedTrade) {
@@ -171,82 +171,8 @@ export class MatchingService {
     const policy = await this.pricingService.current();
     const weights = this.readWeights(policy.matchingWeights);
     const now = this.clock.now();
-    const seekers = (await this.prisma.jobSeeker.findMany({
-      where: { status: 'active' },
-      include: {
-        trades: true,
-        languages: true,
-        // Only hits of the current guarantee: paying ₹499 again supersedes earlier ones.
-        hits: { where: { supersededAt: null }, select: { reason: true, reversedAt: true } },
-        placements: { include: { replacementCandidates: { select: { status: true } } } },
-        interviews: { select: { status: true, businessId: true, result: true } },
-        replacementCandidateOffers: { include: { placement: { select: { businessId: true } } } },
-        payments: { select: { type: true, status: true } },
-      },
-    })) as unknown as MatchCandidate[];
-    const activeConsents = await this.prisma.consent.findMany({
-      where: {
-        subjectType: 'job_seeker',
-        subjectId: { in: seekers.map((seeker) => seeker.id) },
-        purpose: { in: ['job_matching', 'profile_sharing'] },
-        granted: true,
-        grantedAt: { not: null },
-        withdrawnAt: null,
-      },
-      select: { subjectId: true, purpose: true, granted: true, grantedAt: true, withdrawnAt: true },
-    });
-    const consentsBySeeker = new Map<string, MatchCandidate['consents']>();
-    for (const consent of activeConsents) {
-      const rows = consentsBySeeker.get(consent.subjectId) ?? [];
-      rows.push(consent);
-      consentsBySeeker.set(consent.subjectId, rows);
-    }
-
-    const leftOut = { no_location: 0, no_travel_distance: 0, consent_missing: 0 };
-    const matches: CandidateMatch[] = [];
-    const nearMisses: CandidateMatch[] = [];
-    for (const rawSeeker of seekers) {
-      const seeker: MatchCandidate = { ...rawSeeker, consents: consentsBySeeker.get(rawSeeker.id) ?? [] };
-      if (seeker.status !== 'active') continue;
-      const consentPurposes = new Set(
-        seeker.consents
-          .filter((row) => row.granted && row.grantedAt && !row.withdrawnAt)
-          .map((row) => row.purpose),
-      );
-      const hasConsent = consentPurposes.has('job_matching') && consentPurposes.has('profile_sharing');
-      if (!hasConsent) {
-        leftOut.consent_missing += 1;
-        continue;
-      }
-      const salarySuitability = this.salarySuitability(seeker, vacancy, policy.salaryDaysPerMonth);
-      if (!salarySuitability || !this.passesBeforeDistanceRules(seeker, vacancy)) continue;
-      if (seeker.latitude === null || seeker.longitude === null || vacancy.latitude === null || vacancy.longitude === null) {
-        leftOut.no_location += 1;
-        continue;
-      }
-      if (seeker.travelDistanceKm === null) {
-        leftOut.no_travel_distance += 1;
-        continue;
-      }
-      const distanceKm = distanceInKm(seeker.latitude, seeker.longitude, vacancy.latitude, vacancy.longitude);
-      if (distanceKm > seeker.travelDistanceKm) continue;
-      if (!this.passesAfterDistanceRules(seeker, vacancy, policy.adultMinimumAge, now)) continue;
-      const match = this.score(
-        seeker,
-        vacancy,
-        distanceKm,
-        weights,
-        policy.jobSeekerGuaranteeDays,
-        policy.salaryDaysPerMonth,
-        policy.maxHits,
-        now,
-      );
-      if (salarySuitability === 'near_miss') {
-        nearMisses.push({ ...match, salaryWarning: 'below_minimum_ask_him' });
-      } else {
-        matches.push(match);
-      }
-    }
+    const pool = (await this.loadCandidatePool({ status: 'active' })).filter((seeker) => seeker.status === 'active');
+    const { matches, nearMisses, leftOut } = this.evaluate(vacancy, pool, policy, weights, now);
 
     matches.sort((a, b) => b.score - a.score || a.jobSeekerId.localeCompare(b.jobSeekerId));
     const pageSize = policy.matchPageSize;
@@ -290,6 +216,133 @@ export class MatchingService {
       matches: pageMatches,
       nearMisses: pageNearMisses,
     };
+  }
+
+  /**
+   * The same Step 1 rules as match(), for many vacancies at once, without pages,
+   * photos or scores leaving the service. Used by the growth sweeps (shortage
+   * tasks, win-back list). For each vacancy: the ids of job seekers who pass every
+   * rule (near misses on salary are not counted), or null when candidates cannot
+   * be shown for it at all (not confirmed, business not verified or paused, trade
+   * not on the list).
+   */
+  async suitableSeekerIds(
+    vacancyIds: string[],
+    seekerWhere: Prisma.JobSeekerWhereInput = { status: 'active' },
+  ): Promise<Map<string, string[] | null>> {
+    const result = new Map<string, string[] | null>();
+    if (vacancyIds.length === 0) return result;
+    const vacancies = (await this.prisma.vacancy.findMany({
+      where: { id: { in: vacancyIds } },
+      include: { business: true },
+    })) as unknown as VacancyForMatching[];
+    const listedTrades = new Set(
+      (await this.prisma.trade.findMany({ where: { active: true }, select: { nameKey: true } })).map((row) => row.nameKey),
+    );
+    const policy = await this.pricingService.current();
+    const weights = this.readWeights(policy.matchingWeights);
+    const now = this.clock.now();
+    const pool = await this.loadCandidatePool(seekerWhere);
+    for (const vacancy of vacancies) {
+      if (
+        isUnconfirmedVacancyStatus(vacancy.status) ||
+        !businessCandidateAccess(vacancy.business).allowed ||
+        !listedTrades.has(tradeKey(vacancy.tradeSkill))
+      ) {
+        result.set(vacancy.id, null);
+        continue;
+      }
+      const { matches } = this.evaluate(vacancy, pool, policy, weights, now);
+      result.set(vacancy.id, matches.map((match) => match.jobSeekerId));
+    }
+    return result;
+  }
+
+  private async loadCandidatePool(seekerWhere: Prisma.JobSeekerWhereInput): Promise<MatchCandidate[]> {
+    const seekers = (await this.prisma.jobSeeker.findMany({
+      where: seekerWhere,
+      include: {
+        trades: true,
+        languages: true,
+        // Only hits of the current guarantee: paying ₹499 again supersedes earlier ones.
+        hits: { where: { supersededAt: null }, select: { reason: true, reversedAt: true } },
+        placements: { include: { replacementCandidates: { select: { status: true } } } },
+        interviews: { select: { status: true, businessId: true, result: true } },
+        replacementCandidateOffers: { include: { placement: { select: { businessId: true } } } },
+        payments: { select: { type: true, status: true } },
+      },
+    })) as unknown as MatchCandidate[];
+    const activeConsents = await this.prisma.consent.findMany({
+      where: {
+        subjectType: 'job_seeker',
+        subjectId: { in: seekers.map((seeker) => seeker.id) },
+        purpose: { in: ['job_matching', 'profile_sharing'] },
+        granted: true,
+        grantedAt: { not: null },
+        withdrawnAt: null,
+      },
+      select: { subjectId: true, purpose: true, granted: true, grantedAt: true, withdrawnAt: true },
+    });
+    const consentsBySeeker = new Map<string, MatchCandidate['consents']>();
+    for (const consent of activeConsents) {
+      const rows = consentsBySeeker.get(consent.subjectId) ?? [];
+      rows.push(consent);
+      consentsBySeeker.set(consent.subjectId, rows);
+    }
+    return seekers.map((seeker) => ({ ...seeker, consents: consentsBySeeker.get(seeker.id) ?? [] }));
+  }
+
+  private evaluate(
+    vacancy: VacancyForMatching,
+    pool: MatchCandidate[],
+    policy: PricingPolicy,
+    weights: Record<FactorName, number>,
+    now: Date,
+  ): { matches: CandidateMatch[]; nearMisses: CandidateMatch[]; leftOut: { no_location: number; no_travel_distance: number; consent_missing: number } } {
+    const leftOut = { no_location: 0, no_travel_distance: 0, consent_missing: 0 };
+    const matches: CandidateMatch[] = [];
+    const nearMisses: CandidateMatch[] = [];
+    for (const seeker of pool) {
+      const consentPurposes = new Set(
+        seeker.consents
+          .filter((row) => row.granted && row.grantedAt && !row.withdrawnAt)
+          .map((row) => row.purpose),
+      );
+      const hasConsent = consentPurposes.has('job_matching') && consentPurposes.has('profile_sharing');
+      if (!hasConsent) {
+        leftOut.consent_missing += 1;
+        continue;
+      }
+      const salarySuitability = this.salarySuitability(seeker, vacancy, policy.salaryDaysPerMonth);
+      if (!salarySuitability || !this.passesBeforeDistanceRules(seeker, vacancy)) continue;
+      if (seeker.latitude === null || seeker.longitude === null || vacancy.latitude === null || vacancy.longitude === null) {
+        leftOut.no_location += 1;
+        continue;
+      }
+      if (seeker.travelDistanceKm === null) {
+        leftOut.no_travel_distance += 1;
+        continue;
+      }
+      const distanceKm = distanceInKm(seeker.latitude, seeker.longitude, vacancy.latitude, vacancy.longitude);
+      if (distanceKm > seeker.travelDistanceKm) continue;
+      if (!this.passesAfterDistanceRules(seeker, vacancy, policy.adultMinimumAge, now)) continue;
+      const match = this.score(
+        seeker,
+        vacancy,
+        distanceKm,
+        weights,
+        policy.jobSeekerGuaranteeDays,
+        policy.salaryDaysPerMonth,
+        policy.maxHits,
+        now,
+      );
+      if (salarySuitability === 'near_miss') {
+        nearMisses.push({ ...match, salaryWarning: 'below_minimum_ask_him' });
+      } else {
+        matches.push(match);
+      }
+    }
+    return { matches, nearMisses, leftOut };
   }
 
   private salarySuitability(
@@ -452,6 +505,11 @@ export class MatchingService {
     }
     return weights;
   }
+}
+
+/** The Trade.nameKey form of a trade name (the same normalisation as the trade list). */
+export function tradeKey(name: string): string {
+  return name.trim().replace(/\s+/g, ' ').toLocaleLowerCase('en-IN');
 }
 
 function monthlyAmount(amount: number, period: string | null, daysPerMonth: number): number {
