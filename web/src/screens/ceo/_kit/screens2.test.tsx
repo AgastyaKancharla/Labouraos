@@ -75,6 +75,28 @@ describe('Team & access', () => {
     expect(await screen.findByText('tok-123')).toBeInTheDocument();
   });
 
+  it('shows a co-founder title on a CEO-level account and lets the CEO change it', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': {
+        ...teamResponse,
+        rows: [{ id: 'c2', code: 'CEO-0002', name: 'Sanket', email: 'sanket@laboura.in', role: 'ceo', title: 'co_founder', team: null, reportsTo: null, state: 'active', authenticator: true, signedIn: false, lockedUntil: null, lockedReason: null }, ...teamResponse.rows],
+      },
+      'POST /ceo/team/c2/title': { id: 'c2', title: 'founder' },
+    });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Sanket')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('Co-founder')).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Title' }));
+    const d = await dialog();
+    await userEvent.selectOptions(within(d).getByLabelText(/Title/), 'founder');
+    await userEvent.click(within(d).getByRole('button', { name: 'Save title' }));
+    await waitFor(() => expect(api.calls('POST /ceo/team/c2/title')[0].body).toEqual({ title: 'founder' }));
+    // Only CEO-level accounts get a title.
+    const agent = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
+    expect(within(agent).queryByRole('button', { name: 'Title' })).toBeNull();
+  });
+
   it('takes a joining date when adding staff and lets the CEO set one later', async () => {
     const api = mockApi({
       ...common,

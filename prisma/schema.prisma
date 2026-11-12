@@ -752,6 +752,8 @@ model Staff {
   teamName          String?
   /// An intern (call or field agent) — carries the same targets as paid agents.
   isIntern          Boolean          @default(false)
+  /// CEO-level accounts only: ceo, founder or co_founder (guide: one top-level role, different titles).
+  title             String?
   /// Joining date, entered when the staff member is added (CEO or Manager);
   /// payroll counts from it. When empty, payroll uses the first login date;
   /// the CEO can correct it later (PUT /staff/:id/joined-on).

@@ -132,6 +132,21 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
     expect(Array.isArray(res.body.requests)).toBe(true);
   });
 
+  it('titles on the one top-level role: the CEO sets founder or co-founder on a CEO-level account only, audited', async () => {
+    const ceoToken = tokens.ceo;
+    const other = await makeStaff('ceo', null);
+    tokens.ceo = ceoToken; // makeStaff keeps the newest token per role; the CEO acting stays the first one.
+    expect((await request(server()).post(`/ceo/team/${other.id}/title`).set(as('manager')).send({ title: 'founder' })).status).toBe(403);
+    expect((await request(server()).post(`/ceo/team/${other.id}/title`).set(as('ceo')).send({ title: 'chairman' })).status).toBe(400);
+    expect((await request(server()).post(`/ceo/team/${agent.id}/title`).set(as('ceo')).send({ title: 'founder' })).status).toBe(400);
+    const ok = await request(server()).post(`/ceo/team/${other.id}/title`).set(as('ceo')).send({ title: 'co_founder' });
+    expect(ok.status).toBe(201);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: other.id } })).title).toBe('co_founder');
+    const team = await request(server()).get('/ceo/team').set(as('ceo')).expect(200);
+    expect(team.body.rows.find((r: { id: string }) => r.id === other.id)).toMatchObject({ title: 'co_founder' });
+    expect(await prisma.auditLog.findFirst({ where: { action: 'staff.title_set', entityCode: other.code } })).not.toBeNull();
+  });
+
   it('serves every part-2 screen to the CEO', async () => {
     for (const path of GET_ROUTES) {
       const res = await request(server()).get(path).set(as('ceo'));

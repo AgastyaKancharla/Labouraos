@@ -309,6 +309,13 @@ export class CeoPortalController {
     return this.team.leaderboardRange(parseRange(q.fromDate, q.toDate, now));
   }
 
+  /** CEO, founder or co-founder on a CEO-level account (CEO only). */
+  @Post('team/:id/title')
+  @RequireRoles('ceo')
+  setTitle(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { title?: unknown; reason?: unknown }) {
+    return this.team.setTitle(req.user.sub, id, body ?? {});
+  }
+
   @Post('targets/copy')
   @RequireRoles('ceo')
   copyTargets(@Req() req: AuthedRequest, @Body() body: { fromYear?: unknown; fromMonth?: unknown; toYear?: unknown; toMonth?: unknown }) {

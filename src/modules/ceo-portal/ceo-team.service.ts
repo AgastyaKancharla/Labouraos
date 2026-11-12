@@ -63,6 +63,9 @@ export function parseMonth(year: unknown, month: unknown, now: Date): Month {
  * and copying a month's targets; every other action goes to the existing staff,
  * device, login-code and target endpoints.
  */
+/** Titles of the one top-level role (guide, People and roles). */
+export const STAFF_TITLES = ['ceo', 'founder', 'co_founder'] as const;
+
 @Injectable()
 export class CeoTeamService {
   constructor(
@@ -86,6 +89,30 @@ export class CeoTeamService {
   }
 
   /** C-Team: the organisation, every account and the "Add a staff member" choices. */
+  /**
+   * Guide, People and roles: the CEO, founders and co-founders are one
+   * top-level role with different titles. Only the CEO sets the title, and
+   * only on a CEO-level account. Audited.
+   */
+  async setTitle(actorId: string, staffId: string, body: { title?: unknown; reason?: unknown }) {
+    const title = typeof body?.title === 'string' ? body.title : '';
+    if (!STAFF_TITLES.includes(title as (typeof STAFF_TITLES)[number])) throw new BadRequestException(`title is one of ${STAFF_TITLES.join(', ')}`);
+    const target = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, role: true, title: true } });
+    if (!target) throw new NotFoundException('Staff account not found');
+    if (target.role !== 'ceo') throw new BadRequestException('Only a CEO-level account has the title CEO, founder or co-founder');
+    await this.prisma.staff.update({ where: { id: staffId }, data: { title } });
+    await this.audit.log({
+      actorId,
+      action: 'staff.title_set',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: { title: target.title },
+      after: { title },
+      reason: typeof body?.reason === 'string' && body.reason.trim() ? body.reason.trim() : null,
+    });
+    return { id: target.id, title };
+  }
+
   async team(now: Date) {
     const [staff, online] = await Promise.all([
       this.prisma.staff.findMany({
@@ -95,6 +122,7 @@ export class CeoTeamService {
           name: true,
           email: true,
           role: true,
+          title: true,
           status: true,
           totpEnabled: true,
           lockedUntil: true,
@@ -131,6 +159,7 @@ export class CeoTeamService {
         name: s.name,
         email: s.email,
         role: s.role,
+        title: s.title,
         team: teamOf(s),
         reportsTo: boss ? { id: boss.id, name: boss.name, role: boss.role } : null,
         state: staffState(s, now),
