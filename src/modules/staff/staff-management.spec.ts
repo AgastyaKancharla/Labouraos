@@ -44,7 +44,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
   async function mkStaff(
     role: string,
-    extra: Partial<{ teamLeadId: string; status: string }> = {},
+    extra: Partial<{ teamLeadId: string; status: string; reportsToId: string }> = {},
   ): Promise<Actor> {
     const email = `t9_${role}_${ts}_${createdStaffIds.length}@laboura.local`;
     const staff = await prisma.staff.create({
@@ -522,7 +522,8 @@ describe('Phase 8 Task 9: Staff account management', () => {
 
   describe('GET /staff — listing', () => {
     it('lists staff for CEO and Manager, filterable by role / team / status', async () => {
-      const lead = await mkStaff('team_lead');
+      // The lead reports to the Manager: a Manager lists only their own tree (security check L6).
+      const lead = await mkStaff('team_lead', { reportsToId: manager.id });
       const a = await hire('field_agent', { teamLeadId: lead.id });
       const b = await hire('call_agent', { teamLeadId: lead.id });
       await accept(a.inviteToken);

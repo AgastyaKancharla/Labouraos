@@ -124,6 +124,8 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     const callAgent = await makeStaff('call_agent', { teamLeadId: lead.id });
     const fieldAgent = await makeStaff('field_agent', { teamLeadId: lead.id });
     const manager = await makeStaff('manager');
+    // A Manager opens only people in their own tree (security check L6): the lead reports to them.
+    await prisma.staff.update({ where: { id: lead.id }, data: { reportsToId: manager.id } });
     const ceo = await makeStaff('ceo');
     const outsider = await makeStaff('call_agent');
     const stamp = Date.now();

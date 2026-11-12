@@ -535,25 +535,40 @@ export class StaffService {
 
     const effectiveTeamLeadId =
       actor?.role === 'team_lead' ? actor.sub : query.teamLeadId;
+    // A Manager lists only their own reporting tree (security check L6); a Team Lead
+    // only their team (above). The CEO lists everyone.
+    const tree = actor?.role === 'manager' ? await this.reportingScope.peopleUnder(actor.sub) : null;
 
     return this.prisma.staff.findMany({
       where: {
         ...(query.role ? { role: query.role } : {}),
         ...(effectiveTeamLeadId ? { teamLeadId: effectiveTeamLeadId } : {}),
         ...(query.status ? { status: query.status } : {}),
+        ...(tree ? { id: { in: [actor!.sub, ...tree] } } : {}),
       },
       select: STAFF_VIEW_SELECT,
       orderBy: { createdAt: 'asc' },
     });
   }
 
-  async getStaffById(id: string) {
+  async getStaffById(id: string, actor?: JwtPayload) {
     const staff = await this.prisma.staff.findUnique({
       where: { id },
       select: STAFF_VIEW_SELECT,
     });
     if (!staff) {
       throw new NotFoundException(`Staff '${id}' not found`);
+    }
+    // A Manager opens only people in their own tree, a Team Lead only their team.
+    if (actor && (actor.role === 'manager' || actor.role === 'team_lead') && staff.id !== actor.sub) {
+      const inTeam = actor.role === 'team_lead' && staff.teamLeadId === actor.sub;
+      if (!inTeam && !(await this.reportingScope.personIsUnder(actor.sub, staff.id))) {
+        throw new ForbiddenException(
+          actor.role === 'manager'
+            ? `Access denied: staff '${id}' is not in your reporting tree`
+            : `Access denied: staff '${id}' is not part of your team`,
+        );
+      }
     }
     return staff;
   }
