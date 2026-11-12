@@ -251,9 +251,10 @@ export class SearchService {
         : q.kind === 'phone'
           ? { phone: { endsWith: q.digits! } }
           : { name: { contains: q.name!, mode: 'insensitive' } };
-    // A Team Lead's referral partners: those whose referred job seekers the team registered.
+    // A Team Lead's referral partners: those the team registered (registeredByStaffId),
+    // as on GET /referrals. Older partners with no registering agent are not shown.
     const where: Prisma.ReferralWhereInput = {
-      AND: [match, { anonymisedAt: null }, ...(team ? [{ jobSeekers: { some: { registeredByStaffId: { in: team } } } }] : [])],
+      AND: [match, { anonymisedAt: null }, ...(team ? [{ registeredByStaffId: { in: team } }] : [])],
     };
     const [rows, total] = await Promise.all([
       this.prisma.referral.findMany({

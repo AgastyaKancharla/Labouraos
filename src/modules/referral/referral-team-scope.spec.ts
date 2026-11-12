@@ -5,6 +5,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { ReferralService } from './referral.service';
 import { verifiedOtpFor } from '../../test-support/verified-otp';
 import { CreateReferralDto } from './dto/create-referral.dto';
+import { SearchService } from '../screens-call-agent/search.service';
+import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 
 /**
  * A Team Lead reads only referral partners registered by their team. The registering
@@ -15,6 +17,7 @@ describe('Referral partners: Team Lead reads only their team\'s', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let referrals: ReferralService;
+  let search: SearchService;
   const stamp = String(Date.now());
   const staff: Record<string, { id: string; role: string }> = {};
   const referralIds: string[] = [];
@@ -26,6 +29,7 @@ describe('Referral partners: Team Lead reads only their team\'s', () => {
     await app.init();
     prisma = app.get(PrismaService);
     referrals = app.get(ReferralService);
+    search = app.get(SearchService);
     const make = async (key: string, role: string, teamLeadId: string | null = null) => {
       const row = await prisma.staff.create({
         data: { code: `RTS-${key}-${stamp}`, name: `Ref ${key}`, email: `rts-${key.toLowerCase()}-${stamp}@laboura.local`, passwordHash: 'x', role, city: 'Bengaluru', teamLeadId },
@@ -43,7 +47,7 @@ describe('Referral partners: Team Lead reads only their team\'s', () => {
     const partner = async (name: string, registeredByStaffId: string | null) => {
       n += 1;
       const row = await prisma.referral.create({
-        data: { code: `RF-RTS-${stamp}-${n}`, name, phone: `+9191${stamp.slice(-6)}${String(n).padStart(2, '0')}`, city: 'Bengaluru', registeredByStaffId },
+        data: { code: `RF-RTS-${stamp}-${n}`, name: `Quokka ${name}`, phone: `+9191${stamp.slice(-6)}${String(n).padStart(2, '0')}`, city: 'Bengaluru', registeredByStaffId },
       });
       referralIds.push(row.id);
       byName[name] = row.id;
@@ -85,6 +89,15 @@ describe('Referral partners: Team Lead reads only their team\'s', () => {
       expect(await listed(who)).toEqual(['byLead', 'mine', 'old', 'theirs']);
       await expect(referrals.findById(byName.old, as(who))).resolves.toMatchObject({ id: byName.old });
     }
+  });
+
+  it('applies the same scope to the search bar', async () => {
+    const found = async (key: string) => {
+      const res = await search.search({ sub: staff[key].id, role: staff[key].role, code: key, email: null } as JwtPayload, 'quokka', 'referral');
+      return Object.entries(byName).filter(([, id]) => res.results.some((r) => r.id === id)).map(([name]) => name).sort();
+    };
+    expect(await found('TL')).toEqual(['byLead', 'mine']);
+    expect(await found('CEO')).toEqual(['byLead', 'mine', 'old', 'theirs']);
   });
 
   it('records the agent who registers a partner', async () => {
