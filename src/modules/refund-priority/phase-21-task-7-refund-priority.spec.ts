@@ -232,15 +232,22 @@ describe('Phase 21 Task 7: close to a refund, the 15-day priority', () => {
     expect((await list(agentA, '?format=csv')).status).toBe(403);
   });
 
-  it('rings the agent, their Team Lead and Manager when someone is in the window, and clears it when he leaves', async () => {
+  // Owner decision 12 Nov: the CEO also gets the bell (with rupees); this test listed only the
+  // agent, Team Lead and Manager before, so its recipient list and counts now include the CEO.
+  it('rings the agent, their Team Lead, Manager and the CEO when someone is in the window, and clears it when he leaves', async () => {
     await priority.syncBells(shared.at);
     const open = await prisma.notification.findMany({
       where: { kind: 'refund_priority', subjectId: seekers.twelve.id, clearedAt: null },
     });
-    expect(open.map((n) => n.recipientStaffId).sort()).toEqual([agentA.id, leadA.id, managerA.id].sort());
+    expect(open.map((n) => n.recipientStaffId).sort()).toEqual([agentA.id, leadA.id, managerA.id, ceo.id].sort());
     const forAgent = open.find((n) => n.recipientStaffId === agentA.id)!;
     expect(forAgent.link).toBe(`/call-agent/people/${encodeURIComponent(seekers.twelve.code)}`);
-    expect(open.every((n) => !n.title.includes('₹') && !(n.body ?? '').includes('₹'))).toBe(true);
+    // Managers, Team Leads and agents: counts only. The CEO's bell says the rupees at stake.
+    const notCeo = open.filter((n) => n.recipientStaffId !== ceo.id);
+    expect(notCeo.every((n) => !n.title.includes('₹') && !(n.body ?? '').includes('₹'))).toBe(true);
+    const forCeo = open.find((n) => n.recipientStaffId === ceo.id)!;
+    expect(forCeo.body).toMatch(/₹[\d,]+ at stake/);
+    expect(forCeo.link).toBe('/ceo/job-seekers/near-refund');
     expect(
       await prisma.notification.count({
         where: { kind: 'refund_priority', subjectId: seekers.twelve.id, recipientStaffId: { in: [leadB.id, managerB.id, agentB.id] } },
@@ -251,7 +258,7 @@ describe('Phase 21 Task 7: close to a refund, the 15-day priority', () => {
 
     // Running again adds nothing.
     await priority.syncBells(shared.at);
-    expect(await prisma.notification.count({ where: { kind: 'refund_priority', subjectId: seekers.twelve.id } })).toBe(3);
+    expect(await prisma.notification.count({ where: { kind: 'refund_priority', subjectId: seekers.twelve.id } })).toBe(4);
 
     // He leaves the window (placed): every bell about him clears.
     await prisma.jobSeeker.update({ where: { id: seekers.twelve.id }, data: { status: 'placed' } });
@@ -259,7 +266,7 @@ describe('Phase 21 Task 7: close to a refund, the 15-day priority', () => {
     const cleared = await prisma.notification.findMany({
       where: { kind: 'refund_priority', subjectId: seekers.twelve.id },
     });
-    expect(cleared).toHaveLength(3);
+    expect(cleared).toHaveLength(4);
     expect(cleared.every((n) => n.clearedAt && n.clearedReason === 'left_window')).toBe(true);
     expect(mine((await list(ceo)).body.rows as Row[]).some((r) => r.id === seekers.twelve.id)).toBe(false);
   });

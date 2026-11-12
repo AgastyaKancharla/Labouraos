@@ -2,11 +2,11 @@ import { BehindPaceBellsService, BEHIND_PACE_CHECK_EVERY_MS } from './behind-pac
 import { evaluateMetricPace } from './target.constants';
 
 /** Guide, Monthly targets: agents who fall behind pace are flagged to their Team Lead and Manager. */
-describe('behind-pace bells for the Team Lead and Manager', () => {
+describe('behind-pace bells for the Team Lead, Manager and CEO', () => {
   const now = new Date('2026-11-20T06:00:00Z');
   const agent = { id: 'ca-1', code: 'CA-0042', name: 'Deepa Nair', role: 'call_agent', city: 'Bengaluru', email: null, teamLeadId: 'tl-1', status: 'active' };
   const onPace = { ...agent, id: 'ca-2', code: 'CA-0043', name: 'Kiran' };
-  function setup() {
+  function setup(ceo: { id: string; status: string; role: string } | null = null, ceos: Array<{ id: string; status: string; role: string }> = []) {
     const prisma = { staff: { findMany: jest.fn().mockResolvedValue([agent, onPace]) } };
     const overview = {
       buildSingleAgentOverview: jest.fn().mockImplementation(async (staff: { id: string }) => ({
@@ -22,7 +22,7 @@ describe('behind-pace bells for the Team Lead and Manager', () => {
     const mgr = { id: 'mg-1', status: 'active', role: 'manager' };
     const sources = {
       registerRequestSource: jest.fn(),
-      directory: jest.fn().mockResolvedValue({ chainOf: () => ({ teamLead: tl, manager: mgr, ceo: null }) }),
+      directory: jest.fn().mockResolvedValue({ chainOf: () => ({ teamLead: tl, manager: mgr, ceo }), ceos: () => ceos }),
       drafts: jest.fn().mockImplementation((people: Array<{ id: string }>, base: Record<string, unknown>) => people.map((p) => ({ ...base, recipientStaffId: p.id }))),
     };
     const service = new BehindPaceBellsService(prisma as never, overview as never, notifications as never, sources as never);
@@ -39,6 +39,25 @@ describe('behind-pace bells for the Team Lead and Manager', () => {
     expect(drafts[0].title).toContain('Deepa Nair (CA-0042) is behind pace');
     expect(drafts[0].body).toBe('Candidates activated: 2 of 12, about 8 by now');
     expect(drafts[0].body).not.toMatch(/₹/);
+  });
+
+  it('rings the CEO too (owner decision 12 Nov): one bell per agent, counts only, opening the targets', async () => {
+    const ceo = { id: 'ceo-1', status: 'active', role: 'ceo' };
+    const { service, notifications } = setup(ceo, [ceo, { id: 'ceo-2', status: 'active', role: 'ceo' }]);
+    await service.sweep(now);
+    const [, drafts, clearInfo] = notifications.reconcileKind.mock.calls[0];
+    // The CEO at the top of the agent's line, once; reconcileKind clears it when the agent is back on pace.
+    expect(drafts.map((d: { recipientStaffId: string }) => d.recipientStaffId)).toEqual(['tl-1', 'mg-1', 'ceo-1']);
+    expect(drafts.filter((d: { subjectId: string }) => d.subjectId === 'ca-1')).toHaveLength(3);
+    expect(drafts[2]).toMatchObject({ kind: 'behind_pace', subjectType: 'staff_pace', subjectId: 'ca-1', body: 'Candidates activated: 2 of 12, about 8 by now' });
+    expect(clearInfo({})).toEqual({ reason: 'back_on_pace' });
+  });
+
+  it('an agent with no CEO on their line reaches every active CEO', async () => {
+    const { service, notifications } = setup(null, [{ id: 'ceo-1', status: 'active', role: 'ceo' }, { id: 'ceo-2', status: 'active', role: 'ceo' }]);
+    await service.sweep(now);
+    const [, drafts] = notifications.reconcileKind.mock.calls[0];
+    expect(drafts.map((d: { recipientStaffId: string }) => d.recipientStaffId)).toEqual(['tl-1', 'mg-1', 'ceo-1', 'ceo-2']);
   });
 
   it('runs with the bell sweep at most once an hour', async () => {
