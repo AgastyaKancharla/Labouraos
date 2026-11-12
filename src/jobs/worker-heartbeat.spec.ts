@@ -116,6 +116,8 @@ describe('Worker heartbeat', () => {
       jest.spyOn(service, 'checkDatabase').mockResolvedValue({ healthy: true });
       jest.spyOn(service, 'checkRedis').mockResolvedValue({ healthy: true });
       jest.spyOn(service, 'checkSweepInfo').mockResolvedValue(undefined);
+      // The job-schedule check (same switch as the heartbeat) has its own tests.
+      jest.spyOn(service, 'checkSchedules').mockResolvedValue({ status: 'ok', missing: [] });
       return { service, controller: new HealthController(service) };
     }
 
@@ -167,6 +169,7 @@ describe('Worker heartbeat', () => {
         postgres: 'ok',
         redis: 'ok',
         worker: alive,
+        schedules: { status: 'ok', missing: [] },
       });
     });
 
