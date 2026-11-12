@@ -2127,6 +2127,12 @@ model PayrollRun {
   returnedAt        DateTime?
   returnedReason    String?
   paidAt            DateTime?
+  /// Settings in force when the sheet was prepared: weekly offs (0 = Sunday)
+  /// and production minutes in a full day. The correction recompute uses
+  /// them. fullDayMinutes null = prepared before they were kept (falls back
+  /// to the Settings version in force at preparedAt; weeklyOffDays unused).
+  weeklyOffDays     Int[]         @default([])
+  fullDayMinutes    Int?
   lines             PayrollLine[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
@@ -2250,13 +2256,16 @@ model PayrollCorrection {
   /// + pays back, − takes back (paise).
   amountPaise    Int
   reason         String
-  /// recompute (a frozen month worked out again), carry_forward (left over from a sheet)
+  /// recompute (a frozen month worked out again), carry_forward (left over from a sheet),
+  /// manual (added by the CEO, e.g. for a month payroll no longer works out again)
   source         String
   /// The sheet it was applied on; null until then.
   appliedRunId   String?
   appliedMonth   String?
   /// For carry_forward: the sheet that left it over.
   createdByRunId String?
+  /// For manual: the CEO who added it.
+  createdByStaffId String?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

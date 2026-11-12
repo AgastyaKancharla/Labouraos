@@ -44,6 +44,7 @@ import {
   startOfWeekIst,
 } from './requests-routing';
 import { RequestBellsService } from './request-bells.service';
+import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
 export interface Actor {
   id: string;
@@ -557,6 +558,7 @@ export class RequestsService {
     if (day.dayType === 'open') throw new BadRequestException('The day is still open');
     if (!['full', 'half', 'absent'].includes(day.dayType)) throw new BadRequestException('Only a full, half or absent day can be changed');
     if (day.dayType === dayType) throw new BadRequestException(`It already counts as a ${dayType} day`);
+    await assertPayrollCanCorrect(this.prisma, [monthOfDay(day.date)], 'This day change');
     const own = day.staffId === actor.id;
     if (own && !AGENT_ROLES.includes(actor.role) && actor.role !== 'team_lead') {
       throw new ForbiddenException('Ask the CEO to change your own day');
@@ -766,6 +768,7 @@ export class RequestsService {
     const details = row.details as Record<string, unknown>;
     if (row.kind === 'day_change') {
       const day = await this.prisma.attendanceDay.findUniqueOrThrow({ where: { id: String(details.dayId) } });
+      await assertPayrollCanCorrect(this.prisma, [monthOfDay(day.date)], 'Undoing this day change');
       // Back to how the day counted before the change, with its shortfall and make-up worked out again.
       const from = String(details.fromDayType);
       const policy = await this.pricing.current();

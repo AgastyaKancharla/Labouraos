@@ -21,6 +21,7 @@ import { PayslipCard, type Payslip } from '../../call-agent/CA14g-Payslip/Paysli
 import { FormAction, Note } from '../_kit/kit';
 import { ServerDownload } from '../_kit/download';
 import { MonthlyPay } from '../_kit/MonthlyPay';
+import { PayrollCorrections } from '../_kit/PayrollCorrections';
 import { PAID_FROM } from '../_kit/labels';
 import { STAFF_ROLE, addMonths, dayMonth, istMonthKey, monthName, paidDaysText, shortTime, type SalarySheet, type SheetRow } from '../_kit/payroll';
 import '../_kit/fin.css';
@@ -265,7 +266,7 @@ export default function Salaries() {
           emptyTitle="No rows match these filters. Change a filter to see more."
         />
         <Note>
-          Worked out only from attendance: approved leave, weekly offs and holidays are paid · a day's pay is the monthly pay ÷ {sheet?.salaryDays ?? 26} in every month · absence without leave is loss of pay (half for a half day) · working days before joining, while away or after leaving are not paid (the leaving day is) · short time not made up by month end is deducted · a change to an approved month comes as a correction on the next sheet · PF, ESI and professional tax: ₹0 — {sheet?.statutory.note.toLowerCase() ?? 'added after company registration'}
+          Worked out only from attendance: on the staff all month, the monthly pay (approved leave, weekly offs and holidays are paid) · a day's pay is the monthly pay ÷ {sheet?.salaryDays ?? 26} in every month · joined, left or away part of the month: paid for the days on the staff, monthly pay ÷ {sheet?.salaryDays ?? 26} × (working days + holidays on the staff), never more than the monthly pay (the leaving day is paid) · absence without leave is loss of pay (half for a half day) · short time not made up by month end is deducted · a change to an approved month comes as a correction on the next sheet · PF, ESI and professional tax: ₹0 — {sheet?.statutory.note.toLowerCase() ?? 'added after company registration'}
         </Note>
       </Card>
       <div className="fin-foot" style={{ justifyContent: 'flex-start' }}>
@@ -307,6 +308,7 @@ export default function Salaries() {
           </div>
         </div>
       </Card>
+      <PayrollCorrections canAdd={false} />
       <MonthlyPay months={[...new Set([previous, current, addMonths(current, 1)])]} canEdit={false} />
     </div>
   );

@@ -28,6 +28,7 @@ import {
   placementOf,
   whereLabel,
 } from './request-routing';
+import { assertPayrollCanCorrect, monthOfDay, monthsBetween } from '../finance/payroll-window';
 
 /** Statuses a correction may claim: working time a person picks. */
 const CORRECTION_STATUSES = ['available', 'team_meeting', 'training', 'one_to_one'];
@@ -256,6 +257,8 @@ export class AttendanceRequestsService {
       });
       if (day?.dayType === 'leave') throw new BadRequestException('This is a leave day');
     }
+    // An approval changes attendance: refused in a month payroll no longer works out again.
+    if (decision === 'approved') await this.assertPayrollReaches(request);
     const data = {
       status: decision,
       decidedAt: now,
@@ -441,6 +444,8 @@ export class AttendanceRequestsService {
         "A Manager over the person overturns a Team Lead's decision",
       );
     }
+    // Either way an overturn changes attendance: refused in a month payroll no longer works out again.
+    await this.assertPayrollReaches(request);
     const now = this.clock.now();
     const next = request.status === 'approved' ? 'rejected' : 'approved';
     const claimed = await this.prisma.leaveRequest.updateMany({
@@ -665,6 +670,15 @@ export class AttendanceRequestsService {
       throw new ForbiddenException('This request is still with the Team Lead');
     }
     throw new ForbiddenException('This request is not in your team');
+  }
+
+  /** The request's dates (a leave's range, a correction's day) must be in months payroll still works out again. */
+  private async assertPayrollReaches(request: AnyRequest): Promise<void> {
+    const months =
+      'fromDate' in request
+        ? monthsBetween(monthOfDay((request as LeaveRequest).fromDate), monthOfDay((request as LeaveRequest).toDate))
+        : [monthOfDay((request as AttendanceCorrection).date)];
+    await assertPayrollCanCorrect(this.prisma, months, 'kind' in request ? 'This leave decision' : 'This attendance correction');
   }
 
   private async alreadyDecided(kind: AttendanceRequestKind, id: string) {
