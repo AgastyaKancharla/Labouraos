@@ -210,6 +210,13 @@ export const attendanceEn = {
   'att.leave.sent.noLine': 'Nobody is set as the person you report to yet, so it went to the CEO.',
   'att.leave.sent.office': 'It is with the person you report to now.',
   'att.leave.smsNote': 'You get an SMS when it is decided. You can follow it under My requests.',
+  // Half-day leave (owner decision 12 Nov). Kannada and Hindi below: for native-speaker review.
+  'att.leave.halfDay': 'Half day?',
+  'att.leave.fullDay': 'Full day',
+  'att.leave.firstHalf': 'First half',
+  'att.leave.secondHalf': 'Second half',
+  'att.leave.halfHint': 'A half day is for one date and uses half a day of your leave. You work the other half: half the production hours make it a full day.',
+  'att.leave.sentHalf': 'Leave request sent · {date} · half day ({half})',
   'att.back': 'Back to my attendance',
 
   // CA14h — request a correction
@@ -420,6 +427,13 @@ export const attendanceKn: Record<AttendanceKey, string> = {
   'att.leave.sent.noLine': 'ನೀವು ವರದಿ ಮಾಡುವವರು ಇನ್ನೂ ನೇಮಕವಾಗಿಲ್ಲ, ಆದ್ದರಿಂದ ಇದು CEO ಗೆ ಹೋಗಿದೆ.',
   'att.leave.sent.office': 'ಈಗ ಇದು ನೀವು ವರದಿ ಮಾಡುವವರ ಬಳಿ ಇದೆ.',
   'att.leave.smsNote': 'ನಿರ್ಧಾರವಾದಾಗ ನಿಮಗೆ SMS ಬರುತ್ತದೆ. "ನನ್ನ ಮನವಿಗಳು" ಅಡಿಯಲ್ಲಿ ನೋಡಬಹುದು.',
+  // Half-day leave — for native-speaker review.
+  'att.leave.halfDay': 'ಅರ್ಧ ದಿನವೇ?',
+  'att.leave.fullDay': 'ಪೂರ್ಣ ದಿನ',
+  'att.leave.firstHalf': 'ಮೊದಲ ಅರ್ಧ',
+  'att.leave.secondHalf': 'ಎರಡನೇ ಅರ್ಧ',
+  'att.leave.halfHint': 'ಅರ್ಧ ದಿನದ ರಜೆ ಒಂದೇ ದಿನಾಂಕಕ್ಕೆ ಮಾತ್ರ, ಮತ್ತು ನಿಮ್ಮ ರಜೆ ಬಾಕಿಯಿಂದ ಅರ್ಧ ದಿನ ಕಳೆಯುತ್ತದೆ. ಉಳಿದ ಅರ್ಧದಲ್ಲಿ ನೀವು ಕೆಲಸ ಮಾಡುತ್ತೀರಿ: ಆ ದಿನ ಅರ್ಧದಷ್ಟು ಉತ್ಪಾದನಾ ಗಂಟೆಗಳು ಪೂರ್ಣ ದಿನವಾಗುತ್ತವೆ.',
+  'att.leave.sentHalf': 'ರಜೆ ಮನವಿ ಕಳುಹಿಸಲಾಗಿದೆ · {date} · ಅರ್ಧ ದಿನ ({half})',
   'att.back': 'ನನ್ನ ಹಾಜರಾತಿಗೆ ಹಿಂತಿರುಗಿ',
 
   'att.corr.title': 'ತಿದ್ದುಪಡಿ ಕೇಳಿ',
@@ -627,6 +641,13 @@ export const attendanceHi: Record<AttendanceKey, string> = {
   'att.leave.sent.noLine': 'आप किसे रिपोर्ट करते हैं यह अभी तय नहीं है, इसलिए यह CEO के पास गया।',
   'att.leave.sent.office': 'अभी यह उनके पास है जिन्हें आप रिपोर्ट करते हैं।',
   'att.leave.smsNote': 'फ़ैसला होने पर आपको SMS मिलेगा। "मेरे अनुरोध" में इसे देख सकते हैं।',
+  // Half-day leave — for native-speaker review.
+  'att.leave.halfDay': 'आधा दिन?',
+  'att.leave.fullDay': 'पूरा दिन',
+  'att.leave.firstHalf': 'पहला आधा दिन',
+  'att.leave.secondHalf': 'दूसरा आधा दिन',
+  'att.leave.halfHint': 'आधे दिन की छुट्टी सिर्फ़ एक तारीख के लिए होती है और आपकी बची छुट्टी में से आधा दिन घटता है। बाकी आधे दिन आप काम करते हैं: उस दिन आधे प्रोडक्शन घंटे पूरा दिन गिने जाते हैं।',
+  'att.leave.sentHalf': 'छुट्टी का अनुरोध भेजा गया · {date} · आधा दिन ({half})',
   'att.back': 'मेरी हाज़िरी पर वापस जाएँ',
 
   'att.corr.title': 'सुधार माँगें',

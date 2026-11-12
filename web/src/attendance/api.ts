@@ -124,6 +124,9 @@ export interface MyRequest {
   leaveKind?: 'casual' | 'emergency';
   fromDate?: string;
   toDate?: string;
+  /** "first" / "second" for a half day of leave; null for full days. */
+  half?: LeaveHalf | null;
+  /** Whole or half days (0.5 for a half day). */
   days?: number;
   approvedDays?: number | null;
   date?: string;
@@ -132,11 +135,16 @@ export interface MyRequest {
   segmentStatus?: string;
 }
 
+/** A half day of leave (owner decision 12 Nov): the first or second half of one date. */
+export type LeaveHalf = 'first' | 'second';
+
 export interface LeaveBody {
   kind: 'casual' | 'emergency';
   fromDate: string;
   toDate: string;
   reason: string;
+  /** Left out for full days. */
+  half?: LeaveHalf;
 }
 
 export type CorrectionStatus = 'available' | 'team_meeting' | 'training' | 'one_to_one';

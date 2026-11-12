@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAttendance } from '../../../attendance/AttendanceProvider';
-import { attendanceKeys, useLeaveBalance, type LeaveBody, type MyRequest } from '../../../attendance/api';
+import { attendanceKeys, useLeaveBalance, type LeaveBody, type LeaveHalf, type MyRequest } from '../../../attendance/api';
 import { dateRange } from '../../../attendance/format';
 import { DateField, FieldShell, SelectField } from '../../../components/fields';
 import { TopBar } from '../../../components/TopBar';
@@ -27,6 +27,8 @@ function routedKey(routeReason: string, office: boolean): MessageKey {
  * server decides where: more than 3 casual days in a month go to the Manager;
  * a Team Lead's, Manager's or Finance's own request goes up their line).
  * Days beyond the paid balance count as unpaid leave — nothing is blocked.
+ * "Half day?" (owner decision 12 Nov): full day, or the first or second half
+ * of one date — half a day of the balance; the other half is worked.
  */
 export default function RequestLeave() {
   const t = useT();
@@ -40,10 +42,19 @@ export default function RequestLeave() {
   const [fromDate, setFrom] = useState('');
   const [toDate, setTo] = useState('');
   const [reason, setReason] = useState('');
+  const [half, setHalf] = useState<LeaveHalf | ''>('');
   const [tried, setTried] = useState(false);
 
   const send = useMutation<MyRequest, Error>({
-    mutationFn: () => api.post<MyRequest>('/attendance/leave', { kind, fromDate, toDate: toDate || fromDate, reason: reason.trim() }),
+    // A half day is one date: "To" is "From".
+    mutationFn: () =>
+      api.post<MyRequest>('/attendance/leave', {
+        kind,
+        fromDate,
+        toDate: half ? fromDate : toDate || fromDate,
+        reason: reason.trim(),
+        ...(half ? { half } : {}),
+      }),
     onSuccess: () => {
       void qc.invalidateQueries({ queryKey: attendanceKeys.mine });
       void qc.invalidateQueries({ queryKey: attendanceKeys.balance });
@@ -53,7 +64,7 @@ export default function RequestLeave() {
   });
 
   const left = (k: 'casual' | 'emergency') => (balance.data ? String(balance.data[k].left) : '—');
-  const toBefore = Boolean(toDate && fromDate && toDate < fromDate);
+  const toBefore = !half && Boolean(toDate && fromDate && toDate < fromDate);
   const errors = {
     kind: tried && !kind ? t('form.select.placeholder') : undefined,
     from: tried && !fromDate ? t('common.required') : undefined,
@@ -69,7 +80,9 @@ export default function RequestLeave() {
         <TopBar title={t('att.leave.title')} titleHidden />
         <h2 className="h1">{t('att.leave.title')}</h2>
         <div className="lb-att-ok" role="status">
-          {t('att.leave.sent', { dates: dateRange(r.fromDate ?? fromDate, r.toDate ?? (toDate || fromDate)), days: r.days ?? 0 })}
+          {r.half
+            ? t('att.leave.sentHalf', { date: dateRange(r.fromDate ?? fromDate, r.fromDate ?? fromDate), half: t(r.half === 'first' ? 'att.leave.firstHalf' : 'att.leave.secondHalf') })
+            : t('att.leave.sent', { dates: dateRange(r.fromDate ?? fromDate, r.toDate ?? (toDate || fromDate)), days: r.days ?? 0 })}
         </div>
         <p className="lb-att-muted" style={{ margin: 0 }}>
           {t(routedKey(r.routeReason, office))} {t('att.leave.smsNote')}
@@ -120,7 +133,19 @@ export default function RequestLeave() {
               if (toDate && toDate < v) setTo('');
             }}
           />
-          <DateField label={t('att.leave.to')} required value={toDate || fromDate} min={fromDate || undefined} hint={t('att.leave.toHint')} error={errors.to} onChange={setTo} />
+          <DateField label={t('att.leave.to')} required value={half ? fromDate : toDate || fromDate} min={fromDate || undefined} hint={half ? undefined : t('att.leave.toHint')} error={errors.to} onChange={setTo} disabled={Boolean(half)} />
+          <fieldset className="lb-att-half">
+            <legend>{t('att.leave.halfDay')}</legend>
+            <div className="lb-att-half__choices">
+              {([['', 'att.leave.fullDay'], ['first', 'att.leave.firstHalf'], ['second', 'att.leave.secondHalf']] as const).map(([value, key]) => (
+                <label key={value || 'full'} className={half === value ? 'is-on' : undefined}>
+                  <input type="radio" name="leave-half" value={value || 'full'} checked={half === value} onChange={() => setHalf(value)} />
+                  {t(key)}
+                </label>
+              ))}
+            </div>
+            {half && <p className="lb-att-muted lb-att-half__hint">{t('att.leave.halfHint')}</p>}
+          </fieldset>
           <FieldShell label={t('att.leave.reason')} required error={errors.reason} className="lb-att-wide">
             {({ inputId, describedBy, invalid }) => (
               <textarea id={inputId} rows={3} value={reason} onChange={(e) => setReason(e.target.value)} aria-describedby={describedBy} aria-invalid={invalid || undefined} required maxLength={500} />
