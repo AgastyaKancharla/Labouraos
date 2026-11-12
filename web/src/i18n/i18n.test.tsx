@@ -31,6 +31,7 @@ describe('i18n', () => {
     'reg.role.hr', // HR
     'reg.extra.pf_esi', // PF / ESI
     'reg.biz.pan', // PAN
+    'payslip.esi', // ESI (state insurance code)
   ]);
   /** Nothing to translate: only {placeholders}, digits, signs and punctuation. */
   const hasNoWords = (s: string) => !/\p{L}/u.test(s.replace(/\{\w+\}/g, ''));
