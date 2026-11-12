@@ -1,4 +1,5 @@
 import { ApiError, apiErrorFromBody, networkError } from './errors';
+import { announceTestMode } from './testMode';
 
 export type QueryValue = string | number | boolean | null | undefined;
 export type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
@@ -105,6 +106,7 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
       if (response.status === 401 && token) config.onUnauthorized(error.message);
       throw error;
     }
+    announceTestMode(parsed);
     return parsed as T;
   }
 

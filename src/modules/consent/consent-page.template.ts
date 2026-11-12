@@ -35,7 +35,7 @@ function renderConsentOtpScript(token: string, language: string, successMessage:
         if (!res.ok) { showAlert(data.message || 'Failed to send OTP', true); return; }
         activeOtpRequestId = data.requestId;
         document.getElementById('otp-input-container').style.display = 'block';
-        showAlert('OTP has been sent to your phone.', false);
+        showAlert(data.testModeBanner ? data.testModeBanner : 'OTP has been sent to your phone.', false);
       } catch (err) { showAlert('Network error while requesting OTP', true); }
     });
     document.getElementById('consent-form').addEventListener('submit', async (e) => {

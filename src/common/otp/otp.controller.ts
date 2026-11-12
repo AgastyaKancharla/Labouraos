@@ -9,6 +9,7 @@ import { OTP_PURPOSES, OtpPurpose } from './otp.service';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
+import { testModeFields } from './otp-test-mode';
 
 @Controller('otp')
 @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
@@ -41,6 +42,7 @@ export class OtpController {
       requestId: result.requestId,
       resendAvailableAt: result.resendAvailableAt,
       resendsLeft: result.resendsLeft,
+      ...testModeFields(result),
     };
   }
 

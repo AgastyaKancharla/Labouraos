@@ -983,7 +983,8 @@ export function renderCallAgentConsoleHtml(): string {
         otpRequests[type] = res.requestId;
         document.getElementById(type + '-otp-container').style.display = 'block';
         document.getElementById(type + '-otp-status').textContent = 'OTP sent! Request ID: ' + res.requestId;
-        showAlert('OTP code sent to ' + phone);
+        // OTP test mode (pretend vendors): the server sends the code back to show.
+        showAlert(res.testModeBanner ? res.testModeBanner : 'OTP code sent to ' + phone);
       } catch (e) {
         showAlert(e.message, false);
       }

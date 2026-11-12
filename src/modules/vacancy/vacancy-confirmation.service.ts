@@ -10,6 +10,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { MessagingService } from '../message/messaging.service';
 import { PricingService } from '../pricing/pricing.service';
 import { MinimumWageLevel, tradeNameKey } from '../trade/trade.service';
+import { testModeFields } from '../../common/otp/otp-test-mode';
 
 /** A vacancy may only be matched, introduced or interviewed for once it is `open`. */
 export const UNCONFIRMED_VACANCY_STATUSES = ['draft', 'awaiting_confirmation'] as const;
@@ -181,6 +182,7 @@ export class VacancyConfirmationService {
       contactName: contact.name,
       resendAvailableAt: result.resendAvailableAt,
       resendsLeft: result.resendsLeft,
+      ...testModeFields(result),
     };
   }
 
@@ -280,6 +282,7 @@ export class VacancyConfirmationService {
       sentToLast4: last4(link.phone!),
       resendAvailableAt: result.resendAvailableAt,
       resendsLeft: result.resendsLeft,
+      ...testModeFields(result),
     };
   }
 
