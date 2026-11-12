@@ -193,12 +193,12 @@ describe('Web attendance: today view, live status and office staff days', () => 
     await post(tokenFor(lead), '/attendance/status', { status: 'one_to_one' }).expect(201);
     await post(tokenFor(finance), '/attendance/status', { status: 'training' }).expect(201);
 
-    const managerBoard = await get(tokenFor(manager), '/attendance/reports/live').expect(200);
+    const managerBoard = await get(tokenFor(manager), '/attendance/live').expect(200);
     const managerRows = managerBoard.body.people;
     const leadRow = managerRows.find((row: { staff: { id: string } }) => row.staff.id === lead.id);
     expect(leadRow?.status).toBe('one_to_one');
 
-    const ceoBoard = await get(tokenFor(ceo), '/attendance/reports/live').expect(200);
+    const ceoBoard = await get(tokenFor(ceo), '/attendance/live').expect(200);
     const ceoRows = ceoBoard.body.people;
     const ids = ceoRows.map((row: { staff: { id: string } }) => row.staff.id);
     expect(ids).toEqual(expect.arrayContaining([manager.id, lead.id, finance.id, agent.id]));
@@ -215,7 +215,7 @@ describe('Web attendance: today view, live status and office staff days', () => 
       expect(day).toMatchObject({ dayType: 'full', lateMinutes: 0 });
     }
 
-    const sheet = await get(tokenFor(ceo), '/attendance/reports/month-sheet?month=2026-11').expect(200);
+    const sheet = await get(tokenFor(ceo), '/attendance/month-sheet?month=2026-11').expect(200);
     for (const person of [manager, lead, finance, agent]) {
       const row = sheet.body.rows.find((r: { staffCode: string }) => r.staffCode === person.code);
       expect(row).toBeDefined();
