@@ -23,7 +23,7 @@ export type PublicPaymentState = 'pending' | 'confirming' | 'received' | 'closed
 
 export interface CreateUpiRequestInput {
   type: string;
-  subjectType: 'job_seeker' | 'placement';
+  subjectType: 'job_seeker' | 'placement' | 'bypass_charge';
   subjectId: string;
   amountPaise: number;
   city?: string;
@@ -255,7 +255,7 @@ export class UpiCollectionService {
     });
     return {
       type: payment.type,
-      description: payment.type === 'activation' ? 'Job seeker registration' : 'Placement fee',
+      description: payment.type === 'activation' ? 'Job seeker registration' : payment.type === 'bypass_charge' ? 'No-bypass charge (agreement)' : 'Placement fee',
       amountPaise: payment.expectedAmountPaise,
       amount: amountInRupees(payment.expectedAmountPaise),
       payeeName,

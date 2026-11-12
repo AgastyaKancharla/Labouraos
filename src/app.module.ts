@@ -8,6 +8,7 @@ import { AuditModule } from './common/audit/audit.module';
 import { EditPolicyModule } from './common/edit-policy/edit-policy.module';
 import { AnonymisationModule } from './common/anonymisation/anonymisation.module';
 import { OtpModule } from './common/otp/otp.module';
+import { BypassChargeModule } from './modules/bypass-charge/bypass-charge.module';
 import { EmailModule } from './common/email/email.module';
 import { KycModule } from './common/kyc/kyc.module';
 import { KycHealthModule } from './common/kyc/kyc-health.module';
@@ -116,6 +117,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     ScreensCallAgentModule,
     ScreensManagerModule,
     WebAppModule,
+    BypassChargeModule,
     FieldAppModule,
     FieldVisitModule,
     ScreensFieldModule,

@@ -2531,3 +2531,38 @@ model DataBreach {
 
   @@index([status, reportDueAt])
 }
+
+/// The no-bypass charge (agreement clause, guide "Stopping bypass"): a business
+/// hired someone Laboura introduced within the no-bypass months without paying,
+/// so it owes the full fee plus the penalty percent, plus GST. Raised by the
+/// CEO with a reason; collected and invoiced like a placement fee. Paise only.
+model BypassCharge {
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  businessId         String
+  jobSeekerId        String
+  /// When the business hired the person (as the CEO found out).
+  hiredOn            DateTime  @db.Date
+  /// The introduction (profile shown or interview) it rests on.
+  introducedAt       DateTime
+  monthlySalaryPaise Int
+  feePercent         Int
+  penaltyPercent     Int
+  gstPercent         Int
+  feePaise           Int
+  penaltyPaise       Int
+  gstPaise           Int
+  totalPaise         Int
+  reason             String
+  invoiceCode        String    @unique
+  paymentId          String?   @unique
+  /// raised, cancelled (paid is read from the payment)
+  status             String    @default("raised")
+  raisedByStaffId    String
+  raisedAt           DateTime  @default(now())
+  cancelledAt        DateTime?
+  cancelReason       String?
+
+  @@index([businessId])
+  @@index([jobSeekerId])
+}

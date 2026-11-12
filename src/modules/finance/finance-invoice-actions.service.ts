@@ -35,7 +35,7 @@ export class FinanceInvoiceActionsService {
         business: { select: { id: true, code: true, name: true, accountAgentId: true } },
       },
     });
-    if (!payment || payment.type !== 'placement_fee') throw new NotFoundException('Placement fee not found');
+    if (!payment || !['placement_fee', 'bypass_charge'].includes(payment.type)) throw new NotFoundException('Placement fee not found');
     if (!UNPAID.includes(payment.status)) throw new BadRequestException('This fee is not waiting for payment');
     const business = payment.placement?.business ?? payment.business;
     if (!business) throw new BadRequestException('This fee is not linked to a business');
@@ -48,7 +48,7 @@ export class FinanceInvoiceActionsService {
       {
         recipientStaffId: agent.id,
         kind: 'fee_unpaid_reminder',
-        title: `${business.name} has not paid the placement fee${placementCode ? ` for ${placementCode}` : ''}`,
+        title: `${business.name} has not paid the ${payment.type === 'bypass_charge' ? 'no-bypass charge' : 'placement fee'}${placementCode ? ` for ${placementCode}` : ''}`,
         body: `Waiting ${days === 1 ? '1 day' : `${days} days`} · please call the owner (Finance asked)`,
         link: notificationLink(agent.role, 'fee_unpaid_reminder', { id: business.id }),
         subjectType: 'payment',

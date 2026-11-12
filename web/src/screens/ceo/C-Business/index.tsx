@@ -16,6 +16,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { BUSINESS_STATUS, VACANCY_STATUS } from '../_kit/labels';
+import { BypassChargesCard } from './BypassCharges';
 
 /** CEO business page — design C-Business.dc.html. */
 interface Detail {
@@ -297,6 +298,7 @@ export default function BusinessDetail() {
           {d.visits.length === 0 && <p className="ceo-sub">No visits recorded.</p>}
         </Card>
       </div>
+      <BypassChargesCard businessId={d.id} />
       {d.history.length > 0 && (
         <Card title="History">
           <Timeline events={d.history.map((h) => ({ at: h.at, text: `${BUSINESS_STATUS[h.status]?.label ?? humanize(h.status)}${h.by ? ` · ${h.by}` : ''}`, aside: h.reason ? humanize(h.reason) : null }))} />

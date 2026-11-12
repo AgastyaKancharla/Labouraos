@@ -64,6 +64,7 @@ function statusOf(r: Row): { tone: 'good' | 'warn' | 'crit' | 'muted' | 'info'; 
 }
 
 function forText(r: Row): string {
+  if (r.forWhat.type === 'bypass_charge') return `No-bypass charge · ${r.forWhat.placementCode ?? ''}`;
   return r.kind === 'receipt' ? 'Registration fee (no GST)' : `Placement fee · ${r.forWhat.placementCode ?? ''}`;
 }
 
