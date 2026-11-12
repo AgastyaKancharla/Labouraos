@@ -3,7 +3,9 @@ import { isApiError } from '@/api/errors';
 /**
  * Steps that need the other person live — OTPs, calls, payment, login —
  * are never queued (guide: "Steps that need the other person live need
- * signal"). The queue refuses these paths so a screen cannot queue one by
+ * signal"). Leave and correction requests need signal too: the agent sees at
+ * once where the request went and his balance, and a request is never sent
+ * twice. The queue refuses these paths so a screen cannot queue one by
  * mistake.
  */
 export const LIVE_ONLY_PATTERNS: readonly RegExp[] = [
@@ -16,6 +18,7 @@ export const LIVE_ONLY_PATTERNS: readonly RegExp[] = [
   /\/payments?(\/|$)/,
   /\/payment-links?(\/|$)/,
   /\/payouts?(\/|$)/,
+  /^\/attendance\/(leave|corrections)$/,
 ];
 
 export function isLiveOnlyPath(path: string): boolean {

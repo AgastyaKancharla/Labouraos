@@ -6,7 +6,7 @@ import { Banner, Button, Card, EmptyState, ErrorState, ListRow, LoadingState, Sc
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { formatTimeIst } from '@/lib/format';
-import { routes } from '@/navigation/routes';
+import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 
@@ -67,7 +67,7 @@ export default function VisitDoneScreen() {
         <Button
           label={t('fa06b.showCandidates')}
           disabled={!b.canShowCandidates}
-          onPress={() => router.push({ pathname: routes.jobSeekers, params: { businessId: b.id } })}
+          onPress={() => router.push(sellingRoutes.matches(b.id))}
           testID="fa06b-show"
         />
         {params.visitId ? (

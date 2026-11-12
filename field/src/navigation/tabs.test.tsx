@@ -64,6 +64,11 @@ const activeTab = () =>
 /** Each screen from the task list, with the tab its design marks as active. */
 const SCREENS: [design: string, url: string, tab: 'Home' | 'Visits'][] = [
   ['FA04-CheckedIn', routes.attendance, 'Home'],
+  ['FA04e-MyAttendance', routes.myAttendance, 'Home'],
+  ['FA04f-RequestLeave', routes.myLeave, 'Home'],
+  ['FA04h-Correction', routes.myCorrection, 'Home'],
+  ['FA04g-Payslip', routes.myPayslips, 'Home'],
+  ['Search (CA16 for the phone)', routes.search, 'Home'],
   ['FA07-RegisterBusiness', `${routes.businessNew}?visitId=v-1`, 'Home'],
   ['FA08-Business', `${routes.business}/b-1`, 'Home'],
   ['FA10-CaptureSeeker', routes.jobSeekerNew, 'Home'],
@@ -133,6 +138,21 @@ describe('Laboura Field tab bar', () => {
     expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/(home)/index');
   });
 
+  it.each([
+    ['Job seekers', sellingRoutes.matches('b-1', 'v-1'), '/job-seekers', '(app)/(tabs)/job-seekers/index'],
+    ['Job seekers', sellingRoutes.candidate('js-1', 'v-1'), '/job-seekers', '(app)/(tabs)/job-seekers/index'],
+    ['Vacancies', sellingRoutes.confirmVacancy('v-1'), '/vacancies', '(app)/(tabs)/vacancies/index'],
+    ['Vacancies', sellingRoutes.addVacancy('b-1'), '/vacancies', '(app)/(tabs)/vacancies/index'],
+  ])('a deep link into the %s tab (%s) keeps the list underneath, so back shows the list', async (tab, url, listPath, listScreen) => {
+    const result = await render(url);
+    expect(activeTab()).toEqual([tab]);
+    expect(testRouter.canGoBack()).toBe(true);
+    await testRouter.back();
+    expect(result.getPathname()).toBe(listPath);
+    expect(screen.getByTestId('screen')).toHaveTextContent(listScreen);
+    expect(activeTab()).toEqual([tab]);
+  });
+
   it('switching tabs keeps each tab where the agent left it', async () => {
     await render(routes.visits);
     await testRouter.push(routes.visitStart);
@@ -145,7 +165,7 @@ describe('Laboura Field tab bar', () => {
   it('every visit-flow and Home-flow route file sits inside (tabs), so none can lose the tab bar', () => {
     const files = routeFiles(APP_DIR).filter((f) => !f.endsWith('_layout.tsx'));
     const outside = files.filter((f) => f.startsWith('(app)/') && !f.startsWith('(app)/(tabs)/'));
-    // Only search (no design yet) is outside the tabs.
-    expect(outside).toEqual(['(app)/search.tsx']);
+    // Search (CA16 adapted to the phone) now lives in the Home stack too, so nothing is outside the tabs.
+    expect(outside).toEqual([]);
   });
 });

@@ -224,12 +224,19 @@ export class AttendanceRequestsService {
 
   // ------------------------------------------------------------ decisions
 
+  /**
+   * Approve or reject, with a reason. A leave approval may name `fromDate` and
+   * `toDate` inside the asked dates to approve only part of it (MG-Req-Vikram,
+   * "approve 3 of 5 days"): those days become leave, the rest is rejected with
+   * the same reason. A Team Lead never approves past 3 planned days in a month
+   * for a person (guide, 9 Nov) — that is the Manager's decision.
+   */
   async decide(
     actor: Actor,
     kind: string,
     id: string,
     decision: 'approved' | 'rejected',
-    body: { reason?: string },
+    body: { reason?: string; fromDate?: string; toDate?: string },
   ) {
     const requestKind = this.kindOf(kind);
     const reason = String(body?.reason ?? '').trim();
@@ -237,6 +244,13 @@ export class AttendanceRequestsService {
     const request = await this.load(requestKind, id);
     const now = this.clock.now();
     await this.assertCanDecide(actor, request, now);
+    const part =
+      decision === 'approved' && requestKind === 'leave' && (body?.fromDate || body?.toDate)
+        ? await this.partRange(request as LeaveRequest & AnyRequest, body)
+        : null;
+    if (decision === 'approved' && requestKind === 'leave') {
+      await this.assertTeamLeadLimit(actor, request as LeaveRequest & AnyRequest, part);
+    }
     if (decision === 'approved' && requestKind === 'correction') {
       const day = await this.prisma.attendanceDay.findUnique({
         where: { staffId_date: { staffId: request.staffId, date: (request as AttendanceCorrection).date } },
@@ -244,7 +258,10 @@ export class AttendanceRequestsService {
       if (day?.dayType === 'leave') throw new BadRequestException('This is a leave day');
     }
     // An approval changes attendance: refused in a month payroll no longer works out again.
-    if (decision === 'approved') await this.assertPayrollReaches(request);
+    // A part approval writes only its own days, so only their months are checked (before anything is written).
+    if (decision === 'approved') {
+      await this.assertPayrollReaches(request, part ? { from: part.from, to: part.to, what: 'This part approval' } : undefined);
+    }
     const data = {
       status: decision,
       decidedAt: now,
@@ -262,8 +279,16 @@ export class AttendanceRequestsService {
     if (decision === 'approved') {
       if (requestKind === 'leave') {
         const fresh = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
-        const split = await this.leave.applyApproval(fresh);
-        await this.prisma.leaveRequest.update({ where: { id }, data: split });
+        const split = await this.leave.applyApproval(
+          part ? { ...fresh, fromDate: part.from, toDate: part.to } : fresh,
+        );
+        await this.prisma.leaveRequest.update({
+          where: { id },
+          data: {
+            ...split,
+            ...(part ? { approvedFromDate: part.from, approvedToDate: part.to, approvedDays: part.days } : {}),
+          },
+        });
       } else {
         await this.applyCorrection(id);
       }
@@ -275,10 +300,18 @@ export class AttendanceRequestsService {
       entityType: requestKind === 'leave' ? 'leave_request' : 'attendance_correction',
       entityCode: staffCode,
       before: { status: 'pending' },
-      after: { status: decision },
+      after: part
+        ? {
+            status: decision,
+            approvedFromDate: this.label(part.from),
+            approvedToDate: this.label(part.to),
+            approvedDays: part.days,
+            rejectedDays: (request as LeaveRequest).days - part.days,
+          }
+        : { status: decision },
       reason,
     });
-    await this.smsDecision(requestKind, id, decision);
+    await this.smsDecision(requestKind, id, part ? 'partly approved' : decision);
     await this.hooks.requestDecided(requestKind, id);
     return this.view(requestKind, await this.load(requestKind, id), actor, now);
   }
@@ -319,6 +352,70 @@ export class AttendanceRequestsService {
       reason: note,
     });
     await this.hooks.requestForwarded(requestKind, id);
+    return this.view(requestKind, await this.load(requestKind, id), actor, now);
+  }
+
+  /**
+   * "Send back to the Team Lead" (MG-Req-Sneha, MG-Req-Vikram): a Manager over
+   * the person hands a request that is with them back to the person's Team
+   * Lead, with a note. It stays pending, with the Team Lead again (their 24
+   * hours start again); the Team Lead can decide it within their limits (never
+   * past 3 planned days in a month), reject it, or forward it again. Audited;
+   * the Team Lead's bell rings and the Manager's clears.
+   */
+  async sendBack(actor: Actor, kind: string, id: string, body: { note?: string }) {
+    const requestKind = this.kindOf(kind);
+    const note = String(body?.note ?? '').trim();
+    if (!note) throw new BadRequestException('A note is required to send it back to the Team Lead');
+    const request = await this.load(requestKind, id);
+    const now = this.clock.now();
+    if (request.status !== 'pending') throw await this.alreadyDecided(requestKind, id);
+    const placement = placementOf(request, now);
+    if (
+      actor.role !== 'manager' ||
+      !placement.withManager ||
+      !(await this.scope.personIsUnder(actor.id, request.staffId))
+    ) {
+      throw new ForbiddenException("Only the person's Manager sends a request that is with them back to the Team Lead");
+    }
+    const role = request.staff?.role ?? '';
+    const chain = await this.scope.chainOf(request.staffId);
+    if (!AGENT_ROLES.includes(role) || !chain.teamLead) {
+      throw new BadRequestException(
+        role === 'team_lead'
+          ? "A Team Lead's own request has no Team Lead to go back to"
+          : 'This person has no Team Lead to send it back to',
+      );
+    }
+    // The Team Lead could only approve it by changing attendance in those months, which payroll may no
+    // longer work out again: refused here too (the Manager can still reject it; pay goes by manual correction).
+    await this.assertPayrollReaches(request, { what: 'Sending this request back to the Team Lead' });
+    const data = {
+      routedToRole: 'team_lead',
+      routedToStaffId: chain.teamLead.id,
+      routeReason: 'sent_back',
+      forwardedAt: null,
+      forwardedByStaffId: null,
+      forwardNote: null,
+      sentBackAt: now,
+      sentBackByStaffId: actor.id,
+      sentBackNote: note,
+    };
+    const claimed =
+      requestKind === 'leave'
+        ? await this.prisma.leaveRequest.updateMany({ where: { id, status: 'pending' }, data })
+        : await this.prisma.attendanceCorrection.updateMany({ where: { id, status: 'pending' }, data });
+    if (claimed.count === 0) throw await this.alreadyDecided(requestKind, id);
+    await this.audit.log({
+      actorId: actor.id,
+      action: `attendance.${requestKind}_sent_back`,
+      entityType: requestKind === 'leave' ? 'leave_request' : 'attendance_correction',
+      entityCode: request.staff?.code ?? request.staffId,
+      before: { routedToRole: request.routedToRole, routeReason: request.routeReason, forwarded: Boolean(request.forwardedAt) },
+      after: { routedToRole: 'team_lead', routeReason: 'sent_back', teamLead: chain.teamLead.code },
+      reason: note,
+    });
+    await this.hooks.requestSentBack(requestKind, id);
     return this.view(requestKind, await this.load(requestKind, id), actor, now);
   }
 
@@ -364,6 +461,10 @@ export class AttendanceRequestsService {
         overturnedAt: now,
         overturnedByStaffId: actor.id,
         overturnReason: reason,
+        // An overturn decides the whole request again: no part approval stays.
+        approvedFromDate: null,
+        approvedToDate: null,
+        approvedDays: null,
       },
     });
     if (claimed.count === 0) throw new ConflictException('This decision has just changed');
@@ -480,6 +581,49 @@ export class AttendanceRequestsService {
 
   // ------------------------------------------------------------- internals
 
+  /** The part of a leave request to approve: inside the asked dates, at least one leave day, fewer than all. */
+  private async partRange(
+    request: LeaveRequest & AnyRequest,
+    body: { fromDate?: string; toDate?: string },
+  ): Promise<{ from: Date; to: Date; days: number } | null> {
+    const from = this.parseDate(body.fromDate ?? this.label(request.fromDate), 'fromDate');
+    const to = this.parseDate(body.toDate ?? this.label(request.toDate), 'toDate');
+    if (to.getTime() < from.getTime()) throw new BadRequestException('toDate is before fromDate');
+    if (from.getTime() < request.fromDate.getTime() || to.getTime() > request.toDate.getTime()) {
+      throw new BadRequestException('Approve days inside the dates asked for');
+    }
+    const dates = await this.leave.leaveDates(from, to);
+    if (dates.length === 0) throw new BadRequestException('These dates are all weekly days off');
+    // The whole request (or every leave day in it) is a plain approval.
+    if (dates.length >= request.days) return null;
+    return { from, to, days: dates.length };
+  }
+
+  /**
+   * A Team Lead approves up to 3 planned (casual) days in a month for a
+   * person (guide, 9 Nov). Approved planned days already on the record plus
+   * the days being approved must stay within it; past that only a Manager
+   * (or the CEO) approves. Emergency leave is not counted.
+   */
+  private async assertTeamLeadLimit(
+    actor: Actor,
+    request: LeaveRequest & AnyRequest,
+    part: { from: Date; to: Date } | null,
+  ): Promise<void> {
+    if (actor.role !== 'team_lead' || request.kind !== 'casual') return;
+    const dates = await this.leave.leaveDates(part?.from ?? request.fromDate, part?.to ?? request.toDate);
+    const byMonth = new Map<string, number>();
+    for (const date of dates) byMonth.set(monthOf(date), (byMonth.get(monthOf(date)) ?? 0) + 1);
+    for (const [month, count] of byMonth) {
+      const { taken } = await this.leave.casualDaysInMonth(request.staffId, month, request.id);
+      if (taken + count > TEAM_LEAD_CASUAL_DAYS_LIMIT) {
+        throw new ForbiddenException(
+          `More than ${TEAM_LEAD_CASUAL_DAYS_LIMIT} planned days in ${month} (${taken} already taken): only the Manager approves this. Reject it or send it to the Manager.`,
+        );
+      }
+    }
+  }
+
   private async routeFor(
     staff: { id: string; role: string },
     limitReason: 'over_limit' | 'third_correction' | null,
@@ -534,13 +678,26 @@ export class AttendanceRequestsService {
     throw new ForbiddenException('This request is not in your team');
   }
 
-  /** The request's dates (a leave's range, a correction's day) must be in months payroll still works out again. */
-  private async assertPayrollReaches(request: AnyRequest): Promise<void> {
+  /**
+   * The request's dates (a leave's range — or only the approved part of it —
+   * or a correction's day) must be in months payroll still works out again.
+   */
+  private async assertPayrollReaches(
+    request: AnyRequest,
+    options?: { from?: Date; to?: Date; what?: string },
+  ): Promise<void> {
     const months =
       'fromDate' in request
-        ? monthsBetween(monthOfDay((request as LeaveRequest).fromDate), monthOfDay((request as LeaveRequest).toDate))
+        ? monthsBetween(
+            monthOfDay(options?.from ?? (request as LeaveRequest).fromDate),
+            monthOfDay(options?.to ?? (request as LeaveRequest).toDate),
+          )
         : [monthOfDay((request as AttendanceCorrection).date)];
-    await assertPayrollCanCorrect(this.prisma, months, 'kind' in request ? 'This leave decision' : 'This attendance correction');
+    await assertPayrollCanCorrect(
+      this.prisma,
+      months,
+      options?.what ?? ('kind' in request ? 'This leave decision' : 'This attendance correction'),
+    );
   }
 
   private async alreadyDecided(kind: AttendanceRequestKind, id: string) {
@@ -723,7 +880,7 @@ export class AttendanceRequestsService {
 
   private async view(kind: AttendanceRequestKind, row: AnyRequest, actor: Actor, now: Date) {
     const placement: Placement = placementOf(row, now);
-    const deciderIds = [row.decidedByStaffId, row.forwardedByStaffId].filter(
+    const deciderIds = [row.decidedByStaffId, row.forwardedByStaffId, row.sentBackByStaffId].filter(
       (value): value is string => Boolean(value),
     );
     if (kind === 'leave' && (row as LeaveRequest).overturnedByStaffId) {
@@ -762,6 +919,9 @@ export class AttendanceRequestsService {
           }
         : null,
       canDecide: await this.canDecideQuietly(actor, row, now),
+      sentBack: row.sentBackAt
+        ? { at: row.sentBackAt.toISOString(), by: who(row.sentBackByStaffId), note: row.sentBackNote }
+        : null,
     };
     if (kind === 'leave') {
       const leave = row as LeaveRequest;
@@ -775,6 +935,9 @@ export class AttendanceRequestsService {
         days: leave.days,
         paidDays: leave.paidDays,
         unpaidDays: leave.unpaidDays,
+        approvedFromDate: leave.approvedFromDate ? this.label(leave.approvedFromDate) : null,
+        approvedToDate: leave.approvedToDate ? this.label(leave.approvedToDate) : null,
+        approvedDays: leave.approvedDays ?? null,
         casualDaysTakenThisMonth: casual.taken,
         casualDaysPendingThisMonth: casual.pending,
         overturned: leave.overturnedAt

@@ -577,14 +577,24 @@ describe('Pricing & policy', () => {
   });
 
   it('keeping data runs a dry run and shows what would happen', async () => {
-    const summary = { executedAt: NOW.toISOString(), dryRun: true, profilesAnonymised: { jobSeekers: 2, businesses: 1, referrals: 0, total: 3, refused: 1 }, recordingsDeleted: 41, recordingsProtected: 0, accessLogsDeleted: { sessions: 200, loginCodeRequests: 12, total: 212 }, moneyRecordsDeleted: { total: 0 }, publicLinksDeleted: 0, otpSessionsDeleted: 0 };
+    const summary = { executedAt: NOW.toISOString(), dryRun: true, profilesAnonymised: { jobSeekers: 2, businesses: 1, referrals: 0, total: 3, refused: 1 }, recordingsDeleted: 41, recordingsProtected: 0, accessLogsDeleted: { sessions: 200, loginCodeRequests: 12, total: 212 }, moneyRecordsDeleted: { total: 0 }, publicLinksDeleted: 0, otpSessionsDeleted: 0, jobRunsDeleted: 37 };
     const api = mockApi({ ...common, 'GET /retention/summary': null, 'POST /retention/dry-run': summary });
     render(<KeepingData />, '/ceo/pricing/data');
     expect(await screen.findByText('The clean-up has not run yet.')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Dry run — show what would happen' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Dry run of the clean-up' }));
     expect(await screen.findByText('3 (2 job seekers, 1 businesses, 0 partners)')).toBeInTheDocument();
+    expect(screen.getByText('Old job run logs deleted')).toBeInTheDocument();
+    expect(screen.getByTestId('job-runs-deleted')).toHaveTextContent('37');
     expect(api.calls('POST /retention/dry-run')).toHaveLength(1);
+  });
+
+  it('keeping data shows the job run logs the last run deleted, next to the other counts', async () => {
+    const last = { executedAt: NOW.toISOString(), dryRun: false, profilesAnonymised: { jobSeekers: 0, businesses: 0, referrals: 0, total: 0, refused: 0 }, recordingsDeleted: 4, recordingsProtected: 0, accessLogsDeleted: { sessions: 1, loginCodeRequests: 1, total: 2 }, moneyRecordsDeleted: { total: 0 }, publicLinksDeleted: 3, otpSessionsDeleted: 2, jobRunsDeleted: 120 };
+    mockApi({ ...common, 'GET /retention/summary': last });
+    render(<KeepingData />, '/ceo/pricing/data');
+    expect(await screen.findByTestId('job-runs-deleted')).toHaveTextContent('120');
+    expect(screen.getByText("Deleted after 90 days · each job's latest run kept")).toBeInTheDocument();
   });
 });
 

@@ -58,3 +58,9 @@
 .mg-banner { padding: 14px 18px; font-size: 13.5px; }
 .mg-banner--warn { border-color: var(--amber); background: var(--amber-bg); color: var(--text); }
 .mg-agents-sum { display: block; font-size: 11px; color: var(--text-faint); margin-top: 3px; }
+
+/* MG-Req-Vikram: approve only some of the days. */
+.mg-part { display: flex; flex-direction: column; gap: 10px; }
+.mg-check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; font-weight: 600; min-height: 44px; }
+.mg-check input { width: 18px; height: 18px; accent-color: var(--blue, #0055C0); }
+.mg-part__row { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }

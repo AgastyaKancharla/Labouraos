@@ -90,6 +90,32 @@ describe('Audit rows record the device and the network', () => {
     expect(verified.status).toBe(200);
   });
 
+  it('the login code check (login_code.used, and a wrong code) records the phone the login named and the network', async () => {
+    const { staff, deviceId } = await makeAgent('Field phone', 'android');
+    const res = await request(app.getHttpServer())
+      .post('/auth/login')
+      .set('X-Forwarded-For', '203.0.113.30')
+      .send({ staffCode: staff.code, password, deviceId });
+    expect(res.body.status).toBe('awaiting_code');
+    const wrong = loginCodeFor(res.body.loginRequestId) === '000000' ? '111111' : '000000';
+    await request(app.getHttpServer())
+      .post('/auth/login/verify-code')
+      .set('X-Forwarded-For', '203.0.113.30')
+      .send({ loginRequestId: res.body.loginRequestId, code: wrong })
+      .expect(401);
+    const verified = await request(app.getHttpServer())
+      .post('/auth/login/verify-code')
+      .set('X-Forwarded-For', '10.91.4.21')
+      .send({ loginRequestId: res.body.loginRequestId, code: loginCodeFor(res.body.loginRequestId) });
+    expect(verified.status).toBe(200);
+    const wrongRow = await prisma.auditLog.findFirstOrThrow({ where: { actorId: staff.id, action: 'login_code.wrong_code' } });
+    expect([wrongRow.deviceId, wrongRow.deviceName, wrongRow.network]).toEqual([deviceId, 'Field phone (android)', 'outside_office']);
+    const used = await prisma.auditLog.findFirstOrThrow({ where: { actorId: staff.id, action: 'login_code.used' } });
+    expect(used.deviceId).toBe(deviceId);
+    expect(used.deviceName).toBe('Field phone (android)');
+    expect(used.network).toBe(`office:${OFFICE_LABEL}`);
+  });
+
   it('a signed-in request records the session’s device, and outside_office away from the office', async () => {
     const { staff, deviceId } = await makeAgent('Kiran’s phone', 'ios');
     const session = await prisma.staffSession.create({

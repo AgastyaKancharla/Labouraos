@@ -480,13 +480,15 @@ export function formatClock(hhmm: string): string {
   return `${h % 12 === 0 ? 12 : h % 12}:${m[2]} ${h >= 12 ? 'PM' : 'AM'}`;
 }
 
-/** A clock picker in 15-minute steps (never typed). */
-export function TimeField({ label, value, onChange, from = '09:00', to = '21:00', required, error, testID }: {
+/** A clock picker in 15-minute steps by default (never typed). */
+export function TimeField({ label, value, onChange, from = '09:00', to = '21:00', step = 15, required, error, testID }: {
   label: string;
   value: string;
   onChange: (hhmm: string) => void;
   from?: string;
   to?: string;
+  /** Minutes between choices (corrections use 5). */
+  step?: number;
   required?: boolean;
   error?: string | null;
   testID?: string;
@@ -495,12 +497,12 @@ export function TimeField({ label, value, onChange, from = '09:00', to = '21:00'
     const out: Choice[] = [];
     const [fh, fm] = from.split(':').map(Number);
     const [th, tm] = to.split(':').map(Number);
-    for (let min = fh * 60 + fm; min <= th * 60 + tm; min += 15) {
+    for (let min = fh * 60 + fm; min <= th * 60 + tm; min += step) {
       const key = `${String(Math.floor(min / 60)).padStart(2, '0')}:${String(min % 60).padStart(2, '0')}`;
       out.push({ value: key, label: formatClock(key) });
     }
     return out;
-  }, [from, to]);
+  }, [from, to, step]);
   return <SelectField label={label} value={value} choices={choices} onChange={onChange} required={required} error={error} testID={testID} />;
 }
 

@@ -83,11 +83,24 @@ export class RequestsController {
     return this.requests.get(this.actor(req), ref);
   }
 
+  /** Approve or reject; a leave approval with fromDate/toDate approves only those days (the rest is rejected). */
   @Post(':ref/decide')
   @HttpCode(HttpStatus.OK)
   @RequireRoles(...DECIDERS)
-  decide(@Req() req: Authed, @Param('ref') ref: string, @Body() body: { decision?: string; reason?: string }) {
+  decide(
+    @Req() req: Authed,
+    @Param('ref') ref: string,
+    @Body() body: { decision?: string; reason?: string; fromDate?: string; toDate?: string },
+  ) {
     return this.requests.decide(this.actor(req), ref, body ?? {});
+  }
+
+  /** "Send back to the Team Lead" (MG-Req-Sneha, MG-Req-Vikram): stays pending, with the Team Lead again. */
+  @Post(':ref/send-back')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager')
+  sendBack(@Req() req: Authed, @Param('ref') ref: string, @Body() body: { note?: string }) {
+    return this.requests.sendBack(this.actor(req), ref, body ?? {});
   }
 
   @Post(':ref/forward')

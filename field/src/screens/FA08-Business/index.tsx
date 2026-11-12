@@ -7,7 +7,7 @@ import { Button, Card, EmptyState, ErrorState, ListRow, LoadingState, Screen, St
 import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import { formatDayIst, formatTimeIst } from '@/lib/format';
-import { routes } from '@/navigation/routes';
+import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { istDateKey, minutesOf, salaryRange } from '../_visits/format';
@@ -54,7 +54,7 @@ export default function BusinessScreen() {
                     <StatusChip tone={b.verificationStatus === 'verified' && !b.paused ? 'green' : 'amber'} label={t(verificationKey(b.verificationStatus, b.paused))} />
                   </View>
                   <View style={styles.actions}>
-                    <Button label={t('fa08.showCandidates')} disabled={!b.canShowCandidates} style={styles.cell} onPress={() => router.push({ pathname: routes.jobSeekers, params: { businessId: b.id } })} testID="fa08-show" />
+                    <Button label={t('fa08.showCandidates')} disabled={!b.canShowCandidates} style={styles.cell} onPress={() => router.push(sellingRoutes.matches(b.id))} testID="fa08-show" />
                     <Button label={t('fa03.addVacancy')} variant="secondary" style={styles.cell} onPress={() => router.push({ pathname: routes.vacancyNew, params: { businessId: b.id } })} testID="fa08-vacancy" />
                     <Button label={t('fa08.callOwner')} variant="secondary" style={styles.cell} disabled={!b.isMine} onPress={() => router.push({ pathname: routes.callOwner, params: { businessId: b.id } })} testID="fa08-call" />
                     <Button label={t('fa08.recordVisit')} variant="secondary" style={styles.cell} onPress={() => router.push({ pathname: routes.visitStart, params: { businessId: b.id, name: b.name } })} testID="fa08-visit" />
@@ -89,7 +89,7 @@ export default function BusinessScreen() {
                       title={`${v.trade} × ${v.headcount}`}
                       subtitle={[salaryRange(v.salaryMinPaise, v.salaryMaxPaise), v.otpConfirmed ? t('fa08.otpConfirmed') : t('fa08.otpWaiting')].filter(Boolean).join(' · ')}
                       trailing={v.otpConfirmed ? <StatusChip tone="blue" label={t('fa08.matches')} /> : <StatusChip tone="amber" label={t('fa08.otpWaiting')} />}
-                      onPress={v.otpConfirmed ? () => router.push({ pathname: routes.jobSeekers, params: { businessId: b.id, vacancyId: v.id } }) : undefined}
+                      onPress={v.otpConfirmed ? () => router.push(sellingRoutes.matches(b.id, v.id)) : undefined}
                       last={i === b.vacancies.length - 1}
                     />
                   ))}

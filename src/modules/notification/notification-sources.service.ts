@@ -258,7 +258,32 @@ export class NotificationSourcesService {
     if (request.forwardedAt) {
       return { byStaffId: request.forwardedByStaffId, reason: 'forwarded' };
     }
+    if (request.sentBackAt) {
+      return { byStaffId: request.sentBackByStaffId, reason: 'sent_back' };
+    }
     return { byStaffId: null, reason: 'moved' };
+  }
+
+  /**
+   * A Manager sent a request back to the Team Lead: the Team Lead's bell rings
+   * again as a new one (even when the old one was still open, after 24 hours),
+   * and the Manager's clears with who sent it back.
+   */
+  async requestSentBack(kind: RequestKind, id: string, now: Date = this.notifications.now()): Promise<void> {
+    const request = await this.loadRequest(kind, id);
+    if (request?.routedToStaffId && request.sentBackAt) {
+      await this.notifications.clear(
+        {
+          kind: this.requestNotificationKind(kind),
+          subjectType: this.requestSubjectType(kind),
+          subjectId: id,
+          recipientStaffId: request.routedToStaffId,
+        },
+        { byStaffId: request.sentBackByStaffId, reason: 'sent_back' },
+        now,
+      );
+    }
+    await this.syncRequest(kind, id, now);
   }
 
   /** One request: the approvers' bells, and the requester's once it is decided. */

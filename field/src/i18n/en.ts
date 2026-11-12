@@ -1,4 +1,6 @@
 import { sellingEn } from './selling.en';
+import { attendanceEn } from './attendance.en';
+import { searchEn } from './search.en';
 /**
  * English — the reference language. Every key here must exist in kn.ts and
  * hi.ts (TypeScript and i18n.test.ts both check). Keys are grouped by the
@@ -10,6 +12,8 @@ import { sellingEn } from './selling.en';
  */
 export const en = {
   ...sellingEn,
+  ...attendanceEn,
+  ...searchEn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'Field agent',
