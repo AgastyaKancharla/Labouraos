@@ -59,6 +59,6 @@ export class AttendanceReportsController {
       'Content-Disposition',
       `attachment; filename="attendance-month-sheet-${sheet.month}.csv"`,
     );
-    return this.reports.monthSheetCsv(sheet.rows);
+    return this.reports.monthSheetCsv(sheet.rows, req.user.role);
   }
 }

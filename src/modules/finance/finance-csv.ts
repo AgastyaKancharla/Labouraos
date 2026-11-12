@@ -1,3 +1,5 @@
+import { maskCsvPhoneColumns } from '../../common/csv/csv-phone-mask';
+
 /**
  * CSV files for the CA (they open in Excel). A cell that starts like a formula
  * is written as text, so a name like "=SUM(…)" can never run in a spreadsheet.
@@ -14,8 +16,12 @@ export function csvCell(value: CsvValue): string {
   return text;
 }
 
-export function toCsv(header: string[], rows: CsvValue[][]): string {
-  return `${[header, ...rows].map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
+/**
+ * `viewerRole`: who downloads it. A phone column is masked for everyone but the CEO
+ * (left out = masked fully), like JSON answers.
+ */
+export function toCsv(header: string[], rows: CsvValue[][], viewerRole?: string | null): string {
+  return `${[header, ...maskCsvPhoneColumns(header, rows, viewerRole)].map((row) => row.map(csvCell).join(',')).join('\n')}\n`;
 }
 
 /** Rupees with two decimals from integer paise, for spreadsheets (never a float in our books). */
