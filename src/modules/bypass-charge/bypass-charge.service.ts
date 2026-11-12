@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -31,6 +31,8 @@ export interface RaiseBypassChargeBody {
  */
 @Injectable()
 export class BypassChargeService {
+  private readonly logger = new Logger(BypassChargeService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
@@ -237,7 +239,8 @@ export class BypassChargeService {
       }
       throw err;
     }
-    const request = await this.upi.deliverRequest(payment, { ...requestInput, subjectId: saved.id });
+    // N5: the charge is saved, so it is audited first; sending the link comes after,
+    // and a failed send never leaves a raised charge unaudited (the link can be re-sent).
     await this.audit.log({
       actorId,
       action: 'business.bypass_charge_raised',
@@ -249,12 +252,26 @@ export class BypassChargeService {
         jobSeeker: seeker.code,
         ...amounts,
         monthlySalaryPaise: salary,
-        payment: request.paymentCode,
+        payment: payment.code,
         agreement: { id: agreement.id, version: agreement.version, signedAt: agreement.signedAt.toISOString() },
       },
       reason,
     });
-    return this.view(saved, { code: request.paymentCode, status: request.status, confirmedAt: null }, { id: seeker.id, code: seeker.code, name: '' });
+    let linkSent = true;
+    try {
+      await this.upi.deliverRequest(payment, { ...requestInput, subjectId: saved.id });
+    } catch (err: unknown) {
+      linkSent = false;
+      this.logger.warn(`Payment link for bypass charge ${saved.code} was not sent: ${err instanceof Error ? err.message : String(err)}`);
+      await this.audit.log({
+        actorId,
+        action: 'business.bypass_charge_link_not_sent',
+        entityType: 'business',
+        entityCode: business.code,
+        after: { charge: saved.code, payment: payment.code },
+      });
+    }
+    return { ...this.view(saved, { code: payment.code, status: payment.status, confirmedAt: null }, { id: seeker.id, code: seeker.code, name: '' }), linkSent };
   }
 
   /**

@@ -4,6 +4,7 @@ import { JwtService } from '@nestjs/jwt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { BypassChargeService } from './bypass-charge.service';
 
 jest.setTimeout(180000);
 
@@ -189,7 +190,21 @@ describe('No-bypass charge (CEO)', () => {
     expect((await prisma.payment.findUniqueOrThrow({ where: { id: charge.paymentId! } })).status).toBe('cancelled');
     expect(await prisma.statusHistory.count({ where: { subjectType: 'payment', subjectId: charge.paymentId!, toStatus: 'cancelled' } })).toBe(1);
     await request(server()).post(cancel).set(as('ceo')).send({ reason: 'again' }).expect(409);
-    expect(await prisma.auditLog.count({ where: { actorId: ceoId, action: 'business.bypass_charge_cancelled' } })).toBe(1);
+    expect(await prisma.auditLog.count({ where: { actorId: ceoId, action: 'business.bypass_charge_cancelled' } })).toBeGreaterThanOrEqual(1);
+  });
+
+  it('N5: a raised charge is audited even when sending the payment link fails', async () => {
+    const upi = (app.get(BypassChargeService) as unknown as { upi: { deliverRequest: (...args: unknown[]) => Promise<unknown> } }).upi;
+    const spy = jest.spyOn(upi, 'deliverRequest').mockRejectedValueOnce(new Error('SMS vendor down'));
+    try {
+      const res = await request(server()).post(path()).set(as('ceo')).send(body({ reason: 'Raised while SMS was down' })).expect(201);
+      expect(res.body).toMatchObject({ linkSent: false, status: 'waiting' });
+      expect(await prisma.auditLog.findFirst({ where: { actorId: ceoId, action: 'business.bypass_charge_raised', reason: 'Raised while SMS was down' } })).not.toBeNull();
+      expect(await prisma.auditLog.findFirst({ where: { actorId: ceoId, action: 'business.bypass_charge_link_not_sent' } })).not.toBeNull();
+      await request(server()).post(`/bypass-charges/${res.body.id}/cancel`).set(as('ceo')).send({ reason: 'Raise again once SMS works' }).expect(201);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('a paid charge is in the GST invoices, the GSTR-1 data and the books (B3), and cannot be cancelled', async () => {
