@@ -188,4 +188,12 @@ export class ScreensManagerController {
   resolveFlag(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { resolution?: string; status?: string }) {
     return this.ops.resolveFlag(this.actor(req), id, body ?? {});
   }
+
+  /** "Send to CEO" on MG-Flags: the flag goes up to the CEO with the Manager's note. */
+  @Post('flags/:id/escalate')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager')
+  escalateFlag(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { note?: string }) {
+    return this.ops.escalateFlag(this.actor(req), id, body ?? {});
+  }
 }

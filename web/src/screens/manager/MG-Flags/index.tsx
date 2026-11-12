@@ -3,7 +3,6 @@ import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
 import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
-import { Button } from '../../../components/Button';
 import { TopBar } from '../../../components/TopBar';
 import { api } from '../../../lib/api/client';
 import { formatDateIST, istDateKey } from '../../../lib/format/date';
@@ -25,7 +24,11 @@ interface FlagRow {
   staff: { id: string; code: string; name: string; role: string } | null;
   team: string | null;
   isIntern: boolean;
+  ownerRole: 'team_lead' | 'manager' | 'ceo';
   goesToCeo: boolean;
+  escalated: { at: string; by: { id: string; name: string; role: string } | null; note: string | null } | null;
+  canResolve: boolean;
+  canEscalate: boolean;
 }
 interface FlagsResponse {
   summary: { open: number; forCeo: number; resolvedThisMonth: number };
@@ -53,8 +56,10 @@ function raised(iso: string, now: Date): string {
 
 /**
  * Flags — design MG-Flags.dc.html, on GET /manager/flags: quality and fraud
- * flags for the Manager's teams. Resolve uses POST /manager/flags/:id/resolve
- * (money and bypass flags are refused there: they go to the CEO).
+ * flags for the Manager's teams, flags sent to the Manager and flags about no
+ * particular person (the same scope as GET /requests/flags). Resolve uses
+ * POST /manager/flags/:id/resolve, "Send to CEO" POST /manager/flags/:id/escalate
+ * with a note. Money and bypass flags never reach a Manager: they go to the CEO.
  */
 export default function ManagerFlags() {
   const to = useScreenPath();
@@ -91,29 +96,41 @@ export default function ManagerFlags() {
                       <StatusPill tone={f.goesToCeo ? 'crit' : 'warn'}>{flagWords(f.kind)}</StatusPill>
                     </td>
                     <td className="mg-what">
-                      <b>{f.staff?.name ?? '—'}</b>
-                      <span>{f.staff ? roleTeam(f.staff.role, f.team, f.isIntern) : ''}</span>
+                      <b>{f.staff?.name ?? 'No one in particular'}</b>
+                      <span>{f.staff ? roleTeam(f.staff.role, f.team, f.isIntern) : f.subjectType.replace(/_/g, ' ')}</span>
                     </td>
                     <td style={{ whiteSpace: 'normal', maxWidth: 320 }}>{whatHappened(f)}</td>
                     <td>{raised(f.raisedAt, now)}</td>
                     <td>
                       {f.goesToCeo ? (
-                        <StatusPill tone="muted">Goes to CEO</StatusPill>
+                        <StatusPill tone="muted" title={f.escalated?.note ? `"${f.escalated.note}"` : undefined}>
+                          {f.escalated ? 'Sent to the CEO' : 'Goes to CEO'}
+                        </StatusPill>
                       ) : (
                         <div className="ceo-actions">
-                          <ActionButton
-                            label="Resolve"
-                            variant="success"
-                            title={`Resolve: ${flagWords(f.kind)}`}
-                            reason={{ label: 'What you found and did', required: true }}
-                            run={({ reason }) => api.post(`/manager/flags/${f.id}/resolve`, { resolution: reason, status: 'resolved' })}
-                            success="Flag resolved"
-                            confirmLabel="Resolve"
-                          />
-                          {/* TODO(build/team-lead-portal): wire "Send to CEO" to the shared escalation backend on that branch. */}
-                          <Button disabled title="Coming next with the shared requests and escalation system">
-                            Send to CEO
-                          </Button>
+                          {f.canResolve && (
+                            <ActionButton
+                              label="Resolve"
+                              variant="success"
+                              title={`Resolve: ${flagWords(f.kind)}`}
+                              reason={{ label: 'What you found and did', required: true }}
+                              run={({ reason }) => api.post(`/manager/flags/${f.id}/resolve`, { resolution: reason, status: 'resolved' })}
+                              success="Flag resolved"
+                              confirmLabel="Resolve"
+                            />
+                          )}
+                          {f.canEscalate && (
+                            <ActionButton
+                              label="Send to CEO"
+                              title={`Send to the CEO: ${flagWords(f.kind)}`}
+                              description="It moves to the CEO's flags with your note. Only the CEO closes it after that."
+                              reason={{ label: 'Note for the CEO', required: true }}
+                              run={({ reason }) => api.post(`/manager/flags/${f.id}/escalate`, { note: reason })}
+                              success="Sent to the CEO"
+                              confirmLabel="Send to CEO"
+                            />
+                          )}
+                          {!f.canResolve && !f.canEscalate && <StatusPill tone="muted">{f.ownerRole === 'team_lead' ? 'With the Team Lead' : 'Not yours to close'}</StatusPill>}
                         </div>
                       )}
                     </td>

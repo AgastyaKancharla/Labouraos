@@ -1,11 +1,8 @@
 import './manager.css';
 import '../../ceo/_kit/ceo.css';
 import type { ReactNode } from 'react';
-import { ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
-import { TopBar } from '../../../components/TopBar';
-import { useScreenPath } from '../../../portals/PortalContext';
 
 /**
  * Shared pieces of the Manager portal screens (MG-* designs). The Manager
@@ -163,32 +160,4 @@ export function paceTone(pace: string): StatusTone {
 }
 export function paceText(pace: string): string {
   return pace === 'behind' ? 'Behind' : pace === 'on_pace' ? 'On track' : pace === 'early' ? 'Too early to tell' : 'No target';
-}
-
-/**
- * The Requests screens (MG-Requests, MG-Decided, MG-Req-*) come with the shared
- * requests and escalation backend being built on branch
- * `build/team-lead-portal`. Until it merges they show this.
- */
-export function ComingNext({ title, subtitle }: { title: string; subtitle: string }) {
-  const to = useScreenPath();
-  return (
-    <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title={title} subtitle={subtitle} />
-      <section className="panel mg-coming" aria-live="polite">
-        <StatusPill tone="info">Coming next</StatusPill>
-        <h2 className="h2">Requests are being built</h2>
-        <p>
-          Leave, day changes, corrections, replacement claims and hit removals that wait for a Manager — with why each one is with you — arrive here
-          with the shared requests system. Until then, leave requests in your teams are on the Leave page.
-        </p>
-        <div className="ceo-actions" style={{ justifyContent: 'center' }}>
-          <ButtonLink to={to('MG-Leave')} variant="primary">
-            Open Leave
-          </ButtonLink>
-          <ButtonLink to={to('MG-Home')}>Back to Command Center</ButtonLink>
-        </div>
-      </section>
-    </div>
-  );
 }

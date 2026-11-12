@@ -19,9 +19,6 @@ import Targets from '../MG-Targets';
 import Reports from '../MG-Reports';
 import LoginCodes from '../MG-LoginCodes';
 import Notifications from '../MG-Notifications';
-import Requests from '../MG-Requests';
-import Decided from '../MG-Decided';
-import RequestDetail from '../MG-Req-Ravi';
 
 const NOW = new Date('2026-11-09T12:30:00Z'); // 18:00 IST, 9 Nov
 const common = {
@@ -57,20 +54,20 @@ const overview = {
 
 describe('Manager Command Center', () => {
   it('shows plan vs actual in counts (no rupees), teams, attendance and the watch list', async () => {
-    const api = mockApi({ ...common, 'GET /manager/overview': overview });
+    const api = mockApi({ ...common, 'GET /manager/overview': overview, 'GET /requests/waiting': [], 'GET /manager/staff': { manager: { id: 'm1', code: 'MGR-2', name: 'Priya Sharma' }, rows: [] } });
     const { container } = render(<Home />, '/manager');
     expect(await screen.findByText("At today's speed we reach 1 of 3 targets")).toBeInTheDocument();
     expect(screen.getByText(/Biggest gap: people placed in jobs — we'd end at 37 of 45/)).toBeInTheDocument();
     expect(screen.getByText('Short by 8')).toBeInTheDocument();
     expect(screen.getByText('14 / 16')).toBeInTheDocument();
     expect(screen.getByText(/Meena R \(Field · North \(intern\)\)/)).toBeInTheDocument();
-    expect(screen.getByText('Coming next')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing is waiting for you.')).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/₹/);
     expect(api.calls('GET /manager/overview')[0].query.get('fromDate')).toBe('2026-10-31T18:30:00.000Z');
   });
 
   it('shows the error with a retry', async () => {
-    mockApi({ ...common, 'GET /manager/overview': apiError(500, 'Internal server error', 'req-mg1') });
+    mockApi({ ...common, 'GET /manager/overview': apiError(500, 'Internal server error', 'req-mg1'), 'GET /requests/waiting': [], 'GET /manager/staff': { manager: { id: 'm1', code: 'MGR-2', name: 'Priya Sharma' }, rows: [] } });
     render(<Home />, '/manager');
     expect((await screen.findAllByText('Reference: req-mg1')).length).toBeGreaterThan(0);
   });
@@ -346,26 +343,36 @@ describe('Work boards', () => {
     await waitFor(() => expect(api.calls('POST /businesses/b1/visit-assignments/a1/assign')[0].body).toEqual({ assignedStaffId: 'fa1' }));
   });
 
-  it('flags: resolves a quality flag; money and bypass flags go to the CEO; Send to CEO waits', async () => {
+  it('flags: resolves a quality flag and sends another to the CEO with a note', async () => {
     const api = mockApi({
       ...common,
       'GET /manager/flags': {
-        summary: { open: 2, forCeo: 1, resolvedThisMonth: 7 },
+        summary: { open: 3, forCeo: 1, resolvedThisMonth: 7 },
         rows: [
-          { id: 'f1', code: 'RF-1', kind: 'visit_short', title: 'Short visit', subjectType: 'staff', subjectId: 'x', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, goesToCeo: false },
-          { id: 'f2', code: 'RF-2', kind: 'bypass_suspected', title: 'Suspected bypass', subjectType: 'business', subjectId: 'b', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, goesToCeo: true },
+          { id: 'f1', code: 'RF-1', kind: 'visit_short', title: 'Short visit', subjectType: 'staff', subjectId: 'x', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, ownerRole: 'team_lead', goesToCeo: false, escalated: null, canResolve: true, canEscalate: false },
+          { id: 'f2', code: 'RF-2', kind: 'duplicate_business', title: 'Possible duplicate business', subjectType: 'business', subjectId: 'b', details: null, raisedAt: NOW.toISOString(), staff: null, team: null, isIntern: false, ownerRole: 'manager', goesToCeo: false, escalated: null, canResolve: true, canEscalate: true },
+          { id: 'f3', code: 'RF-3', kind: 'visits_too_far_apart', title: 'Two shops too far apart', subjectType: 'staff', subjectId: 'y', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, ownerRole: 'ceo', goesToCeo: true, escalated: { at: NOW.toISOString(), by: { id: 'm1', name: 'Priya Sharma', role: 'manager' }, note: 'Pattern' }, canResolve: false, canEscalate: false },
         ],
       },
       'POST /manager/flags/f1/resolve': { ok: true },
+      'POST /manager/flags/f2/escalate': { ok: true },
     });
-    render(<Flags />, '/manager/flags');
-    expect(await screen.findByText('Goes to CEO')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send to CEO' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Resolve' }));
-    const d = await dialog();
+    const { container } = render(<Flags />, '/manager/flags');
+    expect(await screen.findByText('Sent to the CEO')).toBeInTheDocument();
+    expect(screen.getByText('No one in particular')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/₹/);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Resolve' })[0]);
+    let d = await dialog();
     await userEvent.type(within(d).getByLabelText(/What you found/), 'Owner was out');
     await userEvent.click(within(d).getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(api.calls('POST /manager/flags/f1/resolve')[0].body).toEqual({ resolution: 'Owner was out', status: 'resolved' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send to CEO' }));
+    d = await dialog();
+    const send = within(d).getByRole('button', { name: 'Send to CEO' });
+    expect(send).toBeDisabled();
+    await userEvent.type(within(d).getByLabelText(/Note for the CEO/), 'Same owner, two names');
+    await userEvent.click(send);
+    await waitFor(() => expect(api.calls('POST /manager/flags/f2/escalate')[0].body).toEqual({ note: 'Same owner, two names' }));
   });
 });
 
@@ -440,14 +447,5 @@ describe('Targets, reports, login codes, notifications', () => {
     await userEvent.selectOptions(screen.getByLabelText('Type'), 'Quality');
     expect(screen.queryByText('Ravi Shankar asked for 2 days off')).not.toBeInTheDocument();
     expect(screen.getByText('2 shop visits under 3 minutes')).toBeInTheDocument();
-  });
-
-  it('the requests screens say "Coming next"', async () => {
-    mockApi(common);
-    for (const [ui, path] of [[<Requests key="a" />, '/manager/requests'], [<Decided key="b" />, '/manager/requests/decided'], [<RequestDetail key="c" />, '/manager/requests/x']] as const) {
-      const { unmount } = render(ui, path);
-      expect(await screen.findByText('Coming next')).toBeInTheDocument();
-      unmount();
-    }
   });
 });

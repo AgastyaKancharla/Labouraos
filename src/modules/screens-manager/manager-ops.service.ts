@@ -6,7 +6,7 @@ import { AttendanceReportsService } from '../attendance/attendance-reports.servi
 import { AttendanceRequestsService } from '../attendance/attendance-requests.service';
 import { LeaveService, monthOf } from '../attendance/leave.service';
 import { RefundPriorityService } from '../refund-priority/refund-priority.service';
-import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { FlagEscalationService } from '../requests/flag-escalation.service';
 import { NotificationService } from '../notification/notification.service';
 import { MONEY_FLAG_KINDS, flagTitle } from '../notification/notification.constants';
 import { DAY_MS, DateRange, average, countBy, istDayKey, istStartOfDay, percent } from '../ceo-portal/ceo-common';
@@ -49,7 +49,7 @@ export class ManagerOpsService {
     private readonly requests: AttendanceRequestsService,
     private readonly leave: LeaveService,
     private readonly priority: RefundPriorityService,
-    private readonly flags: ReviewFlagService,
+    private readonly escalation: FlagEscalationService,
     private readonly notifications: NotificationService,
   ) {}
 
@@ -412,54 +412,72 @@ export class ManagerOpsService {
     const tree = await this.tree.load(actor.id);
     const ids = this.some(tree.ids);
     const monthStart = istStartOfDay(`${istDayKey(now).slice(0, 8)}01`);
-    const [open, resolvedThisMonth] = await Promise.all([
-      this.prisma.reviewFlag.findMany({
-        where: { status: 'open', raisedForStaffId: { in: ids } },
-        include: { raisedForStaff: { select: { id: true, code: true, name: true, role: true } } },
-        orderBy: { raisedAt: 'desc' },
-        take: 500,
+    // The same scope as GET /requests/flags: flags about people in the tree, flags
+    // sent to this Manager, and flags about nobody in particular. Money and bypass
+    // flags never go to a Manager (FlagEscalationService leaves them out).
+    const [open, resolvedThisMonth, forCeo] = await Promise.all([
+      this.escalation.list(actor, { status: 'open' }),
+      this.prisma.reviewFlag.count({
+        where: {
+          status: { in: ['resolved', 'dismissed'] },
+          resolvedAt: { gte: monthStart },
+          kind: { notIn: CEO_FLAG_KINDS as string[] },
+          OR: [{ raisedForStaffId: { in: ids } }, { ownerStaffId: actor.id }, { raisedForStaffId: null }],
+        },
       }),
-      this.prisma.reviewFlag.count({ where: { status: { in: ['resolved', 'dismissed'] }, raisedForStaffId: { in: ids }, resolvedAt: { gte: monthStart } } }),
+      // Only how many: the flags themselves (money, bypass) go to the CEO.
+      this.prisma.reviewFlag.count({ where: { status: 'open', raisedForStaffId: { in: ids }, kind: { in: CEO_FLAG_KINDS as string[] } } }),
     ]);
     const teamOf = new Map(tree.people.map((p) => [p.id, p]));
     return {
       summary: {
         open: open.length,
-        forCeo: open.filter((f) => CEO_FLAG_KINDS.includes(f.kind)).length,
+        forCeo,
         resolvedThisMonth,
       },
       rows: open.map((f) => {
-        const person = f.raisedForStaffId ? teamOf.get(f.raisedForStaffId) : undefined;
+        const person = f.raisedFor?.id ? teamOf.get(f.raisedFor.id) : undefined;
         return {
           id: f.id,
           code: f.code,
           kind: f.kind,
-          title: flagTitle(f.kind),
+          title: f.title,
           subjectType: f.subjectType,
           subjectId: f.subjectId,
           details: f.details,
-          raisedAt: f.raisedAt.toISOString(),
-          staff: f.raisedForStaff,
+          raisedAt: f.raisedAt,
+          staff: f.raisedFor,
           team: person?.team ?? null,
           isIntern: person?.isIntern ?? false,
-          goesToCeo: CEO_FLAG_KINDS.includes(f.kind),
+          ownerRole: f.ownerRole,
+          /** Sent up to the CEO (by this Manager or above): only the CEO closes it now. */
+          goesToCeo: f.ownerRole === 'ceo',
+          escalated: f.escalated,
+          canResolve: f.canResolve,
+          canEscalate: f.canEscalate,
         };
       }),
     };
   }
 
-  /** Resolve a flag about someone in the tree; money and bypass flags are the CEO's. */
+  /** Resolve a flag in the Manager's scope (the same rules as POST /requests/flags/:id/resolve). */
   async resolveFlag(actor: Actor, id: string, body: { resolution?: string; status?: string }) {
-    const flag = await this.prisma.reviewFlag.findUnique({ where: { id }, select: { id: true, kind: true, raisedForStaffId: true } });
+    const flag = await this.prisma.reviewFlag.findUnique({ where: { id }, select: { id: true, kind: true } });
     if (!flag) throw new NotFoundException(`Review flag '${id}' not found`);
     if (CEO_FLAG_KINDS.includes(flag.kind)) {
       throw new ForbiddenException('Flags about money or bypass go to the CEO');
     }
-    const tree = await this.tree.load(actor.id);
-    if (!flag.raisedForStaffId || !tree.ids.includes(flag.raisedForStaffId)) {
-      throw new ForbiddenException('This flag is not about anyone in your teams');
+    try {
+      return await this.escalation.resolve(actor, id, { resolution: body?.resolution ?? '', status: body?.status ?? 'resolved' });
+    } catch (error) {
+      if (error instanceof NotFoundException) throw new ForbiddenException('This flag is not about anyone in your teams');
+      throw error;
     }
-    return this.flags.resolve(id, actor, { resolution: body?.resolution ?? '', status: (body?.status ?? 'resolved') as 'resolved' | 'dismissed' });
+  }
+
+  /** "Send to CEO" from MG-Flags (the same as POST /requests/flags/:id/escalate). */
+  async escalateFlag(actor: Actor, id: string, body: { note?: string }) {
+    return this.escalation.escalate(actor, id, body ?? {});
   }
 
   // ---------------------------------------------------------------- leave
