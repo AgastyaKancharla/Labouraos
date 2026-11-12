@@ -1,4 +1,6 @@
-import { assertSeedAllowed } from '../prisma/seed';
+import * as fs from 'fs';
+import * as path from 'path';
+import { assertSeedAllowed, assertSeedDatabaseIsLocal } from '../prisma/seed';
 
 describe('Phase 6.5 Task 10: Seed Environment Guard (assertSeedAllowed)', () => {
   it('allows seeding when NODE_ENV is "development"', () => {
@@ -56,5 +58,32 @@ describe('Phase 6.5 Task 10: Seed Environment Guard (assertSeedAllowed)', () => 
     } finally {
       process.env.NODE_ENV = original;
     }
+  });
+});
+
+describe('M7: npm run seed cannot bypass its production guard', () => {
+  const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8')) as {
+    scripts: Record<string, string>;
+    prisma: { seed: string };
+  };
+
+  it('the npm script and the Prisma seed command no longer force NODE_ENV=development', () => {
+    expect(pkg.scripts.seed).toBe('ts-node prisma/seed.ts');
+    expect(pkg.scripts.seed).not.toMatch(/NODE_ENV/);
+    expect(pkg.prisma.seed).not.toMatch(/NODE_ENV/);
+  });
+
+  it('refuses any database that is not on this computer', () => {
+    expect(() => assertSeedDatabaseIsLocal('postgresql://postgres.abc:pw@aws-0-ap-south-1.pooler.supabase.com:6543/postgres')).toThrow(
+      /must point at a database on this computer.*aws-0-ap-south-1\.pooler\.supabase\.com/,
+    );
+    expect(() => assertSeedDatabaseIsLocal('postgresql://u:p@10.0.0.5:5432/laboura')).toThrow(/10\.0\.0\.5/);
+    expect(() => assertSeedDatabaseIsLocal(undefined)).toThrow(/no usable address/);
+    expect(() => assertSeedDatabaseIsLocal('not a url')).toThrow(/no usable address/);
+  });
+
+  it('allows a local database', () => {
+    expect(() => assertSeedDatabaseIsLocal('postgresql://postgres:postgres@localhost:5432/laboura_test?schema=public')).not.toThrow();
+    expect(() => assertSeedDatabaseIsLocal('postgresql://postgres:postgres@127.0.0.1:5432/laboura')).not.toThrow();
   });
 });
