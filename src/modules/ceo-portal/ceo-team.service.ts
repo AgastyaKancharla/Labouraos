@@ -106,6 +106,7 @@ export class CeoTeamService {
           worksFromOffice: true,
           createdAt: true,
           deactivatedAt: true,
+          joinedOn: true,
         },
         orderBy: [{ createdAt: 'asc' }],
       }),
@@ -139,6 +140,7 @@ export class CeoTeamService {
         lockedReason: s.lockedReason,
         worksFromOffice: s.worksFromOffice,
         createdAt: s.createdAt.toISOString(),
+        joinedOn: s.joinedOn ? s.joinedOn.toISOString().slice(0, 10) : null,
       };
     });
     const leads = live.filter((s) => s.role === 'team_lead');

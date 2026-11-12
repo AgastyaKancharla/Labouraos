@@ -27,12 +27,25 @@ const SYSTEM_PROBLEM_LOOKBACK_DAYS = 31;
 const READ_SYNC_THROTTLE_MS = 15_000;
 
 /** The groups of sources a reader's role needs refreshed before reading the bell. */
-const READ_GROUPS: Record<string, Array<'requests' | 'team' | 'ceoMoney' | 'financeMoney' | 'lines'>> = {
+const READ_GROUPS: Record<string, Array<'requests' | 'team' | 'ceoMoney' | 'financeMoney' | 'lines' | 'payroll'>> = {
   team_lead: ['requests', 'team'],
   manager: ['requests', 'lines'],
-  ceo: ['requests', 'ceoMoney', 'lines'],
-  finance: ['financeMoney'],
+  ceo: ['requests', 'ceoMoney', 'lines', 'payroll'],
+  finance: ['financeMoney', 'payroll'],
 };
+
+const IST_MS = 5.5 * 3600 * 1000;
+function istMonthOf(date: Date): string {
+  return new Date(date.getTime() + IST_MS).toISOString().slice(0, 7);
+}
+function monthBefore(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return m === 1 ? `${y - 1}-12` : `${y}-${String(m - 1).padStart(2, '0')}`;
+}
+function monthWords(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  return `${new Date(Date.UTC(y, m - 1, 1)).toLocaleString('en-IN', { month: 'long', timeZone: 'UTC' })} ${y}`;
+}
 
 function istDateLabel(date: Date): string {
   return date.toISOString().slice(0, 10);
@@ -129,6 +142,7 @@ export class NotificationSourcesService {
       money: await this.safely('money', () => this.syncMoney(now, dir, 'all')),
       lines: await this.safely('lines', () => this.syncNoReportingLine(now, dir)),
       shortage: await this.safely('shortage tasks', () => this.syncShortageTasks(now, dir)),
+      payroll: await this.safely('payroll', () => this.syncPayroll(now, dir)),
     };
   }
 
@@ -159,6 +173,7 @@ export class NotificationSourcesService {
       if (group === 'ceoMoney') await this.safely('money', () => this.syncMoney(now, dir, 'ceo'));
       if (group === 'financeMoney') await this.safely('money', () => this.syncMoney(now, dir, 'finance'));
       if (group === 'lines') await this.safely('lines', () => this.syncNoReportingLine(now, dir));
+      if (group === 'payroll') await this.safely('payroll', () => this.syncPayroll(now, dir));
     }
   }
 
@@ -735,6 +750,102 @@ export class NotificationSourcesService {
       );
       await this.notifications.reconcileKind('expense_to_pay', toPayDrafts, (row) => this.expenseClear(row), now);
     }
+  }
+
+  /**
+   * Payroll and month-end bells (Phase 22 Part B):
+   * - Finance: last month's salaries to prepare (once salaries are set up), a
+   *   sheet the CEO sent back, and an approved month still to pay ("salaries
+   *   ready to release") — cleared when the work moves on;
+   * - CEO: a month's salary total waiting for approval;
+   * - Finance and the CEO: last month (or a reopened month) not closed yet.
+   */
+  async syncPayroll(now: Date, dir?: StaffDirectory): Promise<void> {
+    const directory = dir ?? (await this.directory());
+    const ceos = directory.ceos();
+    const finance = directory.active('finance');
+    const lastMonth = monthBefore(istMonthOf(now));
+    const runs = await this.prisma.payrollRun.findMany({
+      where: { OR: [{ status: { in: ['with_ceo', 'returned', 'approved'] } }, { month: lastMonth }] },
+      select: { month: true, status: true, netPaise: true, people: true, returnedReason: true },
+    });
+    const salariesSetUp = (await this.prisma.staffSalary.count()) > 0;
+    const runClear = async (row: Notification): Promise<ClearInfo> => {
+      const run = await this.prisma.payrollRun.findUnique({ where: { month: row.subjectId } });
+      return { byStaffId: run?.approvedByStaffId ?? run?.preparedByStaffId ?? null, reason: run ? `payroll_${run.status}` : 'payroll_gone' };
+    };
+
+    const toRelease: NotificationDraft[] = [];
+    for (const run of runs) {
+      if (run.status === 'approved') {
+        toRelease.push(
+          ...this.drafts(finance, {
+            kind: 'salaries_to_release',
+            title: `${monthWords(run.month)} salaries ready to release`,
+            body: `The CEO approved ${formatINR(run.netPaise)} for ${run.people} people · pay each one and record the UTR`,
+            subjectType: 'payroll_month',
+            subjectId: run.month,
+          }, { month: run.month }),
+        );
+      } else if (run.status === 'returned') {
+        toRelease.push(
+          ...this.drafts(finance, {
+            kind: 'salaries_to_release',
+            title: `${monthWords(run.month)} salaries sent back by the CEO`,
+            body: run.returnedReason ? `Check: ${run.returnedReason}` : 'Check the sheet and send it again',
+            subjectType: 'payroll_month',
+            subjectId: run.month,
+          }, { month: run.month }),
+        );
+      }
+    }
+    if (salariesSetUp && !runs.some((r) => r.month === lastMonth)) {
+      toRelease.push(
+        ...this.drafts(finance, {
+          kind: 'salaries_to_release',
+          title: `Prepare ${monthWords(lastMonth)} salaries`,
+          body: 'Check the sheet worked out from attendance and send the total to the CEO',
+          subjectType: 'payroll_month',
+          subjectId: lastMonth,
+        }, { month: lastMonth }),
+      );
+    }
+    await this.notifications.reconcileKind('salaries_to_release', toRelease, runClear, now);
+
+    const needCeo = runs
+      .filter((r) => r.status === 'with_ceo')
+      .flatMap((run) =>
+        this.drafts(ceos, {
+          kind: 'salaries_need_ceo',
+          title: `Approve ${monthWords(run.month)} salaries`,
+          body: `${formatINR(run.netPaise)} net for ${run.people} people, worked out from attendance`,
+          subjectType: 'payroll_month',
+          subjectId: run.month,
+        }, { month: run.month }),
+      );
+    await this.notifications.reconcileKind('salaries_need_ceo', needCeo, runClear, now);
+
+    const closes = await this.prisma.monthClose.findMany({ where: { OR: [{ month: lastMonth }, { status: 'reopened' }] } });
+    const open = new Set(closes.filter((c) => c.status === 'reopened').map((c) => c.month));
+    if (!closes.some((c) => c.month === lastMonth)) open.add(lastMonth);
+    const notClosed = [...open].sort().flatMap((month) =>
+      this.drafts([...ceos, ...finance], {
+        kind: 'month_not_closed',
+        title: `${monthWords(month)} is not closed yet`,
+        body: 'Check the month-end review: bank days, credits, payouts, salaries and bills — then the CEO closes it',
+        subjectType: 'month',
+        subjectId: month,
+      }, { month }),
+    );
+    await this.notifications.reconcileKind(
+      'month_not_closed',
+      notClosed,
+      async (row) => {
+        const close = await this.prisma.monthClose.findUnique({ where: { month: row.subjectId } });
+        return { byStaffId: close?.closedByStaffId ?? null, reason: close ? `month_${close.status}` : 'month_open' };
+      },
+      now,
+    );
   }
 
   /** Who finished an expense bell's work: whoever paid, approved or rejected it. */

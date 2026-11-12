@@ -18,6 +18,7 @@ import {
   getCallRecordingRetentionCutoff,
   getMoneyRecordRetentionCutoff,
   getProfileRetentionCutoff,
+  JOB_RUN_RETENTION_DAYS,
   TRANSIENT_LINK_RETENTION_DAYS,
 } from './retention.policy';
 
@@ -46,6 +47,8 @@ export interface RetentionSummary {
   };
   publicLinksDeleted: number;
   otpSessionsDeleted: number;
+  /** JobRun rows older than 90 days (each job's latest run is kept). */
+  jobRunsDeleted: number;
 }
 
 export interface RetentionRunOptions {
@@ -98,6 +101,7 @@ export class RetentionService {
       },
       publicLinksDeleted: 0,
       otpSessionsDeleted: 0,
+      jobRunsDeleted: 0,
     };
 
     try {
@@ -115,6 +119,9 @@ export class RetentionService {
 
       // 5. Public links and OTP sessions (> 30 days after expiry)
       await this.cleanupExpiredLinkData(now, dryRun, summary);
+
+      // 6. The job run log itself (> 90 days, keeping each job's latest run)
+      await this.cleanupJobRuns(now, dryRun, summary);
     } catch (err: unknown) {
       // A run that fails part-way is recorded too (start, finish, error), like every scheduled job.
       try {
@@ -147,7 +154,8 @@ export class RetentionService {
             summary.accessLogsDeleted.total +
             summary.moneyRecordsDeleted.total +
             summary.publicLinksDeleted +
-            summary.otpSessionsDeleted,
+            summary.otpSessionsDeleted +
+            summary.jobRunsDeleted,
           hitsRecorded: 0,
           details: {
             executedAt: summary.executedAt.toISOString(),
@@ -159,6 +167,7 @@ export class RetentionService {
             moneyRecordsDeleted: summary.moneyRecordsDeleted,
             publicLinksDeleted: summary.publicLinksDeleted,
             otpSessionsDeleted: summary.otpSessionsDeleted,
+            jobRunsDeleted: summary.jobRunsDeleted,
           },
         },
       });
@@ -191,7 +200,26 @@ export class RetentionService {
       moneyRecordsDeleted: details.moneyRecordsDeleted as RetentionSummary['moneyRecordsDeleted'],
       publicLinksDeleted: Number(details.publicLinksDeleted ?? 0),
       otpSessionsDeleted: Number(details.otpSessionsDeleted ?? 0),
+      jobRunsDeleted: Number(details.jobRunsDeleted ?? 0),
     };
+  }
+
+  /**
+   * Deletes JobRun rows older than JOB_RUN_RETENTION_DAYS. Each job's latest
+   * run is kept whatever its age, so "last ran" on System Health and the
+   * stale-sweep alerts still know when a job last ran.
+   */
+  private async cleanupJobRuns(now: Date, dryRun: boolean, summary: RetentionSummary): Promise<void> {
+    const cutoff = new Date(now.getTime() - JOB_RUN_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    const latest = await this.prisma.$queryRaw<{ id: string }[]>`
+      SELECT DISTINCT ON ("jobName") "id" FROM "JobRun" ORDER BY "jobName", "createdAt" DESC, "id" DESC`;
+    const where = { createdAt: { lt: cutoff }, id: { notIn: latest.map((row) => row.id) } };
+    if (dryRun) {
+      summary.jobRunsDeleted = await this.prisma.jobRun.count({ where });
+      return;
+    }
+    const deleted = await this.prisma.jobRun.deleteMany({ where });
+    summary.jobRunsDeleted = deleted.count;
   }
 
   private async cleanupExpiredLinkData(now: Date, dryRun: boolean, summary: RetentionSummary): Promise<void> {

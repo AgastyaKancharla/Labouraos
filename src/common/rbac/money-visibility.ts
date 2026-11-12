@@ -16,6 +16,13 @@
  * rupee amount written inside text.
  */
 
+/**
+ * Set on a request whose answer is the caller's own pay (their payslip): a
+ * Manager sees their own payslip, only that, and only once paid (owner
+ * decision 11 Nov). Every other answer to a Manager is still stripped.
+ */
+export const OWN_PAY_ANSWER = '__labouraOwnPayAnswer';
+
 /** Roles that never receive a money figure. */
 export const MONEY_BLIND_ROLES: ReadonlySet<string> = new Set(['manager']);
 

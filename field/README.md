@@ -12,7 +12,8 @@ field/
   app/                    routes (expo-router). Files here are thin: they export a screen.
     (auth)/login.tsx        → src/screens/FA01-Login
     (auth)/login-code.tsx   → src/screens/FA02-LoginCode
-    (app)/(tabs)/index.tsx  → src/screens/FA03-Home   (tabs: Home · Visits · Job seekers · Vacancies · Map · Targets)
+    (app)/(tabs)/(home)/index.tsx  → src/screens/FA03-Home   (tabs: Home · Visits · Job seekers · Vacancies · Map · Targets)
+    (app)/(tabs)/<tab>/...  every screen whose design shows the tab bar lives in its tab's stack
     (app)/...               other screens (placeholders until built)
   src/
     screens/<FA id>/        one folder per design: index.tsx, hooks, <FA id>.test.tsx
@@ -51,8 +52,8 @@ Build design `FA05-Visits` in `src/screens/FA05-Visits/`:
 - `useVisits.ts` (or similar) — data hooks for this screen.
 - `FA05-Visits.test.tsx` — tests (see below).
 
-Then point the route at it: replace the placeholder in `app/(app)/(tabs)/visits.tsx` with
-`export { default } from '@/screens/FA05-Visits';`. New URLs go in `src/navigation/routes.ts` with the design id in a comment. Navigate with `router.push(routes.x)` from `expo-router`.
+Then point the route at it: replace the placeholder in `app/(app)/(tabs)/(visits)/visits.tsx` with
+`export { default } from '@/screens/FA05-Visits';`. New URLs go in `src/navigation/routes.ts` with the design id in a comment. A screen whose design shows the tab bar goes inside the stack of the tab its design marks active — `(tabs)/(home)/`, `(tabs)/(visits)/`, `(tabs)/job-seekers/` or `(tabs)/vacancies/` (the groups in brackets don't change the URL) — and `src/navigation/tabs.test.tsx` checks it. Navigate with `router.push(routes.x)` from `expo-router`.
 
 Use the components in `src/components` and the tokens in `src/theme` — never raw hex colours or font names. Everything tappable is at least 48 px tall (`touch.min`). Mobile numbers, money and dates follow the guide's "Forms: rules for every screen" (masked numbers, ₹ boxes, pickers — never typed dates).
 

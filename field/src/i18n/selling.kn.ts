@@ -220,7 +220,7 @@ export const sellingKn: Record<keyof typeof sellingEn, string> = {
   'fa16.first': 'ಈ ವ್ಯಾಪಾರದ ಮೊದಲ ಸಂದರ್ಶನ',
   'fa16.atShop': 'ನೀವು ಅಂಗಡಿಯಲ್ಲಿದ್ದೀರಿ',
   'fa16.farFromShop': 'ನೀವು ಅಂಗಡಿಯ ಪಿನ್‌ನಲ್ಲಿ ಇಲ್ಲ',
-  'fa16.gps': 'GPS · {meters} m',
+  'fa16.gps': 'GPS · {meters} ಮೀ',
   'fa16.readingGps': 'GPS ಓದಲಾಗುತ್ತಿದೆ…',
   'fa16.noGps': 'GPS ಇಲ್ಲ',
   'fa16.needGps': 'ನಿಮ್ಮ GPS ಸ್ಥಳ ಬೇಕು. ಸ್ಥಳ ಅನುಮತಿಸಿ ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ.',

@@ -1,3 +1,4 @@
+import { invoiceGstSplit } from './invoice-gst-split';
 import {
   BadRequestException,
   ForbiddenException,
@@ -1915,10 +1916,7 @@ export class PlacementService {
     const totalTaxPaise = placement.gstAmount || calculateGst(baseAmountPaise, gstPercent);
     const totalAmountPaise = baseAmountPaise + totalTaxPaise;
 
-    const cgstRatePercent = Math.floor(gstPercent / 2);
-    const sgstRatePercent = gstPercent - cgstRatePercent;
-    const cgstAmountPaise = Math.floor(totalTaxPaise / 2);
-    const sgstAmountPaise = totalTaxPaise - cgstAmountPaise;
+    const { cgstRatePercent, sgstRatePercent, cgstAmountPaise, sgstAmountPaise } = invoiceGstSplit(totalTaxPaise, gstPercent);
 
     // Company details come from Settings (entered by the CEO). Environment values are
     // only a fallback, used when the Settings value is empty.

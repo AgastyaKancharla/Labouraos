@@ -24,7 +24,7 @@ export class RequestIdMiddleware implements NestMiddleware {
     req.requestId = requestId;
     res.setHeader('x-request-id', requestId);
 
-    requestContext.run({ requestId }, () => {
+    requestContext.run({ requestId, ip: req.ip || req.socket?.remoteAddress || undefined }, () => {
       next();
     });
   }

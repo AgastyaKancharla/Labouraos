@@ -10,6 +10,7 @@ import { api } from '../../../lib/api/client';
 import { formatDateIST, formatDateTimeIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { DateFilter, FilterPanel, PagedTable, SearchField, SelectFilter, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
+import { DataRequestsCard, dataRequestsKey, type DataRequestList } from './DataRequests';
 
 /** Consent & privacy — design C-Privacy.dc.html. Proof of every consent and withdrawal (India's data law). */
 interface Privacy {
@@ -49,6 +50,8 @@ export default function PrivacyScreen() {
   const to = useScreenPath();
   const p = useQuery({ queryKey: ['ceo', 'privacy'], queryFn: () => api.get<Privacy>('/ceo/privacy') });
   const d = p.data;
+  const requests = useQuery({ queryKey: dataRequestsKey, queryFn: () => api.get<DataRequestList>('/data-requests') });
+  const open = requests.data?.summary;
   const [search, setSearch] = useState('');
   const [subjectType, setSubjectType] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -75,7 +78,13 @@ export default function PrivacyScreen() {
           <StatGrid>
             <StatTile label="People with full consent" value={d?.summary.fullConsent ?? '—'} tone="good" loading={p.isPending} />
             <StatTile label="Withdrawals this month" value={d?.summary.withdrawalsThisMonth ?? '—'} tone="orange" loading={p.isPending} />
-            <StatTile label="Erasure requests this month" value={d?.summary.erasuresThisMonth ?? '—'} tone="red" loading={p.isPending} />
+            <StatTile
+              label="Data requests open"
+              value={open?.open ?? '—'}
+              tone="red"
+              detail={open ? (open.overdue ? `${open.overdue} overdue` : 'none overdue') : undefined}
+              loading={requests.isPending}
+            />
             <StatTile label="Notice version in use" value={d?.summary.noticeVersion ? `v${d.summary.noticeVersion}` : '—'} tone="royal" loading={p.isPending} />
           </StatGrid>
           <div className="two-col">
@@ -108,14 +117,15 @@ export default function PrivacyScreen() {
               )}
             </Card>
           </div>
+          <DataRequestsCard />
           <div className="two-col">
-            <Card title="Data requests under India's data law">
+            <Card title="Erasures done">
               {d && !d.erasures.length ? (
-                <p className="ceo-sub">No erasure requests recorded. Erasure is done from the person's page (Erase data) and recorded here.</p>
+                <p className="ceo-sub">No erasures yet. Erasure is done from the person's page (Erase data) and recorded here; log the request above first.</p>
               ) : (
                 <div className="scrollx">
                   <table>
-                    <thead><tr><th>Asked</th><th>Who</th><th>Request</th><th>Done by</th></tr></thead>
+                    <thead><tr><th>Done</th><th>Who</th><th>Request</th><th>Done by</th></tr></thead>
                     <tbody>
                       {d?.erasures.map((e) => (
                         <tr key={e.id}><td>{formatDateIST(e.at)}</td><td className="code">{e.entityCode}</td><td>Delete my data{e.reason ? ` · ${e.reason}` : ''}</td><td>{e.by ?? '—'}</td></tr>

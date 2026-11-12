@@ -75,6 +75,27 @@ describe('Team & access', () => {
     expect(await screen.findByText('tok-123')).toBeInTheDocument();
   });
 
+  it('takes a joining date when adding staff and lets the CEO set one later', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': teamResponse,
+      'POST /staff': { staff: { code: 'CA-0021', name: 'Kavya R' }, inviteToken: 'tok-9' },
+      'PUT /staff/ca1/joined-on': { id: 'ca1' },
+    });
+    render(<Team />, '/ceo/team');
+    await screen.findByText(/3 call \+ 2 field agents/);
+    const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Joining date' }));
+    const d = await dialog();
+    fireEvent.change(within(d).getByLabelText(/Joined on/), { target: { value: '2026-10-28' } });
+    await userEvent.click(within(d).getByRole('button', { name: 'Joining date · Deepa Nair' }));
+    await waitFor(() => expect(api.calls('PUT /staff/ca1/joined-on')[0]?.body).toEqual({ joinedOn: '2026-10-28' }));
+    await userEvent.type(screen.getByLabelText(/Full name/), 'Kavya R');
+    fireEvent.change(screen.getByLabelText(/Joining date/), { target: { value: '2026-11-16' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
+    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Kavya R', joinedOn: '2026-11-16' })));
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /ceo/team': apiError(500, 'Internal server error', 'req-t1') });
     render(<Team />, '/ceo/team');
@@ -109,16 +130,26 @@ describe('Teams', () => {
 });
 
 describe('Salaries', () => {
-  it('shows last month\'s days from attendance and leaves rupees to payroll', async () => {
+  // Paid days now come from payroll: weekly offs and holidays are paid days
+  // (Phase 22 Part B), so the sheet reads GET /finance/salaries instead of the
+  // attendance month sheet, and the rupee columns are filled.
+  it("shows last month's payroll from attendance with the rupees", async () => {
     const api = mockApi({
       ...common,
-      'GET /attendance/month-sheet': { month: '2026-10', rows: [{ staffCode: 'CA-1', name: 'Kiran Kumar', role: 'field_agent', workingDays: 27, holidays: 4, fullDays: 25, halfDays: 0, paidLeaveDays: 2, absentDays: 2, unpaidLeaveDays: 0, paidDays: 27, unpaidDays: 2, deductibleShortfallMinutes: 70 }] },
+      'GET /finance/staff-salaries': { month: '2026-11', rows: [] },
+      'GET /finance/salaries': {
+        month: '2026-10', label: 'October 2026', status: 'paid', closed: false, salaryDays: 31, calendarDays: 31, prepareFrom: '2026-10-31', canPrepare: false, payDay: '2026-11-01',
+        run: { preparedBy: 'Nisha', preparedAt: '2026-10-31T10:00:00Z', approvedBy: 'Agastya', approvedAt: '2026-10-31T12:00:00Z', returnedBy: null, returnedAt: null, returnedReason: null, paidAt: '2026-11-01T05:00:00Z' },
+        totals: { people: 1, grossPaise: 2000000, deductionsPaise: 137000, lossOfPayAndShortfallPaise: 137000, correctionsPaise: 0, netPaise: 1863000, paidCount: 1, paidPaise: 1863000, unpaidCount: 0 },
+        missingSalary: [], openDays: [], statutory: { lines: [], note: 'Added after company registration' },
+        rows: [{ staffId: 's1', staffCode: 'CA-1', name: 'Kiran Kumar', role: 'field_agent', joinedOn: '2026-08-01', monthlyPaise: 2000000, salaryDays: 26, calendarDays: 31, workingDays: 27, holidays: 0, fullDays: 25, halfDays: 0, paidLeaveDays: 2, unpaidLeaveDays: 0, absentDays: 2, notEmployedDays: 0, unmarkedDays: 0, paidDays: 24, lossOfPayDays: 2, shortfallMinutes: 70, basicPaise: 1000000, hraPaise: 400000, specialPaise: 600000, grossPaise: 2000000, notEmployedPaise: 0, lossOfPayPaise: 129032, shortfallPaise: 7968, pfPaise: 0, esiPaise: 0, professionalTaxPaise: 0, deductionsPaise: 137000, correctionPaise: 0, correctionNote: null, netPaise: 1863000, line: { id: 'l1', status: 'paid', paidAt: '2026-11-01T05:00:00Z', utrLast4: '1111', paidFrom: 'bank_transfer' } }],
+      },
     });
     render(<Salaries />, '/ceo/team/salaries');
-    expect(await screen.findByText('27 / 31')).toBeInTheDocument();
-    expect(screen.getByText('Check: 2 absent')).toBeInTheDocument();
+    expect(await screen.findByText('24 / 26')).toBeInTheDocument();
     expect(screen.getByText('1h 10m')).toBeInTheDocument();
-    expect(api.calls('GET /attendance/month-sheet')[0].query.get('month')).toBe('2026-10');
+    expect(screen.getAllByText('₹18,630').length).toBeGreaterThan(0);
+    expect(api.calls('GET /finance/salaries')[0].query.get('month')).toBe('2026-10');
   });
 });
 
@@ -165,6 +196,49 @@ describe('Login codes', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Unlock Arun P' }));
     await waitFor(() => expect(api.calls('POST /staff/ca9/unlock')).toHaveLength(1));
+  });
+});
+
+describe('Password resets (POST /staff/:id/reset-password, never the old re-issued invite)', () => {
+  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.in/app/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
+
+  it('Login codes: Reset on a locked account sends a one-time link and keeps the old password until it is used', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/access': { summary: { waiting: 0, codesToday: 0, locked: 1, invitesPending: 1 }, locked: [{ id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', lockedUntil: '2026-11-11T07:00:00Z', reason: '5 wrong passwords', byManager: false }], invites: [{ id: 'fa1', code: 'FA-0019', name: 'Meena R', role: 'field_agent', invitedAt: '2026-11-10T05:00:00Z', expired: false }], codes: [] },
+      'POST /staff/ca9/reset-password': reset,
+      'POST /staff/fa1/reissue-invite': { staff: { code: 'FA-0019' }, inviteToken: 'inv-1' },
+    });
+    render(<LoginCodes />, '/ceo/login-codes');
+    const row = (await screen.findByText('Arun P')).closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset' }));
+    const d = await dialog();
+    expect(within(d).getByText(/old password and authenticator keep working until they use the link/)).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca9/reset-password')).toHaveLength(1));
+    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(api.calls('POST /staff/ca9/reissue-invite')).toHaveLength(0);
+
+    // Someone who never set a password gets a new invite instead (a reset needs a password to replace).
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    const invite = screen.getByText('Meena R').closest('tr') as HTMLElement;
+    expect(within(invite).queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
+    await userEvent.click(within(invite).getByRole('button', { name: 'New invite' }));
+    await userEvent.click(within(await dialog()).getByRole('button', { name: 'New invite for Meena R' }));
+    await waitFor(() => expect(api.calls('POST /staff/fa1/reissue-invite')).toHaveLength(1));
+  });
+
+  it('Team & access: Reset password on an active account uses the reset link; pending invites keep Resend', async () => {
+    const api = mockApi({ ...common, 'GET /ceo/team': teamResponse, 'POST /staff/ca1/reset-password': { ...reset, staff: { code: 'CA-0011' } } });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
+    await userEvent.click(within(await dialog()).getByRole('button', { name: 'Make the link' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/reset-password')).toHaveLength(1));
+    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    const pending = screen.getByText('Meena R').closest('tr') as HTMLElement;
+    expect(within(pending).queryByRole('button', { name: 'Reset password' })).not.toBeInTheDocument();
+    expect(within(pending).getByRole('button', { name: 'Resend' })).toBeInTheDocument();
   });
 });
 
@@ -379,6 +453,7 @@ describe('Audit, flags, privacy, system and notifications', () => {
       ...common,
       'GET /ceo/privacy': { summary: { fullConsent: 320, withdrawalsThisMonth: 4, erasuresThisMonth: 0, noticeVersion: '3' }, purposes: [{ purpose: 'call_recording', required: true, given: 320, withdrawn: 2 }], withdrawals: [{ id: 'w', at: '2026-10-28T05:00:00Z', subjectType: 'job_seeker', subjectCode: 'JS-00133', purpose: 'call_recording', method: 'call', effect: 'Profile paused' }], erasures: [], noticeVersions: [{ version: '3', count: 10, firstAt: '2026-11-01T00:00:00Z', lastAt: NOW.toISOString() }], businesses: { total: 54, signedAndRecording: 54 }, partners: { total: 22, termsAndRecording: 20 } },
       'GET /ceo/privacy/consents': { rows: [], total: 0, page: 1, pageSize: 25, summary: null },
+      'GET /data-requests': { dueDays: 30, summary: { open: 0, overdue: 0, closedThisMonth: 0 }, rows: [] },
     });
     render(<Privacy />, '/ceo/privacy');
     expect(await screen.findByText('Profile paused')).toBeInTheDocument();

@@ -44,6 +44,7 @@ import { WebAppModule } from './modules/web-app/web-app.module';
 import { ScreensCallRegistrationModule } from './modules/screens-call-registration/screens-call-registration.module';
 import { FieldSellingModule } from './modules/field-selling/field-selling.module';
 import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
+import { DataRequestModule } from './modules/data-request/data-request.module';
 import { AreaModule } from './modules/area/area.module';
 import { LiveModule } from './common/live/live.module';
 import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-call-agent.module';
@@ -60,6 +61,7 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
 @Module({
   imports: [
     CeoPortalModule,
+    DataRequestModule,
     FinanceModule,
     AreaModule,
     ObservabilityModule,

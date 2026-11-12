@@ -167,6 +167,7 @@ export class CeoAdminService {
         entityCode: r.entityCode,
         reason: r.reason,
         change: changeSummary(r.before, r.after, r.changedFields),
+        device: { id: r.deviceId, name: r.deviceName, network: r.network },
       })),
       total,
       page: page.page,

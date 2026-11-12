@@ -1,10 +1,12 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { DateRange, RECEIVED_STATUSES, contains, daysSince, sumPaise } from '../ceo-portal/ceo-common';
 import { invoicePath } from '../placement/invoice-link';
 import { receiptToken } from '../payment/receipt-link';
+import { MonthLockService } from '../month-lock/month-lock.service';
+import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
 import { MONEY_IN_NEEDS_YOU, MoneyInStatus, bankDay, istDay, istDayBounds, matchHints, moneyInStatus, parsePaise } from './finance-rules';
 
 const OUT_TYPES = ['refund', 'duplicate_refund', 'referral_payout', 'joining_reward'];
@@ -48,6 +50,7 @@ export class FinanceBooksService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
+    @Optional() private readonly locks?: MonthLockService,
   ) {}
 
   // ------------------------------------------------------------ money in
@@ -286,13 +289,18 @@ export class FinanceBooksService {
     const credit = await this.prisma.bankCredit.findUnique({ where: { id: creditId } });
     if (!credit) throw new NotFoundException(`Bank credit '${creditId}' not found`);
     if (credit.status !== 'unmatched') throw new BadRequestException(`This credit is ${credit.status}; only an unmatched credit is returned`);
-    const clash = await this.prisma.payment.findFirst({ where: { bankUtr: utr }, select: { code: true } });
-    const clashCredit = await this.prisma.bankCredit.findFirst({ where: { OR: [{ returnedUtr: utr }, { bankUtr: utr }] }, select: { id: true } });
-    if (clash || clashCredit) throw new ConflictException(`UTR '${utr}' is already recorded${clash ? ` on ${clash.code}` : ''}`);
-    const claimed = await this.prisma.bankCredit.updateMany({
-      where: { id: credit.id, status: 'unmatched' },
-      data: { status: 'returned', returnedUtr: utr, returnedAt: now, returnedByStaffId: actorId, ignoredReason: reason },
-    });
+    // A closed month never changes: its credits are not returned from here.
+    if (this.locks) await this.locks.assertOpenOn(credit.receivedAt, 'its bank credits');
+    await assertUtrUnused(this.prisma, utr);
+    const claimed = await this.prisma.bankCredit
+      .updateMany({
+        where: { id: credit.id, status: 'unmatched' },
+        data: { status: 'returned', returnedUtr: utr, returnedAt: now, returnedByStaffId: actorId, ignoredReason: reason },
+      })
+      .catch((error: unknown) => {
+        if (isUniqueViolation(error)) throw utrUsed(utr);
+        throw error;
+      });
     if (claimed.count !== 1) throw new BadRequestException('This credit changed meanwhile; reload');
     await this.prisma.reviewFlag.updateMany({
       where: { kind: 'payment_mismatch', status: 'open', subjectType: 'bank_credit', subjectId: credit.id },
@@ -315,7 +323,7 @@ export class FinanceBooksService {
 
   /** Every movement through the bank in our books between two instants. */
   private async movements(from: Date, to: Date) {
-    const [credits, outs, expenses, returns] = await Promise.all([
+    const [credits, outs, expenses, returns, salaries] = await Promise.all([
       this.prisma.bankCredit.findMany({
         where: { receivedAt: { gte: from, lte: to } },
         include: { matchedPayment: { select: { id: true, code: true, type: true, jobSeeker: { select: { code: true, name: true } }, business: { select: { name: true } }, placement: { select: { code: true, invoiceCode: true, business: { select: { name: true } } } } } }, tdsReceivable: { select: { id: true } } },
@@ -326,6 +334,8 @@ export class FinanceBooksService {
       }),
       this.prisma.expense.findMany({ where: { status: 'paid', paidAt: { gte: from, lte: to }, NOT: { paidFrom: 'cash' } } }),
       this.prisma.bankCredit.findMany({ where: { status: 'returned', returnedAt: { gte: from, lte: to } } }),
+      // Salaries paid from the company account (Phase 22 Part B).
+      this.prisma.payrollLine.findMany({ where: { status: 'paid', paidAt: { gte: from, lte: to }, netPaise: { gt: 0 }, NOT: { paidFrom: 'cash' } }, select: { id: true, staffCode: true, name: true, netPaise: true, paidAt: true, utr: true, run: { select: { month: true } } } }),
     ]);
     type Line = { id: string; at: string; direction: 'credit' | 'debit'; amountPaise: number; what: string; status: string; reference: string | null; source: string };
     const lines: Line[] = [
@@ -372,6 +382,16 @@ export class FinanceBooksService {
         status: 'matched',
         reference: c.returnedUtr,
         source: 'return',
+      })),
+      ...salaries.map((l) => ({
+        id: `sal-${l.id}`,
+        at: l.paidAt!.toISOString(),
+        direction: 'debit' as const,
+        amountPaise: l.netPaise,
+        what: `Salary ${l.run.month} · ${l.staffCode} ${l.name}`,
+        status: 'matched',
+        reference: l.utr,
+        source: 'salary',
       })),
     ];
     return lines.sort((a, b) => b.at.localeCompare(a.at));
@@ -464,6 +484,7 @@ export class FinanceBooksService {
     }
     const day = input.day;
     if (day > istDay(now)) throw new BadRequestException('A day in the future cannot be closed');
+    if (this.locks) await this.locks.assertOpen(day.slice(0, 7), 'its bank days');
     let bankClosingPaise: number;
     try {
       bankClosingPaise = parsePaise(input.bankClosingPaise, 'bankClosingPaise', { allowZero: true });
