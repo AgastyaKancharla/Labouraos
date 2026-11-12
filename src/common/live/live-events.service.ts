@@ -15,12 +15,20 @@ import { Observable, Subject, filter, map } from 'rxjs';
  *   green); publish with the same service.
  * - `notification`: one of this person's bell notifications opened or
  *   cleared, so the bell reloads now instead of at its next 30-second poll.
+ * - `attendance_status`: this person's attendance status changed (picked,
+ *   set by the phone system, by the idle detector, or the day ended), so the
+ *   header status menu changes at once.
  *
  * Delivery is in-process: the web service runs as one instance on Render and
  * every webhook that feeds this channel arrives there. Screens also poll as a
  * fallback, so a missed event only costs a few seconds, never data.
  */
-export type LiveEventType = 'incoming_call' | 'call_status' | 'registration_step' | 'notification';
+export type LiveEventType =
+  | 'incoming_call'
+  | 'call_status'
+  | 'registration_step'
+  | 'notification'
+  | 'attendance_status';
 
 export interface LiveEvent {
   type: LiveEventType;

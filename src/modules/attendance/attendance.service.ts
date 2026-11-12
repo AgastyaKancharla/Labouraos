@@ -11,6 +11,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
+import { LiveEventsService } from '../../common/live/live-events.service';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { AttendanceClock } from './attendance-clock';
 import {
@@ -26,6 +27,30 @@ import { WorkingDaysService } from './working-days.service';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
 
+/** Meetings, training and one-to-ones: production, shown apart on the attendance screen. */
+const MEETING_STATUSES = ['team_meeting', 'training', 'one_to_one'];
+
+/** One status period of today, oldest first (the "Today so far" timeline). */
+export interface TodaySegment {
+  status: string;
+  startedAt: string;
+  endedAt: string | null;
+  /** Who set it: staff, phone_system, check_in, idle_detector, correction. */
+  source: string;
+  /** System problem only: whether a Team Lead approved it (it counts as production only then). */
+  approved: boolean | null;
+}
+
+/** The attendance settings the screen needs to show allowances and ask "Still there?". */
+export interface TodayPolicy {
+  productionHoursFullDay: number;
+  lateGraceMinutes: number;
+  shortBreakMinutes: number;
+  lunchMinutes: number;
+  idleAfterMinutes: number;
+  idlePromptMinutes: number;
+}
+
 export interface TodayView {
   date: string;
   status: string | null;
@@ -40,6 +65,14 @@ export interface TodayView {
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
+  /** When the current status started (null before login and after logout). */
+  statusSince: string | null;
+  shortBreakSeconds: number;
+  shortBreaks: number;
+  lunchSeconds: number;
+  meetingSeconds: number;
+  segments: TodaySegment[];
+  policy: TodayPolicy;
 }
 
 @Injectable()
@@ -53,7 +86,26 @@ export class AttendanceService {
     private readonly clock: AttendanceClock,
     private readonly workingDays: WorkingDaysService,
     @Optional() private readonly bells?: NotificationSourcesService,
+    @Optional() private readonly live?: LiveEventsService,
   ) {}
+
+  /**
+   * Tells the person's open screens that their status changed (live channel
+   * `attendance_status`), so the header menu follows the phone system, the
+   * idle detector and the end of the day without waiting for its next poll.
+   * Never blocks attendance.
+   */
+  private announce(staffId: string, status: string | null, since: Date | null): void {
+    if (!this.live) return;
+    try {
+      this.live.publish(staffId, 'attendance_status', {
+        status,
+        since: since ? since.toISOString() : null,
+      });
+    } catch (error) {
+      this.logger.warn(`Live status event failed: ${(error as Error).message}`);
+    }
+  }
 
   /** A bell never blocks attendance: failures are logged, not thrown. */
   private async bell(label: string, run: (bells: NotificationSourcesService) => Promise<unknown>) {
@@ -127,6 +179,7 @@ export class AttendanceService {
           },
         },
       });
+      this.announce(staffId, 'available', now);
       return this.today(staffId);
     }
     await this.prisma.attendanceDay.create({
@@ -149,6 +202,7 @@ export class AttendanceService {
         },
       },
     });
+    this.announce(staffId, 'available', now);
     return this.today(staffId);
   }
 
@@ -198,6 +252,7 @@ export class AttendanceService {
     if (!day || !day.loginAt) {
       return { ...this.emptyToday(now, policy), dayType: day?.dayType ?? 'open' };
     }
+    const end = day.logoutAt ?? now;
     const totals = this.totals(day.segments, now);
     if (!day.logoutAt) {
       await this.prisma.attendanceDay.update({
@@ -227,6 +282,51 @@ export class AttendanceService {
       flagged: day.flagged,
       closedReason: day.closedReason,
       dayType: day.dayType,
+      statusSince: current ? current.startedAt.toISOString() : null,
+      ...this.breakdown(day.segments, end),
+      segments: day.segments.map((segment) => ({
+        status: segment.status,
+        startedAt: segment.startedAt.toISOString(),
+        endedAt: segment.endedAt?.toISOString() ?? null,
+        source: segment.source,
+        approved: segment.status === 'system_problem' ? Boolean(segment.approvedAt) : null,
+      })),
+      policy: this.todayPolicy(policy),
+    };
+  }
+
+  /** Short breaks, lunch and meetings apart, for the attendance screen's tiles. */
+  private breakdown(
+    segments: AttendanceSegment[],
+    end: Date,
+  ): { shortBreakSeconds: number; shortBreaks: number; lunchSeconds: number; meetingSeconds: number } {
+    let shortBreakSeconds = 0;
+    let shortBreaks = 0;
+    let lunchSeconds = 0;
+    let meetingSeconds = 0;
+    for (const segment of segments) {
+      const stop = segment.endedAt ?? end;
+      const seconds = Math.max(0, Math.floor((stop.getTime() - segment.startedAt.getTime()) / 1000));
+      if (segment.status === 'short_break') {
+        shortBreakSeconds += seconds;
+        shortBreaks += 1;
+      } else if (segment.status === 'lunch') {
+        lunchSeconds += seconds;
+      } else if (MEETING_STATUSES.includes(segment.status)) {
+        meetingSeconds += seconds;
+      }
+    }
+    return { shortBreakSeconds, shortBreaks, lunchSeconds, meetingSeconds };
+  }
+
+  private todayPolicy(policy: PricingPolicy): TodayPolicy {
+    return {
+      productionHoursFullDay: policy.productionHoursFullDay,
+      lateGraceMinutes: policy.lateGraceMinutes,
+      shortBreakMinutes: policy.shortBreakMinutes,
+      lunchMinutes: policy.lunchMinutes,
+      idleAfterMinutes: policy.idleAfterMinutes,
+      idlePromptMinutes: IDLE_PROMPT_MINUTES,
     };
   }
 
@@ -368,6 +468,7 @@ export class AttendanceService {
         flagged,
       },
     });
+    this.announce(day.staffId, null, null);
   }
 
   /**
@@ -446,6 +547,7 @@ export class AttendanceService {
     const created = await this.prisma.attendanceSegment.create({
       data: { staffId, dayId, status, startedAt: now, source },
     });
+    this.announce(staffId, status, now);
     if (status === 'system_problem') {
       await this.bell('system problem', (bells) => bells.syncSystemProblem(created.id, now));
     }
@@ -559,6 +661,13 @@ export class AttendanceService {
       flagged: false,
       closedReason: null,
       dayType: 'open',
+      statusSince: null,
+      shortBreakSeconds: 0,
+      shortBreaks: 0,
+      lunchSeconds: 0,
+      meetingSeconds: 0,
+      segments: [],
+      policy: this.todayPolicy(policy),
     };
   }
 

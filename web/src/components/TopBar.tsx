@@ -8,6 +8,7 @@ import { useFamily } from './family';
 import { NotificationBell } from './NotificationBell';
 import { PeriodPicker } from './PeriodPicker';
 import { SearchBox } from './SearchBox';
+import { StatusMenu } from '../attendance/StatusMenu';
 
 /**
  * The header block at the top of every staff screen, as in the designs:
@@ -76,6 +77,8 @@ export function TopBar({
         </div>
         <div className="lb-topbar__tools">
           {showSearch && <SearchBox />}
+          {/* Team Lead, Manager and Finance: the attendance status menu (renders nothing elsewhere). */}
+          {family === 'portal' && <StatusMenu tone="onLight" />}
           {family === 'portal' && (
             <NotificationBell
               items={bell.items}

@@ -1,5 +1,6 @@
 /* Hindi (हिंदी) — same keys as en.ts. Have a native speaker review new strings. */
 import { payslipHi } from '../screens/call-agent/CA14g-Payslip/i18n';
+import { attendanceHi } from '../attendance/i18n';
 import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
@@ -579,4 +580,5 @@ export const hi: Messages = {
   // Call agent console and the search bar (in every portal): Kannada, English and Hindi (owner decision, 11 Nov).
   ...callAgentHi,
   ...payslipHi,
+  ...attendanceHi,
 };
