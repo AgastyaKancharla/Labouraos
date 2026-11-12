@@ -190,22 +190,28 @@ Settings that Render creates by itself, and that you never type, are `JWT_SECRET
 
 ### Step 7: Create the first CEO account
 
-When the app first starts, no staff accounts exist. A one-time "bootstrap" request creates the CEO. You send it from a web page called ReqBin, so no terminal is needed.
+When the app first starts, no staff accounts exist. A one-time "bootstrap" request creates the CEO. You send it from **Laboura's own set-up page**, so no terminal is needed.
 
-1. **Copy the bootstrap secret.** In Render, open **`laboura-api`**, then **Environment**. Find `STAFF_BOOTSTRAP_SECRET` and click the eye icon to show it. Copy it.
-2. **Send the request.** Open **[reqbin.com](https://reqbin.com)**.
-   - Method: **POST**.
-   - Address: `https://<your laboura-api address>/staff/bootstrap`
-   - Open the **Content** (body) tab, choose **JSON**, and paste, replacing the three values:
-     ```json
-     {
-       "name": "Sanket",
-       "email": "ceo@laboura.in",
-       "password": "A-long-password-you-will-remember",
-       "secret": "PASTE-THE-BOOTSTRAP-SECRET-HERE"
-     }
-     ```
-   - Click **Send**. The answer is `201` and includes `"code": "CEO-00001"` (the staff code). Write the staff code down. This only works while no staff account exists.
+> [!IMPORTANT]
+> **Never type the bootstrap secret, the CEO password or a login token into any other website** (for example online "API testers" such as ReqBin or Postman's web version). Those sites pass what you type through their own servers. Use only the page below, on your own Laboura address.
+
+1. **Copy the bootstrap secret.** In Render, open **`laboura-api`** (on the free tier: `laboura-test`), then **Environment**. Find `STAFF_BOOTSTRAP_SECRET` and click the eye icon to show it. Copy it.
+2. **Open the set-up page on your own Laboura address:** `https://<your laboura-api address>/setup`. Check that the address bar shows your own Laboura address (for example `https://laboura-api.onrender.com/setup`) before typing anything.
+   - **CEO name**, for example `Sanket`.
+   - **CEO email**, for example `ceo@laboura.in`.
+   - **Password** (twice): at least 12 characters. Save it in your password manager first.
+   - **Bootstrap secret**: paste the value from 1.
+   - Click **Create the CEO account**. The page shows the staff code, for example `CEO-00001`. Write it down. The page works only while no staff account exists; after that it answers that set-up is already done.
+
+   *If the set-up page does not open*, use the browser console on your own Laboura address instead (still nothing goes through another website): open `https://<your laboura-api address>/health` in Chrome, press **Ctrl+Shift+J** (Mac: **Cmd+Option+J**), paste this with your own values, and press **Enter**:
+   ```js
+   fetch('/staff/bootstrap', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json' },
+     body: JSON.stringify({ name: 'Sanket', email: 'ceo@laboura.in', password: 'A-long-password', secret: 'THE-BOOTSTRAP-SECRET' }),
+   }).then((r) => r.json()).then(console.log);
+   ```
+   The answer includes `"code": "CEO-00001"`. Close the console afterwards.
 3. **Set up the authenticator app on the first login.** Open `https://<your laboura-api address>/admin`.
    - Log in with the **staff code** (for example `CEO-00001`) and the password. Not the email. Leave the authenticator box empty this first time.
    - The page shows a secret key. Add it to Google Authenticator, Microsoft Authenticator or Authy.
@@ -218,10 +224,17 @@ Managers and Finance also use an authenticator app. Team Leads and agents instea
 
 Until an office network is added, nobody is limited to it. Add it only when the office has its own internet connection. You need the address range from whoever set it up (it looks like `203.0.113.0/24`); never guess it.
 
-1. Log in to `/admin` as the CEO or a Manager.
-2. Right-click the page, choose **Inspect**, open **Application** (Chrome) or **Storage** (Firefox), then **Session storage**, click the Laboura address and copy the value named `laboura_token`. Close Inspect. This token lasts about 15 minutes; if a later step says "unauthorized", log in again and copy it again.
-3. In **[reqbin.com](https://reqbin.com)**: method **POST**, address `https://<your laboura-api address>/office-networks`. In **Headers** add `Authorization` with the value `Bearer ` followed by the token. Body (JSON): `{ "label": "Bengaluru office", "cidr": "203.0.113.0/24" }` with the real range. Click **Send**.
-4. For each person who may log in only from the office: method **POST**, address `https://<your laboura-api address>/staff/<their staff id>/works-from-office`, same header, body `{ "worksFromOffice": true }`. The staff id is the long id on their staff row, not the staff code.
+1. Log in to the app as the CEO or a Manager and open **Team & Access**, then **Devices & logins**.
+2. Under **Office networks**, type a **Name** (for example `Bengaluru office`) and the **Network address** range, and click the button under them. A range can be removed there too.
+3. To limit one person to the office network: on your own Laboura address (never in another website), open the browser console with **Ctrl+Shift+J** (Mac: **Cmd+Option+J**) while logged in to the app as the CEO or a Manager, paste this with the person's staff id (the long id on their staff row, not the staff code), and press **Enter**:
+   ```js
+   fetch('/staff/PASTE-THE-STAFF-ID/works-from-office', {
+     method: 'POST',
+     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('laboura_token') },
+     body: JSON.stringify({ worksFromOffice: true }),
+   }).then((r) => r.json()).then(console.log);
+   ```
+   The login token never leaves the page: the request goes from your browser straight to Laboura. Close the console afterwards.
 
 ---
 
