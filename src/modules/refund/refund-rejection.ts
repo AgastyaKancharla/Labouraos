@@ -37,7 +37,9 @@ export interface RefundRejectionInput {
 }
 
 /** The rejection already recorded for this guarantee (job seeker) or placement chain (business), if any. */
-export function findRefundRejection(db: Db, key: { jobSeekerId: string; guaranteeStartedAt: Date } | { placementId: string }) {
+export async function findRefundRejection(db: Db, key: { jobSeekerId: string; guaranteeStartedAt: Date } | { placementId: string }) {
+  // A unit-test double of Prisma may not have this table.
+  if (!(db as Partial<Db>).refundRejection) return null;
   return db.refundRejection.findFirst({
     where: 'placementId' in key ? { kind: 'business', placementId: key.placementId } : { kind: 'job_seeker', jobSeekerId: key.jobSeekerId, guaranteeStartedAt: key.guaranteeStartedAt },
     orderBy: { rejectedAt: 'desc' },
@@ -52,6 +54,7 @@ export function findRefundRejection(db: Db, key: { jobSeekerId: string; guarante
 export async function recordRefundRejection(db: Db, input: RefundRejectionInput) {
   if (input.kind === 'job_seeker' && (!input.jobSeekerId || !input.guaranteeStartedAt)) return null;
   if (input.kind === 'business' && !input.placementId) return null;
+  if (!(db as Partial<Db>).refundRejection) return null;
   const existing = await findRefundRejection(
     db,
     input.kind === 'business' ? { placementId: input.placementId! } : { jobSeekerId: input.jobSeekerId!, guaranteeStartedAt: input.guaranteeStartedAt! },

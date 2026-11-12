@@ -56,7 +56,7 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
       data: {
         code: `JS-RRJ-${tail}-${n}`,
         name: `Refund Seeker ${n}`,
-        phone: `+9196${tail}${n}`.slice(0, 13),
+        phone: `+9196${tail.slice(-5)}${String(n).padStart(3, '0')}`,
         phoneVerified: true,
         minSalary: 1500000,
         maxSalary: 2000000,
