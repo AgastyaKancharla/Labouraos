@@ -12,13 +12,34 @@ import { JwtPayload } from '../auth/jwt-payload.interface';
 import { AuditService } from '../audit/audit.service';
 import { OWN_PAY_ANSWER, seesMoney, stripMoney } from './money-visibility';
 
+/** Identity details Finance never sees (phone-like keys are matched by `isPhoneLikeKey`). */
 const PII_KEYS = new Set([
-  'phone',
   'kycReference',
   'kycDetails',
-  'contactPhone',
-  'candidatePhone',
 ]);
+
+/**
+ * A key that holds a phone number (H1, security check 12 Nov): matched by name,
+ * case-insensitive, so a field added later is masked without a list to update —
+ * phone, mobile, WhatsApp, contact or alternate number, caller, signed phone,
+ * last 4 digits and so on, with or without a Number/No/Last4/Masked ending.
+ * Keys that only describe a phone (phoneVerified, phoneVerifiedAt, phoneHash,
+ * whatsappOptIn, hasSmartphone with a true/false value…) are not numbers and are
+ * left alone; `callRoutingPhone` is removed from every answer separately.
+ */
+const PHONE_KEY =
+  /(phone|mobile|whatsapp|msisdn|virtualnumber|contactnumber|contactno|alternatenumber|altnumber|callernumber|calleenumber|fromnumber|tonumber|dialednumber|diallednumber|landline|telephone)(numbers?|nos?|num|e164|last4|last4digits|suffix|masked|full|raw|digits)?s?$/;
+
+export function isPhoneLikeKey(key: string): boolean {
+  const normalised = key.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (normalised === 'callroutingphone') return false;
+  return PHONE_KEY.test(normalised);
+}
+
+/** A value that can carry (part of) a phone number: text or a number with at least one digit. */
+function phoneLikeValue(value: unknown): value is string | number {
+  return (typeof value === 'string' || typeof value === 'number') && /\d/.test(String(value));
+}
 
 /**
  * Roles that see only the last 4 digits of a phone number. Only the CEO sees
@@ -42,13 +63,15 @@ export function maskPhoneLast4(value: unknown): string {
 }
 
 function isAgentPhoneKey(key: string): boolean {
-  const lower = key.toLowerCase();
-  if (lower === 'callroutingphone') {
-    return false;
-  }
-  return lower === 'phone' || lower.endsWith('phone') || lower === 'virtualnumber';
+  return isPhoneLikeKey(key);
 }
 
+/**
+ * Finance: no phone number at all and no identity details (Master Guide, People
+ * and roles: "Money records, with personal details masked"; AGENTS.md §7:
+ * "Finance sees none"). Every phone-like field, and every number in a list under
+ * a phone-like key, becomes `********`.
+ */
 export function maskPii<T>(data: T, seen = new WeakSet<object>()): T {
   if (data === null || data === undefined) {
     return data;
@@ -76,6 +99,10 @@ export function maskPii<T>(data: T, seen = new WeakSet<object>()): T {
       }
       if (PII_KEYS.has(key) && value !== null && value !== undefined) {
         masked[key] = value === '[changed]' ? value : '********';
+      } else if (isPhoneLikeKey(key) && phoneLikeValue(value)) {
+        masked[key] = value === '[changed]' ? value : '********';
+      } else if (isPhoneLikeKey(key) && Array.isArray(value)) {
+        masked[key] = value.map((item) => (phoneLikeValue(item) ? '********' : maskPii(item, seen)));
       } else if (typeof value === 'object' && value !== null) {
         masked[key] = maskPii(value, seen);
       } else {
@@ -114,8 +141,10 @@ export function maskAgentPhones<T>(data: T, seen = new WeakSet<object>()): T {
       if (key === 'callRoutingPhone') {
         continue;
       }
-      if (isAgentPhoneKey(key) && value !== null && value !== undefined && typeof value !== 'object') {
+      if (isAgentPhoneKey(key) && phoneLikeValue(value)) {
         masked[key] = value === '[changed]' ? value : maskPhoneLast4(value);
+      } else if (isAgentPhoneKey(key) && Array.isArray(value)) {
+        masked[key] = value.map((item) => (phoneLikeValue(item) ? maskPhoneLast4(item) : maskAgentPhones(item, seen)));
       } else if (typeof value === 'object' && value !== null) {
         masked[key] = maskAgentPhones(value, seen);
       } else {
