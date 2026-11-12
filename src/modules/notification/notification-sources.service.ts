@@ -52,6 +52,8 @@ function istDateLabel(date: Date): string {
 export class NotificationSourcesService {
   private readonly logger = new Logger(NotificationSourcesService.name);
   private readonly lastReadSync = new Map<string, number>();
+  /** Sources other modules add (e.g. the requests module's StaffRequest bells), run with "requests". */
+  private readonly extraSources: Array<{ label: string; run: (now: Date) => Promise<unknown> }> = [];
 
   constructor(
     private readonly prisma: PrismaService,
@@ -103,6 +105,15 @@ export class NotificationSourcesService {
     }
   }
 
+  /** Adds a source that is swept with the requests (24/48-hour escalation by the clock). */
+  registerRequestSource(label: string, run: (now: Date) => Promise<unknown>): void {
+    if (!this.extraSources.some((source) => source.label === label)) this.extraSources.push({ label, run });
+  }
+
+  private async syncExtraSources(now: Date): Promise<void> {
+    for (const source of this.extraSources) await this.safely(source.label, () => source.run(now));
+  }
+
   // ------------------------------------------------------------- everything
 
   /** The sweep: every state-derived kind. */
@@ -110,6 +121,7 @@ export class NotificationSourcesService {
     const dir = await this.directory();
     return {
       requests: await this.safely('requests', () => this.syncAllRequests(now, dir)),
+      extra: await this.safely('extra sources', () => this.syncExtraSources(now)),
       flags: await this.safely('flags', () => this.syncAllFlags(now, dir)),
       idle: await this.safely('idle', () => this.syncIdle(now, dir)),
       systemProblems: await this.safely('system problems', () => this.syncSystemProblems(now, dir)),
@@ -136,7 +148,10 @@ export class NotificationSourcesService {
     for (const group of due) this.lastReadSync.set(group, Date.now());
     const dir = await this.directory();
     for (const group of due) {
-      if (group === 'requests') await this.safely('requests', () => this.syncAllRequests(now, dir));
+      if (group === 'requests') {
+        await this.safely('requests', () => this.syncAllRequests(now, dir));
+        await this.syncExtraSources(now);
+      }
       if (group === 'team') {
         await this.safely('idle', () => this.syncIdle(now, dir));
         await this.safely('system problems', () => this.syncSystemProblems(now, dir));
@@ -315,6 +330,17 @@ export class NotificationSourcesService {
     }
     const person = dir.get(flag.raisedForStaffId);
     const chain = person ? dir.chainOf(person.id) : null;
+    // Escalated flags ("Send to Manager" / "Send to CEO") and the CEO's own
+    // kinds (a business hiding a hire) go to their owner; the Manager over
+    // the person still hears about a bypass (guide, Quality).
+    if (flag.ownerRole === 'ceo') {
+      const manager = flag.kind === 'bypass_suspected' ? (chain?.manager ?? null) : null;
+      return [...ceos, manager].filter((row): row is DirectoryRow => Boolean(row && row.status === 'active'));
+    }
+    if (flag.ownerRole === 'manager') {
+      const owner = dir.get(flag.ownerStaffId) ?? chain?.manager ?? null;
+      return owner && owner.status === 'active' ? [owner] : ceos;
+    }
     const orCeo = (list: Array<DirectoryRow | null>) => {
       const found = list.filter((row): row is DirectoryRow => Boolean(row && row.status === 'active'));
       return found.length > 0 ? found : ceos;

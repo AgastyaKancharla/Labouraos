@@ -12,6 +12,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import {
+  CEO_OWNED_FLAG_KINDS,
   REVIEW_FLAG_KINDS,
   ReviewFlagKind,
 } from './review-flag.constants';
@@ -71,6 +72,8 @@ export class ReviewFlagService {
         raisedForStaffId: params.raisedForStaffId ?? null,
         details: (params.details ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         status: 'open',
+        // Money and bypass flags are always decided by the CEO (guide, Quality).
+        ownerRole: CEO_OWNED_FLAG_KINDS.includes(params.kind) ? 'ceo' : null,
       },
     });
     await this.syncBell(flag.id);

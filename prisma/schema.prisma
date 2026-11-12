@@ -1578,9 +1578,18 @@ model ReviewFlag {
   resolvedByStaffId String?
   resolvedByStaff   Staff?    @relation("ReviewFlagResolvedBy", fields: [resolvedByStaffId], references: [id], onDelete: SetNull)
   resolution        String?
+  /// Who decides the flag now: team_lead, manager or ceo. Money and bypass
+  /// flags are always the CEO's. Moved up by "Send to Manager" / "Send to CEO".
+  ownerRole         String?
+  /// The Manager it was sent to (ownerRole manager); null for the CEO.
+  ownerStaffId      String?
+  escalatedAt       DateTime?
+  escalatedByStaffId String?
+  escalationNote    String?
 
   @@index([status, raisedAt])
   @@index([raisedForStaffId])
+  @@index([ownerRole, status])
 }
 
 model CallRecord {
@@ -1997,4 +2006,97 @@ model OwnerFavourite {
 
   @@unique([vacancyId, jobSeekerId])
   @@index([jobSeekerId])
+}
+
+/// Requests a Team Lead, Manager or the CEO decides that have no table of
+/// their own (Team Lead portal T-Requests, Manager portal MG-Requests): a hit
+/// removal, a target change, a day change, a written warning. Leave,
+/// corrections, devices and replacement claims stay in their own tables and
+/// are read through the same requests read model (src/modules/requests).
+/// Routed like leave: routedToRole / routedToStaffId / routeReason, with the
+/// 24-hour (Team Lead) and 48-hour (Manager) escalation worked out from the clock.
+model StaffRequest {
+  id                  String    @id @default(uuid())
+  /// hit_removal, target_change, day_change, written_warning
+  kind                String
+  /// The staff member the request is about (scope and routing follow them).
+  staffId             String
+  requestedByStaffId  String
+  /// job_seeker_hit, target, attendance_day, staff
+  subjectType         String
+  subjectId           String
+  details             Json
+  reason              String
+  /// pending, approved, rejected
+  status              String    @default("pending")
+  routedToRole        String
+  routedToStaffId     String?
+  routeReason         String
+  forwardedAt         DateTime?
+  forwardedByStaffId  String?
+  forwardNote         String?
+  decidedAt           DateTime?
+  decidedByStaffId    String?
+  decidedByRole       String?
+  decisionReason      String?
+  overturnedAt        DateTime?
+  overturnedByStaffId String?
+  overturnReason      String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  @@index([status, routedToRole])
+  @@index([staffId, status])
+  @@index([kind, subjectId])
+  @@index([decidedAt])
+}
+
+/// Coaching notes and warnings on an agent (Team Lead T-Agent): seen by the
+/// agent, their Team Lead, Managers over them and the CEO.
+model CoachingNote {
+  id            String   @id @default(uuid())
+  staffId       String
+  authorStaffId String
+  /// note, one_to_one, verbal_warning, written_warning
+  kind          String   @default("note")
+  text          String
+  createdAt     DateTime @default(now())
+
+  @@index([staffId, createdAt])
+}
+
+/// A Team Lead's checklist score for one recorded call (T-Quality). Minimal on
+/// purpose: six yes/no checks, the score out of 100, and a note.
+model CallQualityScore {
+  id              String   @id @default(uuid())
+  callRecordId    String   @unique
+  staffId         String
+  scoredByStaffId String
+  checks          Json
+  score           Int
+  note            String?
+  flagged         Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([staffId, createdAt])
+  @@index([scoredByStaffId])
+}
+
+/// A Team Lead's check of a registration (T-Verify) or a shop visit (T-Visits):
+/// "Looks right", or "Fake" / "Flag" with the review flag it opened.
+model TeamLeadCheck {
+  id               String   @id @default(uuid())
+  /// job_seeker, business_visit
+  subjectType      String
+  subjectId        String
+  /// ok, fake, flagged
+  verdict          String
+  note             String?
+  flagId           String?
+  checkedByStaffId String
+  createdAt        DateTime @default(now())
+
+  @@index([subjectType, subjectId])
+  @@index([checkedByStaffId, createdAt])
 }

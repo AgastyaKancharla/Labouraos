@@ -21,7 +21,7 @@ const dir = new StaffDirectory([
   row('gone', 'team_lead', 'mga', 'deactivated'),
 ]);
 
-function flag(kind: string, raisedForStaffId: string | null): ReviewFlag {
+function flag(kind: string, raisedForStaffId: string | null, owner: Partial<ReviewFlag> = {}): ReviewFlag {
   return {
     id: `f-${kind}`,
     code: 'RF-1',
@@ -35,6 +35,12 @@ function flag(kind: string, raisedForStaffId: string | null): ReviewFlag {
     resolvedAt: null,
     resolvedByStaffId: null,
     resolution: null,
+    ownerRole: null,
+    ownerStaffId: null,
+    escalatedAt: null,
+    escalatedByStaffId: null,
+    escalationNote: null,
+    ...owner,
   };
 }
 
@@ -102,5 +108,14 @@ describe('who hears about a review flag', () => {
 
   it('falls back to the CEO when the person has no line', () => {
     expect(ids(sources.flagRecipients(flag('odd_hour_login', 'orphan'), dir))).toEqual(['ceo']);
+  });
+
+  it('sends a flag sent up by the Team Lead to that Manager only, and one sent to the CEO to the CEO only', () => {
+    expect(ids(sources.flagRecipients(flag('visit_short', 'fa1', { ownerRole: 'manager', ownerStaffId: 'mga' }), dir))).toEqual(['mga']);
+    expect(ids(sources.flagRecipients(flag('visit_short', 'fa1', { ownerRole: 'ceo' }), dir))).toEqual(['ceo']);
+  });
+
+  it("sends a suspected bypass to the CEO, who decides, and the person's Manager", () => {
+    expect(ids(sources.flagRecipients(flag('bypass_suspected', 'fa1', { ownerRole: 'ceo' }), dir))).toEqual(['ceo', 'mga']);
   });
 });
