@@ -22,7 +22,10 @@ export const routes = {
   businessNew: '/business/new', // FA07 (?visitId)
   business: '/business', // FA08: `${routes.business}/${id}`
   callOwner: '/call-owner', // FA18 (?businessId)
-  myAttendance: '/my-attendance', // attendance, leave & payslips
+  myAttendance: '/my-attendance', // FA04e (CA14e-MyAttendance for the phone)
+  myLeave: '/my-attendance/leave', // FA04f (CA14f-RequestLeave)
+  myCorrection: '/my-attendance/correction', // FA04h (CA14h-Correction)
+  myPayslips: '/my-attendance/payslips', // FA04g (CA14g-Payslip)
   jobSeekerNew: '/job-seeker/new', // FA10
   vacancyNew: '/vacancy/new', // FA17
   feeCalculator: '/fee-calculator', // FA14

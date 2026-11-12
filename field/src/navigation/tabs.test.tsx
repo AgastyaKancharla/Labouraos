@@ -64,6 +64,10 @@ const activeTab = () =>
 /** Each screen from the task list, with the tab its design marks as active. */
 const SCREENS: [design: string, url: string, tab: 'Home' | 'Visits'][] = [
   ['FA04-CheckedIn', routes.attendance, 'Home'],
+  ['FA04e-MyAttendance', routes.myAttendance, 'Home'],
+  ['FA04f-RequestLeave', routes.myLeave, 'Home'],
+  ['FA04h-Correction', routes.myCorrection, 'Home'],
+  ['FA04g-Payslip', routes.myPayslips, 'Home'],
   ['FA07-RegisterBusiness', `${routes.businessNew}?visitId=v-1`, 'Home'],
   ['FA08-Business', `${routes.business}/b-1`, 'Home'],
   ['FA10-CaptureSeeker', routes.jobSeekerNew, 'Home'],

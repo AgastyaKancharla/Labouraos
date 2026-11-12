@@ -49,4 +49,10 @@ export const queryKeys = {
   call: (id: string) => ['calls', id] as const,
   formOptions: ['registration', 'options'] as const,
   seekerStatus: (id: string) => ['registration', 'job-seeker', id] as const,
+  // My attendance, leave, corrections and payslips (CA14e–CA14h for the field app)
+  myMonth: (month: string) => ['attendance', 'month', month] as const,
+  leaveBalance: ['attendance', 'leave', 'balance'] as const,
+  myRequests: ['attendance', 'requests', 'mine'] as const,
+  myPayslips: ['payroll', 'my-payslips'] as const,
+  myPayslip: (month: string) => ['payroll', 'my-payslips', month] as const,
 };
