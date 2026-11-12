@@ -964,6 +964,14 @@ model AuditLog {
   after         Json?
   reason        String?
   changedFields String[]  @default([])
+  /// The device the request came from (StaffDevice.deviceId and its label), when
+  /// the row was written during a signed-in request or a login. Never a phone number.
+  deviceId      String?
+  deviceName    String?
+  /// "office:<office network label>" or "outside_office"; null outside a request.
+  /// The address itself is not kept here (audit rows are never deleted; access
+  /// logs with addresses are kept only 1 year, guide: keeping data).
+  network       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 

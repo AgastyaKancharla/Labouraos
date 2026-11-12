@@ -2,6 +2,43 @@ import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdService } from '../id/id.service';
+import { requestContext } from '../observability/request-context';
+import { ipInCidr, normalizeIp } from '../../modules/office-network/office-network.cidr';
+
+/** Where an audit row was written from (C-Audit's Device column). */
+export interface AuditDevice {
+  deviceId: string | null;
+  deviceName: string | null;
+  network: string | null;
+}
+
+const NO_DEVICE: AuditDevice = { deviceId: null, deviceName: null, network: null };
+
+/**
+ * Never a full phone number in the device columns: any run of 10 or more
+ * digits (spaces, dashes, dots and a leading + allowed between them) keeps
+ * only its last 4 digits.
+ */
+export function maskPhoneLike(value: string): string {
+  return value.replace(/\+?\d(?:[\s.-]?\d){9,}/g, (run) => `******${run.replace(/\D/g, '').slice(-4)}`);
+}
+
+function cleanDeviceText(value: string | null | undefined, max = 120): string | null {
+  const trimmed = value?.trim();
+  return trimmed ? maskPhoneLike(trimmed).slice(0, max) : null;
+}
+
+/**
+ * A device id is normally a random id (UUID), whose digit groups must not be
+ * mistaken for a phone number; it is masked only when the whole id looks like
+ * one (digits, spaces, dots, dashes and a leading +, 10 or more digits).
+ */
+function cleanDeviceId(value: string | null | undefined): string | null {
+  const trimmed = value?.trim();
+  if (!trimmed) return null;
+  const phoneLike = /^\+?[\d\s.-]+$/.test(trimmed) && trimmed.replace(/\D/g, '').length >= 10;
+  return (phoneLike ? `******${trimmed.replace(/\D/g, '').slice(-4)}` : trimmed).slice(0, 64);
+}
 
 /** Limits audit reads to actions by, or on, a set of staff. */
 export interface AuditScope {
@@ -136,9 +173,14 @@ export class AuditService {
       }
     }
 
+    const device = await this.currentDevice();
+
     return this.prisma.auditLog.create({
       data: {
         code,
+        deviceId: device.deviceId,
+        deviceName: device.deviceName,
+        network: device.network,
         actorId: params.actorId,
         action: params.action,
         entityType: params.entityType,
@@ -150,6 +192,73 @@ export class AuditService {
         city: params.city ?? 'Bengaluru',
       },
     });
+  }
+
+  /**
+   * The device and network of the request this row is written in, from the
+   * signed-in session (StaffSession.deviceId → StaffDevice.label) or the
+   * device a login names, and the request address checked against the
+   * office networks. Resolved once per request; outside a request (jobs,
+   * webhooks) all three are null. Never fails the write.
+   */
+  async currentDevice(): Promise<AuditDevice> {
+    const store = requestContext.getStore();
+    if (!store) {
+      return NO_DEVICE;
+    }
+    if (!store.auditDevice) {
+      store.auditDevice = this.resolveDevice(store).catch(() => NO_DEVICE);
+    }
+    return (await store.auditDevice) as AuditDevice;
+  }
+
+  private async resolveDevice(store: {
+    ip?: string;
+    staffId?: string;
+    sessionId?: string;
+    deviceId?: string;
+  }): Promise<AuditDevice> {
+    let deviceId = store.deviceId ?? null;
+    let staffId = store.staffId ?? null;
+    if (!deviceId && store.sessionId) {
+      const session = await this.prisma.staffSession.findUnique({
+        where: { id: store.sessionId },
+        select: { deviceId: true, staffId: true },
+      });
+      deviceId = session?.deviceId ?? null;
+      staffId = staffId ?? session?.staffId ?? null;
+    }
+    let deviceName: string | null = null;
+    if (deviceId && staffId) {
+      const device = await this.prisma.staffDevice.findUnique({
+        where: { staffId_deviceId: { staffId, deviceId } },
+        select: { label: true, platform: true },
+      });
+      if (device) {
+        const platform = device.platform && device.platform !== 'unknown' ? ` (${device.platform})` : '';
+        deviceName = `${device.label}${platform}`;
+      }
+    }
+    return {
+      deviceId: cleanDeviceId(deviceId),
+      deviceName: cleanDeviceText(deviceName),
+      network: await this.networkOf(store.ip),
+    };
+  }
+
+  /** "office:<label>" inside an active office range, "outside_office" otherwise, null without an address. */
+  private async networkOf(ip: string | undefined): Promise<string | null> {
+    const address = normalizeIp(ip ?? '');
+    if (!address) {
+      return null;
+    }
+    const ranges = await this.prisma.officeNetwork.findMany({
+      where: { active: true },
+      select: { label: true, cidr: true },
+      orderBy: { createdAt: 'asc' },
+    });
+    const office = ranges.find((range) => ipInCidr(address, range.cidr));
+    return office ? cleanDeviceText(`office:${office.label}`) : 'outside_office';
   }
 
   /**

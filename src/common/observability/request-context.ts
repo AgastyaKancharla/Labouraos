@@ -4,6 +4,14 @@ export interface RequestStore {
   requestId: string;
   userId?: string;
   userRole?: string;
+  /** The address Express resolved for this request (trust proxy applied), for the audit log's network column. */
+  ip?: string;
+  /** Set once the token is checked (JwtStrategy) or the login names its device. */
+  staffId?: string;
+  sessionId?: string;
+  deviceId?: string;
+  /** Resolved once per request by AuditService and reused by every audit row the request writes. */
+  auditDevice?: Promise<unknown>;
 }
 
 export const requestContext = new AsyncLocalStorage<RequestStore>();
@@ -26,4 +34,20 @@ export function runWithRequestId<T>(
   extra?: Partial<RequestStore>,
 ): T {
   return requestContext.run({ requestId, ...extra }, fn);
+}
+
+/**
+ * Records who is calling from which device, so every audit row this request
+ * writes carries the device and network (C-Audit's Device column). A no-op
+ * outside a request.
+ */
+export function noteRequestDevice(details: { staffId?: string; sessionId?: string; deviceId?: string | null }): void {
+  const store = requestContext.getStore();
+  if (!store) {
+    return;
+  }
+  if (details.staffId) store.staffId = details.staffId;
+  if (details.sessionId) store.sessionId = details.sessionId;
+  if (details.deviceId) store.deviceId = details.deviceId;
+  store.auditDevice = undefined;
 }

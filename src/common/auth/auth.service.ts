@@ -11,6 +11,7 @@ import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { Staff } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
+import { noteRequestDevice } from '../observability/request-context';
 import { AuditService } from '../audit/audit.service';
 import { TotpService } from './totp.service';
 import {
@@ -205,6 +206,7 @@ export class AuthService {
       });
       throw new UnauthorizedException('A device id is required');
     }
+    noteRequestDevice({ staffId: staff.id, deviceId });
 
     const management = (MANAGEMENT_ROLES as readonly string[]).includes(staff.role);
     const device = await this.prisma.staffDevice.findUnique({
@@ -300,6 +302,7 @@ export class AuthService {
         select: { staffDeviceId: true },
       })).staffDeviceId },
     });
+    noteRequestDevice({ staffId: staff.id, deviceId: device?.deviceId ?? null });
     return this.issueSession(staff, device?.deviceId ?? null, metadata, used.id);
   }
 
@@ -472,6 +475,7 @@ export class AuthService {
     ) {
       throw refuse(FIELD_SESSION_REFUSED, 'unknown');
     }
+    noteRequestDevice({ staffId: session.staffId, sessionId: session.id, deviceId });
     if (session.revokedAt || session.endedReason) {
       throw refuse('Session has been revoked', 'revoked');
     }
