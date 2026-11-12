@@ -277,10 +277,10 @@ export class BypassChargeService {
       let closed = false;
       if (payment && payment.status === 'pending') {
         const shut = await tx.payment.updateMany({ where: { id: payment.id, status: 'pending' }, data: { status: 'cancelled' } });
-        if (shut.count) {
-          closed = true;
-          await recordStatusChange(tx, { subjectType: 'payment', subjectId: payment.id, fromStatus: 'pending', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'bypass_charge_cancelled' });
-        }
+        // N3: the payment moved on meanwhile (paid or confirmed): undo the whole cancel.
+        if (!shut.count) throw new ConflictException('The payment for this charge changed meanwhile (it may have been paid): look again before cancelling');
+        closed = true;
+        await recordStatusChange(tx, { subjectType: 'payment', subjectId: payment.id, fromStatus: 'pending', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'bypass_charge_cancelled' });
       }
       const business = await tx.business.findUnique({ where: { id: charge.businessId }, select: { code: true } });
       return { charge, closed, businessCode: business?.code ?? charge.businessId };
