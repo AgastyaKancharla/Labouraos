@@ -1,8 +1,9 @@
--- Manager portal: interns and start dates on "Add a staff member", password
+-- Manager portal: interns and the joining date (payroll counts from it) on
+-- "Add a staff member", password
 -- resets that work like a new invite link, and coaching notes / written warnings.
 
 ALTER TABLE "Staff" ADD COLUMN "isIntern" BOOLEAN NOT NULL DEFAULT false;
-ALTER TABLE "Staff" ADD COLUMN "startsOn" DATE;
+ALTER TABLE "Staff" ADD COLUMN "joinedOn" DATE;
 
 -- CreateTable
 CREATE TABLE "StaffPasswordReset" (

@@ -30,7 +30,7 @@ export interface StaffRow {
   locked: { byManager: boolean; until: string | null; reason: string | null } | null;
   pendingDevice: { id: string; label: string; platform: string; requestedAt: string | null } | null;
   approvedDevices: { id: string; label: string; platform: string }[];
-  startsOn: string | null;
+  joinedOn: string | null;
 }
 interface StaffResponse {
   manager: { id: string; name: string };
@@ -87,7 +87,7 @@ export default function StaffAndAccess() {
   const [name, setName] = useState('');
   const [role, setRole] = useState<string>('call_agent');
   const [reportsTo, setReportsTo] = useState('');
-  const [startsOn, setStartsOn] = useState(() => istDateKey(now));
+  const [joinedOn, setJoinedOn] = useState(() => istDateKey(now));
   const [formError, setFormError] = useState<string | null>(null);
   const [baseRole, intern] = role.split(':');
   const forLead = baseRole === 'team_lead';
@@ -103,7 +103,7 @@ export default function StaffAndAccess() {
         role: baseRole,
         ...(forLead ? { reportsToId: chosenReport } : { teamLeadId: chosenReport }),
         intern: intern === 'intern',
-        startsOn: startsOn || null,
+        joinedOn: joinedOn || null,
       }),
     onSuccess: (res) => {
       setName('');
@@ -245,7 +245,7 @@ export default function StaffAndAccess() {
             <TextField label="Full name" value={name} onChange={setName} placeholder="Name" required />
             <SelectField label="Role" value={role} onChange={(v) => setRole(v || 'call_agent')} options={ROLE_OPTIONS} placeholder={null} />
             <SelectField label="Reports to" value={chosenReport} onChange={(v) => setReportsTo(v)} options={reportOptions} placeholder={reportOptions.length ? null : 'Add a Team Lead first'} />
-            <DateField label="Start date" value={startsOn} onChange={setStartsOn} />
+            <DateField label="Start date" value={joinedOn} onChange={setJoinedOn} />
             <div>
               <Button type="submit" variant="primary" loading={create.isPending}>
                 Add · send staff code

@@ -260,11 +260,11 @@ describe('Manager portal endpoints', () => {
   });
 
   it('a Manager adds an intern field agent under their own Team Lead, with a start date', async () => {
-    const res = await send('mgrA', 'post', '/staff', { name: 'New Intern', role: 'field_agent', teamLeadId: people.tlA.id, intern: true, startsOn: '2026-11-16' });
+    const res = await send('mgrA', 'post', '/staff', { name: 'New Intern', role: 'field_agent', teamLeadId: people.tlA.id, intern: true, joinedOn: '2026-11-16' });
     expect(res.status).toBe(201);
     ids.push(res.body.staff.id);
     expect(res.body.staff).toMatchObject({ role: 'field_agent', isIntern: true, reportsToId: people.tlA.id });
-    expect(String(res.body.staff.startsOn)).toContain('2026-11-16');
+    expect(String(res.body.staff.joinedOn)).toContain('2026-11-16');
     expect((await send('mgrA', 'post', '/staff', { name: 'Bad', role: 'team_lead', reportsToId: people.mgrA.id, intern: true })).status).toBe(400);
     expect((await send('mgrA', 'post', '/staff', { name: 'Other', role: 'call_agent', teamLeadId: people.tlB.id })).status).toBe(403);
   });

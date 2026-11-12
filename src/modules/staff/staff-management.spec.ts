@@ -575,7 +575,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
             'name',
             'reportsToId',
             'role',
-            'startsOn',
+            'joinedOn',
             'status',
             'teamLeadId',
           ].sort(),

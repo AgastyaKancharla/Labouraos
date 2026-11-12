@@ -212,8 +212,8 @@ describe('Teams and a Team Lead', () => {
 const staffResponse = {
   manager: { id: 'm1', name: 'Priya Sharma' },
   rows: [
-    { id: 'tl1', code: 'TL-3', name: 'Ravi Shankar', role: 'team_lead', isIntern: false, team: 'Team South', teamLeadId: 'tl1', reportsTo: { id: 'm1', name: 'Priya Sharma', role: 'manager', isYou: true }, state: 'active', locked: null, pendingDevice: null, approvedDevices: [], startsOn: null },
-    { id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', isIntern: false, team: 'Team North', teamLeadId: 'tl2', reportsTo: { id: 'tl2', name: 'Fatima Z', role: 'team_lead', isYou: false }, state: 'locked', locked: { byManager: false, until: '2026-11-09T13:00:00Z', reason: '5 wrong passwords' }, pendingDevice: null, approvedDevices: [], startsOn: null },
+    { id: 'tl1', code: 'TL-3', name: 'Ravi Shankar', role: 'team_lead', isIntern: false, team: 'Team South', teamLeadId: 'tl1', reportsTo: { id: 'm1', name: 'Priya Sharma', role: 'manager', isYou: true }, state: 'active', locked: null, pendingDevice: null, approvedDevices: [], joinedOn: null },
+    { id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', isIntern: false, team: 'Team North', teamLeadId: 'tl2', reportsTo: { id: 'tl2', name: 'Fatima Z', role: 'team_lead', isYou: false }, state: 'locked', locked: { byManager: false, until: '2026-11-09T13:00:00Z', reason: '5 wrong passwords' }, pendingDevice: null, approvedDevices: [], joinedOn: null },
   ],
   reportsToOptions: [
     { id: 'tl1', name: 'Ravi Shankar', role: 'team_lead', team: 'Team South' },
@@ -263,7 +263,7 @@ describe('Staff & access', () => {
     await userEvent.selectOptions(roles[roles.length - 1], 'field_agent:intern');
     await userEvent.selectOptions(screen.getByLabelText(/Reports to/), 'tl2');
     await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
-    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Meena R', role: 'field_agent', teamLeadId: 'tl2', intern: true, startsOn: '2026-11-09' }));
+    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Meena R', role: 'field_agent', teamLeadId: 'tl2', intern: true, joinedOn: '2026-11-09' }));
     expect(await screen.findByText('https://app.laboura.in/app/p/invite/tok')).toBeInTheDocument();
   });
 });

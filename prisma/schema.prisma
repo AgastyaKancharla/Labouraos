@@ -752,8 +752,9 @@ model Staff {
   teamName          String?
   /// An intern (call or field agent) — carries the same targets as paid agents.
   isIntern          Boolean          @default(false)
-  /// First working day, picked on "Add a staff member" (Manager portal).
-  startsOn          DateTime?        @db.Date
+  /// Joining date, entered when the staff member is added (CEO or Manager);
+  /// payroll counts from it.
+  joinedOn          DateTime?        @db.Date
   failedLoginCount  Int              @default(0)
   lockedUntil       DateTime?
   lockedByStaffId   String?

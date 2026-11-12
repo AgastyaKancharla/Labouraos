@@ -171,7 +171,7 @@ const STAFF_VIEW_SELECT = {
   reportsToId: true,
   status: true,
   isIntern: true,
-  startsOn: true,
+  joinedOn: true,
   createdAt: true,
   deactivatedAt: true,
 } satisfies Prisma.StaffSelect;
@@ -405,14 +405,14 @@ export class StaffService {
     if (isIntern && !TEAM_MEMBER_ROLES.includes(role)) {
       throw new BadRequestException('Only call agents and field agents can be interns');
     }
-    let startsOn: Date | null = null;
-    if (dto.startsOn !== undefined && dto.startsOn !== null && dto.startsOn !== '') {
-      if (typeof dto.startsOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dto.startsOn)) {
-        throw new BadRequestException('startsOn must be a date like 2026-11-16');
+    let joinedOn: Date | null = null;
+    if (dto.joinedOn !== undefined && dto.joinedOn !== null && dto.joinedOn !== '') {
+      if (typeof dto.joinedOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dto.joinedOn)) {
+        throw new BadRequestException('joinedOn must be a date like 2026-11-16');
       }
-      startsOn = new Date(`${dto.startsOn}T00:00:00.000Z`);
-      if (Number.isNaN(startsOn.getTime())) {
-        throw new BadRequestException('startsOn must be a valid date');
+      joinedOn = new Date(`${dto.joinedOn}T00:00:00.000Z`);
+      if (Number.isNaN(joinedOn.getTime())) {
+        throw new BadRequestException('joinedOn must be a valid date');
       }
     }
     const requestedTeamLeadId = dto.teamLeadId || undefined;
@@ -481,7 +481,7 @@ export class StaffService {
         inviteTokenHash: hashInviteToken(inviteToken),
         inviteExpiresAt,
         isIntern,
-        startsOn,
+        joinedOn,
       }),
       actor.sub,
     );
@@ -501,7 +501,7 @@ export class StaffService {
         reportsToId: staff.reportsToId,
         status: staff.status,
         isIntern: staff.isIntern,
-        startsOn: staff.startsOn ? staff.startsOn.toISOString().slice(0, 10) : null,
+        joinedOn: staff.joinedOn ? staff.joinedOn.toISOString().slice(0, 10) : null,
         inviteExpiresAt: inviteExpiresAt.toISOString(),
       },
     });
@@ -1040,7 +1040,7 @@ export class StaffService {
       reportsToId: target.reportsToId,
       status: target.status,
       isIntern: target.isIntern,
-      startsOn: target.startsOn,
+      joinedOn: target.joinedOn,
       createdAt: target.createdAt,
       deactivatedAt: target.deactivatedAt,
     };

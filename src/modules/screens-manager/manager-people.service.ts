@@ -324,7 +324,7 @@ export class ManagerPeopleService {
             failedLoginCount: true,
             reportsToId: true,
             teamLeadId: true,
-            startsOn: true,
+            joinedOn: true,
             devices: { where: { status: { in: ['pending', 'approved'] } }, select: { id: true, label: true, platform: true, status: true, requestedAt: true } },
           },
         })
@@ -358,7 +358,7 @@ export class ManagerPeopleService {
             : null,
           pendingDevice: pendingDevice ? { id: pendingDevice.id, label: pendingDevice.label, platform: pendingDevice.platform, requestedAt: pendingDevice.requestedAt?.toISOString() ?? null } : null,
           approvedDevices: (r?.devices ?? []).filter((d) => d.status === 'approved').map((d) => ({ id: d.id, label: d.label, platform: d.platform })),
-          startsOn: r?.startsOn ? r.startsOn.toISOString().slice(0, 10) : null,
+          joinedOn: r?.joinedOn ? r.joinedOn.toISOString().slice(0, 10) : null,
         };
       }),
       /** Who a new person can report to: a Team Lead (for agents) or the Manager (for a new Team Lead). */
