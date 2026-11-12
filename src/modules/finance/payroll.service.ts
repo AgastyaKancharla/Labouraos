@@ -153,6 +153,8 @@ interface PersonMonth {
   notEmployed: number;
   /** Public holidays (not on a weekly off) while on the staff: paid days. */
   holidaysOnStaff: number;
+  /** Public holidays (not on a weekly off) while not on the staff: the month was not whole. */
+  holidaysOffStaff: number;
   unmarked: string[];
   open: string[];
   absent: number;
@@ -454,7 +456,8 @@ export class PayrollService {
     const closed = days.filter((d) => d.dayType !== 'open');
     const shortfallSeconds = deductibleShortfall(sumPaise(closed.map((d) => d.shortfallSeconds)), sumPaise(closed.map((d) => d.makeUpSeconds)));
     const { employed, notEmployed } = staffWorkingDays(working, joinedDay, away);
-    const m: PersonMonth = { joinedDay, employed, notEmployed, holidaysOnStaff: holidaysOnStaff(holidayDays, joinedDay, away), unmarked: [], open: [], absent: 0, unpaidLeave: 0, half: 0, full: 0, paidLeave: 0, shortfallMinutes: Math.floor(shortfallSeconds / 60) };
+    const onStaffHolidays = holidaysOnStaff(holidayDays, joinedDay, away);
+    const m: PersonMonth = { joinedDay, employed, notEmployed, holidaysOnStaff: onStaffHolidays, holidaysOffStaff: holidayDays.length - onStaffHolidays, unmarked: [], open: [], absent: 0, unpaidLeave: 0, half: 0, full: 0, paidLeave: 0, shortfallMinutes: Math.floor(shortfallSeconds / 60) };
     for (const day of employed) {
       if (day > upTo) continue;
       const row = byDay.get(day);
@@ -479,6 +482,7 @@ export class PayrollService {
       employedWorkingDays: pm.employed.length,
       notEmployedWorkingDays: pm.notEmployed,
       holidaysOnStaff: pm.holidaysOnStaff,
+      holidaysOffStaff: pm.holidaysOffStaff,
       lossOfPayHalfDays: lopHalf,
       shortfallMinutes: pm.shortfallMinutes,
       fullDayMinutes,
@@ -584,6 +588,7 @@ export class PayrollService {
           employedWorkingDays: pm.employed.length,
           notEmployedWorkingDays: pm.notEmployed,
           holidaysOnStaff: pm.holidaysOnStaff,
+          holidaysOffStaff: pm.holidaysOffStaff,
           lossOfPayHalfDays: lossOfPayHalfDays({ absentDays: pm.absent, unpaidLeaveDays: pm.unpaidLeave, halfDays: pm.half, unmarkedDays: pm.unmarked.length }),
           shortfallMinutes: pm.shortfallMinutes,
           fullDayMinutes,

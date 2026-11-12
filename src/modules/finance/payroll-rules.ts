@@ -151,6 +151,8 @@ export interface PayInput {
   notEmployedWorkingDays: number;
   /** Public holidays (not on a weekly off) that fell while the person was on the staff: paid days. */
   holidaysOnStaff?: number;
+  /** Public holidays (not on a weekly off) that fell while the person was NOT on the staff (before joining, away, after leaving). */
+  holidaysOffStaff?: number;
   /** Absent and unpaid-leave working days ×2, + 1 for each half day, + unmarked working days ×2. */
   lossOfPayHalfDays: number;
   /** Shortfall not made up by month end, in whole minutes. */
@@ -191,8 +193,9 @@ export interface PayResult {
 
 /**
  * One person's pay for a month (owner decisions 11 Nov; Master Guide 12 Nov).
- * A day's pay is the monthly salary ÷ 26. On staff the whole month: the full
- * salary (weekly offs and holidays paid, whatever the number of working days).
+ * A day's pay is the monthly salary ÷ 26. On staff the whole month (not one
+ * working day or public holiday of it off the staff): the full salary (weekly
+ * offs and holidays paid, whatever the number of working days).
  * Joined, left or away part of the month: paid for the days actually on
  * staff — salary ÷ 26 × (working days on staff + public holidays on staff,
  * since a holiday is paid, never absent), never more than the full salary —
@@ -211,7 +214,8 @@ export function computePay(input: PayInput): PayResult {
   const notEmployedDays = Math.max(0, input.notEmployedWorkingDays);
   // Paid days on staff: working days plus the public holidays that fell while on staff.
   const employedDays = Math.max(0, input.employedWorkingDays) + Math.max(0, input.holidaysOnStaff ?? 0);
-  const wholeMonth = notEmployedDays === 0;
+  // On staff the whole month: not one working day and not one holiday missed while off the staff.
+  const wholeMonth = notEmployedDays === 0 && Math.max(0, input.holidaysOffStaff ?? 0) === 0;
   const earnedPaise = wholeMonth ? monthly : Math.min(monthly, mulDivRound(monthly, employedDays, days));
   const notEmployedPaise = monthly - earnedPaise;
   const lostHalfDays = Math.max(0, input.lossOfPayHalfDays);

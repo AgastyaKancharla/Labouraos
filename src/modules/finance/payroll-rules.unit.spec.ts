@@ -265,6 +265,50 @@ describe('payroll rules', () => {
     });
   });
 
+  // "On staff the whole month" means not one working day AND not one public
+  // holiday of the month missed while off the staff.
+  describe('a whole month means no holiday missed while off the staff either', () => {
+    // November 2026: Sundays 1, 8, 15, 22, 29 → 25 working days.
+    const november = Array.from({ length: 30 }, (_, i) => `2026-11-${String(i + 1).padStart(2, '0')}`).filter((d) => new Date(`${d}T00:00:00Z`).getUTCDay() !== 0);
+    const payNov = (holidays: string[], joinedDay: string, away: Parameters<typeof staffWorkingDays>[2] = []) => {
+      const working = november.filter((d) => !holidays.includes(d));
+      const w = staffWorkingDays(working, joinedDay, away);
+      const on = holidaysOnStaff(holidays, joinedDay, away);
+      return { w, on, p: pay({ employedWorkingDays: w.employed.length, notEmployedWorkingDays: w.notEmployed, holidaysOnStaff: on, holidaysOffStaff: holidays.length - on }) };
+    };
+
+    it('knows November 2026 has 25 working days', () => {
+      expect(november).toHaveLength(25);
+    });
+
+    it('joined Tue 3 Nov 2026: 24 working days on staff = ₹24,000', () => {
+      const { w, p } = payNov([], '2026-11-03');
+      expect(w.employed).toHaveLength(24);
+      expect(w.notEmployed).toBe(1);
+      expect(p.netPaise).toBe(2400000);
+    });
+
+    it('Mon 2 Nov later made a holiday: still ₹24,000, so no correction (the holiday was before joining)', () => {
+      const { w, on, p } = payNov(['2026-11-02'], '2026-11-03');
+      expect(w.notEmployed).toBe(0); // every working day left is on staff…
+      expect(on).toBe(0); // …but the holiday was not: not a whole month
+      expect(p.netPaise).toBe(2400000);
+      expect(p.paidHalfDays).toBe(48);
+      expect(p.netPaise - payNov([], '2026-11-03').p.netPaise).toBe(0);
+    });
+
+    it('a leaver whose remaining days are holidays is paid for the days on staff, not the whole month', () => {
+      // Mon 30 Nov a holiday; left Sat 28 Nov (paid): after it only Sun 29 and the holiday remain.
+      const { w, on, p } = payNov(['2026-11-30'], '2026-01-01', [{ leftDay: '2026-11-28', returnedDay: null }]);
+      expect(w.notEmployed).toBe(0);
+      expect(on).toBe(0);
+      expect(w.employed).toHaveLength(24);
+      expect(p.netPaise).toBe(2400000);
+      // On staff to the end instead: the whole month, ₹26,000.
+      expect(payNov(['2026-11-30'], '2026-01-01').p.netPaise).toBe(2600000);
+    });
+  });
+
   it('pays ₹0 when not on staff on any working day', () => {
     const p = pay({ employedWorkingDays: 0, notEmployedWorkingDays: 27 });
     expect(p.notEmployedPaise).toBe(2600000);
