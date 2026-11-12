@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -33,6 +34,7 @@ import {
   CreateJobSeekerLanguageDto,
   UpdateJobSeekerLanguageDto,
 } from './dto/job-seeker-language.dto';
+import { STAFF_PHOTO_MAX_BYTES } from '../../common/upload-limits';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -58,8 +60,16 @@ export class JobSeekerController {
   @Get()
   @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'read')
-  async findAll() {
-    return this.jobSeekerService.findAll();
+  async findAll(
+    @Req() req: Request & { user: JwtPayload },
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const num = (v?: string) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
+    return this.jobSeekerService.findAll(
+      { id: req.user.sub, role: req.user.role },
+      { limit: num(limit), offset: num(offset) },
+    );
   }
 
   @Get(':id')
@@ -238,7 +248,8 @@ export class JobSeekerController {
   }
 
   @Post(':id/photo')
-  @UseInterceptors(FileInterceptor('photo'))
+  // L1: a size limit like every other upload, so a huge file cannot fill the memory.
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES, files: 1 } }))
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
   @RequirePermission('job_seeker', 'write')
   async uploadPhoto(

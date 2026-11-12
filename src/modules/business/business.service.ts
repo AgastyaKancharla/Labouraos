@@ -39,6 +39,7 @@ import { BusinessClock } from './business-clock';
 import { BusinessVerificationService } from './business-verification.service';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
+import { AGENT_LIMITED_ROLES, AgentViewer, businessForViewer } from './business-agent-view';
 
 @Injectable()
 export class BusinessService {
@@ -731,10 +732,25 @@ export class BusinessService {
       orderBy: { createdAt: 'desc' },
       include: { vacancies: true, branches: true },
     });
-    return rows.map((row) => this.presentBusiness(row));
+    const viewer = await this.agentViewer(staff.id, staff.role);
+    return rows.map((row) => businessForViewer(this.presentBusiness(row), viewer));
   }
 
-  async findById(id: string) {
+  /**
+   * M2: who is looking, for the agent view. Field and call agents see full
+   * details only of businesses they hold (account agent, lead creator, open
+   * verification visit); see business-agent-view.ts.
+   */
+  private async agentViewer(staffId: string, role: string): Promise<AgentViewer> {
+    if (!(AGENT_LIMITED_ROLES as readonly string[]).includes(role)) return { id: staffId, role };
+    const visits = await this.prisma.visitAssignment.findMany({
+      where: { assignedStaffId: staffId, status: 'assigned' },
+      select: { businessId: true },
+    });
+    return { id: staffId, role, assignedBusinessIds: new Set(visits.map((v) => v.businessId)) };
+  }
+
+  async findById(id: string, actor?: { id: string; role: string }) {
     let business = await this.prisma.business.findUnique({
       where: { id },
       include: { vacancies: true, branches: true, visits: true, agreements: { select: { signedAt: true } } },
@@ -751,7 +767,8 @@ export class BusinessService {
     const accountAgent = business.accountAgentId
       ? await this.prisma.staff.findUnique({ where: { id: business.accountAgentId }, select: { id: true, code: true, name: true } })
       : null;
-    return this.presentBusiness({ ...business, accountAgentSummary: accountAgent });
+    const presented = this.presentBusiness({ ...business, accountAgentSummary: accountAgent });
+    return actor ? businessForViewer(presented, await this.agentViewer(actor.id, actor.role)) : presented;
   }
 
   async recordVisit(businessId: string, dto: RecordVisitDto, actorId: string) {

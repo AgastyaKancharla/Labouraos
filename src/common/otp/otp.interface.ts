@@ -9,6 +9,11 @@ export interface OtpSendResult {
   requestId: string;
   resendAvailableAt: string;
   resendsLeft: number;
+  /**
+   * OTP test mode only (mock sender, see otp-test-mode.ts): the code itself,
+   * so testers can finish OTP steps. Never set by the real sender.
+   */
+  testModeCode?: string;
 }
 
 export interface OtpProvider {

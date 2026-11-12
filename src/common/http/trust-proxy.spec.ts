@@ -123,6 +123,8 @@ describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-F
         .send({
           loginRequestId: waiting.body.loginRequestId,
           code: loginCodeFor(waiting.body.loginRequestId),
+          deviceId: 'tp-session',
+          loginRequestProof: waiting.body.loginRequestProof,
         });
       expect(res.status).toBe(200);
 
@@ -187,6 +189,8 @@ describe('Phase 8: rate limiting does not trust a client-spoofable X-Forwarded-F
         .send({
           loginRequestId: waiting.body.loginRequestId,
           code: loginCodeFor(waiting.body.loginRequestId),
+          deviceId: 'tp-session-proxy',
+          loginRequestProof: waiting.body.loginRequestProof,
         });
 
       const session = await prisma.staffSession.findUniqueOrThrow({

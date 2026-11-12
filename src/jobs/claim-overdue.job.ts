@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { PlacementService } from '../modules/placement/placement.service';
 import { dailyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const CLAIM_OVERDUE_QUEUE = 'claim-overdue';
 export const CLAIM_OVERDUE_SWEEP = 'daily-claim-overdue';
@@ -75,7 +76,7 @@ export class ClaimOverdueJob implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     // Only the worker process runs jobs and registers schedulers. The web
     // process may still build the queue on demand to enqueue a manual run.
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

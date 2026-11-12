@@ -29,7 +29,7 @@ import { useClock } from '../../lib/useNow';
 type Step =
   | { kind: 'password' }
   | { kind: 'totp' }
-  | { kind: 'code'; loginRequestId: string; expiresAt: number }
+  | { kind: 'code'; loginRequestId: string; loginRequestProof: string; expiresAt: number }
   | { kind: 'enrol'; token: string; secret: string; otpauthUrl: string };
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}logo-mark.png`;
@@ -126,7 +126,12 @@ export default function StaffSignIn() {
         if (isAwaitingCode(response)) {
           setCode('');
           setNow(clock().getTime());
-          setStep({ kind: 'code', loginRequestId: response.loginRequestId, expiresAt: new Date(response.expiresAt).getTime() });
+          setStep({
+            kind: 'code',
+            loginRequestId: response.loginRequestId,
+            loginRequestProof: response.loginRequestProof,
+            expiresAt: new Date(response.expiresAt).getTime(),
+          });
           return;
         }
         await finish(response);
@@ -159,7 +164,7 @@ export default function StaffSignIn() {
       setError(t('form.otp.incomplete'));
       return;
     }
-    void run(async () => finish(await authApi.verifyCode(step.loginRequestId, value)));
+    void run(async () => finish(await authApi.verifyCode(step.loginRequestId, value, step.loginRequestProof)));
   };
 
   const submitEnrol = (value = code) => {

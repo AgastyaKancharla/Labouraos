@@ -1,3 +1,4 @@
+import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
   ConflictException,
@@ -381,13 +382,28 @@ export class JobSeekerService {
     };
   }
 
-  async findAll() {
+  /**
+   * The job seeker list. A Team Lead sees only the job seekers their own team
+   * registered (themselves and the agents who report to them) — the role
+   * table's "own team" (M3). `limit`/`offset` page the list when given.
+   */
+  async findAll(actor?: { id: string; role: string }, page: { limit?: number; offset?: number } = {}) {
+    const where: Prisma.JobSeekerWhereInput = {};
+    if (actor?.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
+      where.registeredByStaffId = { in: [actor.id, ...team.map((t) => t.id)] };
+    }
+    const take = page.limit !== undefined ? Math.min(Math.max(Math.trunc(page.limit), 1), 500) : undefined;
+    const skip = page.offset !== undefined ? Math.max(Math.trunc(page.offset), 0) : undefined;
     const seekers = await this.prisma.jobSeeker.findMany({
+      where,
       include: {
         trades: true,
         identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: { createdAt: 'desc' },
+      ...(take !== undefined ? { take } : {}),
+      ...(skip !== undefined ? { skip } : {}),
     });
     return seekers.map(withCurrentJobSeekerFields);
   }

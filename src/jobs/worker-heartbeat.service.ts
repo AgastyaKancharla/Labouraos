@@ -7,16 +7,19 @@ import {
   WORKER_HEARTBEAT_TTL_SECONDS,
   WorkerHeartbeatValue,
 } from '../common/redis/worker-heartbeat';
+import { processRole, runsJobs } from '../common/process/process-role';
 
 const BEAT_TIMEOUT_MS = 5000;
 
 /**
- * Lets the web service see that the background worker is alive. Runs only in
- * the worker process (PROCESS_ROLE=worker).
+ * Lets the web service see that the background worker is alive. Runs in every
+ * process that runs the jobs (PROCESS_ROLE=worker, or `all` on the free tier).
  *
  * In production a worker that cannot write its first heartbeat cannot reach
  * Redis, so no background job would ever run. It refuses to start instead,
- * and Render restarts it until Redis answers.
+ * and Render restarts it until Redis answers. A single `all` process keeps
+ * serving the site instead (it is the only web service on the free tier);
+ * /health/ready then reports the worker and the job schedules as missing.
  */
 @Injectable()
 export class WorkerHeartbeatService implements OnApplicationBootstrap, OnModuleDestroy {
@@ -25,10 +28,10 @@ export class WorkerHeartbeatService implements OnApplicationBootstrap, OnModuleD
   private timer: NodeJS.Timeout | null = null;
 
   async onApplicationBootstrap(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
 
     const ok = await this.beat();
-    if (!ok && process.env.NODE_ENV === 'production') {
+    if (!ok && process.env.NODE_ENV === 'production' && processRole() === 'worker') {
       const { host, port } = redisClientOptions();
       await this.stop();
       throw new Error(

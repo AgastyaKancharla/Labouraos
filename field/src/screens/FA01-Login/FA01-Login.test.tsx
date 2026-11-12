@@ -6,7 +6,7 @@ import LoginScreen from '.';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
-const awaiting = { status: 'awaiting_code', loginRequestId: 'lr-1', expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() };
+const awaiting = { status: 'awaiting_code', loginRequestId: 'lr-1', loginRequestProof: 'proof-1', expiresAt: new Date(Date.now() + 5 * 60_000).toISOString() };
 
 function body(init: RequestInit) {
   return JSON.parse(String(init.body)) as Record<string, string>;
@@ -107,8 +107,16 @@ describe('FA02 login code', () => {
     });
     await fireEvent.changeText(screen.getByTestId('login-code'), '720453');
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'));
+    const loginInit = (fetchImpl.mock.calls[0] as unknown as [string, RequestInit])[1];
     const init = (fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1];
-    expect(body(init)).toEqual({ loginRequestId: 'lr-1', code: '720453' });
+    // The code works only for this phone and this sign-in: both go back with it.
+    expect(body(init)).toEqual({
+      loginRequestId: 'lr-1',
+      code: '720453',
+      deviceId: (body(loginInit) as { deviceId: string }).deviceId,
+      loginRequestProof: 'proof-1',
+    });
+    expect((body(init) as { deviceId: string }).deviceId).toBeTruthy();
     expect(store.get()).toMatchObject({ sessionId: 'sess-9', staff: { code: 'FA-00017' } });
   });
 

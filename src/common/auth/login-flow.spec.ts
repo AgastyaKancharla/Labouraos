@@ -162,7 +162,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
       .expect(200);
     const leadToken = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
-      .send({ loginRequestId: leadLogin.body.loginRequestId, code: shown.body.code });
+      .send({ loginRequestId: leadLogin.body.loginRequestId, code: shown.body.code, deviceId: 'lead-device', loginRequestProof: leadLogin.body.loginRequestProof });
     expect(leadToken.status).toBe(200);
 
     const queue = await request(app.getHttpServer())
@@ -210,7 +210,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
 
     const wrong = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
-      .send({ loginRequestId: waiting.body.loginRequestId, code: '000000' });
+      .send({ loginRequestId: waiting.body.loginRequestId, code: '000000', deviceId: 'approved-handset', loginRequestProof: waiting.body.loginRequestProof });
     expect(wrong.status).toBe(401);
     expect(wrong.body.accessToken).toBeUndefined();
 
@@ -222,7 +222,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
 
     const verified = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
-      .send({ loginRequestId: waiting.body.loginRequestId, code: shown.body.code });
+      .send({ loginRequestId: waiting.body.loginRequestId, code: shown.body.code, deviceId: 'approved-handset', loginRequestProof: waiting.body.loginRequestProof });
     expect(verified.status).toBe(200);
     expect(verified.body.accessToken).toBeDefined();
     expect(verified.body.sessionId).toBeDefined();

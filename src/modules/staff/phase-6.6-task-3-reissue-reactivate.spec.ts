@@ -260,6 +260,8 @@ describe('Phase 6.6 Task 3: Re-issue invite and reactivate', () => {
         .send({
           loginRequestId: loginRes.body.loginRequestId,
           code: loginCodeFor(loginRes.body.loginRequestId),
+          deviceId: `test-device-${hire.id}`,
+          loginRequestProof: loginRes.body.loginRequestProof,
         });
       expect(fullLoginRes.status).toBe(200);
       expect(fullLoginRes.body.accessToken).toBeDefined();

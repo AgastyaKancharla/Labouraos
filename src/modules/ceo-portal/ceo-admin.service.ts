@@ -6,6 +6,7 @@ import { tradeNameKey } from '../trade/trade.service';
 import { DAILY_JOB_PATTERNS } from '../../jobs/job-schedules';
 import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { DateRange, PageRequest, Paged, contains, dateFilter, istDayKey, istStartOfDay, istStartOfMonth } from './ceo-common';
+import { JOB_CATALOG } from '../../jobs/job-catalog';
 
 export type AuditType = 'money' | 'corrections' | 'policy' | 'logins' | 'records';
 
@@ -72,45 +73,29 @@ export function policyChanges(before: PricingPolicy | null, after: PricingPolicy
 }
 
 /** Endpoints that start each nightly job by hand (jobs.controller.ts), by schedule name. */
-const RUNNABLE: Record<string, string> = {
-  noPickupEvaluation: '/jobs/no-pickup-evaluation/run',
-  placementCompletion: '/jobs/placement-completion/run',
-  claimOverdue: '/jobs/claim-overdue/run',
-  joiningReward: '/jobs/joining-reward/run',
-  patternFlags: '/jobs/pattern-flags/run',
-  retentionCleanup: '/jobs/retention-cleanup/run',
-  followUp: '/jobs/follow-up/run',
-};
+/** C-System "Run now": every scheduled job really runs, in the API process (POST /jobs/:job/run-now, CEO only). */
+const RUNNABLE: Record<string, string> = Object.fromEntries(
+  JOB_CATALOG.map((job) => [job.key, `/jobs/${job.key}/run-now`]),
+);
 
-const JOB_LABELS: Record<string, string> = {
-  noPickupEvaluation: 'Hits for no pickup (calling day closed)',
-  forgottenLogout: 'Attendance: close forgotten days',
-  placementCompletion: '60-day guarantee clocks',
-  claimOverdue: 'Replacement claims overdue',
-  joiningReward: 'Joining rewards due',
-  patternFlags: 'Pattern flags (bypass, rejections)',
-  retentionCleanup: 'Keeping data clean-up',
-  followUp: 'Follow-up calls created',
-  shortageTasks: 'Shortage tasks (trade × area)',
-  winBack: 'Win-back call list',
-};
+const JOB_LABELS: Record<string, string> = Object.fromEntries(JOB_CATALOG.map((job) => [job.key, job.label]));
 
-/** Names JobRun rows use for the jobs that record runs. */
-const JOB_RUN_NAMES: Record<string, string[]> = {
-  noPickupEvaluation: ['no_pickup_evaluation', 'no-pickup-evaluation', 'noPickupEvaluation'],
-  retentionCleanup: ['retention_cleanup', 'retention-cleanup', 'retentionCleanup'],
-};
+/** Names JobRun rows use for each job (the older spellings are kept for rows written before). */
+const JOB_RUN_NAMES: Record<string, string[]> = Object.fromEntries(
+  JOB_CATALOG.map((job) => [
+    job.key,
+    job.key === 'noPickupEvaluation'
+      ? [job.runName, 'no_pickup_evaluation', 'no-pickup-evaluation', 'noPickupEvaluation']
+      : job.key === 'retentionCleanup'
+        ? [job.runName, 'retention_cleanup', 'retentionCleanup']
+        : [job.runName],
+  ]),
+);
 
-/** Audit actions written when the CEO starts a job by hand. */
-const JOB_AUDIT_CODES: Record<string, string[]> = {
-  noPickupEvaluation: ['no-pickup-evaluation', 'no_pickup_evaluation'],
-  placementCompletion: ['placement-completion', 'placement_completion'],
-  claimOverdue: ['claim-overdue', 'claim_overdue'],
-  joiningReward: ['joining-reward', 'joining_reward'],
-  patternFlags: ['pattern-flags', 'pattern_flags'],
-  retentionCleanup: ['retention-cleanup', 'retention_cleanup'],
-  followUp: ['follow-up', 'follow_up'],
-};
+/** Audit rows written when the CEO starts a job by hand (entityCode is the queue name). */
+const JOB_AUDIT_CODES: Record<string, string[]> = Object.fromEntries(
+  JOB_CATALOG.map((job) => [job.key, [job.queue, job.queue.replace(/-/g, '_')]]),
+);
 
 function cronTime(pattern: string): string {
   const [m, h] = pattern.split(' ');
@@ -443,8 +428,10 @@ export class CeoAdminService {
       otps: { sent: otps, verified: otpVerified },
       jobs,
       intervals: [
-        { key: 'interviewReply', label: 'Offer reply deadlines', every: 'Every minute' },
-        { key: 'kycRecovery', label: 'ID check recovery', every: 'Every 15 minutes', runPath: '/jobs/kyc-recovery/run' },
+        { key: 'interviewReply', label: 'Offer reply deadlines', every: 'Every minute', runPath: RUNNABLE.interviewReply },
+        { key: 'kycRecovery', label: 'ID check recovery', every: 'Every 15 minutes', runPath: RUNNABLE.kycRecovery },
+        { key: 'notificationSweep', label: JOB_LABELS.notificationSweep, every: 'Every 5 minutes', runPath: RUNNABLE.notificationSweep },
+        { key: 'weeklyReport', label: JOB_LABELS.weeklyReport, every: 'Mondays at 09:00', runPath: RUNNABLE.weeklyReport },
       ],
     };
   }

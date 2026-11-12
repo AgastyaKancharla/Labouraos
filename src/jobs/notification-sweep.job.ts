@@ -9,6 +9,7 @@ import { NotificationService } from '../modules/notification/notification.servic
 import { NotificationSourcesService } from '../modules/notification/notification-sources.service';
 import { RefundPriorityService } from '../modules/refund-priority/refund-priority.service';
 import { INTERVAL_JOB_MS } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const NOTIFICATION_SWEEP_QUEUE = 'notification-sweep';
 export const NOTIFICATION_SWEEP = 'sweep-notifications';
@@ -115,7 +116,7 @@ export class NotificationSweepJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

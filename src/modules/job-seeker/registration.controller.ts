@@ -25,6 +25,8 @@ import { RegistrationJourneyService } from './registration-journey.service';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { publicLanguage, shortNameOf } from './registration-journey';
+import { testModeFields } from '../../common/otp/otp-test-mode';
+import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 
 const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
 
@@ -87,6 +89,7 @@ export class RegistrationController {
 
   @Post(':token/selfie')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  @CheckLinkBeforeUpload('registration', 'job_seeker', 'A valid job seeker registration link is required')
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadSelfie(
     @Param('token') token: string,
@@ -170,7 +173,7 @@ export class RegistrationController {
     const link = await this.requirePaymentLink(token);
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
     const result = await this.otp.sendOtp(link.phone!);
-    return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt };
+    return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt, ...testModeFields(result) };
   }
 
   /** The payer types the code; the answer is the payment page. */

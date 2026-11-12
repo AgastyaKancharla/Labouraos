@@ -43,7 +43,7 @@ import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 import { receiptLink } from './receipt-link';
 import { invoiceLink } from '../placement/invoice-link';
-import { mockPaymentToolsAllowed } from './payment-mode';
+import { mockPaymentToolsAllowed, paymentProviderMode } from './payment-mode';
 import { MonthLockService } from '../month-lock/month-lock.service';
 import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
 import { isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
@@ -212,6 +212,31 @@ export class PaymentService {
         return updated;
       });
       return { received: true, status: 'failed', paymentId: updatedPayment.id };
+    }
+
+    // M6: a signed "paid" webhook confirms the payment only for the amount
+    // owed. A different amount (e.g. ₹1 on a ₹14,750 fee) is refused and
+    // flagged for Finance. A live gateway that reports no amount is refused
+    // too; the mock gateway may leave it out.
+    const owedPaise = payment.expectedAmountPaise ?? payment.amount;
+    const reportedPaise = verification.amountPaise;
+    const amountMissing = reportedPaise === undefined || reportedPaise === null;
+    if ((amountMissing && paymentProviderMode() !== 'mock') || (!amountMissing && reportedPaise !== owedPaise)) {
+      this.logger.warn(
+        `Card webhook for payment ${payment.id} refused: gateway reported ${amountMissing ? 'no amount' : `${reportedPaise} paise`}, owed ${owedPaise} paise`,
+      );
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: payment.id,
+        details: {
+          reason: amountMissing ? 'gateway_amount_missing' : 'gateway_amount_mismatch',
+          reportedAmountPaise: amountMissing ? null : reportedPaise,
+          expectedAmountPaise: owedPaise,
+          gatewayReference,
+        },
+      });
+      return { received: true, confirmed: false, amountMismatch: true, paymentId: payment.id };
     }
 
     return this.onPaymentSucceeded(payment.id, {
