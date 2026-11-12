@@ -46,7 +46,7 @@ import { invoiceLink } from '../placement/invoice-link';
 import { mockPaymentToolsAllowed, paymentProviderMode } from './payment-mode';
 import { MonthLockService } from '../month-lock/month-lock.service';
 import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
-import { isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
+import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
 import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
 
 /** What the bank feed webhook reports back for one credit. */
@@ -1306,6 +1306,7 @@ export class PaymentService {
 
     let endsGuaranteeForPlacement: { rootId: string; placementId: string; rootStatus: string } | null = null;
     let refundedSeeker: { id: string; status: string } | null = null;
+    let linkRefundTo: string | null = null;
 
     if (payment.type === 'referral_payout') {
       const referralId = payment.referralId || payment.subjectId;
@@ -1396,6 +1397,8 @@ export class PaymentService {
           throw new BadRequestException(eligibility.ineligibleReason!);
         }
         refundedSeeker = { id: jobSeeker.id, status: jobSeeker.status };
+        // The refund names the ₹499 it gives back (one live refund per ₹499).
+        if (!payment.refundsPaymentId && activationPayment) linkRefundTo = activationPayment.id;
       } else if (payment.placementId || payment.subjectType === 'placement') {
         const placementId = payment.placementId || payment.subjectId;
         const placement = await this.prisma.placement.findUnique({
@@ -1487,14 +1490,20 @@ export class PaymentService {
       }
     }
 
-    const updated = await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        status: 'approved',
-        approvedByStaffId: actorId,
-        approvedAt: now,
-      },
-    });
+    const updated = await this.prisma.payment
+      .update({
+        where: { id: payment.id },
+        data: {
+          status: 'approved',
+          approvedByStaffId: actorId,
+          approvedAt: now,
+          ...(linkRefundTo ? { refundsPaymentId: linkRefundTo } : {}),
+        },
+      })
+      .catch((error: unknown) => {
+        if (isDuplicatePayout(error)) throw alreadyExists(`A refund of that ₹499`, null);
+        throw error;
+      });
 
     await recordStatusChange(this.prisma, {
       subjectType: 'payment',

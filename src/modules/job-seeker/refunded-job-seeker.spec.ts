@@ -211,6 +211,21 @@ describe('A refunded job seeker leaves the pool and can pay again', () => {
     });
   });
 
+  it('tells the guarantees apart by link, not by time: a re-pay the same day as the refund', async () => {
+    const seeker = await paidSeeker(35);
+    const first = await jobSeekers.approveRefund(seeker.id, {}, financeId);
+    const back = await jobSeekers.reactivate(seeker.id, ceoId);
+    // The bank's time for the new ₹499 is an hour before the refund row was made.
+    const paidAgainAt = new Date(first.createdAt.getTime() - 60 * 60 * 1000);
+    await payments.onPaymentSucceeded(back.paymentId, { confirmedAt: paidAgainAt, confirmedBy: 'bank_feed', bankUtr: `UTRS${stamp}${seq}` });
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('active');
+    // The old refund names the old ₹499, so it is not this guarantee's: a refund of the
+    // new ₹499 is still possible (here a CEO goodwill refund, as the 30 days are not over).
+    const second = await jobSeekers.approveRefund(seeker.id, { goodwill: true, reason: 'Paid twice by mistake the same day' }, ceoId);
+    expect(second.refundsPaymentId).toBe(back.paymentId);
+    expect(first.refundsPaymentId).not.toBe(back.paymentId);
+  });
+
   it('cannot be got round by a plain status change', async () => {
     const seeker = await paidSeeker(35);
     await expect(jobSeekers.transitionStatus(seeker.id, 'refunded', ceoId)).rejects.toThrow(/only when his ₹499 refund is approved/);

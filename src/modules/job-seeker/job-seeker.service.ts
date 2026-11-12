@@ -24,12 +24,8 @@ import {
 } from '../../common/money/money';
 import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
 import { loadJobSeekerRefundGuards } from './job-seeker-refund-guards';
-import {
-  LIVE_PAYOUT_STATUSES,
-  alreadyExists,
-  isDuplicatePayout,
-  lockSubject,
-} from '../../common/money/one-per-subject';
+import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
+import { currentGuaranteeRefundWhere } from '../../common/money/current-guarantee-refund';
 
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
@@ -979,17 +975,6 @@ export class JobSeekerService {
 
     const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
-    // A refund in his current guarantee: one made since the ₹499 he paid last. Paying
-    // again after a refund starts a new guarantee (Master Guide), which may end in a
-    // refund of its own. A payout the bank refused is retried, never made again.
-    const existingRefundWhere = {
-      jobSeekerId: jobSeeker.id,
-      type: 'refund',
-      status: { in: [...LIVE_PAYOUT_STATUSES] },
-      ...(jobSeeker.paymentReceivedAt ? { createdAt: { gte: jobSeeker.paymentReceivedAt } } : {}),
-    };
-    const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
-
     const policy = await this.getPolicy();
     const activationPayment = await this.prisma.payment.findFirst({
       where: {
@@ -997,8 +982,18 @@ export class JobSeekerService {
         type: { in: ['activation', 'reactivation'] },
         status: { in: ['completed', 'succeeded'] },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+
+    // A refund in his current guarantee: the one that gives back his latest paid ₹499
+    // (by link; timestamps only for refunds made before the link existed). Paying again
+    // after a refund starts a new guarantee (Master Guide), which may end in a refund of
+    // its own. A payout the bank refused is retried, never made again.
+    const existingRefundWhere = currentGuaranteeRefundWhere(jobSeeker.id, {
+      latestPaidActivationId: activationPayment?.id ?? null,
+      paymentReceivedAt: jobSeeker.paymentReceivedAt,
+    });
+    const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
 
     const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
       ? await this.prisma.consent.findFirst({
