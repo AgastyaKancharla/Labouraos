@@ -6,6 +6,7 @@ import { InterviewService } from '../modules/vacancy/interview.service';
 import { PlacementService } from '../modules/placement/placement.service';
 import { FieldSellingService } from '../modules/field-selling/field-selling.service';
 import { INTERVAL_JOB_MS } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const INTERVIEW_REPLY_QUEUE = 'interview-reply-deadlines';
 export const INTERVIEW_REPLY_SWEEP = 'process-due-interview-replies';
@@ -78,7 +79,7 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { PlacementService } from '../modules/placement/placement.service';
 import { dailyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const JOINING_REWARD_QUEUE = 'joining-reward';
 export const JOINING_REWARD_SWEEP = 'daily-joining-reward';
@@ -89,7 +90,7 @@ export class JoiningRewardJob implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     // Only the worker process runs jobs and registers schedulers. The web
     // process may still build the queue on demand to enqueue a manual run.
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

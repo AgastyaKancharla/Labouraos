@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AlertService } from '../common/observability/alert.service';
 import { NO_PICKUP_EVALUATION_JOB } from './no-pickup-evaluation.job';
+import { servesWeb } from '../common/process/process-role';
 
 export const STALENESS_THRESHOLD_HOURS = 36;
 export const STALENESS_THRESHOLD_MS = STALENESS_THRESHOLD_HOURS * 60 * 60 * 1000;
@@ -33,9 +34,9 @@ export class SweepMonitoringService implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit() {
-    // Only web service (PROCESS_ROLE !== 'worker') runs the staleness monitor.
+    // Only a process that serves the web (PROCESS_ROLE web or all) runs the staleness monitor.
     // If the worker process dies or fails to start, the web service continues to monitor.
-    if (process.env.PROCESS_ROLE !== 'worker') {
+    if (servesWeb()) {
       try {
         await this.checkSweepStaleness();
       } catch (err: unknown) {

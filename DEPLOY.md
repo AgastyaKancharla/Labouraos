@@ -36,6 +36,9 @@ It applies every database change (a "migration") that is not in the database yet
 
 Render web $7 + worker $7 + Key Value about $10, and Supabase Pro $25. Supabase must be on **Pro** before real data goes in, because Pro is what keeps daily backups.
 
+> [!TIP]
+> **Testing first, for free?** Skip to [Free tier for testing](#free-tier-for-testing). It uses one free Render web service, one free Key Value and a free Supabase project in Mumbai, for made-up data only.
+
 ---
 
 ## The steps, in order
@@ -318,6 +321,122 @@ Only if every CEO login and every authenticator phone is lost at once. Done by *
 
 ---
 
+## Free tier for testing
+
+Use this section to put Laboura online **for testing with made-up data only**, for free. It uses one free Render web service, one free Render Key Value and a free Supabase project. Nothing here costs money. **No command line or terminal is required:** every step is a click in a web browser.
+
+Do **not** apply `render.yaml` on the free tier: that file describes the paid setup and creates paid services. The free setup is described in a second file, `render.free.yaml`.
+
+### How the free setup differs from the paid one
+
+| Paid setup (`render.yaml`) | Free setup (`render.free.yaml`) | Why |
+| --- | --- | --- |
+| A separate Background Worker runs the scheduled jobs | The one web service also runs every job: `PROCESS_ROLE` is `all` | Render's free tier has no Background Worker |
+| `npm run migrate:deploy` runs as a Pre-Deploy Command | `npm run migrate:deploy` runs at the **end of the build command** | Free services have no Pre-Deploy Command |
+| The web service never sleeps | It sleeps after 15 minutes with no visitors and takes about a minute to wake | Free tier rule. An uptime monitor (step F10) keeps it awake |
+| Key Value keeps its data on disk | The free Key Value loses everything when it restarts | The app puts every job schedule back by itself on every start and every 10 minutes; `/health/ready` says `schedules` while any is missing |
+| Supabase Pro, daily backups | Supabase Free, **no backups**, pauses after a week with no use | Made-up data only |
+| Database in Singapore | Database in **Mumbai** (`ap-south-1`) | Owner decision, 12 Nov: the empty Supabase project is recreated in Mumbai |
+
+The Render parts stay in **Singapore** (Render has no India region).
+
+### Steps F1 to F13
+
+**F1. Delete the old empty Supabase project (only if it is empty).** Go to **[supabase.com/dashboard](https://supabase.com/dashboard)** and sign in. If an empty Laboura project already exists in Singapore, open it, click **Project Settings** (gear icon, bottom left), then **General**, scroll down and click **Delete project**. Only do this if it holds no data you need.
+
+**F2. Create the Supabase project in Mumbai.**
+1. Click **New project**.
+2. **Project name**: `laboura-test`.
+3. **Database password**: click **Generate a password**. If it contains symbols such as `@ # / ? %`, click again until it is only letters and numbers. Copy it into your password manager now.
+4. **Region**: **South Asia (Mumbai)** (`ap-south-1`).
+5. If you see **Automatically expose new tables** (Data API), leave it **unticked**.
+6. Click **Create new project** and wait one or two minutes.
+
+**F3. Copy the two database addresses.** Do [Step 2](#step-2-copy-the-two-database-addresses) exactly as written, in the `laboura-test` project. The addresses will contain `ap-south-1` instead of `ap-southeast-1`; that is correct. You end with **DATABASE_URL** (Transaction pooler, port 6543, ending `?pgbouncer=true&connection_limit=5&sslmode=require`) and **DIRECT_URL** (Session pooler, port 5432, ending `?sslmode=require`).
+
+**F4. Create the four private buckets and copy the storage keys.** Do [Step 3](#step-3-create-the-four-private-file-buckets-and-copy-the-storage-keys): buckets `candidate-photos`, `business-photos`, `agreements`, `recordings`, each with **Public bucket** off. You end with **SUPABASE_URL** and **SUPABASE_SERVICE_ROLE_KEY**.
+
+**F5. Turn off the Supabase Data API.** Do [Step 4](#step-4-turn-off-the-supabase-data-api).
+
+**F6. Create the two Render parts.** Go to **[dashboard.render.com](https://dashboard.render.com)** and sign in. Choose **one** of the two ways.
+
+*Way A, from the free Blueprint (fewer clicks):*
+1. Click **New** (top right), then **Blueprint**.
+2. Pick the repository **Labouraos**, branch **main**.
+3. In **Blueprint Path**, type `render.free.yaml` (instead of the default `render.yaml`).
+4. Render lists two things: `laboura-test` (Web Service, Free, Singapore) and `laboura-test-redis` (Key Value, Free, Singapore). If it shows a price, or a Background Worker, stop: you picked `render.yaml` by mistake.
+5. Render asks for the settings that have no value. Paste `DATABASE_URL`, `DIRECT_URL` (F3), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (F4), and `PUBLIC_APP_URL` = `https://laboura-test.onrender.com`. For `COMPANY_UPI_VPA` and `COMPANY_UPI_PAYEE_NAME` type a made-up UPI id and name (for example `test@upi` and `Laboura Test`). Leave `ALERT_WEBHOOK_URL` empty.
+6. Click **Deploy Blueprint**.
+
+*Way B, by hand:*
+1. **Key Value first.** Click **New**, then **Key Value**. Name `laboura-test-redis`, Region **Singapore**, Instance Type **Free**, Maxmemory Policy **noeviction**. Click **Create Key Value**. When it is ready, copy the **Internal Key Value URL** (it looks like `redis://red-abc123:6379`). The part between `//` and `:` (here `red-abc123`) is **REDIS_HOST**; `6379` is **REDIS_PORT**.
+2. **Web service.** Click **New**, then **Web Service**. Pick the repository **Labouraos**, branch **main**. Name `laboura-test`, Region **Singapore**, Language **Node**, Instance Type **Free**.
+   - **Build Command**: `npm ci --include=dev && npx prisma generate && npm run build && npm run migrate:deploy`
+   - **Start Command**: `npm run start:prod`
+   - Under **Advanced**, **Health Check Path**: `/health`
+3. Under **Environment Variables**, click **Add Environment Variable** for each line of the table below. For the five secrets, open your password manager, make a new random password of 40 letters and numbers for each, and paste it.
+
+   | Setting | Value |
+   | --- | --- |
+   | `NODE_ENV` | `production` |
+   | `PROCESS_ROLE` | `all` (one process serves the site **and** runs the jobs) |
+   | `WORKER_HEARTBEAT_CHECK` | `true` |
+   | `TRUST_PROXY_HOPS` | `1` (check it in step F11) |
+   | `DATABASE_URL`, `DIRECT_URL` | From F3 |
+   | `REDIS_HOST`, `REDIS_PORT` | From the Key Value (step 1 above) |
+   | `REDIS_TLS` | `false` |
+   | `PUBLIC_APP_URL` | `https://laboura-test.onrender.com` (the address Render shows at the top of the service page) |
+   | `JWT_SECRET`, `LOGIN_CODE_SECRET`, `CALL_ROUTING_KEY`, `PAYOUT_ACCOUNT_KEY`, `STAFF_BOOTSTRAP_SECRET` | A new random 40-character secret each |
+   | `JWT_EXPIRES_IN` | `15m` |
+   | `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` |
+   | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | From F4 |
+   | `COMPANY_LEGAL_NAME` | `Laboura Private Limited` |
+   | `COMPANY_ADDRESS` | `Bengaluru, Karnataka, India` |
+   | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | A made-up UPI id and name (payment links are refused while empty) |
+   | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`, `KYC_PROVIDER_MODE` | `mock` |
+   | `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing only) |
+
+4. Click **Deploy Web Service**.
+
+**F7. Read the deploy log.** Open `laboura-test`, then **Events**, and click the newest deploy. The build takes several minutes. It must end with `All migrations have been successfully applied.`; then the start shows `Nest application successfully started` and `PROCESS_ROLE=all: serving the API and running every scheduled job`. If the migration step stops with an error and Supabase already had tables from an older try, start again from an empty project (F1, F2).
+
+**F8. Check it is up.**
+1. Open `https://laboura-test.onrender.com/health`. It shows `"status":"ok"`.
+2. Open `https://laboura-test.onrender.com/health/ready`. It shows `"status":"ready"`, `"postgres":"ok"`, `"redis":"ok"`, a `"worker"` section with `"status":"alive"` and a `"schedules"` section with `"status":"ok"`. Right after the first start, wait one minute and reload if `schedules` is not `ok` yet.
+3. In Supabase, open **Table Editor**: it lists `Staff`, `JobSeeker`, `Payment` and the rest. Then **Advisors**, **Security Advisor**, **Rerun**: there must be no "RLS disabled in public" error.
+
+**F9. Create the first CEO, set up the authenticator and a second CEO.** Do [Step 7](#step-7-create-the-first-ceo-account) and [Step 8](#step-8-create-a-second-ceo-account-on-a-different-phone), using `https://laboura-test.onrender.com` as the address. The first CEO is created on the app's own set-up page; nothing is typed into any other website.
+
+**F10. Keep it awake with an uptime monitor (every 10 minutes).**
+1. Go to **[uptimerobot.com](https://uptimerobot.com)** and create a free account.
+2. Click **New monitor**. Type **HTTP(s)**. Friendly name `Laboura test`. URL `https://laboura-test.onrender.com/health/ready`. Monitoring interval **10 minutes** (the free plan allows 5 minutes or more; do not go above 10).
+3. Add your email under **Alert contacts** and click **Create monitor**.
+
+This does three things: the web service never sleeps (it sleeps after 15 minutes without a visitor), so the nightly jobs can run at their times; Supabase sees daily use, so it does not pause the project; and you get an email when the database, the queue, the worker or the job schedules fail. One always-on free web service fits inside Render's 750 free hours a month; a second free web service would not.
+
+**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy.** Rate limits and the office-network rule need the real address of each visitor.
+1. Log in as the CEO, open **Team & Access**, then **Devices & logins**, and look at the address shown for your own login.
+2. In another tab, search the web for "what is my IP" and note your public address.
+3. If they match, nothing to do. If the app shows an address starting with `10.` or one that is not yours, open `laboura-test`, **Environment**, change `TRUST_PROXY_HOPS` from `1` to `2`, click **Save Changes**, wait for the restart, log in again and compare. Raise it by one until the addresses match (a Render community report needed `3`). Write the final number down.
+
+**F12. Test OTP steps with the on-screen test code.** Every vendor is in `mock` mode, so no SMS is sent. Instead, whenever a screen asks for an OTP, a yellow banner **"Test mode code: 123456"** shows the code (and the server log shows it too). This test mode turns off by itself when `OTP_PROVIDER_MODE` is `real`, and is never shown when `NODE_ENV` is `production` with any live vendor.
+
+**F13. Open the field app on a phone.** Open `https://laboura-test.onrender.com/field` on an iPhone in Safari, then **Share**, **Add to Home Screen**.
+
+### If something stops on the free tier
+
+- **`/health/ready` says `schedules` is missing.** The free Key Value restarted and lost the job schedules. The app puts them back within 10 minutes by itself. To do it at once: open `laboura-test`, click **Manual Deploy**, then **Restart service**. A CEO can also run any job straight away from **System Health** (or `POST /jobs/<job>/run-now`).
+- **The log shows "max number of clients reached".** The free Key Value allows few connections and the single process opens about 45 (one queue and one worker per job). Jobs then fail. Tell Claude: the fix is to share connections or move to the paid Key Value.
+- **The service restarts during testing.** A free instance has 512 MB of memory. Open **Metrics** and look at memory; if it touches the top, tell Claude.
+- **The first page after a quiet spell takes a minute.** The service was asleep; check the uptime monitor (F10) is running.
+- **A restart clears the in-memory test OTP codes and the rate-limit counters.** Ask for a new code after a restart.
+
+### Before any real data
+
+The free setup is for made-up data only. Before real data, move to the paid setup (Steps 1 to 11 above with `render.yaml`), Supabase Pro, Cloudflare Access on, new secrets everywhere, and the repository private.
+
+---
+
 ## All settings
 
 `laboura-api` holds every setting. The worker copies the ones it needs from `laboura-api` (shown in Render as "from laboura-api"), except the fixed values written in `render.yaml`.
@@ -325,13 +444,13 @@ Only if every CEO login and every authenticator phone is lost at once. Done by *
 | Setting | Value | What it is |
 | --- | --- | --- |
 | `NODE_ENV` | `production` (fixed) | Production switches on the strict start-up checks |
-| `PROCESS_ROLE` | `web` / `worker` (fixed) | Keeps scheduled jobs in the worker only |
+| `PROCESS_ROLE` | `web` / `worker` (fixed); `all` on the free tier | Keeps scheduled jobs in the worker only; `all` makes one process serve the site and run the jobs (free tier, no worker) |
 | `TRUST_PROXY_HOPS` | `1` (fixed; `2` behind Cloudflare) | How many proxies sit in front of the app, so rate limits and the office-network rule see the real visitor address |
 | `DATABASE_URL` | Step 2, transaction pooler, port 6543 | The database address the app uses |
 | `DIRECT_URL` | Step 2, session pooler, port 5432 | The database address used for migrations |
 | `REDIS_HOST`, `REDIS_PORT` | From `laboura-redis` (automatic) | The job queue's private address |
 | `REDIS_TLS` | `false` (fixed) | The private Key Value address does not use TLS |
-| `WORKER_HEARTBEAT_CHECK` | `true` on web (fixed) | `/health/ready` reports the worker as failed when its heartbeat stops |
+| `WORKER_HEARTBEAT_CHECK` | `true` on web (fixed) | `/health/ready` reports the worker as failed when its heartbeat stops, and `schedules` as failed when a job schedule is missing from the queue |
 | `JWT_SECRET` | Generated by Render | Signs login tokens |
 | `JWT_EXPIRES_IN` | `15m` (fixed) | How long a login token lasts |
 | `LOGIN_CODE_SECRET` | Generated by Render, shared with the worker | Computes the 6-digit login codes |

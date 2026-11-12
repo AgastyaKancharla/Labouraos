@@ -7,6 +7,7 @@ import {
   RecordingDownloader,
   RecordingStorage,
 } from './recording-storage';
+import { runsJobs } from '../../common/process/process-role';
 
 export const RECORDING_COPY_QUEUE = 'recording-copy';
 
@@ -22,7 +23,7 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') {
+    if (!runsJobs()) {
       return;
     }
     try {

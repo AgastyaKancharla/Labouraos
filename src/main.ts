@@ -6,8 +6,10 @@ import { AlertService } from './common/observability/alert.service';
 import { applyTrustProxy } from './common/http/trust-proxy';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
+import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
 
 export async function bootstrap() {
+  const role = assertKnownProcessRole();
   getPublicAppUrl();
   assertDurableUploadStorage();
   const app = await NestFactory.create(AppModule, {
@@ -29,6 +31,7 @@ export async function bootstrap() {
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);
+  logger.log(startupRoleMessage(role), 'Bootstrap');
 }
 
 if (require.main === module) {

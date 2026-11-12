@@ -22,6 +22,7 @@ import {
 import { StructuredLogger } from '../common/observability/structured-logger.service';
 import { primaryJobSeekerTrade } from '../modules/job-seeker/job-seeker-legacy-read';
 import { cronInIndia, DAILY_JOB_PATTERNS } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const NO_PICKUP_EVALUATION_QUEUE = 'no-pickup-evaluation';
 export const NO_PICKUP_EVALUATION_JOB = 'daily-no-pickup-evaluation';
@@ -77,7 +78,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit() {
     // Only worker process initializes worker and registers scheduler (Phase 6.5 Task 1)
-    if (process.env.PROCESS_ROLE === 'worker') {
+    if (runsJobs()) {
       let timer: NodeJS.Timeout | undefined;
       try {
         const timeoutMs = Number(process.env.REDIS_STARTUP_TIMEOUT_MS) || 2000;
@@ -114,7 +115,7 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
   }
 
   getWorker(): Worker {
-    if (process.env.PROCESS_ROLE !== 'worker') {
+    if (!runsJobs()) {
       throw new Error(
         'BullMQ Worker can only be constructed in a worker process (PROCESS_ROLE === "worker")',
       );

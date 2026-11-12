@@ -453,3 +453,76 @@ describe('Phase 6.5 Task 4: Deployment Configuration (render.yaml & DEPLOY.md)',
     });
   });
 });
+
+describe('B1: render.free.yaml — the free-tier setup for testing', () => {
+  const rootDir = path.resolve(__dirname, '../../');
+  const free = yaml.load(fs.readFileSync(path.join(rootDir, 'render.free.yaml'), 'utf8')) as RenderBlueprint;
+  const deploy = fs.readFileSync(path.join(rootDir, 'DEPLOY.md'), 'utf8');
+  const web = () => free.services.find((s) => s.type === 'web') as RenderService;
+  const kv = () => free.services.find((s) => s.type === 'keyvalue') as RenderService;
+  const envOf = (service: RenderService, key: string) => service.envVars?.find((v) => v.key === key);
+
+  it('is one free web service and one free Key Value, both in Singapore, and no worker', () => {
+    expect(free.services.map((s) => s.type).sort()).toEqual(['keyvalue', 'web']);
+    for (const service of free.services) {
+      expect({ name: service.name, plan: service.plan, region: service.region }).toEqual({
+        name: service.name,
+        plan: 'free',
+        region: 'singapore',
+      });
+    }
+    expect(kv().maxmemoryPolicy).toBe('noeviction');
+    expect(kv().ipAllowList).toEqual([]);
+  });
+
+  it('applies the migrations at the end of the build (free services have no Pre-Deploy Command)', () => {
+    expect(web().preDeployCommand).toBeUndefined();
+    expect(web().buildCommand).toBe(
+      'npm ci --include=dev && npx prisma generate && npm run build && npm run migrate:deploy',
+    );
+    expect(web().buildCommand?.endsWith('&& npm run migrate:deploy')).toBe(true);
+    expect(web().startCommand).toBe('npm run start:prod');
+    expect(web().healthCheckPath).toBe('/health');
+  });
+
+  it('runs the jobs in the single web process (PROCESS_ROLE=all) and watches them on /health/ready', () => {
+    expect(envOf(web(), 'PROCESS_ROLE')?.value).toBe('all');
+    expect(envOf(web(), 'WORKER_HEARTBEAT_CHECK')?.value).toBe('true');
+    expect(envOf(web(), 'NODE_ENV')?.value).toBe('production');
+    expect(envOf(web(), 'TRUST_PROXY_HOPS')?.value).toBe('1');
+  });
+
+  it('wires Redis from the free Key Value and keeps every vendor in mock mode, with no committed secret', () => {
+    expect(envOf(web(), 'REDIS_HOST')?.fromService).toEqual({ type: 'keyvalue', name: kv().name, property: 'host' });
+    expect(envOf(web(), 'REDIS_PORT')?.fromService).toEqual({ type: 'keyvalue', name: kv().name, property: 'port' });
+    for (const mode of ['OTP_PROVIDER_MODE', 'SMS_PROVIDER_MODE', 'PAYMENT_PROVIDER_MODE', 'WHATSAPP_PROVIDER_MODE', 'TELEPHONY_PROVIDER_MODE', 'KYC_PROVIDER_MODE']) {
+      expect({ mode, value: envOf(web(), mode)?.value }).toEqual({ mode, value: 'mock' });
+    }
+    for (const key of ['DATABASE_URL', 'DIRECT_URL', 'SUPABASE_URL', 'SUPABASE_SERVICE_ROLE_KEY', 'PUBLIC_APP_URL']) {
+      expect(envOf(web(), key)).toMatchObject({ sync: false });
+      expect(envOf(web(), key)?.value).toBeUndefined();
+    }
+    for (const key of ['JWT_SECRET', 'LOGIN_CODE_SECRET', 'STAFF_BOOTSTRAP_SECRET', 'CALL_ROUTING_KEY', 'PAYOUT_ACCOUNT_KEY']) {
+      expect(envOf(web(), key)?.generateValue).toBe(true);
+    }
+  });
+
+  it('leaves the paid render.yaml as it was', () => {
+    const paid = yaml.load(fs.readFileSync(path.join(rootDir, 'render.yaml'), 'utf8')) as RenderBlueprint;
+    expect(paid.services.map((s) => s.type).sort()).toEqual(['keyvalue', 'web', 'worker']);
+    expect(paid.services.find((s) => s.type === 'web')?.preDeployCommand).toBe('npm run migrate:deploy');
+  });
+
+  it('DEPLOY.md has the beginner "Free tier for testing" steps: Mumbai Supabase, uptime monitor, proxy hops', () => {
+    expect(deploy).toContain('## Free tier for testing');
+    expect(deploy).toContain('render.free.yaml');
+    expect(deploy).toMatch(/Mumbai/);
+    expect(deploy).toContain('ap-south-1');
+    expect(deploy).toMatch(/uptime monitor/i);
+    expect(deploy).toContain('/health/ready');
+    expect(deploy).toMatch(/10 minutes/);
+    expect(deploy).toContain('TRUST_PROXY_HOPS');
+    expect(deploy).toContain('PROCESS_ROLE');
+    expect(deploy).toContain('npm ci --include=dev && npx prisma generate && npm run build && npm run migrate:deploy');
+  });
+});

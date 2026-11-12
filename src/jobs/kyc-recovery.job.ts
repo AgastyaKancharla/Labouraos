@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { KycRecoveryService } from '../common/kyc/kyc-recovery.service';
 import { INTERVAL_JOB_MS } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const KYC_RECOVERY_QUEUE = 'kyc-recovery';
 export const KYC_RECOVERY_SWEEP = 'probe-id-check-recovery';
@@ -65,7 +66,7 @@ export class KycRecoveryJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

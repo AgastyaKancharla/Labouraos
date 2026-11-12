@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { PatternFlagService, PatternFlagResults } from '../modules/review-flag/pattern-flag.service';
 import { dailyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const PATTERN_FLAGS_QUEUE = 'pattern-flags';
 export const PATTERN_FLAGS_SWEEP = 'daily-pattern-flags';
@@ -88,7 +89,7 @@ export class PatternFlagsJob implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     // Only the worker process runs jobs and registers schedulers. The web
     // process may still build the queue on demand to enqueue a manual run.
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();
