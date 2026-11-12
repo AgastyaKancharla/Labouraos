@@ -263,7 +263,7 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
       phone,
       otpRequestId,
       contactPersonName: 'Shankar Rao',
-      contactPersonRole: 'owner',
+      contactPersonRole: 'owner', heardFrom: 'field_visit',
       businessType: 'restaurant_hotel',
       latitude: SHOP.latitude,
       longitude: SHOP.longitude,

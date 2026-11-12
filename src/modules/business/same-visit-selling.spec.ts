@@ -201,7 +201,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
         phone,
         otpRequestId: await verifiedOtp(phone),
         contactPersonName: 'Owner',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         gstNumber: `29SV${suffix}`,
         businessLatitude: 12.9716,
         businessLongitude: 77.5946,
@@ -224,6 +224,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
     await request(app.getHttpServer())
       .post(`/businesses/${businessId}/storefront-photo`)
       .set(auth(tokens.fieldAgent))
+      .field('source', 'live_camera')
       .attach('photo', Buffer.from(`storefront-${suffix}`), { filename: 'shop.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect((await prisma.business.findUniqueOrThrow({ where: { id: businessId } })).verificationStatus).toBe('lead');

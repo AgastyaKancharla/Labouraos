@@ -97,7 +97,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Safe Cafe Koramangala',
         contactPersonName: 'Safe Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         address: '100 80ft Road, Koramangala',
         phone,
         otpRequestId,
@@ -131,7 +131,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Mismatched Geofence Retail',
         contactPersonName: 'Mismatch Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         address: '50 4th Block, Koramangala',
         phone,
         otpRequestId,
@@ -175,7 +175,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Original Selfie Business',
         contactPersonName: 'Original Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         phone: phone1,
         otpRequestId: otp1,
         selfieUrl: 'https://cdn.laboura.local/selfies/orig.jpg',
@@ -193,7 +193,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Fraudulent Duplicate Selfie Business',
         contactPersonName: 'Duplicate Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         phone: phone2,
         otpRequestId: otp2,
         selfieUrl: 'https://cdn.laboura.local/selfies/duplicate.jpg',
@@ -215,7 +215,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Follow-up Visit Business',
         contactPersonName: 'Visit Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         phone,
         otpRequestId,
         latitude: KORA_LAT,
@@ -249,7 +249,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Other Business For Visit Test',
         contactPersonName: 'Other Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         phone: phoneOther,
         otpRequestId: otpOther,
         latitude: KORA_LAT,
@@ -278,7 +278,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
       .send({
         name: 'Kora Area Business',
         contactPersonName: 'Area Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         phone,
         otpRequestId,
       })

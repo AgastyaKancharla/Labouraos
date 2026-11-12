@@ -215,7 +215,7 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
         phone: phoneKora,
         locality: koraArea,
         contactPersonName: 'Kora Contact',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         otpRequestId: otpKora.body.requestId,
         selfieUrl: 'https://cdn.laboura.local/selfies/kora.jpg',
         selfieHash: `hash_kora_${timestamp}`,

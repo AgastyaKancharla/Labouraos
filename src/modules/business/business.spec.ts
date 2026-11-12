@@ -118,7 +118,10 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         `89${timestamp.toString().slice(-8)}`,
         `75${timestamp.toString().slice(-8)}`,
         `72${timestamp.toString().slice(-8)}`,
+        `71${timestamp.toString().slice(-8)}`,
+        `73${timestamp.toString().slice(-8)}`,
       ];
+      await prisma.area.deleteMany({ where: { nameKey: { startsWith: `gps area ${timestamp}` } } });
       await prisma.business.deleteMany({
         where: { phone: { in: [...typedPhones, ...typedPhones.map((phone) => `+91${phone}`)] } },
       });
@@ -157,7 +160,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         phone,
         locality: 'Koramangala',
         contactPersonName: 'Asha Rao',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
       });
     expect(resNoOtp.status).toBe(400);
 
@@ -170,9 +173,41 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         otpRequestId: 'random_unverified_request_id',
         locality: 'Koramangala',
         contactPersonName: 'Asha Rao',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
       });
     expect(resUnverifiedOtp.status).toBe(400);
+  });
+
+  it('requires how they heard about Laboura', async () => {
+    const phone = `71${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ name: 'No Source Cafe', phone, otpRequestId, locality: 'Koramangala', contactPersonName: 'Asha Rao', contactPersonRole: 'owner' });
+    expect(response.status).toBe(400);
+    expect(response.body.message).toContain('heardFrom is required');
+    const bad = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ name: 'Bad Source Cafe', phone, otpRequestId, locality: 'Koramangala', contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'telepathy' });
+    expect(bad.status).toBe(400);
+  });
+
+  it('fills the area from the map pin (nearest area) when none was picked', async () => {
+    const lat = 12.0123;
+    const lng = 76.0123;
+    await prisma.area.create({ data: { name: `GPS Area ${timestamp}`, nameKey: `gps area ${timestamp}`, latitude: lat, longitude: lng, active: true } });
+    await prisma.area.create({ data: { name: `GPS Area ${timestamp} Far`, nameKey: `gps area ${timestamp} far`, latitude: lat + 0.05, longitude: lng + 0.05, active: true } });
+    const phone = `73${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const response = await request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ name: 'Pin Only Cafe', phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'ad', businessLatitude: lat + 0.001, businessLongitude: lng + 0.001 });
+    expect(response.status).toBe(201);
+    const saved = await prisma.business.findUniqueOrThrow({ where: { id: response.body.id } });
+    expect(saved.locality).toBe(`GPS Area ${timestamp}`);
   });
 
   it('requires a contact person role for a new business registration', async () => {
@@ -194,7 +229,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Branch Test Cafe', phone, otpRequestId,
-        contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
         businessType: 'restaurant_hotel', locality: 'Koramangala',
         branches: [{
           name: 'Whitefield outlet', locality: 'Whitefield', contactPersonName: 'Ravi Rao',
@@ -230,7 +265,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Rao Household', businessType: 'household', familyName: 'Rao', phone, otpRequestId,
-        contactPersonName: 'Asha Rao', contactPersonRole: 'owner', gstNumber: '29ABCDE1234F1Z5',
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit', gstNumber: '29ABCDE1234F1Z5',
       });
     expect(response.status).toBe(400);
     expect(response.body.message).toContain('cannot provide GST or licence');
@@ -242,7 +277,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Rao Household', businessType: 'household', familyName: 'Rao', phone: cleanPhone, otpRequestId: cleanOtpRequestId,
-        contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
       }).expect(201);
     expect(valid.body.familyName).toBe('Rao');
     expect(valid.body.legalName).toBeNull();
@@ -257,7 +292,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     const missingName = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({ name: 'No Contact Name', phone: `89${timestamp.toString().slice(-8)}`, contactPersonRole: 'owner' });
+      .send({ name: 'No Contact Name', phone: `89${timestamp.toString().slice(-8)}`, contactPersonRole: 'owner', heardFrom: 'field_visit' });
     expect(missingName.status).toBe(400);
     expect(missingName.body.message).toContain('Contact person name');
 
@@ -267,7 +302,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .post('/businesses')
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        name: 'Documents Refused', phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        name: 'Documents Refused', phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
         noDocuments: true, gstNumber: '29ABCDE1234F1Z5',
       });
     expect(refused.status).toBe(400);
@@ -304,7 +339,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         .post('/businesses')
         .set('Authorization', `Bearer ${callAgentToken}`)
         .send({
-          name: `Band Check ${field}`, phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+          name: `Band Check ${field}`, phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
           locality: 'Indiranagar', [field]: value,
         });
       expect(res.status).toBe(400);
@@ -323,7 +358,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Koramangala Bakers',
         address: '80 Feet Road, 4th Block',
         contactPerson: 'Ramesh Patel',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         locality: 'Koramangala',
         phone,
         otpRequestId,
@@ -364,7 +399,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Indiranagar Boutique',
         address: '100 Feet Road',
         contactPerson: 'Sunita Rao',
-        contactPersonRole: 'manager',
+        contactPersonRole: 'manager', heardFrom: 'field_visit',
         phone,
         otpRequestId,
         locality: 'Indiranagar',
@@ -388,7 +423,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Indiranagar Tech Labs',
         address: '12th Main Indiranagar',
         contactPerson: 'Deepak Verma',
-        contactPersonRole: 'hr',
+        contactPersonRole: 'hr', heardFrom: 'field_visit',
         phone: phoneIndi,
         otpRequestId: otpIndi,
       });
@@ -437,7 +472,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         name: 'Whitefield Logistics Hub',
         address: 'ITPL Main Road',
         contactPerson: 'Anil Deshmukh',
-        contactPersonRole: 'supervisor',
+        contactPersonRole: 'supervisor', heardFrom: 'field_visit',
         phone,
         otpRequestId,
         locality: 'Whitefield',
@@ -482,7 +517,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
       .send({
         name: 'Account Agent Bakery', phone, otpRequestId,
-        contactPersonName: 'Ravi Rao', contactPersonRole: 'owner',
+        contactPersonName: 'Ravi Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
         businessType: 'bakery', locality: 'Indiranagar',
         latitude: shop.latitude, longitude: shop.longitude,
         branches: [{
@@ -529,7 +564,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
         name: 'Call Agent Lead Cafe', phone, otpRequestId,
-        contactPersonName: 'Asha Rao', contactPersonRole: 'owner',
+        contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
         locality: 'Koramangala',
       })
       .expect(201);

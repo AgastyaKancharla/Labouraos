@@ -200,7 +200,7 @@ describe('Phase 9 Task 8: Review Flags', () => {
         .send({
           name: 'Close Cafe',
           contactPersonName: 'Close Contact',
-          contactPersonRole: 'owner',
+          contactPersonRole: 'owner', heardFrom: 'field_visit',
           address: 'Koramangala 4th Block',
           phone,
           otpRequestId,
@@ -229,7 +229,7 @@ describe('Phase 9 Task 8: Review Flags', () => {
         .send({
           name: 'Far Away Cafe',
           contactPersonName: 'Far Contact',
-          contactPersonRole: 'owner',
+          contactPersonRole: 'owner', heardFrom: 'field_visit',
           address: 'Koramangala 4th Block',
           phone,
           otpRequestId,
