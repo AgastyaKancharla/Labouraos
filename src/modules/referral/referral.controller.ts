@@ -67,15 +67,15 @@ export class ReferralController {
   @Get()
   @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
   @RequirePermission('referral', 'read')
-  async findAll() {
-    return this.referralService.findAll();
+  async findAll(@Req() req: Request & { user: JwtPayload }) {
+    return this.referralService.findAll({ id: req.user.sub, role: req.user.role });
   }
 
   @Get(':id')
   @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
   @RequirePermission('referral', 'read')
-  async findById(@Param('id') id: string) {
-    return this.referralService.findById(id);
+  async findById(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    return this.referralService.findById(id, { id: req.user.sub, role: req.user.role });
   }
 
   @Patch(':id')

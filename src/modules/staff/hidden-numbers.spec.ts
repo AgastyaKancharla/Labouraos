@@ -162,7 +162,8 @@ describe('Phase 11 Task 3: hidden numbers', () => {
     });
     businessIds.push(business.id);
     const referral = await prisma.referral.create({
-      data: { code: `RF-HN-${stamp}`, name: 'Hidden Partner', phone: REFERRAL_PHONE },
+      // Registered by the lead's call agent: a Team Lead reads only their team's partners.
+      data: { code: `RF-HN-${stamp}`, name: 'Hidden Partner', phone: REFERRAL_PHONE, registeredByStaffId: callAgent.id },
     });
     referralIds.push(referral.id);
     const callback = await prisma.callbackTask.create({

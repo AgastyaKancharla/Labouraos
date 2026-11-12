@@ -317,10 +317,16 @@ model Referral {
   pausedByStaffId String?
   pauseReason   String?
   anonymisedAt  DateTime?
+  /// The agent who registered the partner. A Team Lead reads only partners their
+  /// team registered; partners registered before this was kept (null) are seen by
+  /// the CEO and Managers only.
+  registeredByStaffId String?
+  registeredBy  Staff?      @relation("ReferralRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@index([city])
+  @@index([registeredByStaffId])
 }
 
 model Business {
@@ -764,6 +770,7 @@ model Staff {
   lockedReason      String?
   capturedVacancies Vacancy[]
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
+  registeredReferrals Referral[]        @relation("ReferralRegisteredBy")
   candidateIntroductionsShown CandidateIntroduction[] @relation("CandidateIntroductionShownBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
   interviewsProposed   Interview[]      @relation("InterviewProposedBy")

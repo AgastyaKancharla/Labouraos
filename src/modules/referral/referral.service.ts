@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -175,6 +176,8 @@ export class ReferralService {
         latitude: dto.latitude ?? null,
         longitude: dto.longitude ?? null,
         heardFrom: dto.heardFrom,
+        // Who registered the partner: a Team Lead reads only their team's partners.
+        registeredByStaffId: await this.staffIdOrNull(actorId),
       },
     });
 
@@ -195,33 +198,45 @@ export class ReferralService {
     return referral;
   }
 
-  async findAll() {
+  async findAll(viewer?: { id: string; role: string }) {
     return this.prisma.referral.findMany({
+      where: await this.readScope(viewer),
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  async findById(id: string) {
-    let referral = await this.prisma.referral.findUnique({
-      where: { id },
+  async findById(id: string, viewer?: { id: string; role: string }) {
+    const referral = await this.prisma.referral.findFirst({
+      where: { AND: [{ OR: [{ id }, { code: id }] }, await this.readScope(viewer)] },
       include: {
         jobSeekers: true,
         payments: true,
       },
     });
     if (!referral) {
-      referral = await this.prisma.referral.findUnique({
-        where: { code: id },
-        include: {
-          jobSeekers: true,
-          payments: true,
-        },
-      });
-    }
-    if (!referral) {
       throw new NotFoundException(`Referral partner '${id}' not found`);
     }
     return referral;
+  }
+
+  /**
+   * A Team Lead reads only partners registered by their team (themselves and the
+   * people who report to them). Partners registered before this was kept have no
+   * registering agent and are left to the CEO and Managers. Others as before.
+   */
+  private async readScope(viewer?: { id: string; role: string }): Promise<Prisma.ReferralWhereInput> {
+    if (viewer?.role !== 'team_lead') return {};
+    const team = await this.prisma.staff.findMany({
+      where: { OR: [{ teamLeadId: viewer.id }, { reportsToId: viewer.id }] },
+      select: { id: true },
+    });
+    return { registeredByStaffId: { in: [viewer.id, ...team.map((s) => s.id)] } };
+  }
+
+  private async staffIdOrNull(actorId: string): Promise<string | null> {
+    if (!actorId || actorId === 'system') return null;
+    const staff = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true } });
+    return staff?.id ?? null;
   }
 
   /**

@@ -203,6 +203,8 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
         phone: `81${timestamp.toString().slice(-8)}`,
         phoneVerified: true,
         city: 'Bengaluru',
+        // Registered by an agent on Team Lead 1's team: a Team Lead reads only their team's partners.
+        registeredByStaffId: agent1Id,
       },
     });
     sampleReferralId = ref.id;
