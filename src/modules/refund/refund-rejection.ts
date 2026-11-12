@@ -125,12 +125,14 @@ export async function restoreAfterCancelledRefund(
 
   if (payment.jobSeekerId) {
     const before = await previous('job_seeker', payment.jobSeekerId, 'refunded', 'refund_approved');
-    if (before?.fromStatus) {
-      const moved = await db.jobSeeker.updateMany({ where: { id: payment.jobSeekerId, status: 'refunded' }, data: { status: before.fromStatus } });
-      if (moved.count) {
-        await db.statusHistory.create({ data: { subjectType: 'job_seeker', subjectId: payment.jobSeekerId, fromStatus: 'refunded', toStatus: before.fromStatus, changedByStaffId: actorId, reason: 'refund_cancelled_by_ceo', changedAt: at } });
-        restored.push({ subject: 'job_seeker', from: 'refunded', to: before.fromStatus });
-      }
+    // N2: a job seeker moved to "refunded" by the data migration (20261119200200) has no
+    // approval history row; he goes back to "active", and the history says so.
+    const to = before?.fromStatus ?? 'active';
+    const reason = before?.fromStatus ? 'refund_cancelled_by_ceo' : 'refund_cancelled_by_ceo_no_history_back_to_active';
+    const moved = await db.jobSeeker.updateMany({ where: { id: payment.jobSeekerId, status: 'refunded' }, data: { status: to } });
+    if (moved.count) {
+      await db.statusHistory.create({ data: { subjectType: 'job_seeker', subjectId: payment.jobSeekerId, fromStatus: 'refunded', toStatus: to, changedByStaffId: actorId, reason, changedAt: at } });
+      restored.push({ subject: 'job_seeker', from: 'refunded', to });
     }
     return restored;
   }

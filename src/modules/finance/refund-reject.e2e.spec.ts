@@ -219,6 +219,20 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
     expect(['refund_rejected', 'refund_rejected_by_ceo']).toContain(again.body.code);
   });
 
+  it('N2: cancelling an approved ₹499 refund puts the job seeker back; with no approval history he goes back to active, and the history says so', async () => {
+    const seeker = await paidSeeker(40, 'refunded');
+    const activation = await prisma.payment.findFirstOrThrow({ where: { jobSeekerId: seeker.id, type: 'activation' } });
+    const approved = await prisma.payment.create({
+      data: { code: `PAY-RRJ-${tail}-N2`, type: 'refund', status: 'approved', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id, refundsPaymentId: activation.id },
+    });
+    paymentIds.push(approved.id);
+    await reject(`pay-${approved.id}`, 'finance', 'x').expect(403);
+    const res = await reject(`pay-${approved.id}`, 'ceo', 'The refund check was wrong: he is still looking').expect(200);
+    expect(res.body).toMatchObject({ cancelled: true, restored: [{ subject: 'job_seeker', from: 'refunded', to: 'active' }] });
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('active');
+    expect(await prisma.statusHistory.findFirst({ where: { subjectType: 'job_seeker', subjectId: seeker.id, toStatus: 'active' } })).toMatchObject({ fromStatus: 'refunded', reason: 'refund_cancelled_by_ceo_no_history_back_to_active' });
+  });
+
   it('R3: a duplicate ₹499 refund or a goodwill refund turned down leaves no rejection', async () => {
     const seeker = await paidSeeker(5);
     const dup = await prisma.payment.create({ data: { code: `PAY-RRJ-${tail}-D`, type: 'duplicate_refund', status: 'pending', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id } });
