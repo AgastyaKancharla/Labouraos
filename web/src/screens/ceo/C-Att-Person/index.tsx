@@ -9,7 +9,8 @@ import { TopBar } from '../../../components/TopBar';
 import { api } from '../../../lib/api/client';
 import { addDaysToKey, formatDayMonthIST, istDateKey, istStartOfDay } from '../../../lib/format/date';
 import { useNow } from '../../../lib/useNow';
-import { useScreenPath } from '../../../portals/PortalContext';
+import { usePortal, useScreenPath } from '../../../portals/PortalContext';
+import { AttendanceTabs as ManagerAttendanceTabs } from '../../manager/_kit/tabs';
 import { ActionButton } from '../_kit/actions';
 import { hm, roleLabel, timeOrDash } from '../_kit/format';
 import { AttendanceTabs } from '../_kit/tabs';
@@ -24,6 +25,8 @@ interface Day {
   lateMinutes: number;
   productionSeconds: number;
   breakOverSeconds: number;
+  breakCount?: number;
+  extraBreaks?: number;
   idleSeconds: number;
   shortfallSeconds: number;
   makeUpSeconds: number;
@@ -73,7 +76,9 @@ export default function AttendancePerson() {
   const [toDate, setTo] = useState(today);
   const report = useQuery({ queryKey: ['attendance', 'report', staffId, from, toDate], queryFn: () => api.get<Report>('/attendance/report', { query: { staffId, from, to: toDate } }), enabled: Boolean(staffId) });
   const balance = useQuery({ queryKey: ['attendance', 'balance', staffId], queryFn: () => api.get<Balance>('/attendance/leave/balance', { query: { staffId } }), enabled: Boolean(staffId) });
-  const team = useQuery({ queryKey: ['ceo', 'team'], queryFn: () => api.get<TeamLite>('/ceo/team') });
+  // Also the Manager's "One person's report" (MG-Attendance): people in their own teams only.
+  const isManager = usePortal().key === 'manager';
+  const team = useQuery({ queryKey: [isManager ? 'manager' : 'ceo', isManager ? 'staff' : 'team'], queryFn: () => api.get<TeamLite>(isManager ? '/manager/staff' : '/ceo/team') });
   const r = report.data;
   const worked = r ? r.days.filter((d) => d.loginAt).length : 0;
   const lateMinutes = r ? r.lateLogins.days.reduce((s, x) => s + x.minutes, 0) : 0;
@@ -84,6 +89,14 @@ export default function AttendancePerson() {
     { key: 'login', header: 'Login', cell: (d) => timeOrDash(d.loginAt), csv: (d) => d.loginAt },
     { key: 'late', header: 'Late login', cell: (d) => (d.lateMinutes ? `${d.lateMinutes} min` : '—'), csv: (d) => d.lateMinutes },
     { key: 'prod', header: 'Production', cell: (d) => (d.loginAt ? hm(d.productionSeconds) : '—'), sortValue: (d) => d.productionSeconds, csv: (d) => Math.round(d.productionSeconds / 60) },
+    {
+      key: 'breakCount',
+      header: 'Breaks',
+      cell: (d) => (d.loginAt ? (d.extraBreaks ? <StatusPill tone="warn">{`${d.breakCount ?? 0} · ${d.extraBreaks} extra`}</StatusPill> : String(d.breakCount ?? 0)) : '—'),
+      sortValue: (d) => d.breakCount ?? 0,
+      csv: (d) => d.breakCount ?? 0,
+      hideOnPhone: true,
+    },
     { key: 'breaks', header: 'Breaks over', cell: (d) => hm(d.breakOverSeconds), csv: (d) => Math.round(d.breakOverSeconds / 60), hideOnPhone: true },
     { key: 'lost', header: 'Lost', cell: (d) => (d.hoursLostSeconds ? hm(d.hoursLostSeconds) : '—'), csv: (d) => Math.round(d.hoursLostSeconds / 60) },
     { key: 'counts', header: 'Counts as', cell: (d) => <StatusPill tone={d.dayType === 'absent' ? 'danger' : d.change ? 'info' : /short|half/i.test(countsAs(d)) ? 'warn' : 'good'}>{countsAs(d)}</StatusPill>, filter: 'select', filterValue: (d) => countsAs(d).split(' · ')[0], csv: (d) => countsAs(d) },
@@ -108,11 +121,11 @@ export default function AttendancePerson() {
   return (
     <div className="lb-page">
       <TopBar
-        back={{ to: to('C-Team-Attendance'), label: 'Attendance' }}
+        back={{ to: to(isManager ? 'MG-Attendance' : 'C-Team-Attendance'), label: 'Attendance' }}
         title={`Attendance · ${r?.staff.name ?? '…'}`}
         subtitle="Every late login, production day by day and hours lost, for any person and dates."
       />
-      <AttendanceTabs personId={staffId} />
+      {isManager ? <ManagerAttendanceTabs /> : <AttendanceTabs personId={staffId} />}
       <div className="panel ceo-filters">
         <span className="ceo-grow" style={{ alignSelf: 'center' }}>
           Showing <strong>{r?.staff.name ?? '…'}</strong>

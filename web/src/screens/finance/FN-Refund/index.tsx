@@ -15,7 +15,7 @@ import { formatDateIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { FormAction, Note } from '../_kit/kit';
-import { approveAndPay, sendToCeo, type RefundRow } from '../_kit/refunds';
+import { approveAndPay, rejectRefund, sendToCeo, type RefundRow } from '../_kit/refunds';
 import '../_kit/fin.css';
 
 /**
@@ -150,6 +150,22 @@ export default function RefundDetail() {
                       fields={[{ name: 'reason', kind: 'text', label: 'Why', required: true }]}
                       run={(v) => sendToCeo(d.placement!.id, String(v.reason))}
                       success="Sent to the CEO"
+                    />
+                  )}
+                  {row && (
+                    <FormAction
+                      label="Reject"
+                      variant="danger"
+                      title="Reject this refund"
+                      description={`Only when the refund is not owed (for example the refund-check call found ${d.kind === 'business' ? 'the worker back at the business' : 'him working at a business we introduced'}). The reason is kept in the history and the month-end review.`}
+                      confirmLabel="Reject the refund"
+                      fields={[{ name: 'reason', kind: 'text', label: 'Reason', required: true }]}
+                      run={async (v) => {
+                        const res = await rejectRefund(row.ref, String(v.reason));
+                        navigate(to('FN-Refunds'));
+                        return res;
+                      }}
+                      success="Refund rejected · reason saved"
                     />
                   )}
                 </div>

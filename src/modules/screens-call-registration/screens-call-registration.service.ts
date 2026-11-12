@@ -171,6 +171,8 @@ export class ScreensCallRegistrationService {
         promotions: given.has('promotions'),
       },
       registrationLinkExpiresAt: registration.registrationLinkExpiresAt,
+      // How long a payment-only link works (Settings, 15 minutes by default).
+      paymentOnlyLinkMinutes: registration.paymentOnlyLink.validMinutes,
       paymentOnlyLink: otherPayerLink
         ? {
             payerPhone: readPublicLinkPhone(otherPayerLink.phone),

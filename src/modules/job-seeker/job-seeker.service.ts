@@ -35,6 +35,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
+import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from './job-seeker-refunded';
 import { calculateAge, validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
@@ -1054,6 +1055,12 @@ export class JobSeekerService {
       }
     }
 
+    // R4: say so first when this guarantee's refund was rejected (checked again under the lock below).
+    if (jobSeeker.paymentReceivedAt) {
+      const rejected = await findRefundRejection(this.prisma, { jobSeekerId: jobSeeker.id, guaranteeStartedAt: jobSeeker.paymentReceivedAt });
+      assertRejectionOverride(rejected, actor, { overrideRejection: dto?.overrideRejection, reason: note });
+    }
+
     const eligibilityResult = goodwill
       ? null
       : evaluateJobSeekerRefundEligibility(
@@ -1088,9 +1095,14 @@ export class JobSeekerService {
     let payment;
     try {
       payment = await this.prisma.$transaction(async (tx) => {
-        await lockSubject(tx, `refund:job_seeker:${jobSeeker.id}`);
+        await lockSubject(tx, refundLockKey.jobSeeker(jobSeeker.id));
         const again = await tx.payment.findFirst({ where: existingRefundWhere });
         if (again) throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, again);
+        // R4: a refund rejected for this guarantee is raised again only by the CEO, overriding with a reason.
+        if (jobSeeker.paymentReceivedAt) {
+          const rejected = await findRefundRejection(tx, { jobSeekerId: jobSeeker.id, guaranteeStartedAt: jobSeeker.paymentReceivedAt });
+          assertRejectionOverride(rejected, actor, { overrideRejection: dto?.overrideRejection, reason: note });
+        }
 
         const p = await tx.payment.create({
           data: {
@@ -1563,7 +1575,11 @@ export class JobSeekerService {
       jobSeekerId: seeker.id,
       steps: { phone, consent, selfie, idCheck, payment },
       registrationLinkExpiresAt: link?.expiresAt ?? null,
-      paymentOnlyLink: { live: Boolean(paymentOnlyLink), expiresAt: paymentOnlyLink?.expiresAt ?? null },
+      paymentOnlyLink: {
+        live: Boolean(paymentOnlyLink),
+        expiresAt: paymentOnlyLink?.expiresAt ?? null,
+        validMinutes: await this.pricingService.current().then((p) => (Number.isInteger(p.paymentOnlyLinkMinutes) && p.paymentOnlyLinkMinutes > 0 ? p.paymentOnlyLinkMinutes : 15)),
+      },
     };
   }
 
@@ -1586,7 +1602,10 @@ export class JobSeekerService {
 
     const now = this.consentClock?.now() ?? new Date();
     await this.publicLinks.revokeActive('payment_only', 'job_seeker', seeker.id, now);
-    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+    // C-Pricing "Payment-only link" (PricingPolicy.paymentOnlyLinkMinutes, 15 by default).
+    const policy = await this.pricingService.current();
+    const validMinutes = Number.isInteger(policy.paymentOnlyLinkMinutes) && policy.paymentOnlyLinkMinutes > 0 ? policy.paymentOnlyLinkMinutes : 15;
+    const expiresAt = new Date(now.getTime() + validMinutes * 60 * 1000);
     const { token } = await this.publicLinks.create({
       purpose: 'payment_only',
       subjectType: 'job_seeker',
@@ -1620,7 +1639,7 @@ export class JobSeekerService {
       changedFields: ['paymentOnlyLink'],
       city: seeker.city,
     });
-    return { success: true, expiresAt };
+    return { success: true, expiresAt, validMinutes };
   }
 
   // --- Trades (Phase 12 Task 3) ---

@@ -6,6 +6,7 @@ import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
 import { NavIcon, UiIcon } from '../../../components/Icon';
 import { Skeleton, SkeletonCard } from '../../../components/Skeleton';
+import { HomeNotifications } from '../../../components/HomeNotifications';
 import { TopBar } from '../../../components/TopBar';
 import { useT } from '../../../i18n/I18nProvider';
 import { formatDateIST, formatDayMonthIST, formatLongDateIST, formatMonthIST, istPartOfDay, istStartOfDay } from '../../../lib/format/date';
@@ -169,6 +170,7 @@ export default function CommandCenter() {
           </Button>
         }
       />
+      <HomeNotifications />
 
       {/* Money ------------------------------------------------------------ */}
       <section className="lb-section" aria-labelledby="cc-money">

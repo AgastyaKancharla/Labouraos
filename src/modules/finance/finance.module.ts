@@ -21,6 +21,7 @@ import { PayrollService } from './payroll.service';
 import { MonthEndService } from './month-end.service';
 import { FinanceTaxService } from './finance-tax.service';
 import { FinanceReportsService } from './finance-reports.service';
+import { FinanceInvoiceActionsService } from './finance-invoice-actions.service';
 import { FinanceRefundsService } from './finance-refunds.service';
 
 /** Phase 22: the Finance back office, parts A and B (specs/phase-22.md). */
@@ -37,6 +38,7 @@ import { FinanceRefundsService } from './finance-refunds.service';
     FinanceTaxService,
     FinanceReportsService,
     FinanceRefundsService,
+    FinanceInvoiceActionsService,
     { provide: EXPENSE_BILL_STORAGE, useFactory: expenseBillStorageFactory },
   ],
   exports: [ExpenseService, FinancePayoutsService, FinanceBooksService, PayrollService],

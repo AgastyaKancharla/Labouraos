@@ -726,6 +726,19 @@
   font-weight: 700;
 }
 
+/* Home notifications block and the bell's "Done today" heading */
+.lb-homenotes__done {
+  padding: 10px 8px 2px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-faint);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.lb-homenotes .lb-bell__item:first-child {
+  border-top: none;
+}
+
 /* ---------- cards, stats ---------- */
 .lb-card.panel {
   padding: 18px 20px;
@@ -1402,4 +1415,11 @@ th[aria-sort='descending'] .lb-sort {
 .lb-lang-select:focus-visible {
   outline: none;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.7);
+}
+
+/* A status pill inside a .kv value keeps its own size (the .kv cell padding and line would otherwise apply to it). */
+.kv span span.pill {
+  display: inline-block;
+  padding: 3px 9px;
+  border-top: 0;
 }

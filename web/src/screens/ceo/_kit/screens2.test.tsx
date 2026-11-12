@@ -75,6 +75,28 @@ describe('Team & access', () => {
     expect(await screen.findByText('tok-123')).toBeInTheDocument();
   });
 
+  it('shows a co-founder title on a CEO-level account and lets the CEO change it', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': {
+        ...teamResponse,
+        rows: [{ id: 'c2', code: 'CEO-0002', name: 'Sanket', email: 'sanket@laboura.in', role: 'ceo', title: 'co_founder', team: null, reportsTo: null, state: 'active', authenticator: true, signedIn: false, lockedUntil: null, lockedReason: null }, ...teamResponse.rows],
+      },
+      'POST /ceo/team/c2/title': { id: 'c2', title: 'founder' },
+    });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Sanket')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('Co-founder')).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Title' }));
+    const d = await dialog();
+    await userEvent.selectOptions(within(d).getByLabelText(/Title/), 'founder');
+    await userEvent.click(within(d).getByRole('button', { name: 'Save title' }));
+    await waitFor(() => expect(api.calls('POST /ceo/team/c2/title')[0].body).toEqual({ title: 'founder' }));
+    // Only CEO-level accounts get a title.
+    const agent = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
+    expect(within(agent).queryByRole('button', { name: 'Title' })).toBeNull();
+  });
+
   it('takes a joining date when adding staff and lets the CEO set one later', async () => {
     const api = mockApi({
       ...common,
@@ -361,6 +383,21 @@ describe('Targets and leaderboard', () => {
     expect(screen.getByText('₹82,000 fees')).toBeInTheDocument();
     expect(screen.getByText('75% · behind')).toBeInTheDocument();
   });
+
+  it('Today / This week count the same results inside the range, from GET /ceo/leaderboard', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/targets': { ...board, leaderboard: board.rows },
+      'GET /ceo/leaderboard': { leaderboard: [{ ...board.rows[1], position: 1, main: { achieved: 2, target: null }, feesPaise: 1600000, progressPercent: null, pace: 'no_target', target: null }] },
+    });
+    render(<Leaderboard />, '/ceo/leaderboard');
+    expect(await screen.findByText('9 placements')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(await screen.findByText('2 placements')).toBeInTheDocument();
+    expect(screen.getByText('Targets are monthly')).toBeInTheDocument();
+    const q = api.calls('GET /ceo/leaderboard')[0].query;
+    expect(q.get('fromDate')).toBeTruthy();
+  });
 });
 
 describe('Call center and field ops', () => {
@@ -400,8 +437,9 @@ describe('Call center and field ops', () => {
         summary: { visits: 14, onboarded: 3, vacanciesThisWeek: 9, visitToOnboardPercent: 21, geofenceMismatches: 1, openFlags: 2 },
         agentsNow: [{ staff: { id: 'fa1', name: 'Kiran Kumar' }, status: 'on_visit', area: 'BTM Layout', lastCheckInAt: null }],
         proof: [],
-        rows: [{ staff: { id: 'fa1', name: 'Kiran Kumar', team: null }, now: { status: 'on_visit', since: null }, lastVisit: { business: 'Annapoorna Mess', area: 'BTM', at: NOW.toISOString() }, visits: 6, onboarded: 2, vacancies: 3, shown: 4, interviews: 1, geofenceMismatches: 0, openFlags: [] }],
-        requests: [{ id: 'va1', business: biz, purpose: 'verification', createdAt: '2026-11-09T05:00:00Z', suggested: { id: 'fa1', name: 'Kiran Kumar' } }],
+        rows: [{ staff: { id: 'fa1', name: 'Kiran Kumar', team: null }, now: { status: 'on_visit', since: null }, lastVisit: { business: 'Annapoorna Mess', area: 'BTM', at: NOW.toISOString() }, visits: 6, onboarded: 2, vacancies: 3, shown: 4, interviews: 1, geofenceMismatches: 0, openFlags: [], avgVisitSeconds: 720 }],
+        requests: [{ id: 'va1', business: biz, purpose: 'verification', createdAt: '2026-11-09T05:00:00Z', suggested: { id: 'fa1', name: 'Kiran Kumar' }, nearest: { id: 'fa1', name: 'Kiran Kumar', distanceKm: 1.2 } }],
+        revisitsDue: [{ id: 'v9', on: '2026-11-13', business: null, shopName: 'Sri Ganesh Stores', outcome: 'owner_not_there', agent: { id: 'fa1', name: 'Kiran Kumar' } }],
         revisits: [],
         agents: [{ id: 'fa1', name: 'Kiran Kumar' }],
       },
@@ -410,6 +448,10 @@ describe('Call center and field ops', () => {
     render(<FieldOps />, '/ceo/field-ops');
     expect(await screen.findByText('On visit · Annapoorna Mess')).toBeInTheDocument();
     expect(screen.getByText('Kiran · BTM Layout')).toBeInTheDocument();
+    expect(screen.getByText('12 min')).toBeInTheDocument();
+    expect(screen.getByText('Kiran Kumar · 1.2 km')).toBeInTheDocument();
+    const revisits = screen.getByRole('table', { name: 'Revisits due this week' });
+    expect(within(revisits).getByText('Sri Ganesh Stores')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: /Assign the visit/ }));
     await waitFor(() => expect(api.calls('POST /businesses/b1/visit-assignments/va1/assign')[0].body).toEqual({ assignedStaffId: 'fa1' }));
@@ -487,7 +529,7 @@ describe('Audit, flags, privacy, system and notifications', () => {
   });
 });
 
-const policy = { id: 'p1', activationFeePaise: 49900, placementFeePercent: 50, gstPercent: 18, jobSeekerGuaranteeDays: 30, maxHits: 3, offerReplyHours: 48, interviewResultDeadline: '20:00', placementPaymentDueHours: 24, replacementWindowDays: 60, maxFreeReplacements: 2, replacementSearchDays: 15, noBypassMonths: 12, noBypassPenaltyPercent: 50, referralPayoutPaise: 20000, joiningRewardPaise: 20000, joiningRewardAfterDays: 30, callingHoursStart: '09:00', callingHoursEnd: '21:00', shiftStart: '09:30', shiftEnd: '18:30', productionHoursFullDay: 8, halfDayBelowHours: 4.5, dayToleranceMinutes: 10, lateGraceMinutes: 10, shortBreakMinutes: 15, lunchMinutes: 30, idleAfterMinutes: 10, casualLeavePerMonth: 1, emergencyLeavePerMonth: 1, financeBusinessRefundLimitPaise: 1500000, financeExpenseLimitPaise: 1000000, weeklyOffDays: [0] };
+const policy = { id: 'p1', activationFeePaise: 49900, placementFeePercent: 50, gstPercent: 18, jobSeekerGuaranteeDays: 30, maxHits: 3, offerReplyHours: 48, interviewResultDeadline: '20:00', placementPaymentDueHours: 24, replacementWindowDays: 60, maxFreeReplacements: 2, replacementSearchDays: 15, noBypassMonths: 12, noBypassPenaltyPercent: 50, referralPayoutPaise: 20000, joiningRewardPaise: 20000, joiningRewardAfterDays: 30, callingHoursStart: '09:00', callingHoursEnd: '21:00', shiftStart: '09:30', shiftEnd: '18:30', productionHoursFullDay: 8, halfDayBelowHours: 4.5, dayToleranceMinutes: 10, lateGraceMinutes: 10, shortBreakMinutes: 15, lunchMinutes: 30, idleAfterMinutes: 10, casualLeavePerMonth: 1, emergencyLeavePerMonth: 1, financeBusinessRefundLimitPaise: 1500000, financeExpenseLimitPaise: 1000000, weeklyOffDays: [0], registrationLinkValidHours: 48, paymentOnlyLinkMinutes: 20, behindPaceStartDay: 8, behindPaceThresholdPercent: 80 };
 
 describe('Pricing & policy', () => {
   it('shows every rule in force, schedules a change for a later date, sets the weekly day off and adds a holiday', async () => {
@@ -503,6 +545,8 @@ describe('Pricing & policy', () => {
     expect(screen.getByText(/9:30 AM – 6:30 PM · 8 production hours/)).toBeInTheDocument();
     expect(screen.getByText(/No-bypass · Penalty % on top of the fee 0 → 50/)).toBeInTheDocument();
     expect(await screen.findByText(/Kannada Rajyotsava/)).toBeInTheDocument();
+    expect(screen.getByText('48 hours · payment-only link 20 minutes')).toBeInTheDocument();
+    expect(screen.getByText("From day 8 · below 80% of the target's pace")).toBeInTheDocument();
 
     const row = screen.getByText('Offer reply time').closest('tr') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));

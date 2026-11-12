@@ -10,4 +10,6 @@ export class ApprovePlacementRefundDto {
   amountPaise?: number;
   /** Finance can always send a refund to the CEO instead of approving it. */
   sendToCeo?: boolean;
+  /** CEO only: raise a refund that was rejected for this placement, with a reason (R4). */
+  overrideRejection?: boolean;
 }

@@ -94,7 +94,7 @@ export class FinanceBooksService {
         where: {
           confirmedBy: 'gateway',
           status: { in: RECEIVED_STATUSES },
-          type: { in: ['activation', 'reactivation', 'placement_fee'] },
+          type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
           confirmedAt: { gte: range.from, lte: range.to },
           ...(filters.search ? { OR: [{ code: contains(filters.search) }, { gatewayReference: contains(filters.search) }, { jobSeeker: { name: contains(filters.search) } }, { business: { name: contains(filters.search) } }] } : {}),
         },
@@ -121,6 +121,15 @@ export class FinanceBooksService {
         })
       : [];
     const expectedById = new Map(expected.map((p) => [p.id, p]));
+    // A no-bypass charge's invoice number lives on the charge (same INV series as placement fees).
+    const bypassPaymentIds = [...credits.map((c) => c.matchedPayment), ...cards, ...expected]
+      .filter((p): p is NonNullable<typeof p> => Boolean(p) && p!.type === 'bypass_charge')
+      .map((p) => p.id);
+    const bypassInvoice = new Map(
+      bypassPaymentIds.length
+        ? (await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaymentIds } }, select: { paymentId: true, invoiceCode: true } })).map((b) => [b.paymentId!, b.invoiceCode])
+        : [],
+    );
     type P = (typeof expected)[number];
     const forOf = (p: P | null | undefined) =>
       p
@@ -128,7 +137,7 @@ export class FinanceBooksService {
             paymentId: p.id,
             paymentCode: p.code,
             type: p.type,
-            invoiceCode: p.placement?.invoiceCode ?? null,
+            invoiceCode: p.placement?.invoiceCode ?? bypassInvoice.get(p.id) ?? null,
             placementCode: p.placement?.code ?? null,
             who: p.jobSeeker ? { code: p.jobSeeker.code, name: p.jobSeeker.name } : (p.business ?? p.placement?.business) ? { code: (p.business ?? p.placement?.business)!.code, name: (p.business ?? p.placement?.business)!.name } : null,
           }
@@ -190,6 +199,7 @@ export class FinanceBooksService {
     const inRange = all.filter((r) => r.at >= range.from.toISOString() && r.at <= range.to.toISOString());
     const rows = all.filter((r) => {
       if (filters.type === 'placement_fee' && r.for?.type !== 'placement_fee') return false;
+      if (filters.type === 'bypass_charge' && r.for?.type !== 'bypass_charge') return false;
       if (filters.type === 'activation' && !['activation', 'reactivation'].includes(r.for?.type ?? '')) return false;
       if (!filters.status) return true;
       if (filters.status === 'needs') return MONEY_IN_NEEDS_YOU.includes(r.status);
@@ -217,7 +227,7 @@ export class FinanceBooksService {
       ? await this.prisma.payment.findMany({
           where: {
             status: 'pending',
-            type: { in: ['activation', 'reactivation', 'placement_fee'] },
+            type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
             createdAt: { gte: since, lte: new Date(credit.receivedAt.getTime() + 60_000) },
             OR: [{ amount: { gte: credit.amountPaise } }, { expectedAmountPaise: { gte: credit.amountPaise } }],
           },
@@ -571,7 +581,56 @@ export class FinanceBooksService {
       this.prisma.reviewFlag.findMany({ where: { kind: 'payment_mismatch', status: 'open', subjectType: 'payment' }, select: { subjectId: true, details: true } }),
     ]);
     const flagByPayment = new Map(flags.map((f) => [f.subjectId, (f.details ?? {}) as Record<string, unknown>]));
+    // No-bypass charges (raised by the CEO) are GST invoices too: raised in the period, or still waiting.
+    const charges =
+      filters.type === 'activation' || filters.type === 'placement_fee'
+        ? []
+        : await this.prisma.bypassCharge.findMany({
+            where: {
+              status: 'raised',
+              ...(s ? { OR: [{ code: contains(s) }, { invoiceCode: contains(s) }] } : {}),
+            },
+            orderBy: { raisedAt: 'desc' },
+            take: 500,
+          });
+    const chargePayments = charges.length
+      ? await this.prisma.payment.findMany({ where: { id: { in: charges.map((c) => c.paymentId).filter((x): x is string => Boolean(x)) } }, select: { id: true, status: true, confirmedAt: true } })
+      : [];
+    const chargeBusinesses = charges.length
+      ? await this.prisma.business.findMany({ where: { id: { in: charges.map((c) => c.businessId) } }, select: { id: true, code: true, name: true } })
+      : [];
+    const chargePay = new Map(chargePayments.map((p) => [p.id, p]));
+    const chargeBiz = new Map(chargeBusinesses.map((b) => [b.id, b]));
+    const chargeRows = charges
+      .map((c) => {
+        const pay = c.paymentId ? chargePay.get(c.paymentId) : undefined;
+        const paid = Boolean(pay && RECEIVED_STATUSES.includes(pay.status));
+        const date = paid ? (pay!.confirmedAt ?? c.raisedAt) : c.raisedAt;
+        const biz = chargeBiz.get(c.businessId);
+        return {
+          id: c.id,
+          kind: 'invoice' as const,
+          number: c.invoiceCode,
+          to: biz ? { code: biz.code, name: biz.name } : null,
+          forWhat: { type: 'bypass_charge', placementCode: c.code, placementId: null },
+          feePaise: c.feePaise + c.penaltyPaise,
+          gstPaise: c.gstPaise,
+          totalPaise: c.totalPaise,
+          date: date.toISOString(),
+          status: paid ? 'paid' : daysSince(c.raisedAt, now) > 1 ? 'overdue' : 'waiting',
+          waitingDays: paid ? null : daysSince(c.raisedAt, now),
+          tds: null,
+          shortByPaise: null,
+          paymentId: c.paymentId,
+          downloadPath: null,
+          _inRange: date >= range.from && date <= range.to,
+          _paid: paid,
+        };
+      })
+      .filter((r) => !r._paid || r._inRange)
+      .map(({ _inRange, _paid, ...r }) => (void _inRange, void _paid, r));
     const rows = [
+      ...chargeRows,
       ...paid.map((p) => {
         const tds = p.tdsReceivables[0] ?? null;
         return {

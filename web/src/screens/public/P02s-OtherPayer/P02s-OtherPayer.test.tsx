@@ -34,9 +34,9 @@ describe('P02s-OtherPayer', () => {
     expect(screen.getByText(/shows only her first name and ID/)).toBeInTheDocument();
   });
 
-  it('says when the 15 minutes are over', async () => {
+  it('says when the link has run out', async () => {
     mockApi({ 'GET /registration/payment/ptok/info': { maskedPhone: '******0000', language: null, expiresAt: '2026-11-11T05:59:00Z' } });
     render();
-    expect(await screen.findByText(/Payment links work for 15 minutes/)).toBeInTheDocument();
+    expect(await screen.findByText(/Payment links work only for a short time/)).toBeInTheDocument();
   });
 });

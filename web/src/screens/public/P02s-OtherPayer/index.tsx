@@ -11,7 +11,7 @@ import { ActionError, LinkProblem, Loading, Muted, OtpBlock, PageTitle, PaidConf
  * P02s-OtherPayer: someone else pays the ₹499 for a job seeker. The code goes
  * to the payer's number (the one the link was sent to). After it, the page
  * shows only her first name, JS- ID and the amount — no profile, no consent.
- * The link works for 15 minutes.
+ * The link works for the minutes set in Settings (15 by default).
  */
 export default function OtherPayer() {
   const { t } = useI18n();

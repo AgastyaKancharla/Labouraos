@@ -9,6 +9,7 @@ import { JobSeekerModule } from '../job-seeker/job-seeker.module';
 import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import { FollowUpService } from './follow-up.service';
 import { FollowUpController } from './follow-up.controller';
+import { FollowUpHandoverService } from './follow-up-handover.service';
 
 @Module({
   imports: [
@@ -22,7 +23,7 @@ import { FollowUpController } from './follow-up.controller';
     ReportingScopeModule,
   ],
   controllers: [FollowUpController],
-  providers: [FollowUpService],
-  exports: [FollowUpService],
+  providers: [FollowUpService, FollowUpHandoverService],
+  exports: [FollowUpService, FollowUpHandoverService],
 })
 export class FollowUpModule {}

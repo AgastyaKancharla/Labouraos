@@ -6,7 +6,7 @@ import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
 import { api } from '../../../lib/api/client';
-import { formatDateTimeIST, formatTimeIST } from '../../../lib/format/date';
+import { formatDateTimeIST, formatTimeIST, formatDateIST } from '../../../lib/format/date';
 import { periodFor, periodToUtcRange, type Period } from '../../../lib/period';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
@@ -32,15 +32,23 @@ interface AgentRow {
   interviews: number;
   geofenceMismatches: number;
   openFlags: string[];
+  avgVisitSeconds: number | null;
 }
 interface FieldOps {
   summary: { visits: number; onboarded: number; vacanciesThisWeek: number; visitToOnboardPercent: number; geofenceMismatches: number; openFlags: number };
   agentsNow: { staff: { id: string; name: string }; status: string; area: string | null; lastCheckInAt: string | null }[];
   proof: { id: string; at: string; business: Biz; agent: { id: string; name: string } | null; hasSelfie: boolean; photoLive: boolean | null; geofenceFlag: boolean; flag: { id: string; code: string; kind: string } | null }[];
   rows: AgentRow[];
-  requests: { id: string; business: Biz; purpose: string; createdAt: string; suggested: { id: string; name: string } | null }[];
+  requests: { id: string; business: Biz; purpose: string; createdAt: string; suggested: { id: string; name: string } | null; nearest: { id: string; name: string; distanceKm: number } | null }[];
+  revisitsDue: { id: string; on: string; business: Biz | null; shopName: string; outcome: string | null; agent: { id: string; name: string } | null }[];
   revisits: { id: string; business: Biz; purpose: string; agent: { id: string; name: string } | null; since: string }[];
   agents: { id: string; name: string }[];
+}
+
+/** "12 min" for a visit length in seconds; "—" when no visit was timed. */
+function minutesText(seconds: number | null): string {
+  if (seconds === null) return '—';
+  return `${Math.max(1, Math.round(seconds / 60))} min`;
 }
 
 export default function FieldOpsScreen() {
@@ -61,6 +69,7 @@ export default function FieldOpsScreen() {
     { key: 'agent', header: 'Agent', cell: (r) => <strong>{r.staff.name}</strong>, filter: 'text', filterValue: (r) => r.staff.name, sortValue: (r) => r.staff.name, csv: (r) => r.staff.name },
     { key: 'now', header: 'Now', cell: (r) => <StatusPill tone={liveLabel(r.now?.status ?? 'not_logged_in').tone}>{nowText(r)}</StatusPill>, filter: 'select', filterValue: (r) => liveLabel(r.now?.status ?? 'not_logged_in').label, csv: nowText },
     { key: 'visits', header: 'Visits', cell: (r) => r.visits, sortValue: (r) => r.visits, csv: (r) => r.visits, align: 'right' },
+    { key: 'avg', header: 'Avg visit', cell: (r) => minutesText(r.avgVisitSeconds), sortValue: (r) => r.avgVisitSeconds ?? -1, csv: (r) => (r.avgVisitSeconds === null ? '' : Math.round(r.avgVisitSeconds / 60)), align: 'right' },
     { key: 'onb', header: 'Onboarded', cell: (r) => r.onboarded, sortValue: (r) => r.onboarded, csv: (r) => r.onboarded, align: 'right' },
     { key: 'vac', header: 'Vacancies', cell: (r) => r.vacancies, sortValue: (r) => r.vacancies, csv: (r) => r.vacancies, align: 'right' },
     { key: 'shown', header: 'Shown', cell: (r) => r.shown, csv: (r) => r.shown, align: 'right', hideOnPhone: true },
@@ -138,16 +147,40 @@ export default function FieldOpsScreen() {
           ) : (
             <div className="scrollx">
               <table>
-                <thead><tr><th>Business lead</th><th>Why</th><th>Suggested agent</th><th /></tr></thead>
+                <thead><tr><th>Business lead</th><th>Why</th><th>Nearest agent</th><th /></tr></thead>
                 <tbody>
                   {d?.requests.map((r) => (
                     <tr key={r.id}>
                       <td>{r.business.name}{r.business.locality ? ` · ${r.business.locality}` : ''}</td>
                       <td>{humanize(r.purpose)} · {formatDateTimeIST(r.createdAt)}</td>
-                      <td>{r.suggested?.name ?? '—'}</td>
                       <td>
-                        <ActionButton label="Assign" title={`Assign the visit to ${r.business.name}`} choice={{ label: 'Field agent', options: agentOptions, initial: r.suggested?.id }} run={({ choice }) => api.post(`/businesses/${r.business.id}/visit-assignments/${r.id}/assign`, { assignedStaffId: choice })} success="Visit assigned" disabled={!agentOptions.length} />
+                        {r.nearest ? `${r.nearest.name} · ${r.nearest.distanceKm} km` : (r.suggested?.name ?? '—')}
+                        {r.nearest && r.suggested && r.suggested.id !== r.nearest.id ? <div className="ceo-cell-sub">Suggested: {r.suggested.name}</div> : null}
                       </td>
+                      <td>
+                        <ActionButton label="Assign" title={`Assign the visit to ${r.business.name}`} choice={{ label: 'Field agent', options: agentOptions, initial: r.nearest?.id ?? r.suggested?.id }} run={({ choice }) => api.post(`/businesses/${r.business.id}/visit-assignments/${r.id}/assign`, { assignedStaffId: choice })} success="Visit assigned" disabled={!agentOptions.length} />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+        <Card title="Revisits due this week">
+          {d && !d.revisitsDue.length ? (
+            <p className="ceo-sub">No revisits due in the next 7 days.</p>
+          ) : (
+            <div className="scrollx">
+              <table>
+                <caption className="sr-only">Revisits due this week</caption>
+                <thead><tr><th>Shop</th><th>Due</th><th>Agent</th></tr></thead>
+                <tbody>
+                  {d?.revisitsDue.map((r) => (
+                    <tr key={r.id}>
+                      <td>{r.shopName}{r.business?.locality ? ` · ${r.business.locality}` : ''}{r.outcome ? <div className="ceo-cell-sub">{humanize(r.outcome)}</div> : null}</td>
+                      <td>{formatDateIST(`${r.on}T00:00:00+05:30`)}</td>
+                      <td>{r.agent?.name ?? '—'}</td>
                     </tr>
                   ))}
                 </tbody>

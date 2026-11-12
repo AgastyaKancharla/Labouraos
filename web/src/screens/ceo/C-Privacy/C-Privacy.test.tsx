@@ -137,3 +137,45 @@ describe('C-Privacy data request register', () => {
     expect(dueText({ daysLeft: -1, status: 'open', closedAt: null })).toBe('1 day late');
   });
 });
+
+describe('C-Privacy data breaches (72 hours)', () => {
+  const breach = {
+    id: 'b1',
+    code: 'BR-00001',
+    discoveredAt: '2026-11-15T06:30:00Z',
+    reportDueAt: '2026-11-18T06:30:00Z',
+    summary: 'Lost laptop with an export',
+    dataAffected: 'Names and masked phones',
+    peopleAffected: 40,
+    status: 'open',
+    steps: [{ at: '2026-11-15T06:31:00Z', text: 'Breach logged' }],
+    told: [],
+    boardToldAt: null,
+    overdue: false,
+    hoursLeft: 48,
+    closedAt: null,
+  };
+  it('shows the Data breaches tile, the deadline, steps and who was told, and logs a new breach', async () => {
+    const api = mockApi({
+      ...common,
+      ...consents,
+      'GET /ceo/privacy': privacy,
+      'GET /data-requests': register,
+      'GET /ceo/privacy/breaches': { summary: { total: 1, open: 1, overdue: 0, boardToldInTime: 0, reportHours: 72 }, rows: [breach] },
+      'POST /ceo/privacy/breaches': { ...breach, id: 'b2' },
+    });
+    render();
+    expect(await screen.findByText('Data breaches')).toBeInTheDocument();
+    const card = await screen.findByRole('article', { name: 'Breach BR-00001' });
+    expect(within(card).getByText('48 h left to tell the Board')).toBeInTheDocument();
+    expect(within(card).getByText('Nobody yet')).toBeInTheDocument();
+    expect(within(card).getByText(/Breach logged/)).toBeInTheDocument();
+    expect(within(card).getByRole('button', { name: 'Close' })).toBeDisabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Log a breach' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(within(dialog).getByLabelText(/What happened/), 'Wrong file shared');
+    await userEvent.type(within(dialog).getByLabelText(/What data/), 'Business names');
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Log the breach' }));
+    await waitFor(() => expect(api.calls('POST /ceo/privacy/breaches')[0]?.body).toMatchObject({ summary: 'Wrong file shared', dataAffected: 'Business names' }));
+  });
+});

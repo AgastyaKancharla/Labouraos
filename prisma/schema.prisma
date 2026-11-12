@@ -758,6 +758,8 @@ model Staff {
   teamName          String?
   /// An intern (call or field agent) — carries the same targets as paid agents.
   isIntern          Boolean          @default(false)
+  /// CEO-level accounts only: ceo, founder or co_founder (guide: one top-level role, different titles).
+  title             String?
   /// Joining date, entered when the staff member is added (CEO or Manager);
   /// payroll counts from it. When empty, payroll uses the first login date;
   /// the CEO can correct it later (PUT /staff/:id/joined-on).
@@ -1368,6 +1370,14 @@ model PricingPolicy {
   patternStopDays              Int       @default(30)
   patternAgentMinInterviews    Int       @default(10)
   patternAgentRejectionPercent Int       @default(80)
+  /// Behind-pace bells to the Team Lead and Manager start on this day of the month (no number in the guide; default 8).
+  behindPaceStartDay           Int       @default(8)
+  /// Behind pace = done below this percent of where the month's target should be by today (no number in the guide; default 80).
+  behindPaceThresholdPercent   Int       @default(80)
+  /// C-Pricing "Registration link valid": the job seeker's registration link lasts this many hours (guide: 48).
+  registrationLinkValidHours   Int       @default(48)
+  /// C-Pricing: the payment-only link (someone else pays the ₹499) works this many minutes (guide: 15).
+  paymentOnlyLinkMinutes       Int       @default(15)
   shiftStart                   String    @default("09:30")
   shiftEnd                     String    @default("18:30")
   productionHoursFullDay       Float     @default(8)
@@ -2481,4 +2491,115 @@ model DataRequest {
 
   @@index([status, dueOn])
   @@index([subjectType, subjectId])
+}
+
+/// T-Req-Sneha "Her follow-ups that day go to…": a follow-up task moved to a
+/// teammate when a leave is approved, and moved back after the leave.
+model FollowUpHandover {
+  id               String    @id @default(uuid())
+  leaveRequestId   String
+  followUpTaskId   String
+  fromStaffId      String
+  toStaffId        String
+  /// share (round robin between teammates) or teammate (one person)
+  mode             String
+  movedAt          DateTime  @default(now())
+  movedByStaffId   String
+  /// The first day after the leave (IST midnight, stored UTC): pending tasks move back from then.
+  returnAfter      DateTime
+  returnedAt       DateTime?
+  /// returned, done_by_teammate, already_moved
+  returnOutcome    String?
+
+  @@index([leaveRequestId])
+  @@index([followUpTaskId])
+  @@index([returnedAt, returnAfter])
+}
+
+/// A refund decided "not owed" (FN-Refund "Reject", C-Refunds): it leaves the
+/// refund-due list for that guarantee. A job seeker who pays again starts a new
+/// guarantee (guaranteeStartedAt no longer matches), so a new refund can fall due.
+model RefundRejection {
+  id                 String    @id @default(uuid())
+  /// job_seeker or business
+  kind               String
+  jobSeekerId        String?
+  /// The job seeker's paymentReceivedAt when it was rejected (job seeker refunds).
+  guaranteeStartedAt DateTime?
+  /// The first placement of the chain (business refunds). One rejection per chain.
+  placementId        String?   @unique
+  /// The refund payment that was rejected, when one had been raised.
+  paymentId          String?
+  amountPaise        Int
+  reason             String
+  rejectedByStaffId  String
+  rejectedByRole     String
+  rejectedAt         DateTime  @default(now())
+
+  /// One rejection per job seeker guarantee.
+  @@unique([jobSeekerId, guaranteeStartedAt])
+  @@index([jobSeekerId])
+}
+
+/// C-Privacy data-breach register (guide: a data breach must be reported
+/// within 72 hours). CEO only. Holds no personal details: what happened, what
+/// kind of data, how many people, the steps taken and who was told.
+model DataBreach {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  discoveredAt    DateTime
+  /// discoveredAt + 72 hours: the Data Protection Board must be told by then.
+  reportDueAt     DateTime
+  summary         String
+  dataAffected    String
+  peopleAffected  Int?
+  /// open, closed
+  status          String    @default("open")
+  /// [{ at, text, byStaffId }]
+  steps           Json      @default("[]")
+  /// [{ who, at, note, byStaffId }] — who: data_protection_board, affected_people, cert_in, police, other
+  told            Json      @default("[]")
+  boardToldAt     DateTime?
+  createdByStaffId String
+  closedAt        DateTime?
+  closedByStaffId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, reportDueAt])
+}
+
+/// The no-bypass charge (agreement clause, guide "Stopping bypass"): a business
+/// hired someone Laboura introduced within the no-bypass months without paying,
+/// so it owes the full fee plus the penalty percent, plus GST. Raised by the
+/// CEO with a reason; collected and invoiced like a placement fee. Paise only.
+model BypassCharge {
+  id                 String    @id @default(uuid())
+  code               String    @unique
+  businessId         String
+  jobSeekerId        String
+  /// When the business hired the person (as the CEO found out).
+  hiredOn            DateTime  @db.Date
+  /// The introduction (profile shown or interview) it rests on.
+  introducedAt       DateTime
+  monthlySalaryPaise Int
+  feePercent         Int
+  penaltyPercent     Int
+  gstPercent         Int
+  feePaise           Int
+  penaltyPaise       Int
+  gstPaise           Int
+  totalPaise         Int
+  reason             String
+  invoiceCode        String    @unique
+  paymentId          String?   @unique
+  /// raised, cancelled (paid is read from the payment)
+  status             String    @default("raised")
+  raisedByStaffId    String
+  raisedAt           DateTime  @default(now())
+  cancelledAt        DateTime?
+  cancelReason       String?
+
+  @@index([businessId])
+  @@index([jobSeekerId])
 }

@@ -137,7 +137,7 @@ export class ReferralRegistrationController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async submitUpi(
     @Param('token') token: string,
-    @Body() body: { otpRequestId?: string; otpCode?: string; method?: 'upi'; upiId?: string },
+    @Body() body: { otpRequestId?: string; otpCode?: string; method?: 'upi' | 'bank'; upiId?: string; accountNumber?: string; ifsc?: string },
   ) {
     const link = await this.requireLink(token);
     const verification = await this.prisma.referralIdentityVerification.findFirst({
@@ -151,13 +151,16 @@ export class ReferralRegistrationController {
       throw new BadRequestException('Referral terms and call-recording consent are required');
     }
     if (!body.otpRequestId || !body.otpCode) throw new BadRequestException('OTP to the registered mobile is required');
-    if (body.method && body.method !== 'upi') throw new BadRequestException('Referral registration accepts UPI details only');
+    // Guide, referral partners: UPI ID preferred, bank account as the alternative. Both are
+    // kept encrypted, shown masked, and revealed only to the CEO and Finance (logged).
+    const method = body.method ?? 'upi';
+    if (method !== 'upi' && method !== 'bank') throw new BadRequestException("method is 'upi' or 'bank'");
     return this.payouts.submitPayoutAccount({
       token,
       otpRequestId: body.otpRequestId,
       otpCode: body.otpCode,
-      method: 'upi',
-      upiId: body.upiId,
+      method,
+      ...(method === 'upi' ? { upiId: body.upiId } : { accountNumber: body.accountNumber, ifsc: body.ifsc }),
     });
   }
 
@@ -183,7 +186,7 @@ export class ReferralRegistrationController {
       terms: { state: terms ? 'done' : 'not_started', time: terms?.grantedAt ?? null },
       selfie: { state: referral.photoStoragePath ? 'done' : terms ? 'not_started' : 'stuck', time: referral.photoTakenAt },
       id: { state: identity?.status === 'verified' && identity.nameMatches === true && identity.isAdult === true ? 'done' : identity ? 'stuck' : 'not_started', time: identity?.verifiedAt ?? identity?.createdAt ?? null, reason: identity?.failureReason ?? (identity?.nameMatches !== true ? 'ID name did not match the referral profile' : identity?.isAdult !== true ? 'Adult status could not be confirmed' : null) },
-      upi: { state: account?.status === 'verified' ? 'done' : account ? 'in_progress' : 'not_started', time: account?.createdAt ?? null, reason: account?.nameMatches === false ? 'UPI name did not match the verified identity' : null },
+      upi: { state: account?.status === 'verified' ? 'done' : account ? 'in_progress' : 'not_started', time: account?.createdAt ?? null, reason: account?.nameMatches === false ? 'UPI or bank account name did not match the verified identity' : null },
     };
     const currentStep = steps.terms.state !== 'done'
       ? 'terms'

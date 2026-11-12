@@ -145,7 +145,7 @@ export class ScreensFieldService {
       where: { assignedStaffId: staffId, status: 'pending', dueAt: { lt: tomorrowEnd } },
       orderBy: { dueAt: 'asc' },
       take: 20,
-      select: { id: true, code: true, kind: true, dueAt: true, subjectType: true, subjectId: true },
+      select: { id: true, code: true, kind: true, dueAt: true, subjectType: true, subjectId: true, relatedType: true, relatedId: true },
     });
     const seekerIds = checkIns.filter((c) => c.subjectType === 'job_seeker').map((c) => c.subjectId);
     const seekers = seekerIds.length
@@ -181,6 +181,11 @@ export class ScreensFieldService {
         code: c.code,
         taskKind: c.kind,
         name: c.subjectType === 'job_seeker' ? firstName(names.get(c.subjectId) ?? '') : names.get(c.subjectId) ?? '',
+        // Where the row opens in Laboura Field: the placement, the interview or the business.
+        subjectType: c.subjectType,
+        subjectId: c.subjectId,
+        relatedType: c.relatedType,
+        relatedId: c.relatedId,
       })),
     ].sort((a, b) => a.due.localeCompare(b.due));
 

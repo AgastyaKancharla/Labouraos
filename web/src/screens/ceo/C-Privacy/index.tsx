@@ -11,6 +11,7 @@ import { formatDateIST, formatDateTimeIST } from '../../../lib/format/date';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { DateFilter, FilterPanel, PagedTable, SearchField, SelectFilter, humanize, rangeQuery, useCeoList, useDebounced, type ListPeriod } from '../_kit/kit';
 import { DataRequestsCard, dataRequestsKey, type DataRequestList } from './DataRequests';
+import { BreachesCard, useBreaches } from './Breaches';
 
 /** Consent & privacy — design C-Privacy.dc.html. Proof of every consent and withdrawal (India's data law). */
 interface Privacy {
@@ -52,6 +53,8 @@ export default function PrivacyScreen() {
   const d = p.data;
   const requests = useQuery({ queryKey: dataRequestsKey, queryFn: () => api.get<DataRequestList>('/data-requests') });
   const open = requests.data?.summary;
+  const breaches = useBreaches();
+  const br = breaches.data?.summary;
   const [search, setSearch] = useState('');
   const [subjectType, setSubjectType] = useState('');
   const [purpose, setPurpose] = useState('');
@@ -86,6 +89,13 @@ export default function PrivacyScreen() {
               loading={requests.isPending}
             />
             <StatTile label="Notice version in use" value={d?.summary.noticeVersion ? `v${d.summary.noticeVersion}` : '—'} tone="royal" loading={p.isPending} />
+            <StatTile
+              label="Data breaches"
+              value={br?.total ?? '—'}
+              tone={br?.overdue ? 'red' : 'good'}
+              detail={br ? (br.overdue ? `${br.overdue} past 72 hours` : br.open ? `${br.open} open` : 'none open') : undefined}
+              loading={breaches.isPending}
+            />
           </StatGrid>
           <div className="two-col">
             <Card title="Consent by purpose (job seekers)">
@@ -118,6 +128,7 @@ export default function PrivacyScreen() {
             </Card>
           </div>
           <DataRequestsCard />
+          <BreachesCard />
           <div className="two-col">
             <Card title="Erasures done">
               {d && !d.erasures.length ? (

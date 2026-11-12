@@ -110,7 +110,14 @@ export default function JobSeekersList() {
         back={{ to: to('Main'), label: 'Command Center' }}
         title="Job Seekers"
         subtitle="Sorted by guarantee deadline — the candidates closest to a ₹499 refund come first."
-        actions={<ButtonLink to={to('C-NearRefund')}>Close to a refund →</ButtonLink>}
+        actions={
+          <>
+            <ButtonLink to={to('C-NearRefund')}>Close to a refund →</ButtonLink>
+            <ButtonLink to={to('CA08-Register')} variant="primary">
+              + Register job seeker
+            </ButtonLink>
+          </>
+        }
       />
       <StatGrid>
         <StatTile label="Active in pool" value={s?.activeInPool ?? '—'} tone="cyan" loading={loading} />

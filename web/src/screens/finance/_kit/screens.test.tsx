@@ -329,6 +329,7 @@ describe('Invoices (FN-Invoices)', () => {
       },
       'POST /finance/tds-receivables/t1/certificate-received': { id: 't1' },
       'POST /payments/p97/resend': { paymentId: 'p97' },
+      'POST /finance/invoices/p97/tell-account-agent': { told: { id: 'fa1', code: 'FA-0007', name: 'Kiran Kumar' }, business: { code: 'BZ-2', name: 'Udupi Grand' } },
     });
     signInAs('finance');
     renderScreen(<Invoices />, { portal: 'finance', path: '/finance/invoices', now: NOW });
@@ -342,6 +343,12 @@ describe('Invoices (FN-Invoices)', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Send reminder' }));
     await userEvent.click(screen.getByRole('button', { name: 'Send the payment link again' }));
     await waitFor(() => expect(api.calls('POST /payments/p97/resend')).toHaveLength(1));
+    // Only the overdue fee offers "Tell the account agent".
+    expect(screen.getAllByRole('button', { name: 'Tell the account agent' })).toHaveLength(1);
+    await userEvent.click(screen.getByRole('button', { name: 'Tell the account agent' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Send the bell' }));
+    await waitFor(() => expect(api.calls('POST /finance/invoices/p97/tell-account-agent')).toHaveLength(1));
+    expect(await screen.findByText('Kiran Kumar has been told')).toBeInTheDocument();
   });
 });
 

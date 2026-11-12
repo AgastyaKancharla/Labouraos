@@ -281,6 +281,21 @@ describe('Manager portal endpoints', () => {
     expect(weekly.body.teams.map((t: { teamLeadId: string }) => t.teamLeadId)).toEqual([people.tlA.id]);
   });
 
+  it('sidebar count: missed calls waiting with their own call agents (or nobody), never another tree', async () => {
+    const base = await get('mgrA', '/manager/nav-counts');
+    expect(base.status).toBe(200);
+    const mine = await prisma.callbackTask.create({ data: { callId: `MGP-CB-${ts}-1`, phone: '+919800000011', status: 'pending', assignedToStaffId: people.caA.id } });
+    const theirs = await prisma.callbackTask.create({ data: { callId: `MGP-CB-${ts}-2`, phone: '+919800000012', status: 'pending', assignedToStaffId: people.caB.id } });
+    try {
+      const after = await get('mgrA', '/manager/nav-counts');
+      expect(after.body).toEqual({ callbacksWaiting: base.body.callbacksWaiting + 1 });
+      expect((await get('ceo', '/manager/nav-counts')).status).toBe(403);
+      expect((await get('tlA', '/manager/nav-counts')).status).toBe(403);
+    } finally {
+      await prisma.callbackTask.deleteMany({ where: { id: { in: [mine.id, theirs.id] } } });
+    }
+  });
+
   it('a Manager adds an intern field agent under their own Team Lead, with a start date', async () => {
     const res = await send('mgrA', 'post', '/staff', { name: 'New Intern', role: 'field_agent', teamLeadId: people.tlA.id, intern: true, joinedOn: '2026-11-16' });
     expect(res.status).toBe(201);

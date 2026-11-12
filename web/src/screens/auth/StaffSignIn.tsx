@@ -28,6 +28,7 @@ import { useClock } from '../../lib/useNow';
  */
 type Step =
   | { kind: 'password' }
+  | { kind: 'forgot'; sent: { message: string; testModeNote?: string } | null }
   | { kind: 'totp' }
   | { kind: 'code'; loginRequestId: string; loginRequestProof: string; expiresAt: number }
   | { kind: 'enrol'; token: string; secret: string; otpauthUrl: string };
@@ -73,6 +74,7 @@ export default function StaffSignIn() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => clock().getTime());
+  const [forgotEmail, setForgotEmail] = useState('');
 
   useEffect(() => {
     document.title = `${t('auth.signIn.title')} · ${t('app.name')}`;
@@ -241,6 +243,62 @@ export default function StaffSignIn() {
                 {busy ? t('auth.signingIn') : t('auth.signIn')}
               </Button>
               <p className="muted">{t('auth.signIn.note')}</p>
+              <Button
+                onClick={() => {
+                  setError(null);
+                  setStep({ kind: 'forgot', sent: null });
+                }}
+              >
+                {t('auth.forgot.link')}
+              </Button>
+            </form>
+          )}
+
+          {step.kind === 'forgot' && (
+            <form
+              className="lb-stack"
+              noValidate
+              onSubmit={(e) => {
+                e.preventDefault();
+                if (!forgotEmail.trim()) return;
+                setBusy(true);
+                setError(null);
+                authApi
+                  .forgotPassword(forgotEmail.trim())
+                  .then((sent) => setStep({ kind: 'forgot', sent }))
+                  .catch((err: unknown) => setError(messageOf(err, t('error.network'))))
+                  .finally(() => setBusy(false));
+              }}
+            >
+              <div className="lb-auth-card__brand">
+                <img src={LOGO_SRC} alt="Laboura" width={36} height={36} />
+                <h1 className="h1">{t('auth.forgot.title')}</h1>
+              </div>
+              {step.sent ? (
+                <>
+                  <p className="lb-notice" role="status">
+                    {step.sent.message}
+                  </p>
+                  {step.sent.testModeNote && <p className="muted">{step.sent.testModeNote}</p>}
+                </>
+              ) : (
+                <>
+                  <p className="muted">{t('auth.forgot.body')}</p>
+                  <TextField label={t('auth.forgot.email')} type="email" value={forgotEmail} onChange={setForgotEmail} autoComplete="email" spellCheck={false} required />
+                  {error && (
+                    <p className="vno" role="alert">
+                      {error}
+                    </p>
+                  )}
+                  <Button type="submit" variant="primary" fullWidth loading={busy} disabled={!forgotEmail.trim()}>
+                    {t('auth.forgot.send')}
+                  </Button>
+                </>
+              )}
+              <p className="muted">{t('auth.forgot.agents')}</p>
+              <Button fullWidth onClick={() => setStep({ kind: 'password' })}>
+                {t('auth.forgot.back')}
+              </Button>
             </form>
           )}
 

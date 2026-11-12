@@ -88,4 +88,21 @@ describe('C-Reports and the kept company report', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Back to live numbers' }));
     await waitFor(() => expect(api.calls('GET /ceo/reports').length).toBeGreaterThan(0));
   });
+
+  it('live: shows Profit / loss and Cost per placement from Finance\'s figures', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /weekly-reports': kept,
+      'GET /ceo/reports': reports,
+      'GET /growth/money-under-guarantee': { range: null },
+      'GET /finance/reports': { profit: { profitPaise: -8316500, costPerPlacementPaise: 977300 } },
+    });
+    signInAs('ceo');
+    renderScreen(<CeoReports />, { portal: 'ceo', path: '/ceo/reports', route: '/ceo/reports', now: NOW });
+    expect(await screen.findByText('Loss (see Expenses)')).toBeInTheDocument();
+    expect(await screen.findByText('− ₹83,165')).toBeInTheDocument();
+    expect(screen.getByText('Cost per placement')).toBeInTheDocument();
+    expect(screen.getByText('₹9,773')).toBeInTheDocument();
+    expect(api.calls('GET /finance/reports')).toHaveLength(1);
+  });
 });

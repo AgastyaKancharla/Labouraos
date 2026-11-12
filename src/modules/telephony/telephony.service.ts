@@ -14,11 +14,18 @@ import {
   TelephonyCapacity,
   TelephonyProvider,
 } from './telephony.interface';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { validateWebhookHmac } from '../../common/webhook/webhook-signature';
 import { AttendanceService } from '../attendance/attendance.service';
 import { InboundCallRouter } from './inbound-call-router.service';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
+
+/** Only who a callback is with: never the whole staff row (password hash, TOTP secret, invite token hash). */
+const CALLBACK_STAFF_SELECT = { id: true, code: true, name: true } as const;
+/** The job seeker fields a callback row shows (the phone is masked for everyone but the CEO). */
+const CALLBACK_SEEKER_SELECT = { id: true, code: true, name: true, phone: true, status: true } as const;
 
 @Injectable()
 export class TelephonyService {
@@ -29,6 +36,7 @@ export class TelephonyService {
     private readonly attendance: AttendanceService,
     // Always provided by TelephonyModule; optional only for specs that build the service by hand.
     @Optional() private readonly router?: InboundCallRouter,
+    @Optional() private readonly scope?: ReportingScopeService,
   ) {}
 
   async handleInboundWebhook(
@@ -103,18 +111,31 @@ export class TelephonyService {
     return result;
   }
 
-  async getCallbackQueue(filters?: { status?: string }) {
-    const where: { status?: string } = {};
+  /**
+   * The missed-call queue, scoped by the reporting line: the CEO sees every
+   * callback; a Manager or Team Lead sees the ones with themselves or anyone
+   * under them, plus the unassigned ones they can give out; an agent sees their
+   * own and the unassigned ones. Staff and job seeker are narrow selects.
+   */
+  async getCallbackQueue(filters?: { status?: string }, actor?: JwtPayload) {
+    const where: Prisma.CallbackTaskWhereInput = {};
     if (filters?.status) {
       where.status = filters.status;
+    }
+    if (actor && actor.role !== 'ceo') {
+      const mine = [actor.sub];
+      if ((actor.role === 'manager' || actor.role === 'team_lead') && this.scope) {
+        mine.push(...(await this.scope.peopleUnder(actor.sub)));
+      }
+      where.OR = [{ assignedToStaffId: null }, { assignedToStaffId: { in: mine } }];
     }
 
     return this.prisma.callbackTask.findMany({
       where,
       orderBy: { createdAt: 'desc' },
       include: {
-        jobSeeker: true,
-        assignedToStaff: true,
+        jobSeeker: { select: CALLBACK_SEEKER_SELECT },
+        assignedToStaff: { select: CALLBACK_STAFF_SELECT },
       },
     });
   }
@@ -155,7 +176,7 @@ export class TelephonyService {
         status: 'assigned',
       },
       include: {
-        assignedToStaff: true,
+        assignedToStaff: { select: CALLBACK_STAFF_SELECT },
       },
     });
   }

@@ -45,6 +45,12 @@ export const NOTIFICATION_KINDS = [
   'agent_reminder',
   // The Monday weekly report is ready (Manager: their teams, counts only; CEO: the company).
   'weekly_report',
+  // Finance's "Tell the account agent" on an unpaid placement fee (no amount: agents see no rupees).
+  'fee_unpaid_reminder',
+  // A newly registered job seeker fits an open vacancy of the field agent's business (guide: alerted when a new match registers).
+  'new_match_registered',
+  // An agent behind pace on a monthly target, for their Team Lead and Manager (guide, Monthly targets).
+  'behind_pace',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -53,7 +59,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder', 'payslip_ready', 'weekly_report', 'fee_unpaid_reminder', 'new_match_registered'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -149,6 +155,9 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   staff_request: { team_lead: 'requests/:ref', manager: 'requests/:ref', ceo: 'team/leave' },
   agent_reminder: { call_agent: 'people/:id', team_lead: 'work' },
   weekly_report: { manager: 'reports?week=:week', ceo: 'reports?week=:week' },
+  fee_unpaid_reminder: { call_agent: '', field_agent: '' },
+  new_match_registered: { field_agent: '' },
+  behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id' },
 };
 
 /** The in-app path for one recipient, or null when that role has no screen for it. */

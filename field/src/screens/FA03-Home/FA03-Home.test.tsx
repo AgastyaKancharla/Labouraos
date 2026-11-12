@@ -106,7 +106,10 @@ describe('FA03 Home', () => {
       todos: [
         { kind: 'revisit', due: '2026-11-09', when: 'today', visitId: 'v-1', businessId: null, name: 'Lakshmi Tiffins', outcome: 'interested_later' },
         { kind: 'joining', due: '2026-11-09', when: 'today', placementId: 'p-1', code: 'PL-1', candidateFirstName: 'Arjun', businessId: 'b-3', name: 'Metro Mart' },
-        { kind: 'check_in', due: '2026-11-10', when: 'tomorrow', taskId: 't-1', code: 'FU-1', taskKind: 'placement_check_in_day_7', name: 'Kavitha' },
+        { kind: 'check_in', due: '2026-11-10', when: 'tomorrow', taskId: 't-1', code: 'FU-1', taskKind: 'placement_check_in_day_7', name: 'Kavitha', subjectType: 'job_seeker', subjectId: 'js-1', relatedType: 'placement', relatedId: 'p-9' },
+        { kind: 'check_in', due: '2026-11-10', when: 'tomorrow', taskId: 't-2', code: 'FU-2', taskKind: 'placement_check_in_day_30', name: 'Ravi', subjectType: 'job_seeker', subjectId: 'js-2', relatedType: 'placement', relatedId: 'p-10' },
+        { kind: 'check_in', due: '2026-11-10', when: 'tomorrow', taskId: 't-3', code: 'FU-3', taskKind: 'not_selected_day_7', name: 'Meena', subjectType: 'job_seeker', subjectId: 'js-3', relatedType: 'interview', relatedId: 'i-7' },
+        { kind: 'check_in', due: '2026-11-10', when: 'tomorrow', taskId: 't-4', code: 'FU-4', taskKind: 'repeat_business_day_30', name: 'Metro Mart', subjectType: 'business', subjectId: 'b-3', relatedType: 'placement', relatedId: null },
       ],
       checkIn: null,
     };
@@ -125,6 +128,17 @@ describe('FA03 Home', () => {
     expect(screen.getByTestId('todo-check-t-1')).toHaveTextContent(/Day-7 check-in · Kavitha.*Tomorrow/);
     await fireEvent.press(screen.getByTestId('todo-revisit-v-1'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/start', params: { revisitOf: 'v-1', name: 'Lakshmi Tiffins' } });
+    // Confirm joining opens FA11; day-7 / day-30 open the placement, a follow-up its interview, a business follow-up the business.
+    await fireEvent.press(screen.getByTestId('todo-joining-p-1'));
+    expect(router.push).toHaveBeenLastCalledWith('/placement/p-1/joining');
+    await fireEvent.press(screen.getByTestId('todo-check-t-1'));
+    expect(router.push).toHaveBeenLastCalledWith('/job-seekers/placement/p-9');
+    await fireEvent.press(screen.getByTestId('todo-check-t-2'));
+    expect(router.push).toHaveBeenLastCalledWith('/job-seekers/placement/p-10');
+    await fireEvent.press(screen.getByTestId('todo-check-t-3'));
+    expect(router.push).toHaveBeenLastCalledWith('/job-seekers/interview/i-7/day');
+    await fireEvent.press(screen.getByTestId('todo-check-t-4'));
+    expect(router.push).toHaveBeenLastCalledWith('/business/b-3');
   });
 
   it('shows "Saved on phone, sends when signal returns" with the photo count', async () => {

@@ -26,7 +26,7 @@ import '../_kit/fin.css';
 interface Tax {
   month: string;
   label: string;
-  gst: { invoices: { count: number; feePaise: number; gstPaise: number }; creditNotes: { count: number; feePaise: number; gstPaise: number }; receipts: { count: number }; payablePaise: number; ratePercent: number; companyGstin: string | null };
+  gst: { invoices: { count: number; feePaise: number; gstPaise: number }; placementFees?: { count: number; feePaise: number; gstPaise: number }; bypassCharges?: { count: number; feePaise: number; gstPaise: number }; creditNotes: { count: number; feePaise: number; gstPaise: number }; receipts: { count: number }; payablePaise: number; ratePercent: number; companyGstin: string | null };
   dates: { key: string; label: string; due: string; what: string; daysLeft: number }[];
   tdsReceivable: { id: string; business: string | null; placementCode: string | null; invoiceCode: string | null; amountPaise: number; note: string; status: string; recordedAt: string }[];
   tdsReceivableTotalPaise: number;
@@ -117,10 +117,21 @@ export default function TaxPage() {
               <tbody>
                 <tr>
                   <td>Placement invoices</td>
-                  <td>{t.gst.invoices.count}</td>
-                  <td>{formatINR(t.gst.invoices.feePaise)}</td>
-                  <td>{formatINR(t.gst.invoices.gstPaise)}</td>
+                  <td>{(t.gst.placementFees ?? t.gst.invoices).count}</td>
+                  <td>{formatINR((t.gst.placementFees ?? t.gst.invoices).feePaise)}</td>
+                  <td>{formatINR((t.gst.placementFees ?? t.gst.invoices).gstPaise)}</td>
                 </tr>
+                {t.gst.bypassCharges && t.gst.bypassCharges.count > 0 && (
+                  <tr>
+                    <td>
+                      No-bypass charges
+                      <span className="fin-sub">Fee + penalty, same invoice series</span>
+                    </td>
+                    <td>{t.gst.bypassCharges.count}</td>
+                    <td>{formatINR(t.gst.bypassCharges.feePaise)}</td>
+                    <td>{formatINR(t.gst.bypassCharges.gstPaise)}</td>
+                  </tr>
+                )}
                 <tr>
                   <td>
                     Business refunds (fee only)

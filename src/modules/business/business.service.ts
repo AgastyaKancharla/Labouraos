@@ -41,6 +41,9 @@ import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-poli
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 
+/** A pin farther than this from every area gets no area filled in (the agent picks one). */
+export const NEAREST_AREA_MAX_METERS = 25_000;
+
 @Injectable()
 export class BusinessService {
   constructor(
@@ -113,6 +116,23 @@ export class BusinessService {
     });
 
     return updated;
+  }
+
+  /**
+   * The nearest active area (Areas table, managed by the CEO and Managers)
+   * to a map pin, within NEAREST_AREA_MAX_METERS; null when none is close.
+   */
+  async nearestAreaName(latitude: number, longitude: number): Promise<string | null> {
+    const areas = await this.prisma.area.findMany({
+      where: { active: true, mergedIntoId: null, latitude: { not: null }, longitude: { not: null } },
+      select: { name: true, latitude: true, longitude: true },
+    });
+    let best: { name: string; meters: number } | null = null;
+    for (const area of areas) {
+      const meters = calculateHaversineDistanceMeters(latitude, longitude, area.latitude!, area.longitude!);
+      if (meters <= NEAREST_AREA_MAX_METERS && (!best || meters < best.meters)) best = { name: area.name, meters };
+    }
+    return best?.name ?? null;
   }
 
   async create(dto: CreateBusinessDto, actorId: string) {
@@ -242,7 +262,11 @@ export class BusinessService {
       }
     }
 
-    const locality = dto.locality?.trim() || null;
+    // Guide, forms: every registration records how they heard about Laboura.
+    if (!dto.heardFrom?.trim()) {
+      throw new BadRequestException(`heardFrom is required: how they heard about Laboura (${HEARD_FROM_VALUES.join(', ')})`);
+    }
+    let locality = dto.locality?.trim() || null;
     const hideDocuments = isHousehold || dto.noDocuments === true;
     const gstNumber = hideDocuments ? null : (dto.gstNumber?.trim() || null);
     const registrationNumbers = hideDocuments ? [] : [
@@ -355,6 +379,10 @@ export class BusinessService {
     const capturedChannel = staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
     const latitude = typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null);
     const longitude = typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null);
+    // Guide, field agents: a business's area is filled in from its GPS when none was picked.
+    if (!locality && latitude !== null && longitude !== null) {
+      locality = await this.nearestAreaName(latitude, longitude);
+    }
     const accountAgent = staff.role === 'field_agent'
       ? { accountAgentId: staff.id, accountAgentAssignedAt: this.clock.now() }
       : {};
@@ -585,7 +613,7 @@ export class BusinessService {
     await this.photoStorage.put(photoPath, photo, contentType);
     const updated = await this.prisma.business.update({
       where: { id: business.id },
-      data: { storefrontPhotoPath: photoPath, storefrontPhotoHash: photoHash, storefrontPhotoLive: false },
+      data: { storefrontPhotoPath: photoPath, storefrontPhotoHash: photoHash, storefrontPhotoLive: true },
     });
 
     const policy = await this.pricingService.current();
@@ -611,7 +639,7 @@ export class BusinessService {
       entityType: 'business',
       entityCode: business.code,
       before: { storefrontPhotoPath: business.storefrontPhotoPath, storefrontPhotoHash: business.storefrontPhotoHash },
-      after: { storefrontPhotoPath: photoPath, storefrontPhotoHash: photoHash, storefrontPhotoLive: false },
+      after: { storefrontPhotoPath: photoPath, storefrontPhotoHash: photoHash, storefrontPhotoLive: true },
       changedFields: ['storefrontPhotoPath', 'storefrontPhotoHash', 'storefrontPhotoLive'],
       city: business.city,
     });

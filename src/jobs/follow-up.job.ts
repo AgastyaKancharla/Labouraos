@@ -3,6 +3,7 @@ import { Queue, Worker } from 'bullmq';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { FollowUpService } from '../modules/follow-up/follow-up.service';
+import { FollowUpHandoverService } from '../modules/follow-up/follow-up-handover.service';
 import { dailyInIndia } from './job-schedules';
 import { runsJobs } from '../common/process/process-role';
 
@@ -17,6 +18,8 @@ export class FollowUpJob implements OnModuleInit, OnModuleDestroy {
 
   constructor(
     private readonly followUpService: FollowUpService,
+    /** Moves handed-over follow-ups back after the leave (optional only for unit tests). */
+    @Optional() private readonly handovers?: FollowUpHandoverService,
     /** Records a JobRun row for every scheduled run (optional only for unit tests). */
     @Optional() private readonly prisma?: PrismaService,
   ) {}
@@ -82,8 +85,11 @@ export class FollowUpJob implements OnModuleInit, OnModuleDestroy {
     return job.id;
   }
 
-  async process(now = new Date()): Promise<{ created: number; missed: number }> {
-    return this.followUpService.createScheduledTasks(now);
+  async process(now = new Date()): Promise<{ created: number; missed: number; returned?: number }> {
+    // Back first, so a task due after the leave is missed against her, not the teammate.
+    const back = this.handovers ? await this.handovers.returnAfterLeave(now) : null;
+    const result = await this.followUpService.createScheduledTasks(now);
+    return back ? { ...result, returned: back.returned } : result;
   }
 
   async onModuleInit(): Promise<void> {

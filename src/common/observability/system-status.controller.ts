@@ -5,6 +5,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { Public } from '../rbac/public.decorator';
+import { emailMode, emailProductionWarning } from '../email/email.provider';
 
 export interface ComponentStatus {
   name: string;
@@ -163,6 +164,14 @@ export class SystemStatusController {
     } catch {
       // Diagnostic check is non-fatal
     }
+
+    // 4. Email sender (F1): pretend email in production is a warning.
+    const emailWarning = emailProductionWarning();
+    components.push({
+      name: 'Email (password links)',
+      status: emailWarning ? 'degraded' : 'healthy',
+      message: emailWarning ?? (emailMode() === 'mock' ? 'Pretend email (not production): links are written to the server log' : 'Real email sender'),
+    });
 
     // Determine overall status
     const hasUnhealthy = components.some((c) => c.status === 'unhealthy');

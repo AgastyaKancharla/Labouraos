@@ -56,6 +56,11 @@ export const ceoScreens: readonly ScreenDef[] = [
   { id: 'C-Audit', path: 'audit', title: 'screen.C-Audit' },
   { id: 'C-Notifications', path: 'notifications', title: 'screen.C-Notifications' },
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
+  // JobSeekers "+ Register job seeker": the one job seeker form (built once in the call agent console).
+  { id: 'CA08-Register', path: 'register/job-seeker', title: 'screen.CA08-Register', variants: ["CA08v-Verified", "CA08w-SalaryWarning", "CA08x-Duplicate"] },
+  { id: 'CA08c-InProgress', path: 'register/job-seeker/:id', title: 'screen.CA08c-InProgress', variants: ["CA08b-Registered", "CA08f-Active"] },
+  { id: 'CA08d-SignedConsent', path: 'register/job-seeker/:id/consent', title: 'screen.CA08d-SignedConsent' },
+  { id: 'CA08e-OtherPayer', path: 'register/job-seeker/:id/other-payer', title: 'screen.CA08e-OtherPayer' },
 ];
 
 export const managerScreens: readonly ScreenDef[] = [
@@ -72,6 +77,8 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'MG-Agent', path: 'agents/:id', title: 'screen.MG-Agent' },
   { id: 'MG-Attendance', path: 'attendance', title: 'screen.MG-Attendance' },
   { id: 'MG-Attendance-Live', path: 'attendance/live', title: 'screen.MG-Attendance-Live' },
+  // MG-Attendance "One person's report": the CEO's one-person report (C-Att-Person), scoped to the Manager's teams by the API.
+  { id: 'C-Att-Person', path: 'attendance/person/:staffId', title: 'screen.C-Att-Person' },
   { id: 'MG-Targets', path: 'targets', title: 'screen.MG-Targets' },
   { id: 'MG-Pipeline', path: 'pipeline', title: 'screen.MG-Pipeline' },
   { id: 'MG-CallCenter', path: 'call-center', title: 'screen.MG-CallCenter' },

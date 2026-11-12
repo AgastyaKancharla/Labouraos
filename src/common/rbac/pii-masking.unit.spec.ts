@@ -1,4 +1,4 @@
-import { isPhoneLikeKey, maskAgentPhones, maskPii } from './pii-masking.interceptor';
+import { isPhoneLikeKey, isSecretKey, maskAgentPhones, maskPii, stripSecrets } from './pii-masking.interceptor';
 
 /**
  * H1 (security check, 12 Nov): every phone-like field is masked for everyone but
@@ -140,5 +140,29 @@ describe('Phone masking matches every phone-like key (H1)', () => {
   it('keeps the audit redaction marker', () => {
     expect(maskPii({ whatsappPhone: '[changed]' })).toEqual({ whatsappPhone: '[changed]' });
     expect(maskAgentPhones({ contactPersonPhone: '[changed]' })).toEqual({ contactPersonPhone: '[changed]' });
+  });
+});
+
+describe('Account secrets never leave the server (P1, 12 Nov)', () => {
+  it('removes password hashes, TOTP secrets and steps and every token hash, at any depth', () => {
+    const staff = { id: 's1', code: 'CA-1', name: 'A', passwordHash: 'x', totpSecret: 'y', totpLastStep: 3, inviteTokenHash: 'z', inviteUsedTokenHash: 'w', totpEnabled: true };
+    const body = { rows: [{ id: 'cb1', assignedToStaff: { ...staff } }], me: { ...staff }, reset: { tokenHash: 't', resetTokenHash: 'r' }, at: new Date(0) };
+    stripSecrets(body);
+    const packed = JSON.stringify(body);
+    for (const key of ['passwordHash', 'totpSecret', 'totpLastStep', 'inviteTokenHash', 'inviteUsedTokenHash', 'tokenHash', 'resetTokenHash']) {
+      expect(packed).not.toContain(`"${key}"`);
+    }
+    expect(body.rows[0].assignedToStaff).toEqual({ id: 's1', code: 'CA-1', name: 'A', totpEnabled: true });
+    expect(body.at).toEqual(new Date(0));
+    expect(isSecretKey('PasswordHash')).toBe(true);
+    expect(isSecretKey('phoneHash')).toBe(false);
+    expect(isSecretKey('totpEnabled')).toBe(false);
+  });
+
+  it('leaves a cycle alone without looping', () => {
+    const a: Record<string, unknown> = { passwordHash: 'x' };
+    a.self = a;
+    stripSecrets(a);
+    expect(a.passwordHash).toBeUndefined();
   });
 });

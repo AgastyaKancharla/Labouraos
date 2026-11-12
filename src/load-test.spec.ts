@@ -306,7 +306,7 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
           phone: bzPhone,
           otpRequestId: bzOtpRequestId,
           contactPerson: `Manager ${i}`,
-          contactPersonRole: 'owner',
+          contactPersonRole: 'owner', heardFrom: 'field_visit',
           locality: area,
           city: 'Bengaluru',
           address: `${i} Industrial Layout, ${area}`,

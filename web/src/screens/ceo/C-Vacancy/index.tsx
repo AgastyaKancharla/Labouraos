@@ -15,6 +15,8 @@ import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, humanize } from '../_kit/kit';
 import { VACANCY_STATUS } from '../_kit/labels';
 
+import { BestMatchesCard } from './BestMatches';
+
 /** CEO vacancy page — design C-Vacancy.dc.html. */
 interface Detail {
   id: string;
@@ -166,6 +168,7 @@ export default function VacancyDetail() {
           </div>
         </Card>
       </div>
+      <BestMatchesCard vacancyId={d.id} shownIds={d.candidates.map((c) => c.id)} />
       {(d.placements.length > 0 || d.history.length > 0) && (
         <div className="two-col">
           <Card title="Placements">

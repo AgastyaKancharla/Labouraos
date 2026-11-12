@@ -14,6 +14,7 @@ import { AppHeader } from '../_shared/AppHeader';
 import { isLocationError, placementsProgress, useAttendanceLogin, useAttendanceToday, useFieldHome, useTargetDashboard } from './useHome';
 import type { HomeAlert, HomeTodo } from '@/api/endpoints';
 import { formatDateKey } from '../_visits/format';
+import { checkInTarget } from './todoTarget';
 
 /**
  * FA03 — Home. Login and status, search, today's numbers, the four quick
@@ -237,7 +238,7 @@ function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
       <ListRow
         title={t('fa03.todoJoining', { candidate: todo.candidateFirstName, name: todo.name })}
         trailing={chip}
-        onPress={() => router.push(`${routes.business}/${todo.businessId}`)}
+        onPress={() => router.push(sellingRoutes.joining(todo.placementId))}
         last={last}
         testID={`todo-joining-${todo.placementId}`}
       />
@@ -249,8 +250,18 @@ function TodoRow({ todo, last }: { todo: HomeTodo; last: boolean }) {
       : todo.taskKind === 'placement_check_in_day_30'
         ? t('fa03.todoDay30', { name: todo.name })
         : t('fa03.todoFollowUp', { name: todo.name });
-  return <ListRow title={title} trailing={chip} last={last} testID={`todo-check-${todo.taskId}`} />;
+  const target = checkInTarget(todo);
+  return (
+    <ListRow
+      title={title}
+      trailing={chip}
+      onPress={target ? () => router.push(target) : undefined}
+      last={last}
+      testID={`todo-check-${todo.taskId}`}
+    />
+  );
 }
+
 
 const STATUS_KEYS = {
   available: 'status.available',

@@ -247,9 +247,14 @@ export class BusinessController {
     @Param('id') businessId: string,
     @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
     @Req() req: Request & { user: JwtPayload },
+    @Body('source') source?: string,
   ) {
     if (!photo) {
       throw new BadRequestException('A storefront photo is required');
+    }
+    // Guide: the storefront photo is taken live (camera only), as on the field-visit path.
+    if (source !== 'live_camera') {
+      throw new BadRequestException("Only a photo taken with the app's own camera is accepted");
     }
     return this.businessService.uploadStorefrontPhoto(
       businessId,

@@ -168,6 +168,13 @@ export class ScreensManagerController {
     return this.ops.remindStuck(this.actor(req), kind, new Date());
   }
 
+  /** Sidebar badge count: missed calls waiting in the Manager's tree. */
+  @Get('nav-counts')
+  @RequireRoles('manager')
+  navCounts(@Req() req: AuthedRequest) {
+    return this.ops.navCounts(this.actor(req));
+  }
+
   @Get('call-center')
   @RequireRoles('manager')
   callCenter(@Req() req: AuthedRequest, @Query() q: Q) {

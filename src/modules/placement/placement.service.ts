@@ -1,4 +1,5 @@
 import { invoiceGstSplit } from './invoice-gst-split';
+import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
   BadRequestException,
   ForbiddenException,
@@ -1657,6 +1658,11 @@ export class PlacementService {
       }
     }
 
+    // R4: say so first when this placement's refund was rejected (checked again under the lock below).
+    if (!refundWithCeo) {
+      assertRejectionOverride(await findRefundRejection(this.prisma, { placementId: rootId }), actor, { overrideRejection: dto?.overrideRejection, reason: note });
+    }
+
     const claim = await this.prisma.replacementClaim.findFirst({
       where: {
         placement: { OR: [{ id: rootId }, { rootPlacementId: rootId }] },
@@ -1730,7 +1736,7 @@ export class PlacementService {
     // H2: a double tap or a retry creates one refund. The lock on the root placement
     // makes a second request wait, then find the first refund and stop; the partial
     // unique index on placementId refuses a second live refund in any case.
-    const refundLock = `refund:placement:${rootId}`;
+    const refundLock = refundLockKey.placement(rootId);
     const refundWhat = `A refund for placement ${rootPlacement.code}`;
     const duplicateRefund = async (error: unknown): Promise<never> => {
       if (isDuplicatePayout(error)) {
@@ -1745,6 +1751,7 @@ export class PlacementService {
         await lockSubject(tx, refundLock);
         const again = await tx.payment.findFirst({ where: existingRefundWhere });
         if (again) throw alreadyExists(refundWhat, again);
+        assertRejectionOverride(await findRefundRejection(tx, { placementId: rootId }), actor, { overrideRejection: dto?.overrideRejection, reason: note });
         const p = await tx.payment.create({
           data: {
             code: sentCode,
@@ -1815,6 +1822,8 @@ export class PlacementService {
         await lockSubject(tx, refundLock);
         const again = await tx.payment.findFirst({ where: existingRefundWhere });
         if (again) throw alreadyExists(refundWhat, again);
+        // R4: a refund rejected for this placement is raised again only by the CEO, overriding with a reason.
+        assertRejectionOverride(await findRefundRejection(tx, { placementId: rootId }), actor, { overrideRejection: dto?.overrideRejection, reason: note });
       }
       if (refundWithCeo) {
         const claimed = await tx.payment.updateMany({

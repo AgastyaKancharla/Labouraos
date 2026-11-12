@@ -136,15 +136,25 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
                 <MobileField label={t('fa10b.payerMobile')} required value={payer} onChange={setPayer} testID="payer-mobile" />
                 <SelectField label={t('fa10b.relation')} value={relation} choices={RELATIONS.map((r) => ({ value: r, label: t(`fa10b.relation.${r}` as MessageKey) }))} onChange={setRelation} />
                 <Button label={t('fa10b.sendPaymentLink')} disabled={!/^[6-9]\d{9}$/.test(payer)} loading={other.isPending} onPress={() => other.mutate()} testID="send-payment-link" />
-                <Note>{t('fa10b.paymentOnlyNote')}</Note>
+                <Note>{t('fa10b.paymentOnlyNote', { minutes: s.paymentOnlyLinkMinutes ?? 15 })}</Note>
               </View>
             </Card>
           ) : null}
           {s.paymentOnlyLink?.live ? <Banner tone="info" message={t('fa10b.paymentLinkLive')} testID="payment-link-live" /> : null}
-          <Button label={t('fa10b.preview')} variant="secondary" onPress={() => setPreview(!preview)} testID="preview" />
+          <Button
+            label={s.gender === 'female' ? t('fa10b.preview.she') : s.gender === 'male' ? t('fa10b.preview.he') : t('fa10b.preview')}
+            variant="secondary"
+            onPress={() => setPreview(!preview)}
+            testID="preview"
+          />
           {preview ? (
             <Card testID="preview-card">
               <Text>{t('fa10b.previewBody')}</Text>
+              <Text>{t('fa10b.preview.consent')}</Text>
+              <Text>{t('fa10b.preview.selfie')}</Text>
+              <Text>{t('fa10b.preview.id')}</Text>
+              <Text>{t('fa10b.preview.payment')}</Text>
+              <Text variant="muted">{t('fa10b.preview.note')}</Text>
             </Card>
           ) : null}
         </>

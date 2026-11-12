@@ -5,6 +5,7 @@ import * as bcrypt from 'bcrypt';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { PricingService } from '../pricing/pricing.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { MessagingService } from '../message/messaging.service';
@@ -258,10 +259,13 @@ describe('Phase 20 gate end-to-end proof', () => {
       .send({ requestId, acceptTerms: true })
       .expect(201);
     expect(terms.body.payment.amountPaise).toBe(49900);
-    await request(server())
+    const sentLink = await request(server())
       .post(`/registration/${token}/payment-only-link`)
       .send({ requestId, phone: brotherPhone })
       .expect(201);
+    // How long it works is the Settings value (C-Pricing, 15 minutes by default).
+    const policyMinutes = (await app.get(PricingService).current()).paymentOnlyLinkMinutes;
+    expect(sentLink.body.validMinutes).toBe(policyMinutes);
     const paymentSms = [...sent].reverse().find((row) => row.template === 'payment_only_link');
     const paymentLink = paymentSms?.variables?.link;
     if (!paymentLink) throw new Error('Payment-only link was not sent');

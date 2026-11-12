@@ -27,6 +27,8 @@ export interface TeamRow {
   name: string;
   email: string | null;
   role: string;
+  /** CEO-level accounts: ceo, founder or co_founder. */
+  title?: string | null;
   team: string | null;
   reportsTo: { id: string; name: string; role: string } | null;
   state: 'active' | 'invite_pending' | 'locked' | 'deactivated';
@@ -66,6 +68,9 @@ const ROLE_OPTIONS = [
 ];
 
 /** Who a role reports to (guide: agents → Team Lead, Team Lead → Manager, Manager and Finance → CEO). */
+/** Guide, People and roles: the one top-level role's titles. */
+const TITLE_LABEL: Record<string, string> = { ceo: 'CEO', founder: 'Founder', co_founder: 'Co-founder' };
+
 export function bossRoleFor(role: string): string | null {
   if (role === 'call_agent' || role === 'field_agent') return 'team_lead';
   if (role === 'team_lead') return 'manager';
@@ -112,7 +117,7 @@ export default function Team() {
       csv: (r) => r.name,
     },
     { key: 'code', header: 'Staff code', cell: (r) => <span className="code">{r.code}</span>, csv: (r) => r.code, hideOnPhone: true },
-    { key: 'role', header: 'Role', cell: (r) => (r.role === 'ceo' ? 'CEO-level' : roleLabel(r.role)), filter: 'select', filterValue: (r) => roleLabel(r.role), sortValue: (r) => r.role, csv: (r) => roleLabel(r.role) },
+    { key: 'role', header: 'Role', cell: (r) => (r.role === 'ceo' ? (r.title ? TITLE_LABEL[r.title] ?? 'CEO-level' : 'CEO-level') : roleLabel(r.role)), filter: 'select', filterValue: (r) => roleLabel(r.role), sortValue: (r) => r.role, csv: (r) => roleLabel(r.role) },
     { key: 'team', header: 'Team', cell: (r) => r.team ?? (r.role === 'ceo' ? 'All' : '—'), filter: 'select', filterValue: (r) => r.team ?? '', csv: (r) => r.team, hideOnPhone: true },
     {
       key: 'reportsTo',
@@ -144,6 +149,17 @@ export default function Team() {
               confirmLabel="Move"
               run={({ choice, reason }) => api.post(`/staff/${r.id}/reporting-line`, { reportsToId: choice, reason: reason || undefined, moveOpenWork: true })}
               success={`${r.name} now reports to the new person`}
+            />
+          )}
+          {r.role === 'ceo' && r.state !== 'deactivated' && (
+            <ActionButton
+              label="Title"
+              title={`Title for ${r.name}`}
+              description="CEO, founder and co-founder are one top-level role: same access, a different title."
+              choice={{ label: 'Title', options: Object.entries(TITLE_LABEL).map(([value, label]) => ({ value, label })), initial: r.title ?? 'ceo' }}
+              confirmLabel="Save title"
+              run={({ choice }) => api.post(`/ceo/team/${r.id}/title`, { title: choice })}
+              success="Title saved"
             />
           )}
           {r.state === 'invite_pending' && <ResendInvite row={r} />}

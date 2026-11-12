@@ -64,6 +64,7 @@ function statusOf(r: Row): { tone: 'good' | 'warn' | 'crit' | 'muted' | 'info'; 
 }
 
 function forText(r: Row): string {
+  if (r.forWhat.type === 'bypass_charge') return `No-bypass charge · ${r.forWhat.placementCode ?? ''}`;
   return r.kind === 'receipt' ? 'Registration fee (no GST)' : `Placement fee · ${r.forWhat.placementCode ?? ''}`;
 }
 
@@ -93,6 +94,17 @@ function Actions({ r }: { r: Row }) {
           description={`${r.to?.name ?? 'The business'} gets the payment link for ${formatINR(r.totalPaise)} again by SMS and WhatsApp.`}
           run={() => api.post(`/payments/${r.paymentId}/resend`)}
           success="Reminder sent"
+        />
+      )}
+      {r.status === 'overdue' && r.kind === 'invoice' && r.paymentId && (
+        <FormAction
+          label="Tell the account agent"
+          size="compact"
+          title="Tell the account agent"
+          confirmLabel="Send the bell"
+          description={`The field agent who looks after ${r.to?.name ?? 'this business'} gets a bell to call the owner about the unpaid fee (no amount is shown to agents).`}
+          run={() => api.post<{ told: { name: string } }>(`/finance/invoices/${r.paymentId}/tell-account-agent`)}
+          success={(res) => `${(res as { told?: { name?: string } }).told?.name ?? 'The account agent'} has been told`}
         />
       )}
     </span>

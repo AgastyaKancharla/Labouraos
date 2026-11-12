@@ -287,6 +287,29 @@ describe('Attendance and leave', () => {
     await userEvent.type(within(d).getByLabelText(/Reason/), 'Left early, approved');
     await userEvent.click(within(d).getByRole('button', { name: 'Change' }));
     await waitFor(() => expect(api.calls('POST /attendance/days/day1/day-type')[0].body).toEqual({ dayType: 'half', reason: 'Left early, approved' }));
+    expect(screen.getByRole('link', { name: "One person's report · Rahul M" })).toHaveAttribute('href', '/manager/attendance/person/ca1');
+  });
+
+  it("one person's report for a Manager: their own people, breaks per day, back to Attendance", async () => {
+    const api = mockApi({
+      ...common,
+      'GET /attendance/report': {
+        staff: { id: 'ca1', code: 'CA-1', name: 'Rahul M', role: 'call_agent' },
+        from: '2026-11-01',
+        to: '2026-11-09',
+        lateLogins: { count: 0, days: [] },
+        days: [{ id: 'd1', date: '2026-11-09', dayType: 'full', loginAt: '2026-11-09T04:00:00Z', logoutAt: '2026-11-09T13:00:00Z', lateMinutes: 0, productionSeconds: 28800, breakOverSeconds: 0, breakCount: 3, extraBreaks: 1, idleSeconds: 0, shortfallSeconds: 0, makeUpSeconds: 0, hoursLostSeconds: 0, leaveKind: null, change: null }],
+        totals: { productionSeconds: 28800, hoursLostSeconds: 0, lateLogins: 0, absentDays: 0, shortfallSeconds: 0, makeUpSeconds: 0 },
+      },
+      'GET /attendance/leave/balance': { casual: { left: 1 }, emergency: { left: 1 } },
+      'GET /manager/staff': { rows: [{ id: 'ca1', name: 'Rahul M', role: 'call_agent', state: 'active' }] },
+    });
+    const { default: Person } = await import('../../ceo/C-Att-Person');
+    render(<Person />, '/manager/attendance/person/ca1', '/manager/attendance/person/:staffId');
+    expect(await screen.findByText('3 · 1 extra')).toBeInTheDocument();
+    expect(api.calls('GET /manager/staff')).toHaveLength(1);
+    expect(api.calls('GET /ceo/team')).toHaveLength(0);
+    expect(screen.getAllByRole('link', { name: /Attendance/ }).some((a) => a.getAttribute('href') === '/manager/attendance')).toBe(true);
   });
 
   it('shows who is off, heavy planned leave and balances', async () => {

@@ -52,6 +52,12 @@ export default function ReportsScreen() {
   const kept = useKeptReport<KeptCompany>(week);
   const liveQuery = useQuery({ queryKey: ['ceo', 'reports', period.from, period.to], queryFn: () => api.get<Reports>('/ceo/reports', { query: periodToUtcRange(period) }), enabled: !week });
   const liveGuarantee = useQuery({ queryKey: ['payments', 'money-under-guarantee', period.from, period.to], queryFn: () => api.get<Guarantee>('/growth/money-under-guarantee', { query: { from: period.from, to: period.to } }), enabled: !week });
+  // Profit / loss and cost per placement come from Finance's own figures (GET /finance/reports, CEO and Finance).
+  const pnl = useQuery({
+    queryKey: ['finance', 'reports', period.from, period.to],
+    queryFn: () => api.get<{ profit: { profitPaise: number; costPerPlacementPaise: number | null } }>('/finance/reports', { query: periodToUtcRange(period) }),
+    enabled: !week,
+  });
   const query = week ? kept : liveQuery;
   const d: Reports | undefined = week ? kept.data?.content.reports : liveQuery.data;
   const guarantee = { data: week ? (kept.data?.content.guarantee ?? undefined) : liveGuarantee.data, isPending: week ? kept.isPending : liveGuarantee.isPending };
@@ -172,6 +178,14 @@ export default function ReportsScreen() {
             <StatTile label="Revenue per agent" value={k?.revenuePerAgentPaise !== null && k?.revenuePerAgentPaise !== undefined ? formatINR(k.revenuePerAgentPaise) : '—'} tone="navy" loading={loading} />
             <StatTile label="Fill rate" value={k ? `${k.fillRatePercent}%` : '—'} tone="good" loading={loading} to={to('C-Vacancies')} />
             <StatTile label="Time to fill" value={k?.averageDaysToFill !== null && k?.averageDaysToFill !== undefined ? `${k.averageDaysToFill} days` : '—'} tone="gold" loading={loading} />
+ <StatTile
+              label={pnl.data && pnl.data.profit.profitPaise < 0 ? 'Loss (see Expenses)' : 'Profit / loss (see Expenses)'}
+              value={pnl.data ? formatINR(pnl.data.profit.profitPaise) : '—'}
+              tone={pnl.data && pnl.data.profit.profitPaise < 0 ? 'red' : 'good'}
+              loading={!week && pnl.isPending}
+              to={to('C-Expenses')}
+            />
+            <StatTile label="Cost per placement" value={pnl.data?.profit.costPerPlacementPaise !== null && pnl.data?.profit.costPerPlacementPaise !== undefined ? formatINR(pnl.data.profit.costPerPlacementPaise) : '—'} tone="orange" loading={!week && pnl.isPending} to={to('C-Expenses')} />
             <StatTile label="Refunds as % of revenue" value={k ? `${k.refundsPercentOfRevenue}%` : '—'} tone="red" loading={loading} to={to('C-Payments-Out')} />
           </StatGrid>
           {loading || !d ? (

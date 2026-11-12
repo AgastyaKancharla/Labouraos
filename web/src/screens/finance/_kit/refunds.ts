@@ -51,6 +51,14 @@ export async function approveAndPay(row: Pick<RefundRow, 'state' | 'kind' | 'pay
   return { sentToCeo: false };
 }
 
+/**
+ * FN-Refund "Reject": the refund is not owed, with the reason. Finance only
+ * within its limits (the API refuses one above ₹15,000 or outside the rules).
+ */
+export function rejectRefund(ref: string, reason: string) {
+  return api.post<{ ref: string; status: string }>(`/finance/refunds/${encodeURIComponent(ref)}/reject`, { reason });
+}
+
 /** Finance can always send a business refund to the CEO instead of approving it. */
 export function sendToCeo(placementId: string, reason: string) {
   return api.post<{ message?: string }>(`/placements/${placementId}/refund`, { sendToCeo: true, reason });

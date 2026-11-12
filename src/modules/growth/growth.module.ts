@@ -10,11 +10,13 @@ import { MoneyUnderGuaranteeService } from './money-under-guarantee.service';
 import { DaysToFirstInterviewService } from './days-to-first-interview.service';
 import { ShortageTaskService } from './shortage-task.service';
 import { WinBackService } from './win-back.service';
+import { NewMatchAlertService } from './new-match-alert.service';
+import { NotificationModule } from '../notification/notification.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AuthModule, PricingModule, VacancyModule, ReportingScopeModule],
+  imports: [PrismaModule, AuditModule, AuthModule, PricingModule, VacancyModule, ReportingScopeModule, NotificationModule],
   controllers: [GrowthController],
-  providers: [MoneyUnderGuaranteeService, DaysToFirstInterviewService, ShortageTaskService, WinBackService],
-  exports: [MoneyUnderGuaranteeService, DaysToFirstInterviewService, ShortageTaskService, WinBackService],
+  providers: [MoneyUnderGuaranteeService, DaysToFirstInterviewService, ShortageTaskService, WinBackService, NewMatchAlertService],
+  exports: [MoneyUnderGuaranteeService, DaysToFirstInterviewService, ShortageTaskService, WinBackService, NewMatchAlertService],
 })
 export class GrowthModule {}

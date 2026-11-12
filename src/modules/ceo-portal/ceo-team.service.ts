@@ -63,6 +63,9 @@ export function parseMonth(year: unknown, month: unknown, now: Date): Month {
  * and copying a month's targets; every other action goes to the existing staff,
  * device, login-code and target endpoints.
  */
+/** Titles of the one top-level role (guide, People and roles). */
+export const STAFF_TITLES = ['ceo', 'founder', 'co_founder'] as const;
+
 @Injectable()
 export class CeoTeamService {
   constructor(
@@ -86,6 +89,30 @@ export class CeoTeamService {
   }
 
   /** C-Team: the organisation, every account and the "Add a staff member" choices. */
+  /**
+   * Guide, People and roles: the CEO, founders and co-founders are one
+   * top-level role with different titles. Only the CEO sets the title, and
+   * only on a CEO-level account. Audited.
+   */
+  async setTitle(actorId: string, staffId: string, body: { title?: unknown; reason?: unknown }) {
+    const title = typeof body?.title === 'string' ? body.title : '';
+    if (!STAFF_TITLES.includes(title as (typeof STAFF_TITLES)[number])) throw new BadRequestException(`title is one of ${STAFF_TITLES.join(', ')}`);
+    const target = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, role: true, title: true } });
+    if (!target) throw new NotFoundException('Staff account not found');
+    if (target.role !== 'ceo') throw new BadRequestException('Only a CEO-level account has the title CEO, founder or co-founder');
+    await this.prisma.staff.update({ where: { id: staffId }, data: { title } });
+    await this.audit.log({
+      actorId,
+      action: 'staff.title_set',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: { title: target.title },
+      after: { title },
+      reason: typeof body?.reason === 'string' && body.reason.trim() ? body.reason.trim() : null,
+    });
+    return { id: target.id, title };
+  }
+
   async team(now: Date) {
     const [staff, online] = await Promise.all([
       this.prisma.staff.findMany({
@@ -95,6 +122,7 @@ export class CeoTeamService {
           name: true,
           email: true,
           role: true,
+          title: true,
           status: true,
           totpEnabled: true,
           lockedUntil: true,
@@ -131,6 +159,7 @@ export class CeoTeamService {
         name: s.name,
         email: s.email,
         role: s.role,
+        title: s.title,
         team: teamOf(s),
         reportsTo: boss ? { id: boss.id, name: boss.name, role: boss.role } : null,
         state: staffState(s, now),
@@ -445,6 +474,50 @@ export class CeoTeamService {
         behind: rows.filter((r) => r.pace === 'behind').length,
       },
     };
+  }
+
+  /**
+   * C-Leaderboard for Today / This week / Custom: the same money-making
+   * results as the month board, counted inside the range — call agents by
+   * candidates activated (₹499 received) and vacancies captured, field agents
+   * by placements closed (joined and paid) and fees paid. No targets: those
+   * are monthly. Never calls dialled.
+   */
+  async leaderboardRange(range: { from: Date; to: Date }) {
+    const agents = await this.prisma.staff.findMany({
+      where: { role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
+      select: { id: true, code: true, name: true, role: true, teamLeadId: true, reportsToId: true },
+      orderBy: { code: 'asc' },
+    });
+    const ids = agents.map((a) => a.id);
+    const leadIds = [...new Set(agents.map((a) => a.teamLeadId ?? a.reportsToId).filter((x): x is string => Boolean(x)))];
+    const within = { gte: range.from, lte: range.to };
+    const [leads, activated, vacancies, closed, fees] = await Promise.all([
+      leadIds.length ? this.prisma.staff.findMany({ where: { id: { in: leadIds } }, select: { id: true, name: true, teamName: true } }) : [],
+      this.prisma.jobSeeker.groupBy({ by: ['registeredByStaffId'], where: { registeredByStaffId: { in: ids }, paymentReceivedAt: within }, _count: { _all: true } }),
+      this.prisma.vacancy.groupBy({ by: ['capturedByStaffId'], where: { capturedByStaffId: { in: ids }, createdAt: within }, _count: { _all: true } }),
+      this.prisma.placement.groupBy({ by: ['createdByStaffId'], where: { createdByStaffId: { in: ids }, joinedDate: within, paidAt: { not: null } }, _count: { _all: true } }),
+      this.prisma.placement.groupBy({ by: ['createdByStaffId'], where: { createdByStaffId: { in: ids }, paidAt: within }, _sum: { placementFee: true } }),
+    ]);
+    const count = (rows: Array<{ _count: { _all: number } } & Record<string, unknown>>, key: string, id: string) =>
+      rows.find((r) => r[key] === id)?._count._all ?? 0;
+    const rows = agents.map((agent) => {
+      const call = agent.role === 'call_agent';
+      const lead = leads.find((l) => l.id === (agent.teamLeadId ?? agent.reportsToId));
+      return {
+        staff: { id: agent.id, code: agent.code, name: agent.name, role: agent.role },
+        team: teamLabel(lead ?? null),
+        targetId: null,
+        target: null,
+        main: { achieved: call ? count(activated, 'registeredByStaffId', agent.id) : count(closed, 'createdByStaffId', agent.id), target: null },
+        second: { achieved: call ? count(vacancies, 'capturedByStaffId', agent.id) : 0, target: null },
+        feesPaise: call ? null : (fees.find((f) => f.createdByStaffId === agent.id)?._sum.placementFee ?? 0),
+        progressPercent: null,
+        pace: 'no_target' as const,
+      };
+    });
+    const ranked = [...rows].sort((a, b) => b.main.achieved - a.main.achieved || a.staff.code.localeCompare(b.staff.code));
+    return { from: range.from.toISOString(), to: range.to.toISOString(), leaderboard: ranked.map((r, i) => ({ position: i + 1, ...r })) };
   }
 
   private monthBounds(m: Month) {

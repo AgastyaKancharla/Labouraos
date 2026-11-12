@@ -51,6 +51,8 @@ export function isAwaitingCode(r: LoginResponse): r is AwaitingCodeResponse {
 export const TOTP_REQUIRED_MESSAGE = 'TOTP 2FA code is required';
 
 export const authApi = {
+  /** Management forgot password: always the same answer, whether or not the email exists. */
+  forgotPassword: (email: string) => api.post<{ message: string; testModeNote?: string }>('/staff/forgot-password', { email }, { auth: false }),
   login: (input: { staffCode: string; password: string; totpCode?: string }) =>
     api.post<LoginResponse>('/auth/login', { ...input, deviceId: getDeviceId() }, { auth: false }),
   verifyCode: (loginRequestId: string, code: string, loginRequestProof: string) =>

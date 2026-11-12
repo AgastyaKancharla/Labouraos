@@ -87,6 +87,7 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
     '/ceo/attendance',
     '/ceo/call-center',
     '/ceo/field-ops',
+    '/ceo/leaderboard',
     '/ceo/check-ins',
     '/ceo/audit',
     '/ceo/flags',
@@ -109,6 +110,41 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
       (r) => r.staff.id === fieldAgent.id,
     );
     expect(row?.lastVisit).toEqual(expect.objectContaining({ business: `W4C Tea Stall ${stamp}`, area: null }));
+  });
+
+  it('Field operations: average visit time per agent and revisits due this week', async () => {
+    const now = Date.now();
+    await prisma.businessVisit.create({
+      data: { staffId: fieldAgent.id, shopName: `W4C Timed ${stamp}`, latitude: 12.91, longitude: 77.61, durationSeconds: 600, visitedAt: new Date(now - 60_000) },
+    });
+    await prisma.businessVisit.create({
+      data: { staffId: fieldAgent.id, shopName: `W4C Timed 2 ${stamp}`, latitude: 12.91, longitude: 77.61, durationSeconds: 1200, visitedAt: new Date(now - 30_000) },
+    });
+    const due = new Date(now + 2 * 86_400_000 + 5.5 * 3600_000).toISOString().slice(0, 10);
+    const later = await prisma.businessVisit.create({
+      data: { staffId: fieldAgent.id, shopName: `W4C Revisit ${stamp}`, latitude: 12.91, longitude: 77.61, outcome: 'owner_not_there', revisitOn: new Date(`${due}T00:00:00.000Z`) },
+    });
+    const res = await request(server()).get('/ceo/field-ops').set(as('ceo')).expect(200);
+    const row = (res.body.rows as Array<{ staff: { id: string }; avgVisitSeconds: number | null }>).find((r) => r.staff.id === fieldAgent.id);
+    expect(row?.avgVisitSeconds).toBe(900);
+    const revisit = (res.body.revisitsDue as Array<{ id: string; on: string; shopName: string }>).find((r) => r.id === later.id);
+    expect(revisit).toMatchObject({ on: due, shopName: `W4C Revisit ${stamp}` });
+    expect(Array.isArray(res.body.requests)).toBe(true);
+  });
+
+  it('titles on the one top-level role: the CEO sets founder or co-founder on a CEO-level account only, audited', async () => {
+    const ceoToken = tokens.ceo;
+    const other = await makeStaff('ceo', null);
+    tokens.ceo = ceoToken; // makeStaff keeps the newest token per role; the CEO acting stays the first one.
+    expect((await request(server()).post(`/ceo/team/${other.id}/title`).set(as('manager')).send({ title: 'founder' })).status).toBe(403);
+    expect((await request(server()).post(`/ceo/team/${other.id}/title`).set(as('ceo')).send({ title: 'chairman' })).status).toBe(400);
+    expect((await request(server()).post(`/ceo/team/${agent.id}/title`).set(as('ceo')).send({ title: 'founder' })).status).toBe(400);
+    const ok = await request(server()).post(`/ceo/team/${other.id}/title`).set(as('ceo')).send({ title: 'co_founder' });
+    expect(ok.status).toBe(201);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: other.id } })).title).toBe('co_founder');
+    const team = await request(server()).get('/ceo/team').set(as('ceo')).expect(200);
+    expect(team.body.rows.find((r: { id: string }) => r.id === other.id)).toMatchObject({ title: 'co_founder' });
+    expect(await prisma.auditLog.findFirst({ where: { action: 'staff.title_set', entityCode: other.code } })).not.toBeNull();
   });
 
   it('serves every part-2 screen to the CEO', async () => {

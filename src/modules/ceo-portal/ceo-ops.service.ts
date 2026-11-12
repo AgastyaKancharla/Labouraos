@@ -6,6 +6,7 @@ import { AttendanceReportsService } from '../attendance/attendance-reports.servi
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { DateRange, DAY_MS, istDayKey, istStartOfMonth, percent, average } from './ceo-common';
 import { teamLabel } from './ceo-team.service';
+import { calculateHaversineDistanceMeters } from '../../common/geo/geo.util';
 
 /** IST calendar day of an instant, as the Date value an @db.Date column holds. */
 function dbDate(instant: Date): Date {
@@ -59,6 +60,22 @@ export class CeoOpsService {
     private readonly reports: AttendanceReportsService,
     private readonly seekers: JobSeekerService,
   ) {}
+
+  /**
+   * Sidebar counts (C-Interviews and C-CallCenter badges): interviews whose
+   * slot starts today in IST (not cancelled), and missed calls still waiting
+   * to be returned (the same "pending" count as "Missed calls to return").
+   */
+  async navCounts(now: Date): Promise<{ interviewsToday: number; callbacksWaiting: number }> {
+    const dayMs = 24 * 3600 * 1000;
+    const todayStart = new Date(now.getTime() - ((now.getTime() + 5.5 * 3600 * 1000) % dayMs));
+    const todayEnd = new Date(todayStart.getTime() + dayMs - 1);
+    const [interviewsToday, callbacksWaiting] = await Promise.all([
+      this.prisma.interview.count({ where: { slotStartsAt: { gte: todayStart, lte: todayEnd }, status: { not: 'cancelled' } } }),
+      this.prisma.callbackTask.count({ where: { status: 'pending' } }),
+    ]);
+    return { interviewsToday, callbacksWaiting };
+  }
 
   private async people() {
     const staff = await this.prisma.staff.findMany({
@@ -314,7 +331,7 @@ export class CeoOpsService {
       this.prisma.visitAssignment.findMany({
         where: { status: { in: ['pending', 'assigned'] } },
         include: {
-          business: { select: { id: true, code: true, name: true, locality: true } },
+          business: { select: { id: true, code: true, name: true, locality: true, latitude: true, longitude: true } },
           suggestedStaff: { select: { id: true, name: true } },
           assignedStaff: { select: { id: true, name: true } },
         },
@@ -344,8 +361,46 @@ export class CeoOpsService {
         interviews: interviews.find((s) => s.proposedByStaffId === agent.id)?._count._all ?? 0,
         geofenceMismatches: mine.filter((v) => v.geofenceFlag).length,
         openFlags: flags.filter((f) => f.raisedForStaffId === agent.id).map((f) => f.kind),
+        // Time inside the shop (visit timer), averaged over visits with a recorded length.
+        avgVisitSeconds: average(mine.filter((v) => typeof v.durationSeconds === 'number').map((v) => v.durationSeconds as number)),
       };
     });
+    // Where each field agent was last seen today: the latest check-in or visit, for "Nearest agent".
+    const lastSeen = new Map<string, { latitude: number; longitude: number; at: Date }>();
+    for (const c of checkIns) {
+      if (!lastSeen.has(c.staffId)) lastSeen.set(c.staffId, { latitude: c.latitude, longitude: c.longitude, at: c.checkedInAt });
+    }
+    for (const v of visits) {
+      if (!v.staffId) continue;
+      const seen = lastSeen.get(v.staffId);
+      if (!seen || seen.at < v.visitedAt) lastSeen.set(v.staffId, { latitude: v.latitude, longitude: v.longitude, at: v.visitedAt });
+    }
+    const nearestTo = (lat: number | null, lng: number | null) => {
+      if (lat === null || lng === null) return null;
+      let best: { id: string; name: string; distanceKm: number } | null = null;
+      for (const agent of agents) {
+        const seen = lastSeen.get(agent.id);
+        if (!seen) continue;
+        const km = calculateHaversineDistanceMeters(lat, lng, seen.latitude, seen.longitude) / 1000;
+        if (!best || km < best.distanceKm) best = { id: agent.id, name: agent.name, distanceKm: Math.round(km * 10) / 10 };
+      }
+      return best;
+    };
+    // Revisits due this week: visits whose outcome set a revisit date in the next 7 days, with no later visit yet.
+    const todayKey = istDayKey(now);
+    const weekEndKey = istDayKey(new Date(now.getTime() + 6 * DAY_MS));
+    const dueVisits = await this.prisma.businessVisit.findMany({
+      where: { revisitOn: { gte: new Date(`${todayKey}T00:00:00.000Z`), lte: new Date(`${weekEndKey}T00:00:00.000Z`) } },
+      include: { business: { select: { id: true, code: true, name: true, locality: true } }, staff: { select: { id: true, name: true } } },
+      orderBy: { revisitOn: 'asc' },
+      take: 200,
+    });
+    const revisitedIds = new Set(
+      (await this.prisma.businessVisit.findMany({ where: { revisitOfVisitId: { in: dueVisits.map((v) => v.id) } }, select: { revisitOfVisitId: true } })).map((v) => v.revisitOfVisitId),
+    );
+    const revisitsDue = dueVisits
+      .filter((v) => !revisitedIds.has(v.id))
+      .map((v) => ({ id: v.id, on: v.revisitOn!.toISOString().slice(0, 10), business: v.business, shopName: v.business?.name ?? v.shopName ?? 'Unregistered shop', outcome: v.outcome, agent: v.staff }));
     const vacancyCounts = await this.prisma.vacancy.groupBy({ by: ['capturedByStaffId'], where: { capturedByStaffId: { in: ids }, createdAt: { gte: range.from, lte: range.to } }, _count: { _all: true } });
     for (const r of rows) r.vacancies = vacancyCounts.find((v) => v.capturedByStaffId === r.staff.id)?._count._all ?? 0;
     const visitCount = visits.length;
@@ -377,10 +432,18 @@ export class CeoOpsService {
       rows,
       requests: assignments
         .filter((a) => !a.assignedStaffId)
-        .map((a) => ({ id: a.id, business: a.business, purpose: a.purpose, createdAt: a.createdAt.toISOString(), suggested: a.suggestedStaff })),
+        .map((a) => ({
+          id: a.id,
+          business: { id: a.business.id, code: a.business.code, name: a.business.name, locality: a.business.locality },
+          purpose: a.purpose,
+          createdAt: a.createdAt.toISOString(),
+          suggested: a.suggestedStaff,
+          nearest: nearestTo(a.business.latitude, a.business.longitude),
+        })),
+      revisitsDue,
       revisits: assignments
         .filter((a) => a.assignedStaffId)
-        .map((a) => ({ id: a.id, business: a.business, purpose: a.purpose, agent: a.assignedStaff, since: a.updatedAt.toISOString() })),
+        .map((a) => ({ id: a.id, business: { id: a.business.id, code: a.business.code, name: a.business.name, locality: a.business.locality }, purpose: a.purpose, agent: a.assignedStaff, since: a.updatedAt.toISOString() })),
       agents: agents.map((a) => ({ id: a.id, name: a.name })),
     };
   }

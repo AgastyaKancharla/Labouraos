@@ -26,6 +26,7 @@ import { cleanOption, cleanSearch, parseRange } from '../ceo-portal/ceo-common';
 import { BillUpload, CreateExpenseInput, ExpenseService, PayExpenseInput } from './expense.service';
 import { FinancePayoutsService, PayInput } from './finance-payouts.service';
 import { FinanceBooksService } from './finance-books.service';
+import { FinanceInvoiceActionsService } from './finance-invoice-actions.service';
 import { FinanceHomeService } from './finance-home.service';
 import { MAX_BILL_BYTES } from './expense-bill.storage';
 
@@ -47,6 +48,7 @@ export class FinanceController {
     private readonly payouts: FinancePayoutsService,
     private readonly books: FinanceBooksService,
     private readonly home: FinanceHomeService,
+    private readonly invoiceActions: FinanceInvoiceActionsService,
   ) {}
 
   // Money today -----------------------------------------------------------
@@ -203,6 +205,14 @@ export class FinanceController {
   @HttpCode(HttpStatus.OK)
   closeDay(@Body() body: { day?: unknown; bankClosingPaise?: unknown; note?: unknown }, @Req() req: AuthedRequest) {
     return this.books.closeDay(body ?? {}, req.user.sub);
+  }
+
+  /** FN-Invoices "Tell the account agent": a bell to the business's account agent about an unpaid fee. */
+  @Post('invoices/:paymentId/tell-account-agent')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('ceo', 'finance')
+  tellAccountAgent(@Param('paymentId') paymentId: string, @Req() req: AuthedRequest) {
+    return this.invoiceActions.tellAccountAgent(req.user.sub, paymentId, new Date());
   }
 
   @Get('invoices')

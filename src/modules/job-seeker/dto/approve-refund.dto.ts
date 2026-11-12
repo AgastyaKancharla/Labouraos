@@ -7,4 +7,6 @@ export class ApproveJobSeekerRefundDto {
    * audited. Finance cannot approve one.
    */
   goodwill?: boolean;
+  /** CEO only: raise a refund that was rejected for this guarantee, with a reason (R4). */
+  overrideRejection?: boolean;
 }

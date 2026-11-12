@@ -313,6 +313,22 @@ describe('One request (MG-Req-*)', () => {
     expect(screen.queryByRole('button', { name: 'Send back to the Team Lead' })).toBeNull();
   });
 
+  it("hands the agent's follow-ups on the leave days to a teammate when approving (same as the Team Lead's screen)", async () => {
+    const detail: Detail = {
+      ...vikram,
+      history: [],
+      followUps: { planned: 12, teammates: [{ id: 'ca7', code: 'CA-0007', name: 'Deepa Nair' }, { id: 'ca8', code: 'CA-0008', name: 'Rahul M' }], handedOver: { count: 0, returned: 0, to: [] } },
+    };
+    const api = mockApi({ ...common, 'GET /requests/leave.l3': detail, 'GET /manager/staff': staff, 'GET /manager/leave': leave, 'GET /manager/agents': agents, 'POST /requests/leave.l3/decide': vikram, 'GET /requests/waiting': [], 'GET /requests/open': [] });
+    render(<RequestDetail />, '/manager/requests/leave.l3', '/manager/requests/:id');
+    expect(await screen.findByText('12 follow-ups')).toBeInTheDocument();
+    const select = screen.getByLabelText(/Their follow-ups on those days go to/);
+    expect(select).toHaveValue('share');
+    await userEvent.selectOptions(select, 'ca7');
+    await userEvent.click(screen.getByRole('button', { name: 'Approve leave' }));
+    await waitFor(() => expect(api.calls('POST /requests/leave.l3/decide')[0].body).toEqual({ decision: 'approved', followUps: { mode: 'teammate', staffId: 'ca7' } }));
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /requests/leave.l1': apiError(404, 'Not found', 'req-rq2'), 'GET /manager/staff': staff });
     render(<RequestDetail />, '/manager/requests/leave.l1', '/manager/requests/:id');

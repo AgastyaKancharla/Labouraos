@@ -110,7 +110,7 @@ describe('Indian mobile numbers are one format end to end', () => {
     const res = await request(app.getHttpServer())
       .post('/businesses')
       .set(auth())
-      .send({ name, phone, otpRequestId, contactPersonName: 'Owner', contactPersonRole: 'owner' });
+      .send({ name, phone, otpRequestId, contactPersonName: 'Owner', contactPersonRole: 'owner', heardFrom: 'walk_in' });
     if (res.body?.id) businessIds.push(res.body.id as string);
     return res;
   }

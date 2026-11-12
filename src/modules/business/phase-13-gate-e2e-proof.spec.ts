@@ -115,7 +115,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
         businessType: 'household',
         familyName: 'Household Family',
         contactPersonName: 'Household Owner',
-        contactPersonRole: 'owner',
+        contactPersonRole: 'owner', heardFrom: 'field_visit',
         ownerName: 'Household Owner',
         address: 'Test address',
         locality: 'Test locality',

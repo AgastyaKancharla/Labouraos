@@ -90,7 +90,7 @@ export class RequestsController {
   decide(
     @Req() req: Authed,
     @Param('ref') ref: string,
-    @Body() body: { decision?: string; reason?: string; fromDate?: string; toDate?: string },
+    @Body() body: { decision?: string; reason?: string; fromDate?: string; toDate?: string; followUps?: { mode?: string; staffId?: string } },
   ) {
     return this.requests.decide(this.actor(req), ref, body ?? {});
   }
