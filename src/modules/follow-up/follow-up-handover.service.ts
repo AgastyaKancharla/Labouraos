@@ -171,28 +171,62 @@ export class FollowUpHandoverService {
   }
 
   /**
-   * After the leave (or at once when the leave was overturned), every task
-   * still pending with the teammate it went to moves back to her. Daily, with
-   * the follow-up sweep; safe to repeat.
+   * After the leave (or at once when the leave was overturned or cancelled),
+   * every task still pending with the teammate it went to moves back to her.
+   * H1: only rows whose return day has come (returnAfter <= now) or whose
+   * leave no longer stands are read. If she is off again (a new approved
+   * leave today) the row waits for a later run; if she is no longer active
+   * the task stays with the teammate (outcome kept_owner_inactive). Daily,
+   * with the follow-up sweep; safe to repeat.
    */
-  async returnAfterLeave(now: Date): Promise<{ returned: number }> {
-    const due = await this.prisma.followUpHandover.findMany({ where: { returnedAt: null }, orderBy: { movedAt: 'asc' }, take: 2000 });
-    if (!due.length) return { returned: 0 };
+  async returnAfterLeave(now: Date): Promise<{ returned: number; waiting: number; kept: number }> {
+    const openLeaves = await this.prisma.followUpHandover.findMany({ where: { returnedAt: null }, distinct: ['leaveRequestId'], select: { leaveRequestId: true } });
+    if (!openLeaves.length) return { returned: 0, waiting: 0, kept: 0 };
     const leaves = await this.prisma.leaveRequest.findMany({
-      where: { id: { in: [...new Set(due.map((d) => d.leaveRequestId))] } },
+      where: { id: { in: openLeaves.map((l) => l.leaveRequestId) } },
       select: { id: true, status: true, overturnedAt: true, staffId: true },
     });
     const leaveById = new Map(leaves.map((l) => [l.id, l]));
+    const gone = openLeaves.map((l) => l.leaveRequestId).filter((id) => {
+      const leave = leaveById.get(id);
+      return !leave || leave.status !== 'approved' || leave.overturnedAt !== null;
+    });
+    const due = await this.prisma.followUpHandover.findMany({
+      where: { returnedAt: null, OR: [{ returnAfter: { lte: now } }, ...(gone.length ? [{ leaveRequestId: { in: gone } }] : [])] },
+      orderBy: { movedAt: 'asc' },
+      take: 2000,
+    });
+    if (!due.length) return { returned: 0, waiting: 0, kept: 0 };
+
+    // The owners: still active, and not off again today.
+    const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(now);
+    const ownerIds = [...new Set(due.map((d) => d.fromStaffId))];
+    const [owners, offAgain] = await Promise.all([
+      this.prisma.staff.findMany({ where: { id: { in: ownerIds } }, select: { id: true, status: true } }),
+      this.prisma.leaveRequest.findMany({
+        where: { staffId: { in: ownerIds }, status: 'approved', overturnedAt: null, fromDate: { lte: new Date(`${today}T00:00:00.000Z`) }, toDate: { gte: new Date(`${today}T00:00:00.000Z`) } },
+        select: { staffId: true },
+      }),
+    ]);
+    const active = new Set(owners.filter((o) => o.status === 'active').map((o) => o.id));
+    const away = new Set(offAgain.map((o) => o.staffId));
+
     let returned = 0;
+    let waiting = 0;
+    let kept = 0;
     const byLeave = new Map<string, Array<{ code: string; outcome: string }>>();
     for (const row of due) {
-      const leave = leaveById.get(row.leaveRequestId);
-      const cancelled = !leave || leave.status !== 'approved' || leave.overturnedAt !== null;
-      if (!cancelled && row.returnAfter.getTime() > now.getTime()) continue;
+      if (active.has(row.fromStaffId) && away.has(row.fromStaffId)) {
+        waiting += 1; // She is off again: try on a later run.
+        continue;
+      }
       const task = await this.prisma.followUpTask.findUnique({ where: { id: row.followUpTaskId }, select: { code: true, status: true, assignedStaffId: true } });
       let outcome = 'already_moved';
       if (task && task.status !== 'pending') outcome = 'done_by_teammate';
-      else if (task && task.assignedStaffId === row.toStaffId) {
+      else if (!active.has(row.fromStaffId)) {
+        outcome = 'kept_owner_inactive';
+        kept += 1;
+      } else if (task && task.assignedStaffId === row.toStaffId) {
         const back = await this.prisma.followUpTask.updateMany({
           where: { id: row.followUpTaskId, assignedStaffId: row.toStaffId, status: 'pending' },
           data: { assignedStaffId: row.fromStaffId },
@@ -218,9 +252,11 @@ export class FollowUpHandoverService {
         entityType: 'leave_request',
         entityCode: person?.code ?? leaveId,
         after: { leaveRequestId: leaveId, tasks },
-        reason: 'Leave over: follow-ups still open go back to her',
+        reason: tasks.some((t) => t.outcome === 'kept_owner_inactive')
+          ? 'Leave over: she is no longer active, so her open follow-ups stay with the teammate'
+          : 'Leave over: follow-ups still open go back to her',
       });
     }
-    return { returned };
+    return { returned, waiting, kept };
   }
 }

@@ -508,15 +508,15 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
 
       const handovers = app.get(FollowUpHandoverService);
       // During the leave nothing comes back.
-      expect(await handovers.returnAfterLeave(new Date('2027-06-09T12:00:00.000Z'))).toEqual({ returned: 0 });
+      expect(await handovers.returnAfterLeave(new Date('2027-06-09T12:00:00.000Z'))).toMatchObject({ returned: 0 });
       // Deepa makes one call; after the leave the other one goes back to her.
       await prisma.followUpTask.update({ where: { id: morning.id }, data: { status: 'done', completedAt: new Date('2027-06-09T06:00:00.000Z') } });
-      expect(await handovers.returnAfterLeave(new Date('2027-06-09T18:30:00.000Z'))).toEqual({ returned: 1 });
+      expect(await handovers.returnAfterLeave(new Date('2027-06-09T18:30:00.000Z'))).toMatchObject({ returned: 1 });
       expect(await owners()).toEqual({ [morning.id]: deepa.id, [evening.id]: agentA1.id, [nextDay.id]: agentA1.id });
       expect(await prisma.followUpHandover.findFirst({ where: { followUpTaskId: morning.id } })).toMatchObject({ returnOutcome: 'done_by_teammate' });
       expect(await prisma.auditLog.findFirst({ where: { action: 'follow_up.handed_back', entityCode: agentA1.code } })).not.toBeNull();
       // Safe to repeat.
-      expect(await handovers.returnAfterLeave(new Date('2027-06-10T18:30:00.000Z'))).toEqual({ returned: 0 });
+      expect(await handovers.returnAfterLeave(new Date('2027-06-10T18:30:00.000Z'))).toMatchObject({ returned: 0 });
     });
 
     it('shares them between the teammates, or keeps them for her return', async () => {
@@ -536,6 +536,36 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
       const c = await task(agentA1, '2027-06-23T05:30:00.000Z');
       expect((await post(leadA, `/requests/leave.${kept.body.id}/decide`, { decision: 'approved', followUps: { mode: 'keep' } })).status).toBe(200);
       expect((await prisma.followUpTask.findUniqueOrThrow({ where: { id: c.id } })).assignedStaffId).toBe(agentA1.id);
+    });
+
+    it('H1: waits while she is off again, and keeps them with the teammate when she is no longer active', async () => {
+      const handovers = app.get(FollowUpHandoverService);
+      const owner = await make('call_agent', 'CAH1RQ', leadA.id);
+      const gone = await make('call_agent', 'CAH2RQ', leadA.id);
+      const mate = await make('call_agent', 'CAH3RQ', leadA.id);
+      const leave = (staffId: string, day: string) =>
+        prisma.leaveRequest.create({
+          data: { staffId, kind: 'casual', fromDate: new Date(`${day}T00:00:00.000Z`), toDate: new Date(`${day}T00:00:00.000Z`), days: 1, reason: 'Test', status: 'approved', routedToRole: 'team_lead', routedToStaffId: leadA.id, routeReason: 'team_lead', decidedAt: new Date('2027-07-01T05:00:00.000Z'), decidedByStaffId: leadA.id, decidedByRole: 'team_lead' },
+        });
+      const first = await leave(owner.id, '2027-07-05');
+      const t1 = await task(owner, '2027-07-05T06:00:00.000Z');
+      expect(await handovers.handOver(leadA.id, first.id, { mode: 'teammate', staffId: mate.id }, new Date('2027-07-01T05:00:00.000Z'))).toMatchObject({ moved: 1 });
+      // A second leave the next day: on the 6th the task stays with the teammate.
+      await leave(owner.id, '2027-07-06');
+      await handovers.returnAfterLeave(new Date('2027-07-05T19:00:00.000Z'));
+      expect((await prisma.followUpTask.findUniqueOrThrow({ where: { id: t1.id } })).assignedStaffId).toBe(mate.id);
+      expect((await prisma.followUpHandover.findFirstOrThrow({ where: { followUpTaskId: t1.id } })).returnedAt).toBeNull();
+      // On the 7th she is back: it returns to her.
+      await handovers.returnAfterLeave(new Date('2027-07-06T19:00:00.000Z'));
+      expect((await prisma.followUpTask.findUniqueOrThrow({ where: { id: t1.id } })).assignedStaffId).toBe(owner.id);
+
+      const third = await leave(gone.id, '2027-07-12');
+      const t2 = await task(gone, '2027-07-12T06:00:00.000Z');
+      await handovers.handOver(leadA.id, third.id, { mode: 'teammate', staffId: mate.id }, new Date('2027-07-08T05:00:00.000Z'));
+      await prisma.staff.update({ where: { id: gone.id }, data: { status: 'deactivated' } });
+      await handovers.returnAfterLeave(new Date('2027-07-12T19:00:00.000Z'));
+      expect((await prisma.followUpTask.findUniqueOrThrow({ where: { id: t2.id } })).assignedStaffId).toBe(mate.id);
+      expect(await prisma.followUpHandover.findFirst({ where: { followUpTaskId: t2.id } })).toMatchObject({ returnOutcome: 'kept_owner_inactive' });
     });
   });
 });
