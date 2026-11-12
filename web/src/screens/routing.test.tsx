@@ -65,10 +65,11 @@ describe('routes and guards', () => {
 
   it('keeps each role on its own portal', async () => {
     signInAs('manager');
-    mockApi({ 'GET /login-codes/pending': [], 'GET /review-flags': [] });
+    mockApi({ 'GET /login-codes/pending': [], 'GET /review-flags': [], 'GET /manager/overview': { status: 500, body: { message: 'x' } } });
     renderAt('/ceo/refunds');
-    expect(await screen.findByRole('heading', { name: 'Command Center' })).toBeInTheDocument();
-    expect(screen.getByTestId('placeholder-design')).toHaveTextContent('MG-Home.dc.html');
+    // The Manager lands on their own Command Center (MG-Home, now built), never the CEO's page.
+    expect(await screen.findByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Plan vs Actual/ })).toHaveAttribute('href', '/manager/plan');
   });
 
   it('shows the CEO sidebar from Main.dc.html with live badge counts', async () => {

@@ -102,6 +102,15 @@ export class StaffController {
     return this.staffService.reportingTree(req.user);
   }
 
+  /** Who reset whose password. CEO: everyone. Manager: their own tree. */
+  @Get('password-resets')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'read')
+  @RequireRoles('ceo', 'manager')
+  passwordResets(@Req() req: AuthenticatedRequest) {
+    return this.staffService.listPasswordResets(req.user);
+  }
+
   @Get(':id')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'read')
@@ -189,6 +198,22 @@ export class StaffController {
     return this.staffService.reissueInvite(id, req.user);
   }
 
+  /**
+   * Reset password: a new one-time link to the invite page where the person
+   * sets a new password. The old password works until the link is used. A
+   * Team Lead for their own agents, a Manager inside their own tree, the CEO
+   * for anyone (Master Guide, Passwords and email).
+   */
+  @Post(':id/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo', 'manager', 'team_lead')
+  resetPassword(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.issuePasswordReset(id, req.user);
+  }
+
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
@@ -217,7 +242,11 @@ export class StaffController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'write')
   @RequireRoles('ceo', 'manager', 'team_lead')
-  unlock(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.staffService.unlockStaff(id, req.user);
+  unlock(
+    @Param('id') id: string,
+    @Body('reason') reason: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.staffService.unlockStaff(id, req.user, reason);
   }
 }

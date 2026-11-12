@@ -47,6 +47,7 @@ import { CeoPortalModule } from './modules/ceo-portal/ceo-portal.module';
 import { AreaModule } from './modules/area/area.module';
 import { LiveModule } from './common/live/live.module';
 import { ScreensCallAgentModule } from './modules/screens-call-agent/screens-call-agent.module';
+import { ScreensManagerModule } from './modules/screens-manager/screens-manager.module';
 import { FieldAppModule } from './modules/field-app/field-app.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { FieldVisitModule } from './modules/field-visit/field-visit.module';
@@ -104,6 +105,7 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
     ScreensCallRegistrationModule,
     FieldSellingModule,
     ScreensCallAgentModule,
+    ScreensManagerModule,
     WebAppModule,
     FieldAppModule,
     FieldVisitModule,

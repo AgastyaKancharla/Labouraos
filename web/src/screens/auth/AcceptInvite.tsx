@@ -32,6 +32,8 @@ import { formatDateTimeIST } from '../../lib/format/date';
  * POST /staff/accept-invite { token, password, totpCode? }.
  */
 export interface InvitePreview {
+  /** 'reset' for a password reset link (POST /staff/:id/reset-password); older APIs leave it out. */
+  purpose?: 'invite' | 'reset';
   name: string;
   code: string;
   role: string;
@@ -301,7 +303,7 @@ export default function AcceptInvite() {
     body = (
       <form onSubmit={submitPassword} noValidate className="lb-stack">
         {brand(t('invite.welcome', { name: invite.name }))}
-        <p className="muted">{t('invite.intro')}</p>
+        <p className="muted">{t(invite.purpose === 'reset' ? 'invite.resetIntro' : 'invite.intro')}</p>
         <div className="kv lb-invite__who">
           <span>{t('invite.staffCode')}</span>
           <span className="mono">{invite.code}</span>

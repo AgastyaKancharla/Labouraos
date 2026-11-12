@@ -32,6 +32,8 @@ export const NOTIFICATION_KINDS = [
   // Growth tasks for the Team Lead (N2, N3).
   'first_interview_overdue',
   'shortage_task',
+  // A Manager's "Remind the agents" on stuck work (Manager portal, Pipeline).
+  'stuck_work_reminder',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -40,7 +42,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -125,6 +127,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   },
   first_interview_overdue: { team_lead: 'work', manager: 'pipeline', ceo: 'job-seekers' },
   shortage_task: { team_lead: 'work', manager: 'pipeline', ceo: 'vacancies' },
+  stuck_work_reminder: { call_agent: '', team_lead: 'work', field_agent: '' },
 };
 
 /** The in-app path for one recipient, or null when that role has no screen for it. */
