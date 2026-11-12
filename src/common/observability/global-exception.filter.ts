@@ -20,7 +20,7 @@ export function safeRoutePath(request: { route?: { path?: unknown }; baseUrl?: s
   const pattern = request.route?.path;
   if (typeof pattern === 'string' && pattern) return `${request.baseUrl ?? ''}${pattern}`;
   const raw = request.path ?? (request.url ?? '').split('?')[0];
-  return raw.replace(/[A-Za-z0-9_\-]{16,}/g, ':value');
+  return raw.replace(/[A-Za-z0-9_-]{16,}/g, ':value');
 }
 
 @Injectable()
