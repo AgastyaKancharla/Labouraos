@@ -80,6 +80,8 @@ export default function ManagerRequestDetail() {
   const [part, setPart] = useState(false);
   const [partFrom, setPartFrom] = useState('');
   const [partTo, setPartTo] = useState('');
+  // "Their follow-ups go to" (same as T-Req-Sneha): share | <teammate id> | keep (empty = the first offered choice).
+  const [handover, setHandover] = useState('');
   const staff = useTree();
   const tree = useMemo(() => treeIndex(staff.data), [staff.data]);
   const detail = useQuery({ queryKey: ['requests', 'one', id], queryFn: () => api.get<RequestDetail>(`/requests/${encodeURIComponent(id)}`) });
@@ -89,13 +91,19 @@ export default function ManagerRequestDetail() {
   const leave = useQuery({ queryKey: ['manager', 'leave'], queryFn: () => api.get<LeaveBoard>('/manager/leave'), enabled: Boolean(isLeave) });
   const agents = useQuery({ queryKey: ['manager', 'agents'], queryFn: () => api.get<AgentsBoard>('/manager/agents'), enabled: Boolean(personId) });
 
+  const fu = r?.followUps;
+  const mates = fu?.teammates ?? [];
+  const offerHandover = Boolean(isLeave && fu && fu.planned > 0 && r?.status === 'pending');
+  const handoverChoice = handover || (mates.length > 1 ? 'share' : mates.length === 1 ? mates[0].id : 'keep');
+  const followUpsBody =
+    handoverChoice === 'keep' ? { mode: 'keep' } : handoverChoice === 'share' ? { mode: 'share' } : { mode: 'teammate', staffId: handoverChoice };
   const act = useMutation({
     mutationFn: (decision: 'approved' | 'rejected' | 'part') =>
       api.post(
         `/requests/${encodeURIComponent(id)}/decide`,
         decision === 'part'
-          ? { decision: 'approved', reason: note.trim(), fromDate: partFrom, toDate: partTo }
-          : { decision, reason: note.trim() || undefined },
+          ? { decision: 'approved', reason: note.trim(), fromDate: partFrom, toDate: partTo, ...(offerHandover ? { followUps: followUpsBody } : {}) }
+          : { decision, reason: note.trim() || undefined, ...(decision === 'approved' && offerHandover ? { followUps: followUpsBody } : {}) },
       ),
     onSuccess: (_res, decision) => {
       toast.success(decision === 'approved' ? 'Approved · closed for everyone' : decision === 'part' ? 'Those days approved · the rest rejected' : 'Rejected');
@@ -167,6 +175,13 @@ export default function ManagerRequestDetail() {
       const sameTeam = overlapping.filter((o) => o.team === team);
       before.push([`Others off in ${team ? teamShort(team) : 'the team'} ${days > 1 ? 'those days' : 'that day'}`, sameTeam.length ? sameTeam.map((o) => o.staff.name).join(', ') : leave.isPending ? '…' : 'Nobody']);
     }
+    if (fu) {
+      const plannedCalls = `${fu.planned} follow-up${fu.planned === 1 ? '' : 's'}`;
+      const moved = fu.handedOver.count
+        ? ` · ${fu.handedOver.count} moved to ${fu.handedOver.to.map((m) => firstName(m.name)).join(' and ')}${fu.handedOver.returned ? ` · ${fu.handedOver.returned} back with ${who}` : ''}`
+        : '';
+      before.push([`Calls planned for ${who} ${days === 1 ? 'that day' : 'on these days'}`, `${plannedCalls}${moved}`]);
+    }
   }
   if (r.kind === 'correction') before.push(['Correction this month', `${String(d.monthNumber ?? 1)} of the month`]);
   if (r.kind === 'hit_removal') {
@@ -226,6 +241,21 @@ export default function ManagerRequestDetail() {
             Note to them (needed if you reject)
             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional when approving" rows={3} />
           </label>
+          {offerHandover && (
+            <label className="field" style={{ marginTop: 12 }}>
+              Their follow-ups {days === 1 ? 'that day' : 'on those days'} go to
+              <select value={handoverChoice} onChange={(e) => setHandover(e.target.value)}>
+                {mates.length > 1 && <option value="share">{`Share between ${mates.map((m) => firstName(m.name)).join(' and ')}`}</option>}
+                {mates.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+                <option value="keep">Keep for their return</option>
+              </select>
+              <span className="ceo-sub">They move back to {who} after the leave if still not done.</span>
+            </label>
+          )}
           {range.length > 1 && (
             <div className="mg-part" style={{ marginTop: 12 }}>
               <label className="mg-check">
