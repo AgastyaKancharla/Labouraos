@@ -45,6 +45,7 @@ describe('Paid leave is earned from the joining date', () => {
     staffIds.push(row.id);
     return row;
   };
+  /** Months with an accrual row in the table (rows before the first earning month are kept but not counted). */
   const months = async (staffId: string) =>
     (await prisma.leaveAccrual.findMany({ where: { staffId }, orderBy: { month: 'asc' } })).map((r) => r.month);
 
@@ -97,13 +98,18 @@ describe('Paid leave is earned from the joining date', () => {
     expect(balance.casual.earned + balance.emergency.earned).toBeGreaterThan(0);
   });
 
-  it('removes leave written for a month before the joining date (an older rule, or a joining date entered later)', async () => {
+  it('stops counting leave written for a month before the joining date, and never deletes it', async () => {
     const person = await make('F', { createdAt: new Date('2027-10-20T06:00:00.000Z') });
     await leave.ensureAccrued(person.id);
     expect(await months(person.id)).toEqual(['2027-11', '2027-12', '2028-01', '2028-02']);
-    // The CEO enters the real joining date: 3 December.
+    const before = await leave.balance(person.id);
+    // The CEO enters the real joining date: 3 December. Nov and Dec stop counting.
     await prisma.staff.update({ where: { id: person.id }, data: { joinedOn: new Date('2027-12-03T00:00:00.000Z') } });
-    await leave.ensureAccrued(person.id);
-    expect(await months(person.id)).toEqual(['2028-01', '2028-02']);
+    const after = await leave.balance(person.id);
+    expect(after.casual.earned).toBe(before.casual.earned / 2);
+    expect(await months(person.id)).toEqual(['2027-11', '2027-12', '2028-01', '2028-02']);
+    // A typo corrected later brings the leave back.
+    await prisma.staff.update({ where: { id: person.id }, data: { joinedOn: new Date('2027-10-20T00:00:00.000Z') } });
+    expect((await leave.balance(person.id)).casual.earned).toBe(before.casual.earned);
   });
 });

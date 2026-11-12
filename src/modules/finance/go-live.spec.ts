@@ -101,18 +101,64 @@ describe('Go-live date in Settings', () => {
     }
   });
 
-  it('lets only the CEO set the go-live date, checks it, and carries it into later Settings versions', async () => {
-    const server = app.getHttpServer();
-    await request(server).put('/pricing/go-live').set('Authorization', `Bearer ${token(finance)}`).send({ goLiveDate: '2031-03-12' }).expect(403);
-    await request(server).put('/pricing/go-live').set('Authorization', `Bearer ${token(ceo)}`).send({ goLiveDate: '12/03/2031' }).expect(400);
-    await request(server).put('/pricing/go-live').set('Authorization', `Bearer ${token(ceo)}`).send({ goLiveDate: '2031-02-30' }).expect(400);
-    const set = await request(server).put('/pricing/go-live').set('Authorization', `Bearer ${token(ceo)}`).send({ goLiveDate: '2031-03-12' }).expect(200);
+  /** A day `days` from today, as IST "YYYY-MM-DD". */
+  const fromToday = (days: number) => new Date(Date.now() + 330 * 60_000 + days * 24 * 3600_000).toISOString().slice(0, 10);
+  const putGoLive = (who: { id: string; role: string; code: string }, goLiveDate: string | null) =>
+    request(app.getHttpServer()).put('/pricing/go-live').set('Authorization', `Bearer ${token(who)}`).send({ goLiveDate });
+
+  it('lets only the CEO set the go-live date, checks it, bounds it, and carries it into later Settings versions', async () => {
+    const soon = fromToday(30);
+    await putGoLive(finance, soon).expect(403);
+    await putGoLive(ceo, '12/03/2027').expect(400);
+    await putGoLive(ceo, '2027-02-30').expect(400);
+    // A typo can't move it years away: at most a year ahead, never before the first records.
+    expect((await putGoLive(ceo, fromToday(400)).expect(400)).body.message).toMatch(/at most a year ahead/);
+    expect((await putGoLive(ceo, '1999-12-31').expect(400)).body.message).toMatch(/first records/);
+    // A plain Settings save can't set it either.
+    await request(app.getHttpServer()).put('/pricing').set('Authorization', `Bearer ${token(ceo)}`).send({ goLiveDate: '2030-01-01' }).expect(400);
+
+    const set = await putGoLive(ceo, soon).expect(200);
     policyIds.push(set.body.id);
-    expect(set.body.goLiveDate).toBe('2031-03-12T00:00:00.000Z');
+    expect(set.body.goLiveDate).toBe(`${soon}T00:00:00.000Z`);
     // Another Settings change keeps the go-live date.
     const other = await pricing.createVersion({ lateGraceMinutes: (await pricing.current()).lateGraceMinutes }, ceo.id);
     policyIds.push(other.id);
-    expect(other.goLiveDate?.toISOString().slice(0, 10)).toBe('2031-03-12');
+    expect(other.goLiveDate?.toISOString().slice(0, 10)).toBe(soon);
+    expect(await pricing.goLiveDay()).toBe(soon);
+  });
+
+  it('refuses a go-live change once a month it touches has a frozen salary sheet or is closed', async () => {
+    const current = await pricing.goLiveDay(); // set by the test above, about 30 days ahead
+    const later = fromToday(60);
+    const month = (current! < later ? current! : later).slice(0, 7);
+    const run = await prisma.payrollRun.create({
+      data: { month, status: 'approved', people: 0, grossPaise: 0, deductionsPaise: 0, netPaise: 0, preparedByStaffId: finance.id, preparedAt: new Date() },
+    });
+    try {
+      const refused = await putGoLive(ceo, later).expect(409);
+      expect(refused.body.code ?? refused.body.details?.code).toBe('go_live_payroll_frozen');
+      await putGoLive(ceo, null).expect(409);
+    } finally {
+      await prisma.payrollRun.delete({ where: { id: run.id } });
+    }
+    const closed = await prisma.monthClose.create({
+      data: { month, status: 'closed', closedByStaffId: ceo.id, closedAt: new Date(), checklist: {} },
+    });
+    try {
+      const refused = await putGoLive(ceo, later).expect(409);
+      expect(refused.body.code ?? refused.body.details?.code).toBe('month_closed');
+    } finally {
+      await prisma.monthClose.delete({ where: { id: closed.id } });
+    }
+    expect(await pricing.goLiveDay()).toBe(current);
+    // With nothing frozen or closed it can change again.
+    const moved = await putGoLive(ceo, later).expect(200);
+    policyIds.push(moved.body.id);
+  });
+
+  it('works March 2031 with go-live on 12 March (set directly: the endpoint allows at most a year ahead)', async () => {
+    const v = await pricing.createVersion({ goLiveDate: new Date('2031-03-12T00:00:00.000Z') }, ceo.id);
+    policyIds.push(v.id);
     expect(await pricing.goLiveDay()).toBe('2031-03-12');
   });
 
@@ -160,10 +206,37 @@ describe('Go-live date in Settings', () => {
     expect((await prisma.leaveAccrual.findMany({ where: { staffId: after.id } })).map((r) => r.month)).toEqual(['2031-04']);
   });
 
-  it('can be cleared, and then counts from the joining date again', async () => {
-    const cleared = await request(app.getHttpServer()).put('/pricing/go-live').set('Authorization', `Bearer ${token(ceo)}`).send({ goLiveDate: null }).expect(200);
-    policyIds.push(cleared.body.id);
-    expect(cleared.body.goLiveDate).toBeNull();
-    expect(await pricing.goLiveDay()).toBeNull();
+  it('works out a frozen month again with the go-live date kept on its sheet, never today\'s', async () => {
+    // Worked every day of March, joined 1 March; the sheet was prepared with go-live 12 March,
+    // so the 9 working days before it were "not on staff" (₹9,000 not earned).
+    const full = await make('FULL', 'call_agent', { createdAt: new Date('2031-03-01T05:00:00.000Z'), joinedOn: new Date('2031-03-01T00:00:00.000Z') });
+    await fullDays(full.id, 1, 31);
+    const run = await prisma.payrollRun.create({
+      data: {
+        month: '2031-03', status: 'approved', people: 1, grossPaise: SALARY, deductionsPaise: 900_000, netPaise: 1_700_000,
+        preparedByStaffId: finance.id, preparedAt: new Date('2031-04-01T06:00:00.000Z'), weeklyOffDays: [0], fullDayMinutes: 480, goLiveDay: '2031-03-12',
+        lines: {
+          create: {
+            staffId: full.id, staffCode: full.code, name: full.name, role: full.role, monthlyPaise: SALARY, salaryDays: 26, calendarDays: 31,
+            workingDays: 26, holidays: 0, fullDays: 17, halfDays: 0, paidLeaveDays: 0, unpaidLeaveDays: 0, absentDays: 0, notEmployedDays: 9,
+            lossOfPayHalfDays: 0, paidHalfDays: 34, shortfallMinutes: 0, basicPaise: 1_300_000, hraPaise: 520_000, specialPaise: 780_000,
+            grossPaise: SALARY, notEmployedPaise: 900_000, lossOfPayPaise: 0, shortfallPaise: 0, deductionsPaise: 900_000, netPaise: 1_700_000,
+          },
+        },
+      },
+    });
+    try {
+      // Today's Settings change the go-live date (directly, as an older or back-dated version could).
+      const cleared = await pricing.createVersion({ goLiveDate: null }, ceo.id);
+      policyIds.push(cleared.id);
+      const kept = await payroll.draft('2031-04', new Date('2031-05-02T06:00:00.000Z'));
+      expect(kept.corrections.filter((c) => c.staffId === full.id)).toEqual([]);
+      // The recompute really reads the sheet's own value: without it the 9 days would be paid back.
+      await prisma.payrollRun.update({ where: { id: run.id }, data: { goLiveDay: null } });
+      const without = await payroll.draft('2031-04', new Date('2031-05-02T06:00:00.000Z'));
+      expect(without.corrections.filter((c) => c.staffId === full.id).map((c) => c.amountPaise)).toEqual([900_000]);
+    } finally {
+      await prisma.payrollRun.delete({ where: { id: run.id } });
+    }
   });
 });

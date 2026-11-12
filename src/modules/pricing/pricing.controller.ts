@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Get,
@@ -16,6 +17,13 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { UpdateMinimumWagesDto } from './dto/update-minimum-wages.dto';
 import { UpdateApprovalLimitsDto, UpdateCompanyDetailsDto } from './dto/money-settings.dto';
+
+/** The go-live date has its own checked endpoint (PUT /pricing/go-live); a plain Settings save can't set it. */
+function rejectGoLiveInGenericSave(body: Partial<PricingPolicy> | undefined): void {
+  if (body && Object.prototype.hasOwnProperty.call(body, 'goLiveDate')) {
+    throw new BadRequestException('Set the go-live date with PUT /pricing/go-live');
+  }
+}
 
 @Controller('pricing')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -40,6 +48,7 @@ export class PricingController {
     @Body() body: Partial<PricingPolicy>,
     @Req() req: Request & { user: JwtPayload },
   ): Promise<PricingPolicy> {
+    rejectGoLiveInGenericSave(body);
     return this.pricingService.createVersion(body, req.user.sub);
   }
 
@@ -50,6 +59,7 @@ export class PricingController {
     @Body() body: Partial<PricingPolicy>,
     @Req() req: Request & { user: JwtPayload },
   ): Promise<PricingPolicy> {
+    rejectGoLiveInGenericSave(body);
     return this.pricingService.createVersion(body, req.user.sub);
   }
 

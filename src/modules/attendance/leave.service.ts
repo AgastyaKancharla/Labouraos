@@ -108,8 +108,9 @@ export class LeaveService {
    * leave is earned in the joining month, even for someone joining on the 1st
    * (Master Guide, decided 11 Nov): the first accrual is on the 1st of the
    * following month. A row for a month before that (written from an older
-   * rule, or before the joining date was entered) is removed, so the balance
-   * always follows the joining date. Safe to run again: one row per person per month.
+   * rule, or before the joining date or go-live was set) is never deleted: the
+   * balance simply does not count it, so a wrong date entered by mistake and
+   * corrected later brings the leave back. Safe to run again: one row per person per month.
    */
   async ensureAccrued(staffId: string): Promise<number> {
     const staff = await this.prisma.staff.findUnique({
@@ -119,7 +120,6 @@ export class LeaveService {
     if (!staff || !ATTENDANCE_ROLES.includes(staff.role) || staff.status !== 'active') return 0;
     const policy = await this.pricing.current();
     let month = firstAccrualMonth(await this.joiningDay(staff), goLiveDayOf(policy));
-    await this.prisma.leaveAccrual.deleteMany({ where: { staffId, month: { lt: month } } });
     const current = monthOf(this.todayIst());
     const existing = new Set(
       (
@@ -162,9 +162,21 @@ export class LeaveService {
     return { written };
   }
 
+  /** The first month that earns leave for a person (later of joining and go-live), or null for someone who earns none. */
+  async firstEarningMonth(staffId: string): Promise<string | null> {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { id: true, createdAt: true, joinedOn: true },
+    });
+    if (!staff) return null;
+    return firstAccrualMonth(await this.joiningDay(staff), goLiveDayOf(await this.pricing.current()));
+  }
+
   async balance(staffId: string): Promise<LeaveBalance> {
     await this.ensureAccrued(staffId);
-    const accruals = await this.prisma.leaveAccrual.findMany({ where: { staffId } });
+    const first = await this.firstEarningMonth(staffId);
+    // Rows before the first earning month stay in the table but never count.
+    const accruals = (await this.prisma.leaveAccrual.findMany({ where: { staffId } })).filter((row) => !first || row.month >= first);
     const leaveDays = await this.prisma.attendanceDay.findMany({
       where: { staffId, dayType: 'leave' },
       select: { leaveKind: true, leaveUnpaid: true },
@@ -281,7 +293,8 @@ export class LeaveService {
       orderBy: { date: 'asc' },
     });
     await this.ensureAccrued(request.staffId);
-    const accruals = await this.prisma.leaveAccrual.findMany({ where: { staffId: request.staffId } });
+    const first = await this.firstEarningMonth(request.staffId);
+    const accruals = (await this.prisma.leaveAccrual.findMany({ where: { staffId: request.staffId } })).filter((row) => !first || row.month >= first);
     const earned = accruals.reduce(
       (sum, row) => sum + (request.kind === 'emergency' ? row.emergency : row.casual),
       0,

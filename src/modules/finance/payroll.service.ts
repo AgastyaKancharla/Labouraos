@@ -577,7 +577,6 @@ export class PayrollService {
     const staffIds = [...new Set(lines.map((l) => l.staffId))];
     const people = await this.prisma.staff.findMany({ where: { id: { in: staffIds } }, select: PERSON_SELECT });
     const [joined, away] = await Promise.all([this.joinedDays(people), this.awayPeriods(people)]);
-    const goLiveDay = await this.pricing.goLiveDay();
     const recorded = await this.prisma.payrollCorrection.groupBy({
       by: ['staffId', 'relatesToMonth'],
       where: { source: 'recompute', staffId: { in: staffIds }, relatesToMonth: { in: runs.map((r) => r.month) } },
@@ -593,7 +592,9 @@ export class PayrollService {
       for (const line of mine) {
         const joinedDay = joined.get(line.staffId);
         if (!joinedDay) continue;
-        const pm = this.personMonth(attendance.get(line.staffId) ?? [], joinedDay, away.get(line.staffId) ?? [], working, holidayDays, monthDays(run.month).last, goLiveDay);
+        // The go-live date the sheet was prepared with (kept on it), never today's: a later
+        // Settings change can never rewrite a paid month.
+        const pm = this.personMonth(attendance.get(line.staffId) ?? [], joinedDay, away.get(line.staffId) ?? [], working, holidayDays, monthDays(run.month).last, run.goLiveDay ?? null);
         const again = computePay({
           monthlyPaise: line.monthlyPaise,
           salaryDays: line.salaryDays,
@@ -691,7 +692,7 @@ export class PayrollService {
     salaryDays: number;
     corrections: OpenCorrection[];
     correctionRunIds: string[];
-    rules: { weeklyOffDays: number[]; fullDayMinutes: number };
+    rules: { weeklyOffDays: number[]; fullDayMinutes: number; goLiveDay: string | null };
   }> {
     const policy = await this.pricing.current();
     const salaryDays = salaryDaysFor(policy.payrollSalaryDays);
@@ -732,7 +733,7 @@ export class PayrollService {
       }
     }
     rows.sort((a, b) => a.staffCode.localeCompare(b.staffCode));
-    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds, rules: { weeklyOffDays, fullDayMinutes } };
+    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds, rules: { weeklyOffDays, fullDayMinutes, goLiveDay: goLiveDayOf(policy) } };
   }
 
   private rowFromLine(line: PayrollLine): SheetRow {
@@ -880,7 +881,7 @@ export class PayrollService {
     if (!rows.length) throw new BadRequestException(`Nobody was on the staff in ${monthLabel(month)}.`);
     const totals = { people: rows.length, grossPaise: sumPaise(rows.map((r) => r.grossPaise)), deductionsPaise: sumPaise(rows.map((r) => r.deductionsPaise)), netPaise: sumPaise(rows.map((r) => r.netPaise)) };
     // The Settings this sheet was worked out with, kept on it for later recomputes.
-    const snapshot = { weeklyOffDays: rules.weeklyOffDays, fullDayMinutes: rules.fullDayMinutes };
+    const snapshot = { weeklyOffDays: rules.weeklyOffDays, fullDayMinutes: rules.fullDayMinutes, goLiveDay: rules.goLiveDay };
     const lineData = (runId: string): Prisma.PayrollLineCreateManyInput[] =>
       rows.map((r) => ({
         runId,

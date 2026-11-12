@@ -2145,6 +2145,10 @@ model PayrollRun {
   /// to the Settings version in force at preparedAt; weeklyOffDays unused).
   weeklyOffDays     Int[]         @default([])
   fullDayMinutes    Int?
+  /// The go-live date (IST yyyy-mm-dd) in Settings when the sheet was prepared.
+  /// The correction recompute uses it, never today's, so a later go-live change
+  /// never rewrites a frozen month. Null = none set then (or prepared before it was kept).
+  goLiveDay         String?
   lines             PayrollLine[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
