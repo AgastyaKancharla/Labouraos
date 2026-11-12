@@ -37,7 +37,8 @@ import { ConsentService } from '../consent/consent.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
-import { isJobSeekerStatus } from './job-seeker.status';
+import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
+import { markJobSeekerRefunded } from './job-seeker-refunded';
 import { calculateAge, validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 import {
@@ -448,9 +449,9 @@ export class JobSeekerService {
       throw new BadRequestException('Job seeker is already active');
     }
 
-    if (jobSeeker.status === 'deactivated') {
+    if (jobSeeker.status === 'deactivated' || jobSeeker.status === 'refunded') {
       throw new BadRequestException(
-        'Job seeker is deactivated. Use /job-seekers/:id/reactivate to reactivate',
+        `Job seeker is ${jobSeeker.status}. Use /job-seekers/:id/reactivate to reactivate`,
       );
     }
 
@@ -572,11 +573,12 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
 
-    // Deactivated after 3 hits, or closed after finding a job on his own: either way he
-    // comes back by paying ₹499 again, which starts a fresh guarantee.
-    if (jobSeeker.status !== 'deactivated' && jobSeeker.status !== 'closed') {
+    // Deactivated after 3 hits, closed after finding a job on his own, or refunded: he
+    // comes back by paying ₹499 again, which resets the hits and starts a fresh 30-day
+    // guarantee (Master Guide; the win-back list asks refunded people to register again).
+    if (!REACTIVATABLE_STATUSES.includes(jobSeeker.status)) {
       throw new BadRequestException(
-        `Job seeker must be deactivated to be reactivated. Current status: '${jobSeeker.status}'`,
+        `Job seeker must be deactivated, closed or refunded to be reactivated. Current status: '${jobSeeker.status}'`,
       );
     }
 
@@ -1074,6 +1076,9 @@ export class JobSeekerService {
           changedByStaffId: actor.id,
           reason: 'job_seeker_guarantee_refund',
         });
+
+        // His ₹499 goes back, so he leaves the matching pool until he pays again.
+        await markJobSeekerRefunded(tx, jobSeeker, actor.id, now);
 
         return p;
       });

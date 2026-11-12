@@ -47,6 +47,7 @@ import { mockPaymentToolsAllowed } from './payment-mode';
 import { MonthLockService } from '../month-lock/month-lock.service';
 import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
 import { isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
+import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -1279,6 +1280,7 @@ export class PaymentService {
     }
 
     let endsGuaranteeForPlacement: { rootId: string; placementId: string; rootStatus: string } | null = null;
+    let refundedSeeker: { id: string; status: string } | null = null;
 
     if (payment.type === 'referral_payout') {
       const referralId = payment.referralId || payment.subjectId;
@@ -1368,6 +1370,7 @@ export class PaymentService {
         if (!eligibility.eligible) {
           throw new BadRequestException(eligibility.ineligibleReason!);
         }
+        refundedSeeker = { id: jobSeeker.id, status: jobSeeker.status };
       } else if (payment.placementId || payment.subjectType === 'placement') {
         const placementId = payment.placementId || payment.subjectId;
         const placement = await this.prisma.placement.findUnique({
@@ -1497,6 +1500,11 @@ export class PaymentService {
       changedFields: ['status', 'approvedByStaffId', 'approvedAt'],
       reason: 'Payment approved by CEO or Finance',
     });
+
+    // A job seeker whose ₹499 refund is approved leaves the matching pool.
+    if (refundedSeeker) {
+      await markJobSeekerRefunded(this.prisma, refundedSeeker, actorId, now);
+    }
 
     // A business refund under the guarantee rules ends the guarantee, the same as
     // approving it from the placement.

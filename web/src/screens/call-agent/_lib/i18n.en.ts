@@ -120,6 +120,7 @@ export const callAgentEn = {
   'ca.seekerStatus.deactivated': 'Deactivated',
   'ca.seekerStatus.placed': 'Placed',
   'ca.seekerStatus.closed': 'Closed',
+  'ca.seekerStatus.refunded': 'Refunded · can pay again',
 
   'ca.profile.why': 'Why on your list:',
   'ca.profile.wants': 'wants {salary} a month',

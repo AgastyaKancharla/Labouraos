@@ -44,7 +44,7 @@ export class RefundService {
 
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
-        status: { notIn: ['placed', 'deactivated', 'closed'] },
+        status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
         paymentReceivedAt: {
           not: null,
           lte: maxPaymentDate,
@@ -76,6 +76,7 @@ export class RefundService {
       rejectedCandidateIdSet = new Set(rejectedHits.map((h) => h.jobSeekerId));
 
       // Query candidate payments (refunds and activations) in a single set-based query
+      const paidAtById = new Map(candidates.map((c) => [c.id, c.paymentReceivedAt]));
       const candidatePayments = await this.prisma.payment.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
@@ -87,8 +88,11 @@ export class RefundService {
         const isRefund =
           !p.type ||
           (p.type === 'refund' &&
-            (!p.status || ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)));
-        if (isRefund) {
+            (!p.status || ['pending', 'approved', 'processing', 'completed', 'succeeded', 'failed'].includes(p.status)));
+        // Only a refund in his current guarantee counts: paying ₹499 again after a
+        // refund starts a new guarantee.
+        const paidAt = paidAtById.get(p.jobSeekerId);
+        if (isRefund && (!paidAt || !p.createdAt || p.createdAt >= paidAt)) {
           refundedCandidateIdSet.add(p.jobSeekerId);
         } else if (
           (p.type === 'activation' || p.type === 'reactivation') &&

@@ -195,7 +195,7 @@ export class MoneyAtRiskService {
     // --- 2. CANDIDATES AT RISK ---
     // Candidates who paid activation fee, not placed, not deactivated, approaching 30-day deadline
     const candidateWhere: Record<string, unknown> = {
-      status: { notIn: ['placed', 'deactivated', 'closed'] },
+      status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
       paymentReceivedAt: { not: null },
     };
     if (filterStaffIds !== null) {
@@ -249,6 +249,7 @@ export class MoneyAtRiskService {
       }
 
       // Query candidate payments (refunds and activations) in a single set-based query
+      const paidAtById = new Map(candidates.map((c) => [c.id, c.paymentReceivedAt]));
       const candidatePayments = await this.prisma.payment.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
@@ -261,7 +262,10 @@ export class MoneyAtRiskService {
           !p.type ||
           (p.type === 'refund' &&
             (!p.status || ['pending', 'approved', 'processing', 'completed', 'succeeded', 'failed'].includes(p.status)));
-        if (isRefund) {
+        // Only a refund in his current guarantee counts: paying ₹499 again after a
+        // refund starts a new guarantee.
+        const paidAt = paidAtById.get(p.jobSeekerId);
+        if (isRefund && (!paidAt || !p.createdAt || p.createdAt >= paidAt)) {
           refundedCandidateIdSet.add(p.jobSeekerId);
         } else if (
           (p.type === 'activation' || p.type === 'reactivation') &&
@@ -278,7 +282,7 @@ export class MoneyAtRiskService {
     for (const c of candidates) {
       if (!c.paymentReceivedAt) continue;
       // Disqualifiers from shared eligibility
-      if (c.status === 'placed' || c.status === 'deactivated' || c.status === 'closed') continue;
+      if (c.status === 'placed' || c.status === 'deactivated' || c.status === 'closed' || c.status === 'refunded') continue;
       if (rejectedCandidateIdSet.has(c.id)) continue;
       if (refundedCandidateIdSet.has(c.id)) continue;
       const paidAt = c.paymentReceivedAt;

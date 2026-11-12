@@ -134,6 +134,9 @@ export class CeoJobSeekersService {
       case 'closed':
         and.push({ status: 'closed' });
         break;
+      case 'refunded':
+        and.push({ status: 'refunded' });
+        break;
       default:
         break;
     }
