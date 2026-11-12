@@ -8,7 +8,7 @@ import { useOfflineQueue } from '@/device/offline-queue';
 import { LOCATION_ERROR_KEYS } from '@/device/location/useLocation';
 import { isApiError } from '@/api/errors';
 import { formatDayIst, formatShiftTime, formatTimeIst } from '@/lib/format';
-import { routes } from '@/navigation/routes';
+import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { isLocationError, placementsProgress, useAttendanceLogin, useAttendanceToday, useFieldHome, useTargetDashboard } from './useHome';
@@ -194,7 +194,7 @@ function AlertRow({ alert, last }: { alert: HomeAlert; last: boolean }) {
         trailing={alert.canShowCandidates ? <StatusChip tone="green" label={t('fa03.showCandidates')} /> : <StatusChip tone="green" label={t('fa03.signed')} />}
         onPress={() =>
           alert.canShowCandidates
-            ? router.push({ pathname: routes.jobSeekers, params: { businessId: alert.business.id } })
+            ? router.push(sellingRoutes.matches(alert.business.id))
             : router.push(`${routes.business}/${alert.business.id}`)
         }
         last={last}

@@ -23,7 +23,7 @@ describe('FA06b Visit complete', () => {
     expect(screen.getByText('Cook × 2')).toBeTruthy();
     expect(screen.getByText('Later today')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('fa06b-show'));
-    expect(router.push).toHaveBeenCalledWith({ pathname: '/job-seekers', params: { businessId: 'b-1' } });
+    expect(router.push).toHaveBeenCalledWith('/job-seekers/b-1');
     await fireEvent.press(screen.getByTestId('fa06b-outcome'));
     expect(router.push).toHaveBeenCalledWith({ pathname: '/visit/outcome', params: { id: 'v-1' } });
   });

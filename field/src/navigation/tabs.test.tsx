@@ -138,6 +138,21 @@ describe('Laboura Field tab bar', () => {
     expect(screen.getByTestId('screen')).toHaveTextContent('(app)/(tabs)/(home)/index');
   });
 
+  it.each([
+    ['Job seekers', sellingRoutes.matches('b-1', 'v-1'), '/job-seekers', '(app)/(tabs)/job-seekers/index'],
+    ['Job seekers', sellingRoutes.candidate('js-1', 'v-1'), '/job-seekers', '(app)/(tabs)/job-seekers/index'],
+    ['Vacancies', sellingRoutes.confirmVacancy('v-1'), '/vacancies', '(app)/(tabs)/vacancies/index'],
+    ['Vacancies', sellingRoutes.addVacancy('b-1'), '/vacancies', '(app)/(tabs)/vacancies/index'],
+  ])('a deep link into the %s tab (%s) keeps the list underneath, so back shows the list', async (tab, url, listPath, listScreen) => {
+    const result = await render(url);
+    expect(activeTab()).toEqual([tab]);
+    expect(testRouter.canGoBack()).toBe(true);
+    await testRouter.back();
+    expect(result.getPathname()).toBe(listPath);
+    expect(screen.getByTestId('screen')).toHaveTextContent(listScreen);
+    expect(activeTab()).toEqual([tab]);
+  });
+
   it('switching tabs keeps each tab where the agent left it', async () => {
     await render(routes.visits);
     await testRouter.push(routes.visitStart);

@@ -45,9 +45,14 @@ describe('FA15 Job seekers tab', () => {
     expect(router.push).toHaveBeenCalledWith('/visit/start');
   });
 
-  it('opened for one business (from the business page or Home) goes straight to its matches', async () => {
+  it("as the tab's anchor it ignores the params it inherits from a deep-linked screen above it, and shows the list", async () => {
+    // expo-router hands the anchor the params of /job-seekers/biz-1?vacancyId=vac-1.
     (useLocalSearchParams as jest.Mock).mockReturnValue({ businessId: 'biz-1', vacancyId: 'vac-1' });
-    await renderWithApp(<JobSeekersScreen />, { signedInAs: kiran });
-    expect(screen.getByTestId('redirect')).toHaveTextContent('/job-seekers/biz-1?vacancyId=vac-1');
+    const { route } = routeTable({ '/screens/field-selling/businesses': { query: '', results: [] } });
+    await renderWithApp(<JobSeekersScreen />, { signedInAs: kiran, route });
+    expect(screen.queryByTestId('redirect')).toBeNull();
+    expect(screen.getByTestId('screen-FA15')).toBeTruthy();
+    expect(router.push).not.toHaveBeenCalled();
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });
