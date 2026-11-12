@@ -88,7 +88,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     jwt = app.get(JwtService);
     sources = app.get(NotificationSourcesService);
     // Leftovers from an earlier failed run of this suite.
-    await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL] } } });
+    await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL, MAY] } } });
     await prisma.monthClose.deleteMany({ where: { month: MONTH } });
     await prisma.monthReviewMark.deleteMany({ where: { month: MONTH } });
     await prisma.holiday.deleteMany({ where: { date: { in: [day(LATE_HOLIDAY), day(LATE_HOLIDAY_WORKED)] } } });
@@ -114,7 +114,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
 
   afterAll(async () => {
     if (!prisma) return;
-    await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL] } } });
+    await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL, MAY] } } });
     await prisma.payrollCorrection.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staffRequest.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.statusHistory.deleteMany({ where: { subjectType: 'attendance_day', changedByStaffId: { in: staffIds } } });
@@ -130,7 +130,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     await prisma.bankCredit.deleteMany({ where: { bankUtr: { in: creditUtrs } } });
     await prisma.statusHistory.deleteMany({ where: { subjectType: 'payment', subjectId: { in: paymentIds } } });
     await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
-    await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectType: 'payroll_month', subjectId: { in: [MONTH, APRIL] } }, { subjectType: 'month', subjectId: MONTH }] } });
+    await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectType: 'payroll_month', subjectId: { in: [MONTH, APRIL, MAY] } }, { subjectType: 'month', subjectId: MONTH }] } });
     await sources.syncPayroll(new Date()).catch(() => undefined);
     await prisma.staffSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
@@ -703,6 +703,55 @@ describe('Finance back office (Phase 22 Part B)', () => {
     });
   });
 
+  describe('manual corrections (the CEO adds one, the next sheet pays it)', () => {
+    let addedId = '';
+
+    it('lets only the CEO add one, and only the CEO and Finance see them', async () => {
+      const body = { staffId: asha.id, relatesToMonth: MONTH, amountPaise: 75000, reason: 'W5B bonus day missed' };
+      await request(server()).post('/payroll/corrections').set(as('finance')).send(body).expect(403);
+      for (const key of ['manager', 'team_lead', 'agent', 'bala']) {
+        await request(server()).post('/payroll/corrections').set(as(key)).send(body).expect(403);
+        await request(server()).get('/payroll/corrections').set(as(key)).expect(403);
+      }
+      await request(server()).get('/payroll/corrections?status=waiting').set(as('finance')).expect(200);
+      await request(server()).get('/payroll/corrections?status=nonsense').set(as('ceo')).expect(400);
+    });
+
+    it('refuses a correction with no reason, no amount, for this month, or for nobody on the sheet', async () => {
+      const ok = { staffId: asha.id, relatesToMonth: MONTH, amountPaise: 75000, reason: 'W5B bonus day missed' };
+      await request(server()).post('/payroll/corrections').set(as('ceo')).send({ ...ok, reason: '  ' }).expect(400);
+      await request(server()).post('/payroll/corrections').set(as('ceo')).send({ ...ok, amountPaise: 0 }).expect(400);
+      await request(server()).post('/payroll/corrections').set(as('ceo')).send({ ...ok, amountPaise: 10.5 }).expect(400);
+      const thisMonth = new Date(Date.now() + 5.5 * 3600_000).toISOString().slice(0, 7);
+      await request(server()).post('/payroll/corrections').set(as('ceo')).send({ ...ok, relatesToMonth: thisMonth }).expect(400);
+      await request(server()).post('/payroll/corrections').set(as('ceo')).send({ ...ok, staffId: ceoId }).expect(404);
+      expect(await prisma.payrollCorrection.count({ where: { source: 'manual', staffId: { in: staffIds } } })).toBe(0);
+    });
+
+    it('adds a waiting correction (audited) that the next prepared sheet pays through the usual flow', async () => {
+      const res = await request(server()).post('/payroll/corrections').set(as('ceo')).send({ staffId: asha.id, relatesToMonth: MONTH, amountPaise: 75000, reason: 'W5B bonus day missed' }).expect(201);
+      addedId = res.body.id;
+      expect(res.body).toEqual(expect.objectContaining({ staffCode: asha.code, relatesToMonth: MONTH, amountPaise: 75000, source: 'manual', appliedMonth: null, reason: 'W5B bonus day missed' }));
+      expect(res.body.createdBy).toMatch(/W5B ceo/);
+      expect(await prisma.auditLog.count({ where: { action: 'payroll.correction_added', entityCode: asha.code, actorId: ceoId } })).toBe(1);
+      const waiting = await request(server()).get('/payroll/corrections?status=waiting').set(as('finance')).expect(200);
+      expect(waiting.body.rows.map((r: { id: string }) => r.id)).toContain(addedId);
+      // May's sheet (Asha has no May attendance, so her own pay is ₹0) carries it.
+      const may = (await request(server()).get(`/finance/salaries?month=${MAY}`).set(as('finance')).expect(200)).body;
+      const a = may.rows.find((r: { staffId: string }) => r.staffId === asha.id);
+      expect(a.correctionPaise).toBe(75000);
+      expect(a.correctionNote).toContain('Paid back ₹750 for March 2003 (manual correction: W5B bonus day missed)');
+      await request(server()).post(`/finance/salaries/${MAY}/prepare`).set(as('finance')).expect(200);
+      const applied = await request(server()).get('/payroll/corrections?status=applied').set(as('ceo')).expect(200);
+      expect(applied.body.rows.find((r: { id: string }) => r.id === addedId)).toEqual(expect.objectContaining({ appliedMonth: MAY }));
+      const after = await request(server()).get('/payroll/corrections?status=waiting').set(as('ceo')).expect(200);
+      expect(after.body.rows.map((r: { id: string }) => r.id)).not.toContain(addedId);
+      const line = await prisma.payrollLine.findFirstOrThrow({ where: { staffId: asha.id, run: { month: MAY } } });
+      expect(line.correctionPaise).toBe(75000);
+      expect(line.netPaise).toBe(75000);
+    });
+  });
+
   describe('changes in a month payroll no longer works out again', () => {
     // January 2002 has a paid sheet and so does each of the 12 months after it (to January 2003):
     // no sheet still to be prepared works January 2002 out again, so a change there is refused
@@ -733,7 +782,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
 
     it('refuses a holiday added, moved into or removed from such a month, and still allows one a later sheet reaches', async () => {
       const added = await request(server()).post('/attendance/holidays').set(as('ceo')).send({ date: '2002-01-15', name: 'W5B too late' }).expect(400);
-      expect(added.body.message).toMatch(/January 2002 pay.*manual correction/);
+      expect(added.body.message).toMatch(/January 2002 pay.*manual correction on Salaries \(Team & access → Salaries → Add a correction\)/);
       const moved = await request(server()).patch(`/attendance/holidays/${reachableHolidayId}`).set(as('ceo')).send({ date: '2002-01-14' }).expect(400);
       expect(moved.body.message).toMatch(/manual correction/);
       const removed = await request(server()).delete(`/attendance/holidays/${oldHolidayId}`).set(as('ceo')).expect(400);

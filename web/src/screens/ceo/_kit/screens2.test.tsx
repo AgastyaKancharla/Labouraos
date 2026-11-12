@@ -29,7 +29,7 @@ import KeepingData from '../C-Pricing-Data';
 import Partner from '../C-Partner';
 
 const NOW = new Date('2026-11-11T06:30:00Z'); // 12:00 IST
-const common = { 'GET /login-codes/pending': [], 'GET /review-flags': [], 'GET /refunds/due': [], 'GET /notifications/bell': { openCount: 0, unseenCount: 0, latest: [], doneToday: [], asOf: NOW.toISOString() } };
+const common = { 'GET /login-codes/pending': [], 'GET /review-flags': [], 'GET /refunds/due': [], 'GET /payroll/corrections': { status: 'waiting', rows: [] }, 'GET /notifications/bell': { openCount: 0, unseenCount: 0, latest: [], doneToday: [], asOf: NOW.toISOString() } };
 const render = (ui: React.ReactElement, path: string, route?: string) => {
   signInAs('ceo');
   return renderScreen(ui, { portal: 'ceo', path, route, now: NOW });

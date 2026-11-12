@@ -21,6 +21,7 @@ import { PayslipCard, type Payslip } from '../../call-agent/CA14g-Payslip/Paysli
 import { FormAction, Note } from '../_kit/kit';
 import { ServerDownload } from '../_kit/download';
 import { MonthlyPay } from '../_kit/MonthlyPay';
+import { PayrollCorrections } from '../_kit/PayrollCorrections';
 import { PAID_FROM } from '../_kit/labels';
 import { STAFF_ROLE, addMonths, dayMonth, istMonthKey, monthName, paidDaysText, shortTime, type SalarySheet, type SheetRow } from '../_kit/payroll';
 import '../_kit/fin.css';
@@ -307,6 +308,7 @@ export default function Salaries() {
           </div>
         </div>
       </Card>
+      <PayrollCorrections canAdd={false} />
       <MonthlyPay months={[...new Set([previous, current, addMonths(current, 1)])]} canEdit={false} />
     </div>
   );

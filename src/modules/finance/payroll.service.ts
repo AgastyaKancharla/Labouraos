@@ -134,6 +134,9 @@ interface OpenCorrection {
 /** Prepare found a waiting correction already applied on another sheet. */
 export const CORRECTIONS_TAKEN = 'Someone else just prepared a salary sheet that uses the same corrections. Reload and prepare again.';
 
+/** The largest manual correction (₹10,00,000). */
+const MAX_CORRECTION_PAISE = 100_000_000;
+
 /** Every Prepare runs under this Postgres advisory transaction lock, one at a time. */
 const PAYROLL_PREPARE_LOCK = 'laboura:payroll:prepare';
 
@@ -270,6 +273,74 @@ export class PayrollService {
       reason: note ?? undefined,
     });
     return row;
+  }
+
+  // ------------------------------------------------------- manual corrections
+
+  /**
+   * The CEO adds a manual pay correction (only the CEO sets pay): + pays back,
+   * − takes back, for an earlier month, with a reason. It waits as a
+   * PayrollCorrection (source manual) and the next prepared sheet picks it up
+   * like any other — for changes payroll no longer works out by itself.
+   */
+  async addCorrection(input: { staffId?: unknown; relatesToMonth?: unknown; amountPaise?: unknown; reason?: unknown }, actor: Actor, now = new Date()) {
+    if (actor.role !== 'ceo') throw new ForbiddenException('Only the CEO adds a pay correction');
+    const relatesToMonth = this.month(input.relatesToMonth);
+    if (relatesToMonth >= istDay(now).slice(0, 7)) throw new BadRequestException('A correction is for an earlier month: this month is still worked out from attendance');
+    const amountPaise = input.amountPaise;
+    if (typeof amountPaise !== 'number' || !Number.isSafeInteger(amountPaise) || amountPaise === 0) {
+      throw new BadRequestException('amountPaise is a whole number of paise: + to pay back, − to take back, never 0');
+    }
+    if (Math.abs(amountPaise) > MAX_CORRECTION_PAISE) throw new BadRequestException('A correction is at most ₹10,00,000');
+    const reason = typeof input.reason === 'string' ? input.reason.trim().slice(0, 300) : '';
+    if (!reason) throw new BadRequestException('Write the reason for the correction');
+    const staffId = typeof input.staffId === 'string' ? input.staffId : '';
+    const staff = staffId ? await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, name: true, role: true } }) : null;
+    if (!staff || !SALARY_ROLES.includes(staff.role)) throw new NotFoundException('No staff member on the salary sheet with that id');
+    const row = await this.prisma.payrollCorrection.create({ data: { staffId: staff.id, relatesToMonth, amountPaise, reason, source: 'manual', createdByStaffId: actor.id } });
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'payroll.correction_added',
+      entityType: 'PayrollCorrection',
+      entityCode: staff.code,
+      after: { relatesToMonth, amountPaise, source: 'manual' },
+      changedFields: ['amountPaise'],
+      reason,
+    });
+    return (await this.correctionViews([row]))[0];
+  }
+
+  /** Corrections waiting for the next sheet, or already applied on one (CEO and Finance), newest first. */
+  async corrections(statusValue: unknown) {
+    const status = statusValue === undefined || statusValue === '' || statusValue === 'waiting' ? 'waiting' : statusValue === 'applied' ? 'applied' : null;
+    if (!status) throw new BadRequestException('status is waiting or applied');
+    const rows = await this.prisma.payrollCorrection.findMany({
+      where: { appliedRunId: status === 'waiting' ? null : { not: null } },
+      orderBy: [{ createdAt: 'desc' }],
+      take: 200,
+    });
+    return { status, rows: await this.correctionViews(rows) };
+  }
+
+  private async correctionViews(rows: Array<{ id: string; staffId: string; relatesToMonth: string; amountPaise: number; reason: string; source: string; appliedMonth: string | null; createdByStaffId: string | null; createdAt: Date }>) {
+    const people = rows.length ? await this.prisma.staff.findMany({ where: { id: { in: [...new Set(rows.map((r) => r.staffId))] } }, select: { id: true, code: true, name: true } }) : [];
+    const creators = await this.names(rows.map((r) => r.createdByStaffId));
+    return rows.map((r) => {
+      const person = people.find((p) => p.id === r.staffId);
+      return {
+        id: r.id,
+        staffId: r.staffId,
+        staffCode: person?.code ?? null,
+        name: person?.name ?? null,
+        relatesToMonth: r.relatesToMonth,
+        amountPaise: r.amountPaise,
+        reason: r.reason,
+        source: r.source,
+        createdBy: r.createdByStaffId ? (creators.get(r.createdByStaffId) ?? null) : null,
+        createdAt: r.createdAt.toISOString(),
+        appliedMonth: r.appliedMonth,
+      };
+    });
   }
 
   // ------------------------------------------------------------- the sheet
@@ -538,7 +609,12 @@ export class PayrollService {
   private correctionNote(list: OpenCorrection[]): string | null {
     if (!list.length) return null;
     return list
-      .map((c) => `${c.amountPaise > 0 ? 'Paid back' : 'Taken back'} ${inr(Math.abs(c.amountPaise))} for ${monthLabel(c.relatesToMonth)}${c.source === 'carry_forward' ? ' (carried forward: larger than that month\'s pay)' : ' (a holiday or attendance changed after it was approved)'}`)
+      .map(
+        (c) =>
+          `${c.amountPaise > 0 ? 'Paid back' : 'Taken back'} ${inr(Math.abs(c.amountPaise))} for ${monthLabel(c.relatesToMonth)}${
+            c.source === 'carry_forward' ? ' (carried forward: larger than that month\'s pay)' : c.source === 'manual' ? ` (manual correction: ${c.reason})` : ' (a holiday or attendance changed after it was approved)'
+          }`,
+      )
       .join('; ')
       .slice(0, 1000);
   }

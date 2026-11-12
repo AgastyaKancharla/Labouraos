@@ -14,7 +14,22 @@ import CeoSalaries from '../../ceo/C-Team-Salaries';
 import MyPayslips from '../../call-agent/CA14g-Payslip';
 
 const NOW = new Date('2026-11-11T06:30:00Z'); // 12:00 IST
-const common = { 'GET /finance/counts': { bankCreditsUnmatched: 0, invoicesUnpaid: 0, payoutsDue: 0, expensesToApprove: 0 }, 'GET /refunds/due': [] };
+const common = { 'GET /finance/counts': { bankCreditsUnmatched: 0, invoicesUnpaid: 0, payoutsDue: 0, expensesToApprove: 0 }, 'GET /refunds/due': [], 'GET /payroll/corrections': { status: 'waiting', rows: [] } };
+
+const correction = (over: Record<string, unknown> = {}) => ({
+  id: 'pc1',
+  staffId: 's1',
+  staffCode: 'CA-0007',
+  name: 'Deepa Nair',
+  relatesToMonth: '2025-09',
+  amountPaise: 75000,
+  reason: 'Holiday on 2 Oct 2025 not paid',
+  source: 'manual',
+  createdBy: 'Agastya',
+  createdAt: '2026-11-10T06:00:00Z',
+  appliedMonth: null,
+  ...over,
+});
 
 const row = (over: Record<string, unknown> = {}) => ({
   staffId: 's1',
@@ -155,6 +170,33 @@ describe('Salaries (FN-Salaries)', () => {
     expect(screen.getAllByText('₹3,000 more to take back on the next sheet').length).toBeGreaterThan(0);
   });
 
+  it('shows the pay corrections read-only: waiting and applied', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /finance/salaries': sheet(),
+      'GET /finance/staff-salaries': staffSalaries,
+      'GET /payroll/corrections': ({ url }: { url: URL }) =>
+        url.searchParams.get('status') === 'applied'
+          ? { status: 'applied', rows: [correction({ id: 'pc2', amountPaise: -20000, reason: 'Paid twice in August', appliedMonth: '2026-10' })] }
+          : { status: 'waiting', rows: [correction()] },
+    });
+    signInAs('finance');
+    renderScreen(<Salaries />, { portal: 'finance', path: '/finance/salaries', now: NOW });
+    const waiting = await screen.findByRole('table', { name: /Pay corrections waiting for the next sheet/ });
+    expect(await within(waiting).findByText('Holiday on 2 Oct 2025 not paid')).toBeInTheDocument();
+    expect(within(waiting).getByText('+₹750')).toBeInTheDocument();
+    expect(within(waiting).getByText('September 2025')).toBeInTheDocument();
+    expect(screen.getByText('Added by the CEO · the next salary sheet pays them')).toBeInTheDocument();
+    // Only the CEO adds one.
+    expect(screen.queryByRole('button', { name: 'Add a correction' })).toBeNull();
+    await userEvent.click(screen.getByRole('tab', { name: 'Applied' }));
+    const applied = await screen.findByRole('table', { name: /Pay corrections applied/ });
+    expect(await within(applied).findByText('Paid twice in August')).toBeInTheDocument();
+    expect(within(applied).getByText('−₹200')).toBeInTheDocument();
+    expect(within(applied).getByText('On the October 2026 sheet')).toBeInTheDocument();
+    expect(api.calls('GET /payroll/corrections').some((c) => c.query.get('status') === 'applied')).toBe(true);
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /finance/salaries': apiError(500, 'Internal server error', 'req-sal'), 'GET /finance/staff-salaries': staffSalaries });
     signInAs('finance');
@@ -164,6 +206,33 @@ describe('Salaries (FN-Salaries)', () => {
 });
 
 describe("CEO's Salaries (C-Team-Salaries)", () => {
+  it('adds a pay correction for an earlier month, taken back or paid back, with a reason', async () => {
+    const api = mockApi({
+      'GET /login-codes/pending': [],
+      'GET /review-flags': [],
+      'GET /refunds/due': [],
+      'GET /finance/salaries': sheet(),
+      'GET /finance/staff-salaries': staffSalaries,
+      'GET /payroll/corrections': { status: 'waiting', rows: [correction()] },
+      'POST /payroll/corrections': correction({ id: 'pc3', amountPaise: -50000 }),
+    });
+    signInAs('ceo');
+    renderScreen(<CeoSalaries />, { portal: 'ceo', path: '/ceo/team/salaries', now: NOW });
+    expect(await screen.findByText('Holiday on 2 Oct 2025 not paid')).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Add a correction' }));
+    const d = await screen.findByRole('dialog');
+    const confirm = within(d).getByRole('button', { name: 'Add a pay correction' });
+    expect(confirm).toBeDisabled();
+    await waitFor(() => expect(within(d).getByRole('option', { name: 'Deepa Nair (CA-0007)' })).toBeInTheDocument());
+    await userEvent.selectOptions(within(d).getByLabelText(/Person/), 's1');
+    await userEvent.selectOptions(within(d).getByLabelText(/For the month/), '2026-09');
+    await userEvent.selectOptions(within(d).getByLabelText(/Pay back or take back/), 'take');
+    await userEvent.type(within(d).getByLabelText(/Amount/), '500');
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'Paid twice in September');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(api.calls('POST /payroll/corrections')[0]?.body).toEqual({ staffId: 's1', relatesToMonth: '2026-09', amountPaise: -50000, reason: 'Paid twice in September' }));
+  });
+
   it('shows the rupees from payroll and approves the total Finance sent', async () => {
     const api = mockApi({
       'GET /login-codes/pending': [],
@@ -173,6 +242,7 @@ describe("CEO's Salaries (C-Team-Salaries)", () => {
       'POST /finance/salaries/2026-10/approve': sheet({ status: 'approved' }),
       'GET /finance/staff-salaries': { month: '2026-11', rows: [{ ...staffSalaries.rows[0], staffId: 's2', name: 'Kiran Kumar', staffCode: 'FA-0003', monthlyPaise: null, effectiveFromMonth: null }] },
       'PUT /finance/staff-salaries/s2': { id: 'x' },
+      'GET /payroll/corrections': { status: 'waiting', rows: [] },
     });
     signInAs('ceo');
     renderScreen(<CeoSalaries />, { portal: 'ceo', path: '/ceo/team/salaries', now: NOW });

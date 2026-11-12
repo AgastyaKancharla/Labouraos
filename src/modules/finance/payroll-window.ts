@@ -53,6 +53,6 @@ export async function assertPayrollCanCorrect(prisma: RunReader, months: readonl
   if (!beyond.length) return;
   const labels = beyond.map(monthLabel).join(', ');
   throw new BadRequestException(
-    `${what} would change ${labels} pay, which is older than the ${CORRECTION_LOOKBACK_MONTHS} months payroll still works out again, so the change would never reach anyone's salary. Ask Finance to raise a manual correction instead.`,
+    `${what} would change ${labels} pay, which is older than the ${CORRECTION_LOOKBACK_MONTHS} months payroll still works out again, so the change would never reach anyone's salary. Instead, the CEO adds a manual correction on Salaries (Team & access → Salaries → Add a correction); the next salary sheet pays it.`,
   );
 }
