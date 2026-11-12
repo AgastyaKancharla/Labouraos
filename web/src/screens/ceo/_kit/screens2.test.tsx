@@ -400,8 +400,9 @@ describe('Call center and field ops', () => {
         summary: { visits: 14, onboarded: 3, vacanciesThisWeek: 9, visitToOnboardPercent: 21, geofenceMismatches: 1, openFlags: 2 },
         agentsNow: [{ staff: { id: 'fa1', name: 'Kiran Kumar' }, status: 'on_visit', area: 'BTM Layout', lastCheckInAt: null }],
         proof: [],
-        rows: [{ staff: { id: 'fa1', name: 'Kiran Kumar', team: null }, now: { status: 'on_visit', since: null }, lastVisit: { business: 'Annapoorna Mess', area: 'BTM', at: NOW.toISOString() }, visits: 6, onboarded: 2, vacancies: 3, shown: 4, interviews: 1, geofenceMismatches: 0, openFlags: [] }],
-        requests: [{ id: 'va1', business: biz, purpose: 'verification', createdAt: '2026-11-09T05:00:00Z', suggested: { id: 'fa1', name: 'Kiran Kumar' } }],
+        rows: [{ staff: { id: 'fa1', name: 'Kiran Kumar', team: null }, now: { status: 'on_visit', since: null }, lastVisit: { business: 'Annapoorna Mess', area: 'BTM', at: NOW.toISOString() }, visits: 6, onboarded: 2, vacancies: 3, shown: 4, interviews: 1, geofenceMismatches: 0, openFlags: [], avgVisitSeconds: 720 }],
+        requests: [{ id: 'va1', business: biz, purpose: 'verification', createdAt: '2026-11-09T05:00:00Z', suggested: { id: 'fa1', name: 'Kiran Kumar' }, nearest: { id: 'fa1', name: 'Kiran Kumar', distanceKm: 1.2 } }],
+        revisitsDue: [{ id: 'v9', on: '2026-11-13', business: null, shopName: 'Sri Ganesh Stores', outcome: 'owner_not_there', agent: { id: 'fa1', name: 'Kiran Kumar' } }],
         revisits: [],
         agents: [{ id: 'fa1', name: 'Kiran Kumar' }],
       },
@@ -410,6 +411,10 @@ describe('Call center and field ops', () => {
     render(<FieldOps />, '/ceo/field-ops');
     expect(await screen.findByText('On visit · Annapoorna Mess')).toBeInTheDocument();
     expect(screen.getByText('Kiran · BTM Layout')).toBeInTheDocument();
+    expect(screen.getByText('12 min')).toBeInTheDocument();
+    expect(screen.getByText('Kiran Kumar · 1.2 km')).toBeInTheDocument();
+    const revisits = screen.getByRole('table', { name: 'Revisits due this week' });
+    expect(within(revisits).getByText('Sri Ganesh Stores')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: /Assign the visit/ }));
     await waitFor(() => expect(api.calls('POST /businesses/b1/visit-assignments/va1/assign')[0].body).toEqual({ assignedStaffId: 'fa1' }));
