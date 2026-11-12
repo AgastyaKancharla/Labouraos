@@ -28,7 +28,8 @@ export function BestMatchesCard({ vacancyId, shownIds }: { vacancyId: string; sh
   const rows = q.data?.matches ?? [];
   return (
     <Card title="Best matches now" aside={q.data ? `${q.data.total} match${q.data.total === 1 ? '' : 'es'}` : undefined} flush>
-      <div className="scrollx">
+      {/* position: relative keeps the screen-reader-only header inside the scroller on a phone. */}
+      <div className="scrollx" style={{ position: 'relative' }}>
         <table>
           <caption className="sr-only">Best matches now</caption>
           <thead>
