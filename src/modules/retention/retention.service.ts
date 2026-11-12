@@ -24,6 +24,34 @@ import {
   TRANSIENT_LINK_RETENTION_DAYS,
 } from './retention.policy';
 
+/** What still identifies an unregistered shop or a person on a visit (T2). */
+const SHOP_VISIT_PERSONAL = [
+  { contactPhone: { not: null } },
+  { boardPhotoPath: { not: null } },
+  { boardPhotoHash: { not: null } },
+  { selfieUrl: { not: null } },
+  { selfieHash: { not: null } },
+  { shopName: { not: null } },
+  { note: { not: null } },
+  { proofLatitude: { not: null } },
+  { latitude: { not: 0 } },
+];
+
+function hasShopVisitPersonal(v: {
+  contactPhone: string | null;
+  boardPhotoPath: string | null;
+  boardPhotoHash: string | null;
+  selfieUrl: string | null;
+  selfieHash: string | null;
+  shopName: string | null;
+  note: string | null;
+  latitude: number;
+  longitude: number;
+  proofLatitude: number | null;
+}): boolean {
+  return Boolean(v.contactPhone || v.boardPhotoPath || v.boardPhotoHash || v.selfieUrl || v.selfieHash || v.shopName || v.note || v.proofLatitude !== null || v.latitude !== 0 || v.longitude !== 0);
+}
+
 export interface RetentionSummary {
   executedAt: Date;
   dryRun: boolean;
@@ -53,6 +81,8 @@ export interface RetentionSummary {
   jobRunsDeleted: number;
   /** Visits to shops that never registered, 23 months after the shop's last visit: phone and photos removed, the visit kept. */
   shopVisitsCleaned: number;
+  /** Visit photos whose storage delete failed this run: their paths stay for the next run (T1). */
+  shopVisitPhotoDeleteFailures: number;
 }
 
 export interface RetentionRunOptions {
@@ -109,6 +139,7 @@ export class RetentionService {
       otpSessionsDeleted: 0,
       jobRunsDeleted: 0,
       shopVisitsCleaned: 0,
+      shopVisitPhotoDeleteFailures: 0,
     };
 
     try {
@@ -180,6 +211,7 @@ export class RetentionService {
             otpSessionsDeleted: summary.otpSessionsDeleted,
             jobRunsDeleted: summary.jobRunsDeleted,
             shopVisitsCleaned: summary.shopVisitsCleaned,
+            shopVisitPhotoDeleteFailures: summary.shopVisitPhotoDeleteFailures,
           },
         },
       });
@@ -214,6 +246,7 @@ export class RetentionService {
       otpSessionsDeleted: Number(details.otpSessionsDeleted ?? 0),
       jobRunsDeleted: Number(details.jobRunsDeleted ?? 0),
       shopVisitsCleaned: Number(details.shopVisitsCleaned ?? 0),
+      shopVisitPhotoDeleteFailures: Number(details.shopVisitPhotoDeleteFailures ?? 0),
     };
   }
 
@@ -225,11 +258,14 @@ export class RetentionService {
    * chain of visits linked by revisitOfVisitId; a chain where any visit
    * registered the business, or any visit is newer than the cutoff, is kept.
    */
-  async cleanupUnregisteredShopVisits(now: Date, dryRun: boolean, summary: Pick<RetentionSummary, 'shopVisitsCleaned'>): Promise<void> {
+  async cleanupUnregisteredShopVisits(
+    now: Date,
+    dryRun: boolean,
+    summary: Pick<RetentionSummary, 'shopVisitsCleaned'> & Partial<Pick<RetentionSummary, 'shopVisitPhotoDeleteFailures'>>,
+  ): Promise<void> {
     const cutoff = getProfileRetentionCutoff(now);
-    const personal = [{ contactPhone: { not: null } }, { boardPhotoPath: { not: null } }, { selfieUrl: { not: null } }];
     const candidates = await this.prisma.businessVisit.findMany({
-      where: { businessId: null, visitedAt: { lt: cutoff }, OR: personal },
+      where: { businessId: null, visitedAt: { lt: cutoff }, OR: SHOP_VISIT_PERSONAL },
       select: { id: true },
       take: 5000,
     });
@@ -239,23 +275,54 @@ export class RetentionService {
       const chain = await this.visitChain(id);
       chain.forEach((v) => settled.add(v.id));
       if (chain.some((v) => v.businessId !== null || v.visitedAt >= cutoff)) continue;
-      const toClean = chain.filter((v) => v.contactPhone !== null || v.boardPhotoPath !== null || v.selfieUrl !== null);
+      const toClean = chain.filter(hasShopVisitPersonal);
       if (dryRun) {
         summary.shopVisitsCleaned += toClean.length;
         continue;
       }
       for (const visit of toClean) {
-        for (const path of [visit.boardPhotoPath, visit.selfieUrl]) {
-          if (!path || !this.visitPhotos?.delete) continue;
-          try {
-            await this.visitPhotos.delete(path);
-          } catch (err: unknown) {
-            this.logger.warn(`Visit photo ${visit.id} could not be deleted: ${err instanceof Error ? err.message : String(err)}`);
+        // T1: a photo path (and its hash) is cleared only once its file is deleted;
+        // a failed delete stays for the next run and is counted.
+        const keep: { boardPhotoPath?: string; boardPhotoHash?: string | null; selfieUrl?: string; selfieHash?: string | null } = {};
+        for (const [pathKey, hashKey] of [['boardPhotoPath', 'boardPhotoHash'], ['selfieUrl', 'selfieHash']] as const) {
+          const path = visit[pathKey];
+          if (!path) continue;
+          let deleted = false;
+          if (this.visitPhotos?.delete) {
+            try {
+              await this.visitPhotos.delete(path);
+              deleted = true;
+            } catch (err: unknown) {
+              this.logger.warn(`Visit photo ${visit.id} could not be deleted: ${err instanceof Error ? err.message : String(err)}`);
+            }
+          }
+          if (!deleted) {
+            keep[pathKey] = path;
+            keep[hashKey] = visit[hashKey];
+            summary.shopVisitPhotoDeleteFailures = (summary.shopVisitPhotoDeleteFailures ?? 0) + 1;
           }
         }
+        // T2: only the visit itself is kept (it counts in the visit totals): no
+        // shop name, note, phone, GPS or photo fingerprints.
         const cleaned = await this.prisma.businessVisit.updateMany({
           where: { id: visit.id, businessId: null },
-          data: { contactPhone: null, boardPhotoPath: null, selfieUrl: null },
+          data: {
+            contactPhone: null,
+            shopName: null,
+            note: null,
+            latitude: 0,
+            longitude: 0,
+            accuracyMeters: null,
+            proofLatitude: null,
+            proofLongitude: null,
+            proofAccuracyMeters: null,
+            proofDistanceMeters: null,
+            boardPhotoPath: null,
+            boardPhotoHash: null,
+            selfieUrl: null,
+            selfieHash: null,
+            ...keep,
+          },
         });
         summary.shopVisitsCleaned += cleaned.count;
       }
@@ -264,7 +331,22 @@ export class RetentionService {
 
   /** Every visit to the same shop: up to the first visit, then every revisit after it. */
   private async visitChain(id: string) {
-    const select = { id: true, businessId: true, visitedAt: true, contactPhone: true, boardPhotoPath: true, selfieUrl: true, revisitOfVisitId: true } as const;
+    const select = {
+      id: true,
+      businessId: true,
+      visitedAt: true,
+      contactPhone: true,
+      boardPhotoPath: true,
+      boardPhotoHash: true,
+      selfieUrl: true,
+      selfieHash: true,
+      shopName: true,
+      note: true,
+      latitude: true,
+      longitude: true,
+      proofLatitude: true,
+      revisitOfVisitId: true,
+    } as const;
     let root = await this.prisma.businessVisit.findUnique({ where: { id }, select });
     const seen = new Set<string>();
     while (root?.revisitOfVisitId && !seen.has(root.id)) {

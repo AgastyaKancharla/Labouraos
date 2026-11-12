@@ -35,9 +35,15 @@ describe('Retention: visits to shops that never registered', () => {
         latitude: 12.93,
         longitude: 77.62,
         shopName: `Shop ${key}`,
+        note: 'Owner said come back after Diwali',
         contactPhone: '9900054321',
         boardPhotoPath: board,
+        boardPhotoHash: `hash-board-${stamp}-${key}`,
         selfieUrl: selfie,
+        selfieHash: `hash-selfie-${stamp}-${key}`,
+        proofLatitude: 12.9301,
+        proofLongitude: 77.6201,
+        accuracyMeters: 8,
         visitedAt: new Date(now.getTime() - monthsAgo * MONTH),
         revisitOfVisitId: extra.revisitOf ?? null,
         businessId: extra.businessId ?? null,
@@ -84,8 +90,11 @@ describe('Retention: visits to shops that never registered', () => {
     expect(run.shopVisitsCleaned).toBeGreaterThanOrEqual(2);
     for (const id of [oldShop.id, oldRevisit.id]) {
       const row = await prisma.businessVisit.findUniqueOrThrow({ where: { id } });
-      expect(row).toMatchObject({ contactPhone: null, boardPhotoPath: null, selfieUrl: null });
-      expect(row.shopName).toMatch(/^Shop /);
+      // T2: only the visit stays: no shop name, note, phone, GPS or photo fingerprints.
+      expect(row).toMatchObject({
+        contactPhone: null, boardPhotoPath: null, boardPhotoHash: null, selfieUrl: null, selfieHash: null,
+        shopName: null, note: null, latitude: 0, longitude: 0, accuracyMeters: null, proofLatitude: null, proofLongitude: null,
+      });
     }
     expect(photos.has(`visits/ret-${stamp}-a/board.jpg`)).toBe(false);
     expect(photos.has(`visits/ret-${stamp}-b/selfie.jpg`)).toBe(false);
@@ -102,8 +111,36 @@ describe('Retention: visits to shops that never registered', () => {
     expect(await prisma.businessVisit.count({ where: { id: { in: [oldShop.id, oldRevisit.id] }, contactPhone: { not: null } } })).toBe(0);
   });
 
+  it('T1: clears a photo path only after its file is deleted; a failed delete stays for the next run and is counted', async () => {
+    const stuck = await visit('g', 26);
+    // The storage the retention job itself uses.
+    const storage = (retention as unknown as { visitPhotos: { delete: (path: string) => Promise<void> } }).visitPhotos;
+    const original = storage.delete.bind(storage);
+    const failing = `visits/ret-${stamp}-g/board.jpg`;
+    storage.delete = async (path: string) => {
+      if (path === failing) throw new Error('storage unavailable');
+      return original(path);
+    };
+    try {
+      const run = { shopVisitsCleaned: 0, shopVisitPhotoDeleteFailures: 0 };
+      await retention.cleanupUnregisteredShopVisits(now, false, run);
+      expect(run.shopVisitPhotoDeleteFailures).toBeGreaterThanOrEqual(1);
+      const row = await prisma.businessVisit.findUniqueOrThrow({ where: { id: stuck.id } });
+      expect(row).toMatchObject({ boardPhotoPath: failing, boardPhotoHash: `hash-board-${stamp}-g`, selfieUrl: null, contactPhone: null, shopName: null });
+      expect(photos.has(failing)).toBe(true);
+    } finally {
+      storage.delete = original;
+    }
+    // The next run deletes it.
+    const next = { shopVisitsCleaned: 0, shopVisitPhotoDeleteFailures: 0 };
+    await retention.cleanupUnregisteredShopVisits(now, false, next);
+    expect(await prisma.businessVisit.findUniqueOrThrow({ where: { id: stuck.id } })).toMatchObject({ boardPhotoPath: null, boardPhotoHash: null });
+    expect(photos.has(failing)).toBe(false);
+  });
+
   it('is part of the daily keeping-data run summary', async () => {
     const summary = await retention.runRetentionCleanup({ dryRun: true, now });
     expect(typeof summary.shopVisitsCleaned).toBe('number');
+    expect(typeof summary.shopVisitPhotoDeleteFailures).toBe('number');
   });
 });
