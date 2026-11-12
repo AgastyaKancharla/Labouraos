@@ -964,6 +964,14 @@ model AuditLog {
   after         Json?
   reason        String?
   changedFields String[]  @default([])
+  /// The device the request came from (StaffDevice.deviceId and its label), when
+  /// the row was written during a signed-in request or a login. Never a phone number.
+  deviceId      String?
+  deviceName    String?
+  /// "office:<office network label>" or "outside_office"; null outside a request.
+  /// The address itself is not kept here (audit rows are never deleted; access
+  /// logs with addresses are kept only 1 year, guide: keeping data).
+  network       String?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
@@ -2314,4 +2322,39 @@ model TeamLeadCheck {
 
   @@index([subjectType, subjectId])
   @@index([checkedByStaffId, createdAt])
+}
+
+/// Register of data requests under India's data law (C-Privacy): a job seeker,
+/// business or referral partner asks to see, correct or erase their data. The
+/// CEO logs, updates and closes each one. Holds codes, not personal details.
+model DataRequest {
+  id               String    @id @default(uuid())
+  code             String    @unique
+  /// access, correction, erasure
+  kind             String
+  /// job_seeker, business, referral
+  subjectType      String
+  subjectId        String
+  /// JS- / BZ- / RF- code, read aloud on calls
+  subjectCode      String
+  /// What was asked, in a few words (no phone numbers or ID numbers).
+  details          String?
+  /// IST calendar date the request reached Laboura.
+  receivedOn       DateTime  @db.Date
+  /// receivedOn + 30 days (the guide gives no deadline; 30 days until a lawyer confirms).
+  dueOn            DateTime  @db.Date
+  /// open, in_progress, closed
+  status           String    @default("open")
+  /// done, partly_done, refused, withdrawn (set when closed)
+  outcome          String?
+  outcomeNote      String?
+  loggedByStaffId  String
+  updatedByStaffId String?
+  closedByStaffId  String?
+  closedAt         DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+
+  @@index([status, dueOn])
+  @@index([subjectType, subjectId])
 }

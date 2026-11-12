@@ -22,12 +22,38 @@ describe('translations', () => {
     }
   });
 
-  it('really translates (most Kannada and Hindi strings differ from English)', () => {
-    const keys = Object.keys(en) as (keyof typeof en)[];
-    const sameKn = keys.filter((k) => kn[k] === en[k]).length;
-    const sameHi = keys.filter((k) => hi[k] === en[k]).length;
-    expect(sameKn / keys.length).toBeLessThan(0.1);
-    expect(sameHi / keys.length).toBeLessThan(0.1);
+  // Kannada, English and Hindi stay everywhere they are offered (owner decision,
+  // 11 Nov): a Kannada or Hindi string may equal the English one only when it is
+  // a brand name, a code or a number. Anything else is an untranslated copy.
+  const SAME_AS_ENGLISH_ALLOWED = new Set<string>([
+    'common.appName', // Laboura Field (brand)
+    'common.brand', // Laboura (brand)
+    'fa01.staffCodePlaceholder', // FA-0017 (staff code)
+    'fa10.qual.iti', // ITI (qualification code)
+    'fa14.gst', // "GST {percent}%" (tax code)
+    'fa15s.gstLine', // "GST {percent}%"
+    'fa15q.smsWhatsapp', // SMS + WhatsApp (channel names)
+    'fa17.extra.pfEsi', // PF/ESI
+    'fa17b.role.hr', // HR
+  ]);
+  /** Nothing to translate: only {slots}, digits, signs and punctuation. */
+  const hasNoWords = (s: string) => !/\p{L}/u.test(s.replace(/\{\w+\}/g, ''));
+
+  it('never leaves a Kannada or Hindi string as a copy of the English one', () => {
+    const copies: string[] = [];
+    for (const key of Object.keys(en) as (keyof typeof en)[]) {
+      if (SAME_AS_ENGLISH_ALLOWED.has(key) || hasNoWords(en[key])) continue;
+      if (kn[key] === en[key]) copies.push(`kn ${key}`);
+      if (hi[key] === en[key]) copies.push(`hi ${key}`);
+    }
+    expect(copies).toEqual([]);
+  });
+
+  it('keeps the allow-list honest (every allowed key exists and has letters)', () => {
+    for (const key of SAME_AS_ENGLISH_ALLOWED) {
+      expect(en).toHaveProperty([key]);
+      expect(hasNoWords(en[key as keyof typeof en])).toBe(false);
+    }
   });
 
   it('fills {slots} and picks plural forms', () => {

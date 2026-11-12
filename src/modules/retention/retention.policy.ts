@@ -18,6 +18,12 @@ export const CALL_RECORDING_RETENTION_MONTHS = 12;
 export const ACCESS_LOG_RETENTION_MONTHS = 12;
 export const MONEY_RECORD_RETENTION_YEARS = 8;
 export const TRANSIENT_LINK_RETENTION_DAYS = 30;
+/**
+ * The background job run log (JobRun, about 1,800 rows a day) is operational,
+ * not personal data: rows older than 90 days are deleted, except each job's
+ * latest run, which System Health and the stale-sweep alerts read.
+ */
+export const JOB_RUN_RETENTION_DAYS = 90;
 
 export const RETENTION_PERIODS = {
   PROFILES_MONTHS: PROFILE_RETENTION_MONTHS,

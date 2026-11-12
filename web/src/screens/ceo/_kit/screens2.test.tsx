@@ -199,6 +199,49 @@ describe('Login codes', () => {
   });
 });
 
+describe('Password resets (POST /staff/:id/reset-password, never the old re-issued invite)', () => {
+  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.in/app/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
+
+  it('Login codes: Reset on a locked account sends a one-time link and keeps the old password until it is used', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/access': { summary: { waiting: 0, codesToday: 0, locked: 1, invitesPending: 1 }, locked: [{ id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', lockedUntil: '2026-11-11T07:00:00Z', reason: '5 wrong passwords', byManager: false }], invites: [{ id: 'fa1', code: 'FA-0019', name: 'Meena R', role: 'field_agent', invitedAt: '2026-11-10T05:00:00Z', expired: false }], codes: [] },
+      'POST /staff/ca9/reset-password': reset,
+      'POST /staff/fa1/reissue-invite': { staff: { code: 'FA-0019' }, inviteToken: 'inv-1' },
+    });
+    render(<LoginCodes />, '/ceo/login-codes');
+    const row = (await screen.findByText('Arun P')).closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset' }));
+    const d = await dialog();
+    expect(within(d).getByText(/old password and authenticator keep working until they use the link/)).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca9/reset-password')).toHaveLength(1));
+    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(api.calls('POST /staff/ca9/reissue-invite')).toHaveLength(0);
+
+    // Someone who never set a password gets a new invite instead (a reset needs a password to replace).
+    await userEvent.click(screen.getByRole('button', { name: 'Done' }));
+    const invite = screen.getByText('Meena R').closest('tr') as HTMLElement;
+    expect(within(invite).queryByRole('button', { name: 'Reset' })).not.toBeInTheDocument();
+    await userEvent.click(within(invite).getByRole('button', { name: 'New invite' }));
+    await userEvent.click(within(await dialog()).getByRole('button', { name: 'New invite for Meena R' }));
+    await waitFor(() => expect(api.calls('POST /staff/fa1/reissue-invite')).toHaveLength(1));
+  });
+
+  it('Team & access: Reset password on an active account uses the reset link; pending invites keep Resend', async () => {
+    const api = mockApi({ ...common, 'GET /ceo/team': teamResponse, 'POST /staff/ca1/reset-password': { ...reset, staff: { code: 'CA-0011' } } });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
+    await userEvent.click(within(await dialog()).getByRole('button', { name: 'Make the link' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/reset-password')).toHaveLength(1));
+    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    const pending = screen.getByText('Meena R').closest('tr') as HTMLElement;
+    expect(within(pending).queryByRole('button', { name: 'Reset password' })).not.toBeInTheDocument();
+    expect(within(pending).getByRole('button', { name: 'Resend' })).toBeInTheDocument();
+  });
+});
+
 const liveRow = (id: string, name: string, status: string, extra = {}) => ({ staff: { id, code: id, name, role: 'call_agent' }, status, since: '2026-11-11T06:26:00Z', loginAt: '2026-11-11T04:00:00Z', lateMinutes: 0, productionSeconds: 7200, breakSeconds: 600, breakOverSeconds: 0, overBreak: false, idle: false, idleSeconds: 0, ...extra });
 
 describe('Attendance', () => {
@@ -379,6 +422,7 @@ describe('Audit, flags, privacy, system and notifications', () => {
       ...common,
       'GET /ceo/privacy': { summary: { fullConsent: 320, withdrawalsThisMonth: 4, erasuresThisMonth: 0, noticeVersion: '3' }, purposes: [{ purpose: 'call_recording', required: true, given: 320, withdrawn: 2 }], withdrawals: [{ id: 'w', at: '2026-10-28T05:00:00Z', subjectType: 'job_seeker', subjectCode: 'JS-00133', purpose: 'call_recording', method: 'call', effect: 'Profile paused' }], erasures: [], noticeVersions: [{ version: '3', count: 10, firstAt: '2026-11-01T00:00:00Z', lastAt: NOW.toISOString() }], businesses: { total: 54, signedAndRecording: 54 }, partners: { total: 22, termsAndRecording: 20 } },
       'GET /ceo/privacy/consents': { rows: [], total: 0, page: 1, pageSize: 25, summary: null },
+      'GET /data-requests': { dueDays: 30, summary: { open: 0, overdue: 0, closedThisMonth: 0 }, rows: [] },
     });
     render(<Privacy />, '/ceo/privacy');
     expect(await screen.findByText('Profile paused')).toBeInTheDocument();

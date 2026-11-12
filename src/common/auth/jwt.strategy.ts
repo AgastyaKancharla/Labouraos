@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from './jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from './jwt-secret';
+import { noteRequestDevice } from '../observability/request-context';
 import { AuthClock } from './auth.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
 import {
@@ -62,6 +63,8 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
         });
         throw new UnauthorizedException(sessionEndMessage(end));
       }
+
+      noteRequestDevice({ staffId: payload.sub, sessionId: session.id, deviceId: session.deviceId });
 
       if (shouldTouchActivity(session.lastActivityAt, now)) {
         await this.prisma.staffSession.updateMany({

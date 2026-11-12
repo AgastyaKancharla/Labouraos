@@ -15,6 +15,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { formatDateIST } from '../../../lib/format/date';
 import { FormAction } from '../../finance/_kit/kit';
 import { ActionButton } from '../_kit/actions';
+import { PasswordResetButton } from '../_kit/passwordReset';
 import { roleLabel } from '../_kit/format';
 import { TeamTabs } from '../_kit/tabs';
 import '../_kit/ceo.css';
@@ -146,6 +147,7 @@ export default function Team() {
             />
           )}
           {r.state === 'invite_pending' && <ResendInvite row={r} />}
+          {(r.state === 'active' || r.state === 'locked') && <PasswordResetButton id={r.id} name={r.name} />}
           {r.state === 'locked' && (
             <ActionButton label="Unlock" title={`Unlock ${r.name}`} description={r.lockedReason ? `Locked: ${r.lockedReason}` : undefined} run={() => api.post(`/staff/${r.id}/unlock`)} success={`${r.name} is unlocked`} />
           )}

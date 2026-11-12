@@ -15,6 +15,7 @@ import { periodFor, periodToUtcRange, type Period } from '../../../lib/period';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
+import { PasswordResetButton } from '../_kit/passwordReset';
 import { initials, roleLabel } from '../_kit/format';
 
 /** Login codes — design C-LoginCodes.dc.html. The same requests Managers and Team Leads see for their people. */
@@ -117,7 +118,10 @@ export default function LoginCodes() {
                         Locked · {l.reason} · until {formatTimeIST(l.lockedUntil)}
                       </td>
                       <td>
-                        <ActionButton label="Unlock" title={`Unlock ${l.name}`} run={() => api.post(`/staff/${l.id}/unlock`)} success={`${l.name} is unlocked`} />
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                          <ActionButton label="Unlock" title={`Unlock ${l.name}`} run={() => api.post(`/staff/${l.id}/unlock`)} success={`${l.name} is unlocked`} />
+                          <PasswordResetButton id={l.id} name={l.name} label="Reset" />
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -126,7 +130,7 @@ export default function LoginCodes() {
                       <td>{i.name}</td>
                       <td>{i.expired ? 'Invite ran out' : 'Has not set a password yet'} · {roleLabel(i.role)}</td>
                       <td>
-                        <ResetButton id={i.id} name={i.name} />
+                        <NewInviteButton id={i.id} name={i.name} />
                       </td>
                     </tr>
                   ))}
@@ -204,14 +208,15 @@ function RequestCard({ request }: { request: Pending }) {
   );
 }
 
-function ResetButton({ id, name }: { id: string; name: string }) {
+/** Someone who never set a password gets a fresh invite (a password reset needs a password to replace). */
+function NewInviteButton({ id, name }: { id: string; name: string }) {
   const [token, setToken] = useState<{ code: string; token: string } | null>(null);
   return (
     <>
       <ActionButton
-        label="Reset"
-        title={`Reset ${name}'s password`}
-        description="A fresh one-time invite replaces the old one; they set a new password with it."
+        label="New invite"
+        title={`New invite for ${name}`}
+        description="They have not set a password yet. A fresh one-time invite replaces the old one; they set their password with it."
         run={async () => {
           const res = await api.post<{ staff: { code: string }; inviteToken: string }>(`/staff/${id}/reissue-invite`);
           setToken({ code: res.staff.code, token: res.inviteToken });

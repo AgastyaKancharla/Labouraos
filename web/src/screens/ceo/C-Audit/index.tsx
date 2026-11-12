@@ -20,7 +20,29 @@ interface Row {
   entityCode: string;
   reason: string | null;
   change: string | null;
+  /** Where the change was made: the approved device and the network (null on rows from before 16 Nov and from jobs). */
+  device?: { id: string | null; name: string | null; network: string | null } | null;
 }
+
+/** "office:HQ" → "Office network · HQ"; "outside_office" → "Outside the office". */
+export function networkLabel(network: string | null | undefined): string | null {
+  if (!network) return null;
+  if (network === 'outside_office') return 'Outside the office';
+  if (network.startsWith('office:')) return `Office network · ${network.slice('office:'.length)}`;
+  return network;
+}
+
+/** The device's name with the end of its id, so two "Login device" phones can be told apart. */
+export function deviceLabel(device: Row['device']): string | null {
+  if (!device || (!device.name && !device.id)) return null;
+  const shortId = device.id ? `…${device.id.slice(-6)}` : null;
+  return [device.name, shortId].filter(Boolean).join(' · ');
+}
+
+const deviceText = (r: Row) => {
+  const parts = [deviceLabel(r.device), networkLabel(r.device?.network)].filter(Boolean);
+  return parts.length ? parts.join(' — ') : r.actor.role ? 'Not recorded' : 'System';
+};
 const TYPE: Record<Row['type'], { label: string; tone: 'good' | 'warn' | 'info' | 'muted' | 'crit' }> = {
   money: { label: 'Money', tone: 'good' },
   corrections: { label: 'Correction', tone: 'warn' },
@@ -44,6 +66,23 @@ export default function AuditLog() {
     { key: 'what', header: 'What', cell: (r) => `${humanize(r.action.replace(/[._]/g, ' '))}${r.reason ? ` (reason: ${r.reason})` : ''}`, csv: (r) => `${r.action}${r.reason ? ` (${r.reason})` : ''}` },
     { key: 'record', header: 'Record', cell: (r) => <span className="code">{r.entityCode}</span>, csv: (r) => `${r.entityType} ${r.entityCode}`, hideOnPhone: true },
     { key: 'change', header: 'Change', cell: (r) => r.change ?? '—', csv: (r) => r.change, hideOnPhone: true },
+    {
+      key: 'device',
+      header: 'Device',
+      cell: (r) => {
+        const device = deviceLabel(r.device);
+        const network = networkLabel(r.device?.network);
+        if (!device && !network) return <span className="ceo-cell-sub">{deviceText(r)}</span>;
+        return (
+          <div>
+            <div>{device ?? '—'}</div>
+            {network ? <div className="ceo-cell-sub">{network}</div> : null}
+          </div>
+        );
+      },
+      csv: deviceText,
+      hideOnPhone: true,
+    },
   ];
   return (
     <div className="lb-page">
