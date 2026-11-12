@@ -170,9 +170,9 @@ export class RefundService {
             select: { jobSeekerId: true, guaranteeStartedAt: true },
           })
         : [];
-      const paidAtById = new Map(candidates.map((c) => [c.id, c.paymentReceivedAt?.getTime() ?? null]));
+      const guaranteeStartById = new Map(candidates.map((c) => [c.id, c.paymentReceivedAt?.getTime() ?? null]));
       for (const r of rejections) {
-        if (r.jobSeekerId && r.guaranteeStartedAt && paidAtById.get(r.jobSeekerId) === r.guaranteeStartedAt.getTime()) {
+        if (r.jobSeekerId && r.guaranteeStartedAt && guaranteeStartById.get(r.jobSeekerId) === r.guaranteeStartedAt.getTime()) {
           refundedCandidateIdSet.add(r.jobSeekerId);
         }
       }
