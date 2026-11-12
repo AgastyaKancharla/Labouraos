@@ -9,10 +9,14 @@ import { IST_OFFSET_MS, istDay } from './finance-rules';
  * sheet"; "Shortfall not made up by month end is deducted from salary"; "No
  * login and no approved leave is absent (unpaid)"; weekly days off and public
  * holidays are paid days off; "Staff pay: monthly salary, no commission".
- * Owner decisions (11 Nov): a day's pay is the monthly salary ÷ 26 in every
- * month; loss of pay is that per absent or unpaid-leave working day and half
- * for a half day; working days before joining or after leaving are not paid
- * (the leaving day is); net pay is never below ₹0 and keeps its paise.
+ * Owner decisions (11 Nov, 12 Nov): a day's pay is the monthly salary ÷ 26 in
+ * every month; loss of pay is that per absent or unpaid-leave working day and
+ * half for a half day. Someone who joins, leaves or is away part of the month
+ * is paid for the days actually on staff: salary ÷ 26 × (working days on staff
+ * + public holidays on staff), never more than the full salary (the leaving
+ * day is on staff; a holiday is paid, never absent); someone on staff the
+ * whole month gets the full salary. Absences come off after that.
+ * Net pay is never below ₹0 and keeps its paise.
  */
 
 /** A month key (yyyy-mm) that exists. */
@@ -98,6 +102,15 @@ export function staffWorkingDays(workingDays: readonly string[], joinedDay: stri
 }
 
 /**
+ * Public holidays that fall on a day the person was on the staff (holidays on
+ * a weekly off are not in the list: ÷ 26 already leaves weekly offs out). A
+ * holiday is paid, never absent, so these count as paid days on staff.
+ */
+export function holidaysOnStaff(holidayDays: readonly string[], joinedDay: string, away: readonly AwayPeriod[]): number {
+  return holidayDays.filter((d) => onStaffOn(d, joinedDay, away)).length;
+}
+
+/**
  * Statutory deductions. The company is not registered yet, so none is applied:
  * each prints as a zero line "added after registration" until the CA confirms
  * them (Master Guide: "PF and ESI are added once the company is registered (a
@@ -136,6 +149,10 @@ export interface PayInput {
   employedWorkingDays: number;
   /** Working days in the month the person was not on the staff (before joining, away, after leaving). */
   notEmployedWorkingDays: number;
+  /** Public holidays (not on a weekly off) that fell while the person was on the staff: paid days. */
+  holidaysOnStaff?: number;
+  /** Public holidays (not on a weekly off) that fell while the person was NOT on the staff (before joining, away, after leaving). */
+  holidaysOffStaff?: number;
   /** Absent and unpaid-leave working days ×2, + 1 for each half day, + unmarked working days ×2. */
   lossOfPayHalfDays: number;
   /** Shortfall not made up by month end, in whole minutes. */
@@ -151,8 +168,13 @@ export interface PayResult {
   hraPaise: number;
   specialPaise: number;
   grossPaise: number;
-  /** The monthly salary less salary ÷ 26 for each working day not on the staff (never below ₹0). */
+  /**
+   * What the days on staff earn before absences: the full salary when on staff
+   * the whole month, otherwise salary ÷ 26 × (working days + public holidays
+   * on staff), never more than the full salary.
+   */
   earnedPaise: number;
+  /** The salary not earned for the part of the month not on staff (monthly − earned). */
   notEmployedPaise: number;
   lossOfPayHalfDays: number;
   paidHalfDays: number;
@@ -170,15 +192,19 @@ export interface PayResult {
 }
 
 /**
- * One person's pay for a month (owner decisions 11 Nov, re-check 12 Nov). A
- * day's pay is the monthly salary ÷ 26. Joiners, leavers and periods away
- * follow the same rule as absences: take off salary ÷ 26 for each working day
- * not on the staff, never below ₹0. Loss of pay takes salary ÷ 26 per absent,
- * unpaid-leave or unmarked working day and half that for a half day;
- * shortfall not made up takes the day's pay pro rata per production minute.
- * Weekly offs and holidays are paid. Net is never below zero and keeps its
- * paise; a take-back larger than the month's pay is carried forward
- * (carryForwardPaise), never dropped.
+ * One person's pay for a month (owner decisions 11 Nov; Master Guide 12 Nov).
+ * A day's pay is the monthly salary ÷ 26. On staff the whole month (not one
+ * working day or public holiday of it off the staff): the full salary (weekly
+ * offs and holidays paid, whatever the number of working days).
+ * Joined, left or away part of the month: paid for the days actually on
+ * staff — salary ÷ 26 × (working days on staff + public holidays on staff,
+ * since a holiday is paid, never absent), never more than the full salary —
+ * so joining on the last working day always pays one day. Then loss
+ * of pay takes salary ÷ 26 per absent, unpaid-leave or unmarked working day
+ * and half that for a half day, and shortfall not made up takes the day's pay
+ * pro rata per production minute, both capped at what was earned. Net is
+ * never below zero and keeps its paise; a take-back larger than the month's
+ * pay is carried forward (carryForwardPaise), never dropped.
  */
 export function computePay(input: PayInput): PayResult {
   if (!Number.isSafeInteger(input.monthlyPaise) || input.monthlyPaise < 0) throw new Error('monthlyPaise must be whole paise');
@@ -186,8 +212,12 @@ export function computePay(input: PayInput): PayResult {
   const days = Math.max(1, input.salaryDays);
   const split = earningsSplit(monthly);
   const notEmployedDays = Math.max(0, input.notEmployedWorkingDays);
-  const notEmployedPaise = Math.min(monthly, mulDivRound(monthly, notEmployedDays, days));
-  const earnedPaise = Math.max(0, monthly - notEmployedPaise);
+  // Paid days on staff: working days plus the public holidays that fell while on staff.
+  const employedDays = Math.max(0, input.employedWorkingDays) + Math.max(0, input.holidaysOnStaff ?? 0);
+  // On staff the whole month: not one working day and not one holiday missed while off the staff.
+  const wholeMonth = notEmployedDays === 0 && Math.max(0, input.holidaysOffStaff ?? 0) === 0;
+  const earnedPaise = wholeMonth ? monthly : Math.min(monthly, mulDivRound(monthly, employedDays, days));
+  const notEmployedPaise = monthly - earnedPaise;
   const lostHalfDays = Math.max(0, input.lossOfPayHalfDays);
   const lossOfPayPaise = Math.min(earnedPaise, mulDivRound(monthly, lostHalfDays, days * 2));
   const shortfallPaise = Math.min(earnedPaise - lossOfPayPaise, mulDivRound(monthly, Math.max(0, input.shortfallMinutes), days * Math.max(1, input.fullDayMinutes)));
@@ -200,7 +230,8 @@ export function computePay(input: PayInput): PayResult {
   // A take-back larger than this month's pay: apply what fits, carry the rest.
   const carryForwardPaise = Math.min(0, beforeCorrection + wanted);
   const correctionPaise = wanted - carryForwardPaise;
-  const baseDays = Math.max(0, days - notEmployedDays);
+  // Days paid out of the 26: all of them on staff the whole month, else the days on staff (at most 26).
+  const baseDays = wholeMonth ? days : Math.min(days, employedDays);
   return {
     ...split,
     grossPaise: monthly,

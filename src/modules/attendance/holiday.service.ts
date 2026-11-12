@@ -11,6 +11,7 @@ import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
 import { LeaveService } from './leave.service';
 import { WorkingDaysService } from './working-days.service';
+import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
 interface Actor {
   id: string;
@@ -77,6 +78,12 @@ export class HolidayService {
       where: { date: { gte: this.yearStart(year), lte: this.yearEnd(year) } },
     });
     const before = existing.map((row) => ({ date: this.label(row.date), name: row.name }));
+    // A month payroll no longer works out again can't silently change.
+    const touched = [
+      ...existing.filter((row) => !seen.has(this.label(row.date))).map((row) => row.date),
+      ...wanted.filter((item) => !existing.some((row) => row.date.getTime() === item.date.getTime())).map((item) => item.date),
+    ];
+    await this.assertPayrollReaches(touched);
     const changed: Date[] = [];
     for (const row of existing) {
       if (!seen.has(this.label(row.date))) {
@@ -116,6 +123,7 @@ export class HolidayService {
     const item = this.parseInput(body);
     const clash = await this.prisma.holiday.findUnique({ where: { date: item.date } });
     if (clash) throw new ConflictException(`${this.label(item.date)} is already a holiday`);
+    await this.assertPayrollReaches([item.date]);
     const row = await this.prisma.holiday.create({
       data: { date: item.date, name: item.name, createdByStaffId: actor.id },
     });
@@ -138,6 +146,7 @@ export class HolidayService {
     if (date.getTime() !== row.date.getTime()) {
       const clash = await this.prisma.holiday.findUnique({ where: { date } });
       if (clash) throw new ConflictException(`${this.label(date)} is already a holiday`);
+      await this.assertPayrollReaches([row.date, date]);
     }
     const updated = await this.prisma.holiday.update({
       where: { id },
@@ -158,6 +167,7 @@ export class HolidayService {
   async remove(actor: Actor, id: string): Promise<{ removed: true }> {
     const row = await this.prisma.holiday.findUnique({ where: { id } });
     if (!row) throw new NotFoundException('Holiday not found');
+    await this.assertPayrollReaches([row.date]);
     await this.prisma.holiday.delete({ where: { id } });
     await this.audit.log({
       actorId: actor.id,
@@ -168,6 +178,11 @@ export class HolidayService {
     });
     await this.rework([row.date]);
     return { removed: true };
+  }
+
+  /** Refuses a holiday change in a month whose approved pay payroll no longer works out again. */
+  private async assertPayrollReaches(dates: Date[]): Promise<void> {
+    await assertPayrollCanCorrect(this.prisma, dates.map(monthOfDay), 'This holiday change');
   }
 
   /** Works out each changed date again; dates before this month are left alone. */

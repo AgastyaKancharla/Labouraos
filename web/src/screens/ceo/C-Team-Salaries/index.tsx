@@ -14,6 +14,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { FormAction } from '../../finance/_kit/kit';
 import { ServerDownload } from '../../finance/_kit/download';
 import { MonthlyPay } from '../../finance/_kit/MonthlyPay';
+import { PayrollCorrections } from '../../finance/_kit/PayrollCorrections';
 import { paidDaysText, shortTime, type SalarySheet, type SheetRow } from '../../finance/_kit/payroll';
 import { roleLabel } from '../_kit/format';
 import { TeamTabs } from '../_kit/tabs';
@@ -149,8 +150,9 @@ export default function Salaries() {
           onRetry={() => void sheet.refetch()}
           emptyTitle="Nobody was on the staff this month."
         />
-        <div className="ceo-note">Worked out from attendance and approved leave (weekly offs and holidays are paid) · a day's pay is the monthly pay ÷ 26 · working days before joining, away or after leaving are not paid · Finance checks and releases · each person downloads their own payslip · PF, ESI and professional tax start after company registration</div>
+        <div className="ceo-note">Worked out from attendance and approved leave (weekly offs and holidays are paid) · a day's pay is the monthly pay ÷ 26 · joined, left or away part of the month: paid ÷ 26 × (working days + holidays on the staff), never more than the monthly pay · Finance checks and releases · each person downloads their own payslip · PF, ESI and professional tax start after company registration</div>
       </div>
+      <PayrollCorrections canAdd />
       <MonthlyPay months={[...new Set([month, istDateKey(now).slice(0, 7), shiftMonth(istDateKey(now).slice(0, 7), 1)])].sort()} canEdit />
     </div>
   );

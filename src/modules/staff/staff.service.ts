@@ -31,6 +31,8 @@ import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
 import { requireIndianMobile } from '../../common/phone/indian-mobile';
 import { ReportingScopeService } from './reporting-scope.service';
 import { publicLink } from '../../common/public-link';
+import { assertPayrollCanCorrect, frozenMonthsWithoutLine, monthOfDay, monthsBetween } from '../finance/payroll-window';
+import { monthLabel } from '../finance/payroll-rules';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -1633,6 +1635,19 @@ export class StaffService {
     if (!joinedOn) throw new BadRequestException('joinedOn must be a date like 2026-10-28');
     const target = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, joinedOn: true } });
     if (!target) throw new NotFoundException('Staff account not found');
+    // Pay starts on the joining day: every month between the old and the new one changes.
+    const was = target.joinedOn ?? (await this.firstWorkedDay(staffId));
+    if (!was || was.getTime() !== joinedOn.getTime()) {
+      const touched = monthsBetween(monthOfDay(was ?? joinedOn), monthOfDay(joinedOn));
+      await assertPayrollCanCorrect(this.prisma, touched, 'This joining date');
+      // A month whose sheet was prepared without this person: the recompute never adds them to it.
+      const missed = await frozenMonthsWithoutLine(this.prisma, staffId, touched);
+      if (missed.length) {
+        throw new BadRequestException(
+          `This joining date changes pay in ${missed.map(monthLabel).join(', ')}, whose salary sheet was prepared without this person, so payroll can't add the change to it. Keep the joining date as it is and add a manual correction on Salaries (Team & access → Salaries → Add a correction) for the pay owed.`,
+        );
+      }
+    }
     const staff = await this.prisma.staff.update({ where: { id: staffId }, data: { joinedOn }, select: STAFF_VIEW_SELECT });
     await this.auditService.log({
       actorId: actor.sub,
@@ -1644,6 +1659,17 @@ export class StaffService {
       changedFields: ['joinedOn'],
     });
     return staff;
+  }
+
+  /** The day payroll counts from when no joining date is entered: the first login (as an IST day at UTC midnight). */
+  private async firstWorkedDay(staffId: string): Promise<Date | null> {
+    const [day, session] = await Promise.all([
+      this.prisma.attendanceDay.aggregate({ where: { staffId, loginAt: { not: null } }, _min: { loginAt: true } }),
+      this.prisma.staffSession.aggregate({ where: { staffId }, _min: { createdAt: true } }),
+    ]);
+    const times = [day._min.loginAt, session._min.createdAt].filter((d): d is Date => Boolean(d)).map((d) => d.getTime());
+    if (!times.length) return null;
+    return new Date(`${new Date(Math.min(...times) + 5.5 * 3600_000).toISOString().slice(0, 10)}T00:00:00.000Z`);
   }
 
   async setCallRoutingPhone(staffId: string, phone: string, actor: JwtPayload) {

@@ -16,6 +16,7 @@ import { FinanceHomeService } from './finance-home.service';
 import { EXPENSE_BILL_STORAGE, expenseBillStorageFactory } from './expense-bill.storage';
 import { FinanceBController } from './finance-b.controller';
 import { PayrollSelfController } from './payroll-self.controller';
+import { PayrollCorrectionsController } from './payroll-corrections.controller';
 import { PayrollService } from './payroll.service';
 import { MonthEndService } from './month-end.service';
 import { FinanceTaxService } from './finance-tax.service';
@@ -25,7 +26,7 @@ import { FinanceRefundsService } from './finance-refunds.service';
 /** Phase 22: the Finance back office, parts A and B (specs/phase-22.md). */
 @Module({
   imports: [PrismaModule, AuditModule, IdModule, PricingModule, PaymentModule, AttendanceModule, NotificationModule, RefundModule, MonthLockModule],
-  controllers: [FinanceController, FinanceBController, PayrollSelfController],
+  controllers: [FinanceController, FinanceBController, PayrollSelfController, PayrollCorrectionsController],
   providers: [
     ExpenseService,
     FinancePayoutsService,

@@ -14,6 +14,7 @@ import { AttendanceClock } from './attendance-clock';
 import { AttendanceService } from './attendance.service';
 import { classifyDay, deductibleShortfall, monthRange } from './day-rules';
 import { WorkingDaysService } from './working-days.service';
+import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
 /** Roles that mark attendance. The CEO does not (Master Guide, Attendance). */
 export const ATTENDANCE_ROLES = ['manager', 'team_lead', 'call_agent', 'field_agent', 'finance'];
@@ -142,6 +143,7 @@ export class AttendanceDaysService {
     if (!CHANGEABLE_FROM.includes(day.dayType)) {
       throw new BadRequestException('Only a full, half or absent day can be changed');
     }
+    await assertPayrollCanCorrect(this.prisma, [monthOfDay(day.date)], 'This day change');
     const now = this.clock.now();
     const policy = await this.pricing.current();
     const makeUp =
