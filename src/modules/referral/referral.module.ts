@@ -1,3 +1,4 @@
+import { MessageModule } from '../message/message.module';
 import { Module } from '@nestjs/common';
 import { ReferralController } from './referral.controller';
 import { ReferralService } from './referral.service';
@@ -10,7 +11,7 @@ import { PricingModule } from '../pricing/pricing.module';
 import { ReferralTermsController } from './referral-terms.controller';
 
 @Module({
-  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule, PricingModule],
+  imports: [ConsentModule, JobSeekerModule, PayoutAccountModule, ReviewFlagModule, PricingModule, MessageModule],
   controllers: [ReferralController, ReferralRegistrationController, ReferralTermsController],
   providers: [ReferralService],
   exports: [ReferralService],

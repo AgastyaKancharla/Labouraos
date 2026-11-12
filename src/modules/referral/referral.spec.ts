@@ -95,6 +95,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       const referralIds = referrals.map((referral) => referral.id);
       if (referralIds.length) {
         await prisma.payoutAccount.deleteMany({ where: { ownerType: 'referral', ownerId: { in: referralIds } } });
+        await prisma.messageLog.deleteMany({ where: { subjectType: 'referral', subjectId: { in: referralIds }, template: 'referral_partner_id' } }).catch(() => undefined);
         await prisma.publicLink.deleteMany({ where: { subjectType: 'referral', subjectId: { in: referralIds } } });
       }
       await prisma.auditLog.deleteMany({
@@ -408,6 +409,68 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(registrationStatus.body.steps.selfie.state).toBe('done');
     expect(registrationStatus.body.steps.id.state).toBe('done');
     expect(registrationStatus.body.steps.upi.state).toBe('in_progress');
+  });
+
+  it('sends the RF- ID by SMS on saving, and takes a bank account instead of UPI on the registration link (encrypted, masked)', async () => {
+    const phone = `79${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    const created = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Bank Referral', phone, whatsappPhone: phone, language: 'en', type: 'individual',
+        individualRole: 'auto_driver', locality: 'Indiranagar', pincode: '560038',
+        heardFrom: 'field_visit', otpRequestId,
+      })
+      .expect(201);
+    expect(created.body.code).toMatch(/^RF-/);
+    expect(created.body.idSmsSent).toBe(true);
+    const sms = await prisma.messageLog.findFirst({ where: { channel: 'sms', template: 'referral_partner_id', subjectType: 'referral', subjectId: created.body.id } });
+    expect(sms?.status).toBe('sent');
+
+    const linkResponse = await request(app.getHttpServer())
+      .post(`/referrals/${created.body.id}/terms-links`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ language: 'en' })
+      .expect(201);
+    const token = linkResponse.body.token as string;
+    const code = async () => {
+      const sent = await otpService.sendOtp(phone);
+      return { requestId: sent.requestId, code: (otpService.getProvider() as MockOtpProvider).getCode(sent.requestId)! };
+    };
+    const terms = await code();
+    await request(app.getHttpServer())
+      .post('/consent/submit')
+      .send({ token, requestId: terms.requestId, otpRequestId: terms.requestId, otpCode: terms.code, purposes: ['agreement_terms', 'call_recording'], language: 'en' })
+      .expect(201);
+    const selfie = await code();
+    await otpService.verifyOtp(selfie.requestId, selfie.code);
+    await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/selfie`)
+      .field('requestId', selfie.requestId)
+      .field('captureSource', 'live_camera')
+      .attach('photo', Buffer.from('camera-image-bank'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const id = await code();
+    await otpService.verifyOtp(id.requestId, id.code);
+    await request(app.getHttpServer()).post(`/referral-registration/${token}/id-check`).send({ requestId: id.requestId, method: 'pan' }).expect(201);
+
+    const badIfsc = await code();
+    await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/upi`)
+      .send({ otpRequestId: badIfsc.requestId, otpCode: badIfsc.code, method: 'bank', accountNumber: '123456789012', ifsc: 'SHORT' })
+      .expect(400);
+    const bank = await code();
+    await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/upi`)
+      .send({ otpRequestId: bank.requestId, otpCode: bank.code, method: 'bank', accountNumber: `5000${timestamp.toString().slice(-8)}`, ifsc: 'HDFC0001234' })
+      .expect(201);
+    const account = await prisma.payoutAccount.findFirstOrThrow({ where: { ownerType: 'referral', ownerId: created.body.id }, orderBy: { createdAt: 'desc' } });
+    expect(account.method).toBe('bank');
+    expect(account.bankAccountEncrypted).toBeTruthy();
+    expect(account.bankAccountEncrypted).not.toContain(timestamp.toString().slice(-8));
+    expect(account.maskedValue).toMatch(/\d{4}$/);
+    expect(account.maskedValue).not.toContain(`5000${timestamp.toString().slice(-8)}`);
   });
 
   it('does not let a referral partner refer themselves for a joining reward', async () => {

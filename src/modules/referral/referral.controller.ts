@@ -1,3 +1,4 @@
+import { MessagingService } from '../message/messaging.service';
 import {
   Body,
   Controller,
@@ -27,6 +28,7 @@ export class ReferralController {
   constructor(
     private readonly referralService: ReferralService,
     private readonly consentLinkService: ConsentLinkService,
+    private readonly messaging: MessagingService,
   ) {}
 
   @Post(':id/terms-links')
@@ -52,6 +54,11 @@ export class ReferralController {
     @Req() req: Request & { user: JwtPayload },
   ) {
     const referral = await this.referralService.create(body, req.user.sub);
+    // Guide, referral partners: on saving, the RF- ID is sent to them by SMS (the SMS provider; mock until DLT is set up).
+    const idSms = await this.messaging
+      .send({ channel: 'sms', template: 'referral_partner_id', subjectType: 'referral', subjectId: referral.id, variables: { code: referral.code, name: referral.name } })
+      .then((row) => row.status !== 'failed')
+      .catch(() => false);
     const registration = await this.consentLinkService.createReferralTermsLink(
       referral.id,
       req.user.sub,
@@ -59,6 +66,7 @@ export class ReferralController {
     );
     return {
       ...referral,
+      idSmsSent: idSms,
       registrationLinkSent: registration.success,
       registrationLinkExpiresAt: registration.expiresAt,
     };
