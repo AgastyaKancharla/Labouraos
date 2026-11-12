@@ -18,23 +18,17 @@ export class FinanceHomeService {
     private readonly payouts: FinancePayoutsService,
   ) {}
 
-  /** GST on last month's placement invoices, less the GST on refunds paid (a credit note each). */
+  /**
+   * GST on last month's placement invoices. A business refund returns the fee
+   * only, and the GST on it stays owed until the CA answers (owner decision
+   * 11 Nov), so refunds do not reduce it.
+   */
   private async gstLastMonth(now: Date) {
     const thisMonth = istStartOfMonth(now);
     const lastMonth = istStartOfMonth(new Date(thisMonth.getTime() - 1));
     const to = new Date(thisMonth.getTime() - 1);
-    const [invoices, refunded] = await Promise.all([
-      this.prisma.placement.findMany({ where: { paidAt: { gte: lastMonth, lte: to }, invoiceCode: { not: null } }, select: { gstAmount: true } }),
-      this.prisma.payment.findMany({
-        where: { type: 'refund', placementId: { not: null }, status: { in: RECEIVED_STATUSES }, paidAt: { gte: lastMonth, lte: to } },
-        select: { amount: true, placement: { select: { placementFee: true, gstAmount: true } } },
-      }),
-    ]);
-    const collected = sumPaise(invoices.map((p) => p.gstAmount));
-    const reversed = sumPaise(
-      refunded.map((r) => (r.placement && r.placement.placementFee > 0 ? Math.round((r.placement.gstAmount * Math.min(r.amount, r.placement.placementFee)) / r.placement.placementFee) : 0)),
-    );
-    return { paise: collected - reversed, month: lastMonth.toISOString(), due: gstDueDates(to) };
+    const invoices = await this.prisma.placement.findMany({ where: { paidAt: { gte: lastMonth, lte: to }, invoiceCode: { not: null } }, select: { gstAmount: true } });
+    return { paise: sumPaise(invoices.map((p) => p.gstAmount)), month: lastMonth.toISOString(), due: gstDueDates(to) };
   }
 
   async home(now = new Date()) {

@@ -1,10 +1,13 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomUUID } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
 import { PricingService } from '../pricing/pricing.service';
+import { MonthLockService } from '../month-lock/month-lock.service';
+import { PayrollService } from './payroll.service';
+import { assertUtrUnused } from '../../common/money/utr-registry';
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { DateRange, RECEIVED_STATUSES, PAYOUT_TYPES, contains, sumPaise } from '../ceo-portal/ceo-common';
 import {
@@ -88,7 +91,14 @@ export class ExpenseService {
     private readonly ids: IdService,
     private readonly pricing: PricingService,
     @Inject(EXPENSE_BILL_STORAGE) private readonly bills: ExpenseBillStorage,
+    @Optional() private readonly locks?: MonthLockService,
+    @Optional() private readonly payroll?: PayrollService,
   ) {}
+
+  /** A closed month's expenses can't be changed (Month-end review). */
+  private async assertMonthOpen(date: Date): Promise<void> {
+    if (this.locks) await this.locks.assertOpenOn(date, 'its expenses');
+  }
 
   private async actor(actorId: string): Promise<Actor> {
     const staff = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true, role: true, name: true } });
@@ -128,6 +138,7 @@ export class ExpenseService {
     const gstPaise = input.gstPaise === undefined || input.gstPaise === null || input.gstPaise === '' ? 0 : paise(input.gstPaise, 'gstPaise', true);
     if (gstPaise >= amountPaise) throw new BadRequestException('GST must be less than the amount');
     const billDate = pastDate(input.billDate, 'billDate', now);
+    await this.assertMonthOpen(billDate);
     let adChannel: string | null = null;
     if (input.category === 'ads_marketing') {
       if (typeof input.adChannel !== 'string' || !(HEARD_FROM_VALUES as readonly string[]).includes(input.adChannel)) {
@@ -195,6 +206,7 @@ export class ExpenseService {
     const file = this.validateBill(bill);
     if (!file) throw new BadRequestException('Choose the bill to attach');
     const expense = await this.load(id);
+    await this.assertMonthOpen(expense.billDate);
     if (expense.status === 'rejected') throw new BadRequestException('This expense was rejected');
     const stored = await this.storeBill(expense.id, file);
     const updated = await this.prisma.expense.update({ where: { id: expense.id }, data: stored });
@@ -222,6 +234,7 @@ export class ExpenseService {
   async approve(id: string, actorId: string, pay: PayExpenseInput | undefined, now = new Date()) {
     const actor = await this.actor(actorId);
     const expense = await this.load(id);
+    await this.assertMonthOpen(expense.billDate);
     const policy = await this.pricing.current();
     const check = checkExpenseApproval({
       actorRole: actor.role,
@@ -237,6 +250,7 @@ export class ExpenseService {
       throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: check.code, message: check.message });
     }
     const payment = pay ? this.payInput(pay, now) : null;
+    if (payment) await this.checkPayment(payment);
     const claimed = await this.prisma.expense.updateMany({
       where: { id: expense.id, status: expense.status },
       data: {
@@ -267,6 +281,12 @@ export class ExpenseService {
     return this.toRow(updated, await this.names([updated]), policy.financeExpenseLimitPaise);
   }
 
+  /** The payment date's month is open, and a bank or UPI reference is not already used anywhere. */
+  private async checkPayment(payment: { paidFrom: string; reference: string; paidAt: Date }) {
+    await this.assertMonthOpen(payment.paidAt);
+    if (payment.paidFrom !== 'cash') await assertUtrUnused(this.prisma, payment.reference);
+  }
+
   private payInput(input: PayExpenseInput, now: Date) {
     const paidFrom = this.paidFrom(input.paidFrom);
     const reference = text(input.reference, 'reference (UTR, UPI or card reference, or cash voucher number)', 60);
@@ -288,6 +308,8 @@ export class ExpenseService {
     }
     if (!expense.billPath) throw new BadRequestException({ statusCode: 400, error: 'Bad Request', code: 'no_bill', message: 'Attach the bill first. No bill, no payment.' });
     const payment = this.payInput(input, now);
+    await this.assertMonthOpen(expense.billDate);
+    await this.checkPayment(payment);
     const claimed = await this.prisma.expense.updateMany({
       where: { id: expense.id, status: 'approved' },
       data: { status: 'paid', paidByStaffId: actor.id, paidAt: payment.paidAt, paymentReference: payment.reference, paidFrom: payment.paidFrom },
@@ -312,6 +334,7 @@ export class ExpenseService {
     const actor = await this.actor(actorId);
     const why = text(reason, 'reason', 300);
     const expense = await this.load(id);
+    await this.assertMonthOpen(expense.billDate);
     if (!['waiting_finance', 'waiting_ceo'].includes(expense.status)) throw new BadRequestException(`This expense is ${expense.status}, so it cannot be rejected`);
     if (expense.status === 'waiting_ceo' && actor.role !== 'ceo') {
       throw new ForbiddenException({ statusCode: 403, error: 'Forbidden', code: 'needs_ceo', message: 'This expense is waiting for the CEO, so only the CEO can reject it' });
@@ -490,7 +513,7 @@ export class ExpenseService {
    * or paid, plus payouts and rewards paid). Salaries join from payroll.
    */
   async profit(range: DateRange) {
-    const [received, refunds, bills, payouts, budgets, placementsPaid] = await Promise.all([
+    const [received, refunds, bills, payouts, budgets, placementsPaid, payroll] = await Promise.all([
       this.prisma.payment.findMany({
         where: {
           status: { in: RECEIVED_STATUSES },
@@ -504,6 +527,7 @@ export class ExpenseService {
       this.autoPayouts(range),
       this.prisma.expenseBudget.findMany({ where: { month: { in: monthsInRange(range.from, range.to) } } }),
       this.prisma.placement.findMany({ where: { paidAt: { gte: range.from, lte: range.to } }, select: { id: true, jobSeeker: { select: { heardFrom: true } } } }),
+      this.payroll ? this.payroll.salariesInRange(range.from, range.to) : Promise.resolve({ totalPaise: 0, months: [], pendingMonths: [] as string[] }),
     ]);
     const activation = received.filter((p) => p.type !== 'placement_fee');
     const fees = received.filter((p) => p.type === 'placement_fee');
@@ -513,8 +537,9 @@ export class ExpenseService {
     const refundsPaise = sumPaise(refunds.map((r) => r.amount));
     const billsPaise = sumPaise(bills.map((b) => b.amountPaise));
     const payoutsPaise = sumPaise(payouts.map((p) => p.amount));
-    // Salaries come from payroll (Phase 22 Part B); none are counted until it exists.
-    const salariesPaise = 0;
+    // Salaries come from payroll (Phase 22 Part B): each month the CEO approved,
+    // counted in the period that holds the month's last day.
+    const salariesPaise = payroll.totalPaise;
     const expensesPaise = billsPaise + payoutsPaise + salariesPaise;
     const placements = fees.length;
     const pnl = profitAndLoss({ activationPaise, placementFeePaise, refundsPaise, expensesPaise, placements });
@@ -558,7 +583,7 @@ export class ExpenseService {
         netRevenuePaise: pnl.netRevenuePaise,
         gstCollectedPaise,
       },
-      expenses: { billsPaise, payoutsPaise, salariesPaise, salariesFromPayroll: false, totalPaise: expensesPaise },
+      expenses: { billsPaise, payoutsPaise, salariesPaise, salariesFromPayroll: true, salaryMonths: payroll.months, salaryMonthsPending: payroll.pendingMonths, totalPaise: expensesPaise },
       profitPaise: pnl.profitPaise,
       costPerPlacementPaise: pnl.costPerPlacementPaise,
       breakEvenPlacements: pnl.breakEvenPlacements,

@@ -962,7 +962,8 @@ describe('Phase 18 Gate End-to-End Proof', () => {
           receiverNameShown: 'Any Name',
           paidAt: new Date().toISOString(),
         })
-        .expect(400);
+        // One shared UTR check across the books answers 409 Conflict (Phase 22 Part B review, defect 7).
+        .expect(409);
     });
 
     it('verifies old payout-company routes are completely removed and return 404', async () => {

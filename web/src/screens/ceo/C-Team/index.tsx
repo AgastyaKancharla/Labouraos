@@ -6,12 +6,14 @@ import { DataTable, type Column } from '../../../components/DataTable';
 import { ErrorState } from '../../../components/ErrorState';
 import { Modal } from '../../../components/Modal';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
-import { SelectField, TextField } from '../../../components/fields';
+import { DateField, SelectField, TextField } from '../../../components/fields';
 import { TopBar } from '../../../components/TopBar';
 import { useToast } from '../../../components/Toast';
 import { api } from '../../../lib/api/client';
 import { ApiError } from '../../../lib/api/errors';
 import { useScreenPath } from '../../../portals/PortalContext';
+import { formatDateIST } from '../../../lib/format/date';
+import { FormAction } from '../../finance/_kit/kit';
 import { ActionButton } from '../_kit/actions';
 import { roleLabel } from '../_kit/format';
 import { TeamTabs } from '../_kit/tabs';
@@ -31,6 +33,8 @@ export interface TeamRow {
   signedIn: boolean;
   lockedUntil: string | null;
   lockedReason: string | null;
+  /** Joining date (yyyy-mm-dd), entered by the CEO; pay starts on it. */
+  joinedOn?: string | null;
 }
 interface TeamResponse {
   rows: TeamRow[];
@@ -167,6 +171,17 @@ export default function Team() {
             />
           )}
           {r.state === 'deactivated' && <ReactivateButton row={r} />}
+          {r.role !== 'ceo' && (
+            <FormAction
+              label={r.joinedOn ? `Joined ${formatDateIST(`${r.joinedOn}T00:00:00+05:30`)}` : 'Joining date'}
+              size="compact"
+              title={`Joining date · ${r.name}`}
+              description="Pay starts on this day: working days before it are not paid. Leave it empty and the first login is used."
+              fields={[{ name: 'joinedOn', kind: 'date', label: 'Joined on', required: true, initial: r.joinedOn ?? '' }]}
+              run={(v) => api.put(`/staff/${r.id}/joined-on`, { joinedOn: v.joinedOn })}
+              success={`Joining date saved for ${r.name}`}
+            />
+          )}
         </div>
       ),
     },
@@ -341,6 +356,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
   const [email, setEmail] = useState('');
   const [role, setRole] = useState('call_agent');
   const [boss, setBoss] = useState('');
+  const [joinedOn, setJoinedOn] = useState('');
   const [shown, setShown] = useState<{ code: string; token: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -356,12 +372,14 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
         email: email.trim(),
         role,
         reportsToId: bossRole ? effectiveBoss || undefined : undefined,
+        joinedOn: joinedOn || undefined,
       }),
     onSuccess: (res) => {
       setShown({ code: res.staff.code, token: res.inviteToken });
       toast.success(`${res.staff.name} added · staff code ${res.staff.code}`);
       setName('');
       setEmail('');
+      setJoinedOn('');
       setError(null);
       void qc.invalidateQueries({ queryKey: ['ceo'] });
     },
@@ -389,6 +407,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
           />
         )}
         <TextField label={needsEmail ? 'Email (for the authenticator)' : 'Email (optional)'} value={email} onChange={setEmail} required={needsEmail} type="email" />
+        <DateField label="Joining date" value={joinedOn} onChange={setJoinedOn} hint="Pay starts on it · empty = first login" name="new-staff-joined" />
         <div style={{ alignSelf: 'flex-end' }}>
           <Button variant="primary" type="submit" loading={add.isPending} disabled={missing}>
             Add · send staff code

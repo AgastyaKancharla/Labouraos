@@ -118,6 +118,7 @@ export class PricingService {
           updates.financeBusinessRefundLimitPaise ?? before.financeBusinessRefundLimitPaise,
         financeExpenseLimitPaise: updates.financeExpenseLimitPaise ?? before.financeExpenseLimitPaise,
         referralTdsYearlyLimitPaise: updates.referralTdsYearlyLimitPaise ?? before.referralTdsYearlyLimitPaise,
+        payrollSalaryDays: updates.payrollSalaryDays ?? before.payrollSalaryDays,
         companyLegalName: updates.companyLegalName ?? before.companyLegalName,
         companyGstin: updates.companyGstin !== undefined ? updates.companyGstin : before.companyGstin,
         companyAddress: updates.companyAddress !== undefined ? updates.companyAddress : before.companyAddress,

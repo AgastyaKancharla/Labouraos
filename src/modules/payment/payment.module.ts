@@ -15,6 +15,7 @@ import { MessageModule } from '../message/message.module';
 import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { UpiCollectionService } from './upi-collection.service';
 import { paymentProviderMode } from './payment-mode';
+import { MonthLockModule } from '../month-lock/month-lock.module';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { paymentProviderMode } from './payment-mode';
     PricingModule,
     MessageModule,
     ReviewFlagModule,
+    MonthLockModule,
   ],
   controllers: [PaymentController],
   providers: [

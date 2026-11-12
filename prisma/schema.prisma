@@ -753,7 +753,8 @@ model Staff {
   /// An intern (call or field agent) — carries the same targets as paid agents.
   isIntern          Boolean          @default(false)
   /// Joining date, entered when the staff member is added (CEO or Manager);
-  /// payroll counts from it.
+  /// payroll counts from it. When empty, payroll uses the first login date;
+  /// the CEO can correct it later (PUT /staff/:id/joined-on).
   joinedOn          DateTime?        @db.Date
   failedLoginCount  Int              @default(0)
   lockedUntil       DateTime?
@@ -869,6 +870,9 @@ model Payment {
   // Phase 22: a payout the bank refused (account closed, name mismatch…), recorded by Finance.
   payoutFailureReason String?
   payoutFailedAt    DateTime?
+  // Phase 22 Part B: money that arrived for a closed month is booked in the
+  // current open month; this says so (the bank's own date and why).
+  bookingNote       String?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -900,6 +904,8 @@ model BankCredit {
   returnedUtr       String?   @unique
   returnedAt        DateTime?
   returnedByStaffId String?
+  // Phase 22 Part B: a credit dated in a closed month is booked in the open month (note says so).
+  bookingNote       String?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
@@ -1367,6 +1373,9 @@ model PricingPolicy {
   // Referral payouts are commission: Finance is warned before a partner's
   // yearly total crosses this TDS limit (guide, tax handling; CA to confirm).
   referralTdsYearlyLimitPaise  Int       @default(2000000)
+  // Payroll (Phase 22 Part B, owner decision 11 Nov): a day's pay is the
+  // monthly salary divided by this, the same in every month.
+  payrollSalaryDays            Int       @default(26)
   // Company details printed on GST invoices (entered by the CEO in Settings).
   companyLegalName             String    @default("Laboura Private Limited")
   companyGstin                 String?
@@ -2054,6 +2063,178 @@ model StaffCoachingNote {
   createdAt     DateTime @default(now())
 
   @@index([staffId, createdAt])
+}
+
+/// Phase 22 Part B: one staff member's monthly salary from a month onwards.
+/// Set by the CEO or Finance (Managers never see salaries); every change is a
+/// new row, so the history is kept. The latest row on or before a month applies.
+model StaffSalary {
+  id                 String   @id @default(uuid())
+  staffId            String
+  monthlyPaise       Int
+  effectiveFromMonth String   // IST yyyy-mm
+  note               String?
+  setByStaffId       String
+  createdAt          DateTime @default(now())
+
+  @@index([staffId, effectiveFromMonth])
+}
+
+/// Phase 22 Part B: one month's salary sheet, worked out from attendance.
+/// Finance prepares it and sends the total to the CEO (with_ceo); the CEO
+/// approves it (approved) or sends it back (returned); Finance pays each
+/// person and records the UTR; when everyone is paid the month is paid.
+model PayrollRun {
+  id                String        @id @default(uuid())
+  month             String        @unique // IST yyyy-mm
+  status            String        // with_ceo, returned, approved, paid
+  people            Int
+  grossPaise        Int
+  deductionsPaise   Int
+  netPaise          Int
+  preparedByStaffId String
+  preparedAt        DateTime
+  approvedByStaffId String?
+  approvedAt        DateTime?
+  returnedByStaffId String?
+  returnedAt        DateTime?
+  returnedReason    String?
+  paidAt            DateTime?
+  lines             PayrollLine[]
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
+}
+
+/// Phase 22 Part B: one person's pay for a month, frozen when the sheet is
+/// prepared. Days are kept in half days so nothing is a float.
+model PayrollLine {
+  id                    String     @id @default(uuid())
+  runId                 String
+  run                   PayrollRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+  staffId               String
+  staffCode             String
+  name                  String
+  role                  String
+  monthlyPaise          Int
+  salaryDays            Int
+  calendarDays          Int
+  workingDays           Int
+  holidays              Int
+  fullDays              Int
+  halfDays              Int
+  paidLeaveDays         Int
+  unpaidLeaveDays       Int
+  absentDays            Int
+  notEmployedDays       Int
+  /// Working days in the month with no attendance row while on the staff (not paid).
+  unmarkedDays          Int        @default(0)
+  lossOfPayHalfDays     Int
+  paidHalfDays          Int
+  shortfallMinutes      Int
+  basicPaise            Int
+  hraPaise              Int
+  specialPaise          Int
+  grossPaise            Int
+  /// Working days not on the staff (before joining, away, after leaving).
+  notEmployedPaise      Int        @default(0)
+  lossOfPayPaise        Int
+  shortfallPaise        Int
+  pfPaise               Int        @default(0)
+  esiPaise              Int        @default(0)
+  professionalTaxPaise  Int        @default(0)
+  deductionsPaise       Int
+  /// Corrections applied on this sheet (PayrollCorrection rows: a change to
+  /// an earlier approved month, or a take-back carried forward): + pays back,
+  /// − takes back. Only the part that fits this month's pay.
+  correctionPaise       Int        @default(0)
+  correctionNote        String?
+  /// A take-back larger than this month's pay (≤ 0), carried to the next sheet on approval.
+  carryForwardPaise     Int        @default(0)
+  netPaise              Int
+  status                String     @default("unpaid") // unpaid, paid
+  paidAt                DateTime?
+  paidByStaffId         String?
+  paidFrom              String?
+  utr                   String?    @unique
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  @@unique([runId, staffId])
+  @@index([staffId])
+}
+
+/// Phase 22 Part B: a month closed on the Month-end review. Once closed the
+/// month's money records can't be changed (corrections go into the next month
+/// with a note); only the CEO reopens it, with a reason, audited.
+model MonthClose {
+  id                String    @id @default(uuid())
+  month             String    @unique // IST yyyy-mm
+  status            String    // closed, reopened
+  closedByStaffId   String
+  closedAt          DateTime
+  closeNote         String?
+  checklist         Json
+  reopenedByStaffId String?
+  reopenedAt        DateTime?
+  reopenReason      String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+}
+
+/// Phase 22 Part B: the CEO's "Looks right" / "Flag" on one money action in
+/// the Month-end review.
+model MonthReviewMark {
+  id          String   @id @default(uuid())
+  month       String
+  subjectType String   // payment, expense, payroll_line
+  subjectId   String
+  mark        String   // ok, flagged
+  note        String?
+  byStaffId   String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([month, subjectType, subjectId])
+}
+
+/// Phase 22 Part B: a period a staff member was deactivated (away). Working
+/// days strictly between the leaving day and the day they came back are not
+/// paid. An open period (no returnedAt) means they are still away.
+model StaffAwayPeriod {
+  id          String    @id @default(uuid())
+  staffId     String
+  leftAt      DateTime
+  returnedAt  DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([staffId])
+}
+
+/// Phase 22 Part B: a change to a month whose pay was already approved (a
+/// holiday or attendance changed later), or a take-back carried forward
+/// because it was larger than a sheet's pay. Each is applied once, on the next
+/// prepared sheet (appliedRunId); none is ever forgotten.
+model PayrollCorrection {
+  id             String   @id @default(uuid())
+  staffId        String
+  /// IST month (yyyy-mm) the money relates to.
+  relatesToMonth String
+  /// + pays back, − takes back (paise).
+  amountPaise    Int
+  reason         String
+  /// recompute (a frozen month worked out again), carry_forward (left over from a sheet)
+  source         String
+  /// The sheet it was applied on; null until then.
+  appliedRunId   String?
+  appliedMonth   String?
+  /// For carry_forward: the sheet that left it over.
+  createdByRunId String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([staffId, appliedRunId])
+  @@index([relatesToMonth])
 }
 
 /// Requests a Team Lead, Manager or the CEO decides that have no table of

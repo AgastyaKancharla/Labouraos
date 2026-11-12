@@ -1,4 +1,4 @@
-import { BadRequestException } from '@nestjs/common';
+import { BadRequestException, ConflictException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -174,7 +174,8 @@ describe('Phase 18: payout recording is claimed atomically and UTR is unique', (
     ).rejects.toBeInstanceOf(BadRequestException);
   });
 
-  it('a UTR cannot be reused across different payments (400)', async () => {
+  // One shared UTR check across the books answers 409 Conflict (Phase 22 Part B review, defect 7).
+  it('a UTR cannot be reused across different payments (409)', async () => {
     const item1 = await makeApprovedPayoutWithAccount();
     const item2 = await makeApprovedPayoutWithAccount();
     const reusedUtr = `UTR${timestamp}REUSE`;
@@ -189,6 +190,6 @@ describe('Phase 18: payout recording is claimed atomically and UTR is unique', (
         bankUtr: reusedUtr,
         receiverNameShown: 'Arun Kumar',
       }),
-    ).rejects.toThrow(BadRequestException);
+    ).rejects.toThrow(ConflictException);
   });
 });

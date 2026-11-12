@@ -132,6 +132,15 @@ export class StaffController {
     return this.staffService.moveReportingLine(id, body, req.user);
   }
 
+  /** The CEO enters or corrects a joining date (payroll starts on it). */
+  @Put(':id/joined-on')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo')
+  setJoinedOn(@Param('id') id: string, @Body('joinedOn') joinedOn: unknown, @Req() req: AuthenticatedRequest) {
+    return this.staffService.setJoinedOn(id, joinedOn, req.user);
+  }
+
   @Put(':id/call-routing-phone')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')

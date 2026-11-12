@@ -1,0 +1,19 @@
+/* The payslip (CA14g-Payslip). Prints alone on one page. */
+.lb-payslip { display: flex; flex-direction: column; gap: 14px; }
+.lb-payslip__head { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; border-bottom: 2px solid var(--navy); padding-bottom: 10px; }
+.lb-payslip__co { display: flex; flex-direction: column; }
+.lb-payslip__co strong { font-family: var(--font-display, inherit); color: var(--navy); font-size: 16px; }
+.lb-payslip__kv { gap: 6px 24px; }
+.lb-payslip__cols { gap: 24px; }
+.lb-payslip__net { justify-content: space-between; flex-wrap: wrap; gap: 6px; }
+.lb-payslip .row { gap: 12px; }
+.lb-payslip-bar { display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
+.lb-payslip-bar select { min-height: 44px; border: 1px solid var(--line); border-radius: 10px; padding: 0 10px; background: var(--surface, #fff); }
+@media (max-width: 760px) {
+  .lb-payslip__kv, .lb-payslip__cols { grid-template-columns: 1fr; }
+}
+@media print {
+  body * { visibility: hidden; }
+  .lb-payslip, .lb-payslip * { visibility: visible; }
+  .lb-payslip { position: absolute; left: 0; top: 0; width: 100%; box-shadow: none; border: 0; }
+}

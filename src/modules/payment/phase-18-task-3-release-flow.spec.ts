@@ -434,7 +434,8 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
       expect(audit?.after).toMatchObject({ bankUtr: utr });
     });
 
-    it('a UTR cannot be reused across payments (400)', async () => {
+    // One shared UTR check across the books answers 409 Conflict (Phase 22 Part B review, defect 7).
+    it('a UTR cannot be reused across payments (409)', async () => {
       const { referral: r1, payment: p1 } = await createReferralPayment('pending', true);
       await request(app.getHttpServer()).post(`/payments/${p1.id}/approve`).set(as('finance')).expect(201);
       await createTestPayoutAccount({
@@ -463,7 +464,7 @@ describe('Phase 18 Task 3: Owed -> Approved -> Paid Release Flow', () => {
         .set(as('finance'))
         .send({ bankUtr: sharedUtr, receiverNameShown: 'Arun Kumar' });
 
-      expect(res.status).toBe(400);
+      expect(res.status).toBe(409);
       expect(res.body.message).toMatch(/already been used/i);
     });
   });

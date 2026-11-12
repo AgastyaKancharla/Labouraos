@@ -75,6 +75,27 @@ describe('Team & access', () => {
     expect(await screen.findByText('tok-123')).toBeInTheDocument();
   });
 
+  it('takes a joining date when adding staff and lets the CEO set one later', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': teamResponse,
+      'POST /staff': { staff: { code: 'CA-0021', name: 'Kavya R' }, inviteToken: 'tok-9' },
+      'PUT /staff/ca1/joined-on': { id: 'ca1' },
+    });
+    render(<Team />, '/ceo/team');
+    await screen.findByText(/3 call \+ 2 field agents/);
+    const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Joining date' }));
+    const d = await dialog();
+    fireEvent.change(within(d).getByLabelText(/Joined on/), { target: { value: '2026-10-28' } });
+    await userEvent.click(within(d).getByRole('button', { name: 'Joining date · Deepa Nair' }));
+    await waitFor(() => expect(api.calls('PUT /staff/ca1/joined-on')[0]?.body).toEqual({ joinedOn: '2026-10-28' }));
+    await userEvent.type(screen.getByLabelText(/Full name/), 'Kavya R');
+    fireEvent.change(screen.getByLabelText(/Joining date/), { target: { value: '2026-11-16' } });
+    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
+    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Kavya R', joinedOn: '2026-11-16' })));
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /ceo/team': apiError(500, 'Internal server error', 'req-t1') });
     render(<Team />, '/ceo/team');
@@ -109,16 +130,26 @@ describe('Teams', () => {
 });
 
 describe('Salaries', () => {
-  it('shows last month\'s days from attendance and leaves rupees to payroll', async () => {
+  // Paid days now come from payroll: weekly offs and holidays are paid days
+  // (Phase 22 Part B), so the sheet reads GET /finance/salaries instead of the
+  // attendance month sheet, and the rupee columns are filled.
+  it("shows last month's payroll from attendance with the rupees", async () => {
     const api = mockApi({
       ...common,
-      'GET /attendance/month-sheet': { month: '2026-10', rows: [{ staffCode: 'CA-1', name: 'Kiran Kumar', role: 'field_agent', workingDays: 27, holidays: 4, fullDays: 25, halfDays: 0, paidLeaveDays: 2, absentDays: 2, unpaidLeaveDays: 0, paidDays: 27, unpaidDays: 2, deductibleShortfallMinutes: 70 }] },
+      'GET /finance/staff-salaries': { month: '2026-11', rows: [] },
+      'GET /finance/salaries': {
+        month: '2026-10', label: 'October 2026', status: 'paid', closed: false, salaryDays: 31, calendarDays: 31, prepareFrom: '2026-10-31', canPrepare: false, payDay: '2026-11-01',
+        run: { preparedBy: 'Nisha', preparedAt: '2026-10-31T10:00:00Z', approvedBy: 'Agastya', approvedAt: '2026-10-31T12:00:00Z', returnedBy: null, returnedAt: null, returnedReason: null, paidAt: '2026-11-01T05:00:00Z' },
+        totals: { people: 1, grossPaise: 2000000, deductionsPaise: 137000, lossOfPayAndShortfallPaise: 137000, correctionsPaise: 0, netPaise: 1863000, paidCount: 1, paidPaise: 1863000, unpaidCount: 0 },
+        missingSalary: [], openDays: [], statutory: { lines: [], note: 'Added after company registration' },
+        rows: [{ staffId: 's1', staffCode: 'CA-1', name: 'Kiran Kumar', role: 'field_agent', joinedOn: '2026-08-01', monthlyPaise: 2000000, salaryDays: 26, calendarDays: 31, workingDays: 27, holidays: 0, fullDays: 25, halfDays: 0, paidLeaveDays: 2, unpaidLeaveDays: 0, absentDays: 2, notEmployedDays: 0, unmarkedDays: 0, paidDays: 24, lossOfPayDays: 2, shortfallMinutes: 70, basicPaise: 1000000, hraPaise: 400000, specialPaise: 600000, grossPaise: 2000000, notEmployedPaise: 0, lossOfPayPaise: 129032, shortfallPaise: 7968, pfPaise: 0, esiPaise: 0, professionalTaxPaise: 0, deductionsPaise: 137000, correctionPaise: 0, correctionNote: null, netPaise: 1863000, line: { id: 'l1', status: 'paid', paidAt: '2026-11-01T05:00:00Z', utrLast4: '1111', paidFrom: 'bank_transfer' } }],
+      },
     });
     render(<Salaries />, '/ceo/team/salaries');
-    expect(await screen.findByText('27 / 31')).toBeInTheDocument();
-    expect(screen.getByText('Check: 2 absent')).toBeInTheDocument();
+    expect(await screen.findByText('24 / 26')).toBeInTheDocument();
     expect(screen.getByText('1h 10m')).toBeInTheDocument();
-    expect(api.calls('GET /attendance/month-sheet')[0].query.get('month')).toBe('2026-10');
+    expect(screen.getAllByText('₹18,630').length).toBeGreaterThan(0);
+    expect(api.calls('GET /finance/salaries')[0].query.get('month')).toBe('2026-10');
   });
 });
 
