@@ -151,6 +151,24 @@ describe('CEO portal endpoints', () => {
     expect(anonymous.status).toBe(401);
   });
 
+  it('sidebar counts: interviews today and missed calls waiting, for the CEO only', async () => {
+    const before = await request(server()).get('/ceo/nav-counts').set('Authorization', `Bearer ${tokens.ceo}`);
+    expect(before.status).toBe(200);
+    expect(before.body).toEqual({ interviewsToday: expect.any(Number), callbacksWaiting: expect.any(Number) });
+    const pending = await prisma.callbackTask.create({ data: { callId: `W3C-CB-${stamp}-1`, phone: '+919800000001', status: 'pending' } });
+    const done = await prisma.callbackTask.create({ data: { callId: `W3C-CB-${stamp}-2`, phone: '+919800000002', status: 'completed' } });
+    try {
+      const after = await request(server()).get('/ceo/nav-counts').set('Authorization', `Bearer ${tokens.ceo}`);
+      expect(after.body.callbacksWaiting).toBe(before.body.callbacksWaiting + 1);
+      for (const role of ['manager', 'finance', 'team_lead', 'call_agent']) {
+        const res = await request(server()).get('/ceo/nav-counts').set('Authorization', `Bearer ${tokens[role]}`);
+        expect({ role, status: res.status }).toEqual({ role, status: 403 });
+      }
+    } finally {
+      await prisma.callbackTask.deleteMany({ where: { id: { in: [pending.id, done.id] } } });
+    }
+  });
+
   it('lists a job seeker 20 days into his 30-day guarantee as close to a refund, and reminds his agent once', async () => {
     const seeker = await makePaidSeeker(20);
     const list = await request(server()).get('/ceo/near-refund').set('Authorization', `Bearer ${tokens.ceo}`).expect(200);

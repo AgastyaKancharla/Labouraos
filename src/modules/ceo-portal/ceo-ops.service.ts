@@ -60,6 +60,22 @@ export class CeoOpsService {
     private readonly seekers: JobSeekerService,
   ) {}
 
+  /**
+   * Sidebar counts (C-Interviews and C-CallCenter badges): interviews whose
+   * slot starts today in IST (not cancelled), and missed calls still waiting
+   * to be returned (the same "pending" count as "Missed calls to return").
+   */
+  async navCounts(now: Date): Promise<{ interviewsToday: number; callbacksWaiting: number }> {
+    const dayMs = 24 * 3600 * 1000;
+    const todayStart = new Date(now.getTime() - ((now.getTime() + 5.5 * 3600 * 1000) % dayMs));
+    const todayEnd = new Date(todayStart.getTime() + dayMs - 1);
+    const [interviewsToday, callbacksWaiting] = await Promise.all([
+      this.prisma.interview.count({ where: { slotStartsAt: { gte: todayStart, lte: todayEnd }, status: { not: 'cancelled' } } }),
+      this.prisma.callbackTask.count({ where: { status: 'pending' } }),
+    ]);
+    return { interviewsToday, callbacksWaiting };
+  }
+
   private async people() {
     const staff = await this.prisma.staff.findMany({
       where: { role: { in: ATTENDANCE_ROLES }, status: 'active' },

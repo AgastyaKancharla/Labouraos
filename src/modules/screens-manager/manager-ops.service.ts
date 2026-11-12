@@ -281,6 +281,20 @@ export class ManagerOpsService {
 
   // ---------------------------------------------------------- call center
 
+  /**
+   * Sidebar count (MG-CallCenter badge): missed calls waiting to be returned
+   * that are unassigned or with an agent in the Manager's tree — the same
+   * rows as "Missed incoming calls" on MG-CallCenter.
+   */
+  async navCounts(actor: Actor): Promise<{ callbacksWaiting: number }> {
+    const tree = await this.tree.load(actor.id);
+    const ids = this.some(tree.agents.filter((a) => a.role === 'call_agent').map((a) => a.id));
+    const callbacksWaiting = await this.prisma.callbackTask.count({
+      where: { status: 'pending', OR: [{ assignedToStaffId: { in: ids } }, { assignedToStaffId: null }] },
+    });
+    return { callbacksWaiting };
+  }
+
   /** MG-CallCenter: every call agent in the tree today (or the period), live. */
   async callCenter(actor: Actor, range: DateRange, now: Date) {
     const tree = await this.tree.load(actor.id);

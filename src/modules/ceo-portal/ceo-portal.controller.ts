@@ -43,6 +43,13 @@ export class CeoPortalController {
 
   // Command Center and reports ------------------------------------------
 
+  /** Sidebar badge counts: interviews today and missed calls waiting. */
+  @Get('nav-counts')
+  @RequireRoles('ceo')
+  navCounts() {
+    return this.ops.navCounts(new Date());
+  }
+
   @Get('command-center/money')
   @RequireRoles('ceo')
   ccMoney(@Req() req: AuthedRequest, @Query() q: Q) {

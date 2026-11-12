@@ -1,4 +1,5 @@
 import { useQueries } from '@tanstack/react-query';
+import { sessionStore } from '../auth/session';
 import { api } from '../lib/api/client';
 import type { BadgeSource, SidebarConfig } from './types';
 
@@ -22,6 +23,13 @@ const FETCHERS: Partial<Record<BadgeSource, () => Promise<number>>> = {
   'invoices-unpaid': async () => (await financeCounts()).invoicesUnpaid,
   'payouts-due': async () => (await financeCounts()).payoutsDue,
   'expenses-to-approve': async () => (await financeCounts()).expensesToApprove,
+  // CEO › Interviews (GET /ceo/nav-counts, CEO only): interviews whose slot is today.
+  'interviews-today': async () => (await api.get<{ interviewsToday: number }>('/ceo/nav-counts')).interviewsToday,
+  // CEO and Manager › Call Center: missed calls waiting to be returned (the Manager's own tree).
+  'callbacks-waiting': async () =>
+    sessionStore.get()?.staff.role === 'manager'
+      ? (await api.get<{ callbacksWaiting: number }>('/manager/nav-counts')).callbacksWaiting
+      : (await api.get<{ callbacksWaiting: number }>('/ceo/nav-counts')).callbacksWaiting,
 };
 
 interface FinanceCounts {
