@@ -36,8 +36,9 @@ const SOURCE: Record<string, string> = {
 /**
  * Pay corrections (GET /payroll/corrections): waiting for the next salary
  * sheet, or already applied on one. Only the CEO adds one (`canAdd`, on the
- * CEO's Salaries page; POST /payroll/corrections) — for example for a month
- * payroll no longer works out again; Finance sees the same list read-only.
+ * CEO's Salaries page; POST /payroll/corrections) — only for what payroll
+ * can't re-check by itself (a month beyond the 12-month window, or a person
+ * with no pay on that month's prepared sheet); Finance sees the list read-only.
  */
 export function PayrollCorrections({ canAdd }: { canAdd: boolean }) {
   const now = useNow();
@@ -82,7 +83,7 @@ export function PayrollCorrections({ canAdd }: { canAdd: boolean }) {
       label="Add a correction"
       variant="primary"
       title="Add a pay correction"
-      description="Pays back (+) or takes back (−) an amount for an earlier month on the next salary sheet — for example a holiday, day or joining date in a month payroll no longer works out again. Finance pays it with that sheet."
+      description="Pays back (+) or takes back (−) an amount for an earlier month on the next salary sheet. Only for what payroll can't re-check by itself: a month more than 12 sheets back, or a person who has no pay on that month's prepared sheet (for example a joining date moved back). For anything else, fix the holiday, attendance or joining date and the next sheet picks it up."
       fields={[
         { name: 'staffId', kind: 'select', label: 'Person', required: true, options: [{ value: '', label: 'Choose a person' }, ...(staff.data?.rows ?? []).map((p) => ({ value: p.staffId, label: `${p.name} (${p.staffCode})` }))] },
         { name: 'relatesToMonth', kind: 'select', label: 'For the month', options: months.map((m) => ({ value: m, label: monthName(m, true) })) },

@@ -221,6 +221,7 @@ describe("CEO's Salaries (C-Team-Salaries)", () => {
     expect(await screen.findByText('Holiday on 2 Oct 2025 not paid')).toBeInTheDocument();
     await userEvent.click(await screen.findByRole('button', { name: 'Add a correction' }));
     const d = await screen.findByRole('dialog');
+    expect(within(d).getByText(/Only for what payroll can't re-check by itself/)).toBeInTheDocument();
     const confirm = within(d).getByRole('button', { name: 'Add a pay correction' });
     expect(confirm).toBeDisabled();
     await waitFor(() => expect(within(d).getByRole('option', { name: 'Deepa Nair (CA-0007)' })).toBeInTheDocument());

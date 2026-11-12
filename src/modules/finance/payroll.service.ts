@@ -33,7 +33,7 @@ import {
   salaryDaysFor,
   staffWorkingDays,
 } from './payroll-rules';
-import { CORRECTION_LOOKBACK_MONTHS } from './payroll-window';
+import { CORRECTION_LOOKBACK_MONTHS, MANUAL_NOT_NEEDED, recomputeCovers } from './payroll-window';
 
 export type PayrollStatus = 'draft' | 'with_ceo' | 'returned' | 'approved' | 'paid';
 
@@ -283,7 +283,9 @@ export class PayrollService {
    * The CEO adds a manual pay correction (only the CEO sets pay): + pays back,
    * − takes back, for an earlier month, with a reason. It waits as a
    * PayrollCorrection (source manual) and the next prepared sheet picks it up
-   * like any other — for changes payroll no longer works out by itself.
+   * like any other. Only for a person and month the recompute does not cover
+   * (beyond the 12-month window, or no line with pay on that month's frozen
+   * sheet, e.g. a joining date moved back), so nothing is ever paid twice.
    */
   async addCorrection(input: { staffId?: unknown; relatesToMonth?: unknown; amountPaise?: unknown; reason?: unknown }, actor: Actor, now = new Date()) {
     if (actor.role !== 'ceo') throw new ForbiddenException('Only the CEO adds a pay correction');
@@ -299,6 +301,9 @@ export class PayrollService {
     const staffId = typeof input.staffId === 'string' ? input.staffId : '';
     const staff = staffId ? await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, name: true, role: true } }) : null;
     if (!staff || !SALARY_ROLES.includes(staff.role)) throw new NotFoundException('No staff member on the salary sheet with that id');
+    // Only for what payroll can't see by itself (a month beyond the window, or a month whose sheet
+    // has no line for the person): anything else the recompute already pays, so it would be paid twice.
+    if (await recomputeCovers(this.prisma, staff.id, relatesToMonth)) throw new BadRequestException(MANUAL_NOT_NEEDED);
     const row = await this.prisma.payrollCorrection.create({ data: { staffId: staff.id, relatesToMonth, amountPaise, reason, source: 'manual', createdByStaffId: actor.id } });
     await this.audit.log({
       actorId: actor.id,

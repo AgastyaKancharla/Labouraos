@@ -9,7 +9,10 @@ import { monthLabel, nextMonth } from './payroll-rules';
 export const CORRECTION_LOOKBACK_MONTHS = 12;
 
 /** Sheets whose numbers are fixed (with the CEO, approved or paid). A returned sheet is prepared again. */
-const FROZEN = ['with_ceo', 'approved', 'paid'];
+export const FROZEN = ['with_ceo', 'approved', 'paid'];
+
+/** A manual correction refused because the recompute already covers that person and month. */
+export const MANUAL_NOT_NEEDED = 'Payroll already re-checks this month — fix the holiday, attendance or joining date instead, and the next sheet picks it up.';
 
 type RunReader = Pick<PrismaClient, 'payrollRun'>;
 
@@ -41,6 +44,34 @@ export async function monthsBeyondCorrections(prisma: RunReader, months: readonl
     if (frozenLater === later.length) out.push(month);
   }
   return out;
+}
+
+/**
+ * Whether payroll works a person's month out again by itself: the month is
+ * within reach (not beyond the 12-month window) and either its sheet is not
+ * frozen yet (it will be worked out from attendance) or the person has a line
+ * with pay on it (the recompute re-checks that line). A manual correction is
+ * only for what this does NOT cover, so it is never paid twice.
+ */
+export async function recomputeCovers(prisma: RunReader, staffId: string, month: string): Promise<boolean> {
+  if ((await monthsBeyondCorrections(prisma, [month])).length) return false;
+  const run = await prisma.payrollRun.findUnique({ where: { month }, select: { status: true, lines: { where: { staffId, monthlyPaise: { gt: 0 } }, select: { id: true } } } });
+  if (!run || !FROZEN.includes(run.status)) return true;
+  return run.lines.length > 0;
+}
+
+/**
+ * The months among `months` whose sheet is frozen and holds no line with pay
+ * for the person: the recompute never looks at them for that person.
+ */
+export async function frozenMonthsWithoutLine(prisma: RunReader, staffId: string, months: readonly string[]): Promise<string[]> {
+  const wanted = [...new Set(months)];
+  if (!wanted.length) return [];
+  const runs = await prisma.payrollRun.findMany({
+    where: { month: { in: wanted }, status: { in: FROZEN } },
+    select: { month: true, lines: { where: { staffId, monthlyPaise: { gt: 0 } }, select: { id: true } } },
+  });
+  return runs.filter((r) => r.lines.length === 0).map((r) => r.month).sort();
 }
 
 /**
