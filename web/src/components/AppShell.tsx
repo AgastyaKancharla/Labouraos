@@ -13,6 +13,17 @@ import { NavBadge } from './Badge';
 import { FamilyContext } from './family';
 import { NavIcon, UiIcon } from './Icon';
 import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatcher';
+import { AttendanceProvider } from '../attendance/AttendanceProvider';
+import { StatusBanner } from '../attendance/StatusBanner';
+import { StatusMenu } from '../attendance/StatusMenu';
+import { LanguageSelect, usePersonLanguage } from '../i18n/LanguageSwitcher';
+import type { PortalKey } from '../portals';
+
+/**
+ * Portals whose people mark attendance in the web app: call agents, and Team
+ * Leads, Managers and Finance (owner decision 12 Nov). The CEO does not.
+ */
+const OFFICE_ATTENDANCE_PORTALS: readonly PortalKey[] = ['team-lead', 'manager', 'finance'];
 
 /**
  * The frame around every screen. Three variants, one per design family:
@@ -21,7 +32,8 @@ import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatc
  *   with badges, the signed-in person and Log out) from Main.dc.html,
  *   MG-Home, T-Home and FN-Home. Below 900 px the sidebar becomes a drawer
  *   opened from a menu button.
- * - ConsoleShell: the call agent console's top header (CA03-Home).
+ * - ConsoleShell: the call agent console's top header (CA03-Home), with the
+ *   attendance status menu and the language switcher.
  * - PublicShell: the phone header with the language switcher (P00…P06).
  *
  * <AppShell portal={…}> picks the right one and provides the portal and the
@@ -157,7 +169,10 @@ function PortalShell({ portal, children }: { portal: PortalDef; children: ReactN
       {open && <div className="lb-shell__scrim" onClick={() => setOpen(false)} aria-hidden="true" />}
       <main id="main" className="lb-shell__main" tabIndex={-1}>
         <div className="swoosh lb-shell__swoosh" />
-        <div className="lb-shell__content">{children}</div>
+        <div className="lb-shell__content">
+          {OFFICE_ATTENDANCE_PORTALS.includes(portal.key) && <StatusBanner />}
+          {children}
+        </div>
       </main>
     </div>
   );
@@ -168,6 +183,7 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
   const { session, signOut } = useAuth();
   const now = useNow(60_000);
   const staff = session?.staff;
+  usePersonLanguage(staff?.id);
   return (
     <div className="console lb-console">
       <SkipLink />
@@ -192,6 +208,8 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
               );
             })}
           </nav>
+          <StatusMenu tone="onDark" />
+          <LanguageSelect staffId={staff?.id} />
           {staff && (
             <div className="chip">
               <div className="av" aria-hidden="true">
@@ -207,6 +225,7 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
       </header>
       <div className="swoosh lb-console__swoosh" />
       <main id="main" className="wrap lb-console__main" tabIndex={-1}>
+        <StatusBanner />
         {children}
       </main>
       {portal.key === 'call-agent' && <IncomingCallWatcher />}
@@ -242,7 +261,18 @@ function PublicShell({ children }: { children: ReactNode }) {
 export function AppShell({ portal, children }: { portal: PortalDef; children: ReactNode }) {
   let body: ReactNode;
   if (portal.key === 'public') body = <PublicShell>{children}</PublicShell>;
-  else if (portal.family === 'console') body = <ConsoleShell portal={portal}>{children}</ConsoleShell>;
+  else if (portal.family === 'console')
+    body = (
+      <AttendanceProvider audience="agent">
+        <ConsoleShell portal={portal}>{children}</ConsoleShell>
+      </AttendanceProvider>
+    );
+  else if (OFFICE_ATTENDANCE_PORTALS.includes(portal.key))
+    body = (
+      <AttendanceProvider audience="office">
+        <PortalShell portal={portal}>{children}</PortalShell>
+      </AttendanceProvider>
+    );
   else body = <PortalShell portal={portal}>{children}</PortalShell>;
   return (
     <PortalContext.Provider value={portal}>
