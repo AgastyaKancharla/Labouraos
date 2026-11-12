@@ -447,6 +447,50 @@ export class CeoTeamService {
     };
   }
 
+  /**
+   * C-Leaderboard for Today / This week / Custom: the same money-making
+   * results as the month board, counted inside the range — call agents by
+   * candidates activated (₹499 received) and vacancies captured, field agents
+   * by placements closed (joined and paid) and fees paid. No targets: those
+   * are monthly. Never calls dialled.
+   */
+  async leaderboardRange(range: { from: Date; to: Date }) {
+    const agents = await this.prisma.staff.findMany({
+      where: { role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
+      select: { id: true, code: true, name: true, role: true, teamLeadId: true, reportsToId: true },
+      orderBy: { code: 'asc' },
+    });
+    const ids = agents.map((a) => a.id);
+    const leadIds = [...new Set(agents.map((a) => a.teamLeadId ?? a.reportsToId).filter((x): x is string => Boolean(x)))];
+    const within = { gte: range.from, lte: range.to };
+    const [leads, activated, vacancies, closed, fees] = await Promise.all([
+      leadIds.length ? this.prisma.staff.findMany({ where: { id: { in: leadIds } }, select: { id: true, name: true, teamName: true } }) : [],
+      this.prisma.jobSeeker.groupBy({ by: ['registeredByStaffId'], where: { registeredByStaffId: { in: ids }, paymentReceivedAt: within }, _count: { _all: true } }),
+      this.prisma.vacancy.groupBy({ by: ['capturedByStaffId'], where: { capturedByStaffId: { in: ids }, createdAt: within }, _count: { _all: true } }),
+      this.prisma.placement.groupBy({ by: ['createdByStaffId'], where: { createdByStaffId: { in: ids }, joinedDate: within, paidAt: { not: null } }, _count: { _all: true } }),
+      this.prisma.placement.groupBy({ by: ['createdByStaffId'], where: { createdByStaffId: { in: ids }, paidAt: within }, _sum: { placementFee: true } }),
+    ]);
+    const count = (rows: Array<{ _count: { _all: number } } & Record<string, unknown>>, key: string, id: string) =>
+      rows.find((r) => r[key] === id)?._count._all ?? 0;
+    const rows = agents.map((agent) => {
+      const call = agent.role === 'call_agent';
+      const lead = leads.find((l) => l.id === (agent.teamLeadId ?? agent.reportsToId));
+      return {
+        staff: { id: agent.id, code: agent.code, name: agent.name, role: agent.role },
+        team: teamLabel(lead ?? null),
+        targetId: null,
+        target: null,
+        main: { achieved: call ? count(activated, 'registeredByStaffId', agent.id) : count(closed, 'createdByStaffId', agent.id), target: null },
+        second: { achieved: call ? count(vacancies, 'capturedByStaffId', agent.id) : 0, target: null },
+        feesPaise: call ? null : (fees.find((f) => f.createdByStaffId === agent.id)?._sum.placementFee ?? 0),
+        progressPercent: null,
+        pace: 'no_target' as const,
+      };
+    });
+    const ranked = [...rows].sort((a, b) => b.main.achieved - a.main.achieved || a.staff.code.localeCompare(b.staff.code));
+    return { from: range.from.toISOString(), to: range.to.toISOString(), leaderboard: ranked.map((r, i) => ({ position: i + 1, ...r })) };
+  }
+
   private monthBounds(m: Month) {
     const key = `${m.year}-${String(m.month).padStart(2, '0')}-01`;
     const start = istStartOfDay(key);

@@ -87,6 +87,7 @@ describe('CEO portal part 2 endpoints and the Areas list', () => {
     '/ceo/attendance',
     '/ceo/call-center',
     '/ceo/field-ops',
+    '/ceo/leaderboard',
     '/ceo/check-ins',
     '/ceo/audit',
     '/ceo/flags',

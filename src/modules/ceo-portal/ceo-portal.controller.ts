@@ -301,6 +301,14 @@ export class CeoPortalController {
     return this.team.targetsBoard(parseMonth(q.year, q.month, now), now);
   }
 
+  /** C-Leaderboard for Today / This week / Custom (the month view uses /ceo/targets). */
+  @Get('leaderboard')
+  @RequireRoles('ceo')
+  leaderboard(@Query() q: Q) {
+    const now = new Date();
+    return this.team.leaderboardRange(parseRange(q.fromDate, q.toDate, now));
+  }
+
   @Post('targets/copy')
   @RequireRoles('ceo')
   copyTargets(@Req() req: AuthedRequest, @Body() body: { fromYear?: unknown; fromMonth?: unknown; toYear?: unknown; toMonth?: unknown }) {

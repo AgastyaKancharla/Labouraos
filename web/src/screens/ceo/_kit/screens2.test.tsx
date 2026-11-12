@@ -361,6 +361,21 @@ describe('Targets and leaderboard', () => {
     expect(screen.getByText('₹82,000 fees')).toBeInTheDocument();
     expect(screen.getByText('75% · behind')).toBeInTheDocument();
   });
+
+  it('Today / This week count the same results inside the range, from GET /ceo/leaderboard', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/targets': { ...board, leaderboard: board.rows },
+      'GET /ceo/leaderboard': { leaderboard: [{ ...board.rows[1], position: 1, main: { achieved: 2, target: null }, feesPaise: 1600000, progressPercent: null, pace: 'no_target', target: null }] },
+    });
+    render(<Leaderboard />, '/ceo/leaderboard');
+    expect(await screen.findByText('9 placements')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Today' }));
+    expect(await screen.findByText('2 placements')).toBeInTheDocument();
+    expect(screen.getByText('Targets are monthly')).toBeInTheDocument();
+    const q = api.calls('GET /ceo/leaderboard')[0].query;
+    expect(q.get('fromDate')).toBeTruthy();
+  });
 });
 
 describe('Call center and field ops', () => {
