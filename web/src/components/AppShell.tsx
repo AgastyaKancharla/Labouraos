@@ -16,6 +16,7 @@ import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatc
 import { AttendanceProvider } from '../attendance/AttendanceProvider';
 import { StatusBanner } from '../attendance/StatusBanner';
 import { StatusMenu } from '../attendance/StatusMenu';
+import { LanguageSelect, usePersonLanguage } from '../i18n/LanguageSwitcher';
 import type { PortalKey } from '../portals';
 
 /**
@@ -32,7 +33,7 @@ const OFFICE_ATTENDANCE_PORTALS: readonly PortalKey[] = ['team-lead', 'manager',
  *   MG-Home, T-Home and FN-Home. Below 900 px the sidebar becomes a drawer
  *   opened from a menu button.
  * - ConsoleShell: the call agent console's top header (CA03-Home), with the
- *   attendance status menu.
+ *   attendance status menu and the language switcher.
  * - PublicShell: the phone header with the language switcher (P00…P06).
  *
  * <AppShell portal={…}> picks the right one and provides the portal and the
@@ -182,6 +183,7 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
   const { session, signOut } = useAuth();
   const now = useNow(60_000);
   const staff = session?.staff;
+  usePersonLanguage(staff?.id);
   return (
     <div className="console lb-console">
       <SkipLink />
@@ -207,6 +209,7 @@ function ConsoleShell({ portal, children }: { portal: PortalDef; children: React
             })}
           </nav>
           <StatusMenu tone="onDark" />
+          <LanguageSelect staffId={staff?.id} />
           {staff && (
             <div className="chip">
               <div className="av" aria-hidden="true">

@@ -1341,3 +1341,24 @@ th[aria-sort='descending'] .lb-sort {
   color: var(--text-soft);
   cursor: default !important;
 }
+
+/* Language picker in the call agent console header (FA03 design's "EN ▾"). */
+.lb-lang-select {
+  background: rgba(255, 255, 255, 0.14);
+  color: #fff;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 8px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 5px 6px;
+  min-height: 32px;
+  cursor: pointer;
+}
+.lb-lang-select option {
+  color: var(--ink);
+}
+.lb-lang-select:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.7);
+}
