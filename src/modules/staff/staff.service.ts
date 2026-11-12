@@ -815,6 +815,8 @@ export class StaffService {
         where: { staffId, usedAt: null, cancelledAt: null },
         data: { cancelledAt: now },
       });
+      // Payroll: the days away are not paid (the leaving day itself is).
+      await tx.staffAwayPeriod?.create({ data: { staffId, leftAt: now } });
       await recordStatusChange(tx, {
         subjectType: 'staff',
         subjectId: staffId,
@@ -1162,6 +1164,14 @@ export class StaffService {
         select: STAFF_VIEW_SELECT,
       });
 
+      // Payroll: close the period away; the day they come back is paid.
+      const returnedAt = new Date();
+      const open = await tx.staffAwayPeriod?.findFirst({ where: { staffId, returnedAt: null }, orderBy: { leftAt: 'desc' } });
+      if (open) {
+        await tx.staffAwayPeriod.update({ where: { id: open.id }, data: { returnedAt } });
+      } else if (target.deactivatedAt) {
+        await tx.staffAwayPeriod?.create({ data: { staffId, leftAt: target.deactivatedAt, returnedAt } });
+      }
       await recordStatusChange(tx, {
         subjectType: 'staff',
         subjectId: staffId,
@@ -1616,6 +1626,26 @@ export class StaffService {
    * Sets the number the calling system rings. The ciphertext is stored;
    * the response never contains the number.
    */
+  /** The CEO enters or corrects a joining date (Phase 22 Part B). Pay starts on it. */
+  async setJoinedOn(staffId: string, value: unknown, actor: JwtPayload, now: Date = new Date()) {
+    if (actor.role !== 'ceo') throw new ForbiddenException('Only the CEO enters the joining date');
+    const joinedOn = parseJoinedOn(value, now);
+    if (!joinedOn) throw new BadRequestException('joinedOn must be a date like 2026-10-28');
+    const target = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, joinedOn: true } });
+    if (!target) throw new NotFoundException('Staff account not found');
+    const staff = await this.prisma.staff.update({ where: { id: staffId }, data: { joinedOn }, select: STAFF_VIEW_SELECT });
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: 'staff.joined_on_set',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: { joinedOn: target.joinedOn ? target.joinedOn.toISOString().slice(0, 10) : null },
+      after: { joinedOn: joinedOn.toISOString().slice(0, 10) },
+      changedFields: ['joinedOn'],
+    });
+    return staff;
+  }
+
   async setCallRoutingPhone(staffId: string, phone: string, actor: JwtPayload) {
     // The calling system rings an Indian mobile, saved as +91 and 10 digits.
     const trimmed = requireIndianMobile(phone, 'phone');
@@ -1654,4 +1684,20 @@ export class StaffService {
 
     return { set: true };
   }
+}
+
+/** A joining date: an IST calendar date (yyyy-mm-dd), stored at UTC midnight; never more than a year ahead. */
+function parseJoinedOn(value: unknown, now: Date): Date | null {
+  if (value === undefined || value === null || value === '') return null;
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+    throw new BadRequestException('joinedOn must be a date like 2026-10-28');
+  }
+  const date = new Date(`${value}T00:00:00.000Z`);
+  if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+    throw new BadRequestException('joinedOn must be a real date');
+  }
+  if (date.getTime() > now.getTime() + 366 * 24 * 3600 * 1000) {
+    throw new BadRequestException('joinedOn is too far ahead');
+  }
+  return date;
 }

@@ -34,6 +34,10 @@ export const NOTIFICATION_KINDS = [
   'shortage_task',
   // A Manager's "Remind the agents" on stuck work (Manager portal, Pipeline).
   'stuck_work_reminder',
+  'salaries_to_release',
+  'salaries_need_ceo',
+  'month_not_closed',
+  'payslip_ready',
 ] as const;
 
 export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
@@ -42,7 +46,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'payslip_ready'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -52,6 +56,8 @@ export const MONEY_KINDS: readonly NotificationKind[] = [
   'payout_failed',
   'expense_needs_ceo',
   'expense_to_pay',
+  'salaries_to_release',
+  'salaries_need_ceo',
 ];
 
 /** Master Guide: the Team Lead hears about an agent idle for more than 30 minutes. */
@@ -128,6 +134,11 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   first_interview_overdue: { team_lead: 'work', manager: 'pipeline', ceo: 'job-seekers' },
   shortage_task: { team_lead: 'work', manager: 'pipeline', ceo: 'vacancies' },
   stuck_work_reminder: { call_agent: '', team_lead: 'work', field_agent: '' },
+  salaries_to_release: { finance: 'salaries?month=:month' },
+  salaries_need_ceo: { ceo: 'team/salaries?month=:month' },
+  month_not_closed: { finance: 'review?month=:month', ceo: 'month-end?month=:month' },
+  // Payslips: the call agent console has its own page; the other portals have the shared one.
+  payslip_ready: { call_agent: 'attendance/payslip', manager: 'payslip', team_lead: 'payslip', finance: 'payslip' },
 };
 
 /** The in-app path for one recipient, or null when that role has no screen for it. */

@@ -44,6 +44,8 @@ import { publicLink } from '../../common/public-link';
 import { receiptLink } from './receipt-link';
 import { invoiceLink } from '../placement/invoice-link';
 import { mockPaymentToolsAllowed } from './payment-mode';
+import { MonthLockService } from '../month-lock/month-lock.service';
+import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -73,8 +75,14 @@ export class PaymentService {
     private readonly messagingService: MessagingService,
     private readonly reviewFlagService: ReviewFlagService,
     @Optional() publicLinkStore?: PublicLinkStoreService,
+    @Optional() private readonly monthLocks?: MonthLockService,
   ) {
     this.publicLinks = publicLinkStore ?? new PublicLinkStoreService(prisma);
+  }
+
+  /** Where money dated `date` is booked (Phase 22 Part B): its own month, or the open month when that one is closed. */
+  private async bookingFor(date: Date, now = new Date()): Promise<{ at: Date; note: string | null }> {
+    return this.monthLocks ? this.monthLocks.bookingFor(date, now) : { at: date, note: null };
   }
 
   private async getReferralPayoutPaise(): Promise<number> {
@@ -212,9 +220,12 @@ export class PaymentService {
 
   async onPaymentSucceeded(
     paymentId: string,
-    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string },
+    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string; bookedAt?: Date; bookingNote?: string | null },
   ) {
     const { confirmedAt, confirmedBy, confirmedByStaffId, bankUtr } = confirmation;
+    // The money is booked on bookedAt (the open month, when the bank's month is
+    // closed); the job seeker's clock still starts when the money really arrived.
+    const bookedAt = confirmation.bookedAt ?? confirmedAt;
     const transition = await this.prisma.$transaction(async (tx) => {
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
@@ -228,10 +239,11 @@ export class PaymentService {
         where: { id: paymentId, status: payment.status },
         data: {
           status: 'succeeded',
-          confirmedAt,
+          confirmedAt: bookedAt,
           confirmedBy,
           confirmedByStaffId: confirmedByStaffId ?? null,
           bankUtr: bankUtr ?? payment.bankUtr,
+          ...(confirmation.bookingNote ? { bookingNote: confirmation.bookingNote } : {}),
         },
       });
       if (claimed.count !== 1) return { alreadyProcessed: true as const, payment };
@@ -275,7 +287,7 @@ export class PaymentService {
         if (!placement) throw new NotFoundException('Placement for fee payment was not found');
         const paid = await tx.placement.updateMany({
           where: { id: placement.id, status: 'awaiting_payment' },
-          data: { status: 'confirmed', paidAt: confirmedAt },
+          data: { status: 'confirmed', paidAt: bookedAt },
         });
         if (paid.count === 1) {
           let invoiceCode = placement.invoiceCode;
@@ -390,16 +402,19 @@ export class PaymentService {
       return { received: true, alreadyProcessed: true, bankCreditId: existing.id };
     }
 
+    // A credit dated in a closed month is booked in the open month with a note.
+    const booking = await this.bookingFor(receivedAt);
     const credit = await this.prisma.bankCredit.create({
       data: {
         bankUtr,
         amountPaise,
-        receivedAt,
+        receivedAt: booking.at,
         payerName: payerName ?? null,
         payerVpaMasked: payerVpaMasked ?? null,
         remark: remark ?? null,
         source: 'bank_feed',
         status: 'unmatched',
+        bookingNote: booking.note,
       },
     });
 
@@ -495,6 +510,8 @@ export class PaymentService {
       confirmedAt: receivedAt,
       confirmedBy: 'bank_feed',
       bankUtr,
+      bookedAt: booking.at,
+      bookingNote: booking.note,
     });
 
     await this.prisma.bankCredit.update({
@@ -603,12 +620,18 @@ export class PaymentService {
     if (existing) {
       throw new ConflictException(`Bank credit with UTR '${bankUtr}' already exists`);
     }
+    await assertUtrUnused(this.prisma, bankUtr);
 
-    const credit = await this.prisma.bankCredit.create({
+    // A credit dated in a closed month is booked in the open month with a note.
+    const booking = await this.bookingFor(receivedAt);
+    let credit;
+    try {
+      credit = await this.prisma.bankCredit.create({
       data: {
         bankUtr,
         amountPaise,
-        receivedAt,
+        receivedAt: booking.at,
+        bookingNote: booking.note,
         payerName: dto.payerName?.trim() || null,
         payerVpaMasked: dto.payerVpaMasked?.trim() || null,
         remark: dto.remark?.trim() || null,
@@ -616,7 +639,11 @@ export class PaymentService {
         enteredByStaffId: actorId,
         status: 'unmatched',
       },
-    });
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) throw utrUsed(bankUtr);
+      throw error;
+    }
 
     await this.auditService.log({
       actorId,
@@ -628,6 +655,8 @@ export class PaymentService {
         bankUtr,
         amountPaise,
         receivedAt: receivedAt.toISOString(),
+        bookedAt: booking.at.toISOString(),
+        bookingNote: booking.note,
         source: 'finance_manual',
       },
     });
@@ -677,12 +706,19 @@ export class PaymentService {
     if (existingPaymentWithUtr) {
       throw new ConflictException(`Bank UTR '${credit.bankUtr}' is already matched to another payment`);
     }
+    await assertUtrUnused(this.prisma, credit.bankUtr, { paymentId: payment.id, bankCreditId: credit.id });
 
+    // A credit of a closed month is booked in the open month: the payment (and
+    // the placement's invoice) land now, with a note; the closed month's money
+    // figures never change.
+    const booking = await this.bookingFor(credit.receivedAt, now);
     await this.onPaymentSucceeded(payment.id, {
       confirmedAt: credit.receivedAt,
       confirmedBy: 'finance_manual',
       confirmedByStaffId: actorId,
       bankUtr: credit.bankUtr,
+      bookedAt: booking.at,
+      bookingNote: booking.note,
     });
 
     await this.prisma.bankCredit.update({
@@ -690,6 +726,7 @@ export class PaymentService {
       data: {
         status: 'matched',
         matchedPaymentId: payment.id,
+        ...(booking.note ? { bookingNote: booking.note } : {}),
       },
     });
 
@@ -848,6 +885,7 @@ export class PaymentService {
     if (credit.status === 'matched') {
       throw new BadRequestException('Cannot ignore a matched bank credit');
     }
+    if (this.monthLocks) await this.monthLocks.assertOpenOn(credit.receivedAt, 'its bank credits');
 
     const updated = await this.prisma.bankCredit.update({
       where: { id: credit.id },
@@ -1621,6 +1659,8 @@ export class PaymentService {
     if (paidAtDate.getTime() > now.getTime()) {
       throw new BadRequestException('paidAt cannot be in the future');
     }
+    // A closed month never changes: a payout back-dated into one is refused.
+    if (this.monthLocks) await this.monthLocks.assertOpenOn(paidAtDate, 'its payouts');
 
     const payment = await this.loadPayoutPayment(paymentId);
 
@@ -1631,13 +1671,8 @@ export class PaymentService {
       );
     }
 
-    // 2. bankUtr must be unique across all payments
-    const existingUtr = await this.prisma.payment.findFirst({
-      where: { bankUtr },
-    });
-    if (existingUtr && existingUtr.id !== payment.id) {
-      throw new BadRequestException(`Bank UTR '${bankUtr}' has already been used on payment '${existingUtr.code}'`);
-    }
+    // 2. A UTR is one movement of money: unused anywhere in the books (409 otherwise)
+    await assertUtrUnused(this.prisma, bankUtr, { paymentId: payment.id });
 
     // 3. Resolve payout account
     let ownerType: string;
@@ -1799,6 +1834,9 @@ export class PaymentService {
       });
 
       return p;
+    }).catch((error: unknown) => {
+      if (isUniqueViolation(error)) throw utrUsed(bankUtr);
+      throw error;
     });
 
     await this.auditService.log({

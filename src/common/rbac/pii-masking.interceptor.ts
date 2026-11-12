@@ -10,7 +10,7 @@ import { mergeMap } from 'rxjs/operators';
 import { Request } from 'express';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { AuditService } from '../audit/audit.service';
-import { seesMoney, stripMoney } from './money-visibility';
+import { OWN_PAY_ANSWER, seesMoney, stripMoney } from './money-visibility';
 
 const PII_KEYS = new Set([
   'phone',
@@ -236,7 +236,7 @@ export class PiiMaskingInterceptor implements NestInterceptor {
             await this.logFullPhoneView(request, data);
           }
         }
-        if (!seesMoney(role)) {
+        if (!seesMoney(role) && !(request as unknown as Record<string, unknown>)[OWN_PAY_ANSWER]) {
           out = stripMoney(out);
         }
         return out;

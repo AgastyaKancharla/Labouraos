@@ -2,7 +2,7 @@ import { useState, type ReactNode } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { Button, type ButtonVariant } from '../../../components/Button';
 import { Modal } from '../../../components/Modal';
-import { MoneyField, SelectField, TextField, type SelectOption } from '../../../components/fields';
+import { DateField, MoneyField, SelectField, TextField, type SelectOption } from '../../../components/fields';
 import { useToast } from '../../../components/Toast';
 import { ApiError } from '../../../lib/api/errors';
 import './fin.css';
@@ -11,7 +11,8 @@ import './fin.css';
 export type FormFieldDef =
   | { name: string; kind: 'text'; label: string; required?: boolean; hint?: string; placeholder?: string; initial?: string; inputMode?: 'numeric' | 'text' }
   | { name: string; kind: 'money'; label: string; required?: boolean; hint?: string; initial?: number | null }
-  | { name: string; kind: 'select'; label: string; options: SelectOption[]; required?: boolean; initial?: string };
+  | { name: string; kind: 'select'; label: string; options: SelectOption[]; required?: boolean; initial?: string }
+  | { name: string; kind: 'date'; label: string; required?: boolean; hint?: string; initial?: string; max?: string };
 
 export type FormValues = Record<string, string | number | null>;
 
@@ -86,6 +87,8 @@ export function FormAction({
           {fields.map((f) =>
             f.kind === 'money' ? (
               <MoneyField key={f.name} label={f.label} value={(values[f.name] as number | null) ?? null} onChange={(v) => set(f.name, v)} required={f.required} hint={f.hint} />
+            ) : f.kind === 'date' ? (
+              <DateField key={f.name} label={f.label} value={String(values[f.name] ?? '')} onChange={(v) => set(f.name, v)} required={f.required} hint={f.hint} max={f.max} />
             ) : f.kind === 'select' ? (
               <SelectField key={f.name} label={f.label} value={String(values[f.name] ?? '')} onChange={(v) => set(f.name, v)} options={f.options} required={f.required} />
             ) : (

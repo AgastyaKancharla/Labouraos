@@ -1,4 +1,5 @@
 /* Kannada (ಕನ್ನಡ) — same keys as en.ts. Have a native speaker review new strings. */
+import { payslipKn } from '../screens/call-agent/CA14g-Payslip/i18n';
 import type { Messages } from './en';
 import { registrationKn } from './registration';
 import { staffInviteKn } from './staffInvite';
@@ -576,4 +577,5 @@ export const kn: Messages = {
   ...staffInviteKn,
   ...referralTermsKn,
   ...callAgentKn,
+  ...payslipKn,
 };

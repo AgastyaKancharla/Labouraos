@@ -81,6 +81,8 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'MG-Staff', path: 'staff', title: 'screen.MG-Staff' },
   { id: 'MG-Notifications', path: 'notifications', title: 'screen.MG-Notifications' },
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
+  // The person's own payslip (CA14g-Payslip, shared): the payslip-ready bell opens it.
+  { id: 'CA14g-Payslip', path: 'payslip', title: 'screen.CA14g-Payslip' },
 ];
 
 export const teamLeadScreens: readonly ScreenDef[] = [
@@ -103,6 +105,8 @@ export const teamLeadScreens: readonly ScreenDef[] = [
   { id: 'T-Flags', path: 'flags', title: 'screen.T-Flags' },
   { id: 'T-Notifications', path: 'notifications', title: 'screen.T-Notifications' },
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
+  // The person's own payslip (CA14g-Payslip, shared): the payslip-ready bell opens it.
+  { id: 'CA14g-Payslip', path: 'payslip', title: 'screen.CA14g-Payslip' },
 ];
 
 export const financeScreens: readonly ScreenDef[] = [
@@ -123,6 +127,8 @@ export const financeScreens: readonly ScreenDef[] = [
   { id: 'FN-Review', path: 'review', title: 'screen.FN-Review' },
   { id: 'FN-Notifications', path: 'notifications', title: 'screen.FN-Notifications' },
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
+  // The person's own payslip (CA14g-Payslip, shared): the payslip-ready bell opens it.
+  { id: 'CA14g-Payslip', path: 'payslip', title: 'screen.CA14g-Payslip' },
 ];
 
 export const callAgentScreens: readonly ScreenDef[] = [
