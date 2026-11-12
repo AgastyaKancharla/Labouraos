@@ -93,8 +93,8 @@ export default function Salaries() {
     { key: 'paid', header: 'Paid days', cell: paidDaysText, sortValue: (r) => r.paidDays, csv: (r) => r.paidDays, align: 'right' },
     { key: 'lop', header: 'Loss of pay', cell: (r) => r.lossOfPayDays, sortValue: (r) => r.lossOfPayDays, csv: (r) => r.lossOfPayDays, align: 'right' },
     { key: 'short', header: 'Shortfall', cell: (r) => shortTime(r.shortfallMinutes), sortValue: (r) => r.shortfallMinutes, csv: (r) => r.shortfallMinutes, align: 'right' },
-    { key: 'gross', header: 'Gross', cell: (r) => (r.monthlyPaise === null ? <StatusPill tone="warn">Not set</StatusPill> : formatINR(r.grossPaise)), sortValue: (r) => r.grossPaise, csv: (r) => r.grossPaise / 100, align: 'right' },
-    { key: 'ded', header: 'Deductions', cell: (r) => <>{formatINR(r.deductionsPaise)}{r.correctionPaise !== 0 && <div className="ceo-cell-sub" title={r.correctionNote ?? undefined}>Correction {r.correctionPaise > 0 ? '+' : ''}{formatINR(r.correctionPaise)}</div>}</>, sortValue: (r) => r.deductionsPaise, csv: (r) => r.deductionsPaise / 100, align: 'right' },
+    { key: 'gross', header: 'Gross', cell: (r) => (r.correctionOnly ? <StatusPill tone="muted">No longer on the staff</StatusPill> : r.monthlyPaise === null ? <StatusPill tone="warn">Not set</StatusPill> : formatINR(r.grossPaise)), sortValue: (r) => r.grossPaise, csv: (r) => r.grossPaise / 100, align: 'right' },
+    { key: 'ded', header: 'Deductions', cell: (r) => <>{formatINR(r.deductionsPaise)}{r.correctionPaise !== 0 && <div className="ceo-cell-sub" title={r.correctionNote ?? undefined}>Correction {r.correctionPaise > 0 ? '+' : ''}{formatINR(r.correctionPaise)}</div>}{(r.carryForwardPaise ?? 0) < 0 && <div className="ceo-cell-sub">{formatINR(-(r.carryForwardPaise ?? 0))} more to take back next sheet</div>}</>, sortValue: (r) => r.deductionsPaise, csv: (r) => r.deductionsPaise / 100, align: 'right' },
     { key: 'net', header: 'Net', cell: (r) => <strong>{formatINR(r.netPaise)}</strong>, sortValue: (r) => r.netPaise, csv: (r) => r.netPaise / 100, align: 'right' },
     {
       key: 'check',

@@ -180,7 +180,7 @@ export default function Salaries() {
       { key: 'paid', header: 'Paid days', cell: paidDaysText, csv: (r) => r.paidDays, sortValue: (r) => r.paidDays },
       { key: 'lop', header: 'Loss of pay days', cell: (r) => r.lossOfPayDays, csv: (r) => r.lossOfPayDays, sortValue: (r) => r.lossOfPayDays, hideOnPhone: true },
       { key: 'short', header: 'Short time not made up', cell: (r) => shortTime(r.shortfallMinutes), csv: (r) => r.shortfallMinutes, sortValue: (r) => r.shortfallMinutes, hideOnPhone: true },
-      { key: 'monthly', header: 'Monthly pay', cell: (r) => (r.monthlyPaise === null ? <StatusPill tone="warn">Not set</StatusPill> : formatINR(r.monthlyPaise)), csv: (r) => (r.monthlyPaise ?? 0) / 100, sortValue: (r) => r.monthlyPaise ?? 0 },
+      { key: 'monthly', header: 'Monthly pay', cell: (r) => (r.correctionOnly ? <StatusPill tone="muted">No longer on the staff</StatusPill> : r.monthlyPaise === null ? <StatusPill tone="warn">Not set</StatusPill> : formatINR(r.monthlyPaise)), csv: (r) => (r.monthlyPaise ?? 0) / 100, sortValue: (r) => r.monthlyPaise ?? 0 },
       {
         key: 'ded',
         header: 'Deductions',
@@ -190,6 +190,7 @@ export default function Salaries() {
             {r.notEmployedDays > 0 && <span className="fin-sub">{r.notEmployedDays} working day{r.notEmployedDays === 1 ? '' : 's'} not on the staff</span>}
             {r.unmarkedDays > 0 && <span className="fin-sub">{r.unmarkedDays} day{r.unmarkedDays === 1 ? '' : 's'} with no attendance</span>}
             {r.correctionPaise !== 0 && <span className="fin-sub" title={r.correctionNote ?? undefined}>Correction {r.correctionPaise > 0 ? '+' : ''}{formatINR(r.correctionPaise)}</span>}
+            {(r.carryForwardPaise ?? 0) < 0 && <span className="fin-sub">{formatINR(-(r.carryForwardPaise ?? 0))} more to take back on the next sheet</span>}
           </>
         ),
         csv: (r) => r.deductionsPaise / 100,

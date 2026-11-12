@@ -138,6 +138,23 @@ describe('Salaries (FN-Salaries)', () => {
     expect(await screen.findByText('Correction +₹692.31')).toBeInTheDocument();
   });
 
+  it('shows a leaver paid what they are owed, and a take-back carried to the next sheet', async () => {
+    mockApi({
+      ...common,
+      'GET /finance/salaries': sheet({
+        rows: [
+          row({ correctionPaise: -1726442, carryForwardPaise: -300000, correctionNote: 'Taken back for September 2026' }),
+          row({ staffId: 's9', staffCode: 'CA-0009', name: 'Gone Person', monthlyPaise: 0, grossPaise: 0, deductionsPaise: 0, correctionPaise: 50000, correctionOnly: true, netPaise: 50000 }),
+        ],
+      }),
+      'GET /finance/staff-salaries': staffSalaries,
+    });
+    signInAs('finance');
+    renderScreen(<Salaries />, { portal: 'finance', path: '/finance/salaries', now: NOW });
+    expect((await screen.findAllByText('No longer on the staff')).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('₹3,000 more to take back on the next sheet').length).toBeGreaterThan(0);
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /finance/salaries': apiError(500, 'Internal server error', 'req-sal'), 'GET /finance/staff-salaries': staffSalaries });
     signInAs('finance');

@@ -17,6 +17,7 @@ export interface Payslip {
   deductions: { key: string; label: string; paise: number; note: string | null }[];
   deductionsPaise: number;
   correction?: { paise: number; note: string | null } | null;
+  carryForwardPaise?: number;
   netPaise: number;
   netInWords: string;
   note: string;
@@ -139,6 +140,12 @@ export function PayslipCard({ slip }: { slip: Payslip }) {
                 {slip.correction.paise > 0 ? '+ ' : ''}
                 {formatINR(slip.correction.paise)}
               </span>
+            </div>
+          )}
+          {(slip.carryForwardPaise ?? 0) < 0 && (
+            <div className="row">
+              <span>{t('payslip.carryForward')}</span>
+              <span>{formatINR(-(slip.carryForwardPaise ?? 0))}</span>
             </div>
           )}
         </div>

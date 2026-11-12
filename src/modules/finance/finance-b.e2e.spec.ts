@@ -7,6 +7,7 @@ import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
+import { Prisma } from '@prisma/client';
 import { monthBounds } from './payroll-rules';
 
 /**
@@ -25,6 +26,10 @@ import { monthBounds } from './payroll-rules';
  */
 describe('Finance back office (Phase 22 Part B)', () => {
   const MONTH = '2003-03';
+  // April 2003: 30 days, Sundays 6, 13, 20, 27 → 26 working days. May 2003 is only ever a draft.
+  const APRIL = '2003-04';
+  const MAY = '2003-05';
+  const LATE_HOLIDAY = '2003-03-04';
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
@@ -77,9 +82,10 @@ describe('Finance back office (Phase 22 Part B)', () => {
     jwt = app.get(JwtService);
     sources = app.get(NotificationSourcesService);
     // Leftovers from an earlier failed run of this suite.
-    await prisma.payrollRun.deleteMany({ where: { month: MONTH } });
+    await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL] } } });
     await prisma.monthClose.deleteMany({ where: { month: MONTH } });
     await prisma.monthReviewMark.deleteMany({ where: { month: MONTH } });
+    await prisma.holiday.deleteMany({ where: { date: day(LATE_HOLIDAY) } });
     ceoId = (await makeStaff('ceo', 'ceo')).id;
     financeId = (await makeStaff('finance', 'finance')).id;
     await makeStaff('manager', 'manager');
@@ -102,7 +108,9 @@ describe('Finance back office (Phase 22 Part B)', () => {
 
   afterAll(async () => {
     if (!prisma) return;
-    await prisma.payrollRun.deleteMany({ where: { month: MONTH } });
+    await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL] } } });
+    await prisma.payrollCorrection.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.holiday.deleteMany({ where: { date: day(LATE_HOLIDAY) } });
     await prisma.monthClose.deleteMany({ where: { month: MONTH } });
     await prisma.monthReviewMark.deleteMany({ where: { month: MONTH } });
     await prisma.staffSalary.deleteMany({ where: { staffId: { in: staffIds } } });
@@ -114,7 +122,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     await prisma.bankCredit.deleteMany({ where: { bankUtr: { in: creditUtrs } } });
     await prisma.statusHistory.deleteMany({ where: { subjectType: 'payment', subjectId: { in: paymentIds } } });
     await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
-    await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectType: 'payroll_month', subjectId: MONTH }, { subjectType: 'month', subjectId: MONTH }] } });
+    await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectType: 'payroll_month', subjectId: { in: [MONTH, APRIL] } }, { subjectType: 'month', subjectId: MONTH }] } });
     await sources.syncPayroll(new Date()).catch(() => undefined);
     await prisma.staffSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
@@ -438,6 +446,18 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect(gst.text.split('\n')[0]).toContain('GSTIN of recipient');
     });
 
+    it('still shows the closed month’s bank credit in its books download once it was matched later, marked where it was booked', async () => {
+      const booked = new Date(Date.now() + 5.5 * 3600_000);
+      const bookedLabel = `${booked.toLocaleString('en-US', { month: 'long', timeZone: 'UTC' })} ${booked.getUTCFullYear()}`;
+      const csv = await request(server()).get(`/finance/reports/books.csv?month=${MONTH}`).set(as('finance')).expect(200);
+      const line = csv.text.split('\n').find((l) => l.includes(`W5B${stamp}LATE`));
+      expect(line).toBeDefined();
+      expect(line).toContain('2003-03-20');
+      expect(line).toContain(`Matched later, booked in ${bookedLabel}`);
+      expect(line).toContain('499.00');
+      expect(line).not.toContain('Not matched yet');
+    });
+
     it('gives the P&L with cash flow, and the refund queue', async () => {
       const { from, to } = monthBounds(MONTH);
       const res = await request(server()).get('/finance/reports').query({ fromDate: from.toISOString(), toDate: to.toISOString() }).set(as('finance')).expect(200);
@@ -446,6 +466,124 @@ describe('Finance back office (Phase 22 Part B)', () => {
       const refunds = await request(server()).get('/finance/refunds').set(as('finance')).expect(200);
       expect(Array.isArray(refunds.body.rows)).toBe(true);
       await request(server()).get('/finance/refunds/nonsense').set(as('finance')).expect(400);
+    });
+  });
+
+  describe('corrections carried to a later sheet', () => {
+    let gone: { id: string; code: string };
+    let tempPolicyId = '';
+    const sheetFor = async (month: string, key = 'finance') => (await request(server()).get(`/finance/salaries?month=${month}`).set(as(key)).expect(200)).body;
+    const rowOf = (sheet: { rows: Array<{ staffId: string }> }, staffId: string) => sheet.rows.find((r) => r.staffId === staffId) as Record<string, number | string | boolean | null> | undefined;
+    const aprilWorkingDays = Array.from({ length: 30 }, (_, i) => `2003-04-${String(i + 1).padStart(2, '0')}`).filter((d) => day(d).getUTCDay() !== 0);
+
+    /** Settings change after the months were approved: another divisor, other full-day hours, Saturdays off. */
+    async function changeSettings() {
+      const current = await prisma.pricingPolicy.findFirstOrThrow({ where: { effectiveFrom: { lte: new Date() } }, orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }] });
+      const copy: Record<string, unknown> = { ...current };
+      delete copy.id;
+      delete copy.createdAt;
+      const policy = await prisma.pricingPolicy.create({
+        data: {
+          ...(copy as Omit<Prisma.PricingPolicyUncheckedCreateInput, 'matchingWeights'>),
+          matchingWeights: current.matchingWeights as Prisma.InputJsonValue,
+          payrollSalaryDays: 30,
+          productionHoursFullDay: current.productionHoursFullDay + 1,
+          weeklyOffDays: [0, 6],
+          effectiveFrom: new Date(),
+        },
+      });
+      tempPolicyId = policy.id;
+    }
+    async function undoSettings() {
+      if (tempPolicyId) await prisma.pricingPolicy.deleteMany({ where: { id: tempPolicyId } });
+      tempPolicyId = '';
+    }
+
+    beforeAll(async () => {
+      await prisma.attendanceDay.createMany({
+        data: [asha, bala].flatMap((p) => aprilWorkingDays.map((d) => ({ staffId: p.id, date: day(d), dayType: 'full', productionSeconds: 8 * 3600, closedReason: 'logout' }))),
+      });
+      // Left in February, still owed ₹500 from then.
+      gone = await makeStaff('call_agent', 'gone', { joinedOn: day('2003-01-01') });
+      await prisma.staff.update({ where: { id: gone.id }, data: { status: 'deactivated', deactivatedAt: new Date('2003-02-28T06:00:00.000Z') } });
+    });
+
+    afterAll(async () => {
+      await undoSettings();
+    });
+
+    it('works out an approved month with its own salary days and Settings: a Settings change makes no correction', async () => {
+      await changeSettings();
+      try {
+        const april = await sheetFor(APRIL);
+        expect(april.salaryDays).toBe(30);
+        expect(rowOf(april, asha.id)?.correctionPaise).toBe(0);
+        expect(rowOf(april, bala.id)?.correctionPaise).toBe(0);
+        expect(rowOf(april, gone.id)).toBeUndefined();
+        expect(await prisma.payrollCorrection.count({ where: { staffId: { in: staffIds } } })).toBe(0);
+      } finally {
+        await undoSettings();
+      }
+    });
+
+    it('carries a holiday added to an approved month as correction rows, pays a leaver through Finance, and carries a take-back larger than pay', async () => {
+      await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY), name: 'W5B late holiday' } });
+      await prisma.payrollCorrection.createMany({
+        data: [
+          { staffId: gone.id, relatesToMonth: '2003-02', amountPaise: 50000, reason: 'Owed for February 2003', source: 'recompute' },
+          { staffId: bala.id, relatesToMonth: MONTH, amountPaise: -6000000, reason: 'Taken back on the next sheet: larger than March 2003 pay', source: 'carry_forward' },
+        ],
+      });
+      const prepared = (await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(200)).body;
+      // Asha: 4 March was an absent day, now a holiday: ₹1,000 back (₹26,000 ÷ 26 frozen, not today's divisor).
+      const a = rowOf(prepared, asha.id)!;
+      expect(a.correctionPaise).toBe(100000);
+      expect(a.netPaise).toBe(3200000 + 100000);
+      expect(String(a.correctionNote)).toContain('Paid back ₹1,000 for March 2003');
+      // Bala: 4 March was a working day before he joined, now a holiday: ₹2,000 back; ₹60,000 carried take-back.
+      const b = rowOf(prepared, bala.id)!;
+      expect(b.correctionPaise).toBe(-5200000);
+      expect(b.carryForwardPaise).toBe(-600000);
+      expect(b.netPaise).toBe(0);
+      // The leaver: a line of their own for what they are owed.
+      const g = rowOf(prepared, gone.id)!;
+      expect(g.correctionOnly).toBe(true);
+      expect(g.netPaise).toBe(50000);
+      expect(g.grossPaise).toBe(0);
+
+      const ashaRows = await prisma.payrollCorrection.findMany({ where: { staffId: asha.id } });
+      expect(ashaRows).toEqual([expect.objectContaining({ relatesToMonth: MONTH, amountPaise: 100000, source: 'recompute', appliedMonth: APRIL })]);
+      expect(await prisma.payrollCorrection.count({ where: { staffId: { in: [bala.id, gone.id] }, appliedMonth: null } })).toBe(0);
+
+      // Worked out again: the same rows, applied once, nothing doubled.
+      await new Promise((r) => setTimeout(r, 5));
+      await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(200);
+      expect(await prisma.payrollCorrection.count({ where: { staffId: asha.id } })).toBe(1);
+      expect(await prisma.payrollCorrection.count({ where: { staffId: bala.id, source: 'recompute' } })).toBe(1);
+      const sheet = await sheetFor(APRIL, 'ceo');
+      expect(sheet.totals.correctionsPaise).toBe(100000 - 5200000 + 50000);
+      expect(sheet.totals.carryForwardPaise).toBe(-600000);
+
+      await request(server()).post(`/finance/salaries/${APRIL}/approve`).set(as('ceo')).send({ netPaise: sheet.totals.netPaise, preparedAt: sheet.run.preparedAt }).expect(200);
+      const carried = await prisma.payrollCorrection.findMany({ where: { staffId: bala.id, source: 'carry_forward', relatesToMonth: APRIL } });
+      expect(carried).toEqual([expect.objectContaining({ amountPaise: -600000, appliedRunId: null })]);
+      const csv = await request(server()).get(`/finance/reports/salary-sheet.csv?month=${APRIL}`).set(as('finance')).expect(200);
+      expect(csv.text.split('\n')[0]).toContain('Carried to next sheet (Rs)');
+      expect(csv.text).toContain(gone.code);
+    });
+
+    it('puts the carried take-back on the next sheet, and a Settings change still finds nothing new', async () => {
+      await changeSettings();
+      try {
+        const may = await sheetFor(MAY);
+        expect(rowOf(may, asha.id)?.correctionPaise).toBe(0);
+        const b = rowOf(may, bala.id)!;
+        expect(Number(b.correctionPaise) + Number(b.carryForwardPaise)).toBe(-600000);
+        expect(rowOf(may, gone.id)).toBeUndefined();
+        expect(await prisma.payrollCorrection.count({ where: { staffId: { in: staffIds }, source: 'recompute' } })).toBe(3);
+      } finally {
+        await undoSettings();
+      }
     });
   });
 

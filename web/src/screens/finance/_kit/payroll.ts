@@ -32,6 +32,10 @@ export interface SheetRow {
   deductionsPaise: number;
   correctionPaise: number;
   correctionNote: string | null;
+  /** A take-back larger than this month's pay (≤ 0), carried to the next sheet once approved. */
+  carryForwardPaise?: number;
+  /** A line that only pays what is owed to someone no longer on the staff. */
+  correctionOnly?: boolean;
   netPaise: number;
   line: { id: string; status: string; paidAt: string | null; utrLast4: string | null; paidFrom: string | null } | null;
 }
@@ -59,7 +63,7 @@ export interface SalarySheet {
     paidAt: string | null;
     netPaise: number;
   } | null;
-  totals: { people: number; grossPaise: number; deductionsPaise: number; lossOfPayAndShortfallPaise: number; correctionsPaise: number; netPaise: number; paidCount: number; paidPaise: number; unpaidCount: number };
+  totals: { people: number; grossPaise: number; deductionsPaise: number; lossOfPayAndShortfallPaise: number; correctionsPaise: number; carryForwardPaise?: number; netPaise: number; paidCount: number; paidPaise: number; unpaidCount: number };
   missingSalary: { staffId: string; staffCode: string; name: string }[];
   openDays: { name: string; days: string[] }[];
   statutory: { lines: { key: string; label: string; paise: number }[]; note: string };
