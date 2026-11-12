@@ -56,6 +56,11 @@ export const ceoScreens: readonly ScreenDef[] = [
   { id: 'C-Audit', path: 'audit', title: 'screen.C-Audit' },
   { id: 'C-Notifications', path: 'notifications', title: 'screen.C-Notifications' },
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
+  // JobSeekers "+ Register job seeker": the one job seeker form (built once in the call agent console).
+  { id: 'CA08-Register', path: 'register/job-seeker', title: 'screen.CA08-Register', variants: ["CA08v-Verified", "CA08w-SalaryWarning", "CA08x-Duplicate"] },
+  { id: 'CA08c-InProgress', path: 'register/job-seeker/:id', title: 'screen.CA08c-InProgress', variants: ["CA08b-Registered", "CA08f-Active"] },
+  { id: 'CA08d-SignedConsent', path: 'register/job-seeker/:id/consent', title: 'screen.CA08d-SignedConsent' },
+  { id: 'CA08e-OtherPayer', path: 'register/job-seeker/:id/other-payer', title: 'screen.CA08e-OtherPayer' },
 ];
 
 export const managerScreens: readonly ScreenDef[] = [

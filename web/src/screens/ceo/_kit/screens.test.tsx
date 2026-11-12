@@ -55,6 +55,8 @@ describe('CEO Job Seekers list', () => {
     renderScreen(<JobSeekersList />, { portal: 'ceo', path: '/ceo/job-seekers', now: NOW });
     expect(await screen.findByText('Showing 1–25 of 30')).toBeInTheDocument();
     expect(screen.getByText('128')).toBeInTheDocument();
+    // "+ Register job seeker" opens the one job seeker form inside the CEO portal.
+    expect(screen.getByRole('link', { name: '+ Register job seeker' })).toHaveAttribute('href', '/ceo/register/job-seeker');
     expect(screen.getAllByText('2 days left')[0]).toBeInTheDocument();
     expect(api.calls('GET /ceo/job-seekers')[0].query.get('status')).toBe('active');
 
