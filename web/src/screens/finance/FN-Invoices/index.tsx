@@ -95,6 +95,17 @@ function Actions({ r }: { r: Row }) {
           success="Reminder sent"
         />
       )}
+      {r.status === 'overdue' && r.kind === 'invoice' && r.paymentId && (
+        <FormAction
+          label="Tell the account agent"
+          size="compact"
+          title="Tell the account agent"
+          confirmLabel="Send the bell"
+          description={`The field agent who looks after ${r.to?.name ?? 'this business'} gets a bell to call the owner about the unpaid fee (no amount is shown to agents).`}
+          run={() => api.post<{ told: { name: string } }>(`/finance/invoices/${r.paymentId}/tell-account-agent`)}
+          success={(res) => `${(res as { told?: { name?: string } }).told?.name ?? 'The account agent'} has been told`}
+        />
+      )}
     </span>
   );
 }
