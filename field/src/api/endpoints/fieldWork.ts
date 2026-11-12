@@ -17,7 +17,19 @@ export type HomeAlert =
 export type HomeTodo =
   | { kind: 'revisit'; due: string; when: When; visitId: string; businessId: string | null; name: string; outcome: string | null }
   | { kind: 'joining'; due: string; when: When; placementId: string; code: string; candidateFirstName: string; businessId: string; name: string }
-  | { kind: 'check_in'; due: string; when: When; taskId: string; code: string; taskKind: string; name: string };
+  | {
+      kind: 'check_in';
+      due: string;
+      when: When;
+      taskId: string;
+      code: string;
+      taskKind: string;
+      name: string;
+      subjectType: string;
+      subjectId: string;
+      relatedType: string | null;
+      relatedId: string | null;
+    };
 
 /** GET /field-work/home */
 export interface FieldHome {

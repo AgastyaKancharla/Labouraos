@@ -204,6 +204,15 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
 
     const home = await request(app.getHttpServer()).get('/field-work/home').set(auth).expect(200);
     expect(home.body.todos).toEqual(expect.arrayContaining([expect.objectContaining({ kind: 'revisit', visitId: id, when: 'today', name: 'Lakshmi Tiffins' })]));
+    // A day-7 check-in carries what Laboura Field needs to open the placement.
+    const check = await prisma.followUpTask.create({
+      data: { code: `FU-FV-${stamp}`, kind: 'placement_check_in_day_7', subjectType: 'job_seeker', subjectId: randomUUID(), relatedType: 'placement', relatedId: 'placement-x', dueAt: START, assignedStaffId: agent.id },
+    });
+    const homeWithCheck = await request(app.getHttpServer()).get('/field-work/home').set(auth).expect(200);
+    expect(homeWithCheck.body.todos).toEqual(
+      expect.arrayContaining([expect.objectContaining({ kind: 'check_in', taskId: check.id, taskKind: 'placement_check_in_day_7', relatedType: 'placement', relatedId: 'placement-x', subjectType: 'job_seeker' })]),
+    );
+    await prisma.followUpTask.delete({ where: { id: check.id } });
     expect(home.body.today.shopsVisited).toBeGreaterThanOrEqual(3);
     const visits = await request(app.getHttpServer()).get('/field-work/visits').set(auth).expect(200);
     expect(visits.body.revisitsDue.map((r: { visitId: string }) => r.visitId)).toContain(id);
