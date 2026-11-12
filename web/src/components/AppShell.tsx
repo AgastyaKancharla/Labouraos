@@ -16,6 +16,13 @@ import { IncomingCallWatcher } from '../screens/call-agent/_lib/IncomingCallWatc
 import { AttendanceProvider } from '../attendance/AttendanceProvider';
 import { StatusBanner } from '../attendance/StatusBanner';
 import { StatusMenu } from '../attendance/StatusMenu';
+import type { PortalKey } from '../portals';
+
+/**
+ * Portals whose people mark attendance in the web app: call agents, and Team
+ * Leads, Managers and Finance (owner decision 12 Nov). The CEO does not.
+ */
+const OFFICE_ATTENDANCE_PORTALS: readonly PortalKey[] = ['team-lead', 'manager', 'finance'];
 
 /**
  * The frame around every screen. Three variants, one per design family:
@@ -162,6 +169,7 @@ function PortalShell({ portal, children }: { portal: PortalDef; children: ReactN
       <main id="main" className="lb-shell__main" tabIndex={-1}>
         <div className="swoosh lb-shell__swoosh" />
         <div className="lb-shell__content">
+          {OFFICE_ATTENDANCE_PORTALS.includes(portal.key) && <StatusBanner />}
           {children}
         </div>
       </main>
@@ -254,6 +262,12 @@ export function AppShell({ portal, children }: { portal: PortalDef; children: Re
     body = (
       <AttendanceProvider audience="agent">
         <ConsoleShell portal={portal}>{children}</ConsoleShell>
+      </AttendanceProvider>
+    );
+  else if (OFFICE_ATTENDANCE_PORTALS.includes(portal.key))
+    body = (
+      <AttendanceProvider audience="office">
+        <PortalShell portal={portal}>{children}</PortalShell>
       </AttendanceProvider>
     );
   else body = <PortalShell portal={portal}>{children}</PortalShell>;

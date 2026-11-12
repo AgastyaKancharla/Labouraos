@@ -83,6 +83,11 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
   // The person's own payslip (CA14g-Payslip, shared): the payslip-ready bell opens it.
   { id: 'CA14g-Payslip', path: 'payslip', title: 'screen.CA14g-Payslip' },
+  // Their own attendance (owner decision 12 Nov): the CA14 screens, opened from the header status menu.
+  { id: 'CA14b-AttendanceActive', path: 'my-attendance', title: 'screen.CA14b-AttendanceActive', variants: ["CA14-Attendance", "CA14c-OnBreak", "CA14d-DayEnded", "CA14i-Idle"] },
+  { id: 'CA14e-MyAttendance', path: 'my-attendance/month', title: 'screen.CA14e-MyAttendance' },
+  { id: 'CA14f-RequestLeave', path: 'my-attendance/leave', title: 'screen.CA14f-RequestLeave' },
+  { id: 'CA14h-Correction', path: 'my-attendance/correction', title: 'screen.CA14h-Correction' },
 ];
 
 export const teamLeadScreens: readonly ScreenDef[] = [
@@ -107,6 +112,11 @@ export const teamLeadScreens: readonly ScreenDef[] = [
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
   // The person's own payslip (CA14g-Payslip, shared): the payslip-ready bell opens it.
   { id: 'CA14g-Payslip', path: 'payslip', title: 'screen.CA14g-Payslip' },
+  // Their own attendance (owner decision 12 Nov): the CA14 screens, opened from the header status menu.
+  { id: 'CA14b-AttendanceActive', path: 'my-attendance', title: 'screen.CA14b-AttendanceActive', variants: ["CA14-Attendance", "CA14c-OnBreak", "CA14d-DayEnded", "CA14i-Idle"] },
+  { id: 'CA14e-MyAttendance', path: 'my-attendance/month', title: 'screen.CA14e-MyAttendance' },
+  { id: 'CA14f-RequestLeave', path: 'my-attendance/leave', title: 'screen.CA14f-RequestLeave' },
+  { id: 'CA14h-Correction', path: 'my-attendance/correction', title: 'screen.CA14h-Correction' },
 ];
 
 export const financeScreens: readonly ScreenDef[] = [
@@ -129,6 +139,11 @@ export const financeScreens: readonly ScreenDef[] = [
   { id: 'CA16-Search', path: 'search', title: 'screen.CA16-Search' },
   // The person's own payslip (CA14g-Payslip, shared): the payslip-ready bell opens it.
   { id: 'CA14g-Payslip', path: 'payslip', title: 'screen.CA14g-Payslip' },
+  // Their own attendance (owner decision 12 Nov): the CA14 screens, opened from the header status menu.
+  { id: 'CA14b-AttendanceActive', path: 'my-attendance', title: 'screen.CA14b-AttendanceActive', variants: ["CA14-Attendance", "CA14c-OnBreak", "CA14d-DayEnded", "CA14i-Idle"] },
+  { id: 'CA14e-MyAttendance', path: 'my-attendance/month', title: 'screen.CA14e-MyAttendance' },
+  { id: 'CA14f-RequestLeave', path: 'my-attendance/leave', title: 'screen.CA14f-RequestLeave' },
+  { id: 'CA14h-Correction', path: 'my-attendance/correction', title: 'screen.CA14h-Correction' },
 ];
 
 export const callAgentScreens: readonly ScreenDef[] = [
