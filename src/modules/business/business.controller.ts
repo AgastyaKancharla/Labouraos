@@ -72,8 +72,9 @@ export class BusinessController {
   @RequirePermission('business', 'read')
   async findById(
     @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.businessService.findById(id);
+    return this.businessService.findById(id, { id: req.user.sub, role: req.user.role });
   }
 
   @Patch(':id')
