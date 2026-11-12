@@ -64,14 +64,10 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
   });
 
   it('answers every address the same way, and only a management account gets a link', async () => {
-    const answers = await Promise.all([
-      post({ email: emails.mgr }),
-      post({ email: emails.agent }),
-      post({ email: emails.tl }),
-      post({ email: `nobody_${ts}@laboura.local` }),
-      post({ email: 'not an email' }),
-      post({}),
-    ]);
+    const answers = [];
+    for (const body of [{ email: emails.mgr }, { email: emails.agent }, { email: emails.tl }, { email: `nobody_${ts}@laboura.local` }, { email: 'not an email' }, {}]) {
+      answers.push(await post(body));
+    }
     for (const res of answers) {
       expect(res.status).toBe(200);
       expect(res.body).toEqual({ message: FORGOT_PASSWORD_ANSWER });
@@ -82,13 +78,19 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
     expect(await service.request(`support@laboura.local`).done).toBe('skipped');
     const agentIds = ids.slice(3);
     expect(await prisma.staffPasswordReset.count({ where: { staffId: { in: agentIds } } })).toBe(0);
+    // The HTTP ask for the Manager is handled after the reply: wait for its link.
+    for (let i = 0; i < 50 && !(await prisma.staffPasswordReset.count({ where: { staffId: ids[1] } })); i += 1) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    expect(await prisma.staffPasswordReset.count({ where: { staffId: ids[1] } })).toBe(1);
   });
 
   it('emails a one-time, expiring link to the invite page that sets a new password once (any letter case)', async () => {
-    const before = mail.sent.length;
+    const toFin = () => mail.sent.filter((m) => m.to === emails.fin);
+    const before = toFin().length;
     expect(await service.request(emails.fin.toUpperCase()).done).toBe('sent');
-    const message = mail.sent[mail.sent.length - 1];
-    expect(mail.sent.length).toBe(before + 1);
+    const message = toFin()[toFin().length - 1];
+    expect(toFin().length).toBe(before + 1);
     expect(message.to).toBe(emails.fin);
     expect(message.link).toMatch(/\/app\/p\/invite\//);
     const token = decodeURIComponent(message.link!.split('/app/p/invite/')[1]);
@@ -108,7 +110,8 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
   it('expires: an old link no longer opens', async () => {
     const past = new Date(Date.now() - 2 * 60 * 60 * 1000);
     expect(await service.request(emails.ceo, past).done).toBe('sent');
-    const token = decodeURIComponent(mail.sent[mail.sent.length - 1].link!.split('/app/p/invite/')[1]);
+    const toCeo = mail.sent.filter((m) => m.to === emails.ceo);
+    const token = decodeURIComponent(toCeo[toCeo.length - 1].link!.split('/app/p/invite/')[1]);
     const preview = await request(app.getHttpServer()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token });
     expect(preview.status).toBe(410);
   });
