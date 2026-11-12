@@ -7,6 +7,7 @@ import {
   Param,
   Patch,
   Post,
+  Query,
   Req,
   UseGuards,
   UseInterceptors,
@@ -58,8 +59,16 @@ export class JobSeekerController {
   @Get()
   @RequireRoles('call_agent', 'manager', 'ceo', 'finance', 'field_agent', 'team_lead')
   @RequirePermission('job_seeker', 'read')
-  async findAll() {
-    return this.jobSeekerService.findAll();
+  async findAll(
+    @Req() req: Request & { user: JwtPayload },
+    @Query('limit') limit?: string,
+    @Query('offset') offset?: string,
+  ) {
+    const num = (v?: string) => (v !== undefined && v !== '' && Number.isFinite(Number(v)) ? Number(v) : undefined);
+    return this.jobSeekerService.findAll(
+      { id: req.user.sub, role: req.user.role },
+      { limit: num(limit), offset: num(offset) },
+    );
   }
 
   @Get(':id')
