@@ -19,7 +19,7 @@ export class FinanceHomeService {
   ) {}
 
   /**
-   * GST on last month's placement invoices. A business refund returns the fee
+   * GST on last month's GST invoices: placement fees and paid no-bypass charges. A business refund returns the fee
    * only, and the GST on it stays owed until the CA answers (owner decision
    * 11 Nov), so refunds do not reduce it.
    */
@@ -27,8 +27,18 @@ export class FinanceHomeService {
     const thisMonth = istStartOfMonth(now);
     const lastMonth = istStartOfMonth(new Date(thisMonth.getTime() - 1));
     const to = new Date(thisMonth.getTime() - 1);
-    const invoices = await this.prisma.placement.findMany({ where: { paidAt: { gte: lastMonth, lte: to }, invoiceCode: { not: null } }, select: { gstAmount: true } });
-    return { paise: sumPaise(invoices.map((p) => p.gstAmount)), month: lastMonth.toISOString(), due: gstDueDates(to) };
+    const [invoices, bypassPaid] = await Promise.all([
+      this.prisma.placement.findMany({ where: { paidAt: { gte: lastMonth, lte: to }, invoiceCode: { not: null } }, select: { gstAmount: true } }),
+      // N4: paid no-bypass charges carry GST too, the same as on FN-Tax.
+      this.prisma.payment.findMany({
+        where: { type: 'bypass_charge', status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: lastMonth, lte: to } }, { confirmedAt: null, paidAt: { gte: lastMonth, lte: to } }] },
+        select: { id: true },
+      }),
+    ]);
+    const charges = bypassPaid.length
+      ? await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaid.map((p) => p.id) } }, select: { gstPaise: true } })
+      : [];
+    return { paise: sumPaise([...invoices.map((p) => p.gstAmount), ...charges.map((c) => c.gstPaise)]), month: lastMonth.toISOString(), due: gstDueDates(to) };
   }
 
   async home(now = new Date()) {

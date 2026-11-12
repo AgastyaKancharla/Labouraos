@@ -214,6 +214,20 @@ describe('No-bypass charge (CEO)', () => {
     await request(server()).post(`/bypass-charges/${charge.id}/cancel`).set(as('ceo')).send({ reason: 'x' }).expect(409);
   });
 
+  it("N4: last month's paid charge GST is in the Finance home GST figure, the same as FN-Tax", async () => {
+    const charge = await prisma.bypassCharge.findFirstOrThrow({ where: { businessId, status: 'raised' }, orderBy: { raisedAt: 'desc' } });
+    const firstOfMonth = new Date(`${month}-01T00:00:00+05:30`);
+    const lastMonthDay = new Date(firstOfMonth.getTime() - 10 * DAY);
+    await prisma.payment.update({ where: { id: charge.paymentId! }, data: { confirmedAt: lastMonthDay, paidAt: lastMonthDay } });
+    const lastMonth = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(lastMonthDay);
+    const [home, tax] = await Promise.all([
+      request(server()).get('/finance/home').set(as('finance')).expect(200),
+      request(server()).get(`/finance/tax?month=${lastMonth}`).set(as('finance')).expect(200),
+    ]);
+    expect(tax.body.gst.bypassCharges.gstPaise).toBeGreaterThanOrEqual(charge.gstPaise);
+    expect(home.body.stats.gstLastMonthPaise).toBe(tax.body.gst.payablePaise);
+  });
+
   it('is refused while the current month is closed', async () => {
     await prisma.bypassCharge.updateMany({ where: { businessId }, data: { status: 'cancelled' } });
     const existing = await prisma.monthClose.findUnique({ where: { month } });
