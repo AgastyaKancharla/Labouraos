@@ -2,7 +2,9 @@ import {
   Inject,
   Injectable,
   Logger,
+  Optional,
 } from '@nestjs/common';
+import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import {
@@ -49,6 +51,8 @@ export interface RetentionSummary {
   otpSessionsDeleted: number;
   /** JobRun rows older than 90 days (each job's latest run is kept). */
   jobRunsDeleted: number;
+  /** Visits to shops that never registered, 23 months after the shop's last visit: phone and photos removed, the visit kept. */
+  shopVisitsCleaned: number;
 }
 
 export interface RetentionRunOptions {
@@ -69,6 +73,8 @@ export class RetentionService {
     private readonly recordingStorage: RecordingStorage,
     @Inject(AGREEMENT_DOCUMENT_STORAGE)
     private readonly agreementStorage: AgreementDocumentStorage,
+    @Optional() @Inject(BUSINESS_PHOTO_STORAGE)
+    private readonly visitPhotos?: BusinessPhotoStorage,
   ) {}
 
   async runRetentionCleanup(options: RetentionRunOptions = {}): Promise<RetentionSummary> {
@@ -102,6 +108,7 @@ export class RetentionService {
       publicLinksDeleted: 0,
       otpSessionsDeleted: 0,
       jobRunsDeleted: 0,
+      shopVisitsCleaned: 0,
     };
 
     try {
@@ -122,6 +129,9 @@ export class RetentionService {
 
       // 6. The job run log itself (> 90 days, keeping each job's latest run)
       await this.cleanupJobRuns(now, dryRun, summary);
+
+      // 7. Visits to shops that never registered (> 23 months after the shop's last visit)
+      await this.cleanupUnregisteredShopVisits(now, dryRun, summary);
     } catch (err: unknown) {
       // A run that fails part-way is recorded too (start, finish, error), like every scheduled job.
       try {
@@ -155,7 +165,8 @@ export class RetentionService {
             summary.moneyRecordsDeleted.total +
             summary.publicLinksDeleted +
             summary.otpSessionsDeleted +
-            summary.jobRunsDeleted,
+            summary.jobRunsDeleted +
+            summary.shopVisitsCleaned,
           hitsRecorded: 0,
           details: {
             executedAt: summary.executedAt.toISOString(),
@@ -168,6 +179,7 @@ export class RetentionService {
             publicLinksDeleted: summary.publicLinksDeleted,
             otpSessionsDeleted: summary.otpSessionsDeleted,
             jobRunsDeleted: summary.jobRunsDeleted,
+            shopVisitsCleaned: summary.shopVisitsCleaned,
           },
         },
       });
@@ -201,7 +213,81 @@ export class RetentionService {
       publicLinksDeleted: Number(details.publicLinksDeleted ?? 0),
       otpSessionsDeleted: Number(details.otpSessionsDeleted ?? 0),
       jobRunsDeleted: Number(details.jobRunsDeleted ?? 0),
+      shopVisitsCleaned: Number(details.shopVisitsCleaned ?? 0),
     };
+  }
+
+  /**
+   * Guide, retention (11 Nov): visits to shops that never registered (shop
+   * name, shop phone, name-board photo, proof selfie) are kept like business
+   * profiles — 23 months after the last visit to that shop, then the shop
+   * phone and photos are removed and only the visit counts stay. A shop is a
+   * chain of visits linked by revisitOfVisitId; a chain where any visit
+   * registered the business, or any visit is newer than the cutoff, is kept.
+   */
+  async cleanupUnregisteredShopVisits(now: Date, dryRun: boolean, summary: Pick<RetentionSummary, 'shopVisitsCleaned'>): Promise<void> {
+    const cutoff = getProfileRetentionCutoff(now);
+    const personal = [{ contactPhone: { not: null } }, { boardPhotoPath: { not: null } }, { selfieUrl: { not: null } }];
+    const candidates = await this.prisma.businessVisit.findMany({
+      where: { businessId: null, visitedAt: { lt: cutoff }, OR: personal },
+      select: { id: true },
+      take: 5000,
+    });
+    const settled = new Set<string>();
+    for (const { id } of candidates) {
+      if (settled.has(id)) continue;
+      const chain = await this.visitChain(id);
+      chain.forEach((v) => settled.add(v.id));
+      if (chain.some((v) => v.businessId !== null || v.visitedAt >= cutoff)) continue;
+      const toClean = chain.filter((v) => v.contactPhone !== null || v.boardPhotoPath !== null || v.selfieUrl !== null);
+      if (dryRun) {
+        summary.shopVisitsCleaned += toClean.length;
+        continue;
+      }
+      for (const visit of toClean) {
+        for (const path of [visit.boardPhotoPath, visit.selfieUrl]) {
+          if (!path || !this.visitPhotos?.delete) continue;
+          try {
+            await this.visitPhotos.delete(path);
+          } catch (err: unknown) {
+            this.logger.warn(`Visit photo ${visit.id} could not be deleted: ${err instanceof Error ? err.message : String(err)}`);
+          }
+        }
+        const cleaned = await this.prisma.businessVisit.updateMany({
+          where: { id: visit.id, businessId: null },
+          data: { contactPhone: null, boardPhotoPath: null, selfieUrl: null },
+        });
+        summary.shopVisitsCleaned += cleaned.count;
+      }
+    }
+  }
+
+  /** Every visit to the same shop: up to the first visit, then every revisit after it. */
+  private async visitChain(id: string) {
+    const select = { id: true, businessId: true, visitedAt: true, contactPhone: true, boardPhotoPath: true, selfieUrl: true, revisitOfVisitId: true } as const;
+    let root = await this.prisma.businessVisit.findUnique({ where: { id }, select });
+    const seen = new Set<string>();
+    while (root?.revisitOfVisitId && !seen.has(root.id)) {
+      seen.add(root.id);
+      const parent = await this.prisma.businessVisit.findUnique({ where: { id: root.revisitOfVisitId }, select });
+      if (!parent) break;
+      root = parent;
+    }
+    if (!root) return [];
+    const chain = [root];
+    let frontier = [root.id];
+    const inChain = new Set([root.id]);
+    while (frontier.length) {
+      const next = await this.prisma.businessVisit.findMany({ where: { revisitOfVisitId: { in: frontier } }, select });
+      frontier = [];
+      for (const v of next) {
+        if (inChain.has(v.id)) continue;
+        inChain.add(v.id);
+        chain.push(v);
+        frontier.push(v.id);
+      }
+    }
+    return chain;
   }
 
   /**

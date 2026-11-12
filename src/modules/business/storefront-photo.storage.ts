@@ -7,6 +7,8 @@ export interface BusinessPhotoStorage {
    * see it (the Team Lead checking a visit). Never a public URL.
    */
   signedUrl?(path: string, expiresInSeconds: number): Promise<string | null>;
+  /** Removes a photo for good (retention: visits to shops that never registered). */
+  delete?(path: string): Promise<void>;
 }
 
 /** How long a visit-photo link works. */
@@ -25,6 +27,10 @@ export class MemoryBusinessPhotoStorage implements BusinessPhotoStorage {
 
   has(path: string): boolean {
     return memoryObjects.has(path);
+  }
+
+  async delete(path: string): Promise<void> {
+    memoryObjects.delete(path);
   }
 
   /** In preview mode the "link" carries the bytes (a data: URI), so nothing is ever served publicly. */
@@ -58,6 +64,18 @@ export class SupabaseBusinessPhotoStorage implements BusinessPhotoStorage {
     if (!response.ok) {
       throw new Error(`Business photo storage failed with status ${response.status}`);
     }
+  }
+
+  async delete(path: string): Promise<void> {
+    if (!this.baseUrl || !this.serviceKey) {
+      throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required for private business photo storage');
+    }
+    const response = await fetch(`${this.baseUrl}/storage/v1/object/${this.bucket}`, {
+      method: 'DELETE',
+      headers: { Authorization: `Bearer ${this.serviceKey}`, apikey: this.serviceKey, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefixes: [path] }),
+    });
+    if (!response.ok && response.status !== 404) throw new Error(`Business photo delete failed with status ${response.status}`);
   }
 
   async signedUrl(path: string, expiresInSeconds: number): Promise<string | null> {
