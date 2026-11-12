@@ -4,6 +4,7 @@ import {
   computePay,
   earningsSplit,
   filingDates,
+  holidaysOnStaff,
   isMonthKey,
   lossOfPayHalfDays,
   monthBounds,
@@ -200,6 +201,68 @@ describe('payroll rules', () => {
     const over = pay({ employedWorkingDays: 4, notEmployedWorkingDays: 23, lossOfPayHalfDays: 20 });
     expect(over.lossOfPayPaise).toBe(400000);
     expect(over.netPaise).toBe(0);
+  });
+
+  // A public holiday is paid, never absent — for someone on staff part of the
+  // month too: holidays (not on a weekly off) while on staff count as paid days.
+  describe('a part month that contains a holiday', () => {
+    // Monday 26 October 2026 made a holiday: 26 working days in October.
+    const HOLIDAY = '2026-10-26';
+    const withHoliday = october.filter((d) => d !== HOLIDAY);
+    const payPart = (joinedDay: string, lostHalfDays = 0, away: Parameters<typeof staffWorkingDays>[2] = []) => {
+      const w = staffWorkingDays(withHoliday, joinedDay, away);
+      const h = holidaysOnStaff([HOLIDAY], joinedDay, away);
+      return { w, h, p: pay({ employedWorkingDays: w.employed.length, notEmployedWorkingDays: w.notEmployed, holidaysOnStaff: h, lossOfPayHalfDays: lostHalfDays }) };
+    };
+
+    it('counts the holiday as a paid day on staff: joined 21 Oct, 9 working days + 1 holiday = ₹10,000', () => {
+      const { w, h, p } = payPart('2026-10-21');
+      expect(w.employed).toHaveLength(9);
+      expect(h).toBe(1);
+      expect(p.earnedPaise).toBe(1000000);
+      expect(p.netPaise).toBe(1000000);
+      expect(p.paidHalfDays).toBe(20);
+    });
+
+    it('a holiday added later on a day a joiner worked takes nothing back (net 0 change)', () => {
+      const before = payPart('2026-10-21'); // ₹10,000 with the holiday
+      const w = staffWorkingDays(october, '2026-10-21', []); // the same month without it: 10 working days
+      const without = pay({ employedWorkingDays: w.employed.length, notEmployedWorkingDays: w.notEmployed });
+      expect(without.netPaise).toBe(1000000);
+      expect(before.p.netPaise - without.netPaise).toBe(0);
+    });
+
+    it('a holiday on a day a joiner was absent pays that day back, as for someone on staff all month', () => {
+      // Without the holiday: 10 working days, absent on 26 Oct → ₹9,000.
+      const w = staffWorkingDays(october, '2026-10-21', []);
+      const absent = pay({ employedWorkingDays: w.employed.length, notEmployedWorkingDays: w.notEmployed, lossOfPayHalfDays: 2 });
+      expect(absent.netPaise).toBe(900000);
+      // 26 Oct becomes a holiday: no longer absent, and paid → ₹10,000 (₹1,000 back).
+      const now = payPart('2026-10-21');
+      expect(now.p.netPaise - absent.netPaise).toBe(100000);
+      // The same ₹1,000 a full-month person gets back.
+      const fullAbsent = pay({ employedWorkingDays: 27, notEmployedWorkingDays: 0, lossOfPayHalfDays: 2 });
+      const fullNow = pay({ employedWorkingDays: 26, notEmployedWorkingDays: 0, holidaysOnStaff: 1 });
+      expect(fullNow.netPaise - fullAbsent.netPaise).toBe(100000);
+    });
+
+    it('a holiday before joining or while away is not a day on staff', () => {
+      const late = payPart('2026-10-28');
+      expect(late.h).toBe(0);
+      expect(late.p.netPaise).toBe(400000);
+      const away = payPart('2026-01-01', 0, [{ leftDay: '2026-10-24', returnedDay: '2026-10-28' }]);
+      expect(away.h).toBe(0);
+      // 21 working days before leaving (24 Oct paid) + 28–31 Oct = 25 working days on staff → ₹25,000.
+      expect(away.w.employed).toHaveLength(25);
+      expect(away.p.netPaise).toBe(2500000);
+    });
+
+    it('still never pays more than the full salary', () => {
+      const { w, h, p } = payPart('2026-10-02');
+      expect(w.employed.length + h).toBe(26);
+      expect(p.netPaise).toBe(2600000);
+      expect(pay({ employedWorkingDays: 25, notEmployedWorkingDays: 1, holidaysOnStaff: 3 }).netPaise).toBe(2600000);
+    });
   });
 
   it('pays ₹0 when not on staff on any working day', () => {

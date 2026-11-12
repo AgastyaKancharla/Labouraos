@@ -21,6 +21,7 @@ import {
   calendarDaysIn,
   canPrepareOn,
   computePay,
+  holidaysOnStaff,
   isMonthKey,
   lossOfPayHalfDays,
   monthBounds,
@@ -142,6 +143,8 @@ interface PersonMonth {
   joinedDay: string;
   employed: string[];
   notEmployed: number;
+  /** Public holidays (not on a weekly off) while on the staff: paid days. */
+  holidaysOnStaff: number;
   unmarked: string[];
   open: string[];
   absent: number;
@@ -316,23 +319,24 @@ export class PayrollService {
    * correction. Holidays are today's list (a holiday added or removed later
    * is a real correction).
    */
-  private async workingDayKeys(month: string, weeklyOffDays?: number[]): Promise<{ working: string[]; holidays: number }> {
+  private async workingDayKeys(month: string, weeklyOffDays?: number[]): Promise<{ working: string[]; holidays: number; holidayDays: string[] }> {
     if (!weeklyOffDays) {
       const calendar = await this.workingDays.calendar(new Date(`${monthDays(month).first}T00:00:00.000Z`), new Date(`${monthDays(month).last}T00:00:00.000Z`));
-      return { working: calendar.workingDates.map((d) => d.toISOString().slice(0, 10)), holidays: calendar.holidays.length };
+      const holidayDays = calendar.holidays.map((h) => h.date.toISOString().slice(0, 10));
+      return { working: calendar.workingDates.map((d) => d.toISOString().slice(0, 10)), holidays: holidayDays.length, holidayDays };
     }
     const from = new Date(`${monthDays(month).first}T00:00:00.000Z`);
     const to = new Date(`${monthDays(month).last}T00:00:00.000Z`);
     const holidays = new Set((await this.prisma.holiday.findMany({ where: { date: { gte: from, lte: to } }, select: { date: true } })).map((h) => h.date.getTime()));
     const working: string[] = [];
-    let holidayCount = 0;
+    const holidayDays: string[] = [];
     for (let at = from.getTime(); at <= to.getTime(); at += 24 * 3600_000) {
       const date = new Date(at);
       if (isWeeklyOff(date, weeklyOffDays)) continue;
-      if (holidays.has(at)) holidayCount += 1;
+      if (holidays.has(at)) holidayDays.push(date.toISOString().slice(0, 10));
       else working.push(date.toISOString().slice(0, 10));
     }
-    return { working, holidays: holidayCount };
+    return { working, holidays: holidayDays.length, holidayDays };
   }
 
   /**
@@ -369,12 +373,12 @@ export class PayrollService {
    * all (not paid). Days on weekly offs and holidays never cost pay. `upTo`
    * leaves out days not yet over (a live draft of the running month).
    */
-  private personMonth(days: DayLite[], joinedDay: string, away: AwayPeriod[], working: string[], upTo: string): PersonMonth {
+  private personMonth(days: DayLite[], joinedDay: string, away: AwayPeriod[], working: string[], holidayDays: string[], upTo: string): PersonMonth {
     const byDay = new Map(days.map((d) => [d.date, d]));
     const closed = days.filter((d) => d.dayType !== 'open');
     const shortfallSeconds = deductibleShortfall(sumPaise(closed.map((d) => d.shortfallSeconds)), sumPaise(closed.map((d) => d.makeUpSeconds)));
     const { employed, notEmployed } = staffWorkingDays(working, joinedDay, away);
-    const m: PersonMonth = { joinedDay, employed, notEmployed, unmarked: [], open: [], absent: 0, unpaidLeave: 0, half: 0, full: 0, paidLeave: 0, shortfallMinutes: Math.floor(shortfallSeconds / 60) };
+    const m: PersonMonth = { joinedDay, employed, notEmployed, holidaysOnStaff: holidaysOnStaff(holidayDays, joinedDay, away), unmarked: [], open: [], absent: 0, unpaidLeave: 0, half: 0, full: 0, paidLeave: 0, shortfallMinutes: Math.floor(shortfallSeconds / 60) };
     for (const day of employed) {
       if (day > upTo) continue;
       const row = byDay.get(day);
@@ -398,6 +402,7 @@ export class PayrollService {
       salaryDays,
       employedWorkingDays: pm.employed.length,
       notEmployedWorkingDays: pm.notEmployed,
+      holidaysOnStaff: pm.holidaysOnStaff,
       lossOfPayHalfDays: lopHalf,
       shortfallMinutes: pm.shortfallMinutes,
       fullDayMinutes,
@@ -490,18 +495,19 @@ export class PayrollService {
     const out: OpenCorrection[] = [];
     for (const run of runs) {
       const { weeklyOffDays, fullDayMinutes } = await this.rulesOf(run);
-      const { working } = await this.workingDayKeys(run.month, weeklyOffDays);
+      const { working, holidayDays } = await this.workingDayKeys(run.month, weeklyOffDays);
       const mine = run.lines.filter((l) => l.monthlyPaise > 0);
       const attendance = await this.attendanceFor(mine.map((l) => l.staffId), run.month);
       for (const line of mine) {
         const joinedDay = joined.get(line.staffId);
         if (!joinedDay) continue;
-        const pm = this.personMonth(attendance.get(line.staffId) ?? [], joinedDay, away.get(line.staffId) ?? [], working, monthDays(run.month).last);
+        const pm = this.personMonth(attendance.get(line.staffId) ?? [], joinedDay, away.get(line.staffId) ?? [], working, holidayDays, monthDays(run.month).last);
         const again = computePay({
           monthlyPaise: line.monthlyPaise,
           salaryDays: line.salaryDays,
           employedWorkingDays: pm.employed.length,
           notEmployedWorkingDays: pm.notEmployed,
+          holidaysOnStaff: pm.holidaysOnStaff,
           lossOfPayHalfDays: lossOfPayHalfDays({ absentDays: pm.absent, unpaidLeaveDays: pm.unpaidLeave, halfDays: pm.half, unmarkedDays: pm.unmarked.length }),
           shortfallMinutes: pm.shortfallMinutes,
           fullDayMinutes,
@@ -592,7 +598,7 @@ export class PayrollService {
     const salaryDays = salaryDaysFor(policy.payrollSalaryDays);
     const fullDayMinutes = Math.max(1, Math.round(policy.productionHoursFullDay * 60));
     const weeklyOffDays = [...policy.weeklyOffDays];
-    const { working, holidays } = await this.workingDayKeys(month, weeklyOffDays);
+    const { working, holidays, holidayDays } = await this.workingDayKeys(month, weeklyOffDays);
     const yesterday = istDay(new Date(now.getTime() - 24 * 3600_000));
     const upTo = monthDays(month).last < yesterday ? monthDays(month).last : yesterday;
     const people = await this.candidates(month);
@@ -608,7 +614,7 @@ export class PayrollService {
     for (const person of people) {
       const joinedDay = joined.get(person.id);
       if (!joinedDay) continue;
-      const pm = this.personMonth(attendance.get(person.id) ?? [], joinedDay, away.get(person.id) ?? [], working, upTo);
+      const pm = this.personMonth(attendance.get(person.id) ?? [], joinedDay, away.get(person.id) ?? [], working, holidayDays, upTo);
       if (pm.employed.length === 0) continue;
       const monthly = salaries.get(person.id) ?? null;
       if (monthly === null) missingSalary.push({ staffId: person.id, staffCode: person.code, name: person.name });

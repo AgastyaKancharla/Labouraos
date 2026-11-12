@@ -34,6 +34,8 @@ describe('Finance back office (Phase 22 Part B)', () => {
   const APRIL = '2003-04';
   const MAY = '2003-05';
   const LATE_HOLIDAY = '2003-03-04';
+  // A Wednesday Bala was on staff and worked (and Asha too).
+  const LATE_HOLIDAY_WORKED = '2003-03-12';
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
@@ -89,7 +91,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL] } } });
     await prisma.monthClose.deleteMany({ where: { month: MONTH } });
     await prisma.monthReviewMark.deleteMany({ where: { month: MONTH } });
-    await prisma.holiday.deleteMany({ where: { date: day(LATE_HOLIDAY) } });
+    await prisma.holiday.deleteMany({ where: { date: { in: [day(LATE_HOLIDAY), day(LATE_HOLIDAY_WORKED)] } } });
     ceoId = (await makeStaff('ceo', 'ceo')).id;
     financeId = (await makeStaff('finance', 'finance')).id;
     await makeStaff('manager', 'manager');
@@ -116,7 +118,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     await prisma.payrollCorrection.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staffRequest.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.statusHistory.deleteMany({ where: { subjectType: 'attendance_day', changedByStaffId: { in: staffIds } } });
-    await prisma.holiday.deleteMany({ where: { date: day(LATE_HOLIDAY) } });
+    await prisma.holiday.deleteMany({ where: { date: { in: [day(LATE_HOLIDAY), day(LATE_HOLIDAY_WORKED)] } } });
     await prisma.monthClose.deleteMany({ where: { month: MONTH } });
     await prisma.monthReviewMark.deleteMany({ where: { month: MONTH } });
     await prisma.staffSalary.deleteMany({ where: { staffId: { in: staffIds } } });
@@ -603,13 +605,17 @@ describe('Finance back office (Phase 22 Part B)', () => {
 
     it('carries a holiday added to an approved month as correction rows, pays a leaver through Finance, and carries a take-back larger than pay', async () => {
       await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY), name: 'W5B late holiday' } });
-      // Pay is for the days on staff: 4 March was before Bala joined, so the new holiday leaves his
-      // 19 working days on staff — and his March pay — unchanged. Asha was on staff and absent that day.
+      await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY_WORKED), name: 'W5B late holiday on a worked day' } });
+      // Pay is for the days on staff, and a holiday on staff is a paid day. 4 March was before Bala
+      // joined: not a day on staff, nothing changes. 12 March he was on staff and worked: 18 working
+      // days + 1 holiday = still 19 paid days, ₹38,000 — a holiday never takes pay back.
+      // Asha was on staff all month: absent on 4 March (₹1,000 back), worked on 12 March (no change).
       const draft = await sheetFor(APRIL);
       expect(rowOf(draft, bala.id)?.correctionPaise).toBe(0);
       expect(rowOf(draft, asha.id)?.correctionPaise).toBe(150000);
-      // The CEO corrects Bala's joining date to Saturday 8 March, a day he worked: one more working
-      // day on staff in the approved month (20 × ₹2,000 = ₹40,000), so ₹2,000 comes back.
+      // The CEO corrects Bala's joining date to Saturday 8 March, a day he worked: one more day on
+      // staff in the approved month (19 working days + the 12 March holiday = 20 × ₹2,000 = ₹40,000),
+      // so ₹2,000 comes back.
       await prisma.attendanceDay.create({ data: { staffId: bala.id, date: day('2003-03-08'), dayType: 'full', productionSeconds: 8 * 3600, closedReason: 'logout' } });
       await request(server()).put(`/staff/${bala.id}/joined-on`).set(as('ceo')).send({ joinedOn: '2003-03-08' }).expect(200);
       await prisma.payrollCorrection.createMany({

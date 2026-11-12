@@ -12,9 +12,10 @@ import { IST_OFFSET_MS, istDay } from './finance-rules';
  * Owner decisions (11 Nov, 12 Nov): a day's pay is the monthly salary ÷ 26 in
  * every month; loss of pay is that per absent or unpaid-leave working day and
  * half for a half day. Someone who joins, leaves or is away part of the month
- * is paid for the days actually on staff: salary ÷ 26 × working days on staff,
- * never more than the full salary (the leaving day is on staff); someone on
- * staff the whole month gets the full salary. Absences come off after that.
+ * is paid for the days actually on staff: salary ÷ 26 × (working days on staff
+ * + public holidays on staff), never more than the full salary (the leaving
+ * day is on staff; a holiday is paid, never absent); someone on staff the
+ * whole month gets the full salary. Absences come off after that.
  * Net pay is never below ₹0 and keeps its paise.
  */
 
@@ -101,6 +102,15 @@ export function staffWorkingDays(workingDays: readonly string[], joinedDay: stri
 }
 
 /**
+ * Public holidays that fall on a day the person was on the staff (holidays on
+ * a weekly off are not in the list: ÷ 26 already leaves weekly offs out). A
+ * holiday is paid, never absent, so these count as paid days on staff.
+ */
+export function holidaysOnStaff(holidayDays: readonly string[], joinedDay: string, away: readonly AwayPeriod[]): number {
+  return holidayDays.filter((d) => onStaffOn(d, joinedDay, away)).length;
+}
+
+/**
  * Statutory deductions. The company is not registered yet, so none is applied:
  * each prints as a zero line "added after registration" until the CA confirms
  * them (Master Guide: "PF and ESI are added once the company is registered (a
@@ -139,6 +149,8 @@ export interface PayInput {
   employedWorkingDays: number;
   /** Working days in the month the person was not on the staff (before joining, away, after leaving). */
   notEmployedWorkingDays: number;
+  /** Public holidays (not on a weekly off) that fell while the person was on the staff: paid days. */
+  holidaysOnStaff?: number;
   /** Absent and unpaid-leave working days ×2, + 1 for each half day, + unmarked working days ×2. */
   lossOfPayHalfDays: number;
   /** Shortfall not made up by month end, in whole minutes. */
@@ -156,8 +168,8 @@ export interface PayResult {
   grossPaise: number;
   /**
    * What the days on staff earn before absences: the full salary when on staff
-   * the whole month, otherwise salary ÷ 26 × working days on staff, never more
-   * than the full salary.
+   * the whole month, otherwise salary ÷ 26 × (working days + public holidays
+   * on staff), never more than the full salary.
    */
   earnedPaise: number;
   /** The salary not earned for the part of the month not on staff (monthly − earned). */
@@ -182,8 +194,9 @@ export interface PayResult {
  * A day's pay is the monthly salary ÷ 26. On staff the whole month: the full
  * salary (weekly offs and holidays paid, whatever the number of working days).
  * Joined, left or away part of the month: paid for the days actually on
- * staff — salary ÷ 26 × working days on staff, never more than the full
- * salary — so joining on the last working day always pays one day. Then loss
+ * staff — salary ÷ 26 × (working days on staff + public holidays on staff,
+ * since a holiday is paid, never absent), never more than the full salary —
+ * so joining on the last working day always pays one day. Then loss
  * of pay takes salary ÷ 26 per absent, unpaid-leave or unmarked working day
  * and half that for a half day, and shortfall not made up takes the day's pay
  * pro rata per production minute, both capped at what was earned. Net is
@@ -196,7 +209,8 @@ export function computePay(input: PayInput): PayResult {
   const days = Math.max(1, input.salaryDays);
   const split = earningsSplit(monthly);
   const notEmployedDays = Math.max(0, input.notEmployedWorkingDays);
-  const employedDays = Math.max(0, input.employedWorkingDays);
+  // Paid days on staff: working days plus the public holidays that fell while on staff.
+  const employedDays = Math.max(0, input.employedWorkingDays) + Math.max(0, input.holidaysOnStaff ?? 0);
   const wholeMonth = notEmployedDays === 0;
   const earnedPaise = wholeMonth ? monthly : Math.min(monthly, mulDivRound(monthly, employedDays, days));
   const notEmployedPaise = monthly - earnedPaise;

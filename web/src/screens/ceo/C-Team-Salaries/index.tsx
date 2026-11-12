@@ -149,7 +149,7 @@ export default function Salaries() {
           onRetry={() => void sheet.refetch()}
           emptyTitle="Nobody was on the staff this month."
         />
-        <div className="ceo-note">Worked out from attendance and approved leave (weekly offs and holidays are paid) · a day's pay is the monthly pay ÷ 26 · joined, left or away part of the month: paid ÷ 26 × working days on the staff, never more than the monthly pay · Finance checks and releases · each person downloads their own payslip · PF, ESI and professional tax start after company registration</div>
+        <div className="ceo-note">Worked out from attendance and approved leave (weekly offs and holidays are paid) · a day's pay is the monthly pay ÷ 26 · joined, left or away part of the month: paid ÷ 26 × (working days + holidays on the staff), never more than the monthly pay · Finance checks and releases · each person downloads their own payslip · PF, ESI and professional tax start after company registration</div>
       </div>
       <MonthlyPay months={[...new Set([month, istDateKey(now).slice(0, 7), shiftMonth(istDateKey(now).slice(0, 7), 1)])].sort()} canEdit />
     </div>
