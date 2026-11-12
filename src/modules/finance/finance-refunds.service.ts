@@ -5,6 +5,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RefundService } from '../refund/refund.service';
 import { businessRefundNeedsCeo } from '../../common/money/approval-limits';
+import { LIVE_PAYOUT_STATUSES, lockSubject } from '../../common/money/one-per-subject';
+import { isRuleBasedRefund, recordRefundRejection, refundLockKey, restoreAfterCancelledRefund } from '../refund/refund-rejection';
 import { RECEIVED_STATUSES, istStartOfMonth, sumPaise } from '../ceo-portal/ceo-common';
 
 const OPEN_REFUND_STATUSES = ['pending', 'approved', 'processing', 'failed'];
@@ -63,72 +65,126 @@ export class FinanceRefundsService {
     const reason = typeof reasonText === 'string' ? reasonText.trim() : '';
     if (!reason) throw new BadRequestException('A reason is needed to reject a refund');
     if (reason.length > 500) throw new BadRequestException('Keep the reason under 500 characters');
+    const match = /^(js|pl|pay)-([0-9a-f-]{36})$/i.exec(ref);
+    if (!match) throw new NotFoundException('This refund is not waiting for a decision');
+    const kind = match[1].toLowerCase();
+    const id = match[2];
+    const policy = await this.pricing.current();
+    const limit = policy.financeBusinessRefundLimitPaise;
+    const isCeo = actor.role === 'ceo';
+
+    if (kind === 'pay') return this.rejectRaised(actor, ref, id, reason, limit, now);
+
+    // A refund the system marks due (no payment yet): it must be on the due list.
     const list = await this.list(actor.id, {}, now);
-    const row = list.rows.find((r) => r.ref === ref);
+    const row = list.rows.find((r) => r.ref === ref && r.state === 'due');
     if (!row) throw new NotFoundException('This refund is not waiting for a decision');
-    if (actor.role === 'finance' && row.approval !== 'within_limit') {
+    if (!isCeo && row.approval !== 'within_limit') {
       throw new ForbiddenException(`${row.approvalText}: rejecting it is the CEO's decision, not Finance's`);
     }
-    if (row.state === 'processing') throw new ConflictException('The money is already on its way: this refund can no longer be rejected');
-
-    let paymentCode: string | null = null;
-    if (row.paymentId) {
-      const payment = await this.prisma.payment.findUniqueOrThrow({ where: { id: row.paymentId } });
-      const claimed = await this.prisma.payment.updateMany({
-        where: { id: payment.id, status: { in: ['pending', 'approved', 'failed'] } },
-        data: { status: 'rejected' },
-      });
-      if (claimed.count !== 1) throw new ConflictException(`Refund ${payment.code} has already been decided`);
-      paymentCode = payment.code;
-      await recordStatusChange(this.prisma, {
-        subjectType: 'payment',
-        subjectId: payment.id,
-        fromStatus: payment.status,
-        toStatus: 'rejected',
-        changedByStaffId: actor.id,
-        reason: actor.role === 'ceo' ? 'refund_rejected_by_ceo' : 'refund_rejected_by_finance',
-        changedAt: now,
-      });
-    }
-
-    let jobSeekerId: string | null = null;
-    let guaranteeStartedAt: Date | null = null;
-    let placementId: string | null = null;
-    let entityCode = row.paymentCode ?? row.subject.code ?? ref;
-    if (row.kind === 'job_seeker' && row.jobSeekerId) {
-      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: row.jobSeekerId }, select: { code: true, paymentReceivedAt: true } });
-      jobSeekerId = row.jobSeekerId;
-      guaranteeStartedAt = seeker?.paymentReceivedAt ?? null;
-      entityCode = seeker?.code ?? entityCode;
-    } else if (row.placementId) {
-      const placement = await this.prisma.placement.findUnique({ where: { id: row.placementId }, select: { code: true, rootPlacementId: true } });
-      placementId = placement?.rootPlacementId ?? row.placementId;
+    let entityCode = row.subject.code ?? ref;
+    const rejection = await this.prisma.$transaction(async (tx) => {
+      if (row.kind === 'job_seeker') {
+        await lockSubject(tx, refundLockKey.jobSeeker(row.jobSeekerId!));
+        const seeker = await tx.jobSeeker.findUnique({ where: { id: row.jobSeekerId! }, select: { code: true, paymentReceivedAt: true } });
+        entityCode = seeker?.code ?? entityCode;
+        const live = await tx.payment.findFirst({ where: { type: 'refund', jobSeekerId: row.jobSeekerId!, status: { in: [...LIVE_PAYOUT_STATUSES] } }, select: { code: true } });
+        if (live) throw new ConflictException(`Refund ${live.code} was raised meanwhile: decide that one`);
+        return recordRefundRejection(tx, { kind: 'job_seeker', jobSeekerId: row.jobSeekerId, guaranteeStartedAt: seeker?.paymentReceivedAt ?? null, placementId: null, paymentId: null, amountPaise: row.amountPaise, reason, actorId: actor.id, actorRole: actor.role, at: now });
+      }
+      const placement = await tx.placement.findUnique({ where: { id: row.placementId! }, select: { code: true, rootPlacementId: true } });
+      const rootId = placement?.rootPlacementId ?? row.placementId!;
+      await lockSubject(tx, refundLockKey.placement(rootId));
       entityCode = placement?.code ?? entityCode;
-    }
-    const rejection = await this.prisma.refundRejection.create({
-      data: {
-        kind: row.kind,
-        jobSeekerId,
-        guaranteeStartedAt,
-        placementId,
-        paymentId: row.paymentId,
-        amountPaise: row.amountPaise,
-        reason,
-        rejectedByStaffId: actor.id,
-        rejectedByRole: actor.role,
-        rejectedAt: now,
-      },
+      const live = await tx.payment.findFirst({ where: { type: 'refund', placementId: { in: [row.placementId!, rootId] }, status: { in: [...LIVE_PAYOUT_STATUSES] } }, select: { code: true } });
+      if (live) throw new ConflictException(`Refund ${live.code} was raised meanwhile: decide that one`);
+      return recordRefundRejection(tx, { kind: 'business', jobSeekerId: null, guaranteeStartedAt: null, placementId: rootId, paymentId: null, amountPaise: row.amountPaise, reason, actorId: actor.id, actorRole: actor.role, at: now });
     });
     await this.audit.log({
       actorId: actor.id,
       action: 'refund_rejected',
       entityType: row.kind === 'job_seeker' ? 'job_seeker' : 'placement',
       entityCode,
-      before: { state: row.state, approval: row.approval },
-      after: { state: 'rejected', amountPaise: row.amountPaise, payment: paymentCode, rejectionId: rejection.id, by: actor.role },
+      before: { state: 'due', approval: row.approval },
+      after: { state: 'rejected', amountPaise: row.amountPaise, payment: null, rejectionId: rejection?.id ?? null, by: actor.role },
       reason,
     });
     return { ref, status: 'rejected', amountPaise: row.amountPaise, rejectedAt: now.toISOString() };
+  }
+
+  /**
+   * A raised refund payment. R1: whether it is the CEO's comes from the payment
+   * itself (outside the rules, already with the CEO, or a business refund above
+   * Finance's limit), whatever its status. R2: Finance rejects only a pending
+   * one; an approved (or failed) refund is the CEO's to cancel, which puts the
+   * job seeker or placement back as it was, with status history, in the same
+   * transaction. Money already on its way is never rejected. R3: only a
+   * rule-based refund leaves a RefundRejection. Runs under the refund lock.
+   */
+  private async rejectRaised(actor: { id: string; role: string }, ref: string, paymentId: string, reason: string, limit: number, now: Date) {
+    const isCeo = actor.role === 'ceo';
+    const payment = await this.prisma.payment.findUnique({ where: { id: paymentId } });
+    if (!payment || !['refund', 'duplicate_refund'].includes(payment.type)) throw new NotFoundException('Refund not found');
+    const business = !payment.jobSeekerId && Boolean(payment.placementId || payment.businessId);
+    const ceoOnly = payment.outsideRules || Boolean(payment.ceoApprovalReason) || (business && payment.amount > limit);
+    if (!isCeo && ceoOnly) {
+      const why = payment.outsideRules ? 'Outside the rules' : business && payment.amount > limit ? 'Over your limit' : 'With the CEO';
+      throw new ForbiddenException(`${why}: rejecting it is the CEO's decision, not Finance's`);
+    }
+    if (payment.status === 'processing') throw new ConflictException('The money is already on its way: this refund can no longer be rejected');
+    const allowed = isCeo ? ['pending', 'approved', 'failed'] : ['pending'];
+    if (!allowed.includes(payment.status)) {
+      if (!isCeo && ['approved', 'failed'].includes(payment.status)) {
+        throw new ForbiddenException(`Refund ${payment.code} is already approved: only the CEO can cancel it`);
+      }
+      throw new NotFoundException('This refund is not waiting for a decision');
+    }
+
+    const placement = payment.placementId ? await this.prisma.placement.findUnique({ where: { id: payment.placementId }, select: { id: true, code: true, rootPlacementId: true } }) : null;
+    const rootId = placement ? (placement.rootPlacementId ?? placement.id) : null;
+    const lockKey = payment.jobSeekerId ? refundLockKey.jobSeeker(payment.jobSeekerId) : rootId ? refundLockKey.placement(rootId) : `refund:payment:${payment.id}`;
+    const ruleBased = isRuleBasedRefund(payment);
+
+    const result = await this.prisma.$transaction(async (tx) => {
+      await lockSubject(tx, lockKey);
+      const current = await tx.payment.findUniqueOrThrow({ where: { id: payment.id }, select: { status: true } });
+      if (!allowed.includes(current.status)) throw new ConflictException(`Refund ${payment.code} has already been decided`);
+      const claimed = await tx.payment.updateMany({ where: { id: payment.id, status: current.status }, data: { status: 'rejected' } });
+      if (claimed.count !== 1) throw new ConflictException(`Refund ${payment.code} has already been decided`);
+      const cancelled = current.status !== 'pending';
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: payment.id,
+        fromStatus: current.status,
+        toStatus: 'rejected',
+        changedByStaffId: actor.id,
+        reason: cancelled ? 'refund_cancelled_by_ceo' : isCeo ? 'refund_rejected_by_ceo' : 'refund_rejected_by_finance',
+        changedAt: now,
+      });
+      const restored = cancelled ? await restoreAfterCancelledRefund(tx, payment, rootId, actor.id, now) : [];
+      let rejectionId: string | null = null;
+      let seekerCode: string | null = null;
+      if (ruleBased) {
+        if (payment.jobSeekerId) {
+          const seeker = await tx.jobSeeker.findUnique({ where: { id: payment.jobSeekerId }, select: { code: true, paymentReceivedAt: true } });
+          seekerCode = seeker?.code ?? null;
+          rejectionId = (await recordRefundRejection(tx, { kind: 'job_seeker', jobSeekerId: payment.jobSeekerId, guaranteeStartedAt: seeker?.paymentReceivedAt ?? null, placementId: null, paymentId: payment.id, amountPaise: payment.amount, reason, actorId: actor.id, actorRole: actor.role, at: now }))?.id ?? null;
+        } else if (rootId) {
+          rejectionId = (await recordRefundRejection(tx, { kind: 'business', jobSeekerId: null, guaranteeStartedAt: null, placementId: rootId, paymentId: payment.id, amountPaise: payment.amount, reason, actorId: actor.id, actorRole: actor.role, at: now }))?.id ?? null;
+        }
+      }
+      return { fromStatus: current.status, cancelled, restored, rejectionId, seekerCode };
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      action: result.cancelled ? 'refund_cancelled' : 'refund_rejected',
+      entityType: payment.jobSeekerId ? 'job_seeker' : 'placement',
+      entityCode: result.seekerCode ?? placement?.code ?? payment.code,
+      before: { status: result.fromStatus },
+      after: { status: 'rejected', amountPaise: payment.amount, payment: payment.code, rejectionId: result.rejectionId, ruleBased, restored: result.restored, by: actor.role },
+      reason,
+    });
+    return { ref, status: 'rejected', amountPaise: payment.amount, rejectedAt: now.toISOString(), ...(result.cancelled ? { cancelled: true, restored: result.restored } : {}) };
   }
 
   async list(actorId: string, filters: { who?: string; approval?: string; search?: string }, now = new Date()) {

@@ -35,6 +35,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
+import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from './job-seeker-refunded';
 import { calculateAge, validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
@@ -1054,6 +1055,12 @@ export class JobSeekerService {
       }
     }
 
+    // R4: say so first when this guarantee's refund was rejected (checked again under the lock below).
+    if (jobSeeker.paymentReceivedAt) {
+      const rejected = await findRefundRejection(this.prisma, { jobSeekerId: jobSeeker.id, guaranteeStartedAt: jobSeeker.paymentReceivedAt });
+      assertRejectionOverride(rejected, actor, { overrideRejection: dto?.overrideRejection, reason: note });
+    }
+
     const eligibilityResult = goodwill
       ? null
       : evaluateJobSeekerRefundEligibility(
@@ -1088,9 +1095,14 @@ export class JobSeekerService {
     let payment;
     try {
       payment = await this.prisma.$transaction(async (tx) => {
-        await lockSubject(tx, `refund:job_seeker:${jobSeeker.id}`);
+        await lockSubject(tx, refundLockKey.jobSeeker(jobSeeker.id));
         const again = await tx.payment.findFirst({ where: existingRefundWhere });
         if (again) throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, again);
+        // R4: a refund rejected for this guarantee is raised again only by the CEO, overriding with a reason.
+        if (jobSeeker.paymentReceivedAt) {
+          const rejected = await findRefundRejection(tx, { jobSeekerId: jobSeeker.id, guaranteeStartedAt: jobSeeker.paymentReceivedAt });
+          assertRejectionOverride(rejected, actor, { overrideRejection: dto?.overrideRejection, reason: note });
+        }
 
         const p = await tx.payment.create({
           data: {

@@ -47,6 +47,7 @@ import { mockPaymentToolsAllowed, paymentProviderMode } from './payment-mode';
 import { MonthLockService } from '../month-lock/month-lock.service';
 import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
 import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
+import { isRuleBasedRefund, recordRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
 
 /** What the bank feed webhook reports back for one credit. */
@@ -1670,21 +1671,40 @@ export class PaymentService {
     if (payment.type !== 'refund' || payment.status !== 'pending') {
       throw new BadRequestException(`Only a pending refund can be rejected. Current status: '${payment.status}'`);
     }
-    const claimed = await this.prisma.payment.updateMany({
-      where: { id: payment.id, status: 'pending' },
-      data: { status: 'rejected' },
-    });
-    if (claimed.count !== 1) {
-      throw new BadRequestException(`Refund ${payment.code} has already been decided`);
-    }
-    await recordStatusChange(this.prisma, {
-      subjectType: 'payment',
-      subjectId: payment.id,
-      fromStatus: 'pending',
-      toStatus: 'rejected',
-      changedByStaffId: actorId,
-      reason: 'refund_rejected_by_ceo',
-      changedAt: now,
+    // R5: the same lock and the same RefundRejection as FN-Refund's Reject, so a
+    // rule-based refund the CEO turned down does not come back on the due list.
+    const placement = payment.placementId
+      ? await this.prisma.placement.findUnique({ where: { id: payment.placementId }, select: { id: true, rootPlacementId: true } })
+      : null;
+    const rootId = placement ? (placement.rootPlacementId ?? placement.id) : null;
+    const lockKey = payment.jobSeekerId ? refundLockKey.jobSeeker(payment.jobSeekerId) : rootId ? refundLockKey.placement(rootId) : `refund:payment:${payment.id}`;
+    const rejectionId = await this.prisma.$transaction(async (tx) => {
+      await lockSubject(tx, lockKey);
+      const claimed = await tx.payment.updateMany({
+        where: { id: payment.id, status: 'pending' },
+        data: { status: 'rejected' },
+      });
+      if (claimed.count !== 1) {
+        throw new BadRequestException(`Refund ${payment.code} has already been decided`);
+      }
+      await recordStatusChange(tx, {
+        subjectType: 'payment',
+        subjectId: payment.id,
+        fromStatus: 'pending',
+        toStatus: 'rejected',
+        changedByStaffId: actorId,
+        reason: 'refund_rejected_by_ceo',
+        changedAt: now,
+      });
+      if (!isRuleBasedRefund(payment)) return null;
+      if (payment.jobSeekerId) {
+        const seeker = await tx.jobSeeker.findUnique({ where: { id: payment.jobSeekerId }, select: { paymentReceivedAt: true } });
+        return (await recordRefundRejection(tx, { kind: 'job_seeker', jobSeekerId: payment.jobSeekerId, guaranteeStartedAt: seeker?.paymentReceivedAt ?? null, placementId: null, paymentId: payment.id, amountPaise: payment.amount, reason: reason.trim(), actorId, actorRole: 'ceo', at: now }))?.id ?? null;
+      }
+      if (rootId) {
+        return (await recordRefundRejection(tx, { kind: 'business', jobSeekerId: null, guaranteeStartedAt: null, placementId: rootId, paymentId: payment.id, amountPaise: payment.amount, reason: reason.trim(), actorId, actorRole: 'ceo', at: now }))?.id ?? null;
+      }
+      return null;
     });
     await this.auditService.log({
       actorId,
@@ -1697,6 +1717,7 @@ export class PaymentService {
         amount: payment.amount,
         ceoApprovalReason: payment.ceoApprovalReason,
         sentToCeoByStaffId: payment.sentToCeoByStaffId,
+        rejectionId,
       },
       changedFields: ['status'],
       reason: reason.trim(),

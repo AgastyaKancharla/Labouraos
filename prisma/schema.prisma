@@ -2524,8 +2524,8 @@ model RefundRejection {
   jobSeekerId        String?
   /// The job seeker's paymentReceivedAt when it was rejected (job seeker refunds).
   guaranteeStartedAt DateTime?
-  /// The first placement of the chain (business refunds).
-  placementId        String?
+  /// The first placement of the chain (business refunds). One rejection per chain.
+  placementId        String?   @unique
   /// The refund payment that was rejected, when one had been raised.
   paymentId          String?
   amountPaise        Int
@@ -2534,8 +2534,9 @@ model RefundRejection {
   rejectedByRole     String
   rejectedAt         DateTime  @default(now())
 
+  /// One rejection per job seeker guarantee.
+  @@unique([jobSeekerId, guaranteeStartedAt])
   @@index([jobSeekerId])
-  @@index([placementId])
 }
 
 /// C-Privacy data-breach register (guide: a data breach must be reported
