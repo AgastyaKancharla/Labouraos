@@ -10,6 +10,7 @@ import {
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { noteRequestDevice } from '../../common/observability/request-context';
 import { PricingService } from '../pricing/pricing.service';
 import { getLoginCodeSecret } from './login-code.secret';
 import {
@@ -146,10 +147,17 @@ export class LoginCodeService {
   }
 
   async verify(requestId: string, code: string) {
-    const request = await this.prisma.loginCodeRequest.findUnique({ where: { id: requestId } });
+    const request = await this.prisma.loginCodeRequest.findUnique({
+      where: { id: requestId },
+      include: { staffDevice: { select: { deviceId: true } } },
+    });
     if (!request) {
       throw new NotFoundException(`Login code request '${requestId}' not found`);
     }
+    // Nobody is signed in yet: the device is the one the login named, so the
+    // login_code.used / wrong_code rows carry the device and network like the
+    // other audit rows of the request.
+    noteRequestDevice({ staffId: request.staffId, deviceId: request.staffDevice?.deviceId ?? null });
     const expected = loginCodeFor(request.id);
     const matches = loginCodesMatch(code ?? '', expected);
     if (request.expiresAt.getTime() <= this.clock.now().getTime() && request.status !== 'used' && request.status !== 'refused') {
