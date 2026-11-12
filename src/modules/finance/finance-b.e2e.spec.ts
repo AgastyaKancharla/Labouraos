@@ -130,7 +130,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     await prisma.bankCredit.deleteMany({ where: { bankUtr: { in: creditUtrs } } });
     await prisma.statusHistory.deleteMany({ where: { subjectType: 'payment', subjectId: { in: paymentIds } } });
     await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
-    await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectType: 'payroll_month', subjectId: { in: [MONTH, APRIL, MAY] } }, { subjectType: 'month', subjectId: MONTH }] } });
+    await prisma.notification.deleteMany({ where: { OR: [{ recipientStaffId: { in: staffIds } }, { subjectType: 'payroll_month', subjectId: { in: [MONTH, APRIL, MAY, '2003-02'] } }, { subjectType: 'month', subjectId: MONTH }] } });
     await sources.syncPayroll(new Date()).catch(() => undefined);
     await prisma.staffSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
@@ -600,6 +600,33 @@ describe('Finance back office (Phase 22 Part B)', () => {
       } finally {
         spy.mockRestore();
         await prisma.payrollCorrection.deleteMany({ where: { id: temp.id } });
+      }
+    });
+
+    it('takes a waiting row from a sent-back sheet only while that sheet is still sent back (409 otherwise)', async () => {
+      const payroll = app.get(PayrollService);
+      const realDraft = payroll.draft.bind(payroll);
+      // February 2003 was sent back and holds correction X; it is prepared again at the same time as April.
+      const feb = await prisma.payrollRun.create({ data: { month: '2003-02', status: 'returned', people: 0, grossPaise: 0, deductionsPaise: 0, netPaise: 0, preparedByStaffId: financeId, preparedAt: new Date('2003-03-01T04:00:00.000Z') } });
+      const x = await prisma.payrollCorrection.create({ data: { staffId: asha.id, relatesToMonth: '2003-01', amountPaise: 12300, reason: 'W5B X', source: 'carry_forward', appliedRunId: feb.id, appliedMonth: '2003-02' } });
+      const spy = jest.spyOn(payroll, 'draft').mockImplementationOnce(async (...args: Parameters<PayrollService['draft']>) => {
+        const out = await realDraft(...args);
+        // April read X as claimable from February; February is prepared again (with X) before April saves.
+        expect(out.correctionRunIds).toContain(feb.id);
+        expect(out.corrections.map((c) => c.id)).toContain(x.id);
+        await prisma.payrollRun.update({ where: { id: feb.id }, data: { status: 'with_ceo' } });
+        return out;
+      });
+      try {
+        const res = await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(409);
+        expect(res.body.message).toBe(CORRECTIONS_TAKEN);
+        // X is on exactly one sheet: February's.
+        expect((await prisma.payrollCorrection.findUniqueOrThrow({ where: { id: x.id } })).appliedRunId).toBe(feb.id);
+        expect(await prisma.payrollRun.count({ where: { month: APRIL } })).toBe(0);
+      } finally {
+        spy.mockRestore();
+        await prisma.payrollCorrection.deleteMany({ where: { id: x.id } });
+        await prisma.payrollRun.deleteMany({ where: { id: feb.id } });
       }
     });
 

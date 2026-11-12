@@ -914,6 +914,10 @@ export class PayrollService {
       await this.prisma.$transaction(async (tx) => {
         // One Prepare at a time: a second one waits here, then sees what the first recorded.
         await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${PAYROLL_PREPARE_LOCK}))`);
+        // Under the lock: which of the sheets the waiting rows were read from are still sent back
+        // (a sheet prepared again meanwhile keeps its rows, so they can no longer be taken from it).
+        const otherRunIds = correctionRunIds.filter((id) => id !== existing?.id);
+        const stillReturned = otherRunIds.length ? (await tx.payrollRun.findMany({ where: { id: { in: otherRunIds }, status: 'returned' }, select: { id: true } })).map((r) => r.id) : [];
         // A correction found by working a frozen month out again is inserted only if no other sheet
         // recorded one for that person and month since it was found (else it would be paid twice).
         const found = corrections.filter((c) => !c.id);
@@ -946,7 +950,7 @@ export class PayrollService {
         // taken from): a row another sheet claimed meanwhile would otherwise land on two sheets.
         const usedIds = used.map((c) => c.id).filter((id): id is string => Boolean(id));
         if (usedIds.length) {
-          const claimable = [...new Set([runId, ...correctionRunIds])];
+          const claimable = [...new Set([runId, ...stillReturned])];
           const claimedRows = await tx.payrollCorrection.updateMany({
             where: { id: { in: usedIds }, OR: [{ appliedRunId: null }, { appliedRunId: { in: claimable } }] },
             data: { appliedRunId: runId, appliedMonth: month },
