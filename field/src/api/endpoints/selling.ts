@@ -385,6 +385,8 @@ export interface JobSeekerStatus {
   steps: { phone: Step; consent: Step; selfie: Step; idCheck: Step; payment: Step };
   consent: { requiredGiven: number; requiredTotal: number; promotions: boolean };
   registrationLinkExpiresAt: string | null;
+  /** How long a payment-only link works (Settings, 15 minutes by default). */
+  paymentOnlyLinkMinutes?: number;
   paymentOnlyLink: { payerPhone: string | null; relation: string | null; sentAt: string; expiresAt: string; live: boolean; used: boolean } | null;
   paymentReceivedAt: string | null;
   /** For "Preview what she'll / he'll see". */

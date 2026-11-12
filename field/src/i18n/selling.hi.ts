@@ -515,7 +515,7 @@ export const sellingHi: Record<keyof typeof sellingEn, string> = {
   'fa10b.relation.friend': 'दोस्त',
   'fa10b.relation.other': 'अन्य',
   'fa10b.sendPaymentLink': 'सिर्फ़ भुगतान का लिंक भेजें',
-  'fa10b.paymentOnlyNote': 'इसमें सिर्फ़ पहला नाम, JS- ID और ₹499 दिखते हैं, और यह 15 मिनट चलता है।',
+  'fa10b.paymentOnlyNote': 'इसमें सिर्फ़ पहला नाम, JS- ID और ₹499 दिखते हैं, और यह {minutes} मिनट चलता है।',
   'fa10b.paymentLinkLive': 'दूसरे नंबर पर भुगतान लिंक चालू है।',
   'fa10b.preview': 'वे क्या देखेंगे, देखें',
   'fa10b.previewBody': 'एक SMS लिंक। उनके अपने नंबर पर OTP के बाद: 1 सहमति (हर उद्देश्य अलग से टिक) → 2 सेल्फ़ी (लाइव कैमरा) → 3 आईडी जाँच → 4 शर्तें और ₹499।',

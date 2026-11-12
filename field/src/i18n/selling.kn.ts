@@ -515,7 +515,7 @@ export const sellingKn: Record<keyof typeof sellingEn, string> = {
   'fa10b.relation.friend': 'ಸ್ನೇಹಿತ',
   'fa10b.relation.other': 'ಇತರೆ',
   'fa10b.sendPaymentLink': 'ಪಾವತಿ ಮಾತ್ರದ ಲಿಂಕ್ ಕಳುಹಿಸಿ',
-  'fa10b.paymentOnlyNote': 'ಇದರಲ್ಲಿ ಮೊದಲ ಹೆಸರು, JS- ID ಮತ್ತು ₹499 ಮಾತ್ರ ಕಾಣುತ್ತದೆ; 15 ನಿಮಿಷ ಮಾನ್ಯ.',
+  'fa10b.paymentOnlyNote': 'ಇದರಲ್ಲಿ ಮೊದಲ ಹೆಸರು, JS- ID ಮತ್ತು ₹499 ಮಾತ್ರ ಕಾಣುತ್ತದೆ; {minutes} ನಿಮಿಷ ಮಾನ್ಯ.',
   'fa10b.paymentLinkLive': 'ಬೇರೆ ನಂಬರ್‌ನಲ್ಲಿ ಪಾವತಿ ಲಿಂಕ್ ಚಾಲ್ತಿಯಲ್ಲಿದೆ.',
   'fa10b.preview': 'ಅವರು ಏನು ನೋಡುತ್ತಾರೆ, ನೋಡಿ',
   'fa10b.previewBody': 'ಒಂದು SMS ಲಿಂಕ್. ಅವರ ಸ್ವಂತ ನಂಬರ್‌ಗೆ OTP ನಂತರ: 1 ಒಪ್ಪಿಗೆ (ಪ್ರತಿ ಉದ್ದೇಶ ಪ್ರತ್ಯೇಕ ಟಿಕ್) → 2 ಸೆಲ್ಫಿ (ಲೈವ್ ಕ್ಯಾಮೆರಾ) → 3 ಗುರುತು ಪರಿಶೀಲನೆ → 4 ನಿಯಮಗಳು ಮತ್ತು ₹499.',

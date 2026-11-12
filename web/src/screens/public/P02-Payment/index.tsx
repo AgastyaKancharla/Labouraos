@@ -188,11 +188,11 @@ export default function Payment() {
         <div className="card lb-pub-card">
           {otherSent ? (
             <Row label={t('pub.pay.otherSentTitle')}>
-              <span className="sub">{t('pub.pay.otherSent')}</span>
+              <span className="sub">{t('pub.pay.otherSent', { minutes: summary.data?.paymentOnlyLinkMinutes ?? 15 })}</span>
             </Row>
           ) : (
             <>
-              <MobileField label={t('pub.pay.otherPhone')} value={otherPhone} onChange={setOtherPhone} hint={t('pub.pay.otherHint')} required />
+              <MobileField label={t('pub.pay.otherPhone')} value={otherPhone} onChange={setOtherPhone} hint={t('pub.pay.otherHint', { minutes: summary.data?.paymentOnlyLinkMinutes ?? 15 })} required />
               <button
                 type="button"
                 className="btn bp full"

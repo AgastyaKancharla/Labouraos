@@ -514,7 +514,7 @@ export const sellingEn = {
   'fa10b.relation.friend': 'Friend',
   'fa10b.relation.other': 'Other',
   'fa10b.sendPaymentLink': 'Send payment-only link',
-  'fa10b.paymentOnlyNote': 'It shows only the first name, JS- ID and ₹499, and works for 15 minutes.',
+  'fa10b.paymentOnlyNote': 'It shows only the first name, JS- ID and ₹499, and works for {minutes} minutes.',
   'fa10b.paymentLinkLive': 'A payment-only link is live on another number.',
   'fa10b.preview': 'Preview what they’ll see',
   'fa10b.previewBody': 'One SMS link. After an OTP to their own number: 1 consent (each purpose ticked separately) → 2 selfie (live camera) → 3 ID check → 4 terms and ₹499.',

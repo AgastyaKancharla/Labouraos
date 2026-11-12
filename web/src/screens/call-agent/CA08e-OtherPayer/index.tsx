@@ -19,7 +19,8 @@ import '../_registration/registration.css';
 
 /**
  * Send payment link to another number — design CA08e-OtherPayer. The payer
- * sees only his first name, JS- ID and ₹499; the link works for 15 minutes.
+ * sees only his first name, JS- ID and ₹499; the link works for the minutes set
+ * in Settings (15 by default).
  */
 export default function OtherPayer() {
   const t = useT();
@@ -35,12 +36,13 @@ export default function OtherPayer() {
   const [error, setError] = useState<string | null>(null);
   const s = status.data;
   const first = s?.name.split(/\s+/)[0] ?? '';
+  const minutes = s?.paymentOnlyLinkMinutes ?? 15;
   const reached = s ? [s.steps.consent, s.steps.selfie, s.steps.idCheck].every((step) => step.state === 'done') : true;
 
   const send = useMutation({
-    mutationFn: () => api.post<{ expiresAt: string }>(`/job-seekers/${s!.id}/payment-only-link`, { phone: mobile, relation: relation || undefined }),
-    onSuccess: () => {
-      toast.success(t('reg.payer.sent'));
+    mutationFn: () => api.post<{ expiresAt: string; validMinutes?: number }>(`/job-seekers/${s!.id}/payment-only-link`, { phone: mobile, relation: relation || undefined }),
+    onSuccess: (res) => {
+      toast.success(t('reg.payer.sent', { minutes: res?.validMinutes ?? minutes }));
       void queryClient.invalidateQueries({ queryKey: qk.jobSeeker(id) });
       navigate(to('CA08c-InProgress', { id }));
     },
@@ -54,7 +56,7 @@ export default function OtherPayer() {
         <MobileField label={t('reg.payer.mobile')} value={mobile} onChange={setMobile} required />
         <SelectField label={t('reg.payer.who')} value={relation} onChange={setRelation} options={choiceOptions(t, PAYER_RELATIONS)} />
       </Card>
-      <div className="warn">{t('reg.payer.warn')}</div>
+      <div className="warn">{t('reg.payer.warn', { minutes })}</div>
       {!reached && (
         <div className="warn" role="alert">
           {t('reg.payer.notYet')}

@@ -130,6 +130,8 @@ export interface PaymentPage {
 }
 
 export interface PaymentSummary {
+  /** How long a payment-only link for someone else works (Settings). */
+  paymentOnlyLinkMinutes?: number | null;
   type: 'activation' | 'placement_fee';
   state: 'pending' | 'confirming' | 'received' | 'closed';
   amountPaise: number;

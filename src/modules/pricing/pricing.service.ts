@@ -153,6 +153,7 @@ export class PricingService {
         behindPaceStartDay: updates.behindPaceStartDay ?? before.behindPaceStartDay,
         behindPaceThresholdPercent: updates.behindPaceThresholdPercent ?? before.behindPaceThresholdPercent,
         registrationLinkValidHours: updates.registrationLinkValidHours ?? before.registrationLinkValidHours,
+        paymentOnlyLinkMinutes: updates.paymentOnlyLinkMinutes ?? before.paymentOnlyLinkMinutes,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

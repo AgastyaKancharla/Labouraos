@@ -1575,7 +1575,11 @@ export class JobSeekerService {
       jobSeekerId: seeker.id,
       steps: { phone, consent, selfie, idCheck, payment },
       registrationLinkExpiresAt: link?.expiresAt ?? null,
-      paymentOnlyLink: { live: Boolean(paymentOnlyLink), expiresAt: paymentOnlyLink?.expiresAt ?? null },
+      paymentOnlyLink: {
+        live: Boolean(paymentOnlyLink),
+        expiresAt: paymentOnlyLink?.expiresAt ?? null,
+        validMinutes: await this.pricingService.current().then((p) => (Number.isInteger(p.paymentOnlyLinkMinutes) && p.paymentOnlyLinkMinutes > 0 ? p.paymentOnlyLinkMinutes : 15)),
+      },
     };
   }
 
@@ -1598,7 +1602,10 @@ export class JobSeekerService {
 
     const now = this.consentClock?.now() ?? new Date();
     await this.publicLinks.revokeActive('payment_only', 'job_seeker', seeker.id, now);
-    const expiresAt = new Date(now.getTime() + 15 * 60 * 1000);
+    // C-Pricing "Payment-only link" (PricingPolicy.paymentOnlyLinkMinutes, 15 by default).
+    const policy = await this.pricingService.current();
+    const validMinutes = Number.isInteger(policy.paymentOnlyLinkMinutes) && policy.paymentOnlyLinkMinutes > 0 ? policy.paymentOnlyLinkMinutes : 15;
+    const expiresAt = new Date(now.getTime() + validMinutes * 60 * 1000);
     const { token } = await this.publicLinks.create({
       purpose: 'payment_only',
       subjectType: 'job_seeker',
@@ -1632,7 +1639,7 @@ export class JobSeekerService {
       changedFields: ['paymentOnlyLink'],
       city: seeker.city,
     });
-    return { success: true, expiresAt };
+    return { success: true, expiresAt, validMinutes };
   }
 
   // --- Trades (Phase 12 Task 3) ---

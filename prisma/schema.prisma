@@ -1376,6 +1376,8 @@ model PricingPolicy {
   behindPaceThresholdPercent   Int       @default(80)
   /// C-Pricing "Registration link valid": the job seeker's registration link lasts this many hours (guide: 48).
   registrationLinkValidHours   Int       @default(48)
+  /// C-Pricing: the payment-only link (someone else pays the ₹499) works this many minutes (guide: 15).
+  paymentOnlyLinkMinutes       Int       @default(15)
   shiftStart                   String    @default("09:30")
   shiftEnd                     String    @default("18:30")
   productionHoursFullDay       Float     @default(8)

@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
 import { publicPageLink } from '../../common/public-pages';
+import { PricingService } from '../pricing/pricing.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
@@ -73,6 +74,7 @@ export class UpiCollectionService {
     private readonly idService: IdService,
     private readonly messagingService: MessagingService,
     @Optional() private readonly paymentService?: PaymentService,
+    @Optional() private readonly pricing?: PricingService,
   ) {}
 
   private getConfiguration() {
@@ -350,7 +352,14 @@ export class UpiCollectionService {
       pay: state === 'pending' || state === 'confirming' ? await this.getPaymentPage(token) : null,
       receipt: state === 'received' ? { paymentId: payment.id, token: receiptToken(payment.id) } : null,
       invoicePath: state === 'received' && placement ? invoicePath(placement.id) : null,
+      // How long a payment-only link for someone else works (Settings, 15 minutes by default).
+      paymentOnlyLinkMinutes: payment.type === 'activation' ? await this.paymentOnlyLinkMinutes() : null,
     };
+  }
+
+  private async paymentOnlyLinkMinutes(): Promise<number> {
+    const minutes = this.pricing ? (await this.pricing.current()).paymentOnlyLinkMinutes : 15;
+    return Number.isInteger(minutes) && minutes > 0 ? minutes : 15;
   }
 
   async renderPaymentPage(token: string) {
