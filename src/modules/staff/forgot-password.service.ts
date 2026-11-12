@@ -97,7 +97,8 @@ export class ForgotPasswordService {
       action: 'staff.password_reset_emailed',
       entityType: 'staff',
       entityCode: staff.code,
-      after: { passwordResetId: reset.id, expiresAt: expiresAt.toISOString(), replacedEarlierResets: reset.replaced, emailStatus: result.status },
+      // F1: says plainly when no real email went out.
+      after: { passwordResetId: reset.id, expiresAt: expiresAt.toISOString(), replacedEarlierResets: reset.replaced, emailStatus: result.status === 'sent' ? (result.mock ? 'mock' : 'sent') : 'not_sent' },
     });
     return result.status === 'sent' ? 'sent' : 'skipped';
   }

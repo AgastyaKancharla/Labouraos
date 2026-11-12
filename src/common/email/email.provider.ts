@@ -15,6 +15,8 @@ export interface EmailSendResult {
   messageId: string;
   status: 'sent' | 'failed';
   error?: string;
+  /** True when no real email went out (the pretend sender). */
+  mock?: boolean;
 }
 
 export interface EmailProvider {
@@ -26,6 +28,20 @@ export function maskEmail(address: string): string {
   const [local, domain] = address.split('@');
   if (!domain) return '***';
   return `${(local ?? '').slice(0, 1)}***@${domain}`;
+}
+
+/** The email sender in use: `mock` (pretend, the default) or `real`. */
+export function emailMode(env: NodeJS.ProcessEnv = process.env): string {
+  return emailModeOf(env);
+}
+
+/**
+ * F1: the warning System Health shows while production runs on the pretend
+ * sender (forgot-password links then reach nobody). Null when all is well.
+ */
+export function emailProductionWarning(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.NODE_ENV !== 'production' || emailModeOf(env) !== 'mock') return null;
+  return 'Email is pretend (mock) in production: forgot-password links are not sent to anyone. Set EMAIL_PROVIDER_MODE=real with the email vendor.';
 }
 
 function emailModeOf(env: NodeJS.ProcessEnv): string {
@@ -67,7 +83,7 @@ export class MockEmailProvider implements EmailProvider {
     if (message.link && emailTestModeEnabled()) {
       this.logger.log(`[MOCK EMAIL] Test mode link for ${maskEmail(message.to)}: ${message.link}`);
     }
-    return { messageId: `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, status: 'sent' };
+    return { messageId: `email_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`, status: 'sent', mock: true };
   }
 }
 

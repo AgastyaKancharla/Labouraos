@@ -1,5 +1,5 @@
 import { Logger } from '@nestjs/common';
-import { MockEmailProvider, RealEmailProvider, emailTestModeEnabled, maskEmail } from './email.provider';
+import { MockEmailProvider, RealEmailProvider, emailProductionWarning, emailTestModeEnabled, maskEmail } from './email.provider';
 
 describe('email sender (mock until a vendor is chosen)', () => {
   const saved = { ...process.env };
@@ -45,5 +45,18 @@ describe('email sender (mock until a vendor is chosen)', () => {
     const fetchSpy = jest.spyOn(global, 'fetch');
     expect(await new RealEmailProvider().send({ to: 'a@b.in', subject: 's', text: 't' })).toMatchObject({ status: 'failed' });
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('Email in production (F1)', () => {
+  it('warns while production runs on the pretend sender, and not otherwise', () => {
+    expect(emailProductionWarning({ NODE_ENV: 'production' } as NodeJS.ProcessEnv)).toMatch(/pretend/);
+    expect(emailProductionWarning({ NODE_ENV: 'production', EMAIL_PROVIDER_MODE: 'real' } as NodeJS.ProcessEnv)).toBeNull();
+    expect(emailProductionWarning({ NODE_ENV: 'development' } as NodeJS.ProcessEnv)).toBeNull();
+  });
+
+  it('the mock says no real email went out', async () => {
+    const result = await new MockEmailProvider().send({ to: 'a@laboura.in', subject: 'x', text: 'y' });
+    expect(result).toMatchObject({ status: 'sent', mock: true });
   });
 });

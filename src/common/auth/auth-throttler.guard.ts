@@ -22,6 +22,12 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
       expressReq.ip || expressReq.socket?.remoteAddress || '127.0.0.1';
 
     const body = expressReq.body as Record<string, unknown> | undefined;
+    // F2: "Forgot password" is limited per email address only, whatever the
+    // IP, so asking for one address from many addresses still hits the limit.
+    if (expressReq.path === '/staff/forgot-password' || expressReq.originalUrl?.split('?')[0] === '/staff/forgot-password') {
+      const email = typeof body?.email === 'string' ? body.email.trim().toLowerCase() : '';
+      return `forgot-password:${email || 'none'}`;
+    }
     const identity =
       (body?.staffCode as string) ||
       (body?.loginRequestId as string) ||

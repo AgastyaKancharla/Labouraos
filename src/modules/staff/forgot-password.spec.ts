@@ -96,7 +96,9 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
     const token = decodeURIComponent(message.link!.split('/app/p/invite/')[1]);
     const reset = await prisma.staffPasswordReset.findFirstOrThrow({ where: { staffId: ids[2] }, orderBy: { createdAt: 'desc' } });
     expect(reset.expiresAt.getTime() - reset.createdAt.getTime()).toBe(60 * 60 * 1000);
-    expect(await prisma.auditLog.findFirst({ where: { action: 'staff.password_reset_emailed', entityCode: `FPW-fin-${ts}` } })).not.toBeNull();
+    const emailed = await prisma.auditLog.findFirst({ where: { action: 'staff.password_reset_emailed', entityCode: `FPW-fin-${ts}` } });
+    // F1: the pretend sender is recorded as such, never as "sent".
+    expect((emailed?.after as { emailStatus?: string } | null)?.emailStatus).toBe('mock');
 
     const preview = await request(app.getHttpServer()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token });
     expect(preview.status).toBe(200);
@@ -128,5 +130,13 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
     const statuses: number[] = [];
     for (let i = 0; i < 7; i += 1) statuses.push((await post({ email: `same_${ts}@laboura.local` }, from)).status);
     expect(statuses).toContain(429);
+  });
+
+  it('F2: the limit follows the email address, not the IP', async () => {
+    const statuses: number[] = [];
+    for (let i = 0; i < 7; i += 1) statuses.push((await post({ email: `spread_${ts}@laboura.local` }, freshIp())).status);
+    expect(statuses).toContain(429);
+    // Another address from the same IPs is not held back.
+    expect((await post({ email: `fresh_${ts}@laboura.local` })).status).toBe(200);
   });
 });
