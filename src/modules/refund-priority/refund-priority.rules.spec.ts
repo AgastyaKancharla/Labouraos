@@ -1,4 +1,6 @@
-import { DAY_MS, compareMatches, daysLeftOn, priorityBucket, refundPriorityOf } from './refund-priority.rules';
+import { DAY_MS, SEEKER_ENDED_STATUSES, compareMatches, daysLeftOn, priorityBucket, refundPriorityOf } from './refund-priority.rules';
+import { LIVE_REFUND_STATUSES } from '../../common/money/current-guarantee-refund';
+import { LIVE_REFUND_STATUSES as GROWTH_LIVE_REFUND_STATUSES } from '../growth/growth.constants';
 
 describe('close-to-refund buckets', () => {
   it.each([
@@ -55,6 +57,11 @@ describe('refundPriorityOf', () => {
     expect(refundPriorityOf({ ...base, status: 'placed' }, now, 30, 15).priority).toBe(false);
   });
 
+  it('drops a refunded job seeker: his refund is already approved (guide check 12 Nov)', () => {
+    expect(refundPriorityOf({ ...base, status: 'refunded' }, now, 30, 15)).toEqual({ priority: false, daysLeft: null });
+    expect(SEEKER_ENDED_STATUSES).toContain('refunded');
+  });
+
   it('is not a priority outside the window or before paying', () => {
     expect(refundPriorityOf(base, now, 30, 10).priority).toBe(false);
     expect(refundPriorityOf({ ...base, paymentReceivedAt: null }, now, 30, 15)).toEqual({ priority: false, daysLeft: null });
@@ -77,5 +84,13 @@ describe('matching order', () => {
       { jobSeekerId: 'q', score: 71, priority: false },
     ];
     expect([...rows].sort(compareMatches).map((r) => r.jobSeekerId)).toEqual(['q', 'p']);
+  });
+});
+
+describe('one shared list of refund statuses that still count', () => {
+  it('includes approved and failed (retried, never made again) and is the same list everywhere', () => {
+    expect(LIVE_REFUND_STATUSES).toEqual(expect.arrayContaining(['pending', 'approved', 'processing', 'succeeded', 'completed', 'failed']));
+    expect(LIVE_REFUND_STATUSES).not.toContain('rejected');
+    expect(GROWTH_LIVE_REFUND_STATUSES).toBe(LIVE_REFUND_STATUSES);
   });
 });
