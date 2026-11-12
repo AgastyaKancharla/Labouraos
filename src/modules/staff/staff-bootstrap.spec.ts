@@ -210,7 +210,9 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         .send({ totpCode: validTotpCode });
       expect(enableRes.status).toBe(200);
 
-      // 3. Password + valid TOTP -> 200 and issues full token
+      // 3. Password + the next valid TOTP code -> 200 and issues full token. The code
+      // that switched the authenticator on can't be used again (security check L9).
+      const loginTotpCode = await stableTotpCode(secret);
       const successLogin = await request(app.getHttpServer())
         .post('/auth/login')
         .set('X-Forwarded-For', freshIp())
@@ -218,7 +220,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
           staffCode: bootstrapRes.body.staff.code,
           password: 'SuperSecurePassword2026!',
           deviceId: 'bootstrap-ceo-device',
-          totpCode: validTotpCode,
+          totpCode: loginTotpCode,
         });
       expect(successLogin.status).toBe(200);
       expect(successLogin.body.accessToken).toBeDefined();

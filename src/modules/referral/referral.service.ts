@@ -177,7 +177,7 @@ export class ReferralService {
         longitude: dto.longitude ?? null,
         heardFrom: dto.heardFrom,
         // Who registered the partner: a Team Lead reads only their team's partners.
-        registeredByStaffId: await this.staffIdOrNull(actorId),
+        registeredByStaffId: this.registeringStaffId(actorId),
       },
     });
 
@@ -233,10 +233,9 @@ export class ReferralService {
     return { registeredByStaffId: { in: [viewer.id, ...team.map((s) => s.id)] } };
   }
 
-  private async staffIdOrNull(actorId: string): Promise<string | null> {
-    if (!actorId || actorId === 'system') return null;
-    const staff = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true } });
-    return staff?.id ?? null;
+  /** The registering agent: the signed-in staff member (the only caller), never 'system'. */
+  private registeringStaffId(actorId: string): string | null {
+    return actorId && actorId !== 'system' ? actorId : null;
   }
 
   /**
