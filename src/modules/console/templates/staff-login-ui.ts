@@ -31,6 +31,7 @@ export function staffLoginFieldsHtml(): string {
 export function staffLoginHandlersJs(): string {
   return `
     var labouraLoginRequestId = null;
+    var labouraLoginRequestProof = null;
     var labouraCodeTimer = null;
     var labouraRefreshTimer = null;
 
@@ -98,6 +99,8 @@ export function staffLoginHandlersJs(): string {
 
     function labouraShowCodePanel(data) {
       labouraLoginRequestId = data.loginRequestId;
+      // The code works only with this sign-in's proof and this device id.
+      labouraLoginRequestProof = data.loginRequestProof;
       document.getElementById('login-form-fields').classList.add('hidden');
       document.getElementById('login-code-panel').classList.remove('hidden');
       if (labouraCodeTimer) clearTimeout(labouraCodeTimer);
@@ -159,7 +162,7 @@ export function staffLoginHandlersJs(): string {
         var res = await fetch('/auth/login/verify-code', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ loginRequestId: labouraLoginRequestId, code: code })
+          body: JSON.stringify({ loginRequestId: labouraLoginRequestId, code: code, deviceId: labouraDeviceId(), loginRequestProof: labouraLoginRequestProof })
         });
         var data = await res.json().catch(function () { return { message: 'Login code is not valid' }; });
         if (!res.ok) throw new Error(data.message || 'Login code is not valid');

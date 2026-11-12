@@ -22,7 +22,7 @@ import {
 } from './dto/login.dto';
 import { JwtPayload } from './jwt-payload.interface';
 import { LoginCodeService } from '../../modules/login-code/login-code.service';
-import { isOddHourIst } from '../../modules/login-code/login-code.crypto';
+import { isOddHourIst, loginCodesMatch, loginRequestProofFor } from '../../modules/login-code/login-code.crypto';
 import { OfficeNetworkService } from '../../modules/office-network/office-network.service';
 import { ReviewFlagService } from '../../modules/review-flag/review-flag.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
@@ -260,6 +260,7 @@ export class AuthService {
     const awaiting: AwaitingCodeResponseDto = {
       status: 'awaiting_code',
       loginRequestId: request.id,
+      loginRequestProof: loginRequestProofFor(request.id, deviceId),
       expiresAt: request.expiresAt,
     };
     return awaiting;
@@ -269,10 +270,12 @@ export class AuthService {
     loginRequestId: string | undefined,
     code: string | undefined,
     metadata?: LoginMetadata,
+    binding: { deviceId?: string; loginRequestProof?: string } = {},
   ): Promise<LoginResponseDto> {
     if (!loginRequestId || !code) {
       throw new UnauthorizedException('Login code is not valid');
     }
+    await this.assertSameDeviceAndSignIn(loginRequestId, binding);
     let used: { staffId: string; id: string };
     try {
       used = await this.loginCodeService.verify(loginRequestId, code);
@@ -307,6 +310,37 @@ export class AuthService {
     });
     noteRequestDevice({ staffId: staff.id, deviceId: device?.deviceId ?? null });
     return this.issueSession(staff, device?.deviceId ?? null, metadata, used.id);
+  }
+
+  /**
+   * A login code works only for the device and sign-in that asked for it: the
+   * same device id, and the proof that was handed only to that sign-in. A
+   * mismatch is refused without counting as a wrong code, so nobody else can
+   * use up the person's five tries.
+   */
+  private async assertSameDeviceAndSignIn(
+    loginRequestId: string,
+    binding: { deviceId?: string; loginRequestProof?: string },
+  ): Promise<void> {
+    const request = await this.prisma.loginCodeRequest.findUnique({
+      where: { id: loginRequestId },
+      select: { id: true, staffId: true, staffDevice: { select: { deviceId: true } } },
+    });
+    if (!request) return; // the code check answers "not found" as before
+    const deviceId = typeof binding.deviceId === 'string' ? binding.deviceId.trim() : '';
+    const proof = typeof binding.loginRequestProof === 'string' ? binding.loginRequestProof : '';
+    const expectedDevice = request.staffDevice?.deviceId ?? '';
+    const sameDevice = Boolean(deviceId) && Boolean(expectedDevice) && deviceId === expectedDevice;
+    const sameSignIn = sameDevice && loginCodesMatch(proof, loginRequestProofFor(request.id, expectedDevice));
+    if (sameDevice && sameSignIn) return;
+    await this.auditService.log({
+      actorId: request.staffId,
+      action: 'auth.login.refused',
+      entityType: 'login_code_request',
+      entityCode: request.id,
+      after: { reason: sameDevice ? 'login_code_other_sign_in' : 'login_code_other_device' },
+    });
+    throw new UnauthorizedException('This login code can only be used on the device that asked for it');
   }
 
   async verifyToken(token: string): Promise<JwtPayload> {
