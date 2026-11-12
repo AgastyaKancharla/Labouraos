@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { Prisma } from '@prisma/client';
 import { monthBounds } from './payroll-rules';
+import { CORRECTIONS_TAKEN, PayrollService } from './payroll.service';
 
 /**
  * Phase 22 Part B against a real database (with the owner decisions of 11 Nov).
@@ -546,6 +547,29 @@ describe('Finance back office (Phase 22 Part B)', () => {
       const march = await prisma.payrollLine.findFirstOrThrow({ where: { staffId: asha.id, run: { month: MONTH } } });
       expect(march.lossOfPayPaise).toBe(150000);
       expect(march.netPaise).toBe(2443750);
+    });
+
+    it('refuses (409) to apply a waiting correction another sheet claimed while this one was being prepared', async () => {
+      const payroll = app.get(PayrollService);
+      const marchRun = await prisma.payrollRun.findUniqueOrThrow({ where: { month: MONTH } });
+      const temp = await prisma.payrollCorrection.create({ data: { staffId: asha.id, relatesToMonth: MONTH, amountPaise: 10000, reason: 'W5B race check', source: 'recompute' } });
+      const realDraft = payroll.draft.bind(payroll);
+      // Another sheet (here: March's run) applies the row between reading it and saving April.
+      const spy = jest.spyOn(payroll, 'draft').mockImplementationOnce(async (...args: Parameters<PayrollService['draft']>) => {
+        const out = await realDraft(...args);
+        await prisma.payrollCorrection.update({ where: { id: temp.id }, data: { appliedRunId: marchRun.id, appliedMonth: MONTH } });
+        return out;
+      });
+      try {
+        const res = await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(409);
+        expect(res.body.message).toBe(CORRECTIONS_TAKEN);
+        // Nothing was saved: no April sheet, and the row stays on the sheet that claimed it.
+        expect(await prisma.payrollRun.count({ where: { month: APRIL } })).toBe(0);
+        expect((await prisma.payrollCorrection.findUniqueOrThrow({ where: { id: temp.id } })).appliedRunId).toBe(marchRun.id);
+      } finally {
+        spy.mockRestore();
+        await prisma.payrollCorrection.deleteMany({ where: { id: temp.id } });
+      }
     });
 
     it('carries a holiday added to an approved month as correction rows, pays a leaver through Finance, and carries a take-back larger than pay', async () => {

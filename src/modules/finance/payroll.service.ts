@@ -127,6 +127,9 @@ interface OpenCorrection {
   source: 'recompute' | 'carry_forward';
 }
 
+/** Prepare found a waiting correction already applied on another sheet. */
+export const CORRECTIONS_TAKEN = 'Someone else just prepared a salary sheet that uses the same corrections. Reload and prepare again.';
+
 /** How far back frozen months are worked out again to find corrections. */
 const CORRECTION_LOOKBACK_MONTHS = 12;
 
@@ -434,16 +437,21 @@ export class PayrollService {
    * Corrections waiting for a sheet of `month` (owner decisions 11 Nov,
    * re-check 12 Nov): every stored correction not yet applied, whatever month
    * it relates to — also those on a sheet the CEO sent back, or on this
-   * month's own sheet while it is worked out again.
+   * month's own sheet while it is worked out again. `runIds` are the sheets
+   * they may be taken from (besides none): Prepare claims a row only if it is
+   * still on one of them, so two sheets prepared at once never share one.
    */
-  private async storedCorrections(month: string, ownRunId: string | null): Promise<OpenCorrection[]> {
+  private async storedCorrections(month: string, ownRunId: string | null): Promise<{ rows: OpenCorrection[]; runIds: string[] }> {
     const returned = (await this.prisma.payrollRun.findMany({ where: { status: 'returned' }, select: { id: true } })).map((r) => r.id);
     const runIds = [...new Set([...returned, ...(ownRunId ? [ownRunId] : [])])];
     const rows = await this.prisma.payrollCorrection.findMany({
       where: { relatesToMonth: { lt: month }, OR: [{ appliedRunId: null }, ...(runIds.length ? [{ appliedRunId: { in: runIds } }] : [])] },
       orderBy: [{ relatesToMonth: 'asc' }, { createdAt: 'asc' }],
     });
-    return rows.map((r) => ({ id: r.id, staffId: r.staffId, relatesToMonth: r.relatesToMonth, amountPaise: r.amountPaise, reason: r.reason, source: r.source === 'carry_forward' ? 'carry_forward' : 'recompute' }));
+    return {
+      rows: rows.map((r) => ({ id: r.id, staffId: r.staffId, relatesToMonth: r.relatesToMonth, amountPaise: r.amountPaise, reason: r.reason, source: r.source === 'carry_forward' ? 'carry_forward' : 'recompute' })),
+      runIds,
+    };
   }
 
   /**
@@ -557,7 +565,11 @@ export class PayrollService {
   }
 
   /** Works out the month's sheet from attendance, the salaries in force and the corrections waiting. */
-  async draft(month: string, now = new Date(), ownRunId: string | null = null): Promise<{ rows: SheetRow[]; missingSalary: { staffId: string; staffCode: string; name: string }[]; openDays: { name: string; days: string[] }[]; salaryDays: number; corrections: OpenCorrection[] }> {
+  async draft(
+    month: string,
+    now = new Date(),
+    ownRunId: string | null = null,
+  ): Promise<{ rows: SheetRow[]; missingSalary: { staffId: string; staffCode: string; name: string }[]; openDays: { name: string; days: string[] }[]; salaryDays: number; corrections: OpenCorrection[]; correctionRunIds: string[] }> {
     const policy = await this.pricing.current();
     const salaryDays = salaryDaysFor(policy.payrollSalaryDays);
     const fullDayMinutes = Math.max(1, Math.round(policy.productionHoursFullDay * 60));
@@ -568,7 +580,8 @@ export class PayrollService {
     const [joined, away] = await Promise.all([this.joinedDays(people), this.awayPeriods(people)]);
     const salaries = await this.salariesFor(people.map((p) => p.id), month);
     const attendance = await this.attendanceFor(people.map((p) => p.id), month);
-    const corrections = [...(await this.storedCorrections(month, ownRunId)), ...(await this.foundCorrections(month))];
+    const stored = await this.storedCorrections(month, ownRunId);
+    const corrections = [...stored.rows, ...(await this.foundCorrections(month))];
     const correctionsOf = (staffId: string) => corrections.filter((c) => c.staffId === staffId);
     const rows: SheetRow[] = [];
     const missingSalary: { staffId: string; staffCode: string; name: string }[] = [];
@@ -595,7 +608,7 @@ export class PayrollService {
       }
     }
     rows.sort((a, b) => a.staffCode.localeCompare(b.staffCode));
-    return { rows, missingSalary, openDays, salaryDays, corrections };
+    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds };
   }
 
   private rowFromLine(line: PayrollLine): SheetRow {
@@ -731,7 +744,7 @@ export class PayrollService {
       throw new ConflictException(`${monthLabel(month)} pay is already approved by the CEO.`);
     }
     await this.markMonthAbsences(month);
-    const { rows, missingSalary, openDays, corrections } = await this.draft(month, now, existing?.id ?? null);
+    const { rows, missingSalary, openDays, corrections, correctionRunIds } = await this.draft(month, now, existing?.id ?? null);
     if (openDays.length) {
       throw new BadRequestException(`Some days are still open, so attendance is not final: ${openDays.map((o) => `${o.name} on ${o.days.join(', ')}`).join('; ')}. Close those days first.`);
     }
@@ -801,8 +814,17 @@ export class PayrollService {
         }
         // Worked out again: release what this sheet held, then apply what it holds now.
         await tx.payrollCorrection.updateMany({ where: { appliedRunId: runId }, data: { appliedRunId: null, appliedMonth: null } });
+        // Claim each waiting row only if it is still where it was read (waiting, or on a sheet it may be
+        // taken from): a row another sheet claimed meanwhile would otherwise land on two sheets.
         const usedIds = used.map((c) => c.id).filter((id): id is string => Boolean(id));
-        if (usedIds.length) await tx.payrollCorrection.updateMany({ where: { id: { in: usedIds } }, data: { appliedRunId: runId, appliedMonth: month } });
+        if (usedIds.length) {
+          const claimable = [...new Set([runId, ...correctionRunIds])];
+          const claimedRows = await tx.payrollCorrection.updateMany({
+            where: { id: { in: usedIds }, OR: [{ appliedRunId: null }, { appliedRunId: { in: claimable } }] },
+            data: { appliedRunId: runId, appliedMonth: month },
+          });
+          if (claimedRows.count !== usedIds.length) throw new ConflictException(CORRECTIONS_TAKEN);
+        }
         const found = [...used.filter((c) => !c.id).map((c) => ({ c, applied: true })), ...waiting.filter((c) => !c.id).map((c) => ({ c, applied: false }))];
         if (found.length) {
           await tx.payrollCorrection.createMany({
