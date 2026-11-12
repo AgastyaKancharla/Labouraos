@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { ConflictException, ForbiddenException, INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -14,6 +14,8 @@ import { recordRefundCheck } from '../../test-support/refund-check';
  * he leaves the matching pool, and he can register and pay again (reactivate from
  * "refunded"), so the win-back list (N5) works. Paying ₹499 again resets the hits
  * and starts a new 30-day guarantee (Master Guide), which can end in a refund of its own.
+ * The CEO (never Finance) can also give a ₹499 refund outside the rules (goodwill),
+ * with a written reason, audited.
  */
 describe('A refunded job seeker leaves the pool and can pay again', () => {
   let app: INestApplication;
@@ -154,6 +156,59 @@ describe('A refunded job seeker leaves the pool and can pay again', () => {
     expect(second.id).not.toBe(first.id);
     expect(await prisma.payment.count({ where: { jobSeekerId: seeker.id, type: 'refund' } })).toBe(2);
     expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('refunded');
+  });
+
+  describe('goodwill ₹499 refund (outside the rules)', () => {
+    it('is the CEO\'s alone: Finance is refused and nothing is created', async () => {
+      const seeker = await paidSeeker(10);
+      const refused = jobSeekers.approveRefund(seeker.id, { goodwill: true, reason: 'Promised on the call' }, financeId);
+      await expect(refused).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(refused).rejects.toMatchObject({ response: { code: 'goodwill_needs_ceo' } });
+      expect(await prisma.payment.count({ where: { jobSeekerId: seeker.id, type: 'refund' } })).toBe(0);
+      expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('active');
+    });
+
+    it('needs a written reason', async () => {
+      const seeker = await paidSeeker(10);
+      await expect(jobSeekers.approveRefund(seeker.id, { goodwill: true }, ceoId)).rejects.toThrow(/written reason/);
+      await expect(jobSeekers.approveRefund(seeker.id, { goodwill: true, reason: '   ' }, ceoId)).rejects.toThrow(/written reason/);
+    });
+
+    it('lets the CEO refund the ₹499 the rules do not allow, audited with the reason, once', async () => {
+      // Day 10 of his guarantee: under the rules no refund is due yet.
+      const seeker = await paidSeeker(10);
+      await expect(jobSeekers.approveRefund(seeker.id, {}, ceoId)).rejects.toThrow(/30 days/);
+
+      const refund = await jobSeekers.approveRefund(seeker.id, { goodwill: true, reason: 'Family emergency, leaving Bengaluru' }, ceoId);
+      expect(refund).toMatchObject({ type: 'refund', amount: 49900, status: 'approved', approvedByStaffId: ceoId, outsideRules: true, approvalNote: 'Family emergency, leaving Bengaluru' });
+      const activation = await prisma.payment.findFirstOrThrow({ where: { jobSeekerId: seeker.id, type: 'activation' } });
+      expect(refund.refundsPaymentId).toBe(activation.id);
+      expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('refunded');
+
+      const audit = await prisma.auditLog.findFirstOrThrow({ where: { action: 'refund_approved', entityCode: seeker.code, actorId: ceoId } });
+      expect(audit.reason).toBe('Family emergency, leaving Bengaluru');
+      expect(audit.after).toMatchObject({ paymentId: refund.id, outsideRules: true, approvedByRole: 'ceo', amount: 49900 });
+      const history = await prisma.statusHistory.findFirstOrThrow({ where: { subjectType: 'payment', subjectId: refund.id } });
+      expect(history.reason).toBe('goodwill_refund_approved_by_ceo');
+
+      // Never twice for the same ₹499.
+      await expect(
+        jobSeekers.approveRefund(seeker.id, { goodwill: true, reason: 'Again' }, ceoId),
+      ).rejects.toBeInstanceOf(ConflictException);
+      expect(await prisma.payment.count({ where: { jobSeekerId: seeker.id, type: 'refund' } })).toBe(1);
+    });
+
+    it('refuses a goodwill refund to someone who never paid', async () => {
+      seq += 1;
+      const unpaid = await prisma.jobSeeker.create({
+        data: {
+          code: `JS-RFS-${stamp}-${seq}`, name: 'Unpaid', phone: `+9195${stamp.slice(-6)}${String(seq).padStart(2, '0')}`,
+          status: 'lead', city: 'Bengaluru', minSalary: 1500000, maxSalary: 2500000, preferredCallWindowStart: '09:00', preferredCallWindowEnd: '21:00',
+        },
+      });
+      seekerIds.push(unpaid.id);
+      await expect(jobSeekers.approveRefund(unpaid.id, { goodwill: true, reason: 'x' }, ceoId)).rejects.toThrow(/no ₹499 received/);
+    });
   });
 
   it('still refuses to reactivate someone who is active', async () => {

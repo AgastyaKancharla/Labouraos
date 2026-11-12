@@ -1017,28 +1017,58 @@ export class JobSeekerService {
         })
       : null;
 
-    const eligibilityResult = evaluateJobSeekerRefundEligibility(
-      {
-        code: jobSeeker.code,
-        paymentReceivedAt: jobSeeker.paymentReceivedAt,
-        status: jobSeeker.status,
-        hasOfferRejectedHit: guards.hasOfferRejectedHit,
-        hasExistingRefund: Boolean(existingRefund),
-        activationPaymentPaise: activationPayment?.amount,
-        guaranteeDays: policy.jobSeekerGuaranteeDays,
-        hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
-        hasOpenBypassFlag: Boolean(openBypassFlag),
-        hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
-        refundCheckRecorded: guards.refundCheckRecorded,
-        refundCheckWorkingElsewhere: guards.refundCheckWorkingElsewhere,
-        hasOpenOfferReply: guards.hasOpenOfferReply,
-      },
-      now,
-    );
+    // Goodwill (outside the rules): the CEO alone can give a ₹499 refund the rules do not
+    // allow, with a written reason, audited (Master Guide: "Any refund outside the rules
+    // (goodwill) always needs the CEO"). Finance cannot. Only the basics are checked: he
+    // paid, and nothing has been refunded in this guarantee already.
+    const goodwill = dto?.goodwill === true;
+    const note = typeof dto?.reason === 'string' && dto.reason.trim() ? dto.reason.trim().slice(0, 500) : null;
+    if (goodwill) {
+      if (actor.role !== 'ceo') {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          code: 'goodwill_needs_ceo',
+          message: 'A ₹499 refund outside the rules (goodwill) is the CEO\'s decision. Finance cannot approve one.',
+        });
+      }
+      if (!note) {
+        throw new BadRequestException('A refund outside the rules (goodwill) needs a written reason');
+      }
+      if (!jobSeeker.paymentReceivedAt || !activationPayment) {
+        throw new BadRequestException(`Job seeker '${jobSeeker.code}' has no ₹499 received, so nothing can be refunded`);
+      }
+      if (existingRefund) {
+        throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, existingRefund);
+      }
+    }
 
-    if (!eligibilityResult.eligible) {
+    const eligibilityResult = goodwill
+      ? null
+      : evaluateJobSeekerRefundEligibility(
+          {
+            code: jobSeeker.code,
+            paymentReceivedAt: jobSeeker.paymentReceivedAt,
+            status: jobSeeker.status,
+            hasOfferRejectedHit: guards.hasOfferRejectedHit,
+            hasExistingRefund: Boolean(existingRefund),
+            activationPaymentPaise: activationPayment?.amount,
+            guaranteeDays: policy.jobSeekerGuaranteeDays,
+            hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
+            hasOpenBypassFlag: Boolean(openBypassFlag),
+            hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
+            refundCheckRecorded: guards.refundCheckRecorded,
+            refundCheckWorkingElsewhere: guards.refundCheckWorkingElsewhere,
+            hasOpenOfferReply: guards.hasOpenOfferReply,
+          },
+          now,
+        );
+
+    if (eligibilityResult && !eligibilityResult.eligible) {
       throw new BadRequestException(eligibilityResult.ineligibleReason!);
     }
+    // The stored ₹499 he paid (old records never change), under the rules or as goodwill.
+    const refundAmount = eligibilityResult ? eligibilityResult.amountPaise : activationPayment!.amount;
 
     const paymentCode = await this.idService.generateCode('payment');
     // H2: one refund per ₹499 even when Approve is tapped twice or retried. The lock
@@ -1056,7 +1086,7 @@ export class JobSeekerService {
             code: paymentCode,
             city: jobSeeker.city,
             type: 'refund',
-            amount: eligibilityResult.amountPaise,
+            amount: refundAmount,
             status: 'approved',
             approvedByStaffId: actor.id,
             approvedAt: now,
@@ -1065,6 +1095,8 @@ export class JobSeekerService {
             subjectId: jobSeeker.id,
             jobSeekerId: jobSeeker.id,
             refundsPaymentId: activationPayment?.id ?? null,
+            outsideRules: goodwill,
+            approvalNote: goodwill ? note : null,
           },
         });
 
@@ -1074,7 +1106,7 @@ export class JobSeekerService {
           fromStatus: null,
           toStatus: 'approved',
           changedByStaffId: actor.id,
-          reason: 'job_seeker_guarantee_refund',
+          reason: goodwill ? 'goodwill_refund_approved_by_ceo' : 'job_seeker_guarantee_refund',
         });
 
         // His ₹499 goes back, so he leaves the matching pool until he pays again.
@@ -1104,7 +1136,11 @@ export class JobSeekerService {
         amount: payment.amount,
         type: 'refund',
         reason: dto?.reason ?? '30-day no-offer guarantee refund',
+        outsideRules: goodwill,
+        approvedByRole: actor.role,
+        refundsPaymentId: payment.refundsPaymentId,
       },
+      ...(goodwill ? { reason: note! } : {}),
     });
 
     // Phase 18 Task 4: When a refund becomes owed and the receiver has no account, send link
