@@ -55,7 +55,8 @@ export class CeoCommandCenterService {
       ...totals,
       previousNetPaise: before.netPaise,
       changePercent: changePercent(totals.netPaise, before.netPaise),
-      refundExposure: { owedNowPaise, owedNowCount: due.length, atRiskPaise: atRisk.totalAtRiskPaise, totalPaise: owedNowPaise + atRisk.totalAtRiskPaise },
+      // Asked without an actor (the system), so the answer carries rupees.
+      refundExposure: { owedNowPaise, owedNowCount: due.length, atRiskPaise: atRisk.totalAtRiskPaise ?? 0, totalPaise: owedNowPaise + (atRisk.totalAtRiskPaise ?? 0) },
       payouts,
     };
   }

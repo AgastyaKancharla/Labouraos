@@ -16,8 +16,9 @@ export interface MoneyAtRiskRow {
   id: string;
   code: string;
   city: string;
-  amountPaise: number;
-  amountRupees: number;
+  /** CEO (and the system) only: everyone else gets counts, never rupees. */
+  amountPaise?: number;
+  amountRupees?: number;
   daysRemaining: number;
   deadline: string; // ISO date string
   staffId: string | null;
@@ -38,13 +39,41 @@ export interface MoneyAtRiskResult {
   scope: 'agent' | 'team' | 'city';
   actorId: string;
   asOf: string;
-  totalAtRiskPaise: number;
-  totalAtRiskRupees: number;
+  /** True for agents, Team Leads and Managers: the answer has no rupee or paise field at all. */
+  countsOnly: boolean;
+  totalAtRiskPaise?: number;
+  totalAtRiskRupees?: number;
   candidatesCount: number;
-  candidatesAtRiskPaise: number;
+  candidatesAtRiskPaise?: number;
   placementsCount: number;
-  placementsAtRiskPaise: number;
+  placementsAtRiskPaise?: number;
   rows: MoneyAtRiskRow[];
+}
+
+/**
+ * Who sees money at risk in rupees. Guide (11 Nov, 9:34 PM): call and field agents
+ * see money at risk as counts only, never rupees; the Team Lead portal shows no
+ * rupees; Managers see no money at all. Finance is refused this endpoint (targets).
+ */
+export const MONEY_AT_RISK_RUPEE_ROLES: ReadonlySet<string> = new Set(['ceo', 'finance']);
+
+/** The same answer with every rupee and paise figure removed: counts, days and deadlines stay. */
+export function moneyAtRiskCountsOnly(result: MoneyAtRiskResult): MoneyAtRiskResult {
+  return {
+    scope: result.scope,
+    actorId: result.actorId,
+    asOf: result.asOf,
+    countsOnly: true,
+    candidatesCount: result.candidatesCount,
+    placementsCount: result.placementsCount,
+    rows: result.rows.map((row) => {
+      const out: MoneyAtRiskRow = { ...row, details: { ...row.details } };
+      delete out.amountPaise;
+      delete out.amountRupees;
+      delete out.details.placementFee;
+      return out;
+    }),
+  };
 }
 
 /**
@@ -231,7 +260,7 @@ export class MoneyAtRiskService {
         const isRefund =
           !p.type ||
           (p.type === 'refund' &&
-            (!p.status || ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)));
+            (!p.status || ['pending', 'approved', 'processing', 'completed', 'succeeded', 'failed'].includes(p.status)));
         if (isRefund) {
           refundedCandidateIdSet.add(p.jobSeekerId);
         } else if (
@@ -437,14 +466,15 @@ export class MoneyAtRiskService {
       return a.code.localeCompare(b.code);
     });
 
-    const candidatesAtRiskPaise = candidateRows.reduce((acc, r) => acc + r.amountPaise, 0);
-    const placementsAtRiskPaise = placementRows.reduce((acc, r) => acc + r.amountPaise, 0);
+    const candidatesAtRiskPaise = candidateRows.reduce((acc, r) => acc + (r.amountPaise ?? 0), 0);
+    const placementsAtRiskPaise = placementRows.reduce((acc, r) => acc + (r.amountPaise ?? 0), 0);
     const totalAtRiskPaise = candidatesAtRiskPaise + placementsAtRiskPaise;
 
-    return {
+    const result: MoneyAtRiskResult = {
       scope: resolvedScope,
       actorId: actor?.sub ?? 'system',
       asOf: now.toISOString(),
+      countsOnly: false,
       totalAtRiskPaise,
       totalAtRiskRupees: totalAtRiskPaise / 100,
       candidatesCount: candidateRows.length,
@@ -453,5 +483,10 @@ export class MoneyAtRiskService {
       placementsAtRiskPaise,
       rows: allRows,
     };
+    // Agents and Team Leads (and Managers) get counts only, never rupees.
+    if (actor && !MONEY_AT_RISK_RUPEE_ROLES.has(actor.role)) {
+      return moneyAtRiskCountsOnly(result);
+    }
+    return result;
   }
 }

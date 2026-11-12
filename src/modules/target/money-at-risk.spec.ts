@@ -547,8 +547,77 @@ describe('Phase 6.7 Task 5: Money at Risk', () => {
       expect(result.rows[2].daysRemaining).toBe(5);
 
       // Sum of rows matches total
-      const rowSum = result.rows.reduce((acc, r) => acc + r.amountPaise, 0);
+      const rowSum = result.rows.reduce((acc, r) => acc + (r.amountPaise ?? 0), 0);
       expect(rowSum).toBe(result.totalAtRiskPaise);
+    });
+  });
+
+  describe('Counts only below the CEO (guide 11 Nov: agents and the Team Lead portal see no rupees)', () => {
+    const fixedNow = new Date('2026-11-15T12:00:00.000Z');
+    const DAY = 24 * 60 * 60 * 1000;
+    const rupeeKeys = (value: unknown, path = '$', out: string[] = []): string[] => {
+      if (Array.isArray(value)) value.forEach((v, i) => rupeeKeys(v, `${path}[${i}]`, out));
+      else if (value && typeof value === 'object') {
+        for (const [k, v] of Object.entries(value)) {
+          if (/paise$|rupees$|amount|fee$/i.test(k)) out.push(`${path}.${k}`);
+          rupeeKeys(v, `${path}.${k}`, out);
+        }
+      }
+      return out;
+    };
+
+    beforeEach(() => {
+      prismaMock.jobSeeker.findMany.mockResolvedValue([
+        {
+          id: 'js-near', code: 'JS-00042', city: 'Bengaluru', name: 'Near Refund', phone: '+919900000042',
+          paymentReceivedAt: new Date(fixedNow.getTime() - 27 * DAY), status: 'active',
+          registeredByStaffId: mockCallAgentId, registeredBy: { id: mockCallAgentId, code: 'CA-00001', name: 'Call Agent 1' },
+        },
+      ]);
+      prismaMock.replacementClaim.findMany.mockResolvedValue([
+        {
+          decision: 'accepted', decidedAt: new Date(fixedNow.getTime() - 9 * DAY), reportedAt: new Date(fixedNow.getTime() - 10 * DAY),
+          placement: {
+            id: 'pl-1', code: 'PL-00001', city: 'Bengaluru', status: 'dropped_out', rootPlacementId: null, placementFee: 1000000,
+            dropoutReportedAt: new Date(fixedNow.getTime() - 10 * DAY), guaranteeEndedReason: null, createdByStaffId: mockFieldAgentId,
+            replacementCandidates: [], business: { name: 'Hotel' }, jobSeeker: { name: 'W', phone: '+919900000043' },
+            createdBy: { id: mockFieldAgentId, code: 'FA-00001', name: 'Field Agent 1' },
+          },
+        },
+      ]);
+    });
+
+    it.each([
+      ['call agent', callAgentUser],
+      ['field agent', fieldAgentUser],
+      ['team lead', teamLeadUser],
+      ['manager', managerUser],
+    ])('gives a %s counts, days and deadlines but no rupee or paise figure', async (_label, user) => {
+      const result = await service.getMoneyAtRisk(user.role === 'team_lead' || user.role === 'manager' ? undefined : 'me', user, fixedNow);
+      expect(result.countsOnly).toBe(true);
+      expect(rupeeKeys(result)).toEqual([]);
+      expect(result.candidatesCount + result.placementsCount).toBeGreaterThan(0);
+      for (const row of result.rows) {
+        expect(row.daysRemaining).toBeGreaterThan(0);
+        expect(row.deadline).toEqual(expect.any(String));
+      }
+    });
+
+    it('gives the CEO the rupee figures', async () => {
+      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+      expect(result.countsOnly).toBe(false);
+      expect(result.candidatesCount).toBe(1);
+      expect(result.placementsCount).toBe(1);
+      expect(result.totalAtRiskPaise).toBe(49900 + 1000000);
+      expect(result.rows.find((r) => r.type === 'placement')?.details.placementFee).toBe(1000000);
+    });
+
+    it('does not count someone whose refund is already approved', async () => {
+      prismaMock.payment.findMany.mockResolvedValue([
+        { jobSeekerId: 'js-near', type: 'refund', status: 'approved', amount: 49900, createdAt: fixedNow },
+      ]);
+      const result = await service.getMoneyAtRisk(undefined, ceoUser, fixedNow);
+      expect(result.candidatesCount).toBe(0);
     });
   });
 
