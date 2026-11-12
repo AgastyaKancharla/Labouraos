@@ -1256,12 +1256,27 @@ export class JobSeekerService {
     if (targetStatus === 'closed') {
       throw new BadRequestException("Use 'found a job on his own' to close a profile; it records why the refund ends");
     }
+    // These come only from what happened, never by hand: "refunded" from an approved ₹499
+    // refund, "deactivated" from the third hit (guide check 12 Nov).
+    if (targetStatus === 'refunded') {
+      throw new BadRequestException('A profile becomes refunded only when his ₹499 refund is approved');
+    }
+    if (targetStatus === 'deactivated') {
+      throw new BadRequestException('A profile is deactivated only by the third hit');
+    }
 
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
     if (!seeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+    // Coming back from deactivated, closed or refunded takes a new ₹499 payment, which
+    // resets the hits and starts a new guarantee: use reactivate, never a plain status change.
+    if (targetStatus === 'active' && REACTIVATABLE_STATUSES.includes(seeker.status)) {
+      throw new BadRequestException(
+        `A ${seeker.status} profile becomes active again only when he pays ₹499 again: use /job-seekers/:id/reactivate`,
+      );
     }
 
     validateJobSeekerAge(seeker.dateOfBirth, targetStatus);

@@ -211,6 +211,19 @@ describe('A refunded job seeker leaves the pool and can pay again', () => {
     });
   });
 
+  it('cannot be got round by a plain status change', async () => {
+    const seeker = await paidSeeker(35);
+    await expect(jobSeekers.transitionStatus(seeker.id, 'refunded', ceoId)).rejects.toThrow(/only when his ₹499 refund is approved/);
+    await expect(jobSeekers.transitionStatus(seeker.id, 'deactivated', ceoId)).rejects.toThrow(/third hit/);
+    await jobSeekers.approveRefund(seeker.id, {}, financeId);
+    await expect(jobSeekers.transitionStatus(seeker.id, 'active', ceoId)).rejects.toThrow(/pays ₹499 again/);
+    for (const status of ['deactivated', 'closed']) {
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { status } });
+      await expect(jobSeekers.transitionStatus(seeker.id, 'active', ceoId)).rejects.toThrow(/pays ₹499 again/);
+    }
+    expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seeker.id } })).status).toBe('closed');
+  });
+
   it('still refuses to reactivate someone who is active', async () => {
     const seeker = await paidSeeker(5);
     await expect(jobSeekers.reactivate(seeker.id, ceoId)).rejects.toThrow(/deactivated, closed or refunded/);
