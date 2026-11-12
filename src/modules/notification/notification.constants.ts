@@ -45,7 +45,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'agent_reminder'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [

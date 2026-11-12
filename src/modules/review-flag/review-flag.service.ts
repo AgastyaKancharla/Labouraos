@@ -23,6 +23,8 @@ export interface RaiseReviewFlagParams {
   subjectId: string;
   raisedForStaffId?: string | null;
   details?: Record<string, unknown> | null;
+  /** Raised straight to a level above (e.g. a Team Lead reporting an agent to their Manager). */
+  owner?: { role: 'manager' | 'ceo'; staffId?: string | null; byStaffId?: string | null; note?: string | null } | null;
 }
 
 export interface ListReviewFlagsQuery {
@@ -73,7 +75,11 @@ export class ReviewFlagService {
         details: (params.details ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         status: 'open',
         // Money and bypass flags are always decided by the CEO (guide, Quality).
-        ownerRole: CEO_OWNED_FLAG_KINDS.includes(params.kind) ? 'ceo' : null,
+        ownerRole: CEO_OWNED_FLAG_KINDS.includes(params.kind) ? 'ceo' : (params.owner?.role ?? null),
+        ownerStaffId: params.owner?.role === 'manager' ? (params.owner.staffId ?? null) : null,
+        escalatedAt: params.owner ? new Date() : null,
+        escalatedByStaffId: params.owner?.byStaffId ?? null,
+        escalationNote: params.owner?.note ?? null,
       },
     });
     await this.syncBell(flag.id);

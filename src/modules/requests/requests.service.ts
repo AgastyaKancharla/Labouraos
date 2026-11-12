@@ -401,8 +401,6 @@ export class RequestsService {
     if (!hit) throw new NotFoundException('Hit not found');
     if (hit.reversedAt) throw new BadRequestException('This hit has already been removed');
     if (hit.supersededAt) throw new BadRequestException('This hit is from an earlier guarantee and no longer counts');
-    const open = await this.prisma.staffRequest.findFirst({ where: { kind: 'hit_removal', subjectId: hit.id, status: 'pending' } });
-    if (open) throw new ConflictException('A request to remove this hit is already waiting');
     // The job seeker belongs to the team of the agent who registered him.
     const personId = hit.jobSeeker.registeredByStaffId ?? actor.id;
     const person = await this.requireStaff(personId);
@@ -416,6 +414,8 @@ export class RequestsService {
         throw new ForbiddenException('You can ask only about job seekers your team handles');
       }
     }
+    const open = await this.prisma.staffRequest.findFirst({ where: { kind: 'hit_removal', subjectId: hit.id, status: 'pending' } });
+    if (open) throw new ConflictException('A request to remove this hit is already waiting');
     const earlier = await this.prisma.jobSeekerHit.count({ where: { jobSeekerId: hit.jobSeekerId, reversedAt: { not: null } } });
     const chain = await this.scope.chainOf(person.id);
     const route = routeStaffRequest({ kind: 'hit_removal', personRole: person.role, chain, ceoId: await this.ceoId(chain), earlier });
@@ -918,7 +918,7 @@ export class RequestsService {
       const to = row.endAt ? new Date(row.endAt) : null;
       const hhmm = (d: Date | null) => (d ? new Date(d.getTime() + 5.5 * HOUR_MS).toISOString().slice(11, 16) : '');
       summary = `${dayLabel(row.date ?? '')} · ${hhmm(from)}–${hhmm(to)}`;
-      if ((row.monthNumber ?? 0) >= 3) alert = `${ordinal(row.monthNumber ?? 3)} correction this month`;
+      if ((row.monthNumber ?? 0) >= 3) alert = `${ordinal(row.monthNumber as number)} correction this month`;
       Object.assign(details, { date: row.date, startAt: row.startAt, endAt: row.endAt, segmentStatus: row.segmentStatus, monthNumber: row.monthNumber });
     }
     const why = waiting?.whyWithYou ?? null;
