@@ -379,6 +379,7 @@ describe('Audit, flags, privacy, system and notifications', () => {
       ...common,
       'GET /ceo/privacy': { summary: { fullConsent: 320, withdrawalsThisMonth: 4, erasuresThisMonth: 0, noticeVersion: '3' }, purposes: [{ purpose: 'call_recording', required: true, given: 320, withdrawn: 2 }], withdrawals: [{ id: 'w', at: '2026-10-28T05:00:00Z', subjectType: 'job_seeker', subjectCode: 'JS-00133', purpose: 'call_recording', method: 'call', effect: 'Profile paused' }], erasures: [], noticeVersions: [{ version: '3', count: 10, firstAt: '2026-11-01T00:00:00Z', lastAt: NOW.toISOString() }], businesses: { total: 54, signedAndRecording: 54 }, partners: { total: 22, termsAndRecording: 20 } },
       'GET /ceo/privacy/consents': { rows: [], total: 0, page: 1, pageSize: 25, summary: null },
+      'GET /data-requests': { dueDays: 30, summary: { open: 0, overdue: 0, closedThisMonth: 0 }, rows: [] },
     });
     render(<Privacy />, '/ceo/privacy');
     expect(await screen.findByText('Profile paused')).toBeInTheDocument();
