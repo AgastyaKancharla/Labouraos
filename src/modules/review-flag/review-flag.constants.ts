@@ -41,9 +41,25 @@ export const REVIEW_FLAG_KINDS = [
   'owner_complaint',
   /** FA11: the owner said on the joining call that the worker didn't come. */
   'joining_no_show',
+  /** T-Verify: the Team Lead marked a registration as fake (Manager sees it). */
+  'registration_suspect',
+  /** T-Quality: the Team Lead flagged a recorded call. */
+  'call_flagged',
+  /** T-Visits: the Team Lead flagged a shop visit. */
+  'visit_flagged',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];
 
 export const REVIEW_FLAG_STATUSES = ['open', 'resolved', 'dismissed'] as const;
 export type ReviewFlagStatus = (typeof REVIEW_FLAG_STATUSES)[number];
+
+/** Flags about money or a business hiding a hire: the CEO decides them (guide, Quality). */
+export const CEO_OWNED_FLAG_KINDS: readonly string[] = [
+  'payment_overdue',
+  'payment_mismatch',
+  'payout_name_mismatch',
+  'payout_shared_account',
+  'payout_matches_staff',
+  'bypass_suspected',
+];

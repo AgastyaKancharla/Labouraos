@@ -52,6 +52,8 @@ import { FieldAppModule } from './modules/field-app/field-app.module';
 import { FinanceModule } from './modules/finance/finance.module';
 import { FieldVisitModule } from './modules/field-visit/field-visit.module';
 import { ScreensFieldModule } from './modules/screens-field/screens-field.module';
+import { RequestsModule } from './modules/requests/requests.module';
+import { ScreensTeamLeadModule } from './modules/screens-team-lead/screens-team-lead.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
 
 @Module({
@@ -110,6 +112,8 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
     FieldAppModule,
     FieldVisitModule,
     ScreensFieldModule,
+    RequestsModule,
+    ScreensTeamLeadModule,
   ],
 })
 export class AppModule {}

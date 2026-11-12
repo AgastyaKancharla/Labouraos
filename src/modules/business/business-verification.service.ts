@@ -597,6 +597,7 @@ export class BusinessVerificationService {
           reviewFlag.id,
           { id: actorId, role: actor.role },
           { status: 'resolved', resolution: 'Team Lead reviewed the in-person onboarding and approved it' },
+          { closedByOwnWork: true },
         );
       }
     }
@@ -609,6 +610,7 @@ export class BusinessVerificationService {
           flag.id,
           { id: actorId, role: actor.role },
           { status: 'resolved', resolution: 'Business verification approved after answered verification call' },
+          { closedByOwnWork: true },
         );
       }
     }

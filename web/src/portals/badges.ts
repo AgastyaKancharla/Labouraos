@@ -11,6 +11,12 @@ const FETCHERS: Partial<Record<BadgeSource, () => Promise<number>>> = {
   'login-codes': async () => (await api.get<unknown[]>('/login-codes/pending')).length,
   'review-flags': async () => (await api.get<unknown[]>('/review-flags', { query: { status: 'open' } })).length,
   'refunds-due': async () => (await api.get<unknown[]>('/refunds/due')).length,
+  // Requests waiting for this Team Lead or Manager (GET /requests/waiting, scoped by the reporting line).
+  'requests-open': async () => (await api.get<unknown[]>('/requests/waiting')).length,
+  // Team Lead sidebar (GET /team-lead/*, Team Leads only).
+  'calls-to-review': async () => (await api.get<{ summary: { toListen: number } }>('/team-lead/quality')).summary.toListen,
+  'registrations-to-check': async () => (await api.get<{ summary: { toCheck: number } }>('/team-lead/registrations')).summary.toCheck,
+  'visit-proof-to-check': async () => (await api.get<{ summary: { toCheck: number } }>('/team-lead/visits')).summary.toCheck,
   // Finance sidebar (GET /finance/counts, Finance and CEO only).
   'bank-credits-unmatched': async () => (await financeCounts()).bankCreditsUnmatched,
   'invoices-unpaid': async () => (await financeCounts()).invoicesUnpaid,

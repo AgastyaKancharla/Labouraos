@@ -97,7 +97,8 @@ describe('routes and guards', () => {
 
   it('renders every portal home for its role', async () => {
     const cases = [
-      ['team_lead', '/team-lead', 'My team'],
+      // The Team Lead home (T-Home) greets the Team Lead by name.
+      ['team_lead', '/team-lead', /^Good (morning|afternoon|evening), Ravi$/],
       // Money today (FN-Home) greets the Finance person by name.
       ['finance', '/finance', /^Good (morning|afternoon|evening), Nisha$/],
       ['call_agent', '/call-agent', 'Home'],
