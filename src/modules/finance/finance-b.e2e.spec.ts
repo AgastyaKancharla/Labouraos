@@ -485,7 +485,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
     const aprilWorkingDays = Array.from({ length: 30 }, (_, i) => `2003-04-${String(i + 1).padStart(2, '0')}`).filter((d) => day(d).getUTCDay() !== 0);
 
     /** Settings change after the months were approved: another divisor, other full-day hours, Saturdays off. */
-    async function changeSettings() {
+    async function changeSettings(effectiveFrom = new Date()) {
       const current = await prisma.pricingPolicy.findFirstOrThrow({ where: { effectiveFrom: { lte: new Date() } }, orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }] });
       const copy: Record<string, unknown> = { ...current };
       delete copy.id;
@@ -497,7 +497,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
           payrollSalaryDays: 30,
           productionHoursFullDay: current.productionHoursFullDay + 1,
           weeklyOffDays: [0, 6],
-          effectiveFrom: new Date(),
+          effectiveFrom,
         },
       });
       tempPolicyId = policy.id;
@@ -532,6 +532,34 @@ describe('Finance back office (Phase 22 Part B)', () => {
       } finally {
         await undoSettings();
       }
+    });
+
+    it('keeps the Settings on the sheet, so even a back-dated Settings version makes no correction', async () => {
+      const march = await prisma.payrollRun.findUniqueOrThrow({ where: { month: MONTH } });
+      const then = await prisma.pricingPolicy.findFirstOrThrow({ where: { effectiveFrom: { lte: march.preparedAt } }, orderBy: [{ effectiveFrom: 'desc' }, { createdAt: 'desc' }] });
+      expect(march.weeklyOffDays).toEqual(then.weeklyOffDays);
+      expect(march.fullDayMinutes).toBe(Math.round(then.productionHoursFullDay * 60));
+      // A version dated just before March was prepared: it is "the Settings in force then", but the sheet kept its own.
+      await changeSettings(new Date(march.preparedAt.getTime() - 1));
+      try {
+        const april = await sheetFor(APRIL);
+        expect(rowOf(april, asha.id)?.correctionPaise).toBe(0);
+        expect(rowOf(april, bala.id)?.correctionPaise).toBe(0);
+      } finally {
+        await undoSettings();
+      }
+      // A sheet prepared before the Settings were kept falls back to the version in force at its preparedAt.
+      await prisma.payrollRun.update({ where: { id: march.id }, data: { fullDayMinutes: null } });
+      await changeSettings();
+      try {
+        const april = await sheetFor(APRIL);
+        expect(rowOf(april, asha.id)?.correctionPaise).toBe(0);
+        expect(rowOf(april, bala.id)?.correctionPaise).toBe(0);
+      } finally {
+        await undoSettings();
+        await prisma.payrollRun.update({ where: { id: march.id }, data: { fullDayMinutes: march.fullDayMinutes } });
+      }
+      expect(await prisma.payrollCorrection.count({ where: { staffId: { in: staffIds } } })).toBe(0);
     });
 
     it('treats a day change approved after the month (a Team Lead portal request) like any attendance change: a correction on the next sheet', async () => {

@@ -310,10 +310,11 @@ export class PayrollService {
   }
 
   /**
-   * The month's working days. Today's Settings by default; a frozen month is
-   * worked out again with the weekly offs in force when it was prepared, so
-   * a later Settings change never looks like a correction. Holidays are
-   * today's list (a holiday added or removed later is a real correction).
+   * The month's working days. Today's Settings by default; given weekly offs
+   * (the live draft passes today's, a frozen month those kept on its sheet)
+   * they are used instead, so a later Settings change never looks like a
+   * correction. Holidays are today's list (a holiday added or removed later
+   * is a real correction).
    */
   private async workingDayKeys(month: string, weeklyOffDays?: number[]): Promise<{ working: string[]; holidays: number }> {
     if (!weeklyOffDays) {
@@ -332,6 +333,17 @@ export class PayrollService {
       else working.push(date.toISOString().slice(0, 10));
     }
     return { working, holidays: holidayCount };
+  }
+
+  /**
+   * The weekly offs and full-day minutes a sheet was worked out with: kept on
+   * the sheet at Prepare; for a sheet prepared before they were kept, the
+   * Settings version in force when it was prepared.
+   */
+  private async rulesOf(run: PayrollRun): Promise<{ weeklyOffDays: number[]; fullDayMinutes: number }> {
+    if (run.fullDayMinutes !== null) return { weeklyOffDays: run.weeklyOffDays, fullDayMinutes: Math.max(1, run.fullDayMinutes) };
+    const policy = await this.policyAt(run.preparedAt);
+    return { weeklyOffDays: policy.weeklyOffDays, fullDayMinutes: Math.max(1, Math.round(policy.productionHoursFullDay * 60)) };
   }
 
   /** The Settings a sheet was worked out with: the version in force when it was prepared. */
@@ -456,8 +468,8 @@ export class PayrollService {
   /**
    * Works out again every approved month of the last year from today's
    * holidays and attendance, with that sheet's own frozen salary days and the
-   * Settings in force when it was prepared (so a Settings change never looks
-   * like a correction), and returns what is owed either way that is not
+   * weekly offs and full-day minutes kept on it at Prepare (so a Settings
+   * change, even a back-dated version, never looks like a correction), and returns what is owed either way that is not
    * already recorded. The approved sheet itself never changes.
    */
   private async foundCorrections(month: string): Promise<OpenCorrection[]> {
@@ -477,9 +489,8 @@ export class PayrollService {
     const already = (staffId: string, m: string) => recorded.find((g) => g.staffId === staffId && g.relatesToMonth === m)?._sum.amountPaise ?? 0;
     const out: OpenCorrection[] = [];
     for (const run of runs) {
-      const policy = await this.policyAt(run.preparedAt);
-      const fullDayMinutes = Math.max(1, Math.round(policy.productionHoursFullDay * 60));
-      const { working } = await this.workingDayKeys(run.month, policy.weeklyOffDays);
+      const { weeklyOffDays, fullDayMinutes } = await this.rulesOf(run);
+      const { working } = await this.workingDayKeys(run.month, weeklyOffDays);
       const mine = run.lines.filter((l) => l.monthlyPaise > 0);
       const attendance = await this.attendanceFor(mine.map((l) => l.staffId), run.month);
       for (const line of mine) {
@@ -568,11 +579,20 @@ export class PayrollService {
     month: string,
     now = new Date(),
     ownRunId: string | null = null,
-  ): Promise<{ rows: SheetRow[]; missingSalary: { staffId: string; staffCode: string; name: string }[]; openDays: { name: string; days: string[] }[]; salaryDays: number; corrections: OpenCorrection[]; correctionRunIds: string[] }> {
+  ): Promise<{
+    rows: SheetRow[];
+    missingSalary: { staffId: string; staffCode: string; name: string }[];
+    openDays: { name: string; days: string[] }[];
+    salaryDays: number;
+    corrections: OpenCorrection[];
+    correctionRunIds: string[];
+    rules: { weeklyOffDays: number[]; fullDayMinutes: number };
+  }> {
     const policy = await this.pricing.current();
     const salaryDays = salaryDaysFor(policy.payrollSalaryDays);
     const fullDayMinutes = Math.max(1, Math.round(policy.productionHoursFullDay * 60));
-    const { working, holidays } = await this.workingDayKeys(month);
+    const weeklyOffDays = [...policy.weeklyOffDays];
+    const { working, holidays } = await this.workingDayKeys(month, weeklyOffDays);
     const yesterday = istDay(new Date(now.getTime() - 24 * 3600_000));
     const upTo = monthDays(month).last < yesterday ? monthDays(month).last : yesterday;
     const people = await this.candidates(month);
@@ -607,7 +627,7 @@ export class PayrollService {
       }
     }
     rows.sort((a, b) => a.staffCode.localeCompare(b.staffCode));
-    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds };
+    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds, rules: { weeklyOffDays, fullDayMinutes } };
   }
 
   private rowFromLine(line: PayrollLine): SheetRow {
@@ -743,7 +763,7 @@ export class PayrollService {
       throw new ConflictException(`${monthLabel(month)} pay is already approved by the CEO.`);
     }
     await this.markMonthAbsences(month);
-    const { rows, missingSalary, openDays, corrections, correctionRunIds } = await this.draft(month, now, existing?.id ?? null);
+    const { rows, missingSalary, openDays, corrections, correctionRunIds, rules } = await this.draft(month, now, existing?.id ?? null);
     if (openDays.length) {
       throw new BadRequestException(`Some days are still open, so attendance is not final: ${openDays.map((o) => `${o.name} on ${o.days.join(', ')}`).join('; ')}. Close those days first.`);
     }
@@ -752,6 +772,8 @@ export class PayrollService {
     }
     if (!rows.length) throw new BadRequestException(`Nobody was on the staff in ${monthLabel(month)}.`);
     const totals = { people: rows.length, grossPaise: sumPaise(rows.map((r) => r.grossPaise)), deductionsPaise: sumPaise(rows.map((r) => r.deductionsPaise)), netPaise: sumPaise(rows.map((r) => r.netPaise)) };
+    // The Settings this sheet was worked out with, kept on it for later recomputes.
+    const snapshot = { weeklyOffDays: rules.weeklyOffDays, fullDayMinutes: rules.fullDayMinutes };
     const lineData = (runId: string): Prisma.PayrollLineCreateManyInput[] =>
       rows.map((r) => ({
         runId,
@@ -801,14 +823,14 @@ export class PayrollService {
         if (existing) {
           const claimed = await tx.payrollRun.updateMany({
             where: { id: existing.id, status: { in: ['with_ceo', 'returned'] }, preparedAt: existing.preparedAt },
-            data: { status: 'with_ceo', ...totals, preparedByStaffId: actor.id, preparedAt: now, returnedAt: null, returnedByStaffId: null, returnedReason: null },
+            data: { status: 'with_ceo', ...totals, ...snapshot, preparedByStaffId: actor.id, preparedAt: now, returnedAt: null, returnedByStaffId: null, returnedReason: null },
           });
           if (claimed.count !== 1) throw new ConflictException('The sheet changed meanwhile; reload');
           runId = existing.id;
           await tx.payrollLine.deleteMany({ where: { runId } });
           await tx.payrollLine.createMany({ data: lineData(runId) });
         } else {
-          runId = (await tx.payrollRun.create({ data: { month, status: 'with_ceo', ...totals, preparedByStaffId: actor.id, preparedAt: now } })).id;
+          runId = (await tx.payrollRun.create({ data: { month, status: 'with_ceo', ...totals, ...snapshot, preparedByStaffId: actor.id, preparedAt: now } })).id;
           await tx.payrollLine.createMany({ data: lineData(runId) });
         }
         // Worked out again: release what this sheet held, then apply what it holds now.
