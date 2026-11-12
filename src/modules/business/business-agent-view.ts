@@ -63,3 +63,36 @@ export function businessForViewer<T extends { id: string; accountAgentId?: strin
   }
   return limited as T & { detailsLimited: true };
 }
+
+type VisitReader = {
+  visitAssignment: { findMany(args: { where: { assignedStaffId: string; status: string }; select: { businessId: true } }): Promise<Array<{ businessId: string }>> };
+};
+
+/**
+ * M2: who is looking, for the agent view. Field and call agents see full details
+ * only of businesses they hold (account agent, lead creator, open verification
+ * visit). Shared by the businesses API and every screen that shows a business.
+ */
+export async function agentViewerFor(db: VisitReader, staffId: string, role: string): Promise<AgentViewer> {
+  if (!(AGENT_LIMITED_ROLES as readonly string[]).includes(role)) return { id: staffId, role };
+  const visits = await db.visitAssignment.findMany({
+    where: { assignedStaffId: staffId, status: 'assigned' },
+    select: { businessId: true },
+  });
+  return { id: staffId, role, assignedBusinessIds: new Set(visits.map((v) => v.businessId)) };
+}
+
+/**
+ * A business-name search for an agent matches the hidden names (legal or owner name)
+ * only on businesses they hold, so a search can't reveal them.
+ */
+export function heldByAgent(viewer: AgentViewer): Record<string, unknown> | null {
+  if (!(AGENT_LIMITED_ROLES as readonly string[]).includes(viewer.role)) return null;
+  return {
+    OR: [
+      { accountAgentId: viewer.id },
+      { leadCreatedByStaffId: viewer.id },
+      ...(viewer.assignedBusinessIds?.size ? [{ id: { in: [...viewer.assignedBusinessIds] } }] : []),
+    ],
+  };
+}

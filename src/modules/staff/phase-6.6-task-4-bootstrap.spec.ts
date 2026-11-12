@@ -1,6 +1,5 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { authenticator } from 'otplib';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -136,7 +135,7 @@ describe('Phase 6.6 Task 4: Harden the CEO bootstrap', () => {
       const totpSecret = setupRes.body.secret as string;
 
       // 5. CEO confirms and enables 2FA via /staff/2fa/enable
-      const totpCode = authenticator.generate(totpSecret);
+      const totpCode = await stableTotpCode(totpSecret);
       const enableRes = await request(app.getHttpServer())
         .post('/staff/2fa/enable')
         .set('Authorization', `Bearer ${setupToken}`)

@@ -1518,9 +1518,11 @@ export class PlacementService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
+    // The same who-can-see rule as the list: out of scope answers 404, as if it did not exist.
+    const scope = await this.placementListScope(actor);
     const placement = await this.prisma.placement.findFirst({
       where: {
-        OR: [{ id }, { code: id }],
+        AND: [{ OR: [{ id }, { code: id }] }, scope],
       },
       include: {
         business: true,

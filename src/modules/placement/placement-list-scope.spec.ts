@@ -1,4 +1,4 @@
-import { INestApplication } from '@nestjs/common';
+import { INestApplication, NotFoundException } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -39,6 +39,7 @@ describe('Placements list: scoped to the people involved, company money only for
     };
     await make('CEO', 'ceo');
     await make('FIN', 'finance');
+    await make('MGR', 'manager');
     await make('TL', 'team_lead');
     await make('CA', 'call_agent', staff.TL.id);
     await make('FA', 'field_agent');
@@ -123,6 +124,23 @@ describe('Placements list: scoped to the people involved, company money only for
       expect(names(rows)).toEqual(['accountAgentFA', 'introducedByOther', 'nobody', 'registeredByCA']);
       expect(rows[0]).toMatchObject({ placementFee: 1000000, gstAmount: 180000 });
     }
+  });
+
+  it('applies the same scope to a single placement: out of scope is 404', async () => {
+    await expect(placements.findById(byName.accountAgentFA, staff.CA.id)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(placements.findById(byName.nobody, staff.TL.id)).rejects.toBeInstanceOf(NotFoundException);
+    await expect(placements.findById(byName.registeredByCA, staff.OTHER.id)).rejects.toBeInstanceOf(NotFoundException);
+    // By code as well as by id.
+    const code = (await prisma.placement.findUniqueOrThrow({ where: { id: byName.introducedByOther } })).code;
+    expect(((await placements.findById(code, staff.OTHER.id)) as Record<string, unknown>).id).toBe(byName.introducedByOther);
+    expect(((await placements.findById(byName.registeredByCA, staff.TL.id)) as Record<string, unknown>).id).toBe(byName.registeredByCA);
+    for (const who of ['CEO', 'FIN']) {
+      expect(((await placements.findById(byName.nobody, staff[who].id)) as Record<string, unknown>).id).toBe(byName.nobody);
+    }
+    // A Manager opens any placement, as before, with no money.
+    const mgr = (await placements.findById(byName.nobody, staff.MGR.id)) as Record<string, unknown>;
+    expect(mgr.id).toBe(byName.nobody);
+    expect(mgr).not.toHaveProperty('placementFee');
   });
 
   it('keeps the fee off a single placement for an agent too', async () => {

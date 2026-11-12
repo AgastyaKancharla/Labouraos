@@ -1,3 +1,4 @@
+import { freshTotpWindow } from '../../test-support/enrolled-login-spec';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -25,6 +26,8 @@ describe('Phase 9 Task 4: Field Agent Device ID Enforcement', () => {
     if (remaining < TOTP_SAFE_MARGIN_MS) {
       await new Promise((resolve) => setTimeout(resolve, remaining + 50));
     }
+    // A code is accepted once per step: open a fresh step for this person first.
+    await freshTotpWindow(secret);
     return totpService.generateToken(secret);
   };
 

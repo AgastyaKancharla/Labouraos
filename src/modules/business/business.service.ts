@@ -39,7 +39,7 @@ import { BusinessClock } from './business-clock';
 import { BusinessVerificationService } from './business-verification.service';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
-import { AGENT_LIMITED_ROLES, AgentViewer, businessForViewer } from './business-agent-view';
+import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
 
 @Injectable()
 export class BusinessService {
@@ -742,12 +742,7 @@ export class BusinessService {
    * verification visit); see business-agent-view.ts.
    */
   private async agentViewer(staffId: string, role: string): Promise<AgentViewer> {
-    if (!(AGENT_LIMITED_ROLES as readonly string[]).includes(role)) return { id: staffId, role };
-    const visits = await this.prisma.visitAssignment.findMany({
-      where: { assignedStaffId: staffId, status: 'assigned' },
-      select: { businessId: true },
-    });
-    return { id: staffId, role, assignedBusinessIds: new Set(visits.map((v) => v.businessId)) };
+    return agentViewerFor(this.prisma, staffId, role);
   }
 
   async findById(id: string, actor?: { id: string; role: string }) {

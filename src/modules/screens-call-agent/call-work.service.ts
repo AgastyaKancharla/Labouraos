@@ -1,3 +1,4 @@
+import { agentViewerFor, businessForViewer } from '../business/business-agent-view';
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund, latestPaidActivations } from '../../common/money/current-guarantee-refund';
 import { SEEKER_ENDED_STATUSES } from '../refund-priority/refund-priority.rules';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
@@ -818,7 +819,7 @@ export class CallWorkService {
     const history = await this.history(user.sub, type, id);
     const base = { onList, history, canCallNow: ctx.inCallingHours && available, attendanceAvailable: available, inCallingHours: ctx.inCallingHours, callingHours: ctx.callingHours };
     if (type === 'job_seeker') return { type, ...base, ...(await this.seekerProfile(id, ctx)) };
-    if (type === 'business') return { type, ...base, ...(await this.businessProfile(id)) };
+    if (type === 'business') return { type, ...base, ...(await this.businessProfile(id, user)) };
     return { type, ...base, ...(await this.referralProfile(id)) };
   }
 
@@ -918,13 +919,15 @@ export class CallWorkService {
     };
   }
 
-  private async businessProfile(id: string) {
-    const b = await this.prisma.business.findUniqueOrThrow({
+  private async businessProfile(id: string, user: JwtPayload) {
+    const found = await this.prisma.business.findUniqueOrThrow({
       where: { id },
       include: {
         vacancies: { where: { status: 'open' }, select: { id: true, code: true, tradeSkill: true, headcount: true, roleTitle: true } },
       },
     });
+    // M2: an agent sees the owner's name and registration details only of businesses they hold.
+    const b = businessForViewer(found, await agentViewerFor(this.prisma, user.sub, user.role));
     const agent = b.accountAgentId
       ? await this.prisma.staff.findUnique({ where: { id: b.accountAgentId }, select: { name: true } })
       : null;
@@ -935,8 +938,9 @@ export class CallWorkService {
       maskedPhone: maskPhoneLast4(b.phone),
       businessType: b.businessType,
       locality: b.locality,
-      contactName: b.ownerName,
+      contactName: b.additionalContactName ?? b.ownerName,
       contactRole: b.contactRole,
+      detailsLimited: b.detailsLimited ?? false,
       verificationStatus: b.verificationStatus,
       accountAgent: agent?.name ?? null,
       openVacancies: b.vacancies,

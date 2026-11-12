@@ -317,10 +317,16 @@ model Referral {
   pausedByStaffId String?
   pauseReason   String?
   anonymisedAt  DateTime?
+  /// The agent who registered the partner. A Team Lead reads only partners their
+  /// team registered; partners registered before this was kept (null) are seen by
+  /// the CEO and Managers only.
+  registeredByStaffId String?
+  registeredBy  Staff?      @relation("ReferralRegisteredBy", fields: [registeredByStaffId], references: [id], onDelete: SetNull)
   createdAt     DateTime    @default(now())
   updatedAt     DateTime    @updatedAt
 
   @@index([city])
+  @@index([registeredByStaffId])
 }
 
 model Business {
@@ -764,6 +770,7 @@ model Staff {
   lockedReason      String?
   capturedVacancies Vacancy[]
   registeredJobSeekers JobSeeker[]      @relation("JobSeekerRegisteredBy")
+  registeredReferrals Referral[]        @relation("ReferralRegisteredBy")
   candidateIntroductionsShown CandidateIntroduction[] @relation("CandidateIntroductionShownBy")
   createdPlacements    Placement[]      @relation("PlacementCreatedBy")
   interviewsProposed   Interview[]      @relation("InterviewProposedBy")
@@ -803,6 +810,9 @@ model Staff {
   notificationsCleared Notification[] @relation("NotificationClearedBy")
   totpSecret        String?
   totpEnabled       Boolean          @default(false)
+  /// The 30-second time step of the last authenticator code accepted. A code is
+  /// accepted once: the same code (same step) or an older one is refused.
+  totpLastStep      Int?
   status            String           @default("active") // pending_invite, active, deactivated
   inviteTokenHash   String?          @unique // SHA-256 of the one-time invite token; the raw token is never stored
   inviteExpiresAt   DateTime?

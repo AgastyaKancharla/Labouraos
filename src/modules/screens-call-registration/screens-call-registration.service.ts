@@ -1,3 +1,4 @@
+import { agentSeesFullBusiness, agentViewerFor, businessForViewer } from '../business/business-agent-view';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
@@ -359,8 +360,8 @@ export class ScreensCallRegistrationService {
   }
 
   /** CA13b: what is left before candidates can be shown, and the draft vacancies. */
-  async business(ref: string) {
-    const business = await this.prisma.business.findFirst({
+  async business(ref: string, actor?: { sub: string; role: string }) {
+    const found = await this.prisma.business.findFirst({
       where: isUuid(ref) ? { id: ref } : { code: ref },
       include: {
         agreements: { orderBy: { signedAt: 'desc' }, take: 1, select: { signedAt: true, signedName: true, signedRole: true } },
@@ -377,14 +378,18 @@ export class ScreensCallRegistrationService {
         },
       },
     });
-    if (!business) throw new NotFoundException(`Business '${ref}' not found`);
+    if (!found) throw new NotFoundException(`Business '${ref}' not found`);
+    // M2: an agent sees the owner's name and the signed agreement's names only of businesses they hold.
+    const viewer = actor ? await agentViewerFor(this.prisma, actor.sub, actor.role) : null;
+    const full = !viewer || agentSeesFullBusiness(found, viewer);
+    const business = viewer ? businessForViewer(found, viewer) : found;
     const now = this.clock.now();
     const link = await this.prisma.publicLink.findFirst({
       where: { purpose: 'business_agreement', subjectType: 'business', subjectId: business.id },
       orderBy: { createdAt: 'desc' },
       select: { createdAt: true, expiresAt: true, usedAt: true, revokedAt: true },
     });
-    const agreement = business.agreements[0];
+    const agreement = found.agreements[0];
     const visit = business.visits[0];
     const assignment = business.visitAssignments[0];
     const status = business.verificationStatus ?? 'lead';
@@ -404,7 +409,7 @@ export class ScreensCallRegistrationService {
       steps: {
         phone: step(business.phoneVerified ? 'done' : 'not_started', { time: business.phoneVerified ? business.createdAt : null }),
         agreement: agreement
-          ? step('done', { time: agreement.signedAt, signedName: agreement.signedName, signedRole: agreement.signedRole })
+          ? step('done', { time: agreement.signedAt, signedName: full ? agreement.signedName : null, signedRole: full ? agreement.signedRole : null })
           : linkLive
             ? step('in_progress', { time: link?.createdAt ?? null, expiresAt: link?.expiresAt ?? null })
             : step(link ? 'stuck' : 'not_started', { time: link?.createdAt ?? null, reason: link ? 'link_expired' : null }),
