@@ -1,3 +1,4 @@
+import { AgentViewer, agentViewerFor, heldByAgent } from '../business/business-agent-view';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -103,6 +104,7 @@ export class SearchService {
     const empty = { query: raw ?? '', kind: null, counts: zeroCounts(), results: [] as SearchRow[] };
     if (!parsed) return empty;
     const team = await this.teamIds(user);
+    const viewer = await agentViewerFor(this.prisma, user.sub, user.role);
     const types = (onlyType ? [onlyType] : SEARCH_TYPES) as SearchType[];
     const wanted = types.filter((t) => parsed.kind !== 'id' || parsed.idType === t);
     const limit = onlyType ? ONE_TYPE_LIMIT : PER_TYPE;
@@ -111,7 +113,7 @@ export class SearchService {
     const counts = zeroCounts();
     await Promise.all(
       wanted.map(async (type) => {
-        const { rows, total } = await this.searchType(type, parsed, team, limit);
+        const { rows, total } = await this.searchType(type, parsed, team, limit, viewer);
         counts[type] = total;
         results.push(...rows);
       }),
@@ -122,12 +124,12 @@ export class SearchService {
     return { query: raw, kind: parsed.kind, counts, results };
   }
 
-  private async searchType(type: SearchType, q: ParsedQuery, team: string[] | null, limit: number) {
+  private async searchType(type: SearchType, q: ParsedQuery, team: string[] | null, limit: number, viewer: AgentViewer) {
     switch (type) {
       case 'job_seeker':
         return this.jobSeekers(q, team, limit);
       case 'business':
-        return this.businesses(q, team, limit);
+        return this.businesses(q, team, limit, viewer);
       case 'referral':
         return this.referrals(q, team, limit);
       case 'vacancy':
@@ -188,7 +190,10 @@ export class SearchService {
     };
   }
 
-  private async businesses(q: ParsedQuery, team: string[] | null, limit: number) {
+  private async businesses(q: ParsedQuery, team: string[] | null, limit: number, viewer: AgentViewer) {
+    // M2: the owner's name matches only on businesses an agent holds, so a search can't reveal it.
+    const held = heldByAgent(viewer) as Prisma.BusinessWhereInput | null;
+    const ownerNameMatch: Prisma.BusinessWhereInput = { ownerName: { contains: q.name ?? '', mode: 'insensitive' } };
     const match: Prisma.BusinessWhereInput =
       q.kind === 'id'
         ? { code: this.codeWhere(q) }
@@ -197,7 +202,7 @@ export class SearchService {
           : {
               OR: [
                 { name: { contains: q.name!, mode: 'insensitive' } },
-                { ownerName: { contains: q.name!, mode: 'insensitive' } },
+                held ? { AND: [ownerNameMatch, held] } : ownerNameMatch,
               ],
             };
     const where: Prisma.BusinessWhereInput = {

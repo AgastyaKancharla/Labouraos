@@ -1,3 +1,4 @@
+import { agentViewerFor, businessForViewer, heldByAgent } from '../business/business-agent-view';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -133,9 +134,12 @@ export class FieldSellingScreensService {
       };
     }
     if (query.length < 2) return { query, results: [] };
+    // M2: the legal name matches only on businesses the agent holds, so a search can't reveal it.
+    const held = heldByAgent(await agentViewerFor(this.prisma, actor.id, actor.role)) as Prisma.BusinessWhereInput | null;
+    const legalNameMatch: Prisma.BusinessWhereInput = { legalName: { contains: query, mode: 'insensitive' } };
     const where: Prisma.BusinessWhereInput = /^bz-\d+$/i.test(query)
       ? { code: query.toUpperCase() }
-      : { OR: [{ name: { contains: query, mode: 'insensitive' } }, { legalName: { contains: query, mode: 'insensitive' } }] };
+      : { OR: [{ name: { contains: query, mode: 'insensitive' } }, held ? { AND: [legalNameMatch, held] } : legalNameMatch] };
     const rows = await this.businessRows(where, [{ name: 'asc' }], SEARCH_LIMIT * 3, actor);
     const lower = query.toLowerCase();
     rows.sort((a, b) => Number(!a.name.toLowerCase().startsWith(lower)) - Number(!b.name.toLowerCase().startsWith(lower)) ||
@@ -145,7 +149,7 @@ export class FieldSellingScreensService {
 
   /** FA15b header / FA17 header: the business and its vacancies (with OTP state). */
   async business(actor: SellingActor, ref: string) {
-    const business = await this.prisma.business.findFirst({
+    const found = await this.prisma.business.findFirst({
       where: ref.startsWith('BZ-') ? { code: ref } : { id: ref },
       include: {
         agreements: { orderBy: { signedAt: 'desc' }, take: 1, select: { signedAt: true } },
@@ -156,9 +160,11 @@ export class FieldSellingScreensService {
         },
       },
     });
-    if (!business) throw new NotFoundException('Business not found');
+    if (!found) throw new NotFoundException('Business not found');
+    // M2: the owner's name only for a business the agent holds (shared rule).
+    const business = businessForViewer(found, await agentViewerFor(this.prisma, actor.id, actor.role));
     const now = this.clock.now();
-    const signedAt = business.agreements[0]?.signedAt ?? null;
+    const signedAt = found.agreements[0]?.signedAt ?? null;
     return {
       id: business.id,
       code: business.code,
