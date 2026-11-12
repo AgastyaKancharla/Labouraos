@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { localCalendarToUtc } from '../../common/time/period-boundary';
 import { AttendanceClock } from '../attendance/attendance-clock';
+import { FollowUpHandoverService } from '../follow-up/follow-up-handover.service';
 
 jest.setTimeout(180000);
 
@@ -127,6 +128,9 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
   });
 
   afterAll(async () => {
+    const leaves = await prisma.leaveRequest.findMany({ where: { staffId: { in: staffIds } }, select: { id: true } });
+    await prisma.followUpHandover.deleteMany({ where: { leaveRequestId: { in: leaves.map((l) => l.id) } } });
+    await prisma.followUpTask.deleteMany({ where: { code: { startsWith: `FU-RQ-${stamp}` } } });
     await prisma.notification.deleteMany({ where: { recipientStaffId: { in: staffIds } } });
     await prisma.staffRequest.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staffCoachingNote.deleteMany({ where: { staffId: { in: staffIds } } });
@@ -446,6 +450,92 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
       expect(((await waiting(managerA)).find((row) => row.ref === ref) as Detail).canSendBack).toBe(false);
       expect((await post(managerA, `/requests/${ref}/send-back`, { note: 'x' })).status).toBe(400);
       expect((await post(managerA, `/requests/device.not-a-device/send-back`, { note: 'x' })).status).toBe(400);
+    });
+  });
+
+  describe('T-Req-Sneha: her follow-ups on the leave days go to a teammate, and come back after', () => {
+    let taskCounter = 0;
+    async function task(owner: Person, dueAt: string) {
+      taskCounter += 1;
+      return prisma.followUpTask.create({
+        data: {
+          code: `FU-RQ-${stamp}-${taskCounter}`,
+          kind: 'not_selected_day_7',
+          subjectType: 'job_seeker',
+          subjectId: `seeker-${taskCounter}`,
+          dueAt: new Date(dueAt),
+          assignedStaffId: owner.id,
+        },
+      });
+    }
+
+    it('shows the follow-ups planned for her, moves them to the picked teammate (audited), and moves pending ones back after the leave', async () => {
+      const deepa = await make('call_agent', 'CAA3RQ', leadA.id);
+      const rahul = await make('call_agent', 'CAA4RQ', leadA.id);
+      at(2027, 6, 1, 10);
+      const res = await post(agentA1, '/attendance/leave', { kind: 'emergency', fromDate: '2027-06-09', toDate: '2027-06-09', reason: 'Fever' });
+      expect(res.status).toBe(201);
+      const ref = `leave.${res.body.id}`;
+      const morning = await task(agentA1, '2027-06-09T05:30:00.000Z');
+      const evening = await task(agentA1, '2027-06-09T12:30:00.000Z');
+      const nextDay = await task(agentA1, '2027-06-10T05:30:00.000Z');
+
+      const detail = await get(leadA, `/requests/${ref}`);
+      expect(detail.status).toBe(200);
+      expect(detail.body.followUps.planned).toBe(2);
+      const mates = detail.body.followUps.teammates.map((m: { id: string }) => m.id);
+      expect(mates).toEqual(expect.arrayContaining([deepa.id, rahul.id]));
+      // Same role and same team only: not the field agent, not another team.
+      expect(mates).not.toContain(agentA2.id);
+      expect(mates).not.toContain(agentB1.id);
+
+      // Someone outside the team is refused and nothing is decided.
+      const wrong = await post(leadA, `/requests/${ref}/decide`, { decision: 'approved', followUps: { mode: 'teammate', staffId: agentB1.id } });
+      expect(wrong.status).toBe(400);
+      expect((await get(leadA, `/requests/${ref}`)).body.status).toBe('pending');
+      expect((await post(leadA, `/requests/${ref}/decide`, { decision: 'approved', followUps: { mode: 'teammate' } })).status).toBe(400);
+
+      const ok = await post(leadA, `/requests/${ref}/decide`, { decision: 'approved', followUps: { mode: 'teammate', staffId: deepa.id } });
+      expect(ok.status).toBe(200);
+      const owners = async () =>
+        Object.fromEntries(
+          (await prisma.followUpTask.findMany({ where: { id: { in: [morning.id, evening.id, nextDay.id] } } })).map((t) => [t.id, t.assignedStaffId]),
+        );
+      expect(await owners()).toEqual({ [morning.id]: deepa.id, [evening.id]: deepa.id, [nextDay.id]: agentA1.id });
+      const audit = await prisma.auditLog.findFirst({ where: { actorId: leadA.id, action: 'follow_up.handed_over' }, orderBy: { createdAt: 'desc' } });
+      expect(audit).not.toBeNull();
+      expect((await get(leadA, `/requests/${ref}`)).body.followUps.handedOver).toMatchObject({ count: 2, returned: 0 });
+
+      const handovers = app.get(FollowUpHandoverService);
+      // During the leave nothing comes back.
+      expect(await handovers.returnAfterLeave(new Date('2027-06-09T12:00:00.000Z'))).toEqual({ returned: 0 });
+      // Deepa makes one call; after the leave the other one goes back to her.
+      await prisma.followUpTask.update({ where: { id: morning.id }, data: { status: 'done', completedAt: new Date('2027-06-09T06:00:00.000Z') } });
+      expect(await handovers.returnAfterLeave(new Date('2027-06-09T18:30:00.000Z'))).toEqual({ returned: 1 });
+      expect(await owners()).toEqual({ [morning.id]: deepa.id, [evening.id]: agentA1.id, [nextDay.id]: agentA1.id });
+      expect(await prisma.followUpHandover.findFirst({ where: { followUpTaskId: morning.id } })).toMatchObject({ returnOutcome: 'done_by_teammate' });
+      expect(await prisma.auditLog.findFirst({ where: { action: 'follow_up.handed_back', entityCode: agentA1.code } })).not.toBeNull();
+      // Safe to repeat.
+      expect(await handovers.returnAfterLeave(new Date('2027-06-10T18:30:00.000Z'))).toEqual({ returned: 0 });
+    });
+
+    it('shares them between the teammates, or keeps them for her return', async () => {
+      at(2027, 6, 7, 10);
+      const shared1 = await post(agentA1, '/attendance/leave', { kind: 'casual', fromDate: '2027-06-16', toDate: '2027-06-16', reason: 'Family' });
+      expect(shared1.status).toBe(201);
+      const a = await task(agentA1, '2027-06-16T05:30:00.000Z');
+      const b = await task(agentA1, '2027-06-16T06:30:00.000Z');
+      const ok = await post(leadA, `/requests/leave.${shared1.body.id}/decide`, { decision: 'approved', followUps: { mode: 'share' } });
+      expect(ok.status).toBe(200);
+      const rows = await prisma.followUpTask.findMany({ where: { id: { in: [a.id, b.id] } } });
+      const takers = new Set(rows.map((r) => r.assignedStaffId));
+      expect(takers.size).toBe(2);
+      expect(takers.has(agentA1.id)).toBe(false);
+
+      const kept = await post(agentA1, '/attendance/leave', { kind: 'casual', fromDate: '2027-06-23', toDate: '2027-06-23', reason: 'Exam' });
+      const c = await task(agentA1, '2027-06-23T05:30:00.000Z');
+      expect((await post(leadA, `/requests/leave.${kept.body.id}/decide`, { decision: 'approved', followUps: { mode: 'keep' } })).status).toBe(200);
+      expect((await prisma.followUpTask.findUniqueOrThrow({ where: { id: c.id } })).assignedStaffId).toBe(agentA1.id);
     });
   });
 });

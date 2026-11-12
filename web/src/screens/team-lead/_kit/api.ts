@@ -51,6 +51,12 @@ export interface RequestView {
 
 export interface RequestDetail extends RequestView {
   history: { at: string; text: string }[];
+  /** Leave only: her follow-ups due on the leave days and the teammates who can take them. */
+  followUps?: {
+    planned: number;
+    teammates: { id: string; code: string; name: string }[];
+    handedOver: { count: number; returned: number; to: { id: string; code: string; name: string }[] };
+  } | null;
 }
 
 export interface PaceRow {

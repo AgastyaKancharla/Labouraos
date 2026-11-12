@@ -3,6 +3,7 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
 import { AttendanceModule } from '../attendance/attendance.module';
 import { JobSeekerModule } from '../job-seeker/job-seeker.module';
+import { FollowUpModule } from '../follow-up/follow-up.module';
 import { NotificationModule } from '../notification/notification.module';
 import { PlacementModule } from '../placement/placement.module';
 import { PricingModule } from '../pricing/pricing.module';
@@ -22,6 +23,7 @@ import { RequestsService } from './requests.service';
     AuditModule,
     AttendanceModule,
     JobSeekerModule,
+    FollowUpModule,
     NotificationModule,
     PlacementModule,
     PricingModule,

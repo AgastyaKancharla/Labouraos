@@ -44,6 +44,7 @@ import {
   startOfWeekIst,
 } from './requests-routing';
 import { RequestBellsService } from './request-bells.service';
+import { FollowUpHandoverService, type HandoverChoice } from '../follow-up/follow-up-handover.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
 export interface Actor {
@@ -207,6 +208,7 @@ export class RequestsService {
     private readonly jobSeekers: JobSeekerService,
     private readonly targets: TargetService,
     private readonly bells: RequestBellsService,
+    private readonly handovers: FollowUpHandoverService,
   ) {}
 
   // ================================================================= reads
@@ -258,7 +260,9 @@ export class RequestsService {
     const [kind, id] = parseRef(ref);
     const view = await this.one(actor, kind, id);
     const history = this.history(view, this.clock.now());
-    return { ...view, history };
+    // T-Req-Sneha: "Calls planned for her that day" and who can take them.
+    const followUps = kind === 'leave' ? await this.handovers.plan(id) : null;
+    return { ...view, history, followUps };
   }
 
   // ============================================================== actions
@@ -268,7 +272,7 @@ export class RequestsService {
    * approve only part of it; the rest is rejected with the reason, which is
    * then required (MG-Req-Vikram: "approve 3 of 5 days").
    */
-  async decide(actor: Actor, ref: string, body: { decision?: string; reason?: string; fromDate?: string; toDate?: string }) {
+  async decide(actor: Actor, ref: string, body: { decision?: string; reason?: string; fromDate?: string; toDate?: string; followUps?: HandoverChoice }) {
     this.assertDecider(actor);
     const [kind, id] = parseRef(ref);
     const decision = body?.decision === 'approved' || body?.decision === 'approve' ? 'approved' : body?.decision === 'rejected' || body?.decision === 'reject' ? 'rejected' : null;
@@ -291,12 +295,22 @@ export class RequestsService {
       });
     }
     if (!view.canDecide) throw new ForbiddenException(this.whyNot(actor, view));
+    // "Her follow-ups that day go to…": checked before anything is saved.
+    const handover = kind === 'leave' && decision === 'approved' && body?.followUps ? body.followUps : undefined;
+    if (handover) {
+      const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
+      const days = part
+        ? { fromDate: new Date(`${String(body.fromDate ?? body.toDate)}T00:00:00.000Z`), toDate: new Date(`${String(body.toDate ?? body.fromDate)}T00:00:00.000Z`) }
+        : leave;
+      await this.handovers.validate(leave.staffId, days, handover);
+    }
 
     if (kind === 'leave' || kind === 'correction') {
       await this.attendanceRequests.decide(actor, kind, id, decision, {
         reason,
         ...(part ? { fromDate: body.fromDate, toDate: body.toDate } : {}),
       });
+      if (handover) await this.handovers.handOver(actor.id, id, handover, this.clock.now());
     } else if (kind === 'device') {
       if (decision === 'approved') await this.devices.approve(id, actor);
       else await this.devices.revoke(id, actor);

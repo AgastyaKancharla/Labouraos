@@ -189,6 +189,36 @@ describe('One request (T-Req-Sneha) and Decided this week (T-Decided)', () => {
     await waitFor(() => expect(api.calls('POST /requests/leave.l1/decide')[0].body).toEqual({ decision: 'approved' }));
   });
 
+  it('hands her follow-ups on the leave day to the picked teammate when approving', async () => {
+    const deepa = { id: 'ca-4', code: 'CA-0010', name: 'Deepa Nair' };
+    const rahul = { id: 'ca-5', code: 'CA-0011', name: 'Rahul M' };
+    const api = mockApi({
+      ...common,
+      'GET /requests/leave.l1': {
+        ...request({}),
+        history: [],
+        followUps: { planned: 38, teammates: [deepa, rahul], handedOver: { count: 0, returned: 0, to: [] } },
+      },
+      'GET /attendance/leave/balance': { casual: { left: 3 }, emergency: { left: 2 } },
+      'GET /team-lead/leave': { schedule: [] },
+      'GET /team-lead/agents': { rows: [] },
+      'POST /requests/leave.l1/decide': {},
+      'GET /requests/decided': [],
+    });
+    signInAs('team_lead');
+    renderScreen(<RequestDetailScreen />, { portal: 'team-lead', path: '/team-lead/requests/leave.l1', route: '/team-lead/requests/:id', now: NOW });
+    expect(await screen.findByText('38 follow-ups')).toBeInTheDocument();
+    expect(screen.getByText('Calls planned for Sneha that day')).toBeInTheDocument();
+    const select = screen.getByRole('combobox', { name: /Her follow-ups that day go to/ });
+    expect(within(select).getByRole('option', { name: 'Share between Deepa and Rahul' })).toBeInTheDocument();
+    expect(within(select).getByRole('option', { name: 'Keep for her return' })).toBeInTheDocument();
+    await userEvent.selectOptions(select, 'ca-4');
+    await userEvent.click(screen.getByRole('button', { name: 'Approve leave' }));
+    await waitFor(() =>
+      expect(api.calls('POST /requests/leave.l1/decide')[0].body).toEqual({ decision: 'approved', followUps: { mode: 'teammate', staffId: 'ca-4' } }),
+    );
+  });
+
   it('lists who decided what this week, "You" for the Team Lead', async () => {
     mockApi({
       ...common,

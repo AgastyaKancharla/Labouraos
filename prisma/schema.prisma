@@ -2456,3 +2456,26 @@ model DataRequest {
   @@index([status, dueOn])
   @@index([subjectType, subjectId])
 }
+
+/// T-Req-Sneha "Her follow-ups that day go to…": a follow-up task moved to a
+/// teammate when a leave is approved, and moved back after the leave.
+model FollowUpHandover {
+  id               String    @id @default(uuid())
+  leaveRequestId   String
+  followUpTaskId   String
+  fromStaffId      String
+  toStaffId        String
+  /// share (round robin between teammates) or teammate (one person)
+  mode             String
+  movedAt          DateTime  @default(now())
+  movedByStaffId   String
+  /// The first day after the leave (IST midnight, stored UTC): pending tasks move back from then.
+  returnAfter      DateTime
+  returnedAt       DateTime?
+  /// returned, done_by_teammate, already_moved
+  returnOutcome    String?
+
+  @@index([leaveRequestId])
+  @@index([followUpTaskId])
+  @@index([returnedAt, returnAfter])
+}

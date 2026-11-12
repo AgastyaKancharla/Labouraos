@@ -38,6 +38,8 @@ export default function RequestDetailScreen() {
   const qc = useQueryClient();
   const team = useTeam();
   const [note, setNote] = useState('');
+  // "Her follow-ups that day go to": share | <teammate id> | keep (empty = the first offered choice).
+  const [handover, setHandover] = useState('');
   const detail = useQuery({ queryKey: ['requests', 'one', id], queryFn: () => api.get<RequestDetail>(`/requests/${encodeURIComponent(id)}`) });
   const r = detail.data;
   const personId = r?.person?.id;
@@ -48,9 +50,21 @@ export default function RequestDetailScreen() {
   const manager = team.data?.manager;
   const mgr = manager ? `${firstName(manager.name)} (Manager)` : 'the Manager';
 
+  const fu = r?.followUps;
+  const mates = fu?.teammates ?? [];
+  const offerHandover = Boolean(isLeave && fu && fu.planned > 0 && r?.status === 'pending');
+  const handoverChoice = handover || (mates.length > 1 ? 'share' : mates.length === 1 ? mates[0].id : 'keep');
+  const followUpsBody =
+    handoverChoice === 'keep' ? { mode: 'keep' } : handoverChoice === 'share' ? { mode: 'share' } : { mode: 'teammate', staffId: handoverChoice };
   const act = useMutation({
     mutationFn: (action: 'approved' | 'rejected' | 'forward') =>
-      action === 'forward' ? api.post(`/requests/${encodeURIComponent(id)}/forward`, { note }) : api.post(`/requests/${encodeURIComponent(id)}/decide`, { decision: action, reason: note.trim() || undefined }),
+      action === 'forward'
+        ? api.post(`/requests/${encodeURIComponent(id)}/forward`, { note })
+        : api.post(`/requests/${encodeURIComponent(id)}/decide`, {
+            decision: action,
+            reason: note.trim() || undefined,
+            ...(action === 'approved' && offerHandover ? { followUps: followUpsBody } : {}),
+          }),
     onSuccess: (_res, action) => {
       toast.success(action === 'forward' ? `Sent to ${mgr}` : action === 'approved' ? 'Approved · closed for everyone' : 'Rejected');
       void qc.invalidateQueries();
@@ -93,6 +107,13 @@ export default function RequestDetailScreen() {
     if (d.leaveKind === 'casual') before.push(['Planned leave this month', `${Number(d.casualDaysTakenThisMonth ?? 0)} taken · with this ${Number(d.casualDaysTakenThisMonth ?? 0) + Number(d.casualDaysPendingThisMonth ?? 0) + days} (you decide up to 3)`]);
     else before.push(['Emergency leave', 'Not counted against the 3-day limit']);
     before.push([`Others off on these days`, othersOff.length ? othersOff.join(', ') : 'Nobody']);
+    if (fu) {
+      const planned = `${fu.planned} follow-up${fu.planned === 1 ? '' : 's'}`;
+      const moved = fu.handedOver.count
+        ? ` · ${fu.handedOver.count} moved to ${fu.handedOver.to.map((m) => firstName(m.name)).join(' and ')}${fu.handedOver.returned ? ` · ${fu.handedOver.returned} back with ${who}` : ''}`
+        : '';
+      before.push([`Calls planned for ${who} ${days === 1 ? 'that day' : 'on these days'}`, `${planned}${moved}`]);
+    }
   }
   if (r.kind === 'hit_removal') {
     before.push(['The hit', `${String(d.hitReason ?? '').replace(/_/g, ' ')} · recorded ${d.hitRecordedAt ? formatDateTimeIST(String(d.hitRecordedAt)) : ''} by ${String(d.hitRecordedBy ?? 'the phone system')}`]);
@@ -126,6 +147,21 @@ export default function RequestDetailScreen() {
             Note to {who} (needed if you reject)
             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional when approving" rows={3} />
           </label>
+          {offerHandover && (
+            <label className="field" style={{ marginTop: 12 }}>
+              Her follow-ups that day go to
+              <select value={handoverChoice} onChange={(e) => setHandover(e.target.value)}>
+                {mates.length > 1 && <option value="share">{`Share between ${mates.map((m) => firstName(m.name)).join(' and ')}`}</option>}
+                {mates.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.name}
+                  </option>
+                ))}
+                <option value="keep">Keep for her return</option>
+              </select>
+              <span className="tl-sub">They move back to {who} after the leave if still not done.</span>
+            </label>
+          )}
           <div className="tl-actions" style={{ marginTop: 12 }}>
             <Button variant="success" onClick={() => act.mutate('approved')} loading={act.isPending && act.variables === 'approved'}>
               Approve{isLeave ? ' leave' : ''}
