@@ -78,7 +78,7 @@ describe('toBellItems', () => {
   });
 
   it('is empty before the first answer', () => {
-    expect(toBellItems(undefined, (n) => n)).toEqual([]);
+    expect(toBellItems(undefined, (n) => n ?? '')).toEqual([]);
   });
 });
 
