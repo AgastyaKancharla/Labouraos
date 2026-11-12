@@ -110,6 +110,8 @@ describe('Finance back office (Phase 22 Part B)', () => {
     if (!prisma) return;
     await prisma.payrollRun.deleteMany({ where: { month: { in: [MONTH, APRIL] } } });
     await prisma.payrollCorrection.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.staffRequest.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'attendance_day', changedByStaffId: { in: staffIds } } });
     await prisma.holiday.deleteMany({ where: { date: day(LATE_HOLIDAY) } });
     await prisma.monthClose.deleteMany({ where: { month: MONTH } });
     await prisma.monthReviewMark.deleteMany({ where: { month: MONTH } });
@@ -526,6 +528,22 @@ describe('Finance back office (Phase 22 Part B)', () => {
       }
     });
 
+    it('treats a day change approved after the month (a Team Lead portal request) like any attendance change: a correction on the next sheet', async () => {
+      // Asha's half day on 5 March becomes a full day, decided by the CEO, after March pay was approved and paid.
+      const halfDay = await prisma.attendanceDay.findUniqueOrThrow({ where: { staffId_date: { staffId: asha.id, date: day('2003-03-05') } } });
+      const res = await request(server()).post('/requests').set(as('ceo')).send({ kind: 'day_change', dayId: halfDay.id, dayType: 'full', reason: 'Was on a client visit in the afternoon' });
+      expect(res.status).toBeLessThan(300);
+      expect((await prisma.attendanceDay.findUniqueOrThrow({ where: { id: halfDay.id } })).dayType).toBe('full');
+      expect(await prisma.staffRequest.count({ where: { kind: 'day_change', subjectId: halfDay.id, status: 'approved' } })).toBe(1);
+      // Half of ₹1,000 back on April's sheet; March's approved sheet is unchanged.
+      const april = await sheetFor(APRIL);
+      expect(rowOf(april, asha.id)?.correctionPaise).toBe(50000);
+      expect(String(rowOf(april, asha.id)?.correctionNote)).toContain('Paid back ₹500 for March 2003');
+      const march = await prisma.payrollLine.findFirstOrThrow({ where: { staffId: asha.id, run: { month: MONTH } } });
+      expect(march.lossOfPayPaise).toBe(150000);
+      expect(march.netPaise).toBe(2443750);
+    });
+
     it('carries a holiday added to an approved month as correction rows, pays a leaver through Finance, and carries a take-back larger than pay', async () => {
       await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY), name: 'W5B late holiday' } });
       await prisma.payrollCorrection.createMany({
@@ -535,11 +553,12 @@ describe('Finance back office (Phase 22 Part B)', () => {
         ],
       });
       const prepared = (await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(200)).body;
-      // Asha: 4 March was an absent day, now a holiday: ₹1,000 back (₹26,000 ÷ 26 frozen, not today's divisor).
+      // Asha: 4 March was an absent day, now a holiday: ₹1,000 back (₹26,000 ÷ 26 frozen, not today's divisor),
+      // plus ₹500 for the half day changed to a full day — one row for March.
       const a = rowOf(prepared, asha.id)!;
-      expect(a.correctionPaise).toBe(100000);
-      expect(a.netPaise).toBe(3200000 + 100000);
-      expect(String(a.correctionNote)).toContain('Paid back ₹1,000 for March 2003');
+      expect(a.correctionPaise).toBe(150000);
+      expect(a.netPaise).toBe(3200000 + 150000);
+      expect(String(a.correctionNote)).toContain('Paid back ₹1,500 for March 2003');
       // Bala: 4 March was a working day before he joined, now a holiday: ₹2,000 back; ₹60,000 carried take-back.
       const b = rowOf(prepared, bala.id)!;
       expect(b.correctionPaise).toBe(-5200000);
@@ -552,7 +571,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect(g.grossPaise).toBe(0);
 
       const ashaRows = await prisma.payrollCorrection.findMany({ where: { staffId: asha.id } });
-      expect(ashaRows).toEqual([expect.objectContaining({ relatesToMonth: MONTH, amountPaise: 100000, source: 'recompute', appliedMonth: APRIL })]);
+      expect(ashaRows).toEqual([expect.objectContaining({ relatesToMonth: MONTH, amountPaise: 150000, source: 'recompute', appliedMonth: APRIL })]);
       expect(await prisma.payrollCorrection.count({ where: { staffId: { in: [bala.id, gone.id] }, appliedMonth: null } })).toBe(0);
 
       // Worked out again: the same rows, applied once, nothing doubled.
@@ -561,7 +580,7 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect(await prisma.payrollCorrection.count({ where: { staffId: asha.id } })).toBe(1);
       expect(await prisma.payrollCorrection.count({ where: { staffId: bala.id, source: 'recompute' } })).toBe(1);
       const sheet = await sheetFor(APRIL, 'ceo');
-      expect(sheet.totals.correctionsPaise).toBe(100000 - 5200000 + 50000);
+      expect(sheet.totals.correctionsPaise).toBe(150000 - 5200000 + 50000);
       expect(sheet.totals.carryForwardPaise).toBe(-600000);
 
       await request(server()).post(`/finance/salaries/${APRIL}/approve`).set(as('ceo')).send({ netPaise: sheet.totals.netPaise, preparedAt: sheet.run.preparedAt }).expect(200);

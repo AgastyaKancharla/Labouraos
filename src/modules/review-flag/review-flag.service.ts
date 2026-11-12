@@ -11,7 +11,11 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
+import { MONEY_FLAG_KINDS } from '../notification/notification.constants';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
+import { effectiveOwner } from './flag-owner';
 import {
+  CEO_OWNED_FLAG_KINDS,
   REVIEW_FLAG_KINDS,
   ReviewFlagKind,
 } from './review-flag.constants';
@@ -22,6 +26,8 @@ export interface RaiseReviewFlagParams {
   subjectId: string;
   raisedForStaffId?: string | null;
   details?: Record<string, unknown> | null;
+  /** Raised straight to a level above (e.g. a Team Lead reporting an agent to their Manager). */
+  owner?: { role: 'manager' | 'ceo'; staffId?: string | null; byStaffId?: string | null; note?: string | null } | null;
 }
 
 export interface ListReviewFlagsQuery {
@@ -43,7 +49,15 @@ export class ReviewFlagService {
     private readonly idService: IdService,
     private readonly auditService: AuditService,
     @Optional() private readonly bells?: NotificationSourcesService,
+    @Optional() private readonly reportingScope?: ReportingScopeService,
   ) {}
+
+  /** Everyone below the person on the reporting line (Team Lead: their team; Manager: their tree). */
+  private async peopleUnder(staffId: string): Promise<string[]> {
+    if (this.reportingScope) return this.reportingScope.peopleUnder(staffId);
+    const rows = await this.prisma.staff.findMany({ where: { OR: [{ teamLeadId: staffId }, { reportsToId: staffId }] }, select: { id: true } });
+    return rows.map((row) => row.id);
+  }
 
   /** Puts the flag on (or takes it off) the right bells. Never blocks the flag itself. */
   private async syncBell(flagId: string): Promise<void> {
@@ -71,6 +85,12 @@ export class ReviewFlagService {
         raisedForStaffId: params.raisedForStaffId ?? null,
         details: (params.details ?? Prisma.JsonNull) as Prisma.InputJsonValue,
         status: 'open',
+        // Money and bypass flags are always decided by the CEO (guide, Quality).
+        ownerRole: CEO_OWNED_FLAG_KINDS.includes(params.kind) ? 'ceo' : (params.owner?.role ?? null),
+        ownerStaffId: params.owner?.role === 'manager' ? (params.owner.staffId ?? null) : null,
+        escalatedAt: params.owner ? new Date() : null,
+        escalatedByStaffId: params.owner?.byStaffId ?? null,
+        escalationNote: params.owner?.note ?? null,
       },
     });
     await this.syncBell(flag.id);
@@ -87,16 +107,19 @@ export class ReviewFlagService {
       where.kind = query.kind;
     }
 
-    if (actor.role === 'ceo' || actor.role === 'manager') {
-      // CEO and Manager see all flags
+    if (actor.role === 'ceo') {
+      // The CEO sees every flag.
+    } else if (actor.role === 'manager') {
+      // A Manager: flags about people in their tree, flags sent to them, and
+      // flags about nobody in particular — never a money flag (no money at all).
+      const people = await this.peopleUnder(actor.id);
+      where.AND = [
+        { OR: [{ raisedForStaffId: { in: people } }, { ownerStaffId: actor.id }, { raisedForStaffId: null }] },
+        { kind: { notIn: MONEY_FLAG_KINDS } },
+      ];
     } else if (actor.role === 'team_lead') {
-      // Team Lead only sees flags whose raisedForStaffId is one of their team members
-      const teamMembers = await this.prisma.staff.findMany({
-        where: { teamLeadId: actor.id },
-        select: { id: true },
-      });
-      const memberIds = teamMembers.map((m) => m.id);
-      where.raisedForStaffId = { in: memberIds };
+      // A Team Lead: flags about their own team only.
+      where.raisedForStaffId = { in: await this.peopleUnder(actor.id) };
     } else if (actor.role === 'field_agent') {
       where.raisedForStaffId = actor.id;
     } else {
@@ -119,10 +142,45 @@ export class ReviewFlagService {
     });
   }
 
+  /**
+   * Who may resolve a flag: the CEO, any flag. Money and bypass flags (and
+   * flags sent to the CEO): only the CEO. A Manager: flags in their tree (or
+   * sent to them, or about nobody) owned by a Team Lead or a Manager, but not
+   * one sent to another Manager. A Team Lead: their own team's flags that are
+   * still theirs (not sent up).
+   */
+  private async assertCanResolve(
+    flag: { kind: string; ownerRole: string | null; ownerStaffId: string | null; raisedForStaffId: string | null },
+    actor: { id: string; role: string },
+  ): Promise<void> {
+    if (actor.role === 'ceo') return;
+    if (actor.role !== 'manager' && actor.role !== 'team_lead') {
+      throw new ForbiddenException('Only Team Leads, Managers, or CEO may resolve review flags');
+    }
+    const person = flag.raisedForStaffId
+      ? await this.prisma.staff.findUnique({ where: { id: flag.raisedForStaffId }, select: { role: true } })
+      : null;
+    const owner = effectiveOwner(flag, person?.role ?? null);
+    if (owner === 'ceo') throw new ForbiddenException('The CEO decides this flag (money, a business hiding a hire, or sent to the CEO)');
+    const under = flag.raisedForStaffId ? (await this.peopleUnder(actor.id)).includes(flag.raisedForStaffId) : false;
+    if (actor.role === 'team_lead') {
+      if (!under) throw new ForbiddenException('Team leads can only resolve review flags raised for their own team members');
+      if (owner !== 'team_lead') throw new ForbiddenException('This flag was sent to the Manager');
+      return;
+    }
+    const inTree = under || flag.ownerStaffId === actor.id || !flag.raisedForStaffId;
+    if (!inTree) throw new ForbiddenException('A Manager resolves flags only for their own teams');
+    if (owner === 'manager' && flag.ownerStaffId && flag.ownerStaffId !== actor.id) {
+      throw new ForbiddenException('This flag was sent to another Manager');
+    }
+  }
+
   async resolve(
     id: string,
     actor: { id: string; role: string },
     dto: ResolveReviewFlagDto,
+    /** Closing a flag as part of work the caller already proved they may do (e.g. approving the business it is about). */
+    opts: { closedByOwnWork?: boolean } = {},
   ) {
     if (!dto || !dto.resolution || !dto.resolution.trim()) {
       throw new BadRequestException(
@@ -144,30 +202,7 @@ export class ReviewFlagService {
       throw new NotFoundException(`Review flag '${id}' not found`);
     }
 
-    if (actor.role === 'ceo' || actor.role === 'manager') {
-      // CEO and Manager may resolve any flag
-    } else if (actor.role === 'team_lead') {
-      if (!flag.raisedForStaffId) {
-        throw new ForbiddenException(
-          'Team leads can only resolve review flags raised for their own team members',
-        );
-      }
-      const member = await this.prisma.staff.findFirst({
-        where: {
-          id: flag.raisedForStaffId,
-          teamLeadId: actor.id,
-        },
-      });
-      if (!member) {
-        throw new ForbiddenException(
-          'Team leads can only resolve review flags raised for their own team members',
-        );
-      }
-    } else {
-      throw new ForbiddenException(
-        'Only Team Leads, Managers, or CEO may resolve review flags',
-      );
-    }
+    if (!opts.closedByOwnWork) await this.assertCanResolve(flag, actor);
 
     const updated = await this.prisma.reviewFlag.update({
       where: { id },
