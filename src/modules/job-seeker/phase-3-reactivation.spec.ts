@@ -144,7 +144,8 @@ describe('Phase 3 Task 5: Reactivation', () => {
       .set('Authorization', `Bearer ${callAgentToken}`);
 
     expect(res.status).toBe(400);
-    expect(res.body.message).toContain('must be deactivated to be reactivated');
+    // A refunded job seeker can be reactivated too now (guide check 12 Nov), so the message names all three.
+    expect(res.body.message).toContain('must be deactivated, closed or refunded to be reactivated');
   });
 
   it('field_agent can reactivate (201) while finance is denied (403)', async () => {

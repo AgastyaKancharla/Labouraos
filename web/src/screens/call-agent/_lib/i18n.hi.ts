@@ -124,6 +124,7 @@ export const callAgentHi: Record<keyof typeof callAgentEn, string> = {
   'ca.seekerStatus.deactivated': 'बंद किया गया',
   'ca.seekerStatus.placed': 'नौकरी लगी',
   'ca.seekerStatus.closed': 'बंद',
+  'ca.seekerStatus.refunded': 'पैसे लौटाए गए · फिर से भुगतान कर सकते हैं',
 
   'ca.profile.why': 'आपकी लिस्ट में क्यों:',
   'ca.profile.wants': 'महीने के {salary} चाहिए',

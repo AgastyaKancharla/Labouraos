@@ -19,7 +19,7 @@ function initials(name: string): string {
     .join('');
 }
 
-const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed'];
+const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 /** The header card: avatar, name, masked phone · trade · languages · salary, status · ID. */
 export function ProfileHeader({ profile }: { profile: Profile }) {

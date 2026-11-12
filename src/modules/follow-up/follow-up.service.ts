@@ -465,7 +465,7 @@ export class FollowUpService {
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
         paymentReceivedAt: { not: null },
-        status: { notIn: ['placed', 'deactivated', 'closed'] },
+        status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
       },
       include: {
         hits: {

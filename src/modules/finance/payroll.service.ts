@@ -2,7 +2,7 @@ import { BadRequestException, ConflictException, ForbiddenException, Injectable,
 import { PayrollLine, PayrollRun, PricingPolicy, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
-import { PricingService } from '../pricing/pricing.service';
+import { PricingService, goLiveDayOf } from '../pricing/pricing.service';
 import { AttendanceDaysService, ATTENDANCE_ROLES } from '../attendance/attendance-days.service';
 import { WorkingDaysService } from '../attendance/working-days.service';
 import { deductibleShortfall, isWeeklyOff } from '../attendance/day-rules';
@@ -28,6 +28,7 @@ import {
   monthDays,
   monthLabel,
   nextMonth,
+  payStartDay,
   previousMonth,
   rupeesInWords,
   salaryDaysFor,
@@ -459,12 +460,14 @@ export class PayrollService {
    * all (not paid). Days on weekly offs and holidays never cost pay. `upTo`
    * leaves out days not yet over (a live draft of the running month).
    */
-  private personMonth(days: DayLite[], joinedDay: string, away: AwayPeriod[], working: string[], holidayDays: string[], upTo: string): PersonMonth {
-    const byDay = new Map(days.map((d) => [d.date, d]));
-    const closed = days.filter((d) => d.dayType !== 'open');
+  private personMonth(days: DayLite[], joinedDay: string, away: AwayPeriod[], working: string[], holidayDays: string[], upTo: string, goLiveDay: string | null): PersonMonth {
+    // Counted from the later of joining and go-live: days before go-live are not on staff (never absent).
+    const startDay = payStartDay(joinedDay, goLiveDay);
+    const byDay = new Map(days.filter((d) => d.date >= startDay).map((d) => [d.date, d]));
+    const closed = days.filter((d) => d.dayType !== 'open' && d.date >= startDay);
     const shortfallSeconds = deductibleShortfall(sumPaise(closed.map((d) => d.shortfallSeconds)), sumPaise(closed.map((d) => d.makeUpSeconds)));
-    const { employed, notEmployed } = staffWorkingDays(working, joinedDay, away);
-    const onStaffHolidays = holidaysOnStaff(holidayDays, joinedDay, away);
+    const { employed, notEmployed } = staffWorkingDays(working, startDay, away);
+    const onStaffHolidays = holidaysOnStaff(holidayDays, startDay, away);
     const m: PersonMonth = { joinedDay, employed, notEmployed, holidaysOnStaff: onStaffHolidays, holidaysOffStaff: holidayDays.length - onStaffHolidays, unmarked: [], open: [], absent: 0, unpaidLeave: 0, half: 0, full: 0, paidLeave: 0, shortfallMinutes: Math.floor(shortfallSeconds / 60) };
     for (const day of employed) {
       if (day > upTo) continue;
@@ -589,7 +592,9 @@ export class PayrollService {
       for (const line of mine) {
         const joinedDay = joined.get(line.staffId);
         if (!joinedDay) continue;
-        const pm = this.personMonth(attendance.get(line.staffId) ?? [], joinedDay, away.get(line.staffId) ?? [], working, holidayDays, monthDays(run.month).last);
+        // The go-live date the sheet was prepared with (kept on it), never today's: a later
+        // Settings change can never rewrite a paid month.
+        const pm = this.personMonth(attendance.get(line.staffId) ?? [], joinedDay, away.get(line.staffId) ?? [], working, holidayDays, monthDays(run.month).last, run.goLiveDay ?? null);
         const again = computePay({
           monthlyPaise: line.monthlyPaise,
           salaryDays: line.salaryDays,
@@ -687,7 +692,7 @@ export class PayrollService {
     salaryDays: number;
     corrections: OpenCorrection[];
     correctionRunIds: string[];
-    rules: { weeklyOffDays: number[]; fullDayMinutes: number };
+    rules: { weeklyOffDays: number[]; fullDayMinutes: number; goLiveDay: string | null };
   }> {
     const policy = await this.pricing.current();
     const salaryDays = salaryDaysFor(policy.payrollSalaryDays);
@@ -709,7 +714,7 @@ export class PayrollService {
     for (const person of people) {
       const joinedDay = joined.get(person.id);
       if (!joinedDay) continue;
-      const pm = this.personMonth(attendance.get(person.id) ?? [], joinedDay, away.get(person.id) ?? [], working, holidayDays, upTo);
+      const pm = this.personMonth(attendance.get(person.id) ?? [], joinedDay, away.get(person.id) ?? [], working, holidayDays, upTo, goLiveDayOf(policy));
       if (pm.employed.length === 0) continue;
       const monthly = salaries.get(person.id) ?? null;
       if (monthly === null) missingSalary.push({ staffId: person.id, staffCode: person.code, name: person.name });
@@ -728,7 +733,7 @@ export class PayrollService {
       }
     }
     rows.sort((a, b) => a.staffCode.localeCompare(b.staffCode));
-    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds, rules: { weeklyOffDays, fullDayMinutes } };
+    return { rows, missingSalary, openDays, salaryDays, corrections, correctionRunIds: stored.runIds, rules: { weeklyOffDays, fullDayMinutes, goLiveDay: goLiveDayOf(policy) } };
   }
 
   private rowFromLine(line: PayrollLine): SheetRow {
@@ -845,10 +850,12 @@ export class PayrollService {
     const { working } = await this.workingDayKeys(month);
     const people = (await this.candidates(month)).filter((p) => p.status === 'active');
     const [joined, away] = await Promise.all([this.joinedDays(people), this.awayPeriods(people)]);
+    const goLiveDay = await this.pricing.goLiveDay();
     for (const day of working) {
       const ids = people.filter((p) => {
         const j = joined.get(p.id);
-        return j && staffWorkingDays([day], j, away.get(p.id) ?? []).employed.length === 1;
+        // Days before go-live are handled outside the app: never marked absent.
+        return j && staffWorkingDays([day], payStartDay(j, goLiveDay), away.get(p.id) ?? []).employed.length === 1;
       }).map((p) => p.id);
       if (ids.length) await this.days.markAbsentDays(new Date(`${day}T00:00:00.000Z`), ids);
     }
@@ -874,7 +881,7 @@ export class PayrollService {
     if (!rows.length) throw new BadRequestException(`Nobody was on the staff in ${monthLabel(month)}.`);
     const totals = { people: rows.length, grossPaise: sumPaise(rows.map((r) => r.grossPaise)), deductionsPaise: sumPaise(rows.map((r) => r.deductionsPaise)), netPaise: sumPaise(rows.map((r) => r.netPaise)) };
     // The Settings this sheet was worked out with, kept on it for later recomputes.
-    const snapshot = { weeklyOffDays: rules.weeklyOffDays, fullDayMinutes: rules.fullDayMinutes };
+    const snapshot = { weeklyOffDays: rules.weeklyOffDays, fullDayMinutes: rules.fullDayMinutes, goLiveDay: rules.goLiveDay };
     const lineData = (runId: string): Prisma.PayrollLineCreateManyInput[] =>
       rows.map((r) => ({
         runId,

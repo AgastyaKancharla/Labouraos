@@ -1,3 +1,5 @@
+import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund, latestPaidActivations } from '../../common/money/current-guarantee-refund';
+import { SEEKER_ENDED_STATUSES } from '../refund-priority/refund-priority.rules';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
@@ -27,7 +29,8 @@ type SubjectType = 'job_seeker' | 'business' | 'referral';
 const REQUIRED_CONSENTS = ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'];
 const REFUND_ENDING_HITS = ['offer_declined', 'offer_no_reply', 'interview_no_show'];
 const MATCHING_PURPOSES = ['offer', 'follow_up', 'interview_result', 'joining_confirmation'];
-const CLOSED_SEEKER = ['placed', 'deactivated', 'closed'];
+/** No refund to come: the one shared list (refunded included). */
+const CLOSED_SEEKER = SEEKER_ENDED_STATUSES;
 const STUCK_STATUSES = ['lead', 'consented', 'pending_activation'];
 const STUCK_LIST_LIMIT = 20;
 
@@ -219,15 +222,21 @@ export class CallWorkService {
         select: { jobSeekerId: true },
       }),
       this.prisma.payment.findMany({
-        where: { jobSeekerId: { in: ids }, type: 'refund', status: { in: ['pending', 'processing', 'completed', 'succeeded'] } },
-        select: { jobSeekerId: true },
+        where: { jobSeekerId: { in: ids }, type: 'refund', status: { in: [...LIVE_REFUND_STATUSES] } },
+        select: { jobSeekerId: true, refundsPaymentId: true, createdAt: true },
       }),
       this.prisma.interview.findMany({
         where: { jobSeekerId: { in: ids }, status: { not: 'cancelled' } },
         select: { jobSeekerId: true, createdAt: true },
       }),
     ]);
-    const ended = new Set([...hits.map((h) => h.jobSeekerId), ...refunds.map((r) => r.jobSeekerId!)]);
+    // Only a refund of his current guarantee ends it (by link; dates only for older refunds).
+    const latest = await latestPaidActivations(this.prisma, ids);
+    const paidAt = new Map(paid.map((s) => [s.id, s.paymentReceivedAt]));
+    const currentRefunds = refunds.filter((r) =>
+      isCurrentGuaranteeRefund(r, { latestPaidActivationId: latest.get(r.jobSeekerId!)?.id ?? null, paymentReceivedAt: paidAt.get(r.jobSeekerId!) ?? null }),
+    );
+    const ended = new Set([...hits.map((h) => h.jobSeekerId), ...currentRefunds.map((r) => r.jobSeekerId!)]);
     for (const s of paid) {
       const deadline = refundGuaranteeDeadline(s.paymentReceivedAt!, ctx.guaranteeDays);
       const msLeft = deadline.getTime() - ctx.now.getTime();

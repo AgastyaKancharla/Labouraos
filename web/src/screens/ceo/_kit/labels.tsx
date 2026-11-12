@@ -10,6 +10,7 @@ export const SEEKER_STATUS: Record<string, { label: string; tone: StatusTone }> 
   deactivated: { label: 'Deactivated', tone: 'danger' },
   placed: { label: 'Placed', tone: 'good' },
   closed: { label: 'Closed', tone: 'muted' },
+  refunded: { label: 'Refunded · can pay again', tone: 'muted' },
 };
 export function guaranteePill(daysLeft: number | null) {
   if (daysLeft === null) return <span className="ceo-sub">—</span>;

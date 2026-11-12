@@ -1,3 +1,4 @@
+import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund } from '../../common/money/current-guarantee-refund';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -44,7 +45,7 @@ export class RefundService {
 
     const candidates = await this.prisma.jobSeeker.findMany({
       where: {
-        status: { notIn: ['placed', 'deactivated', 'closed'] },
+        status: { notIn: ['placed', 'deactivated', 'closed', 'refunded'] },
         paymentReceivedAt: {
           not: null,
           lte: maxPaymentDate,
@@ -76,26 +77,40 @@ export class RefundService {
       rejectedCandidateIdSet = new Set(rejectedHits.map((h) => h.jobSeekerId));
 
       // Query candidate payments (refunds and activations) in a single set-based query
+      const paidAtById = new Map(candidates.map((c) => [c.id, c.paymentReceivedAt]));
       const candidatePayments = await this.prisma.payment.findMany({
         where: {
           jobSeekerId: { in: candidateIds },
         },
-        orderBy: { createdAt: 'desc' },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       });
+      // His latest paid ₹499 first (payments come newest first), then the refunds:
+      // only a refund of that ₹499 counts (current guarantee).
+      const latestPaidId = new Map<string, string>();
       for (const p of candidatePayments) {
-        if (!p.jobSeekerId) continue;
-        const isRefund =
-          !p.type ||
-          (p.type === 'refund' &&
-            (!p.status || ['pending', 'processing', 'completed', 'succeeded'].includes(p.status)));
-        if (isRefund) {
-          refundedCandidateIdSet.add(p.jobSeekerId);
-        } else if (
+        if (
+          p.jobSeekerId &&
           (p.type === 'activation' || p.type === 'reactivation') &&
           (!p.status || ['completed', 'succeeded'].includes(p.status)) &&
           !candidatePaymentMap.has(p.jobSeekerId)
         ) {
           candidatePaymentMap.set(p.jobSeekerId, p.amount);
+          latestPaidId.set(p.jobSeekerId, p.id);
+        }
+      }
+      for (const p of candidatePayments) {
+        if (!p.jobSeekerId) continue;
+        const isRefund =
+          !p.type ||
+          (p.type === 'refund' && (!p.status || (LIVE_REFUND_STATUSES as readonly string[]).includes(p.status)));
+        if (
+          isRefund &&
+          isCurrentGuaranteeRefund(p, {
+            latestPaidActivationId: latestPaidId.get(p.jobSeekerId) ?? null,
+            paymentReceivedAt: paidAtById.get(p.jobSeekerId) ?? null,
+          })
+        ) {
+          refundedCandidateIdSet.add(p.jobSeekerId);
         }
       }
 

@@ -21,7 +21,7 @@ import { ProfileHeader } from '../_lib/ProfileParts';
  * it is before saying hello. An unregistered number goes to CA17b.
  */
 const LIKELY = ['registration', 'offer', 'job', 'job_search_refund', 'staff_vacancy', 'referral', 'general'];
-const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed'];
+const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 function useAnswerIncoming() {
   const qc = useQueryClient();

@@ -121,6 +121,9 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
     agentA1 = await make('call_agent', 'CA15', leadA.id);
     agentA2 = await make('call_agent', 'CA25', leadA.id);
     agentA3 = await make('call_agent', 'CA35', leadA.id);
+    // Joined before the month the sheet is about: paid leave is counted from the
+    // joining date (else the first login), and none is earned in the joining month.
+    await prisma.staff.update({ where: { id: agentA3.id }, data: { joinedOn: new Date('2027-01-04T00:00:00.000Z') } });
     agentB1 = await make('call_agent', 'CB15', leadB.id);
     finance = await make('finance', 'FIN5', ceo.id);
 

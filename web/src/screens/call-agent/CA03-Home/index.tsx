@@ -217,7 +217,7 @@ function doneText(d: { kind: string; name: string; extra: string | null; status:
 }
 
 const OUTCOMES = ['interested', 'accepted_offer', 'rejected_offer', 'callback_requested', 'not_interested', 'working_now', 'other'];
-const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed'];
+const SEEKER_STATUSES = ['lead', 'consented', 'pending_activation', 'active', 'paused', 'deactivated', 'placed', 'closed', 'refunded'];
 
 function doneTag(d: { kind: string; status: string; extra: string | null }, t: ReturnType<typeof useT>): string {
   if (d.kind === 'interview_booked' && d.extra) return t('ca.done.interviewOn', { date: formatDayMonthIST(d.extra) });

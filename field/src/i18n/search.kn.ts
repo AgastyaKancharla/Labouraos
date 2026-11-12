@@ -33,6 +33,7 @@ export const searchKn: Record<keyof typeof searchEn, string> = {
   'search.js.deactivated': 'ನಿಷ್ಕ್ರಿಯಗೊಳಿಸಲಾಗಿದೆ',
   'search.js.placed': 'ಕೆಲಸಕ್ಕೆ ಸೇರಿದ್ದಾರೆ',
   'search.js.closed': 'ಮುಚ್ಚಲಾಗಿದೆ',
+  'search.js.refunded': 'ಹಣ ಹಿಂತಿರುಗಿಸಲಾಗಿದೆ · ಮತ್ತೆ ಪಾವತಿಸಬಹುದು',
   'search.vc.open': 'ತೆರೆದಿದೆ',
   'search.vc.filled': 'ಭರ್ತಿಯಾಗಿದೆ',
   'search.vc.cancelled': 'ರದ್ದಾಗಿದೆ',

@@ -45,6 +45,7 @@ const SEEKER_STATUS: Record<string, [MessageKey, Tone]> = {
   deactivated: ['search.js.deactivated', 'tomato'],
   placed: ['search.js.placed', 'blue'],
   closed: ['search.js.closed', 'neutral'],
+  refunded: ['search.js.refunded', 'neutral'],
 };
 const BUSINESS_STATUS: Record<string, MessageKey> = {
   verified: 'vstatus.verified',

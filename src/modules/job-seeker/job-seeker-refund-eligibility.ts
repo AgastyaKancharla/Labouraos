@@ -41,6 +41,7 @@ export interface JobSeekerRefundEligibilityResult {
  * - Must NOT be in 'placed' status (confirmed placement).
  * - Must NOT be in 'deactivated' status (3 hits deactivate with no refund entitlement).
  * - Must NOT be 'closed' (found a job on his own: no refund).
+ * - Must NOT be 'refunded' (already refunded in this guarantee; paying again starts a new one).
  * - Must NOT have any 'offer_rejected' hit (rejecting a suitable offer forfeits guarantee).
  * - Refund can only be approved after guaranteeDays have elapsed from payment receipt (now > deadline).
  * - No refund has already been issued.
@@ -78,6 +79,17 @@ export function evaluateJobSeekerRefundEligibility(
     return {
       eligible: false,
       ineligibleReason: `Job seeker '${input.code}' found a job on his own; the profile is closed and carries no refund`,
+      amountPaise: 0,
+      daysOwed: 0,
+      daysElapsed: 0,
+      deadline: null,
+    };
+  }
+
+  if (input.status === 'refunded') {
+    return {
+      eligible: false,
+      ineligibleReason: `A refund has already been issued for job seeker '${input.code}'; he pays ₹499 again to start a new guarantee`,
       amountPaise: 0,
       daysOwed: 0,
       daysElapsed: 0,

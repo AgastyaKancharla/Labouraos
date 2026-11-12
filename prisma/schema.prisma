@@ -877,6 +877,12 @@ model Payment {
   // Phase 22 Part B: money that arrived for a closed month is booked in the
   // current open month; this says so (the bank's own date and why).
   bookingNote       String?
+  // A job seeker's ₹499 refund: the registration payment it gives back. With the
+  // partial unique indexes in migration 20261119200000 (SQL only, Prisma cannot
+  // express them) a double tap or a retry can never create two live refunds for
+  // one ₹499, two live refunds for one placement, or two referral payouts or
+  // joining rewards for one placement. "Live" = any status but rejected or cancelled.
+  refundsPaymentId  String?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
@@ -1388,6 +1394,12 @@ model PricingPolicy {
   // Payroll (Phase 22 Part B, owner decision 11 Nov): a day's pay is the
   // monthly salary divided by this, the same in every month.
   payrollSalaryDays            Int       @default(26)
+  // Go-live (owner decision 12 Nov): the day Laboura starts using the software
+  // (IST calendar date, set by the CEO in Settings). Payroll counts only from the
+  // later of a person's joining date and this day: days before it are handled
+  // outside the app, never absent and never loss of pay. Leave accrual starts from
+  // the later of the two as well. Null = not set (no effect).
+  goLiveDate                   DateTime? @db.Date
   // Company details printed on GST invoices (entered by the CEO in Settings).
   companyLegalName             String    @default("Laboura Private Limited")
   companyGstin                 String?
@@ -2133,6 +2145,10 @@ model PayrollRun {
   /// to the Settings version in force at preparedAt; weeklyOffDays unused).
   weeklyOffDays     Int[]         @default([])
   fullDayMinutes    Int?
+  /// The go-live date (IST yyyy-mm-dd) in Settings when the sheet was prepared.
+  /// The correction recompute uses it, never today's, so a later go-live change
+  /// never rewrites a frozen month. Null = none set then (or prepared before it was kept).
+  goLiveDay         String?
   lines             PayrollLine[]
   createdAt         DateTime      @default(now())
   updatedAt         DateTime      @updatedAt
