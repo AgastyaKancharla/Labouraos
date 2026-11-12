@@ -603,6 +603,30 @@ describe('Finance back office (Phase 22 Part B)', () => {
       }
     });
 
+    it('prepares one sheet at a time and never inserts a recompute correction another sheet recorded meanwhile (409)', async () => {
+      const payroll = app.get(PayrollService);
+      const realDraft = payroll.draft.bind(payroll);
+      let injectedId = '';
+      // April's draft finds ₹500 for Asha's March (the half day changed to full). Another sheet,
+      // prepared at the same moment, records that same correction before April is saved.
+      const spy = jest.spyOn(payroll, 'draft').mockImplementationOnce(async (...args: Parameters<PayrollService['draft']>) => {
+        const out = await realDraft(...args);
+        expect(out.corrections).toEqual(expect.arrayContaining([expect.objectContaining({ id: null, staffId: asha.id, relatesToMonth: MONTH, amountPaise: 50000 })]));
+        injectedId = (await prisma.payrollCorrection.create({ data: { staffId: asha.id, relatesToMonth: MONTH, amountPaise: 50000, reason: 'W5B found by another sheet', source: 'recompute' } })).id;
+        return out;
+      });
+      try {
+        const res = await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(409);
+        expect(res.body.message).toBe(CORRECTIONS_TAKEN);
+        expect(await prisma.payrollRun.count({ where: { month: APRIL } })).toBe(0);
+        // Only the other sheet's row: the ₹500 was not recorded twice.
+        expect(await prisma.payrollCorrection.count({ where: { staffId: asha.id, source: 'recompute' } })).toBe(1);
+      } finally {
+        spy.mockRestore();
+        await prisma.payrollCorrection.deleteMany({ where: { id: injectedId } });
+      }
+    });
+
     it('carries a holiday added to an approved month as correction rows, pays a leaver through Finance, and carries a take-back larger than pay', async () => {
       await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY), name: 'W5B late holiday' } });
       await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY_WORKED), name: 'W5B late holiday on a worked day' } });

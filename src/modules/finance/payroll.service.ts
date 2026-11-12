@@ -126,11 +126,16 @@ interface OpenCorrection {
   relatesToMonth: string;
   amountPaise: number;
   reason: string;
-  source: 'recompute' | 'carry_forward';
+  source: 'recompute' | 'carry_forward' | 'manual';
+  /** For a found correction: the recompute total already recorded for that person and month when it was found. */
+  recordedBefore?: number;
 }
 
 /** Prepare found a waiting correction already applied on another sheet. */
 export const CORRECTIONS_TAKEN = 'Someone else just prepared a salary sheet that uses the same corrections. Reload and prepare again.';
+
+/** Every Prepare runs under this Postgres advisory transaction lock, one at a time. */
+const PAYROLL_PREPARE_LOCK = 'laboura:payroll:prepare';
 
 
 /** ₹1,000 or ₹1,000.50 for notes. */
@@ -465,7 +470,7 @@ export class PayrollService {
       orderBy: [{ relatesToMonth: 'asc' }, { createdAt: 'asc' }],
     });
     return {
-      rows: rows.map((r) => ({ id: r.id, staffId: r.staffId, relatesToMonth: r.relatesToMonth, amountPaise: r.amountPaise, reason: r.reason, source: r.source === 'carry_forward' ? 'carry_forward' : 'recompute' })),
+      rows: rows.map((r) => ({ id: r.id, staffId: r.staffId, relatesToMonth: r.relatesToMonth, amountPaise: r.amountPaise, reason: r.reason, source: r.source === 'carry_forward' || r.source === 'manual' ? r.source : 'recompute' })),
       runIds,
     };
   }
@@ -523,6 +528,7 @@ export class PayrollService {
           amountPaise,
           source: 'recompute',
           reason: `${monthLabel(run.month)}: a holiday or attendance changed after that month's pay was approved`,
+          recordedBefore: already(line.staffId, run.month),
         });
       }
     }
@@ -825,6 +831,20 @@ export class PayrollService {
     const waiting = corrections.filter((c) => !onSheet.has(c.staffId));
     try {
       await this.prisma.$transaction(async (tx) => {
+        // One Prepare at a time: a second one waits here, then sees what the first recorded.
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${PAYROLL_PREPARE_LOCK}))`);
+        // A correction found by working a frozen month out again is inserted only if no other sheet
+        // recorded one for that person and month since it was found (else it would be paid twice).
+        const found = corrections.filter((c) => !c.id);
+        if (found.length) {
+          const recordedNow = await tx.payrollCorrection.groupBy({
+            by: ['staffId', 'relatesToMonth'],
+            where: { source: 'recompute', OR: found.map((c) => ({ staffId: c.staffId, relatesToMonth: c.relatesToMonth })) },
+            _sum: { amountPaise: true },
+          });
+          const changed = found.some((c) => (recordedNow.find((g) => g.staffId === c.staffId && g.relatesToMonth === c.relatesToMonth)?._sum.amountPaise ?? 0) !== (c.recordedBefore ?? 0));
+          if (changed) throw new ConflictException(CORRECTIONS_TAKEN);
+        }
         let runId: string;
         if (existing) {
           const claimed = await tx.payrollRun.updateMany({
@@ -852,10 +872,10 @@ export class PayrollService {
           });
           if (claimedRows.count !== usedIds.length) throw new ConflictException(CORRECTIONS_TAKEN);
         }
-        const found = [...used.filter((c) => !c.id).map((c) => ({ c, applied: true })), ...waiting.filter((c) => !c.id).map((c) => ({ c, applied: false }))];
-        if (found.length) {
+        const toInsert = [...used.filter((c) => !c.id).map((c) => ({ c, applied: true })), ...waiting.filter((c) => !c.id).map((c) => ({ c, applied: false }))];
+        if (toInsert.length) {
           await tx.payrollCorrection.createMany({
-            data: found.map(({ c, applied }) => ({
+            data: toInsert.map(({ c, applied }) => ({
               staffId: c.staffId,
               relatesToMonth: c.relatesToMonth,
               amountPaise: c.amountPaise,
