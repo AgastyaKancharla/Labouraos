@@ -60,7 +60,7 @@ export const notificationKeys = {
   bell: ['notifications', 'bell'] as const,
 };
 
-export function toBellItems(data: NotificationBellData | undefined, doneBy: (name: string) => string): NotificationItem[] {
+export function toBellItems(data: NotificationBellData | undefined, doneBy: (name: string | null) => string): NotificationItem[] {
   if (!data) return [];
   const open = data.latest.map<NotificationItem>((n) => ({
     id: n.id,
@@ -73,7 +73,7 @@ export function toBellItems(data: NotificationBellData | undefined, doneBy: (nam
   const done = data.doneToday.map<NotificationItem>((n) => ({
     id: n.id,
     title: n.title,
-    detail: n.clearedBy ? doneBy(n.clearedBy.name) : (n.body ?? undefined),
+    detail: doneBy(n.clearedBy?.name ?? null),
     meta: n.clearedAt ? formatDateTimeIST(n.clearedAt) : undefined,
     to: n.link ?? undefined,
     state: 'cleared',
@@ -81,13 +81,8 @@ export function toBellItems(data: NotificationBellData | undefined, doneBy: (nam
   return [...open, ...done];
 }
 
-export function usePortalNotifications(portal: PortalKey): {
-  items: NotificationItem[];
-  count: number;
-  onOpen?: () => void;
-} {
-  const t = useT();
-  const queryClient = useQueryClient();
+/** `GET /notifications/bell`, shared by the top-bar bell and the Home notifications block. */
+export function useBellQuery(portal: PortalKey) {
   const signedIn = sessionStore.token() !== null;
   const enabled = portal !== 'public' && signedIn;
   const bell = useQuery({
@@ -97,6 +92,17 @@ export function usePortalNotifications(portal: PortalKey): {
     refetchInterval: NOTIFICATIONS_POLL_MS,
     refetchIntervalInBackground: false,
   });
+  return { bell, enabled };
+}
+
+export function usePortalNotifications(portal: PortalKey): {
+  items: NotificationItem[];
+  count: number;
+  onOpen?: () => void;
+} {
+  const t = useT();
+  const queryClient = useQueryClient();
+  const { bell, enabled } = useBellQuery(portal);
   const seen = useMutation({
     mutationFn: () => api.post<{ seen: number; cleared: number }>('/notifications/seen'),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: notificationKeys.all }),
@@ -110,7 +116,7 @@ export function usePortalNotifications(portal: PortalKey): {
     if (unseen > 0) mutate();
   }, [unseen, mutate]);
   return {
-    items: toBellItems(bell.data, (name) => t('common.notificationDoneBy', { name })),
+    items: toBellItems(bell.data, (name) => (name ? t('common.notificationDoneBy', { name }) : t('common.notificationClearedItself'))),
     count: bell.data?.openCount ?? 0,
     onOpen: enabled ? onOpen : undefined,
   };

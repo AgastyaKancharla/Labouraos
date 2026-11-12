@@ -6,6 +6,7 @@ import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
 import { StatGrid, StatTile } from '../../../components/StatTile';
 import { StatusPill } from '../../../components/Badge';
+import { HomeNotifications } from '../../../components/HomeNotifications';
 import { TopBar } from '../../../components/TopBar';
 import { useT } from '../../../i18n/I18nProvider';
 import { istPartOfDay } from '../../../lib/format/date';
@@ -54,6 +55,7 @@ export default function ManagerHome() {
           </>
         }
       />
+      <HomeNotifications />
       {ov.error ? (
         <ErrorState error={ov.error} onRetry={() => void ov.refetch()} />
       ) : (

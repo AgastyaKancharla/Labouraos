@@ -1,6 +1,7 @@
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
+import { HomeNotifications } from '../components/HomeNotifications';
 import { TopBar } from '../components/TopBar';
 import { sessionStore } from '../auth/session';
 import { TEST_STAFF, fakeJwt, mockApi, renderScreen, signInAs } from '../test/utils';
@@ -91,7 +92,8 @@ describe('TopBar bell', () => {
     await userEvent.click(button);
     const link = screen.getByRole('link', { name: /asks for 1 day of casual leave/ });
     expect(link).toHaveAttribute('href', '/team-lead/requests?kind=leave&id=r1');
-    expect(screen.getByText('Done by Ravi Shankar')).toBeInTheDocument();
+    expect(screen.getByText('Cleared by itself when Ravi Shankar did the work')).toBeInTheDocument();
+    expect(screen.getByText('Done today · cleared by themselves')).toBeInTheDocument();
     await waitFor(() => expect(api.calls('POST /notifications/seen')).toHaveLength(1));
   });
 
@@ -138,5 +140,37 @@ describe('TopBar bell', () => {
     renderScreen(<TopBar title="Home" />, { portal: 'team-lead', path: '/team-lead' });
     expect(await screen.findByRole('button', { name: 'Notifications, 3 new' })).toBeInTheDocument();
     expect(bellCalls).toBe(2);
+  });
+});
+
+describe('Home notifications block (Main, MG-Home, T-Home, FN-Home)', () => {
+  it('lists the open notifications, then "Done today · cleared by themselves", then See all', async () => {
+    mockApi({ 'GET /notifications/bell': bell });
+    signInAs('team_lead');
+    renderScreen(<HomeNotifications />, { portal: 'team-lead', path: '/team-lead' });
+
+    const block = await screen.findByTestId('home-notifications');
+    expect(screen.getByRole('heading', { name: 'Notifications · 2 new' })).toBeInTheDocument();
+    const links = within(block).getAllByRole('link');
+    expect(links[0]).toHaveAttribute('href', '/team-lead/requests?kind=leave&id=r1');
+    expect(within(block).getByText('Done today · cleared by themselves')).toBeInTheDocument();
+    expect(within(block).getByText('Cleared by itself when Ravi Shankar did the work')).toBeInTheDocument();
+    expect(within(block).getByRole('link', { name: 'See all notifications →' })).toHaveAttribute('href', '/team-lead/notifications');
+  });
+
+  it('says so when nothing is waiting, and names no one for an item that cleared with no person', async () => {
+    mockApi({
+      'GET /notifications/bell': {
+        ...bell,
+        openCount: 0,
+        latest: [],
+        doneToday: [{ ...bell.doneToday[0], clearedBy: null }],
+      },
+    });
+    signInAs('finance');
+    renderScreen(<HomeNotifications />, { portal: 'finance', path: '/finance' });
+    const block = await screen.findByTestId('home-notifications');
+    expect(within(block).getByText('Nothing needs you right now.')).toBeInTheDocument();
+    expect(within(block).getByText('Cleared by itself when the work was done')).toBeInTheDocument();
   });
 });

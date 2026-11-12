@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useState } from 'react';
+import { Fragment, useEffect, useId, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useT } from '../i18n/I18nProvider';
 import type { NotificationItem } from '../portals/notifications';
@@ -73,7 +73,7 @@ export function NotificationBell({
             </button>
           </div>
           {items.length === 0 && <p className="lb-bell__empty">{t('common.noNotifications')}</p>}
-          {[...openItems, ...cleared].map((item) => {
+          {[...openItems, ...cleared].map((item, index) => {
             const body = (
               <>
                 <span className={`lb-bell__dot lb-bell__dot--${item.state}`} aria-hidden="true" />
@@ -85,14 +85,21 @@ export function NotificationBell({
               </>
             );
             const cls = `lb-bell__item${item.state === 'cleared' ? ' is-cleared' : ''}`;
-            return item.to ? (
-              <Link key={item.id} to={item.to} className={cls} onClick={() => setOpen(false)}>
-                {body}
-              </Link>
-            ) : (
-              <div key={item.id} className={cls}>
-                {body}
-              </div>
+            const heading =
+              index === openItems.length && item.state === 'cleared' ? (
+                <div className="lb-homenotes__done">{t('common.notificationsDoneToday')}</div>
+              ) : null;
+            return (
+              <Fragment key={item.id}>
+                {heading}
+                {item.to ? (
+                  <Link to={item.to} className={cls} onClick={() => setOpen(false)}>
+                    {body}
+                  </Link>
+                ) : (
+                  <div className={cls}>{body}</div>
+                )}
+              </Fragment>
             );
           })}
           {allPath && (
