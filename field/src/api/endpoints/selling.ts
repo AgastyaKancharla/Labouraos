@@ -387,6 +387,8 @@ export interface JobSeekerStatus {
   registrationLinkExpiresAt: string | null;
   paymentOnlyLink: { payerPhone: string | null; relation: string | null; sentAt: string; expiresAt: string; live: boolean; used: boolean } | null;
   paymentReceivedAt: string | null;
+  /** For "Preview what she'll / he'll see". */
+  gender?: string | null;
 }
 
 

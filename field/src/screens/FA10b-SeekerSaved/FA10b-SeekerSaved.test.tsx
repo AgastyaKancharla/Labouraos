@@ -23,4 +23,18 @@ describe('FA10b Saved — send the link', () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/job-seeker/js-uuid'));
     expect(calls).toContainEqual({ method: 'POST', path: '/consent/links', body: { jobSeekerId: 'js-uuid' } });
   });
+
+  it("previews what she'll see: the four steps in order, in plain words", async () => {
+    (useLocalSearchParams as jest.Mock).mockReturnValue({ id: 'js-uuid' });
+    const { route } = routeTable({ '/screens/call-registration/job-seekers/js-uuid': { ...status(), gender: 'female' } });
+    await renderWithApp(<SeekerSaved />, { signedInAs: kiran, route });
+    await waitFor(() => screen.getByTestId('preview'));
+    expect(screen.getByTestId('preview')).toHaveTextContent('Preview what she’ll see');
+    await fireEvent.press(screen.getByTestId('preview'));
+    const card = screen.getByTestId('preview-card');
+    expect(card).toHaveTextContent(/1 Consent — each purpose ticked separately/);
+    expect(card).toHaveTextContent(/2 Selfie — live camera only/);
+    expect(card).toHaveTextContent(/3 ID check — Aadhaar through DigiLocker/);
+    expect(card).toHaveTextContent(/4 ₹499 payment — their exact terms/);
+  });
 });
