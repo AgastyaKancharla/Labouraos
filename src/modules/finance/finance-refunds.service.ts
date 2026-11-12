@@ -6,6 +6,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { RefundService } from '../refund/refund.service';
 import { businessRefundNeedsCeo } from '../../common/money/approval-limits';
 import { LIVE_PAYOUT_STATUSES, lockSubject } from '../../common/money/one-per-subject';
+import { currentGuaranteeRefundWhere, latestPaidActivations } from '../../common/money/current-guarantee-refund';
 import { isRuleBasedRefund, recordRefundRejection, refundLockKey, restoreAfterCancelledRefund } from '../refund/refund-rejection';
 import { RECEIVED_STATUSES, istStartOfMonth, sumPaise } from '../ceo-portal/ceo-common';
 
@@ -88,7 +89,12 @@ export class FinanceRefundsService {
         await lockSubject(tx, refundLockKey.jobSeeker(row.jobSeekerId!));
         const seeker = await tx.jobSeeker.findUnique({ where: { id: row.jobSeekerId! }, select: { code: true, paymentReceivedAt: true } });
         entityCode = seeker?.code ?? entityCode;
-        const live = await tx.payment.findFirst({ where: { type: 'refund', jobSeekerId: row.jobSeekerId!, status: { in: [...LIVE_PAYOUT_STATUSES] } }, select: { code: true } });
+        // N1: only a refund of his current guarantee counts (paying again starts a new one), as on approve.
+        const latest = (await latestPaidActivations(tx, [row.jobSeekerId!])).get(row.jobSeekerId!);
+        const live = await tx.payment.findFirst({
+          where: currentGuaranteeRefundWhere(row.jobSeekerId!, { latestPaidActivationId: latest?.id ?? null, paymentReceivedAt: seeker?.paymentReceivedAt ?? null }),
+          select: { code: true },
+        });
         if (live) throw new ConflictException(`Refund ${live.code} was raised meanwhile: decide that one`);
         return recordRefundRejection(tx, { kind: 'job_seeker', jobSeekerId: row.jobSeekerId, guaranteeStartedAt: seeker?.paymentReceivedAt ?? null, placementId: null, paymentId: null, amountPaise: row.amountPaise, reason, actorId: actor.id, actorRole: actor.role, at: now });
       }
@@ -96,7 +102,8 @@ export class FinanceRefundsService {
       const rootId = placement?.rootPlacementId ?? row.placementId!;
       await lockSubject(tx, refundLockKey.placement(rootId));
       entityCode = placement?.code ?? entityCode;
-      const live = await tx.payment.findFirst({ where: { type: 'refund', placementId: { in: [row.placementId!, rootId] }, status: { in: [...LIVE_PAYOUT_STATUSES] } }, select: { code: true } });
+      // N1: only a rule-based refund counts (a goodwill refund leaves the guarantee as it is).
+      const live = await tx.payment.findFirst({ where: { type: 'refund', outsideRules: false, placementId: { in: [row.placementId!, rootId] }, status: { in: [...LIVE_PAYOUT_STATUSES] } }, select: { code: true } });
       if (live) throw new ConflictException(`Refund ${live.code} was raised meanwhile: decide that one`);
       return recordRefundRejection(tx, { kind: 'business', jobSeekerId: null, guaranteeStartedAt: null, placementId: rootId, paymentId: null, amountPaise: row.amountPaise, reason, actorId: actor.id, actorRole: actor.role, at: now });
     });

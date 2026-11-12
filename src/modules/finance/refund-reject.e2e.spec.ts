@@ -159,6 +159,28 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
     expect(later.body.rows.map((r: { ref: string }) => r.ref)).toContain(ref);
   });
 
+  it('N1: a refund in a second guarantee can be rejected though the first guarantee was refunded', async () => {
+    const seeker = await paidSeeker(80);
+    const first = await prisma.payment.findFirstOrThrow({ where: { jobSeekerId: seeker.id, type: 'activation' } });
+    await prisma.payment.update({ where: { id: first.id }, data: { createdAt: new Date(Date.now() - 80 * DAY) } });
+    const oldRefund = await prisma.payment.create({
+      data: { code: `PAY-RRJ-${tail}-OLD`, type: 'refund', status: 'completed', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id, refundsPaymentId: first.id, paidAt: new Date(Date.now() - 45 * DAY), createdAt: new Date(Date.now() - 46 * DAY) },
+    });
+    paymentIds.push(oldRefund.id);
+    // He pays ₹499 again: a new guarantee, which also runs out.
+    const repaidAt = new Date(Date.now() - 35 * DAY);
+    const second = await prisma.payment.create({
+      data: { code: `PAY-RRJ-${tail}-A2`, type: 'activation', status: 'succeeded', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id, confirmedAt: repaidAt, paidAt: repaidAt, createdAt: repaidAt },
+    });
+    paymentIds.push(second.id);
+    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: repaidAt, status: 'active' } });
+    const ref = `js-${seeker.id}`;
+    const due = await request(server()).get('/finance/refunds').set(as('finance')).expect(200);
+    expect(due.body.rows.map((r: { ref: string }) => r.ref)).toContain(ref);
+    await reject(ref, 'finance', 'Refund check: working at a business we introduced').expect(200);
+    expect(await prisma.refundRejection.findFirst({ where: { jobSeekerId: seeker.id } })).toMatchObject({ guaranteeStartedAt: repaidAt });
+  });
+
   it('R1: a business refund above the limit is the CEO\'s whatever its status; the CEO rejects it and the chain gets one rejection', async () => {
     const pl = await placement();
     const big = await refundPayment({ amount: 2000000, subjectId: pl.id, placementId: pl.id, businessId });
