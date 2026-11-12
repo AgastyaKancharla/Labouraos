@@ -5,6 +5,7 @@ import { AuthProvider, useAuth } from './auth/AuthProvider';
 import { RequireRole } from './auth/RequireRole';
 import { ROLE_HOME } from './auth/roles';
 import { ToastProvider } from './components/Toast';
+import { TestModeBanner } from './components/TestModeBanner';
 import { I18nProvider } from './i18n/I18nProvider';
 import { isApiError } from './lib/api/errors';
 import { PORTALS } from './portals';
@@ -40,7 +41,10 @@ export function AppProviders({ children, queryClient }: { children: ReactNode; q
     <QueryClientProvider client={client}>
       <I18nProvider>
         <AuthProvider>
-          <ToastProvider>{children}</ToastProvider>
+          <ToastProvider>
+            {children}
+            <TestModeBanner />
+          </ToastProvider>
         </AuthProvider>
       </I18nProvider>
     </QueryClientProvider>

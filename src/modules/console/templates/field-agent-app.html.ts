@@ -1050,7 +1050,8 @@ export function renderFieldAgentAppHtml(): string {
         bizOtpRequestId = res.requestId;
         document.getElementById('fa-biz-otp-box').style.display = 'block';
         document.getElementById('fa-biz-otp-status').textContent = 'OTP sent! Req: ' + res.requestId;
-        showAlert('OTP sent to ' + phone);
+        // OTP test mode (pretend vendors): the server sends the code back to show.
+        showAlert(res.testModeBanner ? res.testModeBanner : 'OTP sent to ' + phone);
       } catch (e) {
         showAlert(e.message, false);
       }

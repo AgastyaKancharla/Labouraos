@@ -27,6 +27,7 @@ import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { Public } from '../../common/rbac/public.decorator';
+import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 
 @Controller()
 export class ReferralRegistrationController {
@@ -55,6 +56,7 @@ export class ReferralRegistrationController {
 
   @Post('referral-registration/:token/selfie')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  @CheckLinkBeforeUpload('referral_registration', 'referral', 'A valid referral registration link is required')
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadSelfie(
     @Param('token') token: string,

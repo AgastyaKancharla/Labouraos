@@ -61,10 +61,12 @@ export class AuthController {
   ) {
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    return this.authService.verifyLoginCode(body.loginRequestId, body.code, {
-      ip,
-      userAgent,
-    });
+    return this.authService.verifyLoginCode(
+      body.loginRequestId,
+      body.code,
+      { ip, userAgent },
+      { deviceId: body.deviceId, loginRequestProof: body.loginRequestProof },
+    );
   }
 
   @Post('refresh')

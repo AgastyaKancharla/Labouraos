@@ -148,6 +148,9 @@ export function enrolledLogin(
     return request(server).post('/auth/login/verify-code').send({
       loginRequestId: login.body.loginRequestId,
       code,
+      // The code works only for the device and sign-in that asked for it.
+      deviceId,
+      loginRequestProof: login.body.loginRequestProof,
     });
   };
   const call = run();

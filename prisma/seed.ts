@@ -34,6 +34,29 @@ export function assertSeedAllowed(env?: string): void {
   }
 }
 
+/** Hosts that can only be a database on this computer (or its local Docker network). */
+const LOCAL_DATABASE_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]', 'host.docker.internal', 'postgres', 'db']);
+
+/**
+ * M7: the seed creates CEO, Manager and Finance accounts with a password that
+ * is published in this repository. It refuses any database that is not on
+ * this computer, whatever NODE_ENV says, so a laptop whose .env points at the
+ * live Supabase can never be seeded by mistake.
+ */
+export function assertSeedDatabaseIsLocal(databaseUrl: string | undefined = process.env.DATABASE_URL): void {
+  let host = '';
+  try {
+    host = databaseUrl ? new URL(databaseUrl).hostname.toLowerCase() : '';
+  } catch {
+    host = '';
+  }
+  if (!host || !LOCAL_DATABASE_HOSTS.has(host)) {
+    throw new Error(
+      `Refusing to seed database: DATABASE_URL must point at a database on this computer (localhost), but found ${host ? `"${host}"` : 'no usable address'}. The seed's accounts use a published password and must never reach a hosted database.`,
+    );
+  }
+}
+
 async function seedPrimaryTrade(prisma: PrismaClient, jobSeekerId: string, trade: string) {
   await prisma.jobSeekerTrade.updateMany({
     where: { jobSeekerId },
@@ -75,6 +98,7 @@ async function seedIdentityVerification(
 
 export async function seed(prismaClient?: PrismaClient) {
   assertSeedAllowed();
+  assertSeedDatabaseIsLocal();
 
   const prisma = prismaClient ?? new PrismaClient();
   const defaultPassword = 'Password123!Secure';

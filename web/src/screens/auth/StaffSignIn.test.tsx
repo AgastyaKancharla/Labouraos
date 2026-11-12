@@ -46,7 +46,7 @@ describe('Staff sign in', () => {
 
   it('Call agent: password, then the code the Team Lead reads out (CA01 → CA02)', async () => {
     const api = mockApi({
-      'POST /auth/login': { status: 'awaiting_code', loginRequestId: 'lr-1', expiresAt: new Date(Date.now() + 300_000).toISOString() },
+      'POST /auth/login': { status: 'awaiting_code', loginRequestId: 'lr-1', loginRequestProof: 'proof-1', expiresAt: new Date(Date.now() + 300_000).toISOString() },
       'POST /auth/login/verify-code': tokenResponse('call_agent', 'CA-0042'),
     });
     renderSignIn();
@@ -56,7 +56,13 @@ describe('Staff sign in', () => {
     await userEvent.click(screen.getAllByRole('textbox')[0]);
     await userEvent.paste('481906');
     await waitFor(() => expect(sessionStore.get()?.staff.role).toBe('call_agent'));
-    expect(api.calls('POST /auth/login/verify-code')[0].body).toEqual({ loginRequestId: 'lr-1', code: '481906' });
+    // The code works only for this device and this sign-in: both go back with it.
+    expect(api.calls('POST /auth/login/verify-code')[0].body).toEqual({
+      loginRequestId: 'lr-1',
+      code: '481906',
+      deviceId: localStorage.getItem(DEVICE_ID_KEY),
+      loginRequestProof: 'proof-1',
+    });
   });
 
   it('Team Lead is told to ask a Manager (TL02)', async () => {

@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { WeeklyReportService, WeeklyRunResult } from '../modules/weekly-report/weekly-report.service';
 import { weeklyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const WEEKLY_REPORT_QUEUE = 'weekly-report';
 export const WEEKLY_REPORT_RUN = 'monday-weekly-report';
@@ -80,7 +81,7 @@ export class WeeklyReportJob implements OnModuleInit, OnModuleDestroy {
   async onModuleInit(): Promise<void> {
     // Only the worker process runs jobs and registers schedulers, so the web
     // and worker processes never both run the Monday report.
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

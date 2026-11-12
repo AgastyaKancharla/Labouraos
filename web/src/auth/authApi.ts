@@ -6,9 +6,10 @@ import { getDeviceId } from './device';
  *
  *   POST /auth/login              { staffCode, password, deviceId, totpCode? }
  *        → token                  (management with authenticator, or not yet enrolled → totp_setup token)
- *        → { status: 'awaiting_code', loginRequestId, expiresAt }   (Team Lead, agents)
+ *        → { status: 'awaiting_code', loginRequestId, loginRequestProof, expiresAt }   (Team Lead, agents)
  *        → 401 "TOTP 2FA code is required"   (management: password right, ask for the code)
- *   POST /auth/login/verify-code  { loginRequestId, code } → token
+ *   POST /auth/login/verify-code  { loginRequestId, code, deviceId, loginRequestProof } → token
+ *        (the code works only for the device and sign-in that asked for it)
  *   POST /auth/refresh            (Bearer) → { accessToken, sessionId }
  *   POST /auth/logout             (Bearer)
  *   POST /staff/2fa/setup         (Bearer, setup token) → { secret, otpauthUrl }
@@ -35,6 +36,8 @@ export interface TokenResponse {
 export interface AwaitingCodeResponse {
   status: 'awaiting_code';
   loginRequestId: string;
+  /** Sent back with the code: only this sign-in has it. */
+  loginRequestProof: string;
   expiresAt: string;
 }
 
@@ -50,8 +53,12 @@ export const TOTP_REQUIRED_MESSAGE = 'TOTP 2FA code is required';
 export const authApi = {
   login: (input: { staffCode: string; password: string; totpCode?: string }) =>
     api.post<LoginResponse>('/auth/login', { ...input, deviceId: getDeviceId() }, { auth: false }),
-  verifyCode: (loginRequestId: string, code: string) =>
-    api.post<TokenResponse>('/auth/login/verify-code', { loginRequestId, code }, { auth: false }),
+  verifyCode: (loginRequestId: string, code: string, loginRequestProof: string) =>
+    api.post<TokenResponse>(
+      '/auth/login/verify-code',
+      { loginRequestId, code, deviceId: getDeviceId(), loginRequestProof },
+      { auth: false },
+    ),
   refresh: () => api.post<{ accessToken: string; sessionId: string }>('/auth/refresh'),
   logout: (token?: string) => api.post<{ success: boolean }>('/auth/logout', {}, token ? { token } : undefined),
   setupTotp: (token: string) => api.post<{ secret: string; otpauthUrl: string }>('/staff/2fa/setup', {}, { token }),

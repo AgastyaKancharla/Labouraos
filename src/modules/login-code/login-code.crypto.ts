@@ -14,6 +14,17 @@ export function loginCodeFor(requestId: string, secret = getLoginCodeSecret()): 
   return decimal.slice(0, 6).padStart(6, '0');
 }
 
+/**
+ * The proof handed only to the device and sign-in that asked for a login
+ * code (in the `awaiting_code` answer). The code alone is not enough: it is
+ * read out by a Team Lead and may be overheard, so POST /auth/login/verify-code
+ * also needs this proof and the same device id. Bound to the request and its
+ * device; never shown on the login code screens.
+ */
+export function loginRequestProofFor(requestId: string, deviceId: string, secret = getLoginCodeSecret()): string {
+  return createHmac('sha256', secret).update(`login-request-proof:${requestId}:${deviceId}`).digest('base64url');
+}
+
 export function loginCodesMatch(supplied: string, expected: string): boolean {
   const left = createHash('sha256').update(supplied).digest();
   const right = createHash('sha256').update(expected).digest();

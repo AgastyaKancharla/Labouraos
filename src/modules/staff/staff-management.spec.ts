@@ -148,6 +148,8 @@ describe('Phase 8 Task 9: Staff account management', () => {
       .send({
         loginRequestId: res.body.loginRequestId,
         code: loginCodeFor(res.body.loginRequestId),
+        deviceId: deviceId,
+        loginRequestProof: res.body.loginRequestProof,
       });
   }
 

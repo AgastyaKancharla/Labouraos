@@ -22,7 +22,7 @@ import {
 } from './dto/login.dto';
 import { JwtPayload } from './jwt-payload.interface';
 import { LoginCodeService } from '../../modules/login-code/login-code.service';
-import { isOddHourIst } from '../../modules/login-code/login-code.crypto';
+import { isOddHourIst, loginCodesMatch, loginRequestProofFor } from '../../modules/login-code/login-code.crypto';
 import { OfficeNetworkService } from '../../modules/office-network/office-network.service';
 import { ReviewFlagService } from '../../modules/review-flag/review-flag.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
@@ -150,15 +150,18 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, metadata?: LoginMetadata): Promise<LoginResult> {
-    if (loginDto.email && !loginDto.staffCode?.trim()) {
+    if (loginDto.email && !(typeof loginDto.staffCode === 'string' && loginDto.staffCode.trim())) {
       await this.auditAttempt('login', 'unknown', 'auth.login.refused', {
         reason: 'email_not_identifier',
       });
       throw new UnauthorizedException('Email is not a login identifier');
     }
 
-    const staffCode = loginDto.staffCode?.trim() ?? '';
-    const password = loginDto.password ?? '';
+    // L10: request bodies are not validated globally; a wrong type (for
+    // example a number) is treated as missing, not answered with a 500.
+    const text = (value: unknown): string => (typeof value === 'string' ? value : '');
+    const staffCode = text(loginDto.staffCode).trim();
+    const password = text(loginDto.password);
     if (!staffCode || !password) {
       await this.auditAttempt('login', 'unknown', 'auth.login.refused', {
         reason: 'invalid_credentials',
@@ -190,7 +193,11 @@ export class AuthService {
     }
 
     await this.rejectIfLocked(staff);
-    await this.clearFailedLogins(staff.id);
+    const management = (MANAGEMENT_ROLES as readonly string[]).includes(staff.role);
+    // Management has a second factor still to come (authenticator code): the
+    // wrong-try count is cleared only once that is right too, so wrong codes
+    // lock the account exactly like wrong passwords (5 tries, 15 minutes).
+    if (!management) await this.clearFailedLogins(staff.id);
 
     if (staff.status !== 'active') {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
@@ -199,7 +206,7 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
-    const deviceId = loginDto.deviceId?.trim() ?? '';
+    const deviceId = text(loginDto.deviceId).trim();
     if (!deviceId) {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
         reason: 'device_required',
@@ -208,7 +215,6 @@ export class AuthService {
     }
     noteRequestDevice({ staffId: staff.id, deviceId });
 
-    const management = (MANAGEMENT_ROLES as readonly string[]).includes(staff.role);
     const device = await this.prisma.staffDevice.findUnique({
       where: { staffId_deviceId: { staffId: staff.id, deviceId } },
     });
@@ -236,7 +242,7 @@ export class AuthService {
     }
 
     if (management) {
-      return this.completeManagementLogin(staff, deviceId, device?.status, loginDto.totpCode, metadata);
+      return this.completeManagementLogin(staff, deviceId, device?.status, text(loginDto.totpCode) || undefined, metadata);
     }
 
     if (!(LOGIN_CODE_ROLES as readonly string[]).includes(staff.role)) {
@@ -257,6 +263,7 @@ export class AuthService {
     const awaiting: AwaitingCodeResponseDto = {
       status: 'awaiting_code',
       loginRequestId: request.id,
+      loginRequestProof: loginRequestProofFor(request.id, deviceId),
       expiresAt: request.expiresAt,
     };
     return awaiting;
@@ -266,10 +273,12 @@ export class AuthService {
     loginRequestId: string | undefined,
     code: string | undefined,
     metadata?: LoginMetadata,
+    binding: { deviceId?: string; loginRequestProof?: string } = {},
   ): Promise<LoginResponseDto> {
-    if (!loginRequestId || !code) {
+    if (!loginRequestId || !code || typeof loginRequestId !== 'string' || typeof code !== 'string') {
       throw new UnauthorizedException('Login code is not valid');
     }
+    await this.assertSameDeviceAndSignIn(loginRequestId, binding);
     let used: { staffId: string; id: string };
     try {
       used = await this.loginCodeService.verify(loginRequestId, code);
@@ -304,6 +313,37 @@ export class AuthService {
     });
     noteRequestDevice({ staffId: staff.id, deviceId: device?.deviceId ?? null });
     return this.issueSession(staff, device?.deviceId ?? null, metadata, used.id);
+  }
+
+  /**
+   * A login code works only for the device and sign-in that asked for it: the
+   * same device id, and the proof that was handed only to that sign-in. A
+   * mismatch is refused without counting as a wrong code, so nobody else can
+   * use up the person's five tries.
+   */
+  private async assertSameDeviceAndSignIn(
+    loginRequestId: string,
+    binding: { deviceId?: string; loginRequestProof?: string },
+  ): Promise<void> {
+    const request = await this.prisma.loginCodeRequest.findUnique({
+      where: { id: loginRequestId },
+      select: { id: true, staffId: true, staffDevice: { select: { deviceId: true } } },
+    });
+    if (!request) return; // the code check answers "not found" as before
+    const deviceId = typeof binding.deviceId === 'string' ? binding.deviceId.trim() : '';
+    const proof = typeof binding.loginRequestProof === 'string' ? binding.loginRequestProof : '';
+    const expectedDevice = request.staffDevice?.deviceId ?? '';
+    const sameDevice = Boolean(deviceId) && Boolean(expectedDevice) && deviceId === expectedDevice;
+    const sameSignIn = sameDevice && loginCodesMatch(proof, loginRequestProofFor(request.id, expectedDevice));
+    if (sameDevice && sameSignIn) return;
+    await this.auditService.log({
+      actorId: request.staffId,
+      action: 'auth.login.refused',
+      entityType: 'login_code_request',
+      entityCode: request.id,
+      after: { reason: sameDevice ? 'login_code_other_sign_in' : 'login_code_other_device' },
+    });
+    throw new UnauthorizedException('This login code can only be used on the device that asked for it');
   }
 
   async verifyToken(token: string): Promise<JwtPayload> {
@@ -573,6 +613,7 @@ export class AuthService {
   ): Promise<LoginResponseDto> {
     const enrolled = !!(staff.totpEnabled && staff.totpSecret);
     if (!enrolled) {
+      await this.clearFailedLogins(staff.id);
       return this.issueSession(staff, deviceId, metadata, null, true);
     }
     if (!totpCode) {
@@ -580,9 +621,14 @@ export class AuthService {
       throw new UnauthorizedException('TOTP 2FA code is required');
     }
     if (!this.totpService.verify(totpCode, staff.totpSecret!)) {
-      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'totp_invalid' });
+      // Counted on the account like a wrong password: 5 wrong codes lock it.
+      const lockedUntil = await this.recordFailedPassword(staff, 'totp_invalid');
+      if (lockedUntil) {
+        throw new UnauthorizedException(this.lockedMessage({ lockedUntil, lockedByStaffId: null }));
+      }
       throw new UnauthorizedException('Invalid TOTP code');
     }
+    await this.clearFailedLogins(staff.id);
     if (deviceStatus !== 'approved') {
       if (!this.selfApprovesDevice(staff)) {
         await this.ensurePendingDevice(staff.id, deviceId);
@@ -846,7 +892,11 @@ export class AuthService {
     });
   }
 
-  private async recordFailedPassword(staff: Staff): Promise<Date | null> {
+  /** Counts one wrong password (or wrong authenticator code) and locks at the limit. */
+  private async recordFailedPassword(
+    staff: Staff,
+    reason: 'invalid_credentials' | 'totp_invalid' = 'invalid_credentials',
+  ): Promise<Date | null> {
     const policy = await this.pricingService.current();
     const updated = await this.prisma.staff.update({
       where: { id: staff.id },
@@ -861,7 +911,7 @@ export class AuthService {
         entityType: 'staff',
         entityCode: staff.code,
         before: { failedLoginCount: count - 1 },
-        after: { reason: 'invalid_credentials', failedLoginCount: count },
+        after: { reason, failedLoginCount: count },
       });
       return null;
     }
@@ -880,6 +930,7 @@ export class AuthService {
       before: { failedLoginCount: count - 1, lockedUntil: null },
       after: {
         reason: 'account_locked',
+        lastFailure: reason,
         failedLoginCount: count,
         lockedUntil: lockedUntil.toISOString(),
       },

@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
@@ -168,6 +168,30 @@ export class UpiCollectionService {
       payeeName,
       status: payment.status,
     };
+  }
+
+  /**
+   * L8: an agent may re-send a payment link only for an account they hold:
+   * the business's account agent (or lead creator), or the agent who
+   * registered the job seeker.
+   */
+  async assertAccountAgentForPayment(paymentId: string, staffId: string): Promise<void> {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: {
+        business: { select: { accountAgentId: true, leadCreatedByStaffId: true } },
+        jobSeeker: { select: { registeredByStaffId: true } },
+      },
+    });
+    if (!payment) throw new NotFoundException('Pending UPI payment request not found');
+    const holders = [
+      payment.business?.accountAgentId,
+      payment.business?.leadCreatedByStaffId,
+      payment.jobSeeker?.registeredByStaffId,
+    ];
+    if (!holders.includes(staffId)) {
+      throw new ForbiddenException('Only Finance, the CEO or the agent who holds this account can re-send its payment link');
+    }
   }
 
   async resendRequest(paymentId: string, notifySubjectType?: 'job_seeker' | 'business', notifySubjectId?: string, recipientPhone?: string) {

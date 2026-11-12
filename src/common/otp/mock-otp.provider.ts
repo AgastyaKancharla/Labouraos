@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { nationalMobileDigits } from '../phone/indian-mobile';
 import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
+import { otpTestModeEnabled } from './otp-test-mode';
 
 export interface OtpRecord {
   requestId: string;
@@ -70,6 +71,7 @@ export class MockOtpProvider implements OtpProvider {
       record.resendCount += 1;
       record.lastSentAt = now;
       this.logger.log(`[MOCK OTP] Resent OTP to ******${normalizePhone(phone).slice(-4)} (requestId: ${record.requestId})`);
+      this.logTestModeCode(record);
       return this.sendResult(record);
     }
 
@@ -92,6 +94,7 @@ export class MockOtpProvider implements OtpProvider {
     });
 
     this.logger.log(`[MOCK OTP] Sent OTP to ******${normalizePhone(phone).slice(-4)} (requestId: ${requestId})`);
+    this.logTestModeCode(this.records.get(requestId)!);
     return this.sendResult(this.records.get(requestId)!);
   }
 
@@ -160,6 +163,16 @@ export class MockOtpProvider implements OtpProvider {
       requestId: record.requestId,
       resendAvailableAt: new Date(record.lastSentAt + RESEND_WAIT_MS).toISOString(),
       resendsLeft: MAX_RESENDS - record.resendCount,
+      // Test mode only: nobody can receive a pretend SMS, so the screen shows the code.
+      ...(otpTestModeEnabled() ? { testModeCode: record.code } : {}),
     };
+  }
+
+  /** Test mode only: the code in the server log, so a tester can read it there too. */
+  private logTestModeCode(record: OtpRecord): void {
+    if (!otpTestModeEnabled()) return;
+    this.logger.log(
+      `[MOCK OTP] Test mode code for ******${normalizePhone(record.phone).slice(-4)}: ${record.code} (requestId: ${record.requestId})`,
+    );
   }
 }

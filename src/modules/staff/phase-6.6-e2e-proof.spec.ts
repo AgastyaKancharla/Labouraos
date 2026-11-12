@@ -342,6 +342,8 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
       .send({
         loginRequestId: tl1CodeLogin.body.loginRequestId,
         code: tl1Shown.body.code,
+        deviceId: tl1DeviceId,
+        loginRequestProof: tl1CodeLogin.body.loginRequestProof,
       });
     expect(tl1FullLogin.status).toBe(200);
     const tl1Token = tl1FullLogin.body.accessToken;
@@ -504,6 +506,8 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
       .send({
         loginRequestId: newPasswordLogin.body.loginRequestId,
         code: restoredShown.body.code,
+        deviceId: tl1DeviceId,
+        loginRequestProof: newPasswordLogin.body.loginRequestProof,
       });
     expect(restoredLoginRes.status).toBe(200);
     expect(restoredLoginRes.body.accessToken).toBeDefined();

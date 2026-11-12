@@ -4,6 +4,7 @@ import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { PlacementService } from '../modules/placement/placement.service';
 import { dailyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const PLACEMENT_COMPLETION_QUEUE = 'placement-completion';
 export const PLACEMENT_COMPLETION_SWEEP = 'daily-placement-completion';
@@ -65,7 +66,7 @@ export class PlacementCompletionJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

@@ -6,6 +6,7 @@ import { AttendanceService } from '../modules/attendance/attendance.service';
 import { AttendanceDaysService } from '../modules/attendance/attendance-days.service';
 import { LeaveService } from '../modules/attendance/leave.service';
 import { dailyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const FORGOTTEN_LOGOUT_QUEUE = 'forgotten-logout';
 export const FORGOTTEN_LOGOUT_SWEEP = 'close-forgotten-days';
@@ -77,7 +78,7 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

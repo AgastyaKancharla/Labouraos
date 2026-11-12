@@ -188,6 +188,8 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
         preferredCallWindowEnd: '18:00',
         status: 'active',
         city: 'Bengaluru',
+        // "Owned by Agent 1": registered by them, so inside Lead 1's team (M3).
+        registeredByStaffId: agent1Id,
       },
     });
     sampleSeekerId = seeker.id;
