@@ -1,3 +1,4 @@
+import { ForgotPasswordService } from './forgot-password.service';
 import { Module } from '@nestjs/common';
 import { StaffController } from './staff.controller';
 import { StaffDeviceController } from './staff-device.controller';
@@ -10,7 +11,7 @@ import { ReportingScopeModule } from './reporting-scope.module';
 @Module({
   imports: [PrismaModule, IdModule, ReportingScopeModule],
   controllers: [StaffController, StaffDeviceController],
-  providers: [StaffService, StaffDeviceService],
+  providers: [StaffService, StaffDeviceService, ForgotPasswordService],
   exports: [StaffService, StaffDeviceService],
 })
 export class StaffModule {}

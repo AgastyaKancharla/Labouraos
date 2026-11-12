@@ -26,6 +26,21 @@ function renderSignIn() {
 }
 
 describe('Staff sign in', () => {
+  it('Forgot password: management asks for a link by company email and always gets the same answer', async () => {
+    const answer = { message: 'If that is the company email of a CEO, Manager or Finance account, a link to set a new password is on its way.' };
+    const api = mockApi({ 'POST /staff/forgot-password': answer });
+    renderSignIn();
+    await userEvent.click(screen.getByRole('button', { name: 'Forgot password?' }));
+    expect(screen.getByRole('heading', { name: 'Forgot password' })).toBeInTheDocument();
+    expect(screen.getByText(/ask your Team Lead, a Manager or the CEO to tap Reset/)).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/Company email/), 'priya@laboura.in');
+    await userEvent.click(screen.getByRole('button', { name: 'Send the link' }));
+    expect(await screen.findByText(answer.message)).toBeInTheDocument();
+    expect(api.calls('POST /staff/forgot-password')[0].body).toEqual({ email: 'priya@laboura.in' });
+    await userEvent.click(screen.getByRole('button', { name: 'Back to sign in' }));
+    expect(screen.getByRole('heading', { name: 'Staff sign in' })).toBeInTheDocument();
+  });
+
   it('CEO: password, then the authenticator code as a second step (M01 → M02)', async () => {
     const api = mockApi({
       'POST /auth/login': ({ body }: { body: { totpCode?: string } }) =>

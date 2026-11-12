@@ -27,6 +27,7 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
       (body?.loginRequestId as string) ||
       (body?.phone as string) ||
       (body?.requestId as string) ||
+      (typeof body?.email === 'string' ? (body.email as string).trim().toLowerCase() : '') ||
       'anon';
 
     return `${identity}:${clientIp}`;

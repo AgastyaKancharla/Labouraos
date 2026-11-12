@@ -1,3 +1,4 @@
+import { ForgotPasswordService } from './forgot-password.service';
 import {
   Body,
   Controller,
@@ -34,7 +35,10 @@ type AuthenticatedRequest = Request & { user: JwtPayload };
 @Controller('staff')
 @UseInterceptors(PiiMaskingInterceptor)
 export class StaffController {
-  constructor(private readonly staffService: StaffService) {}
+  constructor(
+    private readonly staffService: StaffService,
+    private readonly forgotPasswords: ForgotPasswordService,
+  ) {}
 
   @Post()
   @UseGuards(JwtAuthGuard, RbacGuard)
@@ -156,6 +160,21 @@ export class StaffController {
    * Public by design: the new hire has no password or session yet and proves
    * identity with the one-time invite token. Throttled like login.
    */
+  /**
+   * "Forgot password" for the CEO, Managers and Finance: a one-time link to
+   * their company email. Public (they cannot sign in); the same answer for
+   * every address; throttled per address and email, and at most 3 links an
+   * hour per account.
+   */
+  @Post('forgot-password')
+  @Public('management forgot password: always the same answer, never says whether the email exists')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  forgotPassword(@Body() body: { email?: unknown }) {
+    return this.forgotPasswords.request(body?.email).answer;
+  }
+
   @Post('accept-invite/preview')
   @Public('invite page: shows whose invite the one-time token is, before a password exists')
   @HttpCode(HttpStatus.OK)

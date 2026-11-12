@@ -434,6 +434,8 @@ This does three things: the web service never sleeps (it sleeps after 15 minutes
 
 **F12. Test OTP steps with the on-screen test code.** Every vendor is in `mock` mode, so no SMS is sent. Instead, whenever a screen asks for an OTP, a yellow banner **"Test mode code: 123456"** shows the code (and the server log shows it too). This test mode turns off by itself when `OTP_PROVIDER_MODE` is `real`, and is never shown when `NODE_ENV` is `production` with any live vendor.
 
+**F12b. Forgot password (CEO, Managers, Finance) in test mode.** No email vendor is chosen yet (`EMAIL_PROVIDER_MODE` is `mock`, the default), so no email goes out. The screen always gives the same answer; the reset link is written to the server log next to a masked address (`p***@laboura.in`). Test mode turns off when `EMAIL_PROVIDER_MODE` is `real` (which also needs `EMAIL_API_URL`, `EMAIL_API_KEY` and `EMAIL_FROM`) or when `NODE_ENV` is `production` with any live vendor.
+
 **F13. Open the field app on a phone.** Open `https://laboura-test.onrender.com/field` on an iPhone in Safari, then **Share**, **Add to Home Screen**.
 
 ### If something stops on the free tier
