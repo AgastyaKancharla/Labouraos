@@ -913,6 +913,40 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect(await prisma.attendanceDay.count({ where: { staffId: oldie.id, date: { in: [day('2002-01-16'), day('2002-01-21'), day('2002-01-22')] } } })).toBe(0);
     });
 
+    it('refuses a part leave approval with days there before writing anything, but allows one whose days a later sheet reaches; refuses sending such a request back', async () => {
+      const route = { routedToRole: 'team_lead', routeReason: 'W5B test' };
+      // Wed 30 Jan – Tue 5 Feb 2002: 6 leave days (Sunday off), January beyond reach, February reached.
+      const asked = await prisma.leaveRequest.create({ data: { staffId: oldie.id, kind: 'emergency', fromDate: day('2002-01-30'), toDate: day('2002-02-05'), days: 6, reason: 'W5B part leave', ...route } });
+      const january = await request(server()).post(`/attendance/requests/leave/${asked.id}/approve`).set(as('ceo')).send({ reason: 'Two days only', fromDate: '2002-01-30', toDate: '2002-01-31' }).expect(400);
+      expect(january.body.message).toMatch(/part approval.*January 2002.*manual correction/);
+      const untouched = await prisma.leaveRequest.findUniqueOrThrow({ where: { id: asked.id } });
+      expect([untouched.status, untouched.approvedDays, untouched.decidedAt]).toEqual(['pending', null, null]);
+      expect(await prisma.attendanceDay.count({ where: { staffId: oldie.id, date: { in: [day('2002-01-30'), day('2002-01-31')] } } })).toBe(0);
+      // The whole request would touch January too: refused as a leave decision.
+      const whole = await request(server()).post(`/attendance/requests/leave/${asked.id}/approve`).set(as('ceo')).send({ reason: 'ok' }).expect(400);
+      expect(whole.body.message).toMatch(/leave decision.*January 2002/);
+      // Only the February days: payroll still works February 2002 out again.
+      const february = await request(server()).post(`/attendance/requests/leave/${asked.id}/approve`).set(as('ceo')).send({ reason: 'February days only', fromDate: '2002-02-04', toDate: '2002-02-05' });
+      expect(february.status).toBe(201);
+      expect(february.body).toMatchObject({ status: 'approved', approvedFromDate: '2002-02-04', approvedToDate: '2002-02-05', approvedDays: 2 });
+
+      // Send back: a Manager over the person, the request with the Manager, its days in January 2002.
+      const manager = await makeStaff('manager', 'w-window-mgr');
+      const lead = await makeStaff('team_lead', 'w-window-tl');
+      await prisma.staff.update({ where: { id: lead.id }, data: { reportsToId: manager.id } });
+      await prisma.staff.update({ where: { id: oldie.id }, data: { teamLeadId: lead.id, reportsToId: lead.id } });
+      try {
+        const overLimit = await prisma.leaveRequest.create({
+          data: { staffId: oldie.id, kind: 'casual', fromDate: day('2002-01-28'), toDate: day('2002-01-29'), days: 2, reason: 'W5B send back', routedToRole: 'manager', routedToStaffId: manager.id, routeReason: 'over_limit' },
+        });
+        const back = await request(server()).post(`/requests/leave.${overLimit.id}/send-back`).set(as('w-window-mgr')).send({ note: 'W5B ask the TL' }).expect(400);
+        expect(back.body.message).toMatch(/Sending this request back to the Team Lead.*January 2002.*manual correction/);
+        expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: overLimit.id } })).toMatchObject({ routedToRole: 'manager', sentBackAt: null, status: 'pending' });
+      } finally {
+        await prisma.staff.update({ where: { id: oldie.id }, data: { teamLeadId: null, reportsToId: ceoId || null } });
+      }
+    });
+
     it('allows a manual correction for such a month: payroll no longer re-checks it', async () => {
       const res = await request(server()).post('/payroll/corrections').set(as('ceo')).send({ staffId: oldie.id, relatesToMonth: '2002-01', amountPaise: 100000, reason: 'W5B holiday on 14 Jan 2002 not paid' }).expect(201);
       expect(res.body).toEqual(expect.objectContaining({ relatesToMonth: '2002-01', amountPaise: 100000, source: 'manual' }));

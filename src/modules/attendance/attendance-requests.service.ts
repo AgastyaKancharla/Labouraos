@@ -258,7 +258,10 @@ export class AttendanceRequestsService {
       if (day?.dayType === 'leave') throw new BadRequestException('This is a leave day');
     }
     // An approval changes attendance: refused in a month payroll no longer works out again.
-    if (decision === 'approved') await this.assertPayrollReaches(request);
+    // A part approval writes only its own days, so only their months are checked (before anything is written).
+    if (decision === 'approved') {
+      await this.assertPayrollReaches(request, part ? { from: part.from, to: part.to, what: 'This part approval' } : undefined);
+    }
     const data = {
       status: decision,
       decidedAt: now,
@@ -384,6 +387,9 @@ export class AttendanceRequestsService {
           : 'This person has no Team Lead to send it back to',
       );
     }
+    // The Team Lead could only approve it by changing attendance in those months, which payroll may no
+    // longer work out again: refused here too (the Manager can still reject it; pay goes by manual correction).
+    await this.assertPayrollReaches(request, { what: 'Sending this request back to the Team Lead' });
     const data = {
       routedToRole: 'team_lead',
       routedToStaffId: chain.teamLead.id,
@@ -672,13 +678,26 @@ export class AttendanceRequestsService {
     throw new ForbiddenException('This request is not in your team');
   }
 
-  /** The request's dates (a leave's range, a correction's day) must be in months payroll still works out again. */
-  private async assertPayrollReaches(request: AnyRequest): Promise<void> {
+  /**
+   * The request's dates (a leave's range — or only the approved part of it —
+   * or a correction's day) must be in months payroll still works out again.
+   */
+  private async assertPayrollReaches(
+    request: AnyRequest,
+    options?: { from?: Date; to?: Date; what?: string },
+  ): Promise<void> {
     const months =
       'fromDate' in request
-        ? monthsBetween(monthOfDay((request as LeaveRequest).fromDate), monthOfDay((request as LeaveRequest).toDate))
+        ? monthsBetween(
+            monthOfDay(options?.from ?? (request as LeaveRequest).fromDate),
+            monthOfDay(options?.to ?? (request as LeaveRequest).toDate),
+          )
         : [monthOfDay((request as AttendanceCorrection).date)];
-    await assertPayrollCanCorrect(this.prisma, months, 'kind' in request ? 'This leave decision' : 'This attendance correction');
+    await assertPayrollCanCorrect(
+      this.prisma,
+      months,
+      options?.what ?? ('kind' in request ? 'This leave decision' : 'This attendance correction'),
+    );
   }
 
   private async alreadyDecided(kind: AttendanceRequestKind, id: string) {
