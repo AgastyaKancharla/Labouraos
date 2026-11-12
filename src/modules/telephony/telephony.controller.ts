@@ -50,8 +50,8 @@ export class TelephonyController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('job_seeker', 'read')
   @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
-  async getCallbackQueue(@Query('status') status?: string) {
-    return this.telephonyService.getCallbackQueue({ status });
+  async getCallbackQueue(@Req() req: Request & { user: JwtPayload }, @Query('status') status?: string) {
+    return this.telephonyService.getCallbackQueue({ status }, req.user);
   }
 
   @Post('callbacks/:id/assign')

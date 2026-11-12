@@ -11,9 +11,10 @@ import { PrismaModule } from '../../common/prisma/prisma.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditModule } from '../../common/audit/audit.module';
 import { AuditService } from '../../common/audit/audit.service';
+import { ReportingScopeModule } from '../staff/reporting-scope.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AttendanceModule, LiveModule],
+  imports: [PrismaModule, AuditModule, AttendanceModule, LiveModule, ReportingScopeModule],
   controllers: [TelephonyController],
   providers: [
     {

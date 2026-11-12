@@ -4,7 +4,9 @@ import {
   Injectable,
   NestInterceptor,
   Optional,
+  StreamableFile,
 } from '@nestjs/common';
+import { Stream } from 'stream';
 import { Observable } from 'rxjs';
 import { mergeMap } from 'rxjs/operators';
 import { Request } from 'express';
@@ -185,6 +187,53 @@ function omitCallRoutingPhone(data: unknown, seen = new WeakSet<object>()): void
   }
 }
 
+/**
+ * Account secrets that never leave the server, for any role including the CEO
+ * and for public routes (security check 12 Nov, P1): a password hash, the TOTP
+ * secret and its last used step, and every token hash (invite, used invite,
+ * reset and so on). A service should never select them; this is the backstop.
+ */
+const SECRET_KEYS = new Set(['passwordhash', 'totpsecret', 'totplaststep']);
+
+export function isSecretKey(key: string): boolean {
+  const k = key.toLowerCase();
+  return SECRET_KEYS.has(k) || k.endsWith('tokenhash');
+}
+
+/**
+ * Removes secret keys everywhere in a response, in place. Walks arrays and
+ * objects; streams, files, Dates and Buffers are left alone.
+ */
+export function stripSecrets(data: unknown, seen = new WeakSet<object>()): void {
+  if (data === null || data === undefined || typeof data !== 'object' || seen.has(data)) {
+    return;
+  }
+  if (
+    data instanceof Date ||
+    ArrayBuffer.isView(data) ||
+    data instanceof ArrayBuffer ||
+    data instanceof StreamableFile ||
+    data instanceof Stream
+  ) {
+    return;
+  }
+  seen.add(data);
+  if (Array.isArray(data)) {
+    for (const item of data) {
+      stripSecrets(item, seen);
+    }
+    return;
+  }
+  const record = data as Record<string, unknown>;
+  for (const key of Object.keys(record)) {
+    if (isSecretKey(key)) {
+      delete record[key];
+    } else {
+      stripSecrets(record[key], seen);
+    }
+  }
+}
+
 export interface FullPhoneRecordRef {
   id?: string;
   code?: string;
@@ -258,6 +307,7 @@ export class PiiMaskingInterceptor implements NestInterceptor {
 
     return next.handle().pipe(
       mergeMap(async (data: unknown) => {
+        stripSecrets(data);
         let out: unknown;
         if (role === 'finance') {
           out = maskPii(data);
