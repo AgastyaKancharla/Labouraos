@@ -1,3 +1,4 @@
+import { dayTally, leaveHalvesOf } from '../attendance/leave-units';
 import { BadRequestException, ForbiddenException, Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -394,10 +395,11 @@ export class ManagerPeopleService {
         productionSeconds: d.reduce((s, x) => s + x.productionSeconds, 0),
         lateMinutes: d.reduce((s, x) => s + x.lateMinutes, 0),
         lateDays: d.filter((x) => x.lateMinutes > 0).length,
-        fullDays: d.filter((x) => x.dayType === 'full').length,
-        halfDays: d.filter((x) => x.dayType === 'half').length,
-        absentDays: d.filter((x) => x.dayType === 'absent').length,
-        leaveDays: d.filter((x) => x.dayType === 'leave').length,
+        // Whole and half days (a half day of leave is half leave, half a working day).
+        fullDays: d.reduce((s, x) => s + dayTally(x).fullHalves / 2, 0),
+        halfDays: d.reduce((s, x) => s + dayTally(x).halfDays, 0),
+        absentDays: d.reduce((s, x) => s + dayTally(x).absentHalves / 2, 0),
+        leaveDays: d.reduce((s, x) => s + leaveHalvesOf(x).total / 2, 0),
         lostSeconds: d.reduce((s, x) => s + lostSeconds(x), 0),
       });
     }

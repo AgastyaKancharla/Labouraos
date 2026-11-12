@@ -6,6 +6,7 @@ import { PricingService, goLiveDayOf } from '../pricing/pricing.service';
 import { AttendanceDaysService, ATTENDANCE_ROLES } from '../attendance/attendance-days.service';
 import { WorkingDaysService } from '../attendance/working-days.service';
 import { deductibleShortfall, isWeeklyOff } from '../attendance/day-rules';
+import { dayTally } from '../attendance/leave-units';
 import { NotificationService } from '../notification/notification.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { notificationLink } from '../notification/notification.constants';
@@ -115,7 +116,12 @@ interface Person {
 interface DayLite {
   date: string;
   dayType: string;
+  leaveKind: string | null;
   leaveUnpaid: boolean;
+  /** A half day of leave ("first"/"second"); null on other days. */
+  leaveHalf: string | null;
+  /** A full leave day half paid, half unpaid. */
+  leavePartUnpaid: boolean;
   shortfallSeconds: number;
   makeUpSeconds: number;
 }
@@ -448,9 +454,9 @@ export class PayrollService {
     if (!staffIds.length) return out;
     const rows = await this.prisma.attendanceDay.findMany({
       where: { staffId: { in: staffIds }, date: { gte: new Date(`${monthDays(month).first}T00:00:00.000Z`), lte: new Date(`${monthDays(month).last}T00:00:00.000Z`) } },
-      select: { staffId: true, date: true, dayType: true, leaveUnpaid: true, shortfallSeconds: true, makeUpSeconds: true },
+      select: { staffId: true, date: true, dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, shortfallSeconds: true, makeUpSeconds: true },
     });
-    for (const r of rows) out.get(r.staffId)?.push({ date: r.date.toISOString().slice(0, 10), dayType: r.dayType, leaveUnpaid: r.leaveUnpaid, shortfallSeconds: r.shortfallSeconds, makeUpSeconds: r.makeUpSeconds });
+    for (const r of rows) out.get(r.staffId)?.push({ date: r.date.toISOString().slice(0, 10), dayType: r.dayType, leaveKind: r.leaveKind, leaveUnpaid: r.leaveUnpaid, leaveHalf: r.leaveHalf, leavePartUnpaid: r.leavePartUnpaid, shortfallSeconds: r.shortfallSeconds, makeUpSeconds: r.makeUpSeconds });
     return out;
   }
 
@@ -474,12 +480,16 @@ export class PayrollService {
       const row = byDay.get(day);
       if (!row) m.unmarked.push(day);
       else if (row.dayType === 'open') m.open.push(day);
-      else if (row.dayType === 'absent') m.absent += 1;
-      else if (row.dayType === 'half') m.half += 1;
-      else if (row.dayType === 'full') m.full += 1;
-      else if (row.dayType === 'leave') {
-        if (row.leaveUnpaid) m.unpaidLeave += 1;
-        else m.paidLeave += 1;
+      else {
+        // Whole and half days (owner decision 12 Nov: half-day leave). A half
+        // day of leave is half leave (paid, or unpaid = half a day's loss of
+        // pay) and a working half (worked, or absent = half a day's loss of pay).
+        const tally = dayTally(row);
+        m.full += tally.fullHalves / 2;
+        m.half += tally.halfDays;
+        m.absent += tally.absentHalves / 2;
+        m.paidLeave += tally.paidLeaveHalves / 2;
+        m.unpaidLeave += tally.unpaidLeaveHalves / 2;
       }
     }
     return m;

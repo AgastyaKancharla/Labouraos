@@ -1,3 +1,4 @@
+import { daysLabel } from '../attendance/leave-units';
 import {
   BadRequestException,
   ConflictException,
@@ -164,6 +165,8 @@ interface AttendanceView {
   leaveKind?: string;
   fromDate?: string;
   toDate?: string;
+  /** "first" or "second" for a half day of leave; null for full days. */
+  half?: string | null;
   days?: number;
   paidDays?: number;
   unpaidDays?: number;
@@ -966,7 +969,10 @@ export class RequestsService {
       const planned = row.leaveKind === 'casual';
       title = planned ? 'Planned leave' : 'Emergency leave';
       const dates = row.fromDate === row.toDate ? dayLabel(row.fromDate ?? '') : `${dayLabel(row.fromDate ?? '')} – ${dayLabel(row.toDate ?? '')}`;
-      summary = `${dates} · ${row.days ?? 0} day${row.days === 1 ? '' : 's'}`;
+      // A half day of leave (owner decision 12 Nov) says so, and which half.
+      summary = row.half
+        ? `${dates} · half day (${row.half} half)`
+        : `${dates} · ${daysLabel(row.days ?? 0)} day${row.days === 1 ? '' : 's'}`;
       if (row.approvedDays && row.approvedFromDate) {
         const approved = row.approvedFromDate === row.approvedToDate ? dayLabel(row.approvedFromDate) : `${dayLabel(row.approvedFromDate)} – ${dayLabel(row.approvedToDate ?? '')}`;
         summary += ` · ${row.approvedDays} approved (${approved})`;
@@ -975,12 +981,17 @@ export class RequestsService {
       const pendingOthers = row.casualDaysPendingThisMonth ?? 0;
       if (planned && status === 'pending') {
         const total = taken + pendingOthers + (row.days ?? 0);
-        if (total > 1) alert = `${ordinal(total)} planned day${row.days && row.days > 1 ? 's' : ''} in ${monthName(row.fromDate ?? '')}`;
+        if (total > 1) {
+          alert = Number.isInteger(total)
+            ? `${ordinal(total)} planned day${row.days && row.days > 1 ? 's' : ''} in ${monthName(row.fromDate ?? '')}`
+            : `${daysLabel(total)} planned days in ${monthName(row.fromDate ?? '')}`;
+        }
       }
       Object.assign(details, {
         leaveKind: row.leaveKind,
         fromDate: row.fromDate,
         toDate: row.toDate,
+        half: row.half ?? null,
         days: row.days,
         unpaidDays: row.unpaidDays ?? 0,
         approvedFromDate: row.approvedFromDate ?? null,

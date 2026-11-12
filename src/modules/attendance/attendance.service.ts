@@ -65,6 +65,8 @@ export interface TodayView {
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
+  /** "first" or "second" on a day with a half day of leave: half the production is needed. */
+  leaveHalf?: string | null;
   /** When the current status started (null before login and after logout). */
   statusSince: string | null;
   shortBreakSeconds: number;
@@ -160,7 +162,7 @@ export class AttendanceService {
       loginLat = body.latitude as number;
       loginLng = body.longitude as number;
     }
-    const lateMinutes = this.lateMinutes(now, policy);
+    const lateMinutes = this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
     if (existing) {
       // A day marked absent or leave before the person logged in becomes a
       // working day. The leave fields stay so the leave flow can see them.
@@ -250,7 +252,7 @@ export class AttendanceService {
       include: { segments: { orderBy: { startedAt: 'asc' } } },
     });
     if (!day || !day.loginAt) {
-      return { ...this.emptyToday(now, policy), dayType: day?.dayType ?? 'open' };
+      return { ...this.emptyToday(now, policy), dayType: day?.dayType ?? 'open', leaveHalf: day?.leaveKind ? (day.leaveHalf ?? null) : null };
     }
     const end = day.logoutAt ?? now;
     const totals = this.totals(day.segments, now);
@@ -260,7 +262,9 @@ export class AttendanceService {
         data: totals,
       });
     }
-    const fullSeconds = Math.round(policy.productionHoursFullDay * 3600);
+    // A half day of leave needs half the production (owner decision 12 Nov).
+    const halfLeave = Boolean(day.leaveHalf && day.leaveKind);
+    const fullSeconds = Math.round((policy.productionHoursFullDay * 3600) / (halfLeave ? 2 : 1));
     const current = [...day.segments].reverse().find((segment) => !segment.endedAt);
     return {
       date: this.dateLabel(day.date),
@@ -282,6 +286,7 @@ export class AttendanceService {
       flagged: day.flagged,
       closedReason: day.closedReason,
       dayType: day.dayType,
+      leaveHalf: halfLeave ? day.leaveHalf : null,
       statusSince: current ? current.startedAt.toISOString() : null,
       ...this.breakdown(day.segments, end),
       segments: day.segments.map((segment) => ({
@@ -457,6 +462,7 @@ export class AttendanceService {
       totals.productionSeconds,
       policy,
       await this.workingDays.isNonWorking(day.date),
+      Boolean(day.leaveHalf && day.leaveKind),
     );
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
@@ -492,6 +498,7 @@ export class AttendanceService {
       totals.productionSeconds,
       policy,
       await this.workingDays.isNonWorking(day.date),
+      Boolean(day.leaveHalf && day.leaveKind),
     );
     const changed = Boolean(day.dayTypeChangedAt);
     await this.prisma.attendanceDay.update({
@@ -626,11 +633,21 @@ export class AttendanceService {
     return new Date(latest);
   }
 
-  lateMinutes(loginAt: Date, policy: PricingPolicy): number {
+  /**
+   * Minutes late past the grace. On a day with the first half on leave the
+   * working half starts half way through the shift, so lateness counts from
+   * there (owner decision 12 Nov: the other half is a normal working half day).
+   */
+  lateMinutes(loginAt: Date, policy: PricingPolicy, leaveHalf: string | null = null): number {
     const parts = getCalendarPartsInTimezone(loginAt);
-    const [startHour, startMinute] = policy.shiftStart.split(':').map((part) => Number(part));
+    const toMinutes = (hhmm: string) => {
+      const [hour, minute] = hhmm.split(':').map((part) => Number(part));
+      return hour * 60 + minute;
+    };
     const loginMinutes = parts.hour * 60 + parts.minute;
-    const startMinutes = startHour * 60 + startMinute;
+    const shiftStart = toMinutes(policy.shiftStart);
+    const startMinutes =
+      leaveHalf === 'first' ? shiftStart + Math.floor((toMinutes(policy.shiftEnd) - shiftStart) / 2) : shiftStart;
     const lateBy = loginMinutes - startMinutes;
     if (lateBy <= policy.lateGraceMinutes) return 0;
     return lateBy;

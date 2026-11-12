@@ -19,6 +19,8 @@ interface ScheduleRow {
   fromDate: string;
   toDate: string;
   days: number;
+  /** "first" / "second" for a half day of leave; null for full days. */
+  half?: string | null;
   status: string;
   where: string;
   waitingForYou: boolean;
@@ -45,7 +47,7 @@ export default function TeamLeadLeave() {
   const b = board.data;
   const mgr = b?.manager ? firstName(b.manager.name) : 'the Manager';
   const schedule: Column<ScheduleRow>[] = [
-    { key: 'date', header: 'Date', cell: (r) => (r.fromDate === r.toDate ? day(r.fromDate) : `${day(r.fromDate)} – ${day(r.toDate)}`), sortValue: (r) => r.fromDate },
+    { key: 'date', header: 'Date', cell: (r) => (r.fromDate === r.toDate ? `${day(r.fromDate)}${r.half ? ` · half day (${r.half} half)` : ''}` : `${day(r.fromDate)} – ${day(r.toDate)}`), sortValue: (r) => r.fromDate },
     { key: 'who', header: 'Who', cell: (r) => `${r.staff.name}${r.isYou ? ' (you)' : ''}`, filter: 'text', filterValue: (r) => r.staff.name },
     { key: 'type', header: 'Type', cell: (r) => (r.kind === 'casual' ? 'Planned' : 'Emergency'), filter: 'select', filterValue: (r) => (r.kind === 'casual' ? 'Planned' : 'Emergency') },
     { key: 'where', header: 'Where the request is', cell: (r) => (r.waitingForYou ? <Link to={to('T-Req-Sneha', { id: r.ref })}>{r.where}</Link> : r.where) },

@@ -1,3 +1,4 @@
+import { dayTally, leaveHalvesOf } from '../attendance/leave-units';
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -23,8 +24,16 @@ export const FOLLOW_UP_GROUPS: { key: string; label: string; kinds: string[] }[]
 ];
 
 /** What a person's day "counts as" on the Attendance screen. */
-export function countsAs(row: Pick<DayRow, 'dayType' | 'leaveKind' | 'leaveUnpaid' | 'shortfallSeconds' | 'lateMinutes' | 'change'>): string {
+export function countsAs(row: Pick<DayRow, 'dayType' | 'leaveKind' | 'leaveUnpaid' | 'shortfallSeconds' | 'lateMinutes' | 'change'> & { leaveHalf?: string | null }): string {
   const late = row.lateMinutes > 0 ? 'Late · ' : '';
+  if (row.leaveHalf && row.leaveKind) {
+    // A half day of leave (owner decision 12 Nov): half leave, half a working day.
+    const leave = `${row.leaveHalf === 'first' ? 'First' : 'Second'} half ${row.leaveKind} leave${row.leaveUnpaid ? ' (unpaid)' : ''}`;
+    if (row.dayType === 'full') return row.shortfallSeconds > 0 ? `${leave} · ${late}${Math.round(row.shortfallSeconds / 60)}m short` : `${leave} · ${late}worked half`;
+    if (row.dayType === 'half') return `${leave} · working half not worked`;
+    if (row.dayType === 'leave' || row.dayType === 'absent') return `${leave} · not logged in`;
+    return `${leave} · working`;
+  }
   switch (row.dayType) {
     case 'full':
       if (row.change) return 'Changed to full day';
@@ -120,10 +129,11 @@ export class CeoOpsService {
         breakSeconds: days.reduce((s, d) => s + d.breakSeconds, 0),
         lateMinutes: days.reduce((s, d) => s + d.lateMinutes, 0),
         lateDays: days.filter((d) => d.lateMinutes > 0).length,
-        fullDays: days.filter((d) => d.dayType === 'full').length,
-        halfDays: days.filter((d) => d.dayType === 'half').length,
-        absentDays: days.filter((d) => d.dayType === 'absent').length,
-        leaveDays: days.filter((d) => d.dayType === 'leave').length,
+        // Whole and half days (a half day of leave is half leave, half a working day).
+        fullDays: days.reduce((s, d) => s + dayTally(d).fullHalves / 2, 0),
+        halfDays: days.reduce((s, d) => s + dayTally(d).halfDays, 0),
+        absentDays: days.reduce((s, d) => s + dayTally(d).absentHalves / 2, 0),
+        leaveDays: days.reduce((s, d) => s + leaveHalvesOf(d).total / 2, 0),
         shortfallSeconds: days.reduce((s, d) => s + Math.max(0, d.shortfallSeconds - d.makeUpSeconds), 0),
       };
       productionSeconds += totals.productionSeconds;

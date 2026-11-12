@@ -1,3 +1,4 @@
+import { leaveHalvesOf } from '../attendance/leave-units';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AttendanceClock } from '../attendance/attendance-clock';
@@ -371,6 +372,8 @@ export class TeamLeadScreensService {
         fromDate: row.fromDate.toISOString().slice(0, 10),
         toDate: row.toDate.toISOString().slice(0, 10),
         days: row.days,
+        /** "first" or "second" for a half day of leave; null for full days. */
+        half: row.half ?? null,
         status: row.status,
         where,
         waitingForYou: row.status === 'pending' && placement.withTeamLead && row.staffId !== actor.id,
@@ -382,12 +385,12 @@ export class TeamLeadScreensService {
     const balances = [];
     for (const member of team) {
       const balance = await this.leave.balance(member.id);
-      const used = await this.prisma.attendanceDay.groupBy({
-        by: ['leaveKind'],
-        where: { staffId: member.id, dayType: 'leave', date: { gte: monthFrom, lte: monthTo } },
-        _count: true,
+      // Whole and half days: a half day of leave uses half a day (owner decision 12 Nov).
+      const used = await this.prisma.attendanceDay.findMany({
+        where: { staffId: member.id, OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }], date: { gte: monthFrom, lte: monthTo } },
+        select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
       });
-      const usedOf = (kind: string) => used.find((row) => (row.leaveKind ?? 'casual') === kind)?._count ?? 0;
+      const usedOf = (kind: string) => used.filter((row) => (row.leaveKind ?? 'casual') === kind).reduce((sum, row) => sum + leaveHalvesOf(row).total, 0) / 2;
       balances.push({ staff: member, plannedLeft: balance.casual.left, emergencyLeft: balance.emergency.left, plannedUsedThisMonth: usedOf('casual'), emergencyUsedThisMonth: usedOf('emergency') });
     }
     const offToday = schedule.filter((row) => row.status === 'approved' && row.fromDate <= today && row.toDate >= today).length;

@@ -23,18 +23,27 @@ export interface DayResult {
  *
  * A day worked on a weekly day off is `off`: no shortfall, and all of its
  * production is make-up time.
+ *
+ * A day with a half day of leave (owner decision 12 Nov: "the other half is a
+ * normal working half day") needs half the production: both lines are halved
+ * (4 hours for the full line, 2¼ hours for the half line with the default
+ * Settings), the tolerance stays the same. `full` then means the working half
+ * was worked; `half` means it was not (under the halved half line), which
+ * costs half a day like any half day.
  */
 export function classifyDay(
   productionSeconds: number,
   policy: DayRulePolicy,
   weeklyOff = false,
+  halfDayLeave = false,
 ): DayResult {
   const production = Math.max(0, Math.floor(productionSeconds));
   if (weeklyOff) {
     return { dayType: 'off', shortfallSeconds: 0, makeUpSeconds: production };
   }
-  const fullLine = Math.round(policy.productionHoursFullDay * 3600);
-  const halfLine = Math.round(policy.halfDayBelowHours * 3600);
+  const share = halfDayLeave ? 2 : 1;
+  const fullLine = Math.round((policy.productionHoursFullDay * 3600) / share);
+  const halfLine = Math.round((policy.halfDayBelowHours * 3600) / share);
   const tolerance = Math.max(0, policy.dayToleranceMinutes) * 60;
   const makeUpSeconds = Math.max(0, production - fullLine);
   if (production >= fullLine - tolerance) {

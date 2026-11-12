@@ -1458,6 +1458,13 @@ model AttendanceDay {
   /// On a leave day: casual or emergency, and whether it is beyond the paid balance.
   leaveKind         String?
   leaveUnpaid       Boolean             @default(false)
+  /// A half day of leave (owner decision 12 Nov): "first" or "second" half;
+  /// the other half is a normal working half day (production needed is
+  /// halved). Null on a full leave day. `leaveUnpaid` is about this half.
+  leaveHalf         String?
+  /// On a full leave day only: the paid balance ran out half way, so half of
+  /// the day is paid leave and half unpaid (balances count halves).
+  leavePartUnpaid   Boolean             @default(false)
   /// Set when a Team Lead or Manager changes the day to full or half.
   dayTypeChangedById String?
   dayTypeChangedAt  DateTime?
@@ -1530,8 +1537,12 @@ model LeaveRequest {
   kind                String    // casual, emergency
   fromDate            DateTime  @db.Date
   toDate              DateTime  @db.Date
-  /// Leave days in the range, weekly days off left out.
-  days                Int
+  /// A half day (owner decision 12 Nov): "first" or "second" half of the one
+  /// date fromDate = toDate. Null = full days.
+  half                String?
+  /// Leave days in the range, weekly days off left out: whole or half days
+  /// (0.5 for a half day; always a multiple of 0.5, exact as a double).
+  days                Float
   reason              String
   status              String    @default("pending") // pending, approved, rejected
   /// Where it went first: team_lead, manager or ceo.
@@ -1546,8 +1557,9 @@ model LeaveRequest {
   decidedByStaffId    String?
   decidedByRole       String?
   decisionReason      String?
-  paidDays            Int       @default(0)
-  unpaidDays          Int       @default(0)
+  /// Whole or half days.
+  paidDays            Float     @default(0)
+  unpaidDays          Float     @default(0)
   overturnedAt        DateTime?
   overturnedByStaffId String?
   overturnReason      String?
@@ -1555,7 +1567,7 @@ model LeaveRequest {
   /// of the request was rejected with decisionReason. Null = all or nothing.
   approvedFromDate    DateTime? @db.Date
   approvedToDate      DateTime? @db.Date
-  approvedDays        Int?
+  approvedDays        Float?
   /// A Manager sent it back to the Team Lead (still pending; the Team Lead's
   /// 24-hour clock starts again from sentBackAt).
   sentBackAt          DateTime?
@@ -2175,7 +2187,10 @@ model PayrollRun {
 }
 
 /// Phase 22 Part B: one person's pay for a month, frozen when the sheet is
-/// prepared. Days are kept in half days so nothing is a float.
+/// prepared. Pay is worked out in half days (lossOfPayHalfDays, paidHalfDays)
+/// and integer paise. The day counts shown on the sheet (full, paid leave,
+/// unpaid leave, absent) can be half days since half-day leave (12 Nov), so
+/// they are stored as whole or half days (always a multiple of 0.5).
 model PayrollLine {
   id                    String     @id @default(uuid())
   runId                 String
@@ -2189,11 +2204,11 @@ model PayrollLine {
   calendarDays          Int
   workingDays           Int
   holidays              Int
-  fullDays              Int
+  fullDays              Float
   halfDays              Int
-  paidLeaveDays         Int
-  unpaidLeaveDays       Int
-  absentDays            Int
+  paidLeaveDays         Float
+  unpaidLeaveDays       Float
+  absentDays            Float
   notEmployedDays       Int
   /// Working days in the month with no attendance row while on the staff (not paid).
   unmarkedDays          Int        @default(0)

@@ -9,7 +9,8 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
-import { LeaveService } from './leave.service';
+import { LeaveService, NO_LEAVE } from './leave.service';
+import { isLeaveHalf, leaveHalvesOf } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
@@ -208,7 +209,15 @@ export class HolidayService {
       await this.prisma.attendanceDay.deleteMany({
         where: { id: { in: leaveRows.map((row) => row.id) } },
       });
-      for (const requestId of new Set(leaveRows.map((row) => row.leaveRequestId))) {
+      // A half day of leave on a day worked: the day stays (all make-up now), the leave goes.
+      const workedHalves = await this.prisma.attendanceDay.findMany({
+        where: { date, loginAt: { not: null }, leaveHalf: { not: null } },
+        select: { id: true, leaveRequestId: true },
+      });
+      for (const row of workedHalves) {
+        await this.prisma.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
+      }
+      for (const requestId of new Set([...leaveRows, ...workedHalves].map((row) => row.leaveRequestId))) {
         if (requestId) await this.leave.reallocate(requestId);
       }
     } else {
@@ -221,12 +230,16 @@ export class HolidayService {
         const existing = await this.prisma.attendanceDay.findUnique({
           where: { staffId_date: { staffId: request.staffId, date } },
         });
-        if (existing && (existing.loginAt || existing.dayType === 'leave')) continue;
+        const half = isLeaveHalf(request.half) ? request.half : null;
+        if (existing && leaveHalvesOf(existing).total > 0) continue;
+        // A full leave day never covers a day worked; a half day of leave does (its other half is worked).
+        if (existing?.loginAt && !half) continue;
         const data = {
-          dayType: 'leave',
-          closedReason: null,
+          ...(existing?.loginAt ? {} : { dayType: 'leave', closedReason: null }),
           leaveKind: request.kind,
           leaveUnpaid: true,
+          leavePartUnpaid: false,
+          leaveHalf: half,
           leaveRequestId: request.id,
         };
         if (existing) {

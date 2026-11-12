@@ -508,7 +508,7 @@ export class ManagerOpsService {
       this.requests.team(actor),
       this.prisma.leaveRequest.findMany({
         where: { staffId: { in: ids }, status: { in: ['pending', 'approved'] }, toDate: { gte: today }, fromDate: { lte: in14 } },
-        select: { id: true, staffId: true, kind: true, fromDate: true, toDate: true, days: true, status: true },
+        select: { id: true, staffId: true, kind: true, fromDate: true, toDate: true, days: true, half: true, status: true },
         orderBy: { fromDate: 'asc' },
       }),
     ]);
@@ -536,6 +536,8 @@ export class ManagerOpsService {
         from: istDayKey(l.fromDate),
         to: istDayKey(l.toDate),
         days: l.days,
+        /** "first" or "second" for a half day of leave (owner decision 12 Nov); null for full days. */
+        half: l.half ?? null,
         status: l.status,
         where: v?.where ?? l.status,
         withTeamLead: v?.withTeamLead ?? false,

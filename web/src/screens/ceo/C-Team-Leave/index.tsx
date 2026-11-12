@@ -25,6 +25,8 @@ export interface RequestRow {
   fromDate?: string;
   toDate?: string;
   days?: number;
+  /** "first" / "second" for a half day of leave; null for full days. */
+  half?: string | null;
   unpaidDays?: number;
   date?: string;
   startAt?: string;
@@ -41,7 +43,8 @@ export function requestText(r: RequestRow): string {
   if (r.kind === 'leave') {
     const kind = r.leaveKind ? r.leaveKind.charAt(0).toUpperCase() + r.leaveKind.slice(1) : 'Leave';
     const dates = r.fromDate === r.toDate ? formatDateIST(`${r.fromDate}T06:00:00Z`) : `${formatDateIST(`${r.fromDate}T06:00:00Z`)} – ${formatDateIST(`${r.toDate}T06:00:00Z`)}`;
-    return `${kind} · ${dates}${r.days && r.days > 1 ? ` (${r.days} days)` : ''}${r.unpaidDays ? ` · ${r.unpaidDays} unpaid` : ''}`;
+    const span = r.half ? ` (half day, ${r.half} half)` : r.days && r.days > 1 ? ` (${r.days} days)` : '';
+    return `${kind} · ${dates}${span}${r.unpaidDays ? ` · ${r.unpaidDays} unpaid` : ''}`;
   }
   return `Correction · ${r.date ? formatDateIST(`${r.date}T06:00:00Z`) : ''} ${r.startAt ? formatTimeIST(r.startAt) : ''}–${r.endAt ? formatTimeIST(r.endAt) : ''}`;
 }
