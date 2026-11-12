@@ -426,6 +426,39 @@ export class ManagerPeopleService {
     };
   }
 
+  /** MG-LoginCodes: tiles and every code given to people in the tree in the period (the codes themselves are never stored). */
+  async loginCodes(actor: Actor, range: DateRange, now: Date) {
+    const tree = await this.tree.load(actor.id);
+    const ids = tree.ids.length ? tree.ids : ['00000000-0000-0000-0000-000000000000'];
+    const dayStart = istStartOfDay(istDayKey(now));
+    const [waiting, codesToday, locked, given] = await Promise.all([
+      this.prisma.loginCodeRequest.count({ where: { staffId: { in: ids }, status: 'pending', expiresAt: { gt: now } } }),
+      this.prisma.loginCodeRequest.count({ where: { staffId: { in: ids }, revealedAt: { gte: dayStart, lte: now } } }),
+      this.prisma.staff.count({ where: { id: { in: ids }, OR: [{ lockedUntil: { gt: now } }, { lockedByStaffId: { not: null } }] } }),
+      this.prisma.loginCodeRequest.findMany({
+        where: { staffId: { in: ids }, revealedAt: { gte: range.from, lte: range.to } },
+        include: {
+          staff: { select: { id: true, name: true, code: true } },
+          revealedByStaff: { select: { id: true, name: true, role: true } },
+          staffDevice: { select: { label: true } },
+        },
+        orderBy: { revealedAt: 'desc' },
+        take: 500,
+      }),
+    ]);
+    return {
+      summary: { waiting, codesToday, locked },
+      codes: given.map((r) => ({
+        id: r.id,
+        at: (r.revealedAt as Date).toISOString(),
+        to: r.staff,
+        givenBy: r.revealedByStaff ? { ...r.revealedByStaff, isYou: r.revealedByStaff.id === actor.id } : null,
+        device: r.staffDevice.label,
+        used: Boolean(r.usedAt),
+      })),
+    };
+  }
+
   // ------------------------------------------------------------- notes
 
   async notesFor(staffId: string) {

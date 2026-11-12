@@ -102,6 +102,13 @@ export class ScreensManagerController {
     return this.people.attendance(this.actor(req), parseRange(q.fromDate, q.toDate, now), now);
   }
 
+  @Get('login-codes')
+  @RequireRoles('manager')
+  loginCodes(@Req() req: AuthedRequest, @Query() q: Q) {
+    const now = new Date();
+    return this.people.loginCodes(this.actor(req), parseRange(q.fromDate, q.toDate, now), now);
+  }
+
   @Get('leave')
   @RequireRoles('manager')
   leave(@Req() req: AuthedRequest) {

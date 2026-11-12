@@ -242,7 +242,11 @@ export class StaffController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'write')
   @RequireRoles('ceo', 'manager', 'team_lead')
-  unlock(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.staffService.unlockStaff(id, req.user);
+  unlock(
+    @Param('id') id: string,
+    @Body('reason') reason: string | undefined,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.staffService.unlockStaff(id, req.user, reason);
   }
 }

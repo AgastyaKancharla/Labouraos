@@ -1247,7 +1247,9 @@ export class StaffService {
   async unlockStaff(
     staffId: string,
     actor: JwtPayload,
+    reason?: string,
   ): Promise<{ success: boolean }> {
+    const why = typeof reason === 'string' && reason.trim() ? reason.trim().slice(0, 500) : undefined;
     if (
       actor.role !== 'ceo' &&
       actor.role !== 'manager' &&
@@ -1282,6 +1284,7 @@ export class StaffService {
       action: 'staff.unlocked',
       entityType: 'staff',
       entityCode: target.code,
+      ...(why ? { reason: why } : {}),
       before: {
         failedLoginCount: target.failedLoginCount,
         lockedUntil: target.lockedUntil ? target.lockedUntil.toISOString() : null,

@@ -251,6 +251,9 @@ describe('Manager portal endpoints', () => {
     const leave = await get('mgrA', '/manager/leave');
     expect(leave.status).toBe(200);
     expect(leave.body.balances.map((r: { staff: { id: string } }) => r.staff.id)).not.toContain(people.caB.id);
+    const codes = await get('mgrA', '/manager/login-codes');
+    expect(codes.status).toBe(200);
+    expect(codes.body.summary).toEqual(expect.objectContaining({ waiting: expect.any(Number), codesToday: expect.any(Number) }));
     const weekly = await get('mgrA', '/manager/reports/weekly');
     expect(weekly.status).toBe(200);
     expect(weekly.body.teams.map((t: { teamLeadId: string }) => t.teamLeadId)).toEqual([people.tlA.id]);
@@ -264,5 +267,17 @@ describe('Manager portal endpoints', () => {
     expect(String(res.body.staff.startsOn)).toContain('2026-11-16');
     expect((await send('mgrA', 'post', '/staff', { name: 'Bad', role: 'team_lead', reportsToId: people.mgrA.id, intern: true })).status).toBe(400);
     expect((await send('mgrA', 'post', '/staff', { name: 'Other', role: 'call_agent', teamLeadId: people.tlB.id })).status).toBe(403);
+  });
+
+  it('lock and unlock with a reason, both audit-logged; outside the tree refused', async () => {
+    const lock = await send('mgrA', 'post', `/staff/${people.caA.id}/lock`, { reason: 'Phone lost' });
+    expect(lock.status).toBe(200);
+    const listed = await get('mgrA', '/manager/staff');
+    expect(listed.body.rows.find((r: { id: string }) => r.id === people.caA.id).state).toBe('locked');
+    const unlock = await send('mgrA', 'post', `/staff/${people.caA.id}/unlock`, { reason: 'Found the phone' });
+    expect(unlock.status).toBe(200);
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'staff.unlocked', entityCode: people.caA.code }, orderBy: { createdAt: 'desc' } });
+    expect(audit?.reason).toBe('Found the phone');
+    expect((await send('mgrA', 'post', `/staff/${people.caB.id}/lock`, { reason: 'x' })).status).toBe(403);
   });
 });
