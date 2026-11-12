@@ -31,8 +31,10 @@ export const ROLE_LABEL: Record<StaffRole, string> = {
 
 /**
  * Where a fresh sign-in lands. Same as ROLE_HOME except call agents, who
- * start on Attendance to log in for the day (CA02 design: "Next she lands
- * on the Attendance tab").
+ * start on Attendance to start their day (CA02 design: "Next she lands on
+ * the Attendance tab"). Sign-in passes `{ landing: true }` in the route
+ * state, and the Attendance screen moves straight on to Home when the day
+ * has already started.
  */
 export const ROLE_LANDING: Record<StaffRole, string> = {
   ...ROLE_HOME,

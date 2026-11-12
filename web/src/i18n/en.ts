@@ -1,6 +1,7 @@
 /* English — the source of every key. Add new keys here first, then to kn.ts and hi.ts
    (TypeScript refuses to build until all three have the same keys). */
 import { payslipEn } from '../screens/call-agent/CA14g-Payslip/i18n';
+import { attendanceEn } from '../attendance/i18n';
 import { registrationEn } from './registration';
 import { staffInviteEn } from './staffInvite';
 import { referralTermsEn } from './referralTerms';
@@ -578,6 +579,7 @@ export const en = {
   ...referralTermsEn,
   ...callAgentEn,
   ...payslipEn,
+  ...attendanceEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

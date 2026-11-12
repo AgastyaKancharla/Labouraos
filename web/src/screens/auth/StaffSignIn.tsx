@@ -86,7 +86,7 @@ export default function StaffSignIn() {
   }, [step.kind, clock]);
 
   if (session && !session.totpSetupOnly) {
-    return <Navigate to={landingPath(session.staff.role, from)} replace />;
+    return <Navigate to={landingPath(session.staff.role, from)} replace state={{ landing: true }} />;
   }
 
   const finish = async (response: TokenResponse) => {
@@ -101,7 +101,7 @@ export default function StaffSignIn() {
       setError(t('auth.signedOut.unauthorized'));
       return;
     }
-    navigate(landingPath(next.staff.role, from), { replace: true });
+    navigate(landingPath(next.staff.role, from), { replace: true, state: { landing: true } });
   };
 
   const run = async (action: () => Promise<void>) => {
