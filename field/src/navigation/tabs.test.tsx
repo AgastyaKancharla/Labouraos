@@ -68,6 +68,7 @@ const SCREENS: [design: string, url: string, tab: 'Home' | 'Visits'][] = [
   ['FA04f-RequestLeave', routes.myLeave, 'Home'],
   ['FA04h-Correction', routes.myCorrection, 'Home'],
   ['FA04g-Payslip', routes.myPayslips, 'Home'],
+  ['Search (CA16 for the phone)', routes.search, 'Home'],
   ['FA07-RegisterBusiness', `${routes.businessNew}?visitId=v-1`, 'Home'],
   ['FA08-Business', `${routes.business}/b-1`, 'Home'],
   ['FA10-CaptureSeeker', routes.jobSeekerNew, 'Home'],
@@ -149,7 +150,7 @@ describe('Laboura Field tab bar', () => {
   it('every visit-flow and Home-flow route file sits inside (tabs), so none can lose the tab bar', () => {
     const files = routeFiles(APP_DIR).filter((f) => !f.endsWith('_layout.tsx'));
     const outside = files.filter((f) => f.startsWith('(app)/') && !f.startsWith('(app)/(tabs)/'));
-    // Only search (no design yet) is outside the tabs.
-    expect(outside).toEqual(['(app)/search.tsx']);
+    // Search (CA16 adapted to the phone) now lives in the Home stack too, so nothing is outside the tabs.
+    expect(outside).toEqual([]);
   });
 });

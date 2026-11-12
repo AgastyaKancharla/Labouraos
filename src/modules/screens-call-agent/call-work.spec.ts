@@ -271,6 +271,19 @@ describe('Call agent console: work queue, Call next, search, live channel, no-an
     expect(JSON.stringify(asFinance.body)).not.toContain(nearRefund.phone);
   });
 
+  it('search for a field agent (Laboura Field) is city-wide — a job seeker another team registered — with the phone as the last 4 digits', async () => {
+    const fieldAgent = await makeStaff('field_agent', { teamLeadId: otherLead.id });
+    const last4 = nearRefund.phone.slice(-4);
+    const auth = { Authorization: `Bearer ${tokenFor(fieldAgent)}` };
+    const byLast4 = await request(app.getHttpServer()).get(`/search?q=${last4}`).set(auth).expect(200);
+    const hit = (byLast4.body.results as Array<Record<string, unknown>>).find((r) => r.id === nearRefund.id);
+    expect(hit).toMatchObject({ type: 'job_seeker', code: nearRefund.code, maskedPhone: `******${last4}` });
+    expect(JSON.stringify(byLast4.body)).not.toContain(nearRefund.phone);
+    expect(JSON.stringify(byLast4.body)).not.toContain(nearRefund.phone.slice(-10));
+    const byCode = await request(app.getHttpServer()).get(`/search?q=${nearRefund.code}&type=job_seeker`).set(auth).expect(200);
+    expect(byCode.body.counts.job_seeker).toBe(1);
+  });
+
   it('pops an inbound call up on the agent it rings only, once, even when the webhook repeats', async () => {
     const mine = collect(agent.id);
     const theirs = collect(idleAgent.id);

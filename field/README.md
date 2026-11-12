@@ -119,6 +119,10 @@ There is no phone design: these adapt the call agent's CA14e-MyAttendance, CA14f
 - `POST /attendance/leave {kind: casual|emergency, fromDate, toDate, reason}` and `POST /attendance/corrections {date, from, to, status, reason}` — **need signal**: sent with `queue.live(…)`, never queued (both paths are in `LIVE_ONLY_PATTERNS`). The answer says where the request went (Team Lead; Manager when past 3 planned days in a month or for a third correction).
 - `GET /payroll/my-payslips` and `/:month` — only months Finance has paid; the server takes the person from the sign-in.
 
+## Search (CA16-Search for the phone)
+
+`/search` (in the Home stack, opened from the Home search bar; `?q=` pre-fills it) uses the same `GET /search?q=&type=` as the office screens (`src/api/endpoints/search.ts`). For a field agent the server searches city-wide (AGENTS.md §7) and returns phone numbers as the last 4 digits only. Job seekers open FA10c, businesses FA08, vacancies and placements their business's FA08; referral partners have no field screen. No result offers to register a job seeker (FA10) or a business (the visit flow).
+
 ## Sign-in and the session
 
 - FA01: staff code + password + this phone's id (`laboura_device_id`, the same id the old `/field-agent` console used, so an approved phone stays approved). A new phone must first be approved by the Team Lead; FA01 shows the phone's short id to read out.

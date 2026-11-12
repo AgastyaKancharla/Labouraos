@@ -8,6 +8,7 @@ import { visitsApi } from './endpoints/visits';
 import { registrationApi } from './endpoints/registration';
 import { sellingApi } from './endpoints/selling';
 import { myAttendanceApi } from './endpoints/myAttendance';
+import { searchApi } from './endpoints/search';
 import { api as appApi } from './index';
 
 const ApiContext = createContext<ApiClient>(appApi);
@@ -37,6 +38,7 @@ export function useEndpoints() {
       registration: registrationApi(api),
       selling: sellingApi(api),
       myAttendance: myAttendanceApi(api),
+      search: searchApi(api),
         }),
     [api],
   );

@@ -55,4 +55,6 @@ export const queryKeys = {
   myRequests: ['attendance', 'requests', 'mine'] as const,
   myPayslips: ['payroll', 'my-payslips'] as const,
   myPayslip: (month: string) => ['payroll', 'my-payslips', month] as const,
+  // Search (CA16-Search for the field app)
+  search: (q: string, type: string) => ['search', q, type] as const,
 };
