@@ -31,12 +31,14 @@ function cleanDeviceText(value: string | null | undefined, max = 120): string | 
 /**
  * A device id is normally a random id (UUID), whose digit groups must not be
  * mistaken for a phone number; it is masked only when the whole id looks like
- * one (digits, spaces, dots, dashes and a leading +, 10 or more digits).
+ * one (digits, spaces, dots, dashes and a leading +, 10 to 13 digits).
  */
 function cleanDeviceId(value: string | null | undefined): string | null {
   const trimmed = value?.trim();
   if (!trimmed) return null;
-  const phoneLike = /^\+?[\d\s.-]+$/.test(trimmed) && trimmed.replace(/\D/g, '').length >= 10;
+  const digits = trimmed.replace(/\D/g, '').length;
+  // A phone number has 10 to 13 digits (with +91); a digits-only UUID has 32.
+  const phoneLike = /^\+?[\d\s.-]+$/.test(trimmed) && digits >= 10 && digits <= 13;
   return (phoneLike ? `******${trimmed.replace(/\D/g, '').slice(-4)}` : trimmed).slice(0, 64);
 }
 

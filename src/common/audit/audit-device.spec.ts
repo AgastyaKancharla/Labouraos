@@ -27,7 +27,8 @@ describe('Audit rows record the device and the network', () => {
   const officeIds: string[] = [];
   let counter = 0;
   const OFFICE_RANGE = '10.91.0.0/16';
-  const OFFICE_LABEL = `Audit office ${Date.now()}`;
+  // Letters only: a long number in a label would be masked like a phone number.
+  const OFFICE_LABEL = `Audit office ${Date.now().toString(36)}`;
 
   async function makeAgent(label = 'Phone', platform = 'android') {
     counter += 1;
