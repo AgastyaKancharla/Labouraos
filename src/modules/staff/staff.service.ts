@@ -31,7 +31,8 @@ import { encryptCallRoutingPhone, getCallRoutingKey } from './call-routing-key';
 import { requireIndianMobile } from '../../common/phone/indian-mobile';
 import { ReportingScopeService } from './reporting-scope.service';
 import { publicLink } from '../../common/public-link';
-import { assertPayrollCanCorrect, monthOfDay, monthsBetween } from '../finance/payroll-window';
+import { assertPayrollCanCorrect, frozenMonthsWithoutLine, monthOfDay, monthsBetween } from '../finance/payroll-window';
+import { monthLabel } from '../finance/payroll-rules';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -1637,7 +1638,15 @@ export class StaffService {
     // Pay starts on the joining day: every month between the old and the new one changes.
     const was = target.joinedOn ?? (await this.firstWorkedDay(staffId));
     if (!was || was.getTime() !== joinedOn.getTime()) {
-      await assertPayrollCanCorrect(this.prisma, monthsBetween(monthOfDay(was ?? joinedOn), monthOfDay(joinedOn)), 'This joining date');
+      const touched = monthsBetween(monthOfDay(was ?? joinedOn), monthOfDay(joinedOn));
+      await assertPayrollCanCorrect(this.prisma, touched, 'This joining date');
+      // A month whose sheet was prepared without this person: the recompute never adds them to it.
+      const missed = await frozenMonthsWithoutLine(this.prisma, staffId, touched);
+      if (missed.length) {
+        throw new BadRequestException(
+          `This joining date changes pay in ${missed.map(monthLabel).join(', ')}, whose salary sheet was prepared without this person, so payroll can't add the change to it. Keep the joining date as it is and add a manual correction on Salaries (Team & access → Salaries → Add a correction) for the pay owed.`,
+        );
+      }
     }
     const staff = await this.prisma.staff.update({ where: { id: staffId }, data: { joinedOn }, select: STAFF_VIEW_SELECT });
     await this.auditService.log({

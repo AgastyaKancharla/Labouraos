@@ -797,6 +797,21 @@ describe('Finance back office (Phase 22 Part B)', () => {
     });
   });
 
+  describe('a joining date moved back into a prepared month without the person', () => {
+    it('refuses it, pointing to the manual correction, which is allowed for exactly this case', async () => {
+      // Joined in June 2003 (no sheets), then found to have started on Mon 7 April: April's sheet is
+      // approved and May's prepared without him, and the recompute only re-checks lines it holds.
+      const late = await makeStaff('call_agent', 'late', { createdAt: new Date('2003-06-02T04:00:00.000Z'), joinedOn: day('2003-06-02') });
+      const res = await request(server()).put(`/staff/${late.id}/joined-on`).set(as('ceo')).send({ joinedOn: '2003-04-07' }).expect(400);
+      expect(res.body.message).toMatch(/April 2003, May 2003.*prepared without this person.*manual correction on Salaries/);
+      expect((await prisma.staff.findUniqueOrThrow({ where: { id: late.id } })).joinedOn?.toISOString()).toBe('2003-06-02T00:00:00.000Z');
+      // The pay owed goes in as a manual correction instead: April has no line for him.
+      await request(server()).post('/payroll/corrections').set(as('ceo')).send({ staffId: late.id, relatesToMonth: APRIL, amountPaise: 2000000, reason: 'W5B started 7 April' }).expect(201);
+      // Moving it within months with no sheet is still fine.
+      await request(server()).put(`/staff/${late.id}/joined-on`).set(as('ceo')).send({ joinedOn: '2003-06-09' }).expect(200);
+    });
+  });
+
   describe('changes in a month payroll no longer works out again', () => {
     // January 2002 has a paid sheet and so does each of the 12 months after it (to January 2003):
     // no sheet still to be prepared works January 2002 out again, so a change there is refused
