@@ -110,6 +110,8 @@ describe('Phase 9 Task 8: Review Flags', () => {
         passwordHash: 'dummyhash',
         role: 'team_lead',
         status: 'active',
+        // Team Lead 1's team is in the Manager's tree; Team Lead 2's is not.
+        reportsToId: manager.id,
       },
     });
     teamLead1StaffId = tl1.id;
@@ -324,7 +326,9 @@ describe('Phase 9 Task 8: Review Flags', () => {
       expect(staffIds).toContain(fieldAgent2StaffId);
     });
 
-    it('allows Manager to see all review flags', async () => {
+    // Changed (guide: a Manager acts only inside their own reporting tree and
+    // sees no money): this test used to expect a Manager to see every flag.
+    it("scopes a Manager to their own tree and never shows them a money flag", async () => {
       const res = await request(app.getHttpServer())
         .get('/review-flags')
         .set('Authorization', `Bearer ${managerToken}`)
@@ -333,7 +337,8 @@ describe('Phase 9 Task 8: Review Flags', () => {
       expect(Array.isArray(res.body)).toBe(true);
       const staffIds = res.body.map((f: { raisedForStaffId: string }) => f.raisedForStaffId);
       expect(staffIds).toContain(fieldAgent1StaffId);
-      expect(staffIds).toContain(fieldAgent2StaffId);
+      expect(staffIds).not.toContain(fieldAgent2StaffId);
+      expect(res.body.some((f: { kind: string }) => f.kind === 'payment_mismatch')).toBe(false);
     });
 
     it('scopes Team Lead 1 to only see their own team members flags', async () => {
@@ -460,15 +465,29 @@ describe('Phase 9 Task 8: Review Flags', () => {
       expect(audit?.actorId).toBe(teamLead1StaffId);
     });
 
-    it('allows CEO or Manager to dismiss any flag with written resolution and audits it', async () => {
+    // Changed (guide: money flags are decided by the CEO; a Manager acts only in
+    // their own tree): this test used to let a Manager dismiss any flag.
+    it('refuses a Manager on a money flag or a flag outside their tree; the CEO dismisses it and it is audited', async () => {
       const flag = await prisma.reviewFlag.findFirst({
         where: { raisedForStaffId: fieldAgent2StaffId, status: 'open' },
       });
       expect(flag).toBeDefined();
 
-      const res = await request(app.getHttpServer())
+      await request(app.getHttpServer())
         .post(`/review-flags/${flag!.id}/resolve`)
         .set('Authorization', `Bearer ${managerToken}`)
+        .send({ resolution: 'Manager trying', status: 'dismissed' })
+        .expect(403);
+      const outside = await reviewFlagService.raise({ kind: 'odd_hour_login', subjectType: 'staff', subjectId: fieldAgent2StaffId, raisedForStaffId: fieldAgent2StaffId });
+      await request(app.getHttpServer())
+        .post(`/review-flags/${outside.id}/resolve`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ resolution: 'Not my team' })
+        .expect(403);
+
+      const res = await request(app.getHttpServer())
+        .post(`/review-flags/${flag!.id}/resolve`)
+        .set('Authorization', `Bearer ${ceoToken}`)
         .send({
           resolution: 'Manual bank adjustment made, verified transaction hash',
           status: 'dismissed',
@@ -489,6 +508,38 @@ describe('Phase 9 Task 8: Review Flags', () => {
       });
       expect(audit).toBeDefined();
       expect(audit?.after).toMatchObject({ status: 'dismissed' });
+    });
+
+    it("lets a Manager resolve a flag in their tree, but not a bypass; a Team Lead neither a bypass nor one sent to the Manager", async () => {
+      const inTree = await reviewFlagService.raise({ kind: 'odd_hour_login', subjectType: 'staff', subjectId: fieldAgent1StaffId, raisedForStaffId: fieldAgent1StaffId });
+      await request(app.getHttpServer())
+        .post(`/review-flags/${inTree.id}/resolve`)
+        .set('Authorization', `Bearer ${managerToken}`)
+        .send({ resolution: 'Spoke to him' })
+        .expect(201);
+
+      const bypass = await reviewFlagService.raise({ kind: 'bypass_suspected', subjectType: 'business', subjectId: 'b-x', raisedForStaffId: fieldAgent1StaffId });
+      expect(bypass.ownerRole).toBe('ceo');
+      for (const token of [teamLead1Token, managerToken]) {
+        await request(app.getHttpServer())
+          .post(`/review-flags/${bypass.id}/resolve`)
+          .set('Authorization', `Bearer ${token}`)
+          .send({ resolution: 'Looks fine' })
+          .expect(403);
+      }
+
+      const sentUp = await reviewFlagService.raise({
+        kind: 'visit_short',
+        subjectType: 'business_visit',
+        subjectId: 'v-x',
+        raisedForStaffId: fieldAgent1StaffId,
+        owner: { role: 'manager', staffId: null },
+      });
+      await request(app.getHttpServer())
+        .post(`/review-flags/${sentUp.id}/resolve`)
+        .set('Authorization', `Bearer ${teamLead1Token}`)
+        .send({ resolution: 'Mine after all' })
+        .expect(403);
     });
   });
 });

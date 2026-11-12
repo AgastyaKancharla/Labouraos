@@ -207,7 +207,8 @@ describe('Team Lead portal endpoints', () => {
     cleanup.seekers.push(seeker.id);
     const list = await get(lead, '/team-lead/registrations');
     expect((list.body.rows as Array<{ jobSeeker: { id: string } }>).some((r) => r.jobSeeker.id === seeker.id)).toBe(true);
-    expect(JSON.stringify(list.body)).not.toContain(`${stamp.slice(-8)}`);
+    expect(JSON.stringify(list.body)).not.toContain(`+9196${stamp.slice(-8)}`);
+    expect(JSON.stringify(list.body)).not.toContain('"phone"');
     expect((await post(lead, `/team-lead/registrations/${seeker.id}/check`, { verdict: 'fake' })).status).toBe(400);
     expect((await post(otherLead, `/team-lead/registrations/${seeker.id}/check`, { verdict: 'ok' })).status).toBe(404);
     const fake = await post(lead, `/team-lead/registrations/${seeker.id}/check`, { verdict: 'fake', note: 'Same face as JS-00118' });

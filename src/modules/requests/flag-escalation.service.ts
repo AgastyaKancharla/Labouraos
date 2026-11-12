@@ -7,6 +7,7 @@ import { NotificationSourcesService } from '../notification/notification-sources
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { CEO_OWNED_FLAG_KINDS } from '../review-flag/review-flag.constants';
+import { effectiveOwner, FlagOwner, OWNER_LEVEL } from '../review-flag/flag-owner';
 import { AttendanceClock } from '../attendance/attendance-clock';
 
 interface Actor {
@@ -14,25 +15,10 @@ interface Actor {
   role: string;
 }
 
-type Owner = 'team_lead' | 'manager' | 'ceo';
-const AGENT_ROLES = ['call_agent', 'field_agent'];
+type Owner = FlagOwner;
 const BRIEF = { id: true, code: true, name: true, role: true } as const;
-
-/**
- * Who decides a flag now. Money and bypass flags: always the CEO. Otherwise
- * the stored owner (set by "Send to Manager" / "Send to CEO"), else the level
- * above the person it is about: an agent's Team Lead, a Team Lead's Manager,
- * a Manager's or Finance's CEO. A flag about nobody goes to the Managers.
- */
-export function effectiveOwner(flag: { kind: string; ownerRole: string | null }, personRole: string | null): Owner {
-  if (CEO_OWNED_FLAG_KINDS.includes(flag.kind)) return 'ceo';
-  if (flag.ownerRole === 'ceo' || flag.ownerRole === 'manager' || flag.ownerRole === 'team_lead') return flag.ownerRole;
-  if (personRole && AGENT_ROLES.includes(personRole)) return 'team_lead';
-  if (personRole === 'team_lead' || !personRole) return 'manager';
-  return 'ceo';
-}
-
-const LEVEL: Record<Owner, number> = { team_lead: 1, manager: 2, ceo: 3 };
+export { effectiveOwner };
+const LEVEL = OWNER_LEVEL;
 
 /**
  * Review flags for the Team Lead and Manager portals (T-Flags, MG-Flags):
@@ -125,7 +111,7 @@ export class FlagEscalationService {
     }
     const people = await this.scope.peopleUnder(actor.id);
     const scoped: Prisma.ReviewFlagWhereInput = {
-      OR: [{ raisedForStaffId: { in: people } }, ...(actor.role === 'manager' ? [{ ownerStaffId: actor.id }] : [])],
+      OR: [{ raisedForStaffId: { in: people } }, ...(actor.role === 'manager' ? [{ ownerStaffId: actor.id }, { raisedForStaffId: null }] : [])],
       // Money flags belong to the CEO and Finance only; a Manager never sees money.
       kind: { notIn: MONEY_FLAG_KINDS },
     };
@@ -163,7 +149,10 @@ export class FlagEscalationService {
   ) {
     const owner = effectiveOwner(row, row.raisedForStaff?.role ?? null);
     const level = actor.role === 'ceo' ? 3 : actor.role === 'manager' ? 2 : 1;
-    const inScope = people === null || (row.raisedForStaffId ? people.includes(row.raisedForStaffId) : false) || row.ownerStaffId === actor.id;
+    const inScope =
+      people === null ||
+      (row.raisedForStaffId ? people.includes(row.raisedForStaffId) : actor.role === 'manager') ||
+      row.ownerStaffId === actor.id;
     const open = row.status === 'open';
     const otherManager = owner === 'manager' && Boolean(row.ownerStaffId) && row.ownerStaffId !== actor.id && actor.role !== 'ceo';
     const atOrAbove = LEVEL[owner] <= level && !otherManager;

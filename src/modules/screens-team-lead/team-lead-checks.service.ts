@@ -274,7 +274,7 @@ export class TeamLeadChecksService {
       orderBy: { visitedAt: 'asc' },
     });
     const openFlags = await this.prisma.reviewFlag.findMany({
-      where: { status: 'open', kind: { in: VISIT_FLAG_KINDS }, raisedForStaffId: { in: ids }, raisedAt: { gte: new Date(start.getTime() - DAY_MS) } },
+      where: { status: 'open', kind: { in: VISIT_FLAG_KINDS }, raisedForStaffId: { in: ids } },
       select: { id: true, code: true, kind: true, subjectType: true, subjectId: true, details: true },
     });
     const checks = await this.prisma.teamLeadCheck.findMany({ where: { subjectType: 'business_visit', subjectId: { in: visits.map((v) => v.id) } }, orderBy: { createdAt: 'desc' } });
