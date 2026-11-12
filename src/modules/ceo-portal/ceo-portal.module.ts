@@ -16,11 +16,12 @@ import { CeoMoneyService } from './ceo-money.service';
 import { CeoTeamService } from './ceo-team.service';
 import { CeoOpsService } from './ceo-ops.service';
 import { CeoAdminService } from './ceo-admin.service';
+import { CeoBreachService } from './ceo-breach.service';
 
 @Module({
   imports: [PrismaModule, AuditModule, IdModule, PricingModule, RefundModule, TargetModule, AttendanceModule, JobSeekerModule],
   controllers: [CeoPortalController],
-  providers: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, CeoTeamService, CeoOpsService, CeoAdminService],
+  providers: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, CeoTeamService, CeoOpsService, CeoAdminService, CeoBreachService],
   exports: [CeoCommandCenterService],
 })
 export class CeoPortalModule {}

@@ -2503,3 +2503,31 @@ model RefundRejection {
   @@index([jobSeekerId])
   @@index([placementId])
 }
+
+/// C-Privacy data-breach register (guide: a data breach must be reported
+/// within 72 hours). CEO only. Holds no personal details: what happened, what
+/// kind of data, how many people, the steps taken and who was told.
+model DataBreach {
+  id              String    @id @default(uuid())
+  code            String    @unique
+  discoveredAt    DateTime
+  /// discoveredAt + 72 hours: the Data Protection Board must be told by then.
+  reportDueAt     DateTime
+  summary         String
+  dataAffected    String
+  peopleAffected  Int?
+  /// open, closed
+  status          String    @default("open")
+  /// [{ at, text, byStaffId }]
+  steps           Json      @default("[]")
+  /// [{ who, at, note, byStaffId }] — who: data_protection_board, affected_people, cert_in, police, other
+  told            Json      @default("[]")
+  boardToldAt     DateTime?
+  createdByStaffId String
+  closedAt        DateTime?
+  closedByStaffId String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([status, reportDueAt])
+}

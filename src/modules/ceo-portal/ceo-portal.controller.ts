@@ -13,6 +13,7 @@ import { CeoMoneyService } from './ceo-money.service';
 import { CeoTeamService, parseMonth } from './ceo-team.service';
 import { CeoOpsService } from './ceo-ops.service';
 import { CeoAdminService } from './ceo-admin.service';
+import { CeoBreachService } from './ceo-breach.service';
 import { cleanOption, cleanSearch, parseOptionalRange, parsePage, parseRange } from './ceo-common';
 
 type AuthedRequest = Request & { user: JwtPayload };
@@ -39,6 +40,7 @@ export class CeoPortalController {
     private readonly team: CeoTeamService,
     private readonly ops: CeoOpsService,
     private readonly admin: CeoAdminService,
+    private readonly breaches: CeoBreachService,
   ) {}
 
   // Command Center and reports ------------------------------------------
@@ -361,6 +363,38 @@ export class CeoPortalController {
   @RequireRoles('ceo')
   privacy() {
     return this.admin.privacy(new Date());
+  }
+
+  // The 72-hour data-breach register (C-Privacy) ---------------------------
+
+  @Get('privacy/breaches')
+  @RequireRoles('ceo')
+  breachList() {
+    return this.breaches.list(new Date());
+  }
+
+  @Post('privacy/breaches')
+  @RequireRoles('ceo')
+  breachCreate(@Req() req: AuthedRequest, @Body() body: Record<string, unknown>) {
+    return this.breaches.create(req.user.sub, body ?? {}, new Date());
+  }
+
+  @Post('privacy/breaches/:id/steps')
+  @RequireRoles('ceo')
+  breachStep(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.breaches.addStep(req.user.sub, id, body ?? {}, new Date());
+  }
+
+  @Post('privacy/breaches/:id/told')
+  @RequireRoles('ceo')
+  breachTold(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.breaches.recordTold(req.user.sub, id, body ?? {}, new Date());
+  }
+
+  @Post('privacy/breaches/:id/close')
+  @RequireRoles('ceo')
+  breachClose(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: Record<string, unknown>) {
+    return this.breaches.close(req.user.sub, id, body ?? {}, new Date());
   }
 
   @Get('privacy/consents')

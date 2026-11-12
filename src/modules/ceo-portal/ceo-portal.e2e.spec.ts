@@ -62,6 +62,7 @@ describe('CEO portal endpoints', () => {
 
   afterAll(async () => {
     if (!prisma) return;
+    await prisma.dataBreach.deleteMany({ where: { createdByStaffId: { in: staffIds } } });
     await prisma.followUpTask.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
@@ -149,6 +150,38 @@ describe('CEO portal endpoints', () => {
     }
     const anonymous = await request(server()).get('/ceo/job-seekers');
     expect(anonymous.status).toBe(401);
+  });
+
+  it('data-breach register: CEO only, 72-hour deadline, steps, who was told, close; every change audited', async () => {
+    const auth = { Authorization: `Bearer ${tokens.ceo}` };
+    for (const role of ['manager', 'finance', 'team_lead', 'call_agent']) {
+      expect((await request(server()).get('/ceo/privacy/breaches').set('Authorization', `Bearer ${tokens[role]}`)).status).toBe(403);
+      expect((await request(server()).post('/ceo/privacy/breaches').set('Authorization', `Bearer ${tokens[role]}`).send({ summary: 'x', dataAffected: 'y' })).status).toBe(403);
+    }
+    expect((await request(server()).post('/ceo/privacy/breaches').set(auth).send({ dataAffected: 'phones' })).status).toBe(400);
+    const found = new Date(Date.now() - 80 * 3600 * 1000);
+    const created = await request(server()).post('/ceo/privacy/breaches').set(auth).send({ summary: 'Lost laptop with an export', dataAffected: 'Job seeker names and masked phones', peopleAffected: 40, discoveredAt: found.toISOString() });
+    expect(created.status).toBe(201);
+    expect(created.body).toMatchObject({ status: 'open', overdue: true, peopleAffected: 40 });
+    expect(new Date(created.body.reportDueAt).getTime() - found.getTime()).toBe(72 * 3600 * 1000);
+    const id = created.body.id;
+    const list = await request(server()).get('/ceo/privacy/breaches').set(auth);
+    expect(list.body.summary).toMatchObject({ reportHours: 72 });
+    expect(list.body.summary.overdue).toBeGreaterThanOrEqual(1);
+
+    expect((await request(server()).post(`/ceo/privacy/breaches/${id}/close`).set(auth).send({ note: 'done' })).status).toBe(400);
+    const step = await request(server()).post(`/ceo/privacy/breaches/${id}/steps`).set(auth).send({ text: 'Laptop locked remotely, passwords changed' });
+    expect(step.body.steps).toHaveLength(2);
+    expect((await request(server()).post(`/ceo/privacy/breaches/${id}/told`).set(auth).send({ who: 'the press' })).status).toBe(400);
+    const told = await request(server()).post(`/ceo/privacy/breaches/${id}/told`).set(auth).send({ who: 'data_protection_board', note: 'Form filed online' });
+    expect(told.body).toMatchObject({ overdue: false });
+    expect(told.body.told[0]).toMatchObject({ who: 'data_protection_board', label: 'Data Protection Board' });
+    const closed = await request(server()).post(`/ceo/privacy/breaches/${id}/close`).set(auth).send({ note: 'All 40 people told by SMS' });
+    expect(closed.body.status).toBe('closed');
+    const audits = await prisma.auditLog.findMany({ where: { actorId: ceo.id, entityType: 'data_breach', entityCode: created.body.code } });
+    expect(audits.map((a) => a.action).sort()).toEqual(['privacy.breach_closed', 'privacy.breach_logged', 'privacy.breach_step', 'privacy.breach_told']);
+    // The free text stays out of the audit log.
+    expect(JSON.stringify(audits)).not.toContain('Lost laptop');
   });
 
   it('sidebar counts: interviews today and missed calls waiting, for the CEO only', async () => {
