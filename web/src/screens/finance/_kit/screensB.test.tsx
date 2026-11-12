@@ -477,6 +477,58 @@ describe('One refund (FN-Refund)', () => {
     await userEvent.click(within(d).getByRole('button', { name: 'Send this refund to the CEO' }));
     await waitFor(() => expect(api.calls('POST /placements/22222222-2222-2222-2222-222222222222/refund')[0]?.body).toEqual({ sendToCeo: true, reason: 'Owner disputes the dates' }));
   });
+
+  it('rejects a refund within the limit with a reason', async () => {
+    const ref = 'js-33333333-3333-3333-3333-333333333333';
+    const api = mockApi({
+      ...common,
+      [`GET /finance/refunds/${ref}`]: {
+        ref,
+        kind: 'job_seeker',
+        row: refundRow({ ref, kind: 'job_seeker', jobSeekerId: '33333333-3333-3333-3333-333333333333', placementId: null, amountPaise: 49900 }),
+        decided: null,
+        jobSeeker: { id: '33333333-3333-3333-3333-333333333333', code: 'JS-00203', name: 'Manjula', status: 'active' },
+        why: '30-day guarantee ran out without a suitable offer',
+        amountPaise: 49900,
+        checks: [{ ok: true, text: 'Paid ₹499 on 2026-10-01' }],
+        payTo: null,
+        withinLimit: true,
+        limitPaise: 1500000,
+      },
+      [`POST /finance/refunds/${ref}/reject`]: { ref, status: 'rejected' },
+    });
+    signInAs('finance');
+    renderScreen(<RefundDetail />, { portal: 'finance', path: `/finance/refunds/${ref}`, route: '/finance/refunds/:id', now: NOW });
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    const d = await screen.findByRole('dialog');
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'Working at Green Leaf Café');
+    await userEvent.click(within(d).getByRole('button', { name: 'Reject the refund' }));
+    await waitFor(() => expect(api.calls(`POST /finance/refunds/${ref}/reject`)[0]?.body).toEqual({ reason: 'Working at Green Leaf Café' }));
+  });
+
+  it('offers no Reject on a refund above the limit (the CEO decides it)', async () => {
+    const ref = 'pay-44444444-4444-4444-4444-444444444444';
+    mockApi({
+      ...common,
+      [`GET /finance/refunds/${ref}`]: {
+        ref,
+        kind: 'business',
+        row: refundRow({ ref, kind: 'business', approval: 'with_ceo', approvalText: 'Over your limit · needs the CEO', state: 'with_ceo', amountPaise: 2000000 }),
+        decided: null,
+        business: { id: 'b1', code: 'BZ-00031', name: 'Green Leaf Café' },
+        why: 'no replacement in 15 days',
+        amountPaise: 2000000,
+        checks: [],
+        payTo: null,
+        withinLimit: false,
+        limitPaise: 1500000,
+      },
+    });
+    signInAs('finance');
+    renderScreen(<RefundDetail />, { portal: 'finance', path: `/finance/refunds/${ref}`, route: '/finance/refunds/:id', now: NOW });
+    expect(await screen.findByText(/The CEO decides this one/)).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Reject' })).toBeNull();
+  });
 });
 
 describe('Notifications (FN-Notifications)', () => {

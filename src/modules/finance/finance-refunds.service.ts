@@ -1,4 +1,6 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { AuditService } from '../../common/audit/audit.service';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RefundService } from '../refund/refund.service';
@@ -46,7 +48,88 @@ export class FinanceRefundsService {
     private readonly prisma: PrismaService,
     private readonly pricing: PricingService,
     private readonly refunds: RefundService,
+    private readonly audit: AuditService,
   ) {}
+
+  /**
+   * FN-Refund "Reject": the refund is decided not owed, with a reason. Finance
+   * rejects only what it may approve (a ₹499 refund the system marks due, a
+   * business refund up to its limit, ₹15,000 by default); one above the limit,
+   * outside the rules or with the CEO is the CEO's (guide: approval limits). A
+   * raised refund payment becomes "rejected"; either way a RefundRejection
+   * keeps it off the refund-due list for that guarantee. Audited.
+   */
+  async reject(actor: { id: string; role: string }, ref: string, reasonText: unknown, now = new Date()) {
+    const reason = typeof reasonText === 'string' ? reasonText.trim() : '';
+    if (!reason) throw new BadRequestException('A reason is needed to reject a refund');
+    if (reason.length > 500) throw new BadRequestException('Keep the reason under 500 characters');
+    const list = await this.list(actor.id, {}, now);
+    const row = list.rows.find((r) => r.ref === ref);
+    if (!row) throw new NotFoundException('This refund is not waiting for a decision');
+    if (actor.role === 'finance' && row.approval !== 'within_limit') {
+      throw new ForbiddenException(`${row.approvalText}: rejecting it is the CEO's decision, not Finance's`);
+    }
+    if (row.state === 'processing') throw new ConflictException('The money is already on its way: this refund can no longer be rejected');
+
+    let paymentCode: string | null = null;
+    if (row.paymentId) {
+      const payment = await this.prisma.payment.findUniqueOrThrow({ where: { id: row.paymentId } });
+      const claimed = await this.prisma.payment.updateMany({
+        where: { id: payment.id, status: { in: ['pending', 'approved', 'failed'] } },
+        data: { status: 'rejected' },
+      });
+      if (claimed.count !== 1) throw new ConflictException(`Refund ${payment.code} has already been decided`);
+      paymentCode = payment.code;
+      await recordStatusChange(this.prisma, {
+        subjectType: 'payment',
+        subjectId: payment.id,
+        fromStatus: payment.status,
+        toStatus: 'rejected',
+        changedByStaffId: actor.id,
+        reason: actor.role === 'ceo' ? 'refund_rejected_by_ceo' : 'refund_rejected_by_finance',
+        changedAt: now,
+      });
+    }
+
+    let jobSeekerId: string | null = null;
+    let guaranteeStartedAt: Date | null = null;
+    let placementId: string | null = null;
+    let entityCode = row.paymentCode ?? row.subject.code ?? ref;
+    if (row.kind === 'job_seeker' && row.jobSeekerId) {
+      const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: row.jobSeekerId }, select: { code: true, paymentReceivedAt: true } });
+      jobSeekerId = row.jobSeekerId;
+      guaranteeStartedAt = seeker?.paymentReceivedAt ?? null;
+      entityCode = seeker?.code ?? entityCode;
+    } else if (row.placementId) {
+      const placement = await this.prisma.placement.findUnique({ where: { id: row.placementId }, select: { code: true, rootPlacementId: true } });
+      placementId = placement?.rootPlacementId ?? row.placementId;
+      entityCode = placement?.code ?? entityCode;
+    }
+    const rejection = await this.prisma.refundRejection.create({
+      data: {
+        kind: row.kind,
+        jobSeekerId,
+        guaranteeStartedAt,
+        placementId,
+        paymentId: row.paymentId,
+        amountPaise: row.amountPaise,
+        reason,
+        rejectedByStaffId: actor.id,
+        rejectedByRole: actor.role,
+        rejectedAt: now,
+      },
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      action: 'refund_rejected',
+      entityType: row.kind === 'job_seeker' ? 'job_seeker' : 'placement',
+      entityCode,
+      before: { state: row.state, approval: row.approval },
+      after: { state: 'rejected', amountPaise: row.amountPaise, payment: paymentCode, rejectionId: rejection.id, by: actor.role },
+      reason,
+    });
+    return { ref, status: 'rejected', amountPaise: row.amountPaise, rejectedAt: now.toISOString() };
+  }
 
   async list(actorId: string, filters: { who?: string; approval?: string; search?: string }, now = new Date()) {
     const policy = await this.pricing.current();

@@ -206,4 +206,12 @@ export class FinanceBController {
   refund(@Param('ref') ref: string, @Req() req: AuthedRequest) {
     return this.refunds.detail(req.user.sub, ref, new Date());
   }
+
+  /** FN-Refund "Reject" with a reason: Finance within its limits, the CEO for any refund. */
+  @Post('refunds/:ref/reject')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('ceo', 'finance')
+  rejectRefund(@Param('ref') ref: string, @Body() body: { reason?: unknown }, @Req() req: AuthedRequest) {
+    return this.refunds.reject({ id: req.user.sub, role: req.user.role }, ref, body?.reason, new Date());
+  }
 }

@@ -2479,3 +2479,27 @@ model FollowUpHandover {
   @@index([followUpTaskId])
   @@index([returnedAt, returnAfter])
 }
+
+/// A refund decided "not owed" (FN-Refund "Reject", C-Refunds): it leaves the
+/// refund-due list for that guarantee. A job seeker who pays again starts a new
+/// guarantee (guaranteeStartedAt no longer matches), so a new refund can fall due.
+model RefundRejection {
+  id                 String    @id @default(uuid())
+  /// job_seeker or business
+  kind               String
+  jobSeekerId        String?
+  /// The job seeker's paymentReceivedAt when it was rejected (job seeker refunds).
+  guaranteeStartedAt DateTime?
+  /// The first placement of the chain (business refunds).
+  placementId        String?
+  /// The refund payment that was rejected, when one had been raised.
+  paymentId          String?
+  amountPaise        Int
+  reason             String
+  rejectedByStaffId  String
+  rejectedByRole     String
+  rejectedAt         DateTime  @default(now())
+
+  @@index([jobSeekerId])
+  @@index([placementId])
+}

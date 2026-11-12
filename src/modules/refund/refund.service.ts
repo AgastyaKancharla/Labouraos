@@ -147,6 +147,20 @@ export class RefundService {
           })
         : [];
       bypassFollowUpCandidateIdSet = new Set(bypassFollowUps.map((t) => t.subjectId));
+
+      // Refunds decided "not owed" for this guarantee (FN-Refund "Reject"); paying again starts a new one.
+      const rejections = this.prisma.refundRejection
+        ? await this.prisma.refundRejection.findMany({
+            where: { kind: 'job_seeker', jobSeekerId: { in: candidateIds } },
+            select: { jobSeekerId: true, guaranteeStartedAt: true },
+          })
+        : [];
+      const paidAtById = new Map(candidates.map((c) => [c.id, c.paymentReceivedAt?.getTime() ?? null]));
+      for (const r of rejections) {
+        if (r.jobSeekerId && r.guaranteeStartedAt && paidAtById.get(r.jobSeekerId) === r.guaranteeStartedAt.getTime()) {
+          refundedCandidateIdSet.add(r.jobSeekerId);
+        }
+      }
     }
 
     const jobSeekerRows: RefundDueRow[] = [];
@@ -243,6 +257,11 @@ export class RefundService {
         select: { placementId: true },
       });
       refundedPlacementIdSet = new Set(existingPlacementRefunds.map((p) => p.placementId!));
+      // Business refunds decided "not owed" (FN-Refund "Reject") stay off the list.
+      const rejectedPlacements = this.prisma.refundRejection
+        ? await this.prisma.refundRejection.findMany({ where: { kind: 'business', placementId: { in: allPlacementIds } }, select: { placementId: true } })
+        : [];
+      for (const r of rejectedPlacements) if (r.placementId) refundedPlacementIdSet.add(r.placementId);
 
       // Query accepted replacement claims set-based
       const acceptedClaims = this.prisma.replacementClaim
