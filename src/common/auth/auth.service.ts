@@ -190,7 +190,11 @@ export class AuthService {
     }
 
     await this.rejectIfLocked(staff);
-    await this.clearFailedLogins(staff.id);
+    const management = (MANAGEMENT_ROLES as readonly string[]).includes(staff.role);
+    // Management has a second factor still to come (authenticator code): the
+    // wrong-try count is cleared only once that is right too, so wrong codes
+    // lock the account exactly like wrong passwords (5 tries, 15 minutes).
+    if (!management) await this.clearFailedLogins(staff.id);
 
     if (staff.status !== 'active') {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
@@ -208,7 +212,6 @@ export class AuthService {
     }
     noteRequestDevice({ staffId: staff.id, deviceId });
 
-    const management = (MANAGEMENT_ROLES as readonly string[]).includes(staff.role);
     const device = await this.prisma.staffDevice.findUnique({
       where: { staffId_deviceId: { staffId: staff.id, deviceId } },
     });
@@ -573,6 +576,7 @@ export class AuthService {
   ): Promise<LoginResponseDto> {
     const enrolled = !!(staff.totpEnabled && staff.totpSecret);
     if (!enrolled) {
+      await this.clearFailedLogins(staff.id);
       return this.issueSession(staff, deviceId, metadata, null, true);
     }
     if (!totpCode) {
@@ -580,9 +584,14 @@ export class AuthService {
       throw new UnauthorizedException('TOTP 2FA code is required');
     }
     if (!this.totpService.verify(totpCode, staff.totpSecret!)) {
-      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'totp_invalid' });
+      // Counted on the account like a wrong password: 5 wrong codes lock it.
+      const lockedUntil = await this.recordFailedPassword(staff, 'totp_invalid');
+      if (lockedUntil) {
+        throw new UnauthorizedException(this.lockedMessage({ lockedUntil, lockedByStaffId: null }));
+      }
       throw new UnauthorizedException('Invalid TOTP code');
     }
+    await this.clearFailedLogins(staff.id);
     if (deviceStatus !== 'approved') {
       if (!this.selfApprovesDevice(staff)) {
         await this.ensurePendingDevice(staff.id, deviceId);
@@ -846,7 +855,11 @@ export class AuthService {
     });
   }
 
-  private async recordFailedPassword(staff: Staff): Promise<Date | null> {
+  /** Counts one wrong password (or wrong authenticator code) and locks at the limit. */
+  private async recordFailedPassword(
+    staff: Staff,
+    reason: 'invalid_credentials' | 'totp_invalid' = 'invalid_credentials',
+  ): Promise<Date | null> {
     const policy = await this.pricingService.current();
     const updated = await this.prisma.staff.update({
       where: { id: staff.id },
@@ -861,7 +874,7 @@ export class AuthService {
         entityType: 'staff',
         entityCode: staff.code,
         before: { failedLoginCount: count - 1 },
-        after: { reason: 'invalid_credentials', failedLoginCount: count },
+        after: { reason, failedLoginCount: count },
       });
       return null;
     }
@@ -880,6 +893,7 @@ export class AuthService {
       before: { failedLoginCount: count - 1, lockedUntil: null },
       after: {
         reason: 'account_locked',
+        lastFailure: reason,
         failedLoginCount: count,
         lockedUntil: lockedUntil.toISOString(),
       },
