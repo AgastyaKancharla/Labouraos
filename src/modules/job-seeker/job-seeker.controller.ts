@@ -34,6 +34,7 @@ import {
   CreateJobSeekerLanguageDto,
   UpdateJobSeekerLanguageDto,
 } from './dto/job-seeker-language.dto';
+import { STAFF_PHOTO_MAX_BYTES } from '../../common/upload-limits';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -247,7 +248,8 @@ export class JobSeekerController {
   }
 
   @Post(':id/photo')
-  @UseInterceptors(FileInterceptor('photo'))
+  // L1: a size limit like every other upload, so a huge file cannot fill the memory.
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES, files: 1 } }))
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
   @RequirePermission('job_seeker', 'write')
   async uploadPhoto(

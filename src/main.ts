@@ -4,6 +4,7 @@ import { StructuredLogger } from './common/observability/structured-logger.servi
 import { GlobalExceptionFilter } from './common/observability/global-exception.filter';
 import { AlertService } from './common/observability/alert.service';
 import { applyTrustProxy } from './common/http/trust-proxy';
+import { securityHeaders } from './common/http/security-headers';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
@@ -26,6 +27,7 @@ export async function bootstrap() {
   const logger = new StructuredLogger('Bootstrap');
   app.useLogger(logger);
   applyTrustProxy(app);
+  app.use(securityHeaders());
   const alertService = app.get(AlertService);
   app.useGlobalFilters(new GlobalExceptionFilter(alertService));
 

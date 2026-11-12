@@ -96,11 +96,19 @@ export class PaymentController {
     };
   }
 
-  /** Finance re-sends an unpaid placement fee's link from Invoices ("Send reminder"). */
+  /**
+   * Finance re-sends an unpaid placement fee's link from Invoices ("Send reminder").
+   * L8: only Finance, the CEO and the agent who holds the account (the
+   * business's account agent, or the agent who registered the job seeker)
+   * may send it, so nobody can make Laboura text a business they do not handle.
+   */
   @Post(':id/resend')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
-  async resendPayment(@Param('id') id: string) {
+  @RequireRoles('ceo', 'call_agent', 'field_agent', 'finance')
+  async resendPayment(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    if (req.user.role === 'call_agent' || req.user.role === 'field_agent') {
+      await this.upiCollectionService.assertAccountAgentForPayment(id, req.user.sub);
+    }
     return this.upiCollectionService.resendRequest(id);
   }
 

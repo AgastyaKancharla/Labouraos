@@ -31,6 +31,7 @@ import {
   CreateVisitAssignmentDto,
 } from './business-verification.service';
 import { CandidateIntroductionService } from '../vacancy/candidate-introduction.service';
+import { STAFF_PHOTO_MAX_BYTES } from '../../common/upload-limits';
 
 @Controller('businesses')
 @UseGuards(JwtAuthGuard, RbacGuard)
@@ -240,7 +241,8 @@ export class BusinessController {
   @Post(':id/storefront-photo')
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
   @RequirePermission('business', 'write')
-  @UseInterceptors(FileInterceptor('photo'))
+  // L1: a size limit like every other upload, so a huge file cannot fill the memory.
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES, files: 1 } }))
   uploadStorefrontPhoto(
     @Param('id') businessId: string,
     @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
