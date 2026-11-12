@@ -6,6 +6,7 @@ import { DAY_MS, DateRange, istDayKey, percent, weekBuckets } from '../ceo-porta
 import { paceFor } from '../ceo-portal/ceo-team.service';
 import { Forecast, MonthWindow, forecast, monthWeeks, monthWindow, outOfHundred, outOfTen } from './manager-common';
 import { ManagerTree, ManagerTreeService, WorkCounts } from './manager-tree.service';
+import { CompanyPlanService, PLAN_METRICS, PlanMetricKey, PlanValues, emptyPlan, sumOrNull, valuesOf } from '../company-plan/company-plan.service';
 
 /** IST calendar day of an instant, as the Date value an @db.Date column holds. */
 export function dbDate(instant: Date): Date {
@@ -25,11 +26,11 @@ export const PLAN_LABELS: Record<PlanMetric, { label: string; hint: string }> = 
   registered: { label: 'Job seekers registered', hint: 'Profile made by an agent' },
 };
 
-export interface PlanTargets {
-  placed: number | null;
-  paid: number | null;
-  vacancies: number | null;
-}
+/** A target for every plan metric (null = no target). */
+export type PlanTargets = PlanValues;
+
+/** Where a metric's target comes from (MG-Home, MG-Plan footnote). */
+export type PlanSource = 'team_split' | 'company_plan' | 'agent_targets' | null;
 
 export interface PlanRow extends Forecast {
   metric: PlanMetric;
@@ -49,10 +50,6 @@ export interface AttendanceTotals {
   productionSeconds: number;
 }
 
-function sumOrNull(values: (number | null)[]): number | null {
-  const present = values.filter((v): v is number => typeof v === 'number');
-  return present.length ? present.reduce((a, b) => a + b, 0) : null;
-}
 
 /** Hours lost on a day: shortfall not made up, plus idle time. */
 export function lostSeconds(d: Pick<DayRow, 'shortfallSeconds' | 'makeUpSeconds' | 'idleSeconds'>): number {
@@ -74,16 +71,61 @@ export class ManagerPlanService {
     private readonly tree: ManagerTreeService,
     private readonly days: AttendanceDaysService,
     private readonly reports: AttendanceReportsService,
+    private readonly plans: CompanyPlanService,
   ) {}
 
+  /** The sum of these people's agent targets (paid, vacancies, placed, repeat businesses). */
   async targetsFor(ids: string[], m: Pick<MonthWindow, 'year' | 'month'>): Promise<PlanTargets> {
-    if (!ids.length) return { placed: null, paid: null, vacancies: null };
-    const rows = await this.prisma.target.findMany({ where: { staffId: { in: ids }, year: m.year, month: m.month } });
-    return {
-      placed: sumOrNull(rows.map((r) => r.placementsClosed)),
-      paid: sumOrNull(rows.map((r) => r.candidatesActivated)),
-      vacancies: sumOrNull(rows.map((r) => r.vacanciesCaptured)),
-    };
+    return this.plans.agentSums(ids, m.year, m.month);
+  }
+
+  /**
+   * One team's targets: the Manager's split of the CEO's plan where it is set,
+   * otherwise the sum of the team's agent targets.
+   */
+  async teamTargets(leadId: string, ids: string[], m: Pick<MonthWindow, 'year' | 'month'>): Promise<PlanTargets> {
+    const [split, agents] = await Promise.all([this.plans.teamPlans(m.year, m.month, [leadId]), this.targetsFor(ids, m)]);
+    const values = valuesOf(split[0]);
+    const out = emptyPlan();
+    for (const key of PLAN_METRICS) out[key] = values[key] ?? agents[key];
+    return out;
+  }
+
+  /**
+   * The targets for a Manager's whole tree, per metric:
+   * 1. the teams' split of the CEO's plan, when the Manager has split that metric
+   *    (a team without a split number counts its agents' targets);
+   * 2. else the CEO's plan itself, when the Manager's teams are the whole company;
+   * 3. else the sum of the agents' targets.
+   */
+  async treeTargets(tree: ManagerTree, m: Pick<MonthWindow, 'year' | 'month'>): Promise<{ targets: PlanTargets; source: Record<PlanMetricKey, PlanSource> }> {
+    const leadIds = tree.leads.map((l) => l.id);
+    const [company, splits, allLeads, treeAgents] = await Promise.all([
+      this.plans.company(m.year, m.month),
+      leadIds.length ? this.plans.teamPlans(m.year, m.month, leadIds) : Promise.resolve([]),
+      this.prisma.staff.count({ where: { role: 'team_lead', status: { not: 'deactivated' } } }),
+      this.targetsFor(tree.ids, m),
+    ]);
+    const teamAgents = new Map<string, PlanValues>();
+    for (const lead of tree.leads) teamAgents.set(lead.id, await this.targetsFor(this.tree.teamIds(tree, lead.id), m));
+    const plan = company ? valuesOf(company) : null;
+    const wholeCompany = leadIds.length > 0 && allLeads === leadIds.length;
+    const targets = emptyPlan();
+    const source = {} as Record<PlanMetricKey, PlanSource>;
+    for (const key of PLAN_METRICS) {
+      const split = tree.leads.map((l) => valuesOf(splits.find((x) => x.teamLeadId === l.id))[key]);
+      if (split.some((v) => typeof v === 'number')) {
+        targets[key] = sumOrNull(tree.leads.map((l, i) => split[i] ?? teamAgents.get(l.id)?.[key] ?? null));
+        source[key] = 'team_split';
+      } else if (wholeCompany && typeof plan?.[key] === 'number') {
+        targets[key] = plan[key];
+        source[key] = 'company_plan';
+      } else {
+        targets[key] = treeAgents[key];
+        source[key] = treeAgents[key] === null ? null : 'agent_targets';
+      }
+    }
+    return { targets, source };
   }
 
   planRows(counts: WorkCounts, targets: PlanTargets, m: MonthWindow): { bringMoney: PlanRow[]; leadToMoney: PlanRow[] } {
@@ -94,12 +136,12 @@ export class ManagerPlanService {
       ...forecast(done, target, m, lowerIsBetter),
     });
     return {
-      bringMoney: [row('placed', counts.placed, targets.placed), row('paid', counts.paid, targets.paid), row('leftWithin30', counts.leftWithin30, null, true)],
+      bringMoney: [row('placed', counts.placed, targets.placed), row('paid', counts.paid, targets.paid), row('leftWithin30', counts.leftWithin30, targets.leftWithin30, true)],
       leadToMoney: [
-        row('businessesSignedUp', counts.businessesSignedUp, null),
+        row('businessesSignedUp', counts.businessesSignedUp, targets.businessesSignedUp),
         row('vacancies', counts.vacancies, targets.vacancies),
-        row('interviewsDone', counts.interviewsDone, null),
-        row('registered', counts.registered, null),
+        row('interviewsDone', counts.interviewsDone, targets.interviewsDone),
+        row('registered', counts.registered, targets.registered),
       ],
     };
   }
@@ -131,11 +173,12 @@ export class ManagerPlanService {
     const tree = await this.tree.load(actor.id);
     const m = monthWindow(range.to, now);
     const monthRange = { from: m.from, to: now.getTime() < m.to.getTime() ? now : m.to };
-    const [counts, targets, periodCounts] = await Promise.all([
+    const [counts, planned, periodCounts] = await Promise.all([
       this.tree.counts(tree.ids, monthRange),
-      this.targetsFor(tree.ids, m),
+      this.treeTargets(tree, m),
       this.tree.counts(tree.ids, range),
     ]);
+    const targets = planned.targets;
     const { bringMoney, leadToMoney } = this.planRows(counts, targets, m);
     const withTarget = [...bringMoney, ...leadToMoney].filter((r) => r.verdict !== 'no_target');
     const shortRows = withTarget.filter((r) => r.verdict === 'short').sort((a, b) => (a.extra ?? 0) / (a.target || 1) - (b.extra ?? 0) / (b.target || 1));
@@ -146,7 +189,7 @@ export class ManagerPlanService {
     const liveById = new Map(live.people.map((p) => [p.staff.id, p]));
     for (const lead of tree.leads) {
       const ids = this.tree.teamIds(tree, lead.id);
-      const [c, t] = await Promise.all([this.tree.counts(ids, monthRange), this.targetsFor(ids, m)]);
+      const [c, t] = await Promise.all([this.tree.counts(ids, monthRange), this.teamTargets(lead.id, ids, m)]);
       const atWork = ids.filter((id) => {
         const s = liveById.get(id)?.status;
         return s && !['not_logged_in', 'logged_out', 'on_leave'].includes(s);
@@ -160,7 +203,7 @@ export class ManagerPlanService {
         rows: [
           { metric: 'placed' as const, label: 'People placed', ...forecast(c.placed, t.placed, m) },
           { metric: 'paid' as const, label: 'Paid the registration fee', ...forecast(c.paid, t.paid, m) },
-          { metric: 'businessesSignedUp' as const, label: 'Businesses signed up', ...forecast(c.businessesSignedUp, null, m) },
+          { metric: 'businessesSignedUp' as const, label: 'Businesses signed up', ...forecast(c.businessesSignedUp, t.businessesSignedUp, m) },
         ],
       });
     }
@@ -172,9 +215,9 @@ export class ManagerPlanService {
       byWeek.push({
         label: w.label,
         soFar: w.soFar,
-        registered: { done: c.registered, target: null },
+        registered: { done: c.registered, target: share(targets.registered) },
         paid: { done: c.paid, target: share(targets.paid) },
-        businessesSignedUp: { done: c.businessesSignedUp, target: null },
+        businessesSignedUp: { done: c.businessesSignedUp, target: share(targets.businessesSignedUp) },
         placed: { done: c.placed, target: share(targets.placed) },
       });
     }
@@ -243,6 +286,8 @@ export class ManagerPlanService {
       },
       bringMoney,
       leadToMoney,
+      /** Where each target comes from: the teams' split, the CEO's plan, or the agents' targets. */
+      planSource: planned.source,
       rates,
       byTeam,
       byWeek,
@@ -286,7 +331,7 @@ export class ManagerPlanService {
       const [c, att, targets] = await Promise.all([
         this.tree.counts(tree.ids, b),
         this.attendanceTotals(tree.ids, b.from, b.to, now),
-        this.targetsFor(tree.ids, m),
+        this.treeTargets(tree, m).then((p) => p.targets),
       ]);
       const weeklyPlacements = targets.placed === null ? null : Math.round((targets.placed * 7) / m.daysInMonth);
       rows.push({
@@ -309,7 +354,7 @@ export class ManagerPlanService {
     for (const lead of tree.leads) {
       const ids = this.tree.teamIds(tree, lead.id);
       const m = monthWindow(last.to, now);
-      const [c, att, targets] = await Promise.all([this.tree.counts(ids, last), this.attendanceTotals(ids, last.from, last.to, now), this.targetsFor(ids, m)]);
+      const [c, att, targets] = await Promise.all([this.tree.counts(ids, last), this.attendanceTotals(ids, last.from, last.to, now), this.teamTargets(lead.id, ids, m)]);
       const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
       const scored = [];
       for (const a of agents) {

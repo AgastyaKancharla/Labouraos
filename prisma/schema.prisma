@@ -814,6 +814,9 @@ model Staff {
   passwordResetsIssued StaffPasswordReset[] @relation("PasswordResetIssuedBy")
   coachingNotes     StaffCoachingNote[] @relation("CoachingNoteAbout")
   coachingNotesWritten StaffCoachingNote[] @relation("CoachingNoteAuthor")
+  companyPlansSet   CompanyPlan[]    @relation("CompanyPlanSetBy")
+  teamPlans         TeamPlan[]       @relation("TeamPlanTeam")
+  teamPlansSet      TeamPlan[]       @relation("TeamPlanSetBy")
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -2133,4 +2136,54 @@ model TeamLeadCheck {
 
   @@index([subjectType, subjectId])
   @@index([checkedByStaffId, createdAt])
+}
+
+/// The CEO's plan for one month for the whole company (Master Guide, Manager
+/// home: "The CEO sets the monthly target; the Manager splits it into team and
+/// agent targets"). Counts only — never money. Each field is optional: a metric
+/// the CEO leaves empty falls back to the sum of the agents' targets.
+model CompanyPlan {
+  id                 String   @id @default(uuid())
+  year               Int
+  month              Int      // 1 - 12
+  registered         Int?     // job seekers registered
+  paid               Int?     // paid the ₹499 registration fee
+  businessesSignedUp Int?     // businesses signed up (agreement by OTP)
+  vacancies          Int?     // new job openings added
+  interviewsDone     Int?     // interviews done
+  placed             Int?     // people placed in jobs
+  leftWithin30       Int?     // a limit: placed people who left within 30 days, at most this many
+  repeatBusinesses   Int?     // businesses that hired through Laboura again
+  setByStaffId       String
+  setBy              Staff    @relation("CompanyPlanSetBy", fields: [setByStaffId], references: [id], onDelete: Restrict)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([year, month])
+}
+
+/// A Manager's split of the CEO's plan for one team (a Team Lead's team) and
+/// month (MG-Targets "Split the CEO's plan into teams"). The same metrics as
+/// CompanyPlan; the teams' splits should add up to the CEO's plan.
+model TeamPlan {
+  id                 String   @id @default(uuid())
+  teamLeadId         String
+  teamLead           Staff    @relation("TeamPlanTeam", fields: [teamLeadId], references: [id], onDelete: Cascade)
+  year               Int
+  month              Int      // 1 - 12
+  registered         Int?
+  paid               Int?
+  businessesSignedUp Int?
+  vacancies          Int?
+  interviewsDone     Int?
+  placed             Int?
+  leftWithin30       Int?
+  repeatBusinesses   Int?
+  setByStaffId       String
+  setBy              Staff    @relation("TeamPlanSetBy", fields: [setByStaffId], references: [id], onDelete: Restrict)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@unique([teamLeadId, year, month])
+  @@index([year, month])
 }

@@ -5,7 +5,8 @@ import { TargetService } from '../target/target.service';
 import { paceFor, parseMonth } from '../ceo-portal/ceo-team.service';
 import { percent } from '../ceo-portal/ceo-common';
 import { monthOf, previousMonth } from './manager-common';
-import { ManagerTreeService } from './manager-tree.service';
+import { ManagerTree, ManagerTreeService } from './manager-tree.service';
+import { CompanyPlanService, PLAN_METRICS, emptyPlan, splitDifference, sumOrNull, valuesOf } from '../company-plan/company-plan.service';
 
 /** The target fields a Manager edits on MG-Targets (guide, Monthly targets). */
 export const EDITABLE_TARGET_KEYS = ['candidatesActivated', 'vacanciesCaptured', 'placementsClosed', 'repeatBusinesses'] as const;
@@ -36,7 +37,43 @@ export class ManagerTargetsService {
     private readonly prisma: PrismaService,
     private readonly tree: ManagerTreeService,
     private readonly targets: TargetService,
+    private readonly plans: CompanyPlanService,
   ) {}
+
+  /**
+   * "Split the CEO's plan into teams": the CEO's plan, each of the Manager's
+   * teams with its split and the sum of its agents' targets, the split of
+   * teams under other Managers (one total), and whether it all adds up.
+   */
+  async planSplit(tree: ManagerTree, year: number, month: number) {
+    const leadIds = tree.leads.map((l) => l.id);
+    const [company, splits] = await Promise.all([this.plans.company(year, month), this.plans.teamPlans(year, month)]);
+    const teams = [];
+    for (const lead of tree.leads) {
+      teams.push({
+        teamLeadId: lead.id,
+        team: lead.team,
+        teamLead: lead.name,
+        split: valuesOf(splits.find((x) => x.teamLeadId === lead.id)),
+        agents: await this.plans.agentSums(this.tree.teamIds(tree, lead.id), year, month),
+      });
+    }
+    const others = splits.filter((x) => !leadIds.includes(x.teamLeadId));
+    const otherTeams = others.length ? emptyPlan() : null;
+    if (otherTeams) for (const key of PLAN_METRICS) otherTeams[key] = sumOrNull(others.map((x) => x[key]));
+    const total = emptyPlan();
+    for (const key of PLAN_METRICS) total[key] = sumOrNull([...teams.map((t) => t.split[key]), otherTeams?.[key] ?? null]);
+    const plan = company ? valuesOf(company) : null;
+    return { company: plan, teams, otherTeams, total, difference: splitDifference(plan, total) };
+  }
+
+  /** Save the Manager's split for teams in their tree (PUT /manager/targets/split). */
+  async saveSplit(actor: JwtPayload, body: { year?: unknown; month?: unknown; rows?: unknown }, now: Date) {
+    const sel = parseMonth(body?.year, body?.month, now);
+    const tree = await this.tree.load(actor.sub);
+    const result = await this.plans.saveTeamPlans({ id: actor.sub, role: actor.role }, sel.year, sel.month, body?.rows, tree.leads.map((l) => l.id), now);
+    return { ...result, plan: await this.planSplit(tree, sel.year, sel.month) };
+  }
 
   async board(actor: { id: string; role: string }, year: unknown, month: unknown, now: Date) {
     const tree = await this.tree.load(actor.id);
@@ -103,6 +140,7 @@ export class ManagerTargetsService {
         repeatBusinesses: sum(agents, 'repeatBusinesses'),
       },
       teams,
+      plan: await this.planSplit(tree, m.year, m.month),
       agents,
       leaderboard,
     };

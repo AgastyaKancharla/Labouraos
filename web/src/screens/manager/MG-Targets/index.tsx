@@ -13,6 +13,7 @@ import { istDateKey } from '../../../lib/format/date';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { monthLong, roleTeam } from '../_kit/kit';
+import { PlanSplitCard, type PlanSplit } from './Split';
 
 type Key = 'candidatesActivated' | 'vacanciesCaptured' | 'placementsClosed' | 'repeatBusinesses';
 const COLUMNS: { key: Key; label: string; roles: string[] }[] = [
@@ -39,6 +40,7 @@ interface Board {
   previous: { year: number; month: number; targets: number };
   whole: Sums;
   teams: (Sums & { teamLeadId: string; team: string })[];
+  plan: PlanSplit;
   agents: AgentRow[];
   leaderboard: { position: number; staff: AgentRow['staff']; team: string | null; main: AgentRow['main'] }[];
 }
@@ -55,8 +57,10 @@ function months(now: Date): { key: string; year: number; month: number }[] {
 }
 
 /**
- * Targets — design MG-Targets.dc.html, on GET /manager/targets: agent targets
- * for the Manager's teams (this month and next), each team's total, "Copy
+ * Targets — design MG-Targets.dc.html, on GET /manager/targets: the CEO's
+ * plan split into the Manager's teams (PUT /manager/targets/split, with
+ * whether it adds up and each team's agents' targets under its split), agent
+ * targets for the Manager's teams (this month and next), "Copy
  * from last month" (POST /manager/targets/copy, own agents only), Save
  * (PUT /manager/targets) and the leaderboard. Ranked on placements and paid
  * registrations, never on calls dialled.
@@ -89,10 +93,11 @@ export default function ManagerTargets() {
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [d, draft]);
-  const whole = (key: Key) => {
-    const vals = teamTotals.map((t) => t[key]).filter((v): v is number => v !== null);
-    return vals.length ? vals.reduce((x, y) => x + y, 0) : null;
-  };
+  // The agents' targets per team (as typed), shown under each team's split.
+  const agentSums = useMemo(
+    () => Object.fromEntries(teamTotals.map((t) => [t.teamLeadId, { paid: t.candidatesActivated, vacancies: t.vacanciesCaptured, placed: t.placementsClosed, repeatBusinesses: t.repeatBusinesses }])),
+    [teamTotals],
+  );
 
   const save = useMutation({
     mutationFn: () => {
@@ -124,47 +129,13 @@ export default function ManagerTargets() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Targets" subtitle="Split the month into team and agent targets, and see who is delivering." />
+      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Targets" subtitle="Split the CEO's monthly plan into teams and agents, and see who is delivering." />
       <Tabs label="Month" value={tab} onChange={setTab} items={options.map((o) => ({ key: o.key, label: monthLong(o.month) }))} />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (
         <>
-          <Card title="Team targets">
-            <div className="scrollx">
-              <table>
-                <thead>
-                  <tr>
-                    <th />
-                    {COLUMNS.map((c) => (
-                      <th key={c.key}>{c.label}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {teamTotals.map((t) => (
-                    <tr key={t.teamLeadId}>
-                      <td>{t.team}</td>
-                      {COLUMNS.map((c) => (
-                        <td key={c.key}>{t[c.key] ?? '—'}</td>
-                      ))}
-                    </tr>
-                  ))}
-                  <tr>
-                    <td>
-                      <b>All your teams</b>
-                    </td>
-                    {COLUMNS.map((c) => (
-                      <td key={c.key}>
-                        <b>{whole(c.key) ?? '—'}</b>
-                      </td>
-                    ))}
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-            <div className="mg-note">A team's target is the sum of its agents' targets below · you can't lower the CEO's plan, only the CEO can</div>
-          </Card>
+          <PlanSplitCard plan={d?.plan} year={sel.year} month={sel.month} editable={Boolean(d?.editable)} agentSums={agentSums} />
 
           <Card
             title="Agent targets"

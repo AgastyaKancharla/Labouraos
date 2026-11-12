@@ -15,8 +15,9 @@ import { ActionButton } from '../_kit/actions';
 import { MonthPicker, monthName, shiftMonth } from '../_kit/month';
 import { TargetTabs } from '../_kit/tabs';
 import { PACE_LABEL, useTargetsBoard, type TargetRow } from '../_kit/targets';
+import { CompanyPlan } from './CompanyPlan';
 
-/** Targets — design C-Team-Targets.dc.html. */
+/** Targets — design C-Team-Targets.dc.html, with the CEO's monthly company plan on top (GET/PUT /plans/company). */
 export default function Targets() {
   const to = useScreenPath();
   const thisMonth = istDateKey(useNow()).slice(0, 7);
@@ -53,6 +54,7 @@ export default function Targets() {
     <div className="lb-page">
       <TopBar back={{ to: to('Main'), label: 'Command Center' }} title="Targets" subtitle="Every agent's monthly targets and how far along they are." actions={<MonthPicker value={month} onChange={setMonth} />} />
       <TargetTabs />
+      <CompanyPlan month={month} editable={month >= thisMonth} />
       <div className="panel" style={{ padding: '6px 18px 14px' }}>
         <DataTable columns={columns} rows={board.data?.rows} rowKey={(r) => r.staff.id} caption={`Targets ${month}`} loading={board.isPending} error={board.error} onRetry={() => void board.refetch()} download={`targets-${month}`} emptyTitle="No agents yet." />
         <div className="ceo-note">Targets are set per agent each month by the CEO or a Manager · after the 10th, anyone under 80% of pace is flagged to their Team Lead and Manager</div>

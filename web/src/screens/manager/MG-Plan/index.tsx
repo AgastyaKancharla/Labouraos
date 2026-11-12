@@ -11,7 +11,7 @@ import { periodFor, type Period } from '../../../lib/period';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { PlanTable, Verdict, monthLong, monthShort, teamShort, verdictText } from '../_kit/kit';
-import { headlineGap, headlineTitle, useOverview, type Overview } from '../_kit/overview';
+import { headlineGap, headlineTitle, planSourceText, useOverview, type Overview } from '../_kit/overview';
 
 /** "8 (10)" — done, then the week's share of the month target in brackets. */
 function doneTarget(c: { done: number; target: number | null }): string {
@@ -41,7 +41,8 @@ function downloadPlan(o: Overview): number {
  * Plan vs actual — design MG-Plan.dc.html, on GET /manager/overview: the
  * month's targets, done so far and where we end at today's speed, for the
  * whole tree, each team and each week, and where people are lost. Counts
- * only; the plan is the sum of the agents' monthly targets.
+ * only; the plan is the CEO's plan as the Manager split it into teams, or
+ * the sum of the agents' monthly targets where it isn't set.
  */
 export default function PlanVsActual() {
   const to = useScreenPath();
@@ -95,7 +96,7 @@ export default function PlanVsActual() {
             monthShort={mShort}
             daysLeft={o?.month.daysLeft ?? 0}
             loading={ov.isPending}
-            footnote="At this speed = where we end on the last day of the month if we keep doing the same amount every day."
+            footnote={`At this speed = where we end on the last day of the month if we keep doing the same amount every day. ${planSourceText(o)}`}
           />
 
           <Card title="By team">
@@ -140,7 +141,7 @@ export default function PlanVsActual() {
                 </tbody>
               </table>
             </div>
-            <div className="mg-note">A team's target is the sum of its agents' targets, set on the Targets page</div>
+            <div className="mg-note">Team targets are the CEO's plan split by you on the Targets page · a team without a split shows the sum of its agents' targets</div>
           </Card>
 
           <Card title="By week · done (target)">

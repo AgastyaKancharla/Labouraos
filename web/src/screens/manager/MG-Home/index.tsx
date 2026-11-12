@@ -14,7 +14,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { hm } from '../../ceo/_kit/format';
 import { PlanTable, Verdict, monthLong, monthShort, roleTeam, teamShort } from '../_kit/kit';
-import { headlineGap, headlineTitle, useOverview } from '../_kit/overview';
+import { headlineGap, headlineTitle, planSourceText, useOverview } from '../_kit/overview';
 import { WaitingCard } from './WaitingCard';
 import { useWaiting } from '../_kit/requests';
 
@@ -77,7 +77,7 @@ export default function ManagerHome() {
             monthShort={mShort}
             daysLeft={o?.month.daysLeft ?? 0}
             loading={ov.isPending}
-            footnote="At this speed = where we end on the last day of the month if we keep doing the same amount every day. Targets come from the agents' monthly targets; counts without a target show what was done."
+            footnote={`At this speed = where we end on the last day of the month if we keep doing the same amount every day. ${planSourceText(o)}`}
           />
 
           <Card title="How well we turn one step into the next">

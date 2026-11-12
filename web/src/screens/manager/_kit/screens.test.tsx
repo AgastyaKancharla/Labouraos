@@ -376,7 +376,35 @@ describe('Work boards', () => {
   });
 });
 
+const pv = (o: Record<string, number | null>) => ({ registered: null, paid: null, businessesSignedUp: null, vacancies: null, interviewsDone: null, placed: null, repeatBusinesses: null, leftWithin30: null, ...o });
+const splitPlan = {
+  company: pv({ registered: 400, paid: 320, businessesSignedUp: 60, placed: 45 }),
+  teams: [{ teamLeadId: 'tl1', team: 'Team South', teamLead: 'Ravi Shankar', split: pv({ registered: 225, paid: 180, businessesSignedUp: 33, placed: 25 }), agents: pv({ paid: 45 }) }],
+  otherTeams: pv({ registered: 175, paid: 140, businessesSignedUp: 27, placed: 20 }),
+  total: pv({ registered: 400, paid: 320, businessesSignedUp: 60, placed: 45 }),
+  difference: pv({ registered: 0, paid: 0, businessesSignedUp: 0, placed: 0 }),
+};
+
 describe('Targets, reports, login codes, notifications', () => {
+  it("targets: splits the CEO's plan into teams and shows whether it adds up", async () => {
+    const api = mockApi({
+      ...common,
+      'GET /manager/targets': { year: 2026, month: 11, editable: true, previous: { year: 2026, month: 10, targets: 0 }, whole: {}, teams: [{ teamLeadId: 'tl1', team: 'Team South', candidatesActivated: null, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null }], plan: splitPlan, agents: [], leaderboard: [] },
+      'PUT /manager/targets/split': { created: 0, updated: 1, unchanged: 0 },
+    });
+    const { container } = render(<Targets />, '/manager/targets');
+    expect(await screen.findByText('Teams under other Managers')).toBeInTheDocument();
+    expect(screen.getByText('CEO plan · whole team')).toBeInTheDocument();
+    expect(screen.getAllByText('Adds up')).toHaveLength(4);
+    const paid = screen.getByLabelText('Paid for Team South');
+    await userEvent.clear(paid);
+    await userEvent.type(paid, '170');
+    expect(screen.getByText('10 still to split')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save split' }));
+    await waitFor(() => expect(api.calls('PUT /manager/targets/split')[0].body).toEqual({ year: 2026, month: 11, rows: [{ teamLeadId: 'tl1', paid: 170 }] }));
+    expect(container.textContent).not.toMatch(/₹/);
+  });
+
   it('targets: saves an edited agent target and copies from last month', async () => {
     const api = mockApi({
       ...common,
@@ -387,6 +415,7 @@ describe('Targets, reports, login codes, notifications', () => {
         previous: { year: 2026, month: 10, targets: 2 },
         whole: { candidatesActivated: 45, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null },
         teams: [{ teamLeadId: 'tl1', team: 'Team South', candidatesActivated: 45, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null }],
+        plan: splitPlan,
         agents: [{ staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent', isIntern: false }, team: 'Team South', teamLeadId: 'tl1', targetId: 't1', target: { candidatesActivated: 45, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null }, main: { metric: 'paid', done: 27, target: 45, percent: 60 }, pace: 'on_pace' }],
         leaderboard: [{ position: 1, staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent', isIntern: false }, team: 'Team South', main: { metric: 'paid', done: 27, target: 45, percent: 60 } }],
       },
@@ -397,7 +426,7 @@ describe('Targets, reports, login codes, notifications', () => {
     const input = await screen.findByLabelText('Paid registrations for Deepa Nair');
     await userEvent.clear(input);
     await userEvent.type(input, '50');
-    expect(screen.getAllByText('50').length).toBeGreaterThan(0);
+    expect(screen.getByText('agents 50')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save targets' }));
     await waitFor(() => expect(api.calls('PUT /manager/targets')[0].body).toEqual({ year: 2026, month: 11, rows: [{ staffId: 'ca1', candidatesActivated: 50 }] }));
     await userEvent.click(screen.getByRole('button', { name: 'Copy from October' }));

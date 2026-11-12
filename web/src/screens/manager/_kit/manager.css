@@ -57,5 +57,4 @@
 .mg-filters > .mg-grow { flex: 2 1 220px; }
 .mg-banner { padding: 14px 18px; font-size: 13.5px; }
 .mg-banner--warn { border-color: var(--amber); background: var(--amber-bg); color: var(--text); }
-.mg-split-ok { color: var(--good); font-weight: 600; }
-.mg-split-off { color: var(--tomato); font-weight: 600; }
+.mg-agents-sum { display: block; font-size: 11px; color: var(--text-faint); margin-top: 3px; }

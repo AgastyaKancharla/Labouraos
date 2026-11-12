@@ -129,6 +129,13 @@ export class ScreensManagerController {
     return this.targets.save(req.user, body ?? {}, new Date());
   }
 
+  /** "Split the CEO's plan into teams": { year, month, rows: [{ teamLeadId, registered?, paid?, … }] } for teams in the tree. */
+  @Put('targets/split')
+  @RequireRoles('manager')
+  saveSplit(@Req() req: AuthedRequest, @Body() body: { year?: unknown; month?: unknown; rows?: unknown }) {
+    return this.targets.saveSplit(req.user, body ?? {}, new Date());
+  }
+
   /** Copy from last month, for the Manager's own agents only. */
   @Post('targets/copy')
   @RequireRoles('manager')
