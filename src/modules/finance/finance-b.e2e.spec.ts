@@ -18,7 +18,9 @@ import { monthBounds } from './payroll-rules';
  * - Asha (call agent, joined 1 Dec 2002): full days except one absent day,
  *   one half day and 30 minutes of shortfall not made up;
  * - Bala (Manager, joined 10 Mar 2003): full days from his joining day.
- * Pay = monthly ÷ 26 a day. Finance prepares once the month is over, the CEO
+ * Pay = monthly ÷ 26 a day: on staff the whole month, the monthly salary less
+ * absences; part of the month, ÷ 26 × working days on staff (never more than
+ * the monthly salary), then absences (Master Guide, 12 Nov). Finance prepares once the month is over, the CEO
  * approves the exact total he saw, Finance pays with a UTR; each person
  * (the Manager too) reads only their own payslip, once paid. The CEO closes
  * the month: its records never change, late money is booked in the open
@@ -213,9 +215,11 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect(a.notEmployedDays).toBe(0);
       expect(a.pfPaise + a.esiPaise + a.professionalTaxPaise).toBe(0);
       expect(a.netPaise).toBe(2600000 - 150000 - 6250);
-      // Bala joined Monday 10 March: 19 working days on the staff × ₹52,000 ÷ 26 = ₹38,000.
+      // Bala joined Monday 10 March: paid for the days on staff, 19 working days × ₹52,000 ÷ 26 = ₹38,000
+      // (the 7 working days before joining are the ₹14,000 not earned).
       expect(b.notEmployedDays).toBe(7);
       expect(b.notEmployedPaise).toBe(1400000);
+      expect(b.paidDays).toBe(19);
       expect(b.netPaise).toBe(3800000);
     });
 
@@ -546,6 +550,15 @@ describe('Finance back office (Phase 22 Part B)', () => {
 
     it('carries a holiday added to an approved month as correction rows, pays a leaver through Finance, and carries a take-back larger than pay', async () => {
       await prisma.holiday.create({ data: { date: day(LATE_HOLIDAY), name: 'W5B late holiday' } });
+      // Pay is for the days on staff: 4 March was before Bala joined, so the new holiday leaves his
+      // 19 working days on staff — and his March pay — unchanged. Asha was on staff and absent that day.
+      const draft = await sheetFor(APRIL);
+      expect(rowOf(draft, bala.id)?.correctionPaise).toBe(0);
+      expect(rowOf(draft, asha.id)?.correctionPaise).toBe(150000);
+      // The CEO corrects Bala's joining date to Saturday 8 March, a day he worked: one more working
+      // day on staff in the approved month (20 × ₹2,000 = ₹40,000), so ₹2,000 comes back.
+      await prisma.attendanceDay.create({ data: { staffId: bala.id, date: day('2003-03-08'), dayType: 'full', productionSeconds: 8 * 3600, closedReason: 'logout' } });
+      await request(server()).put(`/staff/${bala.id}/joined-on`).set(as('ceo')).send({ joinedOn: '2003-03-08' }).expect(200);
       await prisma.payrollCorrection.createMany({
         data: [
           { staffId: gone.id, relatesToMonth: '2003-02', amountPaise: 50000, reason: 'Owed for February 2003', source: 'recompute' },
@@ -559,7 +572,8 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect(a.correctionPaise).toBe(150000);
       expect(a.netPaise).toBe(3200000 + 150000);
       expect(String(a.correctionNote)).toContain('Paid back ₹1,500 for March 2003');
-      // Bala: 4 March was a working day before he joined, now a holiday: ₹2,000 back; ₹60,000 carried take-back.
+      // Bala: ₹2,000 back for his corrected joining date, less the ₹60,000 take-back carried from March:
+      // −₹58,000 against ₹52,000 of April pay → ₹52,000 taken now, ₹6,000 carried to May, net ₹0.
       const b = rowOf(prepared, bala.id)!;
       expect(b.correctionPaise).toBe(-5200000);
       expect(b.carryForwardPaise).toBe(-600000);
