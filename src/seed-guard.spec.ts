@@ -78,7 +78,7 @@ describe('M7: npm run seed cannot bypass its production guard', () => {
       /must point at a database on this computer.*aws-0-ap-south-1\.pooler\.supabase\.com/,
     );
     expect(() => assertSeedDatabaseIsLocal('postgresql://u:p@10.0.0.5:5432/laboura')).toThrow(/10\.0\.0\.5/);
-    expect(() => assertSeedDatabaseIsLocal(undefined)).toThrow(/no usable address/);
+    expect(() => assertSeedDatabaseIsLocal('')).toThrow(/no usable address/);
     expect(() => assertSeedDatabaseIsLocal('not a url')).toThrow(/no usable address/);
   });
 
