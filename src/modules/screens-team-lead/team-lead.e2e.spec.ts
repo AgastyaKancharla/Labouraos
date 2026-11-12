@@ -101,7 +101,7 @@ describe('Team Lead portal endpoints', () => {
     await prisma.notification.deleteMany({ where: { recipientStaffId: { in: staffIds } } });
     await prisma.callQualityScore.deleteMany({ where: { callRecordId: { in: cleanup.calls } } });
     await prisma.teamLeadCheck.deleteMany({ where: { checkedByStaffId: { in: staffIds } } });
-    await prisma.coachingNote.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.staffCoachingNote.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.reviewFlag.deleteMany({ where: { raisedForStaffId: { in: staffIds } } });
     await prisma.callRecord.deleteMany({ where: { id: { in: cleanup.calls } } });
     await prisma.businessVisit.deleteMany({ where: { id: { in: cleanup.visits } } });

@@ -129,7 +129,7 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
   afterAll(async () => {
     await prisma.notification.deleteMany({ where: { recipientStaffId: { in: staffIds } } });
     await prisma.staffRequest.deleteMany({ where: { staffId: { in: staffIds } } });
-    await prisma.coachingNote.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.staffCoachingNote.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.reviewFlag.deleteMany({ where: { id: { in: flagIds } } });
     await prisma.reviewFlag.deleteMany({ where: { raisedForStaffId: { in: staffIds } } });
     await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: jobSeekerIds } } });

@@ -209,23 +209,23 @@ function CodeCard({ request, waited }: { request: Pending; waited: string }) {
 }
 
 function ResetButton({ id, name }: { id: string; name: string }) {
-  const [token, setToken] = useState<{ code: string; token: string } | null>(null);
+  const [link, setLink] = useState<{ url: string; expiresAt: string } | null>(null);
   return (
     <>
       <ActionButton
         label="Reset password"
         title={`Reset ${name}'s password`}
-        description="A fresh one-time invite replaces the old password; they set a new one with it."
+        description="A one-time link to set a new password. Their old password keeps working until they use it."
         run={async () => {
-          const res = await api.post<{ staff: { code: string }; inviteToken: string }>(`/staff/${id}/reissue-invite`);
-          setToken({ code: res.staff.code, token: res.inviteToken });
+          const res = await api.post<{ resetUrl: string; expiresAt: string }>(`/staff/${id}/reset-password`);
+          setLink({ url: res.resetUrl, expiresAt: res.expiresAt });
           return res;
         }}
-        success="New invite ready"
+        success="Reset link ready"
       />
-      {token && (
+      {link && (
         <p className="tl-sub" role="status">
-          Give {name}: staff code <span className="code">{token.code}</span> · invite <span className="code" style={{ wordBreak: 'break-all' }}>{token.token}</span> (shown once)
+          Give {name} this link (shown once, works until {formatTimeIST(link.expiresAt)}): <span className="code" style={{ wordBreak: 'break-all' }}>{link.url}</span>
         </p>
       )}
     </>

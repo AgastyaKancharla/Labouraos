@@ -673,7 +673,7 @@ export class RequestsService {
       return;
     }
     if (row.kind === 'written_warning') {
-      await this.prisma.coachingNote.create({
+      await this.prisma.staffCoachingNote.create({
         data: { staffId: row.staffId, authorStaffId: actor.id, kind: 'written_warning', text: String(details.text ?? row.reason), createdAt: now },
       });
     }
@@ -755,7 +755,7 @@ export class RequestsService {
       return;
     }
     if (row.kind === 'written_warning') {
-      await this.prisma.coachingNote.create({
+      await this.prisma.staffCoachingNote.create({
         data: { staffId: row.staffId, authorStaffId: actor.id, kind: 'note', text: `Written warning withdrawn: ${reason}`, createdAt: now },
       });
       return;

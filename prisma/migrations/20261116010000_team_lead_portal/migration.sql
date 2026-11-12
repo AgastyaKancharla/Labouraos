@@ -1,17 +1,6 @@
--- Team Lead portal: coaching notes, call quality scores (a minimal checklist)
--- and the Team Lead's checks of registrations and shop visits.
-CREATE TABLE "CoachingNote" (
-  "id" TEXT NOT NULL,
-  "staffId" TEXT NOT NULL,
-  "authorStaffId" TEXT NOT NULL,
-  "kind" TEXT NOT NULL DEFAULT 'note',
-  "text" TEXT NOT NULL,
-  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  CONSTRAINT "CoachingNote_pkey" PRIMARY KEY ("id")
-);
-CREATE INDEX "CoachingNote_staffId_createdAt_idx" ON "CoachingNote"("staffId", "createdAt");
-ALTER TABLE "CoachingNote" ENABLE ROW LEVEL SECURITY;
-
+-- Team Lead portal: call quality scores (a minimal checklist) and the Team
+-- Lead's checks of registrations and shop visits. Coaching notes use the
+-- Manager portal's StaffCoachingNote table (one place for every note).
 CREATE TABLE "CallQualityScore" (
   "id" TEXT NOT NULL,
   "callRecordId" TEXT NOT NULL,

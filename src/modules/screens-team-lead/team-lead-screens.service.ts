@@ -232,7 +232,7 @@ export class TeamLeadScreensService {
       : [];
     const subjects = await this.subjectNames(calls);
     const monthScores = scores.filter((s) => s.createdAt.getTime() >= monthStart.getTime());
-    const notes = await this.prisma.coachingNote.findMany({ where: { staffId }, orderBy: { createdAt: 'desc' }, take: 30 });
+    const notes = await this.prisma.staffCoachingNote.findMany({ where: { staffId }, orderBy: { createdAt: 'desc' }, take: 30 });
     const authors = await this.briefs(notes.map((note) => note.authorStaffId));
     const pendingTargetChanges = await this.prisma.staffRequest.findMany({ where: { kind: 'target_change', staffId, status: 'pending' }, select: { id: true, details: true, createdAt: true } });
     const metricRows =

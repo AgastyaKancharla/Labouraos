@@ -456,7 +456,7 @@ export class TeamLeadChecksService {
     if (text.length > 2000) throw new BadRequestException('Keep a note under 2,000 characters');
     // A Team Lead cannot give a written warning: they ask the Manager (POST /requests, written_warning).
     const kind = ['note', 'one_to_one', 'verbal_warning'].includes(String(body?.kind)) ? String(body?.kind) : 'note';
-    const note = await this.prisma.coachingNote.create({ data: { staffId: member.id, authorStaffId: actor.id, kind, text, createdAt: this.clock.now() } });
+    const note = await this.prisma.staffCoachingNote.create({ data: { staffId: member.id, authorStaffId: actor.id, kind, text, createdAt: this.clock.now() } });
     await this.audit.log({ actorId: actor.id, action: 'team_lead.coaching_note_added', entityType: 'staff', entityCode: member.code, after: { kind } });
     return { id: note.id, kind: note.kind, text: note.text, at: note.createdAt.toISOString() };
   }

@@ -32,6 +32,8 @@ export const NOTIFICATION_KINDS = [
   // Growth tasks for the Team Lead (N2, N3).
   'first_interview_overdue',
   'shortage_task',
+  // A Manager's "Remind the agents" on stuck work (Manager portal, Pipeline).
+  'stuck_work_reminder',
   // Requests with no table of their own (hit removal, target change, day change,
   // written warning — src/modules/requests), with the same 24/48-hour escalation.
   'staff_request',
@@ -45,7 +47,7 @@ export type NotificationKind = (typeof NOTIFICATION_KINDS)[number];
  * Kinds that tell someone something rather than ask them to do something.
  * Reading them is the work: marking one as seen clears it.
  */
-export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'agent_reminder'];
+export const INFORMATIONAL_KINDS: readonly NotificationKind[] = ['request_decided', 'hit_reversed', 'stuck_work_reminder', 'agent_reminder'];
 
 /** Kinds that carry rupee amounts. They only ever go to the CEO or Finance. */
 export const MONEY_KINDS: readonly NotificationKind[] = [
@@ -130,6 +132,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   },
   first_interview_overdue: { team_lead: 'work', manager: 'pipeline', ceo: 'job-seekers' },
   shortage_task: { team_lead: 'work', manager: 'pipeline', ceo: 'vacancies' },
+  stuck_work_reminder: { call_agent: '', team_lead: 'work', field_agent: '' },
   staff_request: { team_lead: 'requests/:ref', manager: 'requests/:ref', ceo: 'team/leave' },
   agent_reminder: { call_agent: 'people/:id', team_lead: 'work' },
 };
