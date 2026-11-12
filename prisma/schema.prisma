@@ -877,6 +877,12 @@ model Payment {
   // Phase 22 Part B: money that arrived for a closed month is booked in the
   // current open month; this says so (the bank's own date and why).
   bookingNote       String?
+  // A job seeker's ₹499 refund: the registration payment it gives back. With the
+  // partial unique indexes in migration 20261119200000 (SQL only, Prisma cannot
+  // express them) a double tap or a retry can never create two live refunds for
+  // one ₹499, two live refunds for one placement, or two referral payouts or
+  // joining rewards for one placement. "Live" = any status but rejected or cancelled.
+  refundsPaymentId  String?
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 

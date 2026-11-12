@@ -23,6 +23,12 @@ import {
 } from '../../common/money/money';
 import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
 import { loadJobSeekerRefundGuards } from './job-seeker-refund-guards';
+import {
+  LIVE_PAYOUT_STATUSES,
+  alreadyExists,
+  isDuplicatePayout,
+  lockSubject,
+} from '../../common/money/one-per-subject';
 
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
@@ -955,13 +961,16 @@ export class JobSeekerService {
 
     const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
-    const existingRefund = await this.prisma.payment.findFirst({
-      where: {
-        jobSeekerId: jobSeeker.id,
-        type: 'refund',
-        status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
-      },
-    });
+    // A refund in his current guarantee: one made since the ₹499 he paid last. Paying
+    // again after a refund starts a new guarantee (Master Guide), which may end in a
+    // refund of its own. A payout the bank refused is retried, never made again.
+    const existingRefundWhere = {
+      jobSeekerId: jobSeeker.id,
+      type: 'refund',
+      status: { in: [...LIVE_PAYOUT_STATUSES] },
+      ...(jobSeeker.paymentReceivedAt ? { createdAt: { gte: jobSeeker.paymentReceivedAt } } : {}),
+    };
+    const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
 
     const policy = await this.getPolicy();
     const activationPayment = await this.prisma.payment.findFirst({
@@ -1030,34 +1039,53 @@ export class JobSeekerService {
     }
 
     const paymentCode = await this.idService.generateCode('payment');
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.create({
-        data: {
-          code: paymentCode,
-          city: jobSeeker.city,
-          type: 'refund',
-          amount: eligibilityResult.amountPaise,
-          status: 'approved',
-          approvedByStaffId: actor.id,
-          approvedAt: now,
-          gatewayReference: null,
-          subjectType: 'job_seeker',
-          subjectId: jobSeeker.id,
-          jobSeekerId: jobSeeker.id,
-        },
-      });
+    // H2: one refund per ₹499 even when Approve is tapped twice or retried. The lock
+    // makes the second request wait for the first; it then finds the refund and stops.
+    // The partial unique index on refundsPaymentId refuses a second one in any case.
+    let payment;
+    try {
+      payment = await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, `refund:job_seeker:${jobSeeker.id}`);
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, again);
 
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: p.id,
-        fromStatus: null,
-        toStatus: 'approved',
-        changedByStaffId: actor.id,
-        reason: 'job_seeker_guarantee_refund',
-      });
+        const p = await tx.payment.create({
+          data: {
+            code: paymentCode,
+            city: jobSeeker.city,
+            type: 'refund',
+            amount: eligibilityResult.amountPaise,
+            status: 'approved',
+            approvedByStaffId: actor.id,
+            approvedAt: now,
+            gatewayReference: null,
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            jobSeekerId: jobSeeker.id,
+            refundsPaymentId: activationPayment?.id ?? null,
+          },
+        });
 
-      return p;
-    });
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: p.id,
+          fromStatus: null,
+          toStatus: 'approved',
+          changedByStaffId: actor.id,
+          reason: 'job_seeker_guarantee_refund',
+        });
+
+        return p;
+      });
+    } catch (error) {
+      if (isDuplicatePayout(error)) {
+        throw alreadyExists(
+          `A refund for job seeker ${jobSeeker.code}`,
+          await this.prisma.payment.findFirst({ where: existingRefundWhere }),
+        );
+      }
+      throw error;
+    }
 
     await this.auditService.log({
       action: 'refund_approved',

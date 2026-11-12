@@ -28,6 +28,12 @@ import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
 import { businessRefundNeedsCeo, ceoApprovalMessage } from '../../common/money/approval-limits';
 import { decisionTime } from '../../common/time/decision-time';
+import {
+  LIVE_PAYOUT_STATUSES,
+  alreadyExists,
+  isDuplicatePayout,
+  lockSubject,
+} from '../../common/money/one-per-subject';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import {
   GstInvoiceResponse,
@@ -748,29 +754,14 @@ export class PlacementService {
 
       // Once per placement: check if joining_reward already exists
       const existing = await this.prisma.payment.findFirst({
-        where: {
-          placementId: placement.id,
-          type: 'joining_reward',
-        },
+        where: { placementId: placement.id, type: 'joining_reward' },
       });
       if (existing) {
         continue;
       }
 
-      const code = await this.idService.generateCode('payment');
-      const payment = await this.prisma.payment.create({
-        data: {
-          code,
-          city: placement.city,
-          type: 'joining_reward',
-          amount: rewardAmount,
-          status: 'pending',
-          subjectType: 'job_seeker',
-          subjectId: placement.jobSeekerId,
-          jobSeekerId: placement.jobSeekerId,
-          placementId: placement.id,
-        },
-      });
+      const payment = await this.createJoiningReward(placement, rewardAmount);
+      if (!payment) continue;
 
       await this.auditService.log({
         action: 'joining_reward_queued',
@@ -791,6 +782,42 @@ export class PlacementService {
     }
 
     return queuedCount;
+  }
+
+  /**
+   * Queues the ₹200 joining reward for one placement, once. H2: two runs of the job
+   * at once (or a manual run during the nightly one) still queue one reward: the lock
+   * makes the second wait and look again, and the partial unique index on placementId
+   * refuses a second reward in any case. Null when the placement already has one.
+   */
+  async createJoiningReward(
+    placement: { id: string; city: string; jobSeekerId: string },
+    rewardAmountPaise: number,
+  ) {
+    const existingWhere = { placementId: placement.id, type: 'joining_reward' };
+    const code = await this.idService.generateCode('payment');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, `joining_reward:${placement.id}`);
+        if (await tx.payment.findFirst({ where: existingWhere })) return null;
+        return tx.payment.create({
+          data: {
+            code,
+            city: placement.city,
+            type: 'joining_reward',
+            amount: rewardAmountPaise,
+            status: 'pending',
+            subjectType: 'job_seeker',
+            subjectId: placement.jobSeekerId,
+            jobSeekerId: placement.jobSeekerId,
+            placementId: placement.id,
+          },
+        });
+      });
+    } catch (error) {
+      if (isDuplicatePayout(error)) return null;
+      throw error;
+    }
   }
 
   async triggerReferralPayout(placementId: string, actorId?: string) {
@@ -1552,13 +1579,13 @@ export class PlacementService {
         rootPlacement.replacementCandidates?.some((rc) => rc.status === 'accepted'),
     );
 
-    const existingRefund = await this.prisma.payment.findFirst({
-      where: {
-        placementId: { in: [placement.id, rootId] },
-        type: 'refund',
-        status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
-      },
-    });
+    // A payout the bank refused is retried, never made again, so it still counts.
+    const existingRefundWhere = {
+      placementId: { in: [placement.id, rootId] },
+      type: 'refund',
+      status: { in: [...LIVE_PAYOUT_STATUSES] },
+    };
+    const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
     const refundWithCeo =
       existingRefund && existingRefund.status === 'pending' && existingRefund.ceoApprovalReason
         ? existingRefund
@@ -1663,9 +1690,24 @@ export class PlacementService {
           sendToCeo: dto?.sendToCeo === true,
         });
 
+    // H2: a double tap or a retry creates one refund. The lock on the root placement
+    // makes a second request wait, then find the first refund and stop; the partial
+    // unique index on placementId refuses a second live refund in any case.
+    const refundLock = `refund:placement:${rootId}`;
+    const refundWhat = `A refund for placement ${rootPlacement.code}`;
+    const duplicateRefund = async (error: unknown): Promise<never> => {
+      if (isDuplicatePayout(error)) {
+        throw alreadyExists(refundWhat, await this.prisma.payment.findFirst({ where: existingRefundWhere }));
+      }
+      throw error;
+    };
+
     if (ceoReason) {
       const sentCode = await this.idService.generateCode('payment');
       const sent = await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, refundLock);
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(refundWhat, again);
         const p = await tx.payment.create({
           data: {
             code: sentCode,
@@ -1694,7 +1736,7 @@ export class PlacementService {
           reason: `refund_sent_to_ceo_${ceoReason}`,
         });
         return p;
-      });
+      }).catch(duplicateRefund);
 
       await this.auditService.log({
         action: 'refund_sent_to_ceo',
@@ -1732,6 +1774,11 @@ export class PlacementService {
     const paymentCode = refundWithCeo ? refundWithCeo.code : await this.idService.generateCode('payment');
     const payment = await this.prisma.$transaction(async (tx) => {
       let p;
+      if (!refundWithCeo) {
+        await lockSubject(tx, refundLock);
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(refundWhat, again);
+      }
       if (refundWithCeo) {
         const claimed = await tx.payment.updateMany({
           where: { id: refundWithCeo.id, status: 'pending' },
@@ -1803,7 +1850,7 @@ export class PlacementService {
       }
 
       return p;
-    });
+    }).catch(duplicateRefund);
 
     await this.auditService.log({
       action: 'refund_approved',

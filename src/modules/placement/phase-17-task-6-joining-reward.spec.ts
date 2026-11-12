@@ -22,6 +22,7 @@ type MockPrisma = {
   replacementClaim: {
     findFirst: jest.Mock;
   };
+  $transaction: jest.Mock;
 };
 
 describe('Phase 17 Task 6: Joining reward queue', () => {
@@ -62,7 +63,10 @@ describe('Phase 17 Task 6: Joining reward queue', () => {
       replacementClaim: {
         findFirst: jest.fn().mockResolvedValue(null),
       },
+      // The reward is created inside a transaction (H2: one per placement).
+      $transaction: jest.fn(),
     };
+    prisma.$transaction.mockImplementation((run: (tx: MockPrisma) => unknown) => run(prisma));
 
     idService = {
       generateCode: jest.fn().mockResolvedValue('PAY-00001'),
