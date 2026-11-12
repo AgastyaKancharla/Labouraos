@@ -20,6 +20,8 @@ export interface RetentionSummary {
   moneyRecordsDeleted: { total: number };
   publicLinksDeleted: number;
   otpSessionsDeleted: number;
+  /** Job run log rows older than 90 days (each job's latest run is kept). Missing on runs before it was counted. */
+  jobRunsDeleted?: number;
 }
 
 export default function KeepingData() {
@@ -46,6 +48,8 @@ export default function KeepingData() {
             <span>Deleted after 12 months unless disputed</span>
             <span>Payment records</span>
             <span>Kept 8 years</span>
+            <span>Job run logs</span>
+            <span>Deleted after 90 days · each job's latest run kept</span>
             <span>Runs</span>
             <span>Every night · 2 AM</span>
           </div>
@@ -78,6 +82,8 @@ export default function KeepingData() {
               <span>{(dry ?? s)!.moneyRecordsDeleted.total}</span>
               <span>Old links and OTPs deleted</span>
               <span>{(dry ?? s)!.publicLinksDeleted + (dry ?? s)!.otpSessionsDeleted}</span>
+              <span>Old job run logs deleted</span>
+              <span data-testid="job-runs-deleted">{(dry ?? s)!.jobRunsDeleted ?? 0}</span>
             </div>
           ) : (
             <p className="ceo-sub">The clean-up has not run yet.</p>
