@@ -36,6 +36,11 @@ export function isPhoneLikeKey(key: string): boolean {
   return PHONE_KEY.test(normalised);
 }
 
+/** Digits in a value. Agents see the last 4: a value with 4 or fewer (a stored last-4) is already that. */
+function digitCount(value: string | number): number {
+  return String(value).replace(/\D/g, '').length;
+}
+
 /** A value that can carry (part of) a phone number: text or a number with at least one digit. */
 function phoneLikeValue(value: unknown): value is string | number {
   return (typeof value === 'string' || typeof value === 'number') && /\d/.test(String(value));
@@ -141,10 +146,10 @@ export function maskAgentPhones<T>(data: T, seen = new WeakSet<object>()): T {
       if (key === 'callRoutingPhone') {
         continue;
       }
-      if (isAgentPhoneKey(key) && phoneLikeValue(value)) {
-        masked[key] = value === '[changed]' ? value : maskPhoneLast4(value);
+      if (isAgentPhoneKey(key) && phoneLikeValue(value) && digitCount(value) > 4) {
+        masked[key] = maskPhoneLast4(value);
       } else if (isAgentPhoneKey(key) && Array.isArray(value)) {
-        masked[key] = value.map((item) => (phoneLikeValue(item) ? maskPhoneLast4(item) : maskAgentPhones(item, seen)));
+        masked[key] = value.map((item) => (phoneLikeValue(item) && digitCount(item) > 4 ? maskPhoneLast4(item) : maskAgentPhones(item, seen)));
       } else if (typeof value === 'object' && value !== null) {
         masked[key] = maskAgentPhones(value, seen);
       } else {

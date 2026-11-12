@@ -131,7 +131,10 @@ describe('Phone masking matches every phone-like key (H1)', () => {
     // A true/false flag on a phone-sounding key is not a number and stays as it is.
     expect(masked.payoutRow.jobSeeker.hasSmartphone).toBe(true);
     const fields = phoneValues(masked);
-    expect(fields.filter(([, v]) => !/^\*{6}\d{0,4}$/.test(String(v)))).toEqual([]);
+    expect(fields.filter(([, v]) => !/^(\*{6})?\d{0,4}$/.test(String(v)))).toEqual([]);
+    // A stored last-4 is already what agents may see, and stays as it is.
+    expect(masked.refund.phoneLast4).toBe('1111');
+    expect(masked.business.agreement.signedPhone).toBe('******5555');
   });
 
   it('keeps the audit redaction marker', () => {
