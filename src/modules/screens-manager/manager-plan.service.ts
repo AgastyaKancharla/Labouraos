@@ -319,46 +319,38 @@ export class ManagerPlanService {
     return out;
   }
 
-  /** MG-Reports: one row per week (counts only), and each team's last week. */
-  async weekly(actor: { id: string; role: string }, range: DateRange, now: Date) {
-    const tree = await this.tree.load(actor.id);
-    const end = range.to.getTime() > now.getTime() ? now : range.to;
-    const weeksWanted = Math.min(12, Math.max(1, Math.ceil((end.getTime() - range.from.getTime() + 1) / (7 * DAY_MS))));
-    const buckets = weekBuckets(end, weeksWanted).reverse();
-    const rows = [];
-    for (const b of buckets) {
-      const m = monthWindow(b.to, now);
-      const [c, att, targets] = await Promise.all([
-        this.tree.counts(tree.ids, b),
-        this.attendanceTotals(tree.ids, b.from, b.to, now),
-        this.treeTargets(tree, m).then((p) => p.targets),
-      ]);
-      const weeklyPlacements = targets.placed === null ? null : Math.round((targets.placed * 7) / m.daysInMonth);
-      rows.push({
-        from: b.from.toISOString(),
-        to: b.to.toISOString(),
-        startDay: b.start,
-        registered: c.registered,
-        paid: c.paid,
-        businessesSignedUp: c.businessesSignedUp,
-        interviewsDone: c.interviewsDone,
-        placed: c.placed,
-        attendancePercent: att.percent,
-        lostSeconds: att.lostSeconds,
-        placementTarget: weeklyPlacements,
-        reached: weeklyPlacements === null ? null : c.placed >= weeklyPlacements,
-      });
-    }
-    const last = weekBuckets(now, 2)[0];
+  /** One week's row of MG-Reports for these people (counts only). */
+  private async weekRow(ids: string[], b: DateRange & { start?: string }, targets: PlanTargets, now: Date) {
+    const m = monthWindow(b.to, now);
+    const [c, att] = await Promise.all([this.tree.counts(ids, b), this.attendanceTotals(ids, b.from, b.to, now)]);
+    const weeklyPlacements = targets.placed === null ? null : Math.round((targets.placed * 7) / m.daysInMonth);
+    return {
+      from: b.from.toISOString(),
+      to: b.to.toISOString(),
+      startDay: b.start ?? istDayKey(b.from),
+      registered: c.registered,
+      paid: c.paid,
+      businessesSignedUp: c.businessesSignedUp,
+      interviewsDone: c.interviewsDone,
+      placed: c.placed,
+      attendancePercent: att.percent,
+      lostSeconds: att.lostSeconds,
+      placementTarget: weeklyPlacements,
+      reached: weeklyPlacements === null ? null : c.placed >= weeklyPlacements,
+    };
+  }
+
+  /** Each team's numbers for one week, with its best agent and the one who needs help. */
+  private async teamWeeks(tree: ManagerTree, week: DateRange, now: Date) {
     const teams = [];
+    const m = monthWindow(week.to, now);
     for (const lead of tree.leads) {
       const ids = this.tree.teamIds(tree, lead.id);
-      const m = monthWindow(last.to, now);
-      const [c, att, targets] = await Promise.all([this.tree.counts(ids, last), this.attendanceTotals(ids, last.from, last.to, now), this.teamTargets(lead.id, ids, m)]);
+      const [c, att, targets] = await Promise.all([this.tree.counts(ids, week), this.attendanceTotals(ids, week.from, week.to, now), this.teamTargets(lead.id, ids, m)]);
       const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
       const scored = [];
       for (const a of agents) {
-        const ac = await this.tree.counts([a.id], last);
+        const ac = await this.tree.counts([a.id], week);
         scored.push({ staff: { id: a.id, name: a.name, role: a.role }, placed: ac.placed, paid: ac.paid, score: ac.placed * 10 + ac.paid });
       }
       scored.sort((x, y) => y.score - x.score);
@@ -375,6 +367,35 @@ export class ManagerPlanService {
         needsHelp: scored.length > 1 ? scored[scored.length - 1] : null,
       });
     }
+    return teams;
+  }
+
+  /** MG-Reports: one row per week (counts only), and each team's last week. */
+  async weekly(actor: { id: string; role: string }, range: DateRange, now: Date) {
+    const tree = await this.tree.load(actor.id);
+    const end = range.to.getTime() > now.getTime() ? now : range.to;
+    const weeksWanted = Math.min(12, Math.max(1, Math.ceil((end.getTime() - range.from.getTime() + 1) / (7 * DAY_MS))));
+    const buckets = weekBuckets(end, weeksWanted).reverse();
+    const rows = [];
+    for (const b of buckets) {
+      const targets = (await this.treeTargets(tree, monthWindow(b.to, now))).targets;
+      rows.push(await this.weekRow(tree.ids, b, targets, now));
+    }
+    const last = weekBuckets(now, 2)[0];
+    const teams = await this.teamWeeks(tree, last, now);
     return { rows, lastWeek: { from: last.from.toISOString(), to: last.to.toISOString() }, teams };
+  }
+
+  /**
+   * One finished week's MG-Reports content for a tree (the Monday report):
+   * the same shape as `weekly`, with that week as the only row and the teams'
+   * numbers for that week. `targets` overrides the tree's plan (the CEO's
+   * whole-company report uses the company plan).
+   */
+  async weekReport(tree: ManagerTree, week: DateRange, now: Date, targets?: PlanTargets) {
+    const plan = targets ?? (await this.treeTargets(tree, monthWindow(week.to, now))).targets;
+    const row = await this.weekRow(tree.ids, week, plan, now);
+    const teams = await this.teamWeeks(tree, week, now);
+    return { rows: [row], lastWeek: { from: week.from.toISOString(), to: week.to.toISOString() }, teams };
   }
 }

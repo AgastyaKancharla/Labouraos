@@ -51,6 +51,19 @@ export function cronInIndia(pattern: string): IndiaCronRepeat {
   return { pattern, tz: JOB_TIME_ZONE };
 }
 
+/** Once-a-week jobs, read in India time like the daily ones. */
+export const WEEKLY_JOB_PATTERNS = {
+  /** MG-Reports: "sent every Monday at 9 AM" — last week's report for each Manager and the CEO. */
+  weeklyReport: '0 9 * * 1',
+} as const;
+
+export type WeeklyJobName = keyof typeof WEEKLY_JOB_PATTERNS;
+
+/** The BullMQ repeat options for a once-a-week job, read in India time. */
+export function weeklyInIndia(job: WeeklyJobName): IndiaCronRepeat {
+  return { pattern: WEEKLY_JOB_PATTERNS[job], tz: JOB_TIME_ZONE };
+}
+
 export const INTERVAL_JOB_MS = {
   interviewReply: 60_000,
   kycRecovery: 15 * 60 * 1000,

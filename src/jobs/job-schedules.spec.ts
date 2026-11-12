@@ -9,7 +9,9 @@ import {
   DailyJobName,
   INTERVAL_JOB_MS,
   JOB_TIME_ZONE,
+  WEEKLY_JOB_PATTERNS,
 } from './job-schedules';
+import { WeeklyReportJob } from './weekly-report.job';
 import { ClaimOverdueJob } from './claim-overdue.job';
 import { FollowUpJob } from './follow-up.job';
 import { ForgottenLogoutJob } from './forgotten-logout.job';
@@ -173,6 +175,29 @@ describe('Background job schedules run on India time', () => {
   });
 });
 
+describe('The Monday weekly report runs at 9 AM India time', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  it('registers a weekly cron read in Asia/Kolkata', async () => {
+    const job = new WeeklyReportJob({} as never);
+    const queue = mockQueue();
+    jest.spyOn(job, 'getQueue').mockReturnValue(queue as unknown as Queue);
+    await job.schedule();
+    expect(queue.upsertJobScheduler).toHaveBeenCalledTimes(1);
+    expect(queue.upsertJobScheduler.mock.calls[0][1]).toEqual({ pattern: '0 9 * * 1', tz: 'Asia/Kolkata' });
+    expect(queue.upsertJobScheduler.mock.calls[0][2]).toMatchObject({ name: 'monday-weekly-report' });
+  });
+
+  it('fires on Monday at 09:00 IST (03:30 UTC), once a week', () => {
+    const it2 = CronExpressionParser.parse(WEEKLY_JOB_PATTERNS.weeklyReport, {
+      tz: JOB_TIME_ZONE,
+      currentDate: new Date('2026-11-12T10:00:00.000Z'), // Thursday
+    });
+    expect(it2.next().toDate().toISOString()).toBe('2026-11-16T03:30:00.000Z');
+    expect(it2.next().toDate().toISOString()).toBe('2026-11-23T03:30:00.000Z');
+  });
+});
+
 describe('Daily jobs start only in the worker process', () => {
   const originalRole = process.env.PROCESS_ROLE;
 
@@ -189,6 +214,7 @@ describe('Daily jobs start only in the worker process', () => {
     { label: 'JoiningRewardJob', build: () => new JoiningRewardJob({} as never) },
     { label: 'ShortageTasksJob', build: () => new ShortageTasksJob({} as never) },
     { label: 'WinBackJob', build: () => new WinBackJob({} as never) },
+    { label: 'WeeklyReportJob', build: () => new WeeklyReportJob({} as never) },
     {
       label: 'NotificationSweepJob',
       build: () => new NotificationSweepJob({} as never, {} as never, {} as never, {} as never, {} as never),

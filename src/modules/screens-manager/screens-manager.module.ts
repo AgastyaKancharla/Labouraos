@@ -22,5 +22,6 @@ import { ManagerTargetsService } from './manager-targets.service';
   imports: [PrismaModule, AuditModule, IdModule, ReportingScopeModule, AttendanceModule, RefundPriorityModule, ReviewFlagModule, NotificationModule, TargetModule, RequestsModule, CompanyPlanModule],
   controllers: [ScreensManagerController],
   providers: [ManagerTreeService, ManagerPlanService, ManagerPeopleService, ManagerOpsService, ManagerTargetsService],
+  exports: [ManagerTreeService, ManagerPlanService],
 })
 export class ScreensManagerModule {}

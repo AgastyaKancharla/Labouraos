@@ -817,6 +817,7 @@ model Staff {
   companyPlansSet   CompanyPlan[]    @relation("CompanyPlanSetBy")
   teamPlans         TeamPlan[]       @relation("TeamPlanTeam")
   teamPlansSet      TeamPlan[]       @relation("TeamPlanSetBy")
+  weeklyReports     WeeklyReport[]   @relation("WeeklyReportOwner")
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -2186,4 +2187,24 @@ model TeamPlan {
 
   @@unique([teamLeadId, year, month])
   @@index([year, month])
+}
+
+/// The Monday weekly report, kept as it was sent (MG-Reports "sent every
+/// Monday at 9 AM", C-Reports): one per Manager's tree and one for the whole
+/// company (the CEO's) per week, so a past week opens as it was. A Manager's
+/// content is counts only; the company one holds the CEO's report with money.
+model WeeklyReport {
+  id           String   @id @default(uuid())
+  /// "manager:<staffId>" or "company" — at most one report per scope and week.
+  scopeKey     String
+  scope        String   // manager, company
+  ownerStaffId String?
+  owner        Staff?   @relation("WeeklyReportOwner", fields: [ownerStaffId], references: [id], onDelete: Cascade)
+  /// The Monday the week starts on (IST calendar day); the week runs Monday to Sunday.
+  weekStart    DateTime @db.Date
+  content      Json
+  createdAt    DateTime @default(now())
+
+  @@unique([scopeKey, weekStart])
+  @@index([ownerStaffId, weekStart])
 }

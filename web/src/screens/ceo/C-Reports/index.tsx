@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useSearchParams } from 'react-router-dom';
+import { KeptReportsBar, TeamWeeks, WeekTable, useKeptReport, type WeeklyResponse } from '../../manager/_kit/weekly';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { ErrorState } from '../../../components/ErrorState';
@@ -16,7 +18,10 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { Bars, Kv, htmlTable, humanize, printDocument } from '../_kit/kit';
 
-/** Reports — design C-Reports.dc.html. Every number comes from real records. */
+/**
+ * Reports — design C-Reports.dc.html. Every number comes from real records.
+ * With ?week= it shows the company report kept that Monday (the bell's link).
+ */
 interface Reports {
   kpis: { netPaise: number; changePercent: number | null; averageFeePaise: number | null; revenuePerAgentPaise: number | null; fillRatePercent: number; averageDaysToFill: number | null; refundsPercentOfRevenue: number };
   totals: { grossPaise: number; refundsPaidPaise: number; placementCount: number };
@@ -30,6 +35,8 @@ interface Reports {
 interface Guarantee {
   range: { total: { couldGoBackPaise: number; safelyEarnedPaise: number; receivedPaise: number } } | null;
 }
+/** The company report kept each Monday (GET /weekly-reports/:week for the CEO). */
+type KeptCompany = WeeklyResponse & { reports: Reports; guarantee: Guarantee | null };
 
 const monthName = (key: string) => formatMonthIST(istStartOfDay(`${key}-01`)).split(' ')[0];
 
@@ -38,11 +45,18 @@ export default function ReportsScreen() {
   const now = useNow(60_000);
   const toast = useToast();
   const [period, setPeriod] = useState<Period>(() => periodFor('month', now));
-  const query = useQuery({ queryKey: ['ceo', 'reports', period.from, period.to], queryFn: () => api.get<Reports>('/ceo/reports', { query: periodToUtcRange(period) }) });
-  const guarantee = useQuery({ queryKey: ['payments', 'money-under-guarantee', period.from, period.to], queryFn: () => api.get<Guarantee>('/growth/money-under-guarantee', { query: { from: period.from, to: period.to } }) });
-  const d = query.data;
+  // ?week=yyyy-mm-dd (the Monday bell's link): the company report kept that Monday, as it was sent.
+  const [params, setParams] = useSearchParams();
+  const week = params.get('week');
+  const openWeek = (w: string | null) => setParams(w ? { week: w } : {});
+  const kept = useKeptReport<KeptCompany>(week);
+  const liveQuery = useQuery({ queryKey: ['ceo', 'reports', period.from, period.to], queryFn: () => api.get<Reports>('/ceo/reports', { query: periodToUtcRange(period) }), enabled: !week });
+  const liveGuarantee = useQuery({ queryKey: ['payments', 'money-under-guarantee', period.from, period.to], queryFn: () => api.get<Guarantee>('/growth/money-under-guarantee', { query: { from: period.from, to: period.to } }), enabled: !week });
+  const query = week ? kept : liveQuery;
+  const d: Reports | undefined = week ? kept.data?.content.reports : liveQuery.data;
+  const guarantee = { data: week ? (kept.data?.content.guarantee ?? undefined) : liveGuarantee.data, isPending: week ? kept.isPending : liveGuarantee.isPending };
   const loading = query.isPending;
-  const label = periodRangeLabel(period);
+  const label = week && kept.data ? `the week of ${kept.data.label}` : periodRangeLabel(period);
 
   const funnelRows: [string, string][] = d
     ? [
@@ -123,7 +137,10 @@ export default function ReportsScreen() {
         title="Reports"
         subtitle={`How the business is growing and where to put effort next. Every number comes from real records. Showing ${label}.`}
         period={period}
-        onPeriodChange={setPeriod}
+        onPeriodChange={(p) => {
+          setPeriod(p);
+          if (week) openWeek(null);
+        }}
         actions={
           <div className="ceo-actions">
             <Button onClick={downloadPdf} disabled={!d}>
@@ -136,10 +153,17 @@ export default function ReportsScreen() {
           </div>
         }
       />
+      <KeptReportsBar week={week} onWeek={openWeek} sentAt={kept.data?.sentAt} />
       {query.isError ? (
         <ErrorState error={query.error} onRetry={() => void query.refetch()} />
       ) : (
         <>
+          {week && kept.data && (
+            <>
+              <WeekTable rows={kept.data.content.rows} note="The whole company that week · sent to you every Monday at 9 AM · weekly target = a week's share of the month's placement plan" />
+              <TeamWeeks teams={kept.data.content.teams} when={kept.data.label} />
+            </>
+          )}
           <StatGrid>
             <StatTile label={`Net revenue${k?.changePercent !== null && k?.changePercent !== undefined ? ` · ${k.changePercent >= 0 ? '↑' : '↓'}${Math.abs(k.changePercent)}%` : ''}`} value={k ? formatINRCompact(k.netPaise) : '—'} tone="good" loading={loading} to={to('C-Payments')} />
             <StatTile label="Could still go back (under guarantee)" value={gt ? formatINR(gt.couldGoBackPaise) : '—'} tone="gold" loading={guarantee.isPending} />
