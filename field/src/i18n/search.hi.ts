@@ -33,6 +33,7 @@ export const searchHi: Record<keyof typeof searchEn, string> = {
   'search.js.deactivated': 'निष्क्रिय',
   'search.js.placed': 'नौकरी लग गई',
   'search.js.closed': 'बंद',
+  'search.js.refunded': 'पैसे लौटाए गए · फिर से भुगतान कर सकते हैं',
   'search.vc.open': 'खुली',
   'search.vc.filled': 'भर गई',
   'search.vc.cancelled': 'रद्द',

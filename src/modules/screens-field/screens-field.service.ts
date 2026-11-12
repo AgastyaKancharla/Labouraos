@@ -1,3 +1,4 @@
+import { agentSeesFullBusiness, agentViewerFor } from '../business/business-agent-view';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { BusinessVisit, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -383,8 +384,9 @@ export class ScreensFieldService {
       }
     }
     const isMine = business.accountAgentId === actor.sub || (!business.accountAgentId && business.leadCreatedByStaffId === actor.sub);
-    // Field agents see every business on the map, and full details of their own (guide, People and roles).
-    const full = actor.role !== 'field_agent' || isMine;
+    // Field agents see every business on the map, and full details of their own (guide, People and
+    // roles): the shared M2 rule (account agent, lead creator, or an open verification visit).
+    const full = agentSeesFullBusiness(business, await agentViewerFor(this.prisma, actor.sub, actor.role));
     const [shown, interviews, placements, inGuarantee, visits, agreement] = await Promise.all([
       this.prisma.candidateIntroduction.count({ where: { businessId: business.id } }),
       this.prisma.interview.count({ where: { businessId: business.id } }),

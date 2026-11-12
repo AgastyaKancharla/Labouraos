@@ -168,7 +168,7 @@ export class PlacementController {
 
     // A Manager may export lists but never sees money: the salary and fee
     // columns are left out of the file (JSON answers are stripped globally).
-    const csvData = formatPlacementsCsv(rows, { includeMoney: seesMoney(req.user.role) });
+    const csvData = formatPlacementsCsv(rows, { includeMoney: seesMoney(req.user.role), viewerRole: req.user.role });
     const dateStr = new Date().toISOString().split('T')[0];
     res.setHeader('Content-Type', 'text/csv');
     res.setHeader(

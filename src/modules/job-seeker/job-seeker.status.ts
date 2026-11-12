@@ -8,7 +8,19 @@ export const JOB_SEEKER_STATUSES = [
   'placed',
   /** Found a job on his own: profile closed, no refund; he can pay again to come back. */
   'closed',
+  /**
+   * His ₹499 was refunded (guarantee ran out with no offer, or a CEO goodwill refund):
+   * out of the matching pool. He can pay ₹499 again (reactivate), which resets the
+   * hits and starts a new 30-day guarantee; the win-back list (N5) asks him to.
+   */
+  'refunded',
 ] as const;
+
+/** Statuses a job seeker comes back from by paying ₹499 again (reactivation). */
+export const REACTIVATABLE_STATUSES: readonly string[] = ['deactivated', 'closed', 'refunded'];
+
+/** Statuses that leave the matching pool when his ₹499 is refunded. */
+export const REFUND_LEAVES_POOL_FROM: readonly string[] = ['active', 'paused'];
 
 export type JobSeekerStatus = (typeof JOB_SEEKER_STATUSES)[number];
 

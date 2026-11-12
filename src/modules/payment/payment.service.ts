@@ -9,7 +9,7 @@ import {
   Optional,
   UnauthorizedException,
 } from '@nestjs/common';
-import { PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
+import { Payment, PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
@@ -46,6 +46,8 @@ import { invoiceLink } from '../placement/invoice-link';
 import { mockPaymentToolsAllowed, paymentProviderMode } from './payment-mode';
 import { MonthLockService } from '../month-lock/month-lock.service';
 import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
+import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
+import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
 
 /** What the bank feed webhook reports back for one credit. */
 export interface BankFeedWebhookResult {
@@ -1062,40 +1064,61 @@ export class PaymentService {
     const code = await this.idService.generateCode('payment');
     const referralPayoutPaise = await this.getReferralPayoutPaise();
 
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.create({
-        data: {
-          code,
-          city: placement.city,
-          type: 'referral_payout',
-          amount: referralPayoutPaise,
-          status: 'pending',
-          gatewayReference: null,
-          subjectType: 'referral',
-          subjectId: placement.jobSeeker.referredById!,
-          referralId: placement.jobSeeker.referredById,
-          placementId: placement.id,
-          jobSeekerId: placement.jobSeekerId,
-          businessId: placement.businessId,
-        },
-        include: {
-          referral: true,
-          jobSeeker: true,
-          placement: true,
-        },
-      });
+    // H2: the joined event firing twice at the same moment still creates one payout:
+    // the lock makes the second wait and look again (it then returns the first), and
+    // the partial unique index on placementId refuses a second payout in any case.
+    const existingWhere = { type: 'referral_payout', placementId: placement.id };
+    let found: Payment | null = null;
+    let payment;
+    try {
+      payment = await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, `referral_payout:${placement.id}`);
+        found = await tx.payment.findFirst({ where: existingWhere });
+        if (found) return null;
+        const p = await tx.payment.create({
+          data: {
+            code,
+            city: placement.city,
+            type: 'referral_payout',
+            amount: referralPayoutPaise,
+            status: 'pending',
+            gatewayReference: null,
+            subjectType: 'referral',
+            subjectId: placement.jobSeeker.referredById!,
+            referralId: placement.jobSeeker.referredById,
+            placementId: placement.id,
+            jobSeekerId: placement.jobSeekerId,
+            businessId: placement.businessId,
+          },
+          include: {
+            referral: true,
+            jobSeeker: true,
+            placement: true,
+          },
+        });
 
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: p.id,
-        fromStatus: null,
-        toStatus: 'pending',
-        changedByStaffId: actorId ?? null,
-        reason: 'referral_payout_created',
-      });
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: p.id,
+          fromStatus: null,
+          toStatus: 'pending',
+          changedByStaffId: actorId ?? null,
+          reason: 'referral_payout_created',
+        });
 
-      return p;
-    });
+        return p;
+      });
+    } catch (error) {
+      if (!isDuplicatePayout(error)) throw error;
+      found = await this.prisma.payment.findFirst({ where: existingWhere });
+      if (!found) throw error;
+    }
+    if (!payment) {
+      this.logger.log(
+        `Referral payout already exists for placement ${placement.id} (payment: ${found?.id}). Idempotent no-op.`,
+      );
+      return found;
+    }
 
     let actor = actorId
       ? await this.prisma.staff.findUnique({ where: { id: actorId } })
@@ -1282,6 +1305,8 @@ export class PaymentService {
     }
 
     let endsGuaranteeForPlacement: { rootId: string; placementId: string; rootStatus: string } | null = null;
+    let refundedSeeker: { id: string; status: string } | null = null;
+    let linkRefundTo: string | null = null;
 
     if (payment.type === 'referral_payout') {
       const referralId = payment.referralId || payment.subjectId;
@@ -1371,6 +1396,9 @@ export class PaymentService {
         if (!eligibility.eligible) {
           throw new BadRequestException(eligibility.ineligibleReason!);
         }
+        refundedSeeker = { id: jobSeeker.id, status: jobSeeker.status };
+        // The refund names the ₹499 it gives back (one live refund per ₹499).
+        if (!payment.refundsPaymentId && activationPayment) linkRefundTo = activationPayment.id;
       } else if (payment.placementId || payment.subjectType === 'placement') {
         const placementId = payment.placementId || payment.subjectId;
         const placement = await this.prisma.placement.findUnique({
@@ -1462,14 +1490,20 @@ export class PaymentService {
       }
     }
 
-    const updated = await this.prisma.payment.update({
-      where: { id: payment.id },
-      data: {
-        status: 'approved',
-        approvedByStaffId: actorId,
-        approvedAt: now,
-      },
-    });
+    const updated = await this.prisma.payment
+      .update({
+        where: { id: payment.id },
+        data: {
+          status: 'approved',
+          approvedByStaffId: actorId,
+          approvedAt: now,
+          ...(linkRefundTo ? { refundsPaymentId: linkRefundTo } : {}),
+        },
+      })
+      .catch((error: unknown) => {
+        if (isDuplicatePayout(error)) throw alreadyExists(`A refund of that ₹499`, null);
+        throw error;
+      });
 
     await recordStatusChange(this.prisma, {
       subjectType: 'payment',
@@ -1500,6 +1534,11 @@ export class PaymentService {
       changedFields: ['status', 'approvedByStaffId', 'approvedAt'],
       reason: 'Payment approved by CEO or Finance',
     });
+
+    // A job seeker whose ₹499 refund is approved leaves the matching pool.
+    if (refundedSeeker) {
+      await markJobSeekerRefunded(this.prisma, refundedSeeker, actorId, now);
+    }
 
     // A business refund under the guarantee rules ends the guarantee, the same as
     // approving it from the placement.

@@ -1,6 +1,5 @@
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
-import { authenticator } from 'otplib';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -138,7 +137,7 @@ describe('Phase 6.6 Gate: End-to-End Proof', () => {
 
     expect(setup2faRes.status).toBe(200);
     const ceoTotpSecret = setup2faRes.body.secret;
-    const ceoCode = authenticator.generate(ceoTotpSecret);
+    const ceoCode = await stableTotpCode(ceoTotpSecret);
 
     const enable2faRes = await request(app.getHttpServer())
       .post('/staff/2fa/enable')

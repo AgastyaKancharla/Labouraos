@@ -141,6 +141,7 @@ export default function JobSeekersList() {
             { value: 'paused', label: 'Paused' },
             { value: 'deactivated', label: 'Deactivated' },
             { value: 'closed', label: 'Closed' },
+            { value: 'refunded', label: 'Refunded' },
           ]}
         />
         <SelectFilter label="Trade" value={trade} onChange={setTrade} options={facetOptions('All trades', list.query.data?.trades)} />

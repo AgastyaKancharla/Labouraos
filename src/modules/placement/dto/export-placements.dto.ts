@@ -1,3 +1,5 @@
+import { maskCsvPhoneColumns } from '../../../common/csv/csv-phone-mask';
+
 export interface ExportPlacementsQueryDto {
   from?: string;
   to?: string;
@@ -22,7 +24,7 @@ export interface RegulatoryPlacementExportRow {
 
 export function formatPlacementsCsv(
   rows: RegulatoryPlacementExportRow[],
-  options: { includeMoney?: boolean } = {},
+  options: { includeMoney?: boolean; viewerRole?: string | null } = {},
 ): string {
   const includeMoney = options.includeMoney !== false;
   const headers = [
@@ -51,8 +53,7 @@ export function formatPlacementsCsv(
   };
 
   const lines = [headers.join(',')];
-  for (const row of rows) {
-    lines.push([
+  const body = rows.map((row) => [
       escapeCsv(row.placementCode),
       escapeCsv(row.joinedDate),
       escapeCsv(row.dropoutDate),
@@ -65,7 +66,9 @@ export function formatPlacementsCsv(
       escapeCsv(row.status),
       escapeCsv(row.locality),
       escapeCsv(row.city),
-    ].join(','));
+    ]);
+  for (const cells of maskCsvPhoneColumns(headers, body, options.viewerRole)) {
+    lines.push(cells.join(','));
   }
   return lines.join('\n');
 }

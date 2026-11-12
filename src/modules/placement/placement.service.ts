@@ -28,6 +28,20 @@ import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
 import { businessRefundNeedsCeo, ceoApprovalMessage } from '../../common/money/approval-limits';
 import { decisionTime } from '../../common/time/decision-time';
+import { stripMoney } from '../../common/rbac/money-visibility';
+
+/**
+ * Who sees company money (placement fee, GST) on placements: the CEO and Finance.
+ * Managers never see money; agents and Team Leads see none either (a field agent
+ * selling in the shop works the fee out with the fee calculator, Master Guide).
+ */
+const PLACEMENT_MONEY_ROLES: ReadonlySet<string> = new Set(['ceo', 'finance']);
+import {
+  LIVE_PAYOUT_STATUSES,
+  alreadyExists,
+  isDuplicatePayout,
+  lockSubject,
+} from '../../common/money/one-per-subject';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import {
   GstInvoiceResponse,
@@ -748,29 +762,14 @@ export class PlacementService {
 
       // Once per placement: check if joining_reward already exists
       const existing = await this.prisma.payment.findFirst({
-        where: {
-          placementId: placement.id,
-          type: 'joining_reward',
-        },
+        where: { placementId: placement.id, type: 'joining_reward' },
       });
       if (existing) {
         continue;
       }
 
-      const code = await this.idService.generateCode('payment');
-      const payment = await this.prisma.payment.create({
-        data: {
-          code,
-          city: placement.city,
-          type: 'joining_reward',
-          amount: rewardAmount,
-          status: 'pending',
-          subjectType: 'job_seeker',
-          subjectId: placement.jobSeekerId,
-          jobSeekerId: placement.jobSeekerId,
-          placementId: placement.id,
-        },
-      });
+      const payment = await this.createJoiningReward(placement, rewardAmount);
+      if (!payment) continue;
 
       await this.auditService.log({
         action: 'joining_reward_queued',
@@ -791,6 +790,42 @@ export class PlacementService {
     }
 
     return queuedCount;
+  }
+
+  /**
+   * Queues the ₹200 joining reward for one placement, once. H2: two runs of the job
+   * at once (or a manual run during the nightly one) still queue one reward: the lock
+   * makes the second wait and look again, and the partial unique index on placementId
+   * refuses a second reward in any case. Null when the placement already has one.
+   */
+  async createJoiningReward(
+    placement: { id: string; city: string; jobSeekerId: string },
+    rewardAmountPaise: number,
+  ) {
+    const existingWhere = { placementId: placement.id, type: 'joining_reward' };
+    const code = await this.idService.generateCode('payment');
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, `joining_reward:${placement.id}`);
+        if (await tx.payment.findFirst({ where: existingWhere })) return null;
+        return tx.payment.create({
+          data: {
+            code,
+            city: placement.city,
+            type: 'joining_reward',
+            amount: rewardAmountPaise,
+            status: 'pending',
+            subjectType: 'job_seeker',
+            subjectId: placement.jobSeekerId,
+            jobSeekerId: placement.jobSeekerId,
+            placementId: placement.id,
+          },
+        });
+      });
+    } catch (error) {
+      if (isDuplicatePayout(error)) return null;
+      throw error;
+    }
   }
 
   async triggerReferralPayout(placementId: string, actorId?: string) {
@@ -1332,17 +1367,7 @@ export class PlacementService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
-    const where: Record<string, unknown> = {};
-    if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
-      const teamIds = team.map(({ id }) => id);
-      where.business = {
-        OR: [
-          { accountAgentId: { in: teamIds } },
-          { leadCreatedByStaffId: { in: teamIds } },
-        ],
-      };
-    }
+    const where = await this.placementListScope(actor);
 
     const placements = await this.prisma.placement.findMany({
       where,
@@ -1397,14 +1422,50 @@ export class PlacementService {
       const openClaim = claims.find((c: { decision: string | null }) => c.decision === null) || null;
       const candidates = p.replacementCandidates || [];
       const rejectionsUsed = candidates.filter((rc: { status: string }) => rc.status === 'rejected').length;
-      return {
+      const row = {
         ...p,
         rootJoinedDate,
         guaranteeDaysLeft,
         openClaim,
         rejectionsUsed,
       };
+      return PLACEMENT_MONEY_ROLES.has(actor.role) ? row : stripMoney(row);
     });
+  }
+
+  /**
+   * Whose placements a person lists (GET /placements). The CEO, Managers and Finance:
+   * all. A call or field agent: the placements they are involved in, as the account
+   * agent of the business, the agent who registered the candidate or introduced him
+   * for that vacancy, who proposed the interview, or who created the placement. A Team
+   * Lead: the same for anyone on their team (and themselves).
+   */
+  private async placementListScope(actor: { id: string; role: string }): Promise<Prisma.PlacementWhereInput> {
+    let staffIds: string[];
+    if (actor.role === 'call_agent' || actor.role === 'field_agent') {
+      staffIds = [actor.id];
+    } else if (actor.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
+      staffIds = [actor.id, ...team.map(({ id }) => id)];
+    } else {
+      return {};
+    }
+    const introductions = await this.prisma.candidateIntroduction.findMany({
+      where: { shownByStaffId: { in: staffIds } },
+      select: { vacancyId: true, jobSeekerId: true },
+      distinct: ['vacancyId', 'jobSeekerId'],
+      take: 5000,
+    });
+    return {
+      OR: [
+        { createdByStaffId: { in: staffIds } },
+        { business: { accountAgentId: { in: staffIds } } },
+        { business: { leadCreatedByStaffId: { in: staffIds } } },
+        { jobSeeker: { registeredByStaffId: { in: staffIds } } },
+        { interview: { proposedByStaffId: { in: staffIds } } },
+        ...introductions.map((i) => ({ vacancyId: i.vacancyId, jobSeekerId: i.jobSeekerId })),
+      ],
+    };
   }
 
   async listPendingClaims(actorId: string) {
@@ -1457,9 +1518,11 @@ export class PlacementService {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
 
+    // The same who-can-see rule as the list: out of scope answers 404, as if it did not exist.
+    const scope = await this.placementListScope(actor);
     const placement = await this.prisma.placement.findFirst({
       where: {
-        OR: [{ id }, { code: id }],
+        AND: [{ OR: [{ id }, { code: id }] }, scope],
       },
       include: {
         business: true,
@@ -1486,7 +1549,8 @@ export class PlacementService {
       throw new NotFoundException(`Placement '${id}' not found`);
     }
 
-    return placement;
+    // Company money (fee, GST) only for the CEO and Finance; agents use the fee calculator.
+    return PLACEMENT_MONEY_ROLES.has(actor.role) ? placement : stripMoney(placement);
   }
 
   async approveRefund(
@@ -1552,13 +1616,13 @@ export class PlacementService {
         rootPlacement.replacementCandidates?.some((rc) => rc.status === 'accepted'),
     );
 
-    const existingRefund = await this.prisma.payment.findFirst({
-      where: {
-        placementId: { in: [placement.id, rootId] },
-        type: 'refund',
-        status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
-      },
-    });
+    // A payout the bank refused is retried, never made again, so it still counts.
+    const existingRefundWhere = {
+      placementId: { in: [placement.id, rootId] },
+      type: 'refund',
+      status: { in: [...LIVE_PAYOUT_STATUSES] },
+    };
+    const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
     const refundWithCeo =
       existingRefund && existingRefund.status === 'pending' && existingRefund.ceoApprovalReason
         ? existingRefund
@@ -1663,9 +1727,24 @@ export class PlacementService {
           sendToCeo: dto?.sendToCeo === true,
         });
 
+    // H2: a double tap or a retry creates one refund. The lock on the root placement
+    // makes a second request wait, then find the first refund and stop; the partial
+    // unique index on placementId refuses a second live refund in any case.
+    const refundLock = `refund:placement:${rootId}`;
+    const refundWhat = `A refund for placement ${rootPlacement.code}`;
+    const duplicateRefund = async (error: unknown): Promise<never> => {
+      if (isDuplicatePayout(error)) {
+        throw alreadyExists(refundWhat, await this.prisma.payment.findFirst({ where: existingRefundWhere }));
+      }
+      throw error;
+    };
+
     if (ceoReason) {
       const sentCode = await this.idService.generateCode('payment');
       const sent = await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, refundLock);
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(refundWhat, again);
         const p = await tx.payment.create({
           data: {
             code: sentCode,
@@ -1694,7 +1773,7 @@ export class PlacementService {
           reason: `refund_sent_to_ceo_${ceoReason}`,
         });
         return p;
-      });
+      }).catch(duplicateRefund);
 
       await this.auditService.log({
         action: 'refund_sent_to_ceo',
@@ -1732,6 +1811,11 @@ export class PlacementService {
     const paymentCode = refundWithCeo ? refundWithCeo.code : await this.idService.generateCode('payment');
     const payment = await this.prisma.$transaction(async (tx) => {
       let p;
+      if (!refundWithCeo) {
+        await lockSubject(tx, refundLock);
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(refundWhat, again);
+      }
       if (refundWithCeo) {
         const claimed = await tx.payment.updateMany({
           where: { id: refundWithCeo.id, status: 'pending' },
@@ -1803,7 +1887,7 @@ export class PlacementService {
       }
 
       return p;
-    });
+    }).catch(duplicateRefund);
 
     await this.auditService.log({
       action: 'refund_approved',

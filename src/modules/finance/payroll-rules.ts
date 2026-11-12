@@ -86,6 +86,17 @@ export interface AwayPeriod {
   returnedDay: string | null;
 }
 
+/**
+ * The first day payroll counts for a person (owner decision 12 Nov): the later of
+ * their joining day and the go-live date the CEO set in Settings. Days before
+ * go-live are handled outside the app — counted as not on staff, never absent
+ * and never loss of pay — so the part-month rule (salary ÷ 26 × (working days on
+ * staff + holidays on staff)) pays only from go-live. No go-live set: the joining day.
+ */
+export function payStartDay(joinedDay: string, goLiveDay: string | null | undefined): string {
+  return goLiveDay && goLiveDay > joinedDay ? goLiveDay : joinedDay;
+}
+
 /** Whether the person was on the staff on a day: on or after joining, and not away (the leaving day is on the staff). */
 export function onStaffOn(day: string, joinedDay: string, away: readonly AwayPeriod[]): boolean {
   if (day < joinedDay) return false;

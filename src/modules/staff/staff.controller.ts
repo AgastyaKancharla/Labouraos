@@ -119,8 +119,8 @@ export class StaffController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'read')
   @RequireRoles('ceo', 'manager', 'team_lead')
-  getById(@Param('id') id: string) {
-    return this.staffService.getStaffById(id);
+  getById(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.getStaffById(id, req.user);
   }
 
   @Post(':id/reporting-line')

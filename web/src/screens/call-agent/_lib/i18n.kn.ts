@@ -121,6 +121,7 @@ export const callAgentKn: Record<keyof typeof callAgentEn, string> = {
   'ca.seekerStatus.deactivated': 'ನಿಷ್ಕ್ರಿಯ',
   'ca.seekerStatus.placed': 'ಕೆಲಸಕ್ಕೆ ಸೇರಿದ್ದಾರೆ',
   'ca.seekerStatus.closed': 'ಮುಚ್ಚಲಾಗಿದೆ',
+  'ca.seekerStatus.refunded': 'ಹಣ ಹಿಂತಿರುಗಿಸಲಾಗಿದೆ · ಮತ್ತೆ ಪಾವತಿಸಬಹುದು',
 
   'ca.profile.why': 'ನಿಮ್ಮ ಪಟ್ಟಿಯಲ್ಲಿ ಏಕೆ:',
   'ca.profile.wants': 'ತಿಂಗಳಿಗೆ {salary} ಬೇಕು',

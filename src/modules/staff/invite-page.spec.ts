@@ -1,3 +1,4 @@
+import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -227,7 +228,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
     const ok = await accept({
       token: h.token,
       password: goodPassword,
-      totpCode: authenticator.generate(setup.body.secret),
+      totpCode: await stableTotpCode(setup.body.secret),
     });
     expect(ok.status).toBe(200);
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: h.id } });

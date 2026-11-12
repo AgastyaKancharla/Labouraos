@@ -306,7 +306,9 @@ export class AttendanceDaysService {
   /**
    * Marks `absent` for everyone who marks attendance and has no day on that
    * date: no login and no approved leave. Weekly days off and holidays are skipped, and so
-   * are dates before the account was created. Runs nightly for yesterday.
+   * are dates before the account was created or before the joining date the CEO
+   * entered. Dates before the go-live date in Settings are never marked: those days
+   * are handled outside the app (owner decision 12 Nov). Runs nightly for yesterday.
    */
   async markAbsentDays(
     date?: Date,
@@ -317,12 +319,17 @@ export class AttendanceDaysService {
     if (await this.workingDays.isNonWorking(target)) {
       return { date: label, marked: 0 };
     }
+    const goLive = (await this.pricing.current()).goLiveDate;
+    if (goLive && target.getTime() < goLive.getTime()) {
+      return { date: label, marked: 0 };
+    }
     const endOfDate = new Date(target.getTime() + 24 * 3600 * 1000 - 5.5 * 3600 * 1000);
     const people = await this.prisma.staff.findMany({
       where: {
         role: { in: ATTENDANCE_ROLES },
         status: 'active',
         createdAt: { lt: endOfDate },
+        OR: [{ joinedOn: null }, { joinedOn: { lte: target } }],
         ...(staffIds ? { id: { in: staffIds } } : {}),
       },
       select: { id: true },

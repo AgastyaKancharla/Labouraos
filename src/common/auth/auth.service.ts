@@ -13,7 +13,7 @@ import { Staff } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { noteRequestDevice } from '../observability/request-context';
 import { AuditService } from '../audit/audit.service';
-import { TotpService } from './totp.service';
+import { TotpService, claimTotpStep } from './totp.service';
 import {
   AwaitingCodeResponseDto,
   LoginDto,
@@ -90,6 +90,9 @@ export interface LoginMetadata {
   ip?: string;
   userAgent?: string;
 }
+
+/** An authenticator code that was already accepted once. */
+export const TOTP_REUSED = 'This authenticator code was already used. Wait for the next code in the app and try again.';
 
 @Injectable()
 export class AuthClock {
@@ -403,9 +406,13 @@ export class AuthService {
       throw new BadRequestException('TOTP setup has not been initiated');
     }
 
-    const isValid = this.totpService.verify(totpCode, staff.totpSecret);
-    if (!isValid) {
+    const step = this.totpService.verifyStep(totpCode, staff.totpSecret);
+    if (step === null) {
       throw new UnauthorizedException('Invalid TOTP verification code');
+    }
+    // A code works once: the same code can't also be used to log in.
+    if (!(await claimTotpStep(this.prisma, staffId, step))) {
+      throw new UnauthorizedException(TOTP_REUSED);
     }
 
     await this.prisma.staff.update({
@@ -620,13 +627,23 @@ export class AuthService {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'totp_required' });
       throw new UnauthorizedException('TOTP 2FA code is required');
     }
-    if (!this.totpService.verify(totpCode, staff.totpSecret!)) {
+    const step = this.totpService.verifyStep(totpCode, staff.totpSecret!);
+    if (step === null) {
       // Counted on the account like a wrong password: 5 wrong codes lock it.
       const lockedUntil = await this.recordFailedPassword(staff, 'totp_invalid');
       if (lockedUntil) {
         throw new UnauthorizedException(this.lockedMessage({ lockedUntil, lockedByStaffId: null }));
       }
       throw new UnauthorizedException('Invalid TOTP code');
+    }
+    // A code works once (security check L9): a replayed code inside its 30 seconds
+    // is refused and counted like a wrong one.
+    if (!(await claimTotpStep(this.prisma, staff.id, step))) {
+      const lockedUntil = await this.recordFailedPassword(staff, 'totp_reused');
+      if (lockedUntil) {
+        throw new UnauthorizedException(this.lockedMessage({ lockedUntil, lockedByStaffId: null }));
+      }
+      throw new UnauthorizedException(TOTP_REUSED);
     }
     await this.clearFailedLogins(staff.id);
     if (deviceStatus !== 'approved') {
@@ -895,7 +912,7 @@ export class AuthService {
   /** Counts one wrong password (or wrong authenticator code) and locks at the limit. */
   private async recordFailedPassword(
     staff: Staff,
-    reason: 'invalid_credentials' | 'totp_invalid' = 'invalid_credentials',
+    reason: 'invalid_credentials' | 'totp_invalid' | 'totp_reused' = 'invalid_credentials',
   ): Promise<Date | null> {
     const policy = await this.pricingService.current();
     const updated = await this.prisma.staff.update({

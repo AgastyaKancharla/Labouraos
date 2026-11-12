@@ -33,13 +33,25 @@ afterAll(async () => {
   prisma = undefined;
 });
 
-/** A TOTP code that will still be valid by the time the server checks it. */
+/**
+ * A TOTP code that will still be valid by the time the server checks it. A code is
+ * accepted once per 30-second step (security check L9), and specs log the same person
+ * in several times within seconds; so this also opens a fresh step for that person, as
+ * if the clock had moved on to the next code (test-only: it resets the stored step).
+ */
 export async function stableTotpCode(secret: string): Promise<string> {
   const remaining = TOTP_STEP_MS - (Date.now() % TOTP_STEP_MS);
   if (remaining < TOTP_SAFE_MARGIN_MS) {
     await new Promise((resolve) => setTimeout(resolve, remaining + 50));
   }
+  await freshTotpWindow(secret);
   return authenticator.generate(secret);
+}
+
+/** Test-only: forgets the last accepted code step of whoever has this secret (the next code). */
+export async function freshTotpWindow(secret: string): Promise<void> {
+  if (!secret) return;
+  await db().staff.updateMany({ where: { totpSecret: secret }, data: { totpLastStep: null } });
 }
 
 /** Enrols a management account in TOTP if it is not already, and returns its secret. */

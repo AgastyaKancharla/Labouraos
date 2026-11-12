@@ -571,6 +571,35 @@ describe('Pricing & policy', () => {
     await waitFor(() => expect(api.calls('POST /attendance/holidays')[0].body).toEqual({ date: '2026-12-25', name: 'Christmas' }));
   });
 
+  it('shows the go-live date (CEO only) and sets it: payroll and paid leave count from it', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/pricing/history': { current: { ...policy, goLiveDate: null }, since: {}, scheduled: [], history: [] },
+      'GET /attendance/holidays': { year: 2026, holidays: [] },
+      'PUT /pricing/go-live': { ok: true },
+    });
+    render(<Pricing />, '/ceo/pricing');
+    const row = (await screen.findByText('Go-live date')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('not set')).toBeInTheDocument();
+    expect(within(row).getByText(/never absent/)).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
+    const d = await dialog();
+    fireEvent.change(within(d).getByLabelText(/starts using the software on/), { target: { value: '2026-11-20' } });
+    await userEvent.click(within(d).getByRole('button', { name: 'Save go-live date' }));
+    await waitFor(() => expect(api.calls('PUT /pricing/go-live')[0].body).toEqual({ goLiveDate: '2026-11-20' }));
+  });
+
+  it('shows a go-live date that is set', async () => {
+    mockApi({
+      ...common,
+      'GET /ceo/pricing/history': { current: { ...policy, goLiveDate: '2026-11-20T00:00:00.000Z' }, since: { goLiveDate: '2026-11-12T10:00:00.000Z' }, scheduled: [], history: [] },
+      'GET /attendance/holidays': { year: 2026, holidays: [] },
+    });
+    render(<Pricing />, '/ceo/pricing');
+    const row = (await screen.findByText('Go-live date')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('20 Nov 2026')).toBeInTheDocument();
+  });
+
   it('trades show pool and open positions; a typed trade is mapped to a listed one', async () => {
     const api = mockApi({
       ...common,

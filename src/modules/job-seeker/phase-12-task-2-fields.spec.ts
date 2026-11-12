@@ -97,6 +97,8 @@ describe('Phase 12 Task 2 — JobSeeker new fields and status list', () => {
       'deactivated',
       'placed',
       'closed',
+      // Guide check 12 Nov: a refunded job seeker leaves the matching pool and can pay again.
+      'refunded',
     ]);
   });
 

@@ -7,8 +7,8 @@ export const DAY_MS = 24 * 60 * 60 * 1000;
 export const PRIORITY_BUCKETS = ['0-5', '6-10', '11-15'] as const;
 export type PriorityBucket = (typeof PRIORITY_BUCKETS)[number];
 
-/** Job seeker statuses with no refund to come (placed, deactivated by 3 hits, closed). */
-export const SEEKER_ENDED_STATUSES = ['placed', 'deactivated', 'closed'];
+/** Job seeker statuses with no refund to come (placed, deactivated by 3 hits, closed, already refunded). */
+export const SEEKER_ENDED_STATUSES = ['placed', 'deactivated', 'closed', 'refunded'];
 
 /**
  * An interview that counts as an offer made to him since paying: anything

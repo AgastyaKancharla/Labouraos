@@ -66,8 +66,8 @@ export class ScreensCallRegistrationController {
   @Get('businesses/:id')
   @RequireRoles(...REGISTERING_ROLES)
   @RequirePermission('business', 'read')
-  business(@Param('id') id: string) {
-    return this.service.business(id);
+  business(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    return this.service.business(id, req.user);
   }
 
   @Get('referrals/:id')

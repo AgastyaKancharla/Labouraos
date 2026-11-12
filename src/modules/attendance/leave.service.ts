@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LeaveRequest } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
-import { PricingService } from '../pricing/pricing.service';
+import { PricingService, goLiveDayOf } from '../pricing/pricing.service';
 import { AttendanceClock } from './attendance-clock';
 import { ATTENDANCE_ROLES } from './attendance-days.service';
 import { monthRange } from './day-rules';
@@ -37,6 +37,26 @@ export function nextMonth(month: string): string {
   return m === 12 ? `${year + 1}-01` : `${year}-${String(m + 1).padStart(2, '0')}`;
 }
 
+/** "YYYY-MM-DD" of an instant in IST. */
+function istDayOf(at: Date): string {
+  const parts = getCalendarPartsInTimezone(at);
+  return `${parts.year}-${String(parts.month).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+/**
+ * The first month that earns paid leave (Master Guide, decided 11 Nov): none in
+ * the month someone joins, even on the 1st; the first leaves come on the 1st of
+ * the following month. With a go-live date in Settings (owner decision 12 Nov)
+ * accrual starts from the later of joining and go-live: the first 1st of a month
+ * on or after go-live, if that is later.
+ */
+export function firstAccrualMonth(joiningDay: string, goLiveDay?: string | null): string {
+  const fromJoining = nextMonth(joiningDay.slice(0, 7));
+  if (!goLiveDay) return fromJoining;
+  const fromGoLive = goLiveDay.endsWith('-01') ? goLiveDay.slice(0, 7) : nextMonth(goLiveDay.slice(0, 7));
+  return fromGoLive > fromJoining ? fromGoLive : fromJoining;
+}
+
 /**
  * Leave balances and the leave days written on the attendance record.
  * Earned: `casualLeavePerMonth` and `emergencyLeavePerMonth` on the 1st of
@@ -58,21 +78,48 @@ export class LeaveService {
   }
 
   /**
+   * The day someone joined (IST "YYYY-MM-DD"): the joining date the CEO
+   * entered; else their first login (first attendance login or first session,
+   * as payroll counts it); else the day the account was created.
+   */
+  async joiningDay(staff: { id: string; joinedOn: Date | null; createdAt: Date }): Promise<string> {
+    if (staff.joinedOn) return staff.joinedOn.toISOString().slice(0, 10);
+    const [firstDay, firstSession] = await Promise.all([
+      this.prisma.attendanceDay.findFirst({
+        where: { staffId: staff.id, loginAt: { not: null } },
+        orderBy: { loginAt: 'asc' },
+        select: { loginAt: true },
+      }),
+      this.prisma.staffSession.findFirst({
+        where: { staffId: staff.id },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+      }),
+    ]);
+    const logins = [firstDay?.loginAt, firstSession?.createdAt].filter((d): d is Date => Boolean(d));
+    if (logins.length) return istDayOf(new Date(Math.min(...logins.map((d) => d.getTime()))));
+    return istDayOf(staff.createdAt);
+  }
+
+  /**
    * Writes the month's accrual for every month whose 1st has come since the
-   * account was created. No leave is earned in the joining month, even for a
-   * person created on the 1st (Master Guide, decided 11 Nov): the first
-   * accrual is on the 1st of the following month.
-   * Safe to run again: one row per person per month.
+   * person joined (joining date, else first login, else account created), or
+   * since the go-live date in Settings when that is later. No
+   * leave is earned in the joining month, even for someone joining on the 1st
+   * (Master Guide, decided 11 Nov): the first accrual is on the 1st of the
+   * following month. A row for a month before that (written from an older
+   * rule, or before the joining date or go-live was set) is never deleted: the
+   * balance simply does not count it, so a wrong date entered by mistake and
+   * corrected later brings the leave back. Safe to run again: one row per person per month.
    */
   async ensureAccrued(staffId: string): Promise<number> {
     const staff = await this.prisma.staff.findUnique({
       where: { id: staffId },
-      select: { id: true, role: true, status: true, createdAt: true },
+      select: { id: true, role: true, status: true, createdAt: true, joinedOn: true },
     });
     if (!staff || !ATTENDANCE_ROLES.includes(staff.role) || staff.status !== 'active') return 0;
-    const created = getCalendarPartsInTimezone(staff.createdAt);
-    let month = `${created.year}-${String(created.month).padStart(2, '0')}`;
-    month = nextMonth(month);
+    const policy = await this.pricing.current();
+    let month = firstAccrualMonth(await this.joiningDay(staff), goLiveDayOf(policy));
     const current = monthOf(this.todayIst());
     const existing = new Set(
       (
@@ -82,7 +129,6 @@ export class LeaveService {
         })
       ).map((row) => row.month),
     );
-    const policy = await this.pricing.current();
     let written = 0;
     for (let guard = 0; month <= current && guard < 600; guard += 1) {
       if (!existing.has(month)) {
@@ -116,9 +162,21 @@ export class LeaveService {
     return { written };
   }
 
+  /** The first month that earns leave for a person (later of joining and go-live), or null for someone who earns none. */
+  async firstEarningMonth(staffId: string): Promise<string | null> {
+    const staff = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { id: true, createdAt: true, joinedOn: true },
+    });
+    if (!staff) return null;
+    return firstAccrualMonth(await this.joiningDay(staff), goLiveDayOf(await this.pricing.current()));
+  }
+
   async balance(staffId: string): Promise<LeaveBalance> {
     await this.ensureAccrued(staffId);
-    const accruals = await this.prisma.leaveAccrual.findMany({ where: { staffId } });
+    const first = await this.firstEarningMonth(staffId);
+    // Rows before the first earning month stay in the table but never count.
+    const accruals = (await this.prisma.leaveAccrual.findMany({ where: { staffId } })).filter((row) => !first || row.month >= first);
     const leaveDays = await this.prisma.attendanceDay.findMany({
       where: { staffId, dayType: 'leave' },
       select: { leaveKind: true, leaveUnpaid: true },
@@ -235,7 +293,8 @@ export class LeaveService {
       orderBy: { date: 'asc' },
     });
     await this.ensureAccrued(request.staffId);
-    const accruals = await this.prisma.leaveAccrual.findMany({ where: { staffId: request.staffId } });
+    const first = await this.firstEarningMonth(request.staffId);
+    const accruals = (await this.prisma.leaveAccrual.findMany({ where: { staffId: request.staffId } })).filter((row) => !first || row.month >= first);
     const earned = accruals.reduce(
       (sum, row) => sum + (request.kind === 'emergency' ? row.emergency : row.casual),
       0,

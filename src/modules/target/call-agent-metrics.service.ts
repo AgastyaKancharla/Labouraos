@@ -1,3 +1,4 @@
+import { LIVE_REFUND_STATUSES } from '../../common/money/current-guarantee-refund';
 import {
   BadRequestException,
   ForbiddenException,
@@ -226,7 +227,7 @@ export class CallAgentMetricsService {
           where: {
             jobSeekerId: { in: maturedIds },
             type: 'refund',
-            status: { in: ['pending', 'processing', 'completed', 'succeeded'] },
+            status: { in: [...LIVE_REFUND_STATUSES] },
           },
           select: { jobSeekerId: true },
           distinct: ['jobSeekerId'],

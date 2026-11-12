@@ -12,8 +12,11 @@ export type GuaranteeState = (typeof GUARANTEE_STATES)[number];
 /** Payment statuses that mean the money is in the bank. */
 export const RECEIVED_PAYMENT_STATUSES = ['succeeded', 'completed'] as const;
 
-/** Refund statuses that mean the money has gone back or is on its way (not turned down or failed). */
-export const LIVE_REFUND_STATUSES = ['pending', 'approved', 'processing', 'succeeded', 'completed'] as const;
+/**
+ * Refund statuses that still count: the one shared list (common/money). A payout the
+ * bank refused (failed) is retried, never made again, so it still counts.
+ */
+export { LIVE_REFUND_STATUSES } from '../../common/money/current-guarantee-refund';
 
 /** N5: why a job seeker is on the win-back list. */
 export const WIN_BACK_REASONS = ['refunded', 'deactivated'] as const;

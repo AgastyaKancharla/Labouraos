@@ -35,6 +35,7 @@ export const searchEn = {
   'search.js.deactivated': 'Deactivated',
   'search.js.placed': 'Placed in a job',
   'search.js.closed': 'Closed',
+  'search.js.refunded': 'Refunded · can pay again',
   'search.vc.open': 'Open',
   'search.vc.filled': 'Filled',
   'search.vc.cancelled': 'Cancelled',

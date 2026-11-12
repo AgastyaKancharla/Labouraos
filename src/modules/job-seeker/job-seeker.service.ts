@@ -24,6 +24,8 @@ import {
 } from '../../common/money/money';
 import { evaluateJobSeekerRefundEligibility } from './job-seeker-refund-eligibility';
 import { loadJobSeekerRefundGuards } from './job-seeker-refund-guards';
+import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
+import { currentGuaranteeRefundWhere } from '../../common/money/current-guarantee-refund';
 
 import { PaymentService } from '../payment/payment.service';
 import { UpiCollectionService } from '../payment/upi-collection.service';
@@ -32,7 +34,8 @@ import { ConsentService } from '../consent/consent.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
-import { isJobSeekerStatus } from './job-seeker.status';
+import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
+import { markJobSeekerRefunded } from './job-seeker-refunded';
 import { calculateAge, validateJobSeekerAge } from './job-seeker.validator';
 import { UpdateJobSeekerProfileDto } from './dto/update-job-seeker-profile.dto';
 import {
@@ -458,9 +461,9 @@ export class JobSeekerService {
       throw new BadRequestException('Job seeker is already active');
     }
 
-    if (jobSeeker.status === 'deactivated') {
+    if (jobSeeker.status === 'deactivated' || jobSeeker.status === 'refunded') {
       throw new BadRequestException(
-        'Job seeker is deactivated. Use /job-seekers/:id/reactivate to reactivate',
+        `Job seeker is ${jobSeeker.status}. Use /job-seekers/:id/reactivate to reactivate`,
       );
     }
 
@@ -582,11 +585,12 @@ export class JobSeekerService {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
 
-    // Deactivated after 3 hits, or closed after finding a job on his own: either way he
-    // comes back by paying ₹499 again, which starts a fresh guarantee.
-    if (jobSeeker.status !== 'deactivated' && jobSeeker.status !== 'closed') {
+    // Deactivated after 3 hits, closed after finding a job on his own, or refunded: he
+    // comes back by paying ₹499 again, which resets the hits and starts a fresh 30-day
+    // guarantee (Master Guide; the win-back list asks refunded people to register again).
+    if (!REACTIVATABLE_STATUSES.includes(jobSeeker.status)) {
       throw new BadRequestException(
-        `Job seeker must be deactivated to be reactivated. Current status: '${jobSeeker.status}'`,
+        `Job seeker must be deactivated, closed or refunded to be reactivated. Current status: '${jobSeeker.status}'`,
       );
     }
 
@@ -971,14 +975,6 @@ export class JobSeekerService {
 
     const guards = await loadJobSeekerRefundGuards(this.prisma, jobSeeker);
 
-    const existingRefund = await this.prisma.payment.findFirst({
-      where: {
-        jobSeekerId: jobSeeker.id,
-        type: 'refund',
-        status: { in: ['pending', 'approved', 'processing', 'completed', 'succeeded'] },
-      },
-    });
-
     const policy = await this.getPolicy();
     const activationPayment = await this.prisma.payment.findFirst({
       where: {
@@ -986,8 +982,18 @@ export class JobSeekerService {
         type: { in: ['activation', 'reactivation'] },
         status: { in: ['completed', 'succeeded'] },
       },
-      orderBy: { createdAt: 'desc' },
+      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
     });
+
+    // A refund in his current guarantee: the one that gives back his latest paid ₹499
+    // (by link; timestamps only for refunds made before the link existed). Paying again
+    // after a refund starts a new guarantee (Master Guide), which may end in a refund of
+    // its own. A payout the bank refused is retried, never made again.
+    const existingRefundWhere = currentGuaranteeRefundWhere(jobSeeker.id, {
+      latestPaidActivationId: activationPayment?.id ?? null,
+      paymentReceivedAt: jobSeeker.paymentReceivedAt,
+    });
+    const existingRefund = await this.prisma.payment.findFirst({ where: existingRefundWhere });
 
     const withdrawnConsent = jobSeeker.paymentReceivedAt && this.prisma.consent
       ? await this.prisma.consent.findFirst({
@@ -1022,58 +1028,112 @@ export class JobSeekerService {
         })
       : null;
 
-    const eligibilityResult = evaluateJobSeekerRefundEligibility(
-      {
-        code: jobSeeker.code,
-        paymentReceivedAt: jobSeeker.paymentReceivedAt,
-        status: jobSeeker.status,
-        hasOfferRejectedHit: guards.hasOfferRejectedHit,
-        hasExistingRefund: Boolean(existingRefund),
-        activationPaymentPaise: activationPayment?.amount,
-        guaranteeDays: policy.jobSeekerGuaranteeDays,
-        hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
-        hasOpenBypassFlag: Boolean(openBypassFlag),
-        hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
-        refundCheckRecorded: guards.refundCheckRecorded,
-        refundCheckWorkingElsewhere: guards.refundCheckWorkingElsewhere,
-        hasOpenOfferReply: guards.hasOpenOfferReply,
-      },
-      now,
-    );
-
-    if (!eligibilityResult.eligible) {
-      throw new BadRequestException(eligibilityResult.ineligibleReason!);
+    // Goodwill (outside the rules): the CEO alone can give a ₹499 refund the rules do not
+    // allow, with a written reason, audited (Master Guide: "Any refund outside the rules
+    // (goodwill) always needs the CEO"). Finance cannot. Only the basics are checked: he
+    // paid, and nothing has been refunded in this guarantee already.
+    const goodwill = dto?.goodwill === true;
+    const note = typeof dto?.reason === 'string' && dto.reason.trim() ? dto.reason.trim().slice(0, 500) : null;
+    if (goodwill) {
+      if (actor.role !== 'ceo') {
+        throw new ForbiddenException({
+          statusCode: 403,
+          error: 'Forbidden',
+          code: 'goodwill_needs_ceo',
+          message: 'A ₹499 refund outside the rules (goodwill) is the CEO\'s decision. Finance cannot approve one.',
+        });
+      }
+      if (!note) {
+        throw new BadRequestException('A refund outside the rules (goodwill) needs a written reason');
+      }
+      if (!jobSeeker.paymentReceivedAt || !activationPayment) {
+        throw new BadRequestException(`Job seeker '${jobSeeker.code}' has no ₹499 received, so nothing can be refunded`);
+      }
+      if (existingRefund) {
+        throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, existingRefund);
+      }
     }
 
+    const eligibilityResult = goodwill
+      ? null
+      : evaluateJobSeekerRefundEligibility(
+          {
+            code: jobSeeker.code,
+            paymentReceivedAt: jobSeeker.paymentReceivedAt,
+            status: jobSeeker.status,
+            hasOfferRejectedHit: guards.hasOfferRejectedHit,
+            hasExistingRefund: Boolean(existingRefund),
+            activationPaymentPaise: activationPayment?.amount,
+            guaranteeDays: policy.jobSeekerGuaranteeDays,
+            hasWithdrawnEssentialConsent: Boolean(withdrawnConsent),
+            hasOpenBypassFlag: Boolean(openBypassFlag),
+            hasWorkingAtIntroducedBusinessFollowUp: Boolean(bypassFollowUp),
+            refundCheckRecorded: guards.refundCheckRecorded,
+            refundCheckWorkingElsewhere: guards.refundCheckWorkingElsewhere,
+            hasOpenOfferReply: guards.hasOpenOfferReply,
+          },
+          now,
+        );
+
+    if (eligibilityResult && !eligibilityResult.eligible) {
+      throw new BadRequestException(eligibilityResult.ineligibleReason!);
+    }
+    // The stored ₹499 he paid (old records never change), under the rules or as goodwill.
+    const refundAmount = eligibilityResult ? eligibilityResult.amountPaise : activationPayment!.amount;
+
     const paymentCode = await this.idService.generateCode('payment');
-    const payment = await this.prisma.$transaction(async (tx) => {
-      const p = await tx.payment.create({
-        data: {
-          code: paymentCode,
-          city: jobSeeker.city,
-          type: 'refund',
-          amount: eligibilityResult.amountPaise,
-          status: 'approved',
-          approvedByStaffId: actor.id,
-          approvedAt: now,
-          gatewayReference: null,
-          subjectType: 'job_seeker',
-          subjectId: jobSeeker.id,
-          jobSeekerId: jobSeeker.id,
-        },
-      });
+    // H2: one refund per ₹499 even when Approve is tapped twice or retried. The lock
+    // makes the second request wait for the first; it then finds the refund and stops.
+    // The partial unique index on refundsPaymentId refuses a second one in any case.
+    let payment;
+    try {
+      payment = await this.prisma.$transaction(async (tx) => {
+        await lockSubject(tx, `refund:job_seeker:${jobSeeker.id}`);
+        const again = await tx.payment.findFirst({ where: existingRefundWhere });
+        if (again) throw alreadyExists(`A refund for job seeker ${jobSeeker.code}`, again);
 
-      await recordStatusChange(tx, {
-        subjectType: 'payment',
-        subjectId: p.id,
-        fromStatus: null,
-        toStatus: 'approved',
-        changedByStaffId: actor.id,
-        reason: 'job_seeker_guarantee_refund',
-      });
+        const p = await tx.payment.create({
+          data: {
+            code: paymentCode,
+            city: jobSeeker.city,
+            type: 'refund',
+            amount: refundAmount,
+            status: 'approved',
+            approvedByStaffId: actor.id,
+            approvedAt: now,
+            gatewayReference: null,
+            subjectType: 'job_seeker',
+            subjectId: jobSeeker.id,
+            jobSeekerId: jobSeeker.id,
+            refundsPaymentId: activationPayment?.id ?? null,
+            outsideRules: goodwill,
+            approvalNote: goodwill ? note : null,
+          },
+        });
 
-      return p;
-    });
+        await recordStatusChange(tx, {
+          subjectType: 'payment',
+          subjectId: p.id,
+          fromStatus: null,
+          toStatus: 'approved',
+          changedByStaffId: actor.id,
+          reason: goodwill ? 'goodwill_refund_approved_by_ceo' : 'job_seeker_guarantee_refund',
+        });
+
+        // His ₹499 goes back, so he leaves the matching pool until he pays again.
+        await markJobSeekerRefunded(tx, jobSeeker, actor.id, now);
+
+        return p;
+      });
+    } catch (error) {
+      if (isDuplicatePayout(error)) {
+        throw alreadyExists(
+          `A refund for job seeker ${jobSeeker.code}`,
+          await this.prisma.payment.findFirst({ where: existingRefundWhere }),
+        );
+      }
+      throw error;
+    }
 
     await this.auditService.log({
       action: 'refund_approved',
@@ -1087,7 +1147,11 @@ export class JobSeekerService {
         amount: payment.amount,
         type: 'refund',
         reason: dto?.reason ?? '30-day no-offer guarantee refund',
+        outsideRules: goodwill,
+        approvedByRole: actor.role,
+        refundsPaymentId: payment.refundsPaymentId,
       },
+      ...(goodwill ? { reason: note! } : {}),
     });
 
     // Phase 18 Task 4: When a refund becomes owed and the receiver has no account, send link
@@ -1203,12 +1267,27 @@ export class JobSeekerService {
     if (targetStatus === 'closed') {
       throw new BadRequestException("Use 'found a job on his own' to close a profile; it records why the refund ends");
     }
+    // These come only from what happened, never by hand: "refunded" from an approved ₹499
+    // refund, "deactivated" from the third hit (guide check 12 Nov).
+    if (targetStatus === 'refunded') {
+      throw new BadRequestException('A profile becomes refunded only when his ₹499 refund is approved');
+    }
+    if (targetStatus === 'deactivated') {
+      throw new BadRequestException('A profile is deactivated only by the third hit');
+    }
 
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
     if (!seeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
+    }
+    // Coming back from deactivated, closed or refunded takes a new ₹499 payment, which
+    // resets the hits and starts a new guarantee: use reactivate, never a plain status change.
+    if (targetStatus === 'active' && REACTIVATABLE_STATUSES.includes(seeker.status)) {
+      throw new BadRequestException(
+        `A ${seeker.status} profile becomes active again only when he pays ₹499 again: use /job-seekers/:id/reactivate`,
+      );
     }
 
     validateJobSeekerAge(seeker.dateOfBirth, targetStatus);

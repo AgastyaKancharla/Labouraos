@@ -98,12 +98,17 @@ export const RULES: Rule[] = [
   },
 ];
 
-const FIELD_LABEL: Record<string, string> = Object.fromEntries(RULES.flatMap((r) => r.fields.map((f) => [f.key, `${r.name} · ${f.label}`])));
+const FIELD_LABEL: Record<string, string> = {
+  ...Object.fromEntries(RULES.flatMap((r) => r.fields.map((f) => [f.key, `${r.name} · ${f.label}`]))),
+  weeklyOffDays: 'Weekly day off',
+  goLiveDate: 'Go-live date',
+};
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
 function show(v: unknown, key: string): string {
   if (key.endsWith('Paise') && typeof v === 'number') return formatINR(v);
   if (key === 'weeklyOffDays' && Array.isArray(v)) return v.map((d) => WEEKDAYS[d as number]?.slice(0, 3)).join(', ') || 'none';
+  if (key === 'goLiveDate') return typeof v === 'string' && v ? formatDateIST(v) : 'not set';
   return String(v);
 }
 
@@ -153,6 +158,19 @@ export default function Pricing() {
                     <td><strong>{show(p.weeklyOffDays, 'weeklyOffDays')}</strong></td>
                     <td>{h?.since.weeklyOffDays ? formatDateIST(h.since.weeklyOffDays) : '—'}</td>
                     <td><WeeklyOff current={p.weeklyOffDays} /></td>
+                  </tr>
+                )}
+                {p && (
+                  <tr>
+                    <td>Go-live date</td>
+                    <td>
+                      <strong>{show(p.goLiveDate, 'goLiveDate')}</strong>
+                      <div className="ceo-sub" style={{ whiteSpace: 'normal', maxWidth: 420 }}>
+                        Salaries and paid leave count from the later of each person&apos;s joining date and this day. Days before it are handled outside the app — never absent.
+                      </div>
+                    </td>
+                    <td>{h?.since.goLiveDate ? formatDateIST(h.since.goLiveDate) : '—'}</td>
+                    <td><GoLive current={typeof p.goLiveDate === 'string' ? p.goLiveDate.slice(0, 10) : ''} /></td>
                   </tr>
                 )}
               </tbody>
@@ -273,6 +291,49 @@ function WeeklyOff({ current }: { current: number[] }) {
       run={() => api.post('/pricing', { weeklyOffDays: days })}
       success="Weekly day off changed"
     />
+  );
+}
+
+/** The go-live date (owner decision 12 Nov): the CEO sets it; payroll and paid leave count from it. */
+function GoLive({ current }: { current: string }) {
+  const [open, setOpen] = useState(false);
+  const [date, setDate] = useState(current);
+  const toast = useToast();
+  const qc = useQueryClient();
+  const save = useMutation({
+    mutationFn: () => api.put('/pricing/go-live', { goLiveDate: date || null }),
+    onSuccess: () => {
+      toast.success(date ? `Go-live date set to ${formatDateIST(`${date}T06:00:00Z`)}` : 'Go-live date cleared');
+      void qc.invalidateQueries({ queryKey: ['ceo'] });
+      void qc.invalidateQueries({ queryKey: ['pricing'] });
+      setOpen(false);
+    },
+    onError: (e) => toast.error(e instanceof ApiError ? e.message : 'Could not save. Try again.'),
+  });
+  return (
+    <>
+      <Button onClick={() => setOpen(true)}>Change →</Button>
+      <Modal
+        open={open}
+        onClose={() => setOpen(false)}
+        title="Go-live date"
+        dismissible={!save.isPending}
+        footer={
+          <>
+            <Button onClick={() => setOpen(false)} disabled={save.isPending}>Cancel</Button>
+            <Button variant="primary" onClick={() => save.mutate()} loading={save.isPending}>
+              {date ? 'Save go-live date' : 'Clear go-live date'}
+            </Button>
+          </>
+        }
+      >
+        <DateField label="Laboura starts using the software on" value={date} onChange={setDate} />
+        <p className="ceo-sub">
+          Salaries count only from the later of a person&apos;s joining date and this day; days before it are paid outside the app and are never marked
+          absent or taken off pay. Paid leave is earned from the later of the two as well. Leave the date empty to clear it.
+        </p>
+      </Modal>
+    </>
   );
 }
 

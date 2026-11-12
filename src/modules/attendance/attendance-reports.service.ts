@@ -1,3 +1,4 @@
+import { maskCsvPhoneColumns } from '../../common/csv/csv-phone-mask';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -284,7 +285,7 @@ export class AttendanceReportsService {
     return { month, rows };
   }
 
-  monthSheetCsv(rows: MonthSheetRow[]): string {
+  monthSheetCsv(rows: MonthSheetRow[], viewerRole?: string | null): string {
     const header = [
       'Staff code',
       'Name',
@@ -301,9 +302,7 @@ export class AttendanceReportsService {
       'Deductible shortfall (minutes)',
     ];
     const lines = [header.map((cell) => this.csvCell(cell)).join(',')];
-    for (const row of rows) {
-      lines.push(
-        [
+    const body = rows.map((row) => [
           row.staffCode,
           row.name,
           row.role,
@@ -317,10 +316,9 @@ export class AttendanceReportsService {
           row.paidDays,
           row.unpaidDays,
           row.deductibleShortfallMinutes,
-        ]
-          .map((cell) => this.csvCell(cell))
-          .join(','),
-      );
+        ]);
+    for (const cells of maskCsvPhoneColumns(header, body, viewerRole)) {
+      lines.push(cells.map((cell) => this.csvCell(cell)).join(','));
     }
     return `${lines.join('\n')}\n`;
   }

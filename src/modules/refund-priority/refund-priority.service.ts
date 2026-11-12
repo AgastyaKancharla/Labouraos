@@ -1,3 +1,4 @@
+import { maskCsvPhoneColumns } from '../../common/csv/csv-phone-mask';
 import { BadRequestException, ForbiddenException, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
@@ -342,7 +343,8 @@ export class RefundPriorityService {
       if (scope.money) line.push(((row.atStakePaise ?? 0) / 100).toFixed(2));
       lines.push(line);
     }
-    return lines.map((cells) => cells.map((cell) => this.csvCell(cell)).join(',')).join('\n') + '\n';
+    const [head, ...body] = lines;
+    return [head, ...maskCsvPhoneColumns(head, body, actor.role)].map((cells) => cells.map((cell) => this.csvCell(cell)).join(',')).join('\n') + '\n';
   }
 
   private csvCell(value: string): string {

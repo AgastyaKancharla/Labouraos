@@ -1,3 +1,6 @@
+import { agentViewerFor, businessForViewer } from '../business/business-agent-view';
+import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund, latestPaidActivations } from '../../common/money/current-guarantee-refund';
+import { SEEKER_ENDED_STATUSES } from '../refund-priority/refund-priority.rules';
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
@@ -27,7 +30,8 @@ type SubjectType = 'job_seeker' | 'business' | 'referral';
 const REQUIRED_CONSENTS = ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'];
 const REFUND_ENDING_HITS = ['offer_declined', 'offer_no_reply', 'interview_no_show'];
 const MATCHING_PURPOSES = ['offer', 'follow_up', 'interview_result', 'joining_confirmation'];
-const CLOSED_SEEKER = ['placed', 'deactivated', 'closed'];
+/** No refund to come: the one shared list (refunded included). */
+const CLOSED_SEEKER = SEEKER_ENDED_STATUSES;
 const STUCK_STATUSES = ['lead', 'consented', 'pending_activation'];
 const STUCK_LIST_LIMIT = 20;
 
@@ -219,15 +223,21 @@ export class CallWorkService {
         select: { jobSeekerId: true },
       }),
       this.prisma.payment.findMany({
-        where: { jobSeekerId: { in: ids }, type: 'refund', status: { in: ['pending', 'processing', 'completed', 'succeeded'] } },
-        select: { jobSeekerId: true },
+        where: { jobSeekerId: { in: ids }, type: 'refund', status: { in: [...LIVE_REFUND_STATUSES] } },
+        select: { jobSeekerId: true, refundsPaymentId: true, createdAt: true },
       }),
       this.prisma.interview.findMany({
         where: { jobSeekerId: { in: ids }, status: { not: 'cancelled' } },
         select: { jobSeekerId: true, createdAt: true },
       }),
     ]);
-    const ended = new Set([...hits.map((h) => h.jobSeekerId), ...refunds.map((r) => r.jobSeekerId!)]);
+    // Only a refund of his current guarantee ends it (by link; dates only for older refunds).
+    const latest = await latestPaidActivations(this.prisma, ids);
+    const paidAt = new Map(paid.map((s) => [s.id, s.paymentReceivedAt]));
+    const currentRefunds = refunds.filter((r) =>
+      isCurrentGuaranteeRefund(r, { latestPaidActivationId: latest.get(r.jobSeekerId!)?.id ?? null, paymentReceivedAt: paidAt.get(r.jobSeekerId!) ?? null }),
+    );
+    const ended = new Set([...hits.map((h) => h.jobSeekerId), ...currentRefunds.map((r) => r.jobSeekerId!)]);
     for (const s of paid) {
       const deadline = refundGuaranteeDeadline(s.paymentReceivedAt!, ctx.guaranteeDays);
       const msLeft = deadline.getTime() - ctx.now.getTime();
@@ -809,7 +819,7 @@ export class CallWorkService {
     const history = await this.history(user.sub, type, id);
     const base = { onList, history, canCallNow: ctx.inCallingHours && available, attendanceAvailable: available, inCallingHours: ctx.inCallingHours, callingHours: ctx.callingHours };
     if (type === 'job_seeker') return { type, ...base, ...(await this.seekerProfile(id, ctx)) };
-    if (type === 'business') return { type, ...base, ...(await this.businessProfile(id)) };
+    if (type === 'business') return { type, ...base, ...(await this.businessProfile(id, user)) };
     return { type, ...base, ...(await this.referralProfile(id)) };
   }
 
@@ -909,13 +919,15 @@ export class CallWorkService {
     };
   }
 
-  private async businessProfile(id: string) {
-    const b = await this.prisma.business.findUniqueOrThrow({
+  private async businessProfile(id: string, user: JwtPayload) {
+    const found = await this.prisma.business.findUniqueOrThrow({
       where: { id },
       include: {
         vacancies: { where: { status: 'open' }, select: { id: true, code: true, tradeSkill: true, headcount: true, roleTitle: true } },
       },
     });
+    // M2: an agent sees the owner's name and registration details only of businesses they hold.
+    const b = businessForViewer(found, await agentViewerFor(this.prisma, user.sub, user.role));
     const agent = b.accountAgentId
       ? await this.prisma.staff.findUnique({ where: { id: b.accountAgentId }, select: { name: true } })
       : null;
@@ -926,8 +938,9 @@ export class CallWorkService {
       maskedPhone: maskPhoneLast4(b.phone),
       businessType: b.businessType,
       locality: b.locality,
-      contactName: b.ownerName,
+      contactName: b.additionalContactName ?? b.ownerName,
       contactRole: b.contactRole,
+      detailsLimited: b.detailsLimited ?? false,
       verificationStatus: b.verificationStatus,
       accountAgent: agent?.name ?? null,
       openVacancies: b.vacancies,
