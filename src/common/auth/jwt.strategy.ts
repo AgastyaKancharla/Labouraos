@@ -4,6 +4,7 @@ import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from './jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
 import { getJwtSecret } from './jwt-secret';
+import { sessionlessTokensAllowed } from './sessionless-tokens';
 import { noteRequestDevice } from '../observability/request-context';
 import { AuthClock } from './auth.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
@@ -30,6 +31,12 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(payload: JwtPayload): Promise<JwtPayload> {
     if (!payload.sub || !payload.role) {
       throw new UnauthorizedException('Malformed token payload');
+    }
+
+    // Every real token carries its session; one without is refused (only a Jest
+    // test run may use one, see sessionless-tokens.ts).
+    if (!payload.sid && !sessionlessTokensAllowed()) {
+      throw new UnauthorizedException('Session required: log in again');
     }
 
     // Check if session revocation applies
