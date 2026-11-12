@@ -865,6 +865,28 @@ describe('Finance back office (Phase 22 Part B)', () => {
       expect((await prisma.attendanceDay.findUniqueOrThrow({ where: { id: oldDayId } })).dayType).toBe('absent');
     });
 
+    it('refuses a leave approval, a leave overturn and an attendance correction approval there', async () => {
+      const route = { routedToRole: 'team_lead', routeReason: 'W5B test' };
+      const pending = await prisma.leaveRequest.create({ data: { staffId: oldie.id, kind: 'casual', fromDate: day('2002-01-21'), toDate: day('2002-01-22'), days: 2, reason: 'W5B late leave', ...route } });
+      const decided = await prisma.leaveRequest.create({
+        data: { staffId: oldie.id, kind: 'casual', fromDate: day('2002-01-24'), toDate: day('2002-01-24'), days: 1, reason: 'W5B decided leave', status: 'approved', decidedAt: new Date('2002-01-20T06:00:00.000Z'), decidedByStaffId: financeId, decidedByRole: 'team_lead', decisionReason: 'ok', ...route },
+      });
+      const correction = await prisma.attendanceCorrection.create({
+        data: { staffId: oldie.id, date: day('2002-01-16'), startAt: new Date('2002-01-16T04:00:00.000Z'), endAt: new Date('2002-01-16T12:00:00.000Z'), reason: 'W5B forgot to log in', monthNumber: 1, ...route },
+      });
+      const leave = await request(server()).post(`/attendance/requests/leave/${pending.id}/approve`).set(as('ceo')).send({ reason: 'ok' }).expect(400);
+      expect(leave.body.message).toMatch(/leave decision.*January 2002.*manual correction/);
+      const over = await request(server()).post(`/attendance/requests/leave/${decided.id}/overturn`).set(as('ceo')).send({ reason: 'W5B wrong' }).expect(400);
+      expect(over.body.message).toMatch(/leave decision.*January 2002.*manual correction/);
+      const corr = await request(server()).post(`/attendance/requests/correction/${correction.id}/approve`).set(as('ceo')).send({ reason: 'ok' }).expect(400);
+      expect(corr.body.message).toMatch(/attendance correction.*January 2002.*manual correction/);
+      // Nothing changed: still pending / approved, and no leave or corrected day written.
+      expect((await prisma.leaveRequest.findUniqueOrThrow({ where: { id: pending.id } })).status).toBe('pending');
+      expect((await prisma.leaveRequest.findUniqueOrThrow({ where: { id: decided.id } })).overturnedAt).toBeNull();
+      expect((await prisma.attendanceCorrection.findUniqueOrThrow({ where: { id: correction.id } })).status).toBe('pending');
+      expect(await prisma.attendanceDay.count({ where: { staffId: oldie.id, date: { in: [day('2002-01-16'), day('2002-01-21'), day('2002-01-22')] } } })).toBe(0);
+    });
+
     it('allows a manual correction for such a month: payroll no longer re-checks it', async () => {
       const res = await request(server()).post('/payroll/corrections').set(as('ceo')).send({ staffId: oldie.id, relatesToMonth: '2002-01', amountPaise: 100000, reason: 'W5B holiday on 14 Jan 2002 not paid' }).expect(201);
       expect(res.body).toEqual(expect.objectContaining({ relatesToMonth: '2002-01', amountPaise: 100000, source: 'manual' }));
