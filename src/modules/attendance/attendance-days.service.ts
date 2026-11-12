@@ -34,6 +34,8 @@ export interface DayRow {
   productionSeconds: number;
   breakSeconds: number;
   breakOverSeconds: number;
+  /** Short breaks taken that day (the guide allows two 15-minute breaks a day, plus lunch). */
+  breakCount: number;
   idleSeconds: number;
   shortfallSeconds: number;
   makeUpSeconds: number;
@@ -384,6 +386,7 @@ export class AttendanceDaysService {
       productionSeconds: day.productionSeconds,
       breakSeconds: day.breakSeconds,
       breakOverSeconds: this.breakOverSeconds(day.segments, policy, day.logoutAt),
+      breakCount: day.segments.filter((segment) => segment.status === 'short_break').length,
       idleSeconds: day.idleSeconds,
       shortfallSeconds: day.dayType === 'open' ? 0 : day.shortfallSeconds,
       makeUpSeconds: day.dayType === 'open' ? 0 : day.makeUpSeconds,

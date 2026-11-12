@@ -243,6 +243,26 @@ describe('Phase 21 Task 5: attendance reports and the live board', () => {
     expect((await get(leadA, `/attendance/report?staffId=${agentA3.id}&from=2027-06-09&to=2027-06-08`)).status).toBe(400);
   });
 
+  it('counts the short breaks each day, and the ones past the two a day the shift allows', async () => {
+    // Tue 15 Jun: three short breaks and lunch.
+    await workDay(agentA2, [2027, 6, 15], [
+      ['09:30', 'login'],
+      ['09:30', 'team_meeting'],
+      ['11:00', 'short_break'],
+      ['11:10', 'team_meeting'],
+      ['13:00', 'lunch'],
+      ['13:30', 'team_meeting'],
+      ['15:00', 'short_break'],
+      ['15:10', 'team_meeting'],
+      ['16:30', 'short_break'],
+      ['16:40', 'team_meeting'],
+      ['18:30', 'logout'],
+    ]);
+    const res = await get(leadA, `/attendance/report?staffId=${agentA2.id}&from=2027-06-15&to=2027-06-15`);
+    expect(res.status).toBe(200);
+    expect(res.body.days[0]).toMatchObject({ date: '2027-06-15', breakCount: 3, extraBreaks: 1 });
+  });
+
   it('summarises the team per person and in total, scoped to each role', async () => {
     const res = await get(leadA, '/attendance/team-summary?from=2027-06-01&to=2027-06-30');
     expect(res.status).toBe(200);

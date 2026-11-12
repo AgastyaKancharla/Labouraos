@@ -14,6 +14,9 @@ interface Actor {
   role: string;
 }
 
+/** Guide, Attendance: two 15-minute breaks a day, plus a 30-minute lunch. */
+export const SHORT_BREAKS_PER_DAY = 2;
+
 export interface Person {
   id: string;
   code: string;
@@ -185,6 +188,9 @@ export class AttendanceReportsService {
         productionSeconds: row.productionSeconds,
         breakSeconds: row.breakSeconds,
         breakOverSeconds: row.breakOverSeconds,
+        breakCount: row.breakCount,
+        /** Short breaks past the two a day the shift allows (guide, Attendance). */
+        extraBreaks: Math.max(0, row.breakCount - SHORT_BREAKS_PER_DAY),
         idleSeconds: row.idleSeconds,
         shortfallSeconds: row.shortfallSeconds,
         makeUpSeconds: row.makeUpSeconds,

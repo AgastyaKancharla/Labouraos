@@ -77,6 +77,8 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'MG-Agent', path: 'agents/:id', title: 'screen.MG-Agent' },
   { id: 'MG-Attendance', path: 'attendance', title: 'screen.MG-Attendance' },
   { id: 'MG-Attendance-Live', path: 'attendance/live', title: 'screen.MG-Attendance-Live' },
+  // MG-Attendance "One person's report": the CEO's one-person report (C-Att-Person), scoped to the Manager's teams by the API.
+  { id: 'C-Att-Person', path: 'attendance/person/:staffId', title: 'screen.C-Att-Person' },
   { id: 'MG-Targets', path: 'targets', title: 'screen.MG-Targets' },
   { id: 'MG-Pipeline', path: 'pipeline', title: 'screen.MG-Pipeline' },
   { id: 'MG-CallCenter', path: 'call-center', title: 'screen.MG-CallCenter' },

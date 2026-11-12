@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/Button';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { StatGrid, StatTile } from '../../../components/StatTile';
@@ -85,6 +85,16 @@ export default function ManagerAttendance() {
     csv: (r) => r.staff.name,
   };
   const team: Column<Row> = { key: 'team', header: 'Team', cell: (r) => teamShort(r.team), filter: 'select', filterValue: (r) => teamShort(r.team), csv: (r) => r.team, hideOnPhone: true };
+  // "One person's report": every late login, production day by day, breaks and hours lost (C-Att-Person, scoped to the Manager's teams).
+  const report: Column<Row> = {
+    key: 'report',
+    header: '',
+    cell: (r) => (
+      <Link to={to('C-Att-Person', { staffId: r.staff.id })} onClick={(e) => e.stopPropagation()} aria-label={`One person's report · ${r.staff.name}`}>
+        One person's report →
+      </Link>
+    ),
+  };
   const dayColumns: Column<Row>[] = [
     name,
     team,
@@ -112,6 +122,7 @@ export default function ManagerAttendance() {
           '—'
         ),
     },
+    report,
   ];
   const rangeColumns: Column<Row>[] = [
     name,
@@ -121,6 +132,7 @@ export default function ManagerAttendance() {
     { key: 'late', header: 'Late logins', cell: (r) => (r.lateDays ? `${r.lateDays} · ${r.lateMinutes} min` : '—'), sortValue: (r) => r.lateMinutes, csv: (r) => r.lateMinutes },
     { key: 'lost', header: 'Work time lost', cell: (r) => hm(r.lostSeconds), sortValue: (r) => r.lostSeconds, csv: (r) => Math.round(r.lostSeconds / 60) },
     { key: 'absent', header: 'Absent', cell: (r) => (r.absentDays ? <StatusPill tone="danger">{`${r.absentDays} absent`}</StatusPill> : '—'), sortValue: (r) => r.absentDays, csv: (r) => r.absentDays },
+    report,
   ];
 
   const downloadMonth = async () => {
