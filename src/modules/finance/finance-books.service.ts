@@ -94,7 +94,7 @@ export class FinanceBooksService {
         where: {
           confirmedBy: 'gateway',
           status: { in: RECEIVED_STATUSES },
-          type: { in: ['activation', 'reactivation', 'placement_fee'] },
+          type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
           confirmedAt: { gte: range.from, lte: range.to },
           ...(filters.search ? { OR: [{ code: contains(filters.search) }, { gatewayReference: contains(filters.search) }, { jobSeeker: { name: contains(filters.search) } }, { business: { name: contains(filters.search) } }] } : {}),
         },
@@ -121,6 +121,15 @@ export class FinanceBooksService {
         })
       : [];
     const expectedById = new Map(expected.map((p) => [p.id, p]));
+    // A no-bypass charge's invoice number lives on the charge (same INV series as placement fees).
+    const bypassPaymentIds = [...credits.map((c) => c.matchedPayment), ...cards, ...expected]
+      .filter((p): p is NonNullable<typeof p> => Boolean(p) && p!.type === 'bypass_charge')
+      .map((p) => p.id);
+    const bypassInvoice = new Map(
+      bypassPaymentIds.length
+        ? (await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaymentIds } }, select: { paymentId: true, invoiceCode: true } })).map((b) => [b.paymentId!, b.invoiceCode])
+        : [],
+    );
     type P = (typeof expected)[number];
     const forOf = (p: P | null | undefined) =>
       p
@@ -128,7 +137,7 @@ export class FinanceBooksService {
             paymentId: p.id,
             paymentCode: p.code,
             type: p.type,
-            invoiceCode: p.placement?.invoiceCode ?? null,
+            invoiceCode: p.placement?.invoiceCode ?? bypassInvoice.get(p.id) ?? null,
             placementCode: p.placement?.code ?? null,
             who: p.jobSeeker ? { code: p.jobSeeker.code, name: p.jobSeeker.name } : (p.business ?? p.placement?.business) ? { code: (p.business ?? p.placement?.business)!.code, name: (p.business ?? p.placement?.business)!.name } : null,
           }
@@ -190,6 +199,7 @@ export class FinanceBooksService {
     const inRange = all.filter((r) => r.at >= range.from.toISOString() && r.at <= range.to.toISOString());
     const rows = all.filter((r) => {
       if (filters.type === 'placement_fee' && r.for?.type !== 'placement_fee') return false;
+      if (filters.type === 'bypass_charge' && r.for?.type !== 'bypass_charge') return false;
       if (filters.type === 'activation' && !['activation', 'reactivation'].includes(r.for?.type ?? '')) return false;
       if (!filters.status) return true;
       if (filters.status === 'needs') return MONEY_IN_NEEDS_YOU.includes(r.status);
@@ -217,7 +227,7 @@ export class FinanceBooksService {
       ? await this.prisma.payment.findMany({
           where: {
             status: 'pending',
-            type: { in: ['activation', 'reactivation', 'placement_fee'] },
+            type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
             createdAt: { gte: since, lte: new Date(credit.receivedAt.getTime() + 60_000) },
             OR: [{ amount: { gte: credit.amountPaise } }, { expectedAmountPaise: { gte: credit.amountPaise } }],
           },

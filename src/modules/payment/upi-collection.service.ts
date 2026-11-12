@@ -98,55 +98,84 @@ export class UpiCollectionService {
     return { uri: `upi://pay?${params.toString()}`, payeeName };
   }
 
+  /** Throws when the company UPI ID is not set, before anything is saved. */
+  assertConfigured(): void {
+    this.getConfiguration();
+  }
+
   async createRequest(input: CreateUpiRequestInput) {
     this.getConfiguration();
-    if (!Number.isSafeInteger(input.amountPaise) || input.amountPaise <= 0) {
-      throw new BadRequestException('amountPaise must be a positive integer');
-    }
+    this.assertAmount(input.amountPaise);
     const lockKey = `payment:${input.type}:${input.subjectType}:${input.subjectId}`;
     const payment = await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${lockKey}))`);
-      const existing = await tx.payment.findFirst({
-        where: {
-          type: input.type,
-          subjectType: input.subjectType,
-          subjectId: input.subjectId,
-          status: 'pending',
-          method: 'upi_direct',
-          gatewayReference: null,
-          upiReference: { not: null },
-          expectedAmountPaise: { not: null },
-          reactivation: input.reactivation ?? false,
-        },
-      });
-      if (existing) return existing;
-
-      const code = await this.idService.generateCode('payment');
-      const upiReference = `${code}-${randomBytes(4).toString('hex')}`;
-      const created = await tx.payment.create({
-        data: {
-          code,
-          city: input.city ?? 'Bengaluru',
-          type: input.type,
-          amount: input.amountPaise,
-          expectedAmountPaise: input.amountPaise,
-          status: 'pending',
-          method: 'upi_direct',
-          upiReference,
-          subjectType: input.subjectType,
-          subjectId: input.subjectId,
-          jobSeekerId: input.jobSeekerId ?? null,
-          businessId: input.businessId ?? null,
-          placementId: input.placementId ?? null,
-          reactivation: input.reactivation ?? false,
-        },
-      });
-      await recordStatusChange(tx, {
-        subjectType: 'payment', subjectId: created.id, fromStatus: null, toStatus: 'pending',
-        reason: 'upi_payment_request_created',
-      });
-      return created;
+      return this.createRequestRecord(tx, input);
     });
+    return this.deliverRequest(payment, input);
+  }
+
+  private assertAmount(amountPaise: number) {
+    if (!Number.isSafeInteger(amountPaise) || amountPaise <= 0) {
+      throw new BadRequestException('amountPaise must be a positive integer');
+    }
+  }
+
+  /**
+   * The payment request row, inside the caller's transaction (so a record that
+   * needs it — a bypass charge — is saved together with it, or not at all).
+   * Reuses a pending request for the same subject. Call deliverRequest after
+   * the transaction commits to send the link.
+   */
+  async createRequestRecord(tx: Prisma.TransactionClient, input: CreateUpiRequestInput) {
+    this.getConfiguration();
+    this.assertAmount(input.amountPaise);
+    const existing = await tx.payment.findFirst({
+      where: {
+        type: input.type,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        status: 'pending',
+        method: 'upi_direct',
+        gatewayReference: null,
+        upiReference: { not: null },
+        expectedAmountPaise: { not: null },
+        reactivation: input.reactivation ?? false,
+      },
+    });
+    if (existing) return existing;
+
+    const code = await this.idService.generateCode('payment');
+    const upiReference = `${code}-${randomBytes(4).toString('hex')}`;
+    const created = await tx.payment.create({
+      data: {
+        code,
+        city: input.city ?? 'Bengaluru',
+        type: input.type,
+        amount: input.amountPaise,
+        expectedAmountPaise: input.amountPaise,
+        status: 'pending',
+        method: 'upi_direct',
+        upiReference,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        jobSeekerId: input.jobSeekerId ?? null,
+        businessId: input.businessId ?? null,
+        placementId: input.placementId ?? null,
+        reactivation: input.reactivation ?? false,
+      },
+    });
+    await recordStatusChange(tx, {
+      subjectType: 'payment', subjectId: created.id, fromStatus: null, toStatus: 'pending',
+      reason: 'upi_payment_request_created',
+    });
+    return created;
+  }
+
+  /** Builds the UPI link for a saved request and sends it (after the saving transaction has committed). */
+  async deliverRequest(
+    payment: { id: string; code: string; upiReference: string | null; expectedAmountPaise: number | null; status: string },
+    input: CreateUpiRequestInput,
+  ) {
     const { uri, payeeName } = this.buildUpiUri({
       code: payment.code,
       upiReference: payment.upiReference!,

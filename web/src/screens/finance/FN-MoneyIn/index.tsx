@@ -46,7 +46,7 @@ interface Response {
   summary: { receivedPaise: number; receivedCount: number; matchedAutoCount: number; needYouCount: number; tdsThisMonthPaise: number };
 }
 
-const TYPE: Record<string, string> = { placement_fee: 'Placement fee', activation: 'Registration fee', reactivation: 'Registration fee (again)' };
+const TYPE: Record<string, string> = { placement_fee: 'Placement fee', bypass_charge: 'No-bypass charge', activation: 'Registration fee', reactivation: 'Registration fee (again)' };
 
 function statusText(r: MoneyInRow): { tone: 'good' | 'warn' | 'crit' | 'info' | 'muted'; text: string } {
   switch (r.status) {
@@ -72,7 +72,7 @@ function statusText(r: MoneyInRow): { tone: 'good' | 'warn' | 'crit' | 'info' | 
 }
 
 function fromText(r: MoneyInRow): string {
-  if (r.for?.who && r.status !== 'not_matched') return r.for.type === 'placement_fee' ? r.for.who.name : `${r.for.who.code} · ${r.for.who.name}`;
+  if (r.for?.who && r.status !== 'not_matched') return r.for.type === 'placement_fee' || r.for.type === 'bypass_charge' ? r.for.who.name : `${r.for.who.code} · ${r.for.who.name}`;
   if (r.kind === 'card') return 'Card payment';
   return r.payerName ? `${r.payerName}${r.payerVpaMasked ? ` · ${r.payerVpaMasked}` : ''}` : `Unknown UPI ID${r.payerVpaMasked ? ` · ${r.payerVpaMasked}` : ''}`;
 }
@@ -215,6 +215,7 @@ export default function MoneyIn() {
           options={[
             { value: '', label: 'All types' },
             { value: 'placement_fee', label: 'Placement fee' },
+            { value: 'bypass_charge', label: 'No-bypass charge' },
             { value: 'activation', label: 'Registration fee' },
           ]}
         />

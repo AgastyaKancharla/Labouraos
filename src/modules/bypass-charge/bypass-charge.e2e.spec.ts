@@ -7,11 +7,16 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 jest.setTimeout(180000);
 
+const DAY = 86_400_000;
+
 /**
  * The no-bypass charge: only the CEO raises it, with a reason, for someone
- * introduced within the no-bypass months; fee + penalty + GST in paise;
- * collected by the usual UPI payment request; GST invoice number from the same
- * series; shown on FN-Invoices; refused in a closed month; audited.
+ * introduced within the no-bypass months of the business's signed agreement
+ * (its fee, penalty and GST, not today's Settings); collected by the usual UPI
+ * payment request, saved together with it under a lock (one open charge per
+ * person); GST invoice number from the same series; shown on FN-Invoices, in
+ * the GST data and the books once paid; the CEO can cancel it; refused in a
+ * closed month; audited.
  */
 describe('No-bypass charge (CEO)', () => {
   let app: INestApplication;
@@ -26,7 +31,10 @@ describe('No-bypass charge (CEO)', () => {
   let seekerId = '';
   let lateSeekerId = '';
   let ceoId = '';
+  let chargeId = '';
+  let invoiceCode = '';
   const month = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit' }).format(new Date());
+  const daysAgo = (n: number) => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Kolkata' }).format(new Date(Date.now() - n * DAY));
 
   async function makeStaff(role: string) {
     const staff = await prisma.staff.create({
@@ -37,6 +45,7 @@ describe('No-bypass charge (CEO)', () => {
     return staff;
   }
   const as = (role: string) => ({ Authorization: `Bearer ${tokens[role]}` });
+  const server = () => app.getHttpServer();
 
   async function seeker(n: number) {
     const s = await prisma.jobSeeker.create({
@@ -73,8 +82,8 @@ describe('No-bypass charge (CEO)', () => {
     seekerId = await seeker(1);
     lateSeekerId = await seeker(2);
     const intro = { businessId, vacancyId, shownByStaffId: ceoId, rank: 1, score: 1, matchReasons: [], channel: 'in_person' };
-    await prisma.candidateIntroduction.create({ data: { ...intro, jobSeekerId: seekerId, shownAt: new Date(Date.now() - 40 * 86_400_000) } });
-    await prisma.candidateIntroduction.create({ data: { ...intro, jobSeekerId: lateSeekerId, shownAt: new Date(Date.now() - 400 * 86_400_000) } });
+    await prisma.candidateIntroduction.create({ data: { ...intro, jobSeekerId: seekerId, shownAt: new Date(Date.now() - 40 * DAY) } });
+    await prisma.candidateIntroduction.create({ data: { ...intro, jobSeekerId: lateSeekerId, shownAt: new Date(Date.now() - 400 * DAY) } });
   }, 120000);
 
   afterAll(async () => {
@@ -86,6 +95,7 @@ describe('No-bypass charge (CEO)', () => {
     await prisma.statusHistory.deleteMany({ where: { subjectType: 'payment', subjectId: { in: paymentIds } } });
     await prisma.payment.deleteMany({ where: { id: { in: paymentIds } } });
     await prisma.candidateIntroduction.deleteMany({ where: { businessId } });
+    await prisma.businessAgreement.deleteMany({ where: { businessId } });
     await prisma.vacancy.deleteMany({ where: { id: vacancyId } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: [seekerId, lateSeekerId] } } });
     await prisma.business.deleteMany({ where: { id: businessId } });
@@ -95,49 +105,113 @@ describe('No-bypass charge (CEO)', () => {
     await app.close();
   });
 
-  it('only the CEO raises it, needs a reason, and only for someone introduced within the no-bypass months', async () => {
-    const path = `/bypass-charges/business/${businessId}`;
-    const body = { jobSeekerId: seekerId, monthlySalaryPaise: 1500000, reason: 'Seen working there on a revisit; owner said not selected' };
-    for (const role of ['finance', 'manager', 'field_agent']) {
-      await request(app.getHttpServer()).post(path).set(as(role)).send(body).expect(403);
-    }
-    await request(app.getHttpServer()).get(`${path}/candidates`).set(as('manager')).expect(403);
-    await request(app.getHttpServer()).post(path).set(as('ceo')).send({ ...body, reason: '' }).expect(400);
-    await request(app.getHttpServer()).post(path).set(as('ceo')).send({ ...body, monthlySalaryPaise: 15000.5 }).expect(400);
-    await request(app.getHttpServer()).post(path).set(as('ceo')).send({ ...body, jobSeekerId: lateSeekerId }).expect(400);
+  const path = () => `/bypass-charges/business/${businessId}`;
+  const body = (extra: Record<string, unknown> = {}) => ({ jobSeekerId: seekerId, monthlySalaryPaise: 1500000, hiredOn: daysAgo(10), reason: 'Seen working there on a revisit', ...extra });
 
-    const candidates = await request(app.getHttpServer()).get(`${path}/candidates`).set(as('ceo')).expect(200);
+  it('only the CEO raises it, needs a reason, and refuses a business with no signed agreement (B2)', async () => {
+    for (const role of ['finance', 'manager', 'field_agent']) {
+      await request(server()).post(path()).set(as(role)).send(body()).expect(403);
+    }
+    await request(server()).get(`${path()}/candidates`).set(as('manager')).expect(403);
+    await request(server()).post(path()).set(as('ceo')).send(body({ reason: '' })).expect(400);
+    await request(server()).post(path()).set(as('ceo')).send(body({ monthlySalaryPaise: 15000.5 })).expect(400);
+
+    const unsigned = await request(server()).post(path()).set(as('ceo')).send(body()).expect(400);
+    expect(unsigned.body.message).toMatch(/no signed agreement/);
+    expect((await request(server()).get(`${path()}/candidates`).set(as('ceo')).expect(200)).body.agreementSigned).toBe(false);
+    expect(await prisma.bypassCharge.count({ where: { businessId } })).toBe(0);
+
+    // The agreement signed before the introductions: 40% fee, 50% penalty, 18% GST, 12 months.
+    await prisma.businessAgreement.create({
+      data: {
+        businessId, version: 'byp-test', termsHash: `byp-${stamp}`, noBypassMonths: 12, noBypassPenaltyPercent: 50, feePercent: 40, gstPercent: 18,
+        signedName: 'Owner', signedPhone: `+9191${tail}33`.slice(0, 13), otpRequestId: `byp-${stamp}`, signedAt: new Date(Date.now() - 500 * DAY), documentStoragePath: `byp/${stamp}.html`,
+      },
+    });
+    await request(server()).post(path()).set(as('ceo')).send(body({ jobSeekerId: lateSeekerId })).expect(400);
+    const candidates = await request(server()).get(`${path()}/candidates`).set(as('ceo')).expect(200);
+    expect(candidates.body).toMatchObject({ agreementSigned: true, feePercent: 40, penaltyPercent: 50, noBypassMonths: 12 });
     expect(candidates.body.rows.map((r: { jobSeeker: { id: string } }) => r.jobSeeker.id)).toEqual([seekerId]);
   });
 
-  it('charges fee + 50% + GST in paise, opens a UPI payment request, numbers the invoice, shows on FN-Invoices, and is audited', async () => {
-    const res = await request(app.getHttpServer())
-      .post(`/bypass-charges/business/${businessId}`)
-      .set(as('ceo'))
-      .send({ jobSeekerId: seekerId, monthlySalaryPaise: 1500000, reason: 'Seen working there on a revisit' })
-      .expect(201);
-    expect(res.body).toMatchObject({ feePaise: 750000, penaltyPaise: 375000, gstPaise: 202500, totalPaise: 1327500, status: 'waiting' });
-    expect(res.body.invoiceCode).toBeTruthy();
-    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: res.body.payment.id } });
-    expect(payment).toMatchObject({ type: 'bypass_charge', status: 'pending', amount: 1327500, expectedAmountPaise: 1327500, businessId });
-    expect(payment.upiReference).toBeTruthy();
+  it('refuses a hire date before the first introduction (B6), and saves nothing when UPI is not set up (B5)', async () => {
+    const early = await request(server()).post(path()).set(as('ceo')).send(body({ hiredOn: daysAgo(60) })).expect(400);
+    expect(early.body.message).toMatch(/before Laboura first introduced/);
 
-    // A second charge for the same person while one is open is refused.
-    await request(app.getHttpServer()).post(`/bypass-charges/business/${businessId}`).set(as('ceo')).send({ jobSeekerId: seekerId, monthlySalaryPaise: 1500000, reason: 'again' }).expect(409);
+    const vpa = process.env.COMPANY_UPI_VPA;
+    delete process.env.COMPANY_UPI_VPA;
+    try {
+      await request(server()).post(path()).set(as('ceo')).send(body()).expect(400);
+    } finally {
+      process.env.COMPANY_UPI_VPA = vpa;
+    }
+    expect(await prisma.bypassCharge.count({ where: { businessId } })).toBe(0);
+  });
 
-    const invoice = await request(app.getHttpServer()).get(`/bypass-charges/${res.body.id}/invoice`).set(as('finance')).expect(200);
-    expect(invoice.body.invoiceNumber).toBe(res.body.invoiceCode);
-    expect(invoice.body.summary).toMatchObject({ subtotalPaise: 1125000, totalTaxPaise: 202500, totalAmountPaise: 1327500 });
-    await request(app.getHttpServer()).get(`/bypass-charges/${res.body.id}/invoice`).set(as('manager')).expect(403);
+  it('charges the agreement fee + penalty + GST in paise, saves charge and payment request together once (B4), numbers the invoice, shows on FN-Invoices, audited', async () => {
+    const [a, b] = await Promise.all([
+      request(server()).post(path()).set(as('ceo')).send(body()),
+      request(server()).post(path()).set(as('ceo')).send(body()),
+    ]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+    const res = a.status === 201 ? a : b;
+    // 40% of ₹15,000 = ₹6,000; + 50% = ₹3,000; GST 18% of ₹9,000 = ₹1,620.
+    expect(res.body).toMatchObject({ feePaise: 600000, penaltyPaise: 300000, gstPaise: 162000, totalPaise: 1062000, penaltyPercent: 50, status: 'waiting' });
+    expect(await prisma.bypassCharge.count({ where: { businessId, status: 'raised' } })).toBe(1);
+    chargeId = res.body.id;
+    invoiceCode = res.body.invoiceCode;
+    expect(invoiceCode).toMatch(/^INV-\d+$/);
+    const charge = await prisma.bypassCharge.findUniqueOrThrow({ where: { id: chargeId } });
+    expect(charge.feePercent).toBe(40);
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: charge.paymentId! } });
+    expect(payment).toMatchObject({ type: 'bypass_charge', status: 'pending', amount: 1062000, expectedAmountPaise: 1062000, businessId, subjectId: chargeId });
 
-    const invoices = await request(app.getHttpServer()).get('/finance/invoices').set(as('finance')).expect(200);
-    const row = invoices.body.rows.find((r: { id: string }) => r.id === res.body.id);
-    expect(row).toMatchObject({ number: res.body.invoiceCode, totalPaise: 1327500, forWhat: { type: 'bypass_charge' } });
+    const invoice = await request(server()).get(`/bypass-charges/${chargeId}/invoice`).set(as('finance')).expect(200);
+    expect(invoice.body.invoiceNumber).toBe(invoiceCode);
+    expect(invoice.body.summary).toMatchObject({ subtotalPaise: 900000, totalTaxPaise: 162000, totalAmountPaise: 1062000 });
+    await request(server()).get(`/bypass-charges/${chargeId}/invoice`).set(as('manager')).expect(403);
 
-    const list = await request(app.getHttpServer()).get(`/bypass-charges/business/${businessId}`).set(as('finance')).expect(200);
-    expect(list.body).toHaveLength(1);
+    const invoices = await request(server()).get('/finance/invoices').set(as('finance')).expect(200);
+    const row = invoices.body.rows.find((r: { id: string }) => r.id === chargeId);
+    expect(row).toMatchObject({ number: invoiceCode, totalPaise: 1062000, forWhat: { type: 'bypass_charge' } });
     const audit = await prisma.auditLog.findFirst({ where: { actorId: ceoId, action: 'business.bypass_charge_raised', entityCode: `BZ-BYP-${tail}` } });
     expect(audit?.reason).toBe('Seen working there on a revisit');
+  });
+
+  it('the CEO cancels a waiting charge with a reason; its payment request closes (B5)', async () => {
+    const cancel = `/bypass-charges/${chargeId}/cancel`;
+    for (const role of ['finance', 'manager']) await request(server()).post(cancel).set(as(role)).send({ reason: 'x' }).expect(403);
+    await request(server()).post(cancel).set(as('ceo')).send({}).expect(400);
+    const res = await request(server()).post(cancel).set(as('ceo')).send({ reason: 'Owner proved the worker left on day 2' }).expect(201);
+    expect(res.body).toMatchObject({ status: 'cancelled', paymentClosed: true });
+    const charge = await prisma.bypassCharge.findUniqueOrThrow({ where: { id: chargeId } });
+    expect(charge).toMatchObject({ status: 'cancelled', cancelReason: 'Owner proved the worker left on day 2' });
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id: charge.paymentId! } })).status).toBe('cancelled');
+    expect(await prisma.statusHistory.count({ where: { subjectType: 'payment', subjectId: charge.paymentId!, toStatus: 'cancelled' } })).toBe(1);
+    await request(server()).post(cancel).set(as('ceo')).send({ reason: 'again' }).expect(409);
+    expect(await prisma.auditLog.count({ where: { actorId: ceoId, action: 'business.bypass_charge_cancelled' } })).toBe(1);
+  });
+
+  it('a paid charge is in the GST invoices, the GSTR-1 data and the books (B3), and cannot be cancelled', async () => {
+    const res = await request(server()).post(path()).set(as('ceo')).send(body({ reason: 'Raised again after the check' })).expect(201);
+    const charge = await prisma.bypassCharge.findUniqueOrThrow({ where: { id: res.body.id } });
+    await prisma.payment.update({ where: { id: charge.paymentId! }, data: { status: 'succeeded', confirmedAt: new Date(), paidAt: new Date(), bankUtr: `UTRBYP${tail}` } });
+
+    const tax = await request(server()).get(`/finance/tax?month=${month}`).set(as('finance')).expect(200);
+    expect(tax.body.gst.bypassCharges.count).toBeGreaterThanOrEqual(1);
+    expect(tax.body.gst.bypassCharges.gstPaise).toBeGreaterThanOrEqual(162000);
+    expect(tax.body.gst.invoices.gstPaise).toBe(tax.body.gst.placementFees.gstPaise + tax.body.gst.bypassCharges.gstPaise);
+    expect(tax.body.gst.payablePaise).toBe(tax.body.gst.invoices.gstPaise);
+    const gstr1 = await request(server()).get(`/finance/reports/gstr1.csv?month=${month}`).set(as('ceo')).expect(200);
+    expect(gstr1.text).toContain(charge.invoiceCode);
+    expect(gstr1.text).toContain(`No-bypass charge ${charge.code}`);
+    const books = await request(server()).get(`/finance/reports/books.csv?month=${month}`).set(as('finance')).expect(200);
+    const line = books.text.split('\n').find((l) => l.includes(charge.invoiceCode))!;
+    expect(line).toContain('No-bypass charge');
+    expect(line).toContain('10620.00');
+    expect(line).toContain('1620.00');
+
+    await request(server()).post(`/bypass-charges/${charge.id}/cancel`).set(as('ceo')).send({ reason: 'x' }).expect(409);
   });
 
   it('is refused while the current month is closed', async () => {
@@ -146,7 +220,7 @@ describe('No-bypass charge (CEO)', () => {
     if (existing) return; // Another suite owns this month's close; the lock itself is tested in month-lock specs.
     await prisma.monthClose.create({ data: { month, status: 'closed', closedByStaffId: ceoId, closedAt: new Date(), checklist: {} } });
     try {
-      const res = await request(app.getHttpServer()).post(`/bypass-charges/business/${businessId}`).set(as('ceo')).send({ jobSeekerId: seekerId, monthlySalaryPaise: 1500000, reason: 'Seen again' });
+      const res = await request(server()).post(path()).set(as('ceo')).send(body({ reason: 'Seen again' }));
       expect(res.status).toBe(403);
     } finally {
       await prisma.monthClose.deleteMany({ where: { month, closedByStaffId: ceoId } });

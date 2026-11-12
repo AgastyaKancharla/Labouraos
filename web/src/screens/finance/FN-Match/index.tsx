@@ -39,7 +39,7 @@ interface Response {
   candidates: Candidate[];
 }
 
-const TYPE: Record<string, string> = { placement_fee: 'Placement fee', activation: 'Registration fee', reactivation: 'Registration fee (again)' };
+const TYPE: Record<string, string> = { placement_fee: 'Placement fee', bypass_charge: 'No-bypass charge', activation: 'Registration fee', reactivation: 'Registration fee (again)' };
 
 function MatchButton({ c, creditId, onDone }: { c: Candidate; creditId: string; onDone: () => void }) {
   if (c.shortByPaise > 0) {

@@ -92,6 +92,8 @@ export class IdService implements OnModuleInit {
       FUT: 'FollowUpTask',
       EXP: 'Expense',
       DR: 'DataRequest',
+      BYP: 'BypassCharge',
+      BR: 'DataBreach',
       // Staff codes are role-prefixed (see STAFF_CODE_PREFIX in staff.service)
       CEO: 'Staff',
       MGR: 'Staff',
@@ -103,50 +105,53 @@ export class IdService implements OnModuleInit {
 
     for (const [prefix, tableName] of Object.entries(mapping)) {
       try {
-        const seqName = this.getSequenceName(prefix);
         await this.ensureSequenceExists(prefix);
-        await this.prisma.$executeRawUnsafe(`
-          DO $$
-          DECLARE
-            max_val integer;
-          BEGIN
-            SELECT COALESCE(MAX(SUBSTRING(code FROM ${prefix.length + 2})::int), 0)
-            INTO max_val
-            FROM "${tableName}"
-            WHERE code ~ '^${prefix}-[0-9]+$';
-
-            IF max_val > 0 THEN
-              PERFORM setval('"${seqName}"', max_val, true);
-            END IF;
-          END $$;
-        `);
+        await this.syncSequenceUp(prefix, [{ table: tableName, column: 'code' }]);
       } catch {
         // Table or column might not exist during initialization
       }
     }
 
-    // Sync invoice sequence from Placement.invoiceCode
+    // Invoice numbers are one series across placement fees and no-bypass charges.
     try {
-      const invSeqName = this.getSequenceName('INV');
       await this.ensureSequenceExists('INV');
-      await this.prisma.$executeRawUnsafe(`
-        DO $$
-        DECLARE
-          max_val integer;
-        BEGIN
-          SELECT COALESCE(MAX(SUBSTRING("invoiceCode" FROM 5)::int), 0)
-          INTO max_val
-          FROM "Placement"
-          WHERE "invoiceCode" ~ '^INV-[0-9]+$';
-
-          IF max_val > 0 THEN
-            PERFORM setval('"${invSeqName}"', max_val, true);
-          END IF;
-        END $$;
-      `);
+      await this.syncSequenceUp('INV', [
+        { table: 'Placement', column: 'invoiceCode' },
+        { table: 'BypassCharge', column: 'invoiceCode' },
+      ]);
     } catch {
       // Ignore if table or column does not exist yet
     }
+  }
+
+  /**
+   * Moves a code sequence up to the highest number already used in the given
+   * columns, and never down (B1, 12 Nov): setval(seq, GREATEST(max, current)).
+   * After a restart the next code is always above every code in use.
+   */
+  async syncSequenceUp(prefix: string, sources: Array<{ table: string; column: string }>): Promise<void> {
+    const seqName = this.getSequenceName(prefix);
+    const start = prefix.length + 2;
+    const pattern = `^${prefix}-[0-9]+$`;
+    const maxes = sources
+      .map(
+        ({ table, column }) =>
+          `SELECT COALESCE(MAX(SUBSTRING("${column}" FROM ${start})::bigint), 0) AS m FROM "${table}" WHERE "${column}" ~ '${pattern}'`,
+      )
+      .join(' UNION ALL ');
+    await this.prisma.$executeRawUnsafe(`
+      DO $$
+      DECLARE
+        max_val bigint;
+        current_val bigint;
+      BEGIN
+        SELECT COALESCE(MAX(m), 0) INTO max_val FROM (${maxes}) AS used;
+        SELECT CASE WHEN is_called THEN last_value ELSE last_value - 1 END INTO current_val FROM "${seqName}";
+        IF GREATEST(max_val, current_val) > 0 THEN
+          PERFORM setval('"${seqName}"', GREATEST(max_val, current_val), true);
+        END IF;
+      END $$;
+    `);
   }
 
   /**

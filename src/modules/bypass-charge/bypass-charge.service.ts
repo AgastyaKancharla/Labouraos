@@ -1,4 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
@@ -38,21 +40,48 @@ export class BypassChargeService {
     private readonly upi: UpiCollectionService,
   ) {}
 
-  /** The latest introduction (profile shown or interview booked) of this person to this business. */
-  private async lastIntroduction(businessId: string, jobSeekerId: string): Promise<Date | null> {
-    const [shown, interview] = await Promise.all([
+  /** The first and the latest introduction (profile shown or interview booked) of this person to this business. */
+  private async introductions(businessId: string, jobSeekerId: string): Promise<{ first: Date; last: Date } | null> {
+    const [firstShown, lastShown, firstInterview, lastInterview] = await Promise.all([
+      this.prisma.candidateIntroduction.findFirst({ where: { businessId, jobSeekerId }, orderBy: { shownAt: 'asc' }, select: { shownAt: true } }),
       this.prisma.candidateIntroduction.findFirst({ where: { businessId, jobSeekerId }, orderBy: { shownAt: 'desc' }, select: { shownAt: true } }),
+      this.prisma.interview.findFirst({ where: { businessId, jobSeekerId }, orderBy: { createdAt: 'asc' }, select: { createdAt: true } }),
       this.prisma.interview.findFirst({ where: { businessId, jobSeekerId }, orderBy: { createdAt: 'desc' }, select: { createdAt: true } }),
     ]);
-    const dates = [shown?.shownAt, interview?.createdAt].filter((d): d is Date => Boolean(d));
-    return dates.length ? new Date(Math.max(...dates.map((d) => d.getTime()))) : null;
+    const firsts = [firstShown?.shownAt, firstInterview?.createdAt].filter((d): d is Date => Boolean(d));
+    const lasts = [lastShown?.shownAt, lastInterview?.createdAt].filter((d): d is Date => Boolean(d));
+    if (!firsts.length) return null;
+    return {
+      first: new Date(Math.min(...firsts.map((d) => d.getTime()))),
+      last: new Date(Math.max(...lasts.map((d) => d.getTime()))),
+    };
+  }
+
+  /**
+   * The business's signed agreement in force at a moment (B2, 12 Nov): the
+   * latest one signed on or before it. Its fee, GST, no-bypass months and
+   * penalty are the terms the charge uses, not today's Settings.
+   */
+  private agreementAt(businessId: string, at: Date) {
+    return this.prisma.businessAgreement.findFirst({
+      where: { businessId, signedAt: { lte: at } },
+      orderBy: { signedAt: 'desc' },
+      select: { id: true, version: true, signedAt: true, feePercent: true, gstPercent: true, noBypassMonths: true, noBypassPenaltyPercent: true },
+    });
   }
 
   /** People this business may owe a charge for: introduced within the no-bypass months, not placed and paid there. */
   async candidates(businessId: string, now: Date) {
     const policy = await this.pricing.current();
+    const agreement = await this.agreementAt(businessId, now);
+    const terms = agreement ?? {
+      noBypassMonths: policy.noBypassMonths,
+      noBypassPenaltyPercent: policy.noBypassPenaltyPercent,
+      feePercent: policy.placementFeePercent,
+      gstPercent: policy.gstPercent,
+    };
     const since = new Date(now.getTime());
-    since.setUTCMonth(since.getUTCMonth() - policy.noBypassMonths);
+    since.setUTCMonth(since.getUTCMonth() - terms.noBypassMonths);
     const [shown, interviews, placements] = await Promise.all([
       this.prisma.candidateIntroduction.findMany({ where: { businessId, shownAt: { gte: since } }, select: { jobSeekerId: true, shownAt: true } }),
       this.prisma.interview.findMany({ where: { businessId, createdAt: { gte: since } }, select: { jobSeekerId: true, createdAt: true } }),
@@ -69,10 +98,11 @@ export class BypassChargeService {
       ? await this.prisma.jobSeeker.findMany({ where: { id: { in: [...latest.keys()] } }, select: { id: true, code: true, name: true } })
       : [];
     return {
-      noBypassMonths: policy.noBypassMonths,
-      penaltyPercent: policy.noBypassPenaltyPercent,
-      feePercent: policy.placementFeePercent,
-      gstPercent: policy.gstPercent,
+      agreementSigned: Boolean(agreement),
+      noBypassMonths: terms.noBypassMonths,
+      penaltyPercent: terms.noBypassPenaltyPercent,
+      feePercent: terms.feePercent,
+      gstPercent: terms.gstPercent,
       rows: seekers
         .map((s) => ({ jobSeeker: s, introducedAt: latest.get(s.id)!.toISOString() }))
         .sort((a, b) => b.introducedAt.localeCompare(a.introducedAt)),
@@ -134,61 +164,137 @@ export class BypassChargeService {
     const hiredOn = new Date(`${hiredText}T00:00:00.000Z`);
     if (hiredOn.getTime() > now.getTime() + 24 * 3600 * 1000) throw new BadRequestException('hiredOn cannot be in the future');
 
-    const policy = await this.pricing.current();
-    const introducedAt = await this.lastIntroduction(business.id, seeker.id);
-    if (!introducedAt) throw new BadRequestException('Laboura never introduced this person to this business: no bypass charge');
+    // Nothing is saved if UPI collection is not set up (B5).
+    this.upi.assertConfigured();
+
+    const intro = await this.introductions(business.id, seeker.id);
+    if (!intro) throw new BadRequestException('Laboura never introduced this person to this business: no bypass charge');
+    const introducedAt = intro.last;
+    if (hiredText < intro.first.toISOString().slice(0, 10)) {
+      throw new BadRequestException('hiredOn is before Laboura first introduced this person to this business');
+    }
+    const agreement = await this.agreementAt(business.id, introducedAt);
+    if (!agreement) {
+      throw new BadRequestException('This business had no signed agreement when the person was introduced: no bypass charge');
+    }
     const windowEnd = new Date(introducedAt.getTime());
-    windowEnd.setUTCMonth(windowEnd.getUTCMonth() + policy.noBypassMonths);
+    windowEnd.setUTCMonth(windowEnd.getUTCMonth() + agreement.noBypassMonths);
     if (hiredOn.getTime() > windowEnd.getTime()) {
-      throw new BadRequestException(`Hired more than ${policy.noBypassMonths} months after the introduction: the no-bypass clause no longer applies`);
+      throw new BadRequestException(`Hired more than ${agreement.noBypassMonths} months after the introduction: the no-bypass clause no longer applies`);
     }
     const placedAndPaid = await this.prisma.placement.count({ where: { businessId: business.id, jobSeekerId: seeker.id, paidAt: { not: null } } });
     if (placedAndPaid) throw new ConflictException('This hire went through Laboura and the fee was paid: it is not a bypass');
-    const open = await this.prisma.bypassCharge.count({ where: { businessId: business.id, jobSeekerId: seeker.id, status: 'raised' } });
-    if (open) throw new ConflictException('A bypass charge for this person is already raised');
     await this.monthLock.assertOpenOn(now, 'a bypass charge');
 
-    const amounts = bypassChargeAmounts(salary, policy.placementFeePercent, policy.noBypassPenaltyPercent, policy.gstPercent);
-    const code = await this.ids.generateCode('BYP');
-    const invoiceCode = await this.ids.generateCode('invoice');
-    const charge = await this.prisma.bypassCharge.create({
-      data: {
-        code,
-        businessId: business.id,
-        jobSeekerId: seeker.id,
-        hiredOn,
-        introducedAt,
-        monthlySalaryPaise: salary,
-        feePercent: policy.placementFeePercent,
-        penaltyPercent: policy.noBypassPenaltyPercent,
-        gstPercent: policy.gstPercent,
-        ...amounts,
-        reason,
-        invoiceCode,
-        raisedByStaffId: actorId,
-        raisedAt: now,
-      },
-    });
-    const request = await this.upi.createRequest({
-      type: 'bypass_charge',
-      subjectType: 'bypass_charge',
-      subjectId: charge.id,
+    const amounts = bypassChargeAmounts(salary, agreement.feePercent, agreement.noBypassPenaltyPercent, agreement.gstPercent);
+    const requestInput = {
+      type: 'bypass_charge' as const,
+      subjectType: 'bypass_charge' as const,
       amountPaise: amounts.totalPaise,
       city: business.city,
       businessId: business.id,
-      notifySubjectType: 'business',
+      notifySubjectType: 'business' as const,
       notifySubjectId: business.id,
-    });
-    const saved = await this.prisma.bypassCharge.update({ where: { id: charge.id }, data: { paymentId: request.paymentId } });
+    };
+
+    // The charge and its payment request are saved together, under a lock on
+    // this business and person, so two clicks never raise two (B4, B5). The
+    // partial unique index on open charges is the last guard.
+    let saved: Awaited<ReturnType<PrismaService['bypassCharge']['findUniqueOrThrow']>>;
+    let payment: Awaited<ReturnType<UpiCollectionService['createRequestRecord']>>;
+    try {
+      ({ saved, payment } = await this.prisma.$transaction(async (tx) => {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`bypass:${business.id}:${seeker.id}`}))`);
+        const open = await tx.bypassCharge.count({ where: { businessId: business.id, jobSeekerId: seeker.id, status: 'raised' } });
+        if (open) throw new ConflictException('A bypass charge for this person is already raised');
+        const code = await this.ids.generateCode('BYP');
+        const invoiceCode = await this.ids.generateCode('invoice');
+        const charge = await tx.bypassCharge.create({
+          data: {
+            code,
+            businessId: business.id,
+            jobSeekerId: seeker.id,
+            hiredOn,
+            introducedAt,
+            monthlySalaryPaise: salary,
+            feePercent: agreement.feePercent,
+            penaltyPercent: agreement.noBypassPenaltyPercent,
+            gstPercent: agreement.gstPercent,
+            ...amounts,
+            reason,
+            invoiceCode,
+            raisedByStaffId: actorId,
+            raisedAt: now,
+          },
+        });
+        const created = await this.upi.createRequestRecord(tx, { ...requestInput, subjectId: charge.id });
+        const row = await tx.bypassCharge.update({ where: { id: charge.id }, data: { paymentId: created.id } });
+        return { saved: row, payment: created };
+      }));
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        throw new ConflictException('A bypass charge for this person is already raised');
+      }
+      throw err;
+    }
+    const request = await this.upi.deliverRequest(payment, { ...requestInput, subjectId: saved.id });
     await this.audit.log({
       actorId,
       action: 'business.bypass_charge_raised',
       entityType: 'business',
       entityCode: business.code,
-      after: { charge: code, invoiceCode, jobSeeker: seeker.code, ...amounts, monthlySalaryPaise: salary, payment: request.paymentCode },
+      after: {
+        charge: saved.code,
+        invoiceCode: saved.invoiceCode,
+        jobSeeker: seeker.code,
+        ...amounts,
+        monthlySalaryPaise: salary,
+        payment: request.paymentCode,
+        agreement: { id: agreement.id, version: agreement.version, signedAt: agreement.signedAt.toISOString() },
+      },
       reason,
     });
     return this.view(saved, { code: request.paymentCode, status: request.status, confirmedAt: null }, { id: seeker.id, code: seeker.code, name: '' });
+  }
+
+  /**
+   * CEO only, with a reason (B5): cancels a raised charge that is not paid and
+   * closes its pending payment request, in one transaction; audited. A paid
+   * charge is not cancelled here (that is a refund).
+   */
+  async cancel(actorId: string, chargeId: string, body: { reason?: unknown }, now: Date) {
+    const reason = typeof body.reason === 'string' ? body.reason.trim() : '';
+    if (!reason) throw new BadRequestException('A reason is needed to cancel a bypass charge');
+    if (reason.length > 1000) throw new BadRequestException('Keep the reason under 1000 characters');
+    const result = await this.prisma.$transaction(async (tx) => {
+      const charge = await tx.bypassCharge.findUnique({ where: { id: chargeId } });
+      if (!charge) throw new NotFoundException('Bypass charge not found');
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`bypass:${charge.businessId}:${charge.jobSeekerId}`}))`);
+      const payment = charge.paymentId ? await tx.payment.findUnique({ where: { id: charge.paymentId }, select: { id: true, status: true } }) : null;
+      if (payment && PAID.includes(payment.status)) throw new ConflictException('This charge is paid: refund it instead of cancelling');
+      const moved = await tx.bypassCharge.updateMany({ where: { id: charge.id, status: 'raised' }, data: { status: 'cancelled', cancelledAt: now, cancelReason: reason } });
+      if (!moved.count) throw new ConflictException('This charge is already cancelled');
+      let closed = false;
+      if (payment && payment.status === 'pending') {
+        const shut = await tx.payment.updateMany({ where: { id: payment.id, status: 'pending' }, data: { status: 'cancelled' } });
+        if (shut.count) {
+          closed = true;
+          await recordStatusChange(tx, { subjectType: 'payment', subjectId: payment.id, fromStatus: 'pending', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'bypass_charge_cancelled' });
+        }
+      }
+      const business = await tx.business.findUnique({ where: { id: charge.businessId }, select: { code: true } });
+      return { charge, closed, businessCode: business?.code ?? charge.businessId };
+    });
+    await this.audit.log({
+      actorId,
+      action: 'business.bypass_charge_cancelled',
+      entityType: 'business',
+      entityCode: result.businessCode,
+      before: { charge: result.charge.code, status: 'raised' },
+      after: { charge: result.charge.code, status: 'cancelled', invoiceCode: result.charge.invoiceCode, paymentClosed: result.closed },
+      reason,
+    });
+    return { id: result.charge.id, code: result.charge.code, status: 'cancelled', paymentClosed: result.closed };
   }
 
   /** The GST invoice for a charge, in the same shape as a placement fee invoice. */

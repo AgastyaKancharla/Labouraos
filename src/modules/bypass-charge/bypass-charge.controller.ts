@@ -32,6 +32,12 @@ export class BypassChargeController {
     return this.charges.raise(req.user.sub, businessId, body ?? {}, new Date());
   }
 
+  @Post(':id/cancel')
+  @RequireRoles('ceo')
+  cancel(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { reason?: unknown }) {
+    return this.charges.cancel(req.user.sub, id, body ?? {}, new Date());
+  }
+
   @Get(':id/invoice')
   @RequireRoles('ceo', 'finance')
   invoice(@Param('id') id: string) {

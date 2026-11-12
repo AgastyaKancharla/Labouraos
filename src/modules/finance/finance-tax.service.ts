@@ -48,6 +48,43 @@ export class FinanceTaxService {
     });
   }
 
+  /**
+   * Paid no-bypass charges in a month (B3, 12 Nov): GST invoices from the same
+   * INV series as placement fees, with the fee + penalty as the taxable value
+   * and the GST printed on the charge.
+   */
+  private async bypassInvoicesIn(month: string) {
+    const { from, to } = monthBounds(month);
+    const payments = await this.prisma.payment.findMany({
+      where: { type: 'bypass_charge', status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: from, lte: to } }, { confirmedAt: null, paidAt: { gte: from, lte: to } }] },
+      select: { id: true, code: true, amount: true, confirmedAt: true, paidAt: true, bankUtr: true, method: true, tdsReceivable: { select: { amountPaise: true } } },
+    });
+    if (!payments.length) return [];
+    const charges = await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: payments.map((p) => p.id) } } });
+    const businesses = await this.prisma.business.findMany({
+      where: { id: { in: [...new Set(charges.map((c) => c.businessId))] } },
+      select: { id: true, code: true, name: true, legalName: true, gstNumber: true, gstLegalName: true },
+    });
+    const pay = new Map(payments.map((p) => [p.id, p]));
+    const biz = new Map(businesses.map((b) => [b.id, b]));
+    return charges
+      .map((c) => {
+        const p = pay.get(c.paymentId!)!;
+        return {
+          code: c.code,
+          invoiceCode: c.invoiceCode,
+          at: p.confirmedAt ?? p.paidAt!,
+          taxablePaise: c.feePaise + c.penaltyPaise,
+          gstPaise: c.gstPaise,
+          gstPercent: c.gstPercent,
+          totalPaise: c.totalPaise,
+          payment: p,
+          business: biz.get(c.businessId) ?? null,
+        };
+      })
+      .sort((a, b) => a.at.getTime() - b.at.getTime());
+  }
+
   private async invoiceRefundsIn(month: string) {
     const { from, to } = monthBounds(month);
     return this.prisma.payment.findMany({
@@ -61,8 +98,9 @@ export class FinanceTaxService {
     const month = this.month(monthValue);
     const { from, to } = monthBounds(month);
     const policy = await this.pricing.current();
-    const [invoices, refunds, receipts, tds, fyPayouts, openPayouts] = await Promise.all([
+    const [invoices, bypass, refunds, receipts, tds, fyPayouts, openPayouts] = await Promise.all([
       this.invoicesIn(month),
+      this.bypassInvoicesIn(month),
       this.invoiceRefundsIn(month),
       this.prisma.payment.count({ where: { type: { in: ['activation', 'reactivation'] }, status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: from, lte: to } }, { confirmedAt: null, paidAt: { gte: from, lte: to } }] } }),
       this.prisma.tdsReceivable.findMany({
@@ -77,8 +115,14 @@ export class FinanceTaxService {
       this.prisma.payment.groupBy({ by: ['referralId'], where: { type: 'referral_payout', status: { in: ['pending', 'approved', 'processing'] }, referralId: { not: null } }, _sum: { amount: true } }),
     ]);
     const fy = financialYear(to);
-    const invoiceFee = sumPaise(invoices.map((i) => i.placementFee));
-    const invoiceGst = sumPaise(invoices.map((i) => i.gstAmount));
+    const bypassFee = sumPaise(bypass.map((b) => b.taxablePaise));
+    const bypassGst = sumPaise(bypass.map((b) => b.gstPaise));
+    const placementFee = sumPaise(invoices.map((i) => i.placementFee));
+    const placementGst = sumPaise(invoices.map((i) => i.gstAmount));
+    // Every GST invoice of the month: placement fees and paid no-bypass charges.
+    const invoiceFee = placementFee + bypassFee;
+    const invoiceGst = placementGst + bypassGst;
+    const invoiceCount = invoices.length + bypass.length;
     const refundFee = sumPaise(refunds.map((r) => refundedFee(r.amount, r.placement)));
     const partnerIds = [...new Set([...fyPayouts, ...openPayouts].map((g) => g.referralId).filter((x): x is string => Boolean(x)))];
     const partners = partnerIds.length ? await this.prisma.referral.findMany({ where: { id: { in: partnerIds } }, select: { id: true, code: true, name: true } }) : [];
@@ -101,7 +145,9 @@ export class FinanceTaxService {
       month,
       label: monthLabel(month),
       gst: {
-        invoices: { count: invoices.length, feePaise: invoiceFee, gstPaise: invoiceGst },
+        invoices: { count: invoiceCount, feePaise: invoiceFee, gstPaise: invoiceGst },
+        placementFees: { count: invoices.length, feePaise: placementFee, gstPaise: placementGst },
+        bypassCharges: { count: bypass.length, feePaise: bypassFee, gstPaise: bypassGst },
         // Business refunds this month: fee only; their GST is still owed (no credit note until the CA answers).
         creditNotes: { count: refunds.length, feePaise: refundFee, gstPaise: 0 },
         receipts: { count: receipts },
@@ -110,7 +156,7 @@ export class FinanceTaxService {
         companyGstin: policy.companyGstin,
       },
       dates: [
-        reminder('gstr1', 'GSTR-1 (sales)', dates.gstr1, invoices.length ? 'Invoice data ready' : 'No invoices this month — file a nil return'),
+        reminder('gstr1', 'GSTR-1 (sales)', dates.gstr1, invoiceCount ? 'Invoice data ready' : 'No invoices this month — file a nil return'),
         reminder('gstr3b', 'GSTR-3B (pay GST)', dates.gstr3b, `Pay ${rupees(invoiceGst)} GST`),
         reminder('tds_pay', 'TDS we took', dates.tdsPay, 'Nothing deducted yet (the CA confirms the referral TDS rule)'),
         reminder('tds_return', 'TDS returns', dates.tdsReturn, 'Every quarter · the CA'),
@@ -119,7 +165,7 @@ export class FinanceTaxService {
       tdsReceivableTotalPaise: sumPaise(tds.map((t) => t.amountPaise)),
       referralTds: { financialYear: fy.label, limitPaise: limit, nextPayoutPaise: nextPayout, rows: referralRows },
       notes: {
-        gst: '₹499 registration fees carry no GST · monthly filing assumed — the CA may choose quarterly · a business refund returns the fee only — its GST stays owed until the CA answers (no credit note yet)',
+        gst: 'Placement fees and no-bypass charges carry GST · ₹499 registration fees carry no GST · monthly filing assumed — the CA may choose quarterly · a business refund returns the fee only — its GST stays owed until the CA answers (no credit note yet)',
         referral: `Referral payouts are commission: Finance is warned before a partner crosses ${rupees(limit)} in a financial year · deducting TDS waits for the CA`,
       },
     };
@@ -132,14 +178,21 @@ export class FinanceTaxService {
    */
   async gstr1Csv(monthValue: unknown): Promise<{ filename: string; csv: string }> {
     const month = this.month(monthValue);
-    const [invoices, policy] = await Promise.all([this.invoicesIn(month), this.pricing.current()]);
+    const [invoices, bypass, policy] = await Promise.all([this.invoicesIn(month), this.bypassInvoicesIn(month), this.pricing.current()]);
     const header = ['Section', 'GSTIN of recipient', 'Receiver name', 'Invoice number', 'Date', 'Value (Rs)', 'Place of supply', 'Reverse charge', 'Rate %', 'Taxable value (Rs)', 'IGST (Rs)', 'CGST (Rs)', 'SGST (Rs)', 'SAC (CA to confirm)', 'Placement'];
-    const rows: CsvValue[][] = invoices.map((i) => {
+    type Line = { at: Date; cells: CsvValue[] };
+    const lines: Line[] = invoices.map((i) => {
       const gstin = i.business?.gstNumber ?? null;
       const t = invoiceGstSplit(i.gstAmount, i.gstPercentAtCreation ?? policy.gstPercent);
-      return [gstin ? 'B2B' : 'B2C', gstin ?? '', i.business?.gstLegalName ?? i.business?.legalName ?? i.business?.name ?? '', i.invoiceCode ?? '', istDay(i.paidAt!), rupees(i.placementFee + i.gstAmount), '29-Karnataka', 'N', i.gstPercentAtCreation ?? policy.gstPercent, rupees(i.placementFee), rupees(t.igstAmountPaise), rupees(t.cgstAmountPaise), rupees(t.sgstAmountPaise), '998512', i.code];
+      return { at: i.paidAt!, cells: [gstin ? 'B2B' : 'B2C', gstin ?? '', i.business?.gstLegalName ?? i.business?.legalName ?? i.business?.name ?? '', i.invoiceCode ?? '', istDay(i.paidAt!), rupees(i.placementFee + i.gstAmount), '29-Karnataka', 'N', i.gstPercentAtCreation ?? policy.gstPercent, rupees(i.placementFee), rupees(t.igstAmountPaise), rupees(t.cgstAmountPaise), rupees(t.sgstAmountPaise), '998512', i.code] };
     });
-    return { filename: `gstr1-data-${month}.csv`, csv: toCsv(header, rows) };
+    for (const b of bypass) {
+      const gstin = b.business?.gstNumber ?? null;
+      const t = invoiceGstSplit(b.gstPaise, b.gstPercent);
+      lines.push({ at: b.at, cells: [gstin ? 'B2B' : 'B2C', gstin ?? '', b.business?.gstLegalName ?? b.business?.legalName ?? b.business?.name ?? '', b.invoiceCode, istDay(b.at), rupees(b.totalPaise), '29-Karnataka', 'N', b.gstPercent, rupees(b.taxablePaise), rupees(t.igstAmountPaise), rupees(t.cgstAmountPaise), rupees(t.sgstAmountPaise), '998512', `No-bypass charge ${b.code}`] });
+    }
+    lines.sort((a, b) => a.at.getTime() - b.at.getTime());
+    return { filename: `gstr1-data-${month}.csv`, csv: toCsv(header, lines.map((l) => l.cells)) };
   }
 
   /** TDS registers: TDS businesses took from our fees, and referral commission against the TDS limit (financial year of the month). */
@@ -179,7 +232,8 @@ export class FinanceTaxService {
   async taxCsv(monthValue: unknown, now = new Date()): Promise<{ filename: string; csv: string }> {
     const view = await this.tax(monthValue, now);
     const rows: CsvValue[][] = [
-      ['GST', 'Placement invoices', view.gst.invoices.count, rupees(view.gst.invoices.feePaise), rupees(view.gst.invoices.gstPaise)],
+      ['GST', 'Placement invoices', view.gst.placementFees.count, rupees(view.gst.placementFees.feePaise), rupees(view.gst.placementFees.gstPaise)],
+      ['GST', 'No-bypass charge invoices', view.gst.bypassCharges.count, rupees(view.gst.bypassCharges.feePaise), rupees(view.gst.bypassCharges.gstPaise)],
       ['GST', 'Business refunds (fee only — GST stays owed until the CA answers)', view.gst.creditNotes.count, rupees(-view.gst.creditNotes.feePaise), '0.00'],
       ['GST', 'GST to pay', '', '', rupees(view.gst.payablePaise)],
       ['GST', '₹499 registration receipts (no GST)', view.gst.receipts.count, '', '0.00'],
@@ -194,11 +248,12 @@ export class FinanceTaxService {
   async booksCsv(monthValue: unknown): Promise<{ filename: string; csv: string }> {
     const month = this.month(monthValue);
     const { from, to } = monthBounds(month);
-    const [received, out, expenses, salaries, returns, unmatched, matchedLater] = await Promise.all([
+    const [received, bypass, out, expenses, salaries, returns, unmatched, matchedLater] = await Promise.all([
       this.prisma.payment.findMany({
         where: { type: { in: ['activation', 'reactivation', 'placement_fee'] }, status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: from, lte: to } }, { confirmedAt: null, paidAt: { gte: from, lte: to } }] },
         select: { code: true, type: true, amount: true, confirmedAt: true, paidAt: true, bankUtr: true, method: true, jobSeeker: { select: { code: true, name: true } }, placement: { select: { code: true, invoiceCode: true, placementFee: true, gstAmount: true, business: { select: { name: true } } } }, tdsReceivable: { select: { amountPaise: true } } },
       }),
+      this.bypassInvoicesIn(month),
       this.prisma.payment.findMany({
         where: { type: { in: OUT_TYPES }, status: { in: RECEIVED_STATUSES }, paidAt: { gte: from, lte: to } },
         select: { code: true, type: true, amount: true, paidAt: true, bankUtr: true, jobSeeker: { select: { code: true, name: true } }, referral: { select: { code: true, name: true } }, placement: { select: { code: true, invoiceCode: true, business: { select: { name: true } } } } },
@@ -221,6 +276,9 @@ export class FinanceTaxService {
       const gst = isFee && p.placement ? p.placement.gstAmount : 0;
       const party = isFee ? (p.placement?.business?.name ?? '') : `${p.jobSeeker?.code ?? ''} ${p.jobSeeker?.name ?? ''}`.trim();
       lines.push({ at, cells: [istDay(at), 'In', isFee ? 'Placement fee' : 'Registration fee', party, isFee ? (p.placement?.invoiceCode ?? '') : p.code, rupees(p.amount), rupees(gst), rupees(p.tdsReceivable?.amountPaise ?? 0), p.bankUtr ?? '', p.method === 'gateway_card' ? 'Card' : 'UPI'] });
+    }
+    for (const b of bypass) {
+      lines.push({ at: b.at, cells: [istDay(b.at), 'In', 'No-bypass charge', b.business?.name ?? '', b.invoiceCode, rupees(b.payment.amount), rupees(b.gstPaise), rupees(b.payment.tdsReceivable?.amountPaise ?? 0), b.payment.bankUtr ?? '', b.payment.method === 'gateway_card' ? 'Card' : 'UPI'] });
     }
     for (const p of out) {
       const what = p.type === 'referral_payout' ? 'Referral payout' : p.type === 'joining_reward' ? 'Joining reward' : p.placement ? 'Business refund' : 'Registration refund';

@@ -23,6 +23,7 @@ interface Charge {
   raisedAt: string;
 }
 interface Candidates {
+  agreementSigned?: boolean;
   noBypassMonths: number;
   penaltyPercent: number;
   feePercent: number;
@@ -57,7 +58,7 @@ export function BypassChargesCard({ businessId }: { businessId: string }) {
               : undefined
           }
           confirmLabel="Raise the charge"
-          disabled={!options.length}
+          disabled={!options.length || c?.agreementSigned === false}
           fields={[
             { name: 'jobSeekerId', kind: 'select', label: 'Who they hired', options },
             { name: 'monthlySalaryPaise', kind: 'money', label: 'Their monthly salary', required: true },
@@ -77,7 +78,13 @@ export function BypassChargesCard({ businessId }: { businessId: string }) {
       }
     >
       {charges.data && charges.data.length === 0 ? (
-        <p className="ceo-sub">{options.length ? 'No charge raised.' : `No charge raised. Nobody introduced in the last ${c?.noBypassMonths ?? 12} months is unpaid.`}</p>
+        <p className="ceo-sub">
+          {c?.agreementSigned === false
+            ? 'No charge raised. This business has no signed agreement, so the no-bypass clause does not apply.'
+            : options.length
+              ? 'No charge raised.'
+              : `No charge raised. Nobody introduced in the last ${c?.noBypassMonths ?? 12} months is unpaid.`}
+        </p>
       ) : (
         <div className="kv">
           {(charges.data ?? []).map((x) => (
@@ -98,6 +105,20 @@ function Row({ x }: { x: Charge }) {
       <span>
         {x.jobSeeker ? `${x.jobSeeker.code} · ` : ''}hired {formatDateIST(x.hiredOn)} · {formatINR(x.feePaise)} + {formatINR(x.penaltyPaise)} + {formatINR(x.gstPaise)} GST = <b>{formatINR(x.totalPaise)}</b>{' '}
         <StatusPill tone={x.status === 'paid' ? 'good' : x.status === 'cancelled' ? 'muted' : 'warn'}>{x.status === 'paid' ? 'Paid' : x.status === 'cancelled' ? 'Cancelled' : 'Waiting for payment'}</StatusPill>
+        {x.status === 'waiting' && (
+          <span style={{ display: 'block', border: 0, padding: '6px 0 0' }}>
+            <FormAction
+              label="Cancel charge"
+              size="compact"
+              title={`Cancel ${x.code}`}
+              description="The payment link stops working and the invoice number is kept as cancelled. The reason is kept in the history."
+              confirmLabel="Cancel the charge"
+              fields={[{ name: 'reason', kind: 'text', label: 'Reason', required: true }]}
+              run={(v) => api.post(`/bypass-charges/${x.id}/cancel`, { reason: v.reason })}
+              success="Charge cancelled · payment link closed"
+            />
+          </span>
+        )}
       </span>
     </>
   );
