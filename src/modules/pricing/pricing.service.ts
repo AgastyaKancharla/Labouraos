@@ -130,6 +130,9 @@ export class PricingService {
         patternAgentMinInterviews: updates.patternAgentMinInterviews ?? before.patternAgentMinInterviews,
         patternAgentRejectionPercent:
           updates.patternAgentRejectionPercent ?? before.patternAgentRejectionPercent,
+        behindPaceStartDay: updates.behindPaceStartDay ?? before.behindPaceStartDay,
+        behindPaceThresholdPercent: updates.behindPaceThresholdPercent ?? before.behindPaceThresholdPercent,
+        registrationLinkValidHours: updates.registrationLinkValidHours ?? before.registrationLinkValidHours,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

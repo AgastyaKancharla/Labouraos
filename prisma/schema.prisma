@@ -1352,6 +1352,12 @@ model PricingPolicy {
   patternStopDays              Int       @default(30)
   patternAgentMinInterviews    Int       @default(10)
   patternAgentRejectionPercent Int       @default(80)
+  /// Behind-pace bells to the Team Lead and Manager start on this day of the month (no number in the guide; default 8).
+  behindPaceStartDay           Int       @default(8)
+  /// Behind pace = done below this percent of where the month's target should be by today (no number in the guide; default 80).
+  behindPaceThresholdPercent   Int       @default(80)
+  /// C-Pricing "Registration link valid": the job seeker's registration link lasts this many hours (guide: 48).
+  registrationLinkValidHours   Int       @default(48)
   shiftStart                   String    @default("09:30")
   shiftEnd                     String    @default("18:30")
   productionHoursFullDay       Float     @default(8)

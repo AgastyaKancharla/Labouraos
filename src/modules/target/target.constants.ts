@@ -272,6 +272,10 @@ export function evaluateMetricPace(params: {
   daysElapsed: number;
   daysInPeriod: number;
   maturedCount?: number;
+  /** Settings (PricingPolicy.behindPaceStartDay); BEHIND_PACE_START_DAY when not given. */
+  startDay?: number;
+  /** Settings (PricingPolicy.behindPaceThresholdPercent); BEHIND_PACE_THRESHOLD × 100 when not given. */
+  thresholdPercent?: number;
 }): PaceEvaluationResult {
   const {
     metric,
@@ -338,8 +342,10 @@ export function evaluateMetricPace(params: {
 
   // Behind pace flagging: only from BEHIND_PACE_START_DAY (day 8) onward
   let isBehindPace = false;
-  if (currentDay >= BEHIND_PACE_START_DAY) {
-    const threshold = BEHIND_PACE_THRESHOLD * expectedPace;
+  const startDay = params.startDay ?? BEHIND_PACE_START_DAY;
+  const thresholdShare = params.thresholdPercent !== undefined ? params.thresholdPercent / 100 : BEHIND_PACE_THRESHOLD;
+  if (currentDay >= startDay) {
+    const threshold = thresholdShare * expectedPace;
     if ((achieved ?? 0) < threshold) {
       isBehindPace = true;
     }

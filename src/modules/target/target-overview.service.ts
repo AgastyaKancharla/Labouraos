@@ -1,3 +1,4 @@
+import { PricingService } from '../pricing/pricing.service';
 import {
   BadRequestException,
   ForbiddenException,
@@ -143,6 +144,7 @@ export class TargetOverviewService {
     private readonly fieldAgentMetricsService: FieldAgentMetricsService,
     private readonly moneyAtRiskService: MoneyAtRiskService,
     @Optional() private readonly workingDays?: WorkingDaysService,
+    @Optional() private readonly pricing?: PricingService,
   ) {}
 
   async getOverview(
@@ -531,6 +533,8 @@ export class TargetOverviewService {
       | { maturedCount?: number; refundedCount?: number }
       | undefined;
     const maturedCount = rrDetails?.maturedCount ?? 0;
+    // Behind pace uses the Settings values when they can be read (defaults: day 8, 80%).
+    const policy = this.pricing ? await this.pricing.current().catch(() => null) : null;
 
     for (const key of ALL_METRIC_KEYS) {
       const targetEval = formattedTarget
@@ -547,6 +551,8 @@ export class TargetOverviewService {
         daysElapsed,
         daysInPeriod,
         maturedCount,
+        startDay: policy?.behindPaceStartDay,
+        thresholdPercent: policy?.behindPaceThresholdPercent,
       });
     }
 
