@@ -196,7 +196,6 @@ export default function TeamLeadHome() {
                   <th>Who</th>
                   <th>Wants</th>
                   <th>Waiting</th>
-                  <th />
                 </tr>
               </thead>
               <tbody>
@@ -206,17 +205,17 @@ export default function TeamLeadHome() {
                       <RequestWho request={r} />
                     </td>
                     <td>
-                      <RequestWants request={r} />
+                      <div style={{ display: 'grid', gap: 8, minWidth: 240 }}>
+                        <RequestWants request={r} />
+                        <RequestActions request={r} managerName={manager?.name} />
+                      </div>
                     </td>
                     <td>{waitedFor(r.createdAt, now)}</td>
-                    <td>
-                      <RequestActions request={r} managerName={manager?.name} />
-                    </td>
                   </tr>
                 ))}
                 {waiting.data && waitingRows.length === 0 && (
                   <tr>
-                    <td colSpan={4} className="tl-sub">
+                    <td colSpan={3} className="tl-sub">
                       Nothing is waiting for you.
                     </td>
                   </tr>
