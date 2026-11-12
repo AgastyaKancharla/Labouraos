@@ -1,3 +1,4 @@
+import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -81,7 +82,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
       totpSecret: authenticator.generateSecret(),
       totpEnabled: true,
     });
-    const totpCode = authenticator.generate(manager.totpSecret!);
+    const totpCode = await stableTotpCode(manager.totpSecret!);
     // A Manager's device is approved by the CEO before the Manager logs in on it.
     await prisma.staffDevice.create({
       data: {
@@ -238,7 +239,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
         staffCode: ceo.code,
         password,
         deviceId: 'ceo-laptop',
-        totpCode: authenticator.generate(secret),
+        totpCode: await stableTotpCode(secret),
       });
     expect(loggedIn.status).toBe(200);
     expect(loggedIn.body.totpEnrollmentRequired).toBeUndefined();
@@ -273,7 +274,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
           staffCode: person.code,
           password,
           deviceId,
-          totpCode: authenticator.generate(secret),
+          totpCode: await stableTotpCode(secret),
         });
       expect(refused.status).toBe(401);
       expect(refused.body.message).toBe('This device is waiting for approval by the CEO');
@@ -318,7 +319,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
           staffCode: person.code,
           password,
           deviceId,
-          totpCode: authenticator.generate(secret),
+          totpCode: await stableTotpCode(secret),
         });
       expect(loggedIn.status).toBe(200);
       expect(loggedIn.body.accessToken).toBeDefined();
@@ -348,7 +349,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
     const enable = await request(app.getHttpServer())
       .post('/staff/2fa/enable')
       .set('Authorization', `Bearer ${setupToken}`)
-      .send({ totpCode: authenticator.generate(setup.body.secret) });
+      .send({ totpCode: await stableTotpCode(setup.body.secret) });
     expect(enable.status).toBe(200);
 
     const device = await prisma.staffDevice.findUniqueOrThrow({
@@ -363,7 +364,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
         staffCode: ceo.code,
         password,
         deviceId,
-        totpCode: authenticator.generate(setup.body.secret),
+        totpCode: await stableTotpCode(setup.body.secret),
       });
     expect(full.status).toBe(200);
     expect(full.body.totpEnrollmentRequired).toBeUndefined();
@@ -427,7 +428,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
         staffCode: manager.code,
         password,
         deviceId: 'odd-hour-device',
-        totpCode: authenticator.generate(secret),
+        totpCode: await stableTotpCode(secret),
       });
     expect(daytime.status).toBe(200);
     const dayFlags = await prisma.reviewFlag.count({
@@ -442,7 +443,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
         staffCode: manager.code,
         password,
         deviceId: 'odd-hour-device',
-        totpCode: authenticator.generate(secret),
+        totpCode: await stableTotpCode(secret),
       });
     expect(night.status).toBe(200);
     const nightFlags = await prisma.reviewFlag.count({

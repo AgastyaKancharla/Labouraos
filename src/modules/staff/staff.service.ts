@@ -18,7 +18,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { AuthService } from '../../common/auth/auth.service';
-import { TotpService } from '../../common/auth/totp.service';
+import { TotpService, claimTotpStep } from '../../common/auth/totp.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Role } from '../../common/rbac/rbac.types';
 import { CreateStaffDto } from './dto/create-staff.dto';
@@ -726,10 +726,18 @@ export class StaffService {
           'Only the CEO, Managers and Finance use an authenticator app',
         );
       }
-      if (!staff.totpSecret || !this.totpService.verify(totpCode, staff.totpSecret)) {
+      const step = staff.totpSecret ? this.totpService.verifyStep(totpCode, staff.totpSecret) : null;
+      if (step === null) {
         throw new BadRequestException({
           message: 'The authenticator code is not right. Check the app and try again.',
           reason: 'totp_invalid',
+        });
+      }
+      // A code works once: the same code can't also be used to log in.
+      if (!(await claimTotpStep(this.prisma, staff.id, step))) {
+        throw new BadRequestException({
+          message: 'This authenticator code was already used. Wait for the next code in the app and try again.',
+          reason: 'totp_reused',
         });
       }
       enableTotp = true;

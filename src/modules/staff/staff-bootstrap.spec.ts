@@ -1,16 +1,15 @@
+import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
-import { TotpService } from '../../common/auth/totp.service';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { seed } from '../../../prisma/seed';
 
 describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
   let app: INestApplication;
   let prisma: PrismaService;
-  let totpService: TotpService;
 
   const BOOTSTRAP_SECRET = 'ci_bootstrap_secret_testing_only_32_characters';
   let ipCounter = 1;
@@ -42,7 +41,6 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
     await app.init();
 
     prisma = app.get(PrismaService);
-    totpService = app.get(TotpService);
   });
 
   afterAll(async () => {
@@ -203,7 +201,7 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
         .send();
       expect(setupRes.status).toBe(200);
       const secret = setupRes.body.secret as string;
-      const validTotpCode = totpService.generateToken(secret);
+      const validTotpCode = await stableTotpCode(secret);
 
       const enableRes = await request(app.getHttpServer())
         .post('/staff/2fa/enable')
