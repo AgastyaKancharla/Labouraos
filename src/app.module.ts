@@ -57,6 +57,8 @@ import { RequestsModule } from './modules/requests/requests.module';
 import { CompanyPlanModule } from './modules/company-plan/company-plan.module';
 import { ScreensTeamLeadModule } from './modules/screens-team-lead/screens-team-lead.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
+import { APP_GUARD } from '@nestjs/core';
+import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
 
 @Module({
   imports: [
@@ -118,6 +120,10 @@ import { IdempotencyModule } from './common/idempotency/idempotency.module';
     RequestsModule,
     CompanyPlanModule,
     ScreensTeamLeadModule,
+  ],
+  providers: [
+    // M4: one per-address limit across every @Public() route.
+    { provide: APP_GUARD, useClass: PublicRateLimitGuard },
   ],
 })
 export class AppModule {}

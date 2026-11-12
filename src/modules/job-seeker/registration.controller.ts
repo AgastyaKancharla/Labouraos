@@ -26,6 +26,7 @@ import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { publicLanguage, shortNameOf } from './registration-journey';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 
 const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
 
@@ -88,6 +89,7 @@ export class RegistrationController {
 
   @Post(':token/selfie')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  @CheckLinkBeforeUpload('registration', 'job_seeker', 'A valid job seeker registration link is required')
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async uploadSelfie(
     @Param('token') token: string,
