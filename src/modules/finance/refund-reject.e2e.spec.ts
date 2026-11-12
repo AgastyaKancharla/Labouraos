@@ -170,7 +170,7 @@ describe('Rejecting a refund: limits, approved refunds, rule-based rejections', 
     // He pays ₹499 again: a new guarantee, which also runs out.
     const repaidAt = new Date(Date.now() - 35 * DAY);
     const second = await prisma.payment.create({
-      data: { code: `PAY-RRJ-${tail}-A2`, type: 'activation', status: 'succeeded', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id, confirmedAt: repaidAt, paidAt: repaidAt, createdAt: repaidAt },
+      data: { code: `PAY-RRJ-${tail}-REPAY`, type: 'activation', status: 'succeeded', amount: 49900, subjectType: 'job_seeker', subjectId: seeker.id, jobSeekerId: seeker.id, confirmedAt: repaidAt, paidAt: repaidAt, createdAt: repaidAt },
     });
     paymentIds.push(second.id);
     await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: repaidAt, status: 'active' } });
