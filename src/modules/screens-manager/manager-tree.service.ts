@@ -68,6 +68,19 @@ export class ManagerTreeService {
       this.scope.peopleUnder(managerId),
     ]);
     if (!me) throw new NotFoundException('Staff account not found');
+    return this.build(me, under);
+  }
+
+  /** The whole company as one tree (every Team Lead and agent), for the CEO's weekly report. */
+  async company(): Promise<ManagerTree> {
+    const everyone = await this.prisma.staff.findMany({
+      where: { role: { in: ['team_lead', ...AGENT_ROLES] }, status: { not: 'deactivated' } },
+      select: { id: true },
+    });
+    return this.build({ id: 'company', code: 'LABOURA', name: 'Laboura' }, everyone.map((s) => s.id));
+  }
+
+  private async build(me: { id: string; code: string; name: string }, under: string[]): Promise<ManagerTree> {
     const rows = under.length
       ? await this.prisma.staff.findMany({
           where: { id: { in: under }, status: { not: 'deactivated' } },

@@ -307,9 +307,40 @@ describe('Attendance', () => {
 const targetRow = (id: string, name: string, role: string, main: number, target: number, pace: string, pos = 1) => ({ position: pos, staff: { id, code: id, name, role }, team: 'Team South', targetId: null, target: null, main: { achieved: main, target }, second: { achieved: 3, target: 12 }, feesPaise: role === 'field_agent' ? 8200000 : null, progressPercent: Math.round((main * 100) / target), pace });
 const board = { year: 2026, month: 11, dayOfMonth: 11, daysInMonth: 30, rows: [targetRow('ca1', 'Deepa Nair', 'call_agent', 18, 30, 'on_pace'), targetRow('fa1', 'Kiran Kumar', 'field_agent', 9, 12, 'behind', 2)], summary: { agents: 2, withTarget: 2, behind: 1 } };
 
+const plan = (o: Record<string, number | null>) => ({ registered: null, paid: null, businessesSignedUp: null, vacancies: null, interviewsDone: null, placed: null, repeatBusinesses: null, leftWithin30: null, ...o });
+const companyPlan = {
+  year: 2026,
+  month: 11,
+  plan: plan({ registered: 400, paid: 320, placed: 45 }),
+  setAt: NOW.toISOString(),
+  teams: [
+    { teamLeadId: 'tl1', team: 'Team South', teamLead: 'Ravi Shankar', manager: { id: 'm1', name: 'Priya Sharma' }, split: plan({ paid: 180, placed: 25 }) },
+    { teamLeadId: 'tl2', team: 'Team North', teamLead: 'Fatima Z', manager: { id: 'm1', name: 'Priya Sharma' }, split: plan({ paid: 140, placed: 15 }) },
+  ],
+  total: plan({ paid: 320, placed: 40 }),
+  difference: plan({ registered: -400, paid: 0, placed: -5 }),
+};
+
 describe('Targets and leaderboard', () => {
+  it("the company plan: shows the teams' split, whether it adds up, and saves the CEO's numbers", async () => {
+    const api = mockApi({ ...common, 'GET /ceo/targets': { ...board, leaderboard: board.rows }, 'GET /plans/company': companyPlan, 'PUT /plans/company': companyPlan });
+    render(<Targets />, '/ceo/targets');
+    expect(await screen.findByText('Company plan · November')).toBeInTheDocument();
+    expect(await screen.findByText('Team South')).toBeInTheDocument();
+    expect(screen.getAllByText('Split by Priya Sharma')).toHaveLength(2);
+    expect(screen.getByText('Adds up')).toBeInTheDocument();
+    expect(screen.getByText('5 not split')).toBeInTheDocument();
+    expect(screen.getByLabelText('Plan: Paid ₹499')).toHaveValue('320');
+    const placed = screen.getByLabelText('Plan: Placements');
+    await userEvent.clear(placed);
+    await userEvent.type(placed, '40');
+    await userEvent.type(screen.getByLabelText('Plan: Vacancies'), '90');
+    await userEvent.click(screen.getByRole('button', { name: 'Save plan' }));
+    await waitFor(() => expect(api.calls('PUT /plans/company')[0].body).toEqual({ year: 2026, month: 11, placed: 40, vacancies: 90 }));
+  });
+
   it('shows progress and pace, sets a target and copies last month', async () => {
-    const api = mockApi({ ...common, 'GET /ceo/targets': { ...board, leaderboard: board.rows }, 'POST /targets': { id: 't' }, 'POST /ceo/targets/copy': { copied: 2 } });
+    const api = mockApi({ ...common, 'GET /ceo/targets': { ...board, leaderboard: board.rows }, 'GET /plans/company': companyPlan, 'POST /targets': { id: 't' }, 'POST /ceo/targets/copy': { copied: 2 } });
     render(<Targets />, '/ceo/targets');
     expect(await screen.findByText('18 / 30 activated')).toBeInTheDocument();
     expect(screen.getAllByText('Behind pace').length).toBeGreaterThan(0);

@@ -91,7 +91,7 @@ export class ManagerPeopleService {
       const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
       const [counts, targets, att, attWeek, req, flags] = await Promise.all([
         this.tree.counts(ids, range),
-        this.plan.targetsFor(ids, m),
+        this.plan.teamTargets(lead.id, ids, m),
         this.plan.attendanceTotals(ids, m.from, now, now),
         this.plan.attendanceTotals(ids, week.from, week.to, now),
         this.requestStats(lead.id, now),
@@ -150,7 +150,7 @@ export class ManagerPeopleService {
     const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
     const [counts, targets, att, attWeek, req, own, codes, visits, leaveRows, notes] = await Promise.all([
       this.tree.counts(ids, range),
-      this.plan.targetsFor(ids, m),
+      this.plan.teamTargets(lead.id, ids, m),
       this.plan.attendanceTotals(ids, m.from, now, now),
       this.plan.attendanceTotals(ids, week.from, week.to, now),
       this.requestStats(lead.id, now),

@@ -16,6 +16,8 @@ export interface Overview {
   };
   bringMoney: PlanRow[];
   leadToMoney: PlanRow[];
+  /** Where each target comes from (absent from older answers). */
+  planSource?: Record<string, 'team_split' | 'company_plan' | 'agent_targets' | null>;
   rates: { key: string; label: string; now: number | null; unit: 'out_of_10' | 'days' }[];
   byTeam: {
     teamLeadId: string;
@@ -57,4 +59,12 @@ export function headlineGap(o: Overview): string {
   if (!g) return o.headline.withTarget ? 'Every target with a number is on course.' : 'Set agent targets on the Targets page to see where the month will end.';
   const need = g.needPerDay !== null ? ` To catch up we need ${g.needPerDay} a day instead of ${g.doingPerDay}.` : '';
   return `Biggest gap: ${g.label.toLowerCase()} — we'd end at ${g.atThisSpeed} of ${g.target}.${need}`;
+}
+
+/** The footnote line that says where the targets come from. */
+export function planSourceText(o: Pick<Overview, 'planSource'> | undefined): string {
+  const sources = new Set(Object.values(o?.planSource ?? {}).filter(Boolean));
+  if (sources.has('team_split')) return "Targets are the CEO's plan as you split it into teams on the Targets page (a team without a split counts its agents' targets); counts without a target show what was done.";
+  if (sources.has('company_plan')) return "Targets are the CEO's plan for the month; counts without a target show what was done.";
+  return "The CEO hasn't split a plan to your teams yet, so targets are the sum of the agents' monthly targets; counts without a target show what was done.";
 }

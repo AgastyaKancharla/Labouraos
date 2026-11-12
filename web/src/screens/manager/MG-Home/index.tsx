@@ -14,7 +14,9 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { hm } from '../../ceo/_kit/format';
 import { PlanTable, Verdict, monthLong, monthShort, roleTeam, teamShort } from '../_kit/kit';
-import { headlineGap, headlineTitle, useOverview } from '../_kit/overview';
+import { headlineGap, headlineTitle, planSourceText, useOverview } from '../_kit/overview';
+import { WaitingCard } from './WaitingCard';
+import { useWaiting } from '../_kit/requests';
 
 /**
  * Manager Command Center — design MG-Home.dc.html, on GET /manager/overview.
@@ -29,6 +31,7 @@ export default function ManagerHome() {
   const { session } = useAuth();
   const [period, setPeriod] = useState<Period>(() => periodFor('month', now));
   const ov = useOverview(period);
+  const waiting = useWaiting();
   const o = ov.data;
   const firstName = session?.staff.name.split(/\s+/)[0] ?? '';
   const teams = o?.teams.length ? o.teams.map(teamShort).join(' and ') : null;
@@ -46,7 +49,7 @@ export default function ManagerHome() {
           <>
             <ButtonLink to={to('MG-Reports')}>Weekly report</ButtonLink>
             <ButtonLink to={to('MG-Requests')} variant="primary">
-              Requests
+              {`Requests${waiting.data ? ` (${waiting.data.length})` : ''}`}
             </ButtonLink>
           </>
         }
@@ -74,7 +77,7 @@ export default function ManagerHome() {
             monthShort={mShort}
             daysLeft={o?.month.daysLeft ?? 0}
             loading={ov.isPending}
-            footnote="At this speed = where we end on the last day of the month if we keep doing the same amount every day. Targets come from the agents' monthly targets; counts without a target show what was done."
+            footnote={`At this speed = where we end on the last day of the month if we keep doing the same amount every day. ${planSourceText(o)}`}
           />
 
           <Card title="How well we turn one step into the next">
@@ -101,11 +104,7 @@ export default function ManagerHome() {
             <div className="mg-note">For the period picked above · fixing the weakest step brings more placements without needing more registrations</div>
           </Card>
 
-          <Card title="Waiting for you" aside={<ButtonLink to={to('MG-Requests')}>All requests</ButtonLink>}>
-            <p className="ceo-sub" style={{ margin: 0 }}>
-              <StatusPill tone="info">Coming next</StatusPill> Requests that wait for you (Team Leads' leave, leave not answered in 24 hours, more than 3 planned days, third corrections, replacement claims) arrive here with the shared requests system. Leave in your teams is on the <Link to={to('MG-Leave')}>Leave</Link> page meanwhile.
-            </p>
-          </Card>
+          <WaitingCard />
 
           <Card title="Teams · people placed" aside={<ButtonLink to={to('MG-Teams')}>Teams</ButtonLink>}>
             <div className="scrollx">

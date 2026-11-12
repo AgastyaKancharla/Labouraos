@@ -172,18 +172,40 @@ describe('Manager portal endpoints', () => {
     expect((await send('mgrA', 'post', `/manager/people/${people.caA.id}/notes`, { kind: 'bonus', text: 'x' })).status).toBe(400);
   });
 
-  it('flags: their teams only; money and bypass flags cannot be resolved by a Manager', async () => {
+  it('flags: the same scope as /requests/flags; money and bypass flags never go to a Manager; Send to CEO', async () => {
+    // A flag about nobody in particular reaches the Managers too.
+    const nobody = await prisma.reviewFlag.create({ data: { code: `RF-MGP-${tail}-4`, kind: 'duplicate_business', subjectType: 'business', subjectId: 'y', raisedForStaffId: null } });
+    flagIds.push(nobody.id);
     const res = await get('mgrA', '/manager/flags');
     const flagRowIds = res.body.rows.map((r: { id: string }) => r.id);
-    expect(flagRowIds).toEqual(expect.arrayContaining([flagIds[0], flagIds[1]]));
+    expect(flagRowIds).toEqual(expect.arrayContaining([flagIds[0], nobody.id]));
+    // Changed on purpose (brief, 12 Nov): the bypass flag used to be listed with "Goes to CEO"; now it is not listed at all.
+    expect(flagRowIds).not.toContain(flagIds[1]);
     expect(flagRowIds).not.toContain(flagIds[2]);
-    expect(res.body.rows.find((r: { id: string }) => r.id === flagIds[1]).goesToCeo).toBe(true);
+    expect(res.body.summary.forCeo).toBe(1);
+    expect(res.body.rows.find((r: { id: string }) => r.id === nobody.id)).toMatchObject({ staff: null, canResolve: true, canEscalate: true });
+    // /requests/flags shows the Manager the same flags.
+    const ours = (list: string[]) => list.filter((id) => flagIds.includes(id)).sort();
+    const shared = (await get('mgrA', '/requests/flags?status=open')).body.map((r: { id: string }) => r.id);
+    expect(ours(shared)).toEqual(ours(flagRowIds));
 
     expect((await send('mgrA', 'post', `/manager/flags/${flagIds[1]}/resolve`, { resolution: 'checked' })).status).toBe(403);
     expect((await send('mgrA', 'post', `/manager/flags/${flagIds[2]}/resolve`, { resolution: 'checked' })).status).toBe(403);
     const ok = await send('mgrA', 'post', `/manager/flags/${flagIds[0]}/resolve`, { resolution: 'Spoke to the agent' });
     expect(ok.status).toBe(200);
     expect((await prisma.reviewFlag.findUniqueOrThrow({ where: { id: flagIds[0] } })).status).toBe('resolved');
+
+    // Send to CEO: a note is needed; then only the CEO closes it.
+    expect((await send('mgrA', 'post', `/manager/flags/${nobody.id}/escalate`, {})).status).toBe(400);
+    const up = await send('mgrA', 'post', `/manager/flags/${nobody.id}/escalate`, { note: 'Same owner under two names' });
+    expect(up.status).toBe(200);
+    expect(up.body).toMatchObject({ ownerRole: 'ceo', canResolve: false, canEscalate: false });
+    const after = (await get('mgrA', '/manager/flags')).body.rows.find((r: { id: string }) => r.id === nobody.id);
+    expect(after).toMatchObject({ goesToCeo: true, escalated: { note: 'Same owner under two names' } });
+    expect((await send('mgrA', 'post', `/manager/flags/${nobody.id}/resolve`, { resolution: 'x' })).status).toBe(403);
+    const audit = await prisma.auditLog.findFirst({ where: { action: 'review_flag.escalated', entityCode: nobody.code } });
+    expect(audit?.reason).toBe('Same owner under two names');
+    expect((await send('mgrB', 'post', `/manager/flags/${flagIds[0]}/escalate`, { note: 'x' })).status).toBe(404);
   });
 
   it('targets: save, copy from last month (own agents only), and the board sums teams', async () => {

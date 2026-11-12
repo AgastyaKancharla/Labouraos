@@ -129,6 +129,13 @@ export class ScreensManagerController {
     return this.targets.save(req.user, body ?? {}, new Date());
   }
 
+  /** "Split the CEO's plan into teams": { year, month, rows: [{ teamLeadId, registered?, paid?, … }] } for teams in the tree. */
+  @Put('targets/split')
+  @RequireRoles('manager')
+  saveSplit(@Req() req: AuthedRequest, @Body() body: { year?: unknown; month?: unknown; rows?: unknown }) {
+    return this.targets.saveSplit(req.user, body ?? {}, new Date());
+  }
+
   /** Copy from last month, for the Manager's own agents only. */
   @Post('targets/copy')
   @RequireRoles('manager')
@@ -187,5 +194,13 @@ export class ScreensManagerController {
   @RequireRoles('manager')
   resolveFlag(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { resolution?: string; status?: string }) {
     return this.ops.resolveFlag(this.actor(req), id, body ?? {});
+  }
+
+  /** "Send to CEO" on MG-Flags: the flag goes up to the CEO with the Manager's note. */
+  @Post('flags/:id/escalate')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager')
+  escalateFlag(@Req() req: AuthedRequest, @Param('id') id: string, @Body() body: { note?: string }) {
+    return this.ops.escalateFlag(this.actor(req), id, body ?? {});
   }
 }

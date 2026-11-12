@@ -319,6 +319,8 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
       expect(((await get(leadB, '/requests/flags')).body as Array<{ id: string }>).some((f) => f.id === short.id)).toBe(false);
       expect(((await get(managerB, '/requests/flags')).body as Array<{ id: string }>).some((f) => f.id === short.id)).toBe(false);
       expect(((await get(managerA, '/requests/flags')).body as Array<{ id: string }>).some((f) => f.id === money.id)).toBe(false);
+      // Money and bypass flags never go to a Manager (a Team Lead still sees a bypass flag, which the CEO decides).
+      expect(((await get(managerA, '/requests/flags')).body as Array<{ id: string }>).some((f) => f.id === bypass.id)).toBe(false);
       expect(((await get(ceo, '/requests/flags')).body as Array<{ id: string }>).some((f) => f.id === money.id)).toBe(true);
     });
 
@@ -333,7 +335,7 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
       const toCeo = await post(managerA, `/requests/flags/${short.id}/escalate`, { note: 'Pattern' });
       expect(toCeo.body.ownerRole).toBe('ceo');
       expect((await post(managerA, `/requests/flags/${short.id}/resolve`, { resolution: 'ok' })).status).toBe(403);
-      expect((await post(managerA, `/requests/flags/${bypass.id}/resolve`, { resolution: 'ok' })).status).toBe(403);
+      expect([403, 404]).toContain((await post(managerA, `/requests/flags/${bypass.id}/resolve`, { resolution: 'ok' })).status);
       const done = await post(ceo, `/requests/flags/${short.id}/resolve`, { resolution: 'Spoke to him' });
       expect(done.status).toBe(200);
       expect(done.body.status).toBe('resolved');

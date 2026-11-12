@@ -112,8 +112,9 @@ export class FlagEscalationService {
     const people = await this.scope.peopleUnder(actor.id);
     const scoped: Prisma.ReviewFlagWhereInput = {
       OR: [{ raisedForStaffId: { in: people } }, ...(actor.role === 'manager' ? [{ ownerStaffId: actor.id }, { raisedForStaffId: null }] : [])],
-      // Money flags belong to the CEO and Finance only; a Manager never sees money.
-      kind: { notIn: MONEY_FLAG_KINDS },
+      // Money flags belong to the CEO and Finance only; a Manager never sees money,
+      // and money and bypass flags never go to a Manager at all (they are the CEO's).
+      kind: { notIn: actor.role === 'manager' ? [...new Set([...MONEY_FLAG_KINDS, ...CEO_OWNED_FLAG_KINDS])] : MONEY_FLAG_KINDS },
     };
     return scoped;
   }

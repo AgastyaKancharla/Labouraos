@@ -21,5 +21,6 @@ import { CeoAdminService } from './ceo-admin.service';
   imports: [PrismaModule, AuditModule, IdModule, PricingModule, RefundModule, TargetModule, AttendanceModule, JobSeekerModule],
   controllers: [CeoPortalController],
   providers: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, CeoTeamService, CeoOpsService, CeoAdminService],
+  exports: [CeoCommandCenterService],
 })
 export class CeoPortalModule {}

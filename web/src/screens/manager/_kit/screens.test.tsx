@@ -19,9 +19,6 @@ import Targets from '../MG-Targets';
 import Reports from '../MG-Reports';
 import LoginCodes from '../MG-LoginCodes';
 import Notifications from '../MG-Notifications';
-import Requests from '../MG-Requests';
-import Decided from '../MG-Decided';
-import RequestDetail from '../MG-Req-Ravi';
 
 const NOW = new Date('2026-11-09T12:30:00Z'); // 18:00 IST, 9 Nov
 const common = {
@@ -57,20 +54,20 @@ const overview = {
 
 describe('Manager Command Center', () => {
   it('shows plan vs actual in counts (no rupees), teams, attendance and the watch list', async () => {
-    const api = mockApi({ ...common, 'GET /manager/overview': overview });
+    const api = mockApi({ ...common, 'GET /manager/overview': overview, 'GET /requests/waiting': [], 'GET /manager/staff': { manager: { id: 'm1', code: 'MGR-2', name: 'Priya Sharma' }, rows: [] } });
     const { container } = render(<Home />, '/manager');
     expect(await screen.findByText("At today's speed we reach 1 of 3 targets")).toBeInTheDocument();
     expect(screen.getByText(/Biggest gap: people placed in jobs — we'd end at 37 of 45/)).toBeInTheDocument();
     expect(screen.getByText('Short by 8')).toBeInTheDocument();
     expect(screen.getByText('14 / 16')).toBeInTheDocument();
     expect(screen.getByText(/Meena R \(Field · North \(intern\)\)/)).toBeInTheDocument();
-    expect(screen.getByText('Coming next')).toBeInTheDocument();
+    expect(await screen.findByText('Nothing is waiting for you.')).toBeInTheDocument();
     expect(container.textContent).not.toMatch(/₹/);
     expect(api.calls('GET /manager/overview')[0].query.get('fromDate')).toBe('2026-10-31T18:30:00.000Z');
   });
 
   it('shows the error with a retry', async () => {
-    mockApi({ ...common, 'GET /manager/overview': apiError(500, 'Internal server error', 'req-mg1') });
+    mockApi({ ...common, 'GET /manager/overview': apiError(500, 'Internal server error', 'req-mg1'), 'GET /requests/waiting': [], 'GET /manager/staff': { manager: { id: 'm1', code: 'MGR-2', name: 'Priya Sharma' }, rows: [] } });
     render(<Home />, '/manager');
     expect((await screen.findAllByText('Reference: req-mg1')).length).toBeGreaterThan(0);
   });
@@ -346,30 +343,68 @@ describe('Work boards', () => {
     await waitFor(() => expect(api.calls('POST /businesses/b1/visit-assignments/a1/assign')[0].body).toEqual({ assignedStaffId: 'fa1' }));
   });
 
-  it('flags: resolves a quality flag; money and bypass flags go to the CEO; Send to CEO waits', async () => {
+  it('flags: resolves a quality flag and sends another to the CEO with a note', async () => {
     const api = mockApi({
       ...common,
       'GET /manager/flags': {
-        summary: { open: 2, forCeo: 1, resolvedThisMonth: 7 },
+        summary: { open: 3, forCeo: 1, resolvedThisMonth: 7 },
         rows: [
-          { id: 'f1', code: 'RF-1', kind: 'visit_short', title: 'Short visit', subjectType: 'staff', subjectId: 'x', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, goesToCeo: false },
-          { id: 'f2', code: 'RF-2', kind: 'bypass_suspected', title: 'Suspected bypass', subjectType: 'business', subjectId: 'b', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, goesToCeo: true },
+          { id: 'f1', code: 'RF-1', kind: 'visit_short', title: 'Short visit', subjectType: 'staff', subjectId: 'x', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, ownerRole: 'team_lead', goesToCeo: false, escalated: null, canResolve: true, canEscalate: false },
+          { id: 'f2', code: 'RF-2', kind: 'duplicate_business', title: 'Possible duplicate business', subjectType: 'business', subjectId: 'b', details: null, raisedAt: NOW.toISOString(), staff: null, team: null, isIntern: false, ownerRole: 'manager', goesToCeo: false, escalated: null, canResolve: true, canEscalate: true },
+          { id: 'f3', code: 'RF-3', kind: 'visits_too_far_apart', title: 'Two shops too far apart', subjectType: 'staff', subjectId: 'y', details: null, raisedAt: NOW.toISOString(), staff: { id: 'fa3', code: 'FA-3', name: 'Arun S', role: 'field_agent' }, team: 'Team North', isIntern: false, ownerRole: 'ceo', goesToCeo: true, escalated: { at: NOW.toISOString(), by: { id: 'm1', name: 'Priya Sharma', role: 'manager' }, note: 'Pattern' }, canResolve: false, canEscalate: false },
         ],
       },
       'POST /manager/flags/f1/resolve': { ok: true },
+      'POST /manager/flags/f2/escalate': { ok: true },
     });
-    render(<Flags />, '/manager/flags');
-    expect(await screen.findByText('Goes to CEO')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Send to CEO' })).toBeDisabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Resolve' }));
-    const d = await dialog();
+    const { container } = render(<Flags />, '/manager/flags');
+    expect(await screen.findByText('Sent to the CEO')).toBeInTheDocument();
+    expect(screen.getByText('No one in particular')).toBeInTheDocument();
+    expect(container.textContent).not.toMatch(/₹/);
+    await userEvent.click(screen.getAllByRole('button', { name: 'Resolve' })[0]);
+    let d = await dialog();
     await userEvent.type(within(d).getByLabelText(/What you found/), 'Owner was out');
     await userEvent.click(within(d).getByRole('button', { name: 'Resolve' }));
     await waitFor(() => expect(api.calls('POST /manager/flags/f1/resolve')[0].body).toEqual({ resolution: 'Owner was out', status: 'resolved' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Send to CEO' }));
+    d = await dialog();
+    const send = within(d).getByRole('button', { name: 'Send to CEO' });
+    expect(send).toBeDisabled();
+    await userEvent.type(within(d).getByLabelText(/Note for the CEO/), 'Same owner, two names');
+    await userEvent.click(send);
+    await waitFor(() => expect(api.calls('POST /manager/flags/f2/escalate')[0].body).toEqual({ note: 'Same owner, two names' }));
   });
 });
 
+const pv = (o: Record<string, number | null>) => ({ registered: null, paid: null, businessesSignedUp: null, vacancies: null, interviewsDone: null, placed: null, repeatBusinesses: null, leftWithin30: null, ...o });
+const splitPlan = {
+  company: pv({ registered: 400, paid: 320, businessesSignedUp: 60, placed: 45 }),
+  teams: [{ teamLeadId: 'tl1', team: 'Team South', teamLead: 'Ravi Shankar', split: pv({ registered: 225, paid: 180, businessesSignedUp: 33, placed: 25 }), agents: pv({ paid: 45 }) }],
+  otherTeams: pv({ registered: 175, paid: 140, businessesSignedUp: 27, placed: 20 }),
+  total: pv({ registered: 400, paid: 320, businessesSignedUp: 60, placed: 45 }),
+  difference: pv({ registered: 0, paid: 0, businessesSignedUp: 0, placed: 0 }),
+};
+
 describe('Targets, reports, login codes, notifications', () => {
+  it("targets: splits the CEO's plan into teams and shows whether it adds up", async () => {
+    const api = mockApi({
+      ...common,
+      'GET /manager/targets': { year: 2026, month: 11, editable: true, previous: { year: 2026, month: 10, targets: 0 }, whole: {}, teams: [{ teamLeadId: 'tl1', team: 'Team South', candidatesActivated: null, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null }], plan: splitPlan, agents: [], leaderboard: [] },
+      'PUT /manager/targets/split': { created: 0, updated: 1, unchanged: 0 },
+    });
+    const { container } = render(<Targets />, '/manager/targets');
+    expect(await screen.findByText('Teams under other Managers')).toBeInTheDocument();
+    expect(screen.getByText('CEO plan · whole team')).toBeInTheDocument();
+    expect(screen.getAllByText('Adds up')).toHaveLength(4);
+    const paid = screen.getByLabelText('Paid for Team South');
+    await userEvent.clear(paid);
+    await userEvent.type(paid, '170');
+    expect(screen.getByText('10 still to split')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Save split' }));
+    await waitFor(() => expect(api.calls('PUT /manager/targets/split')[0].body).toEqual({ year: 2026, month: 11, rows: [{ teamLeadId: 'tl1', paid: 170 }] }));
+    expect(container.textContent).not.toMatch(/₹/);
+  });
+
   it('targets: saves an edited agent target and copies from last month', async () => {
     const api = mockApi({
       ...common,
@@ -380,6 +415,7 @@ describe('Targets, reports, login codes, notifications', () => {
         previous: { year: 2026, month: 10, targets: 2 },
         whole: { candidatesActivated: 45, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null },
         teams: [{ teamLeadId: 'tl1', team: 'Team South', candidatesActivated: 45, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null }],
+        plan: splitPlan,
         agents: [{ staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent', isIntern: false }, team: 'Team South', teamLeadId: 'tl1', targetId: 't1', target: { candidatesActivated: 45, vacanciesCaptured: null, placementsClosed: null, repeatBusinesses: null }, main: { metric: 'paid', done: 27, target: 45, percent: 60 }, pace: 'on_pace' }],
         leaderboard: [{ position: 1, staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent', isIntern: false }, team: 'Team South', main: { metric: 'paid', done: 27, target: 45, percent: 60 } }],
       },
@@ -390,7 +426,7 @@ describe('Targets, reports, login codes, notifications', () => {
     const input = await screen.findByLabelText('Paid registrations for Deepa Nair');
     await userEvent.clear(input);
     await userEvent.type(input, '50');
-    expect(screen.getAllByText('50').length).toBeGreaterThan(0);
+    expect(screen.getByText('agents 50')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Save targets' }));
     await waitFor(() => expect(api.calls('PUT /manager/targets')[0].body).toEqual({ year: 2026, month: 11, rows: [{ staffId: 'ca1', candidatesActivated: 50 }] }));
     await userEvent.click(screen.getByRole('button', { name: 'Copy from October' }));
@@ -440,14 +476,5 @@ describe('Targets, reports, login codes, notifications', () => {
     await userEvent.selectOptions(screen.getByLabelText('Type'), 'Quality');
     expect(screen.queryByText('Ravi Shankar asked for 2 days off')).not.toBeInTheDocument();
     expect(screen.getByText('2 shop visits under 3 minutes')).toBeInTheDocument();
-  });
-
-  it('the requests screens say "Coming next"', async () => {
-    mockApi(common);
-    for (const [ui, path] of [[<Requests key="a" />, '/manager/requests'], [<Decided key="b" />, '/manager/requests/decided'], [<RequestDetail key="c" />, '/manager/requests/x']] as const) {
-      const { unmount } = render(ui, path);
-      expect(await screen.findByText('Coming next')).toBeInTheDocument();
-      unmount();
-    }
   });
 });
