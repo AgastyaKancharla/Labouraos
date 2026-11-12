@@ -9,7 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { Prisma } from '@prisma/client';
 import { monthBounds } from './payroll-rules';
-import { CORRECTIONS_TAKEN, PayrollService } from './payroll.service';
+import { CORRECTIONS_TAKEN, PAYROLL_PREPARE_LOCK, PREPARE_BUSY, PayrollService } from './payroll.service';
 import { MANUAL_NOT_NEEDED, monthsBetween } from './payroll-window';
 
 /**
@@ -602,6 +602,32 @@ describe('Finance back office (Phase 22 Part B)', () => {
         await prisma.payrollCorrection.deleteMany({ where: { id: temp.id } });
       }
     });
+
+    it('refuses at once (409) while another Prepare holds the payroll lock, instead of waiting', async () => {
+      let release: () => void = () => undefined;
+      let locked: () => void = () => undefined;
+      const held = new Promise<void>((r) => (release = r));
+      const gotLock = new Promise<void>((r) => (locked = r));
+      // Another Prepare, in its own transaction, holds the lock.
+      const holder = prisma.$transaction(
+        async (tx) => {
+          await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${PAYROLL_PREPARE_LOCK}))`);
+          locked();
+          await held;
+        },
+        { timeout: 60000 },
+      );
+      await gotLock;
+      try {
+        // A waiting Prepare would hang until the transaction timeout (a 500); it is refused at once.
+        const res = await request(server()).post(`/finance/salaries/${APRIL}/prepare`).set(as('finance')).expect(409);
+        expect(res.body.message).toBe(PREPARE_BUSY);
+        expect(await prisma.payrollRun.count({ where: { month: APRIL } })).toBe(0);
+      } finally {
+        release();
+        await holder;
+      }
+    }, 60000);
 
     it('takes a waiting row from a sent-back sheet only while that sheet is still sent back (409 otherwise)', async () => {
       const payroll = app.get(PayrollService);

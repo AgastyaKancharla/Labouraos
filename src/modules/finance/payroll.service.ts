@@ -138,7 +138,10 @@ export const CORRECTIONS_TAKEN = 'Someone else just prepared a salary sheet that
 const MAX_CORRECTION_PAISE = 100_000_000;
 
 /** Every Prepare runs under this Postgres advisory transaction lock, one at a time. */
-const PAYROLL_PREPARE_LOCK = 'laboura:payroll:prepare';
+export const PAYROLL_PREPARE_LOCK = 'laboura:payroll:prepare';
+
+/** Another Prepare holds the lock: refused at once rather than waiting into a transaction timeout. */
+export const PREPARE_BUSY = 'Someone else is preparing salaries right now. Try again in a moment.';
 
 
 /** ₹1,000 or ₹1,000.50 for notes. */
@@ -917,8 +920,9 @@ export class PayrollService {
     const waiting = corrections.filter((c) => !onSheet.has(c.staffId));
     try {
       await this.prisma.$transaction(async (tx) => {
-        // One Prepare at a time: a second one waits here, then sees what the first recorded.
-        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${PAYROLL_PREPARE_LOCK}))`);
+        // One Prepare at a time: a second one is refused at once (never a transaction-timeout 500).
+        const [lock] = await tx.$queryRaw<{ locked: boolean }[]>(Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext(${PAYROLL_PREPARE_LOCK})) AS locked`);
+        if (!lock?.locked) throw new ConflictException(PREPARE_BUSY);
         // Under the lock: which of the sheets the waiting rows were read from are still sent back
         // (a sheet prepared again meanwhile keeps its rows, so they can no longer be taken from it).
         const otherRunIds = correctionRunIds.filter((id) => id !== existing?.id);
