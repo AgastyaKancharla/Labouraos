@@ -32,6 +32,7 @@ import {
   salaryDaysFor,
   staffWorkingDays,
 } from './payroll-rules';
+import { CORRECTION_LOOKBACK_MONTHS } from './payroll-window';
 
 export type PayrollStatus = 'draft' | 'with_ceo' | 'returned' | 'approved' | 'paid';
 
@@ -130,8 +131,6 @@ interface OpenCorrection {
 /** Prepare found a waiting correction already applied on another sheet. */
 export const CORRECTIONS_TAKEN = 'Someone else just prepared a salary sheet that uses the same corrections. Reload and prepare again.';
 
-/** How far back frozen months are worked out again to find corrections. */
-const CORRECTION_LOOKBACK_MONTHS = 12;
 
 /** ₹1,000 or ₹1,000.50 for notes. */
 const inr = (paise: number) => `₹${Math.floor(paise / 100).toLocaleString('en-IN')}${paise % 100 ? `.${String(paise % 100).padStart(2, '0')}` : ''}`;

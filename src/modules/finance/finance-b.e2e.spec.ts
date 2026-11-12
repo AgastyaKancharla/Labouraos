@@ -10,6 +10,7 @@ import { NotificationSourcesService } from '../notification/notification-sources
 import { Prisma } from '@prisma/client';
 import { monthBounds } from './payroll-rules';
 import { CORRECTIONS_TAKEN, PayrollService } from './payroll.service';
+import { monthsBetween } from './payroll-window';
 
 /**
  * Phase 22 Part B against a real database (with the owner decisions of 11 Nov).
@@ -641,6 +642,68 @@ describe('Finance back office (Phase 22 Part B)', () => {
       } finally {
         await undoSettings();
       }
+    });
+  });
+
+  describe('changes in a month payroll no longer works out again', () => {
+    // January 2002 has a paid sheet and so does each of the 12 months after it (to January 2003):
+    // no sheet still to be prepared works January 2002 out again, so a change there is refused
+    // (it would be silently ignored). February 2002 is still reached by the February 2003 sheet.
+    const months = monthsBetween('2002-01', '2003-01');
+    const holidayDays = ['2002-01-10', '2002-01-14', '2002-01-15', '2002-02-14', '2002-02-15'];
+    let oldie: { id: string; code: string };
+    let oldDayId = '';
+    let oldHolidayId = '';
+    let reachableHolidayId = '';
+
+    beforeAll(async () => {
+      await prisma.payrollRun.deleteMany({ where: { month: { in: months } } });
+      await prisma.holiday.deleteMany({ where: { date: { in: holidayDays.map(day) } } });
+      await prisma.payrollRun.createMany({
+        data: months.map((month) => ({ month, status: 'paid', people: 0, grossPaise: 0, deductionsPaise: 0, netPaise: 0, preparedByStaffId: financeId, preparedAt: new Date('2003-02-01T04:00:00.000Z') })),
+      });
+      oldie = await makeStaff('call_agent', 'oldie', { createdAt: new Date('2002-01-07T04:00:00.000Z'), joinedOn: day('2002-01-07') });
+      oldDayId = (await prisma.attendanceDay.create({ data: { staffId: oldie.id, date: day('2002-01-15'), dayType: 'absent', productionSeconds: 0, closedReason: 'no_login' } })).id;
+      oldHolidayId = (await prisma.holiday.create({ data: { date: day('2002-01-10'), name: 'W5B old holiday' } })).id;
+      reachableHolidayId = (await prisma.holiday.create({ data: { date: day('2002-02-14'), name: 'W5B reachable holiday' } })).id;
+    });
+
+    afterAll(async () => {
+      await prisma.payrollRun.deleteMany({ where: { month: { in: months } } });
+      await prisma.holiday.deleteMany({ where: { date: { in: holidayDays.map(day) } } });
+    });
+
+    it('refuses a holiday added, moved into or removed from such a month, and still allows one a later sheet reaches', async () => {
+      const added = await request(server()).post('/attendance/holidays').set(as('ceo')).send({ date: '2002-01-15', name: 'W5B too late' }).expect(400);
+      expect(added.body.message).toMatch(/January 2002 pay.*manual correction/);
+      const moved = await request(server()).patch(`/attendance/holidays/${reachableHolidayId}`).set(as('ceo')).send({ date: '2002-01-14' }).expect(400);
+      expect(moved.body.message).toMatch(/manual correction/);
+      const removed = await request(server()).delete(`/attendance/holidays/${oldHolidayId}`).set(as('ceo')).expect(400);
+      expect(removed.body.message).toMatch(/manual correction/);
+      expect(await prisma.holiday.count({ where: { id: { in: [oldHolidayId, reachableHolidayId] } } })).toBe(2);
+      expect((await prisma.holiday.findUniqueOrThrow({ where: { id: reachableHolidayId } })).date.toISOString()).toBe('2002-02-14T00:00:00.000Z');
+      expect(await prisma.holiday.count({ where: { date: day('2002-01-15') } })).toBe(0);
+      // February 2002 is still worked out again by the February 2003 sheet: allowed.
+      const ok = await request(server()).post('/attendance/holidays').set(as('ceo')).send({ date: '2002-02-15', name: 'W5B in time' });
+      expect(ok.status).toBeLessThan(300);
+      const gone = await request(server()).delete(`/attendance/holidays/${ok.body.id}`).set(as('ceo'));
+      expect(gone.status).toBeLessThan(300);
+    });
+
+    it('refuses a day change there, directly or as a request', async () => {
+      const direct = await request(server()).post(`/attendance/days/${oldDayId}/day-type`).set(as('ceo')).send({ dayType: 'full', reason: 'W5B late change' }).expect(400);
+      expect(direct.body.message).toMatch(/day change.*manual correction/);
+      const asked = await request(server()).post('/requests').set(as('ceo')).send({ kind: 'day_change', dayId: oldDayId, dayType: 'full', reason: 'W5B late change' }).expect(400);
+      expect(asked.body.message).toMatch(/manual correction/);
+      expect((await prisma.attendanceDay.findUniqueOrThrow({ where: { id: oldDayId } })).dayType).toBe('absent');
+    });
+
+    it('refuses a joining-date change that moves pay in such a month', async () => {
+      const res = await request(server()).put(`/staff/${oldie.id}/joined-on`).set(as('ceo')).send({ joinedOn: '2002-01-14' }).expect(400);
+      expect(res.body.message).toMatch(/joining date.*January 2002.*manual correction/);
+      expect((await prisma.staff.findUniqueOrThrow({ where: { id: oldie.id } })).joinedOn?.toISOString()).toBe('2002-01-07T00:00:00.000Z');
+      // The same date again changes nothing, so it is allowed.
+      await request(server()).put(`/staff/${oldie.id}/joined-on`).set(as('ceo')).send({ joinedOn: '2002-01-07' }).expect(200);
     });
   });
 
