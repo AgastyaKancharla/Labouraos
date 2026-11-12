@@ -142,8 +142,8 @@ export type ConsentLinkDetails =
 export class ConsentLinkService {
   private readonly processingTokens = new Set<string>();
   private ttlMs = 24 * 60 * 60 * 1000; // 24 hours
-  private registrationTtlMs = 48 * 60 * 60 * 1000;
-  private referralRegistrationTtlMs = 48 * 60 * 60 * 1000;
+  /** Set only by setTtlMs (tests); otherwise Settings → registrationLinkValidHours decides. */
+  private registrationTtlOverrideMs: number | null = null;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -162,7 +162,15 @@ export class ConsentLinkService {
 
   setTtlMs(ttlMs: number) {
     this.ttlMs = ttlMs;
-    this.registrationTtlMs = ttlMs;
+    this.registrationTtlOverrideMs = ttlMs;
+  }
+
+  /** C-Pricing "Registration link valid" (PricingPolicy.registrationLinkValidHours, 48 by default). */
+  private async registrationTtl(allowOverride = true): Promise<number> {
+    if (allowOverride && this.registrationTtlOverrideMs !== null) return this.registrationTtlOverrideMs;
+    const policy = await this.pricingService.current();
+    const hours = Number.isInteger(policy.registrationLinkValidHours) && policy.registrationLinkValidHours > 0 ? policy.registrationLinkValidHours : 48;
+    return hours * 60 * 60 * 1000;
   }
 
   createInterviewActionToken(
@@ -213,7 +221,7 @@ export class ConsentLinkService {
     }
 
     const now = this.clock.now();
-    const expiresAt = new Date(now.getTime() + this.registrationTtlMs);
+    const expiresAt = new Date(now.getTime() + (await this.registrationTtl()));
     await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
     const { token, id } = await this.publicLinks.create({
       purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
@@ -311,7 +319,7 @@ export class ConsentLinkService {
     const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
     const now = this.clock.now();
     await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
-    const expiresAt = new Date(now.getTime() + this.referralRegistrationTtlMs);
+    const expiresAt = new Date(now.getTime() + (await this.registrationTtl(false)));
     const { token } = await this.publicLinks.create({
       purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
       phone: referral.phone, language, createdByStaffId: staffId, expiresAt,

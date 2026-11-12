@@ -492,7 +492,7 @@ describe('Audit, flags, privacy, system and notifications', () => {
   });
 });
 
-const policy = { id: 'p1', activationFeePaise: 49900, placementFeePercent: 50, gstPercent: 18, jobSeekerGuaranteeDays: 30, maxHits: 3, offerReplyHours: 48, interviewResultDeadline: '20:00', placementPaymentDueHours: 24, replacementWindowDays: 60, maxFreeReplacements: 2, replacementSearchDays: 15, noBypassMonths: 12, noBypassPenaltyPercent: 50, referralPayoutPaise: 20000, joiningRewardPaise: 20000, joiningRewardAfterDays: 30, callingHoursStart: '09:00', callingHoursEnd: '21:00', shiftStart: '09:30', shiftEnd: '18:30', productionHoursFullDay: 8, halfDayBelowHours: 4.5, dayToleranceMinutes: 10, lateGraceMinutes: 10, shortBreakMinutes: 15, lunchMinutes: 30, idleAfterMinutes: 10, casualLeavePerMonth: 1, emergencyLeavePerMonth: 1, financeBusinessRefundLimitPaise: 1500000, financeExpenseLimitPaise: 1000000, weeklyOffDays: [0] };
+const policy = { id: 'p1', activationFeePaise: 49900, placementFeePercent: 50, gstPercent: 18, jobSeekerGuaranteeDays: 30, maxHits: 3, offerReplyHours: 48, interviewResultDeadline: '20:00', placementPaymentDueHours: 24, replacementWindowDays: 60, maxFreeReplacements: 2, replacementSearchDays: 15, noBypassMonths: 12, noBypassPenaltyPercent: 50, referralPayoutPaise: 20000, joiningRewardPaise: 20000, joiningRewardAfterDays: 30, callingHoursStart: '09:00', callingHoursEnd: '21:00', shiftStart: '09:30', shiftEnd: '18:30', productionHoursFullDay: 8, halfDayBelowHours: 4.5, dayToleranceMinutes: 10, lateGraceMinutes: 10, shortBreakMinutes: 15, lunchMinutes: 30, idleAfterMinutes: 10, casualLeavePerMonth: 1, emergencyLeavePerMonth: 1, financeBusinessRefundLimitPaise: 1500000, financeExpenseLimitPaise: 1000000, weeklyOffDays: [0], registrationLinkValidHours: 48, behindPaceStartDay: 8, behindPaceThresholdPercent: 80 };
 
 describe('Pricing & policy', () => {
   it('shows every rule in force, schedules a change for a later date, sets the weekly day off and adds a holiday', async () => {
@@ -508,6 +508,8 @@ describe('Pricing & policy', () => {
     expect(screen.getByText(/9:30 AM – 6:30 PM · 8 production hours/)).toBeInTheDocument();
     expect(screen.getByText(/No-bypass · Penalty % on top of the fee 0 → 50/)).toBeInTheDocument();
     expect(await screen.findByText(/Kannada Rajyotsava/)).toBeInTheDocument();
+    expect(screen.getByText('48 hours · payment-only link 15 minutes')).toBeInTheDocument();
+    expect(screen.getByText("From day 8 · below 80% of the target's pace")).toBeInTheDocument();
 
     const row = screen.getByText('Offer reply time').closest('tr') as HTMLElement;
     await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
