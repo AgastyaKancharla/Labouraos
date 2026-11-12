@@ -15,6 +15,10 @@ export class LoginDto {
 export class VerifyLoginCodeDto {
   loginRequestId?: string;
   code?: string;
+  /** The same device id the login was started with. */
+  deviceId?: string;
+  /** From the `awaiting_code` answer: only the sign-in that asked has it. */
+  loginRequestProof?: string;
 }
 
 export class LoginResponseDto {
@@ -40,6 +44,8 @@ export class LoginResponseDto {
 export class AwaitingCodeResponseDto {
   status!: 'awaiting_code';
   loginRequestId!: string;
+  /** Send back with the code, with the same deviceId: the code works only for this device and sign-in. */
+  loginRequestProof!: string;
   expiresAt!: Date;
 }
 

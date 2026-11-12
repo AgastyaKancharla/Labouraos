@@ -1,0 +1,153 @@
+# Laboura on Render's FREE tier, for testing with made-up data only.
+# DEPLOY.md, section "Free tier for testing", explains every click.
+#
+# The paid setup is render.yaml (web + worker + paid Key Value). This file is
+# the free-tier version, with two parts in Singapore:
+#   laboura-test        ONE free web service: API, screens, webhooks AND every
+#                       scheduled job (PROCESS_ROLE=all), because the free tier
+#                       has no Background Worker.
+#   laboura-test-redis  ONE free Render Key Value (Redis) for the job queue,
+#                       private network only.
+#
+# The database and the uploaded files live in Supabase, in Mumbai
+# (ap-south-1) — owner decision, 12 Nov.
+#
+# Differences from render.yaml, and why:
+#   - Free services have no Pre-Deploy Command, so the database changes
+#     (`npm run migrate:deploy`) run at the END of the build command instead.
+#   - The free web service sleeps after 15 minutes without visitors. An uptime
+#     monitor opening /health/ready every 10 minutes keeps it awake (and keeps
+#     the nightly jobs able to fire).
+#   - A free Key Value keeps nothing on disk: a restart wipes the job
+#     schedules. The app puts them back by itself on every start and every
+#     10 minutes, and /health/ready answers 503 naming `schedules` while any
+#     is missing.
+#
+# To use it: Render dashboard → New → Blueprint → repository Labouraos →
+# "Blueprint Path" = render.free.yaml. Or create the two parts by hand
+# (DEPLOY.md shows both ways).
+
+services:
+  - type: web
+    name: laboura-test
+    runtime: node
+    plan: free
+    region: singapore
+    # Builds the API, the web app and the field app, then applies every
+    # database change not yet in Supabase (free services have no
+    # Pre-Deploy Command). If the migration step fails, the deploy fails and
+    # the previous version keeps running.
+    buildCommand: npm ci --include=dev && npx prisma generate && npm run build && npm run migrate:deploy
+    startCommand: npm run start:prod
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      # One process serves the site AND runs the jobs (src/common/process/process-role.ts).
+      - key: PROCESS_ROLE
+        value: all
+      # VERIFY ON FIRST DEPLOY: 1 = Render's own proxy. If the address shown on
+      # Team & Access → Devices & logins is not your own public address, raise
+      # it by one until it matches (DEPLOY.md, "Free tier for testing", step F11).
+      - key: TRUST_PROXY_HOPS
+        value: "1"
+
+      # --- Database (Supabase, Mumbai) ---
+      # Transaction pooler, port 6543:
+      #   ...pooler.supabase.com:6543/postgres?pgbouncer=true&connection_limit=5&sslmode=require
+      - key: DATABASE_URL
+        sync: false
+      # Session pooler, port 5432 (used only to run migrations):
+      #   ...pooler.supabase.com:5432/postgres?sslmode=require
+      - key: DIRECT_URL
+        sync: false
+
+      # --- Job queue (free Render Key Value, private network: no TLS, no password) ---
+      - key: REDIS_HOST
+        fromService:
+          type: keyvalue
+          name: laboura-test-redis
+          property: host
+      - key: REDIS_PORT
+        fromService:
+          type: keyvalue
+          name: laboura-test-redis
+          property: port
+      - key: REDIS_TLS
+        value: "false"
+      # /health/ready answers 503 naming `worker` or `schedules` when the jobs stop.
+      - key: WORKER_HEARTBEAT_CHECK
+        value: "true"
+
+      # --- Secrets Render generates (never type these) ---
+      - key: JWT_SECRET
+        generateValue: true
+      - key: LOGIN_CODE_SECRET
+        generateValue: true
+      - key: STAFF_BOOTSTRAP_SECRET
+        generateValue: true
+      - key: CALL_ROUTING_KEY
+        generateValue: true
+      - key: PAYOUT_ACCOUNT_KEY
+        generateValue: true
+      - key: JWT_EXPIRES_IN
+        value: "15m"
+
+      # --- Must be filled before the first start ---
+      # https://laboura-test.onrender.com (the address Render shows on the service page)
+      - key: PUBLIC_APP_URL
+        sync: false
+
+      # --- Uploaded files (Supabase Storage). Production refuses to start otherwise. ---
+      - key: CANDIDATE_PHOTO_STORAGE_MODE
+        value: supabase
+      - key: BUSINESS_PHOTO_STORAGE_MODE
+        value: supabase
+      - key: AGREEMENT_STORAGE_MODE
+        value: supabase
+      - key: RECORDING_STORAGE_MODE
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+
+      # --- Company details (made-up UPI id for testing) ---
+      - key: COMPANY_UPI_VPA
+        sync: false
+      - key: COMPANY_UPI_PAYEE_NAME
+        sync: false
+      - key: COMPANY_LEGAL_NAME
+        value: "Laboura Private Limited"
+      - key: COMPANY_ADDRESS
+        value: "Bengaluru, Karnataka, India"
+
+      # --- Access and alerts (testing only: not behind Cloudflare Access) ---
+      - key: CLOUDFLARE_ACCESS_ENFORCED
+        value: "false"
+      - key: ALERT_WEBHOOK_URL
+        sync: false
+
+      # --- Every vendor in mock mode. OTP codes show on screen in test mode. ---
+      - key: OTP_PROVIDER_MODE
+        value: mock
+      - key: SMS_PROVIDER_MODE
+        value: mock
+      - key: PAYMENT_PROVIDER_MODE
+        value: mock
+      - key: WHATSAPP_PROVIDER_MODE
+        value: mock
+      - key: TELEPHONY_PROVIDER_MODE
+        value: mock
+      - key: KYC_PROVIDER_MODE
+        value: mock
+
+  # Free Key Value: no disk, small connection limit. noeviction is required by
+  # BullMQ (an evicted key is a lost job). An empty ipAllowList means only
+  # Laboura's own Render services can connect, over the private network.
+  - type: keyvalue
+    name: laboura-test-redis
+    plan: free
+    region: singapore
+    maxmemoryPolicy: noeviction
+    ipAllowList: []

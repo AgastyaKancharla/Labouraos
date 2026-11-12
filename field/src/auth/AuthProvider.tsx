@@ -17,6 +17,8 @@ export type AuthStatus = 'loading' | 'signedOut' | 'signedIn';
 
 export interface PendingLogin extends AwaitingCodeResponse {
   staffCode: string;
+  /** The phone the login was started on; the code is checked against it. */
+  deviceId: string;
 }
 
 export type StartLoginResult = { kind: 'awaiting_code' } | { kind: 'signed_in' };
@@ -156,7 +158,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
         ...(totpCode ? { totpCode } : {}),
       });
       if (isAwaitingCode(response)) {
-        setPendingLogin({ ...response, staffCode: staffCode.trim() });
+        setPendingLogin({ ...response, staffCode: staffCode.trim(), deviceId: id });
         return { kind: 'awaiting_code' };
       }
       setSignOutReason(null);
@@ -169,7 +171,13 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
   const verifyCode = useCallback(
     async (code: string) => {
       if (!pendingLogin) throw new Error('No login is waiting for a code');
-      const response = await auth.verifyCode(pendingLogin.loginRequestId, code);
+      // The code works only for this phone and this sign-in (proof from the login answer).
+      const response = await auth.verifyCode(
+        pendingLogin.loginRequestId,
+        code,
+        pendingLogin.deviceId,
+        pendingLogin.loginRequestProof,
+      );
       setSignOutReason(null);
       setPendingLogin(null);
       await store.start(response.accessToken, response.staff, response.sessionId ?? null, response.refreshToken ?? null);

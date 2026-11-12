@@ -85,7 +85,7 @@ describe('Phase 10 Task 7: seeded staff log in by staff code', () => {
 
     const verified = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
-      .send({ loginRequestId: waiting.body.loginRequestId, code: shown.body.code });
+      .send({ loginRequestId: waiting.body.loginRequestId, code: shown.body.code, deviceId: 'seed-device-CA-00001', loginRequestProof: waiting.body.loginRequestProof });
     expect(verified.status).toBe(200);
     expect(verified.body.accessToken).toEqual(expect.any(String));
   }, 120000);

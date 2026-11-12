@@ -79,6 +79,8 @@ describe('Staff Authentication', () => {
     const response = await authService.verifyLoginCode(
       waiting.loginRequestId,
       loginCodeFor(waiting.loginRequestId),
+      undefined,
+      { deviceId, loginRequestProof: waiting.loginRequestProof },
     );
 
     expect(response).toBeDefined();
@@ -142,6 +144,8 @@ describe('Staff Authentication', () => {
     const response = await authService.verifyLoginCode(
       waiting.loginRequestId,
       loginCodeFor(waiting.loginRequestId),
+      undefined,
+      { deviceId, loginRequestProof: waiting.loginRequestProof },
     );
 
     const staffObj = response.staff;

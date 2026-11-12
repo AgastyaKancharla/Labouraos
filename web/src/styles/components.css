@@ -1355,6 +1355,47 @@ th[aria-sort='descending'] .lb-sort {
   cursor: default !important;
 }
 
+/* OTP test mode strip (pretend vendors only) */
+.lb-testmode {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 130;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: calc(100vw - 32px);
+  padding: 10px 14px;
+  border-radius: 10px;
+  background: #fff4c2;
+  color: #4a3b00;
+  border: 1px solid #e8c547;
+  box-shadow: 0 8px 24px rgba(74, 59, 0, 0.18);
+  font-size: 14px;
+}
+.lb-testmode strong {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.lb-testmode span {
+  font-size: 12px;
+}
+.lb-testmode button {
+  background: none;
+  border: 0;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+  color: inherit;
+}
+@media (max-width: 480px) {
+  .lb-testmode span {
+    display: none;
+  }
+}
+
 /* Language picker in the call agent console header (FA03 design's "EN ▾"). */
 .lb-lang-select {
   background: rgba(255, 255, 255, 0.14);

@@ -2,6 +2,7 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Queue, Worker } from 'bullmq';
 import { RetentionService, RetentionSummary } from '../modules/retention/retention.service';
 import { dailyInIndia } from './job-schedules';
+import { runsJobs } from '../common/process/process-role';
 
 export const RETENTION_CLEANUP_QUEUE = 'retention-cleanup';
 export const RETENTION_CLEANUP_SWEEP = 'daily-retention-cleanup';
@@ -66,7 +67,7 @@ export class RetentionCleanupJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') return;
+    if (!runsJobs()) return;
     try {
       await this.schedule();
       this.getWorker();

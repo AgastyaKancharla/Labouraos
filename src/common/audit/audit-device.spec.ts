@@ -86,7 +86,7 @@ describe('Audit rows record the device and the network', () => {
     const verified = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
       .set('X-Forwarded-For', '10.91.4.20')
-      .send({ loginRequestId: res.body.loginRequestId, code: loginCodeFor(res.body.loginRequestId) });
+      .send({ loginRequestId: res.body.loginRequestId, code: loginCodeFor(res.body.loginRequestId), deviceId: deviceId, loginRequestProof: res.body.loginRequestProof });
     expect(verified.status).toBe(200);
   });
 
@@ -101,12 +101,12 @@ describe('Audit rows record the device and the network', () => {
     await request(app.getHttpServer())
       .post('/auth/login/verify-code')
       .set('X-Forwarded-For', '203.0.113.30')
-      .send({ loginRequestId: res.body.loginRequestId, code: wrong })
+      .send({ loginRequestId: res.body.loginRequestId, code: wrong, deviceId: deviceId, loginRequestProof: res.body.loginRequestProof })
       .expect(401);
     const verified = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
       .set('X-Forwarded-For', '10.91.4.21')
-      .send({ loginRequestId: res.body.loginRequestId, code: loginCodeFor(res.body.loginRequestId) });
+      .send({ loginRequestId: res.body.loginRequestId, code: loginCodeFor(res.body.loginRequestId), deviceId: deviceId, loginRequestProof: res.body.loginRequestProof });
     expect(verified.status).toBe(200);
     const wrongRow = await prisma.auditLog.findFirstOrThrow({ where: { actorId: staff.id, action: 'login_code.wrong_code' } });
     expect([wrongRow.deviceId, wrongRow.deviceName, wrongRow.network]).toEqual([deviceId, 'Field phone (android)', 'outside_office']);

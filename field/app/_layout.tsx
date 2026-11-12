@@ -9,6 +9,7 @@ import { AuthProvider, useAuth } from '@/auth/AuthProvider';
 import { OfflineQueueProvider } from '@/device/offline-queue';
 import { I18nProvider } from '@/i18n';
 import { colors, useAppFonts } from '@/theme';
+import { TestModeBanner } from '@/components/TestModeBanner';
 
 /** Records taps for the 1-hour idle limit, without stealing them. */
 function ActivityTracker({ children }: { children: React.ReactNode }) {
@@ -33,6 +34,7 @@ export default function RootLayout() {
               <ActivityTracker>
                 <StatusBar style="light" />
                 <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: colors.bg } }} />
+                <TestModeBanner />
               </ActivityTracker>
             </OfflineQueueProvider>
           </AuthProvider>

@@ -1,5 +1,6 @@
 import { reasonFromMessage, sessionStore } from '../../auth/session';
 import { ApiError, apiErrorFromBody } from './errors';
+import { announceTestMode } from './testMode';
 
 /**
  * The one way screens talk to the Nest API. Same origin (the app is served
@@ -78,6 +79,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     }
     throw error;
   }
+  announceTestMode(parsed);
   return parsed as T;
 }
 

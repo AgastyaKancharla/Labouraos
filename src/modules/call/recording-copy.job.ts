@@ -7,8 +7,10 @@ import {
   RecordingDownloader,
   RecordingStorage,
 } from './recording-storage';
+import { runsJobs } from '../../common/process/process-role';
 
 export const RECORDING_COPY_QUEUE = 'recording-copy';
+export const RECORDING_QUEUE_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
@@ -22,7 +24,7 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
   ) {}
 
   async onModuleInit(): Promise<void> {
-    if (process.env.PROCESS_ROLE !== 'worker') {
+    if (!runsJobs()) {
       return;
     }
     try {
@@ -63,8 +65,15 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
   /** Queues another attempt. A failure here is logged and not shown to agents. */
   async schedule(callRecordId: string, recordingUrl: string): Promise<void> {
     const queue = new Queue(RECORDING_COPY_QUEUE, { connection: this.connection() });
+    let timer: NodeJS.Timeout | undefined;
     try {
-      await queue.add(
+      // L14: with Redis down the telephony webhook must not hang; give up after
+      // a few seconds (the caller logs it, the recording link stays the vendor's).
+      await Promise.race([
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error(`Recording copy queue did not answer within ${RECORDING_QUEUE_TIMEOUT_MS}ms`)), RECORDING_QUEUE_TIMEOUT_MS);
+        }),
+        queue.add(
         'copy-recording',
         { callRecordId, recordingUrl },
         {
@@ -73,9 +82,11 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
           backoff: { type: 'exponential', delay: 30000 },
           removeOnComplete: true,
         },
-      );
+      ),
+      ]);
     } finally {
-      await queue.close();
+      if (timer) clearTimeout(timer);
+      await Promise.race([queue.close(), new Promise((resolve) => setTimeout(resolve, 1000).unref?.())]).catch(() => undefined);
     }
   }
 
@@ -85,6 +96,7 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
       port: Number(process.env.REDIS_PORT) || 6379,
       password: process.env.REDIS_PASSWORD || undefined,
       maxRetriesPerRequest: null as null,
+      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
       tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
     };
   }

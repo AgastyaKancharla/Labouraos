@@ -26,6 +26,10 @@ interface SystemExtras {
   jobs: { key: string; label: string; runsAt: string; lastRunAt: string | null; result: string | null; runPath: string | null }[];
   intervals: { key: string; label: string; every: string; runPath?: string }[];
 }
+interface Schedules {
+  allPresent: boolean;
+  jobs: { key: string; label: string; present: boolean }[];
+}
 const TONE = { healthy: 'good', degraded: 'warn', unhealthy: 'danger' } as const;
 const WORD = { healthy: 'Running', degraded: 'Slow', unhealthy: 'Down' } as const;
 
@@ -33,6 +37,10 @@ export default function SystemScreen() {
   const to = useScreenPath();
   const status = useQuery({ queryKey: ['system', 'status'], queryFn: () => api.get<Status>('/system/status/details'), refetchInterval: 60_000 });
   const extras = useQuery({ queryKey: ['ceo', 'system'], queryFn: () => api.get<SystemExtras>('/ceo/system'), refetchInterval: 60_000 });
+  // A free Render Key Value forgets the job schedules when it restarts; the
+  // server puts them back within 10 minutes, and the CEO can do it at once here.
+  const schedules = useQuery({ queryKey: ['jobs', 'schedules'], queryFn: () => api.get<Schedules>('/jobs/schedules'), refetchInterval: 60_000 });
+  const missingSchedules = (schedules.data?.jobs ?? []).filter((j) => !j.present);
   const st = status.data;
   const x = extras.data;
   const comps = st?.components ?? [];
@@ -54,7 +62,7 @@ export default function SystemScreen() {
             run={async () => {
               for (const j of runnable) await api.post(j.runPath as string);
             }}
-            success="Nightly jobs started"
+            success="Nightly jobs ran"
           />
         }
       />
@@ -65,6 +73,24 @@ export default function SystemScreen() {
         <StatTile label="Messages delivered" value={x ? pct(x.messages.delivered, x.messages.sent) : '—'} tone="cyan" loading={extras.isPending} />
         <StatTile label="Mode" value={st ? humanize(st.environment) : '—'} tone="navy" detail={st ? `Up ${st.uptimeFormatted} · v${st.version}` : undefined} loading={status.isPending} />
       </StatGrid>
+      {missingSchedules.length > 0 && (
+        <Card title="Job schedules missing">
+          <div className="ceo-note">
+            {missingSchedules.length} job schedule(s) are not in the job queue, usually because it restarted: {missingSchedules.map((j) => j.label).join(', ')}.
+            They come back within 10 minutes by themselves. Use Run now below for any job that should have run meanwhile.
+          </div>
+          <ActionButton
+            label="Put schedules back now"
+            variant="primary"
+            title="Register every job schedule again"
+            run={async () => {
+              await api.post('/jobs/schedules/repair');
+              await schedules.refetch();
+            }}
+            success="Job schedules registered again"
+          />
+        </Card>
+      )}
       {status.error ? (
         <ErrorState error={status.error} onRetry={() => void status.refetch()} />
       ) : (
@@ -109,7 +135,7 @@ export default function SystemScreen() {
                       <td>{j.runsAt}</td>
                       <td>{j.lastRunAt ? formatDateTimeIST(j.lastRunAt) : <span className="ceo-sub">Not recorded</span>}</td>
                       <td>{j.result ? humanize(j.result) : '—'}</td>
-                      <td>{j.runPath && <ActionButton label="Run now" title={`Run "${j.label}" now`} run={() => api.post(j.runPath as string)} success={`${j.label} started`} />}</td>
+                      <td>{j.runPath && <ActionButton label="Run now" title={`Run "${j.label}" now`} run={() => api.post(j.runPath as string)} success={`${j.label} ran`} />}</td>
                     </tr>
                   ))}
                   {x?.intervals.map((j) => (
@@ -117,7 +143,7 @@ export default function SystemScreen() {
                       <td>{j.label}</td>
                       <td>{j.every}</td>
                       <td colSpan={2}><span className="ceo-sub">Running</span></td>
-                      <td>{j.runPath && <ActionButton label="Run now" title={`Run "${j.label}" now`} run={() => api.post(j.runPath as string)} success={`${j.label} started`} />}</td>
+                      <td>{j.runPath && <ActionButton label="Run now" title={`Run "${j.label}" now`} run={() => api.post(j.runPath as string)} success={`${j.label} ran`} />}</td>
                     </tr>
                   ))}
                 </tbody>

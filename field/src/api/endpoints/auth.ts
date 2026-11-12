@@ -5,6 +5,8 @@ import type { StaffIdentity } from '@/auth/session';
 export interface AwaitingCodeResponse {
   status: 'awaiting_code';
   loginRequestId: string;
+  /** Sent back with the code and the same device id: only this sign-in has it. */
+  loginRequestProof: string;
   /** ISO time the code request expires (5 minutes). */
   expiresAt: string;
 }
@@ -46,8 +48,9 @@ export function isAwaitingCode(response: LoginResponse): response is AwaitingCod
 
 export const authApi = (api: ApiClient) => ({
   login: (body: LoginBody) => api.post<LoginResponse>('/auth/login', body, { auth: false }),
-  verifyCode: (loginRequestId: string, code: string) =>
-    api.post<TokenResponse>('/auth/login/verify-code', { loginRequestId, code }, { auth: false }),
+  /** The code works only for the device and sign-in that asked for it. */
+  verifyCode: (loginRequestId: string, code: string, deviceId: string, loginRequestProof: string) =>
+    api.post<TokenResponse>('/auth/login/verify-code', { loginRequestId, code, deviceId, loginRequestProof }, { auth: false }),
   refresh: () => api.post<{ accessToken: string; sessionId: string }>('/auth/refresh'),
   /**
    * No bearer token (it may have run out while the app was closed). The

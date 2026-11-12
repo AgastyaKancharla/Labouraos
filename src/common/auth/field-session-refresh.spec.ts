@@ -67,7 +67,7 @@ describe('Laboura Field: session restore with a refresh token', () => {
     const res = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
       .set('X-Forwarded-For', freshIp())
-      .send({ loginRequestId: waiting.body.loginRequestId, code: loginCodeFor(waiting.body.loginRequestId) });
+      .send({ loginRequestId: waiting.body.loginRequestId, code: loginCodeFor(waiting.body.loginRequestId), deviceId: deviceId, loginRequestProof: waiting.body.loginRequestProof });
     expect(res.status).toBe(200);
     return {
       staff,

@@ -35,6 +35,7 @@ import { publicLink } from '../../common/public-link';
 import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
+import { testModeFields } from '../../common/otp/otp-test-mode';
 
 interface ConsentLinkTokenBase {
   token: string;
@@ -585,7 +586,7 @@ export class ConsentLinkService {
     // Every public "Send code" costs an SMS: limited per link and per phone on the server.
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), phone, this.clock.now());
     const otp = await this.otpService.sendOtp(phone);
-    return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(phone) };
+    return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(phone), ...testModeFields(otp) };
   }
 
   async submitConsent(dto: SubmitConsentDto) {

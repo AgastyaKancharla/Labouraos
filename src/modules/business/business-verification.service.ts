@@ -16,6 +16,7 @@ import {
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessClock } from './business-clock';
+import { testModeFields } from '../../common/otp/otp-test-mode';
 
 const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up'] as const;
 
@@ -251,7 +252,7 @@ export class BusinessVerificationService {
     if (!assignment) throw new ForbiddenException('Only the assigned field agent may request owner presence OTP');
     const result = await this.otpService.sendOtp(assignment.business.phone);
     const digits = assignment.business.phone.replace(/\D/g, '');
-    return { success: true, requestId: result.requestId, phone: `******${digits.slice(-4)}` };
+    return { success: true, requestId: result.requestId, phone: `******${digits.slice(-4)}`, ...testModeFields(result) };
   }
 
   async advanceToPendingTlCheckIfReady(businessId: string, changedByStaffId?: string | null) {

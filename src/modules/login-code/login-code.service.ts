@@ -200,10 +200,16 @@ export class LoginCodeService {
       }
       throw new UnauthorizedException('Login code is not valid');
     }
-    const used = await this.prisma.loginCodeRequest.update({
-      where: { id: request.id },
+    // L9: claimed with a conditional update, so two verify calls in the same
+    // instant cannot both turn one code into a session.
+    const claimed = await this.prisma.loginCodeRequest.updateMany({
+      where: { id: request.id, status: { notIn: ['used', 'refused', 'expired'] } },
       data: { status: 'used', usedAt: this.clock.now() },
     });
+    if (claimed.count !== 1) {
+      throw new UnauthorizedException('Login code has already been used');
+    }
+    const used = await this.prisma.loginCodeRequest.findUniqueOrThrow({ where: { id: request.id } });
     await this.auditService.log({
       actorId: request.staffId,
       action: 'login_code.used',

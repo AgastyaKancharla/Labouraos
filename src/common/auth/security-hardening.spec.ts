@@ -292,6 +292,8 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
         .send({
           loginRequestId: waiting.body.loginRequestId,
           code: loginCodeFor(waiting.body.loginRequestId),
+          deviceId: 'ca-session-device',
+          loginRequestProof: waiting.body.loginRequestProof,
         });
 
       expect(loginRes.status).toBe(200);
@@ -343,6 +345,8 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
         .send({
           loginRequestId: caWaiting.body.loginRequestId,
           code: loginCodeFor(caWaiting.body.loginRequestId),
+          deviceId: 'ca-session-device',
+          loginRequestProof: caWaiting.body.loginRequestProof,
         });
 
       const caToken = caLogin.body.accessToken;

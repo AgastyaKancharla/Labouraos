@@ -28,6 +28,7 @@ import { InterviewService, NOT_SELECTED_REASONS } from '../vacancy/interview.ser
 import { isUnconfirmedVacancyStatus } from '../vacancy/vacancy-confirmation.service';
 import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
 import { FieldVisitService } from '../field-visit/field-visit.service';
+import { testModeFields } from '../../common/otp/otp-test-mode';
 
 export interface SellingActor {
   id: string;
@@ -401,6 +402,7 @@ export class FieldSellingService {
       contactRole: contact.role,
       resendAvailableAt: result.resendAvailableAt,
       resendsLeft: result.resendsLeft,
+      ...testModeFields(result),
     };
   }
 

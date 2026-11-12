@@ -1,5 +1,5 @@
 import { Controller, Get, HttpException, HttpStatus } from '@nestjs/common';
-import { HealthService, WorkerHeartbeatStatus } from './health.service';
+import { HealthService, ScheduleCheckStatus, WorkerHeartbeatStatus } from './health.service';
 import { Public } from '../common/rbac/public.decorator';
 
 @Controller('health')
@@ -30,12 +30,14 @@ export class HealthController {
       lastCompletedAt: string | null;
     };
     worker?: WorkerHeartbeatStatus;
+    schedules?: ScheduleCheckStatus;
   }> {
     // Quick readiness probe checking PostgreSQL and Redis with a 2-second timeout.
     // Pointed to by monitoring and alert systems; returns 503 naming which dependency failed.
     // Note: Sweep staleness is reported in body as informational and never forces a 503.
     // With WORKER_HEARTBEAT_CHECK=true (set on Render's web service) a missing
-    // background-worker heartbeat also answers 503, naming `worker`.
+    // background-worker heartbeat also answers 503, naming `worker`, and so
+    // does a job schedule missing from Redis, naming `schedules`.
     const result = await this.healthService.checkReadiness();
     if (!result.ready) {
       throw new HttpException(
@@ -43,6 +45,7 @@ export class HealthController {
           status: 'unavailable',
           failed: result.failed,
           errors: result.errors,
+          ...(result.schedules ? { schedules: result.schedules } : {}),
           message: `Readiness check failed for: ${result.failed.join(', ')}`,
         },
         HttpStatus.SERVICE_UNAVAILABLE,
@@ -55,6 +58,7 @@ export class HealthController {
       redis: 'ok',
       ...(result.sweep ? { sweep: result.sweep } : {}),
       ...(result.worker ? { worker: result.worker } : {}),
+      ...(result.schedules ? { schedules: result.schedules } : {}),
     };
   }
 }

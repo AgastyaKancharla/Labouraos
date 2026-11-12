@@ -22,6 +22,7 @@ import {
 } from './payout-account-key';
 import { CreatePayoutLinkDto } from './dto/create-payout-link.dto';
 import { SubmitPayoutAccountDto } from './dto/submit-payout-account.dto';
+import { testModeFields } from '../../common/otp/otp-test-mode';
 
 function maskPhone(phone: string): string {
   const digits = phone.replace(/\D/g, '');
@@ -190,6 +191,7 @@ export class PayoutAccountService {
       success: true,
       requestId: otp.requestId,
       maskedPhone: maskPhone(record.phone),
+      ...testModeFields(otp),
     };
   }
 

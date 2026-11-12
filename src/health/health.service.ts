@@ -9,11 +9,19 @@ import {
   WORKER_HEARTBEAT_KEY,
   WorkerHeartbeatValue,
 } from '../common/redis/worker-heartbeat';
+import { missingSchedules } from '../jobs/job-schedule-check';
 
 export interface WorkerHeartbeatStatus {
   status: 'alive' | 'missing' | 'unreachable';
   lastBeatAt: string | null;
   secondsAgo: number | null;
+  error?: string;
+}
+
+export interface ScheduleCheckStatus {
+  status: 'ok' | 'missing' | 'unreachable';
+  /** Keys of the repeating jobs whose schedule is not in Redis. */
+  missing: string[];
   error?: string;
 }
 
@@ -27,6 +35,7 @@ export interface ReadinessCheckResult {
     lastCompletedAt: string | null;
   };
   worker?: WorkerHeartbeatStatus;
+  schedules?: ScheduleCheckStatus;
 }
 
 /** True when this process should treat a missing worker heartbeat as not ready. */
@@ -45,11 +54,12 @@ export class HealthService {
     const errors: Record<string, string> = {};
 
     const checkWorker = workerHeartbeatCheckEnabled();
-    const [dbResult, redisResult, sweep, worker] = await Promise.all([
+    const [dbResult, redisResult, sweep, worker, schedules] = await Promise.all([
       this.checkDatabase(timeoutMs),
       this.checkRedis(timeoutMs),
       this.checkSweepInfo(),
       checkWorker ? this.checkWorkerHeartbeat(timeoutMs) : Promise.resolve(undefined),
+      checkWorker ? this.checkSchedules(timeoutMs) : Promise.resolve(undefined),
     ]);
 
     if (!dbResult.healthy) {
@@ -70,13 +80,60 @@ export class HealthService {
           : `Could not read the worker heartbeat: ${worker.error ?? 'Redis unreachable'}`;
     }
 
+    if (schedules && schedules.status !== 'ok') {
+      failed.push('schedules');
+      errors.schedules =
+        schedules.status === 'missing'
+          ? `Job schedules missing from Redis: ${schedules.missing.join(', ')}. They are put back within 10 minutes by the process that runs the jobs; a restart does it at once.`
+          : `Could not read the job schedules: ${schedules.error ?? 'Redis unreachable'}`;
+    }
+
     return {
       ready: failed.length === 0,
       failed,
       errors,
       sweep,
       ...(worker ? { worker } : {}),
+      ...(schedules ? { schedules } : {}),
     };
+  }
+
+  /**
+   * Checks that every repeating job still has its schedule in Redis. A free
+   * Render Key Value loses them on a restart; without this the jobs would stop
+   * while the heartbeat still said "alive".
+   */
+  async checkSchedules(timeoutMs = 2000): Promise<ScheduleCheckStatus> {
+    const client = new Redis({
+      ...redisClientOptions(),
+      connectTimeout: timeoutMs,
+      lazyConnect: true,
+      maxRetriesPerRequest: 0,
+      retryStrategy: () => null,
+    });
+    client.on('error', () => undefined);
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      const missing = await Promise.race([
+        client.connect().then(() => missingSchedules(client)),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`Redis did not answer within ${timeoutMs}ms`)),
+            timeoutMs,
+          );
+        }),
+      ]);
+      return missing.length
+        ? { status: 'missing', missing: missing.map((m) => m.key) }
+        : { status: 'ok', missing: [] };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      this.logger.warn(`Readiness job schedule check failed: ${msg}`);
+      return { status: 'unreachable', missing: [], error: msg };
+    } finally {
+      if (timer) clearTimeout(timer);
+      client.disconnect();
+    }
   }
 
   /** Reads the heartbeat the worker writes to Redis every 30 seconds. */

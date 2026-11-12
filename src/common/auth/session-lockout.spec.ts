@@ -108,7 +108,7 @@ describe('Phase 10 Task 5: sessions, lockout, lock and unlock', () => {
     expect(shown.body.code).toBe(loginCodeFor(waiting.body.loginRequestId));
     const verified = await request(app.getHttpServer())
       .post('/auth/login/verify-code')
-      .send({ loginRequestId: waiting.body.loginRequestId, code: shown.body.code });
+      .send({ loginRequestId: waiting.body.loginRequestId, code: shown.body.code, deviceId: deviceId, loginRequestProof: waiting.body.loginRequestProof });
     expect(verified.status).toBe(200);
     return {
       token: verified.body.accessToken as string,

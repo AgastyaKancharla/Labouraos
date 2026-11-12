@@ -136,6 +136,28 @@ export class RbacGuard implements CanActivate {
     }
 
     if (roleRule.scope === 'own_team') {
+      // M3: a Team Lead reads the job seekers their own team registered
+      // (themselves or an agent who reports to them), not the city's. Writes
+      // keep the service's own rule ("only the team lead of the team that
+      // created this record can edit it").
+      if (requiredPermission.resource === 'job_seeker' && action === 'read') {
+        const seeker = await this.getJobSeekerForRequest(request);
+        if (seeker) {
+          const registeredBy = seeker.registeredByStaffId;
+          const inTeam =
+            registeredBy === user.sub ||
+            (registeredBy
+              ? await this.prisma.staff.findFirst({
+                  where: { id: registeredBy, teamLeadId: user.sub },
+                  select: { id: true },
+                })
+              : null);
+          if (!inTeam) {
+            throw new ForbiddenException('Access denied: job seeker is outside your team');
+          }
+          return true;
+        }
+      }
       if (['business', 'vacancy', 'placement'].includes(requiredPermission.resource)) {
         const business = await this.getBusinessForRequest(requiredPermission.resource, request);
         if (business) {
@@ -224,6 +246,18 @@ export class RbacGuard implements CanActivate {
     }
 
     return true;
+  }
+
+  /** The job seeker a /job-seekers/:id… request names (by id or JS- code), or null. */
+  private async getJobSeekerForRequest(
+    request: Request,
+  ): Promise<{ id: string; registeredByStaffId: string | null } | null> {
+    const id = (request.params as Record<string, string | undefined>)?.id;
+    if (!id || !/^\/?job-seekers\//.test(request.path)) return null;
+    return this.prisma.jobSeeker.findFirst({
+      where: { OR: [{ id }, { code: id }] },
+      select: { id: true, registeredByStaffId: true },
+    });
   }
 
   private async getBusinessForRequest(
