@@ -76,7 +76,7 @@ export class AttendanceRequestsController {
     @Req() req: Authed,
     @Param('kind') kind: string,
     @Param('id') id: string,
-    @Body() body: { reason?: string },
+    @Body() body: { reason?: string; fromDate?: string; toDate?: string },
   ) {
     return this.requests.decide(this.actor(req), kind, id, 'approved', body ?? {});
   }

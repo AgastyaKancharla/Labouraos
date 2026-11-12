@@ -37,9 +37,15 @@ export interface RequestView {
   forwarded: { at: string; by: Brief | null; note: string | null } | null;
   decided: { at: string; by: Brief | null; role: string | null; reason: string | null } | null;
   overturned: { at: string; by: Brief | null; reason: string | null } | null;
+  /** A Manager sent it back to the Team Lead (leave and corrections). */
+  sentBack?: { at: string; by: Brief | null; note: string | null } | null;
   canDecide: boolean;
   canForward: boolean;
   canOverturn: boolean;
+  /** Manager: "Send back to the Team Lead" (POST /requests/:ref/send-back {note}). */
+  canSendBack?: boolean;
+  /** Leave: approve only some of the dates (fromDate/toDate with the approval; the rest is rejected). */
+  canApprovePart?: boolean;
   details: Record<string, unknown>;
 }
 

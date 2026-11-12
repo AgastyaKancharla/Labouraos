@@ -22,6 +22,7 @@ export const REASON_TEXT: Record<string, string> = {
   forwarded: 'Forwarded by the Team Lead',
   team_lead_24h: "The Team Lead hasn't answered in 24 hours",
   manager_48h: "The Manager hasn't answered in 48 hours",
+  sent_back: 'Sent back by the Manager',
   manager_own: "Manager's own request",
   finance_own: "Finance's own request",
   no_line: 'No reporting line yet',
@@ -33,6 +34,8 @@ export interface RoutedRequest {
   routeReason: string;
   forwardedAt: Date | null;
   createdAt: Date;
+  /** A Manager sent it back to the Team Lead: the Team Lead's 24 hours start again from here. */
+  sentBackAt?: Date | null;
 }
 
 export interface Placement {
@@ -67,7 +70,8 @@ export function placementOf(request: RoutedRequest, now: Date): Placement {
       placement.managerReason = 'forwarded';
     } else {
       placement.withTeamLead = true;
-      const escalateAt = new Date(request.createdAt.getTime() + TEAM_LEAD_ESCALATE_HOURS * HOUR_MS);
+      const since = request.sentBackAt ?? request.createdAt;
+      const escalateAt = new Date(since.getTime() + TEAM_LEAD_ESCALATE_HOURS * HOUR_MS);
       if (now.getTime() >= escalateAt.getTime()) {
         placement.managerSince = escalateAt;
         placement.managerReason = 'team_lead_24h';

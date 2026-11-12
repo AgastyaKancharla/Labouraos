@@ -28,6 +28,23 @@ interface AgentsBoard {
 }
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+/** "Wed 25 Nov" for a yyyy-mm-dd day. */
+function dayLabel(ymd: string): string {
+  const d = new Date(`${ymd}T00:00:00.000Z`);
+  return Number.isNaN(d.getTime()) ? ymd : `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()].slice(0, 3)}`;
+}
+
+/** Every calendar day from..to (yyyy-mm-dd), inclusive. */
+function daysBetween(from: string, to: string): string[] {
+  const out: string[] = [];
+  const start = new Date(`${from}T00:00:00.000Z`);
+  const end = new Date(`${to}T00:00:00.000Z`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return out;
+  for (let t = start.getTime(); t <= end.getTime() && out.length < 100; t += 86_400_000) out.push(new Date(t).toISOString().slice(0, 10));
+  return out;
+}
 
 /** The "Why it is with you" banner, in the design's longer words. */
 function whyBanner(r: RequestView, tree: ReturnType<typeof treeIndex>, now: Date): string {
@@ -47,8 +64,10 @@ function whyBanner(r: RequestView, tree: ReturnType<typeof treeIndex>, now: Date
  * MG-Req-Ravi (a Team Lead's own leave), MG-Req-Sneha (not answered by the
  * Team Lead in 24 hours) and MG-Req-Vikram (more than 3 planned days), and
  * every other kind of request in the same layout. On GET /requests/:ref;
- * the decision is POST /requests/:ref/decide, a decided one can be
- * overturned with POST /requests/:ref/overturn.
+ * the decision is POST /requests/:ref/decide (for leave, with fromDate/toDate
+ * to approve only some of the days — the rest is rejected with the note),
+ * "Send back to the Team Lead" is POST /requests/:ref/send-back, and a
+ * decided one can be overturned with POST /requests/:ref/overturn.
  */
 export default function ManagerRequestDetail() {
   const { id = '' } = useParams();
@@ -58,6 +77,9 @@ export default function ManagerRequestDetail() {
   const toast = useToast();
   const qc = useQueryClient();
   const [note, setNote] = useState('');
+  const [part, setPart] = useState(false);
+  const [partFrom, setPartFrom] = useState('');
+  const [partTo, setPartTo] = useState('');
   const staff = useTree();
   const tree = useMemo(() => treeIndex(staff.data), [staff.data]);
   const detail = useQuery({ queryKey: ['requests', 'one', id], queryFn: () => api.get<RequestDetail>(`/requests/${encodeURIComponent(id)}`) });
@@ -68,9 +90,15 @@ export default function ManagerRequestDetail() {
   const agents = useQuery({ queryKey: ['manager', 'agents'], queryFn: () => api.get<AgentsBoard>('/manager/agents'), enabled: Boolean(personId) });
 
   const act = useMutation({
-    mutationFn: (decision: 'approved' | 'rejected') => api.post(`/requests/${encodeURIComponent(id)}/decide`, { decision, reason: note.trim() || undefined }),
+    mutationFn: (decision: 'approved' | 'rejected' | 'part') =>
+      api.post(
+        `/requests/${encodeURIComponent(id)}/decide`,
+        decision === 'part'
+          ? { decision: 'approved', reason: note.trim(), fromDate: partFrom, toDate: partTo }
+          : { decision, reason: note.trim() || undefined },
+      ),
     onSuccess: (_res, decision) => {
-      toast.success(decision === 'approved' ? 'Approved · closed for everyone' : 'Rejected');
+      toast.success(decision === 'approved' ? 'Approved · closed for everyone' : decision === 'part' ? 'Those days approved · the rest rejected' : 'Rejected');
       void qc.invalidateQueries();
       navigate(to('MG-Requests'));
     },
@@ -166,6 +194,11 @@ export default function ManagerRequestDetail() {
   }
 
   const showOverLimit = isLeave && planned && r.whyWithYou === 'over_limit' && r.status === 'pending';
+  const range = r.canApprovePart && typeof d.fromDate === 'string' && typeof d.toDate === 'string' ? daysBetween(d.fromDate, d.toDate) : [];
+  const from = partFrom || range[0] || '';
+  const until = partTo && partTo >= from ? partTo : range[range.length - 1] || '';
+  const partIsAll = from === range[0] && until === range[range.length - 1];
+  const lead = tree.leadOf(personId);
 
   return (
     <div className="lb-page">
@@ -173,7 +206,7 @@ export default function ManagerRequestDetail() {
       {showOverLimit && (
         <div className="panel mg-banner mg-banner--warn" role="note">
           ⚠ {who} has already taken {taken} planned leave day{taken === 1 ? '' : 's'} in {monthName}. With {days === 1 ? 'this day' : `these ${days} days`} it becomes {taken + pendingOthers + days} — more than 3, so you decide. You can approve
-          it, or reject it with a reason.
+          all of it, part of it (for example 3 days), or reject it with a reason.
         </div>
       )}
       {r.status === 'pending' && (
@@ -193,15 +226,81 @@ export default function ManagerRequestDetail() {
             Note to them (needed if you reject)
             <textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional when approving" rows={3} />
           </label>
+          {range.length > 1 && (
+            <div className="mg-part" style={{ marginTop: 12 }}>
+              <label className="mg-check">
+                <input type="checkbox" checked={part} onChange={(e) => setPart(e.target.checked)} /> Approve only some of the days
+              </label>
+              {part && (
+                <div className="mg-part__row">
+                  <label className="field">
+                    From
+                    <select
+                      value={from}
+                      onChange={(e) => {
+                        setPartFrom(e.target.value);
+                        if (partTo && partTo < e.target.value) setPartTo('');
+                      }}
+                    >
+                      {range.map((k) => (
+                        <option key={k} value={k}>
+                          {dayLabel(k)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="field">
+                    To
+                    <select value={until} onChange={(e) => setPartTo(e.target.value)}>
+                      {range
+                        .filter((k) => k >= from)
+                        .map((k) => (
+                          <option key={k} value={k}>
+                            {dayLabel(k)}
+                          </option>
+                        ))}
+                    </select>
+                  </label>
+                </div>
+              )}
+              {part && <p className="ceo-sub">The other days are rejected with your note. Weekly days off and holidays are not counted as leave.</p>}
+            </div>
+          )}
           <div className="mg-actions" style={{ marginTop: 12 }}>
-            <Button variant="success" onClick={() => act.mutate('approved')} loading={act.isPending && act.variables === 'approved'}>
-              {isLeave ? 'Approve leave' : 'Approve'}
-            </Button>
+            {part && range.length > 1 ? (
+              <Button
+                variant="success"
+                onClick={() => {
+                  setPartFrom(from);
+                  setPartTo(until);
+                  act.mutate('part');
+                }}
+                disabled={!note.trim() || partIsAll}
+                loading={act.isPending && act.variables === 'part'}
+              >
+                Approve {from === until ? dayLabel(from) : `${dayLabel(from)} – ${dayLabel(until)}`}
+              </Button>
+            ) : (
+              <Button variant="success" onClick={() => act.mutate('approved')} loading={act.isPending && act.variables === 'approved'}>
+                {isLeave ? 'Approve leave' : 'Approve'}
+              </Button>
+            )}
             <Button variant="danger" onClick={() => act.mutate('rejected')} disabled={!note.trim()} loading={act.isPending && act.variables === 'rejected'}>
               Reject
             </Button>
+            {r.canSendBack && (
+              <ActionButton
+                label="Send back to the Team Lead"
+                title={`Send back to ${lead ? `${lead.name} (TL)` : 'the Team Lead'}`}
+                description={`It stays pending and goes back to ${lead ? `${firstName(lead.name)}'s` : 'their'} list to decide. If it is still not answered in 24 hours it comes back to you. More than 3 planned days in a month still need you.`}
+                reason={{ label: 'Note to the Team Lead', required: true }}
+                confirmLabel="Send back"
+                run={({ reason }) => api.post(`/requests/${encodeURIComponent(r.ref)}/send-back`, { note: reason })}
+                success="Sent back to the Team Lead"
+              />
+            )}
           </div>
-          {!note.trim() && <p className="ceo-sub">Write a note to reject.</p>}
+          {!note.trim() && <p className="ceo-sub">{part ? 'Write a note: the days you do not approve are rejected with it.' : 'Write a note to reject.'}</p>}
         </Card>
       ) : (
         <Card title="Decision">

@@ -6,7 +6,7 @@ export type AttendanceRequestKind = 'leave' | 'correction';
 
 /**
  * The notification bells for leave and correction requests (Phase 21 Task 6).
- * Called when a request is routed, forwarded, decided or overturned. Each call
+ * Called when a request is routed, forwarded, sent back, decided or overturned. Each call
  * makes the bells match where the request is now (request-routing.ts): the
  * approver it is with gets it, the ones it has left have it cleared with who
  * moved it, and the requester hears the decision. Escalation after 24 and 48
@@ -47,5 +47,16 @@ export class AttendanceRequestHooks {
 
   async requestOverturned(kind: AttendanceRequestKind, requestId: string): Promise<void> {
     await this.sync(kind, requestId, 'overturned');
+  }
+
+  /** A Manager sent it back: the Team Lead's bell rings again and the Manager's clears. */
+  async requestSentBack(kind: AttendanceRequestKind, requestId: string): Promise<void> {
+    this.logger.debug(`${kind} request ${requestId} sent back to the Team Lead`);
+    if (!this.bells) return;
+    try {
+      await this.bells.requestSentBack(kind, requestId, this.clock.now());
+    } catch (error) {
+      this.logger.warn(`Bell for ${kind} request ${requestId} failed: ${(error as Error).message}`);
+    }
   }
 }

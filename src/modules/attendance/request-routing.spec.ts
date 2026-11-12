@@ -68,4 +68,13 @@ describe('Phase 21 Task 4: where a request sits', () => {
     expect(decided).toMatchObject({ withTeamLead: false, withManager: false, withCeo: false });
     expect(whereLabel(decided, 'approved')).toBe('decided');
   });
+
+  it('sent back by the Manager: with the Team Lead only, and the 24 hours start again from the send-back', () => {
+    // Over the limit, it went to the Manager; the Manager sent it back on day 3.
+    const sentBack = request({ routedToRole: 'team_lead', routeReason: 'sent_back', sentBackAt: hours(50) });
+    expect(placementOf(sentBack, hours(73.99))).toMatchObject({ withTeamLead: true, withManager: false, withCeo: false });
+    expect(placementOf(sentBack, hours(74))).toMatchObject({ withTeamLead: true, withManager: true, managerReason: 'team_lead_24h', withCeo: false });
+    expect(placementOf(sentBack, hours(122)).withCeo).toBe(true);
+    expect(whereLabel(placementOf(sentBack, hours(51)), 'pending')).toBe('with_team_lead');
+  });
 });

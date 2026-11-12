@@ -268,6 +268,51 @@ describe('One request (MG-Req-*)', () => {
     await waitFor(() => expect(api.calls('POST /requests/leave.l1/decide')[0].body).toEqual({ decision: 'rejected', reason: 'Month-end closing that week' }));
   });
 
+  it('over 3 planned days: approves part of it (3 of 5 days) with a note for the rest', async () => {
+    const detail: Detail = { ...vikram, canApprovePart: true, canSendBack: true, history: [] };
+    const api = mockApi({ ...common, 'GET /requests/leave.l3': detail, 'GET /manager/staff': staff, 'GET /manager/leave': leave, 'GET /manager/agents': agents, 'POST /requests/leave.l3/decide': vikram, 'GET /requests/waiting': [], 'GET /requests/open': [] });
+    render(<RequestDetail />, '/manager/requests/leave.l3', '/manager/requests/:id');
+    expect(await screen.findByText(/You can approve all of it, part of it \(for example 3 days\), or reject it with a reason\./)).toBeInTheDocument();
+    await userEvent.click(screen.getByLabelText('Approve only some of the days'));
+    await userEvent.selectOptions(screen.getByLabelText('To'), '2026-11-25');
+    const approvePart = screen.getByRole('button', { name: 'Approve Mon 23 Nov – Wed 25 Nov' });
+    expect(approvePart).toBeDisabled();
+    expect(screen.getByText('Write a note: the days you do not approve are rejected with it.')).toBeInTheDocument();
+    await userEvent.type(screen.getByLabelText(/Note to them/), 'Three days; Arun covers his calls');
+    await userEvent.click(approvePart);
+    await waitFor(() =>
+      expect(api.calls('POST /requests/leave.l3/decide')[0].body).toEqual({
+        decision: 'approved',
+        reason: 'Three days; Arun covers his calls',
+        fromDate: '2026-11-23',
+        toDate: '2026-11-25',
+      }),
+    );
+  });
+
+  it('sends a request back to the Team Lead with a note (MG-Req-Sneha)', async () => {
+    const detail: Detail = { ...sneha, canSendBack: true, canApprovePart: false, history: [] };
+    const api = mockApi({ ...common, 'GET /requests/leave.l2': detail, 'GET /manager/staff': staff, 'GET /manager/leave': { ...leave, balances: [] }, 'GET /manager/agents': { rows: [] }, 'POST /requests/leave.l2/send-back': { ...sneha, where: 'with_team_lead' }, 'GET /requests/waiting': [], 'GET /requests/open': [] });
+    render(<RequestDetail />, '/manager/requests/leave.l2', '/manager/requests/:id');
+    expect(await screen.findByText('Leave request · Sneha K')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Approve only some of the days')).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'Send back to the Team Lead' }));
+    const d = await dialog();
+    expect(within(d).getByText(/goes back to Ravi's list to decide/)).toBeInTheDocument();
+    expect(within(d).getByRole('button', { name: 'Send back' })).toBeDisabled();
+    await userEvent.type(within(d).getByLabelText(/Note to the Team Lead/), 'Ravi knows the team plan that day');
+    await userEvent.click(within(d).getByRole('button', { name: 'Send back' }));
+    await waitFor(() => expect(api.calls('POST /requests/leave.l2/send-back')[0].body).toEqual({ note: 'Ravi knows the team plan that day' }));
+  });
+
+  it("offers no Send back on a Team Lead's own leave", async () => {
+    const detail: Detail = { ...ravi, canSendBack: false, history: [] };
+    mockApi({ ...common, 'GET /requests/leave.l1': detail, 'GET /manager/staff': staff, 'GET /manager/leave': { ...leave, balances: [] }, 'GET /manager/agents': { rows: [] }, 'GET /requests/waiting': [], 'GET /requests/open': [] });
+    render(<RequestDetail />, '/manager/requests/leave.l1', '/manager/requests/:id');
+    expect(await screen.findByText('Leave request · Ravi Shankar (Team Lead)')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Send back to the Team Lead' })).toBeNull();
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /requests/leave.l1': apiError(404, 'Not found', 'req-rq2'), 'GET /manager/staff': staff });
     render(<RequestDetail />, '/manager/requests/leave.l1', '/manager/requests/:id');

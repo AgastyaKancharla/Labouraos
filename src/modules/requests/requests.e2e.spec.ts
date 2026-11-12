@@ -137,6 +137,8 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
     await prisma.jobSeeker.deleteMany({ where: { id: { in: jobSeekerIds } } });
     await prisma.target.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.leaveRequest.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.attendanceCorrection.deleteMany({ where: { staffId: { in: staffIds } } });
+    await prisma.attendanceSegment.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.attendanceDay.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staff.updateMany({ where: { id: { in: staffIds } }, data: { reportsToId: null, teamLeadId: null } });
     await prisma.staff.deleteMany({ where: { id: { in: staffIds } } });
@@ -339,6 +341,111 @@ describe('Requests and escalation (Team Lead and Manager portals)', () => {
       const done = await post(ceo, `/requests/flags/${short.id}/resolve`, { resolution: 'Spoke to him' });
       expect(done.status).toBe(200);
       expect(done.body.status).toBe('resolved');
+    });
+  });
+
+  describe('Manager request details: send back to the Team Lead, and approving part of a leave (MG-Req-Sneha, MG-Req-Vikram)', () => {
+    type Detail = View & {
+      canSendBack: boolean;
+      canApprovePart: boolean;
+      summary: string;
+      sentBack: { by: { id: string } | null; note: string | null } | null;
+      history: Array<{ at: string; text: string }>;
+    };
+
+    it('more than 3 planned days goes to the Manager, who can send it back; the Team Lead still cannot approve past 3; the Manager approves 3 of 5', async () => {
+      at(2027, 6, 1, 10);
+      const agent = await make('call_agent', 'SBRQ', leadA.id);
+      const asked = await post(agent, '/attendance/leave', { kind: 'casual', fromDate: '2027-06-21', toDate: '2027-06-25', reason: "Sister's wedding" });
+      expect(asked.status).toBe(201);
+      expect(asked.body).toMatchObject({ routedToRole: 'manager', routeReason: 'over_limit', days: 5 });
+      const ref = `leave.${asked.body.id}`;
+
+      const mine = (await waiting(managerA)).find((row) => row.ref === ref) as Detail;
+      expect(mine).toMatchObject({ whyWithYou: 'over_limit', canDecide: true, canSendBack: true, canApprovePart: true });
+      expect(((await get(leadA, `/requests/${ref}`)).body as Detail).canSendBack).toBe(false);
+
+      // Only the person's Manager sends it back, always with a note.
+      expect((await post(leadA, `/requests/${ref}/send-back`, { note: 'x' })).status).toBe(403);
+      expect((await post(agent, `/requests/${ref}/send-back`, { note: 'x' })).status).toBe(403);
+      expect((await post(managerB, `/requests/${ref}/send-back`, { note: 'x' })).status).toBe(404);
+      expect((await post(managerA, `/requests/${ref}/send-back`, {})).status).toBe(400);
+
+      at(2027, 6, 1, 12);
+      const back = await post(managerA, `/requests/${ref}/send-back`, { note: 'Check who covers North that week' });
+      expect(back.status).toBe(200);
+      expect(back.body).toMatchObject({ status: 'pending', where: 'with_team_lead', routeReason: 'sent_back', canSendBack: false });
+      expect((back.body as Detail).sentBack).toMatchObject({ by: { id: managerA.id }, note: 'Check who covers North that week' });
+
+      expect((await waiting(leadA)).find((row) => row.ref === ref)).toMatchObject({ whyWithYou: 'sent_back', canDecide: true, canForward: true });
+      expect((await waiting(managerA)).some((row) => row.ref === ref)).toBe(false);
+      const audit = await prisma.auditLog.findFirst({ where: { action: 'attendance.leave_sent_back', actorId: managerA.id, entityCode: agent.code } });
+      expect(audit?.reason).toBe('Check who covers North that week');
+      // The Team Lead's bell rings; the Manager's clears.
+      const leadBell = await prisma.notification.findFirst({ where: { recipientStaffId: leadA.id, subjectId: asked.body.id, clearedAt: null } });
+      expect(leadBell?.body).toBe('Sent back by the Manager');
+      expect(await prisma.notification.count({ where: { recipientStaffId: managerA.id, subjectId: asked.body.id, clearedAt: null } })).toBe(0);
+      const history = ((await get(managerA, `/requests/${ref}`)).body as Detail).history.map((h) => h.text);
+      expect(history.some((text) => text.startsWith('Sent back to the Team Lead by') && text.includes('Check who covers North that week'))).toBe(true);
+
+      // Still the guide's rule: a Team Lead never approves past 3 planned days in a month.
+      const tooMany = await post(leadA, `/requests/${ref}/decide`, { decision: 'approved', reason: 'Fine' });
+      expect(tooMany.status).toBe(403);
+      expect(tooMany.body.message).toMatch(/only the Manager approves/);
+      const again = await post(leadA, `/requests/${ref}/forward`, { note: 'Over 3 days — yours' });
+      expect(again.status).toBe(200);
+      expect(again.body.where).toBe('with_manager');
+
+      // Part approval: inside the dates, with a reason for the days not approved.
+      const part = { decision: 'approved', fromDate: '2027-06-21', toDate: '2027-06-23' };
+      expect((await post(managerA, `/requests/${ref}/decide`, part)).status).toBe(400);
+      expect((await post(managerA, `/requests/${ref}/decide`, { ...part, fromDate: '2027-06-20', reason: 'x' })).status).toBe(400);
+      expect((await post(managerA, `/requests/${ref}/decide`, { ...part, decision: 'rejected', reason: 'x' })).status).toBe(400);
+      const ok = await post(managerA, `/requests/${ref}/decide`, { ...part, reason: 'Three days; Arun covers his calls' });
+      expect(ok.status).toBe(200);
+      expect(ok.body).toMatchObject({ status: 'approved', details: { approvedFromDate: '2027-06-21', approvedToDate: '2027-06-23', approvedDays: 3, days: 5 } });
+      expect(ok.body.summary).toContain('3 approved');
+
+      const days = await prisma.attendanceDay.findMany({ where: { staffId: agent.id, leaveRequestId: asked.body.id }, orderBy: { date: 'asc' } });
+      expect(days.map((d) => d.date.toISOString().slice(0, 10))).toEqual(['2027-06-21', '2027-06-22', '2027-06-23']);
+      expect(days.every((d) => d.dayType === 'leave' && d.leaveKind === 'casual')).toBe(true);
+      const row = await prisma.leaveRequest.findUniqueOrThrow({ where: { id: asked.body.id } });
+      expect(row.paidDays + row.unpaidDays).toBe(3);
+      const decidedHistory = ((await get(managerA, `/requests/${ref}`)).body as Detail).history.map((h) => h.text);
+      expect(decidedHistory.some((text) => text.startsWith('3 of 5 days approved, the rest rejected'))).toBe(true);
+      const mineList = (await get(agent, '/attendance/requests/mine')).body as Array<{ id: string; approvedDays: number | null }>;
+      expect(mineList.find((r) => r.id === asked.body.id)?.approvedDays).toBe(3);
+      const decidedAudit = await prisma.auditLog.findFirst({ where: { action: 'attendance.leave_approved', actorId: managerA.id, entityCode: agent.code } });
+      expect(decidedAudit?.after).toMatchObject({ approvedDays: 3, rejectedDays: 2 });
+    });
+
+    it("sends back a correction that reached the Manager after 24 hours; the Team Lead's 24 hours start again", async () => {
+      const agent = await make('field_agent', 'SBCRQ', leadA.id);
+      at(2027, 6, 8, 10);
+      const asked = await post(agent, '/attendance/corrections', { date: '2027-06-07', from: '09:30', to: '10:15', status: 'available', reason: 'System down' });
+      expect(asked.status).toBe(201);
+      const ref = `correction.${asked.body.id}`;
+      at(2027, 6, 9, 11);
+      expect((await waiting(managerA)).find((row) => row.ref === ref)).toMatchObject({ whyWithYou: 'team_lead_24h', canSendBack: true });
+      const back = await post(managerA, `/requests/${ref}/send-back`, { note: 'Ravi saw it, he can decide' });
+      expect(back.status).toBe(200);
+      expect(back.body.where).toBe('with_team_lead');
+      at(2027, 6, 10, 10, 59);
+      expect((await waiting(managerA)).some((row) => row.ref === ref)).toBe(false);
+      at(2027, 6, 10, 11, 0);
+      expect((await waiting(managerA)).find((row) => row.ref === ref)?.whyWithYou).toBe('team_lead_24h');
+      const decided = await post(leadA, `/requests/${ref}/decide`, { decision: 'approved', reason: 'Confirmed' });
+      expect(decided.status).toBe(200);
+      expect((await post(managerA, `/requests/${ref}/send-back`, { note: 'late' })).status).toBe(409);
+    });
+
+    it("cannot send back a Team Lead's own leave (no Team Lead above it), or kinds other than leave and corrections", async () => {
+      at(2027, 6, 2, 10);
+      const own = await post(leadA, '/attendance/leave', { kind: 'casual', fromDate: '2027-06-28', toDate: '2027-06-28', reason: 'Family' });
+      const ref = `leave.${own.body.id}`;
+      expect(((await waiting(managerA)).find((row) => row.ref === ref) as Detail).canSendBack).toBe(false);
+      expect((await post(managerA, `/requests/${ref}/send-back`, { note: 'x' })).status).toBe(400);
+      expect((await post(managerA, `/requests/device.not-a-device/send-back`, { note: 'x' })).status).toBe(400);
     });
   });
 });

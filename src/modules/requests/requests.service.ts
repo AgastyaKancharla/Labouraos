@@ -88,9 +88,15 @@ export interface RequestView {
   forwarded: { at: string; by: Brief | null; note: string | null } | null;
   decided: { at: string; by: Brief | null; role: string | null; reason: string | null } | null;
   overturned: { at: string; by: Brief | null; reason: string | null } | null;
+  /** A Manager sent it back to the Team Lead (leave and corrections). */
+  sentBack: { at: string; by: Brief | null; note: string | null } | null;
   canDecide: boolean;
   canForward: boolean;
   canOverturn: boolean;
+  /** "Send back to the Team Lead": a Manager, on a leave or correction with them, from someone with a Team Lead. */
+  canSendBack: boolean;
+  /** Leave only: the caller may approve part of the dates (send fromDate/toDate with the approval). */
+  canApprovePart: boolean;
   /** Kind-specific facts (dates, counts, the hit, the target numbers…). Never money. */
   details: Record<string, unknown>;
 }
@@ -162,6 +168,10 @@ interface AttendanceView {
   casualDaysTakenThisMonth?: number;
   casualDaysPendingThisMonth?: number;
   overturned?: { at: string; by: Brief | null; reason: string | null } | null;
+  sentBack?: { at: string; by: Brief | null; note: string | null } | null;
+  approvedFromDate?: string | null;
+  approvedToDate?: string | null;
+  approvedDays?: number | null;
   date?: string;
   startAt?: string;
   endAt?: string;
@@ -252,13 +262,23 @@ export class RequestsService {
 
   // ============================================================== actions
 
-  async decide(actor: Actor, ref: string, body: { decision?: string; reason?: string }) {
+  /**
+   * Approve or reject. For leave, `fromDate`/`toDate` inside the asked dates
+   * approve only part of it; the rest is rejected with the reason, which is
+   * then required (MG-Req-Vikram: "approve 3 of 5 days").
+   */
+  async decide(actor: Actor, ref: string, body: { decision?: string; reason?: string; fromDate?: string; toDate?: string }) {
     this.assertDecider(actor);
     const [kind, id] = parseRef(ref);
     const decision = body?.decision === 'approved' || body?.decision === 'approve' ? 'approved' : body?.decision === 'rejected' || body?.decision === 'reject' ? 'rejected' : null;
     if (!decision) throw new BadRequestException('decision is approved or rejected');
     const note = String(body?.reason ?? '').trim();
     if (decision === 'rejected' && !note) throw new BadRequestException('A reason is needed to reject');
+    const part = Boolean(body?.fromDate || body?.toDate);
+    if (part && (kind !== 'leave' || decision !== 'approved')) {
+      throw new BadRequestException('Only a leave approval can be for part of the dates');
+    }
+    if (part && !note) throw new BadRequestException('A reason is needed: the days not approved are rejected');
     const reason = note || 'Approved';
     const view = await this.one(actor, kind, id);
     if (view.status !== 'pending') {
@@ -272,7 +292,10 @@ export class RequestsService {
     if (!view.canDecide) throw new ForbiddenException(this.whyNot(actor, view));
 
     if (kind === 'leave' || kind === 'correction') {
-      await this.attendanceRequests.decide(actor, kind, id, decision, { reason });
+      await this.attendanceRequests.decide(actor, kind, id, decision, {
+        reason,
+        ...(part ? { fromDate: body.fromDate, toDate: body.toDate } : {}),
+      });
     } else if (kind === 'device') {
       if (decision === 'approved') await this.devices.approve(id, actor);
       else await this.devices.revoke(id, actor);
@@ -332,6 +355,33 @@ export class RequestsService {
       });
       await this.bells.sync(id);
     }
+    return this.one(actor, kind, id);
+  }
+
+  /**
+   * "Send back to the Team Lead" (MG-Req-Sneha, MG-Req-Vikram): a Manager
+   * hands a leave or correction request that reached them back to the
+   * person's Team Lead, with a note. It stays pending; audited; the Team
+   * Lead's bell rings.
+   */
+  async sendBack(actor: Actor, ref: string, body: { note?: string }) {
+    if (actor.role !== 'manager') throw new ForbiddenException('Only a Manager sends a request back to the Team Lead');
+    const [kind, id] = parseRef(ref);
+    const note = String(body?.note ?? '').trim();
+    if (!note) throw new BadRequestException('A note is required to send it back to the Team Lead');
+    if (kind !== 'leave' && kind !== 'correction') {
+      throw new BadRequestException('Only leave and attendance corrections can be sent back to the Team Lead');
+    }
+    const view = await this.one(actor, kind, id);
+    if (view.status !== 'pending') {
+      throw new ConflictException({
+        statusCode: 409,
+        message: view.decided?.by ? `Already ${view.status} by ${view.decided.by.name} (${view.decided.by.code})` : 'This request has already been handled',
+        decidedBy: view.decided?.by ?? null,
+        status: view.status,
+      });
+    }
+    await this.attendanceRequests.sendBack(actor, kind, id, { note });
     return this.one(actor, kind, id);
   }
 
@@ -823,9 +873,12 @@ export class RequestsService {
       forwarded: null,
       decided: null,
       overturned: null,
+      sentBack: null,
       canDecide: false,
       canForward: false,
       canOverturn: false,
+      canSendBack: false,
+      canApprovePart: false,
       details: {},
       ...partial,
     } as RequestView;
@@ -897,6 +950,10 @@ export class RequestsService {
       title = planned ? 'Planned leave' : 'Emergency leave';
       const dates = row.fromDate === row.toDate ? dayLabel(row.fromDate ?? '') : `${dayLabel(row.fromDate ?? '')} – ${dayLabel(row.toDate ?? '')}`;
       summary = `${dates} · ${row.days ?? 0} day${row.days === 1 ? '' : 's'}`;
+      if (row.approvedDays && row.approvedFromDate) {
+        const approved = row.approvedFromDate === row.approvedToDate ? dayLabel(row.approvedFromDate) : `${dayLabel(row.approvedFromDate)} – ${dayLabel(row.approvedToDate ?? '')}`;
+        summary += ` · ${row.approvedDays} approved (${approved})`;
+      }
       const taken = row.casualDaysTakenThisMonth ?? 0;
       const pendingOthers = row.casualDaysPendingThisMonth ?? 0;
       if (planned && status === 'pending') {
@@ -909,6 +966,9 @@ export class RequestsService {
         toDate: row.toDate,
         days: row.days,
         unpaidDays: row.unpaidDays ?? 0,
+        approvedFromDate: row.approvedFromDate ?? null,
+        approvedToDate: row.approvedToDate ?? null,
+        approvedDays: row.approvedDays ?? null,
         casualDaysTakenThisMonth: taken,
         casualDaysPendingThisMonth: pendingOthers,
       });
@@ -944,12 +1004,17 @@ export class RequestsService {
       forwarded: row.forwarded,
       decided: row.decided,
       overturned: row.overturned ?? null,
+      sentBack: row.sentBack ?? null,
       canDecide: row.canDecide,
       canForward: actor.role === 'team_lead' && row.canDecide && row.withTeamLead && !row.forwarded,
+      canApprovePart: row.kind === 'leave' && row.canDecide && (row.days ?? 0) > 1,
       details,
     });
     view.deciderStaff = await this.deciderStaff(ctx, view, row.staff?.id ?? null);
-    view.dueAt = this.escalationDue(row.createdAt, row.forwarded?.at ?? null, view);
+    view.dueAt = this.escalationDue(row.sentBack?.at ?? row.createdAt, row.forwarded?.at ?? null, view);
+    if (actor.role === 'manager' && status === 'pending' && row.withManager && row.canDecide && row.staff && AGENT_ROLES.includes(row.staff.role)) {
+      view.canSendBack = Boolean((await this.scope.chainOf(row.staff.id)).teamLead);
+    }
     if (row.kind === 'leave' && status !== 'pending' && !row.overturned && row.decided && actor.id !== row.decided.by?.id && actor.id !== row.staff?.id) {
       view.canOverturn = canOverturnLevel(actor.role, row.decided.role) && (actor.role === 'ceo' || this.inScopeSync(ctx, row.staff?.id));
     }
@@ -968,7 +1033,11 @@ export class RequestsService {
     const created = new Date(createdAt).getTime();
     if (view.withTeamLead && !view.withManager) return new Date(created + 24 * HOUR_MS).toISOString();
     if (view.withManager && !view.withCeo) {
-      const since = forwardedAt ? new Date(forwardedAt).getTime() : view.routeReason === 'team_lead' ? created + 24 * HOUR_MS : created;
+      const since = forwardedAt
+        ? new Date(forwardedAt).getTime()
+        : view.routeReason === 'team_lead' || view.routeReason === 'sent_back'
+          ? created + 24 * HOUR_MS
+          : created;
       return new Date(since + 48 * HOUR_MS).toISOString();
     }
     return null;
@@ -1265,8 +1334,15 @@ export class RequestsService {
     const events: Array<{ at: string; text: string }> = [];
     const who = view.requestedBy?.name ?? 'Someone';
     events.push({ at: view.createdAt, text: `${who} asked: ${view.title.toLowerCase()} · ${view.summary}` });
-    if (view.routeReason && view.routeReason !== 'team_lead' && view.routeReason !== 'claim') {
+    if (view.routeReason && view.routeReason !== 'team_lead' && view.routeReason !== 'claim' && view.routeReason !== 'sent_back') {
       events.push({ at: view.createdAt, text: view.routeReasonText });
+    }
+    if (view.sentBack) {
+      events.push({ at: view.sentBack.at, text: `Sent back to the Team Lead by ${view.sentBack.by?.name ?? 'the Manager'}${view.sentBack.note ? ` · "${view.sentBack.note}"` : ''}` });
+      const at = new Date(new Date(view.sentBack.at).getTime() + 24 * HOUR_MS);
+      if (view.status === 'pending' && !view.forwarded) {
+        events.push({ at: at.toISOString(), text: now.getTime() < at.getTime() ? 'Comes back to the Manager too if the Team Lead has not answered in 24 h' : 'Not answered in 24 h · the Manager can decide it too' });
+      }
     }
     if (view.forwarded) events.push({ at: view.forwarded.at, text: `Sent to the Manager by ${view.forwarded.by?.name ?? 'the Team Lead'}${view.forwarded.note ? ` · "${view.forwarded.note}"` : ''}` });
     if (view.kind !== 'claim' && (view.routeReason === 'team_lead' || view.routeReason === 'device_agent')) {
@@ -1279,7 +1355,9 @@ export class RequestsService {
       events.push({ at: view.dueAt, text: 'Goes to the CEO if still not answered' });
     }
     if (view.decided) {
-      events.push({ at: view.decided.at, text: `${view.status === 'approved' ? 'Approved' : 'Rejected'} by ${view.decided.by?.name ?? 'someone'}${view.decided.reason && view.decided.reason !== 'Approved' ? ` · "${view.decided.reason}"` : ''}` });
+      const part = view.kind === 'leave' && view.status === 'approved' && typeof view.details.approvedDays === 'number' && view.details.approvedDays > 0;
+      const verdict = part ? `${view.details.approvedDays} of ${view.details.days} days approved, the rest rejected` : view.status === 'approved' ? 'Approved' : 'Rejected';
+      events.push({ at: view.decided.at, text: `${verdict} by ${view.decided.by?.name ?? 'someone'}${view.decided.reason && view.decided.reason !== 'Approved' ? ` · "${view.decided.reason}"` : ''}` });
     }
     if (view.overturned) {
       events.push({ at: view.overturned.at, text: `Overturned by ${view.overturned.by?.name ?? 'someone'} · "${view.overturned.reason ?? ''}"` });

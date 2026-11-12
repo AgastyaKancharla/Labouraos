@@ -1519,6 +1519,16 @@ model LeaveRequest {
   overturnedAt        DateTime?
   overturnedByStaffId String?
   overturnReason      String?
+  /// Part approval (MG-Req-Vikram): only these dates were approved; the rest
+  /// of the request was rejected with decisionReason. Null = all or nothing.
+  approvedFromDate    DateTime? @db.Date
+  approvedToDate      DateTime? @db.Date
+  approvedDays        Int?
+  /// A Manager sent it back to the Team Lead (still pending; the Team Lead's
+  /// 24-hour clock starts again from sentBackAt).
+  sentBackAt          DateTime?
+  sentBackByStaffId   String?
+  sentBackNote        String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
@@ -1553,6 +1563,11 @@ model AttendanceCorrection {
   decisionReason      String?
   /// The segments as they were before the correction was applied.
   replacedSegments    Json?
+  /// A Manager sent it back to the Team Lead (still pending; the Team Lead's
+  /// 24-hour clock starts again from sentBackAt).
+  sentBackAt          DateTime?
+  sentBackByStaffId   String?
+  sentBackNote        String?
   createdAt           DateTime  @default(now())
   updatedAt           DateTime  @updatedAt
 
