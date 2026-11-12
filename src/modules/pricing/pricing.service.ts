@@ -5,6 +5,12 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 export { PricingPolicy };
 
+/** A policy's go-live date as "YYYY-MM-DD" (stored as a calendar date), or null. */
+export function goLiveDayOf(policy: { goLiveDate?: Date | null } | null | undefined): string | null {
+  const date = policy?.goLiveDate;
+  return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : null;
+}
+
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
@@ -119,6 +125,12 @@ export class PricingService {
         financeExpenseLimitPaise: updates.financeExpenseLimitPaise ?? before.financeExpenseLimitPaise,
         referralTdsYearlyLimitPaise: updates.referralTdsYearlyLimitPaise ?? before.referralTdsYearlyLimitPaise,
         payrollSalaryDays: updates.payrollSalaryDays ?? before.payrollSalaryDays,
+        goLiveDate:
+          updates.goLiveDate === undefined
+            ? before.goLiveDate
+            : updates.goLiveDate === null
+              ? null
+              : new Date(updates.goLiveDate),
         companyLegalName: updates.companyLegalName ?? before.companyLegalName,
         companyGstin: updates.companyGstin !== undefined ? updates.companyGstin : before.companyGstin,
         companyAddress: updates.companyAddress !== undefined ? updates.companyAddress : before.companyAddress,
@@ -193,6 +205,34 @@ export class PricingService {
       businessRefundLimitPaise: policy.financeBusinessRefundLimitPaise,
       expenseLimitPaise: policy.financeExpenseLimitPaise,
     };
+  }
+
+  /**
+   * The go-live date (owner decision 12 Nov): the CEO sets the day Laboura starts
+   * using the software. Payroll counts only from the later of a person's joining
+   * date and this day (days before it are handled outside the app, never absent);
+   * leave accrual starts from the later of the two as well. "YYYY-MM-DD", or null
+   * to clear it. Every change is a new audited Settings version. CEO only.
+   */
+  async updateGoLiveDate(input: { goLiveDate?: unknown }, actorId: string): Promise<PricingPolicy> {
+    const value = input?.goLiveDate;
+    if (value === null || value === '') {
+      return this.createVersion({ goLiveDate: null }, actorId);
+    }
+    if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) {
+      throw new BadRequestException('goLiveDate must be a date like 2026-11-20, or null to clear it');
+    }
+    const date = new Date(`${value}T00:00:00.000Z`);
+    if (Number.isNaN(date.getTime()) || date.toISOString().slice(0, 10) !== value) {
+      throw new BadRequestException('goLiveDate must be a real calendar date');
+    }
+    return this.createVersion({ goLiveDate: date }, actorId);
+  }
+
+  /** The go-live day as an IST calendar key ("YYYY-MM-DD"), or null when not set. */
+  async goLiveDay(): Promise<string | null> {
+    const policy = await this.current();
+    return goLiveDayOf(policy);
   }
 
   /** Company legal name, GSTIN and address printed on GST invoices. CEO only. */

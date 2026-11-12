@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { LeaveRequest } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
-import { PricingService } from '../pricing/pricing.service';
+import { PricingService, goLiveDayOf } from '../pricing/pricing.service';
 import { AttendanceClock } from './attendance-clock';
 import { ATTENDANCE_ROLES } from './attendance-days.service';
 import { monthRange } from './day-rules';
@@ -46,10 +46,15 @@ function istDayOf(at: Date): string {
 /**
  * The first month that earns paid leave (Master Guide, decided 11 Nov): none in
  * the month someone joins, even on the 1st; the first leaves come on the 1st of
- * the following month.
+ * the following month. With a go-live date in Settings (owner decision 12 Nov)
+ * accrual starts from the later of joining and go-live: the first 1st of a month
+ * on or after go-live, if that is later.
  */
-export function firstAccrualMonth(joiningDay: string): string {
-  return nextMonth(joiningDay.slice(0, 7));
+export function firstAccrualMonth(joiningDay: string, goLiveDay?: string | null): string {
+  const fromJoining = nextMonth(joiningDay.slice(0, 7));
+  if (!goLiveDay) return fromJoining;
+  const fromGoLive = goLiveDay.endsWith('-01') ? goLiveDay.slice(0, 7) : nextMonth(goLiveDay.slice(0, 7));
+  return fromGoLive > fromJoining ? fromGoLive : fromJoining;
 }
 
 /**
@@ -98,7 +103,8 @@ export class LeaveService {
 
   /**
    * Writes the month's accrual for every month whose 1st has come since the
-   * person joined (joining date, else first login, else account created). No
+   * person joined (joining date, else first login, else account created), or
+   * since the go-live date in Settings when that is later. No
    * leave is earned in the joining month, even for someone joining on the 1st
    * (Master Guide, decided 11 Nov): the first accrual is on the 1st of the
    * following month. A row for a month before that (written from an older
@@ -111,7 +117,8 @@ export class LeaveService {
       select: { id: true, role: true, status: true, createdAt: true, joinedOn: true },
     });
     if (!staff || !ATTENDANCE_ROLES.includes(staff.role) || staff.status !== 'active') return 0;
-    let month = firstAccrualMonth(await this.joiningDay(staff));
+    const policy = await this.pricing.current();
+    let month = firstAccrualMonth(await this.joiningDay(staff), goLiveDayOf(policy));
     await this.prisma.leaveAccrual.deleteMany({ where: { staffId, month: { lt: month } } });
     const current = monthOf(this.todayIst());
     const existing = new Set(
@@ -122,7 +129,6 @@ export class LeaveService {
         })
       ).map((row) => row.month),
     );
-    const policy = await this.pricing.current();
     let written = 0;
     for (let guard = 0; month <= current && guard < 600; guard += 1) {
       if (!existing.has(month)) {

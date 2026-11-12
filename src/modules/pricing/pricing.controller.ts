@@ -71,6 +71,17 @@ export class PricingController {
     return this.pricingService.updateApprovalLimits(body, req.user.sub);
   }
 
+  /** Go-live date (owner decision 12 Nov): payroll and leave count from it. CEO only. */
+  @Put('go-live')
+  @RequirePermission('pricing', 'write')
+  @RequireRoles('ceo')
+  async updateGoLiveDate(
+    @Body() body: { goLiveDate?: string | null },
+    @Req() req: Request & { user: JwtPayload },
+  ): Promise<PricingPolicy> {
+    return this.pricingService.updateGoLiveDate(body, req.user.sub);
+  }
+
   @Put('company-details')
   @RequirePermission('pricing', 'write')
   @RequireRoles('ceo')
