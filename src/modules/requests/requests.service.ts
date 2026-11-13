@@ -299,7 +299,12 @@ export class RequestsService {
     }
     if (!view.canDecide) throw new ForbiddenException(this.whyNot(actor, view));
     // "Her follow-ups that day go to…": checked before anything is saved.
-    const handover = kind === 'leave' && decision === 'approved' && body?.followUps ? body.followUps : undefined;
+    let handover = kind === 'leave' && decision === 'approved' && body?.followUps ? body.followUps : undefined;
+    if (handover) {
+      const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
+      // A half day of leave keeps its follow-ups (the other half is worked): nothing to hand over.
+      if (!(await this.handovers.willBeFullDayLeave(leave))) handover = undefined;
+    }
     if (handover) {
       const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
       const days = part

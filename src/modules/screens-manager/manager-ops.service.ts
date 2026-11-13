@@ -556,10 +556,10 @@ export class ManagerOpsService {
       const used = await this.prisma.attendanceDay.findMany({
         where: {
           staffId: p.id,
-          OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }],
+          OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }, { otherLeaveRequestId: { not: null } }],
           date: { gte: new Date(Date.UTC(y, m - 1, 1)), lte: new Date(Date.UTC(y, m, 0)) },
         },
-        select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
+        select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true },
       });
       const usedOf = (kind: string) => used.filter((u) => (u.leaveKind ?? 'casual') === kind).reduce((sum, u) => sum + leaveHalvesOf(u).total, 0) / 2;
       const casualUsed = usedOf('casual');

@@ -122,6 +122,8 @@ interface DayLite {
   leaveHalf: string | null;
   /** A full leave day half paid, half unpaid. */
   leavePartUnpaid: boolean;
+  /** Two half days of leave on the date: a full leave day. */
+  otherLeaveRequestId: string | null;
   shortfallSeconds: number;
   makeUpSeconds: number;
 }
@@ -454,9 +456,9 @@ export class PayrollService {
     if (!staffIds.length) return out;
     const rows = await this.prisma.attendanceDay.findMany({
       where: { staffId: { in: staffIds }, date: { gte: new Date(`${monthDays(month).first}T00:00:00.000Z`), lte: new Date(`${monthDays(month).last}T00:00:00.000Z`) } },
-      select: { staffId: true, date: true, dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, shortfallSeconds: true, makeUpSeconds: true },
+      select: { staffId: true, date: true, dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true, shortfallSeconds: true, makeUpSeconds: true },
     });
-    for (const r of rows) out.get(r.staffId)?.push({ date: r.date.toISOString().slice(0, 10), dayType: r.dayType, leaveKind: r.leaveKind, leaveUnpaid: r.leaveUnpaid, leaveHalf: r.leaveHalf, leavePartUnpaid: r.leavePartUnpaid, shortfallSeconds: r.shortfallSeconds, makeUpSeconds: r.makeUpSeconds });
+    for (const r of rows) out.get(r.staffId)?.push({ date: r.date.toISOString().slice(0, 10), dayType: r.dayType, leaveKind: r.leaveKind, leaveUnpaid: r.leaveUnpaid, leaveHalf: r.leaveHalf, leavePartUnpaid: r.leavePartUnpaid, otherLeaveRequestId: r.otherLeaveRequestId, shortfallSeconds: r.shortfallSeconds, makeUpSeconds: r.makeUpSeconds });
     return out;
   }
 

@@ -5,9 +5,10 @@ import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { PricingService, goLiveDayOf } from '../pricing/pricing.service';
 import { AttendanceClock } from './attendance-clock';
 import { ATTENDANCE_ROLES } from './attendance-days.service';
-import { classifyDay, lateMinutesFor, monthRange } from './day-rules';
+import { dayResultFor, lateMinutesFor, monthRange } from './day-rules';
 import {
   halvesToDays,
+  isJoinedLeaveDay,
   isLeaveHalf,
   LeaveHalf,
   leaveFieldsFor,
@@ -197,7 +198,7 @@ export class LeaveService {
 
   /** Attendance days carrying leave: full leave days and days with a half day of leave. */
   private leaveRowsWhere(staffId: string): Prisma.AttendanceDayWhereInput {
-    return { staffId, OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }] };
+    return { staffId, OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }, { otherLeaveRequestId: { not: null } }] };
   }
 
   /**
@@ -208,7 +209,7 @@ export class LeaveService {
     const [casualEarned, emergencyEarned] = [await this.earnedHalves(staffId, 'casual'), await this.earnedHalves(staffId, 'emergency')];
     const leaveDays = await this.prisma.attendanceDay.findMany({
       where: this.leaveRowsWhere(staffId),
-      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
+      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true },
     });
     const build = (kind: LeaveKind, earnedHalves: number): KindBalance => {
       let paid = 0;
@@ -261,7 +262,7 @@ export class LeaveService {
         leaveKind: 'casual',
         date: { gte: range.from, lte: range.to },
       },
-      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
+      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true },
     });
     const takenHalves = rows.reduce((sum, row) => sum + leaveHalvesOf(row).total, 0);
     const pendingRequests = await this.prisma.leaveRequest.findMany({
@@ -343,7 +344,7 @@ export class LeaveService {
     const earned = await this.earnedHalves(staffId, kind);
     const rows = await tx.attendanceDay.findMany({
       where: { ...this.leaveRowsWhere(staffId), leaveKind: kind },
-      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
+      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true },
     });
     return Math.max(0, earned - rows.reduce((sum, row) => sum + leaveHalvesOf(row).paid, 0));
   }
@@ -361,7 +362,7 @@ export class LeaveService {
     request: LeaveRequest,
     date: Date,
     paidLeft: number,
-  ): Promise<{ written: number; paid: number; dayId: string | null }> {
+  ): Promise<{ written: number; paid: number; dayId: string | null; partner?: string | null }> {
     const half = isLeaveHalf(request.half) ? request.half : null;
     const existing = await tx.attendanceDay.findUnique({
       where: { staffId_date: { staffId: request.staffId, date } },
@@ -377,19 +378,23 @@ export class LeaveService {
       existing.leaveRequestId !== request.id &&
       !existing.otherLeaveRequestId
     ) {
-      // The other half is already leave: one full leave day of the two requests.
-      // A day still open (logged in now) stays open; it becomes leave when it closes.
+      // The other half is already leave: one full leave day of the two requests, exactly
+      // like a full-day leave (no shortfall, no make-up, never late), whatever was logged.
+      // A day still open (logged in now) stays open and closes as a leave day.
       const paid = Math.min(1, paidLeft);
       const open = Boolean(existing.loginAt && !existing.logoutAt);
       await tx.attendanceDay.update({
         where: { id: existing.id },
         data: {
           ...(open ? {} : { dayType: 'leave', closedReason: existing.loginAt ? existing.closedReason : null }),
+          shortfallSeconds: 0,
+          makeUpSeconds: 0,
+          lateMinutes: 0,
           otherLeaveRequestId: request.id,
           ...leaveFieldsFor(2, carried.paid + paid, null),
         },
       });
-      return { written: 1, paid, dayId: existing.id };
+      return { written: 1, paid, dayId: existing.id, partner: existing.leaveRequestId };
     }
     if (carried.total > 0) return { written: 0, paid: 0, dayId: null };
     if (!half && existing?.loginAt) return { written: 0, paid: 0, dayId: null };
@@ -428,22 +433,22 @@ export class LeaveService {
     const kind: LeaveKind = request.kind === 'emergency' ? 'emergency' : 'casual';
     const dates = await this.leaveDates(request.fromDate, request.toDate);
     await this.ensureAccrued(request.staffId);
-    const { paidHalves, unpaidHalves, worked } = await this.underLeaveLock(request.staffId, async (tx) => {
+    const { totals, worked } = await this.underLeaveLock(request.staffId, async (tx) => {
       let left = await this.paidLeftHalves(tx, request.staffId, kind);
-      let paidHalves = 0;
-      let unpaidHalves = 0;
       const worked: string[] = [];
+      const partners = new Set<string>();
       for (const date of dates) {
         const result = await this.markDay(tx, request, date, left);
         left -= result.paid;
-        paidHalves += result.paid;
-        unpaidHalves += result.written - result.paid;
         if (result.dayId) worked.push(result.dayId);
+        if (result.partner) partners.add(result.partner);
       }
-      return { paidHalves, unpaidHalves, worked };
+      // Both requests of a joined day get totals that match the day (shareOf).
+      for (const partner of partners) await this.writeTotals(tx, partner);
+      return { totals: await this.totalsOf(tx, request.id), worked };
     });
     for (const dayId of worked) await this.reclassifyWorkedDay(dayId);
-    return { paidDays: halvesToDays(paidHalves), unpaidDays: halvesToDays(unpaidHalves) };
+    return totals;
   }
 
   /**
@@ -467,6 +472,24 @@ export class LeaveService {
     if (row.leaveRequestId === requestId) return { halves: 1, paid: row.leaveUnpaid ? 0 : 1 };
     if (row.otherLeaveRequestId === requestId) return { halves: 1, paid: row.leaveUnpaid || row.leavePartUnpaid ? 0 : 1 };
     return { halves: 0, paid: 0 };
+  }
+
+  /** A request's paid and unpaid days, from the attendance days it covers (shareOf). */
+  private async totalsOf(tx: Prisma.TransactionClient, requestId: string): Promise<{ paidDays: number; unpaidDays: number }> {
+    const rows = await tx.attendanceDay.findMany({ where: { OR: [{ leaveRequestId: requestId }, { otherLeaveRequestId: requestId }] } });
+    let paid = 0;
+    let halves = 0;
+    for (const row of rows) {
+      const share = this.shareOf(row, requestId);
+      paid += share.paid;
+      halves += share.halves;
+    }
+    return { paidDays: halvesToDays(paid), unpaidDays: halvesToDays(halves - paid) };
+  }
+
+  /** Writes a request's paid and unpaid days from the days it covers. */
+  private async writeTotals(tx: Prisma.TransactionClient, requestId: string): Promise<void> {
+    await tx.leaveRequest.update({ where: { id: requestId }, data: await this.totalsOf(tx, requestId) });
   }
 
   /**
@@ -508,9 +531,13 @@ export class LeaveService {
           });
         }
       }
-      const out = { paidDays: halvesToDays(split.paidHalves), unpaidDays: halvesToDays(split.unpaidHalves) };
-      await tx.leaveRequest.update({ where: { id: requestId }, data: out });
-      return out;
+      // Totals from the days, for this request and the other request of any joined day.
+      for (const row of mine) {
+        const partner = row.otherLeaveRequestId ? (row.leaveRequestId === requestId ? row.otherLeaveRequestId : row.leaveRequestId) : null;
+        if (partner) await this.writeTotals(tx, partner);
+      }
+      await this.writeTotals(tx, requestId);
+      return this.totalsOf(tx, requestId);
     });
     return result;
   }
@@ -548,7 +575,8 @@ export class LeaveService {
           await tx.attendanceDay.update({
             where: { id: row.id },
             data: {
-              ...(row.loginAt ? { dayType: 'open' } : {}),
+              // A day still logged in goes back to open; a closed one is worked out again below.
+              ...(row.loginAt && !row.logoutAt ? { dayType: 'open' } : {}),
               leaveRequestId: remainingRequest.id,
               otherLeaveRequestId: null,
               leaveKind: remainingRequest.kind,
@@ -587,23 +615,15 @@ export class LeaveService {
     if (!day?.loginAt) return;
     const policy = await this.pricing.current();
     const leaveHalf = day.leaveHalf && day.leaveKind ? day.leaveHalf : null;
-    const lateMinutes = lateMinutesFor(day.loginAt, policy, leaveHalf);
+    // A joined leave day (two half days) is a full leave day: never late.
+    const lateMinutes = isJoinedLeaveDay(day) ? 0 : lateMinutesFor(day.loginAt, policy, leaveHalf);
     if (!day.logoutAt) {
       await this.prisma.attendanceDay.update({ where: { id: dayId }, data: { lateMinutes } });
       return;
     }
-    const result = classifyDay(day.productionSeconds, policy, await this.workingDays.isNonWorking(day.date), Boolean(leaveHalf));
-    const changed = Boolean(day.dayTypeChangedAt);
-    // Two half days of leave on the date: a full leave day, whatever was worked.
-    const fullLeave = Boolean(day.otherLeaveRequestId && day.leaveKind);
-    await this.prisma.attendanceDay.update({
-      where: { id: dayId },
-      data: {
-        lateMinutes,
-        dayType: fullLeave ? 'leave' : changed ? day.dayType : result.dayType,
-        shortfallSeconds: changed ? 0 : result.shortfallSeconds,
-        makeUpSeconds: changed && day.dayType === 'half' ? 0 : result.makeUpSeconds,
-      },
-    });
+    // Joined day: leave, no shortfall. A Team Lead's full/half change stays; a day left
+    // "leave" after one half was overturned is classified again (never stuck open).
+    const result = dayResultFor(day, day.productionSeconds, policy, await this.workingDays.isNonWorking(day.date));
+    await this.prisma.attendanceDay.update({ where: { id: dayId }, data: { lateMinutes, ...result } });
   }
 }

@@ -22,7 +22,8 @@ import {
   PRODUCTION_STATUSES,
   isStaffPickedStatus,
 } from './attendance.constants';
-import { classifyDay, lateMinutesFor, productionTargetSeconds } from './day-rules';
+import { dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
+import { isJoinedLeaveDay } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
@@ -162,7 +163,8 @@ export class AttendanceService {
       loginLat = body.latitude as number;
       loginLng = body.longitude as number;
     }
-    const lateMinutes = this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
+    // A joined leave day (two half days) is a full leave day: never late.
+    const lateMinutes = existing && isJoinedLeaveDay(existing) ? 0 : this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
     if (existing) {
       // A day marked absent or leave before the person logged in becomes a
       // working day. The leave fields stay so the leave flow can see them.
@@ -265,7 +267,8 @@ export class AttendanceService {
     }
     // A half day of leave needs half the production (owner decision 12 Nov).
     const halfLeave = Boolean(day.leaveHalf && day.leaveKind);
-    const fullSeconds = productionTargetSeconds(policy, halfLeave);
+    // A joined leave day (two half days) is a full leave day: nothing to produce.
+    const fullSeconds = isJoinedLeaveDay(day) ? 0 : productionTargetSeconds(policy, halfLeave);
     const current = [...day.segments].reverse().find((segment) => !segment.endedAt);
     return {
       date: this.dateLabel(day.date),
@@ -459,19 +462,18 @@ export class AttendanceService {
     });
     const totals = this.totals(segments, at);
     const policy = await this.pricing.current();
-    const result = classifyDay(
+    // A joined leave day (two half days) closes as a full leave day: no shortfall, no make-up.
+    const result = dayResultFor(
+      { ...day, dayTypeChangedAt: null },
       totals.productionSeconds,
       policy,
       await this.workingDays.isNonWorking(day.date),
-      Boolean(day.leaveHalf && day.leaveKind),
     );
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
       data: {
         ...totals,
         ...result,
-        // Two half days of leave on the date (owner decision 12 Nov): a full leave day, whatever was worked.
-        ...(day.otherLeaveRequestId && day.leaveKind ? { dayType: 'leave' } : {}),
         logoutAt: at,
         closedReason,
         flagged,
@@ -497,21 +499,10 @@ export class AttendanceService {
       return;
     }
     const policy = await this.pricing.current();
-    const result = classifyDay(
-      totals.productionSeconds,
-      policy,
-      await this.workingDays.isNonWorking(day.date),
-      Boolean(day.leaveHalf && day.leaveKind),
-    );
-    const changed = Boolean(day.dayTypeChangedAt);
+    const result = dayResultFor(day, totals.productionSeconds, policy, await this.workingDays.isNonWorking(day.date));
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
-      data: {
-        ...totals,
-        dayType: day.otherLeaveRequestId && day.leaveKind ? 'leave' : changed ? day.dayType : result.dayType,
-        shortfallSeconds: changed ? 0 : result.shortfallSeconds,
-        makeUpSeconds: changed && day.dayType === 'half' ? 0 : result.makeUpSeconds,
-      },
+      data: { ...totals, ...result },
     });
   }
 

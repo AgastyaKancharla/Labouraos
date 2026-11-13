@@ -116,19 +116,7 @@ export class AttendanceRequestsService {
     }
     // One leave per date (or per half of a date): a date already covered by a pending or approved
     // request is refused here, so an approval never has nothing to write.
-    const overlap = await this.leave.findOverlap(staff.id, dates, half, kind);
-    if (overlap) {
-      throw new BadRequestException({
-        statusCode: 400,
-        error: 'Bad Request',
-        code: overlap.reason === 'covered' ? 'leave_overlap' : 'leave_other_kind',
-        date: overlap.date,
-        message:
-          overlap.reason === 'covered'
-            ? `You already have leave asked for or approved on ${overlap.date}. Pick other dates, or cancel that request first.`
-            : `The other half of ${overlap.date} is a different kind of leave. Ask for the same kind, or a full day.`,
-      });
-    }
+    this.refuseOverlap(await this.leave.findOverlap(staff.id, dates, half, kind));
 
     let overLimit = false;
     if (kind === 'casual') {
@@ -488,6 +476,11 @@ export class AttendanceRequestsService {
     await this.assertPayrollReaches(request);
     const now = this.clock.now();
     const next = request.status === 'approved' ? 'rejected' : 'approved';
+    if (next === 'approved') {
+      // Another request may have taken the date since this one was rejected.
+      const { dates } = await this.leave.requestDays(request);
+      this.refuseOverlap(await this.leave.findOverlap(request.staffId, dates, isLeaveHalf(request.half) ? request.half : null, request.kind, request.id));
+    }
     const claimed = await this.prisma.leaveRequest.updateMany({
       where: { id, status: request.status, overturnedAt: null },
       data: {
@@ -614,6 +607,21 @@ export class AttendanceRequestsService {
   }
 
   // ------------------------------------------------------------- internals
+
+  /** A date (or half) already covered by another pending or approved leave request: refused with a code the screens translate. */
+  private refuseOverlap(overlap: { date: string; reason: 'covered' | 'other_kind' } | null): void {
+    if (!overlap) return;
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      code: overlap.reason === 'covered' ? 'leave_overlap' : 'leave_other_kind',
+      date: overlap.date,
+      message:
+        overlap.reason === 'covered'
+          ? `You already have leave asked for or approved on ${overlap.date}. Pick other dates, or cancel that request first.`
+          : `The other half of ${overlap.date} is a different kind of leave. Ask for the same kind, or a full day.`,
+    });
+  }
 
   /** The part of a leave request to approve: inside the asked dates, at least one leave day, fewer than all. */
   private async partRange(

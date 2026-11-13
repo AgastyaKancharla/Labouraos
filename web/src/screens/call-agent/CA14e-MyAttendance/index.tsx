@@ -39,7 +39,7 @@ export default function MyAttendance() {
   const data = summary.data;
   // A full day's hours; expectedDays counts a day with a half day of leave as half a day.
   const fullDay = (attendance?.today?.policy.productionHoursFullDay ?? 8) * 3600;
-  const needed = data ? expectedDays(data.days) * fullDay : 0;
+  const needed = data ? expectedDays(data.days, istDateKey(now)) * fullDay : 0;
   const days = data ? [...data.days].sort((a, b) => b.date.localeCompare(a.date)) : [];
   const owed = data ? data.deductibleShortfallSeconds : 0;
 
@@ -77,7 +77,7 @@ export default function MyAttendance() {
         <div className="card lb-att-stat">
           <span className="lbl">{t('att.mine.production')}</span>
           <b>{data ? hm(data.productionSeconds) : <Skeleton height={26} />}</b>
-          <span className="sub">{data ? t('att.mine.neededSoFar', { needed: hm(needed), days: expectedDays(data.days) }) : ''}</span>
+          <span className="sub">{data ? t('att.mine.neededSoFar', { needed: hm(needed), days: expectedDays(data.days, istDateKey(now)) }) : ''}</span>
         </div>
         <div className="card lb-att-stat">
           <span className="lbl">{t('att.mine.makeUp')}</span>

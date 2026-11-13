@@ -1,5 +1,5 @@
 import { computePay, lossOfPayHalfDays } from '../finance/payroll-rules';
-import { classifyDay, lateMinutesFor, productionTargetSeconds } from './day-rules';
+import { classifyDay, dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { dayTally, daysLabel, leaveFieldsFor, leaveHalvesOf, splitPaid } from './leave-units';
 
 /** Half-day leave (owner decision 12 Nov), the pure rules: halves, the split, the day and the pay. */
@@ -77,5 +77,18 @@ describe('half-day leave rules', () => {
     expect(lateMinutesFor(new Date('2026-11-16T08:45:00.000Z'), shift, 'first')).toBe(15);
     expect(productionTargetSeconds({ productionHoursFullDay: 8 })).toBe(8 * 3600);
     expect(productionTargetSeconds({ productionHoursFullDay: 8 }, true)).toBe(4 * 3600);
+  });
+
+  it('a joined day (two half days) is a full leave day in any state: counted, no work, no shortfall', () => {
+    const joined = { leaveKind: 'casual', leaveUnpaid: false, leaveHalf: null, otherLeaveRequestId: 'req-2' };
+    // Even while a login that day is open.
+    expect(leaveHalvesOf({ ...joined, dayType: 'open' })).toEqual({ total: 2, paid: 2, unpaid: 0 });
+    expect(leaveHalvesOf({ ...joined, dayType: 'leave', leaveUnpaid: true })).toEqual({ total: 2, paid: 0, unpaid: 2 });
+    expect(dayTally({ ...joined, dayType: 'leave', leavePartUnpaid: true })).toMatchObject({ fullHalves: 0, absentHalves: 0, paidLeaveHalves: 1, unpaidLeaveHalves: 1 });
+    expect(dayResultFor({ ...joined, dayType: 'open', dayTypeChangedAt: null }, 5 * H, policy, false)).toEqual({ dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0 });
+    // A Team Lead's change stays on a normal day; a day left "leave" after an overturn is classified again.
+    const changed = new Date();
+    expect(dayResultFor({ dayType: 'half', leaveKind: null, leaveHalf: null, otherLeaveRequestId: null, dayTypeChangedAt: changed }, 6 * H, policy, false)).toMatchObject({ dayType: 'half', shortfallSeconds: 0 });
+    expect(dayResultFor({ dayType: 'leave', leaveKind: 'casual', leaveHalf: 'first', otherLeaveRequestId: null, dayTypeChangedAt: changed }, 6 * H, policy, false)).toMatchObject({ dayType: 'full', shortfallSeconds: 0 });
   });
 });

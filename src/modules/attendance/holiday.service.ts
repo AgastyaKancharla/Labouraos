@@ -208,9 +208,10 @@ export class HolidayService {
       await this.prisma.attendanceDay.deleteMany({
         where: { id: { in: leaveRows.map((row) => row.id) } },
       });
-      // A half day of leave on a day worked: the day stays (all make-up now), the leave goes.
+      // Leave on a day worked (a half day, or two halves joined into a full leave day): the day
+      // stays (all make-up now), the leave goes, as for any leave day on a holiday.
       const workedHalves = await this.prisma.attendanceDay.findMany({
-        where: { date, loginAt: { not: null }, leaveHalf: { not: null } },
+        where: { date, loginAt: { not: null }, OR: [{ leaveHalf: { not: null } }, { otherLeaveRequestId: { not: null } }] },
         select: { id: true, leaveRequestId: true, otherLeaveRequestId: true },
       });
       for (const row of workedHalves) {

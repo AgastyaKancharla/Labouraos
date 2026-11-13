@@ -1,5 +1,6 @@
 import { PricingPolicy } from '@prisma/client';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
+import { isJoinedLeaveDay } from './leave-units';
 
 export type DayRulePolicy = Pick<
   PricingPolicy,
@@ -109,4 +110,34 @@ export function lateMinutesFor(
 /** The production seconds a full day needs: half of it on a day with a half day of leave. */
 export function productionTargetSeconds(policy: Pick<PricingPolicy, 'productionHoursFullDay'>, halfDayLeave = false): number {
   return Math.round((policy.productionHoursFullDay * 3600) / (halfDayLeave ? 2 : 1));
+}
+
+/** The fields of a closed day that decide how it counts. */
+export interface DayForResult {
+  dayType: string;
+  leaveKind: string | null;
+  leaveHalf: string | null;
+  otherLeaveRequestId: string | null;
+  dayTypeChangedAt: Date | null;
+}
+
+/**
+ * How a closed day counts, worked out again (a correction, a leave approved
+ * or overturned). Two half days of leave on the date (a joined day) are a full
+ * leave day, exactly like a full-day leave: no shortfall, no make-up, whatever
+ * was logged. A day a Team Lead or Manager changed to full or half keeps the
+ * change (no shortfall); any other day is classified from its production
+ * (half the production on a day with a half day of leave).
+ */
+export function dayResultFor(
+  day: DayForResult,
+  productionSeconds: number,
+  policy: DayRulePolicy,
+  weeklyOff: boolean,
+): DayResult | { dayType: 'leave'; shortfallSeconds: 0; makeUpSeconds: 0 } {
+  if (isJoinedLeaveDay(day)) return { dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0 };
+  const result = classifyDay(productionSeconds, policy, weeklyOff, Boolean(day.leaveHalf && day.leaveKind));
+  const keep = Boolean(day.dayTypeChangedAt) && (day.dayType === 'full' || day.dayType === 'half');
+  if (!keep) return result;
+  return { dayType: day.dayType as 'full' | 'half', shortfallSeconds: 0, makeUpSeconds: day.dayType === 'half' ? 0 : result.makeUpSeconds };
 }

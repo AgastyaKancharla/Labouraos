@@ -48,6 +48,8 @@ export interface DayRow {
   leaveHalf: string | null;
   /** A full leave day half paid, half unpaid (the balance ran out half way). */
   leavePartUnpaid: boolean;
+  /** Set when two half days of leave make this a full leave day. */
+  otherLeaveRequestId: string | null;
   change: { byStaffId: string | null; at: string; reason: string | null } | null;
 }
 
@@ -384,6 +386,7 @@ export class AttendanceDaysService {
       leaveUnpaid: boolean;
       leaveHalf: string | null;
       leavePartUnpaid: boolean;
+      otherLeaveRequestId: string | null;
       dayTypeChangedById: string | null;
       dayTypeChangedAt: Date | null;
       dayTypeChangeReason: string | null;
@@ -411,6 +414,7 @@ export class AttendanceDaysService {
       leaveUnpaid: day.leaveUnpaid,
       leaveHalf: day.leaveKind ? day.leaveHalf : null,
       leavePartUnpaid: day.leavePartUnpaid,
+      otherLeaveRequestId: day.otherLeaveRequestId,
       change: day.dayTypeChangedAt
         ? {
             byStaffId: day.dayTypeChangedById,

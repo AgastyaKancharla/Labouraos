@@ -22,6 +22,13 @@ export interface LeaveDayFields {
   leaveUnpaid: boolean;
   leaveHalf?: string | null;
   leavePartUnpaid?: boolean;
+  /** Set when two half days of leave (two requests) make this a full leave day. */
+  otherLeaveRequestId?: string | null;
+}
+
+/** Two half days of leave on one date: a full leave day in every respect, whatever was logged that day. */
+export function isJoinedLeaveDay(row: Pick<LeaveDayFields, 'leaveKind' | 'otherLeaveRequestId'>): boolean {
+  return Boolean(row.otherLeaveRequestId && row.leaveKind);
 }
 
 /** Leave on one day, in half days: total = paid + unpaid. */
@@ -40,8 +47,15 @@ const NONE: LeaveHalves = { total: 0, paid: 0, unpaid: 0 };
  * - A full leave day (dayType 'leave') is two halves: both paid, both unpaid,
  *   or one of each when the paid balance ran out half way (leavePartUnpaid).
  * - A full leave day the person logged in on became a working day: no leave.
+ * - Two half days of one date (a joined day) are a full leave day in any
+ *   state, even while a login that day is open, so its balance is never paid twice.
  */
 export function leaveHalvesOf(row: LeaveDayFields): LeaveHalves {
+  if (isJoinedLeaveDay(row)) {
+    if (row.leaveUnpaid) return { total: 2, paid: 0, unpaid: 2 };
+    if (row.leavePartUnpaid) return { total: 2, paid: 1, unpaid: 1 };
+    return { total: 2, paid: 2, unpaid: 0 };
+  }
   if (row.leaveHalf) {
     if (!row.leaveKind) return NONE;
     return row.leaveUnpaid ? { total: 1, paid: 0, unpaid: 1 } : { total: 1, paid: 1, unpaid: 0 };
@@ -135,6 +149,8 @@ export function dayTally(row: LeaveDayFields, past = true): DayTally {
   tally.paidLeaveHalves = leave.paid;
   tally.unpaidLeaveHalves = leave.unpaid;
   if (row.leaveKind === 'emergency') tally.emergencyPaidHalves = leave.paid;
+  // A joined day is a full leave day only: nothing worked or absent on it.
+  if (isJoinedLeaveDay(row)) return tally;
   if (row.leaveHalf && leave.total > 0) {
     if (row.dayType === 'full') tally.fullHalves = 1;
     else if (row.dayType === 'half') tally.absentHalves = 1;
