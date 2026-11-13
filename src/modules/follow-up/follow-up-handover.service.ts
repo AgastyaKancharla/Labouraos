@@ -68,9 +68,19 @@ export class FollowUpHandoverService {
         fromDate: { lte: new Date(`${toDay}T00:00:00.000Z`) },
         toDate: { gte: new Date(`${fromDay}T00:00:00.000Z`) },
       },
-      select: { staffId: true },
+      select: { staffId: true, half: true, fromDate: true },
     });
-    const away = new Set(off.map((o) => o.staffId));
+    // A teammate on a half day of leave still works the other half; both halves of a date is off.
+    const away = new Set<string>();
+    const halves = new Map<string, number>();
+    for (const o of off) {
+      if (!o.half) away.add(o.staffId);
+      else {
+        const key = `${o.staffId}|${o.fromDate.toISOString()}`;
+        halves.set(key, (halves.get(key) ?? 0) + 1);
+        if ((halves.get(key) ?? 0) >= 2) away.add(o.staffId);
+      }
+    }
     return candidates.filter((c) => !away.has(c.id));
   }
 
@@ -88,6 +98,8 @@ export class FollowUpHandoverService {
       : [];
     return {
       planned,
+      // A half day keeps its follow-ups (the other half is worked) unless it joins the other half.
+      handoverNeeded: leave.status === 'approved' ? await this.isFullDayLeave(leave) : await this.willBeFullDayLeave(leave),
       teammates,
       handedOver: {
         count: handedOver.length,
@@ -95,6 +107,25 @@ export class FollowUpHandoverService {
         to: names,
       },
     };
+  }
+
+  /** Full days, or a half day whose date is joined with the other half into a full leave day. */
+  async isFullDayLeave(leave: { id: string; half: string | null }): Promise<boolean> {
+    if (!leave.half) return true;
+    const joined = await this.prisma.attendanceDay.count({
+      where: { otherLeaveRequestId: { not: null }, OR: [{ leaveRequestId: leave.id }, { otherLeaveRequestId: leave.id }] },
+    });
+    return joined > 0;
+  }
+
+  /**
+   * Before approval: whether approving this request makes a full leave day — full days, or a half
+   * day whose other half is already a half day of leave of the same kind (they will join).
+   */
+  async willBeFullDayLeave(leave: { staffId: string; half: string | null; kind: string; fromDate: Date }): Promise<boolean> {
+    if (!leave.half) return true;
+    const day = await this.prisma.attendanceDay.findUnique({ where: { staffId_date: { staffId: leave.staffId, date: leave.fromDate } } });
+    return Boolean(day?.leaveKind === leave.kind && day.leaveHalf && day.leaveHalf !== leave.half);
   }
 
   /** Checks the choice before a leave is approved, so a bad choice changes nothing. */
@@ -122,6 +153,9 @@ export class FollowUpHandoverService {
   async handOver(actorId: string, leaveId: string, choice: HandoverChoice | undefined, now: Date) {
     const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id: leaveId } });
     if (leave.status !== 'approved') return { moved: 0, to: [] as HandoverTeammate[] };
+    // A half day of leave keeps its follow-ups (the other half is worked); only a full leave day
+    // hands them over, including two half days of one date joined into a full leave day.
+    if (!(await this.isFullDayLeave(leave))) return { moved: 0, to: [] as HandoverTeammate[] };
     const mode = await this.validate(leave.staffId, leave, choice);
     if (mode === 'keep') return { moved: 0, to: [] as HandoverTeammate[] };
     const w = this.window(leave);

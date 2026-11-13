@@ -112,8 +112,8 @@ export default function MyAttendanceScreen() {
               <Text style={styles.big}>{hm(summary.data.productionSeconds)}</Text>
               <Text variant="muted">
                 {t('fa04e.neededSoFar', {
-                  needed: hm(expectedDays(summary.data.days) * FULL_DAY_SECONDS),
-                  days: expectedDays(summary.data.days),
+                  needed: hm(expectedDays(summary.data.days, todayKeyIst()) * FULL_DAY_SECONDS),
+                  days: expectedDays(summary.data.days, todayKeyIst()),
                 })}
               </Text>
             </Card>

@@ -153,7 +153,7 @@ describe('Phase 10 Task 3: Login codes', () => {
     });
 
     it('stores no code, and reveal and verify agree', async () => {
-      const created = await codes.create(agent1Id, device1Id, '203.0.113.10', true);
+      const created = await codes.create(agent1Id, device1Id, '203.0.113.10');
       const stored = await prisma.loginCodeRequest.findUniqueOrThrow({
         where: { id: created.id },
       });
@@ -185,7 +185,7 @@ describe('Phase 10 Task 3: Login codes', () => {
     });
 
     it('refuses an expired code, a refused code, and the fifth wrong code', async () => {
-      const expired = await codes.create(agent1Id, device1Id, '203.0.113.11', false);
+      const expired = await codes.create(agent1Id, device1Id, '203.0.113.11');
       await prisma.loginCodeRequest.update({
         where: { id: expired.id },
         data: { expiresAt: new Date(Date.now() - 60_000) },
@@ -195,7 +195,7 @@ describe('Phase 10 Task 3: Login codes', () => {
         (await prisma.loginCodeRequest.findUnique({ where: { id: expired.id } }))?.status,
       ).toBe('expired');
 
-      const wrong = await codes.create(agent1Id, device1Id, '203.0.113.12', false);
+      const wrong = await codes.create(agent1Id, device1Id, '203.0.113.12');
       for (let attempt = 0; attempt < wrongLimit; attempt += 1) {
         await expect(codes.verify(wrong.id, '000000')).rejects.toThrow(/not valid/);
       }
@@ -204,7 +204,7 @@ describe('Phase 10 Task 3: Login codes', () => {
       expect(refused?.refusedReason).toBe('too_many_wrong_codes');
       await expect(codes.verify(wrong.id, '000000')).rejects.toThrow(/refused/);
 
-      const manual = await codes.create(agent1Id, device1Id, '203.0.113.13', false);
+      const manual = await codes.create(agent1Id, device1Id, '203.0.113.13');
       await request(app.getHttpServer())
         .post(`/login-codes/${manual.id}/refuse`)
         .set('Authorization', `Bearer ${teamLead1Token}`)
@@ -214,8 +214,8 @@ describe('Phase 10 Task 3: Login codes', () => {
     });
 
     it('hides an approver from their own request and limits a Team Lead to their team', async () => {
-      const other = await codes.create(agent2Id, device2Id, '203.0.113.20', false);
-      const own = await codes.create(teamLead1Id, leadDeviceId, '203.0.113.21', true);
+      const other = await codes.create(agent2Id, device2Id, '203.0.113.20');
+      const own = await codes.create(teamLead1Id, leadDeviceId, '203.0.113.21');
 
       const leadList = await request(app.getHttpServer())
         .get('/login-codes/pending')
@@ -272,8 +272,8 @@ describe('Phase 10 Task 3: Login codes', () => {
     });
 
     it('reports counts, the average wait, and odd-hour requests', async () => {
-      const odd = await codes.create(agent1Id, device1Id, '203.0.113.30', false);
-      const day = await codes.create(agent1Id, device1Id, '203.0.113.31', false);
+      const odd = await codes.create(agent1Id, device1Id, '203.0.113.30');
+      const day = await codes.create(agent1Id, device1Id, '203.0.113.31');
       await request(app.getHttpServer())
         .post(`/login-codes/${odd.id}/reveal`)
         .set('Authorization', `Bearer ${teamLead1Token}`)
@@ -292,7 +292,7 @@ describe('Phase 10 Task 3: Login codes', () => {
           status: 'expired',
         },
       });
-      const refused = await codes.create(agent1Id, device1Id, '203.0.113.32', false);
+      const refused = await codes.create(agent1Id, device1Id, '203.0.113.32');
       await prisma.loginCodeRequest.update({
         where: { id: refused.id },
         data: {

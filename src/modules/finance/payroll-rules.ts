@@ -262,9 +262,15 @@ export function computePay(input: PayInput): PayResult {
   };
 }
 
-/** Attendance loss of pay in half days: absent, unpaid leave and unmarked days are whole days, a half day loses half. */
+/**
+ * Attendance loss of pay in half days: absent, unpaid leave and unmarked days
+ * are whole days, a half day loses half. Absent and unpaid leave can be half
+ * days (owner decision 12 Nov: half-day leave): an unpaid half day of leave is
+ * one half (salary ÷ 26 ÷ 2), and so is a working half not worked. A paid half
+ * day of leave costs nothing. Always a whole number of halves.
+ */
 export function lossOfPayHalfDays(days: { absentDays: number; unpaidLeaveDays: number; halfDays: number; unmarkedDays?: number }): number {
-  return days.absentDays * 2 + days.unpaidLeaveDays * 2 + days.halfDays + (days.unmarkedDays ?? 0) * 2;
+  return Math.round(days.absentDays * 2 + days.unpaidLeaveDays * 2 + days.halfDays + (days.unmarkedDays ?? 0) * 2);
 }
 
 /** "Seventeen thousand four hundred eighteen rupees" for the payslip (Indian numbering). */

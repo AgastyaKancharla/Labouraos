@@ -20,16 +20,8 @@ interface Row {
   entityCode: string;
   reason: string | null;
   change: string | null;
-  /** Where the change was made: the approved device and the network (null on rows from before 16 Nov and from jobs). */
+  /** Where the change was made: the approved device (null on rows from before 16 Nov and from jobs). `network` is an old label, no longer shown. */
   device?: { id: string | null; name: string | null; network: string | null } | null;
-}
-
-/** "office:HQ" → "Office network · HQ"; "outside_office" → "Outside the office". */
-export function networkLabel(network: string | null | undefined): string | null {
-  if (!network) return null;
-  if (network === 'outside_office') return 'Outside the office';
-  if (network.startsWith('office:')) return `Office network · ${network.slice('office:'.length)}`;
-  return network;
 }
 
 /** The device's name with the end of its id, so two "Login device" phones can be told apart. */
@@ -40,8 +32,8 @@ export function deviceLabel(device: Row['device']): string | null {
 }
 
 const deviceText = (r: Row) => {
-  const parts = [deviceLabel(r.device), networkLabel(r.device?.network)].filter(Boolean);
-  return parts.length ? parts.join(' — ') : r.actor.role ? 'Not recorded' : 'System';
+  // No office/outside-office label any more (owner decision 14 Nov: no office networks).
+  return deviceLabel(r.device) ?? (r.actor.role ? 'Not recorded' : 'System');
 };
 const TYPE: Record<Row['type'], { label: string; tone: 'good' | 'warn' | 'info' | 'muted' | 'crit' }> = {
   money: { label: 'Money', tone: 'good' },
@@ -71,14 +63,8 @@ export default function AuditLog() {
       header: 'Device',
       cell: (r) => {
         const device = deviceLabel(r.device);
-        const network = networkLabel(r.device?.network);
-        if (!device && !network) return <span className="ceo-cell-sub">{deviceText(r)}</span>;
-        return (
-          <div>
-            <div>{device ?? '—'}</div>
-            {network ? <div className="ceo-cell-sub">{network}</div> : null}
-          </div>
-        );
+        if (!device) return <span className="ceo-cell-sub">{deviceText(r)}</span>;
+        return <div>{device}</div>;
       },
       csv: deviceText,
       hideOnPhone: true,

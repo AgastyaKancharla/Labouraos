@@ -96,7 +96,7 @@ describe('Staff sign in', () => {
     expect(screen.getByRole('heading', { name: 'Staff sign in' })).toBeInTheDocument();
   });
 
-  it('shows the API reason for a refused login (locked, device, office network)', async () => {
+  it('shows the API reason for a refused login (locked, device)', async () => {
     mockApi({ 'POST /auth/login': apiError(401, 'This device is waiting for approval by your Team Lead') });
     renderSignIn();
     await enterPassword('CA-0042');

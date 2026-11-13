@@ -131,7 +131,6 @@ export class CeoTeamService {
           teamName: true,
           teamLeadId: true,
           reportsToId: true,
-          worksFromOffice: true,
           createdAt: true,
           deactivatedAt: true,
           joinedOn: true,
@@ -167,7 +166,6 @@ export class CeoTeamService {
         signedIn: online.has(s.id),
         lockedUntil: s.lockedUntil && s.lockedUntil.getTime() > now.getTime() ? s.lockedUntil.toISOString() : null,
         lockedReason: s.lockedReason,
-        worksFromOffice: s.worksFromOffice,
         createdAt: s.createdAt.toISOString(),
         joinedOn: s.joinedOn ? s.joinedOn.toISOString().slice(0, 10) : null,
       };
@@ -287,13 +285,13 @@ export class CeoTeamService {
     return { id: updated.id, teamName: updated.teamName, team: teamLabel(updated) };
   }
 
-  /** C-Team-Devices: every device with its owner, network at the last login and the last login time. */
+  /** C-Team-Devices: every device with its owner and the last login time (no office network since 14 Nov). */
   async devices(now: Date) {
     const devices = await this.prisma.staffDevice.findMany({
       include: {
-        staff: { select: { id: true, code: true, name: true, role: true, worksFromOffice: true } },
+        staff: { select: { id: true, code: true, name: true, role: true } },
         approvedByStaff: { select: { id: true, name: true } },
-        loginCodeRequests: { orderBy: { createdAt: 'desc' }, take: 1, select: { onOfficeNetwork: true, createdAt: true } },
+        loginCodeRequests: { orderBy: { createdAt: 'desc' }, take: 1, select: { createdAt: true } },
       },
       orderBy: [{ lastSeenAt: { sort: 'desc', nulls: 'last' } }],
     });
@@ -306,7 +304,6 @@ export class CeoTeamService {
         label: d.label,
         platform: d.platform,
         status: d.status,
-        network: last ? (last.onOfficeNetwork ? 'office' : 'mobile') : d.staff.worksFromOffice ? 'office' : null,
         lastLoginAt: lastLogin ? lastLogin.toISOString() : null,
         oddHour: lastLogin ? isOddHourIst(lastLogin) : false,
         requestedAt: d.requestedAt?.toISOString() ?? null,

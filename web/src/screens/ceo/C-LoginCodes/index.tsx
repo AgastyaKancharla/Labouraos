@@ -24,7 +24,6 @@ interface Pending {
   id: string;
   createdAt: string;
   expiresAt: string;
-  onOfficeNetwork: boolean;
   status: string;
   staff: { id: string; name: string; code: string; role: string; photoUrl?: string | null };
   staffDevice: { id: string; label: string; platform: string };
@@ -173,8 +172,6 @@ function RequestCard({ request }: { request: Pending }) {
           <div className="kv" style={{ marginTop: 10 }}>
             <span>Device</span>
             <span>{request.staffDevice.label}</span>
-            <span>Office network</span>
-            <span>{request.onOfficeNetwork ? 'Yes' : request.staff.role === 'field_agent' ? 'No · mobile data (allowed for field)' : 'No'}</span>
             <span>Asked</span>
             <span>{formatTimeIST(request.createdAt)}</span>
           </div>

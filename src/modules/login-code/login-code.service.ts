@@ -62,7 +62,6 @@ export class LoginCodeService {
     staffId: string,
     staffDeviceId: string,
     ip: string,
-    onOfficeNetwork: boolean,
   ) {
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!staff) {
@@ -85,7 +84,6 @@ export class LoginCodeService {
         staffId,
         staffDeviceId,
         ipAddress: ip,
-        onOfficeNetwork,
         status: 'pending',
         createdAt,
         expiresAt,

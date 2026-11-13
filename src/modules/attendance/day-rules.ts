@@ -1,4 +1,5 @@
 import { PricingPolicy } from '@prisma/client';
+import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 
 export type DayRulePolicy = Pick<
   PricingPolicy,
@@ -23,18 +24,27 @@ export interface DayResult {
  *
  * A day worked on a weekly day off is `off`: no shortfall, and all of its
  * production is make-up time.
+ *
+ * A day with a half day of leave (owner decision 12 Nov: "the other half is a
+ * normal working half day") needs half the production: both lines are halved
+ * (4 hours for the full line, 2¼ hours for the half line with the default
+ * Settings), the tolerance stays the same. `full` then means the working half
+ * was worked; `half` means it was not (under the halved half line), which
+ * costs half a day like any half day.
  */
 export function classifyDay(
   productionSeconds: number,
   policy: DayRulePolicy,
   weeklyOff = false,
+  halfDayLeave = false,
 ): DayResult {
   const production = Math.max(0, Math.floor(productionSeconds));
   if (weeklyOff) {
     return { dayType: 'off', shortfallSeconds: 0, makeUpSeconds: production };
   }
-  const fullLine = Math.round(policy.productionHoursFullDay * 3600);
-  const halfLine = Math.round(policy.halfDayBelowHours * 3600);
+  const share = halfDayLeave ? 2 : 1;
+  const fullLine = Math.round((policy.productionHoursFullDay * 3600) / share);
+  const halfLine = Math.round((policy.halfDayBelowHours * 3600) / share);
   const tolerance = Math.max(0, policy.dayToleranceMinutes) * 60;
   const makeUpSeconds = Math.max(0, production - fullLine);
   if (production >= fullLine - tolerance) {
@@ -70,4 +80,62 @@ export function monthRange(month: string): { from: Date; to: Date } | null {
   const from = new Date(Date.UTC(year, monthIndex, 1));
   const to = new Date(Date.UTC(year, monthIndex + 1, 0));
   return { from, to };
+}
+
+/**
+ * Minutes late past the grace, for a login at `loginAt` (IST). On a day with
+ * the first half on leave the working half starts half way through the shift,
+ * so lateness counts from there (owner decision 12 Nov: the other half is a
+ * normal working half day).
+ */
+export function lateMinutesFor(
+  loginAt: Date,
+  policy: Pick<PricingPolicy, 'shiftStart' | 'shiftEnd' | 'lateGraceMinutes'>,
+  leaveHalf: string | null = null,
+): number {
+  const parts = getCalendarPartsInTimezone(loginAt);
+  const toMinutes = (hhmm: string) => {
+    const [hour, minute] = hhmm.split(':').map((part) => Number(part));
+    return hour * 60 + minute;
+  };
+  const loginMinutes = parts.hour * 60 + parts.minute;
+  const shiftStart = toMinutes(policy.shiftStart);
+  const startMinutes =
+    leaveHalf === 'first' ? shiftStart + Math.floor((toMinutes(policy.shiftEnd) - shiftStart) / 2) : shiftStart;
+  const lateBy = loginMinutes - startMinutes;
+  return lateBy <= policy.lateGraceMinutes ? 0 : lateBy;
+}
+
+/** The production seconds a full day needs: half of it on a day with a half day of leave. */
+export function productionTargetSeconds(policy: Pick<PricingPolicy, 'productionHoursFullDay'>, halfDayLeave = false): number {
+  return Math.round((policy.productionHoursFullDay * 3600) / (halfDayLeave ? 2 : 1));
+}
+
+/** The fields of a closed day that decide how it counts. */
+export interface DayForResult {
+  dayType: string;
+  leaveKind: string | null;
+  leaveHalf: string | null;
+  otherLeaveRequestId: string | null;
+  dayTypeChangedAt: Date | null;
+}
+
+/**
+ * How a closed (logged-in) day counts, worked out again (a correction, a
+ * leave approved or overturned). A day a Team Lead or Manager changed to full
+ * or half keeps the change (no shortfall); any other day is classified from
+ * its production (half the production on a day with a half day of leave). A
+ * joined leave day that was logged in is a normal working day, exactly as a
+ * full-day leave day that was logged in.
+ */
+export function dayResultFor(
+  day: DayForResult,
+  productionSeconds: number,
+  policy: DayRulePolicy,
+  weeklyOff: boolean,
+): DayResult {
+  const result = classifyDay(productionSeconds, policy, weeklyOff, Boolean(day.leaveHalf && day.leaveKind));
+  const keep = Boolean(day.dayTypeChangedAt) && (day.dayType === 'full' || day.dayType === 'half');
+  if (!keep) return result;
+  return { dayType: day.dayType as 'full' | 'half', shortfallSeconds: 0, makeUpSeconds: day.dayType === 'half' ? 0 : result.makeUpSeconds };
 }

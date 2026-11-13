@@ -22,7 +22,7 @@ import {
   PRODUCTION_STATUSES,
   isStaffPickedStatus,
 } from './attendance.constants';
-import { classifyDay } from './day-rules';
+import { dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { WorkingDaysService } from './working-days.service';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
@@ -65,6 +65,8 @@ export interface TodayView {
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
+  /** "first" or "second" on a day with a half day of leave: half the production is needed. */
+  leaveHalf?: string | null;
   /** When the current status started (null before login and after logout). */
   statusSince: string | null;
   shortBreakSeconds: number;
@@ -160,7 +162,9 @@ export class AttendanceService {
       loginLat = body.latitude as number;
       loginLng = body.longitude as number;
     }
-    const lateMinutes = this.lateMinutes(now, policy);
+    // A login on a leave day (full day, or two halves joined) makes it a working day with normal
+    // lateness; on a half day of leave the working half starts mid-shift when the first half is off.
+    const lateMinutes = this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
     if (existing) {
       // A day marked absent or leave before the person logged in becomes a
       // working day. The leave fields stay so the leave flow can see them.
@@ -250,7 +254,8 @@ export class AttendanceService {
       include: { segments: { orderBy: { startedAt: 'asc' } } },
     });
     if (!day || !day.loginAt) {
-      return { ...this.emptyToday(now, policy), dayType: day?.dayType ?? 'open' };
+      const leaveHalf = day?.leaveKind ? (day.leaveHalf ?? null) : null;
+      return { ...this.emptyToday(now, policy, Boolean(leaveHalf)), dayType: day?.dayType ?? 'open', leaveHalf };
     }
     const end = day.logoutAt ?? now;
     const totals = this.totals(day.segments, now);
@@ -260,7 +265,9 @@ export class AttendanceService {
         data: totals,
       });
     }
-    const fullSeconds = Math.round(policy.productionHoursFullDay * 3600);
+    // A half day of leave needs half the production (owner decision 12 Nov).
+    const halfLeave = Boolean(day.leaveHalf && day.leaveKind);
+    const fullSeconds = productionTargetSeconds(policy, halfLeave);
     const current = [...day.segments].reverse().find((segment) => !segment.endedAt);
     return {
       date: this.dateLabel(day.date),
@@ -282,6 +289,7 @@ export class AttendanceService {
       flagged: day.flagged,
       closedReason: day.closedReason,
       dayType: day.dayType,
+      leaveHalf: halfLeave ? day.leaveHalf : null,
       statusSince: current ? current.startedAt.toISOString() : null,
       ...this.breakdown(day.segments, end),
       segments: day.segments.map((segment) => ({
@@ -453,7 +461,8 @@ export class AttendanceService {
     });
     const totals = this.totals(segments, at);
     const policy = await this.pricing.current();
-    const result = classifyDay(
+    const result = dayResultFor(
+      { ...day, dayTypeChangedAt: null },
       totals.productionSeconds,
       policy,
       await this.workingDays.isNonWorking(day.date),
@@ -488,20 +497,10 @@ export class AttendanceService {
       return;
     }
     const policy = await this.pricing.current();
-    const result = classifyDay(
-      totals.productionSeconds,
-      policy,
-      await this.workingDays.isNonWorking(day.date),
-    );
-    const changed = Boolean(day.dayTypeChangedAt);
+    const result = dayResultFor(day, totals.productionSeconds, policy, await this.workingDays.isNonWorking(day.date));
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
-      data: {
-        ...totals,
-        dayType: changed ? day.dayType : result.dayType,
-        shortfallSeconds: changed ? 0 : result.shortfallSeconds,
-        makeUpSeconds: changed && day.dayType === 'half' ? 0 : result.makeUpSeconds,
-      },
+      data: { ...totals, ...result },
     });
   }
 
@@ -626,14 +625,9 @@ export class AttendanceService {
     return new Date(latest);
   }
 
-  lateMinutes(loginAt: Date, policy: PricingPolicy): number {
-    const parts = getCalendarPartsInTimezone(loginAt);
-    const [startHour, startMinute] = policy.shiftStart.split(':').map((part) => Number(part));
-    const loginMinutes = parts.hour * 60 + parts.minute;
-    const startMinutes = startHour * 60 + startMinute;
-    const lateBy = loginMinutes - startMinutes;
-    if (lateBy <= policy.lateGraceMinutes) return 0;
-    return lateBy;
+  /** Minutes late past the grace (see lateMinutesFor: counted from mid-shift when the first half is on leave). */
+  lateMinutes(loginAt: Date, policy: PricingPolicy, leaveHalf: string | null = null): number {
+    return lateMinutesFor(loginAt, policy, leaveHalf);
   }
 
   istDate(now: Date): Date {
@@ -645,8 +639,9 @@ export class AttendanceService {
     return date.toISOString().slice(0, 10);
   }
 
-  private emptyToday(now: Date, policy: PricingPolicy): TodayView {
-    const fullSeconds = Math.round(policy.productionHoursFullDay * 3600);
+  /** Before login. On a day with a half day of leave half the production is needed (owner decision 12 Nov). */
+  private emptyToday(now: Date, policy: PricingPolicy, halfDayLeave = false): TodayView {
+    const fullSeconds = productionTargetSeconds(policy, halfDayLeave);
     return {
       date: this.dateLabel(this.istDate(now)),
       status: null,

@@ -1,3 +1,4 @@
+import { daysLabel } from '../attendance/leave-units';
 import {
   BadRequestException,
   ConflictException,
@@ -14,7 +15,7 @@ import { AttendanceClock } from '../attendance/attendance-clock';
 import { AttendanceDaysService } from '../attendance/attendance-days.service';
 import { AttendanceRequestsService } from '../attendance/attendance-requests.service';
 import { AttendanceService } from '../attendance/attendance.service';
-import { classifyDay } from '../attendance/day-rules';
+import { dayResultFor } from '../attendance/day-rules';
 import { PricingService } from '../pricing/pricing.service';
 import { Placement, placementOf, whereLabel } from '../attendance/request-routing';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
@@ -164,6 +165,8 @@ interface AttendanceView {
   leaveKind?: string;
   fromDate?: string;
   toDate?: string;
+  /** "first" or "second" for a half day of leave; null for full days. */
+  half?: string | null;
   days?: number;
   paidDays?: number;
   unpaidDays?: number;
@@ -296,7 +299,18 @@ export class RequestsService {
     }
     if (!view.canDecide) throw new ForbiddenException(this.whyNot(actor, view));
     // "Her follow-ups that day go to…": checked before anything is saved.
-    const handover = kind === 'leave' && decision === 'approved' && body?.followUps ? body.followUps : undefined;
+    let handover = kind === 'leave' && decision === 'approved' && body?.followUps ? body.followUps : undefined;
+    if (handover) {
+      const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
+      // A half day of leave keeps its follow-ups (the other half is worked): say so rather than
+      // silently dropping a teammate choice.
+      if (!(await this.handovers.willBeFullDayLeave(leave))) {
+        if (handover.mode && handover.mode !== 'keep') {
+          throw new BadRequestException('Follow-ups are not handed over for a half day of leave: the other half is worked, so they stay with the person. Approve without a handover.');
+        }
+        handover = undefined;
+      }
+    }
     if (handover) {
       const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
       const days = part
@@ -786,7 +800,13 @@ export class RequestsService {
       // Back to how the day counted before the change, with its shortfall and make-up worked out again.
       const from = String(details.fromDayType);
       const policy = await this.pricing.current();
-      const rules = classifyDay(day.productionSeconds, policy, false);
+      // The same rule as every other recalculation of a stored day (the change itself is being undone).
+      const rules = dayResultFor({ ...day, dayType: from, dayTypeChangedAt: null }, day.productionSeconds, policy, false);
+      if (day.dayType === 'leave') {
+        // Leave has replaced the change since (two half days joined): nothing to put back.
+        await this.prisma.attendanceDay.update({ where: { id: day.id }, data: { dayTypeChangedAt: null, dayTypeChangedById: null, dayTypeChangeReason: null } });
+        return;
+      }
       await this.prisma.attendanceDay.update({
         where: { id: day.id },
         data: {
@@ -966,7 +986,10 @@ export class RequestsService {
       const planned = row.leaveKind === 'casual';
       title = planned ? 'Planned leave' : 'Emergency leave';
       const dates = row.fromDate === row.toDate ? dayLabel(row.fromDate ?? '') : `${dayLabel(row.fromDate ?? '')} – ${dayLabel(row.toDate ?? '')}`;
-      summary = `${dates} · ${row.days ?? 0} day${row.days === 1 ? '' : 's'}`;
+      // A half day of leave (owner decision 12 Nov) says so, and which half.
+      summary = row.half
+        ? `${dates} · half day (${row.half} half)`
+        : `${dates} · ${daysLabel(row.days ?? 0)} day${row.days === 1 ? '' : 's'}`;
       if (row.approvedDays && row.approvedFromDate) {
         const approved = row.approvedFromDate === row.approvedToDate ? dayLabel(row.approvedFromDate) : `${dayLabel(row.approvedFromDate)} – ${dayLabel(row.approvedToDate ?? '')}`;
         summary += ` · ${row.approvedDays} approved (${approved})`;
@@ -975,12 +998,17 @@ export class RequestsService {
       const pendingOthers = row.casualDaysPendingThisMonth ?? 0;
       if (planned && status === 'pending') {
         const total = taken + pendingOthers + (row.days ?? 0);
-        if (total > 1) alert = `${ordinal(total)} planned day${row.days && row.days > 1 ? 's' : ''} in ${monthName(row.fromDate ?? '')}`;
+        if (total > 1) {
+          alert = Number.isInteger(total)
+            ? `${ordinal(total)} planned day${row.days && row.days > 1 ? 's' : ''} in ${monthName(row.fromDate ?? '')}`
+            : `${daysLabel(total)} planned days in ${monthName(row.fromDate ?? '')}`;
+        }
       }
       Object.assign(details, {
         leaveKind: row.leaveKind,
         fromDate: row.fromDate,
         toDate: row.toDate,
+        half: row.half ?? null,
         days: row.days,
         unpaidDays: row.unpaidDays ?? 0,
         approvedFromDate: row.approvedFromDate ?? null,

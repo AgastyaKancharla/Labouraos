@@ -327,7 +327,7 @@ export const en = {
   "auth.password": "Password",
   "auth.signIn": "Sign in",
   "auth.signingIn": "Signing in…",
-  "auth.signIn.note": "Approved device and office network only. 5 wrong passwords lock the account for 15 minutes.",
+  "auth.signIn.note": "Approved device only. 5 wrong passwords lock the account for 15 minutes.",
   "auth.totp.title": "Authenticator code",
   "auth.totp.body": "Open the authenticator app on your phone and type the 6-digit code for Laboura.",
   "auth.code.title": "Ask for your login code",
