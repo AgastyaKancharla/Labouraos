@@ -148,24 +148,19 @@ export class LeaveService {
         })
       ).map((row) => row.month),
     );
-    let written = 0;
+    const missing: string[] = [];
     for (let guard = 0; month <= current && guard < 600; guard += 1) {
-      if (!existing.has(month)) {
-        await this.prisma.leaveAccrual.upsert({
-          where: { staffId_month: { staffId, month } },
-          create: {
-            staffId,
-            month,
-            casual: policy.casualLeavePerMonth,
-            emergency: policy.emergencyLeavePerMonth,
-          },
-          update: {},
-        });
-        written += 1;
-      }
+      if (!existing.has(month)) missing.push(month);
       month = nextMonth(month);
     }
-    return written;
+    if (!missing.length) return 0;
+    // ON CONFLICT DO NOTHING: two requests accruing for the same person at once (two approvals,
+    // a balance read) never trip the one-row-per-month constraint.
+    const { count } = await this.prisma.leaveAccrual.createMany({
+      data: missing.map((m) => ({ staffId, month: m, casual: policy.casualLeavePerMonth, emergency: policy.emergencyLeavePerMonth })),
+      skipDuplicates: true,
+    });
+    return count;
   }
 
   /** Nightly: accrues for everyone who marks attendance. */

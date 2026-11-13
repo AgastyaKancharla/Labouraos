@@ -304,11 +304,13 @@ describe('Half-day leave', () => {
     expect(first.status).toBe(201);
     const again = await leave(agent, 'casual', '2032-06-07', 'first');
     expect(again.status).toBe(400);
-    expect(again.body.details).toMatchObject({ code: 'leave_overlap', date: '2032-06-07' });
+    // The code and date ride on the error (under `details` once the app's exception filter wraps it).
+    const detail = (res: { body: { details?: Record<string, unknown> } & Record<string, unknown> }) => res.body.details ?? res.body;
+    expect(detail(again)).toMatchObject({ code: 'leave_overlap', date: '2032-06-07' });
     expect(again.body.message).toMatch(/already have leave asked for or approved on 2032-06-07/);
-    expect((await leave(agent, 'casual', '2032-06-07')).body.details.code).toBe('leave_overlap');
-    expect((await leave(agent, 'casual', '2032-06-05', undefined, '2032-06-08')).body.details.code).toBe('leave_overlap');
-    expect((await leave(agent, 'emergency', '2032-06-07', 'second')).body.details.code).toBe('leave_other_kind');
+    expect(detail(await leave(agent, 'casual', '2032-06-07')).code).toBe('leave_overlap');
+    expect(detail(await leave(agent, 'casual', '2032-06-05', undefined, '2032-06-08')).code).toBe('leave_overlap');
+    expect(detail(await leave(agent, 'emergency', '2032-06-07', 'second')).code).toBe('leave_other_kind');
     const second = await leave(agent, 'casual', '2032-06-07', 'second');
     expect(second.status).toBe(201);
 
