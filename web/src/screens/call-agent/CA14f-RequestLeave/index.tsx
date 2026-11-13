@@ -134,7 +134,7 @@ export default function RequestLeave() {
             }}
           />
           <DateField label={t('att.leave.to')} required value={half ? fromDate : toDate || fromDate} min={fromDate || undefined} hint={half ? undefined : t('att.leave.toHint')} error={errors.to} onChange={setTo} disabled={Boolean(half)} />
-          <fieldset className="lb-att-half">
+          <fieldset className="lb-att-half lb-att-wide">
             <legend>{t('att.leave.halfDay')}</legend>
             <div className="lb-att-half__choices">
               {([['', 'att.leave.fullDay'], ['first', 'att.leave.firstHalf'], ['second', 'att.leave.secondHalf']] as const).map(([value, key]) => (
