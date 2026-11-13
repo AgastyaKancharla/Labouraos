@@ -6,6 +6,7 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { TeamLeadChecksService } from './team-lead-checks.service';
 import { TeamLeadScreensService } from './team-lead-screens.service';
+import { StaffPhotoService } from '../staff/staff-photo.service';
 
 type Authed = Request & { user: JwtPayload };
 
@@ -17,6 +18,7 @@ export class TeamLeadController {
   constructor(
     private readonly screens: TeamLeadScreensService,
     private readonly checks: TeamLeadChecksService,
+    private readonly photos: StaffPhotoService,
   ) {}
 
   private actor(req: Authed) {
@@ -43,14 +45,16 @@ export class TeamLeadController {
 
   @Get('agents')
   @RequireRoles('team_lead')
-  agents(@Req() req: Authed) {
-    return this.screens.agents(this.actor(req));
+  async agents(@Req() req: Authed) {
+    const res = await this.screens.agents(this.actor(req));
+    return { ...res, rows: await this.photos.withStaffPhotos(res.rows) };
   }
 
   @Get('agents/:id')
   @RequireRoles('team_lead')
-  agent(@Req() req: Authed, @Param('id') id: string) {
-    return this.screens.agent(this.actor(req), id);
+  async agent(@Req() req: Authed, @Param('id') id: string) {
+    const [withPhoto] = await this.photos.withStaffPhotos([await this.screens.agent(this.actor(req), id)]);
+    return withPhoto;
   }
 
   @Post('agents/:id/notes')

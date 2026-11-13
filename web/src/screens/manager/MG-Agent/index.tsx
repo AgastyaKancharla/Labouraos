@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useParams } from 'react-router-dom';
 import { ButtonLink } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -16,7 +17,7 @@ import { monthLong, teamShort, type Forecast, Verdict } from '../_kit/kit';
 import { NoteActions, NotesList, type CoachingNote } from '../_kit/Notes';
 
 interface AgentResponse {
-  staff: { id: string; code: string; name: string; role: string; isIntern: boolean };
+  staff: { id: string; code: string; name: string; role: string; isIntern: boolean; photoUrl?: string | null };
   team: string | null;
   teamLeadId: string | null;
   teams: { id: string; team: string; name: string }[];
@@ -64,7 +65,7 @@ export default function Agent() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Agents'), label: 'Agents' }} title={title} subtitle="One agent: targets and pace, attendance, quality and coaching. Phone numbers stay hidden." />
+      <TopBar back={{ to: to('MG-Agents'), label: 'Agents' }} title={title} titleBadge={d ? <StaffAvatar name={d.staff.name} photoUrl={d.staff.photoUrl} size="md" /> : undefined} subtitle="One agent: targets and pace, attendance, quality and coaching. Phone numbers stay hidden." />
       {q.error ? (
         <ErrorState error={q.error} onRetry={() => void q.refetch()} />
       ) : (

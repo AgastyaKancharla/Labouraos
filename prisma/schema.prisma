@@ -822,6 +822,15 @@ model Staff {
   /// say "already used" instead of "not valid". Never a usable credential.
   inviteUsedTokenHash String?        @unique
   deactivatedAt     DateTime?
+  /// Staff photo (guide, login codes, 14 Nov): a live camera selfie taken when
+  /// the person sets up their account from the invite link, shown on login code
+  /// requests, staff lists and profiles. Path in the private photo bucket; served
+  /// only as a short-lived signed link. Null until taken.
+  photoStoragePath  String?
+  photoTakenAt      DateTime?
+  /// Set when the CEO asks for a new photo; the person retakes it at their next
+  /// login. Cleared when the new photo is saved.
+  photoRetakeRequestedAt DateTime?
   sessions          StaffSession[]
   passwordResets    StaffPasswordReset[] @relation("PasswordResetFor")
   passwordResetsIssued StaffPasswordReset[] @relation("PasswordResetIssuedBy")

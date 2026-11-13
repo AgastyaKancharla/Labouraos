@@ -6,6 +6,7 @@ import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
 import { referralTermsHi } from './referralTerms';
 import { referralPartnerHi } from './referralPartner';
+import { staffPhotoHi } from './staffPhoto';
 import { callAgentHi } from '../screens/call-agent/_lib/i18n.hi';
 
 export const hi: Messages = {
@@ -589,6 +590,7 @@ export const hi: Messages = {
   ...staffInviteHi,
   ...referralTermsHi,
   ...referralPartnerHi,
+  ...staffPhotoHi,
   // Call agent console and the search bar (in every portal): Kannada, English and Hindi (owner decision, 11 Nov).
   ...callAgentHi,
   ...payslipHi,

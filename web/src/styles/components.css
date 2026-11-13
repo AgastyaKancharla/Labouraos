@@ -1423,3 +1423,31 @@ th[aria-sort='descending'] .lb-sort {
   padding: 3px 9px;
   border-top: 0;
 }
+
+/* Staff photo or initials (StaffAvatar). `.avatar` (design.css) is the 26 px circle. */
+img.lb-staffphoto {
+  object-fit: cover;
+  background: var(--sky-bg);
+}
+.lb-staffphoto--md {
+  width: 44px;
+  height: 44px;
+  font-size: 14px;
+}
+.lb-staffphoto--lg {
+  width: 64px;
+  height: 64px;
+  font-size: 20px;
+}
+/* Login code request cards: big enough for a senior to see who is asking. */
+.ceo-req .avatar.lb-staffphoto--lg {
+  width: 56px;
+  height: 56px;
+  font-size: 18px;
+}
+.lb-name-cell {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}

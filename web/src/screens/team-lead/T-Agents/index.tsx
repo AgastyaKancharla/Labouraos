@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router-dom';
 import { Card } from '../../../components/Card';
@@ -12,7 +13,7 @@ import { useTeam, type Brief } from '../_kit/api';
 
 /** Agents — design T-Agents.dc.html. */
 interface AgentRow {
-  staff: Brief;
+  staff: Brief & { photoUrl?: string | null };
   main: { label: string; target: number | null; done: number; projection: number; verdict: string | null; onTrack: boolean | null };
   attendance: { present: number; workingDays: number };
   lateLogins: { count: number; minutes: number };
@@ -35,7 +36,12 @@ export default function TeamLeadAgents() {
       (!search.trim() || `${r.staff.name} ${r.staff.code}`.toLowerCase().includes(search.trim().toLowerCase())),
   );
   const columns: Column<AgentRow>[] = [
-    { key: 'agent', header: 'Agent', cell: (r) => <Link to={to('T-Agent', { id: r.staff.id })}>{r.staff.name}</Link>, sortValue: (r) => r.staff.name },
+    { key: 'agent', header: 'Agent', cell: (r) => (
+        <span className="lb-name-cell">
+          <StaffAvatar name={r.staff.name} photoUrl={r.staff.photoUrl} />
+          <Link to={to('T-Agent', { id: r.staff.id })}>{r.staff.name}</Link>
+        </span>
+      ), sortValue: (r) => r.staff.name },
     { key: 'role', header: 'Role', cell: (r) => (r.staff.role === 'field_agent' ? 'Field' : 'Call') },
     {
       key: 'main',

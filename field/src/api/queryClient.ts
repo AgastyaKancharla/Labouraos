@@ -24,6 +24,8 @@ export function createQueryClient(): QueryClient {
 
 /** Query keys in one place so screens invalidate each other reliably. */
 export const queryKeys = {
+  /** GET /staff/me/photo: must the agent take a staff photo before going on. */
+  staffPhoto: ['staff-photo', 'me'] as const,
   attendanceToday: ['attendance', 'today'] as const,
   targetDashboard: ['targets', 'dashboard'] as const,
   fieldHome: ['field-work', 'home'] as const,
