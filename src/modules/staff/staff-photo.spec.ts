@@ -95,6 +95,7 @@ describe('Staff photo API', () => {
     await prisma.loginCodeRequest.deleteMany({ where: { staffId: { in: ids } } });
     await prisma.staffDevice.deleteMany({ where: { staffId: { in: ids } } });
     await prisma.staffSession.deleteMany({ where: { staffId: { in: ids } } });
+    await prisma.staffPasswordReset.deleteMany({ where: { OR: [{ staffId: { in: ids } }, { issuedByStaffId: { in: ids } }] } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ actorId: { in: ids } }, { entityType: 'staff', entityCode: { in: codes } }] } });
     await prisma.staff.deleteMany({ where: { id: { in: ids } } });
     await app.close();
