@@ -30,6 +30,7 @@ import { ConsentClock } from './consent-clock';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { createHash } from 'node:crypto';
+import { publicPagePath } from '../../common/public-pages';
 
 type MockPrismaService = {
   referral: { findUnique: jest.Mock };
@@ -278,7 +279,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           subjectId: referralId,
           variables: expect.objectContaining({
             token: res.body.token,
-            link: expect.stringContaining(`/consent/${res.body.token}`),
+            link: expect.stringContaining(publicPagePath('referralRegistration', res.body.token)),
             referralCode: expect.any(String),
           }),
         }),
@@ -304,14 +305,31 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
   });
 
   describe('2. Public Link Retrieval (GET /consent/:token)', () => {
-    it('returns terms details including referralPayoutPaise and masked phone', async () => {
+    it('before a code to the partner\'s own number, shows only the masked phone and the language', async () => {
+      const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
+      (otpService.isVerified as jest.Mock).mockResolvedValueOnce(false);
+      const res = await request(app.getHttpServer()).get(`/consent/${link.token}`).set('Accept', 'application/json');
+      expect(res.status).toBe(200);
+      expect(res.body).toEqual({ valid: true, subjectType: 'referral', otpRequired: true, maskedPhone: '******3210', preferredLanguage: 'en' });
+      expect(JSON.stringify(res.body)).not.toContain(partnerName);
+      expect(JSON.stringify(res.body)).not.toContain(referralId);
+
+      const noCode = await request(app.getHttpServer()).get(`/consent/${link.token}`).set('Accept', 'application/json');
+      expect(noCode.body.otpRequired).toBe(true);
+      expect(noCode.body.partnerName).toBeUndefined();
+    });
+
+    it('after the code, returns the terms details including referralPayoutPaise and masked phone', async () => {
       const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
 
       const res = await request(app.getHttpServer())
         .get(`/consent/${link.token}`)
+        .query({ requestId: 'otp-req-999' })
         .set('Accept', 'application/json');
 
       expect(res.status).toBe(200);
+      expect(otpService.isVerified).toHaveBeenCalledWith('otp-req-999', partnerPhone);
+      expect(res.body.otpRequired).toBe(false);
       expect(res.body.valid).toBe(true);
       expect(res.body.subjectType).toBe('referral');
       expect(res.body.referralId).toBe(referralId);
@@ -335,6 +353,8 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.text).toContain('******3210');
       expect(res.text).toContain('agreement_terms');
       expect(res.text).toContain('call_recording');
+      // Before a code, the fallback page names nobody.
+      expect(res.text).not.toContain(partnerName);
     });
   });
 
@@ -365,6 +385,26 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           purposes: ['agreement_terms', 'call_recording'],
         });
 
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Valid owner OTP is required to sign referral terms');
+    });
+
+    it('accepts the code the partner verified when opening the link, without a second code (as on the job seeker link)', async () => {
+      const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
+      const res = await request(app.getHttpServer())
+        .post('/consent/submit')
+        .send({ token: link.token, otpRequestId: 'otp-req-999', purposes: ['agreement_terms', 'call_recording'] });
+      expect(res.status).toBe(201);
+      expect(otpService.isVerified).toHaveBeenCalledWith('otp-req-999', partnerPhone);
+      expect(otpService.verifyOtp).not.toHaveBeenCalledWith('otp-req-999', undefined);
+    });
+
+    it('refuses without a code when that request is not a verified code for the partner phone', async () => {
+      const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
+      (otpService.isVerified as jest.Mock).mockResolvedValueOnce(false);
+      const res = await request(app.getHttpServer())
+        .post('/consent/submit')
+        .send({ token: link.token, otpRequestId: 'otp-req-other', purposes: ['agreement_terms', 'call_recording'] });
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('Valid owner OTP is required to sign referral terms');
     });

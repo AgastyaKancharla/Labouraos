@@ -312,6 +312,27 @@ describe('Money in and claims lists', () => {
     expect(api.calls('GET /ceo/payments/in')[0].query.get('fromDate')).toBe('2026-10-31T18:30:00.000Z');
   });
 
+  it('payments: a paid no-bypass charge shows as its own line and row type', async () => {
+    mockApi({
+      ...common,
+      'GET /ceo/payments/in': {
+        rows: [{ id: 'p2', code: 'PAY-2', at: '2026-11-10T08:32:00Z', amountPaise: 1062000, type: 'bypass_charge', method: 'upi_direct', reference: '4302912', confirmedBy: 'bank_feed', jobSeeker: null, business: { id: 'b1', code: 'BZ-00001', name: 'Quiet Hirer' }, placement: null }],
+        total: 1,
+        page: 1,
+        pageSize: 25,
+        summary: { receivedInclGstPaise: 1062000, matched: 1, unmatchedCredits: 0, amountMismatches: 0, duplicatesToRefund: 0 },
+        byType: { activationPaise: 0, activationCount: 0, placementFeePaise: 0, placementCount: 0, bypassChargePaise: 900000, bypassChargeCount: 1, gstPaise: 162000, refundsPaidPaise: 0, netPaise: 900000 },
+        unmatched: [],
+        unpaidFees: { withinDue: [], overdue: [] },
+      },
+    });
+    signInAs('ceo');
+    renderScreen(<PaymentsIn />, { portal: 'ceo', path: '/ceo/payments', now: NOW });
+    expect(await screen.findByText('No-bypass charges (1)')).toBeInTheDocument();
+    expect(screen.getByText('GST on fees and charges')).toBeInTheDocument();
+    expect(screen.getAllByText('No-bypass charge').length).toBeGreaterThan(0);
+  });
+
   it('claims: shows the decision and the search progress', async () => {
     mockApi({
       ...common,

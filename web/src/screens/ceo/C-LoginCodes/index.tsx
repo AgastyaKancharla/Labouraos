@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -16,7 +17,7 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
 import { PasswordResetButton } from '../_kit/passwordReset';
-import { initials, roleLabel } from '../_kit/format';
+import { roleLabel } from '../_kit/format';
 
 /** Login codes — design C-LoginCodes.dc.html. The same requests Managers and Team Leads see for their people. */
 interface Pending {
@@ -24,7 +25,7 @@ interface Pending {
   createdAt: string;
   expiresAt: string;
   status: string;
-  staff: { id: string; name: string; code: string; role: string };
+  staff: { id: string; name: string; code: string; role: string; photoUrl?: string | null };
   staffDevice: { id: string; label: string; platform: string };
 }
 interface Access {
@@ -162,7 +163,7 @@ function RequestCard({ request }: { request: Pending }) {
   return (
     <Card>
       <div className="ceo-req">
-        <span className="avatar av-royal">{initials(request.staff.name)}</span>
+        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div>
           <div style={{ fontWeight: 700 }}>{request.staff.name}</div>
           <div className="ceo-cell-sub">

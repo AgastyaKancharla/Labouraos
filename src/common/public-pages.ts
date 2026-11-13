@@ -24,6 +24,8 @@ export const PUBLIC_PAGE_PATHS = {
   payment: 'fee',
   /** P06: "Did they offer you the job?" to the candidate. */
   offerCheck: 'did-they-offer',
+  /** P-Partner…: a referral partner's one link that resumes (terms and recording consent → selfie → ID check → UPI). */
+  referralRegistration: 'partner',
 } as const;
 
 export type PublicPage = keyof typeof PUBLIC_PAGE_PATHS;

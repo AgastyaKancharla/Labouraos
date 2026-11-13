@@ -1,5 +1,6 @@
 import { Body, Controller, Get, HttpCode, HttpStatus, Param, Post, Put, Query, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Request } from 'express';
+import { StaffPhotoService } from '../staff/staff-photo.service';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
@@ -32,6 +33,7 @@ export class ScreensManagerController {
     private readonly people: ManagerPeopleService,
     private readonly ops: ManagerOpsService,
     private readonly targets: ManagerTargetsService,
+    private readonly photos: StaffPhotoService,
   ) {}
 
   private actor(req: AuthedRequest) {
@@ -72,14 +74,17 @@ export class ScreensManagerController {
 
   @Get('agents')
   @RequireRoles('manager')
-  agents(@Req() req: AuthedRequest) {
-    return this.people.agents(this.actor(req), new Date());
+  async agents(@Req() req: AuthedRequest) {
+    const res = await this.people.agents(this.actor(req), new Date());
+    return { ...res, rows: await this.photos.withStaffPhotos(res.rows) };
   }
 
   @Get('agents/:id')
   @RequireRoles('manager')
-  agent(@Req() req: AuthedRequest, @Param('id') id: string) {
-    return this.people.agent(this.actor(req), id, new Date());
+  async agent(@Req() req: AuthedRequest, @Param('id') id: string) {
+    const res = await this.people.agent(this.actor(req), id, new Date());
+    const [withPhoto] = await this.photos.withStaffPhotos([res]);
+    return withPhoto;
   }
 
   /** A coaching note or written warning about someone in the tree. */
@@ -91,8 +96,9 @@ export class ScreensManagerController {
 
   @Get('staff')
   @RequireRoles('manager')
-  staff(@Req() req: AuthedRequest) {
-    return this.people.staff(this.actor(req), new Date());
+  async staff(@Req() req: AuthedRequest) {
+    const res = await this.people.staff(this.actor(req), new Date());
+    return { ...res, rows: await this.photos.withPhotos(res.rows, (r) => r.id) };
   }
 
   @Get('attendance')

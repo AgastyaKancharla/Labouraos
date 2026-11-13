@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -13,7 +14,7 @@ import { formatTimeIST } from '../../../lib/format/date';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
-import { initials, roleLabel } from '../../ceo/_kit/format';
+import { roleLabel } from '../../ceo/_kit/format';
 import { firstName, useTeam, waitedFor } from '../_kit/api';
 import '../../ceo/_kit/ceo.css';
 
@@ -22,7 +23,7 @@ interface Pending {
   id: string;
   createdAt: string;
   expiresAt: string;
-  staff: { id: string; name: string; code: string; role: string };
+  staff: { id: string; name: string; code: string; role: string; photoUrl?: string | null };
   staffDevice: { id: string; label: string; platform: string; status?: string };
 }
 interface Device {
@@ -167,7 +168,7 @@ function CodeCard({ request, waited }: { request: Pending; waited: string }) {
   return (
     <Card>
       <div className="ceo-req">
-        <span className="avatar av-royal">{initials(request.staff.name)}</span>
+        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div>
           <div className="tl-strong">{request.staff.name}</div>
           <div className="tl-sub">

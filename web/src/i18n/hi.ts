@@ -5,6 +5,8 @@ import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
 import { referralTermsHi } from './referralTerms';
+import { referralPartnerHi } from './referralPartner';
+import { staffPhotoHi } from './staffPhoto';
 import { callAgentHi } from '../screens/call-agent/_lib/i18n.hi';
 
 export const hi: Messages = {
@@ -373,6 +375,7 @@ export const hi: Messages = {
   "cc.netRevenueDetail": "कुल {gross} − लौटाए गए रिफ़ंड {refunds} · GST के बिना",
   "cc.placementFees": "प्लेसमेंट फ़ीस {amount} · {count}",
   "cc.activationFees": "एक्टिवेशन फ़ीस {amount} · {count}",
+  "cc.bypassCharges": "नो-बाईपास शुल्क {amount} · {count}",
   "cc.refundExposure": "रिफ़ंड का जोखिम",
   "cc.act": "कार्रवाई करें",
   "cc.awaitingApproval": "अभी देय, मंज़ूरी बाकी",
@@ -586,6 +589,8 @@ export const hi: Messages = {
   ...registrationHi,
   ...staffInviteHi,
   ...referralTermsHi,
+  ...referralPartnerHi,
+  ...staffPhotoHi,
   // Call agent console and the search bar (in every portal): Kannada, English and Hindi (owner decision, 11 Nov).
   ...callAgentHi,
   ...payslipHi,

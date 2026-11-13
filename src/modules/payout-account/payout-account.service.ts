@@ -198,6 +198,12 @@ export class PayoutAccountService {
   async submitPayoutAccount(
     dto: SubmitPayoutAccountDto,
     now = new Date(),
+    /**
+     * Server-side only (never from a request body): the referral partner's own
+     * registration link already holds a verified code for this phone, so the
+     * first payout details need no second code. Changes still need a fresh one.
+     */
+    options: { otpVerifiedForPhone?: string } = {},
   ) {
     const record = await this.getPayoutLink(dto.token, now, false);
     const isReferralRegistration = record.purpose === 'referral_registration' && record.subjectType === 'referral';
@@ -215,11 +221,6 @@ export class PayoutAccountService {
       if (!identity || identity.status !== 'verified' || identity.nameMatches !== true || identity.isAdult !== true || !terms || !recording) {
         throw new BadRequestException('Referral terms, ID verification, and call-recording consent are required before UPI details');
       }
-    }
-
-    const validCode = await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
-    if (!validCode) {
-      throw new BadRequestException('Invalid or expired OTP code');
     }
 
     let rawValue = '';
@@ -254,6 +255,16 @@ export class PayoutAccountService {
       ifsc = dto.ifsc.trim().toUpperCase();
     } else {
       throw new BadRequestException(`Invalid method '${dto.method}'`);
+    }
+
+    // Checked once the details themselves are valid, so a typo never uses up the code.
+    // The session code is consumed here, atomically: of two saves sent at once
+    // (a double tap), only one gets past this line; the other is refused.
+    const validCode = options.otpVerifiedForPhone && isReferralRegistration && !dto.otpCode
+      ? await this.otpService.consumeVerified(dto.otpRequestId, options.otpVerifiedForPhone)
+      : await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
+    if (!validCode) {
+      throw new BadRequestException('Invalid or expired OTP code');
     }
 
     // Fraud check 1: Duplicate hash across different owners

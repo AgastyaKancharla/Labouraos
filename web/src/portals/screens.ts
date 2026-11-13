@@ -198,5 +198,13 @@ export const publicScreens: readonly ScreenDef[] = [
   { id: 'P06-DidTheyOffer', path: 'did-they-offer/:token', title: 'screen.P06-DidTheyOffer' },
   // No design file: the referral partner terms, linked from the partner's registration link.
   { id: 'P-ReferralTerms', path: 'referral-terms', title: 'screen.P-ReferralTerms' },
+  // No design file: the referral partner's one link that resumes (mirrors P00 → P02b).
+  // Keep in step with PUBLIC_PAGE_PATHS.referralRegistration in src/common/public-pages.ts.
+  { id: 'P-PartnerOpen', path: 'partner/:token', title: 'screen.P-PartnerOpen' },
+  { id: 'P-PartnerTerms', path: 'partner/:token/terms', title: 'screen.P-PartnerTerms' },
+  { id: 'P-PartnerSelfie', path: 'partner/:token/selfie', title: 'screen.P-PartnerSelfie' },
+  { id: 'P-PartnerIDCheck', path: 'partner/:token/id-check', title: 'screen.P-PartnerIDCheck' },
+  { id: 'P-PartnerUPI', path: 'partner/:token/upi', title: 'screen.P-PartnerUPI' },
+  { id: 'P-PartnerDone', path: 'partner/:token/done', title: 'screen.P-PartnerDone' },
 ];
 

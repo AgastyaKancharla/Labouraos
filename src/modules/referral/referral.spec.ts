@@ -7,8 +7,13 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { MessagingService } from '../message/messaging.service';
+import { publicPagePath } from '../../common/public-pages';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+
+/** A live camera JPEG as far as the API can tell (its first bytes). */
+const cameraJpeg = (tag: string) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]), Buffer.from(tag)]);
 
 describe('Referral Registration (Phase 2 Task 3)', () => {
   let app: INestApplication;
@@ -377,7 +382,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .post(`/referral-registration/${token}/selfie`)
       .field('requestId', selfieOtp.requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('camera-image'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', cameraJpeg('camera-image'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
 
     const idOtp = await otpService.sendOtp(phone);
@@ -449,7 +454,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .post(`/referral-registration/${token}/selfie`)
       .field('requestId', selfie.requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('camera-image-bank'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', cameraJpeg('camera-image-bank'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     const id = await code();
     await otpService.verifyOtp(id.requestId, id.code);
@@ -471,6 +476,100 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(account.bankAccountEncrypted).not.toContain(timestamp.toString().slice(-8));
     expect(account.maskedValue).toMatch(/\d{4}$/);
     expect(account.maskedValue).not.toContain(`5000${timestamp.toString().slice(-8)}`);
+  });
+
+  it("the partner's one link (web /app/p/partner/:token): SMS points at it, old link redirects, code once, then terms → selfie → ID → UPI with that code", async () => {
+    const phone = `76${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    // A business partner goes through the same link (guide).
+    const created = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Partner Page Kumar', phone, whatsappPhone: phone, language: 'kn', type: 'business',
+        partnerBusinessType: 'Tea stall', partnerBusinessName: 'Kumar Tea Stall', locality: 'Jayanagar', pincode: '560041',
+        heardFrom: 'field_visit', otpRequestId,
+      })
+      .expect(201);
+    const referralId = created.body.id as string;
+    const messaging = app.get(MessagingService);
+    const sendSpy = jest.spyOn(messaging, 'send');
+    const linkRes = await request(app.getHttpServer())
+      .post(`/referrals/${referralId}/terms-links`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ language: 'kn' })
+      .expect(201);
+    const token = linkRes.body.token as string;
+    const server = app.getHttpServer();
+
+    // The SMS carries the new page; an old /consent link opened in a browser goes there.
+    const smsCall = sendSpy.mock.calls.find(([m]) => m.template === 'referral_terms_link' && m.subjectId === referralId);
+    sendSpy.mockRestore();
+    expect(String(smsCall?.[0].variables?.link)).toContain(publicPagePath('referralRegistration', token));
+    const old = await request(server).get(`/consent/${token}`).set('Accept', 'text/html').expect(302);
+    expect(old.headers.location).toContain(publicPagePath('referralRegistration', token));
+
+    // Before the code: only the masked number and the language.
+    const locked = await request(server).get(`/referral-registration/${token}/status`).expect(200);
+    expect(locked.body).toEqual({ valid: true, otpRequired: true, maskedPhone: `******${phone.slice(-4)}`, language: 'kn', registrationComplete: false });
+    await request(server).get(`/referral-registration/${token}/terms`).expect(400);
+
+    const sent = await request(server).post('/consent/send-otp').send({ token }).expect(201);
+    expect(sent.body.phone).toBe(`******${phone.slice(-4)}`);
+    const code = (otpService.getProvider() as MockOtpProvider).getCode(sent.body.requestId)!;
+    await request(server).post(`/referral-registration/${token}/verify-otp`).send({ requestId: sent.body.requestId, code: code === '000000' ? '111111' : '000000' }).expect(400);
+    const opened = await request(server).post(`/referral-registration/${token}/verify-otp`).send({ requestId: sent.body.requestId, code }).expect(201);
+    const requestId = sent.body.requestId as string;
+    expect(opened.body).toMatchObject({ otpRequired: false, currentStep: 'terms', referralCode: created.body.code, firstName: 'Partner K.', language: 'kn', payout: null });
+    expect(JSON.stringify(opened.body)).not.toContain(phone);
+
+    const terms = await request(server).get(`/referral-registration/${token}/terms`).query({ requestId }).expect(200);
+    expect(terms.body.referralPayoutPaise).toBeGreaterThan(0);
+    expect(terms.body.termsHtml.length).toBeGreaterThan(50);
+    expect(terms.body.language).toBe('kn');
+
+    // Every step uses the code verified on opening, as on the job seeker link.
+    await request(server).post('/consent/submit').send({ token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language: 'kn' }).expect(201);
+    // Only a JPEG, PNG or WebP by its first bytes, whatever the browser claims.
+    await request(server)
+      .post(`/referral-registration/${token}/selfie`)
+      .field('requestId', requestId)
+      .field('captureSource', 'live_camera')
+      .attach('photo', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(400);
+    await request(server)
+      .post(`/referral-registration/${token}/selfie`)
+      .field('requestId', requestId)
+      .field('captureSource', 'live_camera')
+      .attach('photo', cameraJpeg('camera-image-partner-page'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'pan' }).expect(201);
+    // A raw Aadhaar number is refused before it reaches anything.
+    await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'aadhaar', aadhaarNumber: '234567890123' }).expect(400);
+    const afterId = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
+    expect(afterId.body.currentStep).toBe('upi');
+    expect(afterId.body.idCheck.lastResult).toBe('verified');
+
+    // A double tap: two saves at once. The session code is consumed once, so one saves and the other is refused.
+    const upiBody = { otpRequestId: requestId, method: 'upi', upiId: `partner${timestamp.toString().slice(-6)}@okaxis` };
+    const both = await Promise.all([
+      request(server).post(`/referral-registration/${token}/upi`).send(upiBody),
+      request(server).post(`/referral-registration/${token}/upi`).send(upiBody),
+    ]);
+    expect(both.map((r) => r.status).sort()).toEqual([201, 400]);
+    const saved = both.find((r) => r.status === 201)!;
+    expect(await prisma.payoutAccount.count({ where: { ownerType: 'referral', ownerId: referralId } })).toBe(1);
+    expect(saved.body.maskedValue).toBeTruthy();
+    expect(saved.body.maskedValue).not.toContain(`partner${timestamp.toString().slice(-6)}`);
+    expect(JSON.stringify(saved.body)).not.toContain('Encrypted');
+    const account = await prisma.payoutAccount.findFirstOrThrow({ where: { ownerType: 'referral', ownerId: referralId } });
+    expect(account.method).toBe('upi');
+
+    // The payout details finish the link (as before): it now says it was used; changes go through
+    // a payout-details link with a fresh code and the waiting time, never this session's code.
+    const after = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(400);
+    expect(JSON.stringify(after.body)).toContain('already been used');
+    await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `other${timestamp.toString().slice(-6)}@okaxis` }).expect(400);
   });
 
   it('does not let a referral partner refer themselves for a joining reward', async () => {

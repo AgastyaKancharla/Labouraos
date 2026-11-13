@@ -85,11 +85,12 @@ export class ConsentController {
 
     if (wantsHtml(accept) && details.subjectType === 'referral') {
       res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      // Only reached when the new page could not be chosen; before the code it names nobody.
       return renderReferralTermsPageHtml(
         token,
-        details.partnerName,
+        details.otpRequired ? '' : details.partnerName,
         details.maskedPhone,
-        details.termsHtml,
+        details.otpRequired ? '' : details.termsHtml,
         details.preferredLanguage as 'kn' | 'hi' | 'en',
       );
     }

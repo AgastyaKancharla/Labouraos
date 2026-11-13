@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useParams } from 'react-router-dom';
 import { Button } from '../../../components/Button';
@@ -19,7 +20,7 @@ import { Verdict } from '../_kit/targets';
 
 /** One agent — design T-Agent.dc.html. Phone numbers stay hidden. */
 interface AgentDetail {
-  staff: Brief;
+  staff: Brief & { photoUrl?: string | null };
   main: { label: string; target: number | null; done: number; projection: number; verdict: string | null };
   lateLogins: { count: number; minutes: number };
   leaveLeft: { casual: number; emergency: number; total: number };
@@ -60,7 +61,7 @@ export default function TeamLeadAgent() {
   const metricOptions = a.targets.map((t) => ({ value: t.metric, label: t.label }));
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Agents'), label: 'Agents' }} title={`${a.staff.name} · ${roleLabel(a.staff.role).toLowerCase()}`} subtitle="One agent: targets, attendance, call quality and coaching. Phone numbers stay hidden." />
+      <TopBar showSearch={false} back={{ to: to('T-Agents'), label: 'Agents' }} title={`${a.staff.name} · ${roleLabel(a.staff.role).toLowerCase()}`} titleBadge={<StaffAvatar name={a.staff.name} photoUrl={a.staff.photoUrl} size="md" />} subtitle="One agent: targets, attendance, call quality and coaching. Phone numbers stay hidden." />
       <StatGrid>
         <StatTile label={a.main.label} value={a.main.target === null ? a.main.done : `${a.main.done} of ${a.main.target}`} tone="royal" />
         <StatTile label="At this speed by month end" value={a.main.projection} tone={a.main.verdict?.startsWith('Short') ? 'red' : 'good'} />

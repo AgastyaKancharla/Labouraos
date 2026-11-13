@@ -5,6 +5,8 @@ import { attendanceEn } from '../attendance/i18n';
 import { registrationEn } from './registration';
 import { staffInviteEn } from './staffInvite';
 import { referralTermsEn } from './referralTerms';
+import { referralPartnerEn } from './referralPartner';
+import { staffPhotoEn } from './staffPhoto';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 export const en = {
@@ -373,6 +375,7 @@ export const en = {
   "cc.netRevenueDetail": "Gross {gross} − refunds paid {refunds} · excludes GST",
   "cc.placementFees": "Placement fees {amount} · {count}",
   "cc.activationFees": "Activation fees {amount} · {count}",
+  "cc.bypassCharges": "No-bypass charges {amount} · {count}",
   "cc.refundExposure": "Refund exposure",
   "cc.act": "Act",
   "cc.awaitingApproval": "owed now, waiting for approval",
@@ -586,6 +589,8 @@ export const en = {
   ...registrationEn,
   ...staffInviteEn,
   ...referralTermsEn,
+  ...referralPartnerEn,
+  ...staffPhotoEn,
   ...callAgentEn,
   ...payslipEn,
   ...attendanceEn,

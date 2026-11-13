@@ -20,6 +20,7 @@ import {
   loginCodesMatch,
 } from './login-code.crypto';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
+import { StaffPhotoService } from '../staff/staff-photo.service';
 
 export interface LoginCodeActor {
   id: string;
@@ -51,6 +52,8 @@ export class LoginCodeService {
     private readonly clock: Clock,
     @Optional() @Inject(ReportingScopeService)
     private readonly reportingScope?: ReportingScopeService,
+    @Optional() @Inject(StaffPhotoService)
+    private readonly photos?: StaffPhotoService,
   ) {
     getLoginCodeSecret();
   }
@@ -111,7 +114,10 @@ export class LoginCodeService {
       entityCode: 'pending',
       after: { count: rows.length },
     });
-    return rows;
+    // Guide (14 Nov): each request card shows the person's photo, so the senior sees who is asking.
+    if (!this.photos) return rows;
+    const photos = await this.photos.photosFor(rows.map((r) => r.staff.id));
+    return rows.map((r) => ({ ...r, staff: { ...r.staff, photoUrl: photos.get(r.staff.id)?.photoUrl ?? null } }));
   }
 
   async reveal(requestId: string, approver: LoginCodeActor) {

@@ -221,6 +221,58 @@ describe('Login codes', () => {
   });
 });
 
+describe('Staff photo (guide, 14 Nov)', () => {
+  it('login code requests show the person\'s photo, or their initials when there is none', async () => {
+    mockApi({
+      ...common,
+      'GET /login-codes/pending': [
+        { id: 'r1', createdAt: '2026-11-11T03:34:00Z', expiresAt: '2026-11-11T03:44:00Z', status: 'pending', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-0003', role: 'team_lead', photoUrl: 'https://photos.example/ravi.jpg' }, staffDevice: { id: 'd', label: 'Office PC 1', platform: 'Windows' } },
+        { id: 'r2', createdAt: '2026-11-11T03:35:00Z', expiresAt: '2026-11-11T03:45:00Z', status: 'pending', staff: { id: 'ca1', name: 'Deepa Nair', code: 'CA-0011', role: 'call_agent', photoUrl: null }, staffDevice: { id: 'd2', label: 'Office PC 2', platform: 'Windows' } },
+      ],
+      'GET /ceo/access': { summary: { waiting: 2, codesToday: 0, locked: 0, invitesPending: 0 }, locked: [], invites: [], codes: [] },
+    });
+    render(<LoginCodes />, '/ceo/login-codes');
+    const ravi = (await screen.findByText('Ravi Shankar')).closest('.ceo-req') as HTMLElement;
+    expect(within(ravi).getByTestId('staff-photo')).toHaveAttribute('src', 'https://photos.example/ravi.jpg');
+    const deepa = screen.getByText('Deepa Nair').closest('.ceo-req') as HTMLElement;
+    expect(within(deepa).getByTestId('staff-initials')).toHaveTextContent('DN');
+    expect(within(deepa).getByText('No photo')).toBeInTheDocument();
+    expect(within(ravi).queryByText('No photo')).not.toBeInTheDocument();
+    // A link that can't be loaded falls back to initials.
+    fireEvent.error(within(ravi).getByTestId('staff-photo'));
+    expect(within(ravi).getByTestId('staff-initials')).toHaveTextContent('RS');
+  });
+
+  it('the staff list shows photos, and the CEO asks for a new photo (they retake it at their next login)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': { ...teamResponse, rows: teamResponse.rows.map((r) => (r.id === 'ca1' ? { ...r, photoUrl: 'https://photos.example/deepa.jpg' } : { ...r, photoUrl: null })) },
+      'POST /staff/ca1/photo/retake': { id: 'ca1', photoRetakeRequestedAt: '2026-11-11T06:30:00Z' },
+    });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    expect(within(row).getByTestId('staff-photo')).toHaveAttribute('src', 'https://photos.example/deepa.jpg');
+    const ravi = screen.getByText('Ravi Shankar').closest('tr') as HTMLElement;
+    expect(within(ravi).getByTestId('staff-initials')).toHaveTextContent('RS');
+    // Not offered on an invite that has not been accepted yet.
+    const meena = screen.getByText('Meena R').closest('tr') as HTMLElement;
+    expect(within(meena).queryByRole('button', { name: 'Ask for a new photo' })).not.toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Ask for a new photo' }));
+    const d = await dialog();
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'Face not clear');
+    await userEvent.click(within(d).getByRole('button', { name: 'Ask for a new photo' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/photo/retake')[0].body).toEqual({ reason: 'Face not clear' }));
+  });
+
+  it('says when a new photo has been asked for and does not offer it again', async () => {
+    mockApi({ ...common, 'GET /ceo/team': { ...teamResponse, rows: teamResponse.rows.map((r) => (r.id === 'ca1' ? { ...r, photoRetakeRequested: true } : r)) } });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    expect(within(row).getByText(/new photo asked/)).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Ask for a new photo' })).not.toBeInTheDocument();
+  });
+});
+
 describe('Password resets (POST /staff/:id/reset-password, never the old re-issued invite)', () => {
   const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.in/app/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
 

@@ -1,3 +1,4 @@
+import { StaffPhotoModule } from '../staff/staff-photo.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { PricingModule } from '../pricing/pricing.module';
@@ -6,7 +7,7 @@ import { LoginCodeController } from './login-code.controller';
 import { Clock, LoginCodeService } from './login-code.service';
 
 @Module({
-  imports: [PrismaModule, PricingModule, ReportingScopeModule],
+  imports: [PrismaModule, PricingModule, ReportingScopeModule, StaffPhotoModule],
   controllers: [LoginCodeController],
   providers: [LoginCodeService, Clock],
   exports: [LoginCodeService],

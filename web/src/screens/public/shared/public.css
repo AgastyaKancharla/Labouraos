@@ -175,3 +175,14 @@
 .lb-pub-center {
   text-align: center;
 }
+
+/* A group of choices with its own label (partner payout method). */
+.lb-pub-fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}

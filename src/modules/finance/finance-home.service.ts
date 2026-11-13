@@ -2,7 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RECEIVED_STATUSES, istStartOfMonth, sumPaise } from '../ceo-portal/ceo-common';
-import { gstDueDates } from '../ceo-portal/ceo-money.service';
+import { MONEY_IN_TYPES, gstDueDates } from '../ceo-portal/ceo-money.service';
 import { FinanceBooksService } from './finance-books.service';
 import { FinancePayoutsService } from './finance-payouts.service';
 
@@ -36,7 +36,7 @@ export class FinanceHomeService {
       }),
     ]);
     const charges = bypassPaid.length
-      ? await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaid.map((p) => p.id) } }, select: { gstPaise: true } })
+      ? await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaid.map((p) => p.id) }, status: { not: 'cancelled' } }, select: { gstPaise: true } })
       : [];
     return { paise: sumPaise([...invoices.map((p) => p.gstAmount), ...charges.map((c) => c.gstPaise)]), month: lastMonth.toISOString(), due: gstDueDates(to) };
   }
@@ -48,7 +48,8 @@ export class FinanceHomeService {
       this.prisma.payment.findMany({
         where: {
           status: { in: RECEIVED_STATUSES },
-          type: { in: ['activation', 'reactivation', 'placement_fee'] },
+          // Every kind of money in the books counts, paid no-bypass charges included (as FN-Tax and the books).
+          type: { in: MONEY_IN_TYPES },
           OR: [{ confirmedAt: { gte: monthStart, lte: now } }, { confirmedAt: null, paidAt: { gte: monthStart, lte: now } }],
         },
         select: { amount: true },

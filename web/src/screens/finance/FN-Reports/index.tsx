@@ -24,7 +24,7 @@ import '../_kit/fin.css';
 interface Summary {
   period: { from: string; to: string; month: string };
   profit: {
-    revenue: { activationPaise: number; activationCount: number; placementFeePaise: number; placementCount: number; refundsPaise: number; refundsCount: number; netRevenuePaise: number; gstCollectedPaise: number };
+    revenue: { activationPaise: number; activationCount: number; placementFeePaise: number; placementCount: number; bypassChargePaise?: number; bypassChargeCount?: number; refundsPaise: number; refundsCount: number; netRevenuePaise: number; gstCollectedPaise: number };
     expenses: { billsPaise: number; payoutsPaise: number; salariesPaise: number; salaryMonthsPending?: string[]; totalPaise: number };
     profitPaise: number;
   };
@@ -93,6 +93,7 @@ export default function Reports() {
             <div className="fin-kv">
               <Line label={`Registration fees (${s.profit.revenue.activationCount})`} value={s.profit.revenue.activationPaise} />
               <Line label={`Placement fees (${s.profit.revenue.placementCount})`} value={s.profit.revenue.placementFeePaise} />
+              {(s.profit.revenue.bypassChargeCount ?? 0) > 0 && <Line label={`No-bypass charges (${s.profit.revenue.bypassChargeCount})`} value={s.profit.revenue.bypassChargePaise ?? 0} />}
               <Line label={`Refunds (${s.profit.revenue.refundsCount})`} value={s.profit.revenue.refundsPaise} minus />
               <Line label="Net revenue" value={s.profit.revenue.netRevenuePaise} strong />
               <Line label="Salaries (from payroll)" value={s.profit.expenses.salariesPaise} minus />

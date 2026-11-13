@@ -492,7 +492,7 @@ describe('Phase 20 gate end-to-end proof', () => {
       .post(`/referral-registration/${referralToken}/selfie`)
       .field('requestId', selfieOtp)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('referral-camera'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]), Buffer.from('referral-camera')]), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     const idOtp = await verifiedOtp(referralPhone);
     const idResult = await request(server())

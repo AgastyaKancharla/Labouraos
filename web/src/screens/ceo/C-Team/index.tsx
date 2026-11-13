@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -38,6 +39,9 @@ export interface TeamRow {
   lockedReason: string | null;
   /** Joining date (yyyy-mm-dd), entered by the CEO; pay starts on it. */
   joinedOn?: string | null;
+  /** Staff photo (signed link) — initials when none; and whether the CEO asked for a new one. */
+  photoUrl?: string | null;
+  photoRetakeRequested?: boolean;
 }
 interface TeamResponse {
   rows: TeamRow[];
@@ -103,11 +107,15 @@ export default function Team() {
       key: 'name',
       header: 'Name',
       cell: (r) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{r.name}</div>
-          <div className="ceo-cell-sub">
-            {r.code}
-            {r.signedIn ? ' · signed in now' : ''}
+        <div className="lb-name-cell">
+          <StaffAvatar name={r.name} photoUrl={r.photoUrl} />
+          <div>
+            <div style={{ fontWeight: 600 }}>{r.name}</div>
+            <div className="ceo-cell-sub">
+              {r.code}
+              {r.signedIn ? ' · signed in now' : ''}
+              {r.photoRetakeRequested ? ' · new photo asked' : ''}
+            </div>
           </div>
         </div>
       ),
@@ -164,6 +172,17 @@ export default function Team() {
           )}
           {r.state === 'invite_pending' && <ResendInvite row={r} />}
           {(r.state === 'active' || r.state === 'locked') && <PasswordResetButton id={r.id} name={r.name} />}
+          {r.state === 'active' && r.role !== 'ceo' && !r.photoRetakeRequested && (
+            <ActionButton
+              label="Ask for a new photo"
+              title={`New staff photo · ${r.name}`}
+              description="They take a new live camera selfie at their next login, before going on. Their current photo stays until then."
+              reason={{ label: 'Reason', required: false }}
+              confirmLabel="Ask for a new photo"
+              run={({ reason }) => api.post(`/staff/${r.id}/photo/retake`, { reason: reason || undefined })}
+              success={`${r.name} will take a new photo at their next login`}
+            />
+          )}
           {r.state === 'locked' && (
             <ActionButton label="Unlock" title={`Unlock ${r.name}`} description={r.lockedReason ? `Locked: ${r.lockedReason}` : undefined} run={() => api.post(`/staff/${r.id}/unlock`)} success={`${r.name} is unlocked`} />
           )}
