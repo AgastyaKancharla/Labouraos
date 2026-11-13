@@ -12,7 +12,8 @@ import { PricingService } from '../pricing/pricing.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { AttendanceClock } from './attendance-clock';
 import { AttendanceService } from './attendance.service';
-import { classifyDay, deductibleShortfall, monthRange } from './day-rules';
+import { dayResultFor, deductibleShortfall, monthRange } from './day-rules';
+import { dayTally } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
@@ -43,9 +44,16 @@ export interface DayRow {
   closedReason: string | null;
   leaveKind: string | null;
   leaveUnpaid: boolean;
+  /** "first" or "second" on a day with a half day of leave (owner decision 12 Nov); null otherwise. */
+  leaveHalf: string | null;
+  /** A full leave day half paid, half unpaid (the balance ran out half way). */
+  leavePartUnpaid: boolean;
+  /** Set when two half days of leave make this a full leave day. */
+  otherLeaveRequestId: string | null;
   change: { byStaffId: string | null; at: string; reason: string | null } | null;
 }
 
+/** Day counts are whole or half days since half-day leave (owner decision 12 Nov). */
 export interface MonthSummary {
   staff: { id: string; code: string; name: string; role: string };
   month: string;
@@ -150,7 +158,7 @@ export class AttendanceDaysService {
     const policy = await this.pricing.current();
     const makeUp =
       dayType === 'full'
-        ? classifyDay(day.productionSeconds, policy, false).makeUpSeconds
+        ? dayResultFor({ ...day, dayTypeChangedAt: null }, day.productionSeconds, policy, false).makeUpSeconds
         : 0;
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.attendanceDay.update({
@@ -250,19 +258,19 @@ export class AttendanceDaysService {
       holidays: [],
       days: rows,
     };
+    const todayKey = this.label(this.attendance.istDate(this.clock.now()));
     for (const row of rows) {
-      if (row.dayType === 'full') summary.fullDays += 1;
-      if (row.dayType === 'half') summary.halfDays += 1;
-      if (row.dayType === 'absent') summary.absentDays += 1;
       if (row.dayType === 'off') summary.offDaysWorked += 1;
-      if (row.dayType === 'leave') {
-        if (row.leaveUnpaid) {
-          summary.unpaidLeaveDays += 1;
-        } else if (row.leaveKind === 'emergency') {
-          summary.paidLeaveDays.emergency += 1;
-        } else {
-          summary.paidLeaveDays.casual += 1;
-        }
+      if (row.dayType !== 'open') {
+        // Whole and half days: a half day of leave is half leave and a working half
+        // (absent only once the day has passed).
+        const tally = dayTally(row, row.date < todayKey);
+        summary.fullDays += tally.fullHalves / 2;
+        summary.halfDays += tally.halfDays;
+        summary.absentDays += tally.absentHalves / 2;
+        summary.unpaidLeaveDays += tally.unpaidLeaveHalves / 2;
+        summary.paidLeaveDays.emergency += tally.emergencyPaidHalves / 2;
+        summary.paidLeaveDays.casual += (tally.paidLeaveHalves - tally.emergencyPaidHalves) / 2;
       }
       if (row.lateMinutes > 0) {
         summary.lateLogins.days.push({ date: row.date, minutes: row.lateMinutes });
@@ -376,6 +384,9 @@ export class AttendanceDaysService {
       closedReason: string | null;
       leaveKind: string | null;
       leaveUnpaid: boolean;
+      leaveHalf: string | null;
+      leavePartUnpaid: boolean;
+      otherLeaveRequestId: string | null;
       dayTypeChangedById: string | null;
       dayTypeChangedAt: Date | null;
       dayTypeChangeReason: string | null;
@@ -401,6 +412,9 @@ export class AttendanceDaysService {
       closedReason: day.closedReason,
       leaveKind: day.leaveKind,
       leaveUnpaid: day.leaveUnpaid,
+      leaveHalf: day.leaveKind ? day.leaveHalf : null,
+      leavePartUnpaid: day.leavePartUnpaid,
+      otherLeaveRequestId: day.otherLeaveRequestId,
       change: day.dayTypeChangedAt
         ? {
             byStaffId: day.dayTypeChangedById,

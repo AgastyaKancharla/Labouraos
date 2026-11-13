@@ -1,3 +1,4 @@
+import { StaffPhotoModule } from '../staff/staff-photo.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
@@ -19,7 +20,7 @@ import { ManagerTargetsService } from './manager-targets.service';
 
 /** Manager portal read endpoints (MG-* designs), scoped to the Manager's own reporting tree. */
 @Module({
-  imports: [PrismaModule, AuditModule, IdModule, ReportingScopeModule, AttendanceModule, RefundPriorityModule, ReviewFlagModule, NotificationModule, TargetModule, RequestsModule, CompanyPlanModule],
+  imports: [PrismaModule, AuditModule, IdModule, ReportingScopeModule, AttendanceModule, RefundPriorityModule, ReviewFlagModule, NotificationModule, TargetModule, RequestsModule, CompanyPlanModule, StaffPhotoModule],
   controllers: [ScreensManagerController],
   providers: [ManagerTreeService, ManagerPlanService, ManagerPeopleService, ManagerOpsService, ManagerTargetsService],
   exports: [ManagerTreeService, ManagerPlanService],

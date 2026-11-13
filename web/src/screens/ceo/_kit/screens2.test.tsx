@@ -176,17 +176,16 @@ describe('Salaries', () => {
 });
 
 describe('Devices & logins', () => {
-  it('lists devices and codes given today, removes a device and adds an office network', async () => {
+  // Owner decision 14 Nov: no office networks any more (this test used to add one).
+  it('lists devices and codes given today and removes a device; no office networks', async () => {
     const api = mockApi({
       ...common,
       'GET /ceo/devices': {
-        rows: [{ id: 'd1', staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent' }, label: 'Office PC 3', platform: 'Windows', status: 'approved', network: 'office', lastLoginAt: '2026-11-11T04:01:00Z', oddHour: false, approvedBy: 'Ravi' }],
+        rows: [{ id: 'd1', staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent' }, label: 'Office PC 3', platform: 'Windows', status: 'approved', lastLoginAt: '2026-11-11T04:01:00Z', oddHour: false, approvedBy: 'Ravi' }],
         summary: { approved: 1, pending: 0, revoked: 0, oddHour: 0 },
         codesToday: [{ id: 'l1', at: '2026-11-11T04:00:00Z', givenBy: { id: 'tl1', name: 'Ravi Shankar', role: 'team_lead' }, to: { id: 'ca1', name: 'Deepa Nair', code: 'CA-1' }, device: 'Office PC 3' }],
       },
-      'GET /office-networks': [],
       'POST /staff/devices/d1/revoke': { ok: true },
-      'POST /office-networks': { id: 'n1' },
     });
     render(<Devices />, '/ceo/team/devices');
     expect(await screen.findByText('Today 09:31')).toBeInTheDocument();
@@ -194,10 +193,9 @@ describe('Devices & logins', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Remove Office PC 3' }));
     await waitFor(() => expect(api.calls('POST /staff/devices/d1/revoke')).toHaveLength(1));
-    await userEvent.type(screen.getByLabelText(/^Name/), 'JP Nagar office');
-    await userEvent.type(screen.getByLabelText(/Network address/), '103.21.58.0/24');
-    await userEvent.click(screen.getByRole('button', { name: '+ Add network' }));
-    await waitFor(() => expect(api.calls('POST /office-networks')[0].body).toEqual({ label: 'JP Nagar office', cidr: '103.21.58.0/24' }));
+    expect(screen.queryByText('Office networks')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /Network/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/staff log in from any network/)).toBeInTheDocument();
   });
 });
 
@@ -205,7 +203,7 @@ describe('Login codes', () => {
   it('shows a waiting request, reveals the code to read out, and unlocks a locked account', async () => {
     const api = mockApi({
       ...common,
-      'GET /login-codes/pending': [{ id: 'r1', createdAt: '2026-11-11T03:34:00Z', expiresAt: '2026-11-11T03:44:00Z', onOfficeNetwork: true, status: 'pending', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-0003', role: 'team_lead' }, staffDevice: { id: 'd', label: 'Office PC 1', platform: 'Windows' } }],
+      'GET /login-codes/pending': [{ id: 'r1', createdAt: '2026-11-11T03:34:00Z', expiresAt: '2026-11-11T03:44:00Z', status: 'pending', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-0003', role: 'team_lead' }, staffDevice: { id: 'd', label: 'Office PC 1', platform: 'Windows' } }],
       'GET /ceo/access': { summary: { waiting: 1, codesToday: 19, locked: 1, invitesPending: 0 }, locked: [{ id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', lockedUntil: '2026-11-11T07:00:00Z', reason: '5 wrong passwords', byManager: false }], invites: [], codes: [] },
       'POST /login-codes/r1/reveal': { code: '481207' },
       'POST /staff/ca9/unlock': { ok: true },
@@ -213,11 +211,65 @@ describe('Login codes', () => {
     render(<LoginCodes />, '/ceo/login-codes');
     expect(await screen.findByText('Ravi Shankar')).toBeInTheDocument();
     expect(screen.getByText('19')).toBeInTheDocument();
+    // No "office network yes/no" on the card any more (owner decision 14 Nov).
+    expect(screen.queryByText('Office network')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Show code to read out' }));
     expect(await screen.findByText('481 207')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Unlock Arun P' }));
     await waitFor(() => expect(api.calls('POST /staff/ca9/unlock')).toHaveLength(1));
+  });
+});
+
+describe('Staff photo (guide, 14 Nov)', () => {
+  it('login code requests show the person\'s photo, or their initials when there is none', async () => {
+    mockApi({
+      ...common,
+      'GET /login-codes/pending': [
+        { id: 'r1', createdAt: '2026-11-11T03:34:00Z', expiresAt: '2026-11-11T03:44:00Z', status: 'pending', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-0003', role: 'team_lead', photoUrl: 'https://photos.example/ravi.jpg' }, staffDevice: { id: 'd', label: 'Office PC 1', platform: 'Windows' } },
+        { id: 'r2', createdAt: '2026-11-11T03:35:00Z', expiresAt: '2026-11-11T03:45:00Z', status: 'pending', staff: { id: 'ca1', name: 'Deepa Nair', code: 'CA-0011', role: 'call_agent', photoUrl: null }, staffDevice: { id: 'd2', label: 'Office PC 2', platform: 'Windows' } },
+      ],
+      'GET /ceo/access': { summary: { waiting: 2, codesToday: 0, locked: 0, invitesPending: 0 }, locked: [], invites: [], codes: [] },
+    });
+    render(<LoginCodes />, '/ceo/login-codes');
+    const ravi = (await screen.findByText('Ravi Shankar')).closest('.ceo-req') as HTMLElement;
+    expect(within(ravi).getByTestId('staff-photo')).toHaveAttribute('src', 'https://photos.example/ravi.jpg');
+    const deepa = screen.getByText('Deepa Nair').closest('.ceo-req') as HTMLElement;
+    expect(within(deepa).getByTestId('staff-initials')).toHaveTextContent('DN');
+    expect(within(deepa).getByText('No photo')).toBeInTheDocument();
+    expect(within(ravi).queryByText('No photo')).not.toBeInTheDocument();
+    // A link that can't be loaded falls back to initials.
+    fireEvent.error(within(ravi).getByTestId('staff-photo'));
+    expect(within(ravi).getByTestId('staff-initials')).toHaveTextContent('RS');
+  });
+
+  it('the staff list shows photos, and the CEO asks for a new photo (they retake it at their next login)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': { ...teamResponse, rows: teamResponse.rows.map((r) => (r.id === 'ca1' ? { ...r, photoUrl: 'https://photos.example/deepa.jpg' } : { ...r, photoUrl: null })) },
+      'POST /staff/ca1/photo/retake': { id: 'ca1', photoRetakeRequestedAt: '2026-11-11T06:30:00Z' },
+    });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    expect(within(row).getByTestId('staff-photo')).toHaveAttribute('src', 'https://photos.example/deepa.jpg');
+    const ravi = screen.getByText('Ravi Shankar').closest('tr') as HTMLElement;
+    expect(within(ravi).getByTestId('staff-initials')).toHaveTextContent('RS');
+    // Not offered on an invite that has not been accepted yet.
+    const meena = screen.getByText('Meena R').closest('tr') as HTMLElement;
+    expect(within(meena).queryByRole('button', { name: 'Ask for a new photo' })).not.toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Ask for a new photo' }));
+    const d = await dialog();
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'Face not clear');
+    await userEvent.click(within(d).getByRole('button', { name: 'Ask for a new photo' }));
+    await waitFor(() => expect(api.calls('POST /staff/ca1/photo/retake')[0].body).toEqual({ reason: 'Face not clear' }));
+  });
+
+  it('says when a new photo has been asked for and does not offer it again', async () => {
+    mockApi({ ...common, 'GET /ceo/team': { ...teamResponse, rows: teamResponse.rows.map((r) => (r.id === 'ca1' ? { ...r, photoRetakeRequested: true } : r)) } });
+    render(<Team />, '/ceo/team');
+    const row = (await screen.findByText('Deepa Nair')).closest('tr') as HTMLElement;
+    expect(within(row).getByText(/new photo asked/)).toBeInTheDocument();
+    expect(within(row).queryByRole('button', { name: 'Ask for a new photo' })).not.toBeInTheDocument();
   });
 });
 

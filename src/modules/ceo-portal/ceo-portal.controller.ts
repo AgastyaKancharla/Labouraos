@@ -1,3 +1,4 @@
+import { StaffPhotoService } from '../staff/staff-photo.service';
 import { Body, Controller, Get, Param, Post, Query, Req, UseGuards, UseInterceptors } from '@nestjs/common';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -38,6 +39,7 @@ export class CeoPortalController {
     private readonly placements: CeoPlacementsService,
     private readonly money: CeoMoneyService,
     private readonly team: CeoTeamService,
+    private readonly photos: StaffPhotoService,
     private readonly ops: CeoOpsService,
     private readonly admin: CeoAdminService,
     private readonly breaches: CeoBreachService,
@@ -265,8 +267,10 @@ export class CeoPortalController {
 
   @Get('team')
   @RequireRoles('ceo')
-  teamList() {
-    return this.team.team(new Date());
+  async teamList() {
+    const res = await this.team.team(new Date());
+    // Staff photo on the staff list (guide, 14 Nov), with whether a new one was asked for.
+    return { ...res, rows: await this.photos.withPhotos(res.rows, (r) => r.id) };
   }
 
   @Get('teams')

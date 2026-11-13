@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -15,15 +16,13 @@ import { periodFor, periodToUtcRange, type Period } from '../../../lib/period';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
-import { initials } from '../../ceo/_kit/format';
 import { roleWord } from '../_kit/kit';
 
 interface Pending {
   id: string;
   createdAt: string;
   expiresAt: string;
-  onOfficeNetwork: boolean;
-  staff: { id: string; name: string; code: string; role: string };
+  staff: { id: string; name: string; code: string; role: string; photoUrl?: string | null };
   staffDevice: { id: string; label: string; platform: string };
 }
 interface Codes {
@@ -59,7 +58,7 @@ function RequestCard({ request }: { request: Pending }) {
   return (
     <Card>
       <div className="ceo-req">
-        <span className="avatar av-royal">{initials(request.staff.name)}</span>
+        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div className="mg-code-card">
           <div>
             <div style={{ fontWeight: 700 }}>{request.staff.name}</div>
@@ -70,9 +69,6 @@ function RequestCard({ request }: { request: Pending }) {
           <div className="mg-code-row">
             <span>
               Device <b>{request.staffDevice.label}</b>
-            </span>
-            <span>
-              Office network <b>{request.onOfficeNetwork ? 'Yes' : request.staff.role === 'field_agent' ? 'No · mobile (field)' : 'No'}</b>
             </span>
             <span>
               Asked <b>{ago(request.createdAt, now)}</b>

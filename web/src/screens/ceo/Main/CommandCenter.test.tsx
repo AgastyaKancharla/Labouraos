@@ -123,6 +123,21 @@ describe('CEO Command Center (Main.dc.html)', () => {
     expect(screen.getByRole('link', { name: /Payouts due/ })).toHaveAttribute('href', '/ceo/payments/out');
   });
 
+  it('shows paid no-bypass charges in the net revenue breakdown when there are any', async () => {
+    const money = ccRoutes()['GET /ceo/command-center/money'] as Record<string, unknown>;
+    mockApi(ccRoutes({ 'GET /ceo/command-center/money': { ...money, bypassChargePaise: 900000, bypassChargeCount: 1, grossPaise: 1799800, netPaise: 1749900 } }));
+    renderCC();
+    expect(await screen.findByTestId('cc-net')).toHaveTextContent('₹17,499');
+    expect(screen.getByText('No-bypass charges ₹9,000 · 1')).toBeInTheDocument();
+  });
+
+  it('leaves the no-bypass line out when there are none', async () => {
+    mockApi(ccRoutes());
+    renderCC();
+    await screen.findByTestId('cc-net');
+    expect(screen.queryByText(/No-bypass charges/)).not.toBeInTheDocument();
+  });
+
   it('shows skeletons while loading', () => {
     mockApi(ccRoutes({ 'GET /ceo/command-center/money': () => new Promise(() => {}) }));
     renderCC();

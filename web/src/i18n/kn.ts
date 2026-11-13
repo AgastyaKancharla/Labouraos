@@ -5,6 +5,8 @@ import type { Messages } from './en';
 import { registrationKn } from './registration';
 import { staffInviteKn } from './staffInvite';
 import { referralTermsKn } from './referralTerms';
+import { referralPartnerKn } from './referralPartner';
+import { staffPhotoKn } from './staffPhoto';
 import { callAgentKn } from '../screens/call-agent/_lib/i18n.kn';
 
 export const kn: Messages = {
@@ -325,7 +327,7 @@ export const kn: Messages = {
   "auth.password": "ಪಾಸ್‌ವರ್ಡ್",
   "auth.signIn": "ಸೈನ್ ಇನ್ ಮಾಡಿ",
   "auth.signingIn": "ಸೈನ್ ಇನ್ ಆಗುತ್ತಿದೆ…",
-  "auth.signIn.note": "ಅನುಮೋದಿತ ಸಾಧನ ಮತ್ತು ಕಚೇರಿ ನೆಟ್‌ವರ್ಕ್‌ನಿಂದ ಮಾತ್ರ. 5 ಬಾರಿ ತಪ್ಪು ಪಾಸ್‌ವರ್ಡ್ ಆದರೆ ಖಾತೆ 15 ನಿಮಿಷ ಲಾಕ್ ಆಗುತ್ತದೆ.",
+  "auth.signIn.note": "ಅನುಮೋದಿತ ಸಾಧನದಿಂದ ಮಾತ್ರ. 5 ಬಾರಿ ತಪ್ಪು ಪಾಸ್‌ವರ್ಡ್ ಆದರೆ ಖಾತೆ 15 ನಿಮಿಷ ಲಾಕ್ ಆಗುತ್ತದೆ.",
   "auth.totp.title": "ಅಥೆಂಟಿಕೇಟರ್ ಕೋಡ್",
   "auth.totp.body": "ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ ಅಥೆಂಟಿಕೇಟರ್ ಆ್ಯಪ್ ತೆರೆದು Laboura ದ 6 ಅಂಕಿಯ ಕೋಡ್ ನಮೂದಿಸಿ.",
   "auth.code.title": "ನಿಮ್ಮ ಲಾಗಿನ್ ಕೋಡ್ ಕೇಳಿ",
@@ -373,6 +375,7 @@ export const kn: Messages = {
   "cc.netRevenueDetail": "ಒಟ್ಟು {gross} − ಹಿಂತಿರುಗಿಸಿದ ರೀಫಂಡ್ {refunds} · GST ಹೊರತುಪಡಿಸಿ",
   "cc.placementFees": "ಪ್ಲೇಸ್‌ಮೆಂಟ್ ಶುಲ್ಕ {amount} · {count}",
   "cc.activationFees": "ಆಕ್ಟಿವೇಶನ್ ಶುಲ್ಕ {amount} · {count}",
+  "cc.bypassCharges": "ನೋ-ಬೈಪಾಸ್ ಶುಲ್ಕ {amount} · {count}",
   "cc.refundExposure": "ರೀಫಂಡ್ ಅಪಾಯ",
   "cc.act": "ಕ್ರಮ ಕೈಗೊಳ್ಳಿ",
   "cc.awaitingApproval": "ಈಗ ಬಾಕಿ, ಅನುಮೋದನೆಗಾಗಿ ಕಾಯುತ್ತಿದೆ",
@@ -586,6 +589,8 @@ export const kn: Messages = {
   ...registrationKn,
   ...staffInviteKn,
   ...referralTermsKn,
+  ...referralPartnerKn,
+  ...staffPhotoKn,
   ...callAgentKn,
   ...payslipKn,
   ...attendanceKn,

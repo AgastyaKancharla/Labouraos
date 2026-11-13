@@ -31,7 +31,6 @@ import {
 import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreement-document.storage';
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
-import { publicLink } from '../../common/public-link';
 import { publicPageLink, PublicPage } from '../../common/public-pages';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
@@ -130,6 +129,14 @@ export type ConsentLinkDetails =
   | {
       valid: true;
       subjectType: 'referral';
+      otpRequired: true;
+      maskedPhone: string;
+      preferredLanguage: AgreementLanguage;
+    }
+  | {
+      valid: true;
+      subjectType: 'referral';
+      otpRequired: false;
       referralId: string;
       partnerName: string;
       maskedPhone: string;
@@ -337,7 +344,8 @@ export class ConsentLinkService {
       template: 'referral_terms_link',
       subjectType: 'referral',
       subjectId: referral.id,
-      variables: { token, link: publicLink(`/consent/${token}`), referralCode: referral.code },
+      // The one link that resumes (P-Partner…): terms and call-recording consent → selfie → ID check → UPI.
+      variables: { token, link: publicPageLink('referralRegistration', token), referralCode: referral.code },
     });
 
     return { success: true, token, expiresAt };
@@ -356,8 +364,8 @@ export class ConsentLinkService {
 
   /**
    * Which new public page an old /consent/:token link opens in a browser:
-   * the registration link (P00…) or the business agreement (P04). Referral
-   * partner terms have no new page yet and keep the old one (null).
+   * the registration link (P00…), the business agreement (P04) or the
+   * referral partner's link (P-Partner…).
    */
   async publicPageForToken(token: string): Promise<PublicPage | null> {
     let row: { purpose: string } | null;
@@ -372,6 +380,7 @@ export class ConsentLinkService {
     if (!row) return 'registration';
     if (row.purpose === 'registration') return 'registration';
     if (row.purpose === 'business_agreement') return 'businessAgreement';
+    if (row.purpose === 'referral_registration') return 'referralRegistration';
     return null;
   }
 
@@ -493,11 +502,23 @@ export class ConsentLinkService {
     }
 
     if (record.subjectType === 'referral') {
+      // As for job seekers: nothing about the partner (name, ID, terms, amount)
+      // until a code sent to their own number is verified.
+      if (!requestId || !(await this.otpService.isVerified(requestId, record.partnerPhone))) {
+        return {
+          valid: true,
+          subjectType: 'referral',
+          otpRequired: true,
+          maskedPhone: maskAgreementPhone(record.partnerPhone),
+          preferredLanguage: record.terms.language,
+        };
+      }
       const referral = await this.prisma.referral.findUnique({ where: { id: record.referralId } });
       if (!referral) throw new NotFoundException('Referral partner not found');
       return {
         valid: true,
         subjectType: 'referral',
+        otpRequired: false,
         referralId: referral.id,
         partnerName: referral.name,
         maskedPhone: maskAgreementPhone(record.partnerPhone),
@@ -815,9 +836,11 @@ export class ConsentLinkService {
       throw new BadRequestException('Agreement terms and call recording consent are both required');
     }
 
+    // A fresh code, or (as on the job seeker's link) the code the partner verified
+    // when opening this resumable link, still within its lifetime.
     const otpValid = dto.otpCode
       ? await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)
-      : false;
+      : Boolean(dto.otpRequestId);
     const otpBelongsToPartner = otpValid
       ? await this.otpService.isVerified(dto.otpRequestId, record.partnerPhone)
       : false;

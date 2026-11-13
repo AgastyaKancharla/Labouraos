@@ -1,3 +1,4 @@
+import { daysLabel } from '../attendance/leave-units';
 import { Injectable, Logger } from '@nestjs/common';
 import { AttendanceCorrection, LeaveRequest, Notification, ReviewFlag } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -61,6 +62,14 @@ function istDateLabel(date: Date): string {
  * Event hooks call the one-subject versions for an immediate bell; the
  * notification sweep and reads call the kind-wide versions.
  */
+/** "Deepa Nair asks for 2 days of casual leave"; a half day says which half (owner decision 12 Nov). */
+export function leaveAsk(who: string, request: Pick<LeaveRequest, 'days' | 'kind' | 'half'>): string {
+  if (request.half === 'first' || request.half === 'second') {
+    return `${who} asks for a half day (${request.half} half) of ${request.kind} leave`;
+  }
+  return `${who} asks for ${daysLabel(request.days)} day${request.days === 1 ? '' : 's'} of ${request.kind} leave`;
+}
+
 @Injectable()
 export class NotificationSourcesService {
   private readonly logger = new Logger(NotificationSourcesService.name);
@@ -230,7 +239,7 @@ export class NotificationSourcesService {
     const who = person ? `${person.name} (${person.code})` : 'A staff member';
     const title =
       kind === 'leave'
-        ? `${who} asks for ${(request as LeaveRequest).days} day${(request as LeaveRequest).days === 1 ? '' : 's'} of ${(request as LeaveRequest).kind} leave`
+        ? leaveAsk(who, request as LeaveRequest)
         : `${who} asks for a correction on ${istDateLabel((request as AttendanceCorrection).date)}`;
     const drafts: NotificationDraft[] = [];
     const seen = new Set<string>();

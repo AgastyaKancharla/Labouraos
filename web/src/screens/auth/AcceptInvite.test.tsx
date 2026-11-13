@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { sessionStore } from '../../auth/session';
 import { apiError, mockApi, renderScreen } from '../../test/utils';
+import { fakeCamera } from '../../test/fakeCamera';
 import AcceptInvite, { passwordProblem, type InvitePreview } from './AcceptInvite';
 
 const TOKEN = 'a1'.repeat(32);
@@ -165,4 +166,37 @@ describe('Invite page (accept invite)', () => {
     expect(await screen.findByRole('heading', { name: 'Welcome, Deepa Nair' })).toBeInTheDocument();
     await waitFor(() => expect(api.calls('POST /staff/accept-invite/preview')).toHaveLength(2));
   });
+
+  it('without a staff photo, takes a live camera selfie first with the invite token (no file picker), then the password', async () => {
+    const getUserMedia = fakeCamera();
+    const api = mockApi({
+      'POST /staff/accept-invite/preview': previewOf({ photoRequired: true }),
+      [`POST /staff/accept-invite/${TOKEN}/photo`]: { photoTakenAt: '2026-11-14T06:00:00.000Z' },
+      'POST /staff/accept-invite': { success: true, code: 'CA-00042', email: null },
+    });
+    const { container } = renderInvite();
+    expect(await screen.findByRole('heading', { name: 'First, your photo' })).toBeInTheDocument();
+    expect(container.querySelector('input[type="file"]')).toBeNull();
+    expect(screen.queryByLabelText(/New password/)).not.toBeInTheDocument();
+    await waitFor(() => expect(getUserMedia).toHaveBeenCalledWith(expect.objectContaining({ video: expect.objectContaining({ facingMode: 'user' }), audio: false })));
+    await userEvent.click(await screen.findByRole('button', { name: 'Take photo' }));
+    expect(await screen.findByText('Photo saved. Now choose your password.')).toBeInTheDocument();
+    const sent = api.fetch.mock.calls.find(([url]) => String(url).endsWith(`/staff/accept-invite/${TOKEN}/photo`));
+    const form = sent?.[1]?.body as FormData;
+    expect(form.get('captureSource')).toBe('live_camera');
+    expect(form.get('photo')).toBeInstanceOf(Blob);
+    await typePasswords('my lovely long password');
+    await userEvent.click(screen.getByRole('button', { name: 'Set password' }));
+    expect(await screen.findByRole('heading', { name: 'Your account is ready' })).toBeInTheDocument();
+  });
+
+  it('on a device with no camera the photo can wait until the first sign-in', async () => {
+    Object.defineProperty(navigator, 'mediaDevices', { value: undefined, configurable: true });
+    mockApi({ 'POST /staff/accept-invite/preview': previewOf({ photoRequired: true }) });
+    renderInvite();
+    expect(await screen.findByText(/camera couldn't be opened/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'No camera on this device? Take it when you first sign in' }));
+    expect(await screen.findByLabelText(/New password/)).toBeInTheDocument();
+  });
 });
+

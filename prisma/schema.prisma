@@ -752,7 +752,6 @@ model Staff {
   directReports     Staff[]          @relation("ReportingLine")
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?
-  worksFromOffice   Boolean          @default(false)
   /// A Team Lead's team name ("Team South"), set by the CEO on the Teams
   /// screen. Null for everyone else; a team is its Team Lead and their agents.
   teamName          String?
@@ -797,7 +796,6 @@ model Staff {
   devices           StaffDevice[]    @relation("StaffDeviceOwner")
   devicesApproved   StaffDevice[]    @relation("StaffDeviceApprovedBy")
   devicesRevoked    StaffDevice[]    @relation("StaffDeviceRevokedBy")
-  officeNetworksAdded OfficeNetwork[] @relation("OfficeNetworkAddedBy")
   loginCodeRequests LoginCodeRequest[] @relation("LoginCodeSubject")
   loginCodesRevealed LoginCodeRequest[] @relation("LoginCodeRevealedBy")
   loginCodesRefused LoginCodeRequest[] @relation("LoginCodeRefusedBy")
@@ -822,6 +820,15 @@ model Staff {
   /// say "already used" instead of "not valid". Never a usable credential.
   inviteUsedTokenHash String?        @unique
   deactivatedAt     DateTime?
+  /// Staff photo (guide, login codes, 14 Nov): a live camera selfie taken when
+  /// the person sets up their account from the invite link, shown on login code
+  /// requests, staff lists and profiles. Path in the private photo bucket; served
+  /// only as a short-lived signed link. Null until taken.
+  photoStoragePath  String?
+  photoTakenAt      DateTime?
+  /// Set when the CEO asks for a new photo; the person retakes it at their next
+  /// login. Cleared when the new photo is saved.
+  photoRetakeRequestedAt DateTime?
   sessions          StaffSession[]
   passwordResets    StaffPasswordReset[] @relation("PasswordResetFor")
   passwordResetsIssued StaffPasswordReset[] @relation("PasswordResetIssuedBy")
@@ -990,8 +997,8 @@ model AuditLog {
   /// the row was written during a signed-in request or a login. Never a phone number.
   deviceId      String?
   deviceName    String?
-  /// "office:<office network label>" or "outside_office"; null outside a request.
-  /// The address itself is not kept here (audit rows are never deleted; access
+  /// Old rows only: "office:<office network label>" or "outside_office". Not written
+  /// since 14 Nov (no office networks) and not shown. The address itself is not kept here (audit rows are never deleted; access
   /// logs with addresses are kept only 1 year, guide: keeping data).
   network       String?
   createdAt     DateTime  @default(now())
@@ -1203,19 +1210,6 @@ model StaffDevice {
   @@index([revokedByStaffId])
 }
 
-model OfficeNetwork {
-  id             String   @id @default(uuid())
-  label          String
-  cidr           String
-  active         Boolean  @default(true)
-  addedByStaffId String?
-  addedByStaff   Staff?   @relation("OfficeNetworkAddedBy", fields: [addedByStaffId], references: [id], onDelete: SetNull)
-  createdAt      DateTime @default(now())
-
-  @@index([active])
-  @@index([addedByStaffId])
-}
-
 model LoginCodeRequest {
   id                String      @id @default(uuid())
   staffId           String
@@ -1223,7 +1217,6 @@ model LoginCodeRequest {
   staffDeviceId     String
   staffDevice       StaffDevice @relation(fields: [staffDeviceId], references: [id], onDelete: Cascade)
   ipAddress         String
-  onOfficeNetwork   Boolean
   status            String      @default("pending") // pending, revealed, used, expired, refused
   createdAt         DateTime    @default(now())
   expiresAt         DateTime
@@ -1460,12 +1453,28 @@ model AttendanceDay {
   /// On a leave day: casual or emergency, and whether it is beyond the paid balance.
   leaveKind         String?
   leaveUnpaid       Boolean             @default(false)
+  /// A half day of leave (owner decision 12 Nov): "first" or "second" half;
+  /// the other half is a normal working half day (production needed is
+  /// halved). Null on a full leave day. `leaveUnpaid` is about this half.
+  leaveHalf         String?
+  /// On a full leave day only: the paid balance ran out half way, so half of
+  /// the day is paid leave and half unpaid (balances count halves).
+  leavePartUnpaid   Boolean             @default(false)
   /// Set when a Team Lead or Manager changes the day to full or half.
   dayTypeChangedById String?
   dayTypeChangedAt  DateTime?
   dayTypeChangeReason String?
   /// The approved leave request that made this a leave day.
   leaveRequestId    String?
+  /// Two half days of leave on one date (first half and second half, same
+  /// kind, two requests) make one full leave day: this is the request of the
+  /// half approved second. When one of them is overturned the day goes back
+  /// to a half day of leave of the other.
+  otherLeaveRequestId String?
+  /// On such a day with one half paid and one unpaid (leavePartUnpaid): true when the
+  /// unpaid half is otherLeaveRequestId's, false when it is leaveRequestId's. Set when
+  /// each half is approved, so a request's paid/unpaid split never flips later.
+  otherLeaveUnpaid  Boolean             @default(false)
   lastHeartbeatAt   DateTime?
   segments          AttendanceSegment[]
   createdAt         DateTime            @default(now())
@@ -1532,8 +1541,12 @@ model LeaveRequest {
   kind                String    // casual, emergency
   fromDate            DateTime  @db.Date
   toDate              DateTime  @db.Date
-  /// Leave days in the range, weekly days off left out.
-  days                Int
+  /// A half day (owner decision 12 Nov): "first" or "second" half of the one
+  /// date fromDate = toDate. Null = full days.
+  half                String?
+  /// Leave days in the range, weekly days off left out: whole or half days
+  /// (0.5 for a half day; always a multiple of 0.5, exact as a double).
+  days                Float
   reason              String
   status              String    @default("pending") // pending, approved, rejected
   /// Where it went first: team_lead, manager or ceo.
@@ -1548,8 +1561,9 @@ model LeaveRequest {
   decidedByStaffId    String?
   decidedByRole       String?
   decisionReason      String?
-  paidDays            Int       @default(0)
-  unpaidDays          Int       @default(0)
+  /// Whole or half days.
+  paidDays            Float     @default(0)
+  unpaidDays          Float     @default(0)
   overturnedAt        DateTime?
   overturnedByStaffId String?
   overturnReason      String?
@@ -1557,7 +1571,7 @@ model LeaveRequest {
   /// of the request was rejected with decisionReason. Null = all or nothing.
   approvedFromDate    DateTime? @db.Date
   approvedToDate      DateTime? @db.Date
-  approvedDays        Int?
+  approvedDays        Float?
   /// A Manager sent it back to the Team Lead (still pending; the Team Lead's
   /// 24-hour clock starts again from sentBackAt).
   sentBackAt          DateTime?
@@ -2177,7 +2191,10 @@ model PayrollRun {
 }
 
 /// Phase 22 Part B: one person's pay for a month, frozen when the sheet is
-/// prepared. Days are kept in half days so nothing is a float.
+/// prepared. Pay is worked out in half days (lossOfPayHalfDays, paidHalfDays)
+/// and integer paise. The day counts shown on the sheet (full, paid leave,
+/// unpaid leave, absent) can be half days since half-day leave (12 Nov), so
+/// they are stored as whole or half days (always a multiple of 0.5).
 model PayrollLine {
   id                    String     @id @default(uuid())
   runId                 String
@@ -2191,11 +2208,11 @@ model PayrollLine {
   calendarDays          Int
   workingDays           Int
   holidays              Int
-  fullDays              Int
+  fullDays              Float
   halfDays              Int
-  paidLeaveDays         Int
-  unpaidLeaveDays       Int
-  absentDays            Int
+  paidLeaveDays         Float
+  unpaidLeaveDays       Float
+  absentDays            Float
   notEmployedDays       Int
   /// Working days in the month with no attendance row while on the staff (not paid).
   unmarkedDays          Int        @default(0)

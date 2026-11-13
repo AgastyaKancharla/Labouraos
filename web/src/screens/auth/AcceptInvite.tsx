@@ -14,12 +14,17 @@ import type { StaffInviteKey } from '../../i18n/staffInvite';
 import { api } from '../../lib/api/client';
 import { isApiError } from '../../lib/api/errors';
 import { formatDateTimeIST } from '../../lib/format/date';
+import { postLiveSelfie } from '../public/shared/api';
+import { LiveSelfie } from '../public/shared/LiveSelfie';
 
 /**
  * The invite page: /p/invite/:token (the link in `inviteUrl` when the
  * CEO, a Manager or a Team Lead adds someone or resets their password).
  *
  * No design file exists for it, so it uses the sign-in card (M01). Steps:
+ *   0. no staff photo yet: a live camera selfie (guide, 14 Nov — it shows on
+ *      login code requests so seniors can see who is asking), sent with the
+ *      invite token before the token is used up;
  *   1. whose invite it is (name, staff code, role) and a new password that
  *      meets the API's rules (passwordRules from the preview);
  *   2. CEO, Manager and Finance only: set up the authenticator app;
@@ -29,7 +34,8 @@ import { formatDateTimeIST } from '../../lib/format/date';
  *
  * API (src/modules/staff): POST /staff/accept-invite/preview { token },
  * POST /staff/accept-invite/authenticator { token },
- * POST /staff/accept-invite { token, password, totpCode? }.
+ * POST /staff/accept-invite { token, password, totpCode? },
+ * POST /staff/accept-invite/:token/photo (multipart, live camera only).
  */
 export interface InvitePreview {
   /** 'reset' for a password reset link (POST /staff/:id/reset-password); older APIs leave it out. */
@@ -41,6 +47,8 @@ export interface InvitePreview {
   authenticatorRequired: boolean;
   passwordRules: { minLength: number; maxBytes: number };
   signInAt: 'field_app' | 'web';
+  /** No staff photo yet (or the CEO asked for a new one): a live camera selfie comes first. Older APIs leave it out. */
+  photoRequired?: boolean;
 }
 
 type Problem = 'invalid' | 'expired' | 'used';
@@ -101,6 +109,8 @@ export default function AcceptInvite() {
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<{ password?: string; confirm?: string }>({});
   const [problem, setProblem] = useState<Problem | null>(null);
+  const [photoDone, setPhotoDone] = useState(false);
+  const [photoLater, setPhotoLater] = useState(false);
 
   useEffect(() => {
     document.title = `${t('invite.title')} · ${t('app.name')}`;
@@ -258,6 +268,42 @@ export default function AcceptInvite() {
         )}
       </div>
     );
+  } else if (step.kind === 'password' && invite.photoRequired && !photoDone && !photoLater) {
+    body = (
+      <div className="lb-stack">
+        {brand(t('invite.welcome', { name: invite.name }))}
+        <h2 className="h2">{t('staffPhoto.inviteStep')}</h2>
+        <p className="muted">{t('staffPhoto.intro')}</p>
+        <LiveSelfie
+          active
+          tips={t('staffPhoto.tips')}
+          takeLabel={t('staffPhoto.take')}
+          savingLabel={t('staffPhoto.saving')}
+          error={
+            error && (
+              <p className="vno" role="alert">
+                {error}
+              </p>
+            )
+          }
+          onCapture={async (photo) => {
+            setError(null);
+            try {
+              await postLiveSelfie(`/staff/accept-invite/${encodeURIComponent(token)}/photo`, {}, photo);
+              setPhotoDone(true);
+              return 'done';
+            } catch (err) {
+              failed(err);
+              return 'retry';
+            }
+          }}
+        />
+        {/* No camera on this device: the photo is asked again, before anything else, at the first sign-in. */}
+        <Button fullWidth onClick={() => setPhotoLater(true)}>
+          {t('staffPhoto.inviteLater')}
+        </Button>
+      </div>
+    );
   } else if (step.kind === 'authenticator') {
     body = (
       <form
@@ -303,6 +349,11 @@ export default function AcceptInvite() {
     body = (
       <form onSubmit={submitPassword} noValidate className="lb-stack">
         {brand(t('invite.welcome', { name: invite.name }))}
+        {photoDone && (
+          <p className="lb-notice" role="status">
+            {t('staffPhoto.inviteDone')}
+          </p>
+        )}
         <p className="muted">{t(invite.purpose === 'reset' ? 'invite.resetIntro' : 'invite.intro')}</p>
         <div className="kv lb-invite__who">
           <span>{t('invite.staffCode')}</span>

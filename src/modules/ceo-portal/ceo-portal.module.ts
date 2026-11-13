@@ -1,3 +1,4 @@
+import { StaffPhotoModule } from '../staff/staff-photo.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
@@ -19,7 +20,7 @@ import { CeoAdminService } from './ceo-admin.service';
 import { CeoBreachService } from './ceo-breach.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, IdModule, PricingModule, RefundModule, TargetModule, AttendanceModule, JobSeekerModule],
+  imports: [PrismaModule, AuditModule, IdModule, PricingModule, RefundModule, TargetModule, AttendanceModule, JobSeekerModule, StaffPhotoModule],
   controllers: [CeoPortalController],
   providers: [CeoCommandCenterService, CeoJobSeekersService, CeoBusinessesService, CeoPlacementsService, CeoMoneyService, CeoTeamService, CeoOpsService, CeoAdminService, CeoBreachService],
   exports: [CeoCommandCenterService],

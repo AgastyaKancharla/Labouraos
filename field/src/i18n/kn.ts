@@ -2,6 +2,7 @@ import type { Messages } from './en';
 import { sellingKn } from './selling.kn';
 import { attendanceKn } from './attendance.kn';
 import { searchKn } from './search.kn';
+import { staffPhotoKn } from './staffPhoto.kn';
 
 /**
  * Kannada. Same keys as en.ts (TypeScript refuses a missing or extra key).
@@ -12,6 +13,7 @@ export const kn: Messages = {
   ...sellingKn,
   ...attendanceKn,
   ...searchKn,
+  ...staffPhotoKn,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'ಫೀಲ್ಡ್ ಏಜೆಂಟ್',

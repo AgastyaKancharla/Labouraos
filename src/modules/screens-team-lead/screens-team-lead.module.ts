@@ -1,3 +1,4 @@
+import { StaffPhotoModule } from '../staff/staff-photo.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { AuditModule } from '../../common/audit/audit.module';
@@ -17,7 +18,7 @@ import { TeamLeadController } from './team-lead.controller';
 import { TeamLeadScreensService } from './team-lead-screens.service';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AttendanceModule, JobSeekerModule, NotificationModule, ReviewFlagModule, ReportingScopeModule, TargetModule],
+  imports: [PrismaModule, AuditModule, AttendanceModule, JobSeekerModule, NotificationModule, ReviewFlagModule, ReportingScopeModule, TargetModule, StaffPhotoModule],
   controllers: [TeamLeadController],
   providers: [
     TeamLeadScreensService,

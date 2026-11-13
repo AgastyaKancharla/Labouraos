@@ -103,7 +103,7 @@ Laboura needs two addresses for the same database. Both come from the same scree
 
 ### Step 3: Create the four private file buckets and copy the storage keys
 
-Uploaded files are kept in Supabase Storage. Laboura needs four buckets, all **private**. They hold personal data (selfies, shop photos, signed agreements, recorded calls) and must never be public.
+Uploaded files are kept in Supabase Storage. Laboura needs four buckets, all **private**. They hold personal data (selfies, shop photos, signed agreements, recorded calls) and must never be public. `candidate-photos` holds every live camera selfie: job seekers, referral partners (under `referrals/`) and the staff photos shown on login code requests (under `staff/`).
 
 1. In the project, click **Storage** in the left menu (the bucket icon).
 2. Click **New bucket**.
@@ -220,21 +220,7 @@ When the app first starts, no staff accounts exist. A one-time "bootstrap" reque
 
 Managers and Finance also use an authenticator app. Team Leads and agents instead wait on the "Ask your Team Lead for your code" page until someone reveals their code on the Login codes screen.
 
-#### Office network (once the office opens)
-
-Until an office network is added, nobody is limited to it. Add it only when the office has its own internet connection. You need the address range from whoever set it up (it looks like `203.0.113.0/24`); never guess it.
-
-1. Log in to the app as the CEO or a Manager and open **Team & Access**, then **Devices & logins**.
-2. Under **Office networks**, type a **Name** (for example `Bengaluru office`) and the **Network address** range, and click the button under them. A range can be removed there too.
-3. To limit one person to the office network: on your own Laboura address (never in another website), open the browser console with **Ctrl+Shift+J** (Mac: **Cmd+Option+J**) while logged in to the app as the CEO or a Manager, paste this with the person's staff id (the long id on their staff row, not the staff code), and press **Enter**:
-   ```js
-   fetch('/staff/PASTE-THE-STAFF-ID/works-from-office', {
-     method: 'POST',
-     headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + sessionStorage.getItem('laboura_token') },
-     body: JSON.stringify({ worksFromOffice: true }),
-   }).then((r) => r.json()).then(console.log);
-   ```
-   The login token never leaves the page: the request goes from your browser straight to Laboura. Close the console afterwards.
+Staff log in from any network: there is no office-network rule (owner decision 14 Nov). Every login already needs a one-time code from a senior or the authenticator code.
 
 ---
 
@@ -427,7 +413,7 @@ The Render parts stay in **Singapore** (Render has no India region).
 
 This does three things: the web service never sleeps (it sleeps after 15 minutes without a visitor), so the nightly jobs can run at their times; Supabase sees daily use, so it does not pause the project; and you get an email when the database, the queue, the worker or the job schedules fail. One always-on free web service fits inside Render's 750 free hours a month; a second free web service would not.
 
-**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy.** Rate limits and the office-network rule need the real address of each visitor.
+**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy.** Rate limits need the real address of each visitor.
 1. Log in as the CEO, open **Team & Access**, then **Devices & logins**, and look at the address shown for your own login.
 2. In another tab, search the web for "what is my IP" and note your public address.
 3. If they match, nothing to do. If the app shows an address starting with `10.` or one that is not yours, open `laboura-test`, **Environment**, change `TRUST_PROXY_HOPS` from `1` to `2`, click **Save Changes**, wait for the restart, log in again and compare. Raise it by one until the addresses match (a Render community report needed `3`). Write the final number down.
@@ -507,7 +493,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | --- | --- | --- |
 | `NODE_ENV` | `production` (fixed) | Production switches on the strict start-up checks |
 | `PROCESS_ROLE` | `web` / `worker` (fixed); `all` on the free tier | Keeps scheduled jobs in the worker only; `all` makes one process serve the site and run the jobs (free tier, no worker) |
-| `TRUST_PROXY_HOPS` | `1` (fixed; `2` behind Cloudflare) | How many proxies sit in front of the app, so rate limits and the office-network rule see the real visitor address |
+| `TRUST_PROXY_HOPS` | `1` (fixed; `2` behind Cloudflare) | How many proxies sit in front of the app, so rate limits see the real visitor address |
 | `DATABASE_URL` | Step 2, transaction pooler, port 6543 | The database address the app uses |
 | `DIRECT_URL` | Step 2, session pooler, port 5432 | The database address used for migrations |
 | `REDIS_HOST`, `REDIS_PORT` | From `laboura-redis` (automatic) | The job queue's private address |
@@ -521,7 +507,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `PAYOUT_ACCOUNT_KEY` | Generated by Render, shared with the worker | Encrypts payout UPI and bank details |
 | `PUBLIC_APP_URL` | `https://app.laboura.com` (the onrender.com address until the domain is connected) | The public web address of the app. Every link the software sends (invites, password resets, the public `/p/...` pages, receipts) starts with it; required to start. Links are never built from the address a visitor happened to use. |
 | `FIELD_HOST` | `field.laboura.com` (empty until connected) | The address that opens Laboura Field at its root. Every other address opens the office app, with Laboura Field also at `/field` |
-| `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` on both services (fixed) | Keeps uploads in Supabase Storage; production refuses to start otherwise |
+| `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` on both services (fixed) | Keeps uploads in Supabase Storage; production refuses to start otherwise. `CANDIDATE_PHOTO_STORAGE_MODE` also covers referral partner selfies and staff photos |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Step 3 | Lets the app read and write the four private buckets |
 | `COMPANY_LEGAL_NAME`, `COMPANY_GSTIN`, `COMPANY_ADDRESS` | Company details | Printed on GST invoices |
 | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Bank UPI details | UPI payment links and QR codes |

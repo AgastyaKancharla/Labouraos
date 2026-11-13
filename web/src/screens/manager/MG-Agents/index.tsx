@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useNavigate } from 'react-router-dom';
 import { ButtonLink } from '../../../components/Button';
 import { DataTable, type Column } from '../../../components/DataTable';
@@ -10,7 +11,7 @@ import { paceText, paceTone, roleTeam, teamShort } from '../_kit/kit';
 
 /** GET /manager/agents. */
 export interface AgentRow {
-  staff: { id: string; code: string; name: string; role: string; isIntern: boolean };
+  staff: { id: string; code: string; name: string; role: string; isIntern: boolean; photoUrl?: string | null };
   team: string | null;
   teamLeadId: string | null;
   main: { metric: string; done: number; target: number | null; percent: number | null; atThisSpeed: number };
@@ -47,9 +48,12 @@ export default function Agents() {
       key: 'agent',
       header: 'Agent',
       cell: (r) => (
-        <div>
-          <div style={{ fontWeight: 600 }}>{r.staff.name}</div>
-          <div className="ceo-cell-sub">{roleTeam(r.staff.role, r.team, r.staff.isIntern)}</div>
+        <div className="lb-name-cell">
+          <StaffAvatar name={r.staff.name} photoUrl={r.staff.photoUrl} />
+          <div>
+            <div style={{ fontWeight: 600 }}>{r.staff.name}</div>
+            <div className="ceo-cell-sub">{roleTeam(r.staff.role, r.team, r.staff.isIntern)}</div>
+          </div>
         </div>
       ),
       filter: 'text',

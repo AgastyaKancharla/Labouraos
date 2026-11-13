@@ -34,7 +34,7 @@ import '../_kit/ceo.css';
  */
 interface Profit {
   period: { from: string; to: string; month: string };
-  revenue: { activationPaise: number; activationCount: number; placementFeePaise: number; placementCount: number; refundsPaise: number; refundsCount: number; netRevenuePaise: number; gstCollectedPaise: number };
+  revenue: { activationPaise: number; activationCount: number; placementFeePaise: number; placementCount: number; bypassChargePaise?: number; bypassChargeCount?: number; refundsPaise: number; refundsCount: number; netRevenuePaise: number; gstCollectedPaise: number };
   expenses: { billsPaise: number; payoutsPaise: number; salariesPaise: number; salariesFromPayroll: boolean; totalPaise: number };
   profitPaise: number;
   costPerPlacementPaise: number | null;
@@ -145,6 +145,7 @@ export default function CeoExpenses() {
     const rows: [string, number][] = [
       [`Activation fees (${p.revenue.activationCount})`, p.revenue.activationPaise],
       [`Placement fees (${p.revenue.placementCount})`, p.revenue.placementFeePaise],
+      ...((p.revenue.bypassChargeCount ?? 0) > 0 ? [[`No-bypass charges (${p.revenue.bypassChargeCount})`, p.revenue.bypassChargePaise ?? 0] as [string, number]] : []),
       ['Refunds', -p.revenue.refundsPaise],
       ['Net revenue', p.revenue.netRevenuePaise],
       ...p.categories.map((c) => [`Expense · ${EXPENSE_CATEGORY[c.category] ?? c.category}`, -c.actualPaise] as [string, number]),
@@ -219,6 +220,12 @@ export default function CeoExpenses() {
                   <span>{formatINR(p.revenue.activationPaise)}</span>
                   <span>Placement fees ({p.revenue.placementCount})</span>
                   <span>{formatINR(p.revenue.placementFeePaise)}</span>
+                  {(p.revenue.bypassChargeCount ?? 0) > 0 && (
+                    <>
+                      <span>No-bypass charges ({p.revenue.bypassChargeCount})</span>
+                      <span>{formatINR(p.revenue.bypassChargePaise ?? 0)}</span>
+                    </>
+                  )}
                   <span>Refunds</span>
                   <span>{formatINR(-p.revenue.refundsPaise)}</span>
                   <span>Net revenue</span>

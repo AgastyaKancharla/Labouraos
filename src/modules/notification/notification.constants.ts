@@ -49,7 +49,7 @@ export const NOTIFICATION_KINDS = [
   'fee_unpaid_reminder',
   // A newly registered job seeker fits an open vacancy of the field agent's business (guide: alerted when a new match registers).
   'new_match_registered',
-  // An agent behind pace on a monthly target, for their Team Lead and Manager (guide, Monthly targets).
+  // An agent behind pace on a monthly target, for their Team Lead, Manager and the CEO (guide, Monthly targets; CEO added 12 Nov).
   'behind_pace',
 ] as const;
 
@@ -88,7 +88,7 @@ export const STAFF_ROLES = [
   'field_agent',
 ] as const;
 
-/** Web app portal roots (the browser URL is /app + root). Field agents use the Laboura Field app. */
+/** Web app portal roots (the browser URL is the root itself, e.g. app.laboura.com/ceo). Field agents use the Laboura Field app. */
 const PORTAL_ROOT: Record<string, string | null> = {
   ceo: '/ceo',
   manager: '/manager',
@@ -137,6 +137,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   payout_failed: { finance: 'payouts', ceo: 'payments/out' },
   expense_needs_ceo: { ceo: 'expenses' },
   expense_to_pay: { finance: 'expenses?status=to_pay', ceo: 'expenses' },
+  // The CEO's close-to-refund bell (owner decision 12 Nov) opens the Close to a refund list.
   refund_priority: {
     call_agent: 'people/:id',
     team_lead: 'work',
@@ -157,7 +158,7 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   weekly_report: { manager: 'reports?week=:week', ceo: 'reports?week=:week' },
   fee_unpaid_reminder: { call_agent: '', field_agent: '' },
   new_match_registered: { field_agent: '' },
-  behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id' },
+  behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id', ceo: 'targets' },
 };
 
 /** The in-app path for one recipient, or null when that role has no screen for it. */

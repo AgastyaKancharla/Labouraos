@@ -47,6 +47,17 @@ export interface AttendanceToday {
   meetingSeconds: number;
   segments: TodaySegment[];
   policy: TodayPolicy;
+  /** "first" / "second" on a day with a half day of leave: half the production is needed. */
+  leaveHalf?: string | null;
+}
+
+/**
+ * The production seconds today needs: the full-day hours from Settings, half
+ * of them on a day with a half day of leave (owner decision 12 Nov).
+ */
+export function productionTarget(today: Pick<AttendanceToday, 'policy' | 'leaveHalf'> | null | undefined): number {
+  const full = (today?.policy.productionHoursFullDay ?? 8) * 3600;
+  return today?.leaveHalf ? Math.round(full / 2) : full;
 }
 
 /** Where the day stands, for which screen to show. */
@@ -75,6 +86,8 @@ export interface AttendanceDayRow {
   closedReason: string | null;
   leaveKind: string | null;
   leaveUnpaid: boolean;
+  /** "first" / "second" on a day with a half day of leave (owner decision 12 Nov). */
+  leaveHalf?: string | null;
   change: { byStaffId: string | null; at: string; reason: string | null } | null;
 }
 
@@ -124,6 +137,9 @@ export interface MyRequest {
   leaveKind?: 'casual' | 'emergency';
   fromDate?: string;
   toDate?: string;
+  /** "first" / "second" for a half day of leave; null for full days. */
+  half?: LeaveHalf | null;
+  /** Whole or half days (0.5 for a half day). */
   days?: number;
   approvedDays?: number | null;
   date?: string;
@@ -132,11 +148,16 @@ export interface MyRequest {
   segmentStatus?: string;
 }
 
+/** A half day of leave (owner decision 12 Nov): the first or second half of one date. */
+export type LeaveHalf = 'first' | 'second';
+
 export interface LeaveBody {
   kind: 'casual' | 'emergency';
   fromDate: string;
   toDate: string;
   reason: string;
+  /** Left out for full days. */
+  half?: LeaveHalf;
 }
 
 export type CorrectionStatus = 'available' | 'team_meeting' | 'training' | 'one_to_one';

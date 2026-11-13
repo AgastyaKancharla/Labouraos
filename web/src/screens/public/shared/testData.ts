@@ -1,4 +1,4 @@
-import type { RegistrationOpen } from './api';
+import type { PartnerOpen, RegistrationOpen } from './api';
 
 /** A registration status as the API returns it after the OTP, for the public page tests. */
 export function openStatus(overrides: Partial<RegistrationOpen> = {}): RegistrationOpen {
@@ -27,3 +27,28 @@ export const QR_SVG = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1 1"
 export function verifiedInThisTab(token = TOKEN, requestId = 'req-1') {
   sessionStorage.setItem(`laboura_reg_otp:${token}`, requestId);
 }
+
+/** A referral partner's link status after the code (ReferralRegistrationController). */
+export function partnerStatus(overrides: Partial<PartnerOpen> = {}): PartnerOpen {
+  return {
+    otpRequired: false,
+    maskedPhone: '******3210',
+    language: null,
+    firstName: 'Ramesh K.',
+    referralCode: 'RF-00031',
+    partnerType: 'individual',
+    currentStep: 'terms',
+    steps: { terms: { state: 'not_started' }, selfie: { state: 'stuck' }, id: { state: 'not_started' }, upi: { state: 'not_started' } },
+    idCheck: { serviceDown: false, lastResult: 'none' },
+    stopped: null,
+    payout: null,
+    ...overrides,
+  };
+}
+
+/** Pretend the partner already verified the code on the first page in this tab. */
+export function partnerVerifiedInThisTab(token = TOKEN, requestId = 'req-1') {
+  sessionStorage.setItem(`laboura_partner_otp:${token}`, requestId);
+}
+
+export const DONE = { state: 'done' } as const;

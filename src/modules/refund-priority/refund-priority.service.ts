@@ -9,6 +9,7 @@ import { notificationLink } from '../notification/notification.constants';
 import { NotificationDraft, NotificationService } from '../notification/notification.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { DirectoryRow } from '../notification/staff-directory';
+import { formatINR } from '../../common/money/money';
 import {
   DAY_MS,
   OFFER_STATUSES,
@@ -380,8 +381,12 @@ export class RefundPriorityService {
 
   /**
    * One `refund_priority` notification per person in the window for the
-   * agent working on them, that agent's Team Lead and Manager (no rupees);
-   * cleared when the person leaves the window, with what took them out.
+   * agent working on them, that agent's Team Lead and Manager (no rupees),
+   * and the CEO (owner decision 12 Nov: "The CEO also gets a bell ... when job
+   * seekers or business vacancies come close to a refund (the same 15-day
+   * window)"), whose bell says the rupees at stake. Cleared when the person
+   * leaves the window, with what took them out. One per recipient and person:
+   * running again adds nothing.
    */
   async syncBells(now: Date = this.clock.now(), known?: PriorityRow[]): Promise<{ opened: number; cleared: number }> {
     if (!this.notifications || !this.sources) return { opened: 0, cleared: 0 };
@@ -390,19 +395,33 @@ export class RefundPriorityService {
     const drafts: NotificationDraft[] = [];
     for (const row of rows) {
       const agent = dir.get(row.agent?.id);
-      if (!agent) continue;
-      const chain = dir.chainOf(agent.id);
-      const recipients: Array<DirectoryRow | null> = [
-        AGENT_ROLES.includes(agent.role) ? agent : null,
-        agent.role === 'team_lead' ? agent : chain.teamLead,
-        chain.manager,
-      ];
+      const chain = agent ? dir.chainOf(agent.id) : null;
       const title =
         row.kind === 'job_seeker'
           ? `${row.code}: ${row.daysLeft} day${row.daysLeft === 1 ? '' : 's'} to a refund, no suitable offer yet`
           : `${row.businessName ?? row.code}: ${row.daysLeft} day${row.daysLeft === 1 ? '' : 's'} to a refund, no replacement yet`;
       const body = [row.trade, row.kind === 'business' ? row.code : null, `${row.bucket} days`].filter(Boolean).join(' · ');
-      for (const draft of this.sources.drafts(recipients, {
+      // The CEO first, so an item with nobody working on it (no registering agent, no
+      // account agent) still rings someone: the CEO at the top of the agent's line, or
+      // every active CEO when there is no agent or no line.
+      const ceos = chain?.ceo ? [chain.ceo] : dir.ceos();
+      for (const draft of this.sources.drafts(ceos, {
+        kind: 'refund_priority',
+        title,
+        // Only the CEO's bell carries money (Managers and Team Leads keep counts only).
+        body: [body, `${formatINR(row.atStakePaise ?? 0)} at stake`].filter(Boolean).join(' · '),
+        subjectType: row.kind === 'job_seeker' ? 'job_seeker' : 'placement',
+        subjectId: row.id,
+      })) {
+        drafts.push(draft);
+      }
+      if (!agent || !chain) continue;
+      const recipients: Array<DirectoryRow | null> = [
+        AGENT_ROLES.includes(agent.role) ? agent : null,
+        agent.role === 'team_lead' ? agent : chain.teamLead,
+        chain.manager,
+      ];
+      for (const draft of this.sources.drafts(recipients.filter((person) => !person || person.role !== 'ceo'), {
         kind: 'refund_priority',
         title,
         body,

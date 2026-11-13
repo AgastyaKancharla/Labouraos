@@ -26,7 +26,7 @@ export class AttendanceRequestsController {
   @RequireRoles(...ATTENDANCE_STAFF)
   requestLeave(
     @Req() req: Authed,
-    @Body() body: { kind?: string; fromDate?: string; toDate?: string; reason?: string },
+    @Body() body: { kind?: string; fromDate?: string; toDate?: string; reason?: string; half?: string | null },
   ) {
     return this.requests.requestLeave(this.actor(req), body ?? {});
   }

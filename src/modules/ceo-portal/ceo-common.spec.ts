@@ -17,7 +17,7 @@ import {
   countBy,
   median,
 } from './ceo-common';
-import { gstDueDates, summariseReceived } from './ceo-money.service';
+import { gstDueDates, summariseReceived, withBypassCharges } from './ceo-money.service';
 import { placementStage } from './ceo-placements.service';
 import { CeoJobSeekersService, NearRefundRow } from './ceo-job-seekers.service';
 import { CeoPortalController } from './ceo-portal.controller';
@@ -109,6 +109,52 @@ describe('CEO portal helpers', () => {
       netPaise: 899900,
       receivedInclGstPaise: 1102800,
     });
+  });
+
+  it('counts a paid no-bypass charge: fee + penalty in gross and net, its GST with the GST, as FN-Tax and the books do', () => {
+    const totals = summariseReceived(
+      [
+        { type: 'activation', amount: 49900, placement: null },
+        { type: 'placement_fee', amount: 1003000, placement: { placementFee: 850000, gstAmount: 153000 } },
+        // ₹15,000 salary: full fee ₹7,500 + 50% penalty ₹3,750 = ₹11,250, GST 18% ₹2,025, total ₹13,275.
+        { type: 'bypass_charge', amount: 1327500, placement: null, bypass: { taxablePaise: 1125000, gstPaise: 202500 } },
+      ],
+      [],
+    );
+    expect(totals).toMatchObject({
+      bypassChargePaise: 1125000,
+      bypassChargeCount: 1,
+      gstPaise: 153000 + 202500,
+      grossPaise: 49900 + 850000 + 1125000,
+      netPaise: 49900 + 850000 + 1125000,
+      receivedInclGstPaise: 49900 + 1003000 + 1327500,
+    });
+  });
+
+  it('a bypass payment whose charge is cancelled or missing counts nothing, never its gross amount', () => {
+    const totals = summariseReceived(
+      [
+        { type: 'activation', amount: 49900, placement: null },
+        { type: 'bypass_charge', amount: 1327500, placement: null, bypass: null },
+      ],
+      [],
+    );
+    expect(totals).toMatchObject({ bypassChargePaise: 0, bypassChargeCount: 0, gstPaise: 0, grossPaise: 49900, receivedInclGstPaise: 49900 });
+  });
+
+  it('withBypassCharges: a standing charge gives fee + penalty and GST; a cancelled or missing one gives nothing', async () => {
+    const findMany = jest.fn().mockResolvedValue([
+      { paymentId: 'p-ok', status: 'raised', feePaise: 750000, penaltyPaise: 375000, gstPaise: 202500 },
+      { paymentId: 'p-cancelled', status: 'cancelled', feePaise: 750000, penaltyPaise: 375000, gstPaise: 202500 },
+    ]);
+    const rows = await withBypassCharges({ bypassCharge: { findMany } } as never, [
+      { id: 'p-ok', type: 'bypass_charge' },
+      { id: 'p-cancelled', type: 'bypass_charge' },
+      { id: 'p-missing', type: 'bypass_charge' },
+      { id: 'p-fee', type: 'placement_fee' },
+    ]);
+    expect(findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { paymentId: { in: ['p-ok', 'p-cancelled', 'p-missing'] } } }));
+    expect(rows.map((r) => r.bypass)).toEqual([{ taxablePaise: 1125000, gstPaise: 202500 }, null, null, null]);
   });
 
   it('dates GSTR-1 on the 11th and GSTR-3B on the 20th of the next month', () => {

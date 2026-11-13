@@ -117,7 +117,7 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
 
   describe('app.laboura.com and the Render test address: the office portals at the root', () => {
     it.each([RENDER, APP])('serves the login page, every portal and the public pages at the root on %s, never cached', async (host) => {
-      for (const url of ['/', '/login', '/ceo', '/ceo/refunds', '/manager', '/team-lead/agents/a1', '/finance', '/call-agent', '/call-agent/register/job-seeker/JS-00203', '/p/register/tok123', '/p/invite/inv-1', '/field-app']) {
+      for (const url of ['/', '/login', '/ceo', '/ceo/refunds', '/manager', '/team-lead/agents/a1', '/finance', '/call-agent', '/call-agent/register/job-seeker/JS-00203', '/p/register/tok123', '/p/invite/inv-1', '/p/partner/tok9', '/p/partner/tok9/selfie', '/field-app']) {
         const res = await get(host, url);
         expect([url, res.status]).toEqual([url, 200]);
         expect(res.headers['content-type']).toMatch(/text\/html/);
@@ -202,6 +202,7 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       ['/app/login', '/login'],
       ['/app/p/invite/inv%2F1', '/p/invite/inv%2F1'],
       ['/app/p/register/tok123', '/p/register/tok123'],
+      ['/app/p/partner/tok9?lang=kn', '/p/partner/tok9?lang=kn'],
       ['/app/p/fee/PAY-00001-ab12?lang=kn', '/p/fee/PAY-00001-ab12?lang=kn'],
       ['/app/assets/index-abc123.js', '/assets/index-abc123.js'],
     ])('%s → %s', async (from, to) => {

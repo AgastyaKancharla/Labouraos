@@ -97,6 +97,55 @@ describe('FA04f Request leave', () => {
     expect(screen.getByTestId('fa04f-sent')).toHaveTextContent(/More than 3 planned days in a month, so it went to your Manager/);
   });
 
+  it('asks Full day / Half day — first half / second half; a half day sends one date with the half', async () => {
+    const today = todayKeyIst();
+    const halfMonth = { ...month, days: [...month.days, day('2026-11-10', { dayType: 'full', leaveKind: 'casual', leaveHalf: 'first' })] };
+    const { route, calls } = routeTable({
+      '/attendance/leave/balance': balance,
+      '/attendance/month': halfMonth,
+      'POST /attendance/leave': () => ({ status: 201, body: { kind: 'leave', id: 'lv-10', status: 'pending', where: 'with_team_lead', routeReason: 'team_lead', fromDate: today, toDate: today, half: 'first', days: 0.5, createdAt: '', decided: null, reason: 'Bank work' } }),
+    });
+    await renderWithApp(<RequestLeaveScreen />, { signedInAs: kiran, route });
+    await fireEvent.press(screen.getByTestId('fa04f-kind'));
+    await waitFor(() => screen.getByText('Planned (casual) leave · 2 left'));
+    await fireEvent.press(screen.getByTestId('fa04f-kind-option-casual'));
+    expect(screen.getByTestId('fa04f-half-full').props.accessibilityState.checked).toBe(true);
+    expect(screen.getByText('Half day — second half')).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('fa04f-from'));
+    await fireEvent.press(screen.getByTestId(`fa04f-from-day-${today}`));
+    await fireEvent.press(screen.getByTestId('fa04f-half-first'));
+    // One date: no "To" for a half day, and the rule is explained.
+    expect(screen.queryByTestId('fa04f-to')).toBeNull();
+    expect(screen.getByTestId('fa04f-half-hint')).toHaveTextContent(/uses half a day of your leave/);
+    // A half day already taken counts ½ towards the 3 planned days.
+    await waitFor(() => expect(screen.getByTestId('fa04f-planned')).toHaveTextContent(/1\.5 days taken/));
+    await fireEvent.changeText(screen.getByTestId('fa04f-reason'), 'Bank work');
+    await fireEvent.press(screen.getByTestId('fa04f-send'));
+    await waitFor(() => screen.getByTestId('fa04f-sent'));
+    expect(calls).toContainEqual({ method: 'POST', path: '/attendance/leave', body: { kind: 'casual', fromDate: today, toDate: today, reason: 'Bank work', half: 'first' } });
+    expect(screen.getByTestId('fa04f-sent')).toHaveTextContent(/half day \(first half\)/);
+  });
+
+  it('counts older leave rows with no kind as planned, and says so when the date already has leave', async () => {
+    const today = todayKeyIst();
+    const oldRows = { ...month, days: [day('2026-11-02', { dayType: 'leave', leaveKind: null }), day('2026-11-05', { dayType: 'leave', leaveKind: 'casual' })] };
+    const { route } = routeTable({
+      '/attendance/leave/balance': balance,
+      '/attendance/month': oldRows,
+      'POST /attendance/leave': () => ({ status: 400, body: { statusCode: 400, message: 'You already have leave asked for or approved on 2026-11-13.', details: { code: 'leave_overlap', date: '2026-11-13' } } }),
+    });
+    await renderWithApp(<RequestLeaveScreen />, { signedInAs: kiran, route });
+    await fireEvent.press(screen.getByTestId('fa04f-kind'));
+    await waitFor(() => screen.getByText('Planned (casual) leave · 2 left'));
+    await fireEvent.press(screen.getByTestId('fa04f-kind-option-casual'));
+    await fireEvent.press(screen.getByTestId('fa04f-from'));
+    await fireEvent.press(screen.getByTestId(`fa04f-from-day-${today}`));
+    await waitFor(() => expect(screen.getByTestId('fa04f-planned')).toHaveTextContent(/2 days taken/));
+    await fireEvent.changeText(screen.getByTestId('fa04f-reason'), 'Wedding');
+    await fireEvent.press(screen.getByTestId('fa04f-send'));
+    await waitFor(() => expect(screen.getByTestId('fa04f-overlap')).toHaveTextContent(/You already have leave asked for or approved on/));
+  });
+
   it('needs signal: without it nothing is sent or saved on the phone', async () => {
     const today = todayKeyIst();
     const { queue, ...rest } = await renderWithApp(<RequestLeaveScreen />, {

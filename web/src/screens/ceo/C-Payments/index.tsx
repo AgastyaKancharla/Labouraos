@@ -36,6 +36,8 @@ interface Totals {
   gstPaise: number;
   refundsPaidPaise: number;
   netPaise: number;
+  bypassChargePaise?: number;
+  bypassChargeCount?: number;
 }
 interface Extra {
   byType: Totals;
@@ -121,6 +123,7 @@ export default function PaymentsIn() {
             { value: 'activation', label: '₹499 registration' },
             { value: 'reactivation', label: '₹499 re-registration' },
             { value: 'placement_fee', label: 'Placement fee' },
+            { value: 'bypass_charge', label: 'No-bypass charge' },
           ]}
         />
       </FilterPanel>
@@ -139,7 +142,8 @@ export default function PaymentsIn() {
             rows={[
               [`Activation fees (${t?.activationCount ?? 0})`, t ? formatINR(t.activationPaise) : '—'],
               [`Placement fees (${t?.placementCount ?? 0})`, t ? formatINR(t.placementFeePaise) : '—'],
-              ['GST on placement fees', t ? formatINR(t.gstPaise) : '—'],
+              ...((t?.bypassChargeCount ?? 0) > 0 ? [[`No-bypass charges (${t?.bypassChargeCount ?? 0})`, formatINR(t?.bypassChargePaise ?? 0)] as [string, string]] : []),
+              [(t?.bypassChargeCount ?? 0) > 0 ? 'GST on fees and charges' : 'GST on placement fees', t ? formatINR(t.gstPaise) : '—'],
               ['Refunds paid', t ? `− ${formatINR(t.refundsPaidPaise)}` : '—'],
               ['Net revenue (ex-GST)', t ? <b>{formatINR(t.netPaise)}</b> : '—'],
             ]}

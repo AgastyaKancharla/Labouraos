@@ -28,6 +28,9 @@ import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { Public } from '../../common/rbac/public.decorator';
 import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
+import { PricingService } from '../pricing/pricing.service';
+import { detectSelfieImageType } from '../../common/image-type';
+import { publicLanguage, shortNameOf } from '../job-seeker/registration-journey';
 
 @Controller()
 export class ReferralRegistrationController {
@@ -42,16 +45,63 @@ export class ReferralRegistrationController {
     private readonly payouts: PayoutAccountService,
     private readonly flags: ReviewFlagService,
     @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photos: CandidatePhotoStorage,
+    private readonly pricing: PricingService,
   ) {}
 
+  /**
+   * Where the partner's one link stands (web: /p/partner/:token and each
+   * step after it). Without a verified code to their own number it shows only
+   * the masked number, the language and whether everything is done.
+   */
   @Get('referral-registration/:token/status')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getLinkStatus(@Param('token') token: string, @Query('requestId') requestId: string | undefined) {
     const link = await this.requireLink(token);
     if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) {
-      return { valid: true, otpRequired: true, maskedPhone: this.maskPhone(link.phone ?? '') };
+      const done = await this.status(link.subjectId);
+      return {
+        valid: true,
+        otpRequired: true,
+        maskedPhone: this.maskPhone(link.phone ?? ''),
+        language: publicLanguage(link.language),
+        registrationComplete: done.currentStep === 'complete',
+      };
     }
-    return this.status(link.subjectId, link.expiresAt);
+    return this.publicStatus(link);
+  }
+
+  /** The partner types the code sent to their own number (POST /consent/send-otp); the answer is the open status. */
+  @Post('referral-registration/:token/verify-otp')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async verifyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
+    const link = await this.requireLink(token);
+    if (!body?.requestId || !body.code || !/^\d{4,8}$/.test(body.code)) throw new BadRequestException('Type the code from the SMS');
+    const ok = await this.otp.verifyOtp(body.requestId, body.code);
+    if (!ok || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+      throw new BadRequestException('Wrong or expired code. Check the SMS or ask for a new code.');
+    }
+    return this.publicStatus(link);
+  }
+
+  /**
+   * The referral terms frozen on the link when it was sent (amount, version,
+   * language and the full text), shown before the partner agrees. Only after
+   * their code: the page shows nothing about them before that.
+   */
+  @Get('referral-registration/:token/terms')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async getTerms(@Param('token') token: string, @Query('requestId') requestId: string | undefined) {
+    const link = await this.requireVerifiedLink(token, requestId);
+    const terms = ((link.metadata ?? {}) as { terms?: { referralPayoutPaise?: number; version?: string; language?: string; termsHtml?: string } }).terms ?? {};
+    const policy = await this.pricing.current();
+    return {
+      referralPayoutPaise: terms.referralPayoutPaise ?? policy.referralPayoutPaise,
+      version: terms.version ?? null,
+      language: publicLanguage(terms.language ?? null),
+      termsHtml: terms.termsHtml ?? '',
+      payoutDetailsCoolingHours: policy.payoutDetailsCoolingHours,
+      activationFeePaise: policy.activationFeePaise,
+    };
   }
 
   @Post('referral-registration/:token/selfie')
@@ -65,7 +115,10 @@ export class ReferralRegistrationController {
   ) {
     const link = await this.requireVerifiedLink(token, body.requestId);
     if (body.captureSource !== 'live_camera') throw new BadRequestException('A live camera capture is required; gallery uploads are refused');
-    if (!photo?.buffer.length || !photo.mimetype.toLowerCase().startsWith('image/')) throw new BadRequestException('A live camera image is required');
+    if (!photo?.buffer.length) throw new BadRequestException('A live camera image is required');
+    // JPEG, PNG or WebP by the file's first bytes; the stored type is the one read from them.
+    const contentType = detectSelfieImageType(photo.buffer);
+    if (!contentType) throw new BadRequestException('The selfie must be a JPEG, PNG or WebP image');
     if (!(await this.consent.hasConsent('referral', link.subjectId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', link.subjectId, 'call_recording'))) {
       throw new BadRequestException('Referral terms and call-recording consent are required before the selfie');
     }
@@ -73,7 +126,7 @@ export class ReferralRegistrationController {
     if (!referral) throw new BadRequestException('Referral partner not found');
     const path = `referrals/${referral.id}/profile-photo`;
     const photoTakenAt = this.clock.now();
-    await this.photos.put(path, photo.buffer, photo.mimetype);
+    await this.photos.put(path, photo.buffer, contentType);
     const updated = await this.prisma.referral.update({ where: { id: referral.id }, data: { photoStoragePath: path, photoTakenAt } });
     await this.audit.log({
       actorId: link.createdByStaffId ?? 'system',
@@ -150,7 +203,14 @@ export class ReferralRegistrationController {
     if (!(await this.consent.hasConsent('referral', link.subjectId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', link.subjectId, 'call_recording'))) {
       throw new BadRequestException('Referral terms and call-recording consent are required');
     }
-    if (!body.otpRequestId || !body.otpCode) throw new BadRequestException('OTP to the registered mobile is required');
+    if (!body.otpRequestId) throw new BadRequestException('OTP to the registered mobile is required');
+    // On the partner's own link the code they verified on opening it (still within its
+    // lifetime) proves the number for the first details, the same as every other step;
+    // a fresh code works too.
+    // A change to details already given always needs a fresh code (and its waiting time).
+    const hasDetails = (await this.prisma.payoutAccount.count({ where: { ownerType: 'referral', ownerId: link.subjectId, status: { not: 'superseded' } } })) > 0;
+    const sessionVerified = !body.otpCode && !hasDetails && (await this.otp.isVerified(body.otpRequestId, link.phone ?? ''));
+    if (!body.otpCode && !sessionVerified) throw new BadRequestException('OTP to the registered mobile is required');
     // Guide, referral partners: UPI ID preferred, bank account as the alternative. Both are
     // kept encrypted, shown masked, and revealed only to the CEO and Finance (logged).
     const method = body.method ?? 'upi';
@@ -158,10 +218,10 @@ export class ReferralRegistrationController {
     return this.payouts.submitPayoutAccount({
       token,
       otpRequestId: body.otpRequestId,
-      otpCode: body.otpCode,
+      otpCode: body.otpCode ?? '',
       method,
       ...(method === 'upi' ? { upiId: body.upiId } : { accountNumber: body.accountNumber, ifsc: body.ifsc }),
-    });
+    }, undefined, sessionVerified ? { otpVerifiedForPhone: link.phone ?? '' } : {});
   }
 
   @Get('referrals/:id/registration-status')
@@ -202,6 +262,45 @@ export class ReferralRegistrationController {
       steps,
       currentStep,
       ...(registrationLinkExpiresAt ? { registrationLinkExpiresAt } : {}),
+    };
+  }
+
+  /** The open status for the partner's own page: steps plus what each page needs (masked, no ID numbers). */
+  private async publicStatus(link: Awaited<ReturnType<PublicLinkStoreService['findByToken']>>) {
+    const [base, referral, identity, account, idServiceDown] = await Promise.all([
+      this.status(link.subjectId, link.expiresAt),
+      this.prisma.referral.findUnique({ where: { id: link.subjectId }, select: { code: true, name: true, type: true, language: true } }),
+      this.prisma.referralIdentityVerification.findFirst({ where: { referralId: link.subjectId }, orderBy: { createdAt: 'desc' }, select: { status: true, nameMatches: true, isAdult: true } }),
+      this.prisma.payoutAccount.findFirst({
+        where: { ownerType: 'referral', ownerId: link.subjectId, status: { not: 'superseded' } },
+        orderBy: { createdAt: 'desc' },
+        select: { method: true, maskedValue: true, status: true, nameMatches: true },
+      }),
+      this.kyc.isDown().catch(() => false),
+    ]);
+    if (!referral) throw new BadRequestException('Referral partner not found');
+    const lastResult = !identity
+      ? 'none'
+      : identity.status === 'verified' && identity.isAdult === false
+        ? 'under_18'
+        : identity.nameMatches === false
+          ? 'name_mismatch'
+          : identity.status === 'verified'
+            ? 'verified'
+            : 'failed';
+    return {
+      ...base,
+      otpRequired: false,
+      maskedPhone: this.maskPhone(link.phone ?? ''),
+      language: publicLanguage(link.language ?? referral.language),
+      firstName: shortNameOf(referral.name),
+      referralCode: referral.code,
+      partnerType: referral.type === 'business' ? 'business' : 'individual',
+      idCheck: { serviceDown: idServiceDown, lastResult },
+      stopped: lastResult === 'under_18' ? 'under_18' : null,
+      payout: account
+        ? { method: account.method, maskedValue: account.maskedValue, status: account.status, nameMatches: account.nameMatches }
+        : null,
     };
   }
 

@@ -475,7 +475,7 @@ describe('Targets, reports, login codes, notifications', () => {
   it('login codes: shows the code to read out for a waiting request', async () => {
     const api = mockApi({
       ...common,
-      'GET /login-codes/pending': [{ id: 'r1', createdAt: NOW.toISOString(), expiresAt: '2026-11-09T12:35:00Z', onOfficeNetwork: true, staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-3', role: 'team_lead' }, staffDevice: { id: 'd1', label: 'Office PC 1', platform: 'Windows' } }],
+      'GET /login-codes/pending': [{ id: 'r1', createdAt: NOW.toISOString(), expiresAt: '2026-11-09T12:35:00Z', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-3', role: 'team_lead' }, staffDevice: { id: 'd1', label: 'Office PC 1', platform: 'Windows' } }],
       'GET /manager/login-codes': { summary: { waiting: 1, codesToday: 6, locked: 0 }, codes: [{ id: 'c1', at: '2026-11-09T03:52:00Z', to: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-3' }, givenBy: { id: 'm1', name: 'Priya Sharma', role: 'manager', isYou: true }, device: 'Office PC 1', used: true }] },
       'POST /login-codes/r1/reveal': { code: '503827' },
     });

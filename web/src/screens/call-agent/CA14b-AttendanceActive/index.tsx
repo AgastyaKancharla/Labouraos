@@ -1,7 +1,7 @@
 import { Link, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../../../auth/AuthProvider';
 import { useAttendance } from '../../../attendance/AttendanceProvider';
-import { useAttendanceMonth, useAttendanceToday, useLeaveBalance, type AttendanceToday } from '../../../attendance/api';
+import { useAttendanceMonth, useAttendanceToday, useLeaveBalance, type AttendanceToday, productionTarget } from '../../../attendance/api';
 import { addMinutesToSetting, clockTime, hm, lastDayOf, settingClock, span, countdown, dayMonth } from '../../../attendance/format';
 import { breakClock, optionLabel } from '../../../attendance/StatusMenu';
 import { STATUS_DEFS, pickableStatuses, statusLabelKey, type AttendanceAudience, type AttendanceStatus } from '../../../attendance/statuses';
@@ -127,7 +127,7 @@ function BeforeStart({ today }: { today: AttendanceToday }) {
 /** The three tiles of CA14b and CA14c: logged in, production, breaks. */
 function DayTiles({ today, audience }: { today: AttendanceToday; audience: AttendanceAudience }) {
   const t = useT();
-  const full = today.policy.productionHoursFullDay * 3600;
+  const full = productionTarget(today);
   const percent = Math.min(100, Math.round((today.productionSeconds / Math.max(1, full)) * 100));
   return (
     <div className="lb-att-grid3">
@@ -292,7 +292,7 @@ function DayEnded({ today }: { today: AttendanceToday }) {
   const attendance = useAttendance()!;
   const portal = usePortal();
   const office = attendance.audience === 'office';
-  const full = today.policy.productionHoursFullDay * 3600;
+  const full = productionTarget(today);
   const spans = shortBreakSpans(today.segments, Date.parse(today.logoutAt ?? today.clocks.now));
   const dayTag: Record<string, { key: Parameters<Translate>[0]; tone: string }> = {
     full: { key: 'att.day.full', tone: 'tg' },

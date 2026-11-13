@@ -2,7 +2,7 @@ import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { mockApi, renderScreen, signInAs } from '../../../test/utils';
-import AuditLog, { deviceLabel, networkLabel } from './index';
+import AuditLog, { deviceLabel } from './index';
 
 const downloads = vi.hoisted(() => [] as { name: string; content: string }[]);
 vi.mock('../../../lib/csv', async (importOriginal) => {
@@ -27,7 +27,8 @@ const row = (over: Record<string, unknown>) => ({
 });
 
 describe('C-Audit Device column', () => {
-  it('names the device and the network each change was made from, and puts both in the Excel download', async () => {
+  // Owner decision 14 Nov: no office networks, so old rows' network labels are no longer shown.
+  it('names the device each change was made from, never the old network label, and puts it in the Excel download', async () => {
     downloads.length = 0;
     const rows = [
       row({ device: { id: 'dev-4f2a9c71', name: 'Office PC 1', network: 'office:Jayanagar office' } }),
@@ -41,9 +42,9 @@ describe('C-Audit Device column', () => {
     expect(await screen.findByRole('columnheader', { name: /Device/ })).toBeInTheDocument();
     const first = (await screen.findByText('PL-00052')).closest('tr')!;
     expect(within(first).getByText('Office PC 1 · …2a9c71')).toBeInTheDocument();
-    expect(within(first).getByText('Office network · Jayanagar office')).toBeInTheDocument();
+    expect(within(first).queryByText(/Office network|Jayanagar office/)).not.toBeInTheDocument();
     const second = screen.getByText('PL-00091').closest('tr')!;
-    expect(within(second).getByText('Outside the office')).toBeInTheDocument();
+    expect(within(second).queryByText(/Outside the office/)).not.toBeInTheDocument();
     expect(within(screen.getByText('JR-1').closest('tr')!).getAllByText('System')).toHaveLength(2); // who, and the device column
 
     await userEvent.click(screen.getByRole('button', { name: 'Download (Excel)' }));
@@ -52,14 +53,11 @@ describe('C-Audit Device column', () => {
     const [header, line1, line2] = downloads[0].content.split('\r\n');
     expect(header.split(',').at(-1)).toBe('Device');
     expect(line1).toContain('Office PC 1 · …2a9c71');
-    expect(line1).toContain('Office network · Jayanagar office');
-    expect(line2).toContain('Outside the office');
+    expect(line1).not.toContain('Jayanagar office');
+    expect(line2).not.toContain('Outside the office');
   });
 
-  it('labels the network and device', () => {
-    expect(networkLabel('office:HQ')).toBe('Office network · HQ');
-    expect(networkLabel('outside_office')).toBe('Outside the office');
-    expect(networkLabel(null)).toBeNull();
+  it('labels the device', () => {
     expect(deviceLabel({ id: 'abcdef123456', name: 'Laptop', network: null })).toBe('Laptop · …123456');
     expect(deviceLabel({ id: null, name: null, network: 'outside_office' })).toBeNull();
     expect(deviceLabel(null)).toBeNull();

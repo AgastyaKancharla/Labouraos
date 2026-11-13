@@ -15,8 +15,11 @@ export const BEHIND_PACE_CHECK_EVERY_MS = 60 * 60 * 1000;
  * ("Behind"), with the Settings values (behindPaceStartDay, default day 8;
  * behindPaceThresholdPercent, default 80% of where the target should be by
  * today; neither number is in the guide). An agent behind pace is on the bell
- * of their Team Lead and their Manager; the bell clears by itself once they
- * are back on pace or the month ends. Counts only, never money.
+ * of their Team Lead, their Manager and the CEO (owner decision 12 Nov: "The
+ * CEO also gets a bell when an agent falls behind pace"); one bell per agent
+ * and recipient, cleared by itself once they are back on pace or the month
+ * ends. The targets are counts, so the bell says counts (never money for the
+ * Team Lead or Manager).
  */
 @Injectable()
 export class BehindPaceBellsService implements OnModuleInit {
@@ -50,9 +53,11 @@ export class BehindPaceBellsService implements OnModuleInit {
       if (!result) continue;
       behind += 1;
       const chain = dir.chainOf(agent.id);
+      // The CEO at the top of the agent's line; an agent with no line reaches every active CEO.
+      const ceos = chain.ceo ? [chain.ceo] : dir.ceos();
       drafts.push(
         ...this.sources.drafts(
-          [chain.teamLead, chain.manager],
+          [chain.teamLead, chain.manager, ...ceos],
           {
             kind: 'behind_pace',
             title: `${agent.name} (${agent.code}) is behind pace this month`,

@@ -1,3 +1,4 @@
+import { leaveHalvesOf } from '../attendance/leave-units';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -508,7 +509,7 @@ export class ManagerOpsService {
       this.requests.team(actor),
       this.prisma.leaveRequest.findMany({
         where: { staffId: { in: ids }, status: { in: ['pending', 'approved'] }, toDate: { gte: today }, fromDate: { lte: in14 } },
-        select: { id: true, staffId: true, kind: true, fromDate: true, toDate: true, days: true, status: true },
+        select: { id: true, staffId: true, kind: true, fromDate: true, toDate: true, days: true, half: true, status: true },
         orderBy: { fromDate: 'asc' },
       }),
     ]);
@@ -536,6 +537,8 @@ export class ManagerOpsService {
         from: istDayKey(l.fromDate),
         to: istDayKey(l.toDate),
         days: l.days,
+        /** "first" or "second" for a half day of leave (owner decision 12 Nov); null for full days. */
+        half: l.half ?? null,
         status: l.status,
         where: v?.where ?? l.status,
         withTeamLead: v?.withTeamLead ?? false,
@@ -548,12 +551,23 @@ export class ManagerOpsService {
     const heavy = [];
     for (const p of tree.people) {
       const bal = await this.leave.balance(p.id);
-      const used = await this.prisma.leaveRequest.findMany({
-        where: { staffId: p.id, status: 'approved', fromDate: { lte: new Date(`${month}-31T00:00:00.000Z`) }, toDate: { gte: new Date(`${month}-01T00:00:00.000Z`) } },
-        select: { kind: true, days: true, fromDate: true, toDate: true },
+      // Leave taken this month, from the attendance record: only this month's days, a half day ½.
+      const [y, m] = month.split('-').map(Number);
+      const used = await this.prisma.attendanceDay.findMany({
+        where: {
+          staffId: p.id,
+          OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }, { otherLeaveRequestId: { not: null } }],
+          date: { gte: new Date(Date.UTC(y, m - 1, 1)), lte: new Date(Date.UTC(y, m, 0)) },
+        },
+        select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true },
       });
-      const casualUsed = used.filter((u) => u.kind === 'casual').reduce((s, u) => s + u.days, 0);
-      const emergencyUsed = used.filter((u) => u.kind === 'emergency').reduce((s, u) => s + u.days, 0);
+      const usedOf = (kind: string) => used.filter((u) => (u.leaveKind ?? 'casual') === kind).reduce((sum, u) => sum + leaveHalvesOf(u).total, 0) / 2;
+      const casualUsed = usedOf('casual');
+      const approvedCasual = await this.prisma.leaveRequest.findMany({
+        where: { staffId: p.id, status: 'approved', kind: 'casual', fromDate: { lte: new Date(Date.UTC(y, m, 0)) }, toDate: { gte: new Date(Date.UTC(y, m - 1, 1)) } },
+        select: { fromDate: true, toDate: true },
+      });
+      const emergencyUsed = usedOf('emergency');
       balances.push({
         staff: { id: p.id, name: p.name, role: p.role, isIntern: p.isIntern },
         team: p.team,
@@ -569,7 +583,7 @@ export class ManagerOpsService {
           staff: { id: p.id, name: p.name, role: p.role, isIntern: p.isIntern },
           team: p.team,
           taken: casual.taken,
-          takenDates: used.filter((u) => u.kind === 'casual').map((u) => ({ from: istDayKey(u.fromDate), to: istDayKey(u.toDate) })),
+          takenDates: approvedCasual.map((u) => ({ from: istDayKey(u.fromDate), to: istDayKey(u.toDate) })),
           pending: casual.pending,
           wouldBe: casual.taken + casual.pending,
           requestId: pendingOver?.id ?? null,

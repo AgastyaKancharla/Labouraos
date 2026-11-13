@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react';
+import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
@@ -31,6 +32,8 @@ export interface StaffRow {
   pendingDevice: { id: string; label: string; platform: string; requestedAt: string | null } | null;
   approvedDevices: { id: string; label: string; platform: string }[];
   joinedOn: string | null;
+  /** Staff photo (signed link); initials when none. */
+  photoUrl?: string | null;
 }
 interface StaffResponse {
   manager: { id: string; name: string };
@@ -212,7 +215,7 @@ export default function StaffAndAccess() {
   };
 
   const columns: Column<StaffRow>[] = [
-    { key: 'name', header: 'Name', cell: (r) => <div><div style={{ fontWeight: 600 }}>{r.name}</div><div className="ceo-cell-sub">{r.code}</div></div>, filter: 'text', filterValue: (r) => `${r.name} ${r.code}`, sortValue: (r) => r.name, csv: (r) => r.name },
+    { key: 'name', header: 'Name', cell: (r) => <div className="lb-name-cell"><StaffAvatar name={r.name} photoUrl={r.photoUrl} /><div><div style={{ fontWeight: 600 }}>{r.name}</div><div className="ceo-cell-sub">{r.code}</div></div></div>, filter: 'text', filterValue: (r) => `${r.name} ${r.code}`, sortValue: (r) => r.name, csv: (r) => r.name },
     { key: 'role', header: 'Role', cell: (r) => roleWord(r.role, r.isIntern), filter: 'select', filterValue: (r) => roleWord(r.role, r.isIntern), csv: (r) => roleWord(r.role, r.isIntern) },
     { key: 'team', header: 'Team', cell: (r) => teamShort(r.team), filter: 'select', filterValue: (r) => teamShort(r.team), csv: (r) => r.team, hideOnPhone: true },
     { key: 'reports', header: 'Reports to', cell: (r) => (r.reportsTo ? `${r.reportsTo.name}${r.reportsTo.isYou ? ' (you)' : ''}` : '—'), csv: (r) => r.reportsTo?.name, hideOnPhone: true },

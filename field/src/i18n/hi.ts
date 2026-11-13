@@ -2,6 +2,7 @@ import type { Messages } from './en';
 import { sellingHi } from './selling.hi';
 import { attendanceHi } from './attendance.hi';
 import { searchHi } from './search.hi';
+import { staffPhotoHi } from './staffPhoto.hi';
 
 /**
  * Hindi. Same keys as en.ts (TypeScript refuses a missing or extra key).
@@ -12,6 +13,7 @@ export const hi: Messages = {
   ...sellingHi,
   ...attendanceHi,
   ...searchHi,
+  ...staffPhotoHi,
   'common.appName': 'Laboura Field',
   'common.brand': 'Laboura',
   'common.fieldAgent': 'फ़ील्ड एजेंट',

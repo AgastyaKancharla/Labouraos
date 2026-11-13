@@ -23,6 +23,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Role } from '../../common/rbac/rbac.types';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto, InviteTokenDto } from './dto/accept-invite.dto';
+import { STAFF_PHOTO_ON_FILE, staffPhotoNeeded } from './staff-photo.service';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
@@ -81,6 +82,8 @@ export interface InvitePreview {
   passwordRules: { minLength: number; maxBytes: number };
   /** Field agents sign in on Laboura Field; everyone else on the web sign-in. */
   signInAt: 'field_app' | 'web';
+  /** True when the person has no staff photo yet, or the CEO asked for a new one. */
+  photoRequired: boolean;
 }
 
 type ResolvedInvite =
@@ -644,7 +647,24 @@ export class StaffService {
       authenticatorRequired: invite.purpose === 'invite' && AUTHENTICATOR_ROLES.includes(staff.role),
       passwordRules: { minLength: MIN_PASSWORD_LENGTH, maxBytes: MAX_PASSWORD_BYTES },
       signInAt: staff.role === 'field_agent' ? 'field_app' : 'web',
+      // Guide (14 Nov): a live camera selfie is taken while setting up the account.
+      photoRequired: staffPhotoNeeded(staff) !== null,
     };
+  }
+
+  /**
+   * The staff member an invite (or password reset) link belongs to, for the
+   * live camera selfie on the invite page. Refused like the preview when the
+   * link is not valid, has expired or was used.
+   */
+  async staffForInvitePhoto(rawToken: unknown, now: Date = new Date()): Promise<{ id: string }> {
+    const invite = await this.resolveInvite(rawToken, now);
+    if (!invite.ok) throw this.inviteProblem(invite.reason);
+    // Only while a photo is needed (none on file, or the CEO asked for a new one):
+    // a password reset link, or an invite reissued after the photo was taken, can
+    // never replace the face on someone's account.
+    if (!staffPhotoNeeded(invite.staff)) throw new ForbiddenException(STAFF_PHOTO_ON_FILE);
+    return { id: invite.staff.id };
   }
 
   /**

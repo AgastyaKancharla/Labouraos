@@ -20,6 +20,7 @@ import { ATTENDANCE_ROLES, AttendanceDaysService } from './attendance-days.servi
 import { AttendanceRequestHooks, AttendanceRequestKind } from './attendance-request-hooks';
 import { monthRange } from './day-rules';
 import { LEAVE_KINDS, LeaveKind, LeaveService, monthOf } from './leave.service';
+import { isLeaveHalf } from './leave-units';
 import {
   CORRECTION_TO_MANAGER_FROM,
   Placement,
@@ -76,9 +77,15 @@ export class AttendanceRequestsService {
     return this.leave.balance(staffId);
   }
 
+  /**
+   * Full days, or a half day (owner decision 12 Nov): `half` is "first" or
+   * "second" for one date (toDate left out or the same as fromDate); "full" or
+   * nothing means full days. A half day is ½ a day of the balance and counts ½
+   * towards the Team Lead's 3 planned days a month.
+   */
   async requestLeave(
     actor: Actor,
-    body: { kind?: string; fromDate?: string; toDate?: string; reason?: string },
+    body: { kind?: string; fromDate?: string; toDate?: string; reason?: string; half?: string | null },
   ) {
     const staff = await this.requireAttendanceStaff(actor.id);
     const kind = String(body?.kind ?? '') as LeaveKind;
@@ -87,23 +94,35 @@ export class AttendanceRequestsService {
     }
     const reason = String(body?.reason ?? '').trim();
     if (!reason) throw new BadRequestException('A reason is required');
+    const halfInput = body?.half === undefined || body?.half === null || body?.half === '' || body?.half === 'full' ? null : body.half;
+    if (halfInput !== null && !isLeaveHalf(halfInput)) {
+      throw new BadRequestException('half is "first" or "second" (or "full" for full days)');
+    }
+    const half = halfInput;
     const fromDate = this.parseDate(body?.fromDate, 'fromDate');
-    const toDate = this.parseDate(body?.toDate ?? body?.fromDate, 'toDate');
+    const toDate = this.parseDate(body?.toDate || body?.fromDate, 'toDate');
     if (toDate.getTime() < fromDate.getTime()) {
       throw new BadRequestException('toDate is before fromDate');
+    }
+    if (half && toDate.getTime() !== fromDate.getTime()) {
+      throw new BadRequestException('A half day of leave is for one date');
     }
     if ((toDate.getTime() - fromDate.getTime()) / DAY_MS > 92) {
       throw new BadRequestException('One request covers at most three months');
     }
-    const dates = await this.leave.leaveDates(fromDate, toDate);
+    const { dates, days } = await this.leave.requestDays({ fromDate, toDate, half });
     if (dates.length === 0) {
-      throw new BadRequestException('These dates are all weekly days off');
+      throw new BadRequestException(half ? 'This date is a weekly day off or a holiday' : 'These dates are all weekly days off');
     }
+    // One leave per date (or per half of a date): a date already covered by a pending or approved
+    // request is refused here, so an approval never has nothing to write.
+    this.refuseOverlap(await this.leave.findOverlap(staff.id, dates, half, kind));
 
     let overLimit = false;
     if (kind === 'casual') {
+      const perDate = half ? 0.5 : 1;
       const byMonth = new Map<string, number>();
-      for (const date of dates) byMonth.set(monthOf(date), (byMonth.get(monthOf(date)) ?? 0) + 1);
+      for (const date of dates) byMonth.set(monthOf(date), (byMonth.get(monthOf(date)) ?? 0) + perDate);
       for (const [month, count] of byMonth) {
         const already = await this.leave.casualDaysInMonth(staff.id, month);
         if (already.taken + already.pending + count > TEAM_LEAD_CASUAL_DAYS_LIMIT) {
@@ -119,7 +138,8 @@ export class AttendanceRequestsService {
         kind,
         fromDate,
         toDate,
-        days: dates.length,
+        half,
+        days,
         reason,
         status: 'pending',
         ...route,
@@ -136,7 +156,8 @@ export class AttendanceRequestsService {
         kind,
         fromDate: this.label(fromDate),
         toDate: this.label(toDate),
-        days: dates.length,
+        ...(half ? { half } : {}),
+        days,
         routedToRole: route.routedToRole,
         routeReason: route.routeReason,
       },
@@ -173,7 +194,8 @@ export class AttendanceRequestsService {
     const day = await this.prisma.attendanceDay.findUnique({
       where: { staffId_date: { staffId: staff.id, date } },
     });
-    if (day?.dayType === 'leave') {
+    // A full leave day takes no correction; a half day of leave has a working half that can.
+    if (day?.dayType === 'leave' && !day.leaveHalf) {
       throw new BadRequestException('This is a leave day');
     }
     if (!day && date.getTime() === this.leave.todayIst().getTime()) {
@@ -255,7 +277,7 @@ export class AttendanceRequestsService {
       const day = await this.prisma.attendanceDay.findUnique({
         where: { staffId_date: { staffId: request.staffId, date: (request as AttendanceCorrection).date } },
       });
-      if (day?.dayType === 'leave') throw new BadRequestException('This is a leave day');
+      if (day?.dayType === 'leave' && !day.leaveHalf) throw new BadRequestException('This is a leave day');
     }
     // An approval changes attendance: refused in a month payroll no longer works out again.
     // A part approval writes only its own days, so only their months are checked (before anything is written).
@@ -454,6 +476,11 @@ export class AttendanceRequestsService {
     await this.assertPayrollReaches(request);
     const now = this.clock.now();
     const next = request.status === 'approved' ? 'rejected' : 'approved';
+    if (next === 'approved') {
+      // Another request may have taken the date since this one was rejected.
+      const { dates } = await this.leave.requestDays(request);
+      this.refuseOverlap(await this.leave.findOverlap(request.staffId, dates, isLeaveHalf(request.half) ? request.half : null, request.kind, request.id));
+    }
     const claimed = await this.prisma.leaveRequest.updateMany({
       where: { id, status: request.status, overturnedAt: null },
       data: {
@@ -581,6 +608,21 @@ export class AttendanceRequestsService {
 
   // ------------------------------------------------------------- internals
 
+  /** A date (or half) already covered by another pending or approved leave request: refused with a code the screens translate. */
+  private refuseOverlap(overlap: { date: string; reason: 'covered' | 'other_kind' } | null): void {
+    if (!overlap) return;
+    throw new BadRequestException({
+      statusCode: 400,
+      error: 'Bad Request',
+      code: overlap.reason === 'covered' ? 'leave_overlap' : 'leave_other_kind',
+      date: overlap.date,
+      message:
+        overlap.reason === 'covered'
+          ? `You already have leave asked for or approved on ${overlap.date}. Pick other dates, or cancel that request first.`
+          : `The other half of ${overlap.date} is a different kind of leave. Ask for the same kind, or a full day.`,
+    });
+  }
+
   /** The part of a leave request to approve: inside the asked dates, at least one leave day, fewer than all. */
   private async partRange(
     request: LeaveRequest & AnyRequest,
@@ -592,11 +634,11 @@ export class AttendanceRequestsService {
     if (from.getTime() < request.fromDate.getTime() || to.getTime() > request.toDate.getTime()) {
       throw new BadRequestException('Approve days inside the dates asked for');
     }
-    const dates = await this.leave.leaveDates(from, to);
+    const { dates, days } = await this.leave.requestDays({ fromDate: from, toDate: to, half: request.half });
     if (dates.length === 0) throw new BadRequestException('These dates are all weekly days off');
-    // The whole request (or every leave day in it) is a plain approval.
-    if (dates.length >= request.days) return null;
-    return { from, to, days: dates.length };
+    // The whole request (or every leave day in it, or its one half day) is a plain approval.
+    if (days >= request.days) return null;
+    return { from, to, days };
   }
 
   /**
@@ -612,8 +654,10 @@ export class AttendanceRequestsService {
   ): Promise<void> {
     if (actor.role !== 'team_lead' || request.kind !== 'casual') return;
     const dates = await this.leave.leaveDates(part?.from ?? request.fromDate, part?.to ?? request.toDate);
+    // Counted in days with halves: a half day is ½ of the 3 planned days.
+    const perDate = isLeaveHalf(request.half) ? 0.5 : 1;
     const byMonth = new Map<string, number>();
-    for (const date of dates) byMonth.set(monthOf(date), (byMonth.get(monthOf(date)) ?? 0) + 1);
+    for (const date of dates) byMonth.set(monthOf(date), (byMonth.get(monthOf(date)) ?? 0) + perDate);
     for (const [month, count] of byMonth) {
       const { taken } = await this.leave.casualDaysInMonth(request.staffId, month, request.id);
       if (taken + count > TEAM_LEAD_CASUAL_DAYS_LIMIT) {
@@ -759,7 +803,7 @@ export class AttendanceRequestsService {
         data: {
           loginAt,
           logoutAt,
-          lateMinutes: this.attendance.lateMinutes(loginAt, policy),
+          lateMinutes: this.attendance.lateMinutes(loginAt, policy, day.leaveKind ? day.leaveHalf : null),
           ...(wasPlaceholder ? { dayType: 'open', closedReason: 'correction' } : {}),
         },
         include: { segments: true },
@@ -932,6 +976,8 @@ export class AttendanceRequestsService {
         leaveKind: leave.kind,
         fromDate: this.label(leave.fromDate),
         toDate: this.label(leave.toDate),
+        /** "first" or "second" for a half day of leave; null for full days. */
+        half: isLeaveHalf(leave.half) ? leave.half : null,
         days: leave.days,
         paidDays: leave.paidDays,
         unpaidDays: leave.unpaidDays,

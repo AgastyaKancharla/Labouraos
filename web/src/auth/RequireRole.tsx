@@ -2,11 +2,13 @@ import type { ReactNode } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './AuthProvider';
 import { ROLE_HOME, ROLE_LANDING, type StaffRole } from './roles';
+import { StaffPhotoGate } from './StaffPhotoGate';
 
 /**
  * Route guard. Not signed in → sign-in screen (and back here afterwards).
- * Signed in with another role → that role's own home. The API checks every
- * request anyway; this only keeps people on screens they can use.
+ * Signed in with another role → that role's own home. No staff photo yet
+ * (or the CEO asked for a new one) → the live camera selfie first. The API
+ * checks every request anyway; this only keeps people on screens they can use.
  */
 export function RequireRole({ roles, children }: { roles: readonly StaffRole[]; children: ReactNode }) {
   const { session } = useAuth();
@@ -17,7 +19,8 @@ export function RequireRole({ roles, children }: { roles: readonly StaffRole[]; 
   if (!roles.includes(session.staff.role)) {
     return <Navigate to={ROLE_HOME[session.staff.role]} replace />;
   }
-  return <>{children}</>;
+  // Guide (14 Nov): someone with no staff photo, or asked for a new one, takes it before going on.
+  return <StaffPhotoGate>{children}</StaffPhotoGate>;
 }
 
 /** Where to go after sign-in: the page they asked for if their role may open it, else their home. */
