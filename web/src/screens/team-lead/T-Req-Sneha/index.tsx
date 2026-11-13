@@ -52,7 +52,8 @@ export default function RequestDetailScreen() {
 
   const fu = r?.followUps;
   const mates = fu?.teammates ?? [];
-  const offerHandover = Boolean(isLeave && fu && fu.planned > 0 && r?.status === 'pending');
+  // A half day keeps its follow-ups (the server says when a handover is not needed).
+  const offerHandover = Boolean(isLeave && fu && fu.planned > 0 && fu.handoverNeeded !== false && r?.status === 'pending');
   const handoverChoice = handover || (mates.length > 1 ? 'share' : mates.length === 1 ? mates[0].id : 'keep');
   const followUpsBody =
     handoverChoice === 'keep' ? { mode: 'keep' } : handoverChoice === 'share' ? { mode: 'share' } : { mode: 'teammate', staffId: handoverChoice };

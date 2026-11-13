@@ -8,7 +8,6 @@ import { ATTENDANCE_ROLES } from './attendance-days.service';
 import { dayResultFor, lateMinutesFor, monthRange } from './day-rules';
 import {
   halvesToDays,
-  isJoinedLeaveDay,
   isLeaveHalf,
   LeaveHalf,
   leaveFieldsFor,
@@ -28,6 +27,7 @@ export const NO_LEAVE = {
   leavePartUnpaid: false,
   leaveRequestId: null,
   otherLeaveRequestId: null,
+  otherLeaveUnpaid: false,
 } as const;
 
 /** Days, whole or half (1.5): a half day of leave uses half a day of the balance. */
@@ -378,23 +378,26 @@ export class LeaveService {
       existing.leaveRequestId !== request.id &&
       !existing.otherLeaveRequestId
     ) {
-      // The other half is already leave: one full leave day of the two requests, exactly
-      // like a full-day leave (no shortfall, no make-up, never late), whatever was logged.
-      // A day still open (logged in now) stays open and closes as a leave day.
+      // Together the two halves are a full leave day, exactly like a full-day leave: on a day
+      // the person logged in, nothing is written (a full-day leave never covers a day worked).
+      if (existing.loginAt) return { written: 0, paid: 0, dayId: null };
+      // One full leave day of the two requests. Each keeps the paid/unpaid split it was
+      // approved with (otherLeaveUnpaid says whose half is the unpaid one). The leave replaces
+      // any Team Lead change on the day.
       const paid = Math.min(1, paidLeft);
-      const open = Boolean(existing.loginAt && !existing.logoutAt);
       await tx.attendanceDay.update({
         where: { id: existing.id },
         data: {
-          ...(open ? {} : { dayType: 'leave', closedReason: existing.loginAt ? existing.closedReason : null }),
-          shortfallSeconds: 0,
-          makeUpSeconds: 0,
-          lateMinutes: 0,
+          dayType: 'leave',
+          closedReason: null,
+          dayTypeChangedAt: null,
+          dayTypeChangedById: null,
+          dayTypeChangeReason: null,
           otherLeaveRequestId: request.id,
-          ...leaveFieldsFor(2, carried.paid + paid, null),
+          ...this.joinedFields(carried.paid, paid),
         },
       });
-      return { written: 1, paid, dayId: existing.id, partner: existing.leaveRequestId };
+      return { written: 1, paid, dayId: null, partner: existing.leaveRequestId };
     }
     if (carried.total > 0) return { written: 0, paid: 0, dayId: null };
     if (!half && existing?.loginAt) return { written: 0, paid: 0, dayId: null };
@@ -461,16 +464,25 @@ export class LeaveService {
     if (result.dayId) await this.reclassifyWorkedDay(result.dayId);
   }
 
+  /** Leave fields of a joined day from each request's paid half (0 or 1). */
+  private joinedFields(firstPaid: number, secondPaid: number) {
+    return { ...leaveFieldsFor(2, firstPaid + secondPaid, null), otherLeaveUnpaid: secondPaid === 0 };
+  }
+
   /** The half days of a leave day that belong to a request, and how many of those are paid. */
   private shareOf(
-    row: { dayType: string; leaveKind: string | null; leaveUnpaid: boolean; leaveHalf: string | null; leavePartUnpaid: boolean; leaveRequestId: string | null; otherLeaveRequestId: string | null },
+    row: { dayType: string; leaveKind: string | null; leaveUnpaid: boolean; leaveHalf: string | null; leavePartUnpaid: boolean; leaveRequestId: string | null; otherLeaveRequestId: string | null; otherLeaveUnpaid: boolean },
     requestId: string,
   ): { halves: number; paid: number } {
     const all = leaveHalvesOf(row);
     if (!row.otherLeaveRequestId) return row.leaveRequestId === requestId ? { halves: all.total, paid: all.paid } : { halves: 0, paid: 0 };
-    // Two half days on one date: an unpaid half is counted against the half approved second.
-    if (row.leaveRequestId === requestId) return { halves: 1, paid: row.leaveUnpaid ? 0 : 1 };
-    if (row.otherLeaveRequestId === requestId) return { halves: 1, paid: row.leaveUnpaid || row.leavePartUnpaid ? 0 : 1 };
+    // Two half days on one date: each request keeps its own half's split (otherLeaveUnpaid
+    // says whose half is unpaid when one of them is). A joined day logged in carries no leave.
+    if (all.total === 0) return { halves: 0, paid: 0 };
+    const firstPaid = row.leaveUnpaid ? 0 : row.leavePartUnpaid && !row.otherLeaveUnpaid ? 0 : 1;
+    const secondPaid = row.leaveUnpaid ? 0 : row.leavePartUnpaid && row.otherLeaveUnpaid ? 0 : 1;
+    if (row.leaveRequestId === requestId) return { halves: 1, paid: firstPaid };
+    if (row.otherLeaveRequestId === requestId) return { halves: 1, paid: secondPaid };
     return { halves: 0, paid: 0 };
   }
 
@@ -517,17 +529,23 @@ export class LeaveService {
       const split = splitPaid(Math.max(0, earned - paidElsewhere), units);
       for (const [index, row] of mine.entries()) {
         const myPaid = split.perDay[index].paid;
-        let fields;
+        let fields: { leaveUnpaid: boolean; leavePartUnpaid: boolean; otherLeaveUnpaid?: boolean };
         if (row.otherLeaveRequestId) {
-          const theirs = this.shareOf(row, row.leaveRequestId === requestId ? row.otherLeaveRequestId : (row.leaveRequestId ?? '')).paid;
-          fields = leaveFieldsFor(2, myPaid + theirs, null);
+          // This request's half is worked out again; the other request keeps its split.
+          const iAmFirst = row.leaveRequestId === requestId;
+          const theirs = this.shareOf(row, iAmFirst ? row.otherLeaveRequestId : (row.leaveRequestId ?? '')).paid;
+          fields = iAmFirst ? this.joinedFields(myPaid, theirs) : this.joinedFields(theirs, myPaid);
         } else {
           fields = leaveFieldsFor(units[index] as 1 | 2, myPaid, isLeaveHalf(row.leaveHalf) ? row.leaveHalf : null);
         }
-        if (row.leaveUnpaid !== fields.leaveUnpaid || row.leavePartUnpaid !== fields.leavePartUnpaid) {
+        if (
+          row.leaveUnpaid !== fields.leaveUnpaid ||
+          row.leavePartUnpaid !== fields.leavePartUnpaid ||
+          (fields.otherLeaveUnpaid !== undefined && row.otherLeaveUnpaid !== fields.otherLeaveUnpaid)
+        ) {
           await tx.attendanceDay.update({
             where: { id: row.id },
-            data: { leaveUnpaid: fields.leaveUnpaid, leavePartUnpaid: fields.leavePartUnpaid },
+            data: { leaveUnpaid: fields.leaveUnpaid, leavePartUnpaid: fields.leavePartUnpaid, ...(fields.otherLeaveUnpaid !== undefined ? { otherLeaveUnpaid: fields.otherLeaveUnpaid } : {}) },
           });
         }
       }
@@ -572,6 +590,9 @@ export class LeaveService {
             await tx.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
             continue;
           }
+          // The other request keeps the split it was approved with (a day logged in carried no
+          // leave, so its half is worked out again below).
+          const keptPaid = row.loginAt ? 1 : this.shareOf(row, remainingRequest.id).paid;
           await tx.attendanceDay.update({
             where: { id: row.id },
             data: {
@@ -579,12 +600,17 @@ export class LeaveService {
               ...(row.loginAt && !row.logoutAt ? { dayType: 'open' } : {}),
               leaveRequestId: remainingRequest.id,
               otherLeaveRequestId: null,
+              otherLeaveUnpaid: false,
               leaveKind: remainingRequest.kind,
-              ...leaveFieldsFor(1, 1, half),
+              ...leaveFieldsFor(1, keptPaid, half),
             },
           });
-          others.add(remainingRequest.id);
-          if (row.loginAt) reclassify.push(row.id);
+          if (row.loginAt) {
+            others.add(remainingRequest.id);
+            reclassify.push(row.id);
+          } else {
+            await this.writeTotals(tx, remainingRequest.id);
+          }
         } else if (row.loginAt) {
           await tx.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
           reclassify.push(row.id);
@@ -615,14 +641,13 @@ export class LeaveService {
     if (!day?.loginAt) return;
     const policy = await this.pricing.current();
     const leaveHalf = day.leaveHalf && day.leaveKind ? day.leaveHalf : null;
-    // A joined leave day (two half days) is a full leave day: never late.
-    const lateMinutes = isJoinedLeaveDay(day) ? 0 : lateMinutesFor(day.loginAt, policy, leaveHalf);
+    const lateMinutes = lateMinutesFor(day.loginAt, policy, leaveHalf);
     if (!day.logoutAt) {
       await this.prisma.attendanceDay.update({ where: { id: dayId }, data: { lateMinutes } });
       return;
     }
-    // Joined day: leave, no shortfall. A Team Lead's full/half change stays; a day left
-    // "leave" after one half was overturned is classified again (never stuck open).
+    // A Team Lead's full/half change stays; a day left "leave" after one half of a joined
+    // day was overturned is classified again from its production (never stuck open).
     const result = dayResultFor(day, day.productionSeconds, policy, await this.workingDays.isNonWorking(day.date));
     await this.prisma.attendanceDay.update({ where: { id: dayId }, data: { lateMinutes, ...result } });
   }

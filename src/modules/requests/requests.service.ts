@@ -15,7 +15,7 @@ import { AttendanceClock } from '../attendance/attendance-clock';
 import { AttendanceDaysService } from '../attendance/attendance-days.service';
 import { AttendanceRequestsService } from '../attendance/attendance-requests.service';
 import { AttendanceService } from '../attendance/attendance.service';
-import { classifyDay } from '../attendance/day-rules';
+import { dayResultFor } from '../attendance/day-rules';
 import { PricingService } from '../pricing/pricing.service';
 import { Placement, placementOf, whereLabel } from '../attendance/request-routing';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
@@ -302,8 +302,14 @@ export class RequestsService {
     let handover = kind === 'leave' && decision === 'approved' && body?.followUps ? body.followUps : undefined;
     if (handover) {
       const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
-      // A half day of leave keeps its follow-ups (the other half is worked): nothing to hand over.
-      if (!(await this.handovers.willBeFullDayLeave(leave))) handover = undefined;
+      // A half day of leave keeps its follow-ups (the other half is worked): say so rather than
+      // silently dropping a teammate choice.
+      if (!(await this.handovers.willBeFullDayLeave(leave))) {
+        if (handover.mode && handover.mode !== 'keep') {
+          throw new BadRequestException('Follow-ups are not handed over for a half day of leave: the other half is worked, so they stay with the person. Approve without a handover.');
+        }
+        handover = undefined;
+      }
     }
     if (handover) {
       const leave = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id } });
@@ -794,7 +800,13 @@ export class RequestsService {
       // Back to how the day counted before the change, with its shortfall and make-up worked out again.
       const from = String(details.fromDayType);
       const policy = await this.pricing.current();
-      const rules = classifyDay(day.productionSeconds, policy, false, Boolean(day.leaveHalf && day.leaveKind));
+      // The same rule as every other recalculation of a stored day (the change itself is being undone).
+      const rules = dayResultFor({ ...day, dayType: from, dayTypeChangedAt: null }, day.productionSeconds, policy, false);
+      if (day.dayType === 'leave') {
+        // Leave has replaced the change since (two half days joined): nothing to put back.
+        await this.prisma.attendanceDay.update({ where: { id: day.id }, data: { dayTypeChangedAt: null, dayTypeChangedById: null, dayTypeChangeReason: null } });
+        return;
+      }
       await this.prisma.attendanceDay.update({
         where: { id: day.id },
         data: {

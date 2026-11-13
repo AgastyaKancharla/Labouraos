@@ -12,7 +12,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { AttendanceClock } from './attendance-clock';
 import { AttendanceService } from './attendance.service';
-import { classifyDay, deductibleShortfall, monthRange } from './day-rules';
+import { dayResultFor, deductibleShortfall, monthRange } from './day-rules';
 import { dayTally } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
@@ -158,7 +158,7 @@ export class AttendanceDaysService {
     const policy = await this.pricing.current();
     const makeUp =
       dayType === 'full'
-        ? classifyDay(day.productionSeconds, policy, false, Boolean(day.leaveHalf && day.leaveKind)).makeUpSeconds
+        ? dayResultFor({ ...day, dayTypeChangedAt: null }, day.productionSeconds, policy, false).makeUpSeconds
         : 0;
     const updated = await this.prisma.$transaction(async (tx) => {
       const row = await tx.attendanceDay.update({

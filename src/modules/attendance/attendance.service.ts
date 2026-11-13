@@ -23,7 +23,6 @@ import {
   isStaffPickedStatus,
 } from './attendance.constants';
 import { dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
-import { isJoinedLeaveDay } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
@@ -163,8 +162,9 @@ export class AttendanceService {
       loginLat = body.latitude as number;
       loginLng = body.longitude as number;
     }
-    // A joined leave day (two half days) is a full leave day: never late.
-    const lateMinutes = existing && isJoinedLeaveDay(existing) ? 0 : this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
+    // A login on a leave day (full day, or two halves joined) makes it a working day with normal
+    // lateness; on a half day of leave the working half starts mid-shift when the first half is off.
+    const lateMinutes = this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
     if (existing) {
       // A day marked absent or leave before the person logged in becomes a
       // working day. The leave fields stay so the leave flow can see them.
@@ -267,8 +267,7 @@ export class AttendanceService {
     }
     // A half day of leave needs half the production (owner decision 12 Nov).
     const halfLeave = Boolean(day.leaveHalf && day.leaveKind);
-    // A joined leave day (two half days) is a full leave day: nothing to produce.
-    const fullSeconds = isJoinedLeaveDay(day) ? 0 : productionTargetSeconds(policy, halfLeave);
+    const fullSeconds = productionTargetSeconds(policy, halfLeave);
     const current = [...day.segments].reverse().find((segment) => !segment.endedAt);
     return {
       date: this.dateLabel(day.date),
@@ -462,7 +461,6 @@ export class AttendanceService {
     });
     const totals = this.totals(segments, at);
     const policy = await this.pricing.current();
-    // A joined leave day (two half days) closes as a full leave day: no shortfall, no make-up.
     const result = dayResultFor(
       { ...day, dayTypeChangedAt: null },
       totals.productionSeconds,

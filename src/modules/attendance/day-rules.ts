@@ -1,6 +1,5 @@
 import { PricingPolicy } from '@prisma/client';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
-import { isJoinedLeaveDay } from './leave-units';
 
 export type DayRulePolicy = Pick<
   PricingPolicy,
@@ -122,20 +121,19 @@ export interface DayForResult {
 }
 
 /**
- * How a closed day counts, worked out again (a correction, a leave approved
- * or overturned). Two half days of leave on the date (a joined day) are a full
- * leave day, exactly like a full-day leave: no shortfall, no make-up, whatever
- * was logged. A day a Team Lead or Manager changed to full or half keeps the
- * change (no shortfall); any other day is classified from its production
- * (half the production on a day with a half day of leave).
+ * How a closed (logged-in) day counts, worked out again (a correction, a
+ * leave approved or overturned). A day a Team Lead or Manager changed to full
+ * or half keeps the change (no shortfall); any other day is classified from
+ * its production (half the production on a day with a half day of leave). A
+ * joined leave day that was logged in is a normal working day, exactly as a
+ * full-day leave day that was logged in.
  */
 export function dayResultFor(
   day: DayForResult,
   productionSeconds: number,
   policy: DayRulePolicy,
   weeklyOff: boolean,
-): DayResult | { dayType: 'leave'; shortfallSeconds: 0; makeUpSeconds: 0 } {
-  if (isJoinedLeaveDay(day)) return { dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0 };
+): DayResult {
   const result = classifyDay(productionSeconds, policy, weeklyOff, Boolean(day.leaveHalf && day.leaveKind));
   const keep = Boolean(day.dayTypeChangedAt) && (day.dayType === 'full' || day.dayType === 'half');
   if (!keep) return result;

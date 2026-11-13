@@ -98,6 +98,8 @@ export class FollowUpHandoverService {
       : [];
     return {
       planned,
+      // A half day keeps its follow-ups (the other half is worked) unless it joins the other half.
+      handoverNeeded: leave.status === 'approved' ? await this.isFullDayLeave(leave) : await this.willBeFullDayLeave(leave),
       teammates,
       handedOver: {
         count: handedOver.length,

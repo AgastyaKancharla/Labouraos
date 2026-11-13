@@ -540,23 +540,27 @@ describe('Half-day leave', () => {
     return { a: a.body.id as string, b: b.body.id as string, second: second.body };
   }
 
-  it('a joined day worked for 5 h stays a full leave day: no shortfall, no make-up, never late, also when both halves are unpaid', async () => {
+  it('a joined day not logged in is a full leave day; a login cancels both halves like a full-day leave (paid and unpaid)', async () => {
     at(2032, 6, 1, 10);
     const agent = await make('call_agent', 'HJW', lead.id, MARCH_10);
     await joined(agent, '2032-06-17');
-    await straightDay(agent, [2032, 6, 17], '14:00', '19:00');
-    expect(await dayRow(agent, '2032-06-17')).toMatchObject({ dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0, lateMinutes: 0, leaveUnpaid: false });
+    expect(await dayRow(agent, '2032-06-17')).toMatchObject({ dayType: 'leave', shortfallSeconds: 0, lateMinutes: 0, leaveUnpaid: false });
     expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 1, paidTaken: 1 });
+    // A login cancels the leave, as on a full-day leave: a normal working day (lateness, shortfall).
+    await straightDay(agent, [2032, 6, 17], '14:00', '19:00');
+    expect(await dayRow(agent, '2032-06-17')).toMatchObject({ dayType: 'full', shortfallSeconds: 3 * 3600, makeUpSeconds: 0, lateMinutes: 270 });
+    expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 0, left: 3 });
 
-    // Joined in June: no paid leave, so both halves are unpaid — still exactly a full leave day.
+    // Both halves unpaid (joined in June): a full day worked loses no pay, as with a full-day leave.
     at(2032, 6, 1, 10);
     const fresh = await make('call_agent', 'HJU', lead.id, new Date('2032-06-01T03:00:00.000Z'));
     await joined(fresh, '2032-06-17');
-    await straightDay(fresh, [2032, 6, 17], '09:30', '14:30');
-    expect(await dayRow(fresh, '2032-06-17')).toMatchObject({ dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0, lateMinutes: 0, leaveUnpaid: true });
+    expect(await dayRow(fresh, '2032-06-17')).toMatchObject({ dayType: 'leave', leaveUnpaid: true });
+    await straightDay(fresh, [2032, 6, 17], '09:30', '17:30');
+    expect(await dayRow(fresh, '2032-06-17')).toMatchObject({ dayType: 'full', shortfallSeconds: 0, lateMinutes: 0 });
     at(2032, 6, 18, 10);
     const month = await get(lead, `/attendance/month?month=2032-06&staffId=${fresh.id}`).expect(200);
-    expect(month.body).toMatchObject({ unpaidLeaveDays: 1, fullDays: 0, absentDays: 0, shortfallSeconds: 0 });
+    expect(month.body).toMatchObject({ unpaidLeaveDays: 0, fullDays: 1, absentDays: 0, shortfallSeconds: 0 });
   });
 
   it('keeps both requests’ paid and unpaid days matching a joined day whenever it changes', async () => {
@@ -573,10 +577,15 @@ describe('Half-day leave', () => {
     expect(approved.status).toBe(201);
     const row = (await dayRow(agent, '2032-06-07'))!;
     expect(row).toMatchObject({ otherLeaveRequestId: second.body.id, leavePartUnpaid: true });
-    // Half a day paid on the day: the paid half counts to the first request, the unpaid one to the second.
-    expect(approved.body).toMatchObject({ paidDays: 0, unpaidDays: 0.5 });
-    expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: first.body.id } })).toMatchObject({ paidDays: 0.5, unpaidDays: 0 });
-    expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: second.body.id } })).toMatchObject({ paidDays: 0, unpaidDays: 0.5 });
+    // Each request keeps the split it was approved with: the first stays unpaid, the second is paid.
+    expect(row).toMatchObject({ otherLeaveUnpaid: false });
+    expect(approved.body).toMatchObject({ paidDays: 0.5, unpaidDays: 0 });
+    expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: first.body.id } })).toMatchObject({ paidDays: 0, unpaidDays: 0.5 });
+    expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: second.body.id } })).toMatchObject({ paidDays: 0.5, unpaidDays: 0 });
+    // Overturning the second half gives back its paid half; the first keeps its unpaid half.
+    await decide(manager, second.body.id, 'overturn', { reason: 'Came in after all' }).expect(201);
+    expect(await dayRow(agent, '2032-06-07')).toMatchObject({ leaveHalf: 'first', leaveUnpaid: true, otherLeaveRequestId: null });
+    expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: first.body.id } })).toMatchObject({ paidDays: 0, unpaidDays: 0.5 });
   });
 
   it('a holiday added on a joined leave day that was worked takes the leave off, like any leave day', async () => {
@@ -598,7 +607,7 @@ describe('Half-day leave', () => {
     }
   });
 
-  it('counts a joined day in the balance while it is still open, so the balance is never paid twice', async () => {
+  it('the other half approved on a day already logged in writes nothing, like a full-day leave on a day worked', async () => {
     const agent = await make('call_agent', 'HJO', lead.id, MAY_10);
     at(2032, 6, 1, 10);
     const first = await leave(agent, 'casual', '2032-06-24', 'first');
@@ -606,37 +615,33 @@ describe('Half-day leave', () => {
     at(2032, 6, 24, 14, 0);
     await post(agent, '/attendance/login').expect(201);
     const second = await leave(agent, 'casual', '2032-06-24', 'second');
-    await decide(lead, second.body.id, 'approve').expect(201);
-    expect(await dayRow(agent, '2032-06-24')).toMatchObject({ dayType: 'open', otherLeaveRequestId: second.body.id, lateMinutes: 0 });
-    expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 1, left: 0 });
-    const next = await leave(agent, 'casual', '2032-06-25');
-    expect((await decide(lead, next.body.id, 'approve')).body).toMatchObject({ paidDays: 0, unpaidDays: 1 });
-    // Closing the day keeps it a leave day.
-    at(2032, 6, 24, 18, 0);
-    await post(agent, '/attendance/logout').expect(201);
-    expect(await dayRow(agent, '2032-06-24')).toMatchObject({ dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0 });
+    expect((await decide(lead, second.body.id, 'approve')).body).toMatchObject({ status: 'approved', paidDays: 0, unpaidDays: 0 });
+    expect(await dayRow(agent, '2032-06-24')).toMatchObject({ dayType: 'open', leaveHalf: 'first', otherLeaveRequestId: null, lateMinutes: 0 });
+    expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 0.5, left: 0.5 });
   });
 
-  it('overturning one half of a joined day that had a Team Lead change closes the day properly (never left open)', async () => {
+  it('a Team Lead change on a half-leave day survives the other half (nothing joins on a day worked); undoing it uses the halved lines', async () => {
     at(2032, 6, 1, 10);
     const agent = await make('call_agent', 'HJC', lead.id, MARCH_10);
     const first = await leave(agent, 'casual', '2032-06-18', 'first');
     await decide(lead, first.body.id, 'approve').expect(201);
     await straightDay(agent, [2032, 6, 18], '14:00', '20:00');
     const day = (await dayRow(agent, '2032-06-18'))!;
-    expect(day.dayType).toBe('full');
+    expect(day).toMatchObject({ dayType: 'full', shortfallSeconds: 0, makeUpSeconds: 2 * 3600 });
     at(2032, 6, 18, 21);
     const change = await post(lead, '/requests', { kind: 'day_change', dayId: day.id, dayType: 'half', reason: 'Left the floor early' });
-    expect(change.status).toBe(201);
+    expect(change.body).toMatchObject({ status: 'approved' });
+    expect(await dayRow(agent, '2032-06-18')).toMatchObject({ dayType: 'half', shortfallSeconds: 0, makeUpSeconds: 0 });
     const second = await leave(agent, 'casual', '2032-06-18', 'second');
-    await decide(lead, second.body.id, 'approve').expect(201);
-    expect((await dayRow(agent, '2032-06-18'))!.dayType).toBe('leave');
-    await decide(manager, second.body.id, 'overturn', { reason: 'Was in the morning after all' }).expect(201);
+    expect((await decide(lead, second.body.id, 'approve')).body).toMatchObject({ paidDays: 0, unpaidDays: 0 });
+    const kept = (await dayRow(agent, '2032-06-18'))!;
+    expect(kept).toMatchObject({ dayType: 'half', leaveHalf: 'first', otherLeaveRequestId: null, shortfallSeconds: 0, makeUpSeconds: 0 });
+    expect(kept.dayTypeChangedAt).not.toBeNull();
+    // Undoing the change: back to full, worked out on the halved lines (6 h of 4: 2 h make-up, no shortfall).
+    const undo = await post(manager, `/requests/${change.body.ref}/overturn`, { reason: 'Worked the whole afternoon' });
+    expect(undo.status).toBe(200);
     const after = (await dayRow(agent, '2032-06-18'))!;
-    expect(after.dayType).not.toBe('open');
-    expect(['full', 'half']).toContain(after.dayType);
-    expect(after).toMatchObject({ leaveHalf: 'first', otherLeaveRequestId: null, shortfallSeconds: 0 });
-    // Payroll can run for June: no day of this person is left open.
+    expect(after).toMatchObject({ dayType: 'full', shortfallSeconds: 0, makeUpSeconds: 2 * 3600, leaveHalf: 'first', dayTypeChangedAt: null });
     expect(await prisma.attendanceDay.count({ where: { staffId: agent.id, dayType: 'open' } })).toBe(0);
   });
 
@@ -677,9 +682,15 @@ describe('Half-day leave', () => {
     try {
       const first = await leave(agent, 'casual', '2032-06-26', 'first');
       const approve = (id: string) => post(lead, `/requests/leave.${id}/decide`, { decision: 'approved', reason: 'Fine', followUps: { mode: 'share' } });
-      expect((await approve(first.body.id)).status).toBe(200);
+      // The screen is told a half day needs no handover; a handover asked anyway is refused, not dropped.
+      expect((await get(lead, `/requests/leave.${first.body.id}`)).body.followUps).toMatchObject({ planned: 1, handoverNeeded: false });
+      const refused = await approve(first.body.id);
+      expect(refused.status).toBe(400);
+      expect(refused.body.message).toMatch(/not handed over for a half day/);
+      expect((await post(lead, `/requests/leave.${first.body.id}/decide`, { decision: 'approved', reason: 'Fine', followUps: { mode: 'keep' } })).status).toBe(200);
       expect((await prisma.followUpTask.findUniqueOrThrow({ where: { id: task.id } })).assignedStaffId).toBe(agent.id);
       const second = await leave(agent, 'casual', '2032-06-26', 'second');
+      expect((await get(lead, `/requests/leave.${second.body.id}`)).body.followUps).toMatchObject({ handoverNeeded: true });
       expect((await approve(second.body.id)).status).toBe(200);
       const moved = await prisma.followUpTask.findUniqueOrThrow({ where: { id: task.id } });
       expect(moved.assignedStaffId).not.toBe(agent.id);

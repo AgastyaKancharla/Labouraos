@@ -1460,6 +1460,10 @@ model AttendanceDay {
   /// half approved second. When one of them is overturned the day goes back
   /// to a half day of leave of the other.
   otherLeaveRequestId String?
+  /// On such a day with one half paid and one unpaid (leavePartUnpaid): true when the
+  /// unpaid half is otherLeaveRequestId's, false when it is leaveRequestId's. Set when
+  /// each half is approved, so a request's paid/unpaid split never flips later.
+  otherLeaveUnpaid  Boolean             @default(false)
   lastHeartbeatAt   DateTime?
   segments          AttendanceSegment[]
   createdAt         DateTime            @default(now())

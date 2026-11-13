@@ -79,13 +79,14 @@ describe('half-day leave rules', () => {
     expect(productionTargetSeconds({ productionHoursFullDay: 8 }, true)).toBe(4 * 3600);
   });
 
-  it('a joined day (two half days) is a full leave day in any state: counted, no work, no shortfall', () => {
+  it('a joined day (two half days) counts exactly like a full-day leave: leave until a login, then a working day', () => {
     const joined = { leaveKind: 'casual', leaveUnpaid: false, leaveHalf: null, otherLeaveRequestId: 'req-2' };
-    // Even while a login that day is open.
-    expect(leaveHalvesOf({ ...joined, dayType: 'open' })).toEqual({ total: 2, paid: 2, unpaid: 0 });
+    expect(leaveHalvesOf({ ...joined, dayType: 'leave' })).toEqual({ total: 2, paid: 2, unpaid: 0 });
     expect(leaveHalvesOf({ ...joined, dayType: 'leave', leaveUnpaid: true })).toEqual({ total: 2, paid: 0, unpaid: 2 });
-    expect(dayTally({ ...joined, dayType: 'leave', leavePartUnpaid: true })).toMatchObject({ fullHalves: 0, absentHalves: 0, paidLeaveHalves: 1, unpaidLeaveHalves: 1 });
-    expect(dayResultFor({ ...joined, dayType: 'open', dayTypeChangedAt: null }, 5 * H, policy, false)).toEqual({ dayType: 'leave', shortfallSeconds: 0, makeUpSeconds: 0 });
+    // Logged in: the leave is cancelled, as on a full-day leave.
+    expect(leaveHalvesOf({ ...joined, dayType: 'open' })).toEqual({ total: 0, paid: 0, unpaid: 0 });
+    expect(dayTally({ ...joined, dayType: 'full' })).toMatchObject({ fullHalves: 2, paidLeaveHalves: 0 });
+    expect(dayResultFor({ ...joined, dayType: 'open', dayTypeChangedAt: null }, 5 * H, policy, false)).toEqual({ dayType: 'full', shortfallSeconds: 3 * H, makeUpSeconds: 0 });
     // A Team Lead's change stays on a normal day; a day left "leave" after an overturn is classified again.
     const changed = new Date();
     expect(dayResultFor({ dayType: 'half', leaveKind: null, leaveHalf: null, otherLeaveRequestId: null, dayTypeChangedAt: changed }, 6 * H, policy, false)).toMatchObject({ dayType: 'half', shortfallSeconds: 0 });
