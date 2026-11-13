@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { formatINR } from '../../../lib/format/money';
@@ -16,7 +16,7 @@ import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTit
  * boxes, never pre-ticked — the partner ticks each. Saved with the code they
  * verified on opening the link, as on the job seeker's consent page.
  */
-const POINTS: MessageKey[] = ['rterms.earn.join', 'rterms.earn.notPay', 'rterms.earn.business', 'rterms.earn.self', 'rterms.paid.queued', 'rterms.details.change', 'rterms.calls.id'];
+const POINTS: MessageKey[] = ['rterms.earn.join', 'rterms.earn.notPay', 'rterms.earn.business', 'rterms.earn.self', 'rterms.paid.queued', 'rterms.paid.how', 'rterms.calls.id'];
 
 export default function PartnerTermsPage() {
   const { t, language } = useI18n();
@@ -80,9 +80,6 @@ export default function PartnerTermsPage() {
           <div dangerouslySetInnerHTML={{ __html: d.termsHtml }} />
         </details>
       )}
-      <Link className="lb-pub-link" to={`${to('P-ReferralTerms')}?lang=${language}`}>
-        {t('partner.done.terms')}
-      </Link>
       <Choice checked={agreeTerms} onChange={setAgreeTerms} title={t('partner.terms.agreeTerms')} />
       <Choice checked={agreeRecording} onChange={setAgreeRecording} title={t('partner.terms.agreeRecording')} description={t('pub.consent.recordText')} />
       {!(agreeTerms && agreeRecording) && <span className="sub">{t('partner.terms.needBoth')}</span>}

@@ -20,7 +20,7 @@ describe('P-PartnerTerms (step 1: referral terms and call-recording consent)', (
     expect(screen.getByText('Step 1 of 4 · Terms')).toBeInTheDocument();
     expect(screen.getByText(/You earn ₹200 when a job seeker you referred joins/)).toBeInTheDocument();
     expect(screen.getByText(/pay their ₹499/)).toBeInTheDocument();
-    expect(screen.getByText(/48-hour wait/)).toBeInTheDocument();
+    expect(screen.getByText(/checked against the name on your ID/)).toBeInTheDocument();
     expect(api.calls(`GET /referral-registration/${TOKEN}/terms`)[0]!.query.get('requestId')).toBe('req-1');
     const agree = screen.getByRole('button', { name: 'I agree — continue' });
     const boxes = screen.getAllByRole('checkbox');
