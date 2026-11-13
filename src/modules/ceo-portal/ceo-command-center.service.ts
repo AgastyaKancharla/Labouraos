@@ -3,7 +3,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RefundService } from '../refund/refund.service';
 import { MoneyAtRiskService } from '../target/money-at-risk.service';
-import { CeoMoneyService, summariseReceived } from './ceo-money.service';
+import { CeoMoneyService, MONEY_IN_TYPES, summariseReceived, withBypassCharges } from './ceo-money.service';
 import { CeoJobSeekersService, ENDED_STATUSES, NOT_PAID_STATUSES, OFFER_STATUSES } from './ceo-job-seekers.service';
 import { CeoBusinessesService } from './ceo-businesses.service';
 import {
@@ -219,10 +219,10 @@ export class CeoCommandCenterService {
     const policy = await this.pricing.current();
     const today = { gte: istStartOfDay(istDayKey(now)), lte: now };
     const sixWeeksAgo = weeks[0].from;
-    const [received, refunds, joined, poolTrades, openVac, calls, fieldVacancies, activity] = await Promise.all([
+    const [receivedRows, refunds, joined, poolTrades, openVac, calls, fieldVacancies, activity] = await Promise.all([
       this.prisma.payment.findMany({
-        where: { status: { in: RECEIVED_STATUSES }, type: { in: ['activation', 'reactivation', 'placement_fee'] }, OR: [{ confirmedAt: { gte: sixWeeksAgo, lte: range.to } }, { confirmedAt: null, paidAt: { gte: sixWeeksAgo, lte: range.to } }] },
-        select: { type: true, amount: true, confirmedAt: true, paidAt: true, placement: { select: { placementFee: true, gstAmount: true } } },
+        where: { status: { in: RECEIVED_STATUSES }, type: { in: MONEY_IN_TYPES }, OR: [{ confirmedAt: { gte: sixWeeksAgo, lte: range.to } }, { confirmedAt: null, paidAt: { gte: sixWeeksAgo, lte: range.to } }] },
+        select: { id: true, type: true, amount: true, confirmedAt: true, paidAt: true, placement: { select: { placementFee: true, gstAmount: true } } },
       }),
       this.prisma.payment.findMany({ where: { type: 'refund', status: { in: RECEIVED_STATUSES }, paidAt: { gte: sixWeeksAgo, lte: range.to } }, select: { amount: true, paidAt: true } }),
       this.prisma.placement.findMany({ where: { joinedDate: { gte: sixWeeksAgo, lte: range.to } }, select: { joinedDate: true } }),
@@ -235,6 +235,7 @@ export class CeoCommandCenterService {
       }),
       this.prisma.auditLog.findMany({ orderBy: { createdAt: 'desc' }, take: 8, select: { id: true, action: true, entityType: true, entityCode: true, createdAt: true, actor: { select: { name: true } } } }),
     ]);
+    const received = await withBypassCharges(this.prisma, receivedRows);
     const revenueByWeek = weeks.map((w) => {
       const inWeek = received.filter((p) => {
         const at = p.confirmedAt ?? p.paidAt;

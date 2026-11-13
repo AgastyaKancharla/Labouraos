@@ -373,6 +373,7 @@ export const hi: Messages = {
   "cc.netRevenueDetail": "कुल {gross} − लौटाए गए रिफ़ंड {refunds} · GST के बिना",
   "cc.placementFees": "प्लेसमेंट फ़ीस {amount} · {count}",
   "cc.activationFees": "एक्टिवेशन फ़ीस {amount} · {count}",
+  "cc.bypassCharges": "नो-बाईपास शुल्क {amount} · {count}",
   "cc.refundExposure": "रिफ़ंड का जोखिम",
   "cc.act": "कार्रवाई करें",
   "cc.awaitingApproval": "अभी देय, मंज़ूरी बाकी",

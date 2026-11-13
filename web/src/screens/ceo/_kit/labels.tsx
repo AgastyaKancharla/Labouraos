@@ -65,6 +65,7 @@ export const PAYMENT_TYPE: Record<string, string> = {
   activation: '₹499 registration',
   reactivation: '₹499 re-registration',
   placement_fee: 'Placement fee',
+  bypass_charge: 'No-bypass charge',
   refund: 'Refund',
   duplicate_refund: 'Duplicate payment refund',
   referral_payout: 'Referral payout',

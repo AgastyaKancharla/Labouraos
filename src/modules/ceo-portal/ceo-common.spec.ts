@@ -111,6 +111,26 @@ describe('CEO portal helpers', () => {
     });
   });
 
+  it('counts a paid no-bypass charge: fee + penalty in gross and net, its GST with the GST, as FN-Tax and the books do', () => {
+    const totals = summariseReceived(
+      [
+        { type: 'activation', amount: 49900, placement: null },
+        { type: 'placement_fee', amount: 1003000, placement: { placementFee: 850000, gstAmount: 153000 } },
+        // ₹15,000 salary: fee ₹7,500 + penalty ₹1,500, GST ₹1,620, total ₹10,620.
+        { type: 'bypass_charge', amount: 1062000, placement: null, bypass: { taxablePaise: 900000, gstPaise: 162000 } },
+      ],
+      [],
+    );
+    expect(totals).toMatchObject({
+      bypassChargePaise: 900000,
+      bypassChargeCount: 1,
+      gstPaise: 315000,
+      grossPaise: 1799900,
+      netPaise: 1799900,
+      receivedInclGstPaise: 49900 + 1003000 + 1062000,
+    });
+  });
+
   it('dates GSTR-1 on the 11th and GSTR-3B on the 20th of the next month', () => {
     expect(gstDueDates(new Date('2026-10-20T10:00:00Z'))).toEqual({ gstr1: '2026-11-11', gstr3b: '2026-11-20' });
     expect(gstDueDates(new Date('2026-12-31T10:00:00Z'))).toEqual({ gstr1: '2027-01-11', gstr3b: '2027-01-20' });

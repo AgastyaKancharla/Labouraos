@@ -18,6 +18,9 @@ export interface CcMoney {
   refundsPaidPaise: number;
   netPaise: number;
   receivedInclGstPaise: number;
+  /** Paid no-bypass charges, fee + penalty without GST (older APIs leave it out). */
+  bypassChargePaise?: number;
+  bypassChargeCount?: number;
   changePercent: number | null;
   refundExposure: { owedNowPaise: number; owedNowCount: number; atRiskPaise: number; totalPaise: number };
   payouts: { duePaise: number; dueCount: number; referralDueCount: number; rewardDueCount: number; failedCount: number };

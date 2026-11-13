@@ -229,6 +229,36 @@ describe('No-bypass charge (CEO)', () => {
     await request(server()).post(`/bypass-charges/${charge.id}/cancel`).set(as('ceo')).send({ reason: 'x' }).expect(409);
   });
 
+  it('a paid charge is in Finance home "Received this month", the CEO money tiles and the profit and loss, like the books', async () => {
+    const charge = await prisma.bypassCharge.findFirstOrThrow({ where: { businessId, status: 'raised' }, orderBy: { raisedAt: 'desc' } });
+    const payment = await prisma.payment.findUniqueOrThrow({ where: { id: charge.paymentId! } });
+    expect(payment.status).toBe('succeeded');
+    const read = async () => {
+      const [home, money, profit] = await Promise.all([
+        request(server()).get('/finance/home').set(as('finance')).expect(200),
+        request(server()).get('/ceo/command-center/money').set(as('ceo')).expect(200),
+        request(server()).get('/finance/profit').set(as('ceo')).expect(200),
+      ]);
+      return { home: home.body.stats, money: money.body, profit: profit.body.revenue };
+    };
+    await prisma.payment.update({ where: { id: payment.id }, data: { status: 'pending' } });
+    const before = await read();
+    await prisma.payment.update({ where: { id: payment.id }, data: { status: 'succeeded' } });
+    const after = await read();
+    // The books count the whole amount received (fee + penalty + GST).
+    expect(after.home.receivedThisMonthPaise - before.home.receivedThisMonthPaise).toBe(payment.amount);
+    expect(payment.amount).toBe(charge.totalPaise);
+    // Revenue counts fee + penalty without GST; the GST sits with the GST.
+    expect(after.money.bypassChargePaise - before.money.bypassChargePaise).toBe(charge.feePaise + charge.penaltyPaise);
+    expect(after.money.bypassChargeCount - before.money.bypassChargeCount).toBe(1);
+    expect(after.money.grossPaise - before.money.grossPaise).toBe(charge.feePaise + charge.penaltyPaise);
+    expect(after.money.gstPaise - before.money.gstPaise).toBe(charge.gstPaise);
+    expect(after.money.receivedInclGstPaise - before.money.receivedInclGstPaise).toBe(charge.totalPaise);
+    expect(after.profit.bypassChargePaise - before.profit.bypassChargePaise).toBe(charge.feePaise + charge.penaltyPaise);
+    expect(after.profit.netRevenuePaise - before.profit.netRevenuePaise).toBe(charge.feePaise + charge.penaltyPaise);
+    expect(after.profit.gstCollectedPaise - before.profit.gstCollectedPaise).toBe(charge.gstPaise);
+  });
+
   it("N4: last month's paid charge GST is in the Finance home GST figure, the same as FN-Tax", async () => {
     const charge = await prisma.bypassCharge.findFirstOrThrow({ where: { businessId, status: 'raised' }, orderBy: { raisedAt: 'desc' } });
     const firstOfMonth = new Date(`${month}-01T00:00:00+05:30`);

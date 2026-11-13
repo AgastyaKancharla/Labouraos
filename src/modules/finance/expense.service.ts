@@ -10,6 +10,7 @@ import { PayrollService } from './payroll.service';
 import { assertUtrUnused } from '../../common/money/utr-registry';
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { DateRange, RECEIVED_STATUSES, PAYOUT_TYPES, contains, sumPaise } from '../ceo-portal/ceo-common';
+import { MONEY_IN_TYPES, withBypassCharges } from '../ceo-portal/ceo-money.service';
 import {
   AUTO_EXPENSE_CATEGORIES,
   EXPENSE_CATEGORIES,
@@ -509,18 +510,18 @@ export class ExpenseService {
 
   /**
    * Profit and loss for a period (C-Expenses): net revenue (₹499s + placement
-   * fees without GST − refunds paid) minus expenses (bills by bill date, approved
+   * fees and paid no-bypass charges without GST − refunds paid) minus expenses (bills by bill date, approved
    * or paid, plus payouts and rewards paid). Salaries join from payroll.
    */
   async profit(range: DateRange) {
-    const [received, refunds, bills, payouts, budgets, placementsPaid, payroll] = await Promise.all([
+    const [receivedRows, refunds, bills, payouts, budgets, placementsPaid, payroll] = await Promise.all([
       this.prisma.payment.findMany({
         where: {
           status: { in: RECEIVED_STATUSES },
-          type: { in: ['activation', 'reactivation', 'placement_fee'] },
+          type: { in: MONEY_IN_TYPES },
           OR: [{ confirmedAt: { gte: range.from, lte: range.to } }, { confirmedAt: null, paidAt: { gte: range.from, lte: range.to } }],
         },
-        select: { type: true, amount: true, placement: { select: { placementFee: true, gstAmount: true } } },
+        select: { id: true, type: true, amount: true, placement: { select: { placementFee: true, gstAmount: true } } },
       }),
       this.refundsPaid(range),
       this.prisma.expense.findMany({ where: { status: { in: COUNTED }, billDate: { gte: range.from, lte: range.to } } }),
@@ -529,11 +530,16 @@ export class ExpenseService {
       this.prisma.placement.findMany({ where: { paidAt: { gte: range.from, lte: range.to } }, select: { id: true, jobSeeker: { select: { heardFrom: true } } } }),
       this.payroll ? this.payroll.salariesInRange(range.from, range.to) : Promise.resolve({ totalPaise: 0, months: [], pendingMonths: [] as string[] }),
     ]);
-    const activation = received.filter((p) => p.type !== 'placement_fee');
+    const received = await withBypassCharges(this.prisma, receivedRows);
+    const activation = received.filter((p) => p.type === 'activation' || p.type === 'reactivation');
     const fees = received.filter((p) => p.type === 'placement_fee');
+    // Paid no-bypass charges: fee + penalty is revenue, their GST is GST collected (as on FN-Tax).
+    const bypass = received.filter((p) => p.type === 'bypass_charge');
     const activationPaise = sumPaise(activation.map((p) => p.amount));
     const placementFeePaise = sumPaise(fees.map((p) => p.placement?.placementFee ?? p.amount));
-    const gstCollectedPaise = sumPaise(fees.map((p) => (p.placement ? p.amount - p.placement.placementFee : 0)));
+    const bypassChargePaise = sumPaise(bypass.map((p) => p.bypass?.taxablePaise ?? p.amount));
+    const gstCollectedPaise =
+      sumPaise(fees.map((p) => (p.placement ? p.amount - p.placement.placementFee : 0))) + sumPaise(bypass.map((p) => p.bypass?.gstPaise ?? 0));
     const refundsPaise = sumPaise(refunds.map((r) => r.amount));
     const billsPaise = sumPaise(bills.map((b) => b.amountPaise));
     const payoutsPaise = sumPaise(payouts.map((p) => p.amount));
@@ -542,7 +548,7 @@ export class ExpenseService {
     const salariesPaise = payroll.totalPaise;
     const expensesPaise = billsPaise + payoutsPaise + salariesPaise;
     const placements = fees.length;
-    const pnl = profitAndLoss({ activationPaise, placementFeePaise, refundsPaise, expensesPaise, placements });
+    const pnl = profitAndLoss({ activationPaise, placementFeePaise, bypassChargePaise, refundsPaise, expensesPaise, placements });
     const budgetBy = new Map<string, number>();
     for (const b of budgets) budgetBy.set(b.category, (budgetBy.get(b.category) ?? 0) + b.amountPaise);
     const actualBy = new Map<string, number>();
@@ -578,6 +584,8 @@ export class ExpenseService {
         activationCount: activation.length,
         placementFeePaise,
         placementCount: placements,
+        bypassChargePaise,
+        bypassChargeCount: bypass.length,
         refundsPaise,
         refundsCount: refunds.length,
         netRevenuePaise: pnl.netRevenuePaise,

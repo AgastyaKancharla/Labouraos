@@ -373,6 +373,7 @@ export const kn: Messages = {
   "cc.netRevenueDetail": "ಒಟ್ಟು {gross} − ಹಿಂತಿರುಗಿಸಿದ ರೀಫಂಡ್ {refunds} · GST ಹೊರತುಪಡಿಸಿ",
   "cc.placementFees": "ಪ್ಲೇಸ್‌ಮೆಂಟ್ ಶುಲ್ಕ {amount} · {count}",
   "cc.activationFees": "ಆಕ್ಟಿವೇಶನ್ ಶುಲ್ಕ {amount} · {count}",
+  "cc.bypassCharges": "ನೋ-ಬೈಪಾಸ್ ಶುಲ್ಕ {amount} · {count}",
   "cc.refundExposure": "ರೀಫಂಡ್ ಅಪಾಯ",
   "cc.act": "ಕ್ರಮ ಕೈಗೊಳ್ಳಿ",
   "cc.awaitingApproval": "ಈಗ ಬಾಕಿ, ಅನುಮೋದನೆಗಾಗಿ ಕಾಯುತ್ತಿದೆ",

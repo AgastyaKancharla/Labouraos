@@ -204,6 +204,7 @@ export default function CommandCenter() {
                   <div className="lb-hero__split" aria-hidden="true">
                     <div style={{ width: `${percent(m.placementFeePaise, m.grossPaise)}%`, background: 'var(--cyan-raw)' }} />
                     <div style={{ width: `${percent(m.activationPaise, m.grossPaise)}%`, background: 'var(--gold-raw)' }} />
+                    {(m.bypassChargePaise ?? 0) > 0 && <div style={{ width: `${percent(m.bypassChargePaise ?? 0, m.grossPaise)}%`, background: 'var(--orange-raw)' }} />}
                   </div>
                 ) : (
                   <div className="lb-hero__detail">{t('cc.noMoneyYet')}</div>
@@ -217,6 +218,12 @@ export default function CommandCenter() {
                     <i style={{ background: 'var(--gold-raw)' }} />
                     {t('cc.activationFees', { amount: formatINR(m.activationPaise), count: m.activationCount })}
                   </span>
+                  {(m.bypassChargeCount ?? 0) > 0 && (
+                    <span>
+                      <i style={{ background: 'var(--orange-raw)' }} />
+                      {t('cc.bypassCharges', { amount: formatINR(m.bypassChargePaise ?? 0), count: m.bypassChargeCount ?? 0 })}
+                    </span>
+                  )}
                 </div>
               </>
             )}

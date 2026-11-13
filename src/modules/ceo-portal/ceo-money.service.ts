@@ -28,27 +28,45 @@ export interface MoneyTotals {
   refundsPaidCount: number;
   netPaise: number;
   receivedInclGstPaise: number;
+  /** Paid no-bypass charges: the fee + penalty without GST (their GST is in gstPaise). */
+  bypassChargePaise: number;
+  bypassChargeCount: number;
 }
+
+/**
+ * Every kind of money coming in for a service: ₹499s, placement fees and the
+ * no-bypass charges the CEO raises (invoiced like a fee). The books, FN-Tax
+ * and the money-in figures all count the same kinds.
+ */
+export const MONEY_IN_TYPES = ['activation', 'reactivation', 'placement_fee', 'bypass_charge'];
 
 type ReceivedPayment = {
   type: string;
   amount: number;
   placement: { placementFee: number; gstAmount: number } | null;
+  /** For a bypass_charge payment: the charge's taxable value (fee + penalty) and GST. */
+  bypass?: { taxablePaise: number; gstPaise: number } | null;
 };
 
 /**
  * Money in for a period, in integer paise. Placement fees count without GST
  * (the fee and its GST come from the placement); ₹499 activation fees carry
- * no GST (decided); refunds paid are refunds that left the bank in the period.
+ * no GST (decided); paid no-bypass charges count their fee + penalty, with
+ * their GST beside the placement fees' GST, as on FN-Tax; refunds paid are
+ * refunds that left the bank in the period.
  */
 export function summariseReceived(received: readonly ReceivedPayment[], refundsPaid: readonly { amount: number }[]): MoneyTotals {
   const activation = received.filter((p) => p.type === 'activation' || p.type === 'reactivation');
   const placement = received.filter((p) => p.type === 'placement_fee');
+  const bypass = received.filter((p) => p.type === 'bypass_charge');
   const activationPaise = sumPaise(activation.map((p) => p.amount));
   const placementFeePaise = sumPaise(placement.map((p) => p.placement?.placementFee ?? p.amount - (p.placement?.gstAmount ?? 0)));
-  const gstPaise = sumPaise(placement.map((p) => (p.placement ? p.amount - p.placement.placementFee : 0)));
+  const bypassChargePaise = sumPaise(bypass.map((p) => p.bypass?.taxablePaise ?? p.amount));
+  const gstPaise =
+    sumPaise(placement.map((p) => (p.placement ? p.amount - p.placement.placementFee : 0))) +
+    sumPaise(bypass.map((p) => p.bypass?.gstPaise ?? 0));
   const refundsPaidPaise = sumPaise(refundsPaid.map((p) => p.amount));
-  const grossPaise = activationPaise + placementFeePaise;
+  const grossPaise = activationPaise + placementFeePaise + bypassChargePaise;
   return {
     activationPaise,
     activationCount: activation.length,
@@ -59,8 +77,26 @@ export function summariseReceived(received: readonly ReceivedPayment[], refundsP
     refundsPaidPaise,
     refundsPaidCount: refundsPaid.length,
     netPaise: grossPaise - refundsPaidPaise,
-    receivedInclGstPaise: activationPaise + placementFeePaise + gstPaise,
+    receivedInclGstPaise: grossPaise + gstPaise,
+    bypassChargePaise,
+    bypassChargeCount: bypass.length,
   };
+}
+
+/**
+ * Adds each paid no-bypass charge's taxable value and GST to its payment
+ * (the charge points at its payment; the payment has no link back).
+ */
+export async function withBypassCharges<T extends { id: string; type: string }>(
+  prisma: Pick<PrismaService, 'bypassCharge'>,
+  payments: readonly T[],
+): Promise<(T & { bypass: { taxablePaise: number; gstPaise: number } | null })[]> {
+  const ids = payments.filter((p) => p.type === 'bypass_charge').map((p) => p.id);
+  const charges = ids.length
+    ? await prisma.bypassCharge.findMany({ where: { paymentId: { in: ids } }, select: { paymentId: true, feePaise: true, penaltyPaise: true, gstPaise: true } })
+    : [];
+  const byPayment = new Map(charges.map((c) => [c.paymentId!, { taxablePaise: c.feePaise + c.penaltyPaise, gstPaise: c.gstPaise }]));
+  return payments.map((p) => ({ ...p, bypass: byPayment.get(p.id) ?? null }));
 }
 
 /** GSTR-1 is due on the 11th and GSTR-3B on the 20th of the month after the period. */
@@ -91,15 +127,15 @@ export class CeoMoneyService {
   async totals(range: DateRange): Promise<MoneyTotals> {
     const [received, refunds] = await Promise.all([
       this.prisma.payment.findMany({
-        where: { status: { in: RECEIVED_STATUSES }, type: { in: ['activation', 'reactivation', 'placement_fee'] }, ...this.receivedAtFilter(range) },
-        select: { type: true, amount: true, placement: { select: { placementFee: true, gstAmount: true } } },
+        where: { status: { in: RECEIVED_STATUSES }, type: { in: MONEY_IN_TYPES }, ...this.receivedAtFilter(range) },
+        select: { id: true, type: true, amount: true, placement: { select: { placementFee: true, gstAmount: true } } },
       }),
       this.prisma.payment.findMany({
         where: { type: 'refund', status: { in: RECEIVED_STATUSES }, OR: [{ paidAt: { gte: range.from, lte: range.to } }, { paidAt: null, updatedAt: { gte: range.from, lte: range.to } }] },
         select: { amount: true },
       }),
     ]);
-    return summariseReceived(received, refunds);
+    return summariseReceived(await withBypassCharges(this.prisma, received), refunds);
   }
 
   async payouts() {
@@ -120,7 +156,7 @@ export class CeoMoneyService {
   async moneyIn(range: DateRange, page: PageRequest, search?: string, type?: string) {
     const where: Prisma.PaymentWhereInput = {
       AND: [
-        { type: { in: type ? [type] : ['activation', 'reactivation', 'placement_fee'] } },
+        { type: { in: type ? [type] : MONEY_IN_TYPES } },
         { status: { in: RECEIVED_STATUSES } },
         this.receivedAtFilter(range),
         ...(search

@@ -373,6 +373,7 @@ export const en = {
   "cc.netRevenueDetail": "Gross {gross} − refunds paid {refunds} · excludes GST",
   "cc.placementFees": "Placement fees {amount} · {count}",
   "cc.activationFees": "Activation fees {amount} · {count}",
+  "cc.bypassCharges": "No-bypass charges {amount} · {count}",
   "cc.refundExposure": "Refund exposure",
   "cc.act": "Act",
   "cc.awaitingApproval": "owed now, waiting for approval",

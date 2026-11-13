@@ -265,11 +265,13 @@ export function bankDay(openingPaise: number, inPaise: number, outPaise: number,
 export function profitAndLoss(input: {
   activationPaise: number;
   placementFeePaise: number;
+  /** Paid no-bypass charges, fee + penalty without GST. */
+  bypassChargePaise?: number;
   refundsPaise: number;
   expensesPaise: number;
   placements: number;
 }) {
-  const netRevenuePaise = input.activationPaise + input.placementFeePaise - input.refundsPaise;
+  const netRevenuePaise = input.activationPaise + input.placementFeePaise + (input.bypassChargePaise ?? 0) - input.refundsPaise;
   const profitPaise = netRevenuePaise - input.expensesPaise;
   const averageFeePaise = input.placements > 0 ? Math.round(input.placementFeePaise / input.placements) : 0;
   return {

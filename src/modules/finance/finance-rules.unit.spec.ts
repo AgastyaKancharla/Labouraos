@@ -169,6 +169,11 @@ describe('Finance rules (Phase 22 Part A)', () => {
       // ₹8,000 average fee: ₹5,50,910 of costs need 69 placements' fees.
       expect(r.breakEvenPlacements).toBe(69);
     });
+    it('counts paid no-bypass charges (without GST) in net revenue', () => {
+      const r = profitAndLoss({ activationPaise: 49900, placementFeePaise: 850000, bypassChargePaise: 900000, refundsPaise: 0, expensesPaise: 0, placements: 1 });
+      expect(r.netRevenuePaise).toBe(1799900);
+      expect(r.profitPaise).toBe(1799900);
+    });
     it('has no cost per placement or break-even without placements', () => {
       const r = profitAndLoss({ activationPaise: 0, placementFeePaise: 0, refundsPaise: 0, expensesPaise: 100, placements: 0 });
       expect(r.costPerPlacementPaise).toBeNull();
