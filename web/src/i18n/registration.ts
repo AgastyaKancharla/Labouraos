@@ -4,6 +4,8 @@
 export const registrationEn = {
   "reg.area.choose": "Choose the area",
   "reg.area.label": "Area (from the list)",
+  "reg.area.fromPin": "Filled in from the map pin (an area centre within {distance}) — change it if it is wrong",
+  "reg.area.noneNear": "Pick the area — no area is within {distance} of this shop",
   "reg.backHome": "Back to Home",
   "reg.chip.remove": "Remove {item}",
   "reg.remove": "Remove",
@@ -560,6 +562,8 @@ export const registrationEn = {
 export const registrationKn: Record<keyof typeof registrationEn, string> = {
   "reg.area.choose": "ಪ್ರದೇಶ ಆಯ್ಕೆಮಾಡಿ",
   "reg.area.label": "ಪ್ರದೇಶ (ಪಟ್ಟಿಯಿಂದ)",
+  "reg.area.fromPin": "ನಕ್ಷೆಯ ಪಿನ್‌ನಿಂದ ತುಂಬಲಾಗಿದೆ ({distance} ಒಳಗಿನ ಪ್ರದೇಶದ ಕೇಂದ್ರ) — ತಪ್ಪಾಗಿದ್ದರೆ ಬದಲಿಸಿ",
+  "reg.area.noneNear": "ಪ್ರದೇಶವನ್ನು ಆಯ್ಕೆಮಾಡಿ — ಈ ಅಂಗಡಿಯಿಂದ {distance} ಒಳಗೆ ಯಾವುದೇ ಪ್ರದೇಶವಿಲ್ಲ",
   "reg.backHome": "ಮುಖಪುಟಕ್ಕೆ ಹಿಂದೆ",
   "reg.chip.remove": "{item} ತೆಗೆದುಹಾಕಿ",
   "reg.remove": "ತೆಗೆದುಹಾಕಿ",
@@ -1116,6 +1120,8 @@ export const registrationKn: Record<keyof typeof registrationEn, string> = {
 export const registrationHi: Record<keyof typeof registrationEn, string> = {
   "reg.area.choose": "इलाक़ा चुनें",
   "reg.area.label": "इलाक़ा (सूची से)",
+  "reg.area.fromPin": "मैप पिन से भरा गया ({distance} के अंदर किसी इलाक़े का केंद्र) — ग़लत हो तो बदलें",
+  "reg.area.noneNear": "इलाक़ा चुनें — इस दुकान से {distance} के अंदर कोई इलाक़ा नहीं है",
   "reg.backHome": "होम पर वापस",
   "reg.chip.remove": "{item} हटाएँ",
   "reg.remove": "हटाएँ",

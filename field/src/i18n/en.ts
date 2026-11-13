@@ -383,6 +383,8 @@ export const en = {
   'fa07.street': 'Street *',
   'fa07.landmark': 'Landmark *',
   'fa07.area': 'Area (from the list) *',
+  'fa07.areaFromPin': "Filled in from the shop's location (an area centre within {distance}) — change it if it is wrong",
+  'fa07.areaNoneNear': 'Pick the area — no area is within {distance} of this shop',
   'fa07.pincode': 'Pincode *',
   'fa07.pincodeInvalid': 'Enter the 6-digit pincode.',
   'fa07.city': 'Bengaluru',

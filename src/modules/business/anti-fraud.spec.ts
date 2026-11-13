@@ -94,7 +94,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const res = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Safe Cafe Koramangala',
         contactPersonName: 'Safe Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -128,7 +128,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const res = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Mismatched Geofence Retail',
         contactPersonName: 'Mismatch Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -172,7 +172,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Original Selfie Business',
         contactPersonName: 'Original Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -190,7 +190,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const res = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Fraudulent Duplicate Selfie Business',
         contactPersonName: 'Duplicate Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -212,7 +212,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const createRes = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Follow-up Visit Business',
         contactPersonName: 'Visit Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -246,7 +246,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const otherBizRes = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Other Business For Visit Test',
         contactPersonName: 'Other Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -275,7 +275,7 @@ describe('Phase 4 Task 4: Anti-Fraud Controls on Business Visits', () => {
     const bizRes = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Kora Area Business',
         contactPersonName: 'Area Contact',
         contactPersonRole: 'owner', heardFrom: 'field_visit',

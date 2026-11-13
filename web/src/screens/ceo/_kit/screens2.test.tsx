@@ -571,6 +571,25 @@ describe('Pricing & policy', () => {
     await waitFor(() => expect(api.calls('POST /attendance/holidays')[0].body).toEqual({ date: '2026-12-25', name: 'Christmas' }));
   });
 
+  it("shows and changes the distance for filling in a business's area from its GPS (decided 14 Nov: 1 km)", async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/pricing/history': { current: { ...policy, areaAutoFillMaxMeters: 1000 }, since: {}, scheduled: [], history: [] },
+      'GET /attendance/holidays': { year: 2026, holidays: [] },
+      'POST /pricing': { ok: true },
+    });
+    render(<Pricing />, '/ceo/pricing');
+    expect(await screen.findByText('Nearest area within 1,000 m of the pin · farther, the agent picks it')).toBeInTheDocument();
+    const row = screen.getByText("Business area from the shop's GPS").closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
+    const d = await dialog();
+    const meters = within(d).getByLabelText(/Fill in the nearest area/);
+    await userEvent.clear(meters);
+    await userEvent.type(meters, '1500');
+    await userEvent.click(within(d).getByRole('button', { name: 'Change now' }));
+    await waitFor(() => expect(api.calls('POST /pricing')[0].body).toEqual({ areaAutoFillMaxMeters: 1500 }));
+  });
+
   it('shows the go-live date (CEO only) and sets it: payroll and paid leave count from it', async () => {
     const api = mockApi({
       ...common,

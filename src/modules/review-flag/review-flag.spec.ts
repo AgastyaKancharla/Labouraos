@@ -197,7 +197,7 @@ describe('Phase 9 Task 8: Review Flags', () => {
       const res = await request(app.getHttpServer())
         .post('/businesses')
         .set('Authorization', `Bearer ${fieldAgent1Token}`)
-        .send({
+        .send({ locality: 'Koramangala',
           name: 'Close Cafe',
           contactPersonName: 'Close Contact',
           contactPersonRole: 'owner', heardFrom: 'field_visit',
@@ -226,7 +226,7 @@ describe('Phase 9 Task 8: Review Flags', () => {
       const res = await request(app.getHttpServer())
         .post('/businesses')
         .set('Authorization', `Bearer ${fieldAgent1Token}`)
-        .send({
+        .send({ locality: 'Koramangala',
           name: 'Far Away Cafe',
           contactPersonName: 'Far Contact',
           contactPersonRole: 'owner', heardFrom: 'field_visit',

@@ -153,7 +153,7 @@ export const qk = {
 export function useFormOptions() {
   return useQuery({
     queryKey: qk.options,
-    queryFn: () => api.get<{ city: string; areas: Area[]; scriptTerms?: ScriptTerms }>('/screens/call-registration/options'),
+    queryFn: () => api.get<{ city: string; areas: Area[]; areaAutoFillMaxMeters?: number; scriptTerms?: ScriptTerms }>('/screens/call-registration/options'),
     // Short, so a change in Settings reaches the scripts the agent reads out.
     staleTime: 5 * 60_000,
   });

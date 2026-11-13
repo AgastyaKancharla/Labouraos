@@ -167,6 +167,7 @@ export async function seed(prismaClient?: PrismaClient) {
           },
           adultMinimumAge: 18,
           duplicateBusinessRadiusMeters: 50,
+          areaAutoFillMaxMeters: 1000,
           consentWithdrawalCallWindowMinutes: 60,
           walkInStart: '10:30',
           walkInEnd: '18:00',

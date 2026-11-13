@@ -1378,6 +1378,8 @@ model PricingPolicy {
   registrationLinkValidHours   Int       @default(48)
   /// C-Pricing: the payment-only link (someone else pays the ₹499) works this many minutes (guide: 15).
   paymentOnlyLinkMinutes       Int       @default(15)
+  /// C-Pricing: a new business's area is filled in from its GPS pin when an area's centre is within this many metres (decided 14 Nov: 1 km); otherwise the agent must pick it.
+  areaAutoFillMaxMeters        Int       @default(1000)
   shiftStart                   String    @default("09:30")
   shiftEnd                     String    @default("18:30")
   productionHoursFullDay       Float     @default(8)

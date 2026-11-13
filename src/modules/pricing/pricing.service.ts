@@ -5,6 +5,12 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 
 export { PricingPolicy };
 
+/**
+ * The largest "fill in the area from GPS" distance the CEO can set. An area's
+ * centre farther than this from a shop is never a sensible automatic guess.
+ */
+export const MAX_AREA_AUTO_FILL_METERS = 25_000;
+
 /** How far ahead the go-live date may be set (about a year). */
 export const GO_LIVE_MAX_DAYS_AHEAD = 366;
 
@@ -53,6 +59,12 @@ export class PricingService {
     actorId: string,
   ): Promise<PricingPolicy> {
     const before = await this.current();
+    if (updates.areaAutoFillMaxMeters !== undefined && updates.areaAutoFillMaxMeters !== null) {
+      const meters = updates.areaAutoFillMaxMeters;
+      if (!Number.isSafeInteger(meters) || meters < 1 || meters > MAX_AREA_AUTO_FILL_METERS) {
+        throw new BadRequestException(`areaAutoFillMaxMeters must be a whole number of metres from 1 to ${MAX_AREA_AUTO_FILL_METERS}`);
+      }
+    }
 
     const created = await this.prisma.pricingPolicy.create({
       data: {
@@ -87,6 +99,7 @@ export class PricingService {
         callingHoursEnd: updates.callingHoursEnd ?? before.callingHoursEnd,
         duplicateBusinessRadiusMeters:
           updates.duplicateBusinessRadiusMeters ?? before.duplicateBusinessRadiusMeters,
+        areaAutoFillMaxMeters: updates.areaAutoFillMaxMeters ?? before.areaAutoFillMaxMeters,
         consentWithdrawalCallWindowMinutes:
           updates.consentWithdrawalCallWindowMinutes ?? before.consentWithdrawalCallWindowMinutes,
         walkInStart: updates.walkInStart ?? before.walkInStart,

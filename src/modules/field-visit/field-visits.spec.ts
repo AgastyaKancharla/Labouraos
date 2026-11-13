@@ -265,6 +265,7 @@ describe('Laboura Field shop visits: proof, outcomes, Team Lead checks, Home/Map
       contactPersonName: 'Shankar Rao',
       contactPersonRole: 'owner', heardFrom: 'field_visit',
       businessType: 'restaurant_hotel',
+      locality: 'Jayanagar',
       latitude: SHOP.latitude,
       longitude: SHOP.longitude,
       fieldVisitId: id,

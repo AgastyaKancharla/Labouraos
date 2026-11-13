@@ -59,7 +59,7 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
     await otp.verifyOtp(otpRequest.requestId, code);
     const response = await request(app.getHttpServer()).post('/businesses')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: `Business ${suffix}`, phone, otpRequestId: otpRequest.requestId,
         contactPersonName: 'Account contact', contactPersonRole: 'owner', heardFrom: 'field_visit', ...input,
       });
@@ -156,7 +156,7 @@ describe('Phase 13 Task 2 — business profile and documents', () => {
       await otp.verifyOtp(otpRequest.requestId, code);
       const response = await request(app.getHttpServer()).post('/businesses')
         .set('Authorization', `Bearer ${agentToken}`)
-        .send({ name, phone, otpRequestId: otpRequest.requestId, contactPersonName: 'Contact', contactPersonRole: 'owner', heardFrom: 'field_visit' });
+        .send({ locality: 'Koramangala', name, phone, otpRequestId: otpRequest.requestId, contactPersonName: 'Contact', contactPersonRole: 'owner', heardFrom: 'field_visit' });
       if (response.body.id) businessIds.push(response.body.id as string);
       return response;
     };
