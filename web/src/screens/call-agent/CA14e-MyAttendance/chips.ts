@@ -65,7 +65,14 @@ export function requestTitle(t: Translate, r: MyRequest): string {
   return t(r.leaveKind === 'emergency' ? 'att.req.emergency' : 'att.req.casual', { dates });
 }
 
-/** Days the person was expected to work so far: worked, half, absent or today (not leave or days off). */
+/**
+ * Days the person was expected to work so far: worked, half, absent or today
+ * (not leave or days off). A day with a half day of leave is half a day
+ * (owner decision 12 Nov), also when it was not logged in.
+ */
 export function expectedDays(days: AttendanceDayRow[]): number {
-  return days.filter((d) => d.dayType === 'full' || d.dayType === 'half' || d.dayType === 'absent' || d.dayType === 'open').length;
+  return days.reduce((sum, d) => {
+    if (d.leaveHalf && d.leaveKind) return sum + 0.5;
+    return sum + (d.dayType === 'full' || d.dayType === 'half' || d.dayType === 'absent' || d.dayType === 'open' ? 1 : 0);
+  }, 0);
 }

@@ -10,7 +10,6 @@ import { AuditService } from '../../common/audit/audit.service';
 import { AttendanceService } from './attendance.service';
 import { AttendanceDaysService } from './attendance-days.service';
 import { LeaveService, NO_LEAVE } from './leave.service';
-import { isLeaveHalf, leaveHalvesOf } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
 
@@ -204,7 +203,7 @@ export class HolidayService {
       });
       const leaveRows = await this.prisma.attendanceDay.findMany({
         where: { date, dayType: 'leave', loginAt: null },
-        select: { id: true, leaveRequestId: true },
+        select: { id: true, leaveRequestId: true, otherLeaveRequestId: true },
       });
       await this.prisma.attendanceDay.deleteMany({
         where: { id: { in: leaveRows.map((row) => row.id) } },
@@ -212,12 +211,12 @@ export class HolidayService {
       // A half day of leave on a day worked: the day stays (all make-up now), the leave goes.
       const workedHalves = await this.prisma.attendanceDay.findMany({
         where: { date, loginAt: { not: null }, leaveHalf: { not: null } },
-        select: { id: true, leaveRequestId: true },
+        select: { id: true, leaveRequestId: true, otherLeaveRequestId: true },
       });
       for (const row of workedHalves) {
         await this.prisma.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
       }
-      for (const requestId of new Set([...leaveRows, ...workedHalves].map((row) => row.leaveRequestId))) {
+      for (const requestId of new Set([...leaveRows, ...workedHalves].flatMap((row) => [row.leaveRequestId, row.otherLeaveRequestId]))) {
         if (requestId) await this.leave.reallocate(requestId);
       }
     } else {
@@ -227,26 +226,12 @@ export class HolidayService {
         where: { status: 'approved', fromDate: { lte: date }, toDate: { gte: date } },
       });
       for (const request of requests) {
-        const existing = await this.prisma.attendanceDay.findUnique({
-          where: { staffId_date: { staffId: request.staffId, date } },
-        });
-        const half = isLeaveHalf(request.half) ? request.half : null;
-        if (existing && leaveHalvesOf(existing).total > 0) continue;
-        // A full leave day never covers a day worked; a half day of leave does (its other half is worked).
-        if (existing?.loginAt && !half) continue;
-        const data = {
-          ...(existing?.loginAt ? {} : { dayType: 'leave', closedReason: null }),
-          leaveKind: request.kind,
-          leaveUnpaid: true,
-          leavePartUnpaid: false,
-          leaveHalf: half,
-          leaveRequestId: request.id,
-        };
-        if (existing) {
-          await this.prisma.attendanceDay.update({ where: { id: existing.id }, data });
-        } else {
-          await this.prisma.attendanceDay.create({ data: { staffId: request.staffId, date, ...data } });
-        }
+        // A part approval covers only its approved dates.
+        if (request.approvedFromDate && date.getTime() < request.approvedFromDate.getTime()) continue;
+        if (request.approvedToDate && date.getTime() > request.approvedToDate.getTime()) continue;
+        // Marked unpaid, then the request's split is worked out again. A half day joins the other
+        // half's leave into a full leave day, and also covers a day worked (its other half is worked).
+        await this.leave.markHolidayRemoved(request, date);
         await this.leave.reallocate(request.id);
       }
       if (date.getTime() < today.getTime()) {

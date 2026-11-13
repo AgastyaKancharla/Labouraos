@@ -67,6 +67,8 @@ export const attendanceEn = {
   'fa04f.sentHalfTitle': 'Leave request sent · {date} · half day ({half})',
   'fa04f.half.first': 'first half',
   'fa04f.half.second': 'second half',
+  'fa04f.overlap': 'You already have leave asked for or approved on {date}. Pick other dates.',
+  'fa04f.otherKind': 'The other half of {date} is a different kind of leave. Ask for the same kind, or a full day.',
   'fa04f.reason': 'Reason *',
   'fa04f.plannedTaken':
     'Planned leave this month: {taken} days taken. Your Team Lead approves up to {limit} planned days in a month; a request that goes past that goes to your Manager. Emergency leave is not counted.',

@@ -154,8 +154,10 @@ export class ManagerPlanService {
     for (const id of ids) {
       const rows = await this.days.rowsBetween(id, dbDate(from), end);
       for (const d of rows) {
-        if (!['holiday', 'weekly_off', 'leave'].includes(d.dayType)) totals.expectedDays += 1;
-        if (d.loginAt) totals.workedDays += 1;
+        // A day with a half day of leave is half an expected day (owner decision 12 Nov).
+        const share = d.leaveHalf && d.leaveKind ? 0.5 : 1;
+        if (share === 0.5 || !['holiday', 'weekly_off', 'leave'].includes(d.dayType)) totals.expectedDays += share;
+        if (d.loginAt) totals.workedDays += share;
         if (d.lateMinutes > 0) {
           totals.lateLogins += 1;
           totals.lateMinutes += d.lateMinutes;

@@ -47,6 +47,17 @@ export interface AttendanceToday {
   meetingSeconds: number;
   segments: TodaySegment[];
   policy: TodayPolicy;
+  /** "first" / "second" on a day with a half day of leave: half the production is needed. */
+  leaveHalf?: string | null;
+}
+
+/**
+ * The production seconds today needs: the full-day hours from Settings, half
+ * of them on a day with a half day of leave (owner decision 12 Nov).
+ */
+export function productionTarget(today: Pick<AttendanceToday, 'policy' | 'leaveHalf'> | null | undefined): number {
+  const full = (today?.policy.productionHoursFullDay ?? 8) * 3600;
+  return today?.leaveHalf ? Math.round(full / 2) : full;
 }
 
 /** Where the day stands, for which screen to show. */
@@ -75,6 +86,8 @@ export interface AttendanceDayRow {
   closedReason: string | null;
   leaveKind: string | null;
   leaveUnpaid: boolean;
+  /** "first" / "second" on a day with a half day of leave (owner decision 12 Nov). */
+  leaveHalf?: string | null;
   change: { byStaffId: string | null; at: string; reason: string | null } | null;
 }
 

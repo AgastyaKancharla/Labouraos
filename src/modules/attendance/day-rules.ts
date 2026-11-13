@@ -1,4 +1,5 @@
 import { PricingPolicy } from '@prisma/client';
+import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 
 export type DayRulePolicy = Pick<
   PricingPolicy,
@@ -79,4 +80,33 @@ export function monthRange(month: string): { from: Date; to: Date } | null {
   const from = new Date(Date.UTC(year, monthIndex, 1));
   const to = new Date(Date.UTC(year, monthIndex + 1, 0));
   return { from, to };
+}
+
+/**
+ * Minutes late past the grace, for a login at `loginAt` (IST). On a day with
+ * the first half on leave the working half starts half way through the shift,
+ * so lateness counts from there (owner decision 12 Nov: the other half is a
+ * normal working half day).
+ */
+export function lateMinutesFor(
+  loginAt: Date,
+  policy: Pick<PricingPolicy, 'shiftStart' | 'shiftEnd' | 'lateGraceMinutes'>,
+  leaveHalf: string | null = null,
+): number {
+  const parts = getCalendarPartsInTimezone(loginAt);
+  const toMinutes = (hhmm: string) => {
+    const [hour, minute] = hhmm.split(':').map((part) => Number(part));
+    return hour * 60 + minute;
+  };
+  const loginMinutes = parts.hour * 60 + parts.minute;
+  const shiftStart = toMinutes(policy.shiftStart);
+  const startMinutes =
+    leaveHalf === 'first' ? shiftStart + Math.floor((toMinutes(policy.shiftEnd) - shiftStart) / 2) : shiftStart;
+  const lateBy = loginMinutes - startMinutes;
+  return lateBy <= policy.lateGraceMinutes ? 0 : lateBy;
+}
+
+/** The production seconds a full day needs: half of it on a day with a half day of leave. */
+export function productionTargetSeconds(policy: Pick<PricingPolicy, 'productionHoursFullDay'>, halfDayLeave = false): number {
+  return Math.round((policy.productionHoursFullDay * 3600) / (halfDayLeave ? 2 : 1));
 }

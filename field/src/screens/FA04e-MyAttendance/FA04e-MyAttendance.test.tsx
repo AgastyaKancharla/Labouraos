@@ -126,6 +126,26 @@ describe('FA04f Request leave', () => {
     expect(screen.getByTestId('fa04f-sent')).toHaveTextContent(/half day \(first half\)/);
   });
 
+  it('counts older leave rows with no kind as planned, and says so when the date already has leave', async () => {
+    const today = todayKeyIst();
+    const oldRows = { ...month, days: [day('2026-11-02', { dayType: 'leave', leaveKind: null }), day('2026-11-05', { dayType: 'leave', leaveKind: 'casual' })] };
+    const { route } = routeTable({
+      '/attendance/leave/balance': balance,
+      '/attendance/month': oldRows,
+      'POST /attendance/leave': () => ({ status: 400, body: { statusCode: 400, message: 'You already have leave asked for or approved on 2026-11-13.', details: { code: 'leave_overlap', date: '2026-11-13' } } }),
+    });
+    await renderWithApp(<RequestLeaveScreen />, { signedInAs: kiran, route });
+    await fireEvent.press(screen.getByTestId('fa04f-kind'));
+    await waitFor(() => screen.getByText('Planned (casual) leave · 2 left'));
+    await fireEvent.press(screen.getByTestId('fa04f-kind-option-casual'));
+    await fireEvent.press(screen.getByTestId('fa04f-from'));
+    await fireEvent.press(screen.getByTestId(`fa04f-from-day-${today}`));
+    await waitFor(() => expect(screen.getByTestId('fa04f-planned')).toHaveTextContent(/2 days taken/));
+    await fireEvent.changeText(screen.getByTestId('fa04f-reason'), 'Wedding');
+    await fireEvent.press(screen.getByTestId('fa04f-send'));
+    await waitFor(() => expect(screen.getByTestId('fa04f-overlap')).toHaveTextContent(/You already have leave asked for or approved on/));
+  });
+
   it('needs signal: without it nothing is sent or saved on the phone', async () => {
     const today = todayKeyIst();
     const { queue, ...rest } = await renderWithApp(<RequestLeaveScreen />, {

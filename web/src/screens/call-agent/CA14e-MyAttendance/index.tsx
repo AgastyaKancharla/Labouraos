@@ -37,6 +37,7 @@ export default function MyAttendance() {
   const oldest = shiftMonth(current, -MONTHS_BACK);
 
   const data = summary.data;
+  // A full day's hours; expectedDays counts a day with a half day of leave as half a day.
   const fullDay = (attendance?.today?.policy.productionHoursFullDay ?? 8) * 3600;
   const needed = data ? expectedDays(data.days) * fullDay : 0;
   const days = data ? [...data.days].sort((a, b) => b.date.localeCompare(a.date)) : [];

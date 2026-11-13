@@ -114,6 +114,21 @@ export class AttendanceRequestsService {
     if (dates.length === 0) {
       throw new BadRequestException(half ? 'This date is a weekly day off or a holiday' : 'These dates are all weekly days off');
     }
+    // One leave per date (or per half of a date): a date already covered by a pending or approved
+    // request is refused here, so an approval never has nothing to write.
+    const overlap = await this.leave.findOverlap(staff.id, dates, half, kind);
+    if (overlap) {
+      throw new BadRequestException({
+        statusCode: 400,
+        error: 'Bad Request',
+        code: overlap.reason === 'covered' ? 'leave_overlap' : 'leave_other_kind',
+        date: overlap.date,
+        message:
+          overlap.reason === 'covered'
+            ? `You already have leave asked for or approved on ${overlap.date}. Pick other dates, or cancel that request first.`
+            : `The other half of ${overlap.date} is a different kind of leave. Ask for the same kind, or a full day.`,
+      });
+    }
 
     let overLimit = false;
     if (kind === 'casual') {

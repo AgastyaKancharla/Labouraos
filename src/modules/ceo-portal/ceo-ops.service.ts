@@ -123,7 +123,8 @@ export class CeoOpsService {
       for (const d of month) makeUpOwedSeconds += Math.max(0, d.shortfallSeconds - d.makeUpSeconds);
       if (month.some((d) => d.date === istDayKey(now) && d.loginAt)) loggedInToday += 1;
       const worked = days.filter((d) => d.loginAt);
-      workedDays += worked.length;
+      // A day with a half day of leave is half an expected day (owner decision 12 Nov).
+      workedDays += worked.reduce((sum, d) => sum + (d.leaveHalf && d.leaveKind ? 0.5 : 1), 0);
       const totals = {
         productionSeconds: days.reduce((s, d) => s + d.productionSeconds, 0),
         breakSeconds: days.reduce((s, d) => s + d.breakSeconds, 0),
@@ -132,7 +133,7 @@ export class CeoOpsService {
         // Whole and half days (a half day of leave is half leave, half a working day).
         fullDays: days.reduce((s, d) => s + dayTally(d).fullHalves / 2, 0),
         halfDays: days.reduce((s, d) => s + dayTally(d).halfDays, 0),
-        absentDays: days.reduce((s, d) => s + dayTally(d).absentHalves / 2, 0),
+        absentDays: days.reduce((s, d) => s + dayTally(d, d.date < istDayKey(now)).absentHalves / 2, 0),
         leaveDays: days.reduce((s, d) => s + leaveHalvesOf(d).total / 2, 0),
         shortfallSeconds: days.reduce((s, d) => s + Math.max(0, d.shortfallSeconds - d.makeUpSeconds), 0),
       };

@@ -95,7 +95,8 @@ export default function CheckedInScreen() {
                   </Text>
                 }
               />
-              <ProgressBar value={today.data.productionSeconds / FULL_DAY_SECONDS} />
+              {/* Half the production on a day with a half day of leave (owner decision 12 Nov). */}
+              <ProgressBar value={today.data.productionSeconds / (today.data.leaveHalf ? FULL_DAY_SECONDS / 2 : FULL_DAY_SECONDS)} />
               <View style={styles.gap} />
               <ListRow title={t('fa04.breaks')} trailing={<Text variant="bodyStrong">{hm(today.data.breakSeconds)}</Text>} />
               <ListRow title={t('fa04.myAttendance')} onPress={() => router.push(routes.myAttendance)} last />

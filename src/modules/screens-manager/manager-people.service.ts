@@ -398,7 +398,7 @@ export class ManagerPeopleService {
         // Whole and half days (a half day of leave is half leave, half a working day).
         fullDays: d.reduce((s, x) => s + dayTally(x).fullHalves / 2, 0),
         halfDays: d.reduce((s, x) => s + dayTally(x).halfDays, 0),
-        absentDays: d.reduce((s, x) => s + dayTally(x).absentHalves / 2, 0),
+        absentDays: d.reduce((s, x) => s + dayTally(x, x.date < istDayKey(now)).absentHalves / 2, 0),
         leaveDays: d.reduce((s, x) => s + leaveHalvesOf(x).total / 2, 0),
         lostSeconds: d.reduce((s, x) => s + lostSeconds(x), 0),
       });

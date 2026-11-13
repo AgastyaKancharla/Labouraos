@@ -8,6 +8,7 @@ import { refundGuaranteeDeadline } from '../../common/money/money';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PricingService } from '../pricing/pricing.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { productionTargetSeconds } from '../attendance/day-rules';
 import { CallService } from '../call/call.service';
 import { parseClock } from '../call/call-window';
 import { FINAL_CALL_STATUSES } from '../call/call-status';
@@ -600,7 +601,8 @@ export class CallWorkService {
         callsAnswered: mine.callsAnswered,
         talkSeconds: mine.talkSeconds,
         productionSeconds: today.productionSeconds,
-        productionTargetSeconds: Math.round(policy.productionHoursFullDay * 3600),
+        // Half the production on a day with a half day of leave (owner decision 12 Nov).
+        productionTargetSeconds: productionTargetSeconds(policy, Boolean(today.leaveHalf)),
         registrations: mine.registrations,
         interviewsBooked: mine.interviewsBooked,
         teamAverage: team,

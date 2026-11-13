@@ -34,7 +34,7 @@ interface BalanceRow {
 }
 interface LeaveBoard {
   manager: Brief | null;
-  summary: { offToday: number; offNext7Days: number; waitingForYou: number; pastThreePlanned: number };
+  summary: { offToday: number; halfDayToday?: number; offNext7Days: number; waitingForYou: number; pastThreePlanned: number };
   schedule: ScheduleRow[];
   balances: BalanceRow[];
 }
@@ -63,7 +63,7 @@ export default function TeamLeadLeave() {
     <div className="lb-page">
       <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Leave" subtitle="Who in your team is off, where each request is, and how much leave everyone has left." />
       <StatGrid>
-        <StatTile label="Off today" value={b?.summary.offToday ?? '—'} tone="royal" loading={board.isPending} />
+        <StatTile label="Off today" value={b?.summary.offToday ?? '—'} detail={b?.summary.halfDayToday ? `+ ${b.summary.halfDayToday} on a half day` : undefined} tone="royal" loading={board.isPending} />
         <StatTile label="Off in the next 7 days" value={b?.summary.offNext7Days ?? '—'} tone="cyan" loading={board.isPending} />
         <StatTile label="Waiting for you" value={b?.summary.waitingForYou ?? '—'} tone="orange" loading={board.isPending} to={to('T-Requests')} />
         <StatTile label="Past 3 planned days" value={b?.summary.pastThreePlanned ?? '—'} tone="red" loading={board.isPending} />

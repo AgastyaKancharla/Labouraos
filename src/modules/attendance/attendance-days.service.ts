@@ -256,11 +256,13 @@ export class AttendanceDaysService {
       holidays: [],
       days: rows,
     };
+    const todayKey = this.label(this.attendance.istDate(this.clock.now()));
     for (const row of rows) {
       if (row.dayType === 'off') summary.offDaysWorked += 1;
       if (row.dayType !== 'open') {
-        // Whole and half days: a half day of leave is half leave and a working half.
-        const tally = dayTally(row);
+        // Whole and half days: a half day of leave is half leave and a working half
+        // (absent only once the day has passed).
+        const tally = dayTally(row, row.date < todayKey);
         summary.fullDays += tally.fullHalves / 2;
         summary.halfDays += tally.halfDays;
         summary.absentDays += tally.absentHalves / 2;

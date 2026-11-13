@@ -217,6 +217,8 @@ export const attendanceEn = {
   'att.leave.secondHalf': 'Second half',
   'att.leave.halfHint': 'A half day is for one date and uses half a day of your leave. You work the other half: half the production hours make it a full day.',
   'att.leave.sentHalf': 'Leave request sent · {date} · half day ({half})',
+  'att.leave.overlap': 'You already have leave asked for or approved on {date}. Pick other dates.',
+  'att.leave.otherKind': 'The other half of {date} is a different kind of leave. Ask for the same kind, or a full day.',
   'att.back': 'Back to my attendance',
 
   // CA14h — request a correction
@@ -434,6 +436,8 @@ export const attendanceKn: Record<AttendanceKey, string> = {
   'att.leave.secondHalf': 'ಎರಡನೇ ಅರ್ಧ',
   'att.leave.halfHint': 'ಅರ್ಧ ದಿನದ ರಜೆ ಒಂದೇ ದಿನಾಂಕಕ್ಕೆ ಮಾತ್ರ, ಮತ್ತು ನಿಮ್ಮ ರಜೆ ಬಾಕಿಯಿಂದ ಅರ್ಧ ದಿನ ಕಳೆಯುತ್ತದೆ. ಉಳಿದ ಅರ್ಧದಲ್ಲಿ ನೀವು ಕೆಲಸ ಮಾಡುತ್ತೀರಿ: ಆ ದಿನ ಅರ್ಧದಷ್ಟು ಉತ್ಪಾದನಾ ಗಂಟೆಗಳು ಪೂರ್ಣ ದಿನವಾಗುತ್ತವೆ.',
   'att.leave.sentHalf': 'ರಜೆ ಮನವಿ ಕಳುಹಿಸಲಾಗಿದೆ · {date} · ಅರ್ಧ ದಿನ ({half})',
+  'att.leave.overlap': '{date} ರಂದು ನೀವು ಈಗಾಗಲೇ ರಜೆ ಕೇಳಿದ್ದೀರಿ ಅಥವಾ ಅದು ಅನುಮೋದನೆಯಾಗಿದೆ. ಬೇರೆ ದಿನಾಂಕಗಳನ್ನು ಆರಿಸಿ.',
+  'att.leave.otherKind': '{date} ರ ಇನ್ನೊಂದು ಅರ್ಧ ಬೇರೆ ವಿಧದ ರಜೆ. ಅದೇ ವಿಧದ ರಜೆ ಅಥವಾ ಪೂರ್ಣ ದಿನ ಕೇಳಿ.',
   'att.back': 'ನನ್ನ ಹಾಜರಾತಿಗೆ ಹಿಂತಿರುಗಿ',
 
   'att.corr.title': 'ತಿದ್ದುಪಡಿ ಕೇಳಿ',
@@ -648,6 +652,8 @@ export const attendanceHi: Record<AttendanceKey, string> = {
   'att.leave.secondHalf': 'दूसरा आधा दिन',
   'att.leave.halfHint': 'आधे दिन की छुट्टी सिर्फ़ एक तारीख के लिए होती है और आपकी बची छुट्टी में से आधा दिन घटता है। बाकी आधे दिन आप काम करते हैं: उस दिन आधे प्रोडक्शन घंटे पूरा दिन गिने जाते हैं।',
   'att.leave.sentHalf': 'छुट्टी का अनुरोध भेजा गया · {date} · आधा दिन ({half})',
+  'att.leave.overlap': '{date} के लिए आप पहले ही छुट्टी माँग चुके हैं या वह स्वीकार हो चुकी है। दूसरी तारीखें चुनें।',
+  'att.leave.otherKind': '{date} का दूसरा आधा दिन अलग तरह की छुट्टी है। उसी तरह की छुट्टी या पूरा दिन माँगें।',
   'att.back': 'मेरी हाज़िरी पर वापस जाएँ',
 
   'att.corr.title': 'सुधार माँगें',

@@ -71,6 +71,12 @@ describe('close-to-refund bells for the CEO', () => {
     expect(new Set(keys).size).toBe(keys.length);
   });
 
+  it('rings the CEO for an item nobody works on (no registering agent, no account agent)', async () => {
+    const { drafts } = await sync([{ ...seeker, id: 'js-9', agent: null }, { ...business, id: 'pl-9', agent: null }]);
+    expect(drafts.map((d) => `${d.recipientStaffId}:${d.subjectId}`).sort()).toEqual(['ceo-1:js-9', 'ceo-1:pl-9', 'ceo-2:js-9', 'ceo-2:pl-9']);
+    expect(drafts.every((d) => (d.body ?? '').includes('at stake'))).toBe(true);
+  });
+
   it('reaches every active CEO when the agent has no reporting line', async () => {
     const { drafts } = await sync([orphan]);
     expect(drafts.map((d) => d.recipientStaffId).sort()).toEqual(['ceo-1', 'ceo-2', 'fa-2']);

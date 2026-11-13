@@ -22,7 +22,7 @@ import {
   PRODUCTION_STATUSES,
   isStaffPickedStatus,
 } from './attendance.constants';
-import { classifyDay } from './day-rules';
+import { classifyDay, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { WorkingDaysService } from './working-days.service';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
@@ -252,7 +252,8 @@ export class AttendanceService {
       include: { segments: { orderBy: { startedAt: 'asc' } } },
     });
     if (!day || !day.loginAt) {
-      return { ...this.emptyToday(now, policy), dayType: day?.dayType ?? 'open', leaveHalf: day?.leaveKind ? (day.leaveHalf ?? null) : null };
+      const leaveHalf = day?.leaveKind ? (day.leaveHalf ?? null) : null;
+      return { ...this.emptyToday(now, policy, Boolean(leaveHalf)), dayType: day?.dayType ?? 'open', leaveHalf };
     }
     const end = day.logoutAt ?? now;
     const totals = this.totals(day.segments, now);
@@ -264,7 +265,7 @@ export class AttendanceService {
     }
     // A half day of leave needs half the production (owner decision 12 Nov).
     const halfLeave = Boolean(day.leaveHalf && day.leaveKind);
-    const fullSeconds = Math.round((policy.productionHoursFullDay * 3600) / (halfLeave ? 2 : 1));
+    const fullSeconds = productionTargetSeconds(policy, halfLeave);
     const current = [...day.segments].reverse().find((segment) => !segment.endedAt);
     return {
       date: this.dateLabel(day.date),
@@ -469,6 +470,8 @@ export class AttendanceService {
       data: {
         ...totals,
         ...result,
+        // Two half days of leave on the date (owner decision 12 Nov): a full leave day, whatever was worked.
+        ...(day.otherLeaveRequestId && day.leaveKind ? { dayType: 'leave' } : {}),
         logoutAt: at,
         closedReason,
         flagged,
@@ -505,7 +508,7 @@ export class AttendanceService {
       where: { id: dayId },
       data: {
         ...totals,
-        dayType: changed ? day.dayType : result.dayType,
+        dayType: day.otherLeaveRequestId && day.leaveKind ? 'leave' : changed ? day.dayType : result.dayType,
         shortfallSeconds: changed ? 0 : result.shortfallSeconds,
         makeUpSeconds: changed && day.dayType === 'half' ? 0 : result.makeUpSeconds,
       },
@@ -633,24 +636,9 @@ export class AttendanceService {
     return new Date(latest);
   }
 
-  /**
-   * Minutes late past the grace. On a day with the first half on leave the
-   * working half starts half way through the shift, so lateness counts from
-   * there (owner decision 12 Nov: the other half is a normal working half day).
-   */
+  /** Minutes late past the grace (see lateMinutesFor: counted from mid-shift when the first half is on leave). */
   lateMinutes(loginAt: Date, policy: PricingPolicy, leaveHalf: string | null = null): number {
-    const parts = getCalendarPartsInTimezone(loginAt);
-    const toMinutes = (hhmm: string) => {
-      const [hour, minute] = hhmm.split(':').map((part) => Number(part));
-      return hour * 60 + minute;
-    };
-    const loginMinutes = parts.hour * 60 + parts.minute;
-    const shiftStart = toMinutes(policy.shiftStart);
-    const startMinutes =
-      leaveHalf === 'first' ? shiftStart + Math.floor((toMinutes(policy.shiftEnd) - shiftStart) / 2) : shiftStart;
-    const lateBy = loginMinutes - startMinutes;
-    if (lateBy <= policy.lateGraceMinutes) return 0;
-    return lateBy;
+    return lateMinutesFor(loginAt, policy, leaveHalf);
   }
 
   istDate(now: Date): Date {
@@ -662,8 +650,9 @@ export class AttendanceService {
     return date.toISOString().slice(0, 10);
   }
 
-  private emptyToday(now: Date, policy: PricingPolicy): TodayView {
-    const fullSeconds = Math.round(policy.productionHoursFullDay * 3600);
+  /** Before login. On a day with a half day of leave half the production is needed (owner decision 12 Nov). */
+  private emptyToday(now: Date, policy: PricingPolicy, halfDayLeave = false): TodayView {
+    const fullSeconds = productionTargetSeconds(policy, halfDayLeave);
     return {
       date: this.dateLabel(this.istDate(now)),
       status: null,

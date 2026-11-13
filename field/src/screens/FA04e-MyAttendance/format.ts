@@ -33,7 +33,11 @@ export function lastDayOf(month: string): string {
 
 /** Days the person was expected to work so far: worked, half, absent or today (not leave or days off). */
 export function expectedDays(days: AttendanceDayRow[]): number {
-  return days.filter((d) => d.dayType === 'full' || d.dayType === 'half' || d.dayType === 'absent' || d.dayType === 'open').length;
+  // A day with a half day of leave is half a day (owner decision 12 Nov).
+  return days.reduce((sum, d) => {
+    if (d.leaveHalf && d.leaveKind) return sum + 0.5;
+    return sum + (d.dayType === 'full' || d.dayType === 'half' || d.dayType === 'absent' || d.dayType === 'open' ? 1 : 0);
+  }, 0);
 }
 
 export interface Chip {

@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useAttendance } from '../../../attendance/AttendanceProvider';
 import { attendanceKeys, useLeaveBalance, type LeaveBody, type LeaveHalf, type MyRequest } from '../../../attendance/api';
-import { dateRange } from '../../../attendance/format';
+import { dateRange, dayLabel } from '../../../attendance/format';
 import { DateField, FieldShell, SelectField } from '../../../components/fields';
 import { TopBar } from '../../../components/TopBar';
 import { useToast } from '../../../components/Toast';
@@ -60,7 +60,15 @@ export default function RequestLeave() {
       void qc.invalidateQueries({ queryKey: attendanceKeys.balance });
       void qc.invalidateQueries({ queryKey: ['attendance', 'month'] });
     },
-    onError: (e) => toast.error(isApiError(e) ? e.message : e.message),
+    onError: (e) => {
+      // Leave already on those dates: said in the person's language.
+      const details = isApiError(e) ? (e.details as { code?: string; date?: string } | undefined) : undefined;
+      if (details?.code === 'leave_overlap' || details?.code === 'leave_other_kind') {
+        toast.error(t(details.code === 'leave_overlap' ? 'att.leave.overlap' : 'att.leave.otherKind', { date: dayLabel(details.date ?? fromDate) }));
+        return;
+      }
+      toast.error(e.message);
+    },
   });
 
   const left = (k: 'casual' | 'emergency') => (balance.data ? String(balance.data[k].left) : '—');

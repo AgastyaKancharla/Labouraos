@@ -6,7 +6,7 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { LeaveBody, LeaveHalf, MyRequest } from '@/api/endpoints';
 import { Banner, Button, Card, Screen, Text, TextField } from '@/components';
-import { DateField, RadioGroup, SelectField, todayKeyIst } from '@/components/form';
+import { DateField, RadioGroup, SelectField, formatDateKey, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
 import { routes } from '@/navigation/routes';
@@ -52,8 +52,9 @@ export default function RequestLeaveScreen() {
   // Planned days already taken this month, half days counting ½.
   const plannedTaken = month.data
     ? month.data.days
-        .filter((d) => d.leaveKind && d.leaveKind !== 'emergency' && (d.leaveHalf ? true : d.dayType === 'leave'))
-        .reduce((sum, d) => sum + (d.leaveHalf ? 0.5 : 1), 0)
+        // Older leave rows have no kind: they count as planned, as before.
+        .filter((d) => d.leaveKind !== 'emergency' && (d.leaveHalf && d.leaveKind ? true : d.dayType === 'leave'))
+        .reduce((sum, d) => sum + (d.leaveHalf && d.leaveKind ? 0.5 : 1), 0)
     : null;
 
   const send = useMutation<MyRequest, Error>({
@@ -74,6 +75,9 @@ export default function RequestLeaveScreen() {
       void client.invalidateQueries({ queryKey: ['attendance', 'month'] });
     },
   });
+  // Leave already on those dates: said in his language (the server sends a code with the date).
+  const errorBody = (send.error as { body?: { details?: { code?: string; date?: string } } } | null)?.body;
+  const overlap = errorBody?.details?.code === 'leave_overlap' || errorBody?.details?.code === 'leave_other_kind' ? errorBody.details : null;
   const ready = !!kind && !!fromDate && (!!halfDay || !toDate || toDate >= fromDate) && reason.trim().length > 0;
   const left = (k: 'casual' | 'emergency') => (balance.data ? String(balance.data[k].left) : t('common.placeholderValue'));
 
@@ -165,7 +169,11 @@ export default function RequestLeaveScreen() {
           />
         ) : null}
         <Banner tone="warn" message={t('fa04f.goesTo')} testID="fa04f-goes-to" />
-        <ErrorBanner error={send.error} />
+        {overlap ? (
+          <Banner tone="warn" message={t(overlap.code === 'leave_overlap' ? 'fa04f.overlap' : 'fa04f.otherKind', { date: formatDateKey(overlap.date ?? fromDate) })} testID="fa04f-overlap" />
+        ) : (
+          <ErrorBanner error={send.error} />
+        )}
         <View style={styles.buttons}>
           <Button label={t('fa04f.send')} disabled={!ready} loading={send.isPending} onPress={() => send.mutate()} style={styles.half} testID="fa04f-send" />
           <Button label={t('common.cancel')} variant="secondary" onPress={() => router.back()} style={styles.half} testID="fa04f-cancel" />

@@ -789,7 +789,7 @@ export class RequestsService {
       // Back to how the day counted before the change, with its shortfall and make-up worked out again.
       const from = String(details.fromDayType);
       const policy = await this.pricing.current();
-      const rules = classifyDay(day.productionSeconds, policy, false);
+      const rules = classifyDay(day.productionSeconds, policy, false, Boolean(day.leaveHalf && day.leaveKind));
       await this.prisma.attendanceDay.update({
         where: { id: day.id },
         data: {

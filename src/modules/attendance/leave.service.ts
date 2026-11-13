@@ -5,11 +5,11 @@ import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { PricingService, goLiveDayOf } from '../pricing/pricing.service';
 import { AttendanceClock } from './attendance-clock';
 import { ATTENDANCE_ROLES } from './attendance-days.service';
-import { classifyDay, monthRange } from './day-rules';
+import { classifyDay, lateMinutesFor, monthRange } from './day-rules';
 import {
-  daysToHalves,
   halvesToDays,
   isLeaveHalf,
+  LeaveHalf,
   leaveFieldsFor,
   leaveHalvesOf,
   splitPaid,
@@ -26,6 +26,7 @@ export const NO_LEAVE = {
   leaveHalf: null,
   leavePartUnpaid: false,
   leaveRequestId: null,
+  otherLeaveRequestId: null,
 } as const;
 
 /** Days, whole or half (1.5): a half day of leave uses half a day of the balance. */
@@ -287,6 +288,135 @@ export class LeaveService {
   }
 
   /**
+   * The date of a pending or approved leave request of the person that a new
+   * request would cover again, or null. A full day clashes with any leave on
+   * the date; a half day with a full day or the same half. The other half of a
+   * date is free, as long as it is the same kind of leave (one date carries one
+   * kind): the two halves then make a full leave day.
+   */
+  async findOverlap(
+    staffId: string,
+    dates: Date[],
+    half: LeaveHalf | null,
+    kind: string,
+    excludeRequestId?: string,
+  ): Promise<{ date: string; reason: 'covered' | 'other_kind' } | null> {
+    if (!dates.length) return null;
+    const first = dates[0];
+    const last = dates[dates.length - 1];
+    const others = await this.prisma.leaveRequest.findMany({
+      where: {
+        staffId,
+        status: { in: ['pending', 'approved'] },
+        fromDate: { lte: last },
+        toDate: { gte: first },
+        ...(excludeRequestId ? { id: { not: excludeRequestId } } : {}),
+      },
+    });
+    for (const date of dates) {
+      for (const other of others) {
+        // An approval of part of the dates covers only those dates.
+        const from = other.status === 'approved' && other.approvedFromDate ? other.approvedFromDate : other.fromDate;
+        const to = other.status === 'approved' && other.approvedToDate ? other.approvedToDate : other.toDate;
+        if (date.getTime() < from.getTime() || date.getTime() > to.getTime()) continue;
+        const otherHalf = isLeaveHalf(other.half) ? other.half : null;
+        const label = date.toISOString().slice(0, 10);
+        if (!half || !otherHalf || otherHalf === half) return { date: label, reason: 'covered' };
+        if (other.kind !== kind) return { date: label, reason: 'other_kind' };
+      }
+    }
+    return null;
+  }
+
+  /**
+   * Runs `work` in a transaction under the person's leave lock (a Postgres
+   * advisory transaction lock, as payroll and payments use): two approvals for
+   * the same person never read the same balance or write the same day at once.
+   */
+  private async underLeaveLock<T>(staffId: string, work: (tx: Prisma.TransactionClient) => Promise<T>): Promise<T> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`leave:${staffId}`}))`);
+        return work(tx);
+      },
+      { timeout: 30_000, maxWait: 30_000 },
+    );
+  }
+
+  /** Earned paid leave in halves, and paid halves already used, read inside the lock. */
+  private async paidLeftHalves(tx: Prisma.TransactionClient, staffId: string, kind: LeaveKind): Promise<number> {
+    const earned = await this.earnedHalves(staffId, kind);
+    const rows = await tx.attendanceDay.findMany({
+      where: { ...this.leaveRowsWhere(staffId), leaveKind: kind },
+      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
+    });
+    return Math.max(0, earned - rows.reduce((sum, row) => sum + leaveHalvesOf(row).paid, 0));
+  }
+
+  /**
+   * Marks one date of an approved request as leave, inside the lock.
+   * - a full day: not on a day worked, nor on a day already carrying leave;
+   * - a half day: also on a day worked (the other half is a working half day);
+   *   on a day whose other half is already a half day of leave of the same
+   *   kind, the two make one full leave day (`otherLeaveRequestId`).
+   * Returns the half days it wrote (0 when nothing was written).
+   */
+  private async markDay(
+    tx: Prisma.TransactionClient,
+    request: LeaveRequest,
+    date: Date,
+    paidLeft: number,
+  ): Promise<{ written: number; paid: number; dayId: string | null }> {
+    const half = isLeaveHalf(request.half) ? request.half : null;
+    const existing = await tx.attendanceDay.findUnique({
+      where: { staffId_date: { staffId: request.staffId, date } },
+    });
+    const carried = existing ? leaveHalvesOf(existing) : { total: 0, paid: 0, unpaid: 0 };
+    if (
+      half &&
+      existing &&
+      carried.total === 1 &&
+      existing.leaveHalf &&
+      existing.leaveHalf !== half &&
+      existing.leaveKind === request.kind &&
+      existing.leaveRequestId !== request.id &&
+      !existing.otherLeaveRequestId
+    ) {
+      // The other half is already leave: one full leave day of the two requests.
+      // A day still open (logged in now) stays open; it becomes leave when it closes.
+      const paid = Math.min(1, paidLeft);
+      const open = Boolean(existing.loginAt && !existing.logoutAt);
+      await tx.attendanceDay.update({
+        where: { id: existing.id },
+        data: {
+          ...(open ? {} : { dayType: 'leave', closedReason: existing.loginAt ? existing.closedReason : null }),
+          otherLeaveRequestId: request.id,
+          ...leaveFieldsFor(2, carried.paid + paid, null),
+        },
+      });
+      return { written: 1, paid, dayId: existing.id };
+    }
+    if (carried.total > 0) return { written: 0, paid: 0, dayId: null };
+    if (!half && existing?.loginAt) return { written: 0, paid: 0, dayId: null };
+    const unit: 1 | 2 = half ? 1 : 2;
+    const paid = Math.min(unit, paidLeft);
+    const worked = Boolean(half && existing?.loginAt);
+    const data = {
+      ...(worked ? {} : { dayType: 'leave', closedReason: null }),
+      leaveKind: request.kind,
+      leaveRequestId: request.id,
+      otherLeaveRequestId: null,
+      ...leaveFieldsFor(unit, paid, half),
+    };
+    if (existing) {
+      await tx.attendanceDay.update({ where: { id: existing.id }, data });
+      return { written: unit, paid, dayId: worked ? existing.id : null };
+    }
+    await tx.attendanceDay.create({ data: { staffId: request.staffId, date, ...data } });
+    return { written: unit, paid, dayId: null };
+  }
+
+  /**
    * Writes the leave days of an approved request. Days the person worked are
    * left alone. The first days up to the paid balance are paid; the rest are
    * unpaid leave (nothing is ever blocked). Counted in half days: a full day
@@ -294,41 +424,54 @@ export class LeaveService {
    *
    * A half day of leave marks its one date even when the person has logged in
    * that day (the other half is a working half day): a closed day is worked
-   * out again with half the production needed.
+   * out again with half the production needed, and lateness counts from the
+   * middle of the shift when the first half is on leave. Runs in a transaction
+   * under the person's leave lock, so the balance read and the days written
+   * can't interleave with another approval.
    */
   async applyApproval(request: LeaveRequest): Promise<{ paidDays: number; unpaidDays: number }> {
-    const half = isLeaveHalf(request.half) ? request.half : null;
-    const unit: 1 | 2 = half ? 1 : 2;
-    const balance = await this.balance(request.staffId);
-    const leftDays = request.kind === 'emergency' ? balance.emergency.left : balance.casual.left;
-    const targets = [];
-    for (const date of await this.leaveDates(request.fromDate, request.toDate)) {
-      const existing = await this.prisma.attendanceDay.findUnique({
-        where: { staffId_date: { staffId: request.staffId, date } },
-      });
-      if (existing && leaveHalvesOf(existing).total > 0) continue;
-      if (!half && existing?.loginAt) continue;
-      targets.push({ date, existing });
-    }
-    const split = splitPaid(daysToHalves(leftDays), targets.map(() => unit));
-    for (const [index, { date, existing }] of targets.entries()) {
-      const worked = Boolean(half && existing?.loginAt);
-      const data = {
-        ...(worked ? {} : { dayType: 'leave', closedReason: null }),
-        leaveKind: request.kind,
-        leaveRequestId: request.id,
-        ...leaveFieldsFor(unit, split.perDay[index].paid, half),
-      };
-      if (existing) {
-        await this.prisma.attendanceDay.update({ where: { id: existing.id }, data });
-        if (worked) await this.reclassifyWorkedDay(existing.id);
-      } else {
-        await this.prisma.attendanceDay.create({
-          data: { staffId: request.staffId, date, ...data },
-        });
+    const kind: LeaveKind = request.kind === 'emergency' ? 'emergency' : 'casual';
+    const dates = await this.leaveDates(request.fromDate, request.toDate);
+    await this.ensureAccrued(request.staffId);
+    const { paidHalves, unpaidHalves, worked } = await this.underLeaveLock(request.staffId, async (tx) => {
+      let left = await this.paidLeftHalves(tx, request.staffId, kind);
+      let paidHalves = 0;
+      let unpaidHalves = 0;
+      const worked: string[] = [];
+      for (const date of dates) {
+        const result = await this.markDay(tx, request, date, left);
+        left -= result.paid;
+        paidHalves += result.paid;
+        unpaidHalves += result.written - result.paid;
+        if (result.dayId) worked.push(result.dayId);
       }
-    }
-    return { paidDays: halvesToDays(split.paidHalves), unpaidDays: halvesToDays(split.unpaidHalves) };
+      return { paidHalves, unpaidHalves, worked };
+    });
+    for (const dayId of worked) await this.reclassifyWorkedDay(dayId);
+    return { paidDays: halvesToDays(paidHalves), unpaidDays: halvesToDays(unpaidHalves) };
+  }
+
+  /**
+   * Marks one date of an approved request as (unpaid) leave again after a
+   * holiday on it was removed; the caller works the request's split out again
+   * with `reallocate`. Merges with the other half like an approval.
+   */
+  async markHolidayRemoved(request: LeaveRequest, date: Date): Promise<void> {
+    const result = await this.underLeaveLock(request.staffId, (tx) => this.markDay(tx, request, date, 0));
+    if (result.dayId) await this.reclassifyWorkedDay(result.dayId);
+  }
+
+  /** The half days of a leave day that belong to a request, and how many of those are paid. */
+  private shareOf(
+    row: { dayType: string; leaveKind: string | null; leaveUnpaid: boolean; leaveHalf: string | null; leavePartUnpaid: boolean; leaveRequestId: string | null; otherLeaveRequestId: string | null },
+    requestId: string,
+  ): { halves: number; paid: number } {
+    const all = leaveHalvesOf(row);
+    if (!row.otherLeaveRequestId) return row.leaveRequestId === requestId ? { halves: all.total, paid: all.paid } : { halves: 0, paid: 0 };
+    // Two half days on one date: an unpaid half is counted against the half approved second.
+    if (row.leaveRequestId === requestId) return { halves: 1, paid: row.leaveUnpaid ? 0 : 1 };
+    if (row.otherLeaveRequestId === requestId) return { halves: 1, paid: row.leaveUnpaid || row.leavePartUnpaid ? 0 : 1 };
+    return { halves: 0, paid: 0 };
   }
 
   /**
@@ -339,35 +482,41 @@ export class LeaveService {
   async reallocate(requestId: string): Promise<{ paidDays: number; unpaidDays: number }> {
     const request = await this.prisma.leaveRequest.findUniqueOrThrow({ where: { id: requestId } });
     const kind: LeaveKind = request.kind === 'emergency' ? 'emergency' : 'casual';
-    const rows = (
-      await this.prisma.attendanceDay.findMany({
-        where: { leaveRequestId: requestId, OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }] },
-        orderBy: { date: 'asc' },
-      })
-    ).filter((row) => leaveHalvesOf(row).total > 0);
     const earned = await this.earnedHalves(request.staffId, kind);
-    const elsewhere = await this.prisma.attendanceDay.findMany({
-      where: {
-        ...this.leaveRowsWhere(request.staffId),
-        leaveKind: request.kind,
-        NOT: { leaveRequestId: requestId },
-      },
-      select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true },
-    });
-    const paidElsewhere = elsewhere.reduce((sum, row) => sum + leaveHalvesOf(row).paid, 0);
-    const units = rows.map((row) => (row.leaveHalf ? 1 : 2) as 1 | 2);
-    const split = splitPaid(Math.max(0, earned - paidElsewhere), units);
-    for (const [index, row] of rows.entries()) {
-      const fields = leaveFieldsFor(units[index], split.perDay[index].paid, isLeaveHalf(row.leaveHalf) ? row.leaveHalf : null);
-      if (row.leaveUnpaid !== fields.leaveUnpaid || row.leavePartUnpaid !== fields.leavePartUnpaid) {
-        await this.prisma.attendanceDay.update({
-          where: { id: row.id },
-          data: { leaveUnpaid: fields.leaveUnpaid, leavePartUnpaid: fields.leavePartUnpaid },
-        });
+    const result = await this.underLeaveLock(request.staffId, async (tx) => {
+      const all = await tx.attendanceDay.findMany({
+        where: { ...this.leaveRowsWhere(request.staffId), leaveKind: request.kind },
+        orderBy: { date: 'asc' },
+      });
+      const mine = all.filter((row) => this.shareOf(row, requestId).halves > 0);
+      // Paid elsewhere: every other leave day, and the other request's half of a shared day.
+      let paidElsewhere = 0;
+      for (const row of all) {
+        const halves = leaveHalvesOf(row);
+        paidElsewhere += halves.paid - this.shareOf(row, requestId).paid;
       }
-    }
-    const result = { paidDays: halvesToDays(split.paidHalves), unpaidDays: halvesToDays(split.unpaidHalves) };
-    await this.prisma.leaveRequest.update({ where: { id: requestId }, data: result });
+      const units = mine.map((row) => this.shareOf(row, requestId).halves);
+      const split = splitPaid(Math.max(0, earned - paidElsewhere), units);
+      for (const [index, row] of mine.entries()) {
+        const myPaid = split.perDay[index].paid;
+        let fields;
+        if (row.otherLeaveRequestId) {
+          const theirs = this.shareOf(row, row.leaveRequestId === requestId ? row.otherLeaveRequestId : (row.leaveRequestId ?? '')).paid;
+          fields = leaveFieldsFor(2, myPaid + theirs, null);
+        } else {
+          fields = leaveFieldsFor(units[index] as 1 | 2, myPaid, isLeaveHalf(row.leaveHalf) ? row.leaveHalf : null);
+        }
+        if (row.leaveUnpaid !== fields.leaveUnpaid || row.leavePartUnpaid !== fields.leavePartUnpaid) {
+          await tx.attendanceDay.update({
+            where: { id: row.id },
+            data: { leaveUnpaid: fields.leaveUnpaid, leavePartUnpaid: fields.leavePartUnpaid },
+          });
+        }
+      }
+      const out = { paidDays: halvesToDays(split.paidHalves), unpaidDays: halvesToDays(split.unpaidHalves) };
+      await tx.leaveRequest.update({ where: { id: requestId }, data: out });
+      return out;
+    });
     return result;
   }
 
@@ -375,52 +524,88 @@ export class LeaveService {
    * Takes the leave days of a request off the record (an approval overturned).
    * A past day goes back to absent; a future day is removed. A half day of
    * leave on a day the person worked keeps the day and loses the leave: it is
-   * worked out again as a normal day.
+   * worked out again as a normal day (lateness too). A full day made of two
+   * half days goes back to the other request's half day.
    */
   async undoApproval(request: LeaveRequest): Promise<void> {
     const today = this.todayIst();
-    const rows = await this.prisma.attendanceDay.findMany({
-      where: {
-        leaveRequestId: request.id,
-        OR: [{ dayType: 'leave', loginAt: null }, { leaveHalf: { not: null } }],
-      },
-    });
-    for (const row of rows) {
-      if (row.loginAt) {
-        await this.prisma.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
-        await this.reclassifyWorkedDay(row.id);
-      } else if (row.date.getTime() < today.getTime()) {
-        await this.prisma.attendanceDay.update({
-          where: { id: row.id },
-          data: { dayType: 'absent', closedReason: 'no_login', ...NO_LEAVE },
-        });
-      } else {
-        await this.prisma.attendanceDay.delete({ where: { id: row.id } });
+    const { reclassify, others } = await this.underLeaveLock(request.staffId, async (tx) => {
+      const rows = await tx.attendanceDay.findMany({
+        where: {
+          OR: [
+            { leaveRequestId: request.id, OR: [{ dayType: 'leave', loginAt: null }, { leaveHalf: { not: null } }, { otherLeaveRequestId: { not: null } }] },
+            { otherLeaveRequestId: request.id },
+          ],
+        },
+      });
+      const reclassify: string[] = [];
+      const others = new Set<string>();
+      for (const row of rows) {
+        if (row.otherLeaveRequestId) {
+          // Back to the other request's half day (paid or not is worked out again below).
+          const remaining = row.leaveRequestId === request.id ? row.otherLeaveRequestId : row.leaveRequestId;
+          const remainingRequest = remaining ? await tx.leaveRequest.findUnique({ where: { id: remaining } }) : null;
+          const half = remainingRequest && isLeaveHalf(remainingRequest.half) ? remainingRequest.half : null;
+          if (!remainingRequest || !half) {
+            await tx.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
+            continue;
+          }
+          await tx.attendanceDay.update({
+            where: { id: row.id },
+            data: {
+              ...(row.loginAt ? { dayType: 'open' } : {}),
+              leaveRequestId: remainingRequest.id,
+              otherLeaveRequestId: null,
+              leaveKind: remainingRequest.kind,
+              ...leaveFieldsFor(1, 1, half),
+            },
+          });
+          others.add(remainingRequest.id);
+          if (row.loginAt) reclassify.push(row.id);
+        } else if (row.loginAt) {
+          await tx.attendanceDay.update({ where: { id: row.id }, data: NO_LEAVE });
+          reclassify.push(row.id);
+        } else if (row.date.getTime() < today.getTime()) {
+          await tx.attendanceDay.update({
+            where: { id: row.id },
+            data: { dayType: 'absent', closedReason: 'no_login', ...NO_LEAVE },
+          });
+        } else {
+          await tx.attendanceDay.delete({ where: { id: row.id } });
+        }
       }
-    }
+      return { reclassify, others };
+    });
+    for (const dayId of reclassify) await this.reclassifyWorkedDay(dayId);
+    for (const id of others) await this.reallocate(id);
   }
 
   /**
-   * A closed working day gets its day type again from its production, after
-   * its half day of leave was added or taken away (half the production is
-   * needed on a half day of leave). A day a Team Lead or Manager changed keeps
-   * their change, as in AttendanceService.recalculateDay.
+   * A working day gets its day type and lateness again, after its half day of
+   * leave was added or taken away (half the production is needed on a half
+   * day of leave; lateness counts from mid-shift when the first half is on
+   * leave). A closed day a Team Lead or Manager changed keeps their change,
+   * as in AttendanceService.recalculateDay; an open day only gets its lateness.
    */
   async reclassifyWorkedDay(dayId: string): Promise<void> {
     const day = await this.prisma.attendanceDay.findUnique({ where: { id: dayId } });
-    if (!day?.loginAt || !day.logoutAt) return;
+    if (!day?.loginAt) return;
     const policy = await this.pricing.current();
-    const result = classifyDay(
-      day.productionSeconds,
-      policy,
-      await this.workingDays.isNonWorking(day.date),
-      Boolean(day.leaveHalf && day.leaveKind),
-    );
+    const leaveHalf = day.leaveHalf && day.leaveKind ? day.leaveHalf : null;
+    const lateMinutes = lateMinutesFor(day.loginAt, policy, leaveHalf);
+    if (!day.logoutAt) {
+      await this.prisma.attendanceDay.update({ where: { id: dayId }, data: { lateMinutes } });
+      return;
+    }
+    const result = classifyDay(day.productionSeconds, policy, await this.workingDays.isNonWorking(day.date), Boolean(leaveHalf));
     const changed = Boolean(day.dayTypeChangedAt);
+    // Two half days of leave on the date: a full leave day, whatever was worked.
+    const fullLeave = Boolean(day.otherLeaveRequestId && day.leaveKind);
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
       data: {
-        dayType: changed ? day.dayType : result.dayType,
+        lateMinutes,
+        dayType: fullLeave ? 'leave' : changed ? day.dayType : result.dayType,
         shortfallSeconds: changed ? 0 : result.shortfallSeconds,
         makeUpSeconds: changed && day.dayType === 'half' ? 0 : result.makeUpSeconds,
       },

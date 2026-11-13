@@ -6,6 +6,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { localCalendarToUtc } from '../../common/time/period-boundary';
 import { PayrollService } from '../finance/payroll.service';
+import { ManagerOpsService } from '../screens-manager/manager-ops.service';
 import { AttendanceClock } from './attendance-clock';
 
 jest.setTimeout(180000);
@@ -77,6 +78,10 @@ describe('Half-day leave', () => {
     return request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${tokenFor(person)}`).send(body);
   }
 
+  function del(person: Person, path: string) {
+    return request(app.getHttpServer()).delete(path).set('Authorization', `Bearer ${tokenFor(person)}`);
+  }
+
   function get(person: Person, path: string) {
     return request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${tokenFor(person)}`);
   }
@@ -133,6 +138,7 @@ describe('Half-day leave', () => {
         await prisma.statusHistory.deleteMany({ where: { subjectType: 'attendance_day', subjectId: { in: dayRows.map((row) => row.id) } } });
         await prisma.messageLog.deleteMany({ where: { subjectType: 'staff', subjectId: { in: staffIds } } });
         await prisma.staffSalary.deleteMany({ where: { staffId: { in: staffIds } } });
+        await prisma.leaveRequest.deleteMany({ where: { staffId: { in: staffIds } } });
         await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
         await prisma.reviewFlag.deleteMany({ where: { raisedForStaffId: { in: staffIds } } });
         await prisma.staff.deleteMany({ where: { id: { in: staffIds } } });
@@ -285,5 +291,240 @@ describe('Half-day leave', () => {
       netPaise: 2_550_000,
     });
     expect(Number.isInteger(line.lossOfPayPaise) && Number.isInteger(line.netPaise)).toBe(true);
+  });
+
+  const MARCH_10 = new Date('2032-03-10T06:00:00.000Z');
+  const dayRow = (person: Person, date: string) =>
+    prisma.attendanceDay.findUnique({ where: { staffId_date: { staffId: person.id, date: new Date(`${date}T00:00:00.000Z`) } } });
+
+  it('refuses leave on a date or half already asked for; the other half (same kind) joins it into a full leave day', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDO', lead.id, MARCH_10);
+    const first = await leave(agent, 'casual', '2032-06-07', 'first');
+    expect(first.status).toBe(201);
+    const again = await leave(agent, 'casual', '2032-06-07', 'first');
+    expect(again.status).toBe(400);
+    expect(again.body.details).toMatchObject({ code: 'leave_overlap', date: '2032-06-07' });
+    expect(again.body.message).toMatch(/already have leave asked for or approved on 2032-06-07/);
+    expect((await leave(agent, 'casual', '2032-06-07')).body.details.code).toBe('leave_overlap');
+    expect((await leave(agent, 'casual', '2032-06-05', undefined, '2032-06-08')).body.details.code).toBe('leave_overlap');
+    expect((await leave(agent, 'emergency', '2032-06-07', 'second')).body.details.code).toBe('leave_other_kind');
+    const second = await leave(agent, 'casual', '2032-06-07', 'second');
+    expect(second.status).toBe(201);
+
+    await decide(lead, first.body.id, 'approve').expect(201);
+    expect((await decide(lead, second.body.id, 'approve')).body).toMatchObject({ paidDays: 0.5, unpaidDays: 0 });
+    // Not skipped: the two halves make one full, paid leave day.
+    expect(await dayRow(agent, '2032-06-07')).toMatchObject({
+      dayType: 'leave', leaveHalf: null, leaveRequestId: first.body.id, otherLeaveRequestId: second.body.id, leaveUnpaid: false, leavePartUnpaid: false,
+    });
+    expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 1, left: 2 });
+
+    // Overturning one half leaves the other half day.
+    await decide(manager, second.body.id, 'overturn', { reason: 'Came in for the afternoon' }).expect(201);
+    expect(await dayRow(agent, '2032-06-07')).toMatchObject({ dayType: 'leave', leaveHalf: 'first', leaveRequestId: first.body.id, otherLeaveRequestId: null });
+    expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 0.5, left: 2.5 });
+
+    // The Manager's "used this month" counts the half day as half.
+    const board = await app.get(ManagerOpsService).leaveBoard({ id: manager.id, role: 'manager' }, new Date('2032-06-20T06:00:00.000Z'));
+    expect(board.balances.find((row) => row.staff.id === agent.id)).toMatchObject({ plannedUsedThisMonth: 0.5 });
+  });
+
+  it('two half days of one date approved at the same moment both land, as one full leave day (per-person lock)', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDC', lead.id, MAY_10);
+    const a = await leave(agent, 'casual', '2032-06-08', 'first');
+    const b = await leave(agent, 'casual', '2032-06-08', 'second');
+    const [ra, rb] = await Promise.all([decide(lead, a.body.id, 'approve'), decide(lead, b.body.id, 'approve')]);
+    expect([ra.status, rb.status]).toEqual([201, 201]);
+    expect(ra.body.paidDays + rb.body.paidDays).toBe(1);
+    const row = await dayRow(agent, '2032-06-08');
+    expect(row).toMatchObject({ dayType: 'leave', leaveHalf: null, leaveUnpaid: false });
+    expect([row!.leaveRequestId, row!.otherLeaveRequestId].sort()).toEqual([a.body.id, b.body.id].sort());
+    expect(await prisma.attendanceDay.count({ where: { staffId: agent.id } })).toBe(1);
+  });
+
+  it('works lateness out again when a first-half leave is approved or overturned after login', async () => {
+    const agent = await make('call_agent', 'HDLT', lead.id, MAY_10);
+    at(2032, 6, 9, 14, 0);
+    await post(agent, '/attendance/login').expect(201);
+    expect((await dayRow(agent, '2032-06-09'))!.lateMinutes).toBe(270);
+    const asked = await leave(agent, 'casual', '2032-06-09', 'first');
+    await decide(lead, asked.body.id, 'approve').expect(201);
+    expect(await dayRow(agent, '2032-06-09')).toMatchObject({ lateMinutes: 0, leaveHalf: 'first', dayType: 'open' });
+    // The today view needs half the production.
+    expect((await get(agent, '/attendance/today')).body).toMatchObject({ leaveHalf: 'first' });
+    await decide(manager, asked.body.id, 'overturn', { reason: 'Was not on leave' }).expect(201);
+    expect(await dayRow(agent, '2032-06-09')).toMatchObject({ lateMinutes: 270, leaveHalf: null, leaveKind: null, dayType: 'open' });
+  });
+
+  it('counts the working half of a half day of leave as absent only once the day has passed; before login the target is half', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDF', lead.id, MAY_10);
+    const asked = await leave(agent, 'casual', '2032-06-25', 'first');
+    await decide(lead, asked.body.id, 'approve').expect(201);
+    const before = await get(lead, `/attendance/month?month=2032-06&staffId=${agent.id}`).expect(200);
+    expect(before.body).toMatchObject({ absentDays: 0 });
+    expect(before.body.paidLeaveDays.casual).toBe(0.5);
+    at(2032, 6, 25, 8);
+    expect((await get(agent, '/attendance/today')).body).toMatchObject({ leaveHalf: 'first', shortfallSeconds: 4 * 3600 });
+    at(2032, 6, 26, 10);
+    const after = await get(lead, `/attendance/month?month=2032-06&staffId=${agent.id}`).expect(200);
+    expect(after.body.absentDays).toBe(0.5);
+  });
+
+  it('overturning a day change on a second-half-leave day uses half the production (5 h worked: no shortfall)', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDDC', lead.id, MAY_10);
+    const asked = await leave(agent, 'casual', '2032-06-10', 'second');
+    await decide(lead, asked.body.id, 'approve').expect(201);
+    await straightDay(agent, [2032, 6, 10], '09:30', '14:30');
+    const day = (await dayRow(agent, '2032-06-10'))!;
+    expect(day).toMatchObject({ dayType: 'full', shortfallSeconds: 0, makeUpSeconds: 3600 });
+    at(2032, 6, 10, 16);
+    const change = await post(lead, '/requests', { kind: 'day_change', dayId: day.id, dayType: 'half', reason: 'Left early' });
+    expect(change.status).toBe(201);
+    expect((await dayRow(agent, '2032-06-10'))!.dayType).toBe('half');
+    const undo = await post(manager, `/requests/${change.body.ref}/overturn`, { reason: 'Worked 5 hours of a half day' });
+    expect(undo.status).toBe(200);
+    expect(await dayRow(agent, '2032-06-10')).toMatchObject({ dayType: 'full', shortfallSeconds: 0, makeUpSeconds: 3600 });
+  });
+
+  it('approving "part" of a half day is the half day; dates outside it are refused', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDPA', lead.id, MAY_10);
+    const asked = await leave(agent, 'casual', '2032-06-11', 'first');
+    expect((await decide(lead, asked.body.id, 'approve', { reason: 'Fine', fromDate: '2032-06-12', toDate: '2032-06-12' })).status).toBe(400);
+    const ok = await decide(lead, asked.body.id, 'approve', { reason: 'Fine', fromDate: '2032-06-11', toDate: '2032-06-11' });
+    expect(ok.status).toBe(201);
+    expect(ok.body).toMatchObject({ status: 'approved', approvedDays: null, paidDays: 0.5 });
+    expect(await dayRow(agent, '2032-06-11')).toMatchObject({ leaveHalf: 'first', dayType: 'leave' });
+  });
+
+  it('overturns a half day both ways: a rejection becomes an approval, and an approval a rejection', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDOT', lead.id, MAY_10);
+    const rejected = await leave(agent, 'casual', '2032-06-12', 'second');
+    await decide(lead, rejected.body.id, 'reject', { reason: 'Busy day' }).expect(201);
+    expect(await dayRow(agent, '2032-06-12')).toBeNull();
+    const approvedNow = await decide(manager, rejected.body.id, 'overturn', { reason: 'Cover found' });
+    expect(approvedNow.body).toMatchObject({ status: 'approved', paidDays: 0.5 });
+    expect(await dayRow(agent, '2032-06-12')).toMatchObject({ leaveHalf: 'second', leaveUnpaid: false });
+
+    const approved = await leave(agent, 'emergency', '2032-06-14', 'first');
+    await decide(lead, approved.body.id, 'approve').expect(201);
+    const rejectedNow = await decide(manager, approved.body.id, 'overturn', { reason: 'No emergency' });
+    expect(rejectedNow.body).toMatchObject({ status: 'rejected', paidDays: 0, unpaidDays: 0 });
+    expect(await dayRow(agent, '2032-06-14')).toBeNull();
+    expect((await get(agent, '/attendance/leave/balance')).body.emergency).toMatchObject({ taken: 0, left: 1 });
+  });
+
+  it('a holiday added on a half-day leave date takes the leave off; removed again, the half day comes back', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDHO', lead.id, MAY_10);
+    const asked = await leave(agent, 'casual', '2032-06-22', 'second');
+    await decide(lead, asked.body.id, 'approve').expect(201);
+    await prisma.holiday.deleteMany({ where: { date: new Date('2032-06-22T00:00:00.000Z') } });
+    const holiday = await post(ceo, '/attendance/holidays', { date: '2032-06-22', name: 'Half-day spec holiday' });
+    expect(holiday.status).toBe(201);
+    try {
+      expect(await dayRow(agent, '2032-06-22')).toBeNull();
+      expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: asked.body.id } })).toMatchObject({ paidDays: 0, unpaidDays: 0 });
+      expect((await get(agent, '/attendance/leave/balance')).body.casual).toMatchObject({ taken: 0, left: 1 });
+      await del(ceo, `/attendance/holidays/${holiday.body.id}`).expect(200);
+      expect(await dayRow(agent, '2032-06-22')).toMatchObject({ dayType: 'leave', leaveHalf: 'second', leaveUnpaid: false });
+      expect(await prisma.leaveRequest.findUniqueOrThrow({ where: { id: asked.body.id } })).toMatchObject({ paidDays: 0.5, unpaidDays: 0 });
+    } finally {
+      await prisma.holiday.deleteMany({ where: { date: new Date('2032-06-22T00:00:00.000Z') } });
+    }
+  });
+
+  it('shows a half day today as a half day on the Team Lead leave board, not as off', async () => {
+    at(2032, 6, 1, 10);
+    const agent = await make('call_agent', 'HDTL', lead.id, MAY_10);
+    const asked = await leave(agent, 'casual', '2032-06-16', 'second');
+    await decide(lead, asked.body.id, 'approve').expect(201);
+    at(2032, 6, 16, 10);
+    const board = await get(lead, '/team-lead/leave').expect(200);
+    const mine = board.body.schedule.find((row: { id: string }) => row.id === asked.body.id);
+    expect(mine).toMatchObject({ half: 'second' });
+    type Row = { status: string; fromDate: string; toDate: string; half: string | null };
+    const covering = (board.body.schedule as Row[]).filter((row) => row.status === 'approved' && row.fromDate <= '2032-06-16' && row.toDate >= '2032-06-16');
+    expect(board.body.summary.halfDayToday).toBe(covering.filter((row) => row.half).length);
+    expect(board.body.summary.offToday).toBe(covering.filter((row) => !row.half).length);
+    expect(board.body.summary.halfDayToday).toBeGreaterThanOrEqual(1);
+  });
+
+  it('refuses a half day in a month payroll can no longer work out again', async () => {
+    const months = Array.from({ length: 13 }, (_, i) => `${2034 + Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, '0')}`);
+    await prisma.payrollRun.deleteMany({ where: { month: { in: months } } });
+    await prisma.payrollRun.createMany({
+      data: months.map((month) => ({ month, status: 'paid', people: 0, grossPaise: 0, deductionsPaise: 0, netPaise: 0, preparedByStaffId: ceo.id, preparedAt: new Date('2035-02-01T04:00:00.000Z') })),
+    });
+    try {
+      at(2035, 2, 2, 10);
+      const agent = await make('call_agent', 'HDPW', lead.id, new Date('2033-12-10T06:00:00.000Z'));
+      const asked = await leave(agent, 'casual', '2034-01-10', 'first');
+      expect(asked.status).toBe(201);
+      const refused = await decide(lead, asked.body.id, 'approve');
+      expect(refused.status).toBe(400);
+      expect(refused.body.message).toMatch(/January 2034 pay.*manual correction/);
+      expect(await dayRow(agent, '2034-01-10')).toBeNull();
+      expect((await prisma.leaveRequest.findUniqueOrThrow({ where: { id: asked.body.id } })).status).toBe('pending');
+    } finally {
+      await prisma.payrollRun.deleteMany({ where: { month: { in: months } } });
+    }
+  });
+
+  it('payroll: a part-month joiner with an unpaid half day is paid for the days on staff less half a day, never below zero', async () => {
+    at(2032, 6, 28, 10);
+    const SALARY = 2_600_000;
+    const joiner = await make('call_agent', 'HDJ', lead.id, new Date('2032-06-28T03:00:00.000Z'));
+    await prisma.staffSalary.create({ data: { staffId: joiner.id, monthlyPaise: SALARY, effectiveFromMonth: '2032-06', setByStaffId: ceo.id } });
+    // Joined in June: no paid leave yet, so the half day is unpaid.
+    const asked = await leave(joiner, 'casual', '2032-06-29', 'second');
+    expect((await decide(lead, asked.body.id, 'approve')).body).toMatchObject({ paidDays: 0, unpaidDays: 0.5 });
+    await straightDay(joiner, [2032, 6, 29], '09:30', '13:35');
+    for (const d of [28, 30]) {
+      const date = new Date(Date.UTC(2032, 5, d));
+      await prisma.attendanceDay.create({
+        data: { staffId: joiner.id, date, loginAt: new Date(date.getTime() + 4 * 3600_000), logoutAt: new Date(date.getTime() + 13 * 3600_000), dayType: 'full', productionSeconds: 8 * 3600 },
+      });
+    }
+    const { rows } = await payroll.draft('2032-06', new Date('2032-07-02T06:00:00.000Z'));
+    const line = rows.find((row) => row.staffId === joiner.id)!;
+    // 3 working days on staff: ₹26,000 ÷ 26 × 3 = ₹3,000; less ½ day (₹500).
+    expect(line).toMatchObject({ notEmployedDays: 23, unmarkedDays: 0, fullDays: 2.5, unpaidLeaveDays: 0.5, lossOfPayPaise: 50_000, netPaise: 250_000 });
+    expect(line.netPaise).toBeGreaterThanOrEqual(0);
+    expect(Number.isInteger(line.netPaise)).toBe(true);
+  });
+
+  it('a paid month does not change when a half day in it is overturned later', async () => {
+    at(2032, 6, 1, 10);
+    const SALARY = 2_600_000;
+    const person = await make('call_agent', 'HDPM', lead.id, MAY_10);
+    await prisma.staffSalary.create({ data: { staffId: person.id, monthlyPaise: SALARY, effectiveFromMonth: '2032-05', setByStaffId: ceo.id } });
+    const asked = await leave(person, 'casual', '2032-06-15', 'first');
+    await decide(lead, asked.body.id, 'approve').expect(201);
+    await prisma.payrollRun.deleteMany({ where: { month: '2032-06' } });
+    const run = await prisma.payrollRun.create({
+      data: { month: '2032-06', status: 'paid', people: 1, grossPaise: SALARY, deductionsPaise: 0, netPaise: SALARY, preparedByStaffId: ceo.id, preparedAt: new Date('2032-07-01T04:00:00.000Z'), paidAt: new Date('2032-07-02T04:00:00.000Z') },
+    });
+    try {
+      const line = await prisma.payrollLine.create({
+        data: {
+          runId: run.id, staffId: person.id, staffCode: person.code, name: 'HDPM', role: 'call_agent', monthlyPaise: SALARY, salaryDays: 26, calendarDays: 30, workingDays: 26, holidays: 0,
+          fullDays: 25.5, halfDays: 0, paidLeaveDays: 0.5, unpaidLeaveDays: 0, absentDays: 0, notEmployedDays: 0, lossOfPayHalfDays: 0, paidHalfDays: 52, shortfallMinutes: 0,
+          basicPaise: 1_300_000, hraPaise: 520_000, specialPaise: 780_000, grossPaise: SALARY, lossOfPayPaise: 0, shortfallPaise: 0, deductionsPaise: 0, netPaise: SALARY, status: 'paid',
+        },
+      });
+      at(2032, 7, 5, 10);
+      await decide(manager, asked.body.id, 'overturn', { reason: 'Was at work' }).expect(201);
+      const after = await prisma.payrollLine.findUniqueOrThrow({ where: { id: line.id } });
+      expect(after).toMatchObject({ netPaise: SALARY, paidLeaveDays: 0.5, lossOfPayPaise: 0, status: 'paid' });
+      expect((await prisma.payrollRun.findUniqueOrThrow({ where: { id: run.id } })).status).toBe('paid');
+    } finally {
+      await prisma.payrollRun.delete({ where: { id: run.id } });
+    }
   });
 });

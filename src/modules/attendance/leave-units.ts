@@ -125,8 +125,11 @@ export interface DayTally {
  * - the leave half is paid or unpaid leave (unpaid: half a day's loss of pay).
  * A full leave day is two halves of leave, paid and/or unpaid. Open days and
  * days off count nothing here.
+ *
+ * `past` is false for today and later (IST): a half day of leave not yet
+ * reached has no absent working half (the person may still come in).
  */
-export function dayTally(row: LeaveDayFields): DayTally {
+export function dayTally(row: LeaveDayFields, past = true): DayTally {
   const tally: DayTally = { fullHalves: 0, halfDays: 0, absentHalves: 0, paidLeaveHalves: 0, unpaidLeaveHalves: 0, emergencyPaidHalves: 0 };
   const leave = leaveHalvesOf(row);
   tally.paidLeaveHalves = leave.paid;
@@ -134,7 +137,8 @@ export function dayTally(row: LeaveDayFields): DayTally {
   if (row.leaveKind === 'emergency') tally.emergencyPaidHalves = leave.paid;
   if (row.leaveHalf && leave.total > 0) {
     if (row.dayType === 'full') tally.fullHalves = 1;
-    else if (row.dayType === 'half' || row.dayType === 'leave' || row.dayType === 'absent') tally.absentHalves = 1;
+    else if (row.dayType === 'half') tally.absentHalves = 1;
+    else if ((row.dayType === 'leave' || row.dayType === 'absent') && past) tally.absentHalves = 1;
     return tally;
   }
   if (row.dayType === 'full') tally.fullHalves = 2;

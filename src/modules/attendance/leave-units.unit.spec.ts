@@ -1,5 +1,5 @@
 import { computePay, lossOfPayHalfDays } from '../finance/payroll-rules';
-import { classifyDay } from './day-rules';
+import { classifyDay, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { dayTally, daysLabel, leaveFieldsFor, leaveHalvesOf, splitPaid } from './leave-units';
 
 /** Half-day leave (owner decision 12 Nov), the pure rules: halves, the split, the day and the pay. */
@@ -45,6 +45,8 @@ describe('half-day leave rules', () => {
     expect(dayTally({ dayType: 'half', leaveKind: 'casual', leaveUnpaid: true, leaveHalf: 'first' })).toMatchObject({ fullHalves: 0, halfDays: 0, absentHalves: 1, unpaidLeaveHalves: 1 });
     // Never logged in: the working half is absent.
     expect(dayTally({ dayType: 'leave', leaveKind: 'emergency', leaveUnpaid: false, leaveHalf: 'second' })).toMatchObject({ absentHalves: 1, paidLeaveHalves: 1, emergencyPaidHalves: 1 });
+    // Not reached yet (today or later): no absent half.
+    expect(dayTally({ dayType: 'leave', leaveKind: 'casual', leaveUnpaid: false, leaveHalf: 'second' }, false)).toMatchObject({ absentHalves: 0, paidLeaveHalves: 1 });
     // Ordinary days are unchanged.
     expect(dayTally({ dayType: 'full', leaveKind: null, leaveUnpaid: false })).toMatchObject({ fullHalves: 2 });
     expect(dayTally({ dayType: 'half', leaveKind: null, leaveUnpaid: false })).toMatchObject({ halfDays: 1 });
@@ -64,5 +66,16 @@ describe('half-day leave rules', () => {
     expect(Number.isInteger(odd.netPaise)).toBe(true);
     // Half a day unpaid leave plus the working half not worked: a whole day.
     expect(lossOfPayHalfDays({ absentDays: 0.5, unpaidLeaveDays: 0.5, halfDays: 0 })).toBe(2);
+  });
+
+  it('lateness counts from mid-shift when the first half is on leave; the production target halves', () => {
+    const shift = { shiftStart: '09:30', shiftEnd: '18:30', lateGraceMinutes: 10 };
+    const at1400 = new Date('2026-11-16T08:30:00.000Z'); // 14:00 IST
+    expect(lateMinutesFor(at1400, shift)).toBe(270);
+    expect(lateMinutesFor(at1400, shift, 'first')).toBe(0);
+    expect(lateMinutesFor(at1400, shift, 'second')).toBe(270);
+    expect(lateMinutesFor(new Date('2026-11-16T08:45:00.000Z'), shift, 'first')).toBe(15);
+    expect(productionTargetSeconds({ productionHoursFullDay: 8 })).toBe(8 * 3600);
+    expect(productionTargetSeconds({ productionHoursFullDay: 8 }, true)).toBe(4 * 3600);
   });
 });

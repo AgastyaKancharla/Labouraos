@@ -395,20 +395,16 @@ export class RefundPriorityService {
     const drafts: NotificationDraft[] = [];
     for (const row of rows) {
       const agent = dir.get(row.agent?.id);
-      if (!agent) continue;
-      const chain = dir.chainOf(agent.id);
-      const recipients: Array<DirectoryRow | null> = [
-        AGENT_ROLES.includes(agent.role) ? agent : null,
-        agent.role === 'team_lead' ? agent : chain.teamLead,
-        chain.manager,
-      ];
+      const chain = agent ? dir.chainOf(agent.id) : null;
       const title =
         row.kind === 'job_seeker'
           ? `${row.code}: ${row.daysLeft} day${row.daysLeft === 1 ? '' : 's'} to a refund, no suitable offer yet`
           : `${row.businessName ?? row.code}: ${row.daysLeft} day${row.daysLeft === 1 ? '' : 's'} to a refund, no replacement yet`;
       const body = [row.trade, row.kind === 'business' ? row.code : null, `${row.bucket} days`].filter(Boolean).join(' · ');
-      // The CEO at the top of the agent's line; anyone without a line reaches every active CEO.
-      const ceos = chain.ceo ? [chain.ceo] : dir.ceos();
+      // The CEO first, so an item with nobody working on it (no registering agent, no
+      // account agent) still rings someone: the CEO at the top of the agent's line, or
+      // every active CEO when there is no agent or no line.
+      const ceos = chain?.ceo ? [chain.ceo] : dir.ceos();
       for (const draft of this.sources.drafts(ceos, {
         kind: 'refund_priority',
         title,
@@ -419,6 +415,12 @@ export class RefundPriorityService {
       })) {
         drafts.push(draft);
       }
+      if (!agent || !chain) continue;
+      const recipients: Array<DirectoryRow | null> = [
+        AGENT_ROLES.includes(agent.role) ? agent : null,
+        agent.role === 'team_lead' ? agent : chain.teamLead,
+        chain.manager,
+      ];
       for (const draft of this.sources.drafts(recipients.filter((person) => !person || person.role !== 'ceo'), {
         kind: 'refund_priority',
         title,

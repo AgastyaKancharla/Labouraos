@@ -393,13 +393,17 @@ export class TeamLeadScreensService {
       const usedOf = (kind: string) => used.filter((row) => (row.leaveKind ?? 'casual') === kind).reduce((sum, row) => sum + leaveHalvesOf(row).total, 0) / 2;
       balances.push({ staff: member, plannedLeft: balance.casual.left, emergencyLeft: balance.emergency.left, plannedUsedThisMonth: usedOf('casual'), emergencyUsedThisMonth: usedOf('emergency') });
     }
-    const offToday = schedule.filter((row) => row.status === 'approved' && row.fromDate <= today && row.toDate >= today).length;
+    // A half day of leave today is a half day, not a day off (owner decision 12 Nov).
+    const approvedToday = schedule.filter((row) => row.status === 'approved' && row.fromDate <= today && row.toDate >= today);
+    const offToday = approvedToday.filter((row) => !row.half).length;
+    const halfDayToday = approvedToday.filter((row) => row.half).length;
     const week = istDayKey(new Date(now.getTime() + 7 * DAY_MS));
     return {
       today,
       manager: chain.manager,
       summary: {
         offToday,
+        halfDayToday,
         offNext7Days: new Set(schedule.filter((row) => row.status === 'approved' && row.fromDate <= week && row.toDate >= today).map((row) => row.staff.id)).size,
         waitingForYou: schedule.filter((row) => row.waitingForYou).length,
         pastThreePlanned: balances.filter((row) => row.plannedUsedThisMonth > 3).length,
