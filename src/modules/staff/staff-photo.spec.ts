@@ -1,4 +1,5 @@
 import { BadRequestException, INestApplication } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -169,7 +170,10 @@ describe('Staff photo API', () => {
     const without = await mkStaff('call_agent', { teamLeadId });
     for (const s of [withPhoto, without]) {
       const device = await prisma.staffDevice.create({ data: { staffId: s.id, deviceId: `dev-${s.id}`, label: 'Office PC 3', platform: 'web', status: 'approved' } });
-      await prisma.loginCodeRequest.create({ data: { staffId: s.id, staffDeviceId: device.id, ipAddress: '10.0.0.1', onOfficeNetwork: true, expiresAt: new Date(Date.now() + 5 * 60_000) } });
+      // onOfficeNetwork is on its way out (office network not enforced, 12 Nov): set it only while the column exists.
+      const network = 'onOfficeNetwork' in Prisma.LoginCodeRequestScalarFieldEnum ? { onOfficeNetwork: true } : {};
+      const data = { staffId: s.id, staffDeviceId: device.id, ipAddress: '10.0.0.1', expiresAt: new Date(Date.now() + 5 * 60_000), ...network };
+      await prisma.loginCodeRequest.create({ data: data as unknown as Prisma.LoginCodeRequestUncheckedCreateInput });
     }
     const pending = await request(server()).get('/login-codes/pending').set(as(ceoId)).expect(200);
     const byId = new Map((pending.body as { staff: { id: string; photoUrl: string | null } }[]).map((r) => [r.staff.id, r.staff]));

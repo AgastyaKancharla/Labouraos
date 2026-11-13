@@ -8,6 +8,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { MessagingService } from '../message/messaging.service';
+import { publicPagePath } from '../../common/public-pages';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
@@ -501,9 +502,9 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     // The SMS carries the new page; an old /consent link opened in a browser goes there.
     const smsCall = sendSpy.mock.calls.find(([m]) => m.template === 'referral_terms_link' && m.subjectId === referralId);
     sendSpy.mockRestore();
-    expect(String(smsCall?.[0].variables?.link)).toContain(`/app/p/partner/${token}`);
+    expect(String(smsCall?.[0].variables?.link)).toContain(publicPagePath('referralRegistration', token));
     const old = await request(server).get(`/consent/${token}`).set('Accept', 'text/html').expect(302);
-    expect(old.headers.location).toContain(`/app/p/partner/${token}`);
+    expect(old.headers.location).toContain(publicPagePath('referralRegistration', token));
 
     // Before the code: only the masked number and the language.
     const locked = await request(server).get(`/referral-registration/${token}/status`).expect(200);

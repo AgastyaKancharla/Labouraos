@@ -30,6 +30,7 @@ import { ConsentClock } from './consent-clock';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { createHash } from 'node:crypto';
+import { publicPagePath } from '../../common/public-pages';
 
 type MockPrismaService = {
   referral: { findUnique: jest.Mock };
@@ -278,7 +279,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           subjectId: referralId,
           variables: expect.objectContaining({
             token: res.body.token,
-            link: expect.stringContaining(`/app/p/partner/${res.body.token}`),
+            link: expect.stringContaining(publicPagePath('referralRegistration', res.body.token)),
             referralCode: expect.any(String),
           }),
         }),
