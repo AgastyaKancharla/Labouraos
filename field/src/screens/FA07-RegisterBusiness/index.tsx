@@ -12,6 +12,7 @@ import { isNeedsSignalError, useOfflineQueue } from '@/device/offline-queue';
 import { readLocation } from '@/device/location/location';
 import { locationProvider } from '@/device/location/provider';
 import { formatTimeIst } from '@/lib/format';
+import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText, nearestArea } from '@/lib/nearestArea';
 import { routes } from '@/navigation/routes';
 import { colors, fonts, radius, touch } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
@@ -113,6 +114,27 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   const [busy, setBusy] = useState<string | null>(null);
   const set = (patch: Partial<FormState>) => setForm((f) => ({ ...f, ...patch }));
 
+  // Guide (14 Nov): the area is filled in from the shop's map pin when an area's
+  // centre is within the Settings distance (1 km); otherwise the agent must pick
+  // it. `autoArea` is the name the pin filled in, so a new pin can replace it —
+  // never an area the agent picked himself.
+  const [autoArea, setAutoArea] = useState<string | null>(null);
+  const areaList = options.data?.areas ?? [];
+  const areaMaxMeters = options.data?.areaAutoFillMaxMeters ?? DEFAULT_AREA_AUTO_FILL_MAX_METERS;
+  const nearArea = form.pin ? nearestArea(areaList, form.pin, areaMaxMeters) : null;
+  const noAreaNear = Boolean(form.pin) && areaList.length > 0 && !nearArea;
+  // Fill in again only for a new pin or a newly loaded list (React's "adjust
+  // state while rendering" pattern, so no extra effect pass).
+  const fillKey = form.pin && options.data ? `${form.pin.latitude}|${form.pin.longitude}|${areaList.length}|${areaMaxMeters}` : null;
+  const [filledFor, setFilledFor] = useState<string | null>(null);
+  if (fillKey && fillKey !== filledFor) {
+    setFilledFor(fillKey);
+    if (!form.area || form.area === autoArea) {
+      setAutoArea(nearArea?.name ?? null);
+      setForm((f) => ({ ...f, area: nearArea?.name ?? '', pincode: f.pincode || nearArea?.pincode || '' }));
+    }
+  }
+
 
   const tradeList: Trade[] = trades.data ?? [];
   const findTrade = (row: StaffRow) => tradeList.find((tr) => tr.name === row.trade);
@@ -121,6 +143,11 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
   const household = form.businessType === 'household';
 
   function explain(e: unknown) {
+    const body = isApiError(e) && e.body && typeof e.body === 'object' ? (e.body as { details?: { code?: unknown; maxMeters?: unknown } }).details : undefined;
+    if (body?.code === 'area_required') {
+      setShowErrors(true);
+      return setProblem(t('fa07.areaNoneNear', { distance: distanceText(typeof body.maxMeters === 'number' ? body.maxMeters : areaMaxMeters) }));
+    }
     setProblem(isNeedsSignalError(e) ? t('common.needsSignal') : isApiError(e) ? e.message : t('common.error'));
   }
 
@@ -289,11 +316,19 @@ function RegisterForm({ visitId, visit }: { visitId: string | null; visit: Visit
             choices={(options.data?.areas ?? []).map((a) => ({ value: a.name, label: a.name }))}
             onChange={(v) => {
               const area = options.data?.areas.find((a) => a.name === v);
+              setAutoArea(null);
               set({ area: v, pincode: form.pincode || area?.pincode || '' });
             }}
             error={err('area')}
             testID="fa07-area"
           />
+          {autoArea && form.area === autoArea ? (
+            <Text variant="muted" testID="fa07-area-from-pin">{t('fa07.areaFromPin', { distance: distanceText(areaMaxMeters) })}</Text>
+          ) : noAreaNear && !form.area ? (
+            <Text variant="small" color={err('area') ? colors.tomato : colors.amber} testID="fa07-area-none-near">
+              {t('fa07.areaNoneNear', { distance: distanceText(areaMaxMeters) })}
+            </Text>
+          ) : null}
           <TextField label={t('fa07.pincode')} value={form.pincode} keyboardType="number-pad" maxLength={6} onChangeText={(v) => set({ pincode: v.replace(/\D/g, '') })} error={err('pincode') ? t('fa07.pincodeInvalid') : null} hint={t('fa07.city')} />
           <View style={styles.inline}>
             <Text variant="small" style={styles.flex1}>

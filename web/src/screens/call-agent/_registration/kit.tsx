@@ -13,6 +13,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { lookupRecord, useFormOptions, type ExistingRecord, type StepState } from './api';
 import { SCRIPT_LANGUAGE_LABELS, type ScriptLanguage } from './scripts';
 import type { Choice } from './options';
+import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText, nearestArea } from './nearestArea';
 import './registration.css';
 
 type OtpPurpose = Parameters<typeof useStaffOtp>[0] | 'branch_contact';
@@ -236,20 +237,47 @@ export function PlaceFields({
   onChange,
   pinRequired = true,
   errors,
+  areaFromPin = false,
 }: {
   value: PlaceState;
   onChange: (next: PlaceState) => void;
   pinRequired?: boolean;
   errors?: { area?: string; pincode?: string; pin?: string };
+  /**
+   * Businesses (guide, 14 Nov): setting the map pin fills in the nearest area
+   * whose centre is within the Settings distance (1 km); with none that close
+   * the agent must pick one, and the picker says so.
+   */
+  areaFromPin?: boolean;
 }) {
   const t = useT();
   const options = useFormOptions();
   const [pinOpen, setPinOpen] = useState(false);
   const [pinText, setPinText] = useState('');
   const [pinError, setPinError] = useState<string | null>(null);
+  // The area name the pin filled in, so a later pin can replace it (never one the agent picked).
+  const [autoArea, setAutoArea] = useState<string | null>(null);
   const areas = options.data?.areas ?? [];
+  const maxMeters = options.data?.areaAutoFillMaxMeters ?? DEFAULT_AREA_AUTO_FILL_MAX_METERS;
   const city = value.pincode.length === 6 && /^560(\d{3})$/.test(value.pincode) && Number(value.pincode) <= 560300 ? options.data?.city ?? 'Bengaluru' : null;
   const hasPin = value.latitude !== null && value.longitude !== null;
+  const near = areaFromPin && hasPin ? nearestArea(areas, { latitude: value.latitude!, longitude: value.longitude! }, maxMeters) : null;
+  const noneNear = areaFromPin && hasPin && areas.length > 0 && !near;
+  const areaHint = !areaFromPin
+    ? undefined
+    : autoArea && value.area === autoArea
+      ? t('reg.area.fromPin', { distance: distanceText(maxMeters) })
+      : noneNear && !value.area
+        ? t('reg.area.noneNear', { distance: distanceText(maxMeters) })
+        : undefined;
+  const placePin = (pin: { latitude: number; longitude: number }) => {
+    if (!areaFromPin) return onChange({ ...value, ...pin });
+    const found = nearestArea(areas, pin, maxMeters);
+    const picked = value.area && value.area !== autoArea;
+    if (picked) return onChange({ ...value, ...pin });
+    setAutoArea(found?.name ?? null);
+    onChange({ ...value, ...pin, area: found?.name ?? '', pincode: value.pincode || found?.pincode || '' });
+  };
   return (
     <>
       <SelectField
@@ -258,16 +286,20 @@ export function PlaceFields({
         value={value.area}
         onChange={(area) => {
           const found = areas.find((a) => a.name === area);
+          setAutoArea(null);
+          // A business keeps its own map pin; other forms start the pin at the area's centre.
+          const keepPin = areaFromPin && hasPin;
           onChange({
             area,
             pincode: value.pincode || found?.pincode || '',
-            latitude: found ? found.latitude : value.latitude,
-            longitude: found ? found.longitude : value.longitude,
+            latitude: found && !keepPin ? found.latitude : value.latitude,
+            longitude: found && !keepPin ? found.longitude : value.longitude,
           });
         }}
         options={areas.map((a) => ({ value: a.name, label: a.name }))}
         placeholder={options.isLoading ? t('common.loading') : t('reg.area.choose')}
-        error={errors?.area}
+        hint={areaHint}
+        error={errors?.area ? (noneNear ? t('reg.area.noneNear', { distance: distanceText(maxMeters) }) : errors.area) : undefined}
       />
       <PincodeField
         required
@@ -312,7 +344,7 @@ export function PlaceFields({
                   setPinError(t('reg.pin.invalid'));
                   return;
                 }
-                onChange({ ...value, ...parsed });
+                placePin(parsed);
                 setPinOpen(false);
               }}
             >

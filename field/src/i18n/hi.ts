@@ -383,6 +383,8 @@ export const hi: Messages = {
   'fa07.street': 'गली / सड़क *',
   'fa07.landmark': 'पास की पहचान *',
   'fa07.area': 'इलाक़ा (सूची से) *',
+  'fa07.areaFromPin': 'दुकान की लोकेशन से भरा गया ({distance} के अंदर किसी इलाक़े का केंद्र) — ग़लत हो तो बदलें',
+  'fa07.areaNoneNear': 'इलाक़ा चुनें — इस दुकान से {distance} के अंदर कोई इलाक़ा नहीं है',
   'fa07.pincode': 'पिनकोड *',
   'fa07.pincodeInvalid': '6 अंकों का पिनकोड डालें।',
   'fa07.city': 'बेंगलुरु',

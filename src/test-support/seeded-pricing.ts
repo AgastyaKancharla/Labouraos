@@ -25,6 +25,7 @@ export const SEEDED_PRICING_POLICY = {
   noBypassPenaltyPercent: 50,
   consentWithdrawalCallWindowMinutes: 60,
   duplicateBusinessRadiusMeters: 50,
+  areaAutoFillMaxMeters: 1000,
   followUpGraceDays: 2,
   patternWindowDays: 60,
   patternBusinessMinInterviews: 5,

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { keepPreviousData, useQuery } from '@tanstack/react-query';
-import { useNavigate } from 'react-router-dom';
+import { useHref, useNavigate } from 'react-router-dom';
 import { Button } from '../../../components/Button';
 import { DataTable, type Column } from '../../../components/DataTable';
 import { useAuth } from '../../../auth/AuthProvider';
@@ -214,9 +214,10 @@ export function PagedTable<Row>({
 /** "Open →" in a table row; rows also open on click/Enter. */
 export function OpenLink({ to, label = 'Open →' }: { to: string; label?: string }) {
   const navigate = useNavigate();
+  const href = useHref(to);
   return (
     <a
-      href={`/app${to}`}
+      href={href}
       onClick={(e) => {
         e.preventDefault();
         e.stopPropagation();

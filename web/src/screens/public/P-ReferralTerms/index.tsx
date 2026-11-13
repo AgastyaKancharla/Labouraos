@@ -9,7 +9,7 @@ import { LinkProblem, Loading, Muted, PageTitle, usePersonLanguage } from '../sh
 import './referral-terms.css';
 
 /**
- * Referral partner terms (public, /app/p/referral-terms). No design file; it
+ * Referral partner terms (public, /p/referral-terms). No design file; it
  * uses the public phone pages' look. Linked from the partner's registration
  * link (the terms they sign by OTP) and from the call agent's CA15 screen.
  * `?lang=kn|hi|en` opens it in the partner's language.

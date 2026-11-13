@@ -120,6 +120,9 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
         `72${timestamp.toString().slice(-8)}`,
         `71${timestamp.toString().slice(-8)}`,
         `73${timestamp.toString().slice(-8)}`,
+        `74${timestamp.toString().slice(-8)}`,
+        `76${timestamp.toString().slice(-8)}`,
+        `77${timestamp.toString().slice(-8)}`,
       ];
       await prisma.area.deleteMany({ where: { nameKey: { startsWith: `gps area ${timestamp}` } } });
       await prisma.business.deleteMany({
@@ -210,11 +213,61 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     expect(saved.locality).toBe(`GPS Area ${timestamp}`);
   });
 
+  describe('area from GPS within 1 km (decided 14 Nov)', () => {
+    // An area far from Bengaluru's seeded areas, so only this one can be near.
+    const lat = 12.2345;
+    const lng = 76.2345;
+    const send = (body: Record<string, unknown>) => request(app.getHttpServer())
+      .post('/businesses')
+      .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
+      .send({ contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit', ...body });
+
+    beforeAll(async () => {
+      await prisma.area.create({ data: { name: `GPS Area ${timestamp} One Km`, nameKey: `gps area ${timestamp} one km`, latitude: lat, longitude: lng, active: true } });
+    });
+
+    it('fills in the area when the shop is within 1 km of its centre', async () => {
+      const phone = `74${timestamp.toString().slice(-8)}`;
+      // ~700 m north of the area's centre.
+      const response = await send({ name: 'Within A Km Cafe', phone, otpRequestId: await getVerifiedOtp(phone), businessLatitude: lat + 0.0063, businessLongitude: lng });
+      expect(response.status).toBe(201);
+      expect(response.body.locality).toBe(`GPS Area ${timestamp} One Km`);
+    });
+
+    it('refuses to save beyond 1 km when no area was picked, and saves once the agent picks one', async () => {
+      const phone = `76${timestamp.toString().slice(-8)}`;
+      const otpRequestId = await getVerifiedOtp(phone);
+      // ~1.5 km north of the area's centre: too far to guess.
+      const pin = { businessLatitude: lat + 0.0135, businessLongitude: lng };
+      const refused = await send({ name: 'Beyond A Km Cafe', phone, otpRequestId, ...pin });
+      expect(refused.status).toBe(400);
+      expect(refused.body.message).toBe('Pick the area — no area is within 1 km of this shop');
+      // In production the global filter puts the extra fields under `details`; in this test app they are at the top.
+      const detail = refused.body.details ?? refused.body;
+      expect(detail).toMatchObject({ code: 'area_required', maxMeters: 1000 });
+      expect(detail.messages.kn).toContain('ಪ್ರದೇಶ');
+      expect(detail.messages.hi).toContain('इलाक़ा');
+      expect(await prisma.business.count({ where: { phone: { in: [phone, `+91${phone}`] } } })).toBe(0);
+
+      // The refusal does not use up the verified OTP: pick an area and save.
+      const saved = await send({ name: 'Beyond A Km Cafe', phone, otpRequestId, ...pin, locality: 'Koramangala' });
+      expect(saved.status).toBe(201);
+      expect(saved.body.locality).toBe('Koramangala');
+    });
+
+    it('refuses a business with no pin and no area picked', async () => {
+      const phone = `77${timestamp.toString().slice(-8)}`;
+      const refused = await send({ name: 'No Pin Cafe', phone, otpRequestId: await getVerifiedOtp(phone) });
+      expect(refused.status).toBe(400);
+      expect(refused.body.details ?? refused.body).toMatchObject({ code: 'area_required' });
+    });
+  });
+
   it('requires a contact person role for a new business registration', async () => {
     const response = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({ name: 'Contact Role Required', phone: `96${timestamp.toString().slice(-8)}`, contactPersonName: 'Asha Rao' });
+      .send({ locality: 'Koramangala', name: 'Contact Role Required', phone: `96${timestamp.toString().slice(-8)}`, contactPersonName: 'Asha Rao' });
     expect(response.status).toBe(400);
     expect(response.body.message).toContain('Contact person role');
   });
@@ -263,7 +316,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     const response = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Rao Household', businessType: 'household', familyName: 'Rao', phone, otpRequestId,
         contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit', gstNumber: '29ABCDE1234F1Z5',
       });
@@ -275,7 +328,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     const valid = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentKoramangalaToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Rao Household', businessType: 'household', familyName: 'Rao', phone: cleanPhone, otpRequestId: cleanOtpRequestId,
         contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
       }).expect(201);
@@ -292,7 +345,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     const missingName = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({ name: 'No Contact Name', phone: `89${timestamp.toString().slice(-8)}`, contactPersonRole: 'owner', heardFrom: 'field_visit' });
+      .send({ locality: 'Koramangala', name: 'No Contact Name', phone: `89${timestamp.toString().slice(-8)}`, contactPersonRole: 'owner', heardFrom: 'field_visit' });
     expect(missingName.status).toBe(400);
     expect(missingName.body.message).toContain('Contact person name');
 
@@ -301,7 +354,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     const refused = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Documents Refused', phone, otpRequestId, contactPersonName: 'Asha Rao', contactPersonRole: 'owner', heardFrom: 'field_visit',
         noDocuments: true, gstNumber: '29ABCDE1234F1Z5',
       });
@@ -419,7 +472,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
     const createRes = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${fieldAgentIndiranagarToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Indiranagar Tech Labs',
         address: '12th Main Indiranagar',
         contactPerson: 'Deepak Verma',

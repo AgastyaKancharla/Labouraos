@@ -23,7 +23,7 @@ export type WebAppFile =
   | { kind: 'missing' };
 
 /**
- * Maps a request path under /app to what should be sent:
+ * Maps a request path (the app is served at the site root) to what should be sent:
  * - an existing file inside web/dist (hashed files under assets/ are cached forever);
  * - a path that looks like a file (has an extension) but does not exist → missing (404),
  *   so a broken script tag never receives HTML;
@@ -33,7 +33,7 @@ export type WebAppFile =
 export function resolveWebAppFile(distDir: string, requestPath: string): WebAppFile {
   let relative: string;
   try {
-    relative = decodeURIComponent(requestPath.replace(/^\/app(\/|$)/, ''));
+    relative = decodeURIComponent(requestPath.replace(/^\/+/, ''));
   } catch {
     return { kind: 'missing' };
   }

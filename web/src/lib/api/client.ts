@@ -4,7 +4,7 @@ import { announceTestMode } from './testMode';
 
 /**
  * The one way screens talk to the Nest API. Same origin (the app is served
- * by the API at /app, and Vite proxies in development), JSON in and out,
+ * by the API at the site root, and Vite proxies in development), JSON in and out,
  * the staff JWT attached, errors thrown as ApiError.
  *
  * A 401 on an authenticated request ends the session: the store is cleared

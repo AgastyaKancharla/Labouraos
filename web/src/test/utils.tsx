@@ -90,7 +90,7 @@ export function mockApi(routes: Record<string, Handler>) {
 export interface RenderOptions {
   /** Wrap in this portal's AppShell (sidebar/header) and context. */
   portal?: PortalKey;
-  /** Initial URL inside the app (without /app). */
+  /** Initial URL inside the app (the app is at the site root). */
   path?: string;
   /** Route pattern for useParams, e.g. '/ceo/businesses/:id'. Defaults to path. */
   route?: string;

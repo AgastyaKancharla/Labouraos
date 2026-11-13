@@ -1,10 +1,29 @@
 # Laboura web app (`web/`)
 
 One React app for the CEO, Manager, Team Lead and Finance portals, the call
-agent console and the public job seeker pages. The Nest API serves it at
-**`/app`** (`src/modules/web-app`); the old `/admin`, `/call-agent` and
-`/field-agent` pages keep working until their screens are rebuilt here.
-Field agents use the separate Laboura Field phone app.
+agent console and the public job seeker pages. The Nest API serves it at the
+**site root** of `app.laboura.com` (and of the Render test address):
+`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`, the
+public pages at `/p/...`, and `/field-app` (the note that sends a field agent
+to Laboura Field). See `src/modules/web-app/site-routing.middleware.ts`.
+
+- The API shares some first segments with the portals (`/ceo/...`,
+  `/finance/...`, `/manager/...`). The server tells them apart by what the
+  browser asks for: a page the browser opens (`Accept: text/html`) gets the
+  app; the app's own API calls send `Accept: application/json` (`lib/api`) and
+  reach the API. Never fetch an API path without that header.
+- A new top-level route must be added to the server's `WEB_APP_ROOTS` (and
+  `WEB_ROOTS` in `vite.config.ts`); `src/App.root.test.tsx` checks the list.
+- Old `/app/...` links (invites, resets, `/app/p/...` sent by SMS or WhatsApp)
+  are redirected permanently by the server to the same path without `/app`.
+- Links in screens: use router paths (`navigate('/ceo/refunds')`, `useHref`),
+  never a hard-coded prefix.
+- The old `/admin` and `/field-agent` consoles keep working; the old
+  `/call-agent` console is now at `/console/call-agent` only, because
+  `/call-agent` is this app's call agent console.
+
+Field agents use the separate Laboura Field phone app (`field.laboura.com`,
+or `/field` on the Render address).
 
 React 19 · TypeScript (strict) · Vite 7 · React Router 7 · TanStack Query 5 ·
 Vitest + Testing Library. Every version is pinned exactly in `package.json`.
@@ -14,7 +33,7 @@ Vitest + Testing Library. Every version is pinned exactly in `package.json`.
 | | |
 | --- | --- |
 | `npm run web:install` | install `web/` dependencies (its own lockfile) |
-| `npm run web:dev` | Vite on http://localhost:5173/app/ — API calls go to Nest on :3000 (`npm run dev`) |
+| `npm run web:dev` | Vite on http://localhost:5173/ (e.g. `/login`, `/ceo`) — API calls go to Nest on :3000 (`npm run dev`) |
 | `npm run web:test` | Vitest, once (`npm run test:watch --prefix web` while working) |
 | `npm run web:lint` | ESLint (same base rules as the API, plus React hooks) |
 | `npm run web:build` | type-check and build into `web/dist`, which Nest serves |
@@ -44,7 +63,7 @@ src/
 
 1. **Find your design id.** Every route is already in
    `src/portals/screens.ts`, named after its design file in
-   `cc-canvas/project/<id>.dc.html` (e.g. `C-Refunds` → `/app/ceo/refunds`).
+   `cc-canvas/project/<id>.dc.html` (e.g. `C-Refunds` → `/ceo/refunds`).
    Until you build it, the route shows a placeholder that names the design.
    `variants` lists other designs of the same screen in other states; build
    them into the same route.

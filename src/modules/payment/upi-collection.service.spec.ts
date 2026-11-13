@@ -67,7 +67,7 @@ describe('UpiCollectionService', () => {
     expect(params.searchParams.get('tr')).toBe(payment.upiReference);
     expect(params.searchParams.get('cu')).toBe('INR');
     // The SMS and WhatsApp link opens the public phone page (P05b); /payments/request/... redirects there.
-    expect(result.paymentLink).toBe(`https://app.laboura.in/app/p/fee/${payment.upiReference}`);
+    expect(result.paymentLink).toBe(`https://app.laboura.in/p/fee/${payment.upiReference}`);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         method: 'upi_direct', status: 'pending', amount: 49900,

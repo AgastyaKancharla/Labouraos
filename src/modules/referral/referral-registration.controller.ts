@@ -49,7 +49,7 @@ export class ReferralRegistrationController {
   ) {}
 
   /**
-   * Where the partner's one link stands (web: /app/p/partner/:token and each
+   * Where the partner's one link stands (web: /p/partner/:token and each
    * step after it). Without a verified code to their own number it shows only
    * the masked number, the language and whether everything is done.
    */

@@ -2,6 +2,7 @@ import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it } from 'vitest';
 import { mockApi, renderScreen, signInAs } from '../../../test/utils';
+import { nearestArea } from '../_registration/nearestArea';
 import RegisterBusiness from './index';
 import { businessBody, EMPTY_BUSINESS, EMPTY_STAFF_ROW, type BusinessForm } from './payload';
 
@@ -114,6 +115,70 @@ describe('Register a new business (CA13)', () => {
     await user.click(screen.getByRole('button', { name: 'Save business' }));
     expect(await screen.findByText('This GST or licence number is already registered')).toBeInTheDocument();
     expect(await screen.findByRole('link', { name: 'Open Annapoorna’s record' })).toHaveAttribute('href', '/call-agent/register/business/saved?id=b-211');
+  });
+
+  describe('area from the map pin within 1 km (decided 14 Nov)', () => {
+    const areas = [
+      { name: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.9166, longitude: 77.6101 },
+      { name: 'Jayanagar', pincode: '560041', latitude: 12.925, longitude: 77.5838 },
+    ];
+
+    it('picks the nearest area centre within the limit, and none beyond it', () => {
+      // ~700 m and ~1.5 km north of BTM's centre.
+      expect(nearestArea(areas, { latitude: 12.9229, longitude: 77.6101 })?.name).toBe('BTM Layout 2nd Stage');
+      expect(nearestArea(areas, { latitude: 12.9301, longitude: 77.6101 })).toBeNull();
+      expect(nearestArea(areas, { latitude: 12.9301, longitude: 77.6101 }, 2000)?.name).toBe('BTM Layout 2nd Stage');
+    });
+
+    async function setPin(user: ReturnType<typeof userEvent.setup>, coords: string) {
+      await user.click(screen.getByRole('button', { name: /Set pin|Pin set · change/ }));
+      const input = await screen.findByLabelText(/Coordinates or maps link/);
+      await user.clear(input);
+      await user.type(input, coords);
+      await user.click(screen.getByRole('button', { name: 'Use this pin' }));
+    }
+
+    it('fills the area in from a pin within 1 km, and asks the agent to pick when none is that close', async () => {
+      const user = userEvent.setup();
+      mockApi(routes({ 'GET /screens/call-registration/options': { city: 'Bengaluru', areas, areaAutoFillMaxMeters: 1000 } }));
+      signInAs('call_agent');
+      sessionStorage.setItem('laboura.draft.business.staff-ca', JSON.stringify({ ...form, place: { area: '', pincode: '', latitude: null, longitude: null } }));
+      renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
+      const area = (await screen.findByLabelText(/Area \(from the list\)/)) as HTMLSelectElement;
+      await waitFor(() => expect(area.options.length).toBeGreaterThan(2));
+
+      await setPin(user, '12.9229, 77.6101');
+      await waitFor(() => expect(area.value).toBe('BTM Layout 2nd Stage'));
+      expect(screen.getByText(/Filled in from the map pin/)).toBeInTheDocument();
+
+      await setPin(user, '12.9301, 77.6101');
+      await waitFor(() => expect(area.value).toBe(''));
+      expect(screen.getByText('Pick the area — no area is within 1 km of this shop')).toBeInTheDocument();
+
+      // The agent picks; the shop's own pin stays where it was.
+      await user.selectOptions(area, 'Jayanagar');
+      expect(area.value).toBe('Jayanagar');
+      expect(screen.getByText('At 12.9301, 77.6101')).toBeInTheDocument();
+      expect(screen.queryByText('Pick the area — no area is within 1 km of this shop')).not.toBeInTheDocument();
+    });
+
+    it('shows the server refusal as "pick the area" in the agent’s language', async () => {
+      const user = userEvent.setup();
+      mockApi(
+        routes({
+          'POST /businesses': {
+            status: 400,
+            body: { statusCode: 400, message: 'Pick the area — no area is within 1 km of this shop', details: { code: 'area_required', maxMeters: 1000 } },
+          },
+        }),
+      );
+      signInAs('call_agent');
+      sessionStorage.setItem('laboura.draft.business.staff-ca', JSON.stringify({ ...form, staff: [] }));
+      renderScreen(<RegisterBusiness />, { portal: 'call-agent', path: '/call-agent/register/business' });
+      await verify(user);
+      await user.click(screen.getByRole('button', { name: 'Save business' }));
+      expect(await screen.findByText('Pick the area — no area is within 1 km of this shop')).toBeInTheDocument();
+    });
   });
 
   it('a household gives a family name and no documents', () => {

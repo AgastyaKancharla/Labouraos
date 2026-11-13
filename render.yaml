@@ -80,7 +80,14 @@ services:
         value: "15m"
 
       # --- Must be filled before the first start (the server refuses to start without it) ---
+      # The address every SMS / WhatsApp link points at (invites, resets, /p/...):
+      # https://app.laboura.com once DEPLOY.md, "Connect laboura.com at Hostinger",
+      # is done; until then the onrender.com address Render shows.
       - key: PUBLIC_APP_URL
+        sync: false
+      # The address that opens Laboura Field at its root: field.laboura.com
+      # (empty until it is connected; Laboura Field is always at /field too).
+      - key: FIELD_HOST
         sync: false
 
       # --- Uploaded files (Supabase Storage). Production refuses to start otherwise. ---

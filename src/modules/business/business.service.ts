@@ -40,9 +40,7 @@ import { BusinessVerificationService } from './business-verification.service';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { AgentViewer, agentViewerFor, businessForViewer } from './business-agent-view';
-
-/** A pin farther than this from every area gets no area filled in (the agent picks one). */
-export const NEAREST_AREA_MAX_METERS = 25_000;
+import { areaAutoFillMaxMeters, areaRequiredError, DEFAULT_AREA_AUTO_FILL_MAX_METERS } from './area-auto-fill';
 
 @Injectable()
 export class BusinessService {
@@ -120,9 +118,10 @@ export class BusinessService {
 
   /**
    * The nearest active area (Areas table, managed by the CEO and Managers)
-   * to a map pin, within NEAREST_AREA_MAX_METERS; null when none is close.
+   * to a map pin whose centre is within `maxMeters` (C-Pricing, 1 km by
+   * default); null when none is that close.
    */
-  async nearestAreaName(latitude: number, longitude: number): Promise<string | null> {
+  async nearestAreaName(latitude: number, longitude: number, maxMeters: number = DEFAULT_AREA_AUTO_FILL_MAX_METERS): Promise<string | null> {
     const areas = await this.prisma.area.findMany({
       where: { active: true, mergedIntoId: null, latitude: { not: null }, longitude: { not: null } },
       select: { name: true, latitude: true, longitude: true },
@@ -130,7 +129,7 @@ export class BusinessService {
     let best: { name: string; meters: number } | null = null;
     for (const area of areas) {
       const meters = calculateHaversineDistanceMeters(latitude, longitude, area.latitude!, area.longitude!);
-      if (meters <= NEAREST_AREA_MAX_METERS && (!best || meters < best.meters)) best = { name: area.name, meters };
+      if (meters <= maxMeters && (!best || meters < best.meters)) best = { name: area.name, meters };
     }
     return best?.name ?? null;
   }
@@ -364,6 +363,19 @@ export class BusinessService {
         matchedOn: documentMatches,
       });
     }
+    const latitude = typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null);
+    const longitude = typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null);
+    // Guide (decided 14 Nov): a business's area is filled in from its GPS
+    // location — the nearest area whose centre is within 1 km (C-Pricing). If
+    // no area is that close, the agent must pick it before saving. Checked
+    // before the OTP is used up, so the agent can pick an area and save again.
+    if (!locality) {
+      const maxMeters = areaAutoFillMaxMeters(policy);
+      if (latitude !== null && longitude !== null) {
+        locality = await this.nearestAreaName(latitude, longitude, maxMeters);
+      }
+      if (!locality) throw areaRequiredError(maxMeters);
+    }
     const code = await this.idService.generateCode('business');
     const city = dto.city?.trim() ?? staff.city ?? 'Bengaluru';
 
@@ -377,12 +389,6 @@ export class BusinessService {
     }
 
     const capturedChannel = staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
-    const latitude = typeof businessLat === 'number' ? businessLat : (typeof visitLat === 'number' ? visitLat : null);
-    const longitude = typeof businessLon === 'number' ? businessLon : (typeof visitLon === 'number' ? visitLon : null);
-    // Guide, field agents: a business's area is filled in from its GPS when none was picked.
-    if (!locality && latitude !== null && longitude !== null) {
-      locality = await this.nearestAreaName(latitude, longitude);
-    }
     const accountAgent = staff.role === 'field_agent'
       ? { accountAgentId: staff.id, accountAgentAssignedAt: this.clock.now() }
       : {};

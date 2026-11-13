@@ -18,7 +18,7 @@ import { postLiveSelfie } from '../public/shared/api';
 import { LiveSelfie } from '../public/shared/LiveSelfie';
 
 /**
- * The invite page: /app/p/invite/:token (the link in `inviteUrl` when the
+ * The invite page: /p/invite/:token (the link in `inviteUrl` when the
  * CEO, a Manager or a Team Lead adds someone or resets their password).
  *
  * No design file exists for it, so it uses the sign-in card (M01). Steps:

@@ -6,14 +6,14 @@ import { ceoSidebar, financeSidebar, managerSidebar, teamLeadSidebar } from './s
 import type { ScreenDef, SidebarConfig } from './types';
 
 /**
- * The six parts of the app. Each has a URL root under /app, the roles that
+ * The six parts of the app. Each has a URL root at the site root (app.laboura.com/ceo …), the roles that
  * may open it, its screens (portals/screens.ts) and its navigation.
  */
 export type PortalKey = 'ceo' | 'manager' | 'team-lead' | 'finance' | 'call-agent' | 'public';
 
 export interface PortalDef {
   key: PortalKey;
-  /** Route root inside the app (the browser URL is /app + root). */
+  /** Route root, also the browser URL (app.laboura.com + root). Keep the server's WEB_APP_ROOTS in step. */
   root: string;
   family: DesignFamily;
   /** Empty for the public pages (no sign-in). */

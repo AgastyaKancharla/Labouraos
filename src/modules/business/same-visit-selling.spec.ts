@@ -196,7 +196,7 @@ describe('Same-visit selling, Team Lead pause and business edit rights', () => {
     const created = await request(app.getHttpServer())
       .post('/businesses')
       .set(auth(tokens.fieldAgent))
-      .send({
+      .send({ locality: 'Koramangala',
         name: `Same Visit Bakery ${suffix}`,
         phone,
         otpRequestId: await verifiedOtp(phone),

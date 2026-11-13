@@ -49,7 +49,7 @@ describe('Phase 15 Task 6 screens', () => {
     } as never);
     const redirect = jest.fn();
     await controller.replyPage('single-use-token', 'text/html', { redirect } as never);
-    expect(redirect).toHaveBeenCalledWith(302, expect.stringMatching(/\/app\/p\/offer\/single-use-token$/));
+    expect(redirect).toHaveBeenCalledWith(302, expect.stringMatching(/\/\/[^/]+\/p\/offer\/single-use-token$/));
     const json = await controller.replyPage('single-use-token', 'application/json', { redirect: jest.fn() } as never);
     expect(json).toEqual(details);
     expect(JSON.stringify(json)).not.toContain('businessName');

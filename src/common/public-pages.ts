@@ -2,10 +2,12 @@ import { publicLink } from './public-link';
 
 /**
  * The public phone pages of the web app (web/src/screens/public, served at
- * /app/p/...). Every SMS and WhatsApp link to a job seeker, a business owner
- * or someone paying for a job seeker points at one of these. The older
- * server-rendered URLs (/consent/:token, /interviews/reply/:token …) redirect
- * here, so links already sent keep working.
+ * /p/... on app.laboura.com — PUBLIC_APP_URL). Every SMS and WhatsApp link to a
+ * job seeker, a business owner or someone paying for a job seeker points at
+ * one of these. The older server-rendered URLs (/consent/:token,
+ * /interviews/reply/:token …) redirect here, and links already sent with the
+ * old /app/p/... address are redirected permanently to /p/... (site routing,
+ * src/modules/web-app), so every link already sent keeps working.
  *
  * Keep in step with publicScreens in web/src/portals/screens.ts.
  */
@@ -30,10 +32,10 @@ export const PUBLIC_PAGE_PATHS = {
 
 export type PublicPage = keyof typeof PUBLIC_PAGE_PATHS;
 
-/** Path of a public page inside the site: publicPagePath('offerReply', t) → '/app/p/offer/t'. */
+/** Path of a public page inside the site: publicPagePath('offerReply', t) → '/p/offer/t'. */
 export function publicPagePath(page: PublicPage, token: string): string {
   if (!token) throw new Error(`A ${page} link needs a token`);
-  return `/app/p/${PUBLIC_PAGE_PATHS[page]}/${encodeURIComponent(token)}`;
+  return `/p/${PUBLIC_PAGE_PATHS[page]}/${encodeURIComponent(token)}`;
 }
 
 /** Absolute link to a public page, for SMS and WhatsApp. */

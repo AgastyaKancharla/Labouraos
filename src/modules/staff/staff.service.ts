@@ -57,12 +57,12 @@ export const INVITE_PROBLEM_MESSAGE: Record<InviteProblem, string> = {
 const ACCEPT_INVITE_REFUSED = 'Invalid or expired invite token';
 
 /**
- * Where the invite page lives in the web app. It sits under /app/p (public,
+ * Where the invite page lives in the web app. It sits under /p (public,
  * outside Cloudflare Access) because field agents accept their invite from
  * their phone, outside the office network.
  */
 export function staffInvitePath(token: string): string {
-  return `/app/p/invite/${encodeURIComponent(token)}`;
+  return `/p/invite/${encodeURIComponent(token)}`;
 }
 
 /** The link the person who added a hire sends them (shown once, with the token). */

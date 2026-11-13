@@ -11,6 +11,7 @@ import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } fro
 import { phoneSearchTerm } from '../../common/phone/indian-mobile';
 import { readPublicLinkPhone } from '../../common/public-link-store.service';
 import { AreaService } from '../area/area.service';
+import { areaAutoFillMaxMeters } from '../business/area-auto-fill';
 
 /**
  * Read endpoints for the call agent console's registration screens
@@ -71,6 +72,9 @@ export class ScreensCallRegistrationService {
     return {
       city: 'Bengaluru',
       areas,
+      // Guide (14 Nov): the form fills the area in from the map pin when an
+      // area's centre is within this distance; otherwise the agent picks it.
+      areaAutoFillMaxMeters: areaAutoFillMaxMeters(policy),
       scriptTerms: {
         activationFeePaise: policy.activationFeePaise,
         referralPayoutPaise: policy.referralPayoutPaise,

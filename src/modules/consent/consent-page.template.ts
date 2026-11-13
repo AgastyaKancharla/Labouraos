@@ -5,7 +5,7 @@ import {
 } from './consent.constants';
 
 /** The public referral partner terms page in the web app (web/src/screens/public/P-ReferralTerms). */
-export const REFERRAL_TERMS_PAGE_PATH = '/app/p/referral-terms';
+export const REFERRAL_TERMS_PAGE_PATH = '/p/referral-terms';
 
 function escapeHtml(value: string): string {
   return value

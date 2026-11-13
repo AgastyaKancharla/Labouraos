@@ -189,7 +189,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     const bizRes = await request(app.getHttpServer())
       .post('/businesses')
       .set('Authorization', `Bearer ${caToken}`)
-      .send({
+      .send({ locality: 'Koramangala',
         name: 'Call Agent Biz Test',
         phone: bizPhone,
         area: 'Indiranagar',

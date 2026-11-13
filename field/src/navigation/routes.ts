@@ -1,6 +1,6 @@
 /**
- * Every screen's URL in one place (with the web app's /field prefix added by
- * expo-router). Screens navigate with `router.push(routes.visitStart)`.
+ * Every screen's URL in one place (expo-router adds the build's base path:
+ * /field on the Render address, none at the root of field.laboura.com). Screens navigate with `router.push(routes.visitStart)`.
  * The comment names the design each route implements.
  */
 export const routes = {

@@ -88,7 +88,7 @@ export const STAFF_ROLES = [
   'field_agent',
 ] as const;
 
-/** Web app portal roots (the browser URL is /app + root). Field agents use the Laboura Field app. */
+/** Web app portal roots (the browser URL is the root itself, e.g. app.laboura.com/ceo). Field agents use the Laboura Field app. */
 const PORTAL_ROOT: Record<string, string | null> = {
   ceo: '/ceo',
   manager: '/manager',

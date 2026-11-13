@@ -274,7 +274,7 @@ describe('Staff photo (guide, 14 Nov)', () => {
 });
 
 describe('Password resets (POST /staff/:id/reset-password, never the old re-issued invite)', () => {
-  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.in/app/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
+  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.com/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
 
   it('Login codes: Reset on a locked account sends a one-time link and keeps the old password until it is used', async () => {
     const api = mockApi({
@@ -290,7 +290,7 @@ describe('Password resets (POST /staff/:id/reset-password, never the old re-issu
     expect(within(d).getByText(/old password and authenticator keep working until they use the link/)).toBeInTheDocument();
     await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
     await waitFor(() => expect(api.calls('POST /staff/ca9/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
     expect(api.calls('POST /staff/ca9/reissue-invite')).toHaveLength(0);
 
     // Someone who never set a password gets a new invite instead (a reset needs a password to replace).
@@ -309,7 +309,7 @@ describe('Password resets (POST /staff/:id/reset-password, never the old re-issu
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Make the link' }));
     await waitFor(() => expect(api.calls('POST /staff/ca1/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
     const pending = screen.getByText('Meena R').closest('tr') as HTMLElement;
     expect(within(pending).queryByRole('button', { name: 'Reset password' })).not.toBeInTheDocument();
     expect(within(pending).getByRole('button', { name: 'Resend' })).toBeInTheDocument();
@@ -621,6 +621,25 @@ describe('Pricing & policy', () => {
     await userEvent.type(screen.getByLabelText(/^Holiday/), 'Christmas');
     await userEvent.click(screen.getByRole('button', { name: '+ Add holiday' }));
     await waitFor(() => expect(api.calls('POST /attendance/holidays')[0].body).toEqual({ date: '2026-12-25', name: 'Christmas' }));
+  });
+
+  it("shows and changes the distance for filling in a business's area from its GPS (decided 14 Nov: 1 km)", async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/pricing/history': { current: { ...policy, areaAutoFillMaxMeters: 1000 }, since: {}, scheduled: [], history: [] },
+      'GET /attendance/holidays': { year: 2026, holidays: [] },
+      'POST /pricing': { ok: true },
+    });
+    render(<Pricing />, '/ceo/pricing');
+    expect(await screen.findByText('Nearest area within 1,000 m of the pin · farther, the agent picks it')).toBeInTheDocument();
+    const row = screen.getByText("Business area from the shop's GPS").closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
+    const d = await dialog();
+    const meters = within(d).getByLabelText(/Fill in the nearest area/);
+    await userEvent.clear(meters);
+    await userEvent.type(meters, '1500');
+    await userEvent.click(within(d).getByRole('button', { name: 'Change now' }));
+    await waitFor(() => expect(api.calls('POST /pricing')[0].body).toEqual({ areaAutoFillMaxMeters: 1500 }));
   });
 
   it('shows the go-live date (CEO only) and sets it: payroll and paid leave count from it', async () => {

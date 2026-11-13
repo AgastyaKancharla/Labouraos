@@ -5,7 +5,13 @@
  *   - sw.js, a service worker that caches the app shell so it opens on weak
  *     signal, plus register-sw.js that installs it.
  *
- * Usage: node scripts/pwa.js dist
+ * Usage: node scripts/pwa.js dist          (base path from app.json: /field/)
+ *        node scripts/pwa.js dist-root /    (the build for the root of field.laboura.com)
+ *
+ * Laboura Field is built twice (decided 14 Nov): `dist` for /field on the
+ * office and Render addresses, and `dist-root` for the root of its own
+ * address, field.laboura.com. Expo bakes the base path into the bundle, so one
+ * build cannot serve both.
  */
 const crypto = require('crypto');
 const fs = require('fs');
@@ -23,7 +29,13 @@ const APP = {
 function basePath(appJsonPath = path.join(__dirname, '..', 'app.json')) {
   const config = JSON.parse(fs.readFileSync(appJsonPath, 'utf8'));
   const base = (config.expo && config.expo.experiments && config.expo.experiments.baseUrl) || '';
-  return `${base.replace(/\/+$/, '')}/`;
+  return normaliseBase(base);
+}
+
+/** "/field" → "/field/", "" or "/" → "/". */
+function normaliseBase(base) {
+  const trimmed = String(base || '').replace(/^\/+|\/+$/g, '');
+  return trimmed ? `/${trimmed}/` : '/';
 }
 
 function buildManifest(base) {
@@ -120,10 +132,20 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+const OWN_FILES = new Set(PRECACHE);
+const OWN_FOLDERS = [BASE + '_expo/', BASE + 'assets/', BASE + 'icons/'];
+
+// Only the app's own files and its pages. At the root of field.laboura.com the
+// scope is "/", the same address as the API (/auth, /attendance…): those calls
+// are never answered from the cache.
 function isAppRequest(request) {
   if (request.method !== 'GET') return false;
   const url = new URL(request.url);
-  return url.origin === self.location.origin && (url.pathname === BASE.slice(0, -1) || url.pathname.startsWith(BASE));
+  if (url.origin !== self.location.origin) return false;
+  const inScope = url.pathname === BASE.slice(0, -1) || url.pathname.startsWith(BASE);
+  if (!inScope) return false;
+  if (request.mode === 'navigate') return true;
+  return OWN_FILES.has(url.pathname) || OWN_FOLDERS.some((folder) => url.pathname.startsWith(folder));
 }
 
 // Screens: network first (new deploys show at once), the cached app when the
@@ -176,6 +198,7 @@ if ('serviceWorker' in navigator) {
 }
 
 function run(distDir, base = basePath()) {
+  base = normaliseBase(base);
   const indexPath = path.join(distDir, 'index.html');
   if (!fs.existsSync(indexPath)) throw new Error(`${indexPath} not found — run expo export first`);
   fs.writeFileSync(indexPath, injectHead(fs.readFileSync(indexPath, 'utf8'), base));
@@ -189,8 +212,9 @@ function run(distDir, base = basePath()) {
 
 if (require.main === module) {
   const dir = path.resolve(process.argv[2] || 'dist');
-  const { files, version } = run(dir);
-  console.log(`Laboura Field web app ready in ${dir}: ${files.length} files cached by sw.js (version ${version}).`);
+  const base = process.argv[3] === undefined ? basePath() : normaliseBase(process.argv[3]);
+  const { files, version } = run(dir, base);
+  console.log(`Laboura Field web app (${base}) ready in ${dir}: ${files.length} files cached by sw.js (version ${version}).`);
 }
 
-module.exports = { basePath, buildManifest, injectHead, buildServiceWorker, buildRegisterScript, precacheList, listFiles, run };
+module.exports = { basePath, normaliseBase, buildManifest, injectHead, buildServiceWorker, buildRegisterScript, precacheList, listFiles, run };

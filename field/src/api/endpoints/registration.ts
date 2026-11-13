@@ -28,7 +28,7 @@ export interface OtpSendResult {
 }
 
 export const registrationApi = (api: ApiClient) => ({
-  options: () => api.get<{ city: string; areas: Area[] }>('/screens/call-registration/options'),
+  options: () => api.get<{ city: string; areas: Area[]; areaAutoFillMaxMeters?: number }>('/screens/call-registration/options'),
   trades: () => api.get<Trade[]>('/trades'),
   /** Live: the contact person reads the code out. */
   sendOtp: (phone: string, requestId?: string) =>

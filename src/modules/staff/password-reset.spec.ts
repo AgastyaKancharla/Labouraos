@@ -17,7 +17,7 @@ function reasonOf(body: { reason?: string; details?: { reason?: string } }): str
 /**
  * Reset password (Master Guide, Passwords and email; Manager portal MG-Staff):
  * a Manager (own tree), a Team Lead (own agents) or the CEO issues a reset
- * that works like a new invite link on /app/p/invite/:token. The old password
+ * that works like a new invite link on /p/invite/:token. The old password
  * works until the link is used; then it stops and every session ends. Each
  * reset is stored with who issued it and audit-logged.
  */
@@ -77,7 +77,7 @@ describe('Password reset: issue, use on the invite page, scope, audit', () => {
       .send({});
   const post = (path: string, body: Record<string, unknown>) =>
     request(app.getHttpServer()).post(path).set('X-Forwarded-For', freshIp()).send(body);
-  const tokenOf = (url: string) => decodeURIComponent(url.split('/app/p/invite/')[1]);
+  const tokenOf = (url: string) => decodeURIComponent(url.split('/p/invite/')[1]);
   const passwordIs = async (key: string, password: string) => {
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: people[key].id } });
     return bcrypt.compare(password, row.passwordHash);
@@ -119,7 +119,7 @@ describe('Password reset: issue, use on the invite page, scope, audit', () => {
   it('a Manager resets an agent in their tree: link on the invite page, record stored, audit-logged', async () => {
     const res = await issue('mgrA', 'agentA');
     expect(res.status).toBe(200);
-    expect(res.body.resetUrl).toMatch(/\/app\/p\/invite\/[0-9a-f]{64}$/);
+    expect(res.body.resetUrl).toMatch(/\/\/[^/]+\/p\/invite\/[0-9a-f]{64}$/);
     expect(res.body.resetToken).toHaveLength(64);
     expect(JSON.stringify(res.body)).not.toContain('passwordHash');
 

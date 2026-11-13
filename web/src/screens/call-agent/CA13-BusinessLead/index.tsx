@@ -42,6 +42,7 @@ import {
 } from '../_registration/options';
 import { isAboveMarket, isBelowLegalMinimum } from '../_registration/salary';
 import { businessScript } from '../_registration/scripts';
+import { DEFAULT_AREA_AUTO_FILL_MAX_METERS, distanceText } from '../_registration/nearestArea';
 import { useDraft } from '../_registration/useDraft';
 import {
   businessBody,
@@ -110,6 +111,13 @@ export default function RegisterBusiness() {
       if (typeof code === 'string') {
         const matched = errorDetail(e, 'matchedOn');
         setDuplicate({ record: { type: 'business', code }, what: Array.isArray(matched) && !matched.includes('phone') ? 'document' : 'number' });
+        return;
+      }
+      if (errorDetail(e, 'code') === 'area_required') {
+        // No area picked and none within the Settings distance of the pin (guide, 14 Nov).
+        const meters = errorDetail(e, 'maxMeters');
+        setShowErrors(true);
+        setSaveError(t('reg.area.noneNear', { distance: distanceText(typeof meters === 'number' ? meters : DEFAULT_AREA_AUTO_FILL_MAX_METERS) }));
         return;
       }
       if (isApiError(e) && /OTP/i.test(e.message)) setMobile((m) => ({ ...m, requestId: null, verifiedAt: null }));
@@ -213,7 +221,7 @@ export default function RegisterBusiness() {
             <TextField label={t('reg.biz.shopNumber')} required value={form.shopNumber} onChange={(v) => set('shopNumber', v)} error={err('shopNumber')} />
             <TextField label={t('reg.biz.street')} required value={form.street} onChange={(v) => set('street', v)} error={err('street')} />
             <TextField label={t('reg.biz.landmark')} required value={form.landmark} onChange={(v) => set('landmark', v)} error={err('landmark')} />
-            <PlaceFields value={form.place} onChange={(p) => set('place', p)} errors={{ area: err('area'), pincode: err('pincode'), pin: err('pin') }} />
+            <PlaceFields areaFromPin value={form.place} onChange={(p) => set('place', p)} errors={{ area: err('area'), pincode: err('pincode'), pin: err('pin') }} />
           </div>
           {form.branches.map((b, i) => (
             <div className="reg-box" key={i}>

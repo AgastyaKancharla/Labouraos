@@ -4,6 +4,7 @@ import { kiran, renderWithApp } from '@/test/render';
 import { saveDraft } from '../_visits/visitDraft';
 import { businessBody, formErrors, type FormState } from './form';
 import RegisterBusinessScreen from '.';
+import { nearestArea } from '@/lib/nearestArea';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
 
@@ -79,6 +80,53 @@ describe('FA07 Register a business', () => {
       staffNeededRows: [{ trade: 'Cook', headcount: 1, salaryMinPaise: 1600000, salaryMaxPaise: 1600000, shift: 'day' }],
     });
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith({ pathname: '/visit/done', params: { businessId: 'b-new', visitId: 'v-7' } }));
+  });
+
+  describe('area from the shop\'s GPS within 1 km (decided 14 Nov)', () => {
+    const areas = [
+      { name: 'BTM Layout 2nd Stage', pincode: '560076', latitude: 12.9166, longitude: 77.6101 },
+      { name: 'Jayanagar', pincode: '560041', latitude: 12.925, longitude: 77.5838 },
+    ];
+    const visitAt = (latitude: number) => {
+      saveDraft({
+        id: 'v-8', startedAt: '2026-11-09T06:00:00Z', latitude, longitude: 77.6101, accuracy: 8, shopName: 'Sri Sai Stores', businessId: null,
+        businessName: null, spokeTo: 'owner', contactPhone: '', endedAt: '2026-11-09T06:14:00Z', proofDistance: 6, proofAt: null,
+      });
+      searchParams.current = { visitId: 'v-8' };
+    };
+    const route = (url: string) => {
+      if (url.endsWith('/screens/call-registration/options')) return { status: 200, body: { city: 'Bengaluru', areas, areaAutoFillMaxMeters: 1000 } };
+      if (url.endsWith('/trades')) return { status: 200, body: trades };
+      return undefined;
+    };
+
+    it('finds the nearest area centre within the limit, and none beyond it', () => {
+      expect(nearestArea(areas, { latitude: 12.9229, longitude: 77.6101 })?.name).toBe('BTM Layout 2nd Stage');
+      expect(nearestArea(areas, { latitude: 12.9301, longitude: 77.6101 })).toBeNull();
+      expect(nearestArea(areas, { latitude: 12.9301, longitude: 77.6101 }, 2000)?.name).toBe('BTM Layout 2nd Stage');
+    });
+
+    it('fills the area in from a shop within 1 km of an area centre', async () => {
+      visitAt(12.9229); // ~700 m north of BTM's centre
+      await renderWithApp(<RegisterBusinessScreen />, { signedInAs: kiran, route });
+      await waitFor(() => screen.getByTestId('fa07-area-from-pin'));
+      expect(screen.getByTestId('fa07-area')).toHaveTextContent(/BTM Layout 2nd Stage/);
+      expect(screen.queryByTestId('fa07-area-none-near')).toBeNull();
+    });
+
+    it('asks the agent to pick the area when none is within 1 km, and requires it', async () => {
+      visitAt(12.9301); // ~1.5 km north of BTM's centre
+      await renderWithApp(<RegisterBusinessScreen />, { signedInAs: kiran, route });
+      await waitFor(() => screen.getByTestId('fa07-area-none-near'));
+      expect(screen.getByTestId('fa07-area-none-near')).toHaveTextContent('Pick the area — no area is within 1 km of this shop');
+      expect(screen.queryByTestId('fa07-area-from-pin')).toBeNull();
+      expect(screen.getByTestId('fa07-area')).not.toHaveTextContent(/BTM Layout 2nd Stage/);
+      await fireEvent.press(screen.getByTestId('fa07-area'));
+      await waitFor(() => screen.getByTestId('fa07-area-Jayanagar'));
+      await fireEvent.press(screen.getByTestId('fa07-area-Jayanagar'));
+      expect(screen.getByTestId('fa07-area')).toHaveTextContent(/Jayanagar/);
+      expect(screen.queryByTestId('fa07-area-none-near')).toBeNull();
+    });
   });
 
   it('households have a family name and no documents', () => {

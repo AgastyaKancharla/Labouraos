@@ -136,7 +136,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     expect(agreementMessage).not.toBeNull();
     expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
       template: 'agreement_link',
-      variables: { token: link.body.token, link: `https://app.laboura.in/app/p/agreement/${link.body.token}` },
+      variables: { token: link.body.token, link: `https://app.laboura.in/p/agreement/${link.body.token}` },
     }));
 
     // A browser opening the old link goes to the new phone page (P04); the page reads the
@@ -145,7 +145,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
       .get(`/consent/${link.body.token}`)
       .set('Accept', 'text/html')
       .expect(302);
-    expect(redirect.headers.location).toBe(`https://app.laboura.in/app/p/agreement/${link.body.token}`);
+    expect(redirect.headers.location).toBe(`https://app.laboura.in/p/agreement/${link.body.token}`);
     const page = await request(app.getHttpServer())
       .get(`/consent/${link.body.token}`)
       .set('Accept', 'application/json')

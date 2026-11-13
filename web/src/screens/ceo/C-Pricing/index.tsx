@@ -89,6 +89,11 @@ export const RULES: Rule[] = [
     ],
     show: (p) => `2 × ${n(p, 'shortBreakMinutes')} min + ${n(p, 'lunchMinutes')} min lunch · idle after ${n(p, 'idleAfterMinutes')} min`,
   },
+  {
+    name: "Business area from the shop's GPS",
+    fields: [{ key: 'areaAutoFillMaxMeters', label: 'Fill in the nearest area when its centre is within (metres)', kind: 'int' }],
+    show: (p) => `Nearest area within ${(n(p, 'areaAutoFillMaxMeters') || 1000).toLocaleString('en-IN')} m of the pin · farther, the agent picks it`,
+  },
   { name: 'Paid leave', fields: [{ key: 'casualLeavePerMonth', label: 'Casual a month', kind: 'int' }, { key: 'emergencyLeavePerMonth', label: 'Emergency a month', kind: 'int' }], show: (p) => `${n(p, 'casualLeavePerMonth') + n(p, 'emergencyLeavePerMonth')} a month (${n(p, 'casualLeavePerMonth')} casual, ${n(p, 'emergencyLeavePerMonth')} emergency) · carries forward` },
   {
     name: 'Approval limits (Finance)',

@@ -2,7 +2,7 @@
 
 One codebase (Expo, React Native, TypeScript) for:
 
-- **the installed web app** at `https://<laboura-site>/field` — what iPhone users (Sanket) use first, from Safari's *Add to Home Screen*;
+- **the installed web app** at `https://field.laboura.com` (its own address, at the root) and at `https://<render address>/field` on the Render test address — what iPhone users use first, from Safari's *Add to Home Screen*;
 - **the Android app** (APK, built later with EAS) and **the iPhone App Store app** (when Laboura buys the Apple account).
 
 Designs: `FA01-Login` … `FA22-VisitProof` (phone screens, approved 9 Nov). The rules come from the Master Guide, "The field agent app (decided 9 Nov)".
@@ -37,10 +37,15 @@ field/
 | `npm run field:dev` | Runs the app in a browser on your computer (`http://localhost:8081/field`) |
 | `npm run field:lint` | ESLint + TypeScript check |
 | `npm run field:test` | Jest tests (phone, web and script projects) |
-| `npm run field:build-web` | `expo export --platform web` → `field/dist`, then `scripts/pwa.js` |
+| `npm run field:build-web` | Two web builds, each made installable by `scripts/pwa.js`: `field/dist` (base `/field`) and `field/dist-root` (base `/`, for `field.laboura.com`) |
 | `npm run build` | The API, the office web app **and** this app (what Render runs) |
 
-The API (Nest) serves `field/dist` at `/field` (`src/modules/field-app/`). Run the API locally and open `http://localhost:3000/field` to use the built app against it. Add or update packages with **npm 11** (`npx npm@11 install …` inside `field/`) and pin exact versions at least two weeks old (`--save-exact --before=<date two weeks ago>`).
+The API (Nest) serves the app by address (`src/modules/web-app/site-routing.middleware.ts`):
+
+- on the address named in `FIELD_HOST` (production: `field.laboura.com`) it serves `field/dist-root` at the root — the manifest's `start_url` and `scope` are `/` and the service worker covers `/`. Old `/field/...` links there go to the same page at the root. The API is on the same address, so calls stay same-origin (`apiBaseUrl()` is `''` on the web);
+- on every other address (the Render test address, `app.laboura.com`) it serves `field/dist` at `/field`, scope `/field/`.
+
+Expo writes the base path into the bundle, so one build cannot serve both `/` and `/field`: hence two builds (`LABOURA_FIELD_BASE_URL=/` in `app.config.js` makes the root one). The service worker only answers the app's own files and its pages, never an API call, even when its scope is `/`. Run the API locally and open `http://localhost:3000/field` to use the built app against it; set `FIELD_HOST=localhost` and open `http://localhost:3000/` for the root build. A phone that switches address (onrender.com → field.laboura.com) gets a new device id, so its Team Lead approves it again. Add or update packages with **npm 11** (`npx npm@11 install …` inside `field/`) and pin exact versions at least two weeks old (`--save-exact --before=<date two weeks ago>`).
 
 ## Conventions for screen agents
 

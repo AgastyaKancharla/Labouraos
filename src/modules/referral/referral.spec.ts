@@ -478,7 +478,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(account.maskedValue).not.toContain(`5000${timestamp.toString().slice(-8)}`);
   });
 
-  it("the partner's one link (web /app/p/partner/:token): SMS points at it, old link redirects, code once, then terms → selfie → ID → UPI with that code", async () => {
+  it("the partner's one link (web /p/partner/:token): SMS points at it, old link redirects, code once, then terms → selfie → ID → UPI with that code", async () => {
     const phone = `76${timestamp.toString().slice(-8)}`;
     const otpRequestId = await getVerifiedOtp(phone);
     // A business partner goes through the same link (guide).
@@ -508,6 +508,9 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(String(smsCall?.[0].variables?.link)).toContain(publicPagePath('referralRegistration', token));
     const old = await request(server).get(`/consent/${token}`).set('Accept', 'text/html').expect(302);
     expect(old.headers.location).toContain(publicPagePath('referralRegistration', token));
+    // Decided 14 Nov: links sit at the root of PUBLIC_APP_URL (/p/partner/...), never under /app.
+    expect(String(smsCall?.[0].variables?.link)).toMatch(/^https?:\/\/[^/]+\/p\/partner\//);
+    expect(old.headers.location).toMatch(/^https?:\/\/[^/]+\/p\/partner\//);
 
     // Before the code: only the masked number and the language.
     const locked = await request(server).get(`/referral-registration/${token}/status`).expect(200);
