@@ -92,7 +92,7 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
     const message = toFin()[toFin().length - 1];
     expect(toFin().length).toBe(before + 1);
     expect(message.to).toBe(emails.fin);
-    expect(message.link).toMatch(/\/app\/p\/invite\//);
+    expect(message.link).toMatch(/\/\/[^/]+\/p\/invite\//);
     const token = decodeURIComponent(message.link!.split('/p/invite/')[1]);
     const reset = await prisma.staffPasswordReset.findFirstOrThrow({ where: { staffId: ids[2] }, orderBy: { createdAt: 'desc' } });
     expect(reset.expiresAt.getTime() - reset.createdAt.getTime()).toBe(60 * 60 * 1000);

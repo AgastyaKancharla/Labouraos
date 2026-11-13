@@ -119,7 +119,7 @@ describe('Password reset: issue, use on the invite page, scope, audit', () => {
   it('a Manager resets an agent in their tree: link on the invite page, record stored, audit-logged', async () => {
     const res = await issue('mgrA', 'agentA');
     expect(res.status).toBe(200);
-    expect(res.body.resetUrl).toMatch(/\/app\/p\/invite\/[0-9a-f]{64}$/);
+    expect(res.body.resetUrl).toMatch(/\/\/[^/]+\/p\/invite\/[0-9a-f]{64}$/);
     expect(res.body.resetToken).toHaveLength(64);
     expect(JSON.stringify(res.body)).not.toContain('passwordHash');
 
