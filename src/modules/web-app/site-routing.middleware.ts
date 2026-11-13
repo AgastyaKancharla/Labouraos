@@ -39,7 +39,7 @@ function splitUrl(originalUrl: string): { pathname: string; search: string } {
  * percent-encoded forms are all dropped.
  */
 function stripPrefix(pathname: string, prefix: string): string {
-  return `/${pathname.slice(prefix.length).replace(/^(?:[\/\\]|%2f|%5c)+/i, '')}`;
+  return `/${pathname.slice(prefix.length).replace(/^(?:[/\\]|%2f|%5c)+/i, '')}`;
 }
 
 function under(pathname: string, prefix: string): boolean {
