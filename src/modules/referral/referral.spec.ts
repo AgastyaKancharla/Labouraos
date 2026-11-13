@@ -7,6 +7,7 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { MessagingService } from '../message/messaging.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
@@ -471,6 +472,81 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(account.bankAccountEncrypted).not.toContain(timestamp.toString().slice(-8));
     expect(account.maskedValue).toMatch(/\d{4}$/);
     expect(account.maskedValue).not.toContain(`5000${timestamp.toString().slice(-8)}`);
+  });
+
+  it("the partner's one link (web /app/p/partner/:token): SMS points at it, old link redirects, code once, then terms → selfie → ID → UPI with that code", async () => {
+    const phone = `76${timestamp.toString().slice(-8)}`;
+    const otpRequestId = await getVerifiedOtp(phone);
+    // A business partner goes through the same link (guide).
+    const created = await request(app.getHttpServer())
+      .post('/referrals')
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({
+        name: 'Partner Page Kumar', phone, whatsappPhone: phone, language: 'kn', type: 'business',
+        partnerBusinessType: 'Tea stall', partnerBusinessName: 'Kumar Tea Stall', locality: 'Jayanagar', pincode: '560041',
+        heardFrom: 'field_visit', otpRequestId,
+      })
+      .expect(201);
+    const referralId = created.body.id as string;
+    const messaging = app.get(MessagingService);
+    const sendSpy = jest.spyOn(messaging, 'send');
+    const linkRes = await request(app.getHttpServer())
+      .post(`/referrals/${referralId}/terms-links`)
+      .set('Authorization', `Bearer ${callAgentToken}`)
+      .send({ language: 'kn' })
+      .expect(201);
+    const token = linkRes.body.token as string;
+    const server = app.getHttpServer();
+
+    // The SMS carries the new page; an old /consent link opened in a browser goes there.
+    const smsCall = sendSpy.mock.calls.find(([m]) => m.template === 'referral_terms_link' && m.subjectId === referralId);
+    sendSpy.mockRestore();
+    expect(String(smsCall?.[0].variables?.link)).toContain(`/app/p/partner/${token}`);
+    const old = await request(server).get(`/consent/${token}`).set('Accept', 'text/html').expect(302);
+    expect(old.headers.location).toContain(`/app/p/partner/${token}`);
+
+    // Before the code: only the masked number and the language.
+    const locked = await request(server).get(`/referral-registration/${token}/status`).expect(200);
+    expect(locked.body).toEqual({ valid: true, otpRequired: true, maskedPhone: `******${phone.slice(-4)}`, language: 'kn', registrationComplete: false });
+    await request(server).get(`/referral-registration/${token}/terms`).expect(400);
+
+    const sent = await request(server).post('/consent/send-otp').send({ token }).expect(201);
+    expect(sent.body.phone).toBe(`******${phone.slice(-4)}`);
+    const code = (otpService.getProvider() as MockOtpProvider).getCode(sent.body.requestId)!;
+    await request(server).post(`/referral-registration/${token}/verify-otp`).send({ requestId: sent.body.requestId, code: code === '000000' ? '111111' : '000000' }).expect(400);
+    const opened = await request(server).post(`/referral-registration/${token}/verify-otp`).send({ requestId: sent.body.requestId, code }).expect(201);
+    const requestId = sent.body.requestId as string;
+    expect(opened.body).toMatchObject({ otpRequired: false, currentStep: 'terms', referralCode: created.body.code, firstName: 'Partner K.', language: 'kn', payout: null });
+    expect(JSON.stringify(opened.body)).not.toContain(phone);
+
+    const terms = await request(server).get(`/referral-registration/${token}/terms`).query({ requestId }).expect(200);
+    expect(terms.body.referralPayoutPaise).toBeGreaterThan(0);
+    expect(terms.body.termsHtml.length).toBeGreaterThan(50);
+    expect(terms.body.language).toBe('kn');
+
+    // Every step uses the code verified on opening, as on the job seeker link.
+    await request(server).post('/consent/submit').send({ token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language: 'kn' }).expect(201);
+    await request(server)
+      .post(`/referral-registration/${token}/selfie`)
+      .field('requestId', requestId)
+      .field('captureSource', 'live_camera')
+      .attach('photo', Buffer.from('camera-image-partner-page'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'pan' }).expect(201);
+    // A raw Aadhaar number is refused before it reaches anything.
+    await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'aadhaar', aadhaarNumber: '234567890123' }).expect(400);
+    const afterId = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
+    expect(afterId.body.currentStep).toBe('upi');
+    expect(afterId.body.idCheck.lastResult).toBe('verified');
+
+    await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `partner${timestamp.toString().slice(-6)}@okaxis` }).expect(201);
+    const done = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
+    expect(done.body.payout).toMatchObject({ method: 'upi' });
+    expect(done.body.payout.maskedValue).not.toContain(`partner${timestamp.toString().slice(-6)}`);
+    expect(JSON.stringify(done.body)).not.toContain('Encrypted');
+
+    // Changing details already given needs a fresh code, never the session one.
+    await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `other${timestamp.toString().slice(-6)}@okaxis` }).expect(400);
   });
 
   it('does not let a referral partner refer themselves for a joining reward', async () => {

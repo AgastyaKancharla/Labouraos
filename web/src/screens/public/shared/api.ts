@@ -96,27 +96,95 @@ export const registrationApi = {
   sendPaymentOnlyLink: (token: string, requestId: string, phone: string) =>
     api.post<{ expiresAt: string }>(`/registration/${enc(token)}/payment-only-link`, { requestId, phone }, PUBLIC),
   /** Live camera frame only (the API refuses anything without captureSource=live_camera). */
-  async selfie(token: string, requestId: string, photo: Blob): Promise<void> {
-    const form = new FormData();
-    form.append('requestId', requestId);
-    form.append('captureSource', 'live_camera');
-    form.append('photo', photo, 'selfie.jpg');
-    let response: Response;
-    try {
-      response = await fetch(`/registration/${enc(token)}/selfie`, { method: 'POST', body: form, headers: { Accept: 'application/json' } });
-    } catch {
-      throw new ApiError({ status: 0, messages: ['Could not reach Laboura. Check the internet connection and try again.'], isNetworkError: true });
-    }
-    if (!response.ok) {
-      let body: unknown;
-      try {
-        body = await response.json();
-      } catch {
-        body = undefined;
-      }
-      throw apiErrorFromBody(response.status, body);
-    }
-  },
+  selfie: (token: string, requestId: string, photo: Blob) => postLiveSelfie(`/registration/${enc(token)}/selfie`, { requestId }, photo),
+};
+
+/**
+ * Sends a live camera frame as multipart (`photo`, `captureSource=live_camera`
+ * and the given fields). Used by the selfie steps of the public links and the
+ * staff photo; `headers` carries the staff login where one is needed.
+ */
+export async function postLiveSelfie(path: string, fields: Record<string, string>, photo: Blob, headers: Record<string, string> = {}): Promise<unknown> {
+  const form = new FormData();
+  for (const [key, value] of Object.entries(fields)) form.append(key, value);
+  form.append('captureSource', 'live_camera');
+  form.append('photo', photo, 'selfie.jpg');
+  let response: Response;
+  try {
+    response = await fetch(path, { method: 'POST', body: form, headers: { Accept: 'application/json', ...headers } });
+  } catch {
+    throw new ApiError({ status: 0, messages: ['Could not reach Laboura. Check the internet connection and try again.'], isNetworkError: true });
+  }
+  let body: unknown;
+  try {
+    body = await response.json();
+  } catch {
+    body = undefined;
+  }
+  if (!response.ok) throw apiErrorFromBody(response.status, body);
+  return body;
+}
+
+// ---- Referral partner's link (ReferralRegistrationController, ConsentController) ----
+
+export type PartnerStep = 'terms' | 'selfie' | 'id_check' | 'upi' | 'complete';
+type PartnerStepState = 'done' | 'in_progress' | 'not_started' | 'stuck';
+
+export interface PartnerLocked {
+  otpRequired: true;
+  maskedPhone: string;
+  language: PublicLanguage | null;
+  registrationComplete: boolean;
+}
+
+export interface PartnerOpen {
+  otpRequired: false;
+  maskedPhone: string;
+  language: PublicLanguage | null;
+  firstName: string;
+  referralCode: string;
+  partnerType: 'individual' | 'business';
+  currentStep: PartnerStep;
+  steps: {
+    terms: { state: PartnerStepState };
+    selfie: { state: PartnerStepState };
+    id: { state: PartnerStepState };
+    upi: { state: PartnerStepState };
+  };
+  idCheck: { serviceDown: boolean; lastResult: 'none' | 'verified' | 'name_mismatch' | 'under_18' | 'failed' };
+  stopped: 'under_18' | null;
+  /** Masked only (part of the UPI ID, or the last 4 digits of the account). */
+  payout: { method: 'upi' | 'bank'; maskedValue: string; status: string; nameMatches: boolean | null } | null;
+}
+
+export type PartnerStatus = PartnerLocked | PartnerOpen;
+
+export interface PartnerTerms {
+  referralPayoutPaise: number;
+  version: string | null;
+  language: PublicLanguage | null;
+  termsHtml: string;
+  payoutDetailsCoolingHours: number;
+  activationFeePaise: number;
+}
+
+export type PartnerPayout = { method: 'upi'; upiId: string } | { method: 'bank'; accountNumber: string; ifsc: string };
+
+export const partnerApi = {
+  status: (token: string, requestId?: string | null) =>
+    api.get<PartnerStatus>(`/referral-registration/${enc(token)}/status`, { ...PUBLIC, query: { requestId: requestId ?? undefined } }),
+  sendOtp: (token: string) => api.post<OtpSent>('/consent/send-otp', { token }, PUBLIC),
+  verifyOtp: (token: string, requestId: string, code: string) =>
+    api.post<PartnerOpen>(`/referral-registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
+  terms: (token: string, requestId: string) => api.get<PartnerTerms>(`/referral-registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
+  /** Referral terms and call-recording consent, both ticked by the partner. */
+  acceptTerms: (token: string, requestId: string, language: PublicLanguage) =>
+    api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language }, PUBLIC),
+  selfie: (token: string, requestId: string, photo: Blob) => postLiveSelfie(`/referral-registration/${enc(token)}/selfie`, { requestId }, photo),
+  idCheck: (token: string, requestId: string, method: string, documentNumber?: string) =>
+    api.post<IdCheckResult & { nextStep: string }>(`/referral-registration/${enc(token)}/id-check`, { requestId, method, ...(documentNumber ? { documentNumber } : {}) }, PUBLIC),
+  payout: (token: string, requestId: string, details: PartnerPayout) =>
+    api.post<{ id: string }>(`/referral-registration/${enc(token)}/upi`, { otpRequestId: requestId, ...details }, PUBLIC),
 };
 
 // ---- Payment request by UPI reference (PaymentController) ----

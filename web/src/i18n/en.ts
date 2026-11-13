@@ -5,6 +5,7 @@ import { attendanceEn } from '../attendance/i18n';
 import { registrationEn } from './registration';
 import { staffInviteEn } from './staffInvite';
 import { referralTermsEn } from './referralTerms';
+import { referralPartnerEn } from './referralPartner';
 
 import { callAgentEn } from '../screens/call-agent/_lib/i18n.en';
 export const en = {
@@ -587,6 +588,7 @@ export const en = {
   ...registrationEn,
   ...staffInviteEn,
   ...referralTermsEn,
+  ...referralPartnerEn,
   ...callAgentEn,
   ...payslipEn,
   ...attendanceEn,

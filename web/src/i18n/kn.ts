@@ -5,6 +5,7 @@ import type { Messages } from './en';
 import { registrationKn } from './registration';
 import { staffInviteKn } from './staffInvite';
 import { referralTermsKn } from './referralTerms';
+import { referralPartnerKn } from './referralPartner';
 import { callAgentKn } from '../screens/call-agent/_lib/i18n.kn';
 
 export const kn: Messages = {
@@ -587,6 +588,7 @@ export const kn: Messages = {
   ...registrationKn,
   ...staffInviteKn,
   ...referralTermsKn,
+  ...referralPartnerKn,
   ...callAgentKn,
   ...payslipKn,
   ...attendanceKn,

@@ -278,7 +278,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           subjectId: referralId,
           variables: expect.objectContaining({
             token: res.body.token,
-            link: expect.stringContaining(`/consent/${res.body.token}`),
+            link: expect.stringContaining(`/app/p/partner/${res.body.token}`),
             referralCode: expect.any(String),
           }),
         }),
@@ -365,6 +365,26 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
           purposes: ['agreement_terms', 'call_recording'],
         });
 
+      expect(res.status).toBe(400);
+      expect(res.body.message).toContain('Valid owner OTP is required to sign referral terms');
+    });
+
+    it('accepts the code the partner verified when opening the link, without a second code (as on the job seeker link)', async () => {
+      const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
+      const res = await request(app.getHttpServer())
+        .post('/consent/submit')
+        .send({ token: link.token, otpRequestId: 'otp-req-999', purposes: ['agreement_terms', 'call_recording'] });
+      expect(res.status).toBe(201);
+      expect(otpService.isVerified).toHaveBeenCalledWith('otp-req-999', partnerPhone);
+      expect(otpService.verifyOtp).not.toHaveBeenCalledWith('otp-req-999', undefined);
+    });
+
+    it('refuses without a code when that request is not a verified code for the partner phone', async () => {
+      const link = await consentLinkService.createReferralTermsLink(referralId, 'staff-1', 'en');
+      (otpService.isVerified as jest.Mock).mockResolvedValueOnce(false);
+      const res = await request(app.getHttpServer())
+        .post('/consent/submit')
+        .send({ token: link.token, otpRequestId: 'otp-req-other', purposes: ['agreement_terms', 'call_recording'] });
       expect(res.status).toBe(400);
       expect(res.body.message).toContain('Valid owner OTP is required to sign referral terms');
     });
