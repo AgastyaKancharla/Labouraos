@@ -752,8 +752,6 @@ model Staff {
   directReports     Staff[]          @relation("ReportingLine")
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?
-  /// No longer used (owner decision 14 Nov: no office-network rule; staff log in from any network). Kept for old rows.
-  worksFromOffice   Boolean          @default(false)
   /// A Team Lead's team name ("Team South"), set by the CEO on the Teams
   /// screen. Null for everyone else; a team is its Team Lead and their agents.
   teamName          String?
@@ -798,7 +796,6 @@ model Staff {
   devices           StaffDevice[]    @relation("StaffDeviceOwner")
   devicesApproved   StaffDevice[]    @relation("StaffDeviceApprovedBy")
   devicesRevoked    StaffDevice[]    @relation("StaffDeviceRevokedBy")
-  officeNetworksAdded OfficeNetwork[] @relation("OfficeNetworkAddedBy")
   loginCodeRequests LoginCodeRequest[] @relation("LoginCodeSubject")
   loginCodesRevealed LoginCodeRequest[] @relation("LoginCodeRevealedBy")
   loginCodesRefused LoginCodeRequest[] @relation("LoginCodeRefusedBy")
@@ -991,8 +988,8 @@ model AuditLog {
   /// the row was written during a signed-in request or a login. Never a phone number.
   deviceId      String?
   deviceName    String?
-  /// "office:<office network label>" or "outside_office"; null outside a request.
-  /// The address itself is not kept here (audit rows are never deleted; access
+  /// Old rows only: "office:<office network label>" or "outside_office". Not written
+  /// since 14 Nov (no office networks) and not shown. The address itself is not kept here (audit rows are never deleted; access
   /// logs with addresses are kept only 1 year, guide: keeping data).
   network       String?
   createdAt     DateTime  @default(now())
@@ -1204,19 +1201,6 @@ model StaffDevice {
   @@index([revokedByStaffId])
 }
 
-model OfficeNetwork {
-  id             String   @id @default(uuid())
-  label          String
-  cidr           String
-  active         Boolean  @default(true)
-  addedByStaffId String?
-  addedByStaff   Staff?   @relation("OfficeNetworkAddedBy", fields: [addedByStaffId], references: [id], onDelete: SetNull)
-  createdAt      DateTime @default(now())
-
-  @@index([active])
-  @@index([addedByStaffId])
-}
-
 model LoginCodeRequest {
   id                String      @id @default(uuid())
   staffId           String
@@ -1224,8 +1208,6 @@ model LoginCodeRequest {
   staffDeviceId     String
   staffDevice       StaffDevice @relation(fields: [staffDeviceId], references: [id], onDelete: Cascade)
   ipAddress         String
-  /// No longer filled or shown (owner decision 14 Nov: no office-network rule). Kept for old rows.
-  onOfficeNetwork   Boolean     @default(false)
   status            String      @default("pending") // pending, revealed, used, expired, refused
   createdAt         DateTime    @default(now())
   expiresAt         DateTime

@@ -12,7 +12,7 @@ export type AuditType = 'money' | 'corrections' | 'policy' | 'logins' | 'records
 
 const MONEY = /payment|refund|payout|bank_credit|placement_fee|joining_reward|invoice|tds/;
 const CORRECTIONS = /hit_reversed|hit_refused|day_changed|correction|overturn|overruled|claim_decided|reporting_line|leave_/;
-const POLICY = /pricing|holiday|^trade\.|^area\.|^target\.|office_network\.(added|deactivated)|works_from_office|team_named/;
+const POLICY = /pricing|holiday|^trade\.|^area\.|^target\.|team_named/;
 const LOGINS = /^login_code|^staff_device|^auth\.|session_revoked|staff\.(locked|unlocked)|^otp\./;
 
 /** Which filter group an audit action belongs to (C-Audit "Action" filter). */
@@ -27,7 +27,7 @@ export function auditType(action: string): AuditType {
 const TYPE_PATTERNS: Record<Exclude<AuditType, 'records'>, string[]> = {
   money: ['payment', 'refund', 'payout', 'bank_credit', 'placement_fee', 'joining_reward', 'invoice', 'tds'],
   corrections: ['hit_reversed', 'hit_refused', 'day_changed', 'correction', 'overturn', 'overruled', 'claim_decided', 'reporting_line', 'leave_'],
-  policy: ['pricing', 'holiday', 'trade.', 'area.', 'target.', 'office_network.added', 'office_network.deactivated', 'works_from_office', 'team_named'],
+  policy: ['pricing', 'holiday', 'trade.', 'area.', 'target.', 'team_named'],
   logins: ['login_code', 'staff_device', 'auth.', 'session_revoked', 'staff.locked', 'staff.unlocked', 'otp.'],
 };
 

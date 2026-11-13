@@ -3,7 +3,6 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdService } from '../id/id.service';
 import { requestContext } from '../observability/request-context';
-import { ipInCidr, normalizeIp } from './network-cidr';
 
 /** Where an audit row was written from (C-Audit's Device column). */
 export interface AuditDevice {
@@ -197,11 +196,11 @@ export class AuditService {
   }
 
   /**
-   * The device and network of the request this row is written in, from the
-   * signed-in session (StaffSession.deviceId → StaffDevice.label) or the
-   * device a login names, and the request address checked against the
-   * office networks. Resolved once per request; outside a request (jobs,
-   * webhooks) all three are null. Never fails the write.
+   * The device of the request this row is written in, from the signed-in
+   * session (StaffSession.deviceId → StaffDevice.label) or the device a login
+   * names. Resolved once per request; outside a request (jobs, webhooks) it is
+   * null. `network` is always null now (no office networks since 14 Nov; old
+   * rows keep their label). Never fails the write.
    */
   async currentDevice(): Promise<AuditDevice> {
     const store = requestContext.getStore();
@@ -244,23 +243,10 @@ export class AuditService {
     return {
       deviceId: cleanDeviceId(deviceId),
       deviceName: cleanDeviceText(deviceName),
-      network: await this.networkOf(store.ip),
+      // No office/outside label any more (owner decision 14 Nov: no office networks). The
+      // address stays only in the login and session records, which are kept 1 year.
+      network: null,
     };
-  }
-
-  /** "office:<label>" inside an active office range, "outside_office" otherwise, null without an address. */
-  private async networkOf(ip: string | undefined): Promise<string | null> {
-    const address = normalizeIp(ip ?? '');
-    if (!address) {
-      return null;
-    }
-    const ranges = await this.prisma.officeNetwork.findMany({
-      where: { active: true },
-      select: { label: true, cidr: true },
-      orderBy: { createdAt: 'asc' },
-    });
-    const office = ranges.find((range) => ipInCidr(address, range.cidr));
-    return office ? cleanDeviceText(`office:${office.label}`) : 'outside_office';
   }
 
   /**

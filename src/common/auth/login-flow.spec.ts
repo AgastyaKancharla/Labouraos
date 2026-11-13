@@ -35,7 +35,6 @@ describe('Phase 10 Task 4: staff-code login', () => {
         role,
         status: 'active',
         teamLeadId: (extra.teamLeadId as string) ?? null,
-        worksFromOffice: (extra.worksFromOffice as boolean) ?? false,
         totpSecret: (extra.totpSecret as string) ?? null,
         totpEnabled: (extra.totpEnabled as boolean) ?? false,
       },
@@ -374,7 +373,7 @@ describe('Phase 10 Task 4: staff-code login', () => {
   // Owner decision 14 Nov: no office-network rule. This replaces the old test that refused an
   // office-only agent outside every office range.
   it('lets office staff log in from any network: the one-time code from a senior is the check', async () => {
-    const agent = await makeStaff('call_agent', { worksFromOffice: true });
+    const agent = await makeStaff('call_agent');
     await prisma.staffDevice.create({
       data: { staffId: agent.id, deviceId: 'anywhere-handset', label: 'Handset', platform: 'web', status: 'approved', approvedAt: new Date() },
     });

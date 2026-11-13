@@ -111,12 +111,7 @@ export class LoginCodeService {
       entityCode: 'pending',
       after: { count: rows.length },
     });
-    // No "office network yes/no" any more (owner decision 14 Nov): the old column stays out of the answer.
-    return rows.map((row) => {
-      const shown: Partial<typeof row> = { ...row };
-      delete shown.onOfficeNetwork;
-      return shown;
-    });
+    return rows;
   }
 
   async reveal(requestId: string, approver: LoginCodeActor) {
