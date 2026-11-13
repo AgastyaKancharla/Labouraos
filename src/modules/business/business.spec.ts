@@ -242,9 +242,11 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       const refused = await send({ name: 'Beyond A Km Cafe', phone, otpRequestId, ...pin });
       expect(refused.status).toBe(400);
       expect(refused.body.message).toBe('Pick the area — no area is within 1 km of this shop');
-      expect(refused.body.details).toMatchObject({ code: 'area_required', maxMeters: 1000 });
-      expect(refused.body.details.messages.kn).toContain('ಪ್ರದೇಶ');
-      expect(refused.body.details.messages.hi).toContain('इलाक़ा');
+      // In production the global filter puts the extra fields under `details`; in this test app they are at the top.
+      const detail = refused.body.details ?? refused.body;
+      expect(detail).toMatchObject({ code: 'area_required', maxMeters: 1000 });
+      expect(detail.messages.kn).toContain('ಪ್ರದೇಶ');
+      expect(detail.messages.hi).toContain('इलाक़ा');
       expect(await prisma.business.count({ where: { phone: { in: [phone, `+91${phone}`] } } })).toBe(0);
 
       // The refusal does not use up the verified OTP: pick an area and save.
@@ -257,7 +259,7 @@ describe('Phase 4 Task 1: Business Onboarding', () => {
       const phone = `77${timestamp.toString().slice(-8)}`;
       const refused = await send({ name: 'No Pin Cafe', phone, otpRequestId: await getVerifiedOtp(phone) });
       expect(refused.status).toBe(400);
-      expect(refused.body.details).toMatchObject({ code: 'area_required' });
+      expect(refused.body.details ?? refused.body).toMatchObject({ code: 'area_required' });
     });
   });
 
