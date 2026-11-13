@@ -16,7 +16,8 @@ describe('Public phone page links (/app/p/...)', () => {
     expect(publicPagePath('interviewResult', 'abc')).toBe('/app/p/interview-result/abc');
     expect(publicPagePath('payment', 'PAY-00001-ab12')).toBe('/app/p/fee/PAY-00001-ab12');
     expect(publicPagePath('offerCheck', 'abc')).toBe('/app/p/did-they-offer/abc');
-    expect(Object.keys(PUBLIC_PAGE_PATHS)).toHaveLength(7);
+    expect(publicPagePath('referralRegistration', 'abc')).toBe('/app/p/partner/abc');
+    expect(Object.keys(PUBLIC_PAGE_PATHS)).toHaveLength(8);
   });
 
   it('makes absolute links from PUBLIC_APP_URL, keeping a path prefix, and encodes the token', () => {

@@ -66,6 +66,12 @@ describe('P-PartnerOpen (referral partner link, mirrors P00 / P02r)', () => {
     expect(await screen.findByText(/already complete/)).toBeInTheDocument();
   });
 
+  it('opening the link after the payout details were saved says the registration is complete', async () => {
+    mockApi({ [`GET /referral-registration/${TOKEN}/status`]: apiError(400, 'Public link has already been used') });
+    render();
+    expect(await screen.findByText(/registration on this link is complete/)).toBeInTheDocument();
+  });
+
   it('explains a link that has expired', async () => {
     mockApi({ [`GET /referral-registration/${TOKEN}/status`]: apiError(400, 'Public link has expired') });
     render();

@@ -184,7 +184,7 @@ export const partnerApi = {
   idCheck: (token: string, requestId: string, method: string, documentNumber?: string) =>
     api.post<IdCheckResult & { nextStep: string }>(`/referral-registration/${enc(token)}/id-check`, { requestId, method, ...(documentNumber ? { documentNumber } : {}) }, PUBLIC),
   payout: (token: string, requestId: string, details: PartnerPayout) =>
-    api.post<{ id: string }>(`/referral-registration/${enc(token)}/upi`, { otpRequestId: requestId, ...details }, PUBLIC),
+    api.post<{ id: string; maskedValue: string; status: string }>(`/referral-registration/${enc(token)}/upi`, { otpRequestId: requestId, ...details }, PUBLIC),
 };
 
 // ---- Payment request by UPI reference (PaymentController) ----

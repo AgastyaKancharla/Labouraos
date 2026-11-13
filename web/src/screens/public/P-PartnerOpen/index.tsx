@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useT } from '../../../i18n/I18nProvider';
+import { isApiError } from '../../../lib/api/errors';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { partnerApi, type PartnerOpen } from '../shared/api';
 import { PARTNER_STEP_SCREEN, partnerSession, partnerStepsDone, usePartnerStatus, usePartnerToken } from '../shared/partner';
@@ -37,6 +38,15 @@ export default function PartnerOpenPage() {
   }, [open, nothingDone, navigate, to, token]);
 
   if (status.isLoading) return <Loading />;
+  // The payout details finish the link: opening it again says so plainly.
+  if (isApiError(status.error) && /already been used/i.test(status.error.message)) {
+    return (
+      <>
+        <PageTitle>{t('partner.open.title')}</PageTitle>
+        <Ok>{t('partner.open.used')}</Ok>
+      </>
+    );
+  }
   if (status.error || !data) return <LinkProblem error={status.error} onRetry={() => void status.refetch()} />;
 
   if (open) {

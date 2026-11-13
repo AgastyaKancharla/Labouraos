@@ -539,13 +539,17 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(afterId.body.currentStep).toBe('upi');
     expect(afterId.body.idCheck.lastResult).toBe('verified');
 
-    await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `partner${timestamp.toString().slice(-6)}@okaxis` }).expect(201);
-    const done = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
-    expect(done.body.payout).toMatchObject({ method: 'upi' });
-    expect(done.body.payout.maskedValue).not.toContain(`partner${timestamp.toString().slice(-6)}`);
-    expect(JSON.stringify(done.body)).not.toContain('Encrypted');
+    const saved = await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `partner${timestamp.toString().slice(-6)}@okaxis` }).expect(201);
+    expect(saved.body.maskedValue).toBeTruthy();
+    expect(saved.body.maskedValue).not.toContain(`partner${timestamp.toString().slice(-6)}`);
+    expect(JSON.stringify(saved.body)).not.toContain('Encrypted');
+    const account = await prisma.payoutAccount.findFirstOrThrow({ where: { ownerType: 'referral', ownerId: referralId } });
+    expect(account.method).toBe('upi');
 
-    // Changing details already given needs a fresh code, never the session one.
+    // The payout details finish the link (as before): it now says it was used; changes go through
+    // a payout-details link with a fresh code and the waiting time, never this session's code.
+    const after = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(400);
+    expect(JSON.stringify(after.body)).toContain('already been used');
     await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `other${timestamp.toString().slice(-6)}@okaxis` }).expect(400);
   });
 

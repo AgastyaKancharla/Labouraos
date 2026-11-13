@@ -1,7 +1,6 @@
-import { useQueryClient } from '@tanstack/react-query';
 import { useId, useState } from 'react';
 import { useT } from '../../../i18n/I18nProvider';
-import { partnerApi, type PartnerOpen, type PartnerPayout } from '../shared/api';
+import { partnerApi, type PartnerPayout } from '../shared/api';
 import { usePartnerStepGuard } from '../shared/partner';
 import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, Row, StepsBar, Warn } from '../shared/ui';
 
@@ -10,8 +9,10 @@ import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTit
  * details"): a UPI ID preferred, a bank account as the alternative, in the
  * partner's own name — the API checks it against the name on the ID and
  * flags a mismatch for Finance. It keeps the full value encrypted; this page
- * only ever shows the masked version the API returns. Until the name check
- * finishes, the page says the details were received.
+ * only ever shows the masked version the API returns. Saving finishes the
+ * link; the page then says the details were received and the name is being
+ * checked (a change later goes through the agent, with a fresh code and the
+ * waiting time).
  */
 const UPI_PATTERN = /^[a-zA-Z0-9._-]{2,256}@[a-zA-Z][a-zA-Z0-9.-]{1,63}$/;
 const ACCOUNT_PATTERN = /^\d{9,18}$/;
@@ -20,7 +21,9 @@ const IFSC_PATTERN = /^[A-Z]{4}0[A-Z0-9]{6}$/;
 export default function PartnerUpiPage() {
   const t = useT();
   const { token, requestId, status, query, backToStart } = usePartnerStepGuard('upi');
-  const queryClient = useQueryClient();
+  // Saving the payout details finishes the link (the API marks it used), so the
+  // page keeps the answer here instead of asking for the status again.
+  const [saved, setSaved] = useState<{ maskedValue: string; status: string } | null>(null);
   const ids = { upi: useId(), account: useId(), ifsc: useId() };
   const [method, setMethod] = useState<'upi' | 'bank'>('upi');
   const [upiId, setUpiId] = useState('');
@@ -31,7 +34,8 @@ export default function PartnerUpiPage() {
 
   if (query.error) return <LinkProblem error={query.error} onRetry={() => void query.refetch()} />;
   if (!status) return <Loading />;
-  if (status.payout) return <Received status={status} />;
+  if (saved) return <Received code={status.referralCode} maskedValue={saved.maskedValue} nameMismatch={saved.status === 'flagged'} />;
+  if (status.payout) return <Received code={status.referralCode} maskedValue={status.payout.maskedValue} nameMismatch={status.payout.nameMatches === false} />;
 
   const cleanUpi = upiId.trim();
   const cleanIfsc = ifsc.trim().toUpperCase();
@@ -43,10 +47,10 @@ export default function PartnerUpiPage() {
     setError(null);
     const details: PartnerPayout = method === 'upi' ? { method: 'upi', upiId: cleanUpi } : { method: 'bank', accountNumber: account, ifsc: cleanIfsc };
     try {
-      await partnerApi.payout(token, requestId, details);
+      const result = await partnerApi.payout(token, requestId, details);
       setUpiId('');
       setAccount('');
-      await queryClient.invalidateQueries({ queryKey: ['partner-link', token] });
+      setSaved({ maskedValue: result.maskedValue, status: result.status });
     } catch (e) {
       if (isOtpExpired(e)) backToStart();
       else setError(e);
@@ -119,14 +123,13 @@ export default function PartnerUpiPage() {
   );
 }
 
-function Received({ status }: { status: PartnerOpen }) {
+function Received({ code, maskedValue, nameMismatch }: { code: string; maskedValue: string; nameMismatch: boolean }) {
   const t = useT();
-  const payout = status.payout!;
   return (
     <>
       <StepsBar current={4} label={t('partner.upi.stepLabel')} />
       <PageTitle>{t('partner.upi.title')}</PageTitle>
-      {payout.nameMatches === false ? (
+      {nameMismatch ? (
         <Warn>{t('partner.upi.nameMismatch')}</Warn>
       ) : (
         <Warn>
@@ -135,10 +138,10 @@ function Received({ status }: { status: PartnerOpen }) {
       )}
       <div className="card">
         <Row label={t('partner.done.code')}>
-          <span className="mono">{status.referralCode}</span>
+          <span className="mono">{code}</span>
         </Row>
         <Row label={t('partner.done.payout')}>
-          <span className="mono">{payout.maskedValue}</span>
+          <span className="mono">{maskedValue}</span>
         </Row>
       </div>
     </>
