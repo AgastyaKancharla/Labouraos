@@ -18,4 +18,9 @@ describe('StaffAvatar', () => {
     expect(screen.getByTestId('staff-initials')).toHaveTextContent('DN');
     expect(staffInitials('ravi  shankar kumar')).toBe('RS');
   });
+
+  it('can say "No photo" under the initials (login code cards)', () => {
+    render(<StaffAvatar name="Meena R" photoUrl={null} size="lg" noPhotoLabel="No photo" />);
+    expect(screen.getByText('No photo')).toBeInTheDocument();
+  });
 });

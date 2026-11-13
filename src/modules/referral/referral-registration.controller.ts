@@ -29,6 +29,7 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { Public } from '../../common/rbac/public.decorator';
 import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 import { PricingService } from '../pricing/pricing.service';
+import { detectSelfieImageType } from '../../common/image-type';
 import { publicLanguage, shortNameOf } from '../job-seeker/registration-journey';
 
 @Controller()
@@ -114,7 +115,10 @@ export class ReferralRegistrationController {
   ) {
     const link = await this.requireVerifiedLink(token, body.requestId);
     if (body.captureSource !== 'live_camera') throw new BadRequestException('A live camera capture is required; gallery uploads are refused');
-    if (!photo?.buffer.length || !photo.mimetype.toLowerCase().startsWith('image/')) throw new BadRequestException('A live camera image is required');
+    if (!photo?.buffer.length) throw new BadRequestException('A live camera image is required');
+    // JPEG, PNG or WebP by the file's first bytes; the stored type is the one read from them.
+    const contentType = detectSelfieImageType(photo.buffer);
+    if (!contentType) throw new BadRequestException('The selfie must be a JPEG, PNG or WebP image');
     if (!(await this.consent.hasConsent('referral', link.subjectId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', link.subjectId, 'call_recording'))) {
       throw new BadRequestException('Referral terms and call-recording consent are required before the selfie');
     }
@@ -122,7 +126,7 @@ export class ReferralRegistrationController {
     if (!referral) throw new BadRequestException('Referral partner not found');
     const path = `referrals/${referral.id}/profile-photo`;
     const photoTakenAt = this.clock.now();
-    await this.photos.put(path, photo.buffer, photo.mimetype);
+    await this.photos.put(path, photo.buffer, contentType);
     const updated = await this.prisma.referral.update({ where: { id: referral.id }, data: { photoStoragePath: path, photoTakenAt } });
     await this.audit.log({
       actorId: link.createdByStaffId ?? 'system',

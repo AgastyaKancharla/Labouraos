@@ -169,7 +169,7 @@ function CodeCard({ request, waited }: { request: Pending; waited: string }) {
   return (
     <Card>
       <div className="ceo-req">
-        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" />
+        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div>
           <div className="tl-strong">{request.staff.name}</div>
           <div className="tl-sub">

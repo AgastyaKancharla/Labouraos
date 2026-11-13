@@ -66,8 +66,8 @@ export class StaffPhotoController {
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES } }))
   async invitePhoto(@Param('token') token: string, @UploadedFile() photo: UploadedPhoto, @Body() body: { captureSource?: string }) {
     const { id } = await this.staff.staffForInvitePhoto(token);
-    assertLiveCameraPhoto(photo, body?.captureSource);
-    const saved = await this.photos.save(id, photo, id, 'invite');
+    const checked = assertLiveCameraPhoto(photo, body?.captureSource);
+    const saved = await this.photos.save(id, checked, id, 'invite');
     return { photoTakenAt: saved.photoTakenAt };
   }
 
@@ -79,15 +79,15 @@ export class StaffPhotoController {
     return this.photos.status(req.user.sub);
   }
 
-  /** Signed in: take my photo now (live camera only). */
+  /** Signed in: take my photo now (live camera only) — only when none is on file or the CEO asked for a new one. */
   @Post('me/photo')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles(...ALL_STAFF)
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES } }))
   async takeMyPhoto(@Req() req: AuthenticatedRequest, @UploadedFile() photo: UploadedPhoto, @Body() body: { captureSource?: string }) {
-    assertLiveCameraPhoto(photo, body?.captureSource);
-    const saved = await this.photos.save(req.user.sub, photo, req.user.sub, 'login');
+    const checked = assertLiveCameraPhoto(photo, body?.captureSource);
+    const saved = await this.photos.save(req.user.sub, checked, req.user.sub, 'login');
     return { required: false, reason: null, photoTakenAt: saved.photoTakenAt, photoUrl: saved.photoUrl };
   }
 

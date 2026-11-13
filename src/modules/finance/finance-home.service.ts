@@ -36,7 +36,7 @@ export class FinanceHomeService {
       }),
     ]);
     const charges = bypassPaid.length
-      ? await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaid.map((p) => p.id) } }, select: { gstPaise: true } })
+      ? await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: bypassPaid.map((p) => p.id) }, status: { not: 'cancelled' } }, select: { gstPaise: true } })
       : [];
     return { paise: sumPaise([...invoices.map((p) => p.gstAmount), ...charges.map((c) => c.gstPaise)]), month: lastMonth.toISOString(), due: gstDueDates(to) };
   }

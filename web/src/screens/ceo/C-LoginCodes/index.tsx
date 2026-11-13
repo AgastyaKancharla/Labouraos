@@ -164,7 +164,7 @@ function RequestCard({ request }: { request: Pending }) {
   return (
     <Card>
       <div className="ceo-req">
-        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" />
+        <StaffAvatar name={request.staff.name} photoUrl={request.staff.photoUrl} size="lg" noPhotoLabel="No photo" />
         <div>
           <div style={{ fontWeight: 700 }}>{request.staff.name}</div>
           <div className="ceo-cell-sub">

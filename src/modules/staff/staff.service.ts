@@ -23,7 +23,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { Role } from '../../common/rbac/rbac.types';
 import { CreateStaffDto } from './dto/create-staff.dto';
 import { AcceptInviteDto, InviteTokenDto } from './dto/accept-invite.dto';
-import { staffPhotoNeeded } from './staff-photo.service';
+import { STAFF_PHOTO_ON_FILE, staffPhotoNeeded } from './staff-photo.service';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
@@ -660,6 +660,10 @@ export class StaffService {
   async staffForInvitePhoto(rawToken: unknown, now: Date = new Date()): Promise<{ id: string }> {
     const invite = await this.resolveInvite(rawToken, now);
     if (!invite.ok) throw this.inviteProblem(invite.reason);
+    // Only while a photo is needed (none on file, or the CEO asked for a new one):
+    // a password reset link, or an invite reissued after the photo was taken, can
+    // never replace the face on someone's account.
+    if (!staffPhotoNeeded(invite.staff)) throw new ForbiddenException(STAFF_PHOTO_ON_FILE);
     return { id: invite.staff.id };
   }
 

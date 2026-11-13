@@ -1,4 +1,5 @@
-import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { detectSelfieImageType, type SelfieImageType } from '../../common/image-type';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CandidatePhotoStorage } from '../job-seeker/photo-storage';
@@ -18,11 +19,21 @@ export function staffPhotoNeeded(staff: { photoStoragePath: string | null; photo
   return null;
 }
 
-/** Only a live camera frame: an image, marked as a live capture, not empty, at most 5 MB. */
-export function assertLiveCameraPhoto(photo: { buffer: Buffer; mimetype: string } | undefined, captureSource: unknown): asserts photo is { buffer: Buffer; mimetype: string } {
+/** Refused when a photo is already on file and the CEO has not asked for a new one. */
+export const STAFF_PHOTO_ON_FILE = 'A staff photo is already on file. Only the CEO can ask for a new one.';
+
+/**
+ * Only a live camera frame: marked as a live capture, at most 5 MB, and a
+ * JPEG, PNG or WebP by its first bytes. Returns the checked bytes with the
+ * content type read from them (never the type the browser claimed).
+ */
+export function assertLiveCameraPhoto(photo: { buffer: Buffer; mimetype?: string } | undefined, captureSource: unknown): { buffer: Buffer; contentType: SelfieImageType } {
   if (captureSource !== 'live_camera') throw new BadRequestException('A live camera capture is required; gallery uploads are refused');
-  if (!photo?.buffer?.length || !photo.mimetype?.toLowerCase().startsWith('image/')) throw new BadRequestException('A live camera image is required');
+  if (!photo?.buffer?.length) throw new BadRequestException('A live camera image is required');
   if (photo.buffer.length > STAFF_PHOTO_MAX_BYTES) throw new BadRequestException('The photo is too large');
+  const contentType = detectSelfieImageType(photo.buffer);
+  if (!contentType) throw new BadRequestException('The photo must be a JPEG, PNG or WebP image');
+  return { buffer: photo.buffer, contentType };
 }
 
 /**
@@ -41,20 +52,41 @@ export class StaffPhotoService {
     @Inject(STAFF_PHOTO_STORAGE) private readonly storage: CandidatePhotoStorage,
   ) {}
 
-  private pathFor(staffId: string) {
-    return `staff/${staffId}/profile-photo`;
+  private readonly logger = new Logger(StaffPhotoService.name);
+
+  /** A new object for every photo, so a refused or losing upload never overwrites the photo on file. */
+  private pathFor(staffId: string, now: Date) {
+    return `staff/${staffId}/profile-photo-${now.getTime()}`;
   }
 
-  /** Saves a new photo for a staff member and clears any retake request. Audited. */
-  async save(staffId: string, photo: { buffer: Buffer; mimetype: string }, actorId: string, how: 'invite' | 'login', now: Date = new Date()) {
+  /**
+   * Saves a new photo for a staff member — only when none is on file or the
+   * CEO asked for a new one (guide: the photo is taken at setup; the CEO can
+   * ask for a retake). Nobody can swap someone's face in later. Clears the
+   * retake request. Two saves at once: the first wins, the second is refused.
+   * Audited.
+   */
+  async save(staffId: string, photo: { buffer: Buffer; contentType: SelfieImageType }, actorId: string, how: 'invite' | 'login', now: Date = new Date()) {
     const staff = await this.prisma.staff.findUnique({
       where: { id: staffId },
       select: { id: true, code: true, city: true, photoStoragePath: true, photoTakenAt: true, photoRetakeRequestedAt: true },
     });
     if (!staff) throw new NotFoundException('Staff member not found');
-    const path = this.pathFor(staff.id);
-    await this.storage.put(path, photo.buffer, photo.mimetype);
-    await this.prisma.staff.update({ where: { id: staff.id }, data: { photoStoragePath: path, photoTakenAt: now, photoRetakeRequestedAt: null } });
+    if (!staffPhotoNeeded(staff)) throw new ForbiddenException(STAFF_PHOTO_ON_FILE);
+    const path = this.pathFor(staff.id, now);
+    await this.storage.put(path, photo.buffer, photo.contentType);
+    // Compare-and-set on what was read: a photo saved in between makes this one lose.
+    const changed = await this.prisma.staff.updateMany({
+      where: { id: staff.id, photoStoragePath: staff.photoStoragePath, photoRetakeRequestedAt: staff.photoRetakeRequestedAt },
+      data: { photoStoragePath: path, photoTakenAt: now, photoRetakeRequestedAt: null },
+    });
+    if (changed.count !== 1) {
+      await this.storage.delete(path).catch(() => undefined);
+      throw new ConflictException('A staff photo was saved just now. Refresh to see it.');
+    }
+    if (staff.photoStoragePath && staff.photoStoragePath !== path) {
+      await this.storage.delete(staff.photoStoragePath).catch((e: unknown) => this.logger.warn(`Old staff photo not removed: ${String(e)}`));
+    }
     await this.audit.log({
       actorId,
       action: 'staff.photo_taken',

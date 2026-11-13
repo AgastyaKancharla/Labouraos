@@ -22,11 +22,14 @@ export function StaffAvatar({
   photoUrl,
   size = 'sm',
   tone = 'av-royal',
+  noPhotoLabel,
 }: {
   name: string;
   photoUrl?: string | null;
   size?: 'sm' | 'md' | 'lg';
   tone?: string;
+  /** Written under the initials when there is no photo (login code cards: "No photo"). */
+  noPhotoLabel?: string;
 }) {
   const [failed, setFailed] = useState(false);
   useEffect(() => setFailed(false), [photoUrl]);
@@ -35,9 +38,16 @@ export function StaffAvatar({
     // The name is always written next to the photo, so the image itself is not read out twice.
     return <img className={cls} src={photoUrl} alt="" data-testid="staff-photo" onError={() => setFailed(true)} />;
   }
-  return (
+  const initials = (
     <span className={cls} aria-hidden="true" data-testid="staff-initials">
       {staffInitials(name)}
+    </span>
+  );
+  if (!noPhotoLabel) return initials;
+  return (
+    <span className="lb-staffphoto-none">
+      {initials}
+      <span className="lb-staffphoto-none__label">{noPhotoLabel}</span>
     </span>
   );
 }

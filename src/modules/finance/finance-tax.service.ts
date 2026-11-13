@@ -60,7 +60,8 @@ export class FinanceTaxService {
       select: { id: true, code: true, amount: true, confirmedAt: true, paidAt: true, bankUtr: true, method: true, tdsReceivable: { select: { amountPaise: true } } },
     });
     if (!payments.length) return [];
-    const charges = await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: payments.map((p) => p.id) } } });
+    // The same rule as the money totals (withBypassCharges): a cancelled charge is no invoice.
+    const charges = await this.prisma.bypassCharge.findMany({ where: { paymentId: { in: payments.map((p) => p.id) }, status: { not: 'cancelled' } } });
     const businesses = await this.prisma.business.findMany({
       where: { id: { in: [...new Set(charges.map((c) => c.businessId))] } },
       select: { id: true, code: true, name: true, legalName: true, gstNumber: true, gstLegalName: true },

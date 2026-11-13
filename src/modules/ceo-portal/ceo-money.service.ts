@@ -1,4 +1,6 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+
+const bypassLogger = new Logger('BypassChargeTotals');
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -61,10 +63,12 @@ export function summariseReceived(received: readonly ReceivedPayment[], refundsP
   const bypass = received.filter((p) => p.type === 'bypass_charge');
   const activationPaise = sumPaise(activation.map((p) => p.amount));
   const placementFeePaise = sumPaise(placement.map((p) => p.placement?.placementFee ?? p.amount - (p.placement?.gstAmount ?? 0)));
-  const bypassChargePaise = sumPaise(bypass.map((p) => p.bypass?.taxablePaise ?? p.amount));
+  // Only a payment whose charge stands (not cancelled, row found) counts; never the gross amount.
+  const counted = bypass.filter((p) => p.bypass);
+  const bypassChargePaise = sumPaise(counted.map((p) => p.bypass!.taxablePaise));
   const gstPaise =
     sumPaise(placement.map((p) => (p.placement ? p.amount - p.placement.placementFee : 0))) +
-    sumPaise(bypass.map((p) => p.bypass?.gstPaise ?? 0));
+    sumPaise(counted.map((p) => p.bypass!.gstPaise));
   const refundsPaidPaise = sumPaise(refundsPaid.map((p) => p.amount));
   const grossPaise = activationPaise + placementFeePaise + bypassChargePaise;
   return {
@@ -79,13 +83,15 @@ export function summariseReceived(received: readonly ReceivedPayment[], refundsP
     netPaise: grossPaise - refundsPaidPaise,
     receivedInclGstPaise: grossPaise + gstPaise,
     bypassChargePaise,
-    bypassChargeCount: bypass.length,
+    bypassChargeCount: counted.length,
   };
 }
 
 /**
  * Adds each paid no-bypass charge's taxable value and GST to its payment
- * (the charge points at its payment; the payment has no link back).
+ * (the charge points at its payment; the payment has no link back). A
+ * cancelled charge, or a payment whose charge row is missing, gets `null`
+ * and is counted as nothing (a missing row is logged) — never its gross amount.
  */
 export async function withBypassCharges<T extends { id: string; type: string }>(
   prisma: Pick<PrismaService, 'bypassCharge'>,
@@ -93,9 +99,14 @@ export async function withBypassCharges<T extends { id: string; type: string }>(
 ): Promise<(T & { bypass: { taxablePaise: number; gstPaise: number } | null })[]> {
   const ids = payments.filter((p) => p.type === 'bypass_charge').map((p) => p.id);
   const charges = ids.length
-    ? await prisma.bypassCharge.findMany({ where: { paymentId: { in: ids } }, select: { paymentId: true, feePaise: true, penaltyPaise: true, gstPaise: true } })
+    ? await prisma.bypassCharge.findMany({ where: { paymentId: { in: ids } }, select: { paymentId: true, status: true, feePaise: true, penaltyPaise: true, gstPaise: true } })
     : [];
-  const byPayment = new Map(charges.map((c) => [c.paymentId!, { taxablePaise: c.feePaise + c.penaltyPaise, gstPaise: c.gstPaise }]));
+  const found = new Set(charges.map((c) => c.paymentId));
+  const missing = ids.filter((id) => !found.has(id));
+  if (missing.length) bypassLogger.warn(`Paid bypass_charge payments with no charge row, counted as 0: ${missing.join(', ')}`);
+  const byPayment = new Map(
+    charges.filter((c) => c.status !== 'cancelled').map((c) => [c.paymentId!, { taxablePaise: c.feePaise + c.penaltyPaise, gstPaise: c.gstPaise }]),
+  );
   return payments.map((p) => ({ ...p, bypass: byPayment.get(p.id) ?? null }));
 }
 

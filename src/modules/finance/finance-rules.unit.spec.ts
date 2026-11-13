@@ -170,9 +170,10 @@ describe('Finance rules (Phase 22 Part A)', () => {
       expect(r.breakEvenPlacements).toBe(69);
     });
     it('counts paid no-bypass charges (without GST) in net revenue', () => {
-      const r = profitAndLoss({ activationPaise: 49900, placementFeePaise: 850000, bypassChargePaise: 900000, refundsPaise: 0, expensesPaise: 0, placements: 1 });
-      expect(r.netRevenuePaise).toBe(1799900);
-      expect(r.profitPaise).toBe(1799900);
+      // Fee ₹7,500 + 50% penalty ₹3,750 = ₹11,250 without GST.
+      const r = profitAndLoss({ activationPaise: 49900, placementFeePaise: 850000, bypassChargePaise: 1125000, refundsPaise: 0, expensesPaise: 0, placements: 1 });
+      expect(r.netRevenuePaise).toBe(2024900);
+      expect(r.profitPaise).toBe(2024900);
     });
     it('has no cost per placement or break-even without placements', () => {
       const r = profitAndLoss({ activationPaise: 0, placementFeePaise: 0, refundsPaise: 0, expensesPaise: 100, placements: 0 });

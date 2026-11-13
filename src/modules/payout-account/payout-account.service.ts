@@ -223,13 +223,6 @@ export class PayoutAccountService {
       }
     }
 
-    const validCode = options.otpVerifiedForPhone && isReferralRegistration && !dto.otpCode
-      ? await this.otpService.isVerified(dto.otpRequestId, options.otpVerifiedForPhone)
-      : await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
-    if (!validCode) {
-      throw new BadRequestException('Invalid or expired OTP code');
-    }
-
     let rawValue = '';
     let normalized = '';
     let maskedValue = '';
@@ -262,6 +255,16 @@ export class PayoutAccountService {
       ifsc = dto.ifsc.trim().toUpperCase();
     } else {
       throw new BadRequestException(`Invalid method '${dto.method}'`);
+    }
+
+    // Checked once the details themselves are valid, so a typo never uses up the code.
+    // The session code is consumed here, atomically: of two saves sent at once
+    // (a double tap), only one gets past this line; the other is refused.
+    const validCode = options.otpVerifiedForPhone && isReferralRegistration && !dto.otpCode
+      ? await this.otpService.consumeVerified(dto.otpRequestId, options.otpVerifiedForPhone)
+      : await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
+    if (!validCode) {
+      throw new BadRequestException('Invalid or expired OTP code');
     }
 
     // Fraud check 1: Duplicate hash across different owners

@@ -84,6 +84,7 @@ services:
         sync: false
 
       # --- Uploaded files (Supabase Storage). Production refuses to start otherwise. ---
+      # Job seeker and referral partner selfies and staff photos (private candidate-photos bucket).
       - key: CANDIDATE_PHOTO_STORAGE_MODE
         value: supabase
       - key: BUSINESS_PHOTO_STORAGE_MODE
@@ -249,6 +250,7 @@ services:
           type: web
           name: laboura-api
           envVarKey: PUBLIC_APP_URL
+      # Job seeker and referral partner selfies and staff photos (private candidate-photos bucket).
       - key: CANDIDATE_PHOTO_STORAGE_MODE
         value: supabase
       - key: BUSINESS_PHOTO_STORAGE_MODE

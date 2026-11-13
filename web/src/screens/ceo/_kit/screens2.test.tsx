@@ -236,6 +236,8 @@ describe('Staff photo (guide, 14 Nov)', () => {
     expect(within(ravi).getByTestId('staff-photo')).toHaveAttribute('src', 'https://photos.example/ravi.jpg');
     const deepa = screen.getByText('Deepa Nair').closest('.ceo-req') as HTMLElement;
     expect(within(deepa).getByTestId('staff-initials')).toHaveTextContent('DN');
+    expect(within(deepa).getByText('No photo')).toBeInTheDocument();
+    expect(within(ravi).queryByText('No photo')).not.toBeInTheDocument();
     // A link that can't be loaded falls back to initials.
     fireEvent.error(within(ravi).getByTestId('staff-photo'));
     expect(within(ravi).getByTestId('staff-initials')).toHaveTextContent('RS');

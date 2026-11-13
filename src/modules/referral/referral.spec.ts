@@ -12,6 +12,9 @@ import { publicPagePath } from '../../common/public-pages';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 
+/** A live camera JPEG as far as the API can tell (its first bytes). */
+const cameraJpeg = (tag: string) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]), Buffer.from(tag)]);
+
 describe('Referral Registration (Phase 2 Task 3)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
@@ -379,7 +382,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .post(`/referral-registration/${token}/selfie`)
       .field('requestId', selfieOtp.requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('camera-image'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', cameraJpeg('camera-image'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
 
     const idOtp = await otpService.sendOtp(phone);
@@ -451,7 +454,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .post(`/referral-registration/${token}/selfie`)
       .field('requestId', selfie.requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('camera-image-bank'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', cameraJpeg('camera-image-bank'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     const id = await code();
     await otpService.verifyOtp(id.requestId, id.code);
@@ -527,11 +530,18 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
 
     // Every step uses the code verified on opening, as on the job seeker link.
     await request(server).post('/consent/submit').send({ token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language: 'kn' }).expect(201);
+    // Only a JPEG, PNG or WebP by its first bytes, whatever the browser claims.
     await request(server)
       .post(`/referral-registration/${token}/selfie`)
       .field('requestId', requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('camera-image-partner-page'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(400);
+    await request(server)
+      .post(`/referral-registration/${token}/selfie`)
+      .field('requestId', requestId)
+      .field('captureSource', 'live_camera')
+      .attach('photo', cameraJpeg('camera-image-partner-page'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'pan' }).expect(201);
     // A raw Aadhaar number is refused before it reaches anything.
@@ -540,7 +550,15 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     expect(afterId.body.currentStep).toBe('upi');
     expect(afterId.body.idCheck.lastResult).toBe('verified');
 
-    const saved = await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: `partner${timestamp.toString().slice(-6)}@okaxis` }).expect(201);
+    // A double tap: two saves at once. The session code is consumed once, so one saves and the other is refused.
+    const upiBody = { otpRequestId: requestId, method: 'upi', upiId: `partner${timestamp.toString().slice(-6)}@okaxis` };
+    const both = await Promise.all([
+      request(server).post(`/referral-registration/${token}/upi`).send(upiBody),
+      request(server).post(`/referral-registration/${token}/upi`).send(upiBody),
+    ]);
+    expect(both.map((r) => r.status).sort()).toEqual([201, 400]);
+    const saved = both.find((r) => r.status === 201)!;
+    expect(await prisma.payoutAccount.count({ where: { ownerType: 'referral', ownerId: referralId } })).toBe(1);
     expect(saved.body.maskedValue).toBeTruthy();
     expect(saved.body.maskedValue).not.toContain(`partner${timestamp.toString().slice(-6)}`);
     expect(JSON.stringify(saved.body)).not.toContain('Encrypted');

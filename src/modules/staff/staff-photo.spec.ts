@@ -12,7 +12,10 @@ import { assertLiveCameraPhoto, staffPhotoNeeded } from './staff-photo.service';
 
 jest.setTimeout(120000);
 
-const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3, 4, 5, 0xff, 0xd9]);
+const JPEG = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 2, 3, 0xff, 0xd9]);
+const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 0x0d, 0x49, 0x48, 0x44, 0x52]);
+const WEBP = Buffer.concat([Buffer.from('RIFF'), Buffer.from([0x24, 0, 0, 0]), Buffer.from('WEBPVP8 '), Buffer.alloc(8)]);
+const SVG = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>');
 
 describe('Staff photo rules', () => {
   it('asks for a photo when there is none, or when the CEO asked for a new one', () => {
@@ -21,11 +24,15 @@ describe('Staff photo rules', () => {
     expect(staffPhotoNeeded({ photoStoragePath: 'staff/a/profile-photo', photoRetakeRequestedAt: null })).toBeNull();
   });
 
-  it('takes only a live camera image', () => {
+  it('takes only a live camera JPEG, PNG or WebP, by its first bytes, and stores the type read from them', () => {
+    expect(assertLiveCameraPhoto({ buffer: JPEG, mimetype: 'image/png' }, 'live_camera').contentType).toBe('image/jpeg');
+    expect(assertLiveCameraPhoto({ buffer: PNG, mimetype: 'image/jpeg' }, 'live_camera').contentType).toBe('image/png');
+    expect(assertLiveCameraPhoto({ buffer: WEBP, mimetype: 'application/octet-stream' }, 'live_camera').contentType).toBe('image/webp');
+    expect(() => assertLiveCameraPhoto({ buffer: SVG, mimetype: 'image/jpeg' }, 'live_camera')).toThrow(BadRequestException);
     expect(() => assertLiveCameraPhoto({ buffer: JPEG, mimetype: 'image/jpeg' }, 'gallery')).toThrow(BadRequestException);
     expect(() => assertLiveCameraPhoto({ buffer: JPEG, mimetype: 'image/jpeg' }, undefined)).toThrow(BadRequestException);
     expect(() => assertLiveCameraPhoto({ buffer: Buffer.alloc(0), mimetype: 'image/jpeg' }, 'live_camera')).toThrow(BadRequestException);
-    expect(() => assertLiveCameraPhoto({ buffer: JPEG, mimetype: 'application/pdf' }, 'live_camera')).toThrow(BadRequestException);
+    expect(() => assertLiveCameraPhoto({ buffer: Buffer.from('%PDF-1.7 not an image at all'), mimetype: 'image/jpeg' }, 'live_camera')).toThrow(BadRequestException);
     expect(() => assertLiveCameraPhoto(undefined, 'live_camera')).toThrow(BadRequestException);
     expect(() => assertLiveCameraPhoto({ buffer: JPEG, mimetype: 'image/jpeg' }, 'live_camera')).not.toThrow();
   });
@@ -124,10 +131,18 @@ describe('Staff photo API', () => {
       .expect(200);
 
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: hired.body.staff.id } });
-    expect(row.photoStoragePath).toBe(`staff/${row.id}/profile-photo`);
+    expect(row.photoStoragePath).toMatch(new RegExp(`^staff/${row.id}/profile-photo-\\d+$`));
     expect(row.photoTakenAt).toBeTruthy();
     const after = await request(server()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token }).expect(200);
     expect(after.body.photoRequired).toBe(false);
+    // The same invite link cannot put another face on the account once one is on file.
+    await request(server())
+      .post(`/staff/accept-invite/${token}/photo`)
+      .set('X-Forwarded-For', freshIp())
+      .field('captureSource', 'live_camera')
+      .attach('photo', PNG, { filename: 'other.png', contentType: 'image/png' })
+      .expect(403);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: row.id } })).photoStoragePath).toBe(row.photoStoragePath);
     expect(after.body).not.toHaveProperty('photoStoragePath');
     const audit = await prisma.auditLog.findFirst({ where: { action: 'staff.photo_taken', entityCode: row.code } });
     expect(audit).toBeTruthy();
@@ -142,16 +157,45 @@ describe('Staff photo API', () => {
     expect(before.body).toMatchObject({ required: true, reason: 'missing', photoUrl: null });
     await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'gallery').attach('photo', JPEG, { filename: 'x.jpg', contentType: 'image/jpeg' }).expect(400);
     await request(server()).get('/staff/me/photo').expect(401);
+    await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'live_camera').attach('photo', SVG, { filename: 'x.jpg', contentType: 'image/jpeg' }).expect(400);
     const taken = await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'live_camera').attach('photo', JPEG, { filename: 'x.jpg', contentType: 'image/jpeg' }).expect(200);
     expect(taken.body.required).toBe(false);
     expect(typeof taken.body.photoUrl).toBe('string');
     const now = await request(server()).get('/staff/me/photo').set(as(agent.id)).expect(200);
     expect(now.body).toMatchObject({ required: false, reason: null });
+    // Signed in, nobody can swap their photo again unless the CEO asks.
+    const before2 = (await prisma.staff.findUniqueOrThrow({ where: { id: agent.id } })).photoStoragePath;
+    await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'live_camera').attach('photo', WEBP, { filename: 'x.webp', contentType: 'image/webp' }).expect(403);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: agent.id } })).photoStoragePath).toBe(before2);
+  });
+
+  it('a password reset link cannot replace a photo on file; it can add one only while none is on file', async () => {
+    const withPhoto = await mkStaff('call_agent', { teamLeadId, photoStoragePath: 'staff/r/profile-photo-1', photoTakenAt: new Date() });
+    const reset = await request(server()).post(`/staff/${withPhoto.id}/reset-password`).set(as(ceoId)).set('X-Forwarded-For', freshIp()).expect(200);
+    const preview = await request(server()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token: reset.body.resetToken }).expect(200);
+    expect(preview.body.photoRequired).toBe(false);
+    await request(server())
+      .post(`/staff/accept-invite/${reset.body.resetToken}/photo`)
+      .set('X-Forwarded-For', freshIp())
+      .field('captureSource', 'live_camera')
+      .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(403);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: withPhoto.id } })).photoStoragePath).toBe('staff/r/profile-photo-1');
+
+    const noPhoto = await mkStaff('call_agent', { teamLeadId });
+    const reset2 = await request(server()).post(`/staff/${noPhoto.id}/reset-password`).set(as(ceoId)).set('X-Forwarded-For', freshIp()).expect(200);
+    await request(server())
+      .post(`/staff/accept-invite/${reset2.body.resetToken}/photo`)
+      .set('X-Forwarded-For', freshIp())
+      .field('captureSource', 'live_camera')
+      .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(200);
   });
 
   it('only the CEO asks for a new photo; it is audited and the person retakes it at their next login', async () => {
     const agent = await mkStaff('field_agent', { teamLeadId, photoStoragePath: 'staff/x/profile-photo', photoTakenAt: new Date() });
     const manager = await mkStaff('manager');
+    await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'live_camera').attach('photo', JPEG, { filename: 'x.jpg', contentType: 'image/jpeg' }).expect(403);
     await request(server()).post(`/staff/${agent.id}/photo/retake`).set(as(manager.id)).send({ reason: 'Blurry' }).expect(403);
     await request(server()).post(`/staff/${agent.id}/photo/retake`).set(as(teamLeadId)).send({}).expect(403);
     await request(server()).post(`/staff/${agent.id}/photo/retake`).set(as(ceoId)).send({ reason: 'Face not clear' }).expect(200);
@@ -162,7 +206,9 @@ describe('Staff photo API', () => {
     await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'live_camera').attach('photo', JPEG, { filename: 'x.jpg', contentType: 'image/jpeg' }).expect(200);
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: agent.id } });
     expect(row.photoRetakeRequestedAt).toBeNull();
-    expect(row.photoStoragePath).toBe(`staff/${agent.id}/profile-photo`);
+    expect(row.photoStoragePath).toMatch(new RegExp(`^staff/${agent.id}/profile-photo-\\d+$`));
+    // The retake is used up: a second new photo needs the CEO again.
+    await request(server()).post('/staff/me/photo').set(as(agent.id)).field('captureSource', 'live_camera').attach('photo', PNG, { filename: 'x.png', contentType: 'image/png' }).expect(403);
   });
 
   it('shows the photo on login code requests, the CEO staff list and the Team Lead agent list and profile (null when none)', async () => {

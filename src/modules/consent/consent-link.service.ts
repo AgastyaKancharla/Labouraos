@@ -129,6 +129,14 @@ export type ConsentLinkDetails =
   | {
       valid: true;
       subjectType: 'referral';
+      otpRequired: true;
+      maskedPhone: string;
+      preferredLanguage: AgreementLanguage;
+    }
+  | {
+      valid: true;
+      subjectType: 'referral';
+      otpRequired: false;
       referralId: string;
       partnerName: string;
       maskedPhone: string;
@@ -494,11 +502,23 @@ export class ConsentLinkService {
     }
 
     if (record.subjectType === 'referral') {
+      // As for job seekers: nothing about the partner (name, ID, terms, amount)
+      // until a code sent to their own number is verified.
+      if (!requestId || !(await this.otpService.isVerified(requestId, record.partnerPhone))) {
+        return {
+          valid: true,
+          subjectType: 'referral',
+          otpRequired: true,
+          maskedPhone: maskAgreementPhone(record.partnerPhone),
+          preferredLanguage: record.terms.language,
+        };
+      }
       const referral = await this.prisma.referral.findUnique({ where: { id: record.referralId } });
       if (!referral) throw new NotFoundException('Referral partner not found');
       return {
         valid: true,
         subjectType: 'referral',
+        otpRequired: false,
         referralId: referral.id,
         partnerName: referral.name,
         maskedPhone: maskAgreementPhone(record.partnerPhone),

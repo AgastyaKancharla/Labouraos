@@ -17,7 +17,8 @@ describe('P-PartnerUPI (step 4)', () => {
     });
     render();
     expect(await screen.findByRole('heading', { name: 'Where should we pay you?' })).toBeInTheDocument();
-    expect(screen.getByText(/name on your ID/)).toBeInTheDocument();
+    // The name check happens before the first payout, not on the spot.
+    expect(screen.getByText(/checked against the name on your ID before your first payout/)).toBeInTheDocument();
     const save = screen.getByRole('button', { name: 'Save payout details' });
     await userEvent.type(screen.getByLabelText('UPI ID (like name@okaxis)'), 'ramesh');
     expect(save).toBeDisabled();
@@ -25,6 +26,7 @@ describe('P-PartnerUPI (step 4)', () => {
     await userEvent.click(save);
     expect(api.calls(`POST /referral-registration/${TOKEN}/upi`)[0]!.body).toEqual({ otpRequestId: 'req-1', method: 'upi', upiId: 'ramesh@okaxis' });
     expect(await screen.findByText('Details received.')).toBeInTheDocument();
+    expect(screen.getByText(/checked against your ID before your first payout/)).toBeInTheDocument();
     expect(screen.getByText('ram***@okaxis')).toBeInTheDocument();
     expect(screen.queryByText('ramesh@okaxis')).not.toBeInTheDocument();
   });

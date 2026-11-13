@@ -1,5 +1,6 @@
 /**
- * Uploaded files (candidate selfies, shop photos, signed agreements, call
+ * Uploaded files (job seeker, referral partner and staff selfies — all under
+ * CANDIDATE_PHOTO_STORAGE_MODE — shop photos, signed agreements, call
  * recordings) go to Supabase Storage only when each of these settings is
  * `supabase`. Any other value keeps the file in the server's memory, where it
  * is lost on every deploy or restart. That is fine on a laptop and in tests,

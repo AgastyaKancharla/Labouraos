@@ -534,10 +534,10 @@ export class ExpenseService {
     const activation = received.filter((p) => p.type === 'activation' || p.type === 'reactivation');
     const fees = received.filter((p) => p.type === 'placement_fee');
     // Paid no-bypass charges: fee + penalty is revenue, their GST is GST collected (as on FN-Tax).
-    const bypass = received.filter((p) => p.type === 'bypass_charge');
+    const bypass = received.filter((p) => p.type === 'bypass_charge' && p.bypass);
     const activationPaise = sumPaise(activation.map((p) => p.amount));
     const placementFeePaise = sumPaise(fees.map((p) => p.placement?.placementFee ?? p.amount));
-    const bypassChargePaise = sumPaise(bypass.map((p) => p.bypass?.taxablePaise ?? p.amount));
+    const bypassChargePaise = sumPaise(bypass.map((p) => p.bypass?.taxablePaise ?? 0));
     const gstCollectedPaise =
       sumPaise(fees.map((p) => (p.placement ? p.amount - p.placement.placementFee : 0))) + sumPaise(bypass.map((p) => p.bypass?.gstPaise ?? 0));
     const refundsPaise = sumPaise(refunds.map((r) => r.amount));
