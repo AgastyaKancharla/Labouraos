@@ -71,3 +71,4 @@ describe('PricingService.createVersion carries every setting forward', () => {
     expect(notCarried).toEqual([]);
   });
 });
+

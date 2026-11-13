@@ -353,7 +353,7 @@ describe('Phase 21 Task 1: one reporting line', () => {
         approvedAt: new Date(),
       },
     });
-    const requestRow = await codes.create(outsider.id, device.id, '203.0.113.21', true);
+    const requestRow = await codes.create(outsider.id, device.id, '203.0.113.21');
     const denied = await request(app.getHttpServer())
       .post(`/login-codes/${requestRow.id}/reveal`)
       .set('Authorization', `Bearer ${tokenFor(manager)}`);

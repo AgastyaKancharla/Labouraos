@@ -216,7 +216,7 @@ Enforced server-side on every request, through the guard — never by hiding a b
 - **Approved devices only**, for every role, approved by a Team Lead or Manager. A Manager's or Finance's new device is approved by the CEO; the CEO approves his own with his authenticator code (decided 11 Nov).
 - **One login at a time.** Logout after 1 hour idle or 2 hours at most. In Laboura Field, closing the app does **not** log out: a refresh token restores the session while it is inside the 1-hour idle and 2-hour limits (`POST /auth/field/refresh`). The office web screens still log out when the browser closes.
 - **5 wrong passwords** lock the account for 15 minutes or until unlocked by a Team Lead, Manager or CEO.
-- Office staff can log in only from the office network. No fixed login hours; logins at odd hours are flagged.
+- Staff log in from any network: there is no office-network rule (owner decisions 12 and 14 Nov). Every Team Lead and agent login needs a one-time code from a senior and every CEO, Manager and Finance login the authenticator code; field agents use their approved phone plus a location check. No fixed login hours; logins at odd hours are flagged.
 - The CEO or a Manager can lock any account instantly.
 - The admin and call-agent consoles stay behind Cloudflare Access. The `/field-agent` web console exemption expires when the native field agent app ships.
 

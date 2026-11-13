@@ -54,6 +54,8 @@ export interface RequestDetail extends RequestView {
   /** Leave only: her follow-ups due on the leave days and the teammates who can take them. */
   followUps?: {
     planned: number;
+    /** False for a half day of leave: its follow-ups stay with the person. */
+    handoverNeeded?: boolean;
     teammates: { id: string; code: string; name: string }[];
     handedOver: { count: number; returned: number; to: { id: string; code: string; name: string }[] };
   } | null;

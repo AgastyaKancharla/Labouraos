@@ -18,6 +18,8 @@ export interface AttendanceToday {
   flagged: boolean;
   closedReason: string | null;
   dayType: string;
+  /** "first" / "second" on a day with a half day of leave: half the production is needed (owner decision 12 Nov). */
+  leaveHalf?: string | null;
 }
 
 export interface AttendanceLoginBody {

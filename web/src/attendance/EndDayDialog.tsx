@@ -1,6 +1,7 @@
 import { Button } from '../components/Button';
 import { Modal } from '../components/Modal';
 import { useT } from '../i18n/I18nProvider';
+import { productionTarget } from './api';
 import { useAttendance } from './AttendanceProvider';
 import { hm } from './format';
 
@@ -9,7 +10,7 @@ export function EndDayDialog({ open, onClose, onConfirm, busy }: { open: boolean
   const t = useT();
   const attendance = useAttendance();
   const today = attendance?.today;
-  const total = (today?.policy.productionHoursFullDay ?? 8) * 3600;
+  const total = productionTarget(today);
   return (
     <Modal
       open={open}

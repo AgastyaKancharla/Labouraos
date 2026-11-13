@@ -28,6 +28,8 @@ interface LeaveResponse {
     from: string;
     to: string;
     days: number;
+    /** "first" / "second" for a half day of leave; null for full days. */
+    half?: string | null;
     status: string;
     where: string;
     withTeamLead: boolean;
@@ -105,7 +107,7 @@ export default function ManagerLeave() {
                         <td className="hide-phone">{teamRole(r.team, r.staff)}</td>
                         <td>
                           {r.kind === 'casual' ? 'Planned' : 'Emergency'}
-                          {r.days > 1 ? ` · ${r.days} days` : ''}
+                          {r.half ? ` · half day (${r.half} half)` : r.days > 1 ? ` · ${r.days} days` : ''}
                         </td>
                         <td>
                           <StatusPill tone={w.tone}>{w.text}</StatusPill>

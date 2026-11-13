@@ -38,6 +38,58 @@ describe('Request leave (CA14f)', () => {
     expect(screen.getByRole('link', { name: 'Back to my attendance' })).toHaveAttribute('href', '/call-agent/attendance/history');
   });
 
+  it('asks for a half day — first or second half of one date — as the design shows', async () => {
+    const api = mockApi({
+      'GET /attendance/today': openToday(),
+      'GET /attendance/leave/balance': balanceFixture,
+      'POST /attendance/leave': ({ body }: { body: Record<string, string> }) => ({
+        kind: 'leave', id: 'l10', status: 'pending', reason: body.reason, where: 'with_team_lead', routeReason: 'team_lead', createdAt: ATT_NOW.toISOString(), decided: null,
+        leaveKind: body.kind, fromDate: body.fromDate, toDate: body.toDate, half: body.half, days: 0.5,
+      }),
+    });
+    signInAs('call_agent');
+    renderScreen(<RequestLeave />, path);
+    const group = await screen.findByRole('group', { name: 'Half day?' });
+    expect(screen.getByRole('radio', { name: 'Full day' })).toBeChecked();
+    expect(screen.getByRole('radio', { name: 'First half' })).toBeInTheDocument();
+    expect(group).toContainElement(screen.getByRole('radio', { name: 'Second half' }));
+
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: /Type/ }), 'casual');
+    fireEvent.change(screen.getByLabelText(/^From/), { target: { value: '2026-11-13' } });
+    fireEvent.change(screen.getByLabelText(/^To/), { target: { value: '2026-11-16' } });
+    await userEvent.click(screen.getByRole('radio', { name: 'Second half' }));
+    // A half day is one date: "To" follows "From" and is locked.
+    expect(screen.getByLabelText(/^To/)).toBeDisabled();
+    expect(screen.getByLabelText(/^To/)).toHaveValue('2026-11-13');
+    expect(screen.getByText(/A half day is for one date and uses half a day of your leave/)).toBeInTheDocument();
+    await userEvent.type(screen.getByRole('textbox', { name: /Reason/ }), 'Bank work');
+    await userEvent.click(screen.getByRole('button', { name: 'Send request' }));
+    await waitFor(() => expect(api.calls('POST /attendance/leave')).toHaveLength(1));
+    expect(api.calls('POST /attendance/leave')[0]!.body).toEqual({ kind: 'casual', fromDate: '2026-11-13', toDate: '2026-11-13', reason: 'Bank work', half: 'second' });
+    expect(await screen.findByText('Leave request sent · Fri 13 Nov · half day (Second half)')).toBeInTheDocument();
+  });
+
+  it('says in the person’s language when the date already has leave (Hindi)', async () => {
+    mockApi({
+      'GET /attendance/today': openToday(),
+      'GET /attendance/leave/balance': balanceFixture,
+      'POST /attendance/leave': { status: 400, body: { statusCode: 400, message: 'You already have leave asked for or approved on 2026-11-13.', details: { code: 'leave_overlap', date: '2026-11-13' } } },
+    });
+    signInAs('call_agent');
+    localStorage.setItem('laboura_lang', 'hi');
+    try {
+      renderScreen(<RequestLeave />, path);
+      await screen.findByRole('radio', { name: 'पूरा दिन' });
+      await userEvent.selectOptions(document.querySelector('form select') as HTMLSelectElement, 'casual');
+      fireEvent.change(document.querySelector('form input[type="date"]')!, { target: { value: '2026-11-13' } });
+      await userEvent.type(document.querySelector('form textarea') as HTMLTextAreaElement, 'Shaadi');
+      await userEvent.click(screen.getByRole('button', { name: 'अनुरोध भेजें' }));
+      expect(await screen.findByText(/के लिए आप पहले ही छुट्टी माँग चुके हैं/)).toBeInTheDocument();
+    } finally {
+      localStorage.removeItem('laboura_lang');
+    }
+  });
+
   it('refuses a “To” before “From”', async () => {
     const api = mockApi({ 'GET /attendance/today': openToday(), 'GET /attendance/leave/balance': balanceFixture });
     signInAs('call_agent');

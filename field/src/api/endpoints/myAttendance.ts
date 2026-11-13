@@ -25,6 +25,8 @@ export interface AttendanceDayRow {
   closedReason: string | null;
   leaveKind: string | null;
   leaveUnpaid: boolean;
+  /** "first" / "second" on a day with a half day of leave (owner decision 12 Nov). */
+  leaveHalf?: string | null;
   change: { byStaffId: string | null; at: string; reason: string | null } | null;
 }
 
@@ -83,6 +85,9 @@ export interface MyRequest {
   leaveKind?: 'casual' | 'emergency';
   fromDate?: string;
   toDate?: string;
+  /** "first" / "second" for a half day of leave; null for full days. */
+  half?: LeaveHalf | null;
+  /** Whole or half days (0.5 for a half day). */
   days?: number;
   paidDays?: number;
   unpaidDays?: number;
@@ -98,11 +103,16 @@ export interface MyRequest {
   segmentStatus?: string;
 }
 
+/** A half day of leave (owner decision 12 Nov): the first or second half of one date. */
+export type LeaveHalf = 'first' | 'second';
+
 export interface LeaveBody {
   kind: 'casual' | 'emergency';
   fromDate: string;
   toDate: string;
   reason: string;
+  /** Left out for full days. */
+  half?: LeaveHalf;
 }
 
 export interface CorrectionBody {

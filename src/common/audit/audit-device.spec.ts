@@ -14,21 +14,17 @@ import { AuditService, maskPhoneLike } from './audit.service';
 /**
  * C-Audit's Device column: every audit row written during a request records
  * the device (StaffDevice id and label, from the session or the device a
- * login names) and the network (an office network by its label, or outside
- * the office). Rows written outside a request (jobs) have none. A phone
- * number never lands in these columns.
+ * login names). No network label is written any more (owner decision 14 Nov:
+ * no office networks). Rows written outside a request (jobs) have none. A
+ * phone number never lands in these columns.
  */
-describe('Audit rows record the device and the network', () => {
+describe('Audit rows record the device (no network label since 14 Nov)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let audit: AuditService;
   const password = 'Audit-Device-Password-1';
   const createdIds: string[] = [];
-  const officeIds: string[] = [];
   let counter = 0;
-  const OFFICE_RANGE = '10.91.0.0/16';
-  // Letters only: a long number in a label would be masked like a phone number.
-  const OFFICE_LABEL = `Audit office ${Date.now().toString(36)}`;
 
   async function makeAgent(label = 'Phone', platform = 'android') {
     counter += 1;
@@ -56,8 +52,6 @@ describe('Audit rows record the device and the network', () => {
     await app.init();
     prisma = app.get(PrismaService);
     audit = app.get(AuditService);
-    const office = await prisma.officeNetwork.create({ data: { label: OFFICE_LABEL, cidr: OFFICE_RANGE, active: true } });
-    officeIds.push(office.id);
   });
 
   afterAll(async () => {
@@ -66,11 +60,10 @@ describe('Audit rows record the device and the network', () => {
     await prisma.staffDevice.deleteMany({ where: { staffId: { in: createdIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: createdIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: createdIds } } });
-    await prisma.officeNetwork.deleteMany({ where: { id: { in: officeIds } } });
     await app.close();
   });
 
-  it('a login from the office records the phone and the office network on its audit row', async () => {
+  it('a login records the phone on its audit row, and no network label', async () => {
     const { staff, deviceId } = await makeAgent();
     const res = await request(app.getHttpServer())
       .post('/auth/login')
@@ -80,7 +73,7 @@ describe('Audit rows record the device and the network', () => {
     const row = await prisma.auditLog.findFirstOrThrow({ where: { actorId: staff.id, action: 'login_code.created' } });
     expect(row.deviceId).toBe(deviceId);
     expect(row.deviceName).toBe('Phone (android)');
-    expect(row.network).toBe(`office:${OFFICE_LABEL}`);
+    expect(row.network).toBeNull();
 
     // The verified login's session carries the device to every later request.
     const verified = await request(app.getHttpServer())
@@ -90,7 +83,7 @@ describe('Audit rows record the device and the network', () => {
     expect(verified.status).toBe(200);
   });
 
-  it('the login code check (login_code.used, and a wrong code) records the phone the login named and the network', async () => {
+  it('the login code check (login_code.used, and a wrong code) records the phone the login named', async () => {
     const { staff, deviceId } = await makeAgent('Field phone', 'android');
     const res = await request(app.getHttpServer())
       .post('/auth/login')
@@ -109,14 +102,14 @@ describe('Audit rows record the device and the network', () => {
       .send({ loginRequestId: res.body.loginRequestId, code: loginCodeFor(res.body.loginRequestId), deviceId: deviceId, loginRequestProof: res.body.loginRequestProof });
     expect(verified.status).toBe(200);
     const wrongRow = await prisma.auditLog.findFirstOrThrow({ where: { actorId: staff.id, action: 'login_code.wrong_code' } });
-    expect([wrongRow.deviceId, wrongRow.deviceName, wrongRow.network]).toEqual([deviceId, 'Field phone (android)', 'outside_office']);
+    expect([wrongRow.deviceId, wrongRow.deviceName, wrongRow.network]).toEqual([deviceId, 'Field phone (android)', null]);
     const used = await prisma.auditLog.findFirstOrThrow({ where: { actorId: staff.id, action: 'login_code.used' } });
     expect(used.deviceId).toBe(deviceId);
     expect(used.deviceName).toBe('Field phone (android)');
-    expect(used.network).toBe(`office:${OFFICE_LABEL}`);
+    expect(used.network).toBeNull();
   });
 
-  it('a signed-in request records the session’s device, and outside_office away from the office', async () => {
+  it('a signed-in request records the session’s device, and no network label', async () => {
     const { staff, deviceId } = await makeAgent('Kiran’s phone', 'ios');
     const session = await prisma.staffSession.create({
       data: {
@@ -137,7 +130,7 @@ describe('Audit rows record the device and the network', () => {
     );
     expect(row.deviceId).toBe(deviceId);
     expect(row.deviceName).toBe('Kiran’s phone (ios)');
-    expect(row.network).toBe('outside_office');
+    expect(row.network).toBeNull();
   });
 
   it('every row of one request gets the same device (resolved once)', async () => {
@@ -151,7 +144,7 @@ describe('Audit rows record the device and the network', () => {
       { ip: '10.91.200.1', staffId: staff.id, deviceId },
     );
     expect([a.deviceId, b.deviceId]).toEqual([deviceId, deviceId]);
-    expect([a.network, b.network]).toEqual([`office:${OFFICE_LABEL}`, `office:${OFFICE_LABEL}`]);
+    expect([a.network, b.network]).toEqual([null, null]);
   });
 
   it('never stores a full phone number, even when a device was named after one', async () => {
@@ -189,7 +182,7 @@ describe('Audit rows record the device and the network', () => {
     expect([row.deviceId, row.deviceName, row.network]).toEqual([null, null, null]);
   });
 
-  it('the request-id middleware keeps the request address for the network column', () => {
+  it('the request-id middleware keeps the request address on the request context', () => {
     let seen: string | undefined;
     new RequestIdMiddleware().use(
       { headers: {}, ip: '10.91.1.1', socket: {} } as never,

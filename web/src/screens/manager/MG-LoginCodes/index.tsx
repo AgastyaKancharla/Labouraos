@@ -22,7 +22,6 @@ interface Pending {
   id: string;
   createdAt: string;
   expiresAt: string;
-  onOfficeNetwork: boolean;
   staff: { id: string; name: string; code: string; role: string };
   staffDevice: { id: string; label: string; platform: string };
 }
@@ -70,9 +69,6 @@ function RequestCard({ request }: { request: Pending }) {
           <div className="mg-code-row">
             <span>
               Device <b>{request.staffDevice.label}</b>
-            </span>
-            <span>
-              Office network <b>{request.onOfficeNetwork ? 'Yes' : request.staff.role === 'field_agent' ? 'No · mobile (field)' : 'No'}</b>
             </span>
             <span>
               Asked <b>{ago(request.createdAt, now)}</b>

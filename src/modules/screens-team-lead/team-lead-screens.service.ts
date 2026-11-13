@@ -1,3 +1,4 @@
+import { leaveHalvesOf } from '../attendance/leave-units';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AttendanceClock } from '../attendance/attendance-clock';
@@ -371,6 +372,8 @@ export class TeamLeadScreensService {
         fromDate: row.fromDate.toISOString().slice(0, 10),
         toDate: row.toDate.toISOString().slice(0, 10),
         days: row.days,
+        /** "first" or "second" for a half day of leave; null for full days. */
+        half: row.half ?? null,
         status: row.status,
         where,
         waitingForYou: row.status === 'pending' && placement.withTeamLead && row.staffId !== actor.id,
@@ -382,21 +385,28 @@ export class TeamLeadScreensService {
     const balances = [];
     for (const member of team) {
       const balance = await this.leave.balance(member.id);
-      const used = await this.prisma.attendanceDay.groupBy({
-        by: ['leaveKind'],
-        where: { staffId: member.id, dayType: 'leave', date: { gte: monthFrom, lte: monthTo } },
-        _count: true,
+      // Whole and half days: a half day of leave uses half a day (owner decision 12 Nov).
+      const used = await this.prisma.attendanceDay.findMany({
+        where: { staffId: member.id, OR: [{ dayType: 'leave' }, { leaveHalf: { not: null } }, { otherLeaveRequestId: { not: null } }], date: { gte: monthFrom, lte: monthTo } },
+        select: { dayType: true, leaveKind: true, leaveUnpaid: true, leaveHalf: true, leavePartUnpaid: true, otherLeaveRequestId: true },
       });
-      const usedOf = (kind: string) => used.find((row) => (row.leaveKind ?? 'casual') === kind)?._count ?? 0;
+      const usedOf = (kind: string) => used.filter((row) => (row.leaveKind ?? 'casual') === kind).reduce((sum, row) => sum + leaveHalvesOf(row).total, 0) / 2;
       balances.push({ staff: member, plannedLeft: balance.casual.left, emergencyLeft: balance.emergency.left, plannedUsedThisMonth: usedOf('casual'), emergencyUsedThisMonth: usedOf('emergency') });
     }
-    const offToday = schedule.filter((row) => row.status === 'approved' && row.fromDate <= today && row.toDate >= today).length;
+    // A half day of leave today is a half day, not a day off (owner decision 12 Nov).
+    const approvedToday = schedule.filter((row) => row.status === 'approved' && row.fromDate <= today && row.toDate >= today);
+    // Counted per person: both halves of today (or a full day) is off; one half is a half day.
+    const halvesToday = new Map<string, number>();
+    for (const row of approvedToday) halvesToday.set(row.staff.id, (halvesToday.get(row.staff.id) ?? 0) + (row.half ? 1 : 2));
+    const offToday = [...halvesToday.values()].filter((halves) => halves >= 2).length;
+    const halfDayToday = [...halvesToday.values()].filter((halves) => halves === 1).length;
     const week = istDayKey(new Date(now.getTime() + 7 * DAY_MS));
     return {
       today,
       manager: chain.manager,
       summary: {
         offToday,
+        halfDayToday,
         offNext7Days: new Set(schedule.filter((row) => row.status === 'approved' && row.fromDate <= week && row.toDate >= today).map((row) => row.staff.id)).size,
         waitingForYou: schedule.filter((row) => row.waitingForYou).length,
         pastThreePlanned: balances.filter((row) => row.plannedUsedThisMonth > 3).length,
