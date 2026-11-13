@@ -600,6 +600,25 @@ describe('Pricing & policy', () => {
     expect(within(row).getByText('20 Nov 2026')).toBeInTheDocument();
   });
 
+  it('shows the office-network rule (any network by default) and lets the CEO switch it on', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/pricing/history': { current: { ...policy, officeNetworkRequired: false }, since: {}, scheduled: [], history: [{ id: 'v3', effectiveFrom: '2026-11-12T00:00:00Z', setBy: 'Agastya', changes: [{ field: 'officeNetworkRequired', before: true, after: false }] }] },
+      'GET /attendance/holidays': { year: 2026, holidays: [] },
+      'POST /pricing': { officeNetworkRequired: true },
+    });
+    render(<Pricing />, '/ceo/pricing');
+    const row = (await screen.findByText('Office network')).closest('tr') as HTMLElement;
+    expect(within(row).getByText('Staff may log in from any network')).toBeInTheDocument();
+    expect(within(row).getByText(/one-time code from a senior/)).toBeInTheDocument();
+    expect(screen.getByText(/Office network office network only → any network/)).toBeInTheDocument();
+    await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
+    const d = await dialog();
+    await userEvent.selectOptions(within(d).getByLabelText(/Office staff log in from/), 'office');
+    await userEvent.click(within(d).getByRole('button', { name: 'Save office network rule' }));
+    await waitFor(() => expect(api.calls('POST /pricing')[0].body).toEqual({ officeNetworkRequired: true }));
+  });
+
   it('trades show pool and open positions; a typed trade is mapped to a listed one', async () => {
     const api = mockApi({
       ...common,

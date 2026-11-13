@@ -1420,6 +1420,13 @@ model PricingPolicy {
   // outside the app, never absent and never loss of pay. Leave accrual starts from
   // the later of the two as well. Null = not set (no effect).
   goLiveDate                   DateTime? @db.Date
+  // Office network (owner decision 12 Nov): staff may log in from any network
+  // for now, because every Team Lead and agent login needs a one-time code from
+  // a senior and every CEO, Manager and Finance login the authenticator code;
+  // field agents still use their approved phone plus a location check. The CEO
+  // can switch the office-network rule on here: then staff marked "works from
+  // the office" log in only from an office range (/office-networks).
+  officeNetworkRequired        Boolean   @default(false)
   // Company details printed on GST invoices (entered by the CEO in Settings).
   companyLegalName             String    @default("Laboura Private Limited")
   companyGstin                 String?

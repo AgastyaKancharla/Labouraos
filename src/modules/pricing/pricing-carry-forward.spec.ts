@@ -71,3 +71,45 @@ describe('PricingService.createVersion carries every setting forward', () => {
     expect(notCarried).toEqual([]);
   });
 });
+
+/** Office network (owner decision 12 Nov): off by default, switchable by the CEO, carried forward. */
+describe('PricingService officeNetworkRequired', () => {
+  function service(before: Record<string, unknown>) {
+    let created: Record<string, unknown> = {};
+    const prisma = {
+      pricingPolicy: {
+        findFirst: jest.fn().mockResolvedValue({ id: 'p1', createdAt: new Date(), effectiveFrom: new Date(), matchingWeights: {}, ...before }),
+        create: jest.fn().mockImplementation(({ data }: { data: Record<string, unknown> }) => {
+          created = data;
+          return Promise.resolve({ ...data, id: 'p2' });
+        }),
+      },
+      staff: { findUnique: jest.fn().mockResolvedValue(null) },
+    };
+    return { svc: new PricingService(prisma as never, { log: jest.fn() } as never), created: () => created, prisma };
+  }
+
+  it('defaults to off in the data model', () => {
+    const field = Prisma.dmmf.datamodel.models.find((m) => m.name === 'PricingPolicy')!.fields.find((f) => f.name === 'officeNetworkRequired')!;
+    expect(field.type).toBe('Boolean');
+    expect(field.default).toBe(false);
+  });
+
+  it('switches on and off, and keeps the switch when another setting changes', async () => {
+    const on = service({ officeNetworkRequired: false });
+    await on.svc.createVersion({ officeNetworkRequired: true }, 'ceo-1');
+    expect(on.created().officeNetworkRequired).toBe(true);
+    const keep = service({ officeNetworkRequired: true });
+    await keep.svc.createVersion({ maxHits: 3 }, 'ceo-1');
+    expect(keep.created().officeNetworkRequired).toBe(true);
+    const off = service({ officeNetworkRequired: true });
+    await off.svc.createVersion({ officeNetworkRequired: false }, 'ceo-1');
+    expect(off.created().officeNetworkRequired).toBe(false);
+  });
+
+  it('refuses anything but true or false', async () => {
+    const bad = service({ officeNetworkRequired: false });
+    await expect(bad.svc.createVersion({ officeNetworkRequired: 'yes' as never }, 'ceo-1')).rejects.toThrow('officeNetworkRequired must be true or false');
+    expect(bad.prisma.pricingPolicy.create).not.toHaveBeenCalled();
+  });
+});

@@ -234,7 +234,7 @@ export class AuthService {
       }
     }
 
-    if (staff.worksFromOffice) {
+    if (staff.worksFromOffice && (await this.officeNetworkRequired())) {
       const onOffice = await this.officeNetworkService.isOnOfficeNetwork(metadata?.ip ?? '');
       if (!onOffice) {
         await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
@@ -272,6 +272,17 @@ export class AuthService {
     return awaiting;
   }
 
+  /**
+   * Whether the office-network rule is on (Settings `officeNetworkRequired`,
+   * owner decision 12 Nov: off for now, the CEO can switch it on). Off, office
+   * staff log in from any network; the login-code card still shows "office
+   * network yes/no" for information. Field agents' approved phone and location
+   * checks do not depend on it.
+   */
+  private async officeNetworkRequired(): Promise<boolean> {
+    return (await this.pricingService.current()).officeNetworkRequired === true;
+  }
+
   async verifyLoginCode(
     loginRequestId: string | undefined,
     code: string | undefined,
@@ -301,6 +312,7 @@ export class AuthService {
     await this.rejectIfLocked(staff);
     if (
       staff.worksFromOffice &&
+      (await this.officeNetworkRequired()) &&
       !(await this.officeNetworkService.isOnOfficeNetwork(metadata?.ip ?? ''))
     ) {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
