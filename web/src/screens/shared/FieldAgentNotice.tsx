@@ -11,7 +11,8 @@ export function FieldAgentNotice() {
       <div className="card lb-auth-card">
         <h1 className="h1">{t('auth.fieldAgent.title')}</h1>
         <p className="muted">{t('auth.fieldAgent.body')}</p>
-        <a className="btn bp full" href="/field-agent">
+        {/* Laboura Field is at /field on this address too (its own address is field.laboura.com). */}
+        <a className="btn bp full" href="/field/">
           {t('auth.fieldAgent.open')}
         </a>
         <Button onClick={() => void signOut()} fullWidth>

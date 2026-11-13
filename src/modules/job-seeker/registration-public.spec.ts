@@ -65,7 +65,7 @@ describe('Registration link endpoints for the public pages', () => {
   it('the old payment-only URL sends a browser to the new page', async () => {
     const redirect = jest.fn();
     await controller.getPaymentOnlyPage('pay-tok', '', 'text/html', { redirect } as never);
-    expect(redirect).toHaveBeenCalledWith(302, 'https://app.laboura.in/app/p/pay/pay-tok');
+    expect(redirect).toHaveBeenCalledWith(302, 'https://app.laboura.in/p/pay/pay-tok');
     expect(publicLinks.findByToken).not.toHaveBeenCalled();
   });
 

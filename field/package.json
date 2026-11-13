@@ -10,7 +10,9 @@
     "ios": "expo start --ios",
     "lint": "eslint . --max-warnings=0 && tsc --noEmit",
     "test": "jest --ci",
-    "build:web": "EXPO_NO_TELEMETRY=1 expo export --platform web --output-dir dist && node scripts/pwa.js dist"
+    "build:web": "npm run build:web:field-path && npm run build:web:root",
+    "build:web:field-path": "EXPO_NO_TELEMETRY=1 expo export --platform web --output-dir dist && node scripts/pwa.js dist",
+    "build:web:root": "LABOURA_FIELD_BASE_URL=/ EXPO_NO_TELEMETRY=1 expo export --platform web --output-dir dist-root && node scripts/pwa.js dist-root /"
   },
   "dependencies": {
     "@expo-google-fonts/ibm-plex-sans": "0.4.1",

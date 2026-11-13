@@ -33,7 +33,8 @@ services:
     runtime: node
     plan: free
     region: singapore
-    # Builds the API, the web app and the field app, then applies every
+    # Builds the API, the web app and the field app (twice: for /field and for
+    # the root of field.laboura.com), then applies every
     # database change not yet in Supabase (free services have no
     # Pre-Deploy Command). If the migration step fails, the deploy fails and
     # the previous version keeps running.
@@ -94,8 +95,16 @@ services:
         value: "15m"
 
       # --- Must be filled before the first start ---
-      # https://laboura-test.onrender.com (the address Render shows on the service page)
+      # The address every SMS / WhatsApp link points at (invites, resets, /p/...).
+      # Until laboura.com is connected: https://laboura-test.onrender.com (the
+      # address Render shows on the service page). After DEPLOY.md, "Connect
+      # laboura.com at Hostinger": https://app.laboura.com
       - key: PUBLIC_APP_URL
+        sync: false
+      # The address that opens Laboura Field at its root. Leave empty until
+      # field.laboura.com is connected (Laboura Field is always at /field too);
+      # then: field.laboura.com
+      - key: FIELD_HOST
         sync: false
 
       # --- Uploaded files (Supabase Storage). Production refuses to start otherwise. ---

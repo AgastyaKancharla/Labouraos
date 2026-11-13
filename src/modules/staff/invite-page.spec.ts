@@ -23,7 +23,7 @@ function reasonOf(body: { reason?: string; details?: { reason?: string } }): str
 }
 
 /**
- * The invite page (web: /app/p/invite/:token). A new hire sees whose invite
+ * The invite page (web: /p/invite/:token). A new hire sees whose invite
  * it is, sets a password that meets the API's rules, sets up the
  * authenticator when their role needs one, and is told plainly when the link
  * is not valid, has expired or was already used.
@@ -142,7 +142,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
   it('the create response carries the invite page link with the token', async () => {
     const h = await hire('call_agent');
     expect(h.body.inviteUrl).toBe(`https://app.laboura.in${staffInvitePath(h.token)}`);
-    expect(h.body.inviteUrl).toBe(`https://app.laboura.in/app/p/invite/${h.token}`);
+    expect(h.body.inviteUrl).toBe(`https://app.laboura.in/p/invite/${h.token}`);
   });
 
   it('preview shows who the invite is for, their role and the password rules', async () => {
@@ -271,7 +271,7 @@ describe('Invite page API: preview, authenticator set-up, accept', () => {
       .set('Authorization', `Bearer ${ceoToken}`)
       .set('X-Forwarded-For', freshIp());
     expect(re.status).toBe(200);
-    expect(re.body.inviteUrl).toBe(`https://app.laboura.in/app/p/invite/${re.body.inviteToken}`);
+    expect(re.body.inviteUrl).toBe(`https://app.laboura.in/p/invite/${re.body.inviteToken}`);
     expect((await preview(h.token)).status).toBe(404);
     expect((await preview(re.body.inviteToken)).status).toBe(200);
   });

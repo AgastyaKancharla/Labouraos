@@ -28,6 +28,6 @@ describe('Public referral partner terms', () => {
       const html = renderReferralTermsPageHtml('tok', 'Raju', '******0011', '<article></article>', lang);
       expect(html).toContain(`href="${REFERRAL_TERMS_PAGE_PATH}?lang=${lang}"`);
     }
-    expect(REFERRAL_TERMS_PAGE_PATH).toBe('/app/p/referral-terms');
+    expect(REFERRAL_TERMS_PAGE_PATH).toBe('/p/referral-terms');
   });
 });

@@ -4,7 +4,7 @@ import { PricingService } from '../pricing/pricing.service';
 import { REFERRAL_TERMS_VERSION } from '../consent/referral-terms.template';
 
 /**
- * The public referral partner terms page (web: /app/p/referral-terms) reads
+ * The public referral partner terms page (web: /p/referral-terms) reads
  * its amounts here, from the current Settings (PricingPolicy), so the page
  * never states a figure the software does not pay. No personal data.
  */

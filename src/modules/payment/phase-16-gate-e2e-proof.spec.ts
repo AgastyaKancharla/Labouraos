@@ -190,7 +190,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
 
     expect(actRes.body).toBeDefined();
     expect(actRes.body.amountPaise).toBe(49900);
-    expect(actRes.body.paymentLink).toContain('/app/p/fee/');
+    expect(actRes.body.paymentLink).toContain('/p/fee/');
     expect(actRes.body.upiReference).toMatch(new RegExp(`^${actRes.body.paymentCode}-`));
     expect(actRes.body.upiUri).toContain('upi://pay?');
     expect(actRes.body.upiUri).toContain('pa=laboura%40icici');
@@ -218,7 +218,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
       .get(`/payments/request/${encodeURIComponent(jsUpiRef)}`)
       .set('Accept', 'text/html')
       .expect(302);
-    expect(pageRes.headers.location).toBe(`https://app.laboura.in/app/p/fee/${encodeURIComponent(jsUpiRef)}`);
+    expect(pageRes.headers.location).toBe(`https://app.laboura.in/p/fee/${encodeURIComponent(jsUpiRef)}`);
     const summaryRes = await request(app.getHttpServer())
       .get(`/payments/request/${encodeURIComponent(jsUpiRef)}/summary`)
       .expect(200);

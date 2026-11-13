@@ -225,7 +225,7 @@ describe('Staff & access', () => {
     const api = mockApi({
       ...common,
       'GET /manager/staff': staffResponse,
-      'POST /staff/tl1/reset-password': { resetUrl: 'https://app.laboura.in/app/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-12T12:30:00Z' },
+      'POST /staff/tl1/reset-password': { resetUrl: 'https://app.laboura.com/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-12T12:30:00Z' },
       'POST /staff/ca9/unlock': { success: true },
     });
     render(<Staff />, '/manager/staff');
@@ -236,7 +236,7 @@ describe('Staff & access', () => {
     expect(within(d).getByText(/old password keeps working until they use the link/)).toBeInTheDocument();
     await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
     await waitFor(() => expect(api.calls('POST /staff/tl1/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Done' }));
 
     const locked = screen.getByText('Arun P').closest('tr') as HTMLElement;
@@ -251,7 +251,7 @@ describe('Staff & access', () => {
     const api = mockApi({
       ...common,
       'GET /manager/staff': staffResponse,
-      'POST /staff': { staff: { code: 'FA-0031', name: 'Meena R' }, inviteUrl: 'https://app.laboura.in/app/p/invite/tok', inviteExpiresAt: '2026-11-12T12:30:00Z' },
+      'POST /staff': { staff: { code: 'FA-0031', name: 'Meena R' }, inviteUrl: 'https://app.laboura.com/p/invite/tok', inviteExpiresAt: '2026-11-12T12:30:00Z' },
     });
     render(<Staff />, '/manager/staff');
     await screen.findAllByText('Ravi Shankar');
@@ -261,7 +261,7 @@ describe('Staff & access', () => {
     await userEvent.selectOptions(screen.getByLabelText(/Reports to/), 'tl2');
     await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
     await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual({ name: 'Meena R', role: 'field_agent', teamLeadId: 'tl2', intern: true, joinedOn: '2026-11-09' }));
-    expect(await screen.findByText('https://app.laboura.in/app/p/invite/tok')).toBeInTheDocument();
+    expect(await screen.findByText('https://app.laboura.com/p/invite/tok')).toBeInTheDocument();
   });
 });
 

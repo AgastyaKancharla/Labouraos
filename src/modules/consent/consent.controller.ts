@@ -73,7 +73,7 @@ export class ConsentController {
     @Headers('accept') accept: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    // Links already sent by SMS open the new phone pages (/app/p/...) in a browser.
+    // Links already sent by SMS open the new phone pages (/p/...) in a browser.
     if (wantsHtml(accept)) {
       const page = await this.consentLinkService.publicPageForToken(token);
       if (page) {

@@ -221,7 +221,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(res.amount).toBe(49900);
       expect(res.gatewayReference).toBeNull();
       expect(res.upiReference).toBe('PAY-00001-1234abcd');
-      expect(res.paymentLink).toContain('/app/p/fee/PAY-00001-1234abcd');
+      expect(res.paymentLink).toContain('/p/fee/PAY-00001-1234abcd');
       expect(messagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: 'sms',
@@ -393,7 +393,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(result.gstAmount).toBe(expectedGst);
       expect(result.payment?.amount).toBe(expectedTotal);
       expect(result.payment?.upiReference).toBe('PAY-00003-plfee1234');
-      expect(result.payment?.paymentLink).toContain('/app/p/fee/PAY-00003-plfee1234');
+      expect(result.payment?.paymentLink).toContain('/p/fee/PAY-00003-plfee1234');
 
       // Assert sent to business owner via SMS and WhatsApp
       expect(messagingService.send).toHaveBeenCalledWith(
@@ -403,7 +403,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectId: 'biz-1',
           variables: expect.objectContaining({
             amount: '9440.00',
-            link: expect.stringContaining('/app/p/fee/PAY-00003-plfee1234'),
+            link: expect.stringContaining('/p/fee/PAY-00003-plfee1234'),
           }),
         }),
       );

@@ -93,7 +93,7 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
     expect(toFin().length).toBe(before + 1);
     expect(message.to).toBe(emails.fin);
     expect(message.link).toMatch(/\/app\/p\/invite\//);
-    const token = decodeURIComponent(message.link!.split('/app/p/invite/')[1]);
+    const token = decodeURIComponent(message.link!.split('/p/invite/')[1]);
     const reset = await prisma.staffPasswordReset.findFirstOrThrow({ where: { staffId: ids[2] }, orderBy: { createdAt: 'desc' } });
     expect(reset.expiresAt.getTime() - reset.createdAt.getTime()).toBe(60 * 60 * 1000);
     const emailed = await prisma.auditLog.findFirst({ where: { action: 'staff.password_reset_emailed', entityCode: `FPW-fin-${ts}` } });
@@ -113,7 +113,7 @@ describe('Forgot password by company email (CEO, Managers, Finance)', () => {
     const past = new Date(Date.now() - 2 * 60 * 60 * 1000);
     expect(await service.request(emails.ceo, past).done).toBe('sent');
     const toCeo = mail.sent.filter((m) => m.to === emails.ceo);
-    const token = decodeURIComponent(toCeo[toCeo.length - 1].link!.split('/app/p/invite/')[1]);
+    const token = decodeURIComponent(toCeo[toCeo.length - 1].link!.split('/p/invite/')[1]);
     const preview = await request(app.getHttpServer()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token });
     expect(preview.status).toBe(410);
   });

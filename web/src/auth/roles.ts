@@ -17,7 +17,7 @@ export const ROLE_HOME: Record<StaffRole, string> = {
   finance: '/finance',
   call_agent: '/call-agent',
   // Field agents use the Laboura Field phone app; this page points them to it.
-  field_agent: '/field-agent',
+  field_agent: '/field-app',
 };
 
 export const ROLE_LABEL: Record<StaffRole, string> = {

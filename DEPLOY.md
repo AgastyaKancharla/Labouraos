@@ -10,7 +10,7 @@ Read each step to the end before you start clicking. Keep a password manager (or
 
 | Part | Where | What it does |
 | --- | --- | --- |
-| **Web service** `laboura-api` | Render, Singapore | The API, the webhooks and the staff consoles (`/admin`, `/call-agent`, `/field-agent`) |
+| **Web service** `laboura-api` | Render, Singapore | The API, the webhooks, the office web app (login and portals at `app.laboura.com/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`, public pages at `/p/...`) and Laboura Field (`field.laboura.com`, and `/field` on the Render address) |
 | **Background worker** `laboura-worker` | Render, Singapore | Every scheduled job: the midnight no-pickup check, payment deadlines, day-60 completions, refunds due, follow-up tasks, data clean-up |
 | **Job queue** `laboura-redis` | **Render Key Value**, Singapore | The queue the worker reads. It sits on Render's private network, so only the two services above can reach it |
 | **Database** | Supabase, Singapore | Every record (PostgreSQL) |
@@ -267,7 +267,7 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 >
 > In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office consoles (`/admin`, `/console/admin`, `/call-agent`, `/console/call-agent`) are not behind Cloudflare's identity check.
 >
-> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for your domain covering `/admin*`, `/console/admin*`, `/call-agent*` and `/console/call-agent*`. Leave `/field-agent` out: field agents use it from their phones.
+> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, `/call-agent*`, `/admin*`, `/console/admin*` and `/console/call-agent*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com`, `/field*` and `/field-agent` (field agents use them from their phones).
 > 2. Add a policy that lets in only Laboura's staff email addresses.
 > 3. Copy the application's **Audience (AUD) tag**.
 > 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).
@@ -436,7 +436,7 @@ This does three things: the web service never sleeps (it sleeps after 15 minutes
 
 **F12b. Forgot password (CEO, Managers, Finance) in test mode.** No email vendor is chosen yet (`EMAIL_PROVIDER_MODE` is `mock`, the default), so no email goes out. The screen always gives the same answer; the reset link is written to the server log next to a masked address (`p***@laboura.in`). Test mode turns off when `EMAIL_PROVIDER_MODE` is `real` (which also needs `EMAIL_API_URL`, `EMAIL_API_KEY` and `EMAIL_FROM`) or when `NODE_ENV` is `production` with any live vendor.
 
-**F13. Open the field app on a phone.** Open `https://laboura-test.onrender.com/field` on an iPhone in Safari, then **Share**, **Add to Home Screen**.
+**F13. Open the field app on a phone.** Open `https://laboura-test.onrender.com/field` on an iPhone in Safari, then **Share**, **Add to Home Screen**. (Once laboura.com is connected, use `https://field.laboura.com` instead: see "Connect laboura.com at Hostinger".)
 
 ### If something stops on the free tier
 
@@ -449,6 +449,53 @@ This does three things: the web service never sleeps (it sleeps after 15 minutes
 ### Before any real data
 
 The free setup is for made-up data only. Before real data, move to the paid setup (Steps 1 to 11 above with `render.yaml`), Supabase Pro, Cloudflare Access on, new secrets everywhere, and the repository private.
+
+---
+
+## Connect laboura.com at Hostinger (app.laboura.com and field.laboura.com)
+
+`laboura.com` itself stays the public website: **its records at Hostinger are left untouched.** The software gets two sub-addresses of it:
+
+| Address | What opens there |
+| --- | --- |
+| `https://app.laboura.com` | One login page (`/login`) for the CEO, Managers, Team Leads, Finance and call agents, each landing in their own portal: `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`. Also the public pages for job seekers and businesses (`/p/...`) and the API. |
+| `https://field.laboura.com` | Laboura Field, the installable app for field agents. |
+
+Both point at the same Render web service (`laboura-api`, or `laboura-test` on the free tier). Render gives both a free HTTPS certificate. The Render test address (`https://laboura-test.onrender.com`) keeps working too: the portals at its root and Laboura Field at `/field`.
+
+**H1. Copy the Render address.** In Render, open the web service. At the top of its page is its address, like `laboura-test.onrender.com`. Copy it **without** `https://` and without a `/` at the end.
+
+**H2. Add two records at Hostinger.**
+1. Log in to Hostinger (`hpanel.hostinger.com`). Click **Domains**, then `laboura.com`, then **DNS / Nameservers** (in some accounts: **Manage DNS records**).
+2. Under **Manage DNS records**, add the first record:
+   - **Type:** `CNAME`
+   - **Name:** `app` (only the word `app`; Hostinger adds `.laboura.com` itself)
+   - **Points to** (or **Target**): the Render address from H1, for example `laboura-test.onrender.com`
+   - **TTL:** leave the default
+   - Click **Add Record**.
+3. Add the second record the same way, with **Name** `field` and the same **Points to**.
+4. Do not change or delete any other record. The records named `@` and `www` (and any `MX` email records) belong to the main website and email. If Hostinger already shows a record named exactly `app` or `field`, stop and ask before changing it.
+
+**H3. Add both addresses in Render.**
+1. In Render, open the web service, then **Settings**, then **Custom Domains**.
+2. Click **+ Add Custom Domain**, type `app.laboura.com`, click **Save**.
+3. Click **+ Add Custom Domain** again, type `field.laboura.com`, click **Save**. (If Render offers to add `www` or the bare `laboura.com` too, say no: those stay with the website.)
+4. Next to each address, click **Verify**. Right after H2 it may say the record is not found yet: changes at Hostinger can take from a few minutes up to a few hours to reach the internet. Wait and click **Verify** again.
+5. When verified, Render requests the free certificate by itself. Wait until both addresses show **Certificate Issued** (usually a few minutes).
+
+**H4. Tell the app its addresses.** Only after both show **Certificate Issued**:
+1. In Render, open the web service, then **Environment**.
+2. Set `PUBLIC_APP_URL` to `https://app.laboura.com` (this is the address every SMS and WhatsApp link will use from now on).
+3. Set `FIELD_HOST` to `field.laboura.com` (no `https://`).
+4. Click **Save Changes**. The service restarts in a minute or two. On the paid setup the worker copies `PUBLIC_APP_URL` from the web service by itself.
+
+**H5. Check.**
+1. Open `https://app.laboura.com/login`: the staff sign-in page. Sign in as the CEO: you land on `https://app.laboura.com/ceo`.
+2. Open an old address with `/app` in it, like `https://app.laboura.com/app/ceo`: it moves to `https://app.laboura.com/ceo` by itself. Links already sent by SMS or WhatsApp with `/app/...` keep working the same way, on whichever address they were sent with.
+3. On a phone, open `https://field.laboura.com`: the Laboura Field sign-in. On an iPhone: Safari, **Share**, **Add to Home Screen**. On Android: Chrome, menu, **Install app** (or **Add to Home screen**).
+4. A field agent who installed Laboura Field from the onrender.com address must install it again from `https://field.laboura.com`, then sign in once. A new address counts as a new phone, so their Team Lead approves the phone again (the same as for any new phone).
+
+If something does not open: wait an hour (the Hostinger change may still be spreading), check that both records in H2 point at exactly the address from H1, and that Render shows **Certificate Issued** for both.
 
 ---
 
@@ -472,7 +519,8 @@ The free setup is for made-up data only. Before real data, move to the paid setu
 | `STAFF_BOOTSTRAP_SECRET` | Generated by Render | Needed once, to create the first CEO (Step 7) |
 | `CALL_ROUTING_KEY` | Generated by Render, shared with the worker | Encrypts staff phone numbers used for call routing |
 | `PAYOUT_ACCOUNT_KEY` | Generated by Render, shared with the worker | Encrypts payout UPI and bank details |
-| `PUBLIC_APP_URL` | Your app's `https://` address | The public web address of the app, used in links sent by SMS and WhatsApp; required to start |
+| `PUBLIC_APP_URL` | `https://app.laboura.com` (the onrender.com address until the domain is connected) | The public web address of the app. Every link the software sends (invites, password resets, the public `/p/...` pages, receipts) starts with it; required to start. Links are never built from the address a visitor happened to use. |
+| `FIELD_HOST` | `field.laboura.com` (empty until connected) | The address that opens Laboura Field at its root. Every other address opens the office app, with Laboura Field also at `/field` |
 | `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` on both services (fixed) | Keeps uploads in Supabase Storage; production refuses to start otherwise |
 | `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` | Step 3 | Lets the app read and write the four private buckets |
 | `COMPANY_LEGAL_NAME`, `COMPANY_GSTIN`, `COMPANY_ADDRESS` | Company details | Printed on GST invoices |

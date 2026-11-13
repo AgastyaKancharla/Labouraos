@@ -222,7 +222,7 @@ describe('Login codes', () => {
 });
 
 describe('Password resets (POST /staff/:id/reset-password, never the old re-issued invite)', () => {
-  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.in/app/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
+  const reset = { staff: { code: 'CA-9' }, resetUrl: 'https://app.laboura.com/p/invite/abc123', resetToken: 'abc123', expiresAt: '2026-11-14T06:30:00Z' };
 
   it('Login codes: Reset on a locked account sends a one-time link and keeps the old password until it is used', async () => {
     const api = mockApi({
@@ -238,7 +238,7 @@ describe('Password resets (POST /staff/:id/reset-password, never the old re-issu
     expect(within(d).getByText(/old password and authenticator keep working until they use the link/)).toBeInTheDocument();
     await userEvent.click(within(d).getByRole('button', { name: 'Make the link' }));
     await waitFor(() => expect(api.calls('POST /staff/ca9/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
     expect(api.calls('POST /staff/ca9/reissue-invite')).toHaveLength(0);
 
     // Someone who never set a password gets a new invite instead (a reset needs a password to replace).
@@ -257,7 +257,7 @@ describe('Password resets (POST /staff/:id/reset-password, never the old re-issu
     await userEvent.click(within(row).getByRole('button', { name: 'Reset password' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Make the link' }));
     await waitFor(() => expect(api.calls('POST /staff/ca1/reset-password')).toHaveLength(1));
-    expect(await screen.findByText('https://app.laboura.in/app/p/invite/abc123')).toBeInTheDocument();
+    expect(await screen.findByText('https://app.laboura.com/p/invite/abc123')).toBeInTheDocument();
     const pending = screen.getByText('Meena R').closest('tr') as HTMLElement;
     expect(within(pending).queryByRole('button', { name: 'Reset password' })).not.toBeInTheDocument();
     expect(within(pending).getByRole('button', { name: 'Resend' })).toBeInTheDocument();

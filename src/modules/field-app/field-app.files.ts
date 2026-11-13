@@ -9,9 +9,22 @@ import * as path from 'path';
  * root) or from this file (dist/modules/field-app → repo root).
  */
 export function resolveFieldDistDir(): string | null {
-  const candidates = process.env.FIELD_DIST_DIR
-    ? [process.env.FIELD_DIST_DIR]
-    : [path.resolve(process.cwd(), 'field', 'dist'), path.resolve(__dirname, '..', '..', '..', 'field', 'dist')];
+  return firstBuilt(process.env.FIELD_DIST_DIR, 'dist');
+}
+
+/**
+ * The second build of Laboura Field, made for the root of its own address
+ * (field.laboura.com): `field/dist-root`, or FIELD_ROOT_DIST_DIR. Expo bakes
+ * the base path into the bundle, so one build cannot serve both / and /field.
+ */
+export function resolveFieldRootDistDir(): string | null {
+  return firstBuilt(process.env.FIELD_ROOT_DIST_DIR, 'dist-root');
+}
+
+function firstBuilt(override: string | undefined, folder: string): string | null {
+  const candidates = override
+    ? [override]
+    : [path.resolve(process.cwd(), 'field', folder), path.resolve(__dirname, '..', '..', '..', 'field', folder)];
   for (const dir of candidates) {
     if (fs.existsSync(path.join(dir, 'index.html'))) return path.resolve(dir);
   }
@@ -27,7 +40,9 @@ export type FieldAppFile =
   | { kind: 'missing' };
 
 /**
- * Maps a request path under /field to what should be sent:
+ * Maps a request path to what should be sent. `prefix` is where the app is
+ * mounted: '/field' on the office and Render addresses, '' at the root of
+ * field.laboura.com.
  * - an existing file inside field/dist (hashed bundles under _expo/static/
  *   and assets/ are cached forever; sw.js, register-sw.js and the manifest
  *   never);
@@ -36,10 +51,11 @@ export type FieldAppFile =
  * - anything else is a screen of the app → index.html.
  * Paths that escape field/dist (../) are refused.
  */
-export function resolveFieldAppFile(distDir: string, requestPath: string): FieldAppFile {
+export function resolveFieldAppFile(distDir: string, requestPath: string, prefix: '/field' | '' = '/field'): FieldAppFile {
   let relative: string;
   try {
-    relative = decodeURIComponent(requestPath.replace(/^\/field(\/|$)/, ''));
+    const inApp = prefix ? requestPath.replace(/^\/field(\/|$)/, '') : requestPath;
+    relative = decodeURIComponent(inApp.replace(/^\/+/, ''));
   } catch {
     return { kind: 'missing' };
   }

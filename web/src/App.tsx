@@ -61,10 +61,11 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<StaffSignIn />} />
-      {/* Public (outside Cloudflare Access, like every /app/p page): field agents open their invite on their phone. */}
+      {/* Public (outside Cloudflare Access, like every /p page): field agents open their invite on their phone. */}
       <Route path="/p/invite/:token" element={<AcceptInvite />} />
+      {/* Not /field-agent: that address is still the old field agent console on the server. */}
       <Route
-        path="/field-agent"
+        path="/field-app"
         element={
           <RequireRole roles={['field_agent']}>
             <FieldAgentNotice />
@@ -103,7 +104,8 @@ export function AppRoutes() {
 export function App() {
   return (
     <AppProviders>
-      <BrowserRouter basename="/app">
+      {/* At the site root (decided 14 Nov): app.laboura.com/ceo, /call-agent, /p/…; old /app/… links are redirected by the server. */}
+      <BrowserRouter>
         <AppRoutes />
       </BrowserRouter>
     </AppProviders>

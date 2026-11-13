@@ -119,7 +119,7 @@ export class InterviewController {
     return this.interviews.respondFromCall(id, body.callRecordId, body.answer, body.reason, req.user.sub);
   }
 
-  /** Links already sent by SMS and WhatsApp open the new phone pages (/app/p/...). */
+  /** Links already sent by SMS and WhatsApp open the new phone pages (/p/...). */
   private toPublicPage(res: Response, page: PublicPage, token: string): void {
     res.redirect(302, publicPageLink(page, token));
   }

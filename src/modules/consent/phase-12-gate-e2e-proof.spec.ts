@@ -199,7 +199,7 @@ describe('Phase 12 gate end-to-end proof', () => {
       .get(`/consent/${consentLink.body.token}`)
       .set('Accept', 'text/html')
       .expect(302);
-    expect(openedPage.headers.location).toBe(`https://app.laboura.in/app/p/register/${consentLink.body.token}`);
+    expect(openedPage.headers.location).toBe(`https://app.laboura.in/p/register/${consentLink.body.token}`);
     const lockedDetails = await request(app.getHttpServer())
       .get(`/consent/${consentLink.body.token}`)
       .set('Accept', 'application/json')
