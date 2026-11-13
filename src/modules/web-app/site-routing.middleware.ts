@@ -33,9 +33,13 @@ function splitUrl(originalUrl: string): { pathname: string; search: string } {
   return at === -1 ? { pathname: originalUrl, search: '' } : { pathname: originalUrl.slice(0, at), search: originalUrl.slice(at) };
 }
 
-/** "/app/ceo" → "/ceo"; never "//evil.example" (that would leave the site). */
+/**
+ * "/app/ceo" → "/ceo"; never "//evil.example" or "/\\evil.example" (browsers
+ * read both as another site). Leading slashes, backslashes and their
+ * percent-encoded forms are all dropped.
+ */
 function stripPrefix(pathname: string, prefix: string): string {
-  return `/${pathname.slice(prefix.length).replace(/^\/+/, '')}`;
+  return `/${pathname.slice(prefix.length).replace(/^(?:[\/\\]|%2f|%5c)+/i, '')}`;
 }
 
 function under(pathname: string, prefix: string): boolean {

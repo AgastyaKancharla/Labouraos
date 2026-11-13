@@ -7,7 +7,7 @@ import * as request from 'supertest';
 import { CloudflareAccessVerifier } from '../../common/auth/cloudflare-access.verifier';
 import { resolveFieldAppFile } from '../field-app/field-app.files';
 import { fieldHosts, isFieldHost, normaliseHost } from './site-hosts';
-import { SiteRoutingMiddleware, WEB_APP_ROOTS } from './site-routing.middleware';
+import { routeSiteRequest, SiteRoutingMiddleware, WEB_APP_ROOTS } from './site-routing.middleware';
 import { resolveWebAppFile } from './web-app.files';
 
 /** Stand-ins for API routes that share a first segment with the web app's pages. */
@@ -216,6 +216,21 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       const res = await get(APP, '/app//evil.example/x');
       expect(res.status).toBe(301);
       expect(res.headers.location).toBe('/evil.example/x');
+    });
+
+    it.each([
+      '/app//evil.example/x',
+      '/app/\\evil.example/x',
+      '/app/\\/evil.example/x',
+      '/app/%5Cevil.example/x',
+      '/app/%2F%2Fevil.example/x',
+    ])('never builds an off-site redirect from %s', (url) => {
+      const outcome = routeSiteRequest({ method: 'GET', originalUrl: url, url, hostname: 'app.laboura.com', headers: { accept: 'text/html' } }, {});
+      expect(outcome.kind).toBe('redirect');
+      const location = (outcome as { location: string }).location;
+      expect(location).toBe('/evil.example/x');
+      expect(location.startsWith('//')).toBe(false);
+      expect(location.startsWith('/\\')).toBe(false);
     });
   });
 
