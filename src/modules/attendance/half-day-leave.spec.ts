@@ -65,7 +65,8 @@ describe('Half-day leave', () => {
         city: 'Bengaluru',
         teamLeadId: agent ? (reportsToId ?? null) : null,
         reportsToId: reportsToId ?? null,
-        ...(createdAt ? { createdAt } : {}),
+        // The joining date, so a first login during the test does not move it (leave counts from joining).
+        ...(createdAt ? { createdAt, joinedOn: new Date(`${createdAt.toISOString().slice(0, 10)}T00:00:00.000Z`) } : {}),
       },
     });
     staffIds.push(row.id);
@@ -252,7 +253,6 @@ describe('Half-day leave', () => {
     at(2032, 6, 1, 10);
     const SALARY = 2_600_000; // ₹26,000: ₹1,000 a day, ₹500 a half day
     const person = await make('call_agent', 'HDPAY', lead.id, MAY_10);
-    await prisma.staff.update({ where: { id: person.id }, data: { joinedOn: new Date('2032-05-10T00:00:00.000Z') } });
     await prisma.staffSalary.create({ data: { staffId: person.id, monthlyPaise: SALARY, effectiveFromMonth: '2032-05', setByStaffId: ceo.id } });
 
     // 1 June: a paid full day of leave uses the balance; 9 June: half a day of unpaid leave, the morning worked.
