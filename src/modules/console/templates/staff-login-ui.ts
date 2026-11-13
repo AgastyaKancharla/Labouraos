@@ -257,7 +257,6 @@ export function officeApproverJs(): string {
           + '<div><strong>' + labouraEsc(person.name || person.code) + '</strong> · ' + labouraEsc(person.code) + '</div>'
           + '<div style="font-size: 0.8rem; color: var(--text-muted);">'
           + labouraEsc(person.role) + ' · ' + labouraEsc(device.label || 'device')
-          + ' · office network ' + (row.onOfficeNetwork ? 'yes' : 'no')
           + ' · ' + labouraEsc(new Date(row.createdAt).toLocaleString())
           + '</div>'
           + '<div style="margin-top: 8px;">'

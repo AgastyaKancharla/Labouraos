@@ -752,6 +752,7 @@ model Staff {
   directReports     Staff[]          @relation("ReportingLine")
   /// AES-256-GCM ciphertext. Never selected into an API response.
   callRoutingPhone  String?
+  /// No longer used (owner decision 14 Nov: no office-network rule; staff log in from any network). Kept for old rows.
   worksFromOffice   Boolean          @default(false)
   /// A Team Lead's team name ("Team South"), set by the CEO on the Teams
   /// screen. Null for everyone else; a team is its Team Lead and their agents.
@@ -1223,7 +1224,8 @@ model LoginCodeRequest {
   staffDeviceId     String
   staffDevice       StaffDevice @relation(fields: [staffDeviceId], references: [id], onDelete: Cascade)
   ipAddress         String
-  onOfficeNetwork   Boolean
+  /// No longer filled or shown (owner decision 14 Nov: no office-network rule). Kept for old rows.
+  onOfficeNetwork   Boolean     @default(false)
   status            String      @default("pending") // pending, revealed, used, expired, refused
   createdAt         DateTime    @default(now())
   expiresAt         DateTime
@@ -1420,13 +1422,6 @@ model PricingPolicy {
   // outside the app, never absent and never loss of pay. Leave accrual starts from
   // the later of the two as well. Null = not set (no effect).
   goLiveDate                   DateTime? @db.Date
-  // Office network (owner decision 12 Nov): staff may log in from any network
-  // for now, because every Team Lead and agent login needs a one-time code from
-  // a senior and every CEO, Manager and Finance login the authenticator code;
-  // field agents still use their approved phone plus a location check. The CEO
-  // can switch the office-network rule on here: then staff marked "works from
-  // the office" log in only from an office range (/office-networks).
-  officeNetworkRequired        Boolean   @default(false)
   // Company details printed on GST invoices (entered by the CEO in Settings).
   companyLegalName             String    @default("Laboura Private Limited")
   companyGstin                 String?
@@ -1478,6 +1473,11 @@ model AttendanceDay {
   dayTypeChangeReason String?
   /// The approved leave request that made this a leave day.
   leaveRequestId    String?
+  /// Two half days of leave on one date (first half and second half, same
+  /// kind, two requests) make one full leave day: this is the request of the
+  /// half approved second. When one of them is overturned the day goes back
+  /// to a half day of leave of the other.
+  otherLeaveRequestId String?
   lastHeartbeatAt   DateTime?
   segments          AttendanceSegment[]
   createdAt         DateTime            @default(now())

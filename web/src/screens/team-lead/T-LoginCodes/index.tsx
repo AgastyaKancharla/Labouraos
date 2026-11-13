@@ -22,7 +22,6 @@ interface Pending {
   id: string;
   createdAt: string;
   expiresAt: string;
-  onOfficeNetwork: boolean;
   staff: { id: string; name: string; code: string; role: string };
   staffDevice: { id: string; label: string; platform: string; status?: string };
 }
@@ -180,8 +179,6 @@ function CodeCard({ request, waited }: { request: Pending; waited: string }) {
               {request.staffDevice.label}
               {request.staffDevice.status === 'approved' ? ' (approved)' : ''}
             </span>
-            <span>Office network</span>
-            <span>{request.onOfficeNetwork ? 'Yes' : request.staff.role === 'field_agent' ? 'No · mobile data (allowed for field)' : 'No'}</span>
             <span>Asked</span>
             <span>{waited === '0 min' ? 'Just now' : `${waited} ago`}</span>
           </div>

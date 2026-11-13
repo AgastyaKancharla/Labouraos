@@ -9,7 +9,6 @@ import { PrismaService } from '../prisma/prisma.service';
 import { AuthClock } from './auth.service';
 import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
 import { JwtService } from '@nestjs/jwt';
-import { PricingService } from '../../modules/pricing/pricing.service';
 
 describe('Phase 10 Task 4: staff-code login', () => {
   let app: INestApplication;
@@ -372,77 +371,60 @@ describe('Phase 10 Task 4: staff-code login', () => {
     expect(full.body.accessToken).toBeDefined();
   });
 
-  /** A Settings version with the office-network rule on or off; removed again by the caller. */
-  async function officeRule(required: boolean) {
-    const ceo = await makeStaff('ceo');
-    return app.get(PricingService).createVersion({ officeNetworkRequired: required }, ceo.id);
-  }
-
-  it('with the office-network rule switched on in Settings, refuses an office-only agent outside every active range', async () => {
-    const agent = await makeStaff('call_agent', { worksFromOffice: true });
-    await prisma.staffDevice.create({
-      data: {
-        staffId: agent.id,
-        deviceId: 'office-handset',
-        label: 'Handset',
-        platform: 'web',
-        status: 'approved',
-        approvedAt: new Date(),
-      },
-    });
-    const range = await prisma.officeNetwork.create({
-      data: { label: 'login-flow-office', cidr: '203.0.113.0/24', active: true },
-    });
-    const policy = await officeRule(true);
-    try {
-      const outside = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ staffCode: agent.code, password, deviceId: 'office-handset' });
-      expect(outside.status).toBe(401);
-      expect(outside.body.message).toBe('Login is only allowed from the office network');
-
-      const local = await prisma.officeNetwork.create({
-        data: { label: 'login-flow-loopback', cidr: '127.0.0.1/32', active: true },
-      });
-      const inside = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ staffCode: agent.code, password, deviceId: 'office-handset' });
-      expect(inside.status).toBe(200);
-      expect(inside.body.status).toBe('awaiting_code');
-      await prisma.officeNetwork.update({ where: { id: local.id }, data: { active: false } });
-    } finally {
-      await prisma.pricingPolicy.delete({ where: { id: policy.id } });
-      await prisma.officeNetwork.update({ where: { id: range.id }, data: { active: false } });
-    }
-  });
-
-  it('with the rule off (the default, owner decision 12 Nov), an office-only agent logs in from any network; the code card still says office network no', async () => {
+  // Owner decision 14 Nov: no office-network rule. This replaces the old test that refused an
+  // office-only agent outside every office range.
+  it('lets office staff log in from any network: the one-time code from a senior is the check', async () => {
     const agent = await makeStaff('call_agent', { worksFromOffice: true });
     await prisma.staffDevice.create({
       data: { staffId: agent.id, deviceId: 'anywhere-handset', label: 'Handset', platform: 'web', status: 'approved', approvedAt: new Date() },
     });
-    const range = await prisma.officeNetwork.create({
-      data: { label: 'login-flow-office-off', cidr: '203.0.113.0/24', active: true },
-    });
-    const policy = await officeRule(false);
-    try {
-      const outside = await request(app.getHttpServer())
-        .post('/auth/login')
-        .send({ staffCode: agent.code, password, deviceId: 'anywhere-handset' });
-      expect(outside.status).toBe(200);
-      expect(outside.body.status).toBe('awaiting_code');
-      // Still shown for information on the Team Lead's login-code card.
-      const card = await prisma.loginCodeRequest.findUniqueOrThrow({ where: { id: outside.body.loginRequestId } });
-      expect(card.onOfficeNetwork).toBe(false);
-      // The one-time code from a senior still has to be right.
-      const wrong = await request(app.getHttpServer())
-        .post('/auth/login/verify-code')
-        .send({ loginRequestId: outside.body.loginRequestId, loginRequestProof: outside.body.loginRequestProof, deviceId: 'anywhere-handset', code: '000000' });
-      expect(wrong.status).toBe(401);
-    } finally {
-      await prisma.pricingPolicy.delete({ where: { id: policy.id } });
-      await prisma.officeNetwork.update({ where: { id: range.id }, data: { active: false } });
-    }
+    const outside = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ staffCode: agent.code, password, deviceId: 'anywhere-handset' });
+    expect(outside.status).toBe(200);
+    expect(outside.body.status).toBe('awaiting_code');
+    // The code card no longer says "office network yes/no".
+    const pending = await request(app.getHttpServer())
+      .get('/login-codes/pending')
+      .set('Authorization', `Bearer ${tokenFor(await makeStaff('ceo'))}`);
+    expect(pending.status).toBe(200);
+    const card = (pending.body as Array<Record<string, unknown>>).find((row) => row.id === outside.body.loginRequestId);
+    expect(card).toBeDefined();
+    expect(card).not.toHaveProperty('onOfficeNetwork');
+    // The code itself still has to be right.
+    const wrong = await request(app.getHttpServer())
+      .post('/auth/login/verify-code')
+      .send({ loginRequestId: outside.body.loginRequestId, loginRequestProof: outside.body.loginRequestProof, deviceId: 'anywhere-handset', code: '000000' });
+    expect(wrong.status).toBe(401);
+    // The office-network management is gone.
+    const ceo = await makeStaff('ceo');
+    expect((await request(app.getHttpServer()).get('/office-networks').set('Authorization', `Bearer ${tokenFor(ceo)}`)).status).toBe(404);
+  });
+
+  it("keeps field agents' approved phone and location checks exactly as before", async () => {
+    const lead = await makeStaff('team_lead');
+    const agent = await makeStaff('field_agent', { teamLeadId: lead.id });
+    // A phone nobody approved is refused and waits for the Team Lead.
+    const unapproved = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ staffCode: agent.code, password, deviceId: 'new-phone' });
+    expect(unapproved.status).toBe(401);
+    expect(unapproved.body.message).toBe('This device is waiting for approval by your Team Lead');
+    expect(await prisma.staffDevice.findUnique({ where: { staffId_deviceId: { staffId: agent.id, deviceId: 'new-phone' } } })).toMatchObject({ status: 'pending' });
+    // Approved, the login goes on to the one-time code.
+    await prisma.staffDevice.update({ where: { staffId_deviceId: { staffId: agent.id, deviceId: 'new-phone' } }, data: { status: 'approved', approvedAt: new Date() } });
+    const approved = await request(app.getHttpServer())
+      .post('/auth/login')
+      .send({ staffCode: agent.code, password, deviceId: 'new-phone' });
+    expect(approved.status).toBe(200);
+    expect(approved.body.status).toBe('awaiting_code');
+    // Starting the working day still needs the location.
+    const noLocation = await request(app.getHttpServer())
+      .post('/attendance/login')
+      .set('Authorization', `Bearer ${tokenFor(agent)}`)
+      .send({});
+    expect(noLocation.status).toBe(400);
+    expect(noLocation.body.message).toBe('Field agents save their location at login');
   });
 
   it('raises an odd-hour flag at 23:00 IST and not at 11:00 IST', async () => {

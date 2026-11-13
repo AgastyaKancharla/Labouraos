@@ -52,13 +52,6 @@ export class PricingService {
     updates: Partial<PricingPolicy>,
     actorId: string,
   ): Promise<PricingPolicy> {
-    if (
-      updates.officeNetworkRequired !== undefined &&
-      updates.officeNetworkRequired !== null &&
-      typeof updates.officeNetworkRequired !== 'boolean'
-    ) {
-      throw new BadRequestException('officeNetworkRequired must be true or false');
-    }
     const before = await this.current();
 
     const created = await this.prisma.pricingPolicy.create({
@@ -161,7 +154,6 @@ export class PricingService {
         behindPaceThresholdPercent: updates.behindPaceThresholdPercent ?? before.behindPaceThresholdPercent,
         registrationLinkValidHours: updates.registrationLinkValidHours ?? before.registrationLinkValidHours,
         paymentOnlyLinkMinutes: updates.paymentOnlyLinkMinutes ?? before.paymentOnlyLinkMinutes,
-        officeNetworkRequired: updates.officeNetworkRequired ?? before.officeNetworkRequired,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

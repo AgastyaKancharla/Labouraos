@@ -23,7 +23,6 @@ import {
 import { JwtPayload } from './jwt-payload.interface';
 import { LoginCodeService } from '../../modules/login-code/login-code.service';
 import { isOddHourIst, loginCodesMatch, loginRequestProofFor } from '../../modules/login-code/login-code.crypto';
-import { OfficeNetworkService } from '../../modules/office-network/office-network.service';
 import { ReviewFlagService } from '../../modules/review-flag/review-flag.service';
 import { PricingService } from '../../modules/pricing/pricing.service';
 import { ReportingScopeService } from '../../modules/staff/reporting-scope.service';
@@ -109,7 +108,6 @@ export class AuthService {
     private readonly totpService: TotpService,
     private readonly auditService: AuditService,
     private readonly loginCodeService: LoginCodeService,
-    private readonly officeNetworkService: OfficeNetworkService,
     private readonly reviewFlagService: ReviewFlagService,
     private readonly pricingService: PricingService,
     private readonly clock: AuthClock,
@@ -234,15 +232,8 @@ export class AuthService {
       }
     }
 
-    if (staff.worksFromOffice && (await this.officeNetworkRequired())) {
-      const onOffice = await this.officeNetworkService.isOnOfficeNetwork(metadata?.ip ?? '');
-      if (!onOffice) {
-        await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
-          reason: 'off_office_network',
-        });
-        throw new UnauthorizedException('Login is only allowed from the office network');
-      }
-    }
+    // No office-network rule (owner decision 14 Nov): every login already needs a one-time
+    // code from a senior or the authenticator code, so staff log in from any network.
 
     if (management) {
       return this.completeManagementLogin(staff, deviceId, device?.status, text(loginDto.totpCode) || undefined, metadata);
@@ -253,13 +244,7 @@ export class AuthService {
       throw new UnauthorizedException('This account cannot log in');
     }
 
-    const onOfficeNetwork = await this.officeNetworkService.isOnOfficeNetwork(metadata?.ip ?? '');
-    const request = await this.loginCodeService.create(
-      staff.id,
-      device!.id,
-      metadata?.ip ?? '',
-      onOfficeNetwork,
-    );
+    const request = await this.loginCodeService.create(staff.id, device!.id, metadata?.ip ?? '');
     await this.auditAttempt(staff.id, staff.code, 'auth.login.awaiting_code', {
       loginRequestId: request.id,
     });
@@ -270,17 +255,6 @@ export class AuthService {
       expiresAt: request.expiresAt,
     };
     return awaiting;
-  }
-
-  /**
-   * Whether the office-network rule is on (Settings `officeNetworkRequired`,
-   * owner decision 12 Nov: off for now, the CEO can switch it on). Off, office
-   * staff log in from any network; the login-code card still shows "office
-   * network yes/no" for information. Field agents' approved phone and location
-   * checks do not depend on it.
-   */
-  private async officeNetworkRequired(): Promise<boolean> {
-    return (await this.pricingService.current()).officeNetworkRequired === true;
   }
 
   async verifyLoginCode(
@@ -310,16 +284,6 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
     await this.rejectIfLocked(staff);
-    if (
-      staff.worksFromOffice &&
-      (await this.officeNetworkRequired()) &&
-      !(await this.officeNetworkService.isOnOfficeNetwork(metadata?.ip ?? ''))
-    ) {
-      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
-        reason: 'off_office_network',
-      });
-      throw new UnauthorizedException('Login is only allowed from the office network');
-    }
     const device = await this.prisma.staffDevice.findUnique({
       where: { id: (await this.prisma.loginCodeRequest.findUniqueOrThrow({
         where: { id: used.id },

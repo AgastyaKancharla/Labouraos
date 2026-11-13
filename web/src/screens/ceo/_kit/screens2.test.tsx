@@ -176,17 +176,16 @@ describe('Salaries', () => {
 });
 
 describe('Devices & logins', () => {
-  it('lists devices and codes given today, removes a device and adds an office network', async () => {
+  // Owner decision 14 Nov: no office networks any more (this test used to add one).
+  it('lists devices and codes given today and removes a device; no office networks', async () => {
     const api = mockApi({
       ...common,
       'GET /ceo/devices': {
-        rows: [{ id: 'd1', staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent' }, label: 'Office PC 3', platform: 'Windows', status: 'approved', network: 'office', lastLoginAt: '2026-11-11T04:01:00Z', oddHour: false, approvedBy: 'Ravi' }],
+        rows: [{ id: 'd1', staff: { id: 'ca1', code: 'CA-1', name: 'Deepa Nair', role: 'call_agent' }, label: 'Office PC 3', platform: 'Windows', status: 'approved', lastLoginAt: '2026-11-11T04:01:00Z', oddHour: false, approvedBy: 'Ravi' }],
         summary: { approved: 1, pending: 0, revoked: 0, oddHour: 0 },
         codesToday: [{ id: 'l1', at: '2026-11-11T04:00:00Z', givenBy: { id: 'tl1', name: 'Ravi Shankar', role: 'team_lead' }, to: { id: 'ca1', name: 'Deepa Nair', code: 'CA-1' }, device: 'Office PC 3' }],
       },
-      'GET /office-networks': [],
       'POST /staff/devices/d1/revoke': { ok: true },
-      'POST /office-networks': { id: 'n1' },
     });
     render(<Devices />, '/ceo/team/devices');
     expect(await screen.findByText('Today 09:31')).toBeInTheDocument();
@@ -194,10 +193,9 @@ describe('Devices & logins', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Remove' }));
     await userEvent.click(within(await dialog()).getByRole('button', { name: 'Remove Office PC 3' }));
     await waitFor(() => expect(api.calls('POST /staff/devices/d1/revoke')).toHaveLength(1));
-    await userEvent.type(screen.getByLabelText(/^Name/), 'JP Nagar office');
-    await userEvent.type(screen.getByLabelText(/Network address/), '103.21.58.0/24');
-    await userEvent.click(screen.getByRole('button', { name: '+ Add network' }));
-    await waitFor(() => expect(api.calls('POST /office-networks')[0].body).toEqual({ label: 'JP Nagar office', cidr: '103.21.58.0/24' }));
+    expect(screen.queryByText('Office networks')).not.toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: /Network/ })).not.toBeInTheDocument();
+    expect(screen.getByText(/staff log in from any network/)).toBeInTheDocument();
   });
 });
 
@@ -205,7 +203,7 @@ describe('Login codes', () => {
   it('shows a waiting request, reveals the code to read out, and unlocks a locked account', async () => {
     const api = mockApi({
       ...common,
-      'GET /login-codes/pending': [{ id: 'r1', createdAt: '2026-11-11T03:34:00Z', expiresAt: '2026-11-11T03:44:00Z', onOfficeNetwork: true, status: 'pending', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-0003', role: 'team_lead' }, staffDevice: { id: 'd', label: 'Office PC 1', platform: 'Windows' } }],
+      'GET /login-codes/pending': [{ id: 'r1', createdAt: '2026-11-11T03:34:00Z', expiresAt: '2026-11-11T03:44:00Z', status: 'pending', staff: { id: 'tl1', name: 'Ravi Shankar', code: 'TL-0003', role: 'team_lead' }, staffDevice: { id: 'd', label: 'Office PC 1', platform: 'Windows' } }],
       'GET /ceo/access': { summary: { waiting: 1, codesToday: 19, locked: 1, invitesPending: 0 }, locked: [{ id: 'ca9', code: 'CA-9', name: 'Arun P', role: 'call_agent', lockedUntil: '2026-11-11T07:00:00Z', reason: '5 wrong passwords', byManager: false }], invites: [], codes: [] },
       'POST /login-codes/r1/reveal': { code: '481207' },
       'POST /staff/ca9/unlock': { ok: true },
@@ -213,6 +211,8 @@ describe('Login codes', () => {
     render(<LoginCodes />, '/ceo/login-codes');
     expect(await screen.findByText('Ravi Shankar')).toBeInTheDocument();
     expect(screen.getByText('19')).toBeInTheDocument();
+    // No "office network yes/no" on the card any more (owner decision 14 Nov).
+    expect(screen.queryByText('Office network')).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Show code to read out' }));
     expect(await screen.findByText('481 207')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Unlock' }));
@@ -598,25 +598,6 @@ describe('Pricing & policy', () => {
     render(<Pricing />, '/ceo/pricing');
     const row = (await screen.findByText('Go-live date')).closest('tr') as HTMLElement;
     expect(within(row).getByText('20 Nov 2026')).toBeInTheDocument();
-  });
-
-  it('shows the office-network rule (any network by default) and lets the CEO switch it on', async () => {
-    const api = mockApi({
-      ...common,
-      'GET /ceo/pricing/history': { current: { ...policy, officeNetworkRequired: false }, since: {}, scheduled: [], history: [{ id: 'v3', effectiveFrom: '2026-11-12T00:00:00Z', setBy: 'Agastya', changes: [{ field: 'officeNetworkRequired', before: true, after: false }] }] },
-      'GET /attendance/holidays': { year: 2026, holidays: [] },
-      'POST /pricing': { officeNetworkRequired: true },
-    });
-    render(<Pricing />, '/ceo/pricing');
-    const row = (await screen.findByText('Office network')).closest('tr') as HTMLElement;
-    expect(within(row).getByText('Staff may log in from any network')).toBeInTheDocument();
-    expect(within(row).getByText(/one-time code from a senior/)).toBeInTheDocument();
-    expect(screen.getByText(/Office network office network only → any network/)).toBeInTheDocument();
-    await userEvent.click(within(row).getByRole('button', { name: 'Change →' }));
-    const d = await dialog();
-    await userEvent.selectOptions(within(d).getByLabelText(/Office staff log in from/), 'office');
-    await userEvent.click(within(d).getByRole('button', { name: 'Save office network rule' }));
-    await waitFor(() => expect(api.calls('POST /pricing')[0].body).toEqual({ officeNetworkRequired: true }));
   });
 
   it('trades show pool and open positions; a typed trade is mapped to a listed one', async () => {

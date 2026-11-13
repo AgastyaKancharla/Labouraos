@@ -59,7 +59,6 @@ export class LoginCodeService {
     staffId: string,
     staffDeviceId: string,
     ip: string,
-    onOfficeNetwork: boolean,
   ) {
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!staff) {
@@ -82,7 +81,6 @@ export class LoginCodeService {
         staffId,
         staffDeviceId,
         ipAddress: ip,
-        onOfficeNetwork,
         status: 'pending',
         createdAt,
         expiresAt,
@@ -113,7 +111,12 @@ export class LoginCodeService {
       entityCode: 'pending',
       after: { count: rows.length },
     });
-    return rows;
+    // No "office network yes/no" any more (owner decision 14 Nov): the old column stays out of the answer.
+    return rows.map((row) => {
+      const shown: Partial<typeof row> = { ...row };
+      delete shown.onOfficeNetwork;
+      return shown;
+    });
   }
 
   async reveal(requestId: string, approver: LoginCodeActor) {

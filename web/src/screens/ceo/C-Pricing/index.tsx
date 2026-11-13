@@ -102,7 +102,6 @@ const FIELD_LABEL: Record<string, string> = {
   ...Object.fromEntries(RULES.flatMap((r) => r.fields.map((f) => [f.key, `${r.name} · ${f.label}`]))),
   weeklyOffDays: 'Weekly day off',
   goLiveDate: 'Go-live date',
-  officeNetworkRequired: 'Office network',
 };
 const WEEKDAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 
@@ -110,7 +109,6 @@ function show(v: unknown, key: string): string {
   if (key.endsWith('Paise') && typeof v === 'number') return formatINR(v);
   if (key === 'weeklyOffDays' && Array.isArray(v)) return v.map((d) => WEEKDAYS[d as number]?.slice(0, 3)).join(', ') || 'none';
   if (key === 'goLiveDate') return typeof v === 'string' && v ? formatDateIST(v) : 'not set';
-  if (key === 'officeNetworkRequired') return v === true ? 'office network only' : 'any network';
   return String(v);
 }
 
@@ -173,19 +171,6 @@ export default function Pricing() {
                     </td>
                     <td>{h?.since.goLiveDate ? formatDateIST(h.since.goLiveDate) : '—'}</td>
                     <td><GoLive current={typeof p.goLiveDate === 'string' ? p.goLiveDate.slice(0, 10) : ''} /></td>
-                  </tr>
-                )}
-                {p && (
-                  <tr>
-                    <td>Office network</td>
-                    <td>
-                      <strong>{p.officeNetworkRequired === true ? 'Office staff log in only from the office network' : 'Staff may log in from any network'}</strong>
-                      <div className="ceo-sub" style={{ whiteSpace: 'normal', maxWidth: 420 }}>
-                        Every Team Lead and agent login already needs a one-time code from a senior, and every CEO, Manager and Finance login the authenticator code. Field agents always use their approved phone and a location check.
-                      </div>
-                    </td>
-                    <td>{h?.since.officeNetworkRequired ? formatDateIST(h.since.officeNetworkRequired) : '—'}</td>
-                    <td><OfficeNetwork required={p.officeNetworkRequired === true} /></td>
                   </tr>
                 )}
               </tbody>
@@ -305,31 +290,6 @@ function WeeklyOff({ current }: { current: number[] }) {
       }
       run={() => api.post('/pricing', { weeklyOffDays: days })}
       success="Weekly day off changed"
-    />
-  );
-}
-
-/**
- * Office network (owner decision 12 Nov): staff may log in from any network for
- * now; the CEO can switch the office-network rule on here (and off again).
- */
-function OfficeNetwork({ required }: { required: boolean }) {
-  return (
-    <ActionButton
-      label="Change →"
-      title="Office network"
-      confirmLabel="Save office network rule"
-      description="On: staff who work from the office log in only from an office network range. Off: they log in from any network; the login-code card still shows office network yes or no. Field agents are not affected."
-      choice={{
-        label: 'Office staff log in from',
-        initial: required ? 'office' : 'any',
-        options: [
-          { value: 'any', label: 'Any network' },
-          { value: 'office', label: 'The office network only' },
-        ],
-      }}
-      run={({ choice }) => api.post('/pricing', { officeNetworkRequired: choice === 'office' })}
-      success={(r) => ((r as { officeNetworkRequired?: boolean })?.officeNetworkRequired ? 'Office network only, from now' : 'Any network, from now')}
     />
   );
 }

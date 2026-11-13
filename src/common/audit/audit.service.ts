@@ -3,7 +3,7 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { IdService } from '../id/id.service';
 import { requestContext } from '../observability/request-context';
-import { ipInCidr, normalizeIp } from '../../modules/office-network/office-network.cidr';
+import { ipInCidr, normalizeIp } from './network-cidr';
 
 /** Where an audit row was written from (C-Audit's Device column). */
 export interface AuditDevice {
