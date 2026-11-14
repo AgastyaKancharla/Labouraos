@@ -10,7 +10,7 @@ import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { CreateReferralDto } from './dto/create-referral.dto';
-import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
+import { assertNoRawAadhaar, HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { mobileLookupValues, requireIndianMobile } from '../../common/phone/indian-mobile';
 
@@ -110,7 +110,7 @@ export class ReferralService {
     const whatsappPhone = requireIndianMobile(dto.whatsappPhone, 'whatsappPhone');
     if (!dto.locality?.trim()) throw new BadRequestException('Locality is required');
     if (!/^\d{6}$/.test(dto.pincode ?? '')) throw new BadRequestException('A valid 6-digit pincode is required');
-    if (!['toll_free_missed_call', 'ad', 'referral_partner', 'field_visit', 'social_media', 'walk_in', 'other'].includes(dto.heardFrom)) {
+    if (!(HEARD_FROM_VALUES as readonly string[]).includes(dto.heardFrom)) {
       throw new BadRequestException('heardFrom is required and must be a supported value');
     }
     if ((dto.latitude === undefined) !== (dto.longitude === undefined)) {
