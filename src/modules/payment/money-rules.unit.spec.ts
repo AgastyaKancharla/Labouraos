@@ -45,7 +45,7 @@ describe('Money rules (payment service)', () => {
     process.env.PAYOUT_ACCOUNT_KEY = 'unit_test_payout_account_key_32_characters_min';
     process.env.PUBLIC_APP_URL = originalAppUrl || 'https://app.laboura.in';
     prisma = {
-      bankCredit: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn() },
+      bankCredit: { findUnique: jest.fn(), create: jest.fn(), update: jest.fn(), updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
       payment: {
         findUnique: jest.fn(),
         findFirst: jest.fn().mockResolvedValue(null),

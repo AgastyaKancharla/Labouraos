@@ -19,10 +19,9 @@ to Laboura Field). See `src/modules/web-app/site-routing.middleware.ts`.
 - Links in screens: use router paths (`navigate('/ceo/refunds')`, `useHref`),
   never a hard-coded prefix.
 - The old one-page consoles are retired (14 Nov): the server sends a browser
-  opening `/admin`, `/map` or `/console/map` to `/login`,
-  `/console/call-agent` to `/call-agent`, and `/field-agent` to Laboura Field.
-  Only the old Admin Dashboard is left, at `/console/admin`, for the few
-  things no screen here does yet (see `AGENTS.md`, "Retired consoles").
+  opening `/admin`, `/console/admin`, `/map` or `/console/map` to `/login`,
+  `/console/call-agent` to `/call-agent`, and `/field-agent` to Laboura Field
+  (see `AGENTS.md`, "Retired consoles").
 
 Field agents use the separate Laboura Field phone app (`field.laboura.com`,
 or `/field` on the Render address).

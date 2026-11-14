@@ -2,6 +2,9 @@ import { freshTotpWindow } from '../../test-support/enrolled-login-spec';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
@@ -380,7 +383,21 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       attacker = makeAccessKeypair('kid-console');
     });
 
+    const savedWebDist = process.env.WEB_DIST_DIR;
+    let webDist: string;
+
+    beforeAll(() => {
+      webDist = fs.mkdtempSync(path.join(os.tmpdir(), 'laboura-web-'));
+      fs.writeFileSync(path.join(webDist, 'index.html'), '<!doctype html><div id="root"></div>');
+    });
+
+    afterAll(() => {
+      restoreEnv('WEB_DIST_DIR', savedWebDist);
+      fs.rmSync(webDist, { recursive: true, force: true });
+    });
+
     beforeEach(() => {
+      process.env.WEB_DIST_DIR = webDist;
       process.env.CLOUDFLARE_ACCESS_ENFORCED = 'true';
       process.env.CLOUDFLARE_ACCESS_TEAM_DOMAIN = TEST_TEAM_DOMAIN;
       process.env.CLOUDFLARE_ACCESS_AUD = TEST_AUD;
@@ -394,35 +411,35 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       restoreEnv('CLOUDFLARE_ACCESS_AUD', savedEnv.aud);
     });
 
-    it.each(['/console/admin'])('serves %s only with a genuinely signed Cloudflare Access JWT', async (route) => {
-      const denied = await request(app.getHttpServer()).get(route);
+    // The office web app's staff pages are the gated pages now (the old
+    // Admin Dashboard at /console/admin is gone). A stand-in web build is
+    // served so the check runs end to end with a genuinely signed token.
+    const page = (route: string) => request(app.getHttpServer()).get(route).set('Accept', 'text/html');
+
+    it.each(['/login', '/ceo', '/finance/money-in'])('serves %s only with a genuinely signed Cloudflare Access JWT', async (route) => {
+      const denied = await page(route);
       expect(denied.status).toBe(403);
       expect(denied.body.message).toContain('Cloudflare Access identity verification required');
 
-      const allowed = await request(app.getHttpServer())
-        .get(route)
-        .set('cf-access-jwt-assertion', signAccessJwt(real));
+      const allowed = await page(route).set('cf-access-jwt-assertion', signAccessJwt(real));
       expect(allowed.status).toBe(200);
     });
 
-    it.each(['/console/admin'])('rejects forged, unsigned and header-only identities on %s', async (route) => {
+    it.each(['/login', '/ceo'])('rejects forged, unsigned and header-only identities on %s', async (route) => {
       const forged = signAccessJwt(attacker); // right kid, wrong private key
       const unsigned = unsignedAccessJwt('kid-console');
       const wrongAudience = signAccessJwt(real, { aud: ['another-application'] });
 
       for (const assertion of [forged, unsigned, wrongAudience, 'garbage']) {
-        const res = await request(app.getHttpServer()).get(route).set('cf-access-jwt-assertion', assertion);
+        const res = await page(route).set('cf-access-jwt-assertion', assertion);
         expect(res.status).toBe(403);
       }
 
       // The old bypass: presence of these headers used to be enough.
-      const emailOnly = await request(app.getHttpServer())
-        .get(route)
-        .set('cf-access-authenticated-user-email', 'admin@laboura.local');
+      const emailOnly = await page(route).set('cf-access-authenticated-user-email', 'admin@laboura.local');
       expect(emailOnly.status).toBe(403);
 
-      const junkAssertion = await request(app.getHttpServer())
-        .get(route)
+      const junkAssertion = await page(route)
         .set('cf-access-jwt-assertion', 'x')
         .set('cf-access-authenticated-user-email', 'admin@laboura.local');
       expect(junkAssertion.status).toBe(403);
@@ -431,20 +448,18 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     it('fails closed (403) when enforcement is on but Cloudflare config is missing', async () => {
       delete process.env.CLOUDFLARE_ACCESS_AUD;
 
-      const res = await request(app.getHttpServer())
-        .get('/console/admin')
-        .set('cf-access-jwt-assertion', signAccessJwt(real));
+      const res = await page('/ceo').set('cf-access-jwt-assertion', signAccessJwt(real));
       expect(res.status).toBe(403);
     });
 
     it('does nothing when enforcement is off (local dev and tests)', async () => {
       process.env.CLOUDFLARE_ACCESS_ENFORCED = 'false';
 
-      expect((await request(app.getHttpServer()).get('/console/admin')).status).toBe(200);
+      expect((await page('/ceo')).status).toBe(200);
     });
 
     it('sends browsers on from the retired console addresses without a Cloudflare check (the target page has its own)', async () => {
-      for (const route of ['/admin', '/console/call-agent', '/field-agent', '/map']) {
+      for (const route of ['/admin', '/console/admin', '/console/call-agent', '/field-agent', '/map']) {
         const res = await request(app.getHttpServer()).get(route).set('Accept', 'text/html');
         expect([route, res.status]).toEqual([route, 301]);
       }

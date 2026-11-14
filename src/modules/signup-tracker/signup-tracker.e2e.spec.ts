@@ -667,7 +667,8 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
 
     it('Team Lead checks: an app sign-up counts for the team of the agent it is assigned to', async () => {
       const seeker = await makeSeeker('Verify Appsignup');
-      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { status: 'pending_activation' } });
+      // The Team Lead screens read the (frozen) attendance clock: the registration is from this week.
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { status: 'pending_activation', createdAt: new Date(WED_11.getTime() - 3600_000) } });
       const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id });
       await prisma.signupTracker.update({ where: { id: t.id }, data: { assignedStaffId: kannadaAgent.id, assignedAt: WED_11 } });
       const mine = await request(app.getHttpServer()).get('/team-lead/registrations').set('Authorization', `Bearer ${token(lead1)}`).expect(200);

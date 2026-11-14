@@ -316,7 +316,7 @@ before:
    and-egg lock for every account *after* the first — but nothing unlocks
    the very first one. Right now a freshly deployed Laboura has no path
    to its first login, ever, without hand-editing the database.
-2. The three console login screens (`admin-dashboard.html.ts`,
+2. _(Historical: these consoles, `admin-dashboard.html.ts` the last of them, were deleted on 14 Nov.)_ The three console login screens (`admin-dashboard.html.ts`,
    `call-agent-console.html.ts`, `field-agent-app.html.ts`, all from
    Phase 6) were built before Task 6 (mandatory TOTP 2FA) existed, and
    were never updated. Their login forms only collect email + password —
