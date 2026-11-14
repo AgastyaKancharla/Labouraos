@@ -258,7 +258,7 @@ export class CustomerPushSenderService {
       to: token,
       title: row.title,
       body: row.body,
-      data: { ...extra, messageId: row.id, kind: row.kind, deepLink: row.deepLink ?? '/inbox', profileId: row.profileId },
+      data: { ...extra, messageId: row.id, kind: row.kind, category: row.category, deepLink: row.deepLink ?? '/inbox', profileId: row.profileId },
       channelId: ANDROID_CHANNEL_BY_CATEGORY[row.category as CustomerNotificationCategory] ?? 'service',
       priority: row.priority === 'urgent' ? 'high' : 'normal',
       sound: row.category === 'promotions' ? null : 'default',
