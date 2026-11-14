@@ -30,8 +30,9 @@ describe('RbacGuard: own-team and own-account checks on every action', () => {
   const businesses: Record<string, { id: string; accountAgentId: string | null; leadCreatedByStaffId: string | null; verificationStatus: string }> = {
     'b-fa': { id: 'b-fa', accountAgentId: 'fa-1', leadCreatedByStaffId: null, verificationStatus: 'verified' },
     'b-other': { id: 'b-other', accountAgentId: 'fa-2', leadCreatedByStaffId: null, verificationStatus: 'verified' },
+    'b-team': { id: 'b-team', accountAgentId: MY_AGENT, leadCreatedByStaffId: null, verificationStatus: 'verified' },
   };
-  const vacancies: Record<string, string> = { 'v-other': 'b-other', 'v-fa': 'b-fa' };
+  const vacancies: Record<string, string> = { 'v-other': 'b-other', 'v-fa': 'b-fa', 'v-team': 'b-team' };
   const teamOf: Record<string, { teamLeadId: string | null; reportsToId: string | null }> = {
     [MY_AGENT]: { teamLeadId: TL, reportsToId: null },
     [OTHER_AGENT]: { teamLeadId: 'tl-b', reportsToId: null },
@@ -59,6 +60,10 @@ describe('RbacGuard: own-team and own-account checks on every action', () => {
     visitAssignment: { findFirst: jest.fn(async () => null) },
     staff: {
       findFirst: jest.fn(async ({ where }) => {
+        if (where.id && typeof where.id === 'object') {
+          const hit = (where.id.in as string[]).find((id) => teamOf[id]?.teamLeadId === where.teamLeadId);
+          return hit ? { id: hit } : null;
+        }
         const row = teamOf[where.id as string];
         if (!row) return null;
         const conditions: Array<{ teamLeadId?: string; reportsToId?: string }> = where.OR ?? [{ teamLeadId: where.teamLeadId }];
@@ -233,6 +238,22 @@ describe('RbacGuard: own-team and own-account checks on every action', () => {
       await expect(
         run({ role: 'field_agent', sub: 'fa-1', method: 'POST', path: '/vacancies', body: { businessId: 'b-fa' }, permission: write }),
       ).resolves.toBe(true);
+    });
+  });
+
+  describe('GET /interviews/vacancies/:vacancyId/slots is scoped like reading the vacancy', () => {
+    const read = { resource: 'vacancy' as const, action: 'read' as const };
+    const slots = (role: string, vacancyId: string, sub?: string) =>
+      run({ role, sub, method: 'GET', path: `/interviews/vacancies/${vacancyId}/slots`, params: { vacancyId }, permission: read });
+
+    it('a Team Lead is refused another team\'s vacancy and allowed their own team\'s', async () => {
+      await expect(slots('team_lead', 'v-other')).rejects.toThrow(ForbiddenException);
+      await expect(slots('team_lead', 'v-team')).resolves.toBe(true);
+    });
+
+    it('field and call agents keep their city-wide vacancy read (role table)', async () => {
+      await expect(slots('field_agent', 'v-other', 'fa-1')).resolves.toBe(true);
+      await expect(slots('call_agent', 'v-other', 'ca-1')).resolves.toBe(true);
     });
   });
 });

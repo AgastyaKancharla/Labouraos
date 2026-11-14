@@ -150,18 +150,27 @@ export class FollowUpService {
   }
 
   /**
-   * Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own
-   * team, so a Team Lead completes only follow-ups assigned to them or to
-   * someone in their reporting line — the tasks their list shows. Other roles
-   * are unchanged. A missing task is left to completeTask (404).
+   * Who may complete a follow-up (owner rule, Master Guide 14 Nov) — the
+   * tasks each person's list shows them:
+   * - a call or field agent: only follow-ups assigned to them;
+   * - a Team Lead: follow-ups assigned to them or to someone in their
+   *   reporting line;
+   * - Managers and the CEO: any.
+   * A missing task is left to completeTask (404).
    */
-  async assertTeamLeadMayComplete(taskId: string, actor: { id: string; role: string }) {
-    if (actor.role !== 'team_lead') return;
+  async assertMayComplete(taskId: string, actor: { id: string; role: string }) {
+    if (!['team_lead', 'call_agent', 'field_agent'].includes(actor.role)) return;
     const task = await this.prisma.followUpTask.findUnique({
       where: { id: taskId },
       select: { assignedStaffId: true },
     });
     if (!task) return;
+    if (actor.role !== 'team_lead') {
+      if (task.assignedStaffId !== actor.id) {
+        throw new ForbiddenException('This follow-up is assigned to someone else');
+      }
+      return;
+    }
     const scope = [actor.id, ...(await this.peopleUnder(actor.id))];
     if (!task.assignedStaffId || !scope.includes(task.assignedStaffId)) {
       throw new ForbiddenException('This follow-up is not yours or your team’s');

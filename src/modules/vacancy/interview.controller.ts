@@ -6,6 +6,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
+import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { InterviewService, publicOwnerResult } from './interview.service';
 import { Public } from '../../common/rbac/public.decorator';
 
@@ -32,6 +33,9 @@ export class InterviewController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @UseInterceptors(PiiMaskingInterceptor)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  // Scoped like reading the vacancy (RbacGuard): a Team Lead only their own
+  // team's vacancies; agents, Managers and the CEO city-wide (role table).
+  @RequirePermission('vacancy', 'read')
   slots(@Param('vacancyId') vacancyId: string, @Req() req: AuthenticatedRequest) {
     return this.interviews.listSlots(vacancyId, req.user.sub);
   }

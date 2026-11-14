@@ -349,14 +349,16 @@ export class RbacGuard implements CanActivate {
       });
     }
     if (resource === 'vacancy') {
-      // A request on one vacancy (/vacancies/:id…) is checked against that
+      // A request on one vacancy (/vacancies/:id…, or a :vacancyId such as
+      // /interviews/vacancies/:vacancyId/slots) is checked against that
       // vacancy's own business, never a businessId sent in the body: the body
       // is the caller's to write, so it could name a business of their own to
       // pass this check for someone else's vacancy.
-      const onOneVacancy = /^\/?vacancies\//.test(path) && Boolean(params.id);
+      const vacancyRef =
+        params.vacancyId ?? (/^\/?vacancies\//.test(path) ? params.id : undefined);
       const businessId = path.startsWith('/businesses/')
         ? params.id ?? params.businessId
-        : !onOneVacancy && typeof request.body?.businessId === 'string'
+        : !vacancyRef && typeof request.body?.businessId === 'string'
           ? request.body.businessId
           : null;
       if (businessId) {
@@ -365,7 +367,7 @@ export class RbacGuard implements CanActivate {
           select,
         });
       }
-      const vacancyId = params.id;
+      const vacancyId = vacancyRef ?? params.id;
       if (!vacancyId) return null;
       const vacancy = await this.prisma.vacancy.findFirst({
         where: { OR: [{ id: vacancyId }, { code: vacancyId }] },

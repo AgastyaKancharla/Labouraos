@@ -17,6 +17,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { CallService } from './call.service';
+import { CallAccessGuard } from './call-access.guard';
 import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload; rawBody?: Buffer };
@@ -37,14 +38,14 @@ export class CallController {
   }
 
   @Get('calls/:id/recording')
-  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard, CallAccessGuard)
   @RequireRoles('team_lead', 'manager', 'ceo')
   recording(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.calls.recordingLink({ id: req.user.sub, role: req.user.role }, id);
   }
 
   @Get('calls/:id')
-  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard, CallAccessGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   getOne(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.calls.getOne({ id: req.user.sub, role: req.user.role }, id);
@@ -82,7 +83,7 @@ export class CallController {
   }
 
   @Post('calls/:id/outcome')
-  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard, CallAccessGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   outcome(
     @Param('id') id: string,
@@ -93,7 +94,7 @@ export class CallController {
   }
 
   @Patch('calls/:id')
-  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard, CallAccessGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   updateNotes(
     @Param('id') id: string,

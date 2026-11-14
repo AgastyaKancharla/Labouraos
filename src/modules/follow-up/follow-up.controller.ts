@@ -47,7 +47,7 @@ export class FollowUpController {
     @Req() req: Request & { user: JwtPayload },
     @Body() body: CompleteFollowUpTaskDto,
   ) {
-    await this.followUpService.assertTeamLeadMayComplete(id, this.actor(req.user));
+    await this.followUpService.assertMayComplete(id, this.actor(req.user));
     return this.followUpService.completeTask(id, body, req.user.sub);
   }
 }
