@@ -1,7 +1,7 @@
 import { fireEvent, screen, waitFor } from '@testing-library/react-native';
 import { account, refProfile } from '@/test/fixtures';
 import { fakeApi, renderWithApp } from '@/test/render';
-import { emptyReferral, validateReferral } from './form';
+import { emptyReferral, toReferralForm, validateReferral } from './form';
 import RegisterReferral from './index';
 
 jest.mock('expo-router', () => require('@/test/expo-router-mock'));
@@ -13,6 +13,12 @@ describe('Referral partner registration', () => {
     const biz = validateReferral({ ...emptyReferral('en', 'Asha'), partnerType: 'business' });
     expect(biz.businessType).toBe('form.required');
     expect(biz.businessName).toBe('form.required');
+  });
+
+  it('uses the verified mobile as the WhatsApp number when it is the same (the service needs one)', () => {
+    const d = { ...emptyReferral('en', 'Asha'), partnerType: 'individual' as const, individualKind: 'auto_driver' as const, area: 'BTM Layout', pincode: '560076' };
+    expect(toReferralForm(d, [], '9876504321').whatsappPhone).toBe('9876504321');
+    expect(toReferralForm({ ...d, whatsappSame: false, whatsappPhone: '9988776655' }, [], '9876504321').whatsappPhone).toBe('9988776655');
   });
 
   it('sends the details, then terms, selfie, ID and UPI open in the secure sheet', async () => {

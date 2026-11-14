@@ -22,6 +22,7 @@ export const account = (over: Partial<CustomerAccount> = {}): CustomerAccount =>
   email: null,
   phoneVerified: true,
   phoneLast4: '4321',
+  phone: '9876504321',
   language: 'en',
   signInMethods: ['phone'],
   profiles: [],

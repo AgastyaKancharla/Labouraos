@@ -48,7 +48,8 @@ export function validateReferral(d: ReferralDraft): ReferralErrors {
   return e;
 }
 
-export function toReferralForm(d: ReferralDraft, areas: Area[] = []): ReferralForm {
+/** `ownPhone`: the verified mobile, used as the WhatsApp number when it is the same (the service needs one). */
+export function toReferralForm(d: ReferralDraft, areas: Area[] = [], ownPhone: string | null = null): ReferralForm {
   const area = areas.find((a) => a.name === d.area);
   return {
     name: d.name.trim(),
@@ -60,6 +61,6 @@ export function toReferralForm(d: ReferralDraft, areas: Area[] = []): ReferralFo
     pincode: d.pincode.trim(),
     pin: d.pin ?? (area ? { latitude: area.latitude, longitude: area.longitude } : null),
     messageLanguage: d.messageLanguage,
-    whatsappPhone: d.whatsappSame ? null : d.whatsappPhone,
+    whatsappPhone: d.whatsappSame ? ownPhone : d.whatsappPhone,
   };
 }

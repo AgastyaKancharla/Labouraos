@@ -98,6 +98,7 @@ export function toAccount(w: WireAccount): CustomerAccount {
     email: w.email ?? null,
     phoneVerified: !!w.phoneVerified,
     phoneLast4: w.phone ? w.phone.replace(/\D/g, '').slice(-4) : null,
+    phone: w.phone ? w.phone.replace(/\D/g, '').slice(-10) : null,
     language: isLanguage(w.language) ? w.language : null,
     signInMethods: w.signInMethods ?? [],
     profiles: (w.profiles ?? []).map(toProfile),

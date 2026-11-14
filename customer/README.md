@@ -78,7 +78,7 @@ The HTTP client sends `X-Laboura-Installation` (a random id per install) on ever
 1. **`GET /me/form-options` → `{ areas: [{name, pincode, latitude, longitude}], trades: [{id, name, salaryMinPaise, salaryMaxPaise, legalMinimumPaise}] }`** — the forms need the managed area and trade lists and the salary hints; today those endpoints are staff-only. Until it exists, the live forms show "not ready yet".
 2. **`POST /auth/apple`** (`{ identityToken, fullName, device, language }` → session answer) and **`appleSignIn: true`** in `GET /config`. The Apple button stays hidden until then.
 3. Referral home: signed terms and consent copies (`documents: [{id, kind, signedAt}]` and a link purpose `document`). The app shows them when present.
-4. `whatsappPhone` on the partner registration: the app omits it when it is the same as the verified mobile — the server should default it.
+4. A landing page for the partner link `/r/<RF- code>` (in `web/`, per the contract note) — the QR points there.
 
 ## Commands (inside `customer/`)
 

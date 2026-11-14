@@ -44,8 +44,10 @@ export interface CustomerAccount {
   name: string | null;
   email: string | null;
   phoneVerified: boolean;
-  /** Last 4 digits only. */
+  /** Last 4 digits, for display ("number ending 4321"). */
   phoneLast4: string | null;
+  /** The verified mobile, 10 digits — held in memory only, never shown in full, never stored on the phone. */
+  phone?: string | null;
   language: Language | null;
   signInMethods: ('phone' | 'google' | 'apple')[];
   profiles: ProfileSummary[];
@@ -219,7 +221,7 @@ export interface ReferralForm {
   pincode: string;
   pin: Pin | null;
   messageLanguage: Language;
-  /** Null = the same as the verified mobile. */
+  /** Required by the referral service; the verified mobile when it is the same. */
   whatsappPhone: string | null;
 }
 

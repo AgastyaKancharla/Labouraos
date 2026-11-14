@@ -88,7 +88,7 @@ export default function RegisterReferral() {
             testID="ref-register"
             onBack={() => setStep('form')}
             submit={async (otp) => {
-              const result = await api.registerReferralPartner(toReferralForm(draft, areas), otp);
+              const result = await api.registerReferralPartner(toReferralForm(draft, areas, account?.phone ?? null), otp);
               await clearDraft('referral_partner');
               await refreshAccount();
               setActiveProfileId(result.profile.id);
