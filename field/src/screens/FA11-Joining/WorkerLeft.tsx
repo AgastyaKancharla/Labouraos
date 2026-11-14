@@ -5,14 +5,14 @@ import { useEndpoints } from '@/api/ApiProvider';
 import { queryKeys } from '@/api/queryClient';
 import type { PlacementView } from '@/api/endpoints';
 import { Banner, Button, Card, Text } from '@/components';
-import { DateField, SelectField } from '@/components/form';
+import { DateField, SelectField, todayKeyIst } from '@/components/form';
 import { useOfflineQueue } from '@/device/offline-queue';
 import { useI18n, type MessageKey } from '@/i18n';
 import { formatCountdown, formatDayIst, formatTimeIst } from '@/lib/format';
 import { ErrorBanner } from '../_selling';
 
 /** Indian date ("2026-11-14") of an instant. */
-function istKey(input: string | number): string {
+function istKey(input: string): string {
   return new Date(new Date(input).getTime() + 330 * 60_000).toISOString().slice(0, 10);
 }
 
@@ -68,7 +68,9 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
     ...d.reasons.notCovered.map((r) => ({ value: r, label: t('fa11.left.notCovered', { reason: label(r) }) })),
   ];
   const min = d.placement.joinedDate ? istKey(d.placement.joinedDate) : undefined;
-  const max = istKey(Math.min(new Date(d.leftOnLatest).getTime(), Date.now()));
+  const latest = istKey(d.leftOnLatest);
+  const today = todayKeyIst();
+  const max = latest < today ? latest : today;
   const ready = !!leftOn && !!reason && !!ownerCall;
   return (
     <Card title={t('fa11.left.title')}>
