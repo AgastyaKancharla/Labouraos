@@ -180,19 +180,35 @@ describe('Detail pages', () => {
         activation: { amountPaise: 49900, at: '2026-10-14T06:00:00Z', utr: '43210000', confirmedBy: 'bank_feed' },
         refunds: [],
         profile: { trades: [{ trade: 'Electrician', years: 4, primary: true }], locality: 'JP Nagar', travelDistanceKm: 8, salaryMinPaise: 1600000, salaryMaxPaise: 2000000, salaryPeriod: 'monthly', shiftPreference: 'day', jobType: 'full_time', languages: ['Kannada'], qualification: null, referredBy: null, registeredBy: { id: 's1', name: 'Deepa Nair' }, heardFrom: 'missed_call' },
-        registration: { phoneVerified: true, consentsGranted: 5, consentsAsked: 5, consentAt: '2026-10-01T05:12:00Z', selfieAt: '2026-10-01T05:14:00Z', idCheck: { method: 'digilocker', last4: '6612', adult: true }, paymentAt: '2026-10-14T06:00:00Z' },
+        registration: { phoneVerified: true, consentsGranted: 5, consentsAsked: 5, consentAt: '2026-10-01T05:12:00Z', selfieAt: '2026-10-01T05:14:00Z', idCheck: { method: 'aadhaar_qr', last4: '6612', adult: true }, paymentAt: '2026-10-14T06:00:00Z' },
         hitList: [{ id: 'h1', reason: 'no_pickup', at: '2026-10-20T06:00:00Z', reversed: false, superseded: false }],
         activity: [{ at: '2026-10-20T06:00:00Z', business: null, businessId: null, what: 'no_pickup', status: 'hit', hit: true }],
         placements: [],
         history: [{ at: '2026-10-01T05:00:00Z', kind: 'registered', text: 'registered', by: 'Deepa Nair' }],
       },
       'POST /job-seeker-hits/h1/reverse': { id: 'h1' },
+      'GET /identity/job-seekers/js1/aadhaar-check': {
+        check: {
+          method: 'aadhaar_qr', status: 'verified', verifiedByUidai: true, maskedReference: 'XXXX-XXXX-6612', checkedAt: '2026-10-01T05:20:00Z',
+          nameMatches: true, isAdult: true, phoneLinked: 'not_linked', nameOnId: 'Ramesh Gowda', dateOfBirth: '1996-04-02', gender: 'M',
+          area: 'JP Nagar 8th Phase', pincode: '560076', photo: { kept: true, deletedReason: null, deletedAt: null, expiresAt: '2026-10-31T05:20:00Z' },
+        },
+        qrPhotoUrl: 'https://signed/qr.jpg',
+        selfieUrl: 'https://signed/selfie.jpg',
+      },
     });
     signInAs('ceo');
     renderScreen(<JobSeekerDetail />, { portal: 'ceo', path: '/ceo/job-seekers/js1', route: '/ceo/job-seekers/:id', now: NOW });
     expect(await screen.findByRole('heading', { level: 1, name: 'Ramesh Gowda · JS-00203' })).toBeInTheDocument();
     expect(screen.getByText('Day 28 of 30')).toBeInTheDocument();
-    expect(screen.getByText(/Digilocker · last 4: 6612 · 18\+/)).toBeInTheDocument();
+    expect(screen.getByText(/Aadhaar QR · last 4: 6612 · 18\+/)).toBeInTheDocument();
+    // The Aadhaar check card: loaded on request, the selfie next to the QR photo.
+    await userEvent.click(screen.getByRole('button', { name: 'Show the ID check' }));
+    expect(await screen.findByText('Aadhaar verified by UIDAI')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: 'Photo from the Aadhaar QR' })).toHaveAttribute('src', 'https://signed/qr.jpg');
+    expect(screen.getByRole('img', { name: 'Live selfie' })).toHaveAttribute('src', 'https://signed/selfie.jpg');
+    expect(screen.getByText('XXXX-XXXX-6612')).toBeInTheDocument();
+    expect(screen.getByText('No · flag for the Team Lead')).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Reverse a hit' }));
     const dialog = await screen.findByRole('dialog');
     await userEvent.type(within(dialog).getByLabelText(/Reason/), 'Calls were outside his window');

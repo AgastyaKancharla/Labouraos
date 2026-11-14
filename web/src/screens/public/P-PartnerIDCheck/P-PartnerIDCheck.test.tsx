@@ -1,25 +1,44 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import { mockApi, renderScreen } from '../../../test/utils';
 import { DONE, partnerStatus, partnerVerifiedInThisTab, TOKEN } from '../shared/testData';
 import PartnerIdCheckPage from './index';
 
+const QR_TEXT = '5550001112223334445';
+vi.mock('../shared/aadhaar/AadhaarQrScanner', () => ({
+  AadhaarQrScanner: ({ onText }: { onText: (t: string) => void }) => (
+    <button type="button" onClick={() => onText(QR_TEXT)}>
+      fake camera read
+    </button>
+  ),
+}));
+
 const atId = (extra: Parameters<typeof partnerStatus>[0] = {}) =>
   partnerStatus({ currentStep: 'id_check', steps: { terms: DONE, selfie: DONE, id: { state: 'not_started' }, upi: { state: 'not_started' } }, ...extra });
 const render = () => renderScreen(<PartnerIdCheckPage />, { portal: 'public', path: `/p/partner/${TOKEN}/id-check`, route: '/p/partner/:token/id-check' });
+const qrAnswer = (over: Record<string, unknown> = {}) => ({
+  verificationId: 'v1', method: 'aadhaar_qr', status: 'verified', result: 'verified', verifiedByUidai: true, nameMatches: true, isAdult: true,
+  phoneLinked: 'linked', maskedReference: 'XXXX-XXXX-1234', person: { name: 'Ravi Kumar', dateOfBirth: '1990', gender: 'M' },
+  failureReason: null, offerOtherId: false, nextStep: 'upi', ...over,
+});
 
-describe('P-PartnerIDCheck (step 3)', () => {
-  it('checks Aadhaar through DigiLocker (no number typed or sent) and moves on when verified', async () => {
+describe('P-PartnerIDCheck (step 3, the same Aadhaar QR step)', () => {
+  it('scans the Aadhaar QR (only its text is sent) and moves on when verified', async () => {
     partnerVerifiedInThisTab();
     const api = mockApi({
       [`GET /referral-registration/${TOKEN}/status`]: atId(),
-      [`POST /referral-registration/${TOKEN}/id-check`]: { status: 'verified', method: 'digilocker', nameMatches: true, isAdult: true, failureReason: null, nextStep: 'upi' },
+      [`POST /referral-registration/${TOKEN}/aadhaar-qr`]: qrAnswer(),
     });
     render();
     expect(await screen.findByText('Step 3 of 4 · ID check')).toBeInTheDocument();
-    expect(screen.getByText(/Never your Aadhaar number/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Verify with Aadhaar (DigiLocker)' }));
-    expect(api.calls(`POST /referral-registration/${TOKEN}/id-check`)[0]!.body).toEqual({ requestId: 'req-1', method: 'digilocker' });
+    expect(screen.getByTestId('id-privacy')).toHaveTextContent(/your full Aadhaar number/);
+    await userEvent.click(screen.getByRole('button', { name: 'Aadhaar: scan the QR code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'fake camera read' }));
+    expect(api.calls(`POST /referral-registration/${TOKEN}/aadhaar-qr`)[0]!.body).toEqual({ requestId: 'req-1', qrText: QR_TEXT });
+    expect(await screen.findByText('Aadhaar verified by UIDAI')).toBeInTheDocument();
+    expect(screen.getByText('1990')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
@@ -27,18 +46,18 @@ describe('P-PartnerIDCheck (step 3)', () => {
     partnerVerifiedInThisTab();
     const api = mockApi({
       [`GET /referral-registration/${TOKEN}/status`]: atId(),
-      [`POST /referral-registration/${TOKEN}/id-check`]: ({ body }: { body: { method: string } }) =>
-        body.method === 'digilocker'
-          ? { status: 'verified', method: 'digilocker', nameMatches: false, isAdult: true, failureReason: null, nextStep: 'id_check' }
-          : { status: 'verified', method: body.method, nameMatches: true, isAdult: true, failureReason: null, nextStep: 'upi' },
+      [`POST /referral-registration/${TOKEN}/aadhaar-qr`]: qrAnswer({ status: 'failed', result: 'name_mismatch', nameMatches: false, offerOtherId: true, nextStep: 'id_check' }),
+      [`POST /referral-registration/${TOKEN}/id-check`]: { status: 'verified', method: 'voter_id', nameMatches: true, isAdult: true, failureReason: null, nextStep: 'upi' },
     });
     render();
-    await userEvent.click(await screen.findByRole('button', { name: 'Verify with Aadhaar (DigiLocker)' }));
-    expect(await screen.findByText(/name on the ID doesn't match/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'fake camera read' }));
+    expect(await screen.findByText(/doesn't match the name you registered with/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Voter ID' }));
     await userEvent.type(screen.getByLabelText(/Voter ID number/), 'abc1234567');
     await userEvent.click(screen.getByRole('button', { name: 'Check this ID' }));
-    expect(api.calls(`POST /referral-registration/${TOKEN}/id-check`)[1]!.body).toEqual({ requestId: 'req-1', method: 'voter_id', documentNumber: 'ABC1234567' });
+    expect(api.calls(`POST /referral-registration/${TOKEN}/id-check`)[0]!.body).toEqual({ requestId: 'req-1', method: 'voter_id', documentNumber: 'ABC1234567' });
+    expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
   it('stops under 18', async () => {
@@ -49,12 +68,13 @@ describe('P-PartnerIDCheck (step 3)', () => {
     expect(screen.queryByRole('button', { name: /Aadhaar/ })).not.toBeInTheDocument();
   });
 
-  it('when the ID service is down offers another ID now', async () => {
+  it('when the other-ID check is down the Aadhaar QR still works', async () => {
     partnerVerifiedInThisTab();
     mockApi({ [`GET /referral-registration/${TOKEN}/status`]: atId({ idCheck: { serviceDown: true, lastResult: 'none' } }) });
     render();
-    expect(await screen.findByText(/Aadhaar checks are busy right now/)).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: 'Use another ID instead' }));
+    expect(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' })).toBeEnabled();
+    await userEvent.click(screen.getByRole('button', { name: 'Another ID' }));
+    expect(screen.getByText(/PAN, driving licence and voter ID checks are busy right now/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'PAN card' })).toBeInTheDocument();
   });
 });

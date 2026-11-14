@@ -2,7 +2,7 @@
   "name": "laboura-web",
   "version": "0.1.0",
   "private": true,
-  "description": "Laboura staff portals and public pages \u2014 one React app served by Nest at /app",
+  "description": "Laboura staff portals and public pages — one React app served by Nest at /app",
   "type": "module",
   "scripts": {
     "dev": "vite",
@@ -15,10 +15,12 @@
   },
   "dependencies": {
     "@tanstack/react-query": "5.105.0",
+    "pdfjs-dist": "6.4.299",
     "qrcode-generator": "2.0.4",
     "react": "19.2.9",
     "react-dom": "19.2.9",
-    "react-router-dom": "7.18.4"
+    "react-router-dom": "7.18.4",
+    "zxing-wasm": "3.1.6"
   },
   "devDependencies": {
     "@eslint/js": "9.21.0",

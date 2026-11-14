@@ -304,6 +304,35 @@ describe('Check registrations (T-Verify) and Agents (T-Agents)', () => {
     await waitFor(() => expect(api.calls('POST /team-lead/registrations/r2/check')[0].body).toEqual({ verdict: 'fake', note: 'Same face as JS-00118' }));
   });
 
+  it('shows the live selfie next to the Aadhaar QR photo, the UIDAI badge and the phone flag; approving completes the check', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /team-lead/registrations': {
+        summary: { toCheck: 1, possibleDuplicates: 0, checkedThisMonth: 3, fakesThisMonth: 0 },
+        rows: [{
+          jobSeeker: { id: 'r3', code: 'JS-00252', name: 'Lokesh R' }, trade: 'Driver', registeredBy: sneha, paid: true, hasSelfie: true,
+          idCheck: { method: 'aadhaar_qr', status: 'verified', nameMatches: true, isAdult: true, verifiedByUidai: true, maskedReference: 'XXXX-XXXX-4321', phoneLinked: 'not_linked', qrPhotoKept: true },
+          duplicates: [], signals: ['Phone not linked to the Aadhaar'], verdict: 'Phone not linked to the Aadhaar',
+        }],
+      },
+      'GET /identity/job-seekers/r3/aadhaar-check': { check: null, qrPhotoUrl: 'https://signed/qr.jpg', selfieUrl: 'https://signed/selfie.jpg' },
+      'POST /team-lead/registrations/r3/check': { verdict: 'ok', qrPhotoDeleted: true },
+    });
+    signInAs('team_lead');
+    renderScreen(<TeamLeadVerify />, { portal: 'team-lead', path: '/team-lead/verify', now: NOW });
+    expect(await screen.findByText('Aadhaar verified by UIDAI')).toBeInTheDocument();
+    expect(screen.getByText('XXXX-XXXX-4321')).toBeInTheDocument();
+    expect(screen.getByText('No · flag')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Show photos' }));
+    expect(await screen.findByRole('img', { name: 'Photo from the Aadhaar QR of Lokesh R' })).toHaveAttribute('src', 'https://signed/qr.jpg');
+    expect(screen.getByRole('img', { name: 'Selfie of Lokesh R' })).toHaveAttribute('src', 'https://signed/selfie.jpg');
+    await userEvent.click(screen.getByRole('button', { name: 'Looks right' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/deletes the photo from the Aadhaar QR/)).toBeInTheDocument();
+    await userEvent.click(within(dialog).getByRole('button', { name: /looks right/i }));
+    await waitFor(() => expect(api.calls('POST /team-lead/registrations/r3/check')[0].body).toEqual({ verdict: 'ok' }));
+  });
+
   it('filters agents by role and shows "No rows match" when none fit', async () => {
     mockApi({
       ...common,

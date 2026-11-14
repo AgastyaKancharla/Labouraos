@@ -5,16 +5,19 @@ import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import { isApiError } from '../../../lib/api/errors';
 import { useScreenPath } from '../../../portals/PortalContext';
-import { registrationApi, type IdCheckResult } from '../shared/api';
+import { registrationApi, type AadhaarQrResult, type IdCheckResult } from '../shared/api';
 import { IdCheckPanel } from '../shared/IdCheckPanel';
 import { useStepGuard } from '../shared/registration';
-import { ActionError, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, StepsBar, Warn } from '../shared/ui';
+import { ActionError, isOtpExpired, LinkProblem, Loading, PageTitle, StepsBar, Warn } from '../shared/ui';
 
 /**
- * P01d-IDCheck and P01e-IDBusy. Aadhaar through DigiLocker first; if it
- * fails (name doesn't match, phone not linked) or the service is down, PAN,
- * driving licence or voter ID work too. Under 18 stops here, before any
- * payment. Only the result is kept — never the Aadhaar number or photo.
+ * P01d-IDCheck (guide, "Aadhaar verification", 14 Nov): Aadhaar by its Secure
+ * QR — scanned with his phone's camera, or read from his e-Aadhaar PDF opened
+ * in the browser — or another government ID (PAN, driving licence, voter ID).
+ * Only the QR's text is sent; UIDAI's signature, 18+, the name and the phone
+ * link are checked by the server. Under 18 stops here, before any payment.
+ * The PAN / driving licence / voter ID check can be down (P01e); the QR
+ * check is in-house and never is.
  */
 export default function IdCheck() {
   const t = useT();
@@ -24,8 +27,8 @@ export default function IdCheck() {
   const queryClient = useQueryClient();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<unknown>(null);
-  const [result, setResult] = useState<IdCheckResult | null>(null);
-  const [preferOtherId, setPreferOtherId] = useState(false);
+  const [qrResult, setQrResult] = useState<AadhaarQrResult | null>(null);
+  const [otherResult, setOtherResult] = useState<IdCheckResult | null>(null);
   const [waiting, setWaiting] = useState(false);
 
   if (query.error) return <LinkProblem error={query.error} onRetry={() => void query.refetch()} />;
@@ -33,7 +36,7 @@ export default function IdCheck() {
 
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['registration', token] });
 
-  if (status.stopped === 'under_18' || result?.isAdult === false) {
+  if (status.stopped === 'under_18' || qrResult?.isAdult === false || otherResult?.isAdult === false) {
     return (
       <>
         <StepsBar current={3} label={t('pub.id.stepLabel')} />
@@ -45,17 +48,11 @@ export default function IdCheck() {
     );
   }
 
-  const check = async (method: string, documentNumber?: string) => {
+  const run = async (work: () => Promise<void>) => {
     setBusy(true);
     setError(null);
-    setResult(null);
     try {
-      const outcome = await registrationApi.idCheck(token, requestId, method, documentNumber);
-      setResult(outcome);
-      if (outcome.status === 'verified' && outcome.nameMatches !== false && outcome.isAdult !== false) {
-        await refresh();
-        navigate(to('P02-Payment', { token }));
-      }
+      await work();
     } catch (e) {
       if (isOtpExpired(e)) {
         backToStart();
@@ -68,55 +65,41 @@ export default function IdCheck() {
     }
   };
 
-  const wait = async () => {
-    setBusy(true);
-    setError(null);
-    try {
+  const checkQr = (qrText: string) =>
+    run(async () => {
+      setOtherResult(null);
+      const outcome = await registrationApi.aadhaarQr(token, requestId, qrText);
+      // The green result stays on screen until he taps Continue (the status would move the page on).
+      setQrResult(outcome);
+    });
+
+  const checkOtherId = (method: string, documentNumber: string) =>
+    run(async () => {
+      setQrResult(null);
+      const outcome = await registrationApi.idCheck(token, requestId, method, documentNumber);
+      setOtherResult(outcome);
+      if (outcome.status === 'verified' && outcome.nameMatches !== false && outcome.isAdult !== false) {
+        await refresh();
+        navigate(to('P02-Payment', { token }));
+      }
+    });
+
+  const wait = () =>
+    run(async () => {
       await registrationApi.waitForIdService(token, requestId);
       setWaiting(true);
       await refresh();
-    } catch (e) {
-      if (isOtpExpired(e)) backToStart();
-      else setError(e);
-    } finally {
-      setBusy(false);
-    }
-  };
+    });
 
-  const serviceDown = status.idCheck.serviceDown && !preferOtherId;
-  if (serviceDown) {
-    const alreadyWaiting = waiting || status.idCheck.waitingForService;
-    return (
-      <>
-        <StepsBar current={3} label={t('pub.id.stepLabel')} />
-        <Warn>
-          <strong>{t('pub.busy.title')}</strong> {t('pub.busy.body')}
-        </Warn>
-        <button type="button" className="btn bp full" onClick={() => setPreferOtherId(true)}>
-          {t('pub.busy.otherId')}
-        </button>
-        {alreadyWaiting ? (
-          <Warn>{t('pub.busy.waiting')}</Warn>
-        ) : (
-          <button type="button" className="btn bs full" disabled={busy} aria-busy={busy || undefined} onClick={() => void wait()}>
-            {t('pub.busy.wait')}
-          </button>
-        )}
-        <ActionError error={error} />
-        <Muted>{t('pub.busy.note')}</Muted>
-      </>
-    );
-  }
-
-  const failedMessage: MessageKey | null = result
-    ? result.nameMatches === false
+  const otherIdFailed: MessageKey | null = otherResult
+    ? otherResult.nameMatches === false
       ? 'pub.id.nameMismatch'
-      : result.status !== 'verified'
+      : otherResult.status !== 'verified'
         ? 'pub.id.failed'
         : null
-    : status.idCheck.lastResult === 'name_mismatch'
+    : !qrResult && status.idCheck.lastResult === 'name_mismatch'
       ? 'pub.id.nameMismatch'
-      : status.idCheck.lastResult === 'failed'
+      : !qrResult && status.idCheck.lastResult === 'failed'
         ? 'pub.id.failed'
         : null;
 
@@ -124,7 +107,15 @@ export default function IdCheck() {
     <>
       <StepsBar current={3} label={t('pub.id.stepLabel')} />
       <PageTitle>{t('pub.id.title')}</PageTitle>
-      <IdCheckPanel busy={busy} failedMessage={failedMessage} onCheck={(method, number) => void check(method, number)} />
+      <IdCheckPanel
+        busy={busy}
+        qrResult={qrResult}
+        otherIdFailed={otherIdFailed}
+        onQr={(text) => void checkQr(text)}
+        onOtherId={(method, number) => void checkOtherId(method, number)}
+        onContinue={() => void refresh().then(() => navigate(to('P02-Payment', { token })))}
+        otherIdService={{ down: status.idCheck.serviceDown, waiting: waiting || status.idCheck.waitingForService, onWait: () => void wait() }}
+      />
       <ActionError error={error} />
     </>
   );

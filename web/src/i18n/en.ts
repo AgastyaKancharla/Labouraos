@@ -1,5 +1,6 @@
 /* English — the source of every key. Add new keys here first, then to kn.ts and hi.ts
    (TypeScript refuses to build until all three have the same keys). */
+import { aadhaarQrEn } from './aadhaarQr';
 import { payslipEn } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceEn } from '../attendance/i18n';
 import { registrationEn } from './registration';
@@ -96,7 +97,7 @@ export const en = {
   "pub.consent.record": "Record calls",
   "pub.consent.recordText": "Calls with Laboura are recorded for quality and service",
   "pub.consent.id": "Check my ID",
-  "pub.consent.idText": "Only the result is kept, never my Aadhaar number",
+  "pub.consent.idText": "Aadhaar: the QR code is read on my phone and only its data is sent. Kept: the result, the last 4 digits, name, date of birth, gender, area and pincode. Never: my full Aadhaar number, a picture of the card, the PDF or my full address.",
   "pub.consent.updates": "Job updates",
   "pub.consent.updatesText": "SMS and WhatsApp about my interviews and jobs",
   "pub.consent.offers": "Offers and news (optional)",
@@ -115,10 +116,6 @@ export const en = {
   "pub.selfie.unavailable": "This phone's camera couldn't be opened. Try another phone — the code still comes to your number.",
   "pub.id.stepLabel": "ID check",
   "pub.id.title": "Check your ID",
-  "pub.id.aadhaar": "Verify with Aadhaar (DigiLocker)",
-  "pub.id.keep": "We only keep whether it matched, your age is 18+, and the last 4 digits. Never your Aadhaar number or photo.",
-  "pub.id.notWorking": "Aadhaar not working?",
-  "pub.id.notWorkingText": "Name doesn't match, or your phone isn't linked to Aadhaar — use another government ID.",
   "pub.id.pan": "PAN card",
   "pub.id.dl": "Driving licence",
   "pub.id.voter": "Voter ID",
@@ -130,12 +127,10 @@ export const en = {
   "pub.id.failed": "That ID couldn't be checked. Try again or use another ID.",
   "pub.id.under18Title": "Registration stops here.",
   "pub.id.under18Body": "Laboura can only register people who are 18 or older. No payment is taken.",
-  "pub.busy.title": "Aadhaar checks are busy right now.",
-  "pub.busy.body": "This is on our side, not yours. Your consent and selfie are already saved.",
-  "pub.busy.otherId": "Use another ID instead",
+  "pub.busy.title": "PAN, driving licence and voter ID checks are busy right now.",
+  "pub.busy.body": "This is on our side, not yours. Your Aadhaar QR code still works — or wait and we'll send you an SMS.",
   "pub.busy.wait": "I'll wait — SMS me when it's back",
   "pub.busy.waiting": "Done — we'll send you an SMS when it's back.",
-  "pub.busy.note": "When it's back we send you an SMS, and this link opens straight at the ID step.",
   "pub.pay.stepLabel": "Payment",
   "pub.pay.title": "Pay {amount} · Registration",
   "pub.pay.guarantee": "Your guarantee",
@@ -590,6 +585,7 @@ export const en = {
   ...staffInviteEn,
   ...referralTermsEn,
   ...referralPartnerEn,
+  ...aadhaarQrEn,
   ...staffPhotoEn,
   ...callAgentEn,
   ...payslipEn,

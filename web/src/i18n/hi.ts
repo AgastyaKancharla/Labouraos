@@ -1,4 +1,5 @@
 /* Hindi (हिंदी) — same keys as en.ts. Have a native speaker review new strings. */
+import { aadhaarQrHi } from './aadhaarQr';
 import { payslipHi } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceHi } from '../attendance/i18n';
 import type { Messages } from './en';
@@ -96,7 +97,7 @@ export const hi: Messages = {
   "pub.consent.record": "कॉल रिकॉर्ड करें",
   "pub.consent.recordText": "गुणवत्ता और सेवा के लिए लेबूरा के साथ कॉल रिकॉर्ड की जाती हैं",
   "pub.consent.id": "मेरी पहचान जाँचें",
-  "pub.consent.idText": "सिर्फ़ नतीजा रखा जाता है, मेरा आधार नंबर कभी नहीं",
+  "pub.consent.idText": "आधार: QR कोड मेरे फ़ोन पर ही पढ़ा जाता है और सिर्फ़ उसका डेटा भेजा जाता है। रखा जाता है: नतीजा, आख़िरी 4 अंक, नाम, जन्मतिथि, लिंग, इलाक़ा और पिनकोड। कभी नहीं: मेरा पूरा आधार नंबर, कार्ड की तस्वीर, PDF या मेरा पूरा पता।",
   "pub.consent.updates": "नौकरी की जानकारी",
   "pub.consent.updatesText": "मेरे इंटरव्यू और नौकरियों के बारे में SMS और WhatsApp",
   "pub.consent.offers": "ऑफ़र और ख़बरें (वैकल्पिक)",
@@ -115,10 +116,6 @@ export const hi: Messages = {
   "pub.selfie.unavailable": "इस फ़ोन का कैमरा नहीं खुला। दूसरा फ़ोन आज़माएँ — कोड आपके ही नंबर पर आएगा।",
   "pub.id.stepLabel": "पहचान की जाँच",
   "pub.id.title": "अपनी पहचान जाँचें",
-  "pub.id.aadhaar": "आधार से जाँचें (डिजीलॉकर)",
-  "pub.id.keep": "हम सिर्फ़ यह रखते हैं कि मिलान हुआ या नहीं, आपकी उम्र 18+ है और आख़िरी 4 अंक। आपका आधार नंबर या फ़ोटो कभी नहीं।",
-  "pub.id.notWorking": "आधार काम नहीं कर रहा?",
-  "pub.id.notWorkingText": "नाम मेल नहीं खाता, या आपका फ़ोन आधार से जुड़ा नहीं है — कोई दूसरा सरकारी पहचान पत्र इस्तेमाल करें।",
   "pub.id.pan": "पैन कार्ड",
   "pub.id.dl": "ड्राइविंग लाइसेंस",
   "pub.id.voter": "वोटर आईडी",
@@ -130,12 +127,10 @@ export const hi: Messages = {
   "pub.id.failed": "वह पहचान जाँची नहीं जा सकी। फिर कोशिश करें या दूसरी पहचान इस्तेमाल करें।",
   "pub.id.under18Title": "पंजीकरण यहीं रुकता है।",
   "pub.id.under18Body": "लेबूरा सिर्फ़ 18 साल या उससे ज़्यादा उम्र के लोगों का पंजीकरण कर सकता है। कोई भुगतान नहीं लिया जाता।",
-  "pub.busy.title": "आधार जाँच अभी व्यस्त है।",
-  "pub.busy.body": "यह हमारी तरफ़ की दिक्कत है, आपकी नहीं। आपकी सहमति और सेल्फ़ी पहले ही सेव हैं।",
-  "pub.busy.otherId": "इसकी जगह दूसरी पहचान इस्तेमाल करें",
+  "pub.busy.title": "PAN, ड्राइविंग लाइसेंस और वोटर ID की जाँच अभी व्यस्त है।",
+  "pub.busy.body": "यह हमारी तरफ़ की दिक्कत है, आपकी नहीं। आपका आधार QR कोड अब भी काम करता है — या इंतज़ार करें, हम SMS भेजेंगे।",
   "pub.busy.wait": "मैं इंतज़ार करूँगा — ठीक होने पर SMS करें",
   "pub.busy.waiting": "हो गया — ठीक होने पर हम आपको SMS भेजेंगे।",
-  "pub.busy.note": "ठीक होने पर हम आपको SMS भेजेंगे, और यह लिंक सीधे पहचान वाले चरण पर खुलेगा।",
   "pub.pay.stepLabel": "भुगतान",
   "pub.pay.title": "{amount} भुगतान करें · पंजीकरण",
   "pub.pay.guarantee": "आपकी गारंटी",
@@ -590,6 +585,7 @@ export const hi: Messages = {
   ...staffInviteHi,
   ...referralTermsHi,
   ...referralPartnerHi,
+  ...aadhaarQrHi,
   ...staffPhotoHi,
   // Call agent console and the search bar (in every portal): Kannada, English and Hindi (owner decision, 11 Nov).
   ...callAgentHi,

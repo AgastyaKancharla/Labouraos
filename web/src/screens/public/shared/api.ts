@@ -68,6 +68,24 @@ export interface IdCheckResult {
   failureReason: string | null;
 }
 
+/** The Aadhaar Secure QR answer (POST …/aadhaar-qr): the result, never the QR's raw data. */
+export interface AadhaarQrResult {
+  verificationId: string | null;
+  method: 'aadhaar_qr';
+  status: 'verified' | 'failed';
+  result: 'verified' | 'name_mismatch' | 'under_18' | 'bad_signature' | 'old_qr' | 'unreadable';
+  verifiedByUidai: boolean;
+  nameMatches: boolean | null;
+  isAdult: boolean | null;
+  phoneLinked: 'linked' | 'not_linked' | 'unknown' | null;
+  /** XXXX-XXXX-1234 */
+  maskedReference: string | null;
+  /** Read from his own card, shown back to him on the green result. */
+  person: { name: string; dateOfBirth: string; gender: 'M' | 'F' | 'T' | null } | null;
+  failureReason: string | null;
+  offerOtherId: boolean;
+}
+
 export interface OtpSent {
   requestId: string;
   phone: string;
@@ -81,6 +99,10 @@ export const registrationApi = {
     api.post<RegistrationOpen>(`/registration/${enc(token)}/verify-otp`, { requestId, code }, PUBLIC),
   consent: (token: string, requestId: string, purposes: string[], language: PublicLanguage) =>
     api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes, language }, PUBLIC),
+  /** Only the QR's text: the card's picture and the e-Aadhaar PDF stay on the phone. */
+  aadhaarQr: (token: string, requestId: string, qrText: string) =>
+    api.post<AadhaarQrResult>(`/registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
+  /** Another government ID: PAN, driving licence or voter ID. */
   idCheck: (token: string, requestId: string, method: string, documentNumber?: string) =>
     api.post<IdCheckResult>(`/registration/${enc(token)}/id-check`, { requestId, method, ...(documentNumber ? { documentNumber } : {}) }, PUBLIC),
   waitForIdService: (token: string, requestId: string) =>
@@ -181,6 +203,8 @@ export const partnerApi = {
   acceptTerms: (token: string, requestId: string, language: PublicLanguage) =>
     api.post<{ success: boolean }>('/consent/submit', { token, otpRequestId: requestId, purposes: ['agreement_terms', 'call_recording'], language }, PUBLIC),
   selfie: (token: string, requestId: string, photo: Blob) => postLiveSelfie(`/referral-registration/${enc(token)}/selfie`, { requestId }, photo),
+  aadhaarQr: (token: string, requestId: string, qrText: string) =>
+    api.post<AadhaarQrResult & { nextStep: string }>(`/referral-registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
   idCheck: (token: string, requestId: string, method: string, documentNumber?: string) =>
     api.post<IdCheckResult & { nextStep: string }>(`/referral-registration/${enc(token)}/id-check`, { requestId, method, ...(documentNumber ? { documentNumber } : {}) }, PUBLIC),
   payout: (token: string, requestId: string, details: PartnerPayout) =>
