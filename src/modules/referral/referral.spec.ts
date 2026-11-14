@@ -18,6 +18,21 @@ const cameraJpeg = (tag: string) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff
 describe('Referral Registration (Phase 2 Task 3)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
+
+  /** Another ID (rev 154): a live photo of the PAN card and its number, pending; then the Team Lead's "Looks right". */
+  async function passPartnerId(token: string, requestId: string) {
+    const sent = await request(app.getHttpServer())
+      .post(`/referral-registration/${token}/other-id`)
+      .field('requestId', requestId)
+      .field('idType', 'pan')
+      .field('idNumber', 'ABCDE1234F')
+      .field('captureSource', 'live_camera')
+      .attach('photo', cameraJpeg('pan-card'), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    expect(sent.body).toMatchObject({ status: 'pending', nextStep: 'team_lead_check' });
+    await prisma.referralIdentityVerification.update({ where: { id: sent.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
+    return sent;
+  }
   let otpService: OtpService;
 
   let callAgentToken: string;
@@ -388,12 +403,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
     const idOtp = await otpService.sendOtp(phone);
     const idCode = (otpService.getProvider() as MockOtpProvider).getCode(idOtp.requestId)!;
     await otpService.verifyOtp(idOtp.requestId, idCode);
-    const idResult = await request(app.getHttpServer())
-      .post(`/referral-registration/${token}/id-check`)
-      .send({ requestId: idOtp.requestId, method: 'pan' })
-      .expect(201);
-    expect(idResult.body.status).toBe('verified');
-    expect(idResult.body.nextStep).toBe('upi');
+    await passPartnerId(token, idOtp.requestId);
 
     const payoutOtp = await otpService.sendOtp(phone);
     const payoutCode = (otpService.getProvider() as MockOtpProvider).getCode(payoutOtp.requestId)!;
@@ -458,7 +468,7 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .expect(201);
     const id = await code();
     await otpService.verifyOtp(id.requestId, id.code);
-    await request(app.getHttpServer()).post(`/referral-registration/${token}/id-check`).send({ requestId: id.requestId, method: 'pan' }).expect(201);
+    await passPartnerId(token, id.requestId);
 
     const badIfsc = await code();
     await request(app.getHttpServer())
@@ -546,9 +556,28 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .field('captureSource', 'live_camera')
       .attach('photo', cameraJpeg('camera-image-partner-page'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
-    await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'pan' }).expect(201);
     // A raw Aadhaar number is refused before it reaches anything.
-    await request(server).post(`/referral-registration/${token}/id-check`).send({ requestId, method: 'aadhaar', aadhaarNumber: '234567890123' }).expect(400);
+    await request(server)
+      .post(`/referral-registration/${token}/other-id`)
+      .field('requestId', requestId)
+      .field('idType', 'driving_licence')
+      .field('idNumber', '2345 6789 0123')
+      .field('captureSource', 'live_camera')
+      .attach('photo', cameraJpeg('card'), { filename: 'card.jpg', contentType: 'image/jpeg' })
+      .expect(400);
+    // While the Team Lead hasn't checked the card, the partner waits (no UPI step).
+    const sentId = await request(server)
+      .post(`/referral-registration/${token}/other-id`)
+      .field('requestId', requestId)
+      .field('idType', 'pan')
+      .field('idNumber', 'ABCDE1234F')
+      .field('captureSource', 'live_camera')
+      .attach('photo', cameraJpeg('pan-card'), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .expect(201);
+    const waiting = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
+    expect(waiting.body).toMatchObject({ currentStep: 'id_check', idCheck: { lastResult: 'pending', waitingForTeamLead: true } });
+    await request(server).post(`/referral-registration/${token}/upi`).send({ otpRequestId: requestId, method: 'upi', upiId: 'early@okaxis' }).expect(400);
+    await prisma.referralIdentityVerification.update({ where: { id: sentId.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
     const afterId = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
     expect(afterId.body.currentStep).toBe('upi');
     expect(afterId.body.idCheck.lastResult).toBe('verified');

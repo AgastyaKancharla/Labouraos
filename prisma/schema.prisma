@@ -118,7 +118,6 @@ model JobSeeker {
   trades                    JobSeekerTrade[]
   languages                 JobSeekerLanguage[]
   identityVerifications     IdentityVerification[]
-  kycRecoveryRequests      KycRecoveryRequest[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
   anonymisedAt              DateTime?
@@ -248,14 +247,17 @@ model IdentityVerification {
   id              String    @id @default(uuid())
   jobSeekerId     String
   jobSeeker       JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
-  /// aadhaar_qr (UIDAI Secure QR, checked in-house), pan, driving_licence, voter_id.
+  /// aadhaar_qr (UIDAI Secure QR, checked in-house), pan, driving_licence, voter_id
+  /// (another ID: a live photo of the card checked by the Team Lead by eye).
   method          String
-  /// uidai_secure_qr for the QR; the ID-check adapter for the other IDs.
+  /// uidai_secure_qr for the QR; team_lead_check for another ID.
   vendor          String
   /// Aadhaar QR: the QR's reference (last 4 digits + its time stamp). Never the full number.
-  vendorReference String
-  status          String    // pending, verified, failed
-  last4           String?   // last 4 digits only
+  vendorReference String?
+  /// pending (another ID waiting for the Team Lead), verified, failed
+  status          String
+  /// Last 4 digits only: of the Aadhaar (from the QR) or of the typed ID number.
+  last4           String?
   nameMatches     Boolean?
   isAdult         Boolean?
   /// Aadhaar QR: is his OTP-verified phone the one linked to that Aadhaar — linked, not_linked, unknown.
@@ -265,6 +267,11 @@ model IdentityVerification {
   qrIssuedAt      DateTime?
   /// The aadhaar_verification consent this check ran under.
   consentId       String?
+  /// A signed Aadhaar QR that showed under 18 stops registration for good (guide);
+  /// only a Manager or the CEO can lift it, with a reason (audited).
+  under18LiftedAt        DateTime?
+  under18LiftedByStaffId String?
+  under18LiftReason      String?
   verifiedAt      DateTime?
   failureReason   String?
   createdAt       DateTime  @default(now())
@@ -274,22 +281,25 @@ model IdentityVerification {
   @@index([status])
 }
 
-/// What an Aadhaar Secure QR check keeps besides the result (Master Guide,
-/// "Aadhaar verification", 14 Nov): name, date of birth, gender, area and
-/// pincode from the QR — never the full Aadhaar number, any image of the card,
-/// the e-Aadhaar PDF or XML, or the full address. The photo from the QR is
-/// kept (private storage, short-lived links to the Team Lead / Manager / CEO
-/// only) until the Team Lead's check, and never longer than 30 days.
-/// One row per verification: IdentityVerification (job_seeker) or
-/// ReferralIdentityVerification (referral).
-model AadhaarQrDetail {
+/// What an ID check keeps besides the result (Master Guide, "Aadhaar
+/// verification", 14 Nov), one row per verification (IdentityVerification for
+/// a job seeker, ReferralIdentityVerification for a partner):
+///   - kind aadhaar_qr: name, date of birth, gender, area and pincode from a
+///     QR that passed every check (nothing on a name mismatch or under 18), and
+///     the photo from the QR;
+///   - kind id_card_photo: the live camera photo of another ID card.
+/// Never the full Aadhaar or ID number, the e-Aadhaar PDF/XML or the full
+/// address. A photo is private (short-lived links to the Team Lead / Manager /
+/// CEO only) and kept until the Team Lead's decision, never more than 30 days.
+model IdCheckDetail {
   id                 String    @id @default(uuid())
   subjectType        String    // job_seeker, referral
   subjectId          String
   verificationId     String    @unique
-  nameOnId           String
+  kind               String    // aadhaar_qr, id_card_photo
+  nameOnId           String?
   /// YYYY-MM-DD, or YYYY when the card shows only the year.
-  dateOfBirth        String
+  dateOfBirth        String?
   gender             String?   // M, F, T
   area               String?
   pincode            String?
@@ -303,6 +313,7 @@ model AadhaarQrDetail {
 
   @@index([subjectType, subjectId])
   @@index([photoExpiresAt])
+  @@index([dateOfBirth])
 }
 
 /// Every Aadhaar QR attempt (link or Laboura Field), for the rate limit and the
@@ -312,34 +323,12 @@ model AadhaarQrAttempt {
   subjectType String   // job_seeker, referral
   subjectId   String
   channel     String   // link, field
-  /// verified, name_mismatch, under_18, bad_signature, old_qr, unreadable
+  /// started, verified, name_mismatch, under_18, bad_signature, cert_missing, old_qr, unreadable
   outcome     String
   staffId     String?
   attemptedAt DateTime @default(now())
 
   @@index([subjectType, subjectId, attemptedAt])
-}
-
-model KycServiceState {
-  id            String   @id @default("id-check")
-  status        String   @default("up") // up, down
-  lastChangedAt DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-}
-
-model KycRecoveryRequest {
-  id             String   @id @default(uuid())
-  jobSeekerId    String
-  jobSeeker      JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
-  status         String   @default("waiting") // waiting, notifying, notified
-  registrationLinkId String?
-  requestedAt    DateTime @default(now())
-  notifiedAt     DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
-
-  @@index([status, requestedAt])
-  @@index([jobSeekerId, status])
 }
 
 model Referral {
@@ -507,7 +496,7 @@ model ReferralIdentityVerification {
   referral        Referral  @relation(fields: [referralId], references: [id], onDelete: Cascade)
   method          String
   vendor          String
-  vendorReference String
+  vendorReference String?
   status          String
   last4           String?
   nameMatches     Boolean?
@@ -516,6 +505,9 @@ model ReferralIdentityVerification {
   phoneLinked     String?
   qrIssuedAt      DateTime?
   consentId       String?
+  under18LiftedAt        DateTime?
+  under18LiftedByStaffId String?
+  under18LiftReason      String?
   verifiedAt      DateTime?
   failureReason   String?
   createdAt       DateTime  @default(now())

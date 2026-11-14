@@ -249,11 +249,20 @@ describe('Phase 20 gate end-to-end proof', () => {
       .send({ requestId, qrText: UIDAI_SAMPLE_SECURE_QR })
       .expect(201);
     expect(aadhaar.body).toMatchObject({ method: 'aadhaar_qr', result: 'name_mismatch', verifiedByUidai: true, nameMatches: false, offerOtherId: true });
+    // Another ID (rev 154): a live photo of his PAN card and the number; pending until the Team Lead approves.
     const pan = await request(server())
-      .post(`/registration/${token}/id-check`)
-      .send({ requestId, method: 'pan' })
+      .post(`/registration/${token}/other-id`)
+      .field('requestId', requestId)
+      .field('idType', 'pan')
+      .field('idNumber', 'ABCDE1234F')
+      .field('captureSource', 'live_camera')
+      .attach('photo', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0]), { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
-    expect(pan.body).toMatchObject({ method: 'pan', status: 'verified', nameMatches: true });
+    expect(pan.body).toMatchObject({ method: 'pan', status: 'pending', idNumberLast4: '234F' });
+    const notYet = await request(server()).post(`/registration/${token}/terms-and-payment`).send({ requestId, acceptTerms: true }).expect(400);
+    expect(JSON.stringify(notYet.body)).toContain('Team Lead');
+    // The Team Lead's "Looks right" in T-Verify (that endpoint is covered in aadhaar-qr.e2e.spec.ts).
+    await prisma.identityVerification.update({ where: { id: pan.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
 
     // 5. The brother pays on a payment-only link. A second credit is refunded.
     const terms = await request(server())
@@ -498,10 +507,15 @@ describe('Phase 20 gate end-to-end proof', () => {
       .expect(201);
     const idOtp = await verifiedOtp(referralPhone);
     const idResult = await request(server())
-      .post(`/referral-registration/${referralToken}/id-check`)
-      .send({ requestId: idOtp, method: 'pan' })
+      .post(`/referral-registration/${referralToken}/other-id`)
+      .field('requestId', idOtp)
+      .field('idType', 'pan')
+      .field('idNumber', 'ABCDE1234F')
+      .field('captureSource', 'live_camera')
+      .attach('photo', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0]), { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
-    expect(idResult.body).toMatchObject({ status: 'verified', nameMatches: true, isAdult: true });
+    expect(idResult.body).toMatchObject({ status: 'pending', nextStep: 'team_lead_check' });
+    await prisma.referralIdentityVerification.update({ where: { id: idResult.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
     const payoutOtp = await otp.sendOtp(referralPhone);
     const payoutCode = provider().getCode(payoutOtp.requestId);
     if (!payoutCode) throw new Error('Referral UPI OTP was not stored');

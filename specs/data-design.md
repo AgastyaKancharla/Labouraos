@@ -254,14 +254,20 @@ Profile completeness is computed on read from the optional fields; not stored.
 | phoneLinked | string? | Aadhaar QR: linked, not_linked, unknown (a flag for the Team Lead, never a block) |
 | qrIssuedAt | timestamp? | Aadhaar QR: the QR's own time stamp |
 | consentId | string? | the consent record the check ran under |
-| vendor, vendorReference | string | |
-| status | string | pending, verified, failed |
-| last4 | string? | last 4 digits only |
+| vendor, vendorReference | string, string? | vendor `uidai_secure_qr` (signed QR: the only rows shown as "verified by UIDAI"), `team_lead_check` (another ID, no reference), `seed_sample`; vendorReference: the QR's reference (last 4 + its time stamp), null otherwise |
+| status | string | pending (another ID waiting for the Team Lead: no terms, no payment), verified, failed |
+| last4 | string? | last 4 digits only (another ID: the last 4 of the typed number, with `method` as the ID type) |
 | nameMatches | bool? | |
 | isAdult | bool? | |
+| under18LiftedAt, under18LiftedByStaffId, under18LiftReason | | a signed QR that showed under 18 stops registration until a Manager or the CEO lifts it (rev 154) |
 | verifiedAt, failureReason | | |
 
-**Never stored anywhere:** full Aadhaar number, Aadhaar XML or PDF, Aadhaar photo, Aadhaar address. The existing `assertNoRawAadhaar` guard stays on every input.
+`ReferralIdentityVerification` has the same columns for referral partners. Erasure nulls `last4`, `vendorReference` and `under18LiftReason` on both.
+
+### `IdCheckDetail` — new (rev 154)
+One row per verification that has details or a photo: `kind` aadhaar_qr (name, date of birth, gender, area, pincode — only for a QR that passed every check) or id_card_photo (the live photo of another ID card, no fields); `photoPath` (private bucket), `photoExpiresAt` (30 days at most; set to now when a delete fails so the daily run retries it), `photoDeletedAt`, `photoDeletedReason` (team_lead_approved, team_lead_rejected, expired, replaced, erased). RLS on.
+
+**Never stored anywhere:** full Aadhaar number, Aadhaar XML or PDF, the full ID number of another ID, Aadhaar address. The QR photo and the card photo are kept only until the Team Lead's decision (30 days at most). The existing `assertNoRawAadhaar` guard stays on every input.
 
 ### `JobSeekerHit` — changes
 | Column | Change |

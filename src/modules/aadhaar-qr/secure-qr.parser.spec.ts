@@ -12,7 +12,7 @@ import {
   SecureQrError,
   verifySecureQrSignature,
 } from './secure-qr.parser';
-import { checkName } from './name-check';
+import { checkIdName } from './id-name-check';
 import { jpeg2000ToJpeg } from './qr-photo';
 import { loadUidaiCertificates } from './uidai-certificates';
 import { buildSecureQr, bytesToDecimal, secureQrSignedBytes, secureQrText, SYNTHETIC_JP2_PHOTO, testSigner } from './testing/secure-qr.fixtures';
@@ -181,11 +181,34 @@ describe('Aadhaar Secure QR parser (guide: an in-house check, no outside company
       expect(isAdultOn(parseQrDateOfBirth('not a date'), now)).toBe(false);
     });
 
-    it('compares the name with the registered name and spots spelling differences', () => {
-      expect(checkName('Kavya Ramesh', 'KAVYA  RAMESH')).toEqual({ matches: true, likelySpelling: false });
-      expect(checkName('Kavya R', 'Kavya Ramesh')).toEqual({ matches: true, likelySpelling: false });
-      expect(checkName('Suresh Kumar', 'Sureesh Kumar')).toEqual({ matches: false, likelySpelling: true });
-      expect(checkName('Suresh Kumar', 'Anil Sharma')).toEqual({ matches: false, likelySpelling: false });
+    it('ID name matcher: whole words, at least two words of 3+ letters in common', () => {
+      expect(checkIdName('Kavya Ramesh', 'KAVYA  RAMESH')).toEqual({ matches: true, reason: 'matched', likelySpelling: false });
+      expect(checkIdName('Ravi Kumar', 'Ravi Kumar S')).toMatchObject({ matches: true });
+      expect(checkIdName('Kavya.Ramesh', 'Ramesh, Kavya')).toMatchObject({ matches: true });
+      expect(checkIdName('Suresh Kumar', 'Sureesh Kumar')).toEqual({ matches: false, reason: 'too_few_words', likelySpelling: true });
+      expect(checkIdName('Suresh Kumar', 'Anil Sharma')).toEqual({ matches: false, reason: 'different', likelySpelling: false });
+    });
+
+    it('ID name matcher (adversarial): initials, one shared word or parts of words never pass', () => {
+      // A one-letter name against anything.
+      expect(checkIdName('a', 'Anything At All').matches).toBe(false);
+      expect(checkIdName('Anything At All', 'a').matches).toBe(false);
+      // Initials and short pieces of the real name.
+      expect(checkIdName('R K', 'Ravi Kumar').matches).toBe(false);
+      expect(checkIdName('Ra Ku', 'Ravi Kumar').matches).toBe(false);
+      expect(checkIdName('Ravi Kumar', 'R K').matches).toBe(false);
+      // Only one word in common (a common surname).
+      expect(checkIdName('Kumar', 'Suresh Kumar').matches).toBe(false);
+      expect(checkIdName('Suresh Kumar', 'Kumar').matches).toBe(false);
+      expect(checkIdName('Ramesh Kumar', 'Suresh Kumar').matches).toBe(false);
+      // The same word twice is still one word.
+      expect(checkIdName('Kumar Kumar', 'Kumar Kumar').matches).toBe(false);
+      // Parts of words don't count: "Ravi" is not in "Ravindra".
+      expect(checkIdName('Ravi Kumar', 'Ravindra Kumaran').matches).toBe(false);
+      // Empty or punctuation only.
+      expect(checkIdName('', 'Ravi Kumar').matches).toBe(false);
+      expect(checkIdName('Ravi Kumar', '...').matches).toBe(false);
+      expect(checkIdName('R K', 'Ravi Kumar').reason).toBe('too_few_words');
     });
 
     it('masks the reference as XXXX-XXXX-1234', () => {

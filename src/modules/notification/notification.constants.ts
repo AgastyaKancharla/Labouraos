@@ -226,6 +226,8 @@ const FLAG_TITLES: Record<string, string> = {
   visit_flagged: 'Visit flagged by the Team Lead',
   aadhaar_phone_not_linked: 'Phone not linked to the Aadhaar',
   aadhaar_qr_tampered: 'Aadhaar QR failed the UIDAI signature check again and again',
+  aadhaar_cert_missing: 'Add the new UIDAI certificate: an Aadhaar is newer than our check supports',
+  aadhaar_duplicate_person: 'The same Aadhaar is already verified for another person',
 };
 
 export function flagTitle(kind: string): string {

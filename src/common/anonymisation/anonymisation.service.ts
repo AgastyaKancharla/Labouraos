@@ -236,24 +236,44 @@ export class AnonymisationService {
       }
     }
 
-    // Aadhaar QR details (name, date of birth, gender, area, pincode) and any QR photo still kept.
+    // ID check details (name, date of birth, gender, area, pincode from the Aadhaar QR) and any
+    // ID photo still kept (QR photo or photo of another ID card). A row goes only once its photo
+    // is confirmed deleted; if the delete fails, the personal fields are wiped now and the row
+    // keeps the photo path with expiry = now, so the daily retention run deletes it.
     if (subjectType === 'job_seeker' || subjectType === 'referral') {
-      const qrDetails = await this.prisma.aadhaarQrDetail.findMany({
+      const details = await this.prisma.idCheckDetail.findMany({
         where: { subjectType, subjectId: id },
-        select: { photoPath: true },
+        select: { id: true, photoPath: true },
       });
-      for (const detail of qrDetails) {
-        if (!detail.photoPath) continue;
-        try {
-          await this.photoStorage.delete(detail.photoPath);
-        } catch {
-          // Ignore an already deleted QR photo.
+      let photoDeleteFailed = false;
+      for (const detail of details) {
+        let photoGone = !detail.photoPath;
+        if (detail.photoPath) {
+          try {
+            await this.photoStorage.delete(detail.photoPath);
+            photoGone = true;
+          } catch {
+            photoGone = false;
+          }
+        }
+        if (photoGone) {
+          await this.prisma.idCheckDetail.delete({ where: { id: detail.id } });
+        } else {
+          photoDeleteFailed = true;
+          await this.prisma.idCheckDetail.update({
+            where: { id: detail.id },
+            data: { nameOnId: null, dateOfBirth: null, gender: null, area: null, pincode: null, photoExpiresAt: now },
+          });
         }
       }
-      if (qrDetails.length) {
-        await this.prisma.aadhaarQrDetail.deleteMany({ where: { subjectType, subjectId: id } });
-        changedFields.push('aadhaarQrDetails');
-      }
+      if (details.length) changedFields.push('idCheckDetails');
+      if (photoDeleteFailed) changedFields.push('idPhotoDeleteRetry');
+
+      // The verification rows stay (that a check happened, its result and time) without any part of the ID number.
+      const idWipe = { last4: null, vendorReference: null, under18LiftReason: null };
+      if (subjectType === 'job_seeker') await this.prisma.identityVerification.updateMany({ where: { jobSeekerId: id }, data: idWipe });
+      else await this.prisma.referralIdentityVerification.updateMany({ where: { referralId: id }, data: idWipe });
+      changedFields.push('identityVerificationLast4', 'identityVerificationReference');
     }
 
     // Wipe payout accounts

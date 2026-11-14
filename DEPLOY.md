@@ -157,7 +157,7 @@ Every new table added to the code later must also switch row level security on. 
    | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Empty until the company current account opens. See [UPI details](#upi-details). |
    | `ALERT_WEBHOOK_URL` | A Slack (or similar) incoming-webhook address for error alerts. Empty is allowed: alerts then only go to the logs. |
    | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Empty for testing. Required before real data (Step 9). |
-   | Vendor keys (`SMS_*`, `DLT_*`, `WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`, `KYC_*`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | Empty until each vendor is signed up. Every vendor runs in mock mode until then. |
+   | Vendor keys (`SMS_*`, `DLT_*`, `WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | Empty until each vendor is signed up. Every vendor runs in mock mode until then. |
 
 7. Click **Deploy Blueprint** (some screens say **Apply**).
 8. Render creates the Key Value first, then builds and starts the web service and the worker. The first build takes several minutes.
@@ -247,6 +247,19 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] An uptime monitor watches `/health/ready`.
 - [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
 - [ ] The four buckets exist and are private (Step 3).
+- [ ] **TODO: the current UIDAI certificate for the Aadhaar QR check is added** (see the box below). Until then every e-Aadhaar made after 16 Feb 2026 is answered "This Aadhaar is newer than our check supports, please use another ID", and the CEO gets an "Add the new UIDAI certificate" flag (once a day).
+
+> [!IMPORTANT]
+> **Go-live TODO: download the current UIDAI offline certificate, add it to `src/modules/aadhaar-qr/certs/`, and test with a freshly downloaded e-Aadhaar.**
+>
+> The newest certificate in the repo (`uidai_offline_publickey_17022026.pem`, "DS Unique Identification Authority of India 05") stopped signing on 16 Feb 2026. UIDAI's page (uidai.gov.in, "Aadhaar Paperless Offline e-KYC", certificate downloads) lists a newer one valid until **03 Feb 2029**. It could not be downloaded from the build machine (uidai.gov.in is blocked there), so it is not committed yet.
+>
+> 1. On a normal computer open UIDAI's Paperless Offline e-KYC page and download the certificate valid until 03 Feb 2029 (expected file name `uidai_offline_publickey_2026.cer`, subject "DS Unique Identification Authority of India 06").
+> 2. Check it before trusting it: `openssl x509 -in uidai_offline_publickey_2026.cer -inform DER -noout -subject -enddate -fingerprint -sha256` (use `-inform PEM` if it is text). The end date must be 3 Feb 2029. Compare the fingerprint with the one UIDAI's page shows; a third-party listing gives `E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF` — if UIDAI's page and the file disagree, stop.
+> 3. Ask Claude to add it as `src/modules/aadhaar-qr/certs/uidai_offline_publickey_2026.pem` (PEM text) and deploy.
+> 4. Download a fresh e-Aadhaar PDF (or use a new Aadhaar card) and scan its QR on a test registration link: it must say "Aadhaar verified by UIDAI", not "newer than our check supports".
+>
+> When UIDAI publishes the next certificate, do the same; the CEO's "Add the new UIDAI certificate" flag is the reminder.
 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
@@ -392,7 +405,7 @@ The Render parts stay in **Singapore** (Render has no India region).
    | `COMPANY_LEGAL_NAME` | `Laboura Private Limited` |
    | `COMPANY_ADDRESS` | `Bengaluru, Karnataka, India` |
    | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | A made-up UPI id and name (payment links are refused while empty) |
-   | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`, `KYC_PROVIDER_MODE` | `mock` |
+   | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` |
    | `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing only) |
 
 4. Click **Deploy Web Service**.
@@ -513,11 +526,10 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Bank UPI details | UPI payment links and QR codes |
 | `CLOUDFLARE_ACCESS_ENFORCED`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Step 9 | Identity check in front of the office consoles |
 | `ALERT_WEBHOOK_URL` | Slack-style webhook | Where error alerts are posted |
-| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`, `KYC_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
+| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
 | `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |
 | `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER` | From the calling vendor | Calls |
-| `KYC_API_KEY`, `KYC_API_URL` | From the ID-check provider, if one is signed up | PAN / driving licence / voter ID checks only — Aadhaar is checked in-house from its Secure QR (no vendor, no keys) |
 | `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET`, `RAZORPAYX_WEBHOOK_SECRET`, `RAZORPAYX_ACCOUNT_NUMBER` | From Razorpay | Card payments (only when a payer picks a card) and payouts |
 | `BANK_FEED_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`, `PAYOUT_WEBHOOK_SECRET`, `TELEPHONY_WEBHOOK_SECRET`, `MESSAGE_WEBHOOK_SECRET` | At least 32 characters each, shared with the vendor | Proves an incoming webhook really came from the vendor |
 

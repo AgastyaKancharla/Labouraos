@@ -85,13 +85,18 @@ async function seedIdentityVerification(
     });
     return;
   }
+  // Sample rows only: vendor seed_sample never counts as "verified by UIDAI" (only a signed
+  // Secure QR — vendor uidai_secure_qr — does), so no screen shows the UIDAI badge for them.
   await prisma.identityVerification.create({
     data: {
       jobSeekerId,
       method: 'aadhaar_qr',
-      vendor: 'seed-vendor',
+      vendor: 'seed_sample',
       vendorReference,
       status,
+      nameMatches: status === 'verified' ? true : null,
+      isAdult: status === 'verified' ? true : null,
+      verifiedAt: status === 'verified' ? new Date('2026-06-01T09:35:00.000Z') : null,
     },
   });
 }
@@ -1223,7 +1228,7 @@ export async function seed(prismaClient?: PrismaClient) {
         after: {
           status: 'verified',
           vendorReference: 'ovse_seed_kyc_ref_998877',
-          vendor: 'surepass-ovse',
+          vendor: 'seed_sample',
           timestamp: new Date('2026-06-01T09:35:00.000Z'),
         },
         city: 'Bengaluru',
@@ -1237,7 +1242,7 @@ export async function seed(prismaClient?: PrismaClient) {
         after: {
           status: 'verified',
           vendorReference: 'ovse_seed_kyc_ref_998877',
-          vendor: 'surepass-ovse',
+          vendor: 'seed_sample',
           timestamp: new Date('2026-06-01T09:35:00.000Z'),
         },
         city: 'Bengaluru',

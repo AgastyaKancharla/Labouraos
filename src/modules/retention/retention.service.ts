@@ -5,7 +5,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
-import { AadhaarQrPhotoService } from '../aadhaar-qr/aadhaar-qr-photo.service';
+import { IdCheckPhotoService } from '../aadhaar-qr/id-check-photo.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import {
@@ -108,7 +108,7 @@ export class RetentionService {
     private readonly agreementStorage: AgreementDocumentStorage,
     @Optional() @Inject(BUSINESS_PHOTO_STORAGE)
     private readonly visitPhotos?: BusinessPhotoStorage,
-    @Optional() private readonly aadhaarQrPhotos?: AadhaarQrPhotoService,
+    @Optional() private readonly aadhaarQrPhotos?: IdCheckPhotoService,
   ) {}
 
   async runRetentionCleanup(options: RetentionRunOptions = {}): Promise<RetentionSummary> {

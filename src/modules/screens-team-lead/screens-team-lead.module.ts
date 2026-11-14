@@ -16,10 +16,10 @@ import { TargetModule } from '../target/target.module';
 import { TeamLeadChecksService } from './team-lead-checks.service';
 import { TeamLeadController } from './team-lead.controller';
 import { TeamLeadScreensService } from './team-lead-screens.service';
-import { AadhaarQrPhotoModule } from '../aadhaar-qr/aadhaar-qr-photo.module';
+import { IdCheckPhotoModule } from '../aadhaar-qr/id-check-photo.module';
 
 @Module({
-  imports: [PrismaModule, AuditModule, AttendanceModule, JobSeekerModule, NotificationModule, ReviewFlagModule, ReportingScopeModule, TargetModule, StaffPhotoModule, AadhaarQrPhotoModule],
+  imports: [PrismaModule, AuditModule, AttendanceModule, JobSeekerModule, NotificationModule, ReviewFlagModule, ReportingScopeModule, TargetModule, StaffPhotoModule, IdCheckPhotoModule],
   controllers: [TeamLeadController],
   providers: [
     TeamLeadScreensService,

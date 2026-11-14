@@ -4,7 +4,8 @@
  *     the only way an Aadhaar is verified; no staff member can type it in;
  *   - pan, driving_licence, voter_id: another government ID, always offered
  *     (UIDAI's rules: nobody may be refused for not using Aadhaar), checked
- *     through the ID-check adapter (KycService) exactly as before.
+ *     by the Team Lead by eye (rev 154: no outside company, ₹0) from a live
+ *     camera photo of the card and the typed number (OtherIdService).
  */
 export const OTHER_ID_METHODS = ['pan', 'driving_licence', 'voter_id'] as const;
 export type OtherIdMethod = (typeof OTHER_ID_METHODS)[number];

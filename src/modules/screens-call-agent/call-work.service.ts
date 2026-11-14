@@ -534,7 +534,7 @@ export class CallWorkService {
     const sent = seekers.filter((s) => links.some((l) => l.subjectId === s.id)).slice(0, STUCK_LIST_LIMIT);
     if (sent.length === 0) return [];
     const sentIds = sent.map((s) => s.id);
-    const [consents, verifications, payments, idService] = await Promise.all([
+    const [consents, verifications, payments] = await Promise.all([
       this.consentMap(sentIds),
       this.prisma.identityVerification.findMany({
         where: { jobSeekerId: { in: sentIds } },
@@ -545,7 +545,6 @@ export class CallWorkService {
         where: { jobSeekerId: { in: sentIds }, type: 'activation' },
         select: { jobSeekerId: true, status: true },
       }),
-      this.prisma.kycServiceState.findUnique({ where: { id: 'id-check' } }),
     ]);
     return sent.map((s) => {
       const given = consents.get(s.id) ?? new Set<string>();
@@ -555,8 +554,8 @@ export class CallWorkService {
       let step: string;
       if (!consentDone) step = 'consent';
       else if (!s.photoStoragePath) step = 'selfie';
-      // Only a failed try with another ID waits on the provider; the Aadhaar QR check is in-house.
-      else if (idv?.status !== 'verified') step = idService?.status === 'down' && idv && idv.method !== 'aadhaar_qr' ? 'id_service_down' : 'id_check';
+      // Another government ID waits for the Team Lead's check by eye (guide, 14 Nov).
+      else if (idv?.status !== 'verified') step = idv?.status === 'pending' ? 'id_team_lead_check' : 'id_check';
       else if (s.guaranteeFloorPaise === null) step = 'trade_pending';
       else step = failures > 0 ? 'payment_failed' : 'payment';
       const latest = links.find((l) => l.subjectId === s.id)!;

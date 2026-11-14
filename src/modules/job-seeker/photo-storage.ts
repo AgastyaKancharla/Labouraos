@@ -60,8 +60,10 @@ export class SupabaseCandidatePhotoStorage implements CandidatePhotoStorage {
       method: 'DELETE',
       headers: this.headers(),
     });
+    // 404: already gone. Anything else is a failed delete: the caller keeps the
+    // path and tries again (a photo must never be believed deleted when it isn't).
     if (!response.ok && response.status !== 404) {
-      // 404 is acceptable when file already gone
+      throw new Error(`Candidate photo delete failed with status ${response.status}`);
     }
   }
 

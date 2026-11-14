@@ -29,7 +29,7 @@ import { unzipSync } from 'node:zlib';
  */
 
 /** Why a QR could not be used. The message is safe to show to the person. */
-export type SecureQrFailure = 'old_unsigned_qr' | 'unreadable' | 'bad_signature';
+export type SecureQrFailure = 'old_unsigned_qr' | 'unreadable' | 'bad_signature' | 'cert_missing';
 
 export class SecureQrError extends Error {
   constructor(
@@ -46,6 +46,7 @@ export const SECURE_QR_MESSAGES: Record<SecureQrFailure, string> = {
     "This is an older Aadhaar QR code without UIDAI's digital signature, so it can't be checked. Download your free e-Aadhaar from UIDAI, or use another ID.",
   unreadable: "This doesn't look like an Aadhaar Secure QR code. Scan the QR code on your Aadhaar again, or use another ID.",
   bad_signature: "This Aadhaar QR code failed UIDAI's digital signature check. Scan the QR code on your own Aadhaar card again, or use another ID.",
+  cert_missing: 'This Aadhaar is newer than our check supports. Please use another ID.',
 };
 
 /** A QR code's numeric text is at most ~7,100 digits (version 40); anything longer is refused before parsing. */
@@ -213,13 +214,24 @@ export interface TrustedKey {
   /** A short name for the audit (e.g. the certificate's file name). */
   name: string;
   key: KeyObject;
+  /** Until when UIDAI signed new codes with it (a certificate's notAfter); null for a bare key. */
+  notAfter?: Date | null;
 }
 
 /** A PEM certificate or a PEM public key → the key that checks signatures. */
 export function trustedKeyFromPem(name: string, pem: string): TrustedKey {
   const text = pem.trim();
-  const key = text.includes('BEGIN CERTIFICATE') ? new X509Certificate(text).publicKey : createPublicKey(text);
-  return { name, key };
+  if (text.includes('BEGIN CERTIFICATE')) {
+    const cert = new X509Certificate(text);
+    return { name, key: cert.publicKey, notAfter: new Date(cert.validTo) };
+  }
+  return { name, key: createPublicKey(text), notAfter: null };
+}
+
+/** The latest date any trusted certificate was valid to (null when none says). */
+export function newestCertificateEnd(keys: TrustedKey[]): Date | null {
+  const ends = keys.map((k) => k.notAfter).filter((d): d is Date => d instanceof Date && !Number.isNaN(d.getTime()));
+  return ends.length ? new Date(Math.max(...ends.map((d) => d.getTime()))) : null;
 }
 
 /**

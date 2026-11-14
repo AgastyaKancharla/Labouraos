@@ -79,13 +79,15 @@ Do not leave version ranges like `^11.0.0` in this file.
 
 **Provider switching (mock vs real, from Phase 7 onward):** every external
 integration (OTP/SMS, WhatsApp, telephony, payment collection, payout
-disbursement, the ID check for PAN / driving licence / voter ID) is bound through NestJS DI to an interface — `OtpProvider`,
-`PaymentProvider`, `WhatsAppProvider`, `TelephonyProvider`, and `KycProvider` —
+disbursement) is bound through NestJS DI to an interface — `OtpProvider`,
+`PaymentProvider`, `WhatsAppProvider` and `TelephonyProvider` —
 with a mock implementation and a real one. Which one gets injected is
 controlled by a per-provider environment variable (`OTP_PROVIDER_MODE`,
-`PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`,
-`KYC_PROVIDER_MODE`), each defaulting to `mock` when unset. Never add a second way to pick a
-provider implementation — extend this one.
+`PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`),
+each defaulting to `mock` when unset. Never add a second way to pick a
+provider implementation — extend this one. ID checks have no outside provider
+at all (guide, 14 Nov): Aadhaar is checked in-house from its Secure QR and
+PAN / driving licence / voter ID by the Team Lead from a live photo of the card.
 
 ---
 
@@ -174,7 +176,7 @@ Every number below lives in the `PricingPolicy` table, never as a literal in cod
 - Everything going out — refunds, payouts, rewards — is released by the CEO or Finance.
 
 ### Identity
-- Aadhaar (decided 14 Nov): an in-house check of UIDAI's Secure QR — scanned with his own phone in his link (or read from his e-Aadhaar PDF in the browser), or live in Laboura Field; only the QR's text reaches the server, which checks UIDAI's signature, 18+, the name and whether his OTP-verified phone is linked (not linked: a flag, not a block). No verification company and no outside ID service. PAN, driving licence or voter ID are always offered too. Store only: verified yes/no, method, time, the QR's reference (last 4 + time stamp), name, DOB, gender, area, pincode, name match, phone linked, 18+, the consent; the QR photo only until the Team Lead's check (30 days at most). **Never** the full number, any image of the card, the XML or PDF or the address.
+- Aadhaar (decided 14 Nov): an in-house check of UIDAI's Secure QR — scanned with his own phone in his link (or read from his e-Aadhaar PDF in the browser), or live in Laboura Field; only the QR's text reaches the server, which checks UIDAI's signature, 18+, the name and whether his OTP-verified phone is linked (not linked: a flag, not a block). No verification company and no outside ID service. PAN, driving licence or voter ID are always offered too: a live camera photo of the card plus the typed number, checked by the Team Lead by eye in T-Verify (pending until approved; only the type and last 4 digits are kept; the photo is deleted after the decision or 30 days). Store only: verified yes/no, method, time, the QR's reference (last 4 + time stamp), name, DOB, gender, area, pincode, name match, phone linked, 18+, the consent; the QR photo only until the Team Lead's check (30 days at most). **Never** the full number, any image of the card, the XML or PDF or the address.
 
 ### Keeping data (replaces the 25 October "never delete" rule)
 | Data | Kept | Then |
