@@ -64,10 +64,24 @@ function safeSet(key: string, value: string | null): void {
   }
 }
 
+/**
+ * A session from a token and the staff details shown in the shell. The role
+ * is read from the token's claims rather than the stored staff details, so
+ * editing laboura_staff in sessionStorage does not switch the shell to another
+ * portal by itself. The browser cannot verify the token, so this only keeps
+ * the screens consistent; the API checks every request and is the real
+ * control. A token without a numeric expiry or a staff role gives no session.
+ */
 export function sessionFromToken(token: string, staff: StaffIdentity): Session | null {
   const claims = decodeJwt(token);
-  if (!claims?.exp) return null;
-  return { token, staff, expiresAt: claims.exp * 1000, totpSetupOnly: claims.scope === 'totp_setup' };
+  if (!claims || typeof claims.exp !== 'number' || !Number.isFinite(claims.exp)) return null;
+  if (!isStaffRole(claims.role)) return null;
+  return {
+    token,
+    staff: { ...staff, role: claims.role },
+    expiresAt: claims.exp * 1000,
+    totpSetupOnly: claims.scope === 'totp_setup',
+  };
 }
 
 type Listener = (session: Session | null, reason?: SignOutReason, message?: string) => void;
@@ -85,8 +99,9 @@ class SessionStore {
     const rawStaff = safeGet(STAFF_KEY);
     if (!token || !rawStaff) return null;
     try {
+      // The stored staff details are only for display; the role is taken
+      // from the token (sessionFromToken).
       const staff = JSON.parse(rawStaff) as StaffIdentity;
-      if (!isStaffRole(staff.role)) return null;
       const session = sessionFromToken(token, staff);
       if (!session || session.expiresAt <= Date.now()) return null;
       return session;

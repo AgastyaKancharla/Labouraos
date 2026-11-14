@@ -33,13 +33,14 @@ class TestRbacController {
   }
 
   @Get('business/:id')
-  @RequirePermission('business', 'read')
+  // A route outside /businesses/:id names its record (RbacGuard fails closed otherwise).
+  @RequirePermission('business', 'read', { kind: 'business', from: 'param:id' })
   getBusiness(@Param('id') id: string) {
     return { id, name: 'Sample Business' };
   }
 
   @Post('business/:id')
-  @RequirePermission('business', 'write')
+  @RequirePermission('business', 'write', { kind: 'business', from: 'param:id' })
   writeBusiness(@Param('id') id: string) {
     return { id, updated: true };
   }

@@ -58,7 +58,8 @@ export class AadhaarQrController {
   @Post('field-work/job-seekers/:id/aadhaar-qr')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('field_agent')
-  @RequirePermission('job_seeker', 'write')
+  // The field agent's own registration (RbacGuard: own account), checked again below.
+  @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'param:id' })
   async fieldScan(@Req() req: Authed, @Param('id') id: string, @Body() body: { qrText?: unknown; captureSource?: string }) {
     await this.assertOwnRegistration(req, id);
     if (body?.captureSource !== 'live_camera') throw new BadRequestException('Scan the QR live with the camera');
@@ -73,7 +74,8 @@ export class AadhaarQrController {
   @Post('field-work/job-seekers/:id/other-id')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('field_agent')
-  @RequirePermission('job_seeker', 'write')
+  // The field agent's own registration (RbacGuard: own account), checked again below.
+  @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'param:id' })
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async fieldOtherId(
     @Req() req: Authed,

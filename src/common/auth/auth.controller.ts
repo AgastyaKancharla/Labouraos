@@ -4,6 +4,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Optional,
   Post,
   Req,
   UseGuards,
@@ -20,6 +21,7 @@ import { Public } from '../rbac/public.decorator';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
+import { LiveEventsService } from '../live/live-events.service';
 import { requestedApp } from './staff-app';
 import { fieldAppAddress } from '../../modules/web-app/site-hosts';
 
@@ -31,7 +33,18 @@ interface AuthenticatedRequest extends Request {
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    // Optional so specs that build the controller by hand need not supply it.
+    @Optional() private readonly live?: LiveEventsService,
+  ) {}
+
+  /** A new sign-in can end this person's other sessions: their open live streams check at once. */
+  private afterLogin<T>(result: T): T {
+    const staffId = (result as { staff?: { id?: unknown } } | null)?.staff?.id;
+    if (typeof staffId === 'string') this.live?.recheckSessions(staffId);
+    return result;
+  }
 
   @Post('login')
   @Public('staff login: proves identity itself with code, password, device and second factor')
@@ -47,7 +60,9 @@ export class AuthController {
   ): Promise<LoginResult> {
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    return this.authService.login(loginDto, { ip, userAgent, app: requestedApp(loginDto?.app, req) });
+    return this.afterLogin(
+      await this.authService.login(loginDto, { ip, userAgent, app: requestedApp(loginDto?.app, req) }),
+    );
   }
 
   @Post('login/verify-code')
@@ -64,11 +79,13 @@ export class AuthController {
   ) {
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    return this.authService.verifyLoginCode(
-      body.loginRequestId,
-      body.code,
-      { ip, userAgent, app: requestedApp(body?.app, req) },
-      { deviceId: body.deviceId, loginRequestProof: body.loginRequestProof },
+    return this.afterLogin(
+      await this.authService.verifyLoginCode(
+        body.loginRequestId,
+        body.code,
+        { ip, userAgent, app: requestedApp(body?.app, req) },
+        { deviceId: body.deviceId, loginRequestProof: body.loginRequestProof },
+      ),
     );
   }
 
@@ -111,7 +128,10 @@ export class AuthController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles(...ALL_STAFF_ROLES)
   @AllowTotpSetupScope()
-  logout(@Req() req: AuthenticatedRequest) {
-    return this.authService.logout(req.user);
+  async logout(@Req() req: AuthenticatedRequest) {
+    const result = await this.authService.logout(req.user);
+    // The signed-out session's live stream closes now (LiveController).
+    this.live?.recheckSessions(req.user.sub);
+    return result;
   }
 }

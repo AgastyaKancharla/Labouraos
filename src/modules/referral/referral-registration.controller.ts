@@ -23,6 +23,7 @@ import { CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/ph
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
+import { RequirePermission } from '../../common/rbac/permissions.decorator';
 import { Public } from '../../common/rbac/public.decorator';
 import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 import { PricingService } from '../pricing/pricing.service';
@@ -232,6 +233,8 @@ export class ReferralRegistrationController {
   @Get('referrals/:id/registration-status')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo', 'finance')
+  // A Team Lead sees only their own team's partners (RbacGuard, own team).
+  @RequirePermission('referral', 'read')
   async getRegistrationStatus(@Param('id') id: string) {
     return this.status(id);
   }

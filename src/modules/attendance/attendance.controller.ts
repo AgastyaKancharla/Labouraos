@@ -20,7 +20,7 @@ export class AttendanceController {
   ) {}
 
   @Post('login')
-  @RequireRoles(...STAFF_ROLES)
+  @RequireRoles('manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
   login(
     @Req() req: Authed,
     @Body() body: { latitude?: number; longitude?: number; loginAt?: string },
@@ -29,19 +29,19 @@ export class AttendanceController {
   }
 
   @Post('logout')
-  @RequireRoles(...STAFF_ROLES)
+  @RequireRoles('manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
   logout(@Req() req: Authed) {
     return this.attendance.logout(req.user.sub);
   }
 
   @Post('status')
-  @RequireRoles(...STAFF_ROLES)
+  @RequireRoles('manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
   setStatus(@Req() req: Authed, @Body() body: { status?: string }) {
     return this.attendance.setStatus(req.user.sub, body?.status ?? '');
   }
 
   @Post('heartbeat')
-  @RequireRoles(...STAFF_ROLES)
+  @RequireRoles('manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
   heartbeat(@Req() req: Authed) {
     return this.attendance.heartbeat(req.user.sub);
   }

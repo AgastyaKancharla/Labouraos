@@ -1,4 +1,6 @@
 import {
+  BadRequestException,
+  ConflictException,
   ForbiddenException,
   Inject,
   Injectable,
@@ -14,6 +16,7 @@ import {
   TelephonyCapacity,
   TelephonyProvider,
 } from './telephony.interface';
+import { OwnTeam } from '../../common/rbac/own-team';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
@@ -24,6 +27,8 @@ import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 /** Only who a callback is with: never the whole staff row (password hash, TOTP secret, invite token hash). */
 const CALLBACK_STAFF_SELECT = { id: true, code: true, name: true } as const;
+/** Who a missed call can be given to. */
+const CALLBACK_AGENT_ROLES = ['call_agent', 'field_agent'];
 /** The job seeker fields a callback row shows (the phone is masked for everyone but the CEO). */
 const CALLBACK_SEEKER_SELECT = { id: true, code: true, name: true, phone: true, status: true } as const;
 
@@ -140,6 +145,36 @@ export class TelephonyService {
     });
   }
 
+  /** A Team Lead's own team (the one shared definition, OwnTeam). */
+  private teamOf(teamLeadId: string): Promise<string[]> {
+    return new OwnTeam(this.prisma, this.scope).memberIds(teamLeadId);
+  }
+
+  /**
+   * Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own
+   * team. They act on a missed call that is unassigned or held by their team,
+   * never one another team holds.
+   */
+  private assertCallbackInTeam(callback: { assignedToStaffId: string | null }, team: string[]): void {
+    if (callback.assignedToStaffId && !team.includes(callback.assignedToStaffId)) {
+      throw new ForbiddenException('Access denied: this missed call is with another team');
+    }
+  }
+
+  /**
+   * Give a missed call to someone (owner decision, 14 Nov):
+   * - a call agent: only one that is unassigned (take it, or give it to a
+   *   colleague) or assigned to himself (hand it over); never one someone
+   *   else holds;
+   * - a Team Lead: one that is unassigned or held by their team, to someone
+   *   on their team;
+   * - Managers and the CEO: any.
+   * The person it goes to must be an active call or field agent. When they
+   * are not Available it goes to the next Available agent (a Team Lead's:
+   * on the same team); when nobody is, the answer says so (409) and the
+   * missed call stays where it was. The change only applies if nobody moved
+   * the missed call in between (checked in the update itself).
+   */
   async assignCallback(id: string, staffId: string, actor?: JwtPayload) {
     const existing = await this.prisma.callbackTask.findUnique({
       where: { id },
@@ -148,45 +183,92 @@ export class TelephonyService {
       throw new NotFoundException(`Callback task '${id}' not found`);
     }
 
-    if (actor?.role === 'team_lead' && staffId !== actor.sub) {
-      const targetStaff = await this.prisma.staff.findUnique({
-        where: { id: staffId },
-        select: { teamLeadId: true },
-      });
-      if (!targetStaff || targetStaff.teamLeadId !== actor.sub) {
+    const target = staffId
+      ? await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, status: true } })
+      : null;
+    if (!target || target.status !== 'active' || !CALLBACK_AGENT_ROLES.includes(target.role)) {
+      throw new BadRequestException('A missed call can only go to an active call or field agent');
+    }
+
+    let team: string[] | null = null;
+    if (actor?.role === 'team_lead') {
+      team = await this.teamOf(actor.sub);
+      this.assertCallbackInTeam(existing, team);
+      if (!team.includes(staffId)) {
         throw new ForbiddenException(
           `Access denied: staff '${staffId}' is not part of your team`,
         );
       }
+    } else if (
+      (actor?.role === 'call_agent' || actor?.role === 'field_agent') &&
+      existing.assignedToStaffId &&
+      existing.assignedToStaffId !== actor.sub
+    ) {
+      throw new ForbiddenException('Access denied: this missed call is held by someone else');
     }
 
     let assignTo = staffId;
     if (!(await this.attendance.isAvailable(staffId))) {
-      const next = await this.attendance.nextAvailableAgent(staffId);
+      // A Team Lead's missed call goes only to someone on their own team.
+      const next = team
+        ? await this.nextAvailableIn(team.filter((member) => member !== staffId && member !== actor?.sub))
+        : await this.attendance.nextAvailableAgent(staffId);
       if (!next) {
-        return existing;
+        throw new ConflictException({
+          message: team
+            ? 'Nobody on your team is Available right now. The missed call stays in the queue.'
+            : 'No agent is Available right now. The missed call stays in the queue.',
+          reason: 'nobody_available',
+        });
       }
       assignTo = next;
     }
 
-    return this.prisma.callbackTask.update({
+    const moved = await this.prisma.callbackTask.updateMany({
+      where: { id, assignedToStaffId: existing.assignedToStaffId, status: existing.status },
+      data: { assignedToStaffId: assignTo, status: 'assigned' },
+    });
+    if (moved.count !== 1) {
+      throw new ConflictException({
+        message: 'Someone else changed this missed call just now. Refresh and try again.',
+        reason: 'changed_meanwhile',
+      });
+    }
+    return this.prisma.callbackTask.findUniqueOrThrow({
       where: { id },
-      data: {
-        assignedToStaffId: assignTo,
-        status: 'assigned',
-      },
       include: {
         assignedToStaff: { select: CALLBACK_STAFF_SELECT },
       },
     });
   }
 
-  async completeCallback(id: string) {
+  private async nextAvailableIn(staffIds: string[]): Promise<string | null> {
+    for (const id of staffIds) {
+      if (await this.attendance.isAvailable(id)) return id;
+    }
+    return null;
+  }
+
+  /**
+   * Mark a missed call done. A Team Lead: one that is unassigned or with their
+   * team. An agent: one that is unassigned or theirs (the queue they see).
+   * Managers and the CEO: any.
+   */
+  async completeCallback(id: string, actor?: JwtPayload) {
     const existing = await this.prisma.callbackTask.findUnique({
       where: { id },
     });
     if (!existing) {
       throw new NotFoundException(`Callback task '${id}' not found`);
+    }
+    if (actor?.role === 'team_lead') {
+      this.assertCallbackInTeam(existing, await this.teamOf(actor.sub));
+    } else if (
+      (actor?.role === 'call_agent' || actor?.role === 'field_agent') &&
+      existing.assignedToStaffId &&
+      existing.assignedToStaffId !== actor.sub
+    ) {
+      throw new ForbiddenException('Access denied: this missed call is assigned to someone else');
     }
 
     return this.prisma.callbackTask.update({
