@@ -92,6 +92,9 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
         status: 'active',
         whatsappPhone: `919${suffix}${String(timestamp).slice(-7)}`,
         locality: 'Private locality name',
+        // Registered by the field agent on the Team Lead's team: a Team Lead's
+        // candidate lists hold only their own team's job seekers (owner decision, 14 Nov).
+        registeredByStaffId: staffIds.field_agent,
       },
     });
     const seeker = await createSeeker('1');
