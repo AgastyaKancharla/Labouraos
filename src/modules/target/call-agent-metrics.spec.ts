@@ -11,7 +11,8 @@ import { seededPricingService } from '../../test-support/seeded-pricing';
 
 describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
   type MockPrismaService = {
-    staff: { findUnique: jest.Mock };
+    staff: { findUnique: jest.Mock; findFirst: jest.Mock };
+    signupTracker: { findMany: jest.Mock };
     jobSeeker: { count: jest.Mock; findMany: jest.Mock };
     vacancy: { count: jest.Mock };
     payment: { findMany: jest.Mock };
@@ -108,7 +109,10 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
           }
           return Promise.resolve(null);
         }),
+        // Customer app: assisted app sign-ups (none in these tests).
+        findFirst: jest.fn().mockResolvedValue(null),
       },
+      signupTracker: { findMany: jest.fn().mockResolvedValue([]) },
       jobSeeker: {
         count: jest.fn().mockResolvedValue(0),
         findMany: jest.fn().mockResolvedValue([]),

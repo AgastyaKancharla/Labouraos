@@ -71,7 +71,7 @@ describe('H3: JobScheduleKeeper keeps every schedule in Redis and runs any job o
     const { keeper, jobs } = buildWithFakes();
     jobs[3].schedule.mockRejectedValue(new Error('Redis down'));
     const result = await keeper.ensureAll('test');
-    expect(result.registered).toHaveLength(13);
+    expect(result.registered).toHaveLength(14);
     expect(result.failed).toEqual([{ key: 'claimOverdue', error: 'Redis down' }]);
   });
 

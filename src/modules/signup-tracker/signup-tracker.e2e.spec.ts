@@ -73,7 +73,6 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '21:00',
         status: 'lead',
-        heardFrom: 'laboura_app',
         registeredByStaffId,
         trades: { create: { trade: 'Cook', isPrimary: true } },
       },
@@ -359,7 +358,6 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
         latitude: 12.9716,
         longitude: 77.5946,
         verificationStatus: 'lead',
-        heardFrom: 'laboura_app',
       },
     });
     businessIds.push(business.id);
