@@ -112,7 +112,8 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
         Registered by {row.registeredBy?.name ?? '—'}
         {row.trade ? ` · ${row.trade}` : ''}
       </p>
-      <div className="tl-reg">
+      <div className="tl-reg tl-reg--pair">
+        <div className="tl-photos">
         <div>
           <div className="tl-photo">
             {photos?.selfieUrl ? <img src={photos.selfieUrl} alt={`Selfie of ${row.jobSeeker.name}`} /> : !row.hasSelfie ? 'No selfie yet' : photos ? 'No selfie stored' : 'Selfie'}
@@ -134,6 +135,7 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
             )}
           </div>
           <div className="tl-sub">{qr ? 'Photo from the Aadhaar QR' : 'ID check (no ID photo is stored)'}</div>
+        </div>
         </div>
         <div>
           {qr && id?.verifiedByUidai ? (
