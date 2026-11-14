@@ -79,6 +79,7 @@ One task after another, in order, each on its own branch; build on the latest `m
 **Branch:** `phase-14/task-4-map` · **No migration**
 
 **Acceptance:**
+> **Retired 14 Nov 2026:** `GET /map/points` was removed with the old map page; no current screen used it. Laboura Field's map uses `/field-work/map`. Kept below as history only.
 - `GET /map/points?bbox=&trade=` returns, inside the box: businesses (exact point, name, verification status, account agent's name), open vacancies (exact point, role, trade, salary range), and **candidate dots** — active job seekers with `job_matching` consent, grouped into area cells with coordinates **rounded on the server to 2 decimal places** (about 1 km), each cell with a count and the trades in it. **A job seeker's exact location is never sent to the browser**, for any role.
 - Who sees the map: CEO, Manager, Team Lead, call agent, field agent — everyone sees all businesses (so two agents don't onboard the same shop). Finance doesn't need it.
 - The console page uses an OpenStreetMap-based map (Leaflet, pinned version, from an allowed CDN); no Google Maps. Clicking a business opens its profile; clicking a vacancy opens its shortlist.

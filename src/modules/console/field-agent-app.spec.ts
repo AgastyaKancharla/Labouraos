@@ -6,10 +6,9 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
-import { PriorityCandidateRow } from '../field-agent/priority.types';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
-describe('Phase 6 Task 6: Field Agent API & Priority Dashboard (the old page is retired; Laboura Field replaced it)', () => {
+describe('Phase 6 Task 6: Field Agent API (the old page and its priority endpoints are retired; Laboura Field replaced them)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let otpService: OtpService;
@@ -72,72 +71,6 @@ describe('Phase 6 Task 6: Field Agent API & Priority Dashboard (the old page is 
     if (app) {
       await app.close();
     }
-  });
-
-  it('Priority Dashboard screen reflects live data from /priority/* and updates after re-fetch', async () => {
-    // 1. Initial fetch from /priority/candidates (city-wide)
-    const initCandidatesRes = await request(app.getHttpServer())
-      .get('/priority/candidates')
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .expect(200);
-    expect(Array.isArray(initCandidatesRes.body)).toBe(true);
-
-    // 2. Initial fetch from /priority/vacancies (city-wide)
-    const initVacanciesRes = await request(app.getHttpServer())
-      .get('/priority/vacancies')
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .expect(200);
-    expect(Array.isArray(initVacanciesRes.body)).toBe(true);
-
-    // 3. Initial fetch from /priority/trades (city-wide)
-    const initTradesRes = await request(app.getHttpServer())
-      .get('/priority/trades')
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .expect(200);
-    expect(Array.isArray(initTradesRes.body)).toBe(true);
-
-    // 4. Create a 2-hit candidate city-wide to test urgency flag reflection
-    const phone = `95001${String(timestamp).slice(-5)}`;
-    const otpRes = await request(app.getHttpServer())
-      .post('/otp/send')
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({ phone, purpose: 'job_seeker' })
-      .expect(201);
-    const otpCode = (otpService.getProvider() as MockOtpProvider).getCode(otpRes.body.requestId)!;
-    await request(app.getHttpServer())
-      .post('/otp/verify')
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .send({ requestId: otpRes.body.requestId, code: otpCode })
-      .expect(201);
-
-    const candidate = await prisma.jobSeeker.create({
-      data: {
-        code: `JS-PD-${timestamp}`,
-        name: 'Urgent Seeker',
-        phone,
-        phoneVerified: true,
-        trades: { create: { trade: 'Carpenter', isPrimary: true } },
-        minSalary: 1500000,
-        maxSalary: 2500000,
-        preferredCallWindowStart: '09:00',
-        preferredCallWindowEnd: '18:00',
-        status: 'active',
-        hitCount: 2, // 2-hit candidate!
-        paymentReceivedAt: new Date(),
-        city: 'Bengaluru',
-      },
-    });
-
-    // 5. Re-fetch candidate urgency: live data reflects the newly created candidate with 2 hits
-    const reFetchedCandidates = await request(app.getHttpServer())
-      .get('/priority/candidates')
-      .set('Authorization', `Bearer ${faKoraToken}`)
-      .expect(200);
-
-    const found = reFetchedCandidates.body.find((c: PriorityCandidateRow) => c.id === candidate.id);
-    expect(found).toBeDefined();
-    expect(found.twoHitFlag).toBe(true);
-    expect(found.band).toBeDefined();
   });
 
   it('does not persist deprecated area and grants vacancy writes only to the account agent', async () => {

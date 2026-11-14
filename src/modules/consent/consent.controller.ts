@@ -35,6 +35,8 @@ export class ConsentController {
   @Post('withdraw')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  // A Team Lead: only their own team's job seekers (owner rule, 14 Nov).
+  @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
   withdraw(@Body() body: AgentConsentWithdrawalDto, @Req() req: AuthenticatedRequest) {
     return this.consentWithdrawalService.withdraw(
       { id: req.user.sub, role: req.user.role },
@@ -45,6 +47,7 @@ export class ConsentController {
   @Get('withdrawal-eligibility')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('job_seeker', 'read', { kind: 'job_seeker', from: 'query:jobSeekerId' })
   withdrawalEligibility(@Query('jobSeekerId') jobSeekerId: string, @Req() req: AuthenticatedRequest) {
     return this.consentWithdrawalService.eligibility({ id: req.user.sub }, jobSeekerId);
   }
@@ -57,7 +60,7 @@ export class ConsentController {
   @Post('links')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('job_seeker', 'write')
+  @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
   async createLink(@Body('jobSeekerId') jobSeekerId: string) {
     return this.consentLinkService.createLink(jobSeekerId);
   }

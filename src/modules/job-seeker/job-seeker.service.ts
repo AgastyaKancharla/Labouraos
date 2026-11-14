@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
@@ -387,8 +388,8 @@ export class JobSeekerService {
   async findAll(actor?: { id: string; role: string }, page: { limit?: number; offset?: number } = {}) {
     const where: Prisma.JobSeekerWhereInput = {};
     if (actor?.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
-      where.registeredByStaffId = { in: [actor.id, ...team.map((t) => t.id)] };
+      // The same team every Team Lead check uses (OwnTeam).
+      where.registeredByStaffId = { in: await new OwnTeam(this.prisma).memberIds(actor.id) };
     }
     const take = page.limit !== undefined ? Math.min(Math.max(Math.trunc(page.limit), 1), 500) : undefined;
     const skip = page.offset !== undefined ? Math.max(Math.trunc(page.offset), 0) : undefined;
