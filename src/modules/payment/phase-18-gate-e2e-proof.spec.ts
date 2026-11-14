@@ -498,7 +498,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       // 4. Referral partner enters UPI on phone via payout link + OTP
       await request(app.getHttpServer())
         .post('/payout-accounts/links')
-        .set('Authorization', `Bearer ${callAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ ownerType: 'referral', ownerId: partner.id })
         .expect(201);
 
@@ -648,7 +648,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       // Business enters bank account via payout link + OTP
       await request(app.getHttpServer())
         .post('/payout-accounts/links')
-        .set('Authorization', `Bearer ${callAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ ownerType: 'business', ownerId: biz.id })
         .expect(201);
 
@@ -766,7 +766,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       // Initial account
       await request(app.getHttpServer())
         .post('/payout-accounts/links')
-        .set('Authorization', `Bearer ${callAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ ownerType: 'referral', ownerId: partner.id })
         .expect(201);
 
@@ -791,7 +791,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
       // Now partner changes UPI ID
       await request(app.getHttpServer())
         .post('/payout-accounts/links')
-        .set('Authorization', `Bearer ${callAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ ownerType: 'referral', ownerId: partner.id })
         .expect(201);
 
@@ -1024,7 +1024,7 @@ describe('Phase 18 Gate End-to-End Proof', () => {
 
       await request(app.getHttpServer())
         .post('/payout-accounts/links')
-        .set('Authorization', `Bearer ${callAgentToken}`)
+        .set('Authorization', `Bearer ${financeToken}`)
         .send({ ownerType: 'job_seeker', ownerId: seeker.id })
         .expect(201);
 

@@ -6,6 +6,6 @@
     "dist",
     "prisma",
     "**/*spec.ts",
-    "web", "field"
+    "web", "field", "customer"
   ]
 }

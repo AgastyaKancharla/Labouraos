@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ConflictException,
@@ -226,11 +227,8 @@ export class ReferralService {
    */
   private async readScope(viewer?: { id: string; role: string }): Promise<Prisma.ReferralWhereInput> {
     if (viewer?.role !== 'team_lead') return {};
-    const team = await this.prisma.staff.findMany({
-      where: { OR: [{ teamLeadId: viewer.id }, { reportsToId: viewer.id }] },
-      select: { id: true },
-    });
-    return { registeredByStaffId: { in: [viewer.id, ...team.map((s) => s.id)] } };
+    // The same team every Team Lead check uses (OwnTeam).
+    return { registeredByStaffId: { in: await new OwnTeam(this.prisma).memberIds(viewer.id) } };
   }
 
   /** The registering agent: the signed-in staff member (the only caller), never 'system'. */
