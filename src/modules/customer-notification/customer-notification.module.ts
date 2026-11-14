@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
+import { CustomerAuthModule } from '../../common/customer-auth/customer-auth.module';
 import { CustomerInboxService } from './customer-inbox.service';
 import { CustomerNotificationClock } from './customer-notification.clock';
 import { CustomerNotificationController } from './customer-notification.controller';
@@ -17,10 +18,13 @@ import { createCustomerPushProvider, CUSTOMER_PUSH_PROVIDER } from './push-provi
  *
  * Other modules import this module and call CustomerNotificationService
  * (notify) or CustomerNotificationHooks (their existing events). It imports
- * only PrismaModule, so importing it can never make a module cycle.
+ * only PrismaModule and the customer sign-in module, so importing it can
+ * never make a module cycle.
  */
 @Module({
-  imports: [PrismaModule],
+  // CustomerAuthModule is global in the app; imported here too so a test that
+  // builds only one module (PaymentModule, VacancyModule…) still has the guard.
+  imports: [PrismaModule, CustomerAuthModule],
   controllers: [CustomerNotificationController],
   providers: [
     CustomerNotificationClock,

@@ -179,9 +179,12 @@ export class ExpoCustomerPushProvider implements CustomerPushProvider {
   }
 }
 
+/** The one setting that picks the push provider (AGENTS.md section 3). */
+export const CUSTOMER_PUSH_PROVIDER_MODE_SETTING = 'CUSTOMER_PUSH_PROVIDER_MODE';
+
 /** CUSTOMER_PUSH_PROVIDER_MODE: mock (default) or real (also accepted: expo). */
 export function createCustomerPushProvider(env: NodeJS.ProcessEnv = process.env): CustomerPushProvider {
-  const raw = env.CUSTOMER_PUSH_PROVIDER_MODE;
+  const raw = env[CUSTOMER_PUSH_PROVIDER_MODE_SETTING];
   const mode = raw && raw !== 'undefined' ? raw.trim().toLowerCase() : 'mock';
   if (mode === 'mock') return new MockCustomerPushProvider();
   if (mode === 'real' || mode === 'expo') return new ExpoCustomerPushProvider(env.EXPO_ACCESS_TOKEN || undefined);
