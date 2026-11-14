@@ -159,7 +159,7 @@ describe('Background job schedules run on India time', () => {
   });
 
   it('keeps the short-interval jobs on fixed intervals', () => {
-    expect(INTERVAL_JOB_MS).toEqual({ interviewReply: 60_000, kycRecovery: 900_000, notificationSweep: 300_000 });
+    expect(INTERVAL_JOB_MS).toEqual({ interviewReply: 60_000, kycRecovery: 900_000, notificationSweep: 300_000, customerPush: 60_000 });
   });
 
   it('no job file schedules with a raw 24-hour interval or an inline pattern', () => {

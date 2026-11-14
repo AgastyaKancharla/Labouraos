@@ -3,6 +3,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, Staff } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -17,6 +18,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessClock } from './business-clock';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
 const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
@@ -41,6 +43,7 @@ export class BusinessVerificationService {
     private readonly otpService: OtpService,
     private readonly reviewFlagService: ReviewFlagService,
     private readonly clock: BusinessClock,
+    @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
   ) {}
 
   async listAssignments(staffId: string, role: string) {
@@ -236,6 +239,8 @@ export class BusinessVerificationService {
       changedFields: ['assignedStaffId', 'assignedByStaffId', 'status'],
       city: assignment.business.city,
     });
+    // Customer app notification (Agent C): "visit booked" when the owner picked a time in the app.
+    await this.customerNotifications?.visitAssigned(updated.id);
     return updated;
   }
 
@@ -633,6 +638,8 @@ export class BusinessVerificationService {
       changedFields: ['verificationStatus', 'verifiedAt', 'verifiedByStaffId', 'accountAgentId', 'accountAgentAssignedAt'],
       city: business.city,
     });
+    // Customer app notification (Agent C).
+    await this.customerNotifications?.businessApproved(businessId);
     return updated;
   }
 

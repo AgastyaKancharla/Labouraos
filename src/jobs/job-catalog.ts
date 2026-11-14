@@ -37,6 +37,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'interviewReply', queue: 'interview-reply-deadlines', schedulerId: 'interview-reply-deadline-scheduler', runName: 'process-due-interview-replies', label: 'Offer reply and payment deadlines' },
   { key: 'kycRecovery', queue: 'kyc-recovery', schedulerId: 'kyc-recovery-scheduler', runName: 'probe-id-check-recovery', label: 'ID check recovery' },
   { key: 'notificationSweep', queue: 'notification-sweep', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock' },
+  { key: 'customerPush', queue: 'customer-push', schedulerId: 'customer-push-scheduler', runName: 'send-due-customer-pushes', label: 'Customer app notifications (push)' },
 ];
 
 /** BullMQ keeps each queue's schedulers in this sorted set (default `bull` prefix). */

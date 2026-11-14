@@ -16,6 +16,7 @@ import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { UpiCollectionService } from './upi-collection.service';
 import { paymentProviderMode } from './payment-mode';
 import { MonthLockModule } from '../month-lock/month-lock.module';
+import { CustomerNotificationModule } from '../customer-notification/customer-notification.module';
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { MonthLockModule } from '../month-lock/month-lock.module';
     MessageModule,
     ReviewFlagModule,
     MonthLockModule,
+    CustomerNotificationModule,
   ],
   controllers: [PaymentController],
   providers: [

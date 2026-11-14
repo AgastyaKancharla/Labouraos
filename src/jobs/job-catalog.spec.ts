@@ -9,6 +9,7 @@ import { JOINING_REWARD_QUEUE, JOINING_REWARD_SWEEP } from './joining-reward.job
 import { KYC_RECOVERY_QUEUE, KYC_RECOVERY_SWEEP } from './kyc-recovery.job';
 import { NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB } from './no-pickup-evaluation.job';
 import { NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP } from './notification-sweep.job';
+import { CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND } from './customer-push.job';
 import { PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP } from './pattern-flags.job';
 import { PLACEMENT_COMPLETION_QUEUE, PLACEMENT_COMPLETION_SWEEP } from './placement-completion.job';
 import { RETENTION_CLEANUP_QUEUE } from './retention-cleanup.job';
@@ -30,6 +31,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       kycRecovery: [KYC_RECOVERY_QUEUE, KYC_RECOVERY_SWEEP],
       noPickupEvaluation: [NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB],
       notificationSweep: [NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP],
+      customerPush: [CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND],
       patternFlags: [PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP],
       placementCompletion: [PLACEMENT_COMPLETION_QUEUE, PLACEMENT_COMPLETION_SWEEP],
       // Retention records its own JobRun rows, under the retention service's name.

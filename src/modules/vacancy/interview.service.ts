@@ -29,6 +29,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PlacementService } from '../placement/placement.service';
 import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
 import { sameIndianMobile } from '../../common/phone/indian-mobile';
+import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 
 /** The fixed reasons an owner picks for "not selected" (P05). */
 export const NOT_SELECTED_REASONS = ['skills', 'experience', 'communication', 'salary_expectation', 'not_suitable', 'other'] as const;
@@ -88,6 +89,7 @@ export class InterviewService {
     private readonly reviewFlags: ReviewFlagService,
     private readonly placements: PlacementService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
+    @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
   ) {}
 
   async book(dto: BookInterviewDto, staffId: string) {
@@ -346,6 +348,9 @@ export class InterviewService {
       changedFields: ['status', 'vacancyId', 'businessId', 'jobSeekerId', 'vacancyInterviewSlotId'],
       reason: 'Suitable candidate offered an interview slot',
     });
+    // Customer app notification (Agent C): an urgent push on top of the offer's call, SMS and
+    // WhatsApp. The offer, its 48-hour clock and every hit rule are unchanged; never a contact attempt.
+    await this.customerNotifications?.interviewOffered(created.interview.id);
     return { ...created.interview, offerMessageLogIds: messageLogIds };
   }
 

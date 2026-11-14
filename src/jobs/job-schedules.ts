@@ -69,4 +69,6 @@ export const INTERVAL_JOB_MS = {
   kycRecovery: 15 * 60 * 1000,
   /** Phase 21 Task 6: bells that change with the clock (escalation, idle, break overrun). */
   notificationSweep: 5 * 60 * 1000,
+  /** Customer app pushes (Agent C): what is due, every minute; a "send now" kick makes most go at once. */
+  customerPush: 60_000,
 } as const;

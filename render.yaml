@@ -143,6 +143,12 @@ services:
         value: mock
       - key: KYC_PROVIDER_MODE
         value: mock
+      # Customer app pushes (Expo push service -> Google FCM / Apple APNs). mock logs instead of sending.
+      - key: CUSTOMER_PUSH_PROVIDER_MODE
+        value: mock
+      # Only if "enhanced push security" is switched on in the Expo account.
+      - key: EXPO_ACCESS_TOKEN
+        sync: false
       # SMS and OTP (MSG91 or another DLT-registered gateway)
       - key: SMS_API_KEY
         sync: false
@@ -306,6 +312,14 @@ services:
         value: mock
       - key: KYC_PROVIDER_MODE
         value: mock
+      # The worker sends the customer app pushes.
+      - key: CUSTOMER_PUSH_PROVIDER_MODE
+        value: mock
+      - key: EXPO_ACCESS_TOKEN
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: EXPO_ACCESS_TOKEN
 
   # Job queue. Paid fixed plan: the free plan's command limit runs out because
   # the worker checks the queue constantly. noeviction is required by BullMQ

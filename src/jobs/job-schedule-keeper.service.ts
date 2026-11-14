@@ -21,6 +21,7 @@ import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
 import { KycRecoveryJob } from './kyc-recovery.job';
 import { NotificationSweepJob } from './notification-sweep.job';
+import { CustomerPushJob } from './customer-push.job';
 
 /** How often the keeper checks that every schedule is still in Redis. */
 export const DEFAULT_SCHEDULE_CHECK_INTERVAL_MS = 10 * 60 * 1000;
@@ -100,6 +101,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
     interviewReply: InterviewReplyJob,
     kycRecovery: KycRecoveryJob,
     notificationSweep: NotificationSweepJob,
+    customerPush: CustomerPushJob,
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly alerts?: AlertService,
   ) {
@@ -118,6 +120,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
       interviewReply: { schedule: () => interviewReply.schedule(), run: () => interviewReply.process() },
       kycRecovery: { schedule: () => kycRecovery.schedule(), run: () => kycRecovery.process() },
       notificationSweep: { schedule: () => notificationSweep.schedule(), run: () => notificationSweep.process() },
+      customerPush: { schedule: () => customerPush.schedule(), run: () => customerPush.process() },
     };
   }
 
