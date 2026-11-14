@@ -15,10 +15,12 @@ import type { Language } from '@/i18n';
 import type { PushApi } from './pushApi';
 import { pushText } from './strings';
 
+// Read lazily (not at import time), so a test that fakes expo-notifications
+// without the Android enums can still import this file.
 export const ANDROID_CHANNELS = [
-  { id: 'service', key: 'channel.service', importance: AndroidImportance.HIGH },
-  { id: 'job-updates', key: 'channel.jobUpdates', importance: AndroidImportance.DEFAULT },
-  { id: 'promotions', key: 'channel.promotions', importance: AndroidImportance.LOW },
+  { id: 'service', key: 'channel.service', importance: () => AndroidImportance?.HIGH },
+  { id: 'job-updates', key: 'channel.jobUpdates', importance: () => AndroidImportance?.DEFAULT },
+  { id: 'promotions', key: 'channel.promotions', importance: () => AndroidImportance?.LOW },
 ] as const;
 
 export async function ensureAndroidChannels(language: Language): Promise<void> {
@@ -26,10 +28,10 @@ export async function ensureAndroidChannels(language: Language): Promise<void> {
   for (const channel of ANDROID_CHANNELS) {
     await Notifications.setNotificationChannelAsync(channel.id, {
       name: pushText(language, channel.key),
-      importance: channel.importance,
+      importance: channel.importance(),
       lightColor: '#0055C0',
       // Lock screen: the text is already free of private details (server rule).
-      lockscreenVisibility: AndroidNotificationVisibility.PRIVATE,
+      lockscreenVisibility: AndroidNotificationVisibility?.PRIVATE,
     });
   }
 }
