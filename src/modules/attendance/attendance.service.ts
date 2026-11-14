@@ -6,7 +6,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { AttendanceDay, AttendanceSegment, PricingPolicy } from '@prisma/client';
+import { AttendanceDay, AttendanceSegment, Prisma, PricingPolicy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
@@ -24,6 +24,7 @@ import {
 } from './attendance.constants';
 import { dayResultFor, lateMinutesFor, productionTargetSeconds } from './day-rules';
 import { WorkingDaysService } from './working-days.service';
+import { isOwnerAccount } from '../staff/owner-account';
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
 
@@ -75,6 +76,12 @@ export interface TodayView {
   meetingSeconds: number;
   segments: TodaySegment[];
   policy: TodayPolicy;
+  /**
+   * Owner account (owner decision 14 Nov): no attendance is tracked. The day
+   * starts by itself, never late, and only carries the live status the phone
+   * system routes calls by.
+   */
+  ownerAccount: boolean;
 }
 
 @Injectable()
@@ -147,7 +154,11 @@ export class AttendanceService {
     const existing = await this.prisma.attendanceDay.findUnique({
       where: { staffId_date: { staffId, date } },
     });
+    const owner = isOwnerAccount(staff);
     if (existing?.logoutAt) {
+      // An owner account has no attendance: ending the day only stops the live
+      // status, so starting again reopens it (owner decision 14 Nov).
+      if (owner) return this.reopenOwnerDay(existing.id, staffId, now);
       throw new BadRequestException('This day is already closed');
     }
     if (existing?.loginAt) {
@@ -155,7 +166,14 @@ export class AttendanceService {
     }
     let loginLat: number | null = null;
     let loginLng: number | null = null;
-    if (staff.role === 'field_agent') {
+    const validLocation = this.validCoordinate(body.latitude, body.longitude);
+    if (owner) {
+      // No location rule for an owner account: its day can start by itself. A location sent is kept.
+      if (validLocation) {
+        loginLat = body.latitude as number;
+        loginLng = body.longitude as number;
+      }
+    } else if (staff.role === 'field_agent') {
       if (!this.validCoordinate(body.latitude, body.longitude)) {
         throw new BadRequestException('Field agents save their location at login');
       }
@@ -164,7 +182,8 @@ export class AttendanceService {
     }
     // A login on a leave day (full day, or two halves joined) makes it a working day with normal
     // lateness; on a half day of leave the working half starts mid-shift when the first half is off.
-    const lateMinutes = this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
+    // Owner accounts are never late (owner decision 14 Nov).
+    const lateMinutes = owner ? 0 : this.lateMinutes(now, policy, existing?.leaveKind ? existing.leaveHalf : null);
     if (existing) {
       // A day marked absent or leave before the person logged in becomes a
       // working day. The leave fields stay so the leave flow can see them.
@@ -253,9 +272,11 @@ export class AttendanceService {
       where: { staffId_date: { staffId, date: this.istDate(now) } },
       include: { segments: { orderBy: { startedAt: 'asc' } } },
     });
+    const owner = isOwnerAccount(await this.prisma.staff.findUnique({ where: { id: staffId }, select: { isOwnerAccount: true } }));
     if (!day || !day.loginAt) {
       const leaveHalf = day?.leaveKind ? (day.leaveHalf ?? null) : null;
-      return { ...this.emptyToday(now, policy, Boolean(leaveHalf)), dayType: day?.dayType ?? 'open', leaveHalf };
+      const empty = this.emptyToday(now, policy, Boolean(leaveHalf));
+      return { ...empty, dayType: day?.dayType ?? 'open', leaveHalf, ownerAccount: owner, ...(owner ? { shortfallSeconds: 0 } : {}) };
     }
     const end = day.logoutAt ?? now;
     const totals = this.totals(day.segments, now);
@@ -278,9 +299,11 @@ export class AttendanceService {
       productionSeconds: day.logoutAt ? day.productionSeconds : totals.productionSeconds,
       breakSeconds: day.logoutAt ? day.breakSeconds : totals.breakSeconds,
       idleSeconds: day.logoutAt ? day.idleSeconds : totals.idleSeconds,
-      shortfallSeconds: day.logoutAt
-        ? day.shortfallSeconds
-        : Math.max(0, fullSeconds - totals.productionSeconds),
+      shortfallSeconds: owner
+        ? 0
+        : day.logoutAt
+          ? day.shortfallSeconds
+          : Math.max(0, fullSeconds - totals.productionSeconds),
       clocks: {
         shiftStart: policy.shiftStart,
         shiftEnd: policy.shiftEnd,
@@ -300,7 +323,54 @@ export class AttendanceService {
         approved: segment.status === 'system_problem' ? Boolean(segment.approvedAt) : null,
       })),
       policy: this.todayPolicy(policy),
+      ownerAccount: owner,
     };
+  }
+
+  /**
+   * GET /attendance/today for the person themself. An owner account has no
+   * attendance (owner decision 14 Nov): the first time its app asks for today
+   * (the call agent console and Laboura Field both do when they open), the
+   * day starts by itself as Available, never late, so nothing that waits for
+   * "Start my day" (calls, incoming calls) blocks its work. A day the owner
+   * ended stays ended until they start it again.
+   */
+  async todayForSelf(staffId: string): Promise<TodayView> {
+    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { isOwnerAccount: true } });
+    if (isOwnerAccount(staff)) {
+      const now = this.clock.now();
+      const day = await this.prisma.attendanceDay.findUnique({
+        where: { staffId_date: { staffId, date: this.istDate(now) } },
+        select: { loginAt: true },
+      });
+      if (!day?.loginAt) {
+        try {
+          return await this.login(staffId, {});
+        } catch (error) {
+          // Two screens asked at the same moment: the other call created the day.
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return this.today(staffId);
+          throw error;
+        }
+      }
+    }
+    return this.today(staffId);
+  }
+
+  /** An owner account starts a day it had ended: the live status comes back as Available. */
+  private async reopenOwnerDay(dayId: string, staffId: string, now: Date): Promise<TodayView> {
+    await this.prisma.attendanceDay.update({
+      where: { id: dayId },
+      data: {
+        logoutAt: null,
+        dayType: 'open',
+        closedReason: null,
+        flagged: false,
+        lastHeartbeatAt: now,
+        segments: { create: { staffId, status: 'available', startedAt: now, source: 'staff' } },
+      },
+    });
+    this.announce(staffId, 'available', now);
+    return this.today(staffId);
   }
 
   /** Short breaks, lunch and meetings apart, for the attendance screen's tiles. */
@@ -461,12 +531,16 @@ export class AttendanceService {
     });
     const totals = this.totals(segments, at);
     const policy = await this.pricing.current();
-    const result = dayResultFor(
-      { ...day, dayTypeChangedAt: null },
-      totals.productionSeconds,
-      policy,
-      await this.workingDays.isNonWorking(day.date),
-    );
+    const owner = isOwnerAccount(await this.prisma.staff.findUnique({ where: { id: day.staffId }, select: { isOwnerAccount: true } }));
+    // An owner account's day is never a half day, short or flagged: it has no attendance (owner decision 14 Nov).
+    const result = owner
+      ? { dayType: 'full' as const, shortfallSeconds: 0, makeUpSeconds: 0 }
+      : dayResultFor(
+          { ...day, dayTypeChangedAt: null },
+          totals.productionSeconds,
+          policy,
+          await this.workingDays.isNonWorking(day.date),
+        );
     await this.prisma.attendanceDay.update({
       where: { id: dayId },
       data: {
@@ -474,7 +548,7 @@ export class AttendanceService {
         ...result,
         logoutAt: at,
         closedReason,
-        flagged,
+        flagged: owner ? false : flagged,
       },
     });
     this.announce(day.staffId, null, null);
@@ -578,6 +652,8 @@ export class AttendanceService {
     });
     if (existing) return;
     const person = await this.requireStaff(segment.staffId);
+    // No break alerts for an owner account: it has no attendance (owner decision 14 Nov).
+    if (isOwnerAccount(person)) return;
     const leadId = person.reportsToId ?? person.teamLeadId;
     if (!leadId) return;
     await this.reviewFlags.raise({
@@ -663,6 +739,7 @@ export class AttendanceService {
       meetingSeconds: 0,
       segments: [],
       policy: this.todayPolicy(policy),
+      ownerAccount: false,
     };
   }
 
@@ -690,10 +767,11 @@ export class AttendanceService {
     role: string;
     reportsToId: string | null;
     teamLeadId: string | null;
+    isOwnerAccount: boolean;
   }> {
     const staff = await this.prisma.staff.findUnique({
       where: { id },
-      select: { id: true, role: true, reportsToId: true, teamLeadId: true },
+      select: { id: true, role: true, reportsToId: true, teamLeadId: true, isOwnerAccount: true },
     });
     if (!staff) throw new NotFoundException('Staff account not found');
     return staff;

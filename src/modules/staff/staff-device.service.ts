@@ -204,6 +204,11 @@ export class StaffDeviceService {
         },
         data: { revokedAt: now, endedReason: 'revoked' },
       });
+      // A login code asked for or read out on this device can no longer be used.
+      await tx.loginCodeRequest.updateMany({
+        where: { staffDeviceId: device.id, status: { in: ['pending', 'revealed'] } },
+        data: { status: 'refused', refusedByStaffId: approver.id, refusedReason: 'device_revoked' },
+      });
       return { updated: next, sessionsEnded: ended.count };
     });
 

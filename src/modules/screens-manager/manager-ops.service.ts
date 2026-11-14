@@ -549,7 +549,8 @@ export class ManagerOpsService {
     });
     const balances = [];
     const heavy = [];
-    for (const p of tree.people) {
+    // Owner accounts have no leave (owner decision 14 Nov).
+    for (const p of tree.people.filter((person) => !person.isOwnerAccount)) {
       const bal = await this.leave.balance(p.id);
       // Leave taken this month, from the attendance record: only this month's days, a half day ½.
       const [y, m] = month.split('-').map(Number);

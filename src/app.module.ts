@@ -57,6 +57,11 @@ import { RequestsModule } from './modules/requests/requests.module';
 import { CompanyPlanModule } from './modules/company-plan/company-plan.module';
 import { ScreensTeamLeadModule } from './modules/screens-team-lead/screens-team-lead.module';
 import { IdempotencyModule } from './common/idempotency/idempotency.module';
+import { CustomerAuthModule } from './common/customer-auth/customer-auth.module';
+import { CustomerAccountModule } from './modules/customer-account/customer-account.module';
+import { CustomerAppModule } from './modules/customer-app/customer-app.module';
+import { CustomerNotificationModule } from './modules/customer-notification/customer-notification.module';
+import { SignupTrackerModule } from './modules/signup-tracker/signup-tracker.module';
 import { APP_GUARD } from '@nestjs/core';
 import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
 
@@ -120,6 +125,13 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     RequestsModule,
     CompanyPlanModule,
     ScreensTeamLeadModule,
+    // Customer app (separate sign-in realm). Registered once here so the agents
+    // filling these folders never edit this file.
+    CustomerAuthModule,
+    CustomerAccountModule,
+    CustomerAppModule,
+    CustomerNotificationModule,
+    SignupTrackerModule,
   ],
   providers: [
     // M4: one per-address limit across every @Public() route.
