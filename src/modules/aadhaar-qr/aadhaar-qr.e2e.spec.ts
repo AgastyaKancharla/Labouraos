@@ -195,6 +195,10 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
 
   it('another ID: a live photo of the card and the number; pending (no terms, no payment) until the Team Lead approves', async () => {
     const s = await seeker(5, 'Ravi Shankar');
+    // Every required consent, so the terms step is held back only by the pending ID.
+    for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'job_updates']) {
+      await app.get(ConsentService).grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: '1.1', language: 'en', method: 'sms_link' });
+    }
     const { token: linkToken, requestId } = await registrationLink(s);
     const path = `/registration/${linkToken}/other-id`;
     // Adversarial: gallery, no photo, a non-image, a wrong number.
