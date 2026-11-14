@@ -9,7 +9,7 @@ import {
   resetRedisClientStats,
 } from '../common/redis/redis-connections';
 import { ProcessRole } from '../common/process/process-role';
-import { jobQueue, LABOURA_JOBS_QUEUE } from './job-queue';
+import { jobQueue, LABOURA_JOBS_QUEUE, LABOURA_WORKER_NAME } from './job-queue';
 import { JobScheduleKeeper } from './job-schedule-keeper.service';
 
 /**
@@ -27,6 +27,7 @@ import { JobScheduleKeeper } from './job-schedule-keeper.service';
  * AGENTS.md, "Background jobs".
  */
 const host = process.env.REDIS_HOST || 'localhost';
+const WORKER_CONNECTION_PREFIX = `bull:${Buffer.from(LABOURA_JOBS_QUEUE).toString('base64')}:w:${LABOURA_WORKER_NAME}`;
 const port = Number(process.env.REDIS_PORT) || 6379;
 
 /** What each kind of process opens: one shared connection, plus one blocking connection for the job Worker. */
@@ -97,13 +98,16 @@ describe('Redis connection budget per PROCESS_ROLE (whole app)', () => {
     jest.restoreAllMocks();
   });
 
-  /** Connections Redis lists for this process (names are laboura:<role>:<pid>:<purpose>). */
+  /**
+   * Connections Redis lists for this process: laboura:<role>:<pid>:shared, and
+   * the Worker's blocking connection, which BullMQ names bull:<queue in base64>:w:laboura.
+   */
   async function listed(): Promise<string[]> {
     const list = (await admin.call('CLIENT', 'LIST')) as string;
     return list
       .split('\n')
       .map((line) => /name=(\S+)/.exec(line)?.[1] ?? '')
-      .filter((name) => name.startsWith('laboura:') && name.includes(`:${process.pid}:`));
+      .filter((name) => (name.startsWith('laboura:') && name.includes(`:${process.pid}:`)) || name.startsWith(WORKER_CONNECTION_PREFIX));
   }
 
   it.each(['web', 'worker', 'all'] as ProcessRole[])(
@@ -137,7 +141,7 @@ describe('Redis connection budget per PROCESS_ROLE (whole app)', () => {
         // Old and new instance side by side, well under the free plan's ~50.
         expect(2 * stats.created).toBeLessThan(50);
         expect(names.filter((n) => n.endsWith(':shared'))).toHaveLength(1);
-        if (role !== 'web') expect(names.filter((n) => n.endsWith(':blocking'))).toHaveLength(1);
+        if (role !== 'web') expect(names.filter((n) => n.startsWith(WORKER_CONNECTION_PREFIX))).toHaveLength(1);
       } finally {
         await app.close();
       }

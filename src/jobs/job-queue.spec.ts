@@ -4,6 +4,7 @@ import Redis from 'ioredis';
 import {
   JobQueue,
   LABOURA_JOBS_QUEUE,
+  LABOURA_WORKER_NAME,
   UNKNOWN_JOB_MAX_RETRIES,
   UNKNOWN_JOB_RETRY_MS,
   jobQueue,
@@ -12,6 +13,8 @@ import {
 import { closeSharedRedis } from '../common/redis/redis-connections';
 
 const host = process.env.REDIS_HOST || 'localhost';
+/** BullMQ names the Worker's blocking connection bull:<queue name in base64>:w:<worker name>. */
+const WORKER_CONNECTION_PREFIX = `bull:${Buffer.from(LABOURA_JOBS_QUEUE).toString('base64')}:w:${LABOURA_WORKER_NAME}`;
 const port = Number(process.env.REDIS_PORT) || 6379;
 
 async function redisReachable(): Promise<boolean> {
@@ -211,7 +214,7 @@ describe('JobQueue: one queue and one Worker for every job, dispatching by job n
       const list = (await admin.call('CLIENT', 'LIST')) as string;
       const ids = list
         .split('\n')
-        .filter((line) => line.includes(`:${process.pid}:`))
+        .filter((line) => line.includes(`:${process.pid}:`) || line.includes(`name=${WORKER_CONNECTION_PREFIX}`))
         .map((line) => /id=(\d+)/.exec(line)?.[1])
         .filter(Boolean) as string[];
       expect(ids.length).toBe(2); // shared + the Worker's blocking connection

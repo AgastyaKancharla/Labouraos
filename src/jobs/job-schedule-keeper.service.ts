@@ -88,7 +88,10 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
   private readonly handles: Record<string, JobHandle>;
   private timer: NodeJS.Timeout | null = null;
   private client: Redis | null = null;
+  /** Set at shutdown: background work stops, so nothing opens a connection after Redis is closed. */
+  private destroyed = false;
   private readonly onRedisReady = () => {
+    if (this.destroyed) return;
     this.logger.warn('Redis connection is ready; registering every job schedule again');
     void this.ensureAll('redis reconnected').then(() => this.cleanUpLegacy());
   };
@@ -152,6 +155,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
   /** Registers every schedule and logs how many are in Redis (the start-up check). */
   async startUpCheck(): Promise<void> {
     const result = await this.ensureAll('start');
+    if (this.destroyed) return;
     const missing = await this.safeMissing();
     if (missing === null) {
       this.logger.warn('Start-up check: could not read the job schedules from Redis; they are registered as soon as Redis answers');
@@ -170,6 +174,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
 
   /** Removes the schedules the jobs had in their own queues before the shared queue (see legacy-queues.ts). */
   async cleanUpLegacy(): Promise<void> {
+    if (this.destroyed) return;
     try {
       const client = this.getClient();
       await whenRedisReady(client, SCHEDULE_TIMEOUT_MS);
@@ -190,6 +195,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
   async ensureAll(reason: string): Promise<EnsureResult> {
     const result: EnsureResult = { registered: [], failed: [] };
     for (const [key, handle] of Object.entries(this.handles)) {
+      if (this.destroyed) break;
       try {
         await withTimeout(handle.schedule(), SCHEDULE_TIMEOUT_MS, `Scheduling ${key}`);
         result.registered.push(key);
@@ -210,6 +216,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
    * writes them all again and raises an alert. Returns the keys that were missing.
    */
   async checkAndRepair(reader?: ScheduleReader): Promise<string[]> {
+    if (this.destroyed) return [];
     const missing = await this.safeMissing(reader);
     if (missing === null || missing.length === 0) return [];
     const keys = missing.map((m) => m.key);
@@ -255,6 +262,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.destroyed = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;

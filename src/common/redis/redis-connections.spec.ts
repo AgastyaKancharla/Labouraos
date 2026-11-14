@@ -105,7 +105,9 @@ describe('Redis connections: one shared connection, reconnects by itself, counte
       const client = createRedisClient('shared', { lazyConnect: true });
       const copy = client.duplicate({ connectionName: 'bull:abc' });
       expect(redisClientStats()).toMatchObject({ created: 2, byPurpose: { shared: 1, blocking: 1 } });
-      expect(copy.options.connectionName).toMatch(/^laboura:[a-z]+:\d+:blocking$/);
+      // BullMQ's name is kept: Queue.getWorkers() finds workers by it.
+      expect(copy.options.connectionName).toBe('bull:abc');
+      expect(client.duplicate().options.connectionName).toMatch(/^laboura:[a-z]+:\d+:blocking$/);
       expect(copy.options.maxRetriesPerRequest).toBeNull();
       client.disconnect();
       copy.disconnect();
@@ -192,12 +194,18 @@ describe('Redis connections: one shared connection, reconnects by itself, counte
       expect(sharedRedis()).toBe(client); // the same connection, reconnected
     });
 
-    it('frees the connection on shutdown', async () => {
+    it('frees the connection on shutdown, and nothing can quietly reopen it', async () => {
       if (!available) return;
+      const client = sharedRedis();
       await pingRedis(3000);
       expect((await ourConnections()).filter((n) => n.endsWith(':shared'))).toHaveLength(1);
       await closeSharedRedis(1000);
       expect(await waitFor(async () => (await ourConnections()).length === 0, 3000)).toBe(true);
+      // BullMQ reconnects a closed connection when a job that was still running fails.
+      await expect(client.connect()).rejects.toThrow(/closed at shutdown/);
+      expect((await ourConnections()).length).toBe(0);
+      // The next user gets a fresh connection.
+      expect(sharedRedis()).not.toBe(client);
     });
   });
 });

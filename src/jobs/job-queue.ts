@@ -23,6 +23,8 @@ import { runsJobs } from '../common/process/process-role';
  * How to add a job: AGENTS.md, "Background jobs".
  */
 export const LABOURA_JOBS_QUEUE = 'laboura-jobs';
+/** The Worker's name: Redis lists its blocking connection as bull:<queue in base64>:w:laboura. */
+export const LABOURA_WORKER_NAME = 'laboura';
 
 export type JobHandler = (job: Job) => Promise<unknown>;
 
@@ -141,6 +143,7 @@ export class JobQueue {
       const worker = new Worker(LABOURA_JOBS_QUEUE, (job, token) => this.dispatch(job, token), {
         connection: client,
         concurrency: jobWorkerConcurrency(),
+        name: LABOURA_WORKER_NAME,
       });
       this.workerClient = client;
       let lastError = '';

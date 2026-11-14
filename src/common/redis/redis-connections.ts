@@ -19,7 +19,8 @@ import { processRole } from '../process/process-role';
  *     heartbeat, /health/ready and the CEO system status;
  *   - plus ONE blocking connection for the single BullMQ Worker (processes
  *     that run jobs: PROCESS_ROLE=worker or all). BullMQ makes it by calling
- *     `duplicate()` on the shared connection, which is counted here too.
+ *     `duplicate()` on the shared connection, which is counted here too
+ *     (Redis lists it under BullMQ's name, `bull:<queue in base64>`).
  * So: web = 1, worker = 2, all = 2. REDIS_CONNECTION_BUDGET (default 12) is the
  * ceiling; going over it logs an error (it never stops the app).
  * `redis-connection-budget.spec.ts` boots the whole app for each role and fails
@@ -30,6 +31,18 @@ import { processRole } from '../process/process-role';
  * (unless REDIS_MAX_RETRIES is set, which only tests do).
  */
 const logger = new Logger('RedisConnections');
+
+/** Every setting read in this file (listed by name, so setting-names.spec.ts sees them). */
+export const REDIS_SETTINGS = [
+  'REDIS_HOST',
+  'REDIS_PORT',
+  'REDIS_PASSWORD',
+  'REDIS_TLS',
+  'REDIS_CONNECT_TIMEOUT_MS',
+  'REDIS_MAX_RETRIES',
+  'REDIS_RETRY_MAX_DELAY_MS',
+  'REDIS_CONNECTION_BUDGET',
+] as const;
 
 export const DEFAULT_REDIS_CONNECTION_BUDGET = 12;
 const DEFAULT_RETRY_MAX_DELAY_MS = 10_000;
@@ -134,11 +147,12 @@ function track(client: Redis, purpose: RedisPurpose): Redis {
     );
   }
   // BullMQ makes a Worker's blocking connection by duplicating the one it is
-  // given: count those too, and keep our name and reconnect settings on them.
+  // given: count those too (they keep our reconnect settings). The name BullMQ
+  // gives the copy (bull:<queue>...) is kept: Queue.getWorkers() finds workers by it.
   const original = client.duplicate.bind(client);
   (client as unknown as { duplicate: (override?: Partial<RedisOptions>) => Redis }).duplicate = (override?: Partial<RedisOptions>) => {
     const copyPurpose = 'blocking';
-    const copy = original({ ...override, connectionName: redisConnectionName(copyPurpose) }) as Redis;
+    const copy = original({ connectionName: redisConnectionName(copyPurpose), ...override }) as Redis;
     copy.on('error', () => undefined);
     return track(copy, copyPurpose);
   };
@@ -223,6 +237,12 @@ export async function pingRedis(timeoutMs: number, client: Redis = sharedRedis()
 
 /** Closes a connection politely (QUIT), and drops it after `timeoutMs` if Redis does not answer. */
 export async function closeRedisClient(client: Redis, timeoutMs = 2000): Promise<void> {
+  // Once closed, a connection stays closed: BullMQ calls connect() again on a
+  // closed connection when a job still running at shutdown fails, which would
+  // quietly reopen it (and keep the old instance's connection during a deploy).
+  // The next sharedRedis() call makes a fresh connection instead.
+  (client as unknown as { connect: () => Promise<void> }).connect = () =>
+    Promise.reject(new Error('Redis connection was closed at shutdown'));
   if (client.status === 'end') return;
   let timer: NodeJS.Timeout | undefined;
   try {
