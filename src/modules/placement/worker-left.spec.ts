@@ -90,7 +90,17 @@ describe('Report worker left: form and finder', () => {
       ({
         getHandler: () => handler,
         getClass: () => PlacementController,
-        switchToHttp: () => ({ getRequest: () => ({ method, path, params: path.includes('pl-1') ? { id: 'pl-1' } : {}, body: {}, user: { sub: 'x', role } }) }),
+        switchToHttp: () => ({
+          getRequest: () => ({
+            method,
+            path,
+            // the declared route pattern, as Express gives it (the guard places the record from it)
+            route: { path: path.replace('pl-1', ':id') },
+            params: path.includes('pl-1') ? { id: 'pl-1' } : {},
+            body: {},
+            user: { sub: 'x', role },
+          }),
+        }),
       }) as unknown as ExecutionContext;
 
     it('the form: Team Lead, Manager, CEO, call agent and field agent; never Finance', async () => {
