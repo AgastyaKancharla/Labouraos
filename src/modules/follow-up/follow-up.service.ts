@@ -149,6 +149,25 @@ export class FollowUpService {
     return introductions.map((i) => i.business);
   }
 
+  /**
+   * Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own
+   * team, so a Team Lead completes only follow-ups assigned to them or to
+   * someone in their reporting line — the tasks their list shows. Other roles
+   * are unchanged. A missing task is left to completeTask (404).
+   */
+  async assertTeamLeadMayComplete(taskId: string, actor: { id: string; role: string }) {
+    if (actor.role !== 'team_lead') return;
+    const task = await this.prisma.followUpTask.findUnique({
+      where: { id: taskId },
+      select: { assignedStaffId: true },
+    });
+    if (!task) return;
+    const scope = [actor.id, ...(await this.peopleUnder(actor.id))];
+    if (!task.assignedStaffId || !scope.includes(task.assignedStaffId)) {
+      throw new ForbiddenException('This follow-up is not yours or your team’s');
+    }
+  }
+
   async completeTask(
     taskId: string,
     dto: CompleteFollowUpTaskDto,

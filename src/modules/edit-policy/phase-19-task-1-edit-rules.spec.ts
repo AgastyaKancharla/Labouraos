@@ -360,7 +360,9 @@ describe('Phase 19 Task 1: Who can edit what, and why', () => {
         });
 
       expect(res.status).toBe(403);
-      expect(res.body.message).toContain('Only the team lead of the team that created this record can edit it');
+      // Refused before the edit rule is reached: a Team Lead works only on
+      // their own team's job seekers (Master Guide, 14 Nov).
+      expect(res.body.message).toContain('outside your own team');
     });
 
     it('the agent team lead can edit after money is involved, with a reason', async () => {

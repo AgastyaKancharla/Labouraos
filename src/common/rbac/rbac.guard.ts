@@ -3,6 +3,7 @@ import {
   ExecutionContext,
   ForbiddenException,
   Injectable,
+  NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
@@ -136,11 +137,14 @@ export class RbacGuard implements CanActivate {
     }
 
     if (roleRule.scope === 'own_team') {
-      // M3: a Team Lead reads the job seekers their own team registered
-      // (themselves or an agent who reports to them), not the city's. Writes
-      // keep the service's own rule ("only the team lead of the team that
-      // created this record can edit it").
-      if (requiredPermission.resource === 'job_seeker' && action === 'read') {
+      // M3 and the owner rule (Master Guide, 14 Nov): a Team Lead works only
+      // on their own team. For a job seeker that is one registered by the Team
+      // Lead or an agent who reports to them. The check covers every action on
+      // the job seeker, not only reading it: recording hits, changing status,
+      // trades, languages, photos, payment links, identity checks and edits.
+      // Edits still also pass the service's own rule ("only the team lead of
+      // the team that created this record can edit it").
+      if (requiredPermission.resource === 'job_seeker') {
         const seeker = await this.getJobSeekerForRequest(request);
         if (seeker) {
           const registeredBy = seeker.registeredByStaffId;
@@ -153,7 +157,32 @@ export class RbacGuard implements CanActivate {
                 })
               : null);
           if (!inTeam) {
-            throw new ForbiddenException('Access denied: job seeker is outside your team');
+            throw new ForbiddenException('Access denied: job seeker is outside your own team');
+          }
+          return true;
+        }
+      }
+      // A referral partner: registered by the Team Lead or someone who reports
+      // to them, the same rule the partner list and detail use
+      // (ReferralService.readScope). Those reads answer 404 for a partner
+      // outside the team, so every other action on it does too.
+      if (requiredPermission.resource === 'referral') {
+        const partner = await this.getReferralForRequest(request);
+        if (partner) {
+          const registeredBy = partner.registeredByStaffId;
+          const inTeam =
+            registeredBy === user.sub ||
+            (registeredBy
+              ? await this.prisma.staff.findFirst({
+                  where: {
+                    id: registeredBy,
+                    OR: [{ teamLeadId: user.sub }, { reportsToId: user.sub }],
+                  },
+                  select: { id: true },
+                })
+              : null);
+          if (!inTeam) {
+            throw new NotFoundException(`Referral partner '${partner.ref}' not found`);
           }
           return true;
         }
@@ -248,16 +277,50 @@ export class RbacGuard implements CanActivate {
     return true;
   }
 
-  /** The job seeker a /job-seekers/:id… request names (by id or JS- code), or null. */
+  /**
+   * The job seeker a request acts on, or null: /job-seekers/:id… (by id or
+   * JS- code), /job-seeker-hits/:id… (the hit's job seeker) and
+   * POST /consent/links (the jobSeekerId in the body).
+   */
   private async getJobSeekerForRequest(
     request: Request,
   ): Promise<{ id: string; registeredByStaffId: string | null } | null> {
     const id = (request.params as Record<string, string | undefined>)?.id;
-    if (!id || !/^\/?job-seekers\//.test(request.path)) return null;
-    return this.prisma.jobSeeker.findFirst({
+    const select = { id: true, registeredByStaffId: true } as const;
+    if (id && /^\/?job-seekers\//.test(request.path)) {
+      return this.prisma.jobSeeker.findFirst({
+        where: { OR: [{ id }, { code: id }] },
+        select,
+      });
+    }
+    if (id && /^\/?job-seeker-hits\//.test(request.path)) {
+      const hit = await this.prisma.jobSeekerHit.findUnique({
+        where: { id },
+        select: { jobSeeker: { select } },
+      });
+      return hit?.jobSeeker ?? null;
+    }
+    const bodySeekerId = (request.body as Record<string, unknown> | undefined)?.jobSeekerId;
+    if (/^\/?consent\/links\/?$/.test(request.path) && typeof bodySeekerId === 'string' && bodySeekerId) {
+      return this.prisma.jobSeeker.findFirst({
+        where: { OR: [{ id: bodySeekerId }, { code: bodySeekerId }] },
+        select,
+      });
+    }
+    return null;
+  }
+
+  /** The referral partner a /referrals/:id… request names (by id or code), or null. */
+  private async getReferralForRequest(
+    request: Request,
+  ): Promise<{ id: string; ref: string; registeredByStaffId: string | null } | null> {
+    const id = (request.params as Record<string, string | undefined>)?.id;
+    if (!id || !/^\/?referrals\//.test(request.path)) return null;
+    const partner = await this.prisma.referral.findFirst({
       where: { OR: [{ id }, { code: id }] },
       select: { id: true, registeredByStaffId: true },
     });
+    return partner ? { ...partner, ref: id } : null;
   }
 
   private async getBusinessForRequest(
@@ -286,9 +349,14 @@ export class RbacGuard implements CanActivate {
       });
     }
     if (resource === 'vacancy') {
+      // A request on one vacancy (/vacancies/:id…) is checked against that
+      // vacancy's own business, never a businessId sent in the body: the body
+      // is the caller's to write, so it could name a business of their own to
+      // pass this check for someone else's vacancy.
+      const onOneVacancy = /^\/?vacancies\//.test(path) && Boolean(params.id);
       const businessId = path.startsWith('/businesses/')
         ? params.id ?? params.businessId
-        : typeof request.body?.businessId === 'string'
+        : !onOneVacancy && typeof request.body?.businessId === 'string'
           ? request.body.businessId
           : null;
       if (businessId) {

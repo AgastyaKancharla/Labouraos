@@ -169,6 +169,9 @@ describe('Phase 19 Gate End-to-End Proof', () => {
           preferredCallWindowEnd: '21:00',
           minSalary: 1500000,
           maxSalary: 2500000,
+          // Registered by the agent on the Team Lead's team: a Team Lead works
+          // only on their own team's job seekers (Master Guide, 14 Nov).
+          registeredByStaffId: agentId,
           createdAt: baseDate,
           updatedAt: baseDate,
         },

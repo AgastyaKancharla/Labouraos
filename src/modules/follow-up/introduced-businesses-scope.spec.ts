@@ -79,3 +79,22 @@ describe('FollowUpService.getIntroducedBusinesses: ownership and reporting scope
     await expect(makeService(null).service.getIntroducedBusinesses('nope', { id: 'ceo-1', role: 'ceo' })).rejects.toThrow(NotFoundException);
   });
 });
+
+/** Owner rule (Master Guide, 14 Nov): a Team Lead completes only their own team's follow-ups. */
+describe('FollowUpService.assertTeamLeadMayComplete', () => {
+  it('a Team Lead is refused a follow-up assigned outside their team, or to no one', async () => {
+    await expect(makeService(task).service.assertTeamLeadMayComplete('task-1', { id: 'tl-1', role: 'team_lead' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService({ ...task, assignedStaffId: null }).service.assertTeamLeadMayComplete('task-1', { id: 'tl-1', role: 'team_lead' })).rejects.toThrow(ForbiddenException);
+  });
+
+  it('a Team Lead may complete their own and their team’s follow-ups', async () => {
+    await expect(makeService(task).service.assertTeamLeadMayComplete('task-1', { id: 'tl-2', role: 'team_lead' })).resolves.toBeUndefined();
+    await expect(makeService({ ...task, assignedStaffId: 'tl-2' }).service.assertTeamLeadMayComplete('task-1', { id: 'tl-2', role: 'team_lead' })).resolves.toBeUndefined();
+  });
+
+  it('other roles and missing tasks are left to completeTask', async () => {
+    await expect(makeService(task).service.assertTeamLeadMayComplete('task-1', { id: 'agent-a', role: 'call_agent' })).resolves.toBeUndefined();
+    await expect(makeService(task).service.assertTeamLeadMayComplete('task-1', { id: 'manager-1', role: 'manager' })).resolves.toBeUndefined();
+    await expect(makeService(null).service.assertTeamLeadMayComplete('nope', { id: 'tl-1', role: 'team_lead' })).resolves.toBeUndefined();
+  });
+});
