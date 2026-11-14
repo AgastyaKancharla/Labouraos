@@ -11,7 +11,8 @@ import { NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB } from './no-picku
 import { NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP } from './notification-sweep.job';
 import { PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP } from './pattern-flags.job';
 import { PLACEMENT_COMPLETION_QUEUE, PLACEMENT_COMPLETION_SWEEP } from './placement-completion.job';
-import { RETENTION_CLEANUP_QUEUE } from './retention-cleanup.job';
+import { RETENTION_CLEANUP_QUEUE, RETENTION_CLEANUP_SWEEP } from './retention-cleanup.job';
+import { LABOURA_JOBS_QUEUE } from './job-queue';
 import { SHORTAGE_TASKS_QUEUE, SHORTAGE_TASKS_SWEEP } from './shortage-tasks.job';
 import { WEEKLY_REPORT_QUEUE, WEEKLY_REPORT_RUN } from './weekly-report.job';
 import { WIN_BACK_QUEUE, WIN_BACK_SWEEP } from './win-back.job';
@@ -42,6 +43,33 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
     for (const [key, [queue, runName]] of Object.entries(expected)) {
       expect({ key, queue: byKey[key].queue, runName: byKey[key].runName }).toEqual({ key, queue, runName });
     }
+  });
+
+  it('puts every job in the one shared queue, each under its own job name (what the shared worker dispatches on)', () => {
+    const expected: Record<string, string> = {
+      claimOverdue: CLAIM_OVERDUE_SWEEP,
+      followUp: FOLLOW_UP_SWEEP,
+      forgottenLogout: FORGOTTEN_LOGOUT_SWEEP,
+      interviewReply: INTERVIEW_REPLY_SWEEP,
+      joiningReward: JOINING_REWARD_SWEEP,
+      kycRecovery: KYC_RECOVERY_SWEEP,
+      noPickupEvaluation: NO_PICKUP_EVALUATION_JOB,
+      notificationSweep: NOTIFICATION_SWEEP,
+      patternFlags: PATTERN_FLAGS_SWEEP,
+      placementCompletion: PLACEMENT_COMPLETION_SWEEP,
+      retentionCleanup: RETENTION_CLEANUP_SWEEP,
+      shortageTasks: SHORTAGE_TASKS_SWEEP,
+      weeklyReport: WEEKLY_REPORT_RUN,
+      winBack: WIN_BACK_SWEEP,
+    };
+    for (const entry of JOB_CATALOG) {
+      expect({ key: entry.key, queue: entry.queue }).toEqual({ key: entry.key, queue: LABOURA_JOBS_QUEUE });
+      expect({ key: entry.key, jobName: entry.jobName }).toEqual({ key: entry.key, jobName: expected[entry.key] });
+    }
+    const names = JOB_CATALOG.map((e) => e.jobName);
+    expect(new Set(names).size).toBe(names.length);
+    // ...and no job name clashes with the one-off recording copy job.
+    expect(names).not.toContain('copy-recording');
   });
 
   it('lists the scheduler id of every file that registers a BullMQ job scheduler', () => {

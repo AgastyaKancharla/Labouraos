@@ -46,9 +46,11 @@ describe('JobRun for every scheduled job', () => {
       expect(run).toMatch(/outcome: 'failed'/);
       return;
     }
-    // The worker's processor goes through recordJobRun, with PrismaService injected.
-    const worker = source.slice(source.indexOf('new Worker('));
-    expect(worker.slice(0, 400)).toMatch(/recordJobRun\(this\.prisma, [A-Z_]+, /);
+    // The handler the shared job worker runs (job-queue.ts) goes through
+    // recordJobRun, with PrismaService injected.
+    const handlerAt = source.indexOf('readonly handle: JobHandler');
+    expect(handlerAt).toBeGreaterThan(-1);
+    expect(source.slice(handlerAt, handlerAt + 300)).toMatch(/recordJobRun\(this\.prisma, [A-Z_]+, /);
     expect(source).toMatch(/private readonly prisma\??: PrismaService/);
   });
 });

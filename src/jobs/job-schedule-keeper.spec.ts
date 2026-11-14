@@ -81,9 +81,16 @@ describe('H3: JobScheduleKeeper keeps every schedule in Redis and runs any job o
     expect(jobs[1].schedule).not.toHaveBeenCalled();
     expect(alerts.sendAlert).not.toHaveBeenCalled();
 
+    // Every job shares one queue now, so a schedule is found by its scheduler id.
+    const byKey = Object.fromEntries(JOB_CATALOG.map((e) => [e.key, e]));
     const wiped = {
-      zscore: jest.fn((key: string) =>
-        Promise.resolve(key === schedulerSetKey('win-back') || key === schedulerSetKey('follow-up') ? null : '1'),
+      zscore: jest.fn((key: string, member: string) =>
+        Promise.resolve(
+          key === schedulerSetKey(byKey.winBack.queue) &&
+            (member === byKey.winBack.schedulerId || member === byKey.followUp.schedulerId)
+            ? null
+            : '1',
+        ),
       ),
     };
     const missing = await keeper.checkAndRepair(wiped);

@@ -7,7 +7,7 @@ import { RequireRoles } from '../common/rbac/roles.decorator';
 import { JwtPayload } from '../common/auth/jwt-payload.interface';
 import { AuditService } from '../common/audit/audit.service';
 import { numericSummary } from './job-run-recorder';
-import { findJob } from './job-catalog';
+import { findJob, jobAuditCode } from './job-catalog';
 import { JobScheduleKeeper } from './job-schedule-keeper.service';
 
 /**
@@ -65,7 +65,7 @@ export class JobRunNowController {
       actorId: req.user.sub,
       action: 'job.manual_trigger',
       entityType: 'job',
-      entityCode: entry.queue,
+      entityCode: jobAuditCode(entry),
       after: { ranNow: true, ...counts },
       city: 'Bengaluru',
     });

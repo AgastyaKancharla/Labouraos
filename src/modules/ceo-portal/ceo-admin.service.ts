@@ -6,7 +6,7 @@ import { tradeNameKey } from '../trade/trade.service';
 import { DAILY_JOB_PATTERNS } from '../../jobs/job-schedules';
 import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { DateRange, PageRequest, Paged, contains, dateFilter, istDayKey, istStartOfDay, istStartOfMonth } from './ceo-common';
-import { JOB_CATALOG } from '../../jobs/job-catalog';
+import { JOB_CATALOG, jobAuditCode } from '../../jobs/job-catalog';
 
 export type AuditType = 'money' | 'corrections' | 'policy' | 'logins' | 'records';
 
@@ -92,9 +92,9 @@ const JOB_RUN_NAMES: Record<string, string[]> = Object.fromEntries(
   ]),
 );
 
-/** Audit rows written when the CEO starts a job by hand (entityCode is the queue name). */
+/** Audit rows written when the CEO starts a job by hand (entityCode is the job's audit code: its old queue name). */
 const JOB_AUDIT_CODES: Record<string, string[]> = Object.fromEntries(
-  JOB_CATALOG.map((job) => [job.key, [job.queue, job.queue.replace(/-/g, '_')]]),
+  JOB_CATALOG.map((job) => [job.key, [jobAuditCode(job), jobAuditCode(job).replace(/-/g, '_')]]),
 );
 
 function cronTime(pattern: string): string {
