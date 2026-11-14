@@ -1402,6 +1402,16 @@ model PricingPolicy {
   registrationLinkValidHours   Int       @default(48)
   /// C-Pricing: the payment-only link (someone else pays the ₹499) works this many minutes (guide: 15).
   paymentOnlyLinkMinutes       Int       @default(15)
+  /// Customer app sign-up tracker timing (proposal 4.2; CEO-editable). Null means the default.
+  signupFirstReminderMinutes       Int?      @default(30) // first push reminder after a sign-up stops (minutes)
+  signupSecondReminderMinutes      Int?      @default(240) // second reminder (minutes)
+  signupBusinessCallMinutes        Int?      @default(240) // a business sign-up gets a call task after (minutes)
+  signupPaymentStopWorkingMinutes  Int?      @default(120) // stopped at payment: call task after (working minutes)
+  signupMaxCallTries               Int?      @default(3) // call tries before closing as no response
+  signupCallTryDays                Int?      @default(3) // days the call tries are spread over
+  signupReengageDays               Int?      @default(30) // re-engagement list after (days)
+  signupAreaClusterMin             Int?      @default(3) // stuck sign-ups in one area that make an area task
+  signupStuckHours                 Int?      @default(24) // a sign-up counts as stuck after (hours)
   /// C-Pricing: a new business's area is filled in from its GPS pin when an area's centre is within this many metres (decided 14 Nov: 1 km); otherwise the agent must pick it.
   areaAutoFillMaxMeters        Int       @default(1000)
   shiftStart                   String    @default("09:30")

@@ -864,6 +864,16 @@ Changes to existing tables and values:
   (time the owner picked) and `VisitAssignment.signupTrackerId`.
 - `heardFrom` value `laboura_app` on job seekers, businesses and referral partners (C3).
 - `MessageLog.channel` values `push` and `in_app` (C17).
+- `PricingPolicy` (CEO settings) gains the sign-up tracker timing, nullable with
+  defaults and database range checks (migration `20261128000400_signup_tracker_settings`):
+  `signupFirstReminderMinutes` (30), `signupSecondReminderMinutes` (240),
+  `signupBusinessCallMinutes` (240), `signupPaymentStopWorkingMinutes` (120),
+  `signupMaxCallTries` (3), `signupCallTryDays` (3), `signupReengageDays` (30),
+  `signupAreaClusterMin` (3), `signupStuckHours` (24). A new pricing version keeps
+  them and refuses values out of range. Not yet on the CEO's Pricing & policy
+  screen (`web/`, outside Agent A's folders).
+- `JobSeeker_heardFrom_check` allows `laboura_app` (migration `20261128000200_heard_from_laboura_app`).
+  Businesses and referral partners have no database check on `heardFrom`.
 
 Shared constants: `src/common/customer-auth/customer-app.constants.ts`.
 
