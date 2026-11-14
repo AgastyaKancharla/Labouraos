@@ -15,6 +15,6 @@ describe('IST formatting', () => {
     expect(formatCountdown(65_000)).toBe('1:05');
     expect(formatCountdown(-5)).toBe('0:00');
     expect(initials('Kiran Kumar')).toBe('KK');
-    expect(initials('Sanket')).toBe('SA');
+    expect(initials('Ravi')).toBe('RA');
   });
 });
