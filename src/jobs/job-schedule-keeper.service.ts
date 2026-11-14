@@ -19,7 +19,6 @@ import { ShortageTasksJob } from './shortage-tasks.job';
 import { WinBackJob } from './win-back.job';
 import { WeeklyReportJob } from './weekly-report.job';
 import { InterviewReplyJob } from './interview-reply.job';
-import { KycRecoveryJob } from './kyc-recovery.job';
 import { NotificationSweepJob } from './notification-sweep.job';
 
 /** How often the keeper checks that every schedule is still in Redis. */
@@ -98,7 +97,6 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
     winBack: WinBackJob,
     weeklyReport: WeeklyReportJob,
     interviewReply: InterviewReplyJob,
-    kycRecovery: KycRecoveryJob,
     notificationSweep: NotificationSweepJob,
     @Optional() private readonly prisma?: PrismaService,
     @Optional() private readonly alerts?: AlertService,
@@ -116,7 +114,6 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
       winBack: { schedule: () => winBack.schedule(), run: () => winBack.process() },
       weeklyReport: { schedule: () => weeklyReport.schedule(), run: () => weeklyReport.process() },
       interviewReply: { schedule: () => interviewReply.schedule(), run: () => interviewReply.process() },
-      kycRecovery: { schedule: () => kycRecovery.schedule(), run: () => kycRecovery.process() },
       notificationSweep: { schedule: () => notificationSweep.schedule(), run: () => notificationSweep.process() },
     };
   }

@@ -20,7 +20,6 @@ export const VENDOR_MODE_SETTINGS = [
   'PAYMENT_PROVIDER_MODE',
   'WHATSAPP_PROVIDER_MODE',
   'TELEPHONY_PROVIDER_MODE',
-  'KYC_PROVIDER_MODE',
 ] as const;
 
 function modeOf(env: NodeJS.ProcessEnv, key: string): string {

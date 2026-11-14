@@ -16,10 +16,9 @@ import {
   sharedMemoryAgreementDocumentStorage,
 } from './agreement-document.storage';
 import { BusinessVerificationModule } from '../business/business-verification.module';
-import { KycHealthModule } from '../../common/kyc/kyc-health.module';
 
 @Module({
-  imports: [PrismaModule, PublicLinkStoreModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule, KycHealthModule],
+  imports: [PrismaModule, PublicLinkStoreModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule],
   controllers: [ConsentController],
   providers: [
     ConsentService,

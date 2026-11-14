@@ -429,7 +429,6 @@ export class CeoAdminService {
       jobs,
       intervals: [
         { key: 'interviewReply', label: 'Offer reply deadlines', every: 'Every minute', runPath: RUNNABLE.interviewReply },
-        { key: 'kycRecovery', label: 'ID check recovery', every: 'Every 15 minutes', runPath: RUNNABLE.kycRecovery },
         { key: 'notificationSweep', label: JOB_LABELS.notificationSweep, every: 'Every 5 minutes', runPath: RUNNABLE.notificationSweep },
         { key: 'weeklyReport', label: JOB_LABELS.weeklyReport, every: 'Mondays at 09:00', runPath: RUNNABLE.weeklyReport },
       ],

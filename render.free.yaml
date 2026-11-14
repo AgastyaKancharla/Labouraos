@@ -149,8 +149,6 @@ services:
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
         value: mock
-      - key: KYC_PROVIDER_MODE
-        value: mock
 
   # Free Key Value: no disk, small connection limit. noeviction is required by
   # BullMQ (an evicted key is a lost job). An empty ipAllowList means only

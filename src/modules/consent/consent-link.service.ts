@@ -3,7 +3,6 @@ import {
   Inject,
   Injectable,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PublicLinkPurpose } from '@prisma/client';
@@ -32,7 +31,6 @@ import { AGREEMENT_DOCUMENT_STORAGE, AgreementDocumentStorage } from './agreemen
 import { AuditService } from '../../common/audit/audit.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { publicPageLink, PublicPage } from '../../common/public-pages';
-import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 
@@ -164,7 +162,6 @@ export class ConsentLinkService {
     private readonly businessVerificationService: BusinessVerificationService,
     @Inject(AGREEMENT_DOCUMENT_STORAGE) private readonly agreementStorage: AgreementDocumentStorage,
     private readonly otpLimiter: PublicOtpLimiter,
-    @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
 
   setTtlMs(ttlMs: number) {
@@ -254,21 +251,6 @@ export class ConsentLinkService {
       linkId: id,
       expiresAt,
     };
-  }
-
-  async requestIdCheckRecovery(token: string, requestId: string, code: string) {
-    const record = await this.validateToken(token);
-    if (record.subjectType !== 'job_seeker') throw new BadRequestException('A job seeker registration link is required');
-    if (!this.kycRecovery || !(await this.kycRecovery.isDown())) throw new BadRequestException('ID check service is available');
-    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: record.jobSeekerId } });
-    if (!seeker) throw new NotFoundException('Job seeker not found');
-    const verified = await this.otpService.verifyOtp(requestId, code);
-    if (!verified || !(await this.otpService.isVerified(requestId, seeker.phone))) {
-      throw new BadRequestException('Valid OTP to the registered mobile is required');
-    }
-    const link = await this.publicLinks.findByToken(token, this.clock.now());
-    await this.kycRecovery.requestRecovery(seeker.id, link.id);
-    return { success: true, waitingForRecovery: true };
   }
 
   async createAgreementLink(businessId: string, staffId: string, language: string = 'en') {

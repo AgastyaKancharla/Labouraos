@@ -3,10 +3,12 @@ import { AppModule } from './app.module';
 import { StructuredLogger } from './common/observability/structured-logger.service';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
+import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
 
 export async function bootstrapWorker() {
   getPublicAppUrl();
   assertDurableUploadStorage();
+  assertNoMockIdCheck();
   process.env.PROCESS_ROLE = 'worker';
 
   const logger = new StructuredLogger('WorkerBootstrap');
