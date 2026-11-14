@@ -107,6 +107,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
         },
         replacementClaim: {
           findFirst: jest.fn().mockResolvedValue(null),
+          findMany: jest.fn().mockResolvedValue([]),
           create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'claim-1', code: 'RC-00001', ...data })),
         },
         $queryRaw: jest.fn().mockResolvedValue([]),
@@ -605,6 +606,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
           }),
         },
         replacementClaim: {
+          findMany: jest.fn().mockImplementation(() => Promise.resolve(state.claims.filter((c) => c.decision))),
           create: jest.fn().mockImplementation(({ data }) => {
             const c = { id: `rc-${state.claims.length + 1}`, code: `RC-0000${state.claims.length + 1}`, ...data, placement: rootPlacementRecord };
             state.claims.push(c);

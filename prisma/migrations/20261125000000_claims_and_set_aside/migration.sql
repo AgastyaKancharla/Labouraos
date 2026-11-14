@@ -8,6 +8,10 @@ ALTER TABLE "ReplacementClaim"
 
 CREATE INDEX "ReplacementClaim_reportedByStaffId_idx" ON "ReplacementClaim"("reportedByStaffId");
 
+-- Why a claim was rejected, which decides whether it may be reported again
+-- (owner decision 14 Nov; src/modules/placement/claim-refile.ts).
+ALTER TABLE "ReplacementClaim" ADD COLUMN "rejectionCode" TEXT;
+
 -- If two undecided claims already exist for one placement, keep the earliest
 -- waiting and mark the later ones rejected with a note (nothing is deleted).
 UPDATE "ReplacementClaim" c

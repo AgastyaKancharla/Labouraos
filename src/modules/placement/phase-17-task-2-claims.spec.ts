@@ -604,6 +604,82 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
     });
   });
 
+  describe('Owner decision 14 Nov: reporting again after a rejection', () => {
+    const dto: ReportClaimDto = { workerLeftOn: '2026-10-12', reason: 'resigned', callRecordId: validOwnerCall.id };
+    const now = new Date('2026-10-15T12:00:00.000Z'); // 3 days after leaving; window ends 19 Oct
+    const past = (over: Record<string, unknown>) => ({
+      code: 'RCL-00001', workerLeftOn: new Date('2026-10-12T00:00:00.000Z'), reportedAt: new Date('2026-10-13T06:00:00.000Z'),
+      decision: 'rejected', decisionReason: 'x', rejectionCode: null, decidedByStaffId: 'tl-1', overruledByStaffId: null, ...over,
+    });
+    const withPast = (...claims: Array<Record<string, unknown>>) => prisma.replacementClaim.findMany.mockResolvedValue(claims);
+
+    it.each([
+      ['reported_late', 'more than 7 days'],
+      ['fee_unpaid', 'fee was not paid'],
+      ['reason_not_covered', 'not covered by the guarantee'],
+    ])('never again after an automatic "%s" rejection, not even by the CEO', async (code, words) => {
+      withPast(past({ rejectionCode: code, decidedByStaffId: null }));
+      for (const actor of [caStaff.id, mgrStaff.id, ceoStaff.id]) {
+        await expect(placementService.reportClaim('pl-100', dto, actor, now)).rejects.toThrow(words);
+      }
+      expect(prisma.replacementClaim.create).not.toHaveBeenCalled();
+    });
+
+    it('reads older automatic rejections (no code) from their text', async () => {
+      withPast(past({ decidedByStaffId: null, decisionReason: 'Auto-rejected: Reported 9 days after worker left; deadline is 7 days' }));
+      await expect(placementService.reportClaim('pl-100', dto, ceoStaff.id, now)).rejects.toThrow('more than 7 days');
+    });
+
+    it('a fixable mistake (wrong details / no owner call): one more report by anyone, within the original 7 days', async () => {
+      withPast(past({ rejectionCode: 'wrong_details' }));
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).resolves.toBeTruthy();
+      withPast(past({ rejectionCode: 'no_owner_call' }));
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).resolves.toBeTruthy();
+    });
+
+    it('…but not after the 7 days, and not a second time — then only a Manager or the CEO', async () => {
+      withPast(past({ rejectionCode: 'wrong_details' }));
+      const late = new Date('2026-10-20T12:00:00.000Z'); // window ended 19 Oct
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, late)).rejects.toThrow('only a Manager or the CEO');
+      withPast(past({ code: 'RCL-00002', rejectionCode: 'wrong_details', reportedAt: new Date('2026-10-14T06:00:00.000Z') }), past({ rejectionCode: 'no_owner_call' }));
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toThrow('already reported once more');
+      await expect(placementService.reportClaim('pl-100', dto, mgrStaff.id, now)).resolves.toBeTruthy();
+    });
+
+    it('after a person reviewed and rejected it, only a Manager or the CEO reports it again', async () => {
+      withPast(past({ rejectionCode: 'reviewed' }));
+      for (const actor of [caStaff.id, tlStaff.id, faStaff.id]) {
+        prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, staffId: actor });
+        await expect(placementService.reportClaim('pl-100', dto, actor, now)).rejects.toThrow('only a Manager or the CEO');
+      }
+      await expect(placementService.reportClaim('pl-100', dto, mgrStaff.id, now)).resolves.toBeTruthy();
+      await expect(placementService.reportClaim('pl-100', dto, ceoStaff.id, now)).resolves.toBeTruthy();
+    });
+
+    it('an accepted earlier claim does not block reporting', async () => {
+      withPast(past({ decision: 'accepted' }));
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).resolves.toBeTruthy();
+    });
+
+    it('automatic rejections are stored with their code', async () => {
+      withPast();
+      const late = await placementService.reportClaim('pl-100', dto, caStaff.id, new Date('2026-10-25T12:00:00.000Z'));
+      expect(late.rejectionCode).toBe('reported_late');
+      const notCovered = await placementService.reportClaim('pl-100', { ...dto, reason: 'business_closed' }, caStaff.id, now);
+      expect(notCovered.rejectionCode).toBe('reason_not_covered');
+    });
+
+    it("the decider's rejection records why (fixable or reviewed); anything else is refused", async () => {
+      const pendingClaim = { ...past({ decision: null }), id: 'claim-30', placementId: 'pl-100', reason: 'resigned', reportedByStaffId: 'ca-1', placement: basePlacement };
+      prisma.replacementClaim.findFirst.mockResolvedValue(pendingClaim);
+      await placementService.decideClaim('pl-100', 'claim-30', { decision: 'rejected', decisionReason: 'Wrong date', rejectionCode: 'wrong_details' }, tlStaff.id);
+      expect(prisma.replacementClaim.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'wrong_details' }) }));
+      await placementService.decideClaim('pl-100', 'claim-30', { decision: 'rejected', decisionReason: 'Not true' }, tlStaff.id);
+      expect(prisma.replacementClaim.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'reviewed' }) }));
+      await expect(placementService.decideClaim('pl-100', 'claim-30', { decision: 'rejected', decisionReason: 'x', rejectionCode: 'reported_late' }, tlStaff.id)).rejects.toThrow(BadRequestException);
+    });
+  });
+
   describe('PR #137 review: deciding a claim', () => {
     const pending = {
       id: 'claim-20', code: 'RCL-00020', placementId: 'pl-100', workerLeftOn: new Date('2026-10-12T00:00:00.000Z'), reportedAt: new Date('2026-10-14T00:00:00.000Z'),

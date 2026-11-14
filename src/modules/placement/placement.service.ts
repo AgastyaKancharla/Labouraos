@@ -27,6 +27,7 @@ import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
 import { isValidClaimReason, isRejectClaimReason } from './claim-reasons';
 import { addDays, daysBetween, istDayOf, istDayStart } from './claim-dates';
+import { isReviewRejectionCode, refileRule } from './claim-refile';
 import { isUniqueViolation } from '../../common/money/utr-registry';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
@@ -982,6 +983,18 @@ export class PlacementService {
       throw new BadRequestException(`Invalid claim reason '${dto.reason}'`);
     }
 
+    // After a rejection: once more for a fixable mistake (within the original
+    // 7 days), never after a late / unpaid / not-covered rejection, and only by
+    // a Manager or the CEO after a person reviewed and rejected it.
+    const pastClaims = (await this.prisma.replacementClaim.findMany({
+      where: { placementId: placement.id, decision: { not: null } },
+      select: { code: true, workerLeftOn: true, reportedAt: true, decision: true, decisionReason: true, rejectionCode: true, decidedByStaffId: true, overruledByStaffId: true },
+    })) ?? [];
+    const refile = refileRule(pastClaims, actor.role, today, policy.claimReportDays);
+    if (!refile.allowed) {
+      throw new ForbiddenException(refile.message ?? 'This claim cannot be reported again');
+    }
+
     const reportedAt = now;
     const diffDays = daysBetween(leftDay, today);
     const reportedWithinDeadline = diffDays <= policy.claimReportDays;
@@ -996,19 +1009,23 @@ export class PlacementService {
     let decision: string | null = null;
     let decisionReason: string | null = null;
     let decidedAt: Date | null = null;
+    let rejectionCode: string | null = null;
 
     if (!reportedWithinDeadline) {
       decision = 'rejected';
       decisionReason = `Auto-rejected: Reported ${diffDays} days after worker left; deadline is ${policy.claimReportDays} days`;
       decidedAt = reportedAt;
+      rejectionCode = 'reported_late';
     } else if (!feePaidInFull) {
       decision = 'rejected';
       decisionReason = 'Auto-rejected: Root placement fee is not paid in full';
       decidedAt = reportedAt;
+      rejectionCode = 'fee_unpaid';
     } else if (inRejectList) {
       decision = 'rejected';
       decisionReason = `Auto-rejected: Reason '${dto.reason}' is in the non-eligible rejection list`;
       decidedAt = reportedAt;
+      rejectionCode = 'reason_not_covered';
     }
 
     const decisionDueHours = policy.claimDecisionHours;
@@ -1043,6 +1060,7 @@ export class PlacementService {
             reportedByStaffId: actor.id,
             decision,
             decisionReason,
+            rejectionCode,
             decidedByStaffId: null,
             decidedAt,
             decisionDueAt,
@@ -1164,6 +1182,9 @@ export class PlacementService {
     if (!dto.decisionReason || dto.decisionReason.trim().length === 0) {
       throw new BadRequestException('decisionReason is required');
     }
+    if (dto.rejectionCode !== undefined && dto.rejectionCode !== null && dto.decision === 'rejected' && !isReviewRejectionCode(dto.rejectionCode)) {
+      throw new BadRequestException("rejectionCode is one of 'wrong_details', 'no_owner_call' or 'reviewed'");
+    }
 
     const before = {
       decision: claim.decision,
@@ -1180,6 +1201,8 @@ export class PlacementService {
         decision: dto.decision,
         decisionReason: dto.decisionReason,
         decidedAt: now,
+        // A person's rejection: fixable (wrong details, no owner call) or reviewed.
+        rejectionCode: dto.decision === 'rejected' ? (isReviewRejectionCode(dto.rejectionCode) ? dto.rejectionCode : 'reviewed') : null,
       };
 
       if (isOverrule) {

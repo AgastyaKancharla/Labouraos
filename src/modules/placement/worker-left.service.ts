@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ACCEPT_CLAIM_REASONS, REJECT_CLAIM_REASONS } from './claim-reasons';
 import { addDays, istDayOf, istDayStart } from './claim-dates';
+import { refileRule, rejectionCodeOf } from './claim-refile';
 import { PlacementService } from './placement.service';
 
 /** Who may report that a placed worker left (same list as PlacementService.reportClaim). */
@@ -16,7 +17,7 @@ export const WORKER_LEFT_ROLES = ['field_agent', 'call_agent', 'team_lead', 'man
  */
 const FORM_COVERED_REASONS = ACCEPT_CLAIM_REASONS.filter((r) => r !== 'never_joined');
 
-export type WorkerLeftBlocked = 'not_active' | 'not_joined' | 'open_claim';
+export type WorkerLeftBlocked = 'not_active' | 'not_joined' | 'open_claim' | 'not_again';
 
 interface Actor {
   id: string;
@@ -101,10 +102,23 @@ export class WorkerLeftService {
         jobSeeker: { select: { name: true } },
         business: { select: { id: true, name: true, accountAgentId: true } },
         replacementClaims: {
-          where: { decision: null },
-          select: { code: true, reportedAt: true, decisionDueAt: true },
+          select: {
+            code: true,
+            reportedAt: true,
+            decisionDueAt: true,
+            workerLeftOn: true,
+            reason: true,
+            decision: true,
+            decisionReason: true,
+            rejectionCode: true,
+            decidedByStaffId: true,
+            overruledByStaffId: true,
+            decidedAt: true,
+            decidedByStaff: { select: { name: true, role: true } },
+            overruledByStaff: { select: { name: true, role: true } },
+          },
           orderBy: { reportedAt: 'desc' },
-          take: 1,
+          take: 20,
         },
       },
     });
@@ -125,12 +139,16 @@ export class WorkerLeftService {
     const lastDay = rootJoined ? addDays(istDayOf(rootJoined)!, policy.replacementWindowDays) : null;
     const guaranteeEndsAt = lastDay ? istDayStart(addDays(lastDay, 1)) : null;
     const today = istDayOf(now)!;
-    const openClaim = placement.replacementClaims[0] ?? null;
+    const waiting = placement.replacementClaims.find((c) => c.decision === null) ?? null;
+    const openClaim = waiting ? { code: waiting.code, reportedAt: waiting.reportedAt, decisionDueAt: waiting.decisionDueAt } : null;
+    // Earlier claims and whether this person may report again (claim-refile.ts).
+    const refile = refileRule(placement.replacementClaims, actor.role, today, policy.claimReportDays);
 
     let blocked: WorkerLeftBlocked | null = null;
     if (placement.status !== 'active') blocked = 'not_active';
     else if (!rootJoined) blocked = 'not_joined';
     else if (openClaim) blocked = 'open_claim';
+    else if (!refile.allowed) blocked = 'not_again';
 
     // Calls the claim may rest on: answered calls with this business since this
     // worker joined, made by someone whose calls this person may use, not
@@ -173,6 +191,21 @@ export class WorkerLeftService {
       canReport: blocked === null,
       blocked,
       openClaim,
+      /** Why reporting again is or isn't allowed after a rejection (null when nothing was rejected). */
+      reportAgain: refile.message ? { allowed: refile.allowed, who: refile.who, message: refile.message, until: refile.windowEndsOn } : null,
+      previousClaims: placement.replacementClaims
+        .filter((c) => c.decision !== null)
+        .map((c) => ({
+          code: c.code,
+          reportedAt: c.reportedAt,
+          workerLeftOn: c.workerLeftOn,
+          reason: c.reason,
+          decision: c.decision,
+          decisionReason: c.decisionReason,
+          rejectionCode: rejectionCodeOf(c),
+          decidedBy: (c.overruledByStaff ?? c.decidedByStaff)?.name ?? null,
+          decidedAt: c.decidedAt,
+        })),
       ownerCalls: calls.map((c) => ({ id: c.id, code: c.code, at: c.answeredAt ?? c.startedAt ?? c.createdAt, durationSec: c.durationSec, by: c.staff?.name ?? null })),
       reasons: { covered: [...FORM_COVERED_REASONS], notCovered: [...REJECT_CLAIM_REASONS] },
     };

@@ -163,11 +163,30 @@ describe('Report worker left: form and finder', () => {
       expect((await service.form('pl-1', 'ceo-1', NOW)).blocked).toBe('not_active');
       prisma.placement.findFirst.mockResolvedValueOnce(placement({ joinedDate: null }));
       expect((await service.form('pl-1', 'ceo-1', NOW)).blocked).toBe('not_joined');
-      prisma.placement.findFirst.mockResolvedValueOnce(placement({ replacementClaims: [{ code: 'RC-00003', reportedAt: NOW, decisionDueAt: NOW }] }));
+      prisma.placement.findFirst.mockResolvedValueOnce(placement({ replacementClaims: [{ code: 'RC-00003', reportedAt: NOW, decisionDueAt: NOW, decision: null }] }));
       const open = await service.form('pl-1', 'ceo-1', NOW);
       expect(open.blocked).toBe('open_claim');
       expect(open.canReport).toBe(false);
       expect(open.openClaim?.code).toBe('RC-00003');
+    });
+
+    it('lists earlier claims and says whether reporting again is allowed (owner decision 14 Nov)', async () => {
+      const rejected = {
+        code: 'RC-00002', reportedAt: new Date('2026-11-12T06:00:00Z'), decisionDueAt: NOW, workerLeftOn: new Date('2026-11-11T00:00:00Z'), reason: 'resigned',
+        decision: 'rejected', decisionReason: 'Owner said he is still working', rejectionCode: 'reviewed', decidedByStaffId: 'tl-1', overruledByStaffId: null,
+        decidedAt: new Date('2026-11-13T06:00:00Z'), decidedByStaff: { name: 'Ravi Shankar', role: 'team_lead' }, overruledByStaff: null,
+      };
+      prisma.placement.findFirst.mockResolvedValue(placement({ replacementClaims: [rejected] }));
+      const asAgent = await service.form('pl-1', 'ca-1', NOW);
+      expect(asAgent.canReport).toBe(false);
+      expect(asAgent.blocked).toBe('not_again');
+      expect(asAgent.reportAgain).toEqual({ allowed: false, who: 'manager_ceo', message: expect.stringContaining('only a Manager or the CEO'), until: null });
+      expect(asAgent.previousClaims).toEqual([
+        expect.objectContaining({ code: 'RC-00002', decision: 'rejected', decisionReason: 'Owner said he is still working', rejectionCode: 'reviewed', decidedBy: 'Ravi Shankar' }),
+      ]);
+      const asManager = await service.form('pl-1', 'mg-1', NOW);
+      expect(asManager.canReport).toBe(true);
+      expect(asManager.reportAgain?.allowed).toBe(true);
     });
 
     it('uses the first placement’s joining date for a replacement, and stops the date picker at the end of the guarantee', async () => {
