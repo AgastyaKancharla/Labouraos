@@ -27,10 +27,17 @@ describe('Referral partner registration', () => {
     await fireEvent.press(screen.getByTestId('ref-kind-option-auto_driver'));
     await fireEvent.press(screen.getByTestId('ref-area'));
     await fireEvent.press(screen.getByTestId('ref-area-option-BTM Layout'));
+    await fireEvent.press(screen.getByTestId('ref-wa-same')); // a different WhatsApp number
     await fireEvent.press(screen.getByTestId('ref-submit'));
+    expect(screen.getByTestId('ref-wa-error')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('ref-wa'), '9988776655');
+    await fireEvent.press(screen.getByTestId('ref-submit'));
+    await fireEvent.press(await screen.findByTestId('ref-register-otp-send'));
+    await fireEvent.changeText(await screen.findByTestId('ref-register-otp-code'), '123456');
     await waitFor(() =>
       expect(api.registerReferralPartner).toHaveBeenCalledWith(
-        expect.objectContaining({ name: 'Asha K', partnerType: 'individual', individualKind: 'auto_driver', area: 'BTM Layout', pincode: '560076', businessName: null }),
+        expect.objectContaining({ name: 'Asha K', partnerType: 'individual', individualKind: 'auto_driver', area: 'BTM Layout', pincode: '560076', businessName: null, whatsappPhone: '9988776655' }),
+        { requestId: 'step-1', code: '123456' },
       ),
     );
     expect(await screen.findByTestId('ref-saved')).toHaveTextContent(/UPI ID/);

@@ -33,8 +33,8 @@ describe('legal minimum wage', () => {
 describe('Add a vacancy', () => {
   it('warns below the legal minimum and needs the tick; saves a draft, then confirms by OTP', async () => {
     const api = fakeApi({
-      createVacancy: async () => ({ id: 'v-9', code: null, trade: 'Cook', roleTitle: null, openings: 1, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', status: 'awaiting_otp', belowLegalMinimum: true }),
-      sendVacancyOtp: async () => ({ requestId: 'vreq' }),
+      createVacancy: async () => ({ id: 'v-9', code: null, trade: 'Cook', roleTitle: null, openings: 1, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', status: 'draft', belowLegalMinimum: true }),
+      sendStepUp: async () => ({ requestId: 'vreq' }),
       confirmVacancy: async () => ({ id: 'v-9', code: 'VC-0100', trade: 'Cook', roleTitle: null, openings: 1, salaryMinPaise: 2_000_000, salaryMaxPaise: null, salaryPeriod: 'monthly', status: 'waiting_for_visit', belowLegalMinimum: true }),
     });
     await renderWithApp(<AddVacancy />, { api, account: owner });
@@ -53,21 +53,32 @@ describe('Add a vacancy', () => {
     await waitFor(() =>
       expect(api.createVacancy).toHaveBeenCalledWith('p-biz', expect.objectContaining({ trade: 'Cook', salaryMinPaise: 2_000_000, legalMinimumAcknowledged: true, shift: 'day' })),
     );
-    await fireEvent.press(await screen.findByTestId('vacancy-send-otp'));
-    expect(api.sendVacancyOtp).toHaveBeenCalledWith('p-biz', 'v-9');
-    await fireEvent.changeText(await screen.findByTestId('vacancy-code'), '123456');
-    await waitFor(() => expect(api.confirmVacancy).toHaveBeenCalledWith('p-biz', 'v-9', { requestId: 'vreq', code: '123456' }));
+    await fireEvent.press(await screen.findByTestId('vacancy-otp-card-send'));
+    expect(api.sendStepUp).toHaveBeenCalledWith('confirm_vacancy', undefined);
+    await fireEvent.changeText(await screen.findByTestId('vacancy-otp-card-code'), '123456');
+    await waitFor(() => expect(api.confirmVacancy).toHaveBeenCalledWith('p-biz', 'v-9', { otp: { requestId: 'vreq', code: '123456' }, ownerToldMinimumWage: true }));
     expect(await screen.findByTestId('vacancy-waiting-visit')).toHaveTextContent(/after the verification visit/);
     await fireEvent.press(screen.getByTestId('vacancy-home'));
     expect(router.replace).toHaveBeenCalledWith('/home');
   });
 
-  it('opens straight at the OTP step for a draft from registration', async () => {
+  it('a draft from registration: OTP first; below the legal minimum the server asks for the tick, then it confirms', async () => {
     searchParams.current = { vacancyId: 'v-1' };
-    const api = fakeApi({ sendVacancyOtp: async () => ({ requestId: 'r' }) });
+    const { ApiError } = require('@/api/errors');
+    const confirmVacancy = jest
+      .fn()
+      .mockRejectedValueOnce(new ApiError({ status: 409, messages: ['tick'], body: { code: 'BELOW_MINIMUM_WAGE_TICK_REQUIRED', legalMinimumPaise: 2_340_000 } }))
+      .mockResolvedValueOnce({ id: 'v-1', code: 'VC-0101', trade: '', openings: null, status: 'open', belowLegalMinimum: false });
+    const api = fakeApi({ sendStepUp: async () => ({ requestId: 'r' }), confirmVacancy });
     await renderWithApp(<AddVacancy />, { api, account: owner });
-    await fireEvent.press(await screen.findByTestId('vacancy-send-otp'));
-    expect(api.sendVacancyOtp).toHaveBeenCalledWith('p-biz', 'v-1');
+    await fireEvent.press(await screen.findByTestId('vacancy-otp-card-send'));
+    await fireEvent.changeText(await screen.findByTestId('vacancy-otp-card-code'), '123456');
+    expect(await screen.findByTestId('vacancy-tick-needed')).toHaveTextContent(/about ₹23,400 a month/);
+    expect(screen.getByTestId('vacancy-confirm-after-tick')).toBeDisabled();
+    await fireEvent.press(screen.getByTestId('vacancy-otp-tick'));
+    await fireEvent.press(screen.getByTestId('vacancy-confirm-after-tick'));
+    await waitFor(() => expect(confirmVacancy).toHaveBeenLastCalledWith('p-biz', 'v-1', { otp: null, ownerToldMinimumWage: true }));
+    expect(await screen.findByTestId('vacancy-done')).toBeTruthy();
   });
 
   it('needs a business profile', async () => {

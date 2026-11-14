@@ -58,10 +58,12 @@ export function CodeInput({ value, onChange, length = 6, label, onComplete, auto
 
 const styles = StyleSheet.create({
   wrap: { position: 'relative' },
-  row: { flexDirection: 'row', gap: 8 },
+  row: { flexDirection: 'row', gap: 6 },
+  // Boxes share the width, so six always fit on a small phone with large text.
   box: {
-    width: 44,
-    height: 52,
+    flex: 1,
+    maxWidth: 52,
+    height: 56,
     borderWidth: 1,
     borderColor: colors.border,
     borderRadius: radius.md,

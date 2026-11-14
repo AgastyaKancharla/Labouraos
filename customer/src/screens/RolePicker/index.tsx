@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { useCustomerApi } from '@/api/ApiProvider';
 import type { ProfileKind } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppHeader, Screen, StatusChip, Text } from '@/components';
@@ -21,7 +23,30 @@ const ROLES: { kind: ProfileKind; title: MessageKey; body: MessageKey; emoji: st
  */
 export default function RolePicker() {
   const { t } = useI18n();
-  const { account } = useAuth();
+  const api = useCustomerApi();
+  const { account, refreshAccount, setActiveProfileId } = useAuth();
+  const [busy, setBusy] = useState<ProfileKind | null>(null);
+  /**
+   * POST /me/signups starts the sign-up tracker (stage A) so an agent can help
+   * if the person stops. If I already have that kind of profile, open it.
+   */
+  const pick = async (kind: ProfileKind, href: string) => {
+    setBusy(kind);
+    try {
+      const { existingProfileId } = await api.startSignup(kind);
+      if (existingProfileId) {
+        await refreshAccount();
+        setActiveProfileId(existingProfileId);
+        router.replace(routes.home);
+        return;
+      }
+    } catch {
+      /* the registration itself still works; the tracker row is made then */
+    } finally {
+      setBusy(null);
+    }
+    router.push(href);
+  };
   const held = new Set((account?.profiles ?? []).map((p) => p.kind));
   const first = held.size === 0;
   return (
@@ -37,8 +62,8 @@ export default function RolePicker() {
               accessibilityRole="button"
               accessibilityState={{ disabled: already }}
               accessibilityLabel={`${t(role.title)}. ${t(role.body)}`}
-              disabled={already}
-              onPress={() => router.push(role.href)}
+              disabled={already || busy !== null}
+              onPress={() => void pick(role.kind, role.href)}
               style={({ pressed }) => [styles.card, pressed && styles.pressed, already && styles.off]}
               testID={`role-${role.kind}`}
             >

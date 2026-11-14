@@ -20,8 +20,16 @@ export type GoogleResult =
 
 let configured = false;
 
-function configure(): boolean {
-  const { webClientId, iosClientId } = googleClientIds();
+/**
+ * The Web client id comes from the build (EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID)
+ * or, when the build has none, from the server's GET /config — so a new
+ * client id needs no new app build. (iPhone also needs its URL scheme in the
+ * build: GOOGLE_IOS_URL_SCHEME.)
+ */
+function configure(fromServer?: { webClientId: string | null; iosClientId: string | null }): boolean {
+  const built = googleClientIds();
+  const webClientId = built.webClientId || fromServer?.webClientId || '';
+  const iosClientId = built.iosClientId || fromServer?.iosClientId || '';
   if (!webClientId) return false;
   if (!configured) {
     GoogleSignin.configure({ webClientId, ...(iosClientId ? { iosClientId } : {}), scopes: ['email', 'profile'] });
@@ -30,12 +38,12 @@ function configure(): boolean {
   return true;
 }
 
-export async function googleSignIn(): Promise<GoogleResult> {
+export async function googleSignIn(fromServer?: { webClientId: string | null; iosClientId: string | null }): Promise<GoogleResult> {
   // Pretend data: no Google account needed (works in Expo Go and on the web).
   if (apiMode() === 'mock') return { status: 'ok', idToken: 'mock-google-id-token' };
   if (Platform.OS === 'web') return { status: 'unavailable', reason: 'not_in_this_build' };
   try {
-    if (!configure()) return { status: 'unavailable', reason: 'not_configured' };
+    if (!configure(fromServer)) return { status: 'unavailable', reason: 'not_configured' };
     if (Platform.OS === 'android') await GoogleSignin.hasPlayServices({ showPlayServicesUpdateDialog: true });
     const response = await GoogleSignin.signIn();
     if (!isSuccessResponse(response)) return { status: 'cancelled' };

@@ -3,15 +3,15 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
-import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
 import type { RegisterResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppHeader, Banner, Button, Card, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
-import { Checkbox, DateField, MoneyField, NumberField, PinField, SelectField, addDays, todayKeyIst, type Choice } from '@/components/form';
+import { Checkbox, DateField, MoneyField, NumberField, PinField, SelectField, TimeField, addDays, todayKeyIst, type Choice } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
+import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
 import { businessTypeChoices, contactRoleChoices, heardFromChoices, shiftChoices } from '../shared/choices';
 import { emptyBusiness, emptyStaffRow, toBusinessForm, validateBusiness, type BusinessErrors } from './form';
@@ -30,8 +30,7 @@ export default function RegisterBusiness() {
   const { refreshAccount, setActiveProfileId } = useAuth();
   const [draft, setDraft, ready] = useDraft('business', emptyBusiness());
   const [errors, setErrors] = useState<BusinessErrors>({});
-  const [busy, setBusy] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [step, setStep] = useState<'form' | 'otp'>('form');
   const [saved, setSaved] = useState<RegisterResult | null>(null);
   const options = useQuery({ queryKey: queryKeys.formOptions, queryFn: () => api.formOptions(), staleTime: 60 * 60_000 });
   const today = todayKeyIst();
@@ -44,7 +43,7 @@ export default function RegisterBusiness() {
       <View style={styles.flex}>
         {header}
         <Screen>
-          <SavedNextSteps result={saved} purpose="agreement" nextSteps={t('business.nextSteps')} testID="biz-saved" />
+          <SavedNextSteps result={saved} purpose="business_agreement" nextSteps={t('business.nextSteps')} testID="biz-saved" />
           <Banner tone="info" message={t('business.visitNote')} />
         </Screen>
       </View>
@@ -73,24 +72,32 @@ export default function RegisterBusiness() {
   const setRow = (i: number, patch: Partial<(typeof draft.staffNeeded)[number]>) =>
     setDraft((d) => ({ ...d, staffNeeded: d.staffNeeded.map((r, j) => (j === i ? { ...r, ...patch } : r)) }));
 
-  const submit = async () => {
+  const review = () => {
     const found = validateBusiness(draft);
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
-    setBusy(true);
-    setSendError(null);
-    try {
-      const result = await api.registerBusiness(toBusinessForm(draft));
-      await clearDraft('business');
-      setActiveProfileId(result.profile.id);
-      await refreshAccount();
-      setSaved(result);
-    } catch (e) {
-      setSendError(isApiError(e) ? (e.isNetworkError ? t('common.networkError') : e.message) : t('common.error'));
-    } finally {
-      setBusy(false);
-    }
+    if (Object.keys(found).length === 0) setStep('otp');
   };
+
+  if (step === 'otp') {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <Screen>
+          <RegisterOtpStep
+            testID="biz-register"
+            onBack={() => setStep('form')}
+            submit={async (otp) => {
+              const result = await api.registerBusiness(toBusinessForm(draft, areas), otp);
+              await clearDraft('business');
+              await refreshAccount();
+              setActiveProfileId(result.profile.id);
+              setSaved(result);
+            }}
+          />
+        </Screen>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.flex} testID="biz-form">
@@ -112,8 +119,24 @@ export default function RegisterBusiness() {
             <TextField label={t('business.boardName')} value={draft.boardName} onChangeText={(v) => set('boardName', v)} error={err('boardName')} testID="biz-board-name" />
             <TextField label={t('business.legalName')} value={draft.legalName} onChangeText={(v) => set('legalName', v)} hint={t('business.legalNameHint')} testID="biz-legal-name" />
             <SelectField label={t('business.type')} value={draft.businessType} choices={businessTypeChoices(t)} onChange={(v) => set('businessType', v)} required error={err('businessType')} testID="biz-type" />
-            <NumberField label={t('business.employeesNow')} value={draft.employeesNow} onChange={(v) => set('employeesNow', v)} required error={err('employeesNow')} testID="biz-employees" />
-            <NumberField label={t('business.yearsRunning')} value={draft.yearsRunning} onChange={(v) => set('yearsRunning', v)} max={150} testID="biz-years" />
+            <SelectField
+              label={t('business.employeesNow')}
+              value={draft.employeeBand}
+              choices={(['1-5', '6-20', '21-50', '51-200', '200+'] as const).map((v) => ({ value: v, label: t('business.peopleBand', { band: v }) }))}
+              onChange={(v) => set('employeeBand', v)}
+              required
+              error={err('employeeBand')}
+              testID="biz-employees"
+            />
+            <SelectField
+              label={t('business.yearsRunning')}
+              value={draft.yearsBand}
+              choices={(['under_1', '1_3', '3_10', '10_plus'] as const).map((v) => ({ value: v, label: t(`yearsBand.${v}`) }))}
+              onChange={(v) => set('yearsBand', v)}
+              testID="biz-years"
+            />
+            <TimeField label={t('business.openingTime')} value={draft.openingTime} onChange={(v) => set('openingTime', v)} from="05:00" to="12:00" step={30} testID="biz-opens" />
+            <TimeField label={t('business.closingTime')} value={draft.closingTime} onChange={(v) => set('closingTime', v)} from="12:00" to="23:30" step={30} testID="biz-closes" />
           </View>
         </Card>
 
@@ -163,10 +186,10 @@ export default function RegisterBusiness() {
                 <Text variant="label">{t('business.staffRow', { n: i + 1 })}</Text>
                 <SelectField label={t('vacancy.trade')} value={row.trade} choices={tradeChoices} onChange={(v) => setRow(i, { trade: v })} required error={err(`staffTrade${i}`)} testID={`biz-staff-trade-${i}`} />
                 <NumberField label={t('business.howMany')} value={row.count} onChange={(v) => setRow(i, { count: v })} required max={99} error={err(`staffCount${i}`)} testID={`biz-staff-count-${i}`} />
-                <MoneyField label={t('vacancy.salaryMin')} valuePaise={row.salaryMinPaise} onChange={(v) => setRow(i, { salaryMinPaise: v })} testID={`biz-staff-min-${i}`} />
-                <MoneyField label={t('vacancy.salaryMax')} valuePaise={row.salaryMaxPaise} onChange={(v) => setRow(i, { salaryMaxPaise: v })} error={err(`staffSalary${i}`)} testID={`biz-staff-max-${i}`} />
+                <MoneyField label={t('vacancy.salaryMin')} valuePaise={row.salaryMinPaise} onChange={(v) => setRow(i, { salaryMinPaise: v })} required error={err(`staffMin${i}`)} testID={`biz-staff-min-${i}`} />
+                <MoneyField label={t('vacancy.salaryMax')} valuePaise={row.salaryMaxPaise} onChange={(v) => setRow(i, { salaryMaxPaise: v })} required error={err(`staffSalary${i}`)} testID={`biz-staff-max-${i}`} />
                 <SelectField label={t('form.shift')} value={row.shift} choices={shiftChoices(t)} onChange={(v) => setRow(i, { shift: v })} testID={`biz-staff-shift-${i}`} />
-                <DateField label={t('vacancy.startDate')} value={row.startDate} onChange={(v) => setRow(i, { startDate: v })} min={today} max={addDays(today, 180)} testID={`biz-staff-start-${i}`} />
+                <DateField label={t('vacancy.startDate')} value={row.startDate} onChange={(v) => setRow(i, { startDate: v })} min={today} max={addDays(today, 180)} required error={err(`staffStart${i}`)} testID={`biz-staff-start-${i}`} />
                 {draft.staffNeeded.length > 1 ? (
                   <Button label={t('form.remove')} variant="danger" onPress={() => setDraft((d) => ({ ...d, staffNeeded: d.staffNeeded.filter((_, j) => j !== i) }))} testID={`biz-staff-remove-${i}`} />
                 ) : null}
@@ -193,9 +216,16 @@ export default function RegisterBusiness() {
           </View>
         </Card>
 
+        <Card title={t('business.sectionVisit')}>
+          <View style={styles.gap}>
+            <Text variant="muted">{t('business.visitWhy')}</Text>
+            <DateField label={t('business.visitDate')} value={draft.visitDate} onChange={(v) => set('visitDate', v)} min={addDays(today, 1)} max={addDays(today, 14)} testID="biz-visit-date" />
+            <TimeField label={t('business.visitTime')} value={draft.visitTime} onChange={(v) => set('visitTime', v)} from="10:00" to="18:00" step={30} error={err('visitTime')} testID="biz-visit-time" />
+          </View>
+        </Card>
+
         {Object.keys(errors).length > 0 ? <Banner tone="error" message={t('form.fixMarked')} testID="biz-errors" /> : null}
-        {sendError ? <Banner tone="error" message={sendError} testID="biz-send-error" /> : null}
-        <Button label={t('business.save')} onPress={() => void submit()} loading={busy} testID="biz-submit" />
+        <Button label={t('business.save')} onPress={review} testID="biz-submit" />
       </Screen>
     </View>
   );

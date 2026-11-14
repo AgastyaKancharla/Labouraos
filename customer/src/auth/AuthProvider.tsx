@@ -113,8 +113,10 @@ export function AuthProvider({ children, store = appSessionStore, storage = secu
     (id: string) => {
       setActiveId(id);
       void storage.setItem(ACTIVE_PROFILE_KEY, id);
+      // Remembered on the server too, for the next sign-in on another phone (PUT /me/last-profile).
+      void api.setLastProfile(id).catch(() => undefined);
     },
-    [storage],
+    [storage, api],
   );
 
   const signOut = useCallback(
@@ -134,7 +136,7 @@ export function AuthProvider({ children, store = appSessionStore, storage = secu
 
   const activeProfile = useMemo(() => {
     const profiles = account?.profiles ?? [];
-    return profiles.find((p) => p.id === activeProfileId) ?? profiles[0] ?? null;
+    return profiles.find((p) => p.id === activeProfileId) ?? profiles.find((p) => p.id === account?.lastProfileId) ?? profiles[0] ?? null;
   }, [account, activeProfileId]);
 
   const value = useMemo<AuthValue>(

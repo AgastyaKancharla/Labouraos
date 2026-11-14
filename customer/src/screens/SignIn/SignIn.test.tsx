@@ -37,6 +37,25 @@ describe('Sign in', () => {
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'));
   });
 
+  it('hides Google when the server has it switched off (GET /config)', async () => {
+    const api = fakeApi({ config: async () => ({ googleSignIn: false, googleWebClientId: null, googleIosClientId: null, appleSignIn: false, otpTestMode: false }) });
+    await renderWithApp(<SignIn />, { api });
+    await waitFor(() => expect(screen.queryByTestId('sign-in-google')).toBeNull());
+    expect(screen.getByTestId('sign-in-mobile')).toBeTruthy();
+  });
+
+  it('uses the Google client id from the server when the build has none', async () => {
+    const api = fakeApi({
+      config: async () => ({ googleSignIn: true, googleWebClientId: 'from-server.apps.googleusercontent.com', googleIosClientId: null, appleSignIn: false, otpTestMode: false }),
+      signInWithGoogle: async () => ({ accessToken: 'tok', account: account({ phoneVerified: false }) }),
+    });
+    await renderWithApp(<SignIn />, { api });
+    await waitFor(() => expect(api.config).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    await fireEvent.press(screen.getByTestId('sign-in-google'));
+    await waitFor(() => expect(api.signInWithGoogle).toHaveBeenCalledWith('google-id-token'));
+  });
+
   it('Google not set up in this build: says so and points to the mobile number', async () => {
     await renderWithApp(<SignIn />);
     await fireEvent.press(screen.getByTestId('sign-in-google'));
@@ -74,29 +93,29 @@ describe('Mobile number + OTP sign-in', () => {
     await fireEvent.changeText(screen.getByTestId('phone-otp-mobile'), '9876543210');
     await fireEvent.press(screen.getByTestId('phone-otp-consent'));
     await fireEvent.press(screen.getByTestId('phone-otp-send'));
-    expect(api.sendSignInOtp).toHaveBeenCalledWith('9876543210');
+    expect(api.sendSignInOtp).toHaveBeenCalledWith('9876543210', undefined);
     expect(await screen.findByText('Code sent to the number ending 3210.')).toBeTruthy();
     expect(screen.getByTestId('phone-otp-resend')).toHaveTextContent(/Resend in 0:[0-3]\d/);
     expect(screen.getByTestId('phone-otp-resend')).toBeDisabled();
     await fireEvent.changeText(screen.getByTestId('phone-otp-code'), '123456');
-    await waitFor(() => expect(api.verifySignInOtp).toHaveBeenCalledWith({ requestId: 'req-1', code: '123456', contactConsent: true }));
+    await waitFor(() => expect(api.verifySignInOtp).toHaveBeenCalledWith({ phone: '9876543210', requestId: 'req-1', code: '123456', contactConsent: true }));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'));
     expect(store.token()).toBe('tok');
   });
 
-  it('shows the server message on a wrong code and stays on the screen', async () => {
+  it('a wrong code: the app own words from the contract code, with tries left; stays on the screen', async () => {
     const { ApiError } = require('@/api/errors');
     const api = fakeApi({
       sendSignInOtp: otpSent,
       verifySignInOtp: async () => {
-        throw new ApiError({ status: 400, messages: ['That code is not right.'] });
+        throw new ApiError({ status: 400, messages: ['Wrong OTP'], body: { statusCode: 400, code: 'OTP_INVALID', message: 'Wrong OTP', attemptsLeft: 2 } });
       },
     });
     await renderWithApp(<SignInPhone />, { api });
     await fireEvent.changeText(screen.getByTestId('phone-otp-mobile'), '9876543210');
     await fireEvent.press(screen.getByTestId('phone-otp-send'));
     await fireEvent.changeText(await screen.findByTestId('phone-otp-code'), '000000');
-    expect(await screen.findByTestId('phone-otp-error')).toHaveTextContent('That code is not right.');
+    expect(await screen.findByTestId('phone-otp-error')).toHaveTextContent('That code is not right. 2 tries left.');
     expect(router.replace).not.toHaveBeenCalled();
   });
 
@@ -109,12 +128,27 @@ describe('Mobile number + OTP sign-in', () => {
       await fireEvent.press(await screen.findByTestId('phone-otp-resend'));
       await waitFor(() => expect(api.sendSignInOtp).toHaveBeenCalledTimes(i + 2));
     }
+    expect(api.sendSignInOtp).toHaveBeenLastCalledWith('9876543210', 'r'); // a resend names the request it repeats
     expect(await screen.findByTestId('phone-otp-no-resends')).toBeTruthy();
     expect(screen.queryByTestId('phone-otp-resend')).toBeNull();
   });
 });
 
 describe('After Google: the mobile number comes before any profile', () => {
+  it('when the number belonged to an earlier mobile account, the new tokens from the server replace ours', async () => {
+    const api = fakeApi({
+      sendPhoneOtp: otpSent,
+      verifyPhoneOtp: async () => ({ account: account({ profiles: [jsProfile] }), linkedExisting: [], session: { accessToken: 'joined-token', refreshToken: 'joined-refresh' } }),
+    });
+    const { store } = await renderWithApp(<VerifyPhone />, { api, account: account({ phoneVerified: false, signInMethods: ['google'] }) });
+    await fireEvent.changeText(await screen.findByTestId('verify-otp-mobile'), '9123456780');
+    await fireEvent.press(screen.getByTestId('verify-otp-send'));
+    await fireEvent.changeText(await screen.findByTestId('verify-otp-code'), '123456');
+    await screen.findByTestId('verify-phone-done');
+    expect(store.token()).toBe('joined-token');
+    expect(store.session()?.refreshToken).toBe('joined-refresh');
+  });
+
   it('the start screen sends an account without a verified phone to "Your mobile number"', async () => {
     await renderWithApp(<Start />, { account: account({ phoneVerified: false, phoneLast4: null, signInMethods: ['google'] }) });
     expect(await screen.findByTestId('redirect')).toHaveTextContent('/verify-phone');
@@ -143,7 +177,7 @@ describe('After Google: the mobile number comes before any profile', () => {
     expect(await screen.findByText('Hello Asha')).toBeTruthy();
     await fireEvent.changeText(screen.getByTestId('verify-otp-mobile'), '9123456780');
     await fireEvent.press(screen.getByTestId('verify-otp-send'));
-    expect(api.sendPhoneOtp).toHaveBeenCalledWith({ phone: '9123456780', contactConsent: false });
+    expect(api.sendPhoneOtp).toHaveBeenCalledWith({ phone: '9123456780', contactConsent: false, resendOf: undefined });
     await fireEvent.changeText(await screen.findByTestId('verify-otp-code'), '123456');
     expect(await screen.findByTestId('verify-phone-found-JS-1234')).toHaveTextContent(/We found your registration JS-1234/);
     await fireEvent.press(screen.getByTestId('verify-phone-continue'));

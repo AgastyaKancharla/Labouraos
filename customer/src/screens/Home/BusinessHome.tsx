@@ -47,7 +47,7 @@ export function BusinessHomeView({ profileId, home }: { profileId: string; home:
             ]}
           />
           {tr.agreement !== 'signed' ? (
-            <Button label={t('bizHome.signAgreement')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'agreement')} testID="biz-home-sign" />
+            <Button label={t('bizHome.signAgreement')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'business_agreement')} testID="biz-home-sign" />
           ) : null}
           {tr.visit === 'requested' ? <Text testID="biz-home-visit-requested">{t('bizHome.visitRequested')}</Text> : null}
           {tr.visit === 'booked' && tr.visitAt ? (
@@ -68,13 +68,13 @@ export function BusinessHomeView({ profileId, home }: { profileId: string; home:
         {home.vacancies.map((v, i) => {
           const salary = v.salaryMinPaise
             ? `${rupees(v.salaryMinPaise)}${v.salaryMaxPaise ? `–${rupees(v.salaryMaxPaise)}` : ''} ${v.salaryPeriod === 'daily' ? t('form.perDayShort') : t('form.perMonthShort')}`
-            : t('bizHome.salaryNotSet');
+            : null;
           const needsOtp = v.status === 'draft' || v.status === 'awaiting_otp';
           return (
             <View key={v.id}>
               <ListRow
-                title={`${v.roleTitle ?? v.trade} × ${v.openings}`}
-                subtitle={`${salary}${v.code ? ` · ${v.code}` : ''}${v.belowLegalMinimum ? ` · ${t('bizHome.belowMinimum')}` : ''}`}
+                title={`${v.roleTitle || v.trade}${v.openings ? ` × ${v.openings}` : ''}`}
+                subtitle={[salary, v.code, v.belowLegalMinimum ? t('bizHome.belowMinimum') : null].filter(Boolean).join(' · ') || undefined}
                 trailing={<StatusChip label={t(`vacancyStatus.${v.status}`)} tone={VACANCY_TONE[v.status]} />}
                 last={i === home.vacancies.length - 1 && !needsOtp}
                 testID={`biz-home-vacancy-${v.id}`}

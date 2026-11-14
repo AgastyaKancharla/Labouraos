@@ -1,4 +1,4 @@
-import type { BusinessContactRole, BusinessForm, BusinessType, HeardFrom, Pin, Shift } from '@/api/types';
+import type { Area, BusinessContactRole, BusinessForm, BusinessType, EmployeeBand, HeardFrom, Pin, Shift, YearsBand } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { isEmail, isGstin, isPincode } from '@/lib/validate';
 
@@ -17,8 +17,12 @@ export interface BusinessDraft {
   boardName: string;
   legalName: string;
   businessType: '' | BusinessType;
-  employeesNow: number | null;
-  yearsRunning: number | null;
+  employeeBand: '' | EmployeeBand;
+  yearsBand: '' | YearsBand;
+  openingTime: string;
+  closingTime: string;
+  visitDate: string;
+  visitTime: string;
   shopNumber: string;
   street: string;
   landmark: string;
@@ -44,8 +48,12 @@ export const emptyBusiness = (): BusinessDraft => ({
   boardName: '',
   legalName: '',
   businessType: '',
-  employeesNow: null,
-  yearsRunning: null,
+  employeeBand: '',
+  yearsBand: '',
+  openingTime: '',
+  closingTime: '',
+  visitDate: '',
+  visitTime: '',
   shopNumber: '',
   street: '',
   landmark: '',
@@ -72,7 +80,8 @@ export function validateBusiness(d: BusinessDraft): BusinessErrors {
   if (!d.contactRole) e.contactRole = 'form.required';
   if (d.boardName.trim().length < 2) e.boardName = 'form.required';
   if (!d.businessType) e.businessType = 'form.required';
-  if (d.employeesNow === null) e.employeesNow = 'form.required';
+  if (!d.employeeBand) e.employeeBand = 'form.required';
+  if (d.visitDate && !d.visitTime) e.visitTime = 'form.required';
   if (d.street.trim().length < 2) e.street = 'form.required';
   if (!d.area) e.area = 'form.required';
   if (!isPincode(d.pincode)) e.pincode = 'form.pincodeInvalid';
@@ -82,12 +91,22 @@ export function validateBusiness(d: BusinessDraft): BusinessErrors {
   d.staffNeeded.forEach((row, i) => {
     if (!row.trade) e[`staffTrade${i}`] = 'form.required';
     if (!row.count || row.count < 1) e[`staffCount${i}`] = 'form.required';
-    if (row.salaryMinPaise && row.salaryMaxPaise && row.salaryMaxPaise < row.salaryMinPaise) e[`staffSalary${i}`] = 'jobSeeker.maxBelowMin';
+    // The agent form needs the full row: salary range, shift and start date.
+    if (!row.salaryMinPaise) e[`staffMin${i}`] = 'form.required';
+    if (!row.salaryMaxPaise) e[`staffSalary${i}`] = 'form.required';
+    else if (row.salaryMinPaise && row.salaryMaxPaise < row.salaryMinPaise) e[`staffSalary${i}`] = 'jobSeeker.maxBelowMin';
+    if (!row.startDate) e[`staffStart${i}`] = 'form.required';
   });
   return e;
 }
 
-export function toBusinessForm(d: BusinessDraft): BusinessForm {
+/** IST date + time → UTC ISO. */
+export function istToIso(dateKey: string, hhmm: string): string {
+  return new Date(`${dateKey}T${hhmm}:00.000+05:30`).toISOString();
+}
+
+export function toBusinessForm(d: BusinessDraft, areas: Area[] = []): BusinessForm {
+  const area = areas.find((a) => a.name === d.area);
   const docs = d.noDocuments
     ? {}
     : Object.fromEntries(
@@ -107,25 +126,28 @@ export function toBusinessForm(d: BusinessDraft): BusinessForm {
     boardName: d.boardName.trim(),
     legalName: d.legalName.trim() || d.boardName.trim(),
     businessType: d.businessType as BusinessType,
-    employeesNow: d.employeesNow ?? 0,
-    yearsRunning: d.yearsRunning ?? 0,
+    employeeBand: d.employeeBand as EmployeeBand,
+    yearsBand: d.yearsBand || null,
+    openingTime: d.openingTime || null,
+    closingTime: d.closingTime || null,
     shopNumber: d.shopNumber.trim(),
     street: d.street.trim(),
     landmark: d.landmark.trim(),
     area: d.area,
     pincode: d.pincode.trim(),
-    pin: d.pin,
+    pin: d.pin ?? (area ? { latitude: area.latitude, longitude: area.longitude } : null),
     documents: docs,
     noDocuments: d.noDocuments,
     staffNeeded: d.staffNeeded.map((row) => ({
       trade: row.trade,
       count: row.count ?? 1,
-      salaryMinPaise: row.salaryMinPaise,
-      salaryMaxPaise: row.salaryMaxPaise,
+      salaryMinPaise: row.salaryMinPaise ?? 0,
+      salaryMaxPaise: row.salaryMaxPaise ?? 0,
       shift: row.shift,
-      startDate: row.startDate || null,
+      startDate: row.startDate,
     })),
     billingEmail: d.billingEmail.trim(),
     heardFrom: d.heardFrom,
+    visitPreferredAt: d.visitDate && d.visitTime ? istToIso(d.visitDate, d.visitTime) : null,
   };
 }

@@ -19,7 +19,7 @@ import { PhoneOtpForm } from '../shared/PhoneOtpForm';
 export default function VerifyPhone() {
   const { t } = useI18n();
   const api = useCustomerApi();
-  const { setAccount, account, signOut } = useAuth();
+  const { setAccount, account, signOut, completeSignIn } = useAuth();
   const [done, setDone] = useState<PhoneVerified | null>(null);
 
   if (done) {
@@ -29,7 +29,7 @@ export default function VerifyPhone() {
         <Screen>
           <Banner tone="ok" title={t('verifyPhone.verified')} message={t('verifyPhone.verifiedMessage')} />
           {(done.linkedExisting ?? []).map((link) => (
-            <Banner key={link.code} tone="info" message={t('verifyPhone.foundExisting', { code: link.code })} testID={`verify-phone-found-${link.code}`} />
+            <Banner key={link.code ?? link.kind} tone="info" message={link.code ? t('verifyPhone.foundExisting', { code: link.code }) : t('verifyPhone.foundExistingNoCode')} testID={`verify-phone-found-${link.code ?? link.kind}`} />
           ))}
           <Button label={t('common.continue')} onPress={() => router.replace(routes.start)} testID="verify-phone-continue" />
         </Screen>
@@ -47,10 +47,13 @@ export default function VerifyPhone() {
             <Text>{t('verifyPhone.why')}</Text>
             <PhoneOtpForm
               testID="verify-otp"
-              send={(phone, contactConsent) => api.sendPhoneOtp({ phone, contactConsent })}
-              verify={async ({ requestId, code }) => {
-                const result = await api.verifyPhoneOtp({ requestId, code });
-                setAccount(result.account);
+              send={(phone, contactConsent, resendOf) => api.sendPhoneOtp({ phone, contactConsent, resendOf })}
+              verify={async ({ phone, requestId, code }) => {
+                const result = await api.verifyPhoneOtp({ phone, requestId, code });
+                // The number belonged to an account made by mobile earlier: the server joined
+                // this Google sign-in to it and gave new tokens (contract 3.4).
+                if (result.session?.accessToken) await completeSignIn({ ...result.session, account: result.account });
+                else setAccount(result.account);
                 setDone(result);
               }}
             />

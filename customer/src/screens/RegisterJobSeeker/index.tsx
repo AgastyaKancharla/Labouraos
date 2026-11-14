@@ -3,7 +3,7 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
-import { isApiError } from '@/api/errors';
+import { errorText } from '@/api/errorText';
 import { queryKeys } from '@/api/queryClient';
 import type { RegisterResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
@@ -13,6 +13,7 @@ import { useI18n } from '@/i18n';
 import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
+import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
 import { heardFromChoices, messageLanguageChoices, shiftChoices, spokenLanguageChoices } from '../shared/choices';
 import { MAX_TRADES, OTHER_TRADE, checkAge, emptyJobSeeker, salaryHint, toJobSeekerForm, validateJobSeeker, type JobSeekerErrors } from './form';
@@ -31,7 +32,8 @@ export default function RegisterJobSeeker() {
   const [ageProblem, setAgeProblem] = useState<'missing' | 'under18' | null>(null);
   const [errors, setErrors] = useState<JobSeekerErrors>({});
   const [busy, setBusy] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [step, setStep] = useState<'form' | 'otp'>('form');
+  const [ageError, setAgeError] = useState<string | null>(null);
   const [saved, setSaved] = useState<RegisterResult | null>(null);
   const options = useQuery({ queryKey: queryKeys.formOptions, queryFn: () => api.formOptions(), staleTime: 60 * 60_000 });
   const today = todayKeyIst();
@@ -85,11 +87,26 @@ export default function RegisterJobSeeker() {
                 <Banner tone="warn" title={t('jobSeeker.under18Title')} message={t('jobSeeker.under18')} testID="js-under18" />
               ) : null}
               {ageProblem === 'missing' ? <Banner tone="error" message={t('jobSeeker.dobMissing')} /> : null}
+              {ageError ? <Banner tone="error" message={ageError} /> : null}
               <Button
                 label={t('common.continue')}
                 disabled={ageProblem === 'under18'}
-                onPress={() => {
-                  const check = checkAge(draft.dateOfBirth, today);
+                loading={busy}
+                onPress={async () => {
+                  let check = checkAge(draft.dateOfBirth, today);
+                  setAgeError(null);
+                  if (check === 'ok') {
+                    // The server checks too (POST /me/register/age-check; nothing is stored).
+                    setBusy(true);
+                    try {
+                      if (!(await api.ageCheck(draft.dateOfBirth)).adult) check = 'under18';
+                    } catch (e) {
+                      setAgeError(errorText(t, e));
+                      return;
+                    } finally {
+                      setBusy(false);
+                    }
+                  }
                   if (check === 'ok') set('ageConfirmed', true);
                   else {
                     setAgeProblem(check);
@@ -129,24 +146,32 @@ export default function RegisterJobSeeker() {
   const firstTrade = trades.find((tr) => tr.name === draft.trades[0]?.trade);
   const hint = salaryHint(firstTrade, draft);
 
-  const submit = async () => {
+  const review = () => {
     const found = validateJobSeeker(draft);
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
-    setBusy(true);
-    setSendError(null);
-    try {
-      const result = await api.registerJobSeeker(toJobSeekerForm(draft));
-      await clearDraft('job_seeker');
-      setActiveProfileId(result.profile.id);
-      await refreshAccount();
-      setSaved(result);
-    } catch (e) {
-      setSendError(isApiError(e) ? (e.isNetworkError ? t('common.networkError') : e.message) : t('common.error'));
-    } finally {
-      setBusy(false);
-    }
+    if (Object.keys(found).length === 0) setStep('otp');
   };
+
+  if (step === 'otp') {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <Screen>
+          <RegisterOtpStep
+            testID="js-register"
+            onBack={() => setStep('form')}
+            submit={async (otp) => {
+              const result = await api.registerJobSeeker(toJobSeekerForm(draft, areas), otp);
+              await clearDraft('job_seeker');
+              await refreshAccount();
+              setActiveProfileId(result.profile.id);
+              setSaved(result);
+            }}
+          />
+        </Screen>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.flex} testID="js-form">
@@ -170,7 +195,7 @@ export default function RegisterJobSeeker() {
             <SelectField
               label={t('jobSeeker.bestTime')}
               value={draft.bestTimeToCall}
-              choices={(['morning', 'afternoon', 'evening', 'any'] as const).map((v) => ({ value: v, label: t(`bestTime.${v}`) }))}
+              choices={(['09-12', '12-15', '15-18', '18-21', '09-21'] as const).map((v) => ({ value: v, label: t(`bestTime.${v}`) }))}
               onChange={(v) => set('bestTimeToCall', v)}
               required
               error={err('bestTimeToCall')}
@@ -283,20 +308,21 @@ export default function RegisterJobSeeker() {
               error={err('availableFrom')}
               testID="js-available"
             />
-            <SelectField
-              label={t('jobSeeker.lookingFor')}
-              value={draft.lookingFor}
-              choices={(['just_started', 'under_1_month', '1_3_months', 'over_3_months'] as const).map((v) => ({ value: v, label: t(`looking.${v}`) }))}
-              onChange={(v) => set('lookingFor', v)}
+            <DateField
+              label={t('jobSeeker.lookingSince')}
+              value={draft.lookingSince}
+              onChange={(v) => set('lookingSince', v)}
+              min={addDays(today, -730)}
+              max={today}
               required
-              error={err('lookingFor')}
+              error={err('lookingSince')}
               testID="js-looking"
             />
             <SelectField label={t('form.shift')} value={draft.shift} choices={shiftChoices(t)} onChange={(v) => set('shift', v)} required error={err('shift')} testID="js-shift" />
             <SelectField
               label={t('jobSeeker.jobType')}
               value={draft.jobType}
-              choices={(['full_time', 'part_time', 'any'] as const).map((v) => ({ value: v, label: t(`jobType.${v}`) }))}
+              choices={(['full_time', 'part_time', 'live_in'] as const).map((v) => ({ value: v, label: t(`jobType.${v}`) }))}
               onChange={(v) => set('jobType', v)}
               required
               error={err('jobType')}
@@ -334,8 +360,7 @@ export default function RegisterJobSeeker() {
         </Card>
 
         {Object.keys(errors).length > 0 ? <Banner tone="error" message={t('form.fixMarked')} testID="js-errors" /> : null}
-        {sendError ? <Banner tone="error" message={sendError} testID="js-send-error" /> : null}
-        <Button label={t('jobSeeker.save')} onPress={() => void submit()} loading={busy} testID="js-submit" />
+        <Button label={t('jobSeeker.save')} onPress={review} testID="js-submit" />
       </Screen>
     </View>
   );

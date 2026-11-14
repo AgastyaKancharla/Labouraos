@@ -1,6 +1,7 @@
 /**
- * Every failed API call throws an ApiError. Screens show `error.message`
- * (already readable) or map known cases to their own i18n keys.
+ * Every failed API call throws an ApiError. Screens never show `message`
+ * (English, for logs): they pick their own words from `code`
+ * (src/api/errorText.ts), as the contract asks.
  */
 export class ApiError extends Error {
   readonly status: number;
@@ -15,6 +16,18 @@ export class ApiError extends Error {
     this.messages = init.messages;
     this.isNetworkError = init.isNetworkError ?? false;
     this.body = init.body;
+  }
+
+  /** The contract's machine-readable error code (OTP_INVALID, PROFILE_EXISTS…), if any. */
+  get code(): string | null {
+    const body = this.body as { code?: unknown } | null | undefined;
+    return body && typeof body === 'object' && typeof body.code === 'string' ? body.code : null;
+  }
+
+  /** An extra field of the error body (profileId, legalMinimumPaise, retryAfterSeconds…). */
+  field<T = unknown>(name: string): T | undefined {
+    const body = this.body as Record<string, unknown> | null | undefined;
+    return body && typeof body === 'object' ? (body[name] as T | undefined) : undefined;
   }
 
   /** True for "no signal / server unreachable" — the request may be retried later. */

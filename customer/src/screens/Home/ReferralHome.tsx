@@ -30,7 +30,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
   const sheet = useSecureSheet();
   const [copied, setCopied] = useState(false);
   const stepsDone = Object.values(home.steps).every((s) => s === 'done');
-  const shareText = home.shareLink ? t('refHome.shareText', { link: home.shareLink }) : '';
+  const shareText = home.shareText || (home.shareLink ? t('refHome.shareText', { link: home.shareLink }) : '');
 
   return (
     <View style={styles.gap} testID="ref-home">
@@ -49,7 +49,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
               ]}
             />
             {home.stuckReason ? <Banner tone="warn" message={home.stuckReason} /> : null}
-            <Button label={t('jsHome.continue')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'registration')} testID="ref-home-continue" />
+            <Button label={t('jsHome.continue')} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'referral_registration')} testID="ref-home-continue" />
           </View>
         </Card>
       ) : null}
@@ -85,7 +85,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
           <ListRow
             key={p.id}
             title={p.firstName}
-            subtitle={t('refHome.referredOn', { date: formatDateKey(p.referredOn.slice(0, 10)) })}
+            subtitle={p.referredOn ? t('refHome.referredOn', { date: formatDateKey(p.referredOn.slice(0, 10)) }) : undefined}
             trailing={<StatusChip label={t(`refStage.${p.stage}`)} tone={STAGE_TONE[p.stage]} />}
             last={i === home.referrals.length - 1}
             testID={`ref-home-person-${p.id}`}
@@ -113,7 +113,7 @@ export function ReferralHomeView({ profileId, home }: { profileId: string; home:
           {home.money.payouts.map((line, i) => (
             <ListRow
               key={line.id}
-              title={`${line.firstName} · ${rupees(line.amountPaise)}`}
+              title={line.firstName ? `${line.firstName} · ${rupees(line.amountPaise)}` : rupees(line.amountPaise)}
               subtitle={line.status === 'paid' ? t('refHome.paidLine', { date: line.paidOn ? formatDayIst(line.paidOn) : '—', ref: line.upiRef ?? '—' }) : undefined}
               trailing={<StatusChip label={t(`payout.${line.status}`)} tone={line.status === 'paid' ? 'green' : line.status === 'approved' ? 'cyan' : 'amber'} />}
               last={i === home.money.payouts.length - 1}

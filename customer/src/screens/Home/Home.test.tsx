@@ -101,7 +101,7 @@ describe('Job seeker Home', () => {
   it('after 3 hits: paused, with "Pay ₹499 to start again"', async () => {
     const { api } = await renderHome(runningJsHome({ guarantee: { status: 'deactivated', day: null, totalDays: 30, endsOn: null, hits: 3, maxHits: 3 } }));
     await fireEvent.press(await screen.findByTestId('js-home-pay-again'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-js', 'payment', undefined));
+    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-js', 'registration', undefined));
   });
 });
 
@@ -120,7 +120,7 @@ describe('Business Home', () => {
     expect(router.push).toHaveBeenCalledWith('/vacancy/new?vacancyId=v-1');
     expect(screen.queryByTestId('biz-home-confirm-v-2')).toBeNull();
     await fireEvent.press(screen.getByTestId('biz-home-sign'));
-    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-biz', 'agreement', undefined));
+    await waitFor(() => expect(api.sheetLink).toHaveBeenCalledWith('p-biz', 'business_agreement', undefined));
   });
 
   it('visit booked with the agent first name; verified hides the waiting banner; never a phone number', async () => {

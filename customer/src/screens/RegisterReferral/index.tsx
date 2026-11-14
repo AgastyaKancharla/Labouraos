@@ -3,16 +3,16 @@ import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useQuery } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
-import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
 import type { RegisterResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppHeader, Banner, Button, Card, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
-import { PinField, RadioGroup, SelectField, type Choice } from '@/components/form';
+import { Checkbox, MobileField, PinField, RadioGroup, SelectField, type Choice } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
+import { RegisterOtpStep } from '../shared/RegisterOtpStep';
 import { SavedNextSteps } from '../shared/SavedNextSteps';
 import { businessTypeChoices, messageLanguageChoices } from '../shared/choices';
 import { emptyReferral, toReferralForm, validateReferral, type ReferralErrors } from './form';
@@ -32,8 +32,7 @@ export default function RegisterReferral() {
   const { account, refreshAccount, setActiveProfileId } = useAuth();
   const [draft, setDraft, ready] = useDraft('referral_partner', emptyReferral(language, account?.name ?? ''));
   const [errors, setErrors] = useState<ReferralErrors>({});
-  const [busy, setBusy] = useState(false);
-  const [sendError, setSendError] = useState<string | null>(null);
+  const [step, setStep] = useState<'form' | 'otp'>('form');
   const [saved, setSaved] = useState<RegisterResult | null>(null);
   const options = useQuery({ queryKey: queryKeys.formOptions, queryFn: () => api.formOptions(), staleTime: 60 * 60_000 });
   // Start the name from the Google / Apple account name, once it is known.
@@ -50,7 +49,7 @@ export default function RegisterReferral() {
       <View style={styles.flex}>
         {header}
         <Screen>
-          <SavedNextSteps result={saved} purpose="registration" nextSteps={t('referral.nextSteps')} testID="ref-saved" />
+          <SavedNextSteps result={saved} purpose="referral_registration" nextSteps={t('referral.nextSteps')} testID="ref-saved" />
         </Screen>
       </View>
     );
@@ -74,24 +73,32 @@ export default function RegisterReferral() {
   const areas = options.data.areas;
   const areaChoices: Choice[] = areas.map((a) => ({ value: a.name, label: a.name }));
 
-  const submit = async () => {
+  const review = () => {
     const found = validateReferral(draft);
     setErrors(found);
-    if (Object.keys(found).length > 0) return;
-    setBusy(true);
-    setSendError(null);
-    try {
-      const result = await api.registerReferralPartner(toReferralForm(draft));
-      await clearDraft('referral_partner');
-      setActiveProfileId(result.profile.id);
-      await refreshAccount();
-      setSaved(result);
-    } catch (e) {
-      setSendError(isApiError(e) ? (e.isNetworkError ? t('common.networkError') : e.message) : t('common.error'));
-    } finally {
-      setBusy(false);
-    }
+    if (Object.keys(found).length === 0) setStep('otp');
   };
+
+  if (step === 'otp') {
+    return (
+      <View style={styles.flex}>
+        {header}
+        <Screen>
+          <RegisterOtpStep
+            testID="ref-register"
+            onBack={() => setStep('form')}
+            submit={async (otp) => {
+              const result = await api.registerReferralPartner(toReferralForm(draft, areas), otp);
+              await clearDraft('referral_partner');
+              await refreshAccount();
+              setActiveProfileId(result.profile.id);
+              setSaved(result);
+            }}
+          />
+        </Screen>
+      </View>
+    );
+  }
 
   return (
     <View style={styles.flex} testID="ref-form">
@@ -116,7 +123,7 @@ export default function RegisterReferral() {
               <SelectField
                 label={t('referral.whatYouDo')}
                 value={draft.individualKind}
-                choices={(['auto_driver', 'shop_staff', 'security_guard', 'existing_worker', 'other'] as const).map((v) => ({ value: v, label: t(`refKind.${v}`) }))}
+                choices={(['auto_driver', 'shop_staff', 'shop_owner', 'security_guard', 'existing_worker', 'other'] as const).map((v) => ({ value: v, label: t(`refKind.${v}`) }))}
                 onChange={(v) => set('individualKind', v)}
                 required
                 error={err('individualKind')}
@@ -144,11 +151,14 @@ export default function RegisterReferral() {
             <TextField label={t('form.pincode')} value={draft.pincode} onChangeText={(v) => set('pincode', v.replace(/\D/g, '').slice(0, 6))} keyboardType="number-pad" error={err('pincode')} testID="ref-pincode" />
             <PinField label={t('referral.pin')} value={draft.pin} onChange={(v) => set('pin', v)} testID="ref-pin" />
             <SelectField label={t('jobSeeker.messageLanguage')} value={draft.messageLanguage} choices={messageLanguageChoices(t)} onChange={(v) => set('messageLanguage', v)} required testID="ref-msg-lang" />
+            <Checkbox label={t('referral.whatsappSame')} checked={draft.whatsappSame} onChange={(v) => set('whatsappSame', v)} testID="ref-wa-same" />
+            {!draft.whatsappSame ? (
+              <MobileField label={t('referral.whatsapp')} value={draft.whatsappPhone} onChange={(v) => set('whatsappPhone', v)} required error={err('whatsappPhone')} testID="ref-wa" />
+            ) : null}
           </View>
         </Card>
         {Object.keys(errors).length > 0 ? <Banner tone="error" message={t('form.fixMarked')} testID="ref-errors" /> : null}
-        {sendError ? <Banner tone="error" message={sendError} /> : null}
-        <Button label={t('referral.save')} onPress={() => void submit()} loading={busy} testID="ref-submit" />
+        <Button label={t('referral.save')} onPress={review} testID="ref-submit" />
       </Screen>
     </View>
   );

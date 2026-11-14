@@ -2,11 +2,11 @@ import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
 import { useCustomerApi } from '@/api/ApiProvider';
-import { isApiError } from '@/api/errors';
+import { errorText } from '@/api/errorText';
 import type { CallbackTopic } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
 import { AppHeader, Banner, Button, Card, Screen, Text } from '@/components';
-import { DateField, RadioGroup, SelectField, TimeField, addDays, formatClock, formatDateKey, todayKeyIst } from '@/components/form';
+import { RadioGroup, SelectField, TimeField, formatClock } from '@/components/form';
 import { useI18n, type MessageKey } from '@/i18n';
 
 const TOPICS: CallbackTopic[] = ['registration', 'payment', 'interview', 'refund', 'business', 'referral', 'other'];
@@ -26,27 +26,26 @@ export default function Help() {
   const { t } = useI18n();
   const api = useCustomerApi();
   const { activeProfile } = useAuth();
-  const today = todayKeyIst();
   const [topic, setTopic] = useState<CallbackTopic | ''>('');
   const [when, setWhen] = useState<'now' | 'later'>('now');
-  const [date, setDate] = useState('');
-  const [time, setTime] = useState('');
+  const [from, setFrom] = useState('');
+  const [to, setTo] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [done, setDone] = useState(false);
 
   const submit = async () => {
-    if (!topic || (when === 'later' && (!date || !time))) {
+    if (!topic || (when === 'later' && (!from || !to || to <= from))) {
       setProblem(t('form.fixMarked'));
       return;
     }
     setBusy(true);
     setProblem(null);
     try {
-      await api.requestCallback({ profileId: activeProfile?.id ?? null, topic, when, date: when === 'later' ? date : null, time: when === 'later' ? time : null });
+      await api.requestCallback({ profileId: activeProfile?.id ?? null, topic, when, from: when === 'later' ? from : null, to: when === 'later' ? to : null });
       setDone(true);
     } catch (e) {
-      setProblem(isApiError(e) && e.isNetworkError ? t('common.networkError') : t('common.error'));
+      setProblem(errorText(t, e));
     } finally {
       setBusy(false);
     }
@@ -61,7 +60,7 @@ export default function Help() {
             <Banner
               tone="ok"
               title={t('help.doneTitle')}
-              message={when === 'later' ? t('help.doneLater', { date: formatDateKey(date), time: formatClock(time) }) : t('help.doneNow')}
+              message={when === 'later' ? t('help.doneLater', { from: formatClock(from), to: formatClock(to) }) : t('help.doneNow')}
               testID="help-done"
             />
           ) : (
@@ -79,8 +78,8 @@ export default function Help() {
               />
               {when === 'later' ? (
                 <>
-                  <DateField label={t('help.date')} value={date} onChange={setDate} min={today} max={addDays(today, 7)} required testID="help-date" />
-                  <TimeField label={t('help.time')} value={time} onChange={setTime} from="09:00" to="20:30" step={30} required testID="help-time" />
+                  <TimeField label={t('help.from')} value={from} onChange={setFrom} from="09:00" to="20:30" step={30} required testID="help-from" />
+                  <TimeField label={t('help.to')} value={to} onChange={setTo} from="09:30" to="21:00" step={30} required testID="help-to" />
                 </>
               ) : null}
               {problem ? <Banner tone="error" message={problem} testID="help-problem" /> : null}

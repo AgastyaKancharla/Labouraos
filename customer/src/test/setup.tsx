@@ -61,3 +61,5 @@ jest.mock('react-native-qrcode-svg', () => {
     return <View testID="qr-code" accessibilityLabel={value} />;
   };
 });
+
+jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'install-uuid') }));

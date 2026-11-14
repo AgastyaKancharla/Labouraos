@@ -39,7 +39,7 @@ describe('API client', () => {
       fetchImpl: async () => jsonResponse(401, { statusCode: 401, message: 'Session ended after being idle' }),
     });
     await expect(api.get('/attendance/today')).rejects.toMatchObject({ status: 401, message: 'Session ended after being idle' });
-    expect(onUnauthorized).toHaveBeenCalledWith('Session ended after being idle');
+    expect(onUnauthorized).toHaveBeenCalledWith('Session ended after being idle', null);
   });
 
   it('does not end a session on a 401 from a login attempt (no token sent)', async () => {

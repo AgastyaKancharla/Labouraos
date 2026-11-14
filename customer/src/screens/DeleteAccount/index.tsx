@@ -1,63 +1,77 @@
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { router } from 'expo-router';
+import { useQuery } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
 import { isApiError } from '@/api/errors';
-import type { OtpSent } from '@/api/types';
+import type { OtpProof } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
-import { AppHeader, Banner, Button, Card, CodeInput, Screen, Text } from '@/components';
+import { AppHeader, Banner, Button, Card, LoadingState, Screen, Text } from '@/components';
 import { Checkbox } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
+import { OtpCodeCard } from '../shared/OtpCodeCard';
 
 /**
- * "Delete my account" (proposal 7.1, 7.4; C20). A fresh OTP is always asked.
- * While a job seeker's ₹499 guarantee may be running, deleting is the same
- * as withdrawing consent after paying, which ends the refund (decided 7 Nov,
- * question 20): the app says so in large words and needs a tick first.
- * What the law makes Laboura keep (payments, invoices) is listed after.
+ * "Delete my account" (proposal 7.1, 7.4; C20; contract 11). The server says
+ * first whether a job seeker's ₹499 guarantee is running (GET /me/deletion):
+ * deleting then is the same as withdrawing consent after paying, which ends
+ * the refund (decided 7 Nov, question 20) — the app says so in large words
+ * and needs a tick. A fresh OTP is always asked (step-up "delete_account").
+ * What the law makes Laboura keep is listed.
  */
 export default function DeleteAccount() {
   const { t } = useI18n();
   const api = useCustomerApi();
   const { account, signOut } = useAuth();
-  const guaranteeAtRisk = (account?.profiles ?? []).some((p) => p.kind === 'job_seeker' && (p.stage === 'payment' || p.stage === 'active'));
+  const info = useQuery({ queryKey: ['deletion-info'], queryFn: () => api.deletionInfo(), retry: 1 });
+  // If the server cannot say, assume a paid job seeker may lose the refund.
+  const fallbackRisk = (account?.profiles ?? []).some((p) => p.kind === 'job_seeker' && (p.stage === 'payment' || p.stage === 'active' || p.stage === undefined));
+  const guaranteeAtRisk = info.data ? info.data.guaranteeRunning : info.isError ? fallbackRisk : false;
   const [accepted, setAccepted] = useState(false);
-  const [otp, setOtp] = useState<OtpSent | null>(null);
-  const [code, setCode] = useState('');
-  const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [kept, setKept] = useState<string[] | null>(null);
+  const [done, setDone] = useState(false);
   const blocked = guaranteeAtRisk && !accepted;
-  const failure = (e: unknown) => setProblem(isApiError(e) ? (e.isNetworkError ? t('common.networkError') : e.message) : t('common.error'));
+  const kept = info.data?.kept ?? ['payments', 'invoices'];
 
-  if (kept) {
+  if (done) {
     return (
       <View style={styles.flex} testID="delete-done">
         <AppHeader title={t('delete.title')} />
         <Screen>
           <Banner tone="ok" title={t('delete.doneTitle')} message={t('delete.done')} />
-          {kept.length > 0 ? (
-            <Card title={t('delete.keptTitle')}>
-              {kept.map((line) => (
-                <Text key={line}>• {line}</Text>
-              ))}
-            </Card>
-          ) : null}
-          <Button
-            label={t('common.close')}
-            onPress={() => void signOut('deleted').then(() => router.replace(routes.signIn))}
-            testID="delete-close"
-          />
+          <Card title={t('delete.keptTitle')}>
+            {kept.map((item) => (
+              <Text key={item}>• {t(`kept.${item}`)}</Text>
+            ))}
+          </Card>
+          <Button label={t('common.close')} onPress={() => void signOut('deleted').then(() => router.replace(routes.signIn))} testID="delete-close" />
         </Screen>
       </View>
     );
   }
 
+  const submit = async (otp: OtpProof) => {
+    setProblem(null);
+    try {
+      await api.requestDeletion({ otp, acceptGuaranteeLoss: accepted });
+      setDone(true);
+    } catch (e) {
+      if (isApiError(e) && e.code === 'GUARANTEE_WARNING_REQUIRED') {
+        setProblem(t('delete.guarantee'));
+        void info.refetch();
+        return;
+      }
+      throw e;
+    }
+  };
+
   return (
     <View style={styles.flex} testID="delete-account">
       <AppHeader title={t('delete.title')} onBack={() => router.back()} />
       <Screen>
+        {info.isLoading ? <LoadingState compact /> : null}
+        {info.data?.openRequest ? <Banner tone="info" message={t('error.deletionPending')} testID="delete-open-request" /> : null}
         {guaranteeAtRisk ? (
           <View style={styles.gap} testID="delete-guarantee-warning">
             <Banner tone="error" title={t('delete.guaranteeTitle')} message={t('delete.guarantee')} />
@@ -68,49 +82,15 @@ export default function DeleteAccount() {
           <View style={styles.gap}>
             <Text>{t('delete.what')}</Text>
             <Text variant="muted">{t('delete.keptNote')}</Text>
-            {!otp ? (
-              <Button
-                label={t('delete.sendOtp', { last4: account?.phoneLast4 ?? '' })}
-                variant="danger"
-                disabled={blocked || busy}
-                loading={busy}
-                onPress={async () => {
-                  setBusy(true);
-                  setProblem(null);
-                  try {
-                    setOtp(await api.sendDeletionOtp());
-                  } catch (e) {
-                    failure(e);
-                  } finally {
-                    setBusy(false);
-                  }
-                }}
-                testID="delete-send-otp"
-              />
-            ) : (
-              <>
-                <CodeInput label={t('otp.code')} value={code} onChange={setCode} autoFocus testID="delete-code" />
-                <Button
-                  label={t('delete.confirm')}
-                  variant="danger"
-                  disabled={blocked || code.length !== 6 || busy}
-                  loading={busy}
-                  onPress={async () => {
-                    setBusy(true);
-                    setProblem(null);
-                    try {
-                      const result = await api.requestDeletion({ requestId: otp.requestId, code, acceptGuaranteeLoss: accepted });
-                      setKept(result.kept);
-                    } catch (e) {
-                      failure(e);
-                    } finally {
-                      setBusy(false);
-                    }
-                  }}
-                  testID="delete-confirm"
-                />
-              </>
-            )}
+            <OtpCodeCard
+              testID="delete-otp"
+              disabled={blocked || info.isLoading || !!info.data?.openRequest}
+              send={(resendOf) => api.sendStepUp('delete_account', resendOf)}
+              submit={submit}
+              sendLabel={t('delete.sendOtp', { last4: account?.phoneLast4 ?? '' })}
+              submitLabel={t('delete.confirm')}
+              sentText={t('otp.sentTo', { last4: account?.phoneLast4 ?? '' })}
+            />
           </View>
         </Card>
         {problem ? <Banner tone="error" message={problem} testID="delete-problem" /> : null}

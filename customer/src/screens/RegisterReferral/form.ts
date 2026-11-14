@@ -1,6 +1,6 @@
-import type { BusinessType, Language, Pin, ReferralForm } from '@/api/types';
+import type { Area, BusinessType, Language, Pin, ReferralForm } from '@/api/types';
 import type { MessageKey } from '@/i18n';
-import { isPincode } from '@/lib/validate';
+import { isMobile, isPincode } from '@/lib/validate';
 
 export interface ReferralDraft {
   name: string;
@@ -12,6 +12,8 @@ export interface ReferralDraft {
   pincode: string;
   pin: Pin | null;
   messageLanguage: Language;
+  whatsappSame: boolean;
+  whatsappPhone: string;
 }
 
 export const emptyReferral = (language: Language, name = ''): ReferralDraft => ({
@@ -24,6 +26,8 @@ export const emptyReferral = (language: Language, name = ''): ReferralDraft => (
   pincode: '',
   pin: null,
   messageLanguage: language,
+  whatsappSame: true,
+  whatsappPhone: '',
 });
 
 export type ReferralErrors = Partial<Record<keyof ReferralDraft, MessageKey>>;
@@ -40,10 +44,12 @@ export function validateReferral(d: ReferralDraft): ReferralErrors {
   }
   if (!d.area) e.area = 'form.required';
   if (!isPincode(d.pincode)) e.pincode = 'form.pincodeInvalid';
+  if (!d.whatsappSame && !isMobile(d.whatsappPhone)) e.whatsappPhone = 'otp.invalidMobile';
   return e;
 }
 
-export function toReferralForm(d: ReferralDraft): ReferralForm {
+export function toReferralForm(d: ReferralDraft, areas: Area[] = []): ReferralForm {
+  const area = areas.find((a) => a.name === d.area);
   return {
     name: d.name.trim(),
     partnerType: d.partnerType as 'individual' | 'business',
@@ -52,7 +58,8 @@ export function toReferralForm(d: ReferralDraft): ReferralForm {
     businessName: d.partnerType === 'business' ? d.businessName.trim() : null,
     area: d.area,
     pincode: d.pincode.trim(),
-    pin: d.pin,
+    pin: d.pin ?? (area ? { latitude: area.latitude, longitude: area.longitude } : null),
     messageLanguage: d.messageLanguage,
+    whatsappPhone: d.whatsappSame ? null : d.whatsappPhone,
   };
 }

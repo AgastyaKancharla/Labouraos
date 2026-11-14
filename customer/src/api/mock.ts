@@ -6,6 +6,7 @@ import type {
   CustomerAccount,
   FormOptions,
   JobSeekerHome,
+  OtpProof,
   OtpSent,
   ProfileHome,
   ProfileKind,
@@ -25,6 +26,7 @@ import type {
  * - Opening the secure sheet pretends the person finished the next steps:
  *   job seeker consent, selfie and ID → payment "confirming" → paid, day 1 of 30;
  *   business agreement signed → visit booked; partner terms, selfie, ID and UPI.
+ * Errors use the contract's codes, so screens show the same words as live.
  * All names and numbers are made up.
  */
 export const MOCK_OTP = '123456';
@@ -34,6 +36,7 @@ interface State {
   account: CustomerAccount | null;
   pendingPhone: string | null;
   homes: Record<string, ProfileHome>;
+  /** Draft id → owner told about the legal minimum. */
   seq: number;
 }
 
@@ -65,12 +68,11 @@ function otpSent(prefix: string, seq: number): OtpSent {
   return answer;
 }
 
-function wrongCode(): ApiError {
-  return new ApiError({ status: 400, messages: ['That code is not right. Check the SMS and try again.'] });
-}
+const fail = (status: number, code: string, message: string, extra: object = {}) =>
+  new ApiError({ status, messages: [message], body: { statusCode: status, code, message, ...extra } });
 
-function signedOut(): ApiError {
-  return new ApiError({ status: 401, messages: ['Please sign in again.'] });
+function checkOtp(otp: OtpProof | { code: string }) {
+  if (otp.code !== MOCK_OTP) throw fail(400, 'OTP_INVALID', 'Wrong code', { attemptsLeft: 4 });
 }
 
 export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}): CustomerApi {
@@ -89,7 +91,7 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
     });
   const next = () => (state.seq += 1);
   const account = (): CustomerAccount => {
-    if (!state.account) throw signedOut();
+    if (!state.account) throw fail(401, 'CUSTOMER_SESSION_ENDED', 'Signed out');
     return state.account;
   };
   const snapshot = (): CustomerAccount => JSON.parse(JSON.stringify(account())) as CustomerAccount;
@@ -97,6 +99,7 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
     const profile: ProfileSummary = { id: `p-${next()}`, kind, code, displayName, stage: 'verifying' };
     if (kind === 'business') profile.businessRole = 'owner';
     account().profiles.push(profile);
+    account().lastProfileId = profile.id;
     state.homes[profile.id] = home;
     return profile;
   };
@@ -115,111 +118,109 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
     const p = account().profiles.find((x) => x.id === profileId);
     if (p) p.stage = stage;
   };
-
   const signedIn = (acc: CustomerAccount) => {
     state.account = acc;
-    return { accessToken: `mock-token-${next()}`, refreshToken: null, account: snapshot() };
+    return { accessToken: `mock-token-${next()}`, refreshToken: `mock-refresh-${state.seq}`, account: snapshot() };
   };
+  const newAccount = (over: Partial<CustomerAccount>): CustomerAccount => ({
+    id: `acc-${next()}`,
+    name: null,
+    email: null,
+    phoneVerified: false,
+    phoneLast4: null,
+    language: null,
+    signInMethods: [],
+    profiles: [],
+    lastProfileId: null,
+    contactMe: false,
+    status: 'active',
+    ...over,
+  });
+  const linkAgentRecord = (phone: string) => {
+    if (!phone.endsWith('0000') || account().profiles.some((p) => p.kind === 'job_seeker')) return [];
+    addProfile('job_seeker', 'Ravi', jobSeekerHome('Ravi', 'JS-1234'), 'JS-1234');
+    return [{ kind: 'job_seeker' as const, code: 'JS-1234' }];
+  };
+  const existing = (kind: ProfileKind) => account().profiles.find((p) => p.kind === kind);
 
   return {
+    config: () => wait({ googleSignIn: true, googleWebClientId: null, googleIosClientId: null, appleSignIn: true, otpTestMode: true }),
+
     sendSignInOtp: (phone) =>
       wait(() => {
+        if (!/^[6-9]\d{9}$/.test(phone)) throw fail(400, 'PHONE_INVALID', 'Invalid phone');
         state.pendingPhone = phone;
         return otpSent('signin', next());
       }),
-    verifySignInOtp: ({ code }) =>
+    verifySignInOtp: ({ phone, code, contactConsent }) =>
       wait(() => {
-        if (code !== MOCK_OTP) throw wrongCode();
-        const phone = state.pendingPhone ?? '9000000000';
-        const acc: CustomerAccount = {
-          id: `acc-${next()}`,
-          name: null,
-          email: null,
-          phoneVerified: true,
-          phoneLast4: phone.slice(-4),
-          language: null,
-          signInMethods: ['phone'],
-          profiles: [],
-          grievanceContact: 'Grievance officer (test setup) — details come from the server',
-        };
-        const result = signedIn(acc);
-        if (phone.endsWith('0000')) {
-          addProfile('job_seeker', 'Ravi', jobSeekerHome('Ravi', 'JS-1234'), 'JS-1234');
-          return { ...result, account: snapshot() };
-        }
-        return result;
+        checkOtp({ code });
+        const result = signedIn(newAccount({ phoneVerified: true, phoneLast4: phone.slice(-4), signInMethods: ['phone'], contactMe: contactConsent }));
+        const linked = linkAgentRecord(phone);
+        return { ...result, account: snapshot(), linkedExisting: linked };
       }),
-    signInWithGoogle: () =>
-      wait(() =>
-        signedIn({
-          id: `acc-${next()}`,
-          name: 'Test Person',
-          email: 'test.person@example.com',
-          phoneVerified: false,
-          phoneLast4: null,
-          language: null,
-          signInMethods: ['google'],
-          profiles: [],
-          grievanceContact: 'Grievance officer (test setup) — details come from the server',
-        }),
-      ),
-    signInWithApple: ({ fullName }) =>
-      wait(() =>
-        signedIn({
-          id: `acc-${next()}`,
-          name: fullName,
-          email: null,
-          phoneVerified: false,
-          phoneLast4: null,
-          language: null,
-          signInMethods: ['apple'],
-          profiles: [],
-          grievanceContact: null,
-        }),
-      ),
+    signInWithGoogle: () => wait(() => signedIn(newAccount({ name: 'Test Person', email: 'test.person@example.com', signInMethods: ['google'] }))),
+    signInWithApple: ({ fullName }) => wait(() => signedIn(newAccount({ name: fullName, signInMethods: ['apple'] }))),
     signOut: () =>
       wait(() => {
         state.account = null;
       }),
 
     me: () => wait(snapshot),
-    setLanguage: (language) =>
+    updateMe: ({ language, contactMe }) =>
       wait(() => {
-        account().language = language;
+        if (language) account().language = language;
+        if (contactMe !== undefined) account().contactMe = contactMe;
         return snapshot();
       }),
-    sendPhoneOtp: ({ phone }) =>
+    setLastProfile: (profileId) =>
       wait(() => {
-        account();
+        account().lastProfileId = profileId;
+      }),
+    sendPhoneOtp: ({ phone, contactConsent }) =>
+      wait(() => {
+        account().contactMe = contactConsent || account().contactMe;
         state.pendingPhone = phone;
         return otpSent('phone', next());
       }),
-    verifyPhoneOtp: ({ code }) =>
+    verifyPhoneOtp: ({ phone, code }) =>
       wait(() => {
-        if (code !== MOCK_OTP) throw wrongCode();
+        checkOtp({ code });
         const acc = account();
-        const phone = state.pendingPhone ?? '9000000000';
         acc.phoneVerified = true;
         acc.phoneLast4 = phone.slice(-4);
         acc.signInMethods = Array.from(new Set([...acc.signInMethods, 'phone' as const]));
-        if (phone.endsWith('0000')) {
-          addProfile('job_seeker', 'Ravi', jobSeekerHome('Ravi', 'JS-1234'), 'JS-1234');
-          return { account: snapshot(), linkedExisting: [{ kind: 'job_seeker' as const, code: 'JS-1234' }] };
-        }
-        return { account: snapshot() };
+        const linked = linkAgentRecord(phone);
+        return { account: snapshot(), linkedExisting: linked, session: null };
+      }),
+    sendStepUp: (purpose) =>
+      wait(() => {
+        account();
+        return otpSent(purpose, next());
       }),
 
+    startSignup: (kind) => wait(() => ({ existingProfileId: kind === 'business' ? null : (existing(kind)?.id ?? null) })),
     formOptions: () => wait(options),
-    registerJobSeeker: (form) =>
+    ageCheck: (dateOfBirth) =>
       wait(() => {
-        const existing = account().profiles.find((p) => p.kind === 'job_seeker');
-        if (existing) return { profile: existing, existing: true };
+        const [y, m, d] = dateOfBirth.split('-').map(Number);
+        const now = new Date();
+        let age = now.getUTCFullYear() - y;
+        if (now.getUTCMonth() + 1 < m || (now.getUTCMonth() + 1 === m && now.getUTCDate() < d)) age -= 1;
+        return { adult: age >= 18 };
+      }),
+    registerJobSeeker: (form, otp) =>
+      wait(() => {
+        checkOtp(otp);
+        const found = existing('job_seeker');
+        if (found) return { profile: found, existing: true };
         const firstName = form.fullName.trim().split(/\s+/)[0] ?? form.fullName;
         const code = `JS-${2000 + next()}`;
         return { profile: addProfile('job_seeker', firstName, jobSeekerHome(firstName, code), code), existing: false };
       }),
-    registerBusiness: (form) =>
+    registerBusiness: (form, otp) =>
       wait(() => {
+        checkOtp(otp);
         const code = `BZ-${3000 + next()}`;
         const home: BusinessHome = {
           kind: 'business',
@@ -232,20 +233,21 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
             trade: row.trade,
             roleTitle: null,
             openings: row.count,
-            salaryMinPaise: row.salaryMinPaise ?? 0,
+            salaryMinPaise: row.salaryMinPaise,
             salaryMaxPaise: row.salaryMaxPaise,
             salaryPeriod: 'monthly',
             status: 'draft',
-            belowLegalMinimum: false,
+            belowLegalMinimum: row.salaryMinPaise < (options.trades.find((t) => t.name === row.trade)?.legalMinimumPaise ?? 0),
           })),
           counts: { interviewsUpcoming: 0, placements: 0 },
         };
         return { profile: addProfile('business', form.boardName, home, code), existing: false };
       }),
-    registerReferralPartner: (form) =>
+    registerReferralPartner: (form, otp) =>
       wait(() => {
-        const existing = account().profiles.find((p) => p.kind === 'referral_partner');
-        if (existing) return { profile: existing, existing: true };
+        checkOtp(otp);
+        const found = existing('referral_partner');
+        if (found) return { profile: found, existing: true };
         const code = `RF-${4000 + next()}`;
         const home: ReferralHome = {
           kind: 'referral_partner',
@@ -265,17 +267,17 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
     sheetLink: (profileId, purpose) =>
       wait(() => {
         const home = state.homes[profileId];
-        if (!home) throw new ApiError({ status: 404, messages: ['Not found'] });
+        if (!home) throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
         if (purpose === 'document') return { url: MOCK_SHEET_URL };
         if (home.kind === 'job_seeker') {
           if (home.steps.consent !== 'done') {
             home.steps = { ...home.steps, consent: 'done', selfie: 'done', idCheck: 'done', payment: 'in_progress' };
             home.payment.status = 'confirming';
             setStage(profileId, 'payment');
-          } else if (home.payment.status !== 'paid') {
+          } else if (home.payment.status !== 'paid' || home.guarantee.status === 'deactivated') {
             home.steps.payment = 'done';
             home.payment.status = 'paid';
-            home.guarantee = { ...home.guarantee, status: 'running', day: 1, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
+            home.guarantee = { ...home.guarantee, status: 'running', day: 1, hits: 0, endsOn: new Date(Date.now() + 29 * 86_400_000).toISOString().slice(0, 10) };
             setStage(profileId, 'active');
           }
         } else if (home.kind === 'business') {
@@ -283,10 +285,7 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         } else {
           home.steps = { terms: 'done', selfie: 'done', idCheck: 'done', upi: 'done' };
           home.shareLink = `https://app.laboura.com/r/${home.code ?? 'RF'}`;
-          home.documents = [
-            { id: 'doc-terms', kind: 'terms', signedAt: new Date().toISOString() },
-            { id: 'doc-consent', kind: 'consent', signedAt: new Date().toISOString() },
-          ];
+          home.documents = [];
           setStage(profileId, 'active');
         }
         return { url: MOCK_SHEET_URL };
@@ -296,15 +295,17 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
       wait(() => {
         account();
         const home = state.homes[profileId];
-        if (!home) throw new ApiError({ status: 404, messages: ['Not found'] });
+        if (!home) throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
         return JSON.parse(JSON.stringify(home)) as ProfileHome;
       }),
 
     createVacancy: (profileId, draft) =>
       wait(() => {
         const home = state.homes[profileId];
-        if (!home || home.kind !== 'business') throw new ApiError({ status: 404, messages: ['Not found'] });
+        if (!home || home.kind !== 'business') throw fail(400, 'PROFILE_KIND_MISMATCH', 'Not a business');
         const trade = options.trades.find((t) => t.name === draft.trade);
+        const monthly = draft.salaryPeriod === 'daily' ? draft.salaryMinPaise * 26 : draft.salaryMinPaise;
+        const below = !!trade && monthly < trade.legalMinimumPaise;
         const vacancy: VacancySummary = {
           id: `v-${next()}`,
           code: null,
@@ -314,31 +315,42 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
           salaryMinPaise: draft.salaryMinPaise,
           salaryMaxPaise: draft.salaryMaxPaise,
           salaryPeriod: draft.salaryPeriod,
-          status: 'awaiting_otp',
-          belowLegalMinimum: !!trade && draft.salaryPeriod === 'monthly' && draft.salaryMinPaise < trade.legalMinimumPaise,
+          status: 'draft',
+          belowLegalMinimum: below,
+          legalMinimumPaise: below ? (trade?.legalMinimumPaise ?? null) : null,
         };
         home.vacancies.push(vacancy);
         return vacancy;
       }),
-    sendVacancyOtp: () => wait(() => otpSent('vacancy', next())),
-    confirmVacancy: (profileId, vacancyId, { code }) =>
+    confirmVacancy: (profileId, draftId, { otp, ownerToldMinimumWage }) =>
       wait(() => {
-        if (code !== MOCK_OTP) throw wrongCode();
+        if (otp) checkOtp(otp);
         const home = state.homes[profileId];
-        const vacancy = home && home.kind === 'business' ? home.vacancies.find((v) => v.id === vacancyId) : undefined;
-        if (!vacancy || home.kind !== 'business') throw new ApiError({ status: 404, messages: ['Not found'] });
+        const vacancy = home && home.kind === 'business' ? home.vacancies.find((v) => v.id === draftId) : undefined;
+        if (!vacancy || home.kind !== 'business') throw fail(404, 'PROFILE_NOT_FOUND', 'Not found');
+        if (vacancy.belowLegalMinimum && !ownerToldMinimumWage) {
+          const legal = options.trades.find((t) => t.name === vacancy.trade)?.legalMinimumPaise ?? 0;
+          throw fail(409, 'BELOW_MINIMUM_WAGE_TICK_REQUIRED', 'Tick required', { legalMinimumPaise: legal });
+        }
         vacancy.status = home.tracker.visit === 'done' && home.tracker.approval === 'approved' ? 'open' : 'waiting_for_visit';
         vacancy.code = `VC-${5000 + next()}`;
         return { ...vacancy };
       }),
 
     requestCallback: () => wait(() => ({ id: `cb-${next()}` })),
-    sendDeletionOtp: () => wait(() => otpSent('delete', next())),
-    requestDeletion: ({ code }) =>
+    deletionInfo: () =>
+      wait(() => ({
+        guaranteeRunning: Object.values(state.homes).some((h) => h.kind === 'job_seeker' && (h.guarantee.status === 'running' || h.payment.status === 'confirming')),
+        kept: ['payments', 'invoices'],
+        openRequest: false,
+      })),
+    requestDeletion: ({ otp, acceptGuaranteeLoss }) =>
       wait(() => {
-        if (code !== MOCK_OTP) throw wrongCode();
+        checkOtp(otp);
+        const running = Object.values(state.homes).some((h) => h.kind === 'job_seeker' && h.guarantee.status === 'running');
+        if (running && !acceptGuaranteeLoss) throw fail(409, 'GUARANTEE_WARNING_REQUIRED', 'Warning required');
         state.account = null;
-        return { status: 'requested' as const, kept: ['Payment receipts and invoices (kept by law for 8 years)'] };
+        return { status: 'requested' as const };
       }),
   };
 }

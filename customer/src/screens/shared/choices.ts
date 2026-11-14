@@ -19,7 +19,11 @@ export const businessTypeChoices = (t: T): Choice<BusinessType>[] =>
   ).map((v) => ({ value: v, label: t(`bizType.${v}`) }));
 
 export const contactRoleChoices = (t: T): Choice<BusinessContactRole>[] =>
-  (['owner', 'manager', 'hr', 'supervisor', 'other'] as const).map((v) => ({ value: v, label: t(`contactRole.${v}`) }));
+  (['owner', 'manager', 'hr', 'supervisor'] as const).map((v) => ({ value: v, label: t(`contactRole.${v}`) }));
 
+/** Values are the English names the agent form stores ("Kannada"); labels in the chosen language. */
 export const spokenLanguageChoices = (t: T): Choice[] =>
-  (['kannada', 'hindi', 'english', 'tamil', 'telugu', 'urdu', 'malayalam', 'marathi', 'bengali', 'odia'] as const).map((v) => ({ value: v, label: t(`spoken.${v}`) }));
+  (['kannada', 'hindi', 'english', 'tamil', 'telugu', 'urdu', 'malayalam', 'marathi', 'bengali', 'odia'] as const).map((v) => ({
+    value: v.charAt(0).toUpperCase() + v.slice(1),
+    label: t(`spoken.${v}`),
+  }));

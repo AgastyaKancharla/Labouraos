@@ -22,8 +22,15 @@ export interface RequestOptions {
 export interface ApiClientConfig {
   baseUrl: string;
   getToken: () => string | null;
-  /** Called when an authenticated request gets 401: the session is over. */
-  onUnauthorized: (message: string) => void;
+  /** Called when an authenticated request gets a 401 that a refresh cannot fix: the session is over. */
+  onUnauthorized: (message: string, code: string | null) => void;
+  /** Extra headers on every request (the installation id). */
+  getHeaders?: () => Promise<Record<string, string>>;
+  /**
+   * Renews the 15-minute access token with the refresh token (contract 3.5).
+   * Called on 401 CUSTOMER_TOKEN_EXPIRED; true = a new token is stored, retry once.
+   */
+  refresh?: () => Promise<boolean>;
   fetchImpl?: typeof fetch;
 }
 
@@ -55,16 +62,19 @@ export function buildUrl(baseUrl: string, path: string, query?: RequestOptions['
 }
 
 /**
- * The one way screens talk to the Nest API: JSON in and out, the customer token
- * attached, errors thrown as ApiError. A 401 on an authenticated request
- * ends the session (onUnauthorized) — screens never handle 401 themselves.
+ * The one way the app talks to the Nest API: JSON in and out, the customer
+ * token and the installation header attached, errors thrown as ApiError. An
+ * expired access token is renewed once with the refresh token; any other 401
+ * on an authenticated request ends the session (onUnauthorized) — screens
+ * never handle 401 themselves.
  */
 export function createApiClient(config: ApiClientConfig): ApiClient {
   const doFetch = config.fetchImpl ?? ((...args: Parameters<typeof fetch>) => fetch(...args));
 
-  async function request<T>(path: string, options: RequestOptions = {}): Promise<T> {
+  async function request<T>(path: string, options: RequestOptions = {}, retried = false): Promise<T> {
     const { method = 'GET', body, form, query, auth = true, timeoutMs = DEFAULT_TIMEOUT_MS } = options;
-    const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
+    const extra = config.getHeaders ? await config.getHeaders() : {};
+    const headers: Record<string, string> = { Accept: 'application/json', ...extra, ...options.headers };
     if (body !== undefined && !form) headers['Content-Type'] = 'application/json';
     const token = auth ? config.getToken() : null;
     if (token) headers.Authorization = `Bearer ${token}`;
@@ -103,7 +113,12 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
 
     if (!response.ok) {
       const error = apiErrorFromBody(response.status, parsed);
-      if (response.status === 401 && token) config.onUnauthorized(error.message);
+      if (response.status === 401 && token) {
+        if (error.code === 'CUSTOMER_TOKEN_EXPIRED' && config.refresh && !retried && (await config.refresh())) {
+          return request<T>(path, options, true);
+        }
+        config.onUnauthorized(error.message, error.code);
+      }
       throw error;
     }
     announceTestMode(parsed);

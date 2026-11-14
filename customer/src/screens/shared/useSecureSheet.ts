@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
-import { isApiError } from '@/api/errors';
+import { errorText } from '@/api/errorText';
 import { queryKeys } from '@/api/queryClient';
 import type { SheetPurpose } from '@/api/types';
 import { useI18n } from '@/i18n';
@@ -29,7 +29,8 @@ export function useSecureSheet() {
       await queryClient.invalidateQueries({ queryKey: queryKeys.home(profileId) });
       return result;
     } catch (err) {
-      setError(isApiError(err) && err.isNetworkError ? t('common.networkError') : t('sheet.failed'));
+      const text = errorText(t, err);
+      setError(text === t('common.error') ? t('sheet.failed') : text);
       return null;
     } finally {
       setBusy(false);

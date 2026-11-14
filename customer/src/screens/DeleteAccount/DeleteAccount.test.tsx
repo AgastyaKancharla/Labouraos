@@ -13,26 +13,28 @@ beforeEach(() => jest.clearAllMocks());
 describe('Delete my account', () => {
   it('while the ₹499 guarantee may be running: big warning and a tick before the OTP', async () => {
     const api = fakeApi({
-      sendDeletionOtp: async () => ({ requestId: 'del-1' }),
-      requestDeletion: async () => ({ status: 'requested' as const, kept: ['Payment receipts and invoices'] }),
+      deletionInfo: async () => ({ guaranteeRunning: true, kept: ['payments', 'invoices'], openRequest: false }),
+      sendStepUp: async () => ({ requestId: 'del-1' }),
+      requestDeletion: async () => ({ status: 'requested' as const }),
     });
-    const { store } = await renderWithApp(<DeleteAccount />, { api, account: account({ profiles: [{ ...jsProfile, stage: 'active' }] }) });
+    const { store } = await renderWithApp(<DeleteAccount />, { api, account: account({ profiles: [jsProfile] }) });
     expect(await screen.findByTestId('delete-guarantee-warning')).toHaveTextContent(/ends your refund/);
-    expect(screen.getByTestId('delete-send-otp')).toBeDisabled();
+    expect(screen.getByTestId('delete-otp-send')).toBeDisabled();
     await fireEvent.press(screen.getByTestId('delete-accept'));
-    await fireEvent.press(screen.getByTestId('delete-send-otp'));
-    await fireEvent.changeText(await screen.findByTestId('delete-code'), '123456');
-    await fireEvent.press(screen.getByTestId('delete-confirm'));
-    await waitFor(() => expect(api.requestDeletion).toHaveBeenCalledWith({ requestId: 'del-1', code: '123456', acceptGuaranteeLoss: true }));
-    expect(await screen.findByText(/Payment receipts and invoices/)).toBeTruthy();
+    await fireEvent.press(screen.getByTestId('delete-otp-send'));
+    expect(api.sendStepUp).toHaveBeenCalledWith('delete_account', undefined);
+    await fireEvent.changeText(await screen.findByTestId('delete-otp-code'), '123456');
+    await waitFor(() => expect(api.requestDeletion).toHaveBeenCalledWith({ otp: { requestId: 'del-1', code: '123456' }, acceptGuaranteeLoss: true }));
+    expect(await screen.findByText(/Invoices/)).toBeTruthy();
     await fireEvent.press(screen.getByTestId('delete-close'));
     await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/sign-in'));
     expect(store.token()).toBeNull();
   });
 
   it('no running guarantee: no warning, the OTP can be sent straight away', async () => {
-    await renderWithApp(<DeleteAccount />, { account: account({ profiles: [bizProfile] }) });
-    expect(await screen.findByTestId('delete-send-otp')).not.toBeDisabled();
+    const api = fakeApi({ deletionInfo: async () => ({ guaranteeRunning: false, kept: ['payments'], openRequest: false }) });
+    await renderWithApp(<DeleteAccount />, { api, account: account({ profiles: [bizProfile] }) });
+    await waitFor(() => expect(screen.getByTestId('delete-otp-send')).not.toBeDisabled());
     expect(screen.queryByTestId('delete-guarantee-warning')).toBeNull();
   });
 
@@ -54,7 +56,7 @@ describe('Help: Call me back', () => {
     await fireEvent.press(screen.getByTestId('help-topic'));
     await fireEvent.press(screen.getByTestId('help-topic-option-payment'));
     await fireEvent.press(screen.getByTestId('help-submit'));
-    await waitFor(() => expect(api.requestCallback).toHaveBeenCalledWith({ profileId: 'p-js', topic: 'payment', when: 'now', date: null, time: null }));
+    await waitFor(() => expect(api.requestCallback).toHaveBeenCalledWith({ profileId: 'p-js', topic: 'payment', when: 'now', from: null, to: null }));
     expect(await screen.findByTestId('help-done')).toHaveTextContent(/call you soon/);
   });
 });

@@ -20,7 +20,7 @@ export default function SignInPhone() {
           <View style={styles.gap}>
             <Text variant="muted">{t('signIn.mobileWhy')}</Text>
             <PhoneOtpForm
-              send={(phone) => api.sendSignInOtp(phone)}
+              send={(phone, _consent, resendOf) => api.sendSignInOtp(phone, resendOf)}
               verify={async (input) => {
                 await completeSignIn(await api.verifySignInOtp(input));
                 router.replace(routes.start);

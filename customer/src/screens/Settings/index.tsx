@@ -27,7 +27,7 @@ export default function Settings() {
             value={language}
             onChange={(code) => {
               setLanguage(code);
-              if (status === 'signed_in') void api.setLanguage(code).then(setAccount).catch(() => undefined);
+              if (status === 'signed_in') void api.updateMe({ language: code }).then(setAccount).catch(() => undefined);
             }}
             options={LANGUAGES.map((l) => ({ value: l.code, label: l.label === 'EN' ? 'English' : l.label }))}
             testID="settings-language"

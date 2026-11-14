@@ -36,7 +36,7 @@ describe('job seeker form rules', () => {
   it('requires the agent form fields and a sensible salary range', () => {
     const errors = validateJobSeeker({ ...emptyJobSeeker('en'), salaryMinPaise: 2_000_000, salaryMaxPaise: 1_000_000 });
     expect(Object.keys(errors)).toEqual(
-      expect.arrayContaining(['fullName', 'gender', 'bestTimeToCall', 'area', 'pincode', 'travelKm', 'trade0', 'years0', 'availableFrom', 'lookingFor', 'shift', 'jobType', 'languagesSpoken', 'salaryMax']),
+      expect.arrayContaining(['fullName', 'gender', 'bestTimeToCall', 'area', 'pincode', 'travelKm', 'trade0', 'years0', 'availableFrom', 'lookingSince', 'shift', 'jobType', 'languagesSpoken', 'salaryMax']),
     );
     expect(errors.salaryMax).toBe('jobSeeker.maxBelowMin');
   });
@@ -50,6 +50,16 @@ describe('job seeker form rules', () => {
 });
 
 describe('Register a job seeker', () => {
+  it('the server has the last word on age (POST /me/register/age-check)', async () => {
+    const api = fakeApi({ ageCheck: async () => ({ adult: false }) });
+    await renderWithApp(<RegisterJobSeeker />, { api, account: account() });
+    await screen.findByTestId('js-age');
+    await pickDob(1995);
+    await fireEvent.press(screen.getByTestId('js-age-continue'));
+    expect(await screen.findByTestId('js-under18')).toBeTruthy();
+    expect(api.ageCheck).toHaveBeenCalledWith(`1995-${month}-10`);
+  });
+
   it('asks the date of birth first and stops politely under 18, keeping nothing', async () => {
     const api = fakeApi();
     await renderWithApp(<RegisterJobSeeker />, { api, account: account() });
@@ -59,6 +69,7 @@ describe('Register a job seeker', () => {
     await fireEvent.press(screen.getByTestId('js-age-continue'));
     expect(screen.getByTestId('js-under18')).toHaveTextContent(/18 or older/);
     expect(screen.queryByTestId('js-form')).toBeNull();
+    expect(api.ageCheck).not.toHaveBeenCalled(); // stopped on the phone; nothing was sent
     expect(api.registerJobSeeker).not.toHaveBeenCalled();
   });
 
@@ -76,7 +87,7 @@ describe('Register a job seeker', () => {
     expect(api.registerJobSeeker).not.toHaveBeenCalled();
   });
 
-  it('sends the filled form, then offers the secure steps (consent → selfie → ID → ₹499)', async () => {
+  it('a fresh OTP to my own number confirms the filled form; then the secure steps (consent → selfie → ID → ₹499)', async () => {
     const api = fakeApi({
       registerJobSeeker: async () => ({ profile: { ...jsProfile, code: 'JS-2001' }, existing: false }),
       sheetLink: async () => ({ url: 'https://app.test/p/register/tok' }),
@@ -89,9 +100,9 @@ describe('Register a job seeker', () => {
 
     await fireEvent.changeText(screen.getByTestId('js-name'), 'Ravi Kumar');
     await fireEvent.press(screen.getByTestId('js-gender-male'));
-    await choose('js-best-time', 'evening');
+    await choose('js-best-time', '18-21');
     await fireEvent.press(screen.getByTestId('js-languages-add'));
-    await fireEvent.press(screen.getByTestId('js-languages-option-kannada'));
+    await fireEvent.press(screen.getByTestId('js-languages-option-Kannada'));
     await choose('js-area', 'BTM Layout');
     expect(screen.getByTestId('js-pincode').props.value).toBe('560076');
     await choose('js-travel', '10');
@@ -99,7 +110,8 @@ describe('Register a job seeker', () => {
     await fireEvent.changeText(screen.getByTestId('js-years-0'), '5');
     await fireEvent.press(screen.getByTestId('js-available'));
     await fireEvent.press(screen.getByTestId(`js-available-day-${today}`));
-    await choose('js-looking', 'under_1_month');
+    await fireEvent.press(screen.getByTestId('js-looking'));
+    await fireEvent.press(screen.getByTestId(`js-looking-day-${today}`));
     await choose('js-shift', 'day');
     await choose('js-job-type', 'full_time');
     await fireEvent.changeText(screen.getByTestId('js-salary-min'), '30000');
@@ -108,23 +120,32 @@ describe('Register a job seeker', () => {
     expect(screen.getByTestId('js-salary-warning')).toHaveTextContent(/₹26,000 or more counts as suitable/);
 
     await fireEvent.press(screen.getByTestId('js-submit'));
+    // The OTP step: nothing is sent until the code is typed.
+    expect(api.registerJobSeeker).not.toHaveBeenCalled();
+    await fireEvent.press(await screen.findByTestId('js-register-otp-send'));
+    expect(api.sendStepUp).toHaveBeenCalledWith('register', undefined);
+    await fireEvent.changeText(await screen.findByTestId('js-register-otp-code'), '123456');
     await waitFor(() => expect(api.registerJobSeeker).toHaveBeenCalled());
     expect(api.registerJobSeeker.mock.calls[0][0]).toEqual(
       expect.objectContaining({
         fullName: 'Ravi Kumar',
         dateOfBirth: `1995-${month}-10`,
         gender: 'male',
+        bestTimeToCall: '18-21',
         area: 'BTM Layout',
         pincode: '560076',
+        pin: { latitude: 12.9166, longitude: 77.6101 }, // no GPS: the area's centre
         travelKm: 10,
         trades: [{ trade: 'Cook', years: 5 }],
+        lookingSince: today,
         salaryMinPaise: 3_000_000,
         salaryMaxPaise: 3_200_000,
         salaryPeriod: 'monthly',
-        languagesSpoken: ['kannada'],
+        languagesSpoken: ['Kannada'],
         heardFrom: 'laboura_app',
       }),
     );
+    expect(api.registerJobSeeker.mock.calls[0][1]).toEqual({ requestId: 'step-1', code: '123456' });
     const saved = await screen.findByTestId('js-saved');
     expect(within(saved).getByText('Your Laboura ID is JS-2001.')).toBeTruthy();
     await fireEvent.press(screen.getByTestId('js-saved-continue'));

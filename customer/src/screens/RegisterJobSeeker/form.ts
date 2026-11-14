@@ -1,4 +1,4 @@
-import type { HeardFrom, JobSeekerForm, Language, Pin, SalaryPeriod, Shift, Trade } from '@/api/types';
+import type { Area, HeardFrom, JobSeekerForm, Language, Pin, SalaryPeriod, Shift, Trade } from '@/api/types';
 import type { MessageKey } from '@/i18n';
 import { ageOn, isPincode } from '@/lib/validate';
 
@@ -25,7 +25,7 @@ export interface JobSeekerDraft {
   travelKm: number | null;
   trades: TradeRow[];
   availableFrom: string;
-  lookingFor: '' | JobSeekerForm['lookingFor'];
+  lookingSince: string;
   salaryMinPaise: number | null;
   salaryMaxPaise: number | null;
   salaryPeriod: SalaryPeriod;
@@ -33,7 +33,6 @@ export interface JobSeekerDraft {
   jobType: '' | JobSeekerForm['jobType'];
   languagesSpoken: string[];
   heardFrom: HeardFrom;
-  whatsappSame: boolean;
 }
 
 export const emptyJobSeeker = (language: Language): JobSeekerDraft => ({
@@ -49,7 +48,7 @@ export const emptyJobSeeker = (language: Language): JobSeekerDraft => ({
   travelKm: null,
   trades: [{ trade: '', otherName: '', years: null }],
   availableFrom: '',
-  lookingFor: '',
+  lookingSince: '',
   salaryMinPaise: null,
   salaryMaxPaise: null,
   salaryPeriod: 'monthly',
@@ -57,7 +56,6 @@ export const emptyJobSeeker = (language: Language): JobSeekerDraft => ({
   jobType: '',
   languagesSpoken: [],
   heardFrom: 'laboura_app',
-  whatsappSame: true,
 });
 
 export type AgeCheck = 'missing' | 'under18' | 'ok';
@@ -86,7 +84,7 @@ export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
     else if (row.years > 50) e[`years${i}`] = 'jobSeeker.yearsTooMany';
   });
   if (!d.availableFrom) e.availableFrom = 'form.required';
-  if (!d.lookingFor) e.lookingFor = 'form.required';
+  if (!d.lookingSince) e.lookingSince = 'form.required';
   if (!d.salaryMinPaise) e.salaryMin = 'form.required';
   if (!d.salaryMaxPaise) e.salaryMax = 'form.required';
   else if (d.salaryMinPaise && d.salaryMaxPaise < d.salaryMinPaise) e.salaryMax = 'jobSeeker.maxBelowMin';
@@ -96,7 +94,9 @@ export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
   return e;
 }
 
-export function toJobSeekerForm(d: JobSeekerDraft): JobSeekerForm {
+/** Without a pin, the centre of the chosen area (an agent fixes it later). */
+export function toJobSeekerForm(d: JobSeekerDraft, areas: Area[] = []): JobSeekerForm {
+  const area = areas.find((a) => a.name === d.area);
   return {
     fullName: d.fullName.trim(),
     dateOfBirth: d.dateOfBirth,
@@ -105,13 +105,13 @@ export function toJobSeekerForm(d: JobSeekerDraft): JobSeekerForm {
     bestTimeToCall: d.bestTimeToCall as JobSeekerForm['bestTimeToCall'],
     area: d.area,
     pincode: d.pincode.trim(),
-    pin: d.pin,
+    pin: d.pin ?? (area ? { latitude: area.latitude, longitude: area.longitude } : null),
     travelKm: d.travelKm ?? 0,
     trades: d.trades.map((row) =>
       row.trade === OTHER_TRADE ? { trade: 'other', otherName: row.otherName.trim(), years: row.years ?? 0 } : { trade: row.trade, years: row.years ?? 0 },
     ),
     availableFrom: d.availableFrom,
-    lookingFor: d.lookingFor as JobSeekerForm['lookingFor'],
+    lookingSince: d.lookingSince,
     salaryMinPaise: d.salaryMinPaise ?? 0,
     salaryMaxPaise: d.salaryMaxPaise ?? 0,
     salaryPeriod: d.salaryPeriod,
@@ -119,7 +119,6 @@ export function toJobSeekerForm(d: JobSeekerDraft): JobSeekerForm {
     jobType: d.jobType as JobSeekerForm['jobType'],
     languagesSpoken: d.languagesSpoken,
     heardFrom: d.heardFrom,
-    whatsappSame: d.whatsappSame,
   };
 }
 

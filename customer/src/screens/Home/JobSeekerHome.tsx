@@ -86,7 +86,7 @@ export function JobSeekerHomeView({ profileId, home }: { profileId: string; home
         <Card testID="js-home-deactivated">
           <View style={styles.gap}>
             <Banner tone="warn" title={t('jsHome.deactivatedTitle')} message={t('jsHome.deactivated', { amount: rupees(home.payment.amountPaise) })} />
-            <Button label={t('jsHome.payAgain', { amount: rupees(home.payment.amountPaise) })} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'payment')} testID="js-home-pay-again" />
+            <Button label={t('jsHome.payAgain', { amount: rupees(home.payment.amountPaise) })} loading={sheet.busy} onPress={() => void sheet.open(profileId, 'registration')} testID="js-home-pay-again" />
           </View>
         </Card>
       ) : null}
@@ -97,7 +97,7 @@ export function JobSeekerHomeView({ profileId, home }: { profileId: string; home
             <Text variant="h2" testID="js-home-interview-business">
               {home.interview.businessName}
             </Text>
-            <Text>{home.interview.trade}</Text>
+            {home.interview.trade ? <Text>{home.interview.trade}</Text> : null}
             <Text>{home.interview.address}</Text>
             <Text variant="bodyStrong">{t('jsHome.interviewAt', { day: formatDayIst(home.interview.startsAt), time: formatTimeIst(home.interview.startsAt) })}</Text>
             {home.interview.replyDueAt ? (

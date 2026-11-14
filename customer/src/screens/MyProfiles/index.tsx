@@ -7,7 +7,7 @@ import { useI18n } from '@/i18n';
 import { routes } from '@/navigation/routes';
 import type { Tone } from '@/theme';
 
-const STAGE_TONE: Record<ProfileSummary['stage'], Tone> = {
+const STAGE_TONE: Record<NonNullable<ProfileSummary['stage']>, Tone> = {
   details: 'neutral',
   verifying: 'amber',
   payment: 'amber',
@@ -35,8 +35,15 @@ export default function MyProfiles() {
             <ListRow
               key={p.id}
               title={`${p.displayName}${p.code ? ` · ${p.code}` : ''}`}
-              subtitle={`${t(`kind.${p.kind}`)}${p.id === activeProfile?.id ? ` · ${t('profiles.showing')}` : ''}`}
-              trailing={<StatusChip label={t(`stage.${p.stage}`)} tone={STAGE_TONE[p.stage]} />}
+              subtitle={[
+                t(`kind.${p.kind}`),
+                p.businessRole ? t(`contactRole.${p.businessRole}`) : null,
+                p.branchName,
+                p.id === activeProfile?.id ? t('profiles.showing') : null,
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+              trailing={p.stage ? <StatusChip label={t(`stage.${p.stage}`)} tone={STAGE_TONE[p.stage]} /> : undefined}
               last={i === profiles.length - 1}
               onPress={() => {
                 setActiveProfileId(p.id);

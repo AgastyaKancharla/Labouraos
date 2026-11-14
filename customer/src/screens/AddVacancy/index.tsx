@@ -3,17 +3,19 @@ import { StyleSheet, View } from 'react-native';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCustomerApi } from '@/api/ApiProvider';
+import { errorText } from '@/api/errorText';
 import { isApiError } from '@/api/errors';
 import { queryKeys } from '@/api/queryClient';
-import type { OtpSent, VacancySummary } from '@/api/types';
+import type { OtpProof, VacancySummary } from '@/api/types';
 import { useAuth } from '@/auth/AuthProvider';
-import { AppHeader, Banner, Button, Card, CodeInput, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
+import { AppHeader, Banner, Button, Card, ErrorState, LoadingState, Screen, Text, TextField } from '@/components';
 import { Checkbox, DateField, MoneyField, NumberField, Segmented, SelectField, addDays, todayKeyIst, type Choice } from '@/components/form';
 import { useI18n } from '@/i18n';
 import { colors } from '@/theme';
 import { clearDraft, useDraft } from '@/lib/drafts';
 import { rupees } from '@/lib/money';
 import { routes } from '@/navigation/routes';
+import { OtpCodeCard } from '../shared/OtpCodeCard';
 import { shiftChoices } from '../shared/choices';
 import { belowLegalMinimum, emptyVacancy, toVacancyDraft, validateVacancy, type VacancyErrors } from './form';
 
@@ -41,15 +43,16 @@ export default function AddVacancy() {
   const [vacancyId, setVacancyId] = useState<string | null>(params.vacancyId ?? null);
   const [confirmed, setConfirmed] = useState<VacancySummary | null>(null);
   const [errors, setErrors] = useState<VacancyErrors>({});
-  const [otp, setOtp] = useState<OtpSent | null>(null);
-  const [code, setCode] = useState('');
+  const [ownerTold, setOwnerTold] = useState(false);
+  /** 409 BELOW_MINIMUM_WAGE_TICK_REQUIRED on confirm: the legal minimum to show with the tick. */
+  const [tickFor, setTickFor] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const options = useQuery({ queryKey: queryKeys.formOptions, queryFn: () => api.formOptions(), staleTime: 60 * 60_000 });
   const today = todayKeyIst();
   const set = <K extends keyof typeof form>(key: K, value: (typeof form)[K]) => setForm((f) => ({ ...f, [key]: value }));
   const err = (key: keyof typeof form) => (errors[key] ? t(errors[key]!) : null);
-  const failure = (e: unknown) => setProblem(isApiError(e) ? (e.isNetworkError ? t('common.networkError') : e.message) : t('common.error'));
+  const failure = (e: unknown) => setProblem(errorText(t, e));
   const header = <AppHeader title={t('vacancy.title')} onBack={() => router.back()} />;
   const profileId = activeProfile?.kind === 'business' ? activeProfile.id : null;
 
@@ -95,6 +98,7 @@ export default function AddVacancy() {
       const vacancy = await api.createVacancy(profileId, toVacancyDraft(form));
       await clearDraft('vacancy');
       setVacancyId(vacancy.id);
+      setOwnerTold(form.legalMinimumAcknowledged);
       setStep('otp');
       await queryClient.invalidateQueries({ queryKey: queryKeys.home(profileId) });
     } catch (e) {
@@ -104,35 +108,25 @@ export default function AddVacancy() {
     }
   };
 
-  const sendOtp = async () => {
+  /** Confirm the draft. `otp` null = retry after the tick, with the OTP already checked. */
+  const confirm = async (otp: OtpProof | null, told: boolean) => {
     if (!vacancyId) return;
-    setBusy(true);
-    setProblem(null);
     try {
-      setOtp(await api.sendVacancyOtp(profileId, vacancyId));
-      setCode('');
-    } catch (e) {
-      failure(e);
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  const confirm = async (value: string = code) => {
-    if (!vacancyId || !otp || value.length !== 6) {
-      setProblem(t('otp.enterCode'));
-      return;
-    }
-    setBusy(true);
-    setProblem(null);
-    try {
-      setConfirmed(await api.confirmVacancy(profileId, vacancyId, { requestId: otp.requestId, code: value }));
+      setConfirmed(await api.confirmVacancy(profileId, vacancyId, { otp, ownerToldMinimumWage: told }));
       setStep('done');
       await queryClient.invalidateQueries({ queryKey: queryKeys.home(profileId) });
     } catch (e) {
-      failure(e);
-    } finally {
-      setBusy(false);
+      if (isApiError(e) && e.code === 'BELOW_MINIMUM_WAGE_TICK_REQUIRED') {
+        setTickFor(e.field<number>('legalMinimumPaise') ?? 0);
+        return;
+      }
+      if (isApiError(e) && e.code === 'STEP_UP_REQUIRED') {
+        // The checked code was used up: ask for a new one.
+        setTickFor(null);
+        setProblem(errorText(t, e));
+        return;
+      }
+      throw e;
     }
   };
 
@@ -142,7 +136,7 @@ export default function AddVacancy() {
         {header}
         <Screen>
           <Banner tone="ok" title={t('vacancy.confirmedTitle')} message={confirmed?.code ? t('vacancy.confirmedCode', { code: confirmed.code }) : undefined} />
-          {confirmed?.status === 'waiting_for_visit' ? <Banner tone="info" message={t('vacancy.waitingForVisit')} testID="vacancy-waiting-visit" /> : null}
+          {confirmed?.status !== 'open' ? <Banner tone="info" message={t('vacancy.waitingForVisit')} testID="vacancy-waiting-visit" /> : null}
           <Button label={t('vacancy.backHome')} onPress={() => router.replace(routes.home)} testID="vacancy-home" />
         </Screen>
       </View>
@@ -155,20 +149,42 @@ export default function AddVacancy() {
         {header}
         <Screen>
           <Banner tone="info" title={t('vacancy.draftSaved')} message={t('vacancy.otpWhy')} />
-          <Card>
-            <View style={styles.gap}>
-              {!otp ? (
-                <Button label={t('vacancy.sendOtp', { last4: account?.phoneLast4 ?? '' })} onPress={() => void sendOtp()} loading={busy} testID="vacancy-send-otp" />
-              ) : (
-                <>
-                  <Text variant="muted">{t('otp.sentTo', { last4: account?.phoneLast4 ?? '' })}</Text>
-                  <CodeInput label={t('otp.code')} value={code} onChange={setCode} onComplete={(v) => void confirm(v)} autoFocus testID="vacancy-code" />
-                  <Button label={t('vacancy.confirm')} onPress={() => void confirm()} loading={busy} testID="vacancy-confirm" />
-                  <Button label={t('otp.resend')} variant="secondary" onPress={() => void sendOtp()} disabled={busy} testID="vacancy-resend" />
-                </>
-              )}
-            </View>
-          </Card>
+          {tickFor !== null ? (
+            <Card testID="vacancy-tick-needed">
+              <View style={styles.gap}>
+                <Banner tone="warn" title={t('vacancy.belowMinimumTitle')} message={t('vacancy.belowMinimum', { amount: rupees(tickFor) })} />
+                <Checkbox label={t('vacancy.legalMinimumTick')} checked={ownerTold} onChange={setOwnerTold} testID="vacancy-otp-tick" />
+                <Button
+                  label={t('vacancy.confirm')}
+                  disabled={!ownerTold || busy}
+                  loading={busy}
+                  onPress={async () => {
+                    setBusy(true);
+                    setProblem(null);
+                    try {
+                      await confirm(null, true);
+                    } catch (e) {
+                      failure(e);
+                    } finally {
+                      setBusy(false);
+                    }
+                  }}
+                  testID="vacancy-confirm-after-tick"
+                />
+              </View>
+            </Card>
+          ) : (
+            <Card>
+              <OtpCodeCard
+                testID="vacancy-otp-card"
+                send={(resendOf) => api.sendStepUp('confirm_vacancy', resendOf)}
+                submit={(otp) => confirm(otp, ownerTold)}
+                sendLabel={t('vacancy.sendOtp', { last4: account?.phoneLast4 ?? '' })}
+                submitLabel={t('vacancy.confirm')}
+                sentText={t('otp.sentTo', { last4: account?.phoneLast4 ?? '' })}
+              />
+            </Card>
+          )}
           {problem ? <Banner tone="error" message={problem} testID="vacancy-problem" /> : null}
           <Button label={t('vacancy.later')} variant="secondary" onPress={() => router.replace(routes.home)} testID="vacancy-later" />
         </Screen>
