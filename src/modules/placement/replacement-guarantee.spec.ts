@@ -37,8 +37,12 @@ type MockTxCallback<T> = (tx: unknown) => Promise<T>;
 
 interface MockPrismaForPlacement {
   $transaction?: <T>(fn: MockTxCallback<T> | Promise<T>[]) => Promise<T>;
+  // reportClaim locks the placement row, checks the person's scope and call evidence
+  $queryRaw: jest.Mock;
+  candidateIntroduction: { findMany: jest.Mock };
   staff: {
     findUnique: jest.Mock<Promise<typeof staffActor | null>, [{ where: { id: string } }]>;
+    findMany?: jest.Mock;
   };
   placement: {
     findFirst: jest.Mock<Promise<MockPlacementRecord | null>, []>;
@@ -51,6 +55,7 @@ interface MockPrismaForPlacement {
   replacementClaim: {
     create: jest.Mock;
     findMany: jest.Mock;
+    findFirst: jest.Mock;
   };
 }
 
@@ -67,6 +72,9 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
     answered: true,
     subjectType: 'business',
     subjectId: 'biz-1',
+    // made by the reporting agent after the worker left
+    staffId: 'staff-1',
+    createdAt: new Date('2026-09-01T00:00:00.000Z'),
   };
 
   beforeEach(() => {
@@ -114,7 +122,10 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
           }),
         ),
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      candidateIntroduction: { findMany: jest.fn().mockResolvedValue([]) },
     };
 
     mockAuditService = {
@@ -158,6 +169,7 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
     it('day 10 worker left date is accepted within guarantee window', async () => {
       const day10 = new Date(joinedDate.getTime() + 10 * 24 * 60 * 60 * 1000);
       const reportDate = new Date(day10.getTime() + 2 * 24 * 60 * 60 * 1000); // 2 days later (within 7d deadline)
+      mockPrisma.callRecord.findUnique.mockResolvedValue({ ...validOwnerCall, createdAt: reportDate });
 
       const result = await placementService.reportClaim(
         'pl-1',
@@ -184,6 +196,7 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
     it('day 60 exactly is accepted (boundary stated explicitly)', async () => {
       const day60Exact = new Date(joinedDate.getTime() + 60 * 24 * 60 * 60 * 1000);
       const reportDate = new Date(day60Exact.getTime() + 1 * 24 * 60 * 60 * 1000);
+      mockPrisma.callRecord.findUnique.mockResolvedValue({ ...validOwnerCall, createdAt: reportDate });
 
       const result = await placementService.reportClaim(
         'pl-1',
@@ -277,6 +290,7 @@ describe('Phase 6.5 Task 7 (Updated for Phase 17 Task 2): Enforce 60-Day Replace
     it('auto-rejects claims with reasons from the reject list (e.g. salary_unpaid)', async () => {
       const day20 = new Date(joinedDate.getTime() + 20 * 24 * 60 * 60 * 1000);
       const reportDate = new Date(day20.getTime() + 2 * 24 * 60 * 60 * 1000);
+      mockPrisma.callRecord.findUnique.mockResolvedValue({ ...validOwnerCall, createdAt: reportDate });
 
       const result = await placementService.reportClaim(
         'pl-1',

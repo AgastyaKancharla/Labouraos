@@ -569,3 +569,13 @@ Format:
 **Symptom:** `screen.getByTestId` throws right after `render(...)` in `field/` tests.
 **Cause:** React Native Testing Library 14 made `render`, `fireEvent.press` and `fireEvent.changeText` async.
 **Fix:** `await render(...)`, `await fireEvent.press(...)`.
+
+## Render deploys "Timed Out": the free Key Value ran out of Redis connections
+**Symptom:** On the free tier the new instance logs "Error: read ECONNRESET" over and over, never logs "Nest application successfully started", and Render marks the deploy "Timed Out" after 15 minutes; the old instance's `/health/ready` then says "Connection is closed".
+**Cause:** Every job had its own BullMQ Queue and Worker (3 connections each), plus the keeper, the heartbeat and two fresh connections per readiness check: 46 connections in one `PROCESS_ROLE=all` process. A zero-downtime deploy runs two copies, and the free Key Value accepts about 50. The new copy also waited for Redis inside `onModuleInit` (no timeout), so it never started listening.
+**Fix:** One shared connection (`sharedRedis()`, `src/common/redis/redis-connections.ts`) and one queue with one Worker that dispatches by job name (`src/jobs/job-queue.ts`): 1 connection for `web`, 2 for `worker`/`all`. Start-up never waits for Redis (`startScheduledJob`, keeper in the background), every connection reconnects with backoff, and SIGTERM closes the connections. AGENTS.md §9a says how to add a job; `redis-connection-budget.spec.ts` guards the count.
+
+## A BullMQ Worker that never reached Redis never closes
+**Symptom:** `worker.close()` (and `close(true)`) never resolve when Redis was unreachable the whole time; Jest does not exit and shutdown hangs.
+**Cause:** The Worker's main loop waits for its blocking connection to become ready; `close(true)` after `close(false)` returns the same pending promise.
+**Fix:** `JobQueue.close()` calls `close(true)` straight away when Redis is down, waits at most the grace period otherwise, and `closeSharedRedis()` then drops every connection the process made, including the Worker's blocking copy.

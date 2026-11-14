@@ -3,6 +3,7 @@ import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/commo
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { RBAC_MATRIX, Role } from '../../common/rbac/rbac.types';
+import { OwnTeam } from '../../common/rbac/own-team';
 import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ConsentClock } from '../consent/consent-clock';
@@ -56,7 +57,12 @@ export class ScreensCallRegistrationService {
     private readonly pricing: PricingService,
     private readonly clock: ConsentClock,
     private readonly areas: AreaService,
-  ) {}
+  ) {
+    this.team = new OwnTeam(prisma);
+  }
+
+  /** A Team Lead's own team (the one shared definition, OwnTeam). */
+  private readonly team: OwnTeam;
 
   /**
    * Areas list for every registration form (the pincode fills the city), read
@@ -279,10 +285,10 @@ export class ScreensCallRegistrationService {
     if (upper.startsWith('RF-')) {
       const referral = await this.prisma.referral.findUnique({
         where: { code: upper },
-        select: { id: true, code: true, name: true, createdAt: true },
+        select: { id: true, code: true, name: true, createdAt: true, registeredByStaffId: true },
       });
       if (!referral) throw new NotFoundException(`Record '${code}' not found`);
-      await this.assertCanRead('referral', [], actor);
+      await this.assertCanRead('referral', [referral.registeredByStaffId], actor);
       return { type: 'referral', id: referral.id, code: referral.code, name: referral.name, registeredAt: referral.createdAt, registeredBy: null };
     }
     throw new NotFoundException(`Record '${code}' not found`);
@@ -294,15 +300,17 @@ export class ScreensCallRegistrationService {
     if (rule.scope === 'all') return;
     const ownerIds = owners.filter((owner): owner is string => Boolean(owner));
     if (ownerIds.includes(actor.id)) return;
-    if (rule.scope === 'own_team' && actor.role === 'team_lead' && ownerIds.length > 0) {
-      const inTeam = await this.prisma.staff.findFirst({ where: { id: { in: ownerIds }, teamLeadId: actor.id }, select: { id: true } });
-      if (inTeam) return;
+    if (rule.scope === 'own_team' && actor.role === 'team_lead' && (await this.team.includesAny(actor.id, ownerIds))) {
+      return;
     }
     throw new ForbiddenException('You cannot open this record');
   }
 
-  /** "Referred by": a partner found by RF- ID or by their mobile number. */
-  async findReferralPartner(query: string) {
+  /**
+   * "Referred by": a partner found by RF- ID or by their mobile number. A Team
+   * Lead finds only partners their own team registered (owner rule, 14 Nov).
+   */
+  async findReferralPartner(query: string, actor?: ScreenActor) {
     const q = (query ?? '').trim();
     if (!q) return null;
     // A full number in any spelling (9876543210, +91 98765 43210, 09876543210) finds the
@@ -314,7 +322,10 @@ export class ScreensCallRegistrationService {
         ? { phone: { in: phoneTerm.values } }
         : null;
     if (!where) return null;
-    const partner = await this.prisma.referral.findFirst({ where, select: { id: true, code: true, name: true, phone: true } });
+    const scope = actor?.role === 'team_lead'
+      ? { registeredByStaffId: { in: await this.team.memberIds(actor.id) } }
+      : {};
+    const partner = await this.prisma.referral.findFirst({ where: { ...where, ...scope }, select: { id: true, code: true, name: true, phone: true } });
     return partner ?? null;
   }
 
@@ -360,8 +371,7 @@ export class ScreensCallRegistrationService {
   }
 
   private async teamScope(teamLeadId: string) {
-    const team = await this.prisma.staff.findMany({ where: { teamLeadId }, select: { id: true } });
-    const ids = [teamLeadId, ...team.map((member) => member.id)];
+    const ids = await this.team.memberIds(teamLeadId);
     return { OR: [{ accountAgentId: { in: ids } }, { leadCreatedByStaffId: { in: ids } }] };
   }
 

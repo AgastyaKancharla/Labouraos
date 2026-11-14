@@ -9,11 +9,13 @@ import {
   RECEIPT_CHECK_DELAY_MS,
 } from '../modules/customer-notification/customer-notification.constants';
 import { CustomerPushSenderService, PushTicketRef } from '../modules/customer-notification/customer-push-sender.service';
+import { JobHandler, jobQueue, startScheduledJob } from './job-queue';
 import { recordJobRun } from './job-run-recorder';
 import { INTERVAL_JOB_MS } from './job-schedules';
 
+/** Every job shares one queue (LABOURA_JOBS_QUEUE; see job-queue.ts). */
 export { CUSTOMER_PUSH_QUEUE };
-/** The scheduled round's JobRun name. */
+/** The scheduled round's job name (and its JobRun name). */
 export const CUSTOMER_PUSH_ROUND = 'send-due-customer-pushes';
 
 /**
@@ -23,6 +25,13 @@ export const CUSTOMER_PUSH_ROUND = 'send-due-customer-pushes';
  * the daily cap (CustomerPushSenderService). About 15 minutes after sending
  * it checks Expo's receipts and removes the tokens of uninstalled apps.
  *
+ * Three job names on the shared queue, all run by the shared worker:
+ *   - CUSTOMER_PUSH_ROUND (scheduled, leaves a JobRun row);
+ *   - CUSTOMER_PUSH_SEND_NOW (one-off kick; no JobRun row, it would flood it);
+ *   - CUSTOMER_PUSH_CHECK_RECEIPTS (one-off, delayed; no JobRun row).
+ * The round and the kick never overlap in one process (as when this job had
+ * its own worker with concurrency 1), so the daily cap is counted once.
+ *
  * Push is never a contact attempt (C17); this job writes no ContactAttempt.
  */
 @Injectable()
@@ -30,6 +39,8 @@ export class CustomerPushJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(CustomerPushJob.name);
   private queue: Queue | null = null;
   private worker: Worker | null = null;
+  /** The send in progress in this process: the round and a kick wait for each other. */
+  private sending: Promise<unknown> = Promise.resolve();
 
   constructor(
     private readonly sender: CustomerPushSenderService,
@@ -37,40 +48,24 @@ export class CustomerPushJob implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly prisma?: PrismaService,
   ) {}
 
-  private get connection() {
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null,
-      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-    };
-  }
-
   getQueue(): Queue {
-    if (!this.queue) {
-      this.queue = new Queue(CUSTOMER_PUSH_QUEUE, { connection: this.connection });
-      this.queue.on('error', (error) => this.logger.warn(`Customer push queue error: ${error.message}`));
-    }
+    this.queue = jobQueue.queue();
     return this.queue;
   }
 
+  /** What the shared job worker runs for the scheduled round (src/jobs/job-queue.ts). */
+  readonly handle: JobHandler = () => recordJobRun(this.prisma, CUSTOMER_PUSH_ROUND, () => this.process());
+
+  /** What the shared job worker runs for a "send now" kick and a receipt check. */
+  readonly handleOneOff: JobHandler = (job: Job) => this.handleJob(job);
+
   getWorker(): Worker {
-    if (!this.worker) {
-      // The scheduled round leaves a JobRun row; kicks and receipt checks do not (they would flood it).
-      this.worker = new Worker(
-        CUSTOMER_PUSH_QUEUE,
-        async (job: Job) => (job.name === CUSTOMER_PUSH_ROUND ? recordJobRun(this.prisma, CUSTOMER_PUSH_ROUND, () => this.process()) : this.handle(job)),
-        { connection: this.connection },
-      );
-      this.worker.on('error', (error) => this.logger.error(`Customer push worker error: ${error.message}`));
-    }
+    this.worker = jobQueue.worker(CUSTOMER_PUSH_ROUND, this.handle);
     return this.worker;
   }
 
-  /** The other two kinds of job on the queue: a "send now" kick and a receipt check. */
-  async handle(job: Pick<Job, 'name' | 'data'>) {
+  /** The two one-off kinds of job: a "send now" kick and a receipt check. */
+  async handleJob(job: Pick<Job, 'name' | 'data'>) {
     if (job.name === CUSTOMER_PUSH_CHECK_RECEIPTS) {
       const tickets = Array.isArray((job.data as { tickets?: unknown })?.tickets) ? (job.data as { tickets: PushTicketRef[] }).tickets : [];
       return this.sender.checkReceipts(tickets);
@@ -88,7 +83,13 @@ export class CustomerPushJob implements OnModuleInit, OnModuleDestroy {
   }
 
   /** Sends what is due, then books the receipt check. Returns counts only (JobRun details). */
-  async process(now: Date = this.sender.now()) {
+  async process(now?: Date) {
+    const run = this.sending.then(() => this.sendDue(now ?? this.sender.now()));
+    this.sending = run.catch(() => undefined);
+    return run;
+  }
+
+  private async sendDue(now: Date) {
     const result = await this.sender.sendDue(now);
     if (result.tickets.length > 0) {
       try {
@@ -106,24 +107,30 @@ export class CustomerPushJob implements OnModuleInit, OnModuleDestroy {
   }
 
   async onModuleInit(): Promise<void> {
+    // Only a process that runs jobs handles pushes. The web process still
+    // queues "send now" kicks on the shared queue (CustomerPushKick).
     if (!runsJobs()) return;
-    try {
-      await this.schedule();
-      this.getWorker();
-    } catch (error) {
-      this.logger.warn(`Could not initialize CustomerPushJob BullMQ worker: ${(error as Error).message}`);
-      await this.onModuleDestroy();
-    }
+    jobQueue.register(CUSTOMER_PUSH_SEND_NOW, this.handleOneOff);
+    jobQueue.register(CUSTOMER_PUSH_CHECK_RECEIPTS, this.handleOneOff);
+    await startScheduledJob({
+      name: CUSTOMER_PUSH_ROUND,
+      handler: this.handle,
+      schedule: () => this.schedule(),
+      startWorker: () => this.getWorker(),
+      onError: (message) => this.logger.warn(`Could not initialize CustomerPushJob BullMQ worker: ${message}`),
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-    if (this.queue) {
-      await this.queue.close();
-      this.queue = null;
-    }
+    await this.close();
+  }
+
+  /** Stops handling these jobs here. The shared queue and Worker stay up (JobQueueLifecycle stops them at shutdown). */
+  async close(): Promise<void> {
+    jobQueue.release(CUSTOMER_PUSH_ROUND);
+    jobQueue.release(CUSTOMER_PUSH_SEND_NOW);
+    jobQueue.release(CUSTOMER_PUSH_CHECK_RECEIPTS);
+    this.worker = null;
+    this.queue = null;
   }
 }

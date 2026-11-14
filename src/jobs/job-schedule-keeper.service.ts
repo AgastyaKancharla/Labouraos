@@ -1,9 +1,10 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy, Optional } from '@nestjs/common';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { AlertService } from '../common/observability/alert.service';
-import { redisClientOptions } from '../common/redis/worker-heartbeat';
+import { sharedRedis, whenRedisReady } from '../common/redis/redis-connections';
 import { processRole, runsJobs } from '../common/process/process-role';
+import { cleanUpLegacyQueues } from './legacy-queues';
 import { recordJobRun } from './job-run-recorder';
 import { JOB_CATALOG, JobCatalogEntry, findJob } from './job-catalog';
 import { missingSchedules, ScheduleReader } from './job-schedule-check';
@@ -72,7 +73,11 @@ function withTimeout<T>(work: Promise<T>, ms: number, what: string): Promise<T> 
  *     are in Redis — the start-up check);
  *   - checks every 10 minutes and re-registers whatever is missing;
  *   - re-registers everything whenever its Redis connection comes back
- *     ("ready" after a lost connection).
+ *     ("ready" after a lost connection, or the first time Redis answers when it
+ *     was down at start).
+ * None of this holds up start-up: the app starts and serves HTTP even when
+ * Redis is down, and the keeper catches up once Redis answers. It uses the
+ * shared Redis connection (src/common/redis/redis-connections.ts).
  * /health/ready reports `schedules` as failed while any is missing.
  *
  * `run(key)` is the CEO's "run now": it calls the job's own work directly in
@@ -84,7 +89,15 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
   private readonly handles: Record<string, JobHandle>;
   private timer: NodeJS.Timeout | null = null;
   private client: Redis | null = null;
-  private connectedOnce = false;
+  /** Set at shutdown: background work stops, so nothing opens a connection after Redis is closed. */
+  private destroyed = false;
+  private readonly onRedisReady = () => {
+    if (this.destroyed) return;
+    this.logger.warn('Redis connection is ready; registering every job schedule again');
+    void this.ensureAll('redis reconnected').then(() => this.cleanUpLegacy());
+  };
+  /** The start-up registration running in the background (tests can await it). */
+  startup: Promise<void> = Promise.resolve();
 
   constructor(
     noPickup: NoPickupEvaluationJob,
@@ -131,10 +144,24 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
 
   async onApplicationBootstrap(): Promise<void> {
     if (!runsJobs()) return;
+    this.watchRedis();
+    const intervalMs = Number(process.env.JOB_SCHEDULE_CHECK_INTERVAL_MS) || DEFAULT_SCHEDULE_CHECK_INTERVAL_MS;
+    this.timer = setInterval(() => void this.checkAndRepair(), intervalMs);
+    this.timer.unref?.();
+    // In the background: with Redis down this would otherwise hold up the
+    // HTTP server (and Render's health check) for over a minute.
+    this.startup = this.startUpCheck().catch((error: unknown) => {
+      this.logger.warn(`Start-up check failed: ${error instanceof Error ? error.message : String(error)}`);
+    });
+  }
+
+  /** Registers every schedule and logs how many are in Redis (the start-up check). */
+  async startUpCheck(): Promise<void> {
     const result = await this.ensureAll('start');
+    if (this.destroyed) return;
     const missing = await this.safeMissing();
     if (missing === null) {
-      this.logger.warn('Start-up check: could not read the job schedules from Redis; will retry every 10 minutes');
+      this.logger.warn('Start-up check: could not read the job schedules from Redis; they are registered as soon as Redis answers');
     } else if (missing.length === 0) {
       this.logger.log(
         `Start-up check: all ${JOB_CATALOG.length} job schedules are in Redis (PROCESS_ROLE=${processRole()})`,
@@ -145,16 +172,33 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
           (result.failed.length ? ` (errors: ${result.failed.map((f) => `${f.key}: ${f.error}`).join('; ')})` : ''),
       );
     }
-    this.watchRedis();
-    const intervalMs = Number(process.env.JOB_SCHEDULE_CHECK_INTERVAL_MS) || DEFAULT_SCHEDULE_CHECK_INTERVAL_MS;
-    this.timer = setInterval(() => void this.checkAndRepair(), intervalMs);
-    this.timer.unref?.();
+    if (missing !== null) await this.cleanUpLegacy();
+  }
+
+  /** Removes the schedules the jobs had in their own queues before the shared queue (see legacy-queues.ts). */
+  async cleanUpLegacy(): Promise<void> {
+    if (this.destroyed) return;
+    try {
+      const client = this.getClient();
+      await whenRedisReady(client, SCHEDULE_TIMEOUT_MS);
+      const result = await withTimeout(cleanUpLegacyQueues(client), 4 * SCHEDULE_TIMEOUT_MS, 'Cleaning up the old job queues');
+      if (result.removedSchedules.length || result.movedRecordingCopies) {
+        this.logger.log(
+          `Moved to the shared job queue: removed ${result.removedSchedules.length} old schedule(s)` +
+            (result.removedSchedules.length ? ` (${result.removedSchedules.join(', ')})` : '') +
+            `, moved ${result.movedRecordingCopies} waiting recording copy job(s)`,
+        );
+      }
+    } catch (error: unknown) {
+      this.logger.warn(`Could not clean up the old job queues: ${error instanceof Error ? error.message : String(error)}`);
+    }
   }
 
   /** Writes every schedule again. Safe to repeat: BullMQ upserts by scheduler id. */
   async ensureAll(reason: string): Promise<EnsureResult> {
     const result: EnsureResult = { registered: [], failed: [] };
     for (const [key, handle] of Object.entries(this.handles)) {
+      if (this.destroyed) break;
       try {
         await withTimeout(handle.schedule(), SCHEDULE_TIMEOUT_MS, `Scheduling ${key}`);
         result.registered.push(key);
@@ -175,6 +219,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
    * writes them all again and raises an alert. Returns the keys that were missing.
    */
   async checkAndRepair(reader?: ScheduleReader): Promise<string[]> {
+    if (this.destroyed) return [];
     const missing = await this.safeMissing(reader);
     if (missing === null || missing.length === 0) return [];
     const keys = missing.map((m) => m.key);
@@ -195,7 +240,7 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
 
   /** Which schedules are in Redis right now (CEO view). */
   async status(reader?: ScheduleReader): Promise<ScheduleStatus[]> {
-    const missing = await missingSchedules(reader ?? this.getClient());
+    const missing = await this.readMissing(reader);
     const missingKeys = new Set(missing.map((m) => m.key));
     return JOB_CATALOG.map((entry) => ({
       key: entry.key,
@@ -220,46 +265,54 @@ export class JobScheduleKeeper implements OnApplicationBootstrap, OnModuleDestro
   }
 
   async onModuleDestroy(): Promise<void> {
+    this.destroyed = true;
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
     }
+    // The connection is shared: stop listening, never close it here
+    // (JobQueueLifecycle closes it at shutdown).
     if (this.client) {
-      const client = this.client;
+      this.client.removeListener('ready', this.onRedisReady);
       this.client = null;
-      client.disconnect();
     }
+  }
+
+  /** Reads which schedules are missing, without queueing commands on a connection that is down. */
+  private async readMissing(reader?: ScheduleReader): Promise<JobCatalogEntry[]> {
+    if (reader) return missingSchedules(reader);
+    const client = this.getClient();
+    await whenRedisReady(client, SCHEDULE_TIMEOUT_MS);
+    return missingSchedules(client);
   }
 
   private async safeMissing(reader?: ScheduleReader): Promise<JobCatalogEntry[] | null> {
     try {
-      return await withTimeout(missingSchedules(reader ?? this.getClient()), SCHEDULE_TIMEOUT_MS, 'Reading job schedules');
+      return await withTimeout(this.readMissing(reader), 2 * SCHEDULE_TIMEOUT_MS, 'Reading job schedules');
     } catch (error: unknown) {
       this.logger.warn(`Could not read job schedules: ${error instanceof Error ? error.message : String(error)}`);
       return null;
     }
   }
 
-  /** After a lost Redis connection comes back, every schedule is written again. */
+  /**
+   * Whenever the shared connection becomes ready (after a lost connection, or
+   * for the first time when Redis was down at start), every schedule is
+   * written again.
+   */
   private watchRedis(): void {
     const client = this.getClient();
-    client.on('ready', () => {
-      if (!this.connectedOnce) {
-        this.connectedOnce = true;
-        return;
-      }
-      this.logger.warn('Redis connection is back; registering every job schedule again');
-      void this.ensureAll('redis reconnected');
-    });
-    if (client.status === 'ready') this.connectedOnce = true;
+    client.removeListener('ready', this.onRedisReady);
+    client.on('ready', this.onRedisReady);
   }
 
   private getClient(): Redis {
-    if (!this.client) {
-      this.client = new Redis({ ...redisClientOptions(), maxRetriesPerRequest: 1 });
-      // Errors surface through the checks; stop ioredis printing each retry.
-      this.client.on('error', () => undefined);
+    const client = sharedRedis();
+    if (this.client && this.client !== client) {
+      this.client.removeListener('ready', this.onRedisReady);
+      if (this.timer) client.on('ready', this.onRedisReady);
     }
-    return this.client;
+    this.client = client;
+    return client;
   }
 }

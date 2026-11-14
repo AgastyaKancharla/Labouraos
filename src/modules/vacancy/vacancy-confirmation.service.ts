@@ -15,7 +15,8 @@ import { testModeFields } from '../../common/otp/otp-test-mode';
 
 /** A vacancy may only be matched, introduced or interviewed for once it is `open`. */
 export const UNCONFIRMED_VACANCY_STATUSES = ['draft', 'awaiting_confirmation'] as const;
-export const VACANCY_CONFIRMATION_METHODS = ['code_on_call', 'code_on_visit', 'sms_link'] as const;
+// in_app: the contact person confirmed in the Laboura app with a fresh OTP on their own verified mobile (customer app, C8).
+export const VACANCY_CONFIRMATION_METHODS = ['code_on_call', 'code_on_visit', 'sms_link', 'in_app'] as const;
 export type VacancyConfirmationMethod = (typeof VACANCY_CONFIRMATION_METHODS)[number];
 
 const LINK_VALID_HOURS = 48;
@@ -309,11 +310,27 @@ export class VacancyConfirmationService {
     return this.markConfirmed(vacancy, contact, 'sms_link', null);
   }
 
+  /**
+   * Customer app (C8): the signed-in contact person confirmed with a fresh OTP on
+   * their own verified mobile. The caller checks that the mobile is this
+   * vacancy's contact; refused otherwise.
+   */
+  async confirmInApp(vacancyId: string, verifiedPhone: string, auditActorId: string) {
+    const vacancy = await this.prisma.vacancy.findUnique({ where: { id: vacancyId }, include: { business: true, branch: true } });
+    if (!vacancy) throw new NotFoundException(`Vacancy '${vacancyId}' not found`);
+    const contact = this.contactOf(vacancy);
+    if (last4(contact.phone) !== last4(verifiedPhone) || contact.phone.replace(/\D/g, '').slice(-10) !== verifiedPhone.replace(/\D/g, '').slice(-10)) {
+      throw new ForbiddenException('Only the vacancy contact person can confirm it');
+    }
+    return this.markConfirmed(vacancy, contact, 'in_app', null, auditActorId);
+  }
+
   private async markConfirmed(
     vacancy: Vacancy,
     contact: VacancyContact,
     method: VacancyConfirmationMethod,
     recordedByStaffId: string | null,
+    auditActorId?: string,
   ) {
     const now = new Date();
     const confirmed = await this.prisma.$transaction(async (tx) => {
@@ -341,7 +358,7 @@ export class VacancyConfirmationService {
       return tx.vacancy.findUniqueOrThrow({ where: { id: vacancy.id }, include: { business: true, branch: true } });
     });
     await this.auditService.log({
-      actorId: recordedByStaffId ?? 'system',
+      actorId: recordedByStaffId ?? auditActorId ?? 'system',
       action: 'vacancy.confirmed',
       entityType: 'vacancy',
       entityCode: vacancy.code,

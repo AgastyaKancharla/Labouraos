@@ -1,5 +1,7 @@
 import { CustomerNotificationHooks } from './customer-notification-hooks.service';
-import { CustomerPushJob, CUSTOMER_PUSH_ROUND } from '../../jobs/customer-push.job';
+import { CustomerPushJob, CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND } from '../../jobs/customer-push.job';
+import { jobQueue, LABOURA_JOBS_QUEUE } from '../../jobs/job-queue';
+import { CustomerPushKick } from './customer-push-kick';
 import { CUSTOMER_PUSH_CHECK_RECEIPTS, CUSTOMER_PUSH_SEND_NOW, RECEIPT_CHECK_DELAY_MS } from './customer-notification.constants';
 
 /**
@@ -116,11 +118,61 @@ describe('CustomerPushJob', () => {
   it('routes a kick to a send round and a receipt job to the receipt check', async () => {
     const sender = { now: () => new Date(), sendDue: jest.fn().mockResolvedValue({ ...result, tickets: [] }), checkReceipts: jest.fn().mockResolvedValue({ ok: 1 }) };
     const job = new CustomerPushJob(sender as never);
-    await job.handle({ name: CUSTOMER_PUSH_SEND_NOW, data: {} });
+    await job.handleJob({ name: CUSTOMER_PUSH_SEND_NOW, data: {} });
     expect(sender.sendDue).toHaveBeenCalledTimes(1);
-    await job.handle({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: [{ ticketId: 't' }] } });
+    await job.handleJob({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: [{ ticketId: 't' }] } });
     expect(sender.checkReceipts).toHaveBeenCalledWith([{ ticketId: 't' }]);
     expect(CUSTOMER_PUSH_ROUND).toBe('send-due-customer-pushes');
+  });
+
+  it('never runs a kick and the scheduled round at the same time in one process (the daily cap is counted once)', async () => {
+    let active = 0;
+    let most = 0;
+    const sendDue = jest.fn().mockImplementation(async () => {
+      active += 1;
+      most = Math.max(most, active);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      active -= 1;
+      return { ...result, tickets: [] };
+    });
+    const job = new CustomerPushJob({ now: () => new Date(), sendDue, checkReceipts: jest.fn() } as never);
+    await Promise.all([job.handle({} as never), job.handleOneOff({ name: CUSTOMER_PUSH_SEND_NOW, data: {} } as never), job.process()]);
+    expect(sendDue).toHaveBeenCalledTimes(3);
+    expect(most).toBe(1);
+  });
+
+  it('a failed send does not stop the next one', async () => {
+    const sendDue = jest.fn().mockRejectedValueOnce(new Error('database down')).mockResolvedValue({ ...result, tickets: [] });
+    const job = new CustomerPushJob({ now: () => new Date(), sendDue, checkReceipts: jest.fn() } as never);
+    await expect(job.process()).rejects.toThrow('database down');
+    await expect(job.process()).resolves.toEqual({ ...result, tickets: 0 });
+  });
+
+  it('uses the one shared queue: registers its three job names with the shared worker and opens no queue of its own', async () => {
+    const original = process.env.PROCESS_ROLE;
+    process.env.PROCESS_ROLE = 'worker';
+    const job = new CustomerPushJob({} as never);
+    jest.spyOn(job, 'schedule').mockResolvedValue(undefined);
+    jest.spyOn(job, 'getWorker').mockReturnValue({} as never);
+    try {
+      await job.onModuleInit();
+      expect(CUSTOMER_PUSH_QUEUE).toBe(LABOURA_JOBS_QUEUE);
+      for (const name of [CUSTOMER_PUSH_ROUND, CUSTOMER_PUSH_SEND_NOW, CUSTOMER_PUSH_CHECK_RECEIPTS]) expect(jobQueue.hasHandler(name)).toBe(true);
+      await job.close();
+      for (const name of [CUSTOMER_PUSH_ROUND, CUSTOMER_PUSH_SEND_NOW, CUSTOMER_PUSH_CHECK_RECEIPTS]) expect(jobQueue.hasHandler(name)).toBe(false);
+    } finally {
+      if (original === undefined) delete process.env.PROCESS_ROLE;
+      else process.env.PROCESS_ROLE = original;
+    }
+  });
+
+  it('a "send now" kick goes into the shared queue and gives up quietly when Redis does not answer', async () => {
+    const add = jest.spyOn(jobQueue, 'add').mockResolvedValueOnce({} as never);
+    await new CustomerPushKick().kick();
+    expect(add).toHaveBeenCalledWith(CUSTOMER_PUSH_SEND_NOW, {}, expect.objectContaining({ jobId: CUSTOMER_PUSH_SEND_NOW }));
+    add.mockRejectedValueOnce(new Error('Redis down'));
+    await expect(new CustomerPushKick().kick()).resolves.toBeUndefined();
+    add.mockRestore();
   });
 
   it('builds no queue or worker in a web-only process', async () => {

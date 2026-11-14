@@ -1,6 +1,7 @@
 /* Hindi (हिंदी) — same keys as en.ts. Have a native speaker review new strings. */
 import { payslipHi } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceHi } from '../attendance/i18n';
+import { workerLeftHi } from '../claims/i18n';
 import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
@@ -352,6 +353,19 @@ export const hi: Messages = {
   "auth.signedOut.expired": "आपका सेशन ख़त्म हो गया। फिर से साइन इन करें।",
   "auth.signedOut.unauthorized": "फिर से साइन इन करें।",
   "auth.signedOut.logout": "आप साइन आउट हो गए हैं।",
+  "auth.wrongPortal.for.ceo": "वह पेज केवल CEO के लिए है।",
+  "auth.wrongPortal.for.manager": "वह पेज मैनेजरों के लिए है।",
+  "auth.wrongPortal.for.team_lead": "वह पेज टीम लीड के लिए है।",
+  "auth.wrongPortal.for.finance": "वह पेज फ़ाइनेंस टीम के लिए है।",
+  "auth.wrongPortal.for.call_agent": "वह पेज कॉल एजेंटों के लिए है।",
+  "auth.wrongPortal.for.field_agent": "वह पेज फ़ील्ड एजेंटों के लिए है।",
+  "auth.wrongPortal.for.other": "वह पेज किसी दूसरी भूमिका के लिए है।",
+  "auth.wrongPortal.in.ceo": "आप CEO पोर्टल में हैं।",
+  "auth.wrongPortal.in.manager": "आप मैनेजर पोर्टल में हैं।",
+  "auth.wrongPortal.in.team_lead": "आप टीम लीड पोर्टल में हैं।",
+  "auth.wrongPortal.in.finance": "आप फ़ाइनेंस पोर्टल में हैं।",
+  "auth.wrongPortal.in.call_agent": "आप कॉल एजेंट कंसोल में हैं।",
+  "auth.wrongPortal.in.field_agent": "फ़ील्ड एजेंट Laboura Field ऐप में काम करते हैं।",
   "auth.fieldAgent.title": "Laboura Field ऐप इस्तेमाल करें",
   "auth.fieldAgent.body": "फ़ील्ड एजेंट अपने मंज़ूर फ़ोन पर Laboura Field ऐप से काम करते हैं।",
   "auth.fieldAgent.open": "Laboura Field खोलें",
@@ -595,4 +609,5 @@ export const hi: Messages = {
   ...callAgentHi,
   ...payslipHi,
   ...attendanceHi,
+  ...workerLeftHi,
 };

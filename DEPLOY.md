@@ -247,13 +247,14 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] An uptime monitor watches `/health/ready`.
 - [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
 - [ ] The four buckets exist and are private (Step 3).
+- [ ] **Customer app, before it opens to the public:** `LABOURA_SETUP` is `live` and `HUMAN_CHECK_PROVIDER_MODE` names a real CAPTCHA or device attestation provider. The live setup refuses to start with the mock human check (its token is public), and with `CUSTOMER_OTP_TEST_MODE=on`.
 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
 >
-> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office web app (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`) and the old admin dashboard (`/console/admin`) are not behind Cloudflare's identity check.
+> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office web app (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`) is not behind Cloudflare's identity check.
 >
-> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, `/call-agent*` and `/console/admin*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com` and `/field*` (field agents use them from their phones).
+> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, and `/call-agent*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com` and `/field*` (field agents use them from their phones).
 > 2. Add a policy that lets in only Laboura's staff email addresses.
 > 3. Copy the application's **Audience (AUD) tag**.
 > 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).
@@ -334,10 +335,30 @@ Do **not** apply `render.yaml` on the free tier: that file describes the paid se
 | `npm run migrate:deploy` runs as a Pre-Deploy Command | `npm run migrate:deploy` runs at the **end of the build command** | Free services have no Pre-Deploy Command |
 | The web service never sleeps | It sleeps after 15 minutes with no visitors and takes about a minute to wake | Free tier rule. An uptime monitor (step F10) keeps it awake |
 | Key Value keeps its data on disk | The free Key Value loses everything when it restarts | The app puts every job schedule back by itself on every start and every 10 minutes; `/health/ready` says `schedules` while any is missing |
+| Paid Key Value, plenty of connections | The free Key Value accepts only about **50 connections** | The app keeps a small fixed number: see "Redis connections" below |
 | Supabase Pro, daily backups | Supabase Free, **no backups**, pauses after a week with no use | Made-up data only |
 | Database in Singapore | Database in **Mumbai** (`ap-south-1`) | Owner decision, 12 Nov: the empty Supabase project is recreated in Mumbai |
 
 The Render parts stay in **Singapore** (Render has no India region).
+
+### Redis connections (why deploys need room for two)
+
+Render deploys **without downtime**: it starts the new version while the old one is still running, and stops the old one only once the new one answers on `/health`. For those few minutes **both versions are connected to the Key Value at the same time**, so the free Key Value (about 50 connections) must hold two of them.
+
+Laboura keeps a small, fixed number of Redis connections per running copy:
+
+| `PROCESS_ROLE` | Redis connections | What they are |
+| --- | --- | --- |
+| `web` | 1 | One shared connection for everything (job queue, health checks, the CEO's System Health) |
+| `worker` | 2 | The shared connection, plus one for the single job worker that runs every scheduled job |
+| `all` (free tier) | 2 | The same as `worker` |
+
+So during a free-tier deploy the two copies hold about **4** of the ~50. (Before 15 Nov one copy held 46, so the new copy could not connect and every deploy ended "Timed Out".)
+
+- The ceiling is the setting `REDIS_CONNECTION_BUDGET` (default `12`). Going over it writes an error in the log; it never stops the app. You do not need to set it.
+- The app **starts and answers `/health` even when the Key Value is unreachable or full**. Jobs then wait; `/health/ready` answers 503 naming `redis` (and `worker`/`schedules`), and everything reconnects by itself as soon as the Key Value answers again. No restart needed.
+- When Render stops the old copy (SIGTERM), it closes its Redis connections straight away, so the new copy has room. Running jobs get up to `JOB_SHUTDOWN_GRACE_MS` (default 10 seconds) to finish; the process exits after `SHUTDOWN_TIMEOUT_MS` (default 20 seconds) at the latest.
+- To see who holds connections: Render dashboard → `laboura-test-redis` → **Metrics** → connections. Each Laboura connection is named `laboura:<role>:<process id>:shared` or `...:blocking`.
 
 ### Steps F1 to F13
 
@@ -427,7 +448,7 @@ This does three things: the web service never sleeps (it sleeps after 15 minutes
 ### If something stops on the free tier
 
 - **`/health/ready` says `schedules` is missing.** The free Key Value restarted and lost the job schedules. The app puts them back within 10 minutes by itself. To do it at once: open `laboura-test`, click **Manual Deploy**, then **Restart service**. A CEO can also run any job straight away from **System Health** (or `POST /jobs/<job>/run-now`).
-- **The log shows "max number of clients reached".** The free Key Value allows few connections and the single process opens about 45 (one queue and one worker per job). Jobs then fail. Tell Claude: the fix is to share connections or move to the paid Key Value.
+- **The log shows "max number of clients reached", or a deploy ends "Timed Out".** The free Key Value is out of connections. Laboura needs only 2 per running copy (see "Redis connections" above), so something else holds them: open `laboura-test-redis` → **Metrics** and look at the connection count. A copy started before 15 Nov holds about 46; once it is stopped, the new copy connects by itself within a few seconds (it keeps serving the site meanwhile). If the count stays high, restart `laboura-test` (**Manual Deploy** → **Restart service**) and tell Claude.
 - **The service restarts during testing.** A free instance has 512 MB of memory. Open **Metrics** and look at memory; if it touches the top, tell Claude.
 - **The first page after a quiet spell takes a minute.** The service was asleep; check the uptime monitor (F10) is running.
 - **A restart clears the in-memory test OTP codes and the rate-limit counters.** Ask for a new code after a restart.
@@ -505,6 +526,14 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `STAFF_BOOTSTRAP_SECRET` | Generated by Render | Needed once, to create the first CEO (Step 7) |
 | `CALL_ROUTING_KEY` | Generated by Render, shared with the worker | Encrypts staff phone numbers used for call routing |
 | `PAYOUT_ACCOUNT_KEY` | Generated by Render, shared with the worker | Encrypts payout UPI and bank details |
+| `CUSTOMER_JWT_SECRET` | Generated by Render | Signs sign-ins of the Laboura customer app (job seekers, businesses, referral partners). Separate from `JWT_SECRET`, so a customer can never use a staff door |
+| `LABOURA_SETUP` | `live` on the live setup, `test` on the test setup (the free tier is always `test`) | Marks which setup this is. The only thing it switches today: the customer OTP test mode is allowed only on `test` |
+| `CUSTOMER_OTP_TEST_MODE` | `off` (paid, fixed); `on` on the free test tier | Shows the customer app's OTP code on screen, for testing with pretend SMS. **The server refuses to start with `on` unless `LABOURA_SETUP=test`**, so the live setup can never show codes. The staff OTP test mode does not turn it on |
+| `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it, sending pauses and an alert goes to `ALERT_WEBHOOK_URL`; check for abuse before raising it |
+| `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **The server refuses to start with `mock` when `LABOURA_SETUP=live`.** Any value without a provider refuses every check |
+| `GOOGLE_NONCE_REQUIRED` | `off` (empty) until the customer app sends a nonce | `on` refuses Google sign-ins without a nonce (replay protection). The app does not send one yet |
+| `APPLE_CLIENT_ID_IOS`, `APPLE_CLIENT_ID_WEB` | From the Apple developer account (the iPhone app's bundle id; the web Services ID) | Turns on "Sign in with Apple" in the customer app. Empty: Apple sign-in is off and refused |
+| `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | From the Laboura Firebase project (Project settings, then Your apps; for Android the client id appears once the app's SHA-1 fingerprint is added) | Turns on "Continue with Google" in the customer app. Leave all three empty and the app shows mobile + OTP only. Changing them needs no redeploy of the app, only a restart of `laboura-api` |
 | `PUBLIC_APP_URL` | `https://app.laboura.com` (the onrender.com address until the domain is connected) | The public web address of the app. Every link the software sends (invites, password resets, the public `/p/...` pages, receipts) starts with it; required to start. Links are never built from the address a visitor happened to use. |
 | `FIELD_HOST` | `field.laboura.com` (empty until connected) | The address that opens Laboura Field at its root. Every other address opens the office app, with Laboura Field also at `/field` |
 | `CANDIDATE_PHOTO_STORAGE_MODE`, `BUSINESS_PHOTO_STORAGE_MODE`, `AGREEMENT_STORAGE_MODE`, `RECORDING_STORAGE_MODE` | `supabase` on both services (fixed) | Keeps uploads in Supabase Storage; production refuses to start otherwise. `CANDIDATE_PHOTO_STORAGE_MODE` also covers referral partner selfies and staff photos |

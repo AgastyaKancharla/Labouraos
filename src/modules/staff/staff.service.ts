@@ -6,8 +6,10 @@ import {
   HttpException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, Staff } from '@prisma/client';
+import { LiveEventsService } from '../../common/live/live-events.service';
 import {
   createHash,
   randomBytes,
@@ -245,6 +247,7 @@ export class StaffService {
     private readonly authService: AuthService,
     private readonly totpService: TotpService,
     private readonly reportingScope: ReportingScopeService,
+    @Optional() private readonly live?: LiveEventsService,
   ) {
     getCallRoutingKey();
   }
@@ -891,6 +894,7 @@ export class StaffService {
     });
     const sessionsRevoked =
       await this.authService.revokeAllSessionsForStaff(staffId);
+    this.live?.recheckSessions(staffId);
 
     await this.auditService.log({
       actorId: actor.sub,
@@ -980,6 +984,7 @@ export class StaffService {
     });
 
     await this.authService.revokeAllSessionsForStaff(staffId);
+    this.live?.recheckSessions(staffId);
 
     await this.auditService.log({
       actorId: actor.sub,
@@ -1141,6 +1146,7 @@ export class StaffService {
       throw new BadRequestException({ message: ACCEPT_INVITE_REFUSED, reason: 'used' });
     }
     const sessionsEnded = await this.authService.revokeAllSessionsForStaff(staff.id);
+    this.live?.recheckSessions(staff.id);
     await this.auditService.log({
       actorId: staff.id,
       action: 'staff.password_reset_completed',
@@ -1300,6 +1306,7 @@ export class StaffService {
       },
     });
     const sessionsEnded = await this.authService.endOpenSessions(staffId, 'locked');
+    this.live?.recheckSessions(staffId);
     await this.auditService.log({
       actorId: actor.sub,
       action: 'staff.locked',

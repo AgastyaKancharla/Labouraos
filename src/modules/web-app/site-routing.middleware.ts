@@ -23,13 +23,14 @@ const CF_DENIED = 'Cloudflare Access identity verification required';
  * The old one-page console addresses, retired once the web app and Laboura
  * Field replaced them (14 Nov). A browser that opens one (a bookmark, an old
  * message) is sent on permanently; API callers (JSON) are never redirected.
- * The old Admin Dashboard itself stays at /console/admin for the few things
- * the new screens do not do yet (AGENTS.md, "Retired consoles").
+ * The old Admin Dashboard (/console/admin) went last, once the new screens
+ * did its final four jobs (AGENTS.md, "Retired consoles").
  */
 export function retiredConsoleRedirect(pathname: string, env: NodeJS.ProcessEnv = process.env): string | null {
   const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
   switch (path) {
     case '/admin':
+    case '/console/admin':
     case '/map':
     case '/console/map':
       return '/login';

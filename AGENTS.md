@@ -64,10 +64,10 @@ whether tests pass.
 | Tests | Jest 29.7.0 (NestJS default) | Pinned in `package.json` |
 | CI | GitHub Actions | `.github/workflows/test.yml` |
 | Jobs | BullMQ on Redis | For schedulers and webhook retries |
-| Frontend Consoles | React 19 + TypeScript + Vite 7 web app in `web/` (decided 11 Nov) | CEO, Manager, Team Lead and Finance portals, call agent console and public job seeker pages, served by NestJS at the site root of `app.laboura.com` (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`, `/p/...`; decided 14 Nov — old `/app/...` links redirect). Conventions: `web/README.md`. **Retired consoles (14 Nov):** the old HTML-string consoles are retired; a browser opening `/admin`, `/map` or `/console/map` goes to `/login`, `/console/call-agent` to `/call-agent`, and `/field-agent` or `/console/field-agent` to Laboura Field (301, `SiteRoutingMiddleware`). Only the old Admin Dashboard is left, at `/console/admin`, for what no new screen does yet (adding a bank credit by hand, setting a credit aside, Finance resolving payment and payout flags, reporting a replacement claim); remove it once those exist. `/setup` (first CEO) stays. |
+| Frontend Consoles | React 19 + TypeScript + Vite 7 web app in `web/` (decided 11 Nov) | CEO, Manager, Team Lead and Finance portals, call agent console and public job seeker pages, served by NestJS at the site root of `app.laboura.com` (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`, `/p/...`; decided 14 Nov — old `/app/...` links redirect). Conventions: `web/README.md`. **Retired consoles (14 Nov):** the old HTML-string consoles are retired; a browser opening `/admin`, `/console/admin`, `/map` or `/console/map` goes to `/login`, `/console/call-agent` to `/call-agent`, and `/field-agent` or `/console/field-agent` to Laboura Field (301, `SiteRoutingMiddleware`). The old Admin Dashboard (`/console/admin`) went last (14 Nov), once the new screens did its final four jobs: Finance adds a bank credit from the statement and sets a credit aside (FN-MoneyIn, FN-Bank, FN-Match; the CEO can set one aside on C-Payments), Finance resolves payment and payout flags (FN-MoneyIn, FN-Payouts), and "Report worker left" (the replacement claim) is on C-Placement, MG-Requests, T-Requests, placement search results and Laboura Field's FA11. Only `/setup` (first CEO) is left of the old consoles. |
 | Field agent app | Laboura Field: Expo SDK 58 (React Native 0.88, expo-router, TanStack Query) in `field/` (decided 9 and 11 Nov) | One codebase for the installed web app served by NestJS at the root of `field.laboura.com` (`FIELD_HOST`) and at `/field` on other addresses (iPhone: Safari → Add to Home Screen) and later the Android APK / store apps via EAS. Kannada, English, Hindi. Conventions: `field/README.md`. Add packages with npm 11 and exact versions. |
 | Hosting | Render (LOCKED 2026-10-25) | Web service (API + consoles) + a separate Background Worker service for BullMQ + managed Postgres + managed Redis. Chosen over Vercel because Vercel's serverless model doesn't support BullMQ's always-on worker process. Domain DNS records are at **Hostinger**, where laboura.com was bought (app.laboura.com and field.laboura.com are DNS records there pointing to Render; Master Guide, 14 Nov). Cloudflare Access (next row) needs the gated hostnames to go through Cloudflare, so how it is switched on depends on that set-up. |
-| Cloudflare Access Gating | Identity-gated office consoles | Gated routes: the office web app's staff pages (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`) and the old Admin Dashboard (`/console/admin`). Public pages (`/p/...`), Laboura Field (`field.laboura.com`, `/field`) and API routes are explicitly exempt: field agents reach Laboura Field from phones outside the Cloudflare Access perimeter (the old `/field-agent` page and its exemption are retired; it now redirects to Laboura Field). |
+| Cloudflare Access Gating | Identity-gated office consoles | Gated routes: the office web app's staff pages (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`), checked in `SiteRoutingMiddleware` (the old Admin Dashboard and its `CloudflareAccessGuard` are gone). Public pages (`/p/...`), Laboura Field (`field.laboura.com`, `/field`) and API routes are explicitly exempt: field agents reach Laboura Field from phones outside the Cloudflare Access perimeter (the old `/field-agent` page and its exemption are retired; it now redirects to Laboura Field). |
 | Load Testing | Node.js Concurrency Harness / Artillery | Simulates ~40 concurrent staff sessions (20 call agents, 20 field agents) performing realistic mixed traffic |
 
 **Exact versions pinned above.**
@@ -218,7 +218,7 @@ Enforced server-side on every request, through the guard — never by hiding a b
 - **5 wrong passwords** lock the account for 15 minutes or until unlocked by a Team Lead, Manager or CEO.
 - Staff log in from any network: there is no office-network rule (owner decisions 12 and 14 Nov). Every Team Lead and agent login needs a one-time code from a senior and every CEO, Manager and Finance login the authenticator code; field agents use their approved phone plus a location check. No fixed login hours; logins at odd hours are flagged.
 - The CEO or a Manager can lock any account instantly.
-- The office web app's staff pages and the old Admin Dashboard (`/console/admin`) stay behind Cloudflare Access. Laboura Field is exempt (field agents use it from their phones); the old `/field-agent` console is retired.
+- The office web app's staff pages stay behind Cloudflare Access. Laboura Field is exempt (field agents use it from their phones); the old `/field-agent` console is retired.
 
 ---
 
@@ -250,6 +250,25 @@ tests can fast-forward the clock. Refund-ladder tests must assert the correct
 amount at day 15, 16, 30, 31, 45, 46 and 61.
 
 Write the test in the same task as the code. Do not batch tests for later.
+
+---
+
+## 9a. Background jobs (one queue, one worker, a fixed number of Redis connections)
+
+The free Render Key Value accepts about 50 connections and a zero-downtime deploy runs two copies of the app at once, so **a process opens at most 2 Redis connections** (web 1, worker/all 2; budget `REDIS_CONNECTION_BUDGET`, default 12). `src/jobs/redis-connection-budget.spec.ts` boots the app for each `PROCESS_ROLE` and fails if that grows; `src/common/redis/redis-connections.spec.ts` fails if any file other than `src/common/redis/redis-connections.ts`, `src/jobs/job-queue.ts` or `src/jobs/legacy-queues.ts` writes `new Redis(`, `new Queue(`, `new Worker(`, `new QueueEvents(` or `new FlowProducer(`.
+
+- **Redis:** always `sharedRedis()` (and `whenRedisReady` / `pingRedis` for checks) from `src/common/redis/redis-connections.ts`. Never open your own connection, and never close the shared one (shutdown does).
+- **Queues and workers:** every job uses the one queue `laboura-jobs` and the one Worker in `src/jobs/job-queue.ts` (`jobQueue`), which runs the handler registered under the job's **name**. Two runs of the same job never overlap; different jobs run side by side.
+
+**How to add a scheduled job** (copy `src/jobs/win-back.job.ts`):
+1. In `src/jobs/<name>.job.ts`: export `<NAME>_QUEUE = LABOURA_JOBS_QUEUE` and a unique job name `<NAME>_SWEEP`; `getQueue()` returns `jobQueue.queue()`; `readonly handle: JobHandler = () => recordJobRun(this.prisma, <NAME>_SWEEP, () => this.process())`; `getWorker()` returns `jobQueue.worker(<NAME>_SWEEP, this.handle)`; `schedule()` calls `this.getQueue().upsertJobScheduler('<scheduler-id>', <repeat from job-schedules.ts>, { name: <NAME>_SWEEP, opts })`; `onModuleInit()` returns unless `runsJobs()` and then calls `startScheduledJob({ name, handler: this.handle, schedule, startWorker, onError })`; `close()` calls `jobQueue.release(<NAME>_SWEEP)`.
+2. Add the entry to `JOB_CATALOG` in `src/jobs/job-catalog.ts` (`queue: SHARED_JOB_QUEUE`, `jobName`, `schedulerId`, `runName`, `label`; no `legacyQueue`).
+3. Add the job to `JobScheduleKeeper` (constructor and `handles`) and to `JobsModule` providers.
+That is all: it automatically uses the shared queue and worker, the keeper puts its schedule back after a Key Value restart, `/health/ready` checks it, and it adds no connection.
+
+**A one-off job** (queued by code, not on a schedule, like the recording copy): register the handler with `jobQueue.register('<name>', handler)` in `onModuleInit` when `runsJobs()`, and queue runs with `jobQueue.add('<name>', data, opts)` wrapped in a timeout on HTTP paths.
+
+Nothing that starts with the app may wait for Redis: the app must start and answer `/health` with Redis down (`startScheduledJob` gives up after `REDIS_STARTUP_TIMEOUT_MS`, default 2 s, and the keeper catches up when Redis answers).
 
 ---
 

@@ -281,6 +281,8 @@ export class PayoutAccountService {
 
     let isFlagged = false;
     let flagReason: string | null = null;
+    // Which staff member's number the UPI ID matched (that person never resolves the flag).
+    let matchedStaff: { id: string; code: string } | null = null;
 
     if (sharedAccount) {
       isFlagged = true;
@@ -316,6 +318,7 @@ export class PayoutAccountService {
             ) {
               isFlagged = true;
               flagReason = 'payout_matches_staff';
+              matchedStaff = { id: staff.id, code: staff.code };
               break;
             }
           }
@@ -400,6 +403,8 @@ export class PayoutAccountService {
           payoutAccountId: account.id,
           payoutAccountCode: account.code,
           upiIdMasked: maskedValue,
+          matchedStaffId: matchedStaff?.id ?? null,
+          matchedStaffCode: matchedStaff?.code ?? null,
         },
       });
     }

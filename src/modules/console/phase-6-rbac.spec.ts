@@ -60,23 +60,9 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
   });
 
   describe('Console Availability and Auth Enforcement', () => {
-    it('serves the old Admin Dashboard at GET /console/admin with auth modal and role enforcement logic', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/console/admin')
-        .expect(200);
-
-      expect(res.headers['content-type']).toContain('text/html');
-      expect(res.text).toContain('Laboura Admin Dashboard');
-      expect(res.text).toContain('id="auth-modal"');
-      expect(res.text).toContain('id="login-staff-code"');
-      expect(res.text).toContain('id="login-password"');
-      // Manager token hides pricing tab
-      expect(res.text).toContain('id="tab-pricing"');
-      expect(res.text).toContain('payload.role === \'ceo\'');
-    });
-
     it.each([
       ['/admin', '/login'],
+      ['/console/admin', '/login'],
       ['/console/call-agent', '/call-agent'],
       ['/map', '/login'],
       ['/console/map', '/login'],
@@ -260,31 +246,6 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
         .set('Authorization', `Bearer ${fieldAgentToken}`)
         .send({ bankUtr: 'UTR123', receiverNameShown: 'Name' })
         .expect(403);
-    });
-  });
-
-  describe('Priority Dashboard & Area Scoping', () => {
-    it('Field Agent accesses live priority endpoints (/priority/candidates, vacancies, trades)', async () => {
-      const candRes = await request(app.getHttpServer())
-        .get('/priority/candidates')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(200);
-
-      expect(Array.isArray(candRes.body)).toBe(true);
-
-      const vacRes = await request(app.getHttpServer())
-        .get('/priority/vacancies')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(200);
-
-      expect(Array.isArray(vacRes.body)).toBe(true);
-
-      const tradeRes = await request(app.getHttpServer())
-        .get('/priority/trades')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(200);
-
-      expect(Array.isArray(tradeRes.body)).toBe(true);
     });
   });
 });

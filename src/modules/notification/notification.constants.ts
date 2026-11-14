@@ -161,6 +161,13 @@ const LINKS: Record<NotificationKind, LinkTable> = {
   behind_pace: { team_lead: 'agents/:id', manager: 'agents/:id', ceo: 'targets' },
 };
 
+/**
+ * Detail pages with no list page of their own at the bare address: with the
+ * record missing, the link goes to the portal's home instead
+ * ("/call-agent/people" is not a page; the call agent's home is "/call-agent").
+ */
+const NO_LIST_PAGE = new Set(['people']);
+
 /** The in-app path for one recipient, or null when that role has no screen for it. */
 export function notificationLink(
   role: string,
@@ -184,7 +191,7 @@ export function notificationLink(
     // Drop the part that needed the missing value: "refunds/:id" → "refunds",
     // "requests?kind=leave&id=:id" → "requests".
     const base = template.split(/[/?]:|\?/)[0].replace(/\/$/, '');
-    return base ? `${root}/${base}` : root;
+    return base && !NO_LIST_PAGE.has(base) ? `${root}/${base}` : root;
   }
   return filled ? `${root}/${filled}` : root;
 }

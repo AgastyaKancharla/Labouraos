@@ -1,10 +1,12 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { JobHandler, LABOURA_JOBS_QUEUE, jobQueue, startScheduledJob } from './job-queue';
 import { RetentionService, RetentionSummary } from '../modules/retention/retention.service';
 import { dailyInIndia } from './job-schedules';
 import { runsJobs } from '../common/process/process-role';
 
-export const RETENTION_CLEANUP_QUEUE = 'retention-cleanup';
+/** Every job shares one queue (retention-cleanup was its own queue before; see job-queue.ts). */
+export const RETENTION_CLEANUP_QUEUE = LABOURA_JOBS_QUEUE;
 export const RETENTION_CLEANUP_SWEEP = 'daily-retention-cleanup';
 
 @Injectable()
@@ -15,36 +17,19 @@ export class RetentionCleanupJob implements OnModuleInit, OnModuleDestroy {
 
   constructor(private readonly retentionService: RetentionService) {}
 
-  private get connection() {
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null,
-      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-    };
-  }
-
   getQueue(): Queue {
-    if (!this.queue) {
-      this.queue = new Queue(RETENTION_CLEANUP_QUEUE, { connection: this.connection });
-      this.queue.on('error', (error) => this.logger.warn(`Retention cleanup queue error: ${error.message}`));
-    }
+    this.queue = jobQueue.queue();
     return this.queue;
   }
 
+  /** What the shared job worker runs for this job. Records its own JobRun rows (retention.service.ts). */
+  readonly handle: JobHandler = (job) =>
+    this.process(job.data?.now ? new Date(job.data.now) : new Date(), {
+      dryRun: Boolean(job.data?.dryRun),
+    });
+
   getWorker(): Worker {
-    if (!this.worker) {
-      this.worker = new Worker(
-        RETENTION_CLEANUP_QUEUE,
-        async (job) => this.process(job.data?.now ? new Date(job.data.now) : new Date(), {
-          dryRun: Boolean(job.data?.dryRun),
-        }),
-        { connection: this.connection },
-      );
-      this.worker.on('error', (error) => this.logger.error(`Retention cleanup worker error: ${error.message}`));
-    }
+    this.worker = jobQueue.worker(RETENTION_CLEANUP_SWEEP, this.handle);
     return this.worker;
   }
 
@@ -68,22 +53,22 @@ export class RetentionCleanupJob implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!runsJobs()) return;
-    try {
-      await this.schedule();
-      this.getWorker();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Could not register retention cleanup job: ${message}`);
-      await this.close();
-    }
+    await startScheduledJob({
+      name: RETENTION_CLEANUP_SWEEP,
+      handler: this.handle,
+      schedule: () => this.schedule(),
+      startWorker: () => this.getWorker(),
+      onError: (message) => this.logger.warn(`Could not register retention cleanup job: ${message}`),
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.close();
   }
 
+  /** Stops handling this job here. The shared queue and Worker stay up (JobQueueLifecycle stops them at shutdown). */
   async close(): Promise<void> {
-    await Promise.all([this.worker?.close(), this.queue?.close()]);
+    jobQueue.release(RETENTION_CLEANUP_SWEEP);
     this.worker = null;
     this.queue = null;
   }

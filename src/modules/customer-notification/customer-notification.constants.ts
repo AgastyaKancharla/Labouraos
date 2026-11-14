@@ -126,9 +126,12 @@ export const EXPO_PUSH_TOKEN_PATTERN = /^Expo(nent)?PushToken\[[A-Za-z0-9_\-:.]{
 /** How long after sending Expo's receipts are checked (Expo suggests about 15 minutes). */
 export const RECEIPT_CHECK_DELAY_MS = 15 * 60 * 1000;
 
-/** BullMQ queue of the push worker (src/jobs/customer-push.job.ts). */
-export const CUSTOMER_PUSH_QUEUE = 'customer-push';
-/** Job names on that queue. */
+/**
+ * The push jobs use the one shared BullMQ queue every job uses (LABOURA_JOBS_QUEUE
+ * in src/jobs/job-queue.ts, kept here as plain data; AGENTS.md section 9a).
+ */
+export const CUSTOMER_PUSH_QUEUE = 'laboura-jobs';
+/** Job names on that queue (each unique; the shared worker dispatches on the name). */
 export const CUSTOMER_PUSH_SEND_NOW = 'send-customer-push-now';
 export const CUSTOMER_PUSH_CHECK_RECEIPTS = 'check-customer-push-receipts';
 

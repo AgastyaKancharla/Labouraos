@@ -5,15 +5,18 @@ import { GlobalExceptionFilter } from './common/observability/global-exception.f
 import { AlertService } from './common/observability/alert.service';
 import { applyTrustProxy } from './common/http/trust-proxy';
 import { securityHeaders } from './common/http/security-headers';
+import { caseSensitiveHttpAdapter } from './common/http/case-sensitive-routing';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
+import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrap() {
   const role = assertKnownProcessRole();
   getPublicAppUrl();
   assertDurableUploadStorage();
-  const app = await NestFactory.create(AppModule, {
+  // Case-sensitive routing: /Job-Seekers/… is a 404, not /job-seekers/….
+  const app = await NestFactory.create(AppModule, caseSensitiveHttpAdapter(), {
     bufferLogs: true,
     // Webhook signatures are computed over the exact bytes the gateway sent
     rawBody: true,
@@ -30,6 +33,10 @@ export async function bootstrap() {
   app.use(securityHeaders());
   const alertService = app.get(AlertService);
   app.useGlobalFilters(new GlobalExceptionFilter(alertService));
+  // SIGTERM (a Render deploy stopping the old instance) runs the shutdown
+  // hooks: the job worker stops and the Redis connections are closed at once.
+  app.enableShutdownHooks();
+  installShutdownDeadline((message) => logger.warn(message, 'Bootstrap'));
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

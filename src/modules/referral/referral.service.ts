@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ConflictException,
@@ -81,8 +82,10 @@ export class ReferralService {
     return updated;
   }
 
-  async create(dto: CreateReferralDto, actorId: string) {
+  async create(dto: CreateReferralDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
     assertNoRawAadhaar(dto);
+    // Customer app self-registration: same checks and OTP, no registering agent.
+    const auditActorId = options.selfRegisteredByAccountId ? `customer:${options.selfRegisteredByAccountId}` : actorId;
 
     const submitted = dto as unknown as Record<string, unknown>;
     if (['upiId', 'accountNumber', 'ifsc', 'bankAccount'].some((field) => field in submitted)) {
@@ -177,12 +180,12 @@ export class ReferralService {
         longitude: dto.longitude ?? null,
         heardFrom: dto.heardFrom,
         // Who registered the partner: a Team Lead reads only their team's partners.
-        registeredByStaffId: this.registeringStaffId(actorId),
+        registeredByStaffId: options.selfRegisteredByAccountId ? null : this.registeringStaffId(actorId),
       },
     });
 
     await this.auditService.log({
-      actorId,
+      actorId: auditActorId,
       action: 'referral.create',
       entityType: 'referral',
       entityCode: code,
@@ -226,11 +229,8 @@ export class ReferralService {
    */
   private async readScope(viewer?: { id: string; role: string }): Promise<Prisma.ReferralWhereInput> {
     if (viewer?.role !== 'team_lead') return {};
-    const team = await this.prisma.staff.findMany({
-      where: { OR: [{ teamLeadId: viewer.id }, { reportsToId: viewer.id }] },
-      select: { id: true },
-    });
-    return { registeredByStaffId: { in: [viewer.id, ...team.map((s) => s.id)] } };
+    // The same team every Team Lead check uses (OwnTeam).
+    return { registeredByStaffId: { in: await new OwnTeam(this.prisma).memberIds(viewer.id) } };
   }
 
   /** The registering agent: the signed-in staff member (the only caller), never 'system'. */

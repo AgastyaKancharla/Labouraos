@@ -25,6 +25,19 @@ export function goLiveDayOf(policy: { goLiveDate?: Date | null } | null | undefi
   return date instanceof Date && !Number.isNaN(date.getTime()) ? date.toISOString().slice(0, 10) : null;
 }
 
+/** Customer app sign-up tracker settings (PricingPolicy.signup*) and their allowed ranges; the database checks the same. */
+export const SIGNUP_SETTING_RANGES: Record<string, [number, number]> = {
+      signupFirstReminderMinutes: [1, 10080],
+      signupSecondReminderMinutes: [1, 20160],
+      signupBusinessCallMinutes: [1, 10080],
+      signupPaymentStopWorkingMinutes: [1, 10080],
+      signupMaxCallTries: [1, 10],
+      signupCallTryDays: [1, 30],
+      signupReengageDays: [1, 365],
+      signupAreaClusterMin: [2, 100],
+      signupStuckHours: [1, 720],
+    };
+
 @Injectable()
 export class PricingService {
   private readonly logger = new Logger(PricingService.name);
@@ -63,6 +76,15 @@ export class PricingService {
       const meters = updates.areaAutoFillMaxMeters;
       if (!Number.isSafeInteger(meters) || meters < 1 || meters > MAX_AREA_AUTO_FILL_METERS) {
         throw new BadRequestException(`areaAutoFillMaxMeters must be a whole number of metres from 1 to ${MAX_AREA_AUTO_FILL_METERS}`);
+      }
+    }
+
+    // Customer app sign-up tracker settings: whole numbers in a sane range, or null for the default.
+    for (const [field, [min, max]] of Object.entries(SIGNUP_SETTING_RANGES)) {
+      const value = (updates as Record<string, unknown>)[field];
+      if (value === undefined || value === null) continue;
+      if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < min || value > max) {
+        throw new BadRequestException(`${field} must be a whole number from ${min} to ${max}`);
       }
     }
 
@@ -167,6 +189,15 @@ export class PricingService {
         behindPaceThresholdPercent: updates.behindPaceThresholdPercent ?? before.behindPaceThresholdPercent,
         registrationLinkValidHours: updates.registrationLinkValidHours ?? before.registrationLinkValidHours,
         paymentOnlyLinkMinutes: updates.paymentOnlyLinkMinutes ?? before.paymentOnlyLinkMinutes,
+        signupFirstReminderMinutes: updates.signupFirstReminderMinutes === undefined ? before.signupFirstReminderMinutes : updates.signupFirstReminderMinutes,
+        signupSecondReminderMinutes: updates.signupSecondReminderMinutes === undefined ? before.signupSecondReminderMinutes : updates.signupSecondReminderMinutes,
+        signupBusinessCallMinutes: updates.signupBusinessCallMinutes === undefined ? before.signupBusinessCallMinutes : updates.signupBusinessCallMinutes,
+        signupPaymentStopWorkingMinutes: updates.signupPaymentStopWorkingMinutes === undefined ? before.signupPaymentStopWorkingMinutes : updates.signupPaymentStopWorkingMinutes,
+        signupMaxCallTries: updates.signupMaxCallTries === undefined ? before.signupMaxCallTries : updates.signupMaxCallTries,
+        signupCallTryDays: updates.signupCallTryDays === undefined ? before.signupCallTryDays : updates.signupCallTryDays,
+        signupReengageDays: updates.signupReengageDays === undefined ? before.signupReengageDays : updates.signupReengageDays,
+        signupAreaClusterMin: updates.signupAreaClusterMin === undefined ? before.signupAreaClusterMin : updates.signupAreaClusterMin,
+        signupStuckHours: updates.signupStuckHours === undefined ? before.signupStuckHours : updates.signupStuckHours,
         effectiveFrom: updates.effectiveFrom ? new Date(updates.effectiveFrom) : new Date(),
         setByStaffId: actorId,
       },

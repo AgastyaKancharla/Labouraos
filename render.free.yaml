@@ -94,6 +94,34 @@ services:
       # Customer app sign-in (separate realm): signs customer tokens; never the staff JWT_SECRET.
       - key: CUSTOMER_JWT_SECRET
         generateValue: true
+      # Customer app "Continue with Google": the OAuth client ids from the Laboura
+      # Firebase / Google Cloud project (Android, iPhone, web). Not secret, but
+      # asked for once; leave all three empty to keep Google sign-in off.
+      - key: GOOGLE_CLIENT_ID_ANDROID
+        sync: false
+      - key: GOOGLE_CLIENT_ID_IOS
+        sync: false
+      - key: GOOGLE_CLIENT_ID_WEB
+        sync: false
+      # Customer app "Sign in with Apple" (iPhone app; Apple rule 4.8): the app's
+      # bundle id and the web Services ID. Empty = Apple sign-in off (refused).
+      - key: APPLE_CLIENT_ID_IOS
+        sync: false
+      - key: APPLE_CLIENT_ID_WEB
+        sync: false
+      # Customer OTP abuse protection: system-wide codes per 24 hours before
+      # sending pauses and an alert goes out; the human check (CAPTCHA /
+      # attestation) asked for after repeated tries: mock until a provider is chosen.
+      - key: CUSTOMER_OTP_DAILY_LIMIT
+        value: "3000"
+      - key: HUMAN_CHECK_PROVIDER_MODE
+        value: mock
+      # The free tier is the test setup: customer app OTP codes are shown on
+      # screen (pretend SMS). The server refuses CUSTOMER_OTP_TEST_MODE=on unless LABOURA_SETUP=test.
+      - key: LABOURA_SETUP
+        value: test
+      - key: CUSTOMER_OTP_TEST_MODE
+        value: "on"
       - key: JWT_EXPIRES_IN
         value: "15m"
 
@@ -157,7 +185,10 @@ services:
       - key: CUSTOMER_PUSH_PROVIDER_MODE
         value: mock
 
-  # Free Key Value: no disk, small connection limit. noeviction is required by
+  # Free Key Value: no disk, small connection limit (about 50). The app holds
+  # 2 connections per running copy (src/common/redis/redis-connections.ts), so
+  # the old and new copy fit side by side during a zero-downtime deploy.
+  # noeviction is required by
   # BullMQ (an evicted key is a lost job). An empty ipAllowList means only
   # Laboura's own Render services can connect, over the private network.
   - type: keyvalue

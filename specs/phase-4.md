@@ -54,6 +54,9 @@
 
 ### [x] Task 5 — Priority Dashboard API (read-only, calculated fresh)
 
+> **Retired 14 Nov 2026:** `/priority/*` and `/field-agent/priority-dashboard` were removed with the old one-page consoles; no current screen used them. The close-to-refund list is the refund-priority module (Phase 21 Task 7). Kept below as history only.
+
+
 **Acceptance:**
 - Three read-only `GET` endpoints, accessible to field_agent, call_agent, manager, ceo:
   - `GET /priority/candidates` — active job seekers sorted by days remaining on their 30-day refund clock, soonest first, computed fresh from `paymentReceivedAt` on every request — **never stored as a column**. Within the same urgency band, tiebreak by stated salary range descending (higher expected salary = bigger fee value = sorts first). Each row includes `band` (`critical` ≤7 days, `high` 8–15, `medium` 16–23, `normal` 24+) and a `twoHitFlag` (true when `hitCount === 2`, regardless of band — one more hit loses the candidate entirely).

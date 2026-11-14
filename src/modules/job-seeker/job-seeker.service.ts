@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
@@ -197,8 +198,11 @@ export class JobSeekerService {
    * which is the control that makes field-agent candidate capture safe.
    * Do not remove or weaken it, and do not add a bypass for field agents.
    */
-  async create(dto: CreateJobSeekerDto, actorId: string) {
+  async create(dto: CreateJobSeekerDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
     assertNoRawAadhaar(dto);
+    // Customer app self-registration: same checks and OTP, no registering agent.
+    const staffActorId = options.selfRegisteredByAccountId ? null : actorId;
+    const auditActorId = options.selfRegisteredByAccountId ? `customer:${options.selfRegisteredByAccountId}` : actorId;
     const policy = await this.getPolicy();
     const now = this.consentClock?.now();
     if (!now) throw new Error('ConsentClock is not configured');
@@ -317,7 +321,7 @@ export class JobSeekerService {
           jobType: dto.jobType,
           guaranteeFloorPaise,
           referredById: dto.referredById ?? null,
-          registeredByStaffId: actorId ?? null,
+          registeredByStaffId: staffActorId ?? null,
         },
       });
 
@@ -330,7 +334,7 @@ export class JobSeekerService {
             isPrimary: index === 0,
           },
         });
-        await this.tradeService.recordSuggestion(tx, trade.trade, actorId ?? null, 'job_seeker', created.id);
+        await this.tradeService.recordSuggestion(tx, trade.trade, staffActorId ?? null, 'job_seeker', created.id);
       }
       await tx.jobSeekerLanguage.createMany({
         data: form.spokenLanguages.map((language) => ({
@@ -347,7 +351,7 @@ export class JobSeekerService {
         subjectId: created.id,
         fromStatus: null,
         toStatus: status,
-        changedByStaffId: actorId,
+        changedByStaffId: staffActorId,
       });
 
       const createdWithRelations = await tx.jobSeeker.findUniqueOrThrow({
@@ -358,7 +362,7 @@ export class JobSeekerService {
     });
 
     await this.auditService.log({
-      actorId,
+      actorId: auditActorId,
       action: 'job_seeker.create',
       entityType: 'job_seeker',
       entityCode: code,
@@ -387,8 +391,8 @@ export class JobSeekerService {
   async findAll(actor?: { id: string; role: string }, page: { limit?: number; offset?: number } = {}) {
     const where: Prisma.JobSeekerWhereInput = {};
     if (actor?.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
-      where.registeredByStaffId = { in: [actor.id, ...team.map((t) => t.id)] };
+      // The same team every Team Lead check uses (OwnTeam).
+      where.registeredByStaffId = { in: await new OwnTeam(this.prisma).memberIds(actor.id) };
     }
     const take = page.limit !== undefined ? Math.min(Math.max(Math.trunc(page.limit), 1), 500) : undefined;
     const skip = page.offset !== undefined ? Math.max(Math.trunc(page.offset), 0) : undefined;
