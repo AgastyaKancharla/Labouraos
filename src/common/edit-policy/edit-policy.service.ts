@@ -262,6 +262,41 @@ export class EditPolicyService {
     }
   }
 
+  /**
+   * Whether a record was self-registered in the customer app, and the staff
+   * member assigned to help that sign-up (SignupTracker.assignedStaffId, set by
+   * the back office's sign-up tracker).
+   */
+  private async appSignup(
+    entityType: EditableEntityType,
+    record: Record<string, unknown>,
+    creatorId: string | null,
+  ): Promise<{ selfRegistered: boolean; assigneeId: string | null }> {
+    let subjectType: string | null = null;
+    let subjectId: string | null = null;
+    let selfRegistered = Boolean(creatorId?.startsWith('customer:'));
+    if (entityType === 'job_seeker' || entityType === 'referral') {
+      subjectType = entityType;
+      subjectId = record.id as string;
+    } else if (entityType === 'vacancy') {
+      subjectType = 'business';
+      subjectId = record.businessId as string;
+      selfRegistered = selfRegistered || record.capturedChannel === 'laboura_app';
+    }
+    // Unit tests that hand in a partial Prisma double have no tracker table.
+    if (!subjectType || !subjectId || typeof this.prisma.signupTracker?.findFirst !== 'function') {
+      return { selfRegistered, assigneeId: null };
+    }
+    const tracker = await this.prisma.signupTracker.findFirst({
+      where: { subjectType, subjectId },
+      orderBy: { createdAt: 'desc' },
+      select: { assignedStaffId: true },
+    });
+    if (entityType === 'job_seeker' && tracker) selfRegistered = true;
+    if (entityType === 'vacancy' && !selfRegistered) return { selfRegistered: false, assigneeId: null };
+    return { selfRegistered, assigneeId: tracker?.assignedStaffId ?? null };
+  }
+
   async checkEditPermission(
     actor: EditActor,
     entityType: EditableEntityType,
@@ -279,7 +314,19 @@ export class EditPolicyService {
 
     if (actor.role === 'team_lead') {
       const creatorId = await this.getCreatorStaffId(entityType, record);
-      if (!creatorId || creatorId === actor.id) {
+      if (!creatorId || creatorId.startsWith('customer:')) {
+        // Self-registered in the customer app: a Team Lead edits it unless a
+        // sign-up helper from another team was assigned (security review M2).
+        const app = await this.appSignup(entityType, record, creatorId);
+        if (app.selfRegistered && app.assigneeId && app.assigneeId !== actor.id) {
+          const assignee = await this.prisma.staff.findUnique({ where: { id: app.assigneeId }, select: { teamLeadId: true } });
+          if (assignee?.teamLeadId !== actor.id) {
+            return { allowed: false, isMoneyInvolved: isMoney, reason: 'Only the Team Lead of the agent helping this app sign-up can edit it' };
+          }
+        }
+        return { allowed: true, isMoneyInvolved: isMoney };
+      }
+      if (creatorId === actor.id) {
         return { allowed: true, isMoneyInvolved: isMoney };
       }
       const creator = await this.prisma.staff.findUnique({
@@ -327,7 +374,20 @@ export class EditPolicyService {
       }
 
       const creatorId = await this.getCreatorStaffId(entityType, record);
-      if (!creatorId || creatorId === actor.id) {
+      if (!creatorId || creatorId.startsWith('customer:')) {
+        // Self-registered in the customer app: no agent created it, so it does
+        // not fail open — only the agent assigned to help this sign-up edits it
+        // (Team Leads and above as above). Older records with no creator keep
+        // the previous rule (security review M2).
+        const app = await this.appSignup(entityType, record, creatorId);
+        if (app.selfRegistered) {
+          return app.assigneeId === actor.id
+            ? { allowed: true, isMoneyInvolved: false }
+            : { allowed: false, isMoneyInvolved: false, reason: 'Registered in the app: only the agent assigned to this sign-up or a Team Lead can edit it' };
+        }
+        return { allowed: true, isMoneyInvolved: false };
+      }
+      if (creatorId === actor.id) {
         return { allowed: true, isMoneyInvolved: false };
       }
       return {

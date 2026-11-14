@@ -2,6 +2,12 @@ import { Module } from '@nestjs/common';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { CustomerAccountController } from './customer-account.controller';
 import { CustomerAccountService } from './customer-account.service';
+import { CustomerAuthController } from './customer-auth.controller';
+import { CustomerLinkingService } from './customer-linking.service';
+import { CustomerOtpLimiter } from './customer-otp-limiter.service';
+import { CustomerSignInService } from './customer-sign-in.service';
+import { AppleIdTokenVerifier, GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { HUMAN_CHECK_PROVIDER, humanCheckProviderFactory } from './human-check.provider';
 
 /**
  * Customer app: sign-in (mobile + OTP, Google), sessions, account linking,
@@ -9,8 +15,11 @@ import { CustomerAccountService } from './customer-account.service';
  */
 @Module({
   imports: [PrismaModule],
-  controllers: [CustomerAccountController],
-  providers: [CustomerAccountService],
-  exports: [CustomerAccountService],
+  controllers: [CustomerAuthController, CustomerAccountController],
+  providers: [
+    CustomerAccountService, CustomerSignInService, CustomerLinkingService, CustomerOtpLimiter, GoogleIdTokenVerifier, AppleIdTokenVerifier,
+    { provide: HUMAN_CHECK_PROVIDER, useFactory: humanCheckProviderFactory },
+  ],
+  exports: [CustomerAccountService, CustomerSignInService, CustomerLinkingService],
 })
 export class CustomerAccountModule {}
