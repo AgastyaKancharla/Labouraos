@@ -41,7 +41,7 @@ function jobSeekerService(prisma: Record<string, unknown>, extra: { publicLinks?
   const audit = extra.audit ?? { log: jest.fn() };
   const service = new JobSeekerService(
     prisma as never, {} as never, audit as never, otp as never, {} as never, pricing as never, {} as never, {} as never,
-    {} as never, {} as never, undefined, undefined, { now: () => NOW } as never, undefined, undefined,
+    {} as never, {} as never, undefined, undefined, { now: () => NOW } as never, undefined,
     extra.publicLinks as never, extra.messaging as never,
   );
   return { service, otp };

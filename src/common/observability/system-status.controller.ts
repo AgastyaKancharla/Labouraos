@@ -22,7 +22,6 @@ export interface SystemStatusResponse {
   environment: string;
   version: string;
   nodeVersion: string;
-  idCheck: { status: 'up' | 'down'; lastChangedAt: string | null };
   components: ComponentStatus[];
   memory: {
     rssMb: number;
@@ -74,24 +73,6 @@ export class SystemStatusController {
 
   private async buildReport(): Promise<SystemStatusResponse> {
     const components: ComponentStatus[] = [];
-
-    let idCheck: SystemStatusResponse['idCheck'] = { status: 'up', lastChangedAt: null };
-    try {
-      const state = await this.prisma.kycServiceState?.findUnique({ where: { id: 'id-check' } });
-      if (state) {
-        idCheck = {
-          status: state.status === 'down' ? 'down' : 'up',
-          lastChangedAt: state.lastChangedAt.toISOString(),
-        };
-        components.push({
-          name: 'ID check service',
-          status: idCheck.status === 'down' ? 'degraded' : 'healthy',
-          message: idCheck.status === 'down' ? 'ID verification provider is unavailable' : 'ID verification provider is responding',
-        });
-      }
-    } catch {
-      // The ID provider diagnostic does not make the status endpoint fail.
-    }
 
     // 1. Database Check
     const dbStart = Date.now();
@@ -193,7 +174,6 @@ export class SystemStatusController {
       environment: process.env.NODE_ENV || 'development',
       version: '0.1.0',
       nodeVersion: process.version,
-      idCheck,
       components,
       memory: {
         rssMb: Math.round(mem.rss / 1024 / 1024),

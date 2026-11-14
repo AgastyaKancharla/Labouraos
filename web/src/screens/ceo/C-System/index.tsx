@@ -17,7 +17,6 @@ interface Status {
   uptimeFormatted: string;
   environment: string;
   version: string;
-  idCheck: { status: 'up' | 'down'; lastChangedAt: string | null };
   components: { name: string; status: 'healthy' | 'degraded' | 'unhealthy'; latencyMs?: number; message?: string }[];
 }
 interface SystemExtras {
@@ -107,14 +106,6 @@ export default function SystemScreen() {
                     <td>{c.status === 'healthy' ? '—' : (c.message ?? '—')}</td>
                   </tr>
                 ))}
-                {st && (
-                  <tr>
-                    <td>ID checks (Aadhaar vendor)</td>
-                    <td><StatusPill tone={st.idCheck.status === 'up' ? 'good' : 'danger'}>{st.idCheck.status === 'up' ? 'Running' : 'Down'}</StatusPill></td>
-                    <td>{st.idCheck.status === 'down' ? 'PAN fallback offered' : '—'}</td>
-                    <td>{st.idCheck.lastChangedAt ? `Since ${formatDateTimeIST(st.idCheck.lastChangedAt)}` : '—'}</td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>

@@ -14,8 +14,7 @@ function input(overrides: Partial<JourneyInput> = {}, seeker: Partial<JourneyInp
     latestPayment: null,
     activationFeePaise: 49900,
     guaranteeDays: 30,
-    idServiceDown: false,
-    waitingForIdService: false,
+    under18Stop: false,
     ...overrides,
   };
 }
@@ -50,16 +49,44 @@ describe('Registration link journey (P00 → P02b)', () => {
 
     const minor = buildJourneyStatus(input({
       grantedPurposes: REQUIRED,
+      under18Stop: true,
       latestVerification: { status: 'verified', nameMatches: true, isAdult: false, failureReason: null },
     }, { photoStoragePath: 'p' }));
     expect(minor.currentStep).toBe('id_check');
     expect(minor.stopped).toBe('under_18');
+    expect(minor.idCheck.lastResult).toBe('under_18');
     expect(buildJourneyStatus(input({}, { isUnder18ByDateOfBirth: true })).stopped).toBe('under_18');
   });
 
-  it('reports the ID service being down and his wish to wait for the SMS', () => {
-    const status = buildJourneyStatus(input({ idServiceDown: true, waitingForIdService: true }));
-    expect(status.idCheck).toEqual({ serviceDown: true, waitingForService: true, lastResult: 'none' });
+  it('another ID waits for the Team Lead: pending keeps him at the ID step, never at payment', () => {
+    const status = buildJourneyStatus(input({
+      grantedPurposes: REQUIRED,
+      latestVerification: { status: 'pending', nameMatches: null, isAdult: null, failureReason: null },
+    }, { photoStoragePath: 'p' }));
+    expect(status.currentStep).toBe('id_check');
+    expect(status.steps.idCheck).toBe(false);
+    expect(status.idCheck).toEqual({ waitingForTeamLead: true, lastResult: 'pending' });
+  });
+
+  it('the under-18 stop is sticky: a later verified ID does not get past it', () => {
+    const status = buildJourneyStatus(input({
+      grantedPurposes: REQUIRED,
+      under18Stop: true,
+      latestVerification: { status: 'verified', nameMatches: true, isAdult: true, failureReason: null },
+    }, { photoStoragePath: 'p' }));
+    expect(status.currentStep).toBe('id_check');
+    expect(status.stopped).toBe('under_18');
+    expect(status.idCheck.lastResult).toBe('under_18');
+  });
+
+  it('a lifted under-18 stop asks for a new ID check (not stopped, not verified)', () => {
+    const status = buildJourneyStatus(input({
+      grantedPurposes: REQUIRED,
+      latestVerification: { status: 'verified', nameMatches: true, isAdult: false, failureReason: null },
+    }, { photoStoragePath: 'p' }));
+    expect(status.stopped).toBeNull();
+    expect(status.currentStep).toBe('id_check');
+    expect(status.idCheck.lastResult).toBe('failed');
   });
 
   it('never shows paid until the bank confirms: a typed UPI reference is only "confirming"', () => {

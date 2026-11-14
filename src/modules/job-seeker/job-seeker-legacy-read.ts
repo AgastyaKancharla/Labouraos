@@ -2,7 +2,7 @@ export interface JobSeekerLegacyReadSource {
   trades?: Array<{ trade: string; isPrimary: boolean }>;
   identityVerifications?: Array<{
     status: string;
-    vendorReference: string;
+    vendorReference: string | null;
   }>;
 }
 

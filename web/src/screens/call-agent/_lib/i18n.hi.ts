@@ -71,7 +71,7 @@ export const callAgentHi: Record<keyof typeof callAgentEn, string> = {
   'ca.stuck.consent': 'सहमति पर अटके',
   'ca.stuck.selfie': 'सेल्फ़ी पर अटके',
   'ca.stuck.id_check': 'ID जाँच का इंतज़ार',
-  'ca.stuck.id_service_down': 'ID सर्विस बंद है',
+  'ca.stuck.id_team_lead_check': "टीम लीड की आईडी जाँच का इंतज़ार",
   'ca.stuck.trade_pending': 'उनका काम (ट्रेड) लिस्ट में जुड़ने का इंतज़ार',
   'ca.stuck.payment': 'भुगतान पर अटके',
   'ca.stuck.payment_failed': 'UPI {count}× फ़ेल',

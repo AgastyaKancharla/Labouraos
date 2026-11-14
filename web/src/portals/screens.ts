@@ -187,7 +187,7 @@ export const publicScreens: readonly ScreenDef[] = [
   { id: 'P00-Open', path: 'register/:token', title: 'screen.P00-Open', variants: ["P02r-Resume"] },
   { id: 'P01-Consent', path: 'register/:token/consent', title: 'screen.P01-Consent' },
   { id: 'P01c-Selfie', path: 'register/:token/selfie', title: 'screen.P01c-Selfie' },
-  { id: 'P01d-IDCheck', path: 'register/:token/id-check', title: 'screen.P01d-IDCheck', variants: ["P01e-IDBusy"] },
+  { id: 'P01d-IDCheck', path: 'register/:token/id-check', title: 'screen.P01d-IDCheck' },
   { id: 'P02-Payment', path: 'register/:token/payment', title: 'screen.P02-Payment' },
   { id: 'P02b-Paid', path: 'register/:token/paid', title: 'screen.P02b-Paid' },
   { id: 'P02s-OtherPayer', path: 'pay/:token', title: 'screen.P02s-OtherPayer' },

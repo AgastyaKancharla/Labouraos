@@ -13,6 +13,9 @@ import './public.css';
  * opens when `active` is true; "Take selfie" freezes the frame, stops the
  * camera and hands the JPEG to `onCapture`. If that answers 'retry' (the
  * upload failed), the camera opens again.
+ *
+ * With `facing="environment"` the same live camera photographs an ID card
+ * (another ID, rev 154): the back camera, not mirrored, a card-shaped frame.
  */
 type CameraState = 'starting' | 'ready' | 'denied' | 'unavailable';
 
@@ -23,6 +26,10 @@ export function LiveSelfie({
   takeLabel,
   savingLabel,
   error,
+  facing = 'user',
+  cameraLabel,
+  previewAlt,
+  noGalleryLabel,
 }: {
   active: boolean;
   onCapture: (photo: Blob) => Promise<'done' | 'retry'>;
@@ -31,6 +38,11 @@ export function LiveSelfie({
   savingLabel?: string;
   /** An upload error, shown above the button. */
   error?: ReactNode;
+  /** user: the front camera (a selfie); environment: the back camera (a photo of an ID card). */
+  facing?: 'user' | 'environment';
+  cameraLabel?: string;
+  previewAlt?: string;
+  noGalleryLabel?: string;
 }) {
   const t = useT();
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -51,7 +63,10 @@ export function LiveSelfie({
       return;
     }
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: { ideal: 720 } }, audio: false });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: facing === 'user' ? { facingMode: 'user', width: { ideal: 720 } } : { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+        audio: false,
+      });
       streamRef.current = stream;
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
@@ -61,7 +76,7 @@ export function LiveSelfie({
     } catch (e) {
       setCamera(e instanceof DOMException && (e.name === 'NotAllowedError' || e.name === 'SecurityError') ? 'denied' : 'unavailable');
     }
-  }, []);
+  }, [facing]);
 
   useEffect(() => {
     if (!active) return;
@@ -73,13 +88,16 @@ export function LiveSelfie({
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, 960 / video.videoWidth);
+    const scale = Math.min(1, (facing === 'user' ? 960 : 1280) / video.videoWidth);
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
-    ctx.translate(canvas.width, 0);
-    ctx.scale(-1, 1);
+    if (facing === 'user') {
+      // A selfie is shown mirrored, as in a mirror; a card is kept as it is (its number readable).
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
+    }
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.85));
     if (!blob) return;
@@ -99,10 +117,10 @@ export function LiveSelfie({
 
   return (
     <>
-      <div className="lb-camera">
-        <video ref={videoRef} playsInline muted aria-label={t('pub.selfie.cameraLabel')} hidden={Boolean(preview)} />
-        {preview && <img src={preview} alt={t('pub.selfie.previewAlt')} />}
-        <div className="lb-camera__oval" aria-hidden="true" />
+      <div className={facing === 'user' ? 'lb-camera' : 'lb-camera lb-camera--card'}>
+        <video ref={videoRef} playsInline muted aria-label={cameraLabel ?? t('pub.selfie.cameraLabel')} hidden={Boolean(preview)} />
+        {preview && <img src={preview} alt={previewAlt ?? t('pub.selfie.previewAlt')} />}
+        <div className={facing === 'user' ? 'lb-camera__oval' : 'lb-camera__card'} aria-hidden="true" />
       </div>
       {tips && <Muted>{tips}</Muted>}
       {camera === 'denied' && <Warn>{t('pub.selfie.denied')}</Warn>}
@@ -117,7 +135,7 @@ export function LiveSelfie({
           {uploading ? (savingLabel ?? t('pub.selfie.saving')) : (takeLabel ?? t('pub.selfie.take'))}
         </button>
       )}
-      <span className="sub lb-pub-center">{t('pub.selfie.noGallery')}</span>
+      <span className="sub lb-pub-center">{noGalleryLabel ?? t('pub.selfie.noGallery')}</span>
     </>
   );
 }

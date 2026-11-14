@@ -66,7 +66,6 @@ export function weeklyInIndia(job: WeeklyJobName): IndiaCronRepeat {
 
 export const INTERVAL_JOB_MS = {
   interviewReply: 60_000,
-  kycRecovery: 15 * 60 * 1000,
   /** Phase 21 Task 6: bells that change with the clock (escalation, idle, break overrun). */
   notificationSweep: 5 * 60 * 1000,
 } as const;

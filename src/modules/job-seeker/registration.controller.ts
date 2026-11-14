@@ -4,7 +4,6 @@ import {
   Controller,
   Get,
   Headers,
-  Optional,
   Param,
   Post,
   Query,
@@ -22,11 +21,12 @@ import { Response as ExpressResponse } from 'express';
 import { Public } from '../../common/rbac/public.decorator';
 import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { RegistrationJourneyService } from './registration-journey.service';
-import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { publicLanguage, shortNameOf } from './registration-journey';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
+import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
+import { OtherIdService } from '../aadhaar-qr/other-id.service';
 
 const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
 
@@ -45,26 +45,9 @@ export class RegistrationController {
     private readonly upi: UpiCollectionService,
     private readonly journey: RegistrationJourneyService,
     private readonly otpLimiter: PublicOtpLimiter,
-    @Optional() private readonly kycRecovery?: KycRecoveryService,
+    private readonly aadhaarQr: AadhaarQrService,
+    private readonly otherIds: OtherIdService,
   ) {}
-
-  /**
-   * "I'll wait — SMS me when it's back" (P01e): only while the ID service is down.
-   * He already proved his number on this link, so no second code is asked.
-   */
-  @Post(':token/id-check-wait')
-  @Public(TOKEN_PAGE)
-  async waitForIdService(@Param('token') token: string, @Body() body: { requestId?: string }) {
-    const link = await this.requireRegistrationLink(token);
-    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone!))) {
-      throw new BadRequestException('OTP to the registered mobile is required');
-    }
-    if (!this.kycRecovery || !(await this.kycRecovery.isDown())) {
-      throw new BadRequestException('ID check service is available');
-    }
-    await this.kycRecovery.requestRecovery(link.subjectId, link.id);
-    return { success: true, waitingForRecovery: true };
-  }
 
   /**
    * Where the registration link stands (web page P00/P02r and every step after it).
@@ -107,19 +90,43 @@ export class RegistrationController {
     return this.jobSeekers.uploadPhoto(link.subjectId, photo, 'system');
   }
 
-  @Post(':token/id-check')
-  @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async verifyIdentity(
-    @Param('token') token: string,
-    @Body() body: Record<string, unknown> & { requestId?: string },
-  ) {
+  /**
+   * Aadhaar (guide, 14 Nov): the page reads the Secure QR on his phone — the
+   * camera, or his e-Aadhaar PDF opened in the browser — and sends only the
+   * QR's text. No image of the card or the PDF ever comes here. UIDAI's
+   * signature, 18+, the name and the phone link are checked here.
+   */
+  @Post(':token/aadhaar-qr')
+  @Public(TOKEN_PAGE)
+  async verifyAadhaarQr(@Param('token') token: string, @Body() body: { requestId?: string; qrText?: unknown }) {
     const link = await this.requireRegistrationLink(token);
-    if (!body.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
-    const providerInput = { ...body };
-    delete providerInput.requestId;
-    return this.jobSeekers.verifyIdentityWithProvider(link.subjectId, providerInput, 'system');
+    return this.aadhaarQr.checkJobSeeker(link.subjectId, body.qrText, { channel: 'link' });
+  }
+
+  /**
+   * Another government ID (PAN, driving licence, voter ID) — always offered
+   * (UIDAI: nobody may be refused for not using Aadhaar). Checked by the Team
+   * Lead by eye (rev 154, no outside company, ₹0): a live camera photo of the
+   * card (no gallery, no file upload) and the number typed. Pending until the
+   * Team Lead approves it; terms and payment wait for that.
+   */
+  @Post(':token/other-id')
+  @Public(TOKEN_PAGE)
+  @CheckLinkBeforeUpload('registration', 'job_seeker', 'A valid job seeker registration link is required')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async submitOtherId(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown },
+  ) {
+    const link = await this.requireRegistrationLink(token);
+    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    return this.otherIds.submitForJobSeeker(link.subjectId, { idType: body.idType, idNumber: body.idNumber, captureSource: body.captureSource, photo }, { channel: 'link' });
   }
 
   @Get(':token/terms')

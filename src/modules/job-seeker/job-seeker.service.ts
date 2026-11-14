@@ -58,7 +58,13 @@ import {
   CANDIDATE_PHOTO_STORAGE,
   CandidatePhotoStorage,
 } from './photo-storage';
-import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
+import { IdCheckAccessService } from '../aadhaar-qr/id-check-access.service';
+import { verifiedByUidai } from '../aadhaar-qr/id-check-photo.service';
+import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
+import { UNDER_18_STOP_MESSAGE } from '../aadhaar-qr/under18-stop.service';
+
+/** Another ID waits for the Team Lead's check before terms and payment (rev 154). */
+export const ID_WAITING_FOR_TEAM_LEAD = 'The Team Lead is checking the photo of your ID card. Open this link again once it is checked.';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
 import { publicPageLink } from '../../common/public-pages';
@@ -130,7 +136,6 @@ export class JobSeekerService {
     @Optional() private readonly reviewFlagService?: ReviewFlagService,
     @Optional() private readonly consentClock?: ConsentClock,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
-    @Optional() private readonly kycRecovery?: KycRecoveryService,
     @Optional() private readonly publicLinks?: PublicLinkStoreService,
     @Optional() private readonly messagingService?: MessagingService,
   ) {}
@@ -503,14 +508,20 @@ export class JobSeekerService {
     if (jobSeeker.dateOfBirth && calculateAge(jobSeeker.dateOfBirth, now) < adultMinimumAge) {
       throw new BadRequestException('Registration stops before payment: the job seeker is under 18');
     }
+    // Sticky (rev 154): any signed Aadhaar QR that showed under 18 stops registration until a
+    // Manager or the CEO lifts it — a later ID check of any kind doesn't get past it.
+    const stop = await this.prisma.identityVerification.findFirst({
+      where: { jobSeekerId: jobSeeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
+      select: { id: true },
+    });
+    if (stop) throw new BadRequestException(UNDER_18_STOP_MESSAGE);
     const latest = await this.prisma.identityVerification.findFirst({
       where: { jobSeekerId: jobSeeker.id },
       orderBy: { createdAt: 'desc' },
-      select: { isAdult: true },
+      select: { status: true },
     });
-    if (latest?.isAdult === false) {
-      throw new BadRequestException('Registration stops before payment: the ID check shows the job seeker is under 18');
-    }
+    // Another ID waits for the Team Lead's check: nobody pays before the ID is confirmed.
+    if (latest?.status === 'pending') throw new BadRequestException(ID_WAITING_FOR_TEAM_LEAD);
   }
 
   /**
@@ -533,10 +544,11 @@ export class JobSeekerService {
       where: { jobSeekerId: seeker.id },
       orderBy: { createdAt: 'desc' },
     });
-    if (!verification || verification.status !== 'verified' || verification.nameMatches === false) {
+    await this.assertAdultBeforePayment(seeker, policy.adultMinimumAge);
+    if (verification?.status === 'pending') throw new BadRequestException(ID_WAITING_FOR_TEAM_LEAD);
+    if (!verification || verification.status !== 'verified' || verification.nameMatches !== true || verification.isAdult !== true) {
       throw new BadRequestException('Finish the ID check first');
     }
-    await this.assertAdultBeforePayment(seeker, policy.adultMinimumAge);
     if (seeker.guaranteeFloorPaise === null) {
       throw new BadRequestException('Waiting for the new trade to be added in the Command Center');
     }
@@ -1523,7 +1535,7 @@ export class JobSeekerService {
     });
     if (!seeker) throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     const now = this.consentClock?.now() ?? new Date();
-    const [consents, link, paymentOnlyLink, idService] = await Promise.all([
+    const [consents, link, paymentOnlyLink, under18Stop] = await Promise.all([
       this.prisma.consent.findMany({
         where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
         orderBy: { grantedAt: 'desc' },
@@ -1538,7 +1550,10 @@ export class JobSeekerService {
         orderBy: { createdAt: 'desc' },
         select: { expiresAt: true },
       }),
-      this.prisma.kycServiceState.findUnique({ where: { id: 'id-check' } }),
+      this.prisma.identityVerification.findFirst({
+        where: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
+        select: { id: true },
+      }),
     ]);
     const latestVerification = seeker.identityVerifications[0];
     const latestPayment = seeker.payments[0];
@@ -1555,10 +1570,22 @@ export class JobSeekerService {
       time: seeker.photoTakenAt,
       reason: null,
     };
+    // Both checks are in-house (rev 154): the Aadhaar QR is decided at once; another ID waits
+    // for the Team Lead. A standing under-18 stop is stuck until a Manager or the CEO lifts it.
     const idCheck = {
-      state: latestVerification?.status === 'verified' ? 'done' : idService?.status === 'down' ? 'stuck' : latestVerification ? 'in_progress' : 'not_started',
+      state: under18Stop
+        ? 'stuck'
+        : latestVerification?.status === 'verified' && latestVerification.isAdult === true && latestVerification.nameMatches === true
+          ? 'done'
+          : latestVerification
+            ? 'in_progress'
+            : 'not_started',
       time: latestVerification?.verifiedAt ?? latestVerification?.createdAt ?? null,
-      reason: idService?.status === 'down' ? 'ID check service is temporarily unavailable' : latestVerification?.failureReason ?? null,
+      reason: under18Stop
+        ? 'Under 18: registration stops (only a Manager or the CEO can lift it)'
+        : latestVerification?.status === 'pending'
+          ? 'Waiting for the Team Lead to check the ID card photo'
+          : latestVerification?.failureReason ?? null,
     };
     const payment = {
       state: latestPayment?.status === 'succeeded' || latestPayment?.status === 'completed'
@@ -2026,167 +2053,34 @@ export class JobSeekerService {
     return { success: true };
   }
 
-  /**
-   * Records an IdentityVerification row for a job seeker.
-   * Requires that Consent.aadhaar_verification is active for this job seeker.
-   * NEVER writes to deprecated columns (kycStatus, kycReference).
-   * Runs assertNoRawAadhaar on input.
-   */
-  async createIdentityVerification(
-    jobSeekerId: string,
-    dto: Record<string, unknown>,
-    actorId?: string,
-  ) {
-    assertNoRawAadhaar(dto);
-
+  /** The ID checks of a job seeker for the Team Lead / Manager / CEO in scope: only what the screens need. */
+  async getIdentityVerifications(jobSeekerId: string, actor: { id: string; role: string }, access: IdCheckAccessService) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
+      select: { id: true, registeredByStaffId: true },
     });
     if (!seeker) {
       throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
     }
-
-    if (!this.consentService) {
-      throw new BadRequestException('ConsentService is not available');
-    }
-
-    const hasAadhaarConsent = await this.consentService.hasConsent(
-      'job_seeker',
-      jobSeekerId,
-      'aadhaar_verification',
-    );
-    if (!hasAadhaarConsent) {
-      throw new BadRequestException(
-        'Consent for aadhaar_verification is required before identity verification can be requested',
-      );
-    }
-
-    const method = String(dto.method || 'digilocker');
-    const allowedMethods = ['digilocker', 'aadhaar_qr', 'pan', 'driving_licence', 'voter_id'];
-    if (!allowedMethods.includes(method)) {
-      throw new BadRequestException(
-        `Invalid identity verification method: ${method}. Allowed: ${allowedMethods.join(', ')}`,
-      );
-    }
-
-    const status = String(dto.status || 'verified');
-    const allowedStatuses = ['pending', 'verified', 'failed'];
-    if (!allowedStatuses.includes(status)) {
-      throw new BadRequestException(
-        `Invalid identity verification status: ${status}. Allowed: ${allowedStatuses.join(', ')}`,
-      );
-    }
-
-    let last4: string | null = null;
-    if (dto.last4 !== undefined && dto.last4 !== null && dto.last4 !== '') {
-      const last4Str = String(dto.last4).trim();
-      if (!/^\d{4}$/.test(last4Str)) {
-        throw new BadRequestException('last4 must be exactly 4 digits');
-      }
-      last4 = last4Str;
-    }
-
-    const vendor = String(dto.vendor || 'digilocker');
-    const vendorReference = String(
-      dto.vendorReference ||
-        `idv_ref_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-    );
-
-    const nameMatches =
-      dto.nameMatches !== undefined ? Boolean(dto.nameMatches) : status === 'verified';
-    const isAdult =
-      dto.isAdult !== undefined ? Boolean(dto.isAdult) : status === 'verified';
-    const verifiedAt = status === 'verified' ? new Date() : null;
-    const failureReason =
-      status === 'failed'
-        ? dto.failureReason
-          ? String(dto.failureReason)
-          : 'Verification failed'
-        : null;
-
-    const verification = await this.prisma.identityVerification.create({
-      data: {
-        jobSeekerId,
-        method,
-        vendor,
-        vendorReference,
-        status,
-        last4,
-        nameMatches,
-        isAdult,
-        verifiedAt,
-        failureReason,
-      },
-    });
-
-    if (actorId && actorId !== 'system') {
-      await this.auditService.log({
-        actorId,
-        action: 'job_seeker.identity_verification',
-        entityType: 'identity_verification',
-        entityCode: seeker.code,
-        before: null,
-        after: {
-          id: verification.id,
-          method: verification.method,
-          status: verification.status,
-          vendor: verification.vendor,
-          last4: verification.last4,
-        },
-        changedFields: ['id', 'status', 'method'],
-        city: seeker.city,
-      });
-    }
-
-    return verification;
-  }
-
-  async verifyIdentityWithProvider(jobSeekerId: string, dto: Record<string, unknown>, actorId: string) {
-    assertNoRawAadhaar(dto);
-    if (!this.kycRecovery) throw new BadRequestException('KYC provider is not available');
-    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
-    if (!seeker) throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
-    if (!this.consentService || !(await this.consentService.hasConsent('job_seeker', seeker.id, 'aadhaar_verification'))) {
-      throw new BadRequestException('Consent for aadhaar_verification is required before identity verification can be requested');
-    }
-
-    const result = await this.kycRecovery.verify({
-      ...dto,
-      candidateName: seeker.name,
-      dateOfBirth: seeker.dateOfBirth?.toISOString().slice(0, 10),
-    });
-    const verification = await this.createIdentityVerification(jobSeekerId, {
-      method: dto.method ?? 'digilocker',
-      vendor: 'configured_kyc_provider',
-      vendorReference: result.vendorReference,
-      status: result.status,
-      last4: result.last4,
-      nameMatches: result.nameMatches,
-      isAdult: result.isAdult,
-      failureReason: result.error,
-    }, actorId);
-    if (result.nameMatches === false && this.reviewFlagService) {
-      await this.reviewFlagService.raise({
-        kind: 'name_check',
-        subjectType: 'job_seeker',
-        subjectId: seeker.id,
-        raisedForStaffId: seeker.registeredByStaffId,
-        details: { identityVerificationId: verification.id, reviewRequired: true },
-      });
-    }
-    return verification;
-  }
-
-  async getIdentityVerifications(jobSeekerId: string) {
-    const seeker = await this.prisma.jobSeeker.findUnique({
-      where: { id: jobSeekerId },
-    });
-    if (!seeker) {
-      throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
-    }
-    return this.prisma.identityVerification.findMany({
+    await access.assertCanView(actor, seeker.registeredByStaffId);
+    const rows = await this.prisma.identityVerification.findMany({
       where: { jobSeekerId },
       orderBy: { createdAt: 'desc' },
+      select: {
+        id: true, method: true, vendor: true, status: true, last4: true, nameMatches: true, isAdult: true, phoneLinked: true,
+        verifiedAt: true, failureReason: true, createdAt: true, under18LiftedAt: true,
+      },
+    });
+    return rows.map(({ vendor, last4, ...row }) => {
+      const uidai = verifiedByUidai({ method: row.method, vendor });
+      return {
+        ...row,
+        verifiedByUidai: uidai,
+        checkedBy: uidai ? 'uidai_signature' : vendor === 'team_lead_check' ? 'team_lead' : 'other',
+        maskedReference: uidai ? maskedAadhaarReference(last4) : null,
+        idNumberLast4: row.method !== 'aadhaar_qr' ? last4 : null,
+        under18Stop: uidai && row.isAdult === false && !row.under18LiftedAt,
+      };
     });
   }
 

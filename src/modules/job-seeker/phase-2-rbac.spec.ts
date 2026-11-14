@@ -133,8 +133,8 @@ describe('Phase 2 Task 8: RBAC, PII Masking, and Field Agent Denial', () => {
     await prisma.identityVerification.create({
       data: {
         jobSeekerId: jobSeeker.id,
-        method: 'digilocker',
-        vendor: 'digilocker',
+        method: 'aadhaar_qr',
+        vendor: 'uidai_secure_qr',
         vendorReference: testKycRef,
         status: 'verified',
       },

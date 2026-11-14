@@ -6,7 +6,6 @@ import { FOLLOW_UP_QUEUE, FOLLOW_UP_SWEEP } from './follow-up.job';
 import { FORGOTTEN_LOGOUT_QUEUE, FORGOTTEN_LOGOUT_SWEEP } from './forgotten-logout.job';
 import { INTERVIEW_REPLY_QUEUE, INTERVIEW_REPLY_SWEEP } from './interview-reply.job';
 import { JOINING_REWARD_QUEUE, JOINING_REWARD_SWEEP } from './joining-reward.job';
-import { KYC_RECOVERY_QUEUE, KYC_RECOVERY_SWEEP } from './kyc-recovery.job';
 import { NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB } from './no-pickup-evaluation.job';
 import { NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP } from './notification-sweep.job';
 import { PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP } from './pattern-flags.job';
@@ -27,7 +26,6 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       forgottenLogout: [FORGOTTEN_LOGOUT_QUEUE, FORGOTTEN_LOGOUT_SWEEP],
       interviewReply: [INTERVIEW_REPLY_QUEUE, INTERVIEW_REPLY_SWEEP],
       joiningReward: [JOINING_REWARD_QUEUE, JOINING_REWARD_SWEEP],
-      kycRecovery: [KYC_RECOVERY_QUEUE, KYC_RECOVERY_SWEEP],
       noPickupEvaluation: [NO_PICKUP_EVALUATION_QUEUE, NO_PICKUP_EVALUATION_JOB],
       notificationSweep: [NOTIFICATION_SWEEP_QUEUE, NOTIFICATION_SWEEP],
       patternFlags: [PATTERN_FLAGS_QUEUE, PATTERN_FLAGS_SWEEP],
@@ -51,7 +49,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
       .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
       .flatMap((src) => [...src.matchAll(/upsertJobScheduler\(\s*'([^']+)'/g)].map((m) => m[1]));
-    expect(ids.length).toBeGreaterThanOrEqual(14);
+    expect(ids.length).toBeGreaterThanOrEqual(13);
     expect(ids.sort()).toEqual(JOB_CATALOG.map((e) => e.schedulerId).sort());
   });
 

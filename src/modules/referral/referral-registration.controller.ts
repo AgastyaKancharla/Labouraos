@@ -15,14 +15,11 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
-import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { ConsentService } from '../consent/consent.service';
 import { PayoutAccountService } from '../payout-account/payout-account.service';
-import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
-import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
@@ -31,6 +28,9 @@ import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 import { PricingService } from '../pricing/pricing.service';
 import { detectSelfieImageType } from '../../common/image-type';
 import { publicLanguage, shortNameOf } from '../job-seeker/registration-journey';
+import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
+import { OtherIdService } from '../aadhaar-qr/other-id.service';
+import { Under18StopService } from '../aadhaar-qr/under18-stop.service';
 
 @Controller()
 export class ReferralRegistrationController {
@@ -38,14 +38,15 @@ export class ReferralRegistrationController {
     private readonly links: PublicLinkStoreService,
     private readonly prisma: PrismaService,
     private readonly otp: OtpService,
-    private readonly kyc: KycRecoveryService,
     private readonly audit: AuditService,
     private readonly clock: ConsentClock,
     private readonly consent: ConsentService,
     private readonly payouts: PayoutAccountService,
-    private readonly flags: ReviewFlagService,
     @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photos: CandidatePhotoStorage,
     private readonly pricing: PricingService,
+    private readonly aadhaarQr: AadhaarQrService,
+    private readonly otherIds: OtherIdService,
+    private readonly stops: Under18StopService,
   ) {}
 
   /**
@@ -142,48 +143,49 @@ export class ReferralRegistrationController {
     return { referralId: updated.id, capturedAt: updated.photoTakenAt };
   }
 
-  @Post('referral-registration/:token/id-check')
+  /**
+   * Aadhaar, as on the job seeker's link: the page reads the Secure QR on the
+   * partner's phone (camera or e-Aadhaar PDF) and sends only its text. UIDAI's
+   * signature, 18+, the name and the phone link are checked in-house.
+   */
+  @Post('referral-registration/:token/aadhaar-qr')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
-  async verifyIdentity(@Param('token') token: string, @Body() body: Record<string, unknown> & { requestId?: string }) {
-    const link = await this.requireVerifiedLink(token, body.requestId);
-    assertNoRawAadhaar(body);
-    if (!(await this.consent.hasConsent('referral', link.subjectId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', link.subjectId, 'call_recording'))) {
+  async verifyAadhaarQr(@Param('token') token: string, @Body() body: { requestId?: string; qrText?: unknown }) {
+    const link = await this.requireVerifiedLink(token, body?.requestId);
+    await this.assertReadyForIdCheck(link.subjectId);
+    const outcome = await this.aadhaarQr.checkReferral(link.subjectId, body.qrText, { channel: 'link' });
+    return { ...outcome, nextStep: outcome.result === 'verified' ? 'upi' : 'id_check' };
+  }
+
+  /**
+   * Another government ID (PAN, driving licence, voter ID), checked by the
+   * Team Lead by eye (rev 154, no outside company): a live camera photo of the
+   * card (no gallery, no file upload) and the number typed. Pending until the
+   * Team Lead approves it in T-Verify; the UPI step waits for that.
+   */
+  @Post('referral-registration/:token/other-id')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  @CheckLinkBeforeUpload('referral_registration', 'referral', 'A valid referral registration link is required')
+  @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
+  async submitOtherId(
+    @Param('token') token: string,
+    @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
+    @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown },
+  ) {
+    const link = await this.requireVerifiedLink(token, body?.requestId);
+    await this.assertReadyForIdCheck(link.subjectId);
+    const outcome = await this.otherIds.submitForReferral(link.subjectId, { idType: body.idType, idNumber: body.idNumber, captureSource: body.captureSource, photo }, { channel: 'link' });
+    return { ...outcome, nextStep: 'team_lead_check' };
+  }
+
+  private async assertReadyForIdCheck(referralId: string) {
+    if (!(await this.consent.hasConsent('referral', referralId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', referralId, 'call_recording'))) {
       throw new BadRequestException('Referral terms and call-recording consent are required before ID verification');
     }
-    const referral = await this.prisma.referral.findUnique({ where: { id: link.subjectId } });
+    const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
     if (!referral) throw new BadRequestException('Referral partner not found');
     if (!referral.photoStoragePath) throw new BadRequestException('Complete the live-camera selfie before the ID check');
-    const providerInput = { ...body, candidateName: referral.name };
-    delete providerInput.requestId;
-    const result = await this.kyc.verify(providerInput);
-    const verification = await this.prisma.referralIdentityVerification.create({
-      data: {
-        referralId: referral.id,
-        method: typeof body.method === 'string' ? body.method : 'digilocker',
-        vendor: 'configured_kyc_provider',
-        vendorReference: result.vendorReference,
-        status: result.status,
-        last4: result.last4 ?? null,
-        nameMatches: result.nameMatches ?? null,
-        isAdult: result.isAdult ?? null,
-        verifiedAt: result.status === 'verified' ? this.clock.now() : null,
-        failureReason: result.error ?? null,
-      },
-    });
-    await this.audit.log({
-      actorId: link.createdByStaffId ?? 'system',
-      action: 'referral.identity_verified',
-      entityType: 'referral_identity_verification',
-      entityCode: verification.id,
-      after: { referralId: referral.id, method: verification.method, status: verification.status, last4: verification.last4, nameMatches: verification.nameMatches, isAdult: verification.isAdult },
-      changedFields: ['method', 'status', 'last4', 'nameMatches', 'isAdult'],
-      reason: 'Identity verification completed through the referral registration link',
-      city: referral.city,
-    });
-    if (result.nameMatches === false) {
-      await this.flags.raise({ kind: 'name_check', subjectType: 'referral', subjectId: referral.id, details: { identityVerificationId: verification.id } });
-    }
-    return { ...verification, nextStep: result.status === 'verified' && result.isAdult === true && result.nameMatches === true ? 'upi' : 'id_check' };
+    return referral;
   }
 
   @Post('referral-registration/:token/upi')
@@ -197,8 +199,11 @@ export class ReferralRegistrationController {
       where: { referralId: link.subjectId },
       orderBy: { createdAt: 'desc' },
     });
+    await this.stops.assertNotStopped('referral', link.subjectId);
     if (!verification || verification.status !== 'verified' || verification.nameMatches !== true || verification.isAdult !== true) {
-      throw new BadRequestException('A successful ID check is required before entering UPI details');
+      throw new BadRequestException(
+        verification?.status === 'pending' ? 'The Team Lead has not checked the ID yet. Open this link again once it is checked.' : 'A successful ID check is required before entering UPI details',
+      );
     }
     if (!(await this.consent.hasConsent('referral', link.subjectId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', link.subjectId, 'call_recording'))) {
       throw new BadRequestException('Referral terms and call-recording consent are required');
@@ -242,10 +247,25 @@ export class ReferralRegistrationController {
       this.prisma.payoutAccount.findFirst({ where: { ownerType: 'referral', ownerId: referral.id, status: { not: 'superseded' } }, orderBy: { createdAt: 'desc' }, select: { status: true, nameMatches: true, createdAt: true } }),
     ]);
     const identity = referral.identityVerifications[0];
+    const stopped = await this.stops.isStopped('referral', referral.id);
+    const idState = stopped
+      ? 'stuck'
+      : identity?.status === 'verified' && identity.nameMatches === true && identity.isAdult === true
+        ? 'done'
+        : identity?.status === 'pending'
+          ? 'in_progress'
+          : identity
+            ? 'stuck'
+            : 'not_started';
+    const idReason = stopped
+      ? 'Under 18: registration stops (only a Manager or the CEO can lift it)'
+      : identity?.status === 'pending'
+        ? 'Waiting for the Team Lead to check the ID card photo'
+        : identity?.failureReason ?? (identity?.nameMatches !== true ? 'ID name did not match the referral profile' : identity?.isAdult !== true ? 'Adult status could not be confirmed' : null);
     const steps = {
       terms: { state: terms ? 'done' : 'not_started', time: terms?.grantedAt ?? null },
       selfie: { state: referral.photoStoragePath ? 'done' : terms ? 'not_started' : 'stuck', time: referral.photoTakenAt },
-      id: { state: identity?.status === 'verified' && identity.nameMatches === true && identity.isAdult === true ? 'done' : identity ? 'stuck' : 'not_started', time: identity?.verifiedAt ?? identity?.createdAt ?? null, reason: identity?.failureReason ?? (identity?.nameMatches !== true ? 'ID name did not match the referral profile' : identity?.isAdult !== true ? 'Adult status could not be confirmed' : null) },
+      id: { state: idState, time: identity?.verifiedAt ?? identity?.createdAt ?? null, reason: idState === 'done' ? null : idReason },
       upi: { state: account?.status === 'verified' ? 'done' : account ? 'in_progress' : 'not_started', time: account?.createdAt ?? null, reason: account?.nameMatches === false ? 'UPI or bank account name did not match the verified identity' : null },
     };
     const currentStep = steps.terms.state !== 'done'
@@ -267,7 +287,7 @@ export class ReferralRegistrationController {
 
   /** The open status for the partner's own page: steps plus what each page needs (masked, no ID numbers). */
   private async publicStatus(link: Awaited<ReturnType<PublicLinkStoreService['findByToken']>>) {
-    const [base, referral, identity, account, idServiceDown] = await Promise.all([
+    const [base, referral, identity, account, stopped] = await Promise.all([
       this.status(link.subjectId, link.expiresAt),
       this.prisma.referral.findUnique({ where: { id: link.subjectId }, select: { code: true, name: true, type: true, language: true } }),
       this.prisma.referralIdentityVerification.findFirst({ where: { referralId: link.subjectId }, orderBy: { createdAt: 'desc' }, select: { status: true, nameMatches: true, isAdult: true } }),
@@ -276,18 +296,21 @@ export class ReferralRegistrationController {
         orderBy: { createdAt: 'desc' },
         select: { method: true, maskedValue: true, status: true, nameMatches: true },
       }),
-      this.kyc.isDown().catch(() => false),
+      this.stops.isStopped('referral', link.subjectId),
     ]);
     if (!referral) throw new BadRequestException('Referral partner not found');
-    const lastResult = !identity
-      ? 'none'
-      : identity.status === 'verified' && identity.isAdult === false
-        ? 'under_18'
-        : identity.nameMatches === false
-          ? 'name_mismatch'
-          : identity.status === 'verified'
-            ? 'verified'
-            : 'failed';
+    // A lifted under-18 stop (isAdult false, no longer standing) needs a new ID check: 'failed'.
+    const lastResult = stopped
+      ? 'under_18'
+      : !identity
+        ? 'none'
+        : identity.status === 'pending'
+          ? 'pending'
+          : identity.nameMatches === false
+            ? 'name_mismatch'
+            : identity.status === 'verified' && identity.isAdult === true
+              ? 'verified'
+              : 'failed';
     return {
       ...base,
       otpRequired: false,
@@ -296,8 +319,8 @@ export class ReferralRegistrationController {
       firstName: shortNameOf(referral.name),
       referralCode: referral.code,
       partnerType: referral.type === 'business' ? 'business' : 'individual',
-      idCheck: { serviceDown: idServiceDown, lastResult },
-      stopped: lastResult === 'under_18' ? 'under_18' : null,
+      idCheck: { lastResult, waitingForTeamLead: lastResult === 'pending' },
+      stopped: stopped ? 'under_18' : null,
       payout: account
         ? { method: account.method, maskedValue: account.maskedValue, status: account.status, nameMatches: account.nameMatches }
         : null,

@@ -78,8 +78,8 @@ export interface JourneyInput {
   } | null;
   activationFeePaise: number;
   guaranteeDays: number;
-  idServiceDown: boolean;
-  waitingForIdService: boolean;
+  /** A signed Aadhaar QR showed under 18 and no Manager / CEO has lifted the stop (sticky, rev 154). */
+  under18Stop: boolean;
 }
 
 export interface JourneyStatus {
@@ -91,9 +91,9 @@ export interface JourneyStatus {
   currentStep: RegistrationStep;
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
   idCheck: {
-    serviceDown: boolean;
-    waitingForService: boolean;
-    lastResult: 'none' | 'verified' | 'name_mismatch' | 'under_18' | 'failed';
+    /** Another ID is waiting for the Team Lead's check (rev 154): no payment until it is approved. */
+    waitingForTeamLead: boolean;
+    lastResult: 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'failed';
   };
   /** Registration stops before payment when he is under 18. */
   stopped: 'under_18' | null;
@@ -117,21 +117,24 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
   const consent = JOB_SEEKER_REQUIRED_CONSENT_PURPOSES.every((purpose) => input.grantedPurposes.includes(purpose));
   const selfie = Boolean(seeker.photoStoragePath);
   const idCheck = Boolean(
-    verification && verification.status === 'verified' && verification.nameMatches !== false && verification.isAdult !== false,
+    !input.under18Stop && verification && verification.status === 'verified' && verification.nameMatches === true && verification.isAdult === true,
   );
   const paid = Boolean(seeker.paymentReceivedAt) || Boolean(payment && SUCCEEDED.includes(payment.status));
 
   const currentStep: RegistrationStep = !consent ? 'consent' : !selfie ? 'selfie' : !idCheck ? 'id_check' : !paid ? 'payment' : 'complete';
 
-  const lastResult: JourneyStatus['idCheck']['lastResult'] = !verification
-    ? 'none'
-    : verification.isAdult === false
-      ? 'under_18'
-      : verification.nameMatches === false
-        ? 'name_mismatch'
-        : verification.status === 'verified'
-          ? 'verified'
-          : 'failed';
+  // A lifted under-18 stop (isAdult false, no longer standing) needs a new ID check: 'failed'.
+  const lastResult: JourneyStatus['idCheck']['lastResult'] = input.under18Stop
+    ? 'under_18'
+    : !verification
+      ? 'none'
+      : verification.status === 'pending'
+        ? 'pending'
+        : verification.nameMatches === false
+          ? 'name_mismatch'
+          : verification.status === 'verified' && verification.isAdult === true
+            ? 'verified'
+            : 'failed';
 
   let paymentState: RegistrationPaymentState = 'not_started';
   if (paid) paymentState = 'confirmed';
@@ -147,8 +150,8 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
     jobSeekerCode: seeker.code,
     currentStep,
     steps: { consent, selfie, idCheck, payment: paid },
-    idCheck: { serviceDown: input.idServiceDown, waitingForService: input.waitingForIdService, lastResult },
-    stopped: seeker.isUnder18ByDateOfBirth || verification?.isAdult === false ? 'under_18' : null,
+    idCheck: { waitingForTeamLead: lastResult === 'pending', lastResult },
+    stopped: seeker.isUnder18ByDateOfBirth || input.under18Stop ? 'under_18' : null,
     waitingForTrade: seeker.guaranteeFloorPaise === null,
     termsAcceptedAt: seeker.termsAcceptedAt,
     payment: {

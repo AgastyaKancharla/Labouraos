@@ -115,14 +115,14 @@ export class TeamLeadController {
 
   @Get('registrations/:id/selfie')
   @RequireRoles('team_lead')
-  selfie(@Req() req: Authed, @Param('id') id: string) {
-    return this.checks.selfie(this.actor(req), id);
+  selfie(@Req() req: Authed, @Param('id') id: string, @Query('subjectType') subjectType?: string) {
+    return this.checks.selfie(this.actor(req), id, subjectType);
   }
 
   @Post('registrations/:id/check')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('team_lead')
-  checkRegistration(@Req() req: Authed, @Param('id') id: string, @Body() body: { verdict?: string; note?: string }) {
+  checkRegistration(@Req() req: Authed, @Param('id') id: string, @Body() body: { verdict?: string; note?: string; subjectType?: string }) {
     return this.checks.checkRegistration(this.actor(req), id, body ?? {});
   }
 

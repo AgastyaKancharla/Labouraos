@@ -16,6 +16,7 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { SEEKER_STATUS, guaranteePill } from '../_kit/labels';
+import { AadhaarCheckCard } from '../_kit/AadhaarCheck';
 
 /** CEO job seeker page — design C-JobSeeker.dc.html. */
 interface Detail {
@@ -60,6 +61,15 @@ interface Detail {
   placements: { id: string; code: string; status: string; business: string; joinedDate: string | null }[];
   history: { at: string; kind: string; text: string; by: string | null; detail?: string | null }[];
 }
+
+/** How the ID was checked (guide, 14 Nov: Aadhaar by its Secure QR, or another government ID). */
+const ID_METHOD: Record<string, string> = {
+  aadhaar_qr: 'Aadhaar QR',
+  aadhaar_older_check: 'Aadhaar (older check)',
+  pan: 'PAN',
+  driving_licence: 'Driving licence',
+  voter_id: 'Voter ID',
+};
 
 const ACTIVITY: Record<string, string> = {
   offered: 'Offer sent · waiting for reply',
@@ -237,7 +247,7 @@ export default function JobSeekerDetail() {
                 'ID check',
                 d.registration.idCheck?.last4 !== undefined && !d.registration.idCheck?.status ? (
                   <StatusPill tone="good">
-                    {humanize(d.registration.idCheck.method)}
+                    {ID_METHOD[d.registration.idCheck.method] ?? humanize(d.registration.idCheck.method)}
                     {d.registration.idCheck.last4 ? ` · last 4: ${d.registration.idCheck.last4}` : ''}
                     {d.registration.idCheck.adult ? ' · 18+' : ''}
                   </StatusPill>
@@ -265,6 +275,7 @@ export default function JobSeekerDetail() {
             ]}
           />
         </Card>
+        <AadhaarCheckCard jobSeekerId={d.id} />
       </div>
 
       <div className="two-col">

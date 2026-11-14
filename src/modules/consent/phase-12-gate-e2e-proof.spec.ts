@@ -244,37 +244,19 @@ describe('Phase 12 gate end-to-end proof', () => {
       ),
     ).toBe(true);
 
-    const identityRequest = {
-      method: 'digilocker',
-      vendor: 'digilocker',
-      vendorReference: `gate-proof-${suffix}`,
-      last4: '4242',
-      nameMatches: true,
-      isAdult: true,
-    };
-    const identityResponse = await request(app.getHttpServer())
+    // Staff can't record or mark an ID check (rev 154): the endpoint is gone.
+    await request(app.getHttpServer())
       .post(`/job-seekers/${jobSeekerId}/identity-verification`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
-      .send(identityRequest)
-      .expect(201);
-    expect(identityResponse.body.status).toBe('verified');
-    expect(identityResponse.body.last4).toBe('4242');
-    expect(identityResponse.body.nameMatches).toBe(true);
-    expect(identityResponse.body.isAdult).toBe(true);
-    const verification = await prisma.identityVerification.findUniqueOrThrow({
-      where: { id: identityResponse.body.id },
+      .send({ method: 'voter_id', status: 'verified', last4: '4242', nameMatches: true, isAdult: true })
+      .expect(404);
+    expect(await prisma.identityVerification.count({ where: { jobSeekerId } })).toBe(0);
+    // Another ID approved by the Team Lead (that flow is covered in aadhaar-qr.e2e.spec.ts): type and last 4 only.
+    const verification = await prisma.identityVerification.create({
+      data: { jobSeekerId, method: 'voter_id', vendor: 'team_lead_check', status: 'verified', last4: '4567', nameMatches: true, isAdult: true, verifiedAt: new Date() },
     });
-    expect(verification).toMatchObject({
-      last4: '4242',
-      nameMatches: true,
-      isAdult: true,
-      status: 'verified',
-    });
-    expect(identityResponse.body.id).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(verification.id).toBe(identityResponse.body.id);
     expect(verification.id).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(verification.id).toBe(identityResponse.body.id);
-    const serialized = JSON.stringify({ identityRequest, identityResponse: identityResponse.body, verification });
+    const serialized = JSON.stringify({ verification });
     const withoutUuids = serialized.replace(
       /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi,
       '',

@@ -2,25 +2,9 @@
 
 All routes require a staff bearer token unless marked otherwise. Responses below show representative payloads; paise amounts are integers.
 
-## Task 5 — ID provider recovery
+## Task 5 — ID check (rev 154: in-house only)
 
-### `POST /consent/id-check-wait`
-
-Public registration link holder. The OTP must have been sent to and verified for the job seeker's own registered number.
-
-**Request:** `{"token":"registration-link-token","requestId":"otp-request-id","code":"123456"}`.
-
-**Response `201`:** `{"success":true,"waitingForRecovery":true}`.
-
-**Errors:** `400` invalid/expired link, wrong or unverified registered-number OTP, or ID service is not down.
-
-### `POST /jobs/kyc-recovery/run`
-
-CEO only; manually queues the worker's recovery probe. **Request:** no body. **Response `201`:** `{"jobId":"bullmq-job-id"}`.
-
-**Errors:** `401` unauthenticated; `403` caller is not CEO.
-
-`GET /system/status` and `GET /status` now include `idCheck: {"status":"up","lastChangedAt":"2026-11-10T12:00:00.000Z"}`. A down ID provider also appears as a degraded component.
+There is no outside ID-check company any more: Aadhaar is checked in-house from its signed Secure QR, and another ID (PAN, driving licence, voter ID) by the Team Lead by eye in T-Verify. `POST /consent/id-check-wait`, `POST /registration/:token/id-check-wait`, `POST /jobs/kyc-recovery/run`, the `idCheck` entry of `GET /system/status`, `POST /job-seekers/:id/identity-verification` and `POST /job-seekers/:id/identity-verification/provider` are removed (404). A production process refuses to start while any `KYC_*` or mock ID-check setting is set.
 
 ### `GET /job-seekers/:id/registration-status`
 
@@ -29,22 +13,22 @@ Call agents, field agents, Team Leads, Managers and the CEO may read the registr
 **Response `200` example:**
 
 ```json
-{"jobSeekerId":"job-seeker-id","steps":{"phone":{"state":"done","time":"2026-11-10T10:00:00.000Z","reason":null},"consent":{"state":"in_progress","time":"2026-11-10T10:05:00.000Z","reason":null},"selfie":{"state":"not_started","time":null,"reason":null},"idCheck":{"state":"stuck","time":null,"reason":"ID check service is temporarily unavailable"},"payment":{"state":"not_started","time":null,"reason":null}},"registrationLinkExpiresAt":"2026-11-12T10:00:00.000Z","paymentOnlyLink":{"live":false,"expiresAt":null}}
+{"jobSeekerId":"job-seeker-id","steps":{"phone":{"state":"done","time":"2026-11-10T10:00:00.000Z","reason":null},"consent":{"state":"in_progress","time":"2026-11-10T10:05:00.000Z","reason":null},"selfie":{"state":"not_started","time":null,"reason":null},"idCheck":{"state":"in_progress","time":"2026-11-10T10:20:00.000Z","reason":"Waiting for the Team Lead to check the ID card photo"},"payment":{"state":"not_started","time":null,"reason":null}},"registrationLinkExpiresAt":"2026-11-12T10:00:00.000Z","paymentOnlyLink":{"live":false,"expiresAt":null}}
 ```
 
 **Errors:** `401` unauthenticated; `403` role is not allowed; `404` job seeker not found.
 
-### `POST /job-seekers/:id/identity-verification/provider`
+### `GET /job-seekers/:id/identity-verifications`
 
-Call agents, field agents, Team Leads, Managers and the CEO may request provider verification after the candidate's identity-check consent is active. Provider-specific fields may be sent in the request, but raw Aadhaar numbers are always refused. The candidate name and date of birth are taken from the stored profile.
+Team Lead and Manager (registrations made by themselves or people under them) and the CEO; others `403`, out of scope `404`. Each row: `id`, `method`, `status` (`verified`, `pending`, `failed`), `checkedBy` (`uidai_signature`, `team_lead`, `other`), `verifiedByUidai` (true only for a signed Secure QR), `maskedReference` (signed QR only), `idNumberLast4` (another ID only), `nameMatches`, `isAdult`, `phoneLinked`, `under18Stop`, `verifiedAt`, `failureReason`, `createdAt`. No vendor references, consent ids or Aadhaar last 4.
 
-**Request example:** `{"method":"digilocker","transactionId":"provider-transaction-id","otp":"123456"}`.
+### `GET /identity/job-seekers/:id/aadhaar-check` and `GET /identity/referrals/:id/aadhaar-check`
 
-**Response `201` example:** `{"jobSeekerId":"job-seeker-id","method":"digilocker","vendor":"configured_kyc_provider","status":"verified","last4":"4242","nameMatches":true,"isAdult":true}`.
+Team Lead, Manager (in their teams) and CEO. The latest ID check (`check`, including `under18Stop` and `photo: {kind, kept, deletedReason}`), and while it is kept the ID photo (from the QR or of the card) as `idPhotoUrl`, next to the live selfie (`selfieUrl`); both links last 5 minutes. Every call is audited (`identity.id_check_viewed`), with or without a photo.
 
-Provider/network errors persist the ID service as down. Personal verification results such as name mismatch and under-18 persist as the person's result without changing provider health.
+### `POST /identity/job-seekers/:id/under-18/lift` and `POST /identity/referrals/:id/under-18/lift`
 
-**Errors:** `400` missing consent, invalid method or raw Aadhaar input; `401` unauthenticated; `403` role is not allowed; `404` job seeker not found.
+Manager (registrations in their teams) or CEO. A signed Aadhaar QR that showed under 18 stops registration for good: no other ID, new scan, payment or terms step gets past it until it is lifted here. **Request:** `{"reason":"Birth certificate shows 19"}` (at least 10 characters). **Response `200`:** `{"lifted":1}`. Audited (`identity.under18_stop_lifted`, with the reason). **Errors:** `400` no reason or no stop; `403` other roles; `404` out of scope.
 
 ### `POST /registration/:token/selfie`
 
@@ -54,13 +38,27 @@ Public registration-link endpoint. The link's own registered number must have a 
 
 **Errors:** `400` invalid link, missing registered-number OTP, gallery upload, or missing photo; `413` photo exceeds 5 MiB.
 
-### `POST /registration/:token/id-check`
+### `POST /registration/:token/aadhaar-qr`
 
-Public registration-link endpoint. Requires a verified OTP for the link's registered number and active identity-check consent. The request contains the provider's non-sensitive verification parameters and `requestId`; raw Aadhaar data is refused.
+Public registration-link endpoint (guide, "Aadhaar verification", 14 Nov). Requires a verified OTP for the link's registered number and active `aadhaar_verification` consent. The page reads the Aadhaar Secure QR on the phone (camera or e-Aadhaar PDF) and sends only its text; the server checks UIDAI's signature with UIDAI's public key, 18+, the name and whether the phone is linked to that Aadhaar. Rate-limited per person (with Laboura Field); repeated invalid signatures raise a flag for the Team Lead.
 
-**Request example:** `{"requestId":"otp-request-id","method":"digilocker","transactionId":"provider-transaction-id","otp":"123456"}`. **Response `201`:** the persisted verification result.
+**Request example:** `{"requestId":"otp-request-id","qrText":"<the QR's digits>"}`.
 
-**Errors:** `400` invalid link, missing OTP or consent, invalid method, or raw Aadhaar; provider/network failures are recorded as failed verification and mark the ID service down.
+**Response `201` example:** `{"verificationId":"…","method":"aadhaar_qr","status":"verified","result":"verified","verifiedByUidai":true,"nameMatches":true,"isAdult":true,"phoneLinked":"linked","maskedReference":"XXXX-XXXX-1234","person":{"name":"…","dateOfBirth":"1998-08-15","gender":"F"},"failureReason":null,"offerOtherId":false}`. `result` is one of `verified`, `name_mismatch`, `under_18`, `bad_signature`, `cert_missing`, `old_qr`, `unreadable`. `cert_missing`: the QR was made after the newest UIDAI certificate we hold — "please use another ID", not a fraud flag; the CEO gets one `aadhaar_cert_missing` flag a day at most. The name passes only when at least two whole words of 3+ letters match; anything less is `name_mismatch` with a `name_check` flag for the Team Lead. On `name_mismatch` and `under_18` only the result is kept (no name, date of birth, gender, area or pincode). The same Aadhaar (last 4 + date of birth + name) already verified for another person raises `aadhaar_duplicate_person` for the Manager; it doesn't block.
+
+**Errors:** `400` invalid link, missing OTP or consent, no selfie yet, a standing under-18 stop; `429` too many tries.
+
+### `POST /field-work/job-seekers/:id/aadhaar-qr` and `POST /field-work/job-seekers/:id/other-id`
+
+Laboura Field (field agents), only for a job seeker the calling field agent registered (`404` otherwise). The scan sends `{"qrText":"…","captureSource":"live_camera"}`; the other ID is multipart as below. The app opens only the live camera; `captureSource` describes how the app captured it and is not a security check — the QR is trusted only because UIDAI's signature passes, and a card photo only when the Team Lead approves it. The answer carries no data read from the card.
+
+### `POST /registration/:token/other-id` and `POST /referral-registration/:token/other-id`
+
+Public link endpoints for another government ID (rev 154: checked by the Team Lead by eye, no outside company). Requires a verified OTP for the link's registered number, the consent (`aadhaar_verification`; for a partner the referral terms) and the live selfie. Multipart fields: `photo` (a live camera photo of the card; JPEG, PNG or WebP by its first bytes; 5 MiB), `captureSource=live_camera`, `idType` (`pan`, `driving_licence`, `voter_id`), `idNumber` (PAN `ABCDE1234F`, voter ID `ABC1234567`, driving licence 8–20 letters/digits), `requestId`.
+
+**Response `201`:** `{"verificationId":"…","method":"pan","status":"pending","idNumberLast4":"234F"}` (the partner's link adds `"nextStep":"team_lead_check"`). Only the ID type and the last 4 are kept; the card photo is stored privately and deleted after the Team Lead's decision, 30 days at most. While the check is `pending`, terms, payment and the partner's UPI step are refused ("The Team Lead is checking the photo of your ID card"). In T-Verify "Looks right" sets it `verified` (name and 18+ confirmed by eye) and "Fake · flag it" `failed`.
+
+**Errors:** `400` invalid link, missing OTP, consent or selfie, gallery upload, missing or non-image photo, a number in the wrong form, Aadhaar (raw number or `aadhaar_qr`), a standing under-18 stop.
 
 ### `POST /job-seekers/:id/payment-only-link`
 
@@ -428,7 +426,7 @@ When the caller is a field agent, the new business's `accountAgentId` is that fi
 
 The response includes the created business with branches and `staffNeededRows` vacancies are returned in the `vacancies` relation. The endpoint returns `400` for missing contact identity/role, failed or consumed OTPs, invalid staff-needed rows, or household document fields; `409` for a duplicate business mobile; `401` for an unauthenticated caller; `403` for a role without business-write access. Interview result links and owner-result messages for a branch vacancy target that branch contact.
 
-`POST /referrals/:id/terms-links` resends the registration link and revokes any earlier active link. `GET /referral-registration/:token/status?requestId=...` returns registration progress only after OTP verification to the partner's registered number. `POST /consent/submit` records referral terms and call-recording consent. The same token then accepts live-camera `POST /referral-registration/:token/selfie`, provider-backed `POST /referral-registration/:token/id-check`, and partner-only `POST /referral-registration/:token/upi`; the UPI step requires a successful identity check and OTP. Completing UPI consumes the registration link.
+`POST /referrals/:id/terms-links` resends the registration link and revokes any earlier active link. `GET /referral-registration/:token/status?requestId=...` returns registration progress only after OTP verification to the partner's registered number. `POST /consent/submit` records referral terms and call-recording consent. The same token then accepts live-camera `POST /referral-registration/:token/selfie`, `POST /referral-registration/:token/aadhaar-qr` or `POST /referral-registration/:token/other-id` (Team Lead check), and partner-only `POST /referral-registration/:token/upi`; the UPI step requires a verified identity check (not pending, no under-18 stop) and OTP. Completing UPI consumes the registration link.
 
 The staff registration status endpoint is `GET /referrals/:id/registration-status`. It returns terms, selfie, ID, and UPI state with timestamps and any safe reason. UPI identity review continues through the existing payout account and payout release flow.
 

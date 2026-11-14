@@ -25,6 +25,8 @@
 .tl-checklist label { display: flex; gap: 10px; align-items: flex-start; font-size: 13px; }
 .tl-score { font-family: var(--font-display); font-size: 18px; font-weight: 700; color: var(--navy); }
 .tl-reg { display: grid; grid-template-columns: 200px 200px 1fr; gap: 14px; align-items: start; }
+/* T-Verify: the live selfie and the photo from the Aadhaar QR side by side, then the checks. */
+.tl-reg--pair { grid-template-columns: 414px 1fr; }
 .tl-chain { display: grid; gap: 6px; font-size: 13px; }
 .tl-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; padding: 14px 16px; }
 .tl-filters .field { flex: 1 1 160px; min-width: 140px; }
@@ -35,7 +37,7 @@
 .tl-inline select { min-width: 130px; }
 .two-col > *, .three-col > * { min-width: 0; }
 @media (max-width: 760px) {
-  .tl-reg { grid-template-columns: 1fr; }
+  .tl-reg, .tl-reg--pair { grid-template-columns: 1fr; }
   .tl-attn { grid-template-columns: 70px 12px 1fr; }
   .tl-attn > :last-child { grid-column: 3; }
   .tl-photos { grid-template-columns: 1fr 1fr; }

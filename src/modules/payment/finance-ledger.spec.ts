@@ -165,7 +165,7 @@ describe('Phase 6 Task 3: Finance Ledger View', () => {
     await prisma.identityVerification.create({
       data: {
         jobSeekerId: candidate.id,
-        method: 'digilocker',
+        method: 'aadhaar_qr',
         vendor: 'mock_vendor',
         vendorReference: 'vendor_ref_fl_12345',
         status: 'verified',

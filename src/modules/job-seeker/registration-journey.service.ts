@@ -42,7 +42,7 @@ export class RegistrationJourneyService {
         registrationComplete: Boolean(seeker.paymentReceivedAt),
       };
     }
-    const [policy, consents, latestVerification, latestPayment, idService, waiting] = await Promise.all([
+    const [policy, consents, latestVerification, latestPayment, under18Stop] = await Promise.all([
       this.pricing.current(),
       this.prisma.consent.findMany({
         where: { subjectType: 'job_seeker', subjectId: seeker.id, granted: true, withdrawnAt: null },
@@ -58,8 +58,10 @@ export class RegistrationJourneyService {
         orderBy: { createdAt: 'desc' },
         select: { id: true, status: true, upiReference: true, expectedAmountPaise: true, payerUtrHint: true, confirmedAt: true },
       }),
-      this.prisma.kycServiceState.findUnique({ where: { id: 'id-check' }, select: { status: true } }),
-      this.prisma.kycRecoveryRequest.findFirst({ where: { jobSeekerId: seeker.id, status: 'waiting' }, select: { id: true } }),
+      this.prisma.identityVerification.findFirst({
+        where: { jobSeekerId: seeker.id, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', isAdult: false, under18LiftedAt: null },
+        select: { id: true },
+      }),
     ]);
     const now = this.clock.now();
     const status = buildJourneyStatus({
@@ -72,8 +74,7 @@ export class RegistrationJourneyService {
       latestPayment,
       activationFeePaise: policy.activationFeePaise,
       guaranteeDays: policy.jobSeekerGuaranteeDays,
-      idServiceDown: idService?.status === 'down',
-      waitingForIdService: Boolean(waiting),
+      under18Stop: Boolean(under18Stop),
     });
     return {
       ...status,

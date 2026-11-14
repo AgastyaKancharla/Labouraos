@@ -138,8 +138,6 @@ services:
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
         value: mock
-      - key: KYC_PROVIDER_MODE
-        value: mock
       # SMS and OTP (MSG91 or another DLT-registered gateway)
       - key: SMS_API_KEY
         sync: false
@@ -162,11 +160,6 @@ services:
       - key: TELEPHONY_VENDOR
         sync: false
       - key: TOLL_FREE_NUMBER
-        sync: false
-      # Aadhaar e-KYC
-      - key: KYC_API_KEY
-        sync: false
-      - key: KYC_API_URL
         sync: false
       # Card payments and payouts (Razorpay / RazorpayX)
       - key: RAZORPAY_KEY_ID
@@ -203,8 +196,7 @@ services:
     startCommand: npm run start:worker
     # When a vendor is switched from mock to real, change its *_PROVIDER_MODE on
     # BOTH services and copy its keys to the worker with fromService like the
-    # entries below: the worker sends WhatsApp and SMS messages and checks the
-    # KYC vendor.
+    # entries below: the worker sends WhatsApp and SMS messages.
     envVars:
       - key: NODE_ENV
         value: production
@@ -300,8 +292,6 @@ services:
       - key: WHATSAPP_PROVIDER_MODE
         value: mock
       - key: TELEPHONY_PROVIDER_MODE
-        value: mock
-      - key: KYC_PROVIDER_MODE
         value: mock
 
   # Job queue. Paid fixed plan: the free plan's command limit runs out because

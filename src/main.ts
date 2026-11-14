@@ -7,12 +7,14 @@ import { applyTrustProxy } from './common/http/trust-proxy';
 import { securityHeaders } from './common/http/security-headers';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
+import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
 
 export async function bootstrap() {
   const role = assertKnownProcessRole();
   getPublicAppUrl();
   assertDurableUploadStorage();
+  assertNoMockIdCheck();
   const app = await NestFactory.create(AppModule, {
     bufferLogs: true,
     // Webhook signatures are computed over the exact bytes the gateway sent

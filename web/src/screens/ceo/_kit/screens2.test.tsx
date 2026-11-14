@@ -558,7 +558,7 @@ describe('Audit, flags, privacy, system and notifications', () => {
   it('system health shows services and runs a nightly job', async () => {
     const api = mockApi({
       ...common,
-      'GET /system/status/details': { status: 'degraded', timestamp: NOW.toISOString(), uptimeFormatted: '2d 3h', environment: 'production', version: '1.0.0', idCheck: { status: 'up', lastChangedAt: null }, components: [{ name: 'Database', status: 'healthy', latencyMs: 4 }, { name: 'Redis', status: 'degraded', message: 'slow' }] },
+      'GET /system/status/details': { status: 'degraded', timestamp: NOW.toISOString(), uptimeFormatted: '2d 3h', environment: 'production', version: '1.0.0', components: [{ name: 'Database', status: 'healthy', latencyMs: 4 }, { name: 'Redis', status: 'degraded', message: 'slow' }] },
       'GET /ceo/system': { messages: { sent: 100, delivered: 97, failed: 3, byChannel: [], byTemplate: [] }, otps: { sent: 214, verified: 211 }, jobs: [{ key: 'followUp', label: 'Follow-up calls created', runsAt: '06:00', lastRunAt: null, result: null, runPath: '/jobs/follow-up/run' }], intervals: [] },
       'POST /jobs/follow-up/run': { ok: true },
     });

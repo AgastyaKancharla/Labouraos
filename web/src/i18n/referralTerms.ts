@@ -24,7 +24,7 @@ export const referralTermsEn = {
   'rterms.pause.effect': 'While you are paused, new referrals naming you are not accepted. Money you have already earned is still paid.',
   'rterms.calls.title': 'Calls and your details',
   'rterms.calls.recorded': 'Calls with Laboura are recorded; you agree to this when you sign the terms.',
-  'rterms.calls.id': 'We check your ID and keep only the result — never your Aadhaar number.',
+  'rterms.calls.id': "We check your ID — the Aadhaar QR code is read on your phone. We keep the result, the last 4 digits, your name, date of birth, gender, area and pincode — never your full Aadhaar number or a picture of the card.",
   'rterms.version': 'Terms version {version}. Questions? Ask the Laboura agent who registered you.',
   'rterms.open': 'Open the full referral partner terms',
 } as const;
@@ -51,7 +51,7 @@ export const referralTermsKn: Record<ReferralTermsKey, string> = {
   'rterms.pause.effect': 'ನಿಮ್ಮನ್ನು ತಡೆಹಿಡಿದಿರುವಾಗ, ನಿಮ್ಮ ಹೆಸರಿನ ಹೊಸ ರೆಫರಲ್‌ಗಳನ್ನು ಸ್ವೀಕರಿಸುವುದಿಲ್ಲ. ನೀವು ಈಗಾಗಲೇ ಗಳಿಸಿದ ಹಣವನ್ನು ಪಾವತಿಸಲಾಗುತ್ತದೆ.',
   'rterms.calls.title': 'ಕರೆಗಳು ಮತ್ತು ನಿಮ್ಮ ವಿವರಗಳು',
   'rterms.calls.recorded': 'Laboura ಜೊತೆಗಿನ ಕರೆಗಳು ರೆಕಾರ್ಡ್ ಆಗುತ್ತವೆ; ನಿಯಮಗಳಿಗೆ ಸಹಿ ಮಾಡುವಾಗ ನೀವು ಇದಕ್ಕೆ ಒಪ್ಪುತ್ತೀರಿ.',
-  'rterms.calls.id': 'ನಾವು ನಿಮ್ಮ ಗುರುತಿನ ಚೀಟಿಯನ್ನು ಪರಿಶೀಲಿಸಿ ಫಲಿತಾಂಶ ಮಾತ್ರ ಇಡುತ್ತೇವೆ — ಆಧಾರ್ ನಂಬರ್ ಎಂದೂ ಇಡುವುದಿಲ್ಲ.',
+  'rterms.calls.id': "ನಾವು ನಿಮ್ಮ ಗುರುತನ್ನು ಪರಿಶೀಲಿಸುತ್ತೇವೆ — ಆಧಾರ್ QR ಕೋಡ್ ಅನ್ನು ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲೇ ಓದಲಾಗುತ್ತದೆ. ಫಲಿತಾಂಶ, ಕೊನೆಯ 4 ಅಂಕೆಗಳು, ನಿಮ್ಮ ಹೆಸರು, ಹುಟ್ಟಿದ ದಿನಾಂಕ, ಲಿಂಗ, ಪ್ರದೇಶ ಮತ್ತು ಪಿನ್‌ಕೋಡ್ ಮಾತ್ರ ಇಡುತ್ತೇವೆ — ನಿಮ್ಮ ಪೂರ್ಣ ಆಧಾರ್ ಸಂಖ್ಯೆ ಅಥವಾ ಕಾರ್ಡ್‌ನ ಚಿತ್ರ ಎಂದಿಗೂ ಇಲ್ಲ.",
   'rterms.version': 'ನಿಯಮಗಳ ಆವೃತ್ತಿ {version}. ಪ್ರಶ್ನೆಗಳಿದ್ದರೆ ನಿಮ್ಮನ್ನು ನೋಂದಾಯಿಸಿದ Laboura ಏಜೆಂಟ್ ಅವರನ್ನು ಕೇಳಿ.',
   'rterms.open': 'ರೆಫರಲ್ ಪಾಲುದಾರರ ಪೂರ್ಣ ನಿಯಮಗಳನ್ನು ತೆರೆಯಿರಿ',
 };
@@ -76,7 +76,7 @@ export const referralTermsHi: Record<ReferralTermsKey, string> = {
   'rterms.pause.effect': 'जब तक आप रुके हुए हैं, आपके नाम से नए रेफ़रल स्वीकार नहीं होते। जो पैसे आप कमा चुके हैं, वे फिर भी दिए जाते हैं।',
   'rterms.calls.title': 'कॉल और आपकी जानकारी',
   'rterms.calls.recorded': 'Laboura के साथ कॉल रिकॉर्ड होती हैं; शर्तें मानते समय आप इसकी सहमति देते हैं।',
-  'rterms.calls.id': 'हम आपकी आईडी जाँचकर सिर्फ़ नतीजा रखते हैं — आधार नंबर कभी नहीं।',
+  'rterms.calls.id': "हम आपकी आईडी जाँचते हैं — आधार का QR कोड आपके फ़ोन पर ही पढ़ा जाता है। हम नतीजा, आख़िरी 4 अंक, आपका नाम, जन्मतिथि, लिंग, इलाक़ा और पिनकोड रखते हैं — आपका पूरा आधार नंबर या कार्ड की तस्वीर कभी नहीं।",
   'rterms.version': 'शर्तों का संस्करण {version}। कोई सवाल? जिस Laboura एजेंट ने आपको रजिस्टर किया, उनसे पूछें।',
   'rterms.open': 'रेफ़रल पार्टनर की पूरी शर्तें खोलें',
 };

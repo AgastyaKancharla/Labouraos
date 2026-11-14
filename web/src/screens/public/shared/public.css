@@ -136,6 +136,22 @@
   pointer-events: none;
 }
 
+/* Another ID (rev 154): the back camera, not mirrored, a card-shaped guide. */
+.lb-camera--card {
+  aspect-ratio: 4 / 3;
+}
+.lb-camera--card video {
+  transform: none;
+}
+.lb-camera__card {
+  position: relative;
+  width: 86%;
+  aspect-ratio: 85.6 / 54;
+  border: 3px dashed var(--navacc, #6ec3ff);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
 /* UPI QR (P02, P02s, P05b). */
 .lb-qr {
   display: flex;
@@ -185,4 +201,51 @@
   flex-direction: column;
   gap: 8px;
   min-width: 0;
+}
+
+/* Aadhaar Secure QR (P01d, partner step 3): live scanner, e-Aadhaar PDF, result. */
+.lb-aq {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.lb-aq__camera {
+  aspect-ratio: 1 / 1;
+}
+.lb-camera video.lb-aq__video {
+  transform: none;
+}
+.lb-camera video.lb-aq__video.zoomed {
+  transform: scale(1.66);
+}
+.lb-aq__frame {
+  position: relative;
+  width: 78%;
+  aspect-ratio: 1 / 1;
+  border: 3px solid var(--navacc, #6ec3ff);
+  border-radius: 14px;
+  box-shadow: 0 0 0 999px rgba(11, 30, 74, 0.35);
+  pointer-events: none;
+}
+.lb-aq__frame.zoomed {
+  width: 92%;
+}
+.lb-aq__tips {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.lb-aq__person {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 4px 12px;
+  align-items: baseline;
+}
+.lb-aq__privacy {
+  gap: 6px;
+}
+.lb-aq__privacy strong {
+  color: var(--ink);
 }

@@ -132,7 +132,7 @@ export function routeTable(table: Record<string, unknown | ((init: RequestInit, 
   const route: FetchRoute = (url, init) => {
     const u = new URL(url);
     const method = init.method ?? 'GET';
-    calls.push({ method, path: u.pathname + u.search, body: init.body ? JSON.parse(String(init.body)) : undefined });
+    calls.push({ method, path: u.pathname + u.search, body: init.body instanceof FormData ? init.body : init.body ? JSON.parse(String(init.body)) : undefined });
     for (const [key, answer] of Object.entries(table)) {
       const [m, p] = key.includes(' ') ? key.split(' ') : ['GET', key];
       if (m === method && (u.pathname === p || u.pathname + u.search === p)) {

@@ -1,4 +1,5 @@
 /* Kannada (ಕನ್ನಡ) — same keys as en.ts. Have a native speaker review new strings. */
+import { aadhaarQrKn } from './aadhaarQr';
 import { payslipKn } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceKn } from '../attendance/i18n';
 import type { Messages } from './en';
@@ -96,7 +97,7 @@ export const kn: Messages = {
   "pub.consent.record": "ಕರೆಗಳನ್ನು ರೆಕಾರ್ಡ್ ಮಾಡಿ",
   "pub.consent.recordText": "ಗುಣಮಟ್ಟ ಮತ್ತು ಸೇವೆಗಾಗಿ ಲ್ಯಾಬೂರಾ ಜೊತೆಗಿನ ಕರೆಗಳನ್ನು ರೆಕಾರ್ಡ್ ಮಾಡಲಾಗುತ್ತದೆ",
   "pub.consent.id": "ನನ್ನ ಗುರುತು ಪರಿಶೀಲಿಸಿ",
-  "pub.consent.idText": "ಫಲಿತಾಂಶ ಮಾತ್ರ ಉಳಿಸಲಾಗುತ್ತದೆ, ನನ್ನ ಆಧಾರ್ ನಂಬರ್ ಎಂದಿಗೂ ಇಲ್ಲ",
+  "pub.consent.idText": "ಆಧಾರ್: QR ಕೋಡ್ ಅನ್ನು ನನ್ನ ಫೋನ್‌ನಲ್ಲೇ ಓದಿ ಅದರ ಮಾಹಿತಿ ಮಾತ್ರ ಕಳುಹಿಸಲಾಗುತ್ತದೆ. ಉಳಿಸುವುದು: ಫಲಿತಾಂಶ, ಕೊನೆಯ 4 ಅಂಕೆಗಳು, ಹೆಸರು, ಹುಟ್ಟಿದ ದಿನಾಂಕ, ಲಿಂಗ, ಪ್ರದೇಶ ಮತ್ತು ಪಿನ್‌ಕೋಡ್. ಬೇರೆ ಗುರುತಿನ ಚೀಟಿ: ಕಾರ್ಡ್‌ನ ಫೋಟೋ (ಟೀಮ್ ಲೀಡ್ ಪರಿಶೀಲಿಸುವವರೆಗೆ, ಗರಿಷ್ಠ 30 ದಿನ), ಅದರ ಬಗೆ ಮತ್ತು ನಂಬರ್‌ನ ಕೊನೆಯ 4 ಅಕ್ಷರಗಳು. ಎಂದಿಗೂ ಇಲ್ಲ: ನನ್ನ ಪೂರ್ಣ ಆಧಾರ್ ಸಂಖ್ಯೆ, ಆಧಾರ್ ಕಾರ್ಡ್‌ನ ಚಿತ್ರ, PDF ಅಥವಾ ನನ್ನ ಪೂರ್ಣ ವಿಳಾಸ.",
   "pub.consent.updates": "ಕೆಲಸದ ಮಾಹಿತಿ",
   "pub.consent.updatesText": "ನನ್ನ ಸಂದರ್ಶನ ಮತ್ತು ಕೆಲಸಗಳ ಬಗ್ಗೆ SMS ಮತ್ತು WhatsApp",
   "pub.consent.offers": "ಆಫರ್‌ಗಳು ಮತ್ತು ಸುದ್ದಿ (ಐಚ್ಛಿಕ)",
@@ -115,10 +116,6 @@ export const kn: Messages = {
   "pub.selfie.unavailable": "ಈ ಫೋನ್‌ನ ಕ್ಯಾಮೆರಾ ತೆರೆಯಲಾಗಲಿಲ್ಲ. ಬೇರೆ ಫೋನ್ ಪ್ರಯತ್ನಿಸಿ — ಕೋಡ್ ನಿಮ್ಮ ನಂಬರ್‌ಗೇ ಬರುತ್ತದೆ.",
   "pub.id.stepLabel": "ಗುರುತಿನ ಪರಿಶೀಲನೆ",
   "pub.id.title": "ನಿಮ್ಮ ಗುರುತು ಪರಿಶೀಲಿಸಿ",
-  "pub.id.aadhaar": "ಆಧಾರ್ ಮೂಲಕ ಪರಿಶೀಲಿಸಿ (ಡಿಜಿಲಾಕರ್)",
-  "pub.id.keep": "ಹೊಂದಿಕೆಯಾಯಿತೇ, ನಿಮ್ಮ ವಯಸ್ಸು 18+ ಹೌದೇ ಮತ್ತು ಕೊನೆಯ 4 ಅಂಕಿಗಳನ್ನು ಮಾತ್ರ ಉಳಿಸುತ್ತೇವೆ. ನಿಮ್ಮ ಆಧಾರ್ ನಂಬರ್ ಅಥವಾ ಫೋಟೋ ಎಂದಿಗೂ ಇಲ್ಲ.",
-  "pub.id.notWorking": "ಆಧಾರ್ ಆಗುತ್ತಿಲ್ಲವೇ?",
-  "pub.id.notWorkingText": "ಹೆಸರು ಹೊಂದುತ್ತಿಲ್ಲ, ಅಥವಾ ನಿಮ್ಮ ಫೋನ್ ಆಧಾರ್‌ಗೆ ಲಿಂಕ್ ಆಗಿಲ್ಲ — ಬೇರೆ ಸರ್ಕಾರಿ ಗುರುತಿನ ಚೀಟಿ ಬಳಸಿ.",
   "pub.id.pan": "ಪ್ಯಾನ್ ಕಾರ್ಡ್",
   "pub.id.dl": "ಡ್ರೈವಿಂಗ್ ಲೈಸೆನ್ಸ್",
   "pub.id.voter": "ಮತದಾರರ ಗುರುತಿನ ಚೀಟಿ",
@@ -130,12 +127,6 @@ export const kn: Messages = {
   "pub.id.failed": "ಆ ಗುರುತು ಪರಿಶೀಲಿಸಲಾಗಲಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಯತ್ನಿಸಿ ಅಥವಾ ಬೇರೆ ಗುರುತು ಬಳಸಿ.",
   "pub.id.under18Title": "ನೋಂದಣಿ ಇಲ್ಲಿಗೆ ನಿಲ್ಲುತ್ತದೆ.",
   "pub.id.under18Body": "ಲ್ಯಾಬೂರಾ 18 ವರ್ಷ ಅಥವಾ ಮೇಲ್ಪಟ್ಟವರನ್ನು ಮಾತ್ರ ನೋಂದಾಯಿಸಬಹುದು. ಯಾವುದೇ ಪಾವತಿ ತೆಗೆದುಕೊಳ್ಳುವುದಿಲ್ಲ.",
-  "pub.busy.title": "ಆಧಾರ್ ಪರಿಶೀಲನೆ ಈಗ ಕಾರ್ಯನಿರತವಾಗಿದೆ.",
-  "pub.busy.body": "ಇದು ನಮ್ಮ ಕಡೆಯ ತೊಂದರೆ, ನಿಮ್ಮದಲ್ಲ. ನಿಮ್ಮ ಒಪ್ಪಿಗೆ ಮತ್ತು ಸೆಲ್ಫಿ ಈಗಾಗಲೇ ಉಳಿದಿವೆ.",
-  "pub.busy.otherId": "ಬದಲಿಗೆ ಬೇರೆ ಗುರುತು ಬಳಸಿ",
-  "pub.busy.wait": "ನಾನು ಕಾಯುತ್ತೇನೆ — ಸರಿಯಾದಾಗ SMS ಮಾಡಿ",
-  "pub.busy.waiting": "ಆಯಿತು — ಸರಿಯಾದಾಗ ನಿಮಗೆ SMS ಕಳುಹಿಸುತ್ತೇವೆ.",
-  "pub.busy.note": "ಸರಿಯಾದಾಗ ನಿಮಗೆ SMS ಕಳುಹಿಸುತ್ತೇವೆ, ಮತ್ತು ಈ ಲಿಂಕ್ ನೇರವಾಗಿ ಗುರುತಿನ ಹಂತದಲ್ಲಿ ತೆರೆಯುತ್ತದೆ.",
   "pub.pay.stepLabel": "ಪಾವತಿ",
   "pub.pay.title": "{amount} ಪಾವತಿಸಿ · ನೋಂದಣಿ",
   "pub.pay.guarantee": "ನಿಮ್ಮ ಗ್ಯಾರಂಟಿ",
@@ -590,6 +581,7 @@ export const kn: Messages = {
   ...staffInviteKn,
   ...referralTermsKn,
   ...referralPartnerKn,
+  ...aadhaarQrKn,
   ...staffPhotoKn,
   ...callAgentKn,
   ...payslipKn,

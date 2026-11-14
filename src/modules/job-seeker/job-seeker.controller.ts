@@ -35,12 +35,16 @@ import {
   UpdateJobSeekerLanguageDto,
 } from './dto/job-seeker-language.dto';
 import { STAFF_PHOTO_MAX_BYTES } from '../../common/upload-limits';
+import { IdCheckAccessService } from '../aadhaar-qr/id-check-access.service';
 
 @Controller('job-seekers')
 @UseGuards(JwtAuthGuard, RbacGuard)
 @UseInterceptors(PiiMaskingInterceptor)
 export class JobSeekerController {
-  constructor(private readonly jobSeekerService: JobSeekerService) {}
+  constructor(
+    private readonly jobSeekerService: JobSeekerService,
+    private readonly idCheckAccess: IdCheckAccessService,
+  ) {}
 
   /**
    * ANTI-FRAUD NOTE: Candidate onboarding already carries mobile-number OTP verification,
@@ -99,33 +103,17 @@ export class JobSeekerController {
     return this.jobSeekerService.createActivationPayment(id, req.user?.sub);
   }
 
-  @Post(':id/identity-verification')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
-  @RequirePermission('job_seeker', 'write')
-  async requestIdentityVerification(
-    @Param('id') id: string,
-    @Body() body: Record<string, unknown>,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.jobSeekerService.createIdentityVerification(id, body, req.user.sub);
-  }
-
-  @Post(':id/identity-verification/provider')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead')
-  @RequirePermission('job_seeker', 'write')
-  async verifyIdentityWithProvider(
-    @Param('id') id: string,
-    @Body() body: Record<string, unknown>,
-    @Req() req: Request & { user: JwtPayload },
-  ) {
-    return this.jobSeekerService.verifyIdentityWithProvider(id, body, req.user.sub);
-  }
-
+  /**
+   * The ID checks of a job seeker (no references, no consent ids): the Team
+   * Lead, Manager (registrations in their teams) and the CEO. Staff can't
+   * record or mark an ID check themselves (rev 154): the Aadhaar QR is checked
+   * against UIDAI's signature and another ID by the Team Lead in T-Verify.
+   */
   @Get(':id/identity-verifications')
-  @RequireRoles('call_agent', 'manager', 'ceo', 'field_agent', 'team_lead', 'finance')
+  @RequireRoles('team_lead', 'manager', 'ceo')
   @RequirePermission('job_seeker', 'read')
-  async listIdentityVerifications(@Param('id') id: string) {
-    return this.jobSeekerService.getIdentityVerifications(id);
+  async listIdentityVerifications(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    return this.jobSeekerService.getIdentityVerifications(id, { id: req.user.sub, role: req.user.role }, this.idCheckAccess);
   }
 
   @Get(':id/registration-status')

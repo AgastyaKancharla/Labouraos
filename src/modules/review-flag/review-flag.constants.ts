@@ -47,6 +47,14 @@ export const REVIEW_FLAG_KINDS = [
   'call_flagged',
   /** T-Visits: the Team Lead flagged a shop visit. */
   'visit_flagged',
+  /** Aadhaar QR (guide, 14 Nov): his OTP-verified phone is not the one linked to that Aadhaar — a flag, not a block. */
+  'aadhaar_phone_not_linked',
+  /** Aadhaar QR: repeated QR codes that failed UIDAI's digital signature (possibly an edited card). */
+  'aadhaar_qr_tampered',
+  /** Aadhaar QR (rev 154): a card newer than our newest UIDAI certificate — not fraud; the CEO adds the new certificate. */
+  'aadhaar_cert_missing',
+  /** Aadhaar QR (rev 154): the same Aadhaar (last 4 + date of birth + name) is already verified for another person — the Manager looks; never a block. */
+  'aadhaar_duplicate_person',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];
@@ -62,4 +70,5 @@ export const CEO_OWNED_FLAG_KINDS: readonly string[] = [
   'payout_shared_account',
   'payout_matches_staff',
   'bypass_suspected',
+  'aadhaar_cert_missing',
 ];
