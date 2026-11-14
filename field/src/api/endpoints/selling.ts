@@ -253,6 +253,8 @@ export interface PlacementView {
 export interface WorkerLeftForm {
   placement: { id: string; code: string; status: string; workerName: string | null; businessId: string; businessName: string | null; joinedDate: string | null };
   guarantee: { windowDays: number; endsAt: string | null; reportWithinDays: number; decisionHours: number };
+  /** Indian days ("YYYY-MM-DD"): the worker's own joining day, and today or the guarantee's last day. */
+  leftOnEarliest: string | null;
   leftOnLatest: string;
   canReport: boolean;
   blocked: 'not_active' | 'not_joined' | 'open_claim' | null;
@@ -346,6 +348,9 @@ export const sellingApi = (api: ApiClient) => ({
     api.post<{ callRecordId: string }>('/calls', body),
   recordJoined: (placementId: string) => api.post(`/placements/${enc(placementId)}/joined`, {}),
   workerLeft: (placementId: string) => api.get<WorkerLeftForm>(`/placements/${enc(placementId)}/worker-left`),
+  /** Live only (never queued): the claim's report time must be when it was made, on the owner call. */
+  reportClaim: (placementId: string, body: { workerLeftOn: string; reason: string; callRecordId: string }) =>
+    api.post<{ code: string; decision: string | null; decisionReason: string | null }>(`/placements/${enc(placementId)}/claims`, body),
   // Vacancies (existing endpoints)
   sendVacancyCode: (vacancyId: string, otpRequestId?: string) =>
     api.post<OtpSent>(`/vacancies/${enc(vacancyId)}/confirmation/send-code`, { otpRequestId }),

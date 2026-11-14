@@ -712,6 +712,11 @@ model ReplacementClaim {
   exitCallRecord         CallRecord? @relation("ExitCallRecord", fields: [exitCallRecordId], references: [id], onDelete: SetNull)
   callRecordId           String
   callRecord             CallRecord  @relation("ClaimCallRecord", fields: [callRecordId], references: [id], onDelete: Restrict)
+  // Who reported it (never the one who decides it). With the partial unique
+  // index in migration 20261125000000 (SQL only, Prisma cannot express it) a
+  // placement has at most one claim waiting for a decision.
+  reportedByStaffId      String?
+  reportedByStaff        Staff?      @relation("ClaimReportedBy", fields: [reportedByStaffId], references: [id], onDelete: SetNull)
   decision               String?
   decisionReason         String?
   decidedByStaffId       String?
@@ -728,6 +733,7 @@ model ReplacementClaim {
   @@index([decision])
   @@index([decisionDueAt])
   @@index([decidedByStaffId])
+  @@index([reportedByStaffId])
   @@index([overruledByStaffId])
   @@index([callRecordId])
   @@index([exitCallRecordId])
@@ -804,6 +810,7 @@ model Staff {
   reversedHits      JobSeekerHit[]   @relation("JobSeekerHitReversedBy")
   claimsDecided     ReplacementClaim[] @relation("ClaimDecidedBy")
   claimsOverruled   ReplacementClaim[] @relation("ClaimOverruledBy")
+  claimsReported    ReplacementClaim[] @relation("ClaimReportedBy")
   assignedFollowUpTasks FollowUpTask[]
   attendanceDays    AttendanceDay[]
   notifications     Notification[]   @relation("NotificationRecipient")

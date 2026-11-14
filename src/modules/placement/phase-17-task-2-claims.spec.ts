@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PlacementService } from './placement.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -20,7 +21,9 @@ type MockPrisma = {
   replacementClaim: Record<string, jest.Mock>;
   reviewFlag: Record<string, jest.Mock>;
   vacancy: Record<string, jest.Mock>;
+  candidateIntroduction: Record<string, jest.Mock>;
   $transaction: jest.Mock;
+  $queryRaw: jest.Mock;
 };
 
 describe('Phase 17 Task 2: Replacement Claims', () => {
@@ -111,6 +114,7 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
     subjectId: 'bz-200',
     purpose: 'exit_call',
     answered: true,
+    staffId: 'ca-1',
     startedAt: new Date('2026-10-15T10:00:00.000Z'),
     createdAt: new Date('2026-10-15T10:00:00.000Z'),
   };
@@ -123,6 +127,8 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
           return allStaff.find((s) => s.id === where.id) ?? null;
         }),
         findFirst: jest.fn().mockResolvedValue(mgrStaff),
+        // tl-1's team (claim call scope)
+        findMany: jest.fn().mockResolvedValue([{ id: 'tl-1' }, { id: 'ca-1' }, { id: 'fa-1' }]),
       },
       placement: {
         findFirst: jest.fn().mockResolvedValue(basePlacement),
@@ -132,6 +138,7 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
           ...basePlacement,
           ...data,
         })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       callRecord: {
         findUnique: jest.fn().mockImplementation(async ({ where }: { where: { id: string } }) => {
@@ -163,7 +170,9 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
         create: jest.fn().mockResolvedValue({ id: 'vac-rep-1' }),
         findUniqueOrThrow: jest.fn().mockResolvedValue(basePlacement.vacancy),
       },
+      candidateIntroduction: { findMany: jest.fn().mockResolvedValue([]) },
       $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>) => cb(prisma)),
+      $queryRaw: jest.fn().mockResolvedValue([]),
     };
 
     idService = {
@@ -227,7 +236,8 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
     });
 
     it('allows account agent (field_agent) or any call_agent or team_lead or manager or ceo', async () => {
-      // Account agent
+      // Account agent, on his own call
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, staffId: 'fa-1' });
       const faRes = await placementService.reportClaim('pl-100', validDto, faStaff.id);
       expect(faRes.code).toBe('RCL-00001');
 
@@ -412,9 +422,10 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       const res = await placementService.decideClaim('pl-100', 'claim-10', dto, tlStaff.id);
 
       expect(res.decision).toBe('accepted');
-      expect(prisma.placement.update).toHaveBeenCalledWith(
+      // only while the placement is still active
+      expect(prisma.placement.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'pl-100' },
+          where: { id: 'pl-100', status: 'active' },
           data: expect.objectContaining({
             status: 'dropped_out',
             dropoutReportedAt: pendingClaim.reportedAt,
@@ -497,6 +508,146 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       await expect(
         placementService.decideClaim('pl-100', 'claim-10', overruleDto, tlStaff.id),
       ).rejects.toThrow(ForbiddenException);
+    });
+  });
+
+  describe('PR #137 review: one claim at a time, real evidence, IST days, scope', () => {
+    const dto: ReportClaimDto = { workerLeftOn: '2026-10-12', reason: 'resigned', callRecordId: validOwnerCall.id };
+    const now = new Date('2026-10-15T12:00:00.000Z');
+
+    it('refuses a second claim while one is waiting (409), checked with the placement row locked', async () => {
+      prisma.replacementClaim.findFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+        where.decision === null ? { id: 'claim-open' } : null,
+      );
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toMatchObject({ status: 409 });
+      expect(prisma.$queryRaw).toHaveBeenCalled();
+      expect(prisma.replacementClaim.create).not.toHaveBeenCalled();
+    });
+
+    it('two claims at the same moment: the database index refuses the second (409)', async () => {
+      prisma.replacementClaim.create
+        .mockImplementationOnce(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'claim-a', ...data }))
+        .mockRejectedValueOnce(new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test' }));
+      const [first, second] = await Promise.allSettled([
+        placementService.reportClaim('pl-100', dto, caStaff.id, now),
+        placementService.reportClaim('pl-100', dto, caStaff.id, now),
+      ]);
+      expect(first.status).toBe('fulfilled');
+      expect(second).toMatchObject({ status: 'rejected', reason: expect.objectContaining({ status: 409 }) });
+    });
+
+    it('records who reported the claim', async () => {
+      await placementService.reportClaim('pl-100', dto, caStaff.id, now);
+      expect(prisma.replacementClaim.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ reportedByStaffId: 'ca-1' }) }));
+    });
+
+    it('refuses an owner call made before the day the worker left, or a call in the future', async () => {
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, createdAt: new Date('2026-10-11T12:00:00.000Z') });
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toThrow('on or after the day the worker left');
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, createdAt: new Date('2026-10-16T12:00:00.000Z') });
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toThrow(BadRequestException);
+      // a call at 00:10 IST on the leaving day counts
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, createdAt: new Date('2026-10-11T18:40:00.000Z') });
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).resolves.toBeTruthy();
+    });
+
+    it("refuses another agent's call, and a call already used by another claim", async () => {
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, staffId: 'someone-else' });
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toThrow(ForbiddenException);
+      prisma.replacementClaim.findFirst.mockImplementation(async ({ where }: { where: Record<string, unknown> }) =>
+        where.callRecordId ? { code: 'RCL-00007' } : null,
+      );
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toThrow('already the evidence of claim RCL-00007');
+    });
+
+    it('a Manager or the CEO may use any staff member’s call', async () => {
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, staffId: 'someone-else' });
+      await expect(placementService.reportClaim('pl-100', dto, mgrStaff.id, now)).resolves.toBeTruthy();
+    });
+
+    it('a worker who joined and left on the same Indian day can be reported', async () => {
+      // joined 1 Oct 15:30 IST, left "2026-10-01"
+      const sameDay = { ...dto, workerLeftOn: '2026-10-01' };
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, createdAt: new Date('2026-10-01T11:00:00.000Z') });
+      await expect(placementService.reportClaim('pl-100', sameDay, caStaff.id, now)).resolves.toBeTruthy();
+      await expect(placementService.reportClaim('pl-100', { ...dto, workerLeftOn: '2026-09-30' }, caStaff.id, now)).rejects.toThrow('earlier than the joining day');
+    });
+
+    it('between 00:00 and 05:30 IST, "today" is already the new Indian day', async () => {
+      const earlyMorning = new Date('2026-10-14T19:00:00.000Z'); // 15 Oct 00:30 IST
+      prisma.callRecord.findUnique.mockResolvedValueOnce({ ...validOwnerCall, createdAt: new Date('2026-10-14T18:45:00.000Z') });
+      await expect(placementService.reportClaim('pl-100', { ...dto, workerLeftOn: '2026-10-15' }, caStaff.id, earlyMorning)).resolves.toBeTruthy();
+      await expect(placementService.reportClaim('pl-100', { ...dto, workerLeftOn: '2026-10-16' }, caStaff.id, earlyMorning)).rejects.toThrow('in the future');
+    });
+
+    it('counts the 7 days to report in Indian days', async () => {
+      const lateEvening = new Date('2026-10-19T17:00:00.000Z'); // 19 Oct 22:30 IST, 7 days after 12 Oct
+      const ok = await placementService.reportClaim('pl-100', dto, caStaff.id, lateEvening);
+      expect(ok.reportedWithinDeadline).toBe(true);
+      const pastMidnight = new Date('2026-10-19T19:00:00.000Z'); // 20 Oct 00:30 IST, 8 days
+      const late = await placementService.reportClaim('pl-100', dto, caStaff.id, pastMidnight);
+      expect(late.reportedWithinDeadline).toBe(false);
+    });
+
+    it("a replacement worker cannot have left before his own joining day (the window still counts from the first worker's)", async () => {
+      const replacement = { ...basePlacement, id: 'pl-101', rootPlacementId: 'pl-100', joinedDate: new Date('2026-10-20T05:00:00.000Z') };
+      prisma.placement.findFirst.mockResolvedValue(replacement);
+      prisma.placement.findUnique.mockResolvedValue(basePlacement);
+      await expect(placementService.reportClaim('pl-101', dto, caStaff.id, new Date('2026-10-22T12:00:00.000Z'))).rejects.toThrow('earlier than the joining day (2026-10-20)');
+    });
+
+    it('a call agent or Team Lead outside the placement scope gets 404', async () => {
+      prisma.placement.findFirst
+        .mockResolvedValueOnce(basePlacement) // the placement itself
+        .mockResolvedValueOnce(null); // not in the person's scope
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, now)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('PR #137 review: deciding a claim', () => {
+    const pending = {
+      id: 'claim-20', code: 'RCL-00020', placementId: 'pl-100', workerLeftOn: new Date('2026-10-12T00:00:00.000Z'), reportedAt: new Date('2026-10-14T00:00:00.000Z'),
+      reason: 'resigned', decision: null, decisionReason: null, decidedByStaffId: null, decidedAt: null, overruledByStaffId: null, overruleReason: null,
+      reportedByStaffId: 'ca-1', placement: basePlacement,
+    };
+
+    it('two acceptances never create two replacement vacancies: the second finds the placement no longer active (409)', async () => {
+      prisma.replacementClaim.findFirst.mockResolvedValue(pending);
+      prisma.placement.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+      const dto: DecideClaimDto = { decision: 'accepted', decisionReason: 'Resignation confirmed' };
+      await placementService.decideClaim('pl-100', 'claim-20', dto, tlStaff.id);
+      await expect(placementService.decideClaim('pl-100', 'claim-20', dto, mgrStaff.id)).rejects.toMatchObject({ status: 409 });
+      expect(prisma.vacancy.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('the person who reported a claim does not decide it', async () => {
+      prisma.replacementClaim.findFirst.mockResolvedValue({ ...pending, reportedByStaffId: 'tl-1' });
+      await expect(placementService.decideClaim('pl-100', 'claim-20', { decision: 'accepted', decisionReason: 'x' }, tlStaff.id)).rejects.toThrow('someone else decides it');
+    });
+
+    it('a Team Lead decides only when the business is on their team, also when it has no account agent', async () => {
+      prisma.replacementClaim.findFirst.mockResolvedValue({ ...pending, placement: { ...basePlacement, business: { id: 'bz-200', accountAgentId: null, leadCreatedByStaffId: null } } });
+      await expect(placementService.decideClaim('pl-100', 'claim-20', { decision: 'accepted', decisionReason: 'x' }, tlStaff.id)).rejects.toThrow(ForbiddenException);
+      prisma.replacementClaim.findFirst.mockResolvedValue({ ...pending, placement: { ...basePlacement, business: { id: 'bz-200', accountAgentId: null, leadCreatedByStaffId: 'ca-1' } } });
+      await expect(placementService.decideClaim('pl-100', 'claim-20', { decision: 'rejected', decisionReason: 'x' }, tlStaff.id)).resolves.toBeTruthy();
+    });
+
+    it('overruling an acceptance puts the placement back only when this claim dropped it out', async () => {
+      const accepted = { ...pending, decision: 'accepted', decidedByStaffId: 'tl-1' };
+      prisma.replacementClaim.findFirst.mockResolvedValueOnce({ ...accepted, placement: { ...basePlacement, status: 'dropped_out', dropoutReportedAt: pending.reportedAt } });
+      await placementService.decideClaim('pl-100', 'claim-20', { decision: 'rejected', decisionReason: 'Worker is still there' }, mgrStaff.id);
+      expect(prisma.placement.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ id: 'pl-100', status: 'dropped_out' }), data: expect.objectContaining({ status: 'active' }) }));
+
+      prisma.placement.updateMany.mockClear();
+      // dropped out by something else (another claim, a no-show): left alone
+      prisma.replacementClaim.findFirst.mockResolvedValueOnce({ ...accepted, placement: { ...basePlacement, status: 'dropped_out', dropoutReportedAt: new Date('2026-10-20T00:00:00.000Z') } });
+      await placementService.decideClaim('pl-100', 'claim-20', { decision: 'rejected', decisionReason: 'x' }, mgrStaff.id);
+      expect(prisma.placement.updateMany).not.toHaveBeenCalled();
+
+      // a first-time rejection never reactivates a dropped-out placement
+      prisma.replacementClaim.findFirst.mockResolvedValueOnce({ ...pending, placement: { ...basePlacement, status: 'dropped_out', dropoutReportedAt: pending.reportedAt } });
+      await placementService.decideClaim('pl-100', 'claim-20', { decision: 'rejected', decisionReason: 'x' }, mgrStaff.id);
+      expect(prisma.placement.updateMany).not.toHaveBeenCalled();
     });
   });
 

@@ -3,12 +3,18 @@ import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ACCEPT_CLAIM_REASONS, REJECT_CLAIM_REASONS } from './claim-reasons';
+import { addDays, istDayOf, istDayStart } from './claim-dates';
 import { PlacementService } from './placement.service';
 
 /** Who may report that a placed worker left (same list as PlacementService.reportClaim). */
 export const WORKER_LEFT_ROLES = ['field_agent', 'call_agent', 'team_lead', 'manager', 'ceo'] as const;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
+/**
+ * "Accepted but never joined" is not offered here: this form is reached only
+ * after joining was recorded (a worker who did not come is FA11's "He didn't
+ * come"). The server still accepts the reason.
+ */
+const FORM_COVERED_REASONS = ACCEPT_CLAIM_REASONS.filter((r) => r !== 'never_joined');
 
 export type WorkerLeftBlocked = 'not_active' | 'not_joined' | 'open_claim';
 
@@ -44,16 +50,6 @@ export class WorkerLeftService {
       throw new ForbiddenException(`Role '${staff.role}' cannot report replacement claims`);
     }
     return staff;
-  }
-
-  /** Staff whose calls this person may pick as the owner call (as GET /calls shows them). */
-  private async callStaffIds(actor: Actor): Promise<string[] | null> {
-    if (actor.role === 'ceo' || actor.role === 'manager') return null;
-    if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { OR: [{ id: actor.id }, { teamLeadId: actor.id }] }, select: { id: true } });
-      return team.map((s) => s.id);
-    }
-    return [actor.id];
   }
 
   /**
@@ -116,27 +112,38 @@ export class WorkerLeftService {
     if (actor.role === 'field_agent' && placement.business?.accountAgentId !== actor.id) {
       throw new ForbiddenException('Field agents may only report claims for their account businesses');
     }
+    await this.placements.assertClaimScope(actor, placement);
 
+    // The guarantee counts from the first worker's joining day; this worker
+    // cannot have left before his own joining day (a replacement joined later).
     const root = placement.rootPlacementId
       ? await this.prisma.placement.findUnique({ where: { id: placement.rootPlacementId }, select: { joinedDate: true } })
       : placement;
-    const joinedDate = root?.joinedDate ?? null;
+    const rootJoined = root?.joinedDate ?? null;
+    const ownJoined = placement.joinedDate ?? rootJoined;
     const policy = await this.pricing.current();
-    const guaranteeEndsAt = joinedDate ? new Date(joinedDate.getTime() + policy.replacementWindowDays * DAY_MS) : null;
+    const lastDay = rootJoined ? addDays(istDayOf(rootJoined)!, policy.replacementWindowDays) : null;
+    const guaranteeEndsAt = lastDay ? istDayStart(addDays(lastDay, 1)) : null;
+    const today = istDayOf(now)!;
     const openClaim = placement.replacementClaims[0] ?? null;
 
     let blocked: WorkerLeftBlocked | null = null;
     if (placement.status !== 'active') blocked = 'not_active';
-    else if (!joinedDate) blocked = 'not_joined';
+    else if (!rootJoined) blocked = 'not_joined';
     else if (openClaim) blocked = 'open_claim';
 
-    const staffIds = await this.callStaffIds(actor);
+    // Calls the claim may rest on: answered calls with this business since this
+    // worker joined, made by someone whose calls this person may use, not
+    // already another claim's evidence. The form keeps only those made on or
+    // after the leaving date the person picks.
+    const staffIds = await this.placements.claimCallStaffIds(actor);
     const calls = await this.prisma.callRecord.findMany({
       where: {
         subjectType: 'business',
         subjectId: placement.businessId,
         answered: true,
-        ...(joinedDate ? { createdAt: { gte: joinedDate } } : {}),
+        callRecordClaims: { none: {} },
+        createdAt: { ...(ownJoined ? { gte: istDayStart(istDayOf(ownJoined)!) } : {}), lte: now },
         ...(staffIds ? { staffId: { in: staffIds } } : {}),
       },
       select: { id: true, code: true, answeredAt: true, startedAt: true, createdAt: true, durationSec: true, staff: { select: { name: true } } },
@@ -152,7 +159,7 @@ export class WorkerLeftService {
         workerName: placement.jobSeeker?.name ?? null,
         businessId: placement.businessId,
         businessName: placement.business?.name ?? null,
-        joinedDate,
+        joinedDate: ownJoined,
       },
       guarantee: {
         windowDays: policy.replacementWindowDays,
@@ -160,13 +167,14 @@ export class WorkerLeftService {
         reportWithinDays: policy.claimReportDays,
         decisionHours: policy.claimDecisionHours,
       },
-      /** The latest date the worker can be said to have left: today, or the last day of the guarantee. */
-      leftOnLatest: guaranteeEndsAt && guaranteeEndsAt.getTime() < now.getTime() ? guaranteeEndsAt : now,
+      /** Indian days the worker may be said to have left on: from his own joining day to today or the guarantee's last day. */
+      leftOnEarliest: ownJoined ? istDayOf(ownJoined) : null,
+      leftOnLatest: lastDay && lastDay < today ? lastDay : today,
       canReport: blocked === null,
       blocked,
       openClaim,
       ownerCalls: calls.map((c) => ({ id: c.id, code: c.code, at: c.answeredAt ?? c.startedAt ?? c.createdAt, durationSec: c.durationSec, by: c.staff?.name ?? null })),
-      reasons: { covered: [...ACCEPT_CLAIM_REASONS], notCovered: [...REJECT_CLAIM_REASONS] },
+      reasons: { covered: [...FORM_COVERED_REASONS], notCovered: [...REJECT_CLAIM_REASONS] },
     };
   }
 }

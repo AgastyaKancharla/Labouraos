@@ -50,7 +50,8 @@ describe('FA11 Confirm joining', () => {
     const leftForm = (over: Record<string, unknown> = {}) => ({
       placement: { id: 'pl-1', code: 'PL-00001', status: 'active', workerName: 'Manjunath', businessId: 'biz-1', businessName: 'Annapoorna Mess', joinedDate: `${addDays(today, -10)}T04:30:00.000Z` },
       guarantee: { windowDays: 60, endsAt: null, reportWithinDays: 7, decisionHours: 48 },
-      leftOnLatest: new Date().toISOString(),
+      leftOnEarliest: addDays(today, -10),
+      leftOnLatest: today,
       canReport: true,
       blocked: null,
       openClaim: null,
@@ -60,8 +61,12 @@ describe('FA11 Confirm joining', () => {
     });
     const joined = placement({ status: 'active', paidAt: '2026-11-01T07:00:00Z', joinedDate: `${addDays(today, -10)}T04:30:00.000Z` });
 
-    it('records the claim on the answered owner call with the date and the reason', async () => {
-      const { route } = routeTable({ '/screens/field-selling/placements/pl-1': joined, '/placements/pl-1/worker-left': leftForm() });
+    it('records the claim live on the answered owner call with the date and the reason (never queued)', async () => {
+      const { route, calls } = routeTable({
+        '/screens/field-selling/placements/pl-1': joined,
+        '/placements/pl-1/worker-left': leftForm(),
+        'POST /placements/pl-1/claims': { code: 'RC-9', decision: null, decisionReason: null },
+      });
       const { queue, sent } = recordingQueue();
       await renderWithApp(<JoiningScreen />, { signedInAs: kiran, route, queue });
       await fireEvent.press(await screen.findByTestId('left-open'));
@@ -75,7 +80,10 @@ describe('FA11 Confirm joining', () => {
       expect(screen.getByTestId('left-call')).toBeTruthy();
       await fireEvent.press(screen.getByTestId('left-send'));
       await waitFor(() => screen.getByTestId('left-saved'));
-      expect(sent[0].request).toMatchObject({ method: 'POST', path: '/placements/pl-1/claims', json: { workerLeftOn: day, reason: 'resigned', callRecordId: 'call-7' } });
+      expect(calls).toContainEqual({ method: 'POST', path: '/placements/pl-1/claims', body: { workerLeftOn: day, reason: 'resigned', callRecordId: 'call-7' } });
+      expect(sent).toHaveLength(0);
+      // the form was fetched again when opened
+      expect(calls.filter((c) => c.path === '/placements/pl-1/worker-left').length).toBeGreaterThanOrEqual(2);
     });
 
     it('warns on a reason the guarantee does not cover', async () => {
@@ -91,12 +99,28 @@ describe('FA11 Confirm joining', () => {
       const { route, calls } = routeTable({ '/screens/field-selling/placements/pl-1': joined, '/placements/pl-1/worker-left': leftForm({ ownerCalls: [] }), 'POST /calls': { callRecordId: 'c-9' } });
       await renderWithApp(<JoiningScreen />, { signedInAs: kiran, route, queue: recordingQueue().queue });
       await fireEvent.press(await screen.findByTestId('left-open'));
+      const day = addDays(today, -1);
+      await fireEvent.press(screen.getByTestId('left-on'));
+      if (day.slice(0, 7) !== today.slice(0, 7)) await fireEvent.press(screen.getByLabelText('Previous month'));
+      await fireEvent.press(screen.getByTestId(`left-on-day-${day}`));
       expect(screen.getByTestId('left-no-call')).toBeTruthy();
       expect(screen.getByTestId('left-send')).toBeDisabled();
       await fireEvent.press(screen.getByTestId('left-call-owner'));
       await waitFor(() => expect(calls).toContainEqual({
         method: 'POST', path: '/calls', body: { subjectType: 'business', subjectId: 'biz-1', purpose: 'general', relatedType: 'placement', relatedId: 'pl-1' },
       }));
+    });
+
+    it('never uses an owner call made before the leaving day', async () => {
+      const { route } = routeTable({ '/screens/field-selling/placements/pl-1': joined, '/placements/pl-1/worker-left': leftForm({ ownerCalls: [{ id: 'old', code: 'CL-1', at: `${addDays(today, -5)}T06:00:00.000Z`, durationSec: 40, by: 'Kiran' }] }) });
+      await renderWithApp(<JoiningScreen />, { signedInAs: kiran, route, queue: recordingQueue().queue });
+      await fireEvent.press(await screen.findByTestId('left-open'));
+      const day = addDays(today, -1);
+      await fireEvent.press(screen.getByTestId('left-on'));
+      if (day.slice(0, 7) !== today.slice(0, 7)) await fireEvent.press(screen.getByLabelText('Previous month'));
+      await fireEvent.press(screen.getByTestId(`left-on-day-${day}`));
+      expect(screen.getByTestId('left-no-call')).toBeTruthy();
+      expect(screen.queryByTestId('left-call')).toBeNull();
     });
 
     it('shows a claim already waiting instead of the form, and nothing before joining', async () => {

@@ -75,7 +75,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
 
   describe('Gate Item 2: Claim rules (answered owner call, auto-reject for late/unpaid/reject-list, TL/Manager decision within 48h)', () => {
     it('auto-rejects late claims and requires TL or Manager for decision', async () => {
-      const mockPrisma = {
+      const mockPrisma: Record<string, unknown> = {
         staff: {
           findUnique: jest.fn().mockImplementation(({ where }) => {
             if (where.id === 'staff-fa') return Promise.resolve(staffFa);
@@ -101,12 +101,16 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
             purpose: 'claim_report',
             subjectType: 'business',
             subjectId: 'biz-1',
+            staffId: 'staff-fa',
+            createdAt: new Date('2026-10-25T09:00:00Z'),
           }),
         },
         replacementClaim: {
           findFirst: jest.fn().mockResolvedValue(null),
           create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'claim-1', code: 'RC-00001', ...data })),
         },
+        $queryRaw: jest.fn().mockResolvedValue([]),
+        $transaction: jest.fn(async (cb: (tx: unknown) => Promise<unknown>): Promise<unknown> => cb(mockPrisma)),
       };
 
       const placementService = makePlacementService(mockPrisma);
@@ -523,7 +527,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
       proofLog.push('Step 1: Placement PL-00001 confirmed and paid in full on ' + day0.toISOString());
 
       // 2. Joining confirmation calls (worker and business both answered)
-      const mockCalls = [
+      const mockCalls: Array<{ id: string; subjectType: string; subjectId: string; purpose: string; answered: boolean; startedAt: Date; staffId?: string }> = [
         { id: 'cr-join-worker', subjectType: 'job_seeker', subjectId: 'js-orig', purpose: 'joining_confirmation', answered: true, startedAt: day0 },
         { id: 'cr-join-owner', subjectType: 'business', subjectId: 'bz-1', purpose: 'joining_confirmation', answered: true, startedAt: day0 },
       ];
@@ -568,6 +572,11 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
             const p = state.placements.find((x) => x.id === where.id);
             if (p) Object.assign(p, data);
             return Promise.resolve(p);
+          }),
+          updateMany: jest.fn().mockImplementation(({ where, data }) => {
+            const p = state.placements.find((x) => x.id === where.id && (!where.status || x.status === where.status));
+            if (p) Object.assign(p, data);
+            return Promise.resolve({ count: p ? 1 : 0 });
           }),
         },
         callRecord: {
@@ -655,6 +664,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
         },
         statusHistory: { create: jest.fn().mockResolvedValue({}) },
         $transaction: jest.fn().mockImplementation((cb) => cb(mockPrisma)),
+        $queryRaw: jest.fn().mockResolvedValue([]),
       };
 
       const placementService = makePlacementService(mockPrisma);
@@ -699,6 +709,7 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
         subjectId: 'bz-1',
         purpose: 'claim_report',
         answered: true,
+        staffId: 'staff-fa',
         startedAt: day22,
       });
 

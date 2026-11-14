@@ -19,7 +19,8 @@ const NOW = new Date('2026-11-14T06:30:00Z'); // 12:00 IST
 const form = (over: Partial<WorkerLeftForm> = {}): WorkerLeftForm => ({
   placement: { id: 'pl42', code: 'PL-00042', status: 'active', workerName: 'Ravi Kumar', businessId: 'bz1', businessName: 'Lakshmi Tiffins', joinedDate: '2026-10-20T04:30:00Z' },
   guarantee: { windowDays: 60, endsAt: '2026-12-19T04:30:00Z', reportWithinDays: 7, decisionHours: 48 },
-  leftOnLatest: NOW.toISOString(),
+  leftOnEarliest: '2026-10-20',
+  leftOnLatest: '2026-11-14',
   canReport: true,
   blocked: null,
   openClaim: null,
@@ -85,10 +86,11 @@ describe('Report worker left — CEO placement page (C-Placement)', () => {
     const reason = within(dialog).getByLabelText(/Why the worker left/);
     expect(within(reason).getByRole('option', { name: 'Worker resigned or left' })).toBeInTheDocument();
     expect(within(reason).getByRole('option', { name: 'Business hired a relative or its own person instead — Not covered by the guarantee' })).toBeInTheDocument();
-    // the owner call is picked for you (latest answered)
-    expect(within(dialog).getByLabelText(/Answered call with the owner/)).toHaveValue('call7');
-
+    // the call list waits for the leaving date
+    expect(within(dialog).getByText(/Pick the date first/)).toBeInTheDocument();
     await userEvent.type(within(dialog).getByLabelText(/Date the worker left/), '2026-11-12');
+    // then the owner call is picked for you (latest answered on or after that day)
+    expect(within(dialog).getByLabelText(/Answered call with the owner/)).toHaveValue('call7');
     await userEvent.selectOptions(reason, 'resigned');
     expect(submit).toBeEnabled();
     await userEvent.click(submit);
@@ -115,13 +117,22 @@ describe('Report worker left — CEO placement page (C-Placement)', () => {
     const api = openPlacement({ 'GET /placements/pl42/worker-left': form({ ownerCalls: [] }), 'POST /calls': { id: 'call9' } });
     await userEvent.click(await screen.findByRole('button', { name: 'Report worker left' }));
     const dialog = await screen.findByRole('dialog');
-    expect(await within(dialog).findByText(/No answered call with the owner since the worker joined/)).toBeInTheDocument();
-    await userEvent.type(within(dialog).getByLabelText(/Date the worker left/), '2026-11-12');
+    await userEvent.type(await within(dialog).findByLabelText(/Date the worker left/), '2026-11-12');
+    expect(within(dialog).getByText(/No answered call with the owner on or after that day/)).toBeInTheDocument();
     await userEvent.selectOptions(within(dialog).getByLabelText(/Why the worker left/), 'resigned');
     expect(within(dialog).getByRole('button', { name: 'Report worker left' })).toBeDisabled();
     await userEvent.click(within(dialog).getByRole('button', { name: /Call the owner/ }));
     await waitFor(() => expect(api.calls('POST /calls')[0].body).toEqual({ subjectType: 'business', subjectId: 'bz1', purpose: 'general', relatedType: 'placement', relatedId: 'pl42' }));
     expect(await within(dialog).findByText(/Once they have answered, press Refresh/)).toBeInTheDocument();
+  });
+
+  it('never offers a call made before the day the worker left', async () => {
+    openPlacement({ 'GET /placements/pl42/worker-left': form({ ownerCalls: [{ id: 'old', code: 'CL-1', at: '2026-11-10T05:00:00Z', durationSec: 60, by: 'Deepa Nair' }] }) });
+    await userEvent.click(await screen.findByRole('button', { name: 'Report worker left' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.type(await within(dialog).findByLabelText(/Date the worker left/), '2026-11-12');
+    expect(within(dialog).queryByLabelText(/Answered call with the owner/)).not.toBeInTheDocument();
+    expect(within(dialog).getByText(/No answered call with the owner on or after that day/)).toBeInTheDocument();
   });
 
   it('shows the server’s refusal in the form (e.g. outside the guarantee window)', async () => {

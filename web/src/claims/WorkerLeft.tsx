@@ -25,6 +25,8 @@ import './workerLeft.css';
 export interface WorkerLeftForm {
   placement: { id: string; code: string; status: string; workerName: string | null; businessId: string; businessName: string | null; joinedDate: string | null };
   guarantee: { windowDays: number; endsAt: string | null; reportWithinDays: number; decisionHours: number };
+  /** Indian days ("YYYY-MM-DD"): the worker's own joining day, and today or the guarantee's last day. */
+  leftOnEarliest: string | null;
   leftOnLatest: string;
   canReport: boolean;
   blocked: 'not_active' | 'not_joined' | 'open_claim' | null;
@@ -60,14 +62,17 @@ function ClaimForm({ placementId, onDone, onBack }: { placementId: string; onDon
   const toast = useToast();
   const queryClient = useQueryClient();
   const now = useNow(60_000);
-  const form = useQuery({ queryKey: workerLeftKey(placementId), queryFn: () => api.get<WorkerLeftForm>(`/placements/${encodeURIComponent(placementId)}/worker-left`) });
+  // Always fresh when the form opens: a claim someone else just reported, or a new owner call, shows at once.
+  const form = useQuery({ queryKey: workerLeftKey(placementId), queryFn: () => api.get<WorkerLeftForm>(`/placements/${encodeURIComponent(placementId)}/worker-left`), staleTime: 0, refetchOnMount: 'always' });
   const [leftOn, setLeftOn] = useState('');
   const [reason, setReason] = useState('');
   const [callId, setCallId] = useState('');
   const [calling, setCalling] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const d = form.data;
-  const chosenCall = callId || d?.ownerCalls[0]?.id || '';
+  // Only calls made on or after the day the worker left are evidence; never an older call.
+  const eligibleCalls = leftOn ? (d?.ownerCalls ?? []).filter((c) => istDateKey(c.at) >= leftOn) : [];
+  const chosenCall = eligibleCalls.some((c) => c.id === callId) ? callId : (eligibleCalls[0]?.id ?? '');
 
   const callOwner = useMutation({
     mutationFn: () =>
@@ -117,8 +122,9 @@ function ClaimForm({ placementId, onDone, onBack }: { placementId: string; onDon
     );
   }
 
-  const minDay = p.joinedDate ? istDateKey(p.joinedDate) : undefined;
-  const maxDay = istDateKey(new Date(Math.min(new Date(d.leftOnLatest).getTime(), now.getTime())));
+  const minDay = d.leftOnEarliest ?? undefined;
+  const todayKey = istDateKey(now);
+  const maxDay = d.leftOnLatest < todayKey ? d.leftOnLatest : todayKey;
   const notCovered = d.reasons.notCovered.includes(reason);
   const options = [
     ...d.reasons.covered.map((r) => ({ value: r, label: `${t(`wl.reason.${r}` as MessageKey)}` })),
@@ -153,12 +159,14 @@ function ClaimForm({ placementId, onDone, onBack }: { placementId: string; onDon
           {t('wl.notCoveredNote')}
         </p>
       )}
-      {d.ownerCalls.length ? (
+      {!leftOn ? (
+        <p className="wl-sub">{t('wl.callAfterDate')}</p>
+      ) : eligibleCalls.length ? (
         <SelectField
           label={t('wl.call')}
           value={chosenCall}
           onChange={(v) => setCallId(v)}
-          options={d.ownerCalls.map((c) => ({ value: c.id, label: t('wl.callOption', { date: formatDateTimeIST(c.at), duration: duration(c.durationSec), by: c.by ?? '—' }) }))}
+          options={eligibleCalls.map((c) => ({ value: c.id, label: t('wl.callOption', { date: formatDateTimeIST(c.at), duration: duration(c.durationSec), by: c.by ?? '—' }) }))}
           required
         />
       ) : (

@@ -24,7 +24,8 @@ function istKey(input: string): string {
  * which keeps every rule: inside the guarantee, an answered owner call,
  * reasons from the agreed list, auto-rejection when late, unpaid or not
  * covered). A Team Lead or Manager then decides it. Field agents report only
- * for their own account businesses (the server checks).
+ * for their own account businesses (the server checks). It needs signal: the
+ * claim is sent live, never kept on the phone for later.
  */
 export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
   const { t } = useI18n();
@@ -35,28 +36,32 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
   const [open, setOpen] = useState(false);
   const [leftOn, setLeftOn] = useState('');
   const [reason, setReason] = useState<string>('');
-  const [saved, setSaved] = useState<'sent' | 'queued' | null>(null);
+  const [saved, setSaved] = useState<{ code: string; rejected: string | null } | null>(null);
   const call = useMutation({
     mutationFn: () =>
       queue.live(() => selling.placeCall({ subjectType: 'business', subjectId: p.business.id, purpose: 'general', relatedType: 'placement', relatedId: p.id })),
   });
-  const ownerCall = form.data?.ownerCalls[0] ?? null;
+  // Only a call made on or after the leaving day is evidence; never an older one.
+  const ownerCall = leftOn ? (form.data?.ownerCalls.find((c) => istKey(c.at) >= leftOn) ?? null) : null;
+  // Sent live, never queued: a claim replayed later would carry the wrong report time.
   const save = useMutation({
-    mutationFn: () =>
-      queue.submit(t('fa11.left.queuedLabel', { name: p.candidate.firstName }), {
-        method: 'POST',
-        path: `/placements/${encodeURIComponent(p.id)}/claims`,
-        json: { workerLeftOn: leftOn, reason, callRecordId: ownerCall?.id },
-      }),
-    onSuccess: (r) => {
-      setSaved(r.status);
+    mutationFn: () => queue.live(() => selling.reportClaim(p.id, { workerLeftOn: leftOn, reason, callRecordId: ownerCall!.id })),
+    onSuccess: (claim) => {
+      setSaved({ code: claim.code, rejected: claim.decision === 'rejected' ? (claim.decisionReason ?? '') : null });
       void client.invalidateQueries({ queryKey: queryKeys.sellingPlacement(p.id) });
     },
   });
+  const openForm = async () => {
+    // Look again before showing the form: someone may have reported it meanwhile.
+    const fresh = await form.refetch();
+    if (fresh.data?.canReport) setOpen(true);
+  };
   const d = form.data;
   if (!d) return null;
   if (saved) {
-    return <Banner tone={saved === 'sent' ? 'ok' : 'info'} message={saved === 'sent' ? t('fa11.left.sent', { hours: d.guarantee.decisionHours }) : t('fa03.waitingToSend')} testID="left-saved" />;
+    return saved.rejected !== null
+      ? <Banner tone="warn" message={t('fa11.left.sentRejected', { code: saved.code, reason: saved.rejected })} testID="left-saved" />
+      : <Banner tone="ok" message={t('fa11.left.sent', { hours: d.guarantee.decisionHours })} testID="left-saved" />;
   }
   if (d.blocked === 'open_claim' && d.openClaim) return <Banner tone="info" message={t('fa11.left.waiting', { code: d.openClaim.code })} testID="left-waiting" />;
   if (!d.canReport) return null;
@@ -67,16 +72,15 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
     ...d.reasons.covered.map((r) => ({ value: r, label: label(r) })),
     ...d.reasons.notCovered.map((r) => ({ value: r, label: t('fa11.left.notCovered', { reason: label(r) }) })),
   ];
-  const min = d.placement.joinedDate ? istKey(d.placement.joinedDate) : undefined;
-  const latest = istKey(d.leftOnLatest);
+  const min = d.leftOnEarliest ?? undefined;
   const today = todayKeyIst();
-  const max = latest < today ? latest : today;
+  const max = d.leftOnLatest < today ? d.leftOnLatest : today;
   const ready = !!leftOn && !!reason && !!ownerCall;
   return (
     <Card title={t('fa11.left.title')}>
       <Text variant="muted">{t('fa11.left.intro', { name: p.candidate.firstName, days: d.guarantee.windowDays, hours: d.guarantee.decisionHours })}</Text>
       {!open ? (
-        <Button label={t('fa11.left.open')} variant="secondary" onPress={() => setOpen(true)} testID="left-open" />
+        <Button label={t('fa11.left.open')} variant="secondary" loading={form.isRefetching} onPress={() => void openForm()} testID="left-open" />
       ) : (
         <View style={styles.form}>
           <DateField
@@ -91,7 +95,9 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
           />
           <SelectField label={t('fa11.left.reason')} required value={reason} choices={choices} onChange={setReason} testID="left-reason" />
           {notCovered ? <Banner tone="warn" message={t('fa11.left.notCoveredNote')} testID="left-not-covered" /> : null}
-          {ownerCall ? (
+          {!leftOn ? (
+            <Text variant="muted">{t('fa11.left.callAfterDate')}</Text>
+          ) : ownerCall ? (
             <Text variant="small" testID="left-call">
               {t('fa11.left.call', { time: `${formatDayIst(ownerCall.at)} ${formatTimeIst(ownerCall.at)}`, duration: ownerCall.durationSec ? formatCountdown(ownerCall.durationSec * 1000) : '—' })}
             </Text>

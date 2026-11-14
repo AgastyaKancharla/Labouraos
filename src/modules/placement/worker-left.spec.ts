@@ -21,7 +21,7 @@ describe('Report worker left: form and finder', () => {
     placement: { findFirst: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock };
     callRecord: { findMany: jest.Mock };
   };
-  let placements: { placementListScope: jest.Mock };
+  let placements: { placementListScope: jest.Mock; claimCallStaffIds: jest.Mock; assertClaimScope: jest.Mock };
   let service: WorkerLeftService;
 
   const staff: Record<string, { id: string; role: string }> = {
@@ -64,7 +64,14 @@ describe('Report worker left: form and finder', () => {
         ]),
       },
     };
-    placements = { placementListScope: jest.fn().mockResolvedValue({ OR: [{ createdByStaffId: { in: ['x'] } }] }) };
+    placements = {
+      placementListScope: jest.fn().mockResolvedValue({ OR: [{ createdByStaffId: { in: ['x'] } }] }),
+      // the same rules as PlacementService.claimCallStaffIds
+      claimCallStaffIds: jest.fn(async (a: { id: string; role: string }) =>
+        a.role === 'ceo' || a.role === 'manager' ? null : a.role === 'team_lead' ? ['tl-1', 'ca-7'] : [a.id],
+      ),
+      assertClaimScope: jest.fn().mockResolvedValue(undefined),
+    };
     const pricing = { current: jest.fn().mockResolvedValue({ replacementWindowDays: 60, claimReportDays: 7, claimDecisionHours: 48 }) };
     service = new WorkerLeftService(prisma as unknown as PrismaService, pricing as unknown as PricingService, placements as unknown as PlacementService);
   });
@@ -116,16 +123,23 @@ describe('Report worker left: form and finder', () => {
       expect(form.canReport).toBe(true);
       expect(form.blocked).toBeNull();
       expect(form.placement).toEqual({ id: 'pl-1', code: 'PL-00042', status: 'active', workerName: 'Ravi Kumar', businessId: 'bz-1', businessName: 'Lakshmi Tiffins', joinedDate: JOINED });
-      expect(form.guarantee.endsAt).toEqual(new Date(JOINED.getTime() + 60 * 86400000));
-      expect(form.leftOnLatest).toEqual(NOW);
+      // last day of the guarantee: 20 Oct + 60 days = 19 Dec; ends at 00:00 IST on 20 Dec
+      expect(form.guarantee.endsAt).toEqual(new Date('2026-12-19T18:30:00.000Z'));
+      expect(form.leftOnEarliest).toBe('2026-10-20');
+      expect(form.leftOnLatest).toBe('2026-11-14');
       expect(form.ownerCalls).toEqual([{ id: 'call-1', code: 'CL-00001', at: new Date('2026-11-13T05:00:00Z'), durationSec: 95, by: 'Asha' }]);
       expect(form.reasons.covered).toContain('resigned');
+      // only reached after joining: "never joined" is not offered here
+      expect(form.reasons.covered).not.toContain('never_joined');
       expect(form.reasons.notCovered).toContain('business_closed');
       expect(JSON.stringify(form)).not.toMatch(/phone|Paise|amount/i);
-      // only answered calls with this business, since joining
+      // only answered calls with this business since the joining day (IST), up to now, not already another claim's evidence
       expect(prisma.callRecord.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ where: { subjectType: 'business', subjectId: 'bz-1', answered: true, createdAt: { gte: JOINED } } }),
+        expect.objectContaining({
+          where: { subjectType: 'business', subjectId: 'bz-1', answered: true, callRecordClaims: { none: {} }, createdAt: { gte: new Date('2026-10-19T18:30:00.000Z'), lte: NOW } },
+        }),
       );
+      expect(placements.assertClaimScope).toHaveBeenCalledWith({ id: 'mg-1', role: 'manager' }, expect.objectContaining({ id: 'pl-1' }));
     });
 
     it('offers a call agent or field agent only their own calls, a Team Lead their team’s', async () => {
@@ -161,8 +175,14 @@ describe('Report worker left: form and finder', () => {
       prisma.placement.findFirst.mockResolvedValueOnce(placement({ rootPlacementId: 'pl-root', joinedDate: new Date('2026-09-20T00:00:00Z') }));
       prisma.placement.findUnique.mockResolvedValueOnce({ joinedDate: rootJoined });
       const form = await service.form('pl-1', 'ceo-1', NOW);
-      expect(form.placement.joinedDate).toEqual(rootJoined);
-      expect(form.leftOnLatest).toEqual(new Date(rootJoined.getTime() + 60 * 86400000));
+      // the replacement's own joining day is the earliest leaving day; the window counts from the first worker's
+      expect(form.leftOnEarliest).toBe('2026-09-20');
+      expect(form.leftOnLatest).toBe('2026-09-30'); // 1 Aug + 60 days
+    });
+
+    it('outside a call agent’s or Team Lead’s placement scope it is a 404', async () => {
+      placements.assertClaimScope.mockRejectedValueOnce(new NotFoundException('Placement not found'));
+      await expect(service.form('pl-1', 'ca-1', NOW)).rejects.toThrow(NotFoundException);
     });
 
     it('404s an unknown placement', async () => {
