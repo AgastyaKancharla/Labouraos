@@ -389,7 +389,7 @@ export class SignupTrackerService {
     const quietUntil = this.quietUntil(ctx);
     if (quietUntil) return this.setNext(tracker, quietUntil);
     const sent = await this.send(tracker, result, 'reengage', `reengage:${tracker.id}:${istDateKey(ctx.now.getTime()).slice(0, 7)}`);
-    await this.event(tracker.id, sent === 'sent' ? 'reengage' : 'reengage_due', { note: sent === 'sent' ? null : `not sent: ${sent}` });
+    await this.event(tracker.id, sent === 'sent' ? 'reengage' : 'reengage_due', { note: sent === 'sent' ? null : `not sent: ${sent}`, at: ctx.now });
     return this.setNext(tracker, new Date(ctx.now.getTime() + ctx.settings.reengageDays * DAY_MS));
   }
 
@@ -397,8 +397,9 @@ export class SignupTrackerService {
 
   /** Reminder slots already passed at this stop: sent ones, and due ones the sender could not send. */
   private async reminderSlots(tracker: SignupTracker): Promise<number> {
+    // Stages only move forward, so the reminders of this stop are the ones written for this stage.
     const events = await this.prisma.signupTrackerEvent.count({
-      where: { trackerId: tracker.id, kind: { in: ['reminder', 'reminder_due'] }, createdAt: { gte: tracker.stageReachedAt } },
+      where: { trackerId: tracker.id, kind: { in: ['reminder', 'reminder_due'] }, toStage: tracker.stage },
     });
     return Math.max(tracker.remindersSent, events);
   }
@@ -428,7 +429,7 @@ export class SignupTrackerService {
     if (quietUntil) return { tracker, deferUntil: quietUntil };
     const n = (await this.reminderSlots(tracker)) + 1;
     if (!this.reminders || !tracker.accountId) {
-      await this.event(tracker.id, 'reminder_due', { note: `${n} · not sent: ${this.reminders ? 'no app account' : 'sender not connected'}` });
+      await this.event(tracker.id, 'reminder_due', { note: `${n} · not sent: ${this.reminders ? 'no app account' : 'sender not connected'}`, toStage: tracker.stage, at: ctx.now });
       return { tracker };
     }
     // Claim the slot first, so a second run never sends the same reminder twice.
@@ -439,10 +440,10 @@ export class SignupTrackerService {
     if (claimed.count !== 1) return { tracker: (await this.prisma.signupTracker.findUnique({ where: { id: tracker.id } })) ?? tracker };
     const sent = await this.send(tracker, result, n === 1 ? 1 : 2, `signup:${tracker.id}:${tracker.stage}:${n}`);
     if (sent === 'sent') {
-      await this.event(tracker.id, 'reminder', { note: String(n) });
+      await this.event(tracker.id, 'reminder', { note: String(n), toStage: tracker.stage, at: ctx.now });
     } else {
       await this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { remindersSent: { decrement: 1 } } });
-      await this.event(tracker.id, 'reminder_due', { note: `${n} · not sent: ${sent}` });
+      await this.event(tracker.id, 'reminder_due', { note: `${n} · not sent: ${sent}`, toStage: tracker.stage, at: ctx.now });
     }
     return { tracker: (await this.prisma.signupTracker.findUnique({ where: { id: tracker.id } })) ?? tracker };
   }
@@ -614,7 +615,7 @@ export class SignupTrackerService {
       where: { trackerId: tracker.id, kind: 'unassigned', createdAt: { gte: today } },
       select: { id: true },
     });
-    if (!already) await this.event(tracker.id, 'unassigned', { note: 'No call agent on shift' });
+    if (!already) await this.event(tracker.id, 'unassigned', { note: 'No call agent on shift', at: ctx.now });
   }
 
   private async createCallTask(
@@ -840,7 +841,11 @@ export class SignupTrackerService {
     return new Set(await this.scope.peopleUnder(managerId));
   }
 
-  private async event(trackerId: string, kind: string, extra: { staffId?: string | null; byStaffId?: string | null; note?: string | null } = {}) {
+  private async event(
+    trackerId: string,
+    kind: string,
+    extra: { staffId?: string | null; byStaffId?: string | null; note?: string | null; toStage?: string | null; at?: Date } = {},
+  ) {
     await this.prisma.signupTrackerEvent.create({
       data: {
         trackerId,
@@ -848,6 +853,8 @@ export class SignupTrackerService {
         staffId: extra.staffId ?? null,
         byStaffId: extra.byStaffId ?? null,
         note: extra.note ?? null,
+        toStage: extra.toStage ?? null,
+        ...(extra.at ? { createdAt: extra.at } : {}),
       },
     });
   }
