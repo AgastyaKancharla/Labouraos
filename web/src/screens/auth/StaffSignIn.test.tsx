@@ -54,9 +54,25 @@ describe('Staff sign in', () => {
     await userEvent.paste('264019');
     await waitFor(() => expect(sessionStore.get()?.staff.role).toBe('ceo'));
     const calls = api.calls('POST /auth/login');
-    expect(calls[1].body).toMatchObject({ staffCode: 'CEO-0001', password: 'password12', totpCode: '264019' });
+    // This is the office app: every sign-in says so (each app accepts only its own roles).
+    expect(calls[1].body).toMatchObject({ staffCode: 'CEO-0001', password: 'password12', totpCode: '264019', app: 'office' });
     expect((calls[0].body as { deviceId: string }).deviceId).toBe(localStorage.getItem(DEVICE_ID_KEY));
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
+  });
+
+  it('Field agent: refused at the first step and pointed to Laboura Field at its real address', async () => {
+    const api = mockApi({
+      'POST /auth/login': apiError(401, 'Field agents use Laboura Field: https://field.laboura.com/'),
+    });
+    renderSignIn();
+    await enterPassword('FA-0007');
+    const notice = await screen.findByTestId('field-agent-refusal');
+    expect(notice).toHaveTextContent('Use the Laboura Field app');
+    expect(screen.getByRole('link', { name: 'Open Laboura Field' })).toHaveAttribute('href', 'https://field.laboura.com/');
+    // No login code step and no session.
+    expect(screen.queryByRole('heading', { name: 'Ask your Team Lead for your code' })).toBeNull();
+    expect(api.calls('POST /auth/login/verify-code')).toHaveLength(0);
+    expect(sessionStore.get()).toBeNull();
   });
 
   it('Call agent: password, then the code the Team Lead reads out (CA01 → CA02)', async () => {
@@ -77,6 +93,7 @@ describe('Staff sign in', () => {
       code: '481906',
       deviceId: localStorage.getItem(DEVICE_ID_KEY),
       loginRequestProof: 'proof-1',
+      app: 'office',
     });
   });
 

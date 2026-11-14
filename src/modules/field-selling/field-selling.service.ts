@@ -45,7 +45,8 @@ export const OWNER_JOINING_ANSWERS = ['didnt_come', 'moved'] as const;
 /** What the owner said on a call from the field agent (FA18). */
 export const OWNER_CALL_OUTCOMES = ['needs_staff', 'happy', 'callback', 'complaint'] as const;
 
-const SELLING_ROLES = ['field_agent', 'team_lead', 'manager', 'ceo'];
+/** Field agents only: selling in the shop happens in Laboura Field (owner decision 14 Nov). */
+const SELLING_ROLES = ['field_agent'];
 /** An in-shop phone talk gets a 30-minute slot; a booked interview at the shop or by phone one hour. */
 const IN_SHOP_SLOT_MINUTES = 30;
 const BOOKED_SLOT_MINUTES = 60;

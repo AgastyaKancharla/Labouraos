@@ -12,6 +12,8 @@ export function loginErrorKey(error: unknown): MessageKey {
   if (error.isNetworkError) return 'common.networkError';
   if (error.status === 429) return 'fa01.tooManyTries';
   const m = error.message.toLowerCase();
+  // Laboura Field is for field agents only (owner decision 14 Nov).
+  if (m.includes('this app is for field agents')) return 'fa01.notForThisApp';
   if (m.includes('waiting for approval')) return 'fa01.devicePending';
   if (m.includes('locked')) return 'fa01.locked';
   if (m.includes('not active') || m.includes('cannot log in')) return 'fa01.accountInactive';
@@ -25,6 +27,8 @@ export function codeErrorKey(error: unknown): MessageKey {
   if (error.isNetworkError) return 'common.networkError';
   if (error.status === 429) return 'fa01.tooManyTries';
   const m = error.message.toLowerCase();
+  if (m.includes('this app is for field agents')) return 'fa01.notForThisApp';
+  if (m.includes('no longer approved')) return 'fa01.devicePending';
   if (m.includes('expired') || m.includes('refused') || m.includes('not found') || m.includes('request is')) return 'fa02.expired';
   if (m.includes('not valid') || m.includes('already been used')) return 'fa02.invalidCode';
   if (m.includes('locked')) return 'fa01.locked';

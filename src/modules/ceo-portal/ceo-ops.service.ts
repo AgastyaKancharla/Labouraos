@@ -8,6 +8,7 @@ import { JobSeekerService } from '../job-seeker/job-seeker.service';
 import { DateRange, DAY_MS, istDayKey, istStartOfMonth, percent, average } from './ceo-common';
 import { teamLabel } from './ceo-team.service';
 import { calculateHaversineDistanceMeters } from '../../common/geo/geo.util';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 /** IST calendar day of an instant, as the Date value an @db.Date column holds. */
 function dbDate(instant: Date): Date {
@@ -86,9 +87,10 @@ export class CeoOpsService {
     return { interviewsToday, callbacksWaiting };
   }
 
-  private async people() {
+  /** Everyone who works a shift. `attendanceOnly` leaves owner accounts out: they have no attendance (owner decision 14 Nov). */
+  private async people(attendanceOnly = false) {
     const staff = await this.prisma.staff.findMany({
-      where: { role: { in: ATTENDANCE_ROLES }, status: 'active' },
+      where: { role: { in: ATTENDANCE_ROLES }, status: 'active', ...(attendanceOnly ? NOT_OWNER_ACCOUNT : {}) },
       select: { id: true, code: true, name: true, role: true, teamLeadId: true, reportsToId: true, teamName: true },
       orderBy: { name: 'asc' },
     });
@@ -105,7 +107,7 @@ export class CeoOpsService {
   /** C-Team-Attendance: everyone's day (one day) or totals (a longer period), with the tiles. */
   async attendance(range: DateRange, now: Date) {
     const policy = await this.pricing.current();
-    const people = await this.people();
+    const people = await this.people(true);
     const from = dbDate(range.from);
     const to = dbDate(range.to);
     const singleDay = from.getTime() === to.getTime();

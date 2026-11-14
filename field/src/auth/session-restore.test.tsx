@@ -109,4 +109,16 @@ describe('Laboura Field: reopening the app restores the session', () => {
     await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('signedOut|expired|-'));
     expect(fetchImpl).not.toHaveBeenCalled();
   });
+
+  it('drops a kept session of another role: Laboura Field is for field agents only', async () => {
+    const { fetchImpl, store } = await open(() => undefined, {
+      staff: { id: 'ceo-1', code: 'CEO-1', name: 'Owner', role: 'ceo' },
+      token: fakeToken(T0 + 10 * 60_000),
+      tokenExpiresAt: T0 + 10 * 60_000,
+      refreshToken: null,
+    });
+    await waitFor(() => expect(screen.getByTestId('auth')).toHaveTextContent('signedOut|-|-'));
+    expect(store.get()).toBeNull();
+    expect(fetchImpl).not.toHaveBeenCalled();
+  });
 });
