@@ -13,6 +13,7 @@ import { colors } from '@/theme';
 import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, KeyValue, Note, QueryView, StepRow, useParam } from '../_selling';
 import { isPaid } from '../FA15q-Paid';
+import { WorkerLeft } from './WorkerLeft';
 
 type OwnerSays = 'joined' | 'didnt_come' | 'moved';
 
@@ -23,7 +24,9 @@ type OwnerSays = 'joined' | 'didnt_come' | 'moved';
  * answered; nobody types a joining date), he didn't come (the worker is
  * called; if he isn't joining the business gets a free replacement search),
  * or joining moved to another date (both are told). Then the 60-day
- * guarantee starts and the check-ins follow.
+ * guarantee starts and the check-ins follow. Once he has joined, "Report
+ * worker left" records a replacement claim on an answered owner call
+ * (WorkerLeft).
  */
 export default function JoiningScreen() {
   const { t } = useI18n();
@@ -141,6 +144,7 @@ function Joining({ placement: p }: { placement: PlacementView }) {
       ) : saved ? (
         <Banner tone={saved === 'sent' ? 'ok' : 'info'} message={saved === 'sent' ? t('fa11.saved') : t('fa03.waitingToSend')} testID="saved" />
       ) : null}
+      {p.joinedDate && p.status === 'active' ? <WorkerLeft placement={p} /> : null}
       <Text variant="muted">{t('fa11.guaranteeNote')}</Text>
       <Card title={t('fa11.comingUp')}>
         <StepRow label={t('fa11.day7', { name: p.candidate.firstName })} chip={p.comingUp.dayCheckIn7 ? formatDayIst(p.comingUp.dayCheckIn7).slice(4) : '—'} />

@@ -5,6 +5,7 @@ import { ErrorState } from '../../../components/ErrorState';
 import { SkeletonCard } from '../../../components/Skeleton';
 import { StatusPill } from '../../../components/Badge';
 import { TopBar } from '../../../components/TopBar';
+import { ReportWorkerLeft } from '../../../claims/WorkerLeft';
 import { api } from '../../../lib/api/client';
 import { formatDateIST } from '../../../lib/format/date';
 import { formatINR } from '../../../lib/format/money';
@@ -13,7 +14,7 @@ import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, humanize } from '../_kit/kit';
 import { PAYMENT_STATUS, PLACEMENT_STAGE } from '../_kit/labels';
 
-/** CEO placement page — design C-Placement.dc.html. */
+/** CEO placement page — design C-Placement.dc.html, with "Report worker left" (the replacement claim) for an active placement. */
 interface Pay {
   code: string;
   status: string;
@@ -101,6 +102,8 @@ export default function PlacementDetail() {
         : `${PLACEMENT_STAGE[d.stage]?.label ?? humanize(d.stage)}${g.day ? ` · day ${Math.min(g.day, g.windowDays)} of ${g.windowDays}` : ''}`;
   const refundAmount = d.refund?.amountPaise ?? d.feePaise;
   const canApproveByRules = !d.refund && d.stage === 'replacement';
+  // "Report worker left" (the old Admin Dashboard's Report Claim): an active, joined placement with no claim waiting.
+  const canReportLeft = d.status === 'active' && Boolean(d.joinedDate) && !(d.claim && !d.claim.decision);
   const payPill = (p: Pay | null) => (p ? <StatusPill tone={PAYMENT_STATUS[p.status]?.tone ?? 'muted'}>{`${formatINR(p.amountPaise)} · ${PAYMENT_STATUS[p.status]?.label ?? p.status}`}</StatusPill> : '—');
 
   return (
@@ -111,6 +114,7 @@ export default function PlacementDetail() {
         subtitle={subtitle}
         actions={
           <div className="ceo-actions">
+            {canReportLeft && <ReportWorkerLeft placementId={d.id} workerName={d.jobSeeker.name} />}
             {d.refund?.withCeo && (
               <>
                 <ActionButton

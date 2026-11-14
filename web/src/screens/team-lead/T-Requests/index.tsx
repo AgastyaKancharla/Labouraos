@@ -6,6 +6,7 @@ import { DataTable, type Column } from '../../../components/DataTable';
 import { StatusPill } from '../../../components/Badge';
 import { StatGrid, StatTile } from '../../../components/StatTile';
 import { TopBar } from '../../../components/TopBar';
+import { ReportWorkerLeftFinder } from '../../../claims/WorkerLeft';
 import { useAuth } from '../../../auth/AuthProvider';
 import { api } from '../../../lib/api/client';
 import { useNow } from '../../../lib/useNow';
@@ -71,7 +72,7 @@ export default function TeamLeadRequests() {
 
   return (
     <div className="lb-page">
-      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Requests" subtitle="Leave, day changes, corrections, hits, claims and devices from your team." />
+      <TopBar showSearch={false} back={{ to: to('T-Home'), label: 'My team' }} title="Requests" subtitle="Leave, day changes, corrections, hits, claims and devices from your team." actions={<ReportWorkerLeftFinder />} />
       <RequestTabs waiting={mine.length} />
       <StatGrid>
         <StatTile label="Waiting for you" value={open.data ? mine.length : '—'} tone="red" loading={open.isPending} />

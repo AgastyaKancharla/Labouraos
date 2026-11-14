@@ -249,6 +249,18 @@ export interface PlacementView {
   nextVacancies: { id: string; trade: string; headcount: number }[];
 }
 
+/** GET /placements/:id/worker-left — what "Report worker left" needs (field agents: their account businesses only). */
+export interface WorkerLeftForm {
+  placement: { id: string; code: string; status: string; workerName: string | null; businessId: string; businessName: string | null; joinedDate: string | null };
+  guarantee: { windowDays: number; endsAt: string | null; reportWithinDays: number; decisionHours: number };
+  leftOnLatest: string;
+  canReport: boolean;
+  blocked: 'not_active' | 'not_joined' | 'open_claim' | null;
+  openClaim: { code: string; reportedAt: string; decisionDueAt: string } | null;
+  ownerCalls: { id: string; code: string; at: string; durationSec: number | null; by: string | null }[];
+  reasons: { covered: string[]; notCovered: string[] };
+}
+
 export interface BookingContext {
   vacancyId: string;
   trade: string;
@@ -333,6 +345,7 @@ export const sellingApi = (api: ApiClient) => ({
   placeCall: (body: { subjectType: 'business' | 'job_seeker'; subjectId: string; purpose: string; relatedType?: string; relatedId?: string }) =>
     api.post<{ callRecordId: string }>('/calls', body),
   recordJoined: (placementId: string) => api.post(`/placements/${enc(placementId)}/joined`, {}),
+  workerLeft: (placementId: string) => api.get<WorkerLeftForm>(`/placements/${enc(placementId)}/worker-left`),
   // Vacancies (existing endpoints)
   sendVacancyCode: (vacancyId: string, otpRequestId?: string) =>
     api.post<OtpSent>(`/vacancies/${enc(vacancyId)}/confirmation/send-code`, { otpRequestId }),

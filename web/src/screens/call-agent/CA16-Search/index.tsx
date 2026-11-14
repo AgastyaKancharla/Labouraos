@@ -8,12 +8,19 @@ import type { MessageKey } from '../../../i18n/en';
 import { isSearchable, resultPath, useSearch, type SearchRow, type SearchType } from '../../../lib/search/searchApi';
 import { usePortal } from '../../../portals/PortalContext';
 import { screenPath } from '../../../portals';
+import { useAuth } from '../../../auth/AuthProvider';
+import { ReportWorkerLeft } from '../../../claims/WorkerLeft';
+
+/** Who may report that a placed worker left from here (field agents do it in Laboura Field). */
+const REPORTS_WORKER_LEFT = ['call_agent', 'team_lead', 'manager', 'ceo'];
 
 /**
  * Search — design CA16-Search, used by every staff portal. Finds anyone by
  * name, mobile (full or last 4 digits) or ID (JS-, BZ-, RF-, VC-, PL-),
  * scoped by the server to what the role may see. Phone numbers stay masked.
- * No result offers to register the person (in the call agent console).
+ * No result offers to register the person (in the call agent console). An
+ * active placement offers "Report worker left" (the replacement claim) to the
+ * call agent, Team Lead, Manager and CEO.
  */
 const TABS: Array<'all' | SearchType> = ['all', 'job_seeker', 'business', 'referral', 'vacancy', 'placement'];
 
@@ -99,11 +106,21 @@ function ResultRow({ row, to }: { row: SearchRow; to: string | null }) {
       {tag && <span className="tag tn">{tag.replace(/_/g, ' ')}</span>}
     </>
   );
-  return to ? (
-    <Link className="qc" to={to}>
+  const role = useAuth().session?.staff.role ?? '';
+  const row_ = to ? (
+    <Link className="qc" to={to} style={{ flex: 1, minWidth: 0 }}>
       {body}
     </Link>
   ) : (
-    <div className="qc">{body}</div>
+    <div className="qc" style={{ flex: 1, minWidth: 0 }}>
+      {body}
+    </div>
+  );
+  if (row.type !== 'placement' || row.status !== 'active' || !REPORTS_WORKER_LEFT.includes(role)) return row_;
+  return (
+    <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+      {row_}
+      <ReportWorkerLeft placementId={row.id} workerName={row.name.split(' · ')[0]} variant="secondary" />
+    </div>
   );
 }

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useSearchParams } from 'react-router-dom';
 import { Button } from '../../../components/Button';
@@ -17,13 +17,17 @@ import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { FilterPanel, SearchField, SelectFilter, useDebounced } from '../../ceo/_kit/kit';
 import { FormAction, Note } from '../_kit/kit';
+import { MoneyFlagsCard, PAYOUT_FLAG_KINDS, ResolveFlag, useMoneyFlags } from '../_kit/flags';
 import '../_kit/fin.css';
 
 /**
  * Payouts — design FN-Payouts.dc.html (decided 9 Nov night: paid daily, once
  * due and after any 48-hour wait). Referral payouts, joining rewards and the
  * refunds Finance may pay, with "Pay and record" (UTR + the name the UPI app
- * showed), "Pay all ready", failed → retry.
+ * showed), "Pay all ready", failed → retry. Payout fraud and mismatch flags
+ * (shared account, a staff member's number, name not matching) are resolved
+ * here by Finance as well as by the CEO (from the old Admin Dashboard,
+ * retired 14 Nov).
  */
 export interface PayoutRow {
   id: string;
@@ -159,7 +163,20 @@ function RowActions({ r }: { r: PayoutRow }) {
     );
   }
   if (r.state === 'no_details') return <span className="fin-row-actions">{sendLink}</span>;
+  if (r.state === 'flagged') return <FlaggedActions r={r} sendLink={sendLink} />;
   return <span className="fin-sub">—</span>;
+}
+
+/** Details flagged: resolve the flag on this person, or ask for new details (new details replace the flagged ones). */
+function FlaggedActions({ r, sendLink }: { r: PayoutRow; sendLink: ReactNode }) {
+  const { rows } = useMoneyFlags(PAYOUT_FLAG_KINDS);
+  const flag = rows.find((f) => f.subjectType === r.owner.ownerType && f.subjectId === r.owner.ownerId);
+  return (
+    <span className="fin-row-actions">
+      {flag && <ResolveFlag flag={flag} label="Resolve flag" />}
+      {sendLink}
+    </span>
+  );
 }
 
 function PayAll({ rows }: { rows: PayoutRow[] }) {
@@ -340,6 +357,7 @@ export default function Payouts() {
           emptyTitle="No rows match these filters. Change a filter to see more."
         />
       </Card>
+      <MoneyFlagsCard kinds={PAYOUT_FLAG_KINDS} title="Payout flags to resolve" />
       <Note>
         Payouts are paid every day as soon as they are due, with the UTR recorded · referral payouts are commission: each partner's yearly total is tracked and you are warned once it crosses {s ? formatINR(s.tdsLimitPaise) : 'the TDS limit'} (2% TDS — to confirm with a CA) · changed payout details wait 48 hours before money can go
       </Note>
