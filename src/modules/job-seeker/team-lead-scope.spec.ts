@@ -16,6 +16,7 @@ describe('M3: Team Lead scope on job seekers', () => {
   const seekerIds: string[] = [];
   const tokens: Record<string, string> = {};
   const ids: Record<string, string> = {};
+  const referralIds: string[] = [];
 
   async function staff(key: string, role: string, teamLeadId?: string) {
     const suffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
@@ -72,6 +73,8 @@ describe('M3: Team Lead scope on job seekers', () => {
   });
 
   afterAll(async () => {
+    await prisma.jobSeekerHit.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
+    await prisma.referral.deleteMany({ where: { id: { in: referralIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: staffIds } } });
@@ -114,5 +117,96 @@ describe('M3: Team Lead scope on job seekers', () => {
     expect(seen).toEqual(expect.arrayContaining([ids.mine, ids.theirs]));
     const page = await listIds(tokens.CAA, '?limit=1&offset=0');
     expect(page).toHaveLength(1);
+  });
+
+  // Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own
+  // team — for every action on a job seeker, not only for reading it.
+  const writeRoutes: Array<[string, string]> = [
+    ['post', 'activation-payment'],
+    ['post', 'resend-payment'],
+    ['post', 'identity-verification'],
+    ['post', 'identity-verification/provider'],
+    ['post', 'payment-only-link'],
+    ['post', 'hits'],
+    ['post', 'reactivate'],
+    ['post', 'found-own-job'],
+    ['patch', ''],
+    ['patch', 'profile'],
+    ['post', 'photo'],
+    ['post', 'status'],
+    ['post', 'trades'],
+    ['patch', 'trades/00000000-0000-0000-0000-000000000000'],
+    ['delete', 'trades/00000000-0000-0000-0000-000000000000'],
+    ['post', 'languages'],
+    ['patch', 'languages/00000000-0000-0000-0000-000000000000'],
+    ['delete', 'languages/00000000-0000-0000-0000-000000000000'],
+  ];
+
+  const call = (method: string, path: string, token: string) => {
+    const server = request(app.getHttpServer()) as unknown as Record<string, (url: string) => request.Test>;
+    return server[method](path).set('Authorization', `Bearer ${token}`);
+  };
+
+  it.each(writeRoutes)('a Team Lead is refused %s /job-seekers/:id/%s on another team\'s job seeker', async (method, suffix) => {
+    const path = `/job-seekers/${ids.theirs}${suffix ? `/${suffix}` : ''}`;
+    const res = await call(method, path, tokens.TLA).send({ reason: 'Not my team' });
+    expect(res.status).toBe(403);
+    expect(String(res.body.message)).toContain('outside your own team');
+  });
+
+  it.each(writeRoutes)('a Team Lead is not refused %s /job-seekers/:id/%s on their own team\'s job seeker', async (method, suffix) => {
+    const own = await seeker(`own-${method}-${suffix}`, ids.CAA);
+    const path = `/job-seekers/${own.id}${suffix ? `/${suffix}` : ''}`;
+    const res = await call(method, path, tokens.TLA).send({});
+    // The guard lets it through; the route's own rules then answer (often 400
+    // for this empty body). It is never the team refusal.
+    expect(String(res.body?.message ?? '')).not.toContain('outside your own team');
+  });
+
+  it('a Team Lead edits their own team\'s job seeker', async () => {
+    const res = await call('patch', `/job-seekers/${ids.mine}`, tokens.TLA).send({ locality: 'Jayanagar' });
+    expect(res.status).toBe(200);
+    expect(res.body.locality).toBe('Jayanagar');
+    const theirs = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: ids.theirs } });
+    expect(theirs.locality).toBeNull();
+  });
+
+  it('GET /job-seeker-hits/:id is scoped to the Team Lead\'s own team', async () => {
+    const theirsHit = await prisma.jobSeekerHit.create({
+      data: { jobSeekerId: ids.theirs, reason: 'offer_declined', recordedBy: 'system' },
+    });
+    const mineHit = await prisma.jobSeekerHit.create({
+      data: { jobSeekerId: ids.mine, reason: 'offer_declined', recordedBy: 'system' },
+    });
+    expect((await call('get', `/job-seeker-hits/${theirsHit.id}`, tokens.TLA)).status).toBe(403);
+    const own = await call('get', `/job-seeker-hits/${mineHit.id}`, tokens.TLA);
+    expect(own.status).toBe(200);
+    expect(own.body.id).toBe(mineHit.id);
+    // Agents keep their city-wide read.
+    expect((await call('get', `/job-seeker-hits/${theirsHit.id}`, tokens.CAA)).status).toBe(200);
+  });
+
+  it('POST /consent/links: a Team Lead is refused another team\'s job seeker', async () => {
+    const res = await call('post', '/consent/links', tokens.TLA).send({ jobSeekerId: ids.theirs });
+    expect(res.status).toBe(403);
+  });
+
+  it('referral partners: a Team Lead cannot act on another team\'s partner (404, as the read answers)', async () => {
+    const make = async (key: string, registeredByStaffId: string) => {
+      const suffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+      const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+      const row = await prisma.referral.create({
+        data: { code: `RF-M3-${key}-${suffix}`, name: `M3 partner ${key}`, phone: `+9192${digits}`, registeredByStaffId },
+      });
+      referralIds.push(row.id);
+      return row;
+    };
+    const theirs = await make('B', ids.CAB);
+    const mine = await make('A', ids.CAA);
+    expect((await call('get', `/referrals/${theirs.id}`, tokens.TLA)).status).toBe(404);
+    expect((await call('patch', `/referrals/${theirs.id}`, tokens.TLA).send({ name: 'x', reason: 'y' })).status).toBe(404);
+    expect((await call('post', `/referrals/${theirs.id}/terms-links`, tokens.TLA).send({})).status).toBe(404);
+    expect((await call('get', `/referrals/${theirs.id}/registration-status`, tokens.TLA)).status).toBe(404);
+    expect((await call('get', `/referrals/${mine.id}/registration-status`, tokens.TLA)).status).toBe(200);
   });
 });

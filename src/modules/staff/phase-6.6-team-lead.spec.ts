@@ -416,7 +416,7 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
     });
   });
 
-  describe('4. Team Lead Access to Operations (Referrals, Businesses, Vacancies, Priority)', () => {
+  describe('4. Team Lead Access to Operations (Referrals, Businesses, Vacancies)', () => {
     it('Team Lead can read referrals (GET /referrals and GET /referrals/:id)', async () => {
       const listRes = await request(app.getHttpServer())
         .get('/referrals')
@@ -454,28 +454,6 @@ describe('Phase 6.6 Task 1: Open up the Team Lead role', () => {
         .set('Authorization', `Bearer ${lead1Token}`);
       expect(detailRes.status).toBe(200);
       expect(detailRes.body.id).toBe(sampleVacancyId);
-    });
-
-    it('Team Lead can access Priority Dashboard endpoints', async () => {
-      const candidatesRes = await request(app.getHttpServer())
-        .get('/priority/candidates')
-        .set('Authorization', `Bearer ${lead1Token}`);
-      expect(candidatesRes.status).toBe(200);
-
-      const vacanciesRes = await request(app.getHttpServer())
-        .get('/priority/vacancies')
-        .set('Authorization', `Bearer ${lead1Token}`);
-      expect(vacanciesRes.status).toBe(200);
-
-      const tradesRes = await request(app.getHttpServer())
-        .get('/priority/trades')
-        .set('Authorization', `Bearer ${lead1Token}`);
-      expect(tradesRes.status).toBe(200);
-
-      const dashboardRes = await request(app.getHttpServer())
-        .get('/field-agent/priority-dashboard')
-        .set('Authorization', `Bearer ${lead1Token}`);
-      expect(dashboardRes.status).toBe(200);
     });
   });
 

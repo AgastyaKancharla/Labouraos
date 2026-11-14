@@ -79,3 +79,28 @@ describe('FollowUpService.getIntroducedBusinesses: ownership and reporting scope
     await expect(makeService(null).service.getIntroducedBusinesses('nope', { id: 'ceo-1', role: 'ceo' })).rejects.toThrow(NotFoundException);
   });
 });
+
+/** Owner rule (Master Guide, 14 Nov): agents complete only their own follow-ups, Team Leads their team's. */
+describe('FollowUpService.assertMayComplete: who completes a follow-up', () => {
+  it('a Team Lead is refused a follow-up assigned outside their team, or to no one', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'tl-1', role: 'team_lead' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService({ ...task, assignedStaffId: null }).service.assertMayComplete('task-1', { id: 'tl-1', role: 'team_lead' })).rejects.toThrow(ForbiddenException);
+  });
+
+  it('a Team Lead may complete their own and their team’s follow-ups', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'tl-2', role: 'team_lead' })).resolves.toBeUndefined();
+    await expect(makeService({ ...task, assignedStaffId: 'tl-2' }).service.assertMayComplete('task-1', { id: 'tl-2', role: 'team_lead' })).resolves.toBeUndefined();
+  });
+
+  it('a call or field agent completes only follow-ups assigned to them', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'agent-a', role: 'call_agent' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService({ ...task, assignedStaffId: null }).service.assertMayComplete('task-1', { id: 'agent-c', role: 'field_agent' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'agent-c', role: 'call_agent' })).resolves.toBeUndefined();
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'agent-c', role: 'field_agent' })).resolves.toBeUndefined();
+  });
+
+  it('Managers, the CEO and missing tasks are left to completeTask', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'manager-1', role: 'manager' })).resolves.toBeUndefined();
+    await expect(makeService(null).service.assertMayComplete('nope', { id: 'tl-1', role: 'team_lead' })).resolves.toBeUndefined();
+  });
+});

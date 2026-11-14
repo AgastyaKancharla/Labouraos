@@ -71,8 +71,8 @@ export class TelephonyController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('job_seeker', 'write')
   @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
-  async completeCallback(@Param('id') id: string) {
-    return this.telephonyService.completeCallback(id);
+  async completeCallback(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    return this.telephonyService.completeCallback(id, req.user);
   }
 
   @Get('capacity')

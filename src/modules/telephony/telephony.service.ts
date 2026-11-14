@@ -140,6 +140,28 @@ export class TelephonyService {
     });
   }
 
+  /**
+   * A Team Lead's own team for missed calls: themselves, the agents whose Team
+   * Lead they are, and everyone under them in the reporting line (the same
+   * people the queue shows them, getCallbackQueue).
+   */
+  private async teamOf(teamLeadId: string): Promise<string[]> {
+    const direct = await this.prisma.staff.findMany({ where: { teamLeadId }, select: { id: true } });
+    const under = this.scope ? await this.scope.peopleUnder(teamLeadId) : [];
+    return [...new Set([teamLeadId, ...direct.map((s) => s.id), ...under])];
+  }
+
+  /**
+   * Owner rule (Master Guide, 14 Nov): a Team Lead works only on their own
+   * team. They act on a missed call that is unassigned or held by their team,
+   * never one another team holds.
+   */
+  private assertCallbackInTeam(callback: { assignedToStaffId: string | null }, team: string[]): void {
+    if (callback.assignedToStaffId && !team.includes(callback.assignedToStaffId)) {
+      throw new ForbiddenException('Access denied: this missed call is with another team');
+    }
+  }
+
   async assignCallback(id: string, staffId: string, actor?: JwtPayload) {
     const existing = await this.prisma.callbackTask.findUnique({
       where: { id },
@@ -148,12 +170,11 @@ export class TelephonyService {
       throw new NotFoundException(`Callback task '${id}' not found`);
     }
 
-    if (actor?.role === 'team_lead' && staffId !== actor.sub) {
-      const targetStaff = await this.prisma.staff.findUnique({
-        where: { id: staffId },
-        select: { teamLeadId: true },
-      });
-      if (!targetStaff || targetStaff.teamLeadId !== actor.sub) {
+    let team: string[] | null = null;
+    if (actor?.role === 'team_lead') {
+      team = await this.teamOf(actor.sub);
+      this.assertCallbackInTeam(existing, team);
+      if (!team.includes(staffId)) {
         throw new ForbiddenException(
           `Access denied: staff '${staffId}' is not part of your team`,
         );
@@ -162,7 +183,10 @@ export class TelephonyService {
 
     let assignTo = staffId;
     if (!(await this.attendance.isAvailable(staffId))) {
-      const next = await this.attendance.nextAvailableAgent(staffId);
+      // A Team Lead's missed call goes only to someone on their own team.
+      const next = team
+        ? await this.nextAvailableIn(team.filter((member) => member !== staffId && member !== actor?.sub))
+        : await this.attendance.nextAvailableAgent(staffId);
       if (!next) {
         return existing;
       }
@@ -181,12 +205,33 @@ export class TelephonyService {
     });
   }
 
-  async completeCallback(id: string) {
+  private async nextAvailableIn(staffIds: string[]): Promise<string | null> {
+    for (const id of staffIds) {
+      if (await this.attendance.isAvailable(id)) return id;
+    }
+    return null;
+  }
+
+  /**
+   * Mark a missed call done. A Team Lead: one that is unassigned or with their
+   * team. An agent: one that is unassigned or theirs (the queue they see).
+   * Managers and the CEO: any.
+   */
+  async completeCallback(id: string, actor?: JwtPayload) {
     const existing = await this.prisma.callbackTask.findUnique({
       where: { id },
     });
     if (!existing) {
       throw new NotFoundException(`Callback task '${id}' not found`);
+    }
+    if (actor?.role === 'team_lead') {
+      this.assertCallbackInTeam(existing, await this.teamOf(actor.sub));
+    } else if (
+      (actor?.role === 'call_agent' || actor?.role === 'field_agent') &&
+      existing.assignedToStaffId &&
+      existing.assignedToStaffId !== actor.sub
+    ) {
+      throw new ForbiddenException('Access denied: this missed call is assigned to someone else');
     }
 
     return this.prisma.callbackTask.update({
