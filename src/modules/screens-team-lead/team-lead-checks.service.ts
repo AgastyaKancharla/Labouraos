@@ -47,15 +47,44 @@ export class TeamLeadChecksService {
   // ---------------------------------------------------------------- work
 
   /** T-Work: registrations stuck, follow-ups overdue, interviews today and results overdue, the team's businesses. */
+  /**
+   * App sign-ups (customer app): a job seeker who registered in the app has no
+   * registering agent; the agent the sign-up is assigned to
+   * (SignupTracker.assignedStaffId) stands in for it in these lists.
+   */
+  private async appSignupAgents(people: string[]): Promise<Map<string, string>> {
+    const rows = await this.prisma.signupTracker.findMany({
+      where: { subjectType: 'job_seeker', subjectId: { not: null }, assignedStaffId: { in: people } },
+      select: { subjectId: true, assignedStaffId: true },
+    });
+    return new Map(rows.map((r) => [r.subjectId!, r.assignedStaffId!]));
+  }
+
+  /** Who answers for a registration: the agent who registered it, or for an app sign-up the agent it is assigned to. */
+  private async registrationOwner(jobSeekerId: string, registeredByStaffId: string | null): Promise<string | null> {
+    if (registeredByStaffId) return registeredByStaffId;
+    const tracker = await this.prisma.signupTracker.findFirst({
+      where: { subjectType: 'job_seeker', subjectId: jobSeekerId, assignedStaffId: { not: null } },
+      orderBy: { updatedAt: 'desc' },
+      select: { assignedStaffId: true },
+    });
+    return tracker?.assignedStaffId ?? null;
+  }
+
+  private registeredOrAssigned(people: string[], appAgents: Map<string, string>): Prisma.JobSeekerWhereInput {
+    return { OR: [{ registeredByStaffId: { in: people } }, { id: { in: [...appAgents.keys()] }, registeredByStaffId: null }] };
+  }
+
   async work(actor: Actor) {
     const team = await this.screens.members(actor);
     const ids = team.map((row) => row.id);
     const people = [...ids, actor.id];
     const now = this.clock.now();
     const dayStart = istStartOfDay(istDayKey(now));
+    const appAgents = await this.appSignupAgents(people);
     const [stuck, followUpsOverdue, interviewsToday, overdue, businesses] = await Promise.all([
       this.prisma.jobSeeker.findMany({
-        where: { registeredByStaffId: { in: people }, status: { in: Object.keys(STUCK_STATUSES) }, createdAt: { lte: new Date(now.getTime() - DAY_MS), gte: new Date(now.getTime() - 30 * DAY_MS) }, anonymisedAt: null },
+        where: { ...this.registeredOrAssigned(people, appAgents), status: { in: Object.keys(STUCK_STATUSES) }, createdAt: { lte: new Date(now.getTime() - DAY_MS), gte: new Date(now.getTime() - 30 * DAY_MS) }, anonymisedAt: null },
         select: { id: true, code: true, name: true, status: true, createdAt: true, registeredByStaffId: true },
         orderBy: { createdAt: 'asc' },
         take: 50,
@@ -89,7 +118,7 @@ export class TeamLeadChecksService {
       summary: { stuck: stuck.length, followUpsOverdue, interviewsToday: interviewsToday.length, resultsOverdue: overdue.length },
       stuck: stuck.map((row) => ({
         jobSeeker: { id: row.id, code: row.code, firstName: row.name.split(' ')[0] },
-        agent: nameOf(row.registeredByStaffId),
+        agent: nameOf(row.registeredByStaffId ?? appAgents.get(row.id)),
         where: STUCK_STATUSES[row.status] ?? row.status,
         hours: Math.floor((now.getTime() - row.createdAt.getTime()) / HOUR_MS),
       })),
@@ -170,8 +199,9 @@ export class TeamLeadChecksService {
     const people = [...team.map((row) => row.id), actor.id];
     const now = this.clock.now();
     const monthStart = istStartOfDay(`${istDayKey(now).slice(0, 8)}01`);
+    const appAgents = await this.appSignupAgents(people);
     const seekers = await this.prisma.jobSeeker.findMany({
-      where: { registeredByStaffId: { in: people }, createdAt: { gte: new Date(now.getTime() - 7 * DAY_MS) }, anonymisedAt: null, status: { notIn: ['lead'] } },
+      where: { ...this.registeredOrAssigned(people, appAgents), createdAt: { gte: new Date(now.getTime() - 7 * DAY_MS) }, anonymisedAt: null, status: { notIn: ['lead'] } },
       select: {
         id: true, code: true, name: true, whatsappPhone: true, dateOfBirth: true, photoStoragePath: true, registeredByStaffId: true, paymentReceivedAt: true, createdAt: true,
         trades: { select: { trade: true }, orderBy: { isPrimary: 'desc' }, take: 1 },
@@ -199,7 +229,7 @@ export class TeamLeadChecksService {
       rows.push({
         jobSeeker: { id: seeker.id, code: seeker.code, name: seeker.name },
         trade: seeker.trades[0]?.trade ?? null,
-        registeredBy: team.find((row) => row.id === seeker.registeredByStaffId) ?? null,
+        registeredBy: team.find((row) => row.id === (seeker.registeredByStaffId ?? appAgents.get(seeker.id))) ?? null,
         registeredAt: seeker.createdAt.toISOString(),
         paid: Boolean(seeker.paymentReceivedAt),
         hasSelfie: Boolean(seeker.photoStoragePath),
@@ -223,8 +253,9 @@ export class TeamLeadChecksService {
   /** The selfie of a registration from the team, through a short-lived private link. */
   async selfie(actor: Actor, jobSeekerId: string) {
     const team = await this.screens.members(actor);
-    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { code: true, photoStoragePath: true, registeredByStaffId: true } });
-    if (!seeker || (seeker.registeredByStaffId !== actor.id && !team.some((row) => row.id === seeker.registeredByStaffId))) {
+    const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true, code: true, photoStoragePath: true, registeredByStaffId: true } });
+    const owner = seeker ? await this.registrationOwner(seeker.id, seeker.registeredByStaffId) : null;
+    if (!seeker || !owner || (owner !== actor.id && !team.some((row) => row.id === owner))) {
       throw new NotFoundException('Not a registration from your team');
     }
     if (!seeker.photoStoragePath || !this.candidatePhotos) return { url: null, expiresInSeconds: 0 };
@@ -241,12 +272,13 @@ export class TeamLeadChecksService {
     if (verdict === 'fake' && !note) throw new BadRequestException('Say what looks fake');
     const team = await this.screens.members(actor);
     const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId }, select: { id: true, code: true, registeredByStaffId: true } });
-    if (!seeker || (seeker.registeredByStaffId !== actor.id && !team.some((row) => row.id === seeker.registeredByStaffId))) {
+    const owner = seeker ? await this.registrationOwner(seeker.id, seeker.registeredByStaffId) : null;
+    if (!seeker || !owner || (owner !== actor.id && !team.some((row) => row.id === owner))) {
       throw new NotFoundException('Not a registration from your team');
     }
     let flagId: string | null = null;
     if (verdict === 'fake') {
-      flagId = await this.raiseForManager(actor, 'registration_suspect', 'job_seeker', seeker.id, seeker.registeredByStaffId, { jobSeekerCode: seeker.code, note });
+      flagId = await this.raiseForManager(actor, 'registration_suspect', 'job_seeker', seeker.id, owner, { jobSeekerCode: seeker.code, note });
     }
     const check = await this.prisma.teamLeadCheck.create({
       data: { subjectType: 'job_seeker', subjectId: seeker.id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: this.clock.now() },

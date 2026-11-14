@@ -162,6 +162,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
 
   afterAll(async () => {
     if (!prisma) return;
+    await prisma.teamLeadCheck.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.callTask.deleteMany({ where: { OR: [{ signupTrackerId: { in: trackerIds } }, { staffId: { in: staffIds } }] } });
     await prisma.customerCallbackRequest.deleteMany({ where: { accountId: { in: accountIds } } });
     await prisma.customerProfile.deleteMany({ where: { accountId: { in: accountIds } } });
@@ -662,6 +663,20 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
         .set('Authorization', `Bearer ${token(lead1)}`)
         .expect(200);
       expect(Object.keys(res.body)).toEqual([mine.id]);
+    });
+
+    it('Team Lead checks: an app sign-up counts for the team of the agent it is assigned to', async () => {
+      const seeker = await makeSeeker('Verify Appsignup');
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { status: 'pending_activation' } });
+      const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id });
+      await prisma.signupTracker.update({ where: { id: t.id }, data: { assignedStaffId: kannadaAgent.id, assignedAt: WED_11 } });
+      const mine = await request(app.getHttpServer()).get('/team-lead/registrations').set('Authorization', `Bearer ${token(lead1)}`).expect(200);
+      const row = mine.body.rows.find((r: { jobSeeker: { id: string } }) => r.jobSeeker.id === seeker.id);
+      expect(row?.registeredBy?.id).toBe(kannadaAgent.id);
+      const other = await request(app.getHttpServer()).get('/team-lead/registrations').set('Authorization', `Bearer ${token(lead2)}`).expect(200);
+      expect(other.body.rows.some((r: { jobSeeker: { id: string } }) => r.jobSeeker.id === seeker.id)).toBe(false);
+      await request(app.getHttpServer()).post(`/team-lead/registrations/${seeker.id}/check`).set('Authorization', `Bearer ${token(lead2)}`).send({ verdict: 'ok' }).expect(404);
+      await request(app.getHttpServer()).post(`/team-lead/registrations/${seeker.id}/check`).set('Authorization', `Bearer ${token(lead1)}`).send({ verdict: 'ok' }).expect(200);
     });
   });
 });
