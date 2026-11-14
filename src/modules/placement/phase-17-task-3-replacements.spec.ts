@@ -20,9 +20,10 @@ type MockPrisma = {
     findMany: jest.Mock;
     create: jest.Mock;
     update: jest.Mock;
+    updateMany: jest.Mock;
     count: jest.Mock;
   };
-  replacementClaim: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock };
+  replacementClaim: { findFirst: jest.Mock; findMany: jest.Mock; update: jest.Mock; updateMany: jest.Mock; findUniqueOrThrow: jest.Mock };
   replacementCandidate: { findMany: jest.Mock; create: jest.Mock; updateMany: jest.Mock };
   payment: { findFirst: jest.Mock; create: jest.Mock };
   vacancy: { create: jest.Mock; findUniqueOrThrow: jest.Mock; update: jest.Mock };
@@ -119,11 +120,14 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
           ...rootPlacement,
           ...data,
         })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       replacementClaim: {
         findFirst: jest.fn().mockResolvedValue(null),
         findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({ id: 'claim-1', ...data })),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockResolvedValue({ id: 'claim-1', decision: 'accepted' }),
       },
       replacementCandidate: {
         findMany: jest.fn().mockResolvedValue([]),
@@ -373,6 +377,14 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
             status: 'guarantee_ended',
             guaranteeEndedReason: 'second_replacement_left',
           }),
+        }),
+      );
+
+      // The second replacement itself ends too, only while it is still active
+      expect(prisma.placement.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'pl-rep-2', status: 'active' },
+          data: expect.objectContaining({ status: 'guarantee_ended', guaranteeEndedReason: 'second_replacement_left' }),
         }),
       );
 

@@ -249,7 +249,7 @@ export class FinanceTaxService {
   async booksCsv(monthValue: unknown): Promise<{ filename: string; csv: string }> {
     const month = this.month(monthValue);
     const { from, to } = monthBounds(month);
-    const [received, bypass, out, expenses, salaries, returns, unmatched, matchedLater] = await Promise.all([
+    const [received, bypass, out, expenses, salaries, returns, unmatched, matchedLater, setAside] = await Promise.all([
       this.prisma.payment.findMany({
         where: { type: { in: ['activation', 'reactivation', 'placement_fee'] }, status: { in: RECEIVED_STATUSES }, OR: [{ confirmedAt: { gte: from, lte: to } }, { confirmedAt: null, paidAt: { gte: from, lte: to } }] },
         select: { code: true, type: true, amount: true, confirmedAt: true, paidAt: true, bankUtr: true, method: true, jobSeeker: { select: { code: true, name: true } }, placement: { select: { code: true, invoiceCode: true, placementFee: true, gstAmount: true, business: { select: { name: true } } } }, tdsReceivable: { select: { amountPaise: true } } },
@@ -268,6 +268,8 @@ export class FinanceTaxService {
         where: { status: 'matched', receivedAt: { gte: from, lte: to }, matchedPayment: { confirmedAt: { gt: to } } },
         select: { bankUtr: true, amountPaise: true, receivedAt: true, payerName: true, matchedPayment: { select: { code: true, confirmedAt: true } } },
       }),
+      // In the bank but not Laboura's money (set aside): a line of its own, never income.
+      this.prisma.bankCredit.findMany({ where: { status: 'ignored', receivedAt: { gte: from, lte: to } }, select: { bankUtr: true, amountPaise: true, receivedAt: true, payerName: true, ignoredReason: true } }),
     ]);
     type Row = { at: Date; cells: CsvValue[] };
     const lines: Row[] = [];
@@ -292,6 +294,9 @@ export class FinanceTaxService {
     for (const c of matchedLater) {
       const booked = monthLabel(istDay(c.matchedPayment!.confirmedAt!).slice(0, 7));
       lines.push({ at: c.receivedAt, cells: [istDay(c.receivedAt), 'In', `Matched later, booked in ${booked}`, c.payerName ?? '', c.matchedPayment?.code ?? '', rupees(c.amountPaise), '', '', c.bankUtr, 'UPI'] });
+    }
+    for (const c of setAside) {
+      lines.push({ at: c.receivedAt, cells: [istDay(c.receivedAt), 'In', "Held, not Laboura's (set aside)", [c.payerName, c.ignoredReason].filter(Boolean).join(' · '), `Credit ${c.bankUtr}`, rupees(c.amountPaise), '', '', c.bankUtr, 'UPI'] });
     }
     for (const u of unmatched) lines.push({ at: u.receivedAt, cells: [istDay(u.receivedAt), 'In', 'Not matched yet', u.payerName ?? '', '', rupees(u.amountPaise), '', '', u.bankUtr, 'UPI'] });
     lines.sort((a, b) => a.at.getTime() - b.at.getTime());

@@ -135,8 +135,20 @@ export class BusinessService {
     return best?.name ?? null;
   }
 
-  async create(dto: CreateBusinessDto, actorId: string) {
+  /**
+   * Registers a business (a lead until the verification visit). Staff pass their
+   * id. The customer app passes `options.selfRegisteredByAccountId` instead: the
+   * same validation, OTP, duplicate and document checks run, with no registering
+   * agent, no visit or selfie, no branches (each needs its own OTP) and lead
+   * channel "laboura_app" (customer app proposal 2.2, 5.3).
+   */
+  async create(dto: CreateBusinessDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
     assertNoRawAadhaar(dto);
+    const selfAccountId = options.selfRegisteredByAccountId;
+    if (selfAccountId && (dto.fieldVisitId || dto.visit || dto.selfieUrl || dto.selfieHash || dto.visitLatitude !== undefined
+      || dto.visitLongitude !== undefined || dto.businessLatitude !== undefined || (dto.branches?.length ?? 0) > 0)) {
+      throw new BadRequestException('A business registering itself in the app cannot send a visit, a selfie or branches');
+    }
 
     if (!dto.name || typeof dto.name !== 'string' || !dto.name.trim()) {
       throw new BadRequestException('Name is required');
@@ -181,14 +193,17 @@ export class BusinessService {
       });
     }
 
-    const staff = await this.prisma.staff.findUnique({
+    const staff = selfAccountId ? null : await this.prisma.staff.findUnique({
       where: { id: actorId },
     });
-    if (!staff) {
+    if (!staff && !selfAccountId) {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
+    // The staff member who registers it, or nobody (self-registered in the app).
+    const staffId = staff?.id ?? null;
+    const auditActorId = staff?.id ?? `customer:${selfAccountId}`;
     const fieldVisitId = dto.fieldVisitId?.trim() || null;
-    if (fieldVisitId) {
+    if (fieldVisitId && staff) {
       if (!this.fieldVisits) throw new BadRequestException('Shop visits are not available');
       await this.fieldVisits.assertCanRegisterFrom(staff.id, fieldVisitId);
     }
@@ -378,7 +393,7 @@ export class BusinessService {
       if (!locality) throw areaRequiredError(maxMeters);
     }
     const code = await this.idService.generateCode('business');
-    const city = dto.city?.trim() ?? staff.city ?? 'Bengaluru';
+    const city = dto.city?.trim() ?? staff?.city ?? 'Bengaluru';
 
     if (!(await this.otpService.consumeVerified(dto.otpRequestId, phone))) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
@@ -389,8 +404,8 @@ export class BusinessService {
       }
     }
 
-    const capturedChannel = staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
-    const accountAgent = staff.role === 'field_agent'
+    const capturedChannel = !staff ? 'laboura_app' : staff.role === 'field_agent' ? 'field_visit' : 'phone_call';
+    const accountAgent = staff?.role === 'field_agent'
       ? { accountAgentId: staff.id, accountAgentAssignedAt: this.clock.now() }
       : {};
     const created = await this.prisma.$transaction(async (tx) => {
@@ -437,7 +452,7 @@ export class BusinessService {
           heardFrom: dto.heardFrom?.trim() || null,
           documentsStatus,
           verificationStatus: 'lead',
-          leadCreatedByStaffId: staff.id,
+          leadCreatedByStaffId: staffId,
           leadChannel: capturedChannel,
           ...accountAgent,
           locality,
@@ -472,7 +487,7 @@ export class BusinessService {
         const branchLongitude = namedBranch?.longitude;
         const branchHasPin = typeof branchLatitude === 'number' && typeof branchLongitude === 'number';
         const vacancy = await tx.vacancy.create({ data: {
-          code: vacancyCode, city, businessId: savedBusiness.id, capturedByStaffId: staff.id,
+          code: vacancyCode, city, businessId: savedBusiness.id, capturedByStaffId: staffId,
           branchId,
           tradeSkill: row.trade.trim(), headcount: row.headcount, status: 'draft',
           salaryMinPaise: row.salaryMinPaise, salaryMaxPaise: row.salaryMaxPaise,
@@ -483,10 +498,10 @@ export class BusinessService {
           longitude: branchHasPin ? branchLongitude : longitude,
           capturedChannel,
         } });
-        await this.tradeService.recordSuggestion(tx, row.trade.trim(), staff.id, 'vacancy', vacancy.id);
+        await this.tradeService.recordSuggestion(tx, row.trade.trim(), staffId, 'vacancy', vacancy.id);
         draftVacancies.push({ code: vacancy.code, headcount: row.headcount });
       }
-      if (!fieldVisitId && ((visitLat !== undefined && visitLon !== undefined) || selfieUrl || selfieHash || dto.visit)) {
+      if (staff && !fieldVisitId && ((visitLat !== undefined && visitLon !== undefined) || selfieUrl || selfieHash || dto.visit)) {
         await tx.businessVisit.create({
           data: {
             businessId: savedBusiness.id,
@@ -507,7 +522,7 @@ export class BusinessService {
     const business = created.business;
     for (const branch of dto.branches ?? []) {
       await this.auditService.log({
-        actorId: staff.id, action: 'business.branch_created', entityType: 'business', entityCode: business.code,
+        actorId: auditActorId, action: 'business.branch_created', entityType: 'business', entityCode: business.code,
         after: { branchCount: dto.branches?.length ?? 0, role: branch.contactPersonRole },
         changedFields: ['branch.name', 'branch.locality', 'branch.contactPersonRole'],
         city: business.city,
@@ -515,14 +530,14 @@ export class BusinessService {
     }
     for (const vacancy of created.draftVacancies) {
       await this.auditService.log({
-        actorId: staff.id, action: 'business.staff_need_draft_created', entityType: 'vacancy', entityCode: vacancy.code,
+        actorId: auditActorId, action: 'business.staff_need_draft_created', entityType: 'vacancy', entityCode: vacancy.code,
         after: { businessCode: business.code, headcount: vacancy.headcount, status: 'draft' },
         changedFields: ['tradeSkill', 'headcount', 'salaryMinPaise', 'salaryMaxPaise', 'shift', 'startDate', 'status', 'latitude', 'longitude'],
         city,
       });
     }
 
-    if (fieldVisitId && this.fieldVisits) {
+    if (fieldVisitId && staff && this.fieldVisits) {
       await this.fieldVisits.linkRegisteredBusiness(staff.id, fieldVisitId, business.id);
     }
 
@@ -531,7 +546,7 @@ export class BusinessService {
         kind: 'gps_mismatch',
         subjectType: 'business',
         subjectId: business.id,
-        raisedForStaffId: staff.id,
+        raisedForStaffId: staffId,
         details: {
           businessCode: business.code,
           businessLat,
@@ -543,11 +558,11 @@ export class BusinessService {
     }
 
     for (const [matchedBusinessId, matchTypes] of duplicateMatches) {
-      await this.raiseDuplicateFlag(business.id, staff.id, matchedBusinessId, [...matchTypes]);
+      await this.raiseDuplicateFlag(business.id, staffId, auditActorId, matchedBusinessId, [...matchTypes]);
     }
 
     await this.auditService.log({
-      actorId: staff.id,
+      actorId: auditActorId,
       action: 'business.created',
       entityType: 'business',
       entityCode: business.code,
@@ -637,7 +652,7 @@ export class BusinessService {
       excludeBusinessId: business.id,
     });
     for (const [matchedBusinessId, matchTypes] of duplicates) {
-      await this.raiseDuplicateFlag(business.id, actor.id, matchedBusinessId, [...matchTypes]);
+      await this.raiseDuplicateFlag(business.id, actor.id, actor.id, matchedBusinessId, [...matchTypes]);
     }
 
     await this.auditService.log({
@@ -721,14 +736,14 @@ export class BusinessService {
     return matches;
   }
 
-  private async raiseDuplicateFlag(businessId: string, actorId: string, matchedBusinessId: string, matchTypes: string[]) {
+  private async raiseDuplicateFlag(businessId: string, raisedForStaffId: string | null, actorId: string, matchedBusinessId: string, matchTypes: string[]) {
     const matched = await this.prisma.business.findUnique({ where: { id: matchedBusinessId }, select: { code: true } });
     if (!matched) return;
     const flag = await this.reviewFlagService.raise({
       kind: 'duplicate_business',
       subjectType: 'business',
       subjectId: businessId,
-      raisedForStaffId: actorId,
+      raisedForStaffId,
       details: { matchedBusinessCode: matched.code, matchTypes },
     });
     await this.auditService.log({

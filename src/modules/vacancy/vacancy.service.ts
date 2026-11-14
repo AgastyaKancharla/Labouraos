@@ -97,7 +97,17 @@ export class VacancyService {
     return updated;
   }
 
-  async create(businessId: string, dto: CreateVacancyDto, actorId: string) {
+  /**
+   * Staff pass their id. The customer app passes `options.selfRegisteredByAccountId`
+   * (a business user confirming their own vacancy by a fresh OTP): the same checks
+   * and minimum-wage rule, no capturing agent, channel "laboura_app" (proposal C8).
+   */
+  /**
+   * The vacancy form's checks, with no database work: create() runs them first,
+   * and the customer app runs them before it uses up a fresh OTP.
+   * Returns the headcount.
+   */
+  validateCreateInput(dto: CreateVacancyDto): number {
     if (!dto.tradeSkill || typeof dto.tradeSkill !== 'string' || !dto.tradeSkill.trim()) {
       throw new BadRequestException('tradeSkill is required');
     }
@@ -151,6 +161,11 @@ export class VacancyService {
     if (typeof headcount !== 'number' || !Number.isInteger(headcount) || headcount < 1) {
       throw new BadRequestException('headcount must be a positive integer');
     }
+    return headcount;
+  }
+
+  async create(businessId: string, dto: CreateVacancyDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
+    const headcount = this.validateCreateInput(dto);
 
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },
@@ -159,14 +174,17 @@ export class VacancyService {
       throw new NotFoundException(`Business '${businessId}' not found`);
     }
 
-    const staff = await this.prisma.staff.findUnique({
+    const selfAccountId = options.selfRegisteredByAccountId;
+    const staff = selfAccountId ? null : await this.prisma.staff.findUnique({
       where: { id: actorId },
     });
-    if (!staff) {
+    if (!staff && !selfAccountId) {
       throw new NotFoundException(`Staff '${actorId}' not found`);
     }
+    const staffId = staff?.id ?? null;
+    const auditActorId = staff?.id ?? `customer:${selfAccountId}`;
 
-    if (staff.role === 'field_agent' && business.accountAgentId !== staff.id) {
+    if (staff?.role === 'field_agent' && business.accountAgentId !== staff.id) {
       throw new ForbiddenException('Field agents may only add vacancies to their account businesses');
     }
 
@@ -197,7 +215,7 @@ export class VacancyService {
           code,
           city: business.city,
           businessId: business.id,
-          capturedByStaffId: staff.id,
+          capturedByStaffId: staffId,
           tradeSkill: normalizeTradeName(dto.tradeSkill),
           salaryMinPaise: dto.salaryMinPaise,
           salaryMaxPaise: dto.salaryMaxPaise ?? null,
@@ -226,10 +244,11 @@ export class VacancyService {
           interviewType,
           interviewContactName: dto.interviewContactName?.trim() ?? null,
           capturedChannel:
+            (!staff ? 'laboura_app' : null) ??
             dto.capturedChannel ??
-            (staff.role === 'call_agent'
+            (staff?.role === 'call_agent'
               ? 'phone_call'
-              : staff.role === 'field_agent'
+              : staff?.role === 'field_agent'
                 ? 'field_visit'
                 : null),
           interviewSlots: { create: slots },
@@ -249,15 +268,15 @@ export class VacancyService {
         subjectId: v.id,
         fromStatus: null,
         toStatus: 'awaiting_confirmation',
-        changedByStaffId: staff.id,
+        changedByStaffId: staffId,
       });
-      await this.tradeService.recordSuggestion(tx, v.tradeSkill, staff.id, 'vacancy', v.id);
+      await this.tradeService.recordSuggestion(tx, v.tradeSkill, staffId, 'vacancy', v.id);
 
       return v;
     });
 
     await this.auditService.log({
-      actorId: staff.id,
+      actorId: auditActorId,
       action: 'vacancy.created',
       entityType: 'vacancy',
       entityCode: vacancy.code,
@@ -265,7 +284,7 @@ export class VacancyService {
       city: vacancy.city,
     });
 
-    if (staff.role === 'call_agent' && business.accountAgentId && business.accountAgentId !== staff.id) {
+    if (staff?.role === 'call_agent' && business.accountAgentId && business.accountAgentId !== staff.id) {
       await this.reviewFlagService.raise({
         kind: 'vacancy_captured_for_account_business',
         subjectType: 'vacancy',
@@ -275,7 +294,8 @@ export class VacancyService {
       });
     }
 
-    const confirmation = await this.trySendConfirmationCode(vacancy.id, staff);
+    // In the app the contact person confirms on the spot (VacancyConfirmationService.confirmInApp): no code is sent.
+    const confirmation = staff ? await this.trySendConfirmationCode(vacancy.id, staff) : null;
     return { ...vacancy, confirmation };
   }
 

@@ -301,4 +301,34 @@ describe('Service-scoped routes refuse other teams', () => {
     expect(sessions.status).toBe(200);
     expect(JSON.stringify(sessions.body)).not.toContain(ids.CAB);
   });
+
+  it('a business whose account moved to team B belongs to team B only (Master Guide rev 170)', async () => {
+    // Agent A brought the business in as a lead; the account is now agent B's.
+    const business = await businessFor(ids.FAB);
+    await prisma.business.update({ where: { id: business.id }, data: { leadCreatedByStaffId: ids.CAA } });
+    const vacancy = await prisma.vacancy.create({ data: { code: `VC-SSRM-${unique()}`, businessId: business.id, tradeSkill: 'Electrician', status: 'open' } });
+    cleanup.push(() => prisma.vacancy.delete({ where: { id: vacancy.id } }));
+    const seeker = await seekerFor(ids.CAB);
+    const placement = await prisma.placement.create({
+      data: { code: `PL-SSRM-${unique()}`, vacancyId: vacancy.id, jobSeekerId: seeker.id, businessId: business.id, placementFee: 750000, gstAmount: 135000 },
+    });
+    cleanup.push(() => prisma.placement.delete({ where: { id: placement.id } }));
+    // GET /placements/:id/claims and /placements/:id/worker-left: Team Lead A (lead creator's team) is refused
+    expect([403, 404]).toContain((await get('TLA', `/placements/${placement.id}/claims`)).status);
+    expect([403, 404]).toContain((await get('TLA', `/placements/${placement.id}/worker-left`)).status);
+    expect([403, 404]).toContain((await get('TLA', `/businesses/${business.id}`)).status);
+    // Team Lead B (account agent's team) is in charge.
+    expect((await get('TLB', `/placements/${placement.id}/claims`)).status).toBe(200);
+    expect((await get('TLB', `/businesses/${business.id}`)).status).toBe(200);
+  });
+
+  it('a lead with no account agent belongs to the lead creator\'s team (Master Guide rev 170)', async () => {
+    const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+    const lead = await prisma.business.create({
+      data: { code: `BZ-SSRL-${unique()}`, name: 'SSR Lead', phone: `+9197${digits}`, city: 'Bengaluru', verificationStatus: 'lead', leadCreatedByStaffId: ids.CAA },
+    });
+    cleanup.push(() => prisma.business.delete({ where: { id: lead.id } }));
+    expect((await get('TLA', `/businesses/${lead.id}`)).status).toBe(200);
+    expect([403, 404]).toContain((await get('TLB', `/businesses/${lead.id}`)).status);
+  });
 });

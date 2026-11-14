@@ -48,8 +48,12 @@ type MockTxCallback<T> = (tx: unknown) => Promise<T>;
 
 interface MockPrismaForPlacement {
   $transaction?: <T>(fn: MockTxCallback<T> | Promise<T>[]) => Promise<T>;
+  // reportClaim locks the placement row, checks the person's scope and call evidence
+  $queryRaw: jest.Mock;
+  candidateIntroduction: { findMany: jest.Mock };
   staff: {
     findUnique: jest.Mock<Promise<typeof staffActor | typeof ceoActor | null>, [{ where: { id: string } }]>;
+    findMany?: jest.Mock;
   };
   placement: {
     findFirst: jest.Mock<Promise<MockPlacementRecord | null>, []>;
@@ -62,6 +66,7 @@ interface MockPrismaForPlacement {
   replacementClaim: {
     create: jest.Mock;
     findMany: jest.Mock;
+    findFirst: jest.Mock;
   };
   payment: {
     findFirst: jest.Mock<Promise<unknown | null>, []>;
@@ -85,6 +90,9 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
     answered: true,
     subjectType: 'business',
     subjectId: 'biz-1',
+    // made by the reporting agent after the worker left
+    staffId: 'staff-1',
+    createdAt: serverNow,
   };
 
   beforeEach(() => {
@@ -138,7 +146,10 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
           }),
         ),
         findMany: jest.fn().mockResolvedValue([]),
+        findFirst: jest.fn().mockResolvedValue(null),
       },
+      $queryRaw: jest.fn().mockResolvedValue([]),
+      candidateIntroduction: { findMany: jest.fn().mockResolvedValue([]) },
       payment: {
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'pay-1', ...data })),
@@ -186,9 +197,11 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
       ).rejects.toThrow(/cannot be in the future/);
     });
 
-    it('enforces strict zero-tolerance with NO grace period for clock skew (even 1ms into the future)', async () => {
-      // Exactly 1 millisecond into the future
-      const futureBy1ms = new Date(serverNow.getTime() + 1);
+    // PR #137 review: dates are Indian calendar days, so "the future" is any
+    // day after today in IST (a later time today is still today).
+    it('refuses the next Indian day, even one minute after midnight IST', async () => {
+      // serverNow is 20 Jun 15:30 IST; 21 Jun 00:01 IST is tomorrow
+      const futureBy1ms = new Date('2026-06-20T18:31:00.000Z');
 
       const dto: ReportClaimDto = {
         workerLeftOn: futureBy1ms.toISOString(),
@@ -202,7 +215,7 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
     });
 
     it('refuses future date for reject-list reasons as well (real-world event cannot occur in the future)', async () => {
-      const futureDate = new Date(serverNow.getTime() + 3600 * 1000);
+      const futureDate = new Date(serverNow.getTime() + 24 * 3600 * 1000);
 
       const dto: ReportClaimDto = {
         workerLeftOn: futureDate.toISOString(),
@@ -233,11 +246,12 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
 
       await expect(
         placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
-      ).rejects.toThrow(/cannot be earlier than joinedDate.*employee cannot leave before they started/);
+      ).rejects.toThrow(/cannot be earlier than the joining day.*employee cannot leave before they started/);
     });
 
-    it('refuses even 1 millisecond earlier than joinedDate', async () => {
-      const beforeBy1ms = new Date(joinedDate.getTime() - 1);
+    it('refuses the Indian day before joining, even one minute before midnight IST', async () => {
+      // joined 1 Jun 15:30 IST; 31 May 23:59 IST is the day before
+      const beforeBy1ms = new Date('2026-05-31T18:29:00.000Z');
 
       const dto: ReportClaimDto = {
         workerLeftOn: beforeBy1ms.toISOString(),
@@ -247,7 +261,13 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
 
       await expect(
         placementService.reportClaim('pl-1', dto, 'staff-1', serverNow),
-      ).rejects.toThrow(/cannot be earlier than joinedDate/);
+      ).rejects.toThrow(/cannot be earlier than the joining day/);
+    });
+
+    it('accepts a worker who left on his joining day, earlier in the day than he joined', async () => {
+      const sameDayMorning = new Date('2026-06-01T03:00:00.000Z'); // 1 Jun 08:30 IST, joined 15:30 IST
+      const result = await placementService.reportClaim('pl-1', { workerLeftOn: sameDayMorning.toISOString(), reason: 'resigned', callRecordId: 'call-owner-1' }, 'staff-1', serverNow);
+      expect(result.workerLeftOn).toEqual(sameDayMorning);
     });
   });
 
@@ -301,7 +321,7 @@ describe('Phase 6.5 Task 8 (Updated for Phase 17 Task 2): Validate Worker Left D
         const error = err as BadRequestException;
         expect(error.message).toContain('has no recorded joinedDate');
         expect(error.message).not.toContain('cannot be in the future');
-        expect(error.message).not.toContain('cannot be earlier than joinedDate');
+        expect(error.message).not.toContain('cannot be earlier than the joining day');
       }
     });
   });

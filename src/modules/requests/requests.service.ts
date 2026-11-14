@@ -1,4 +1,6 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { istDayOf } from '../placement/claim-dates';
+import { rejectionCodeOf } from '../placement/claim-refile';
 import { daysLabel } from '../attendance/leave-units';
 import {
   BadRequestException,
@@ -276,7 +278,7 @@ export class RequestsService {
    * approve only part of it; the rest is rejected with the reason, which is
    * then required (MG-Req-Vikram: "approve 3 of 5 days").
    */
-  async decide(actor: Actor, ref: string, body: { decision?: string; reason?: string; fromDate?: string; toDate?: string; followUps?: HandoverChoice }) {
+  async decide(actor: Actor, ref: string, body: { decision?: string; reason?: string; fromDate?: string; toDate?: string; followUps?: HandoverChoice; rejectionCode?: string }) {
     this.assertDecider(actor);
     const [kind, id] = parseRef(ref);
     const decision = body?.decision === 'approved' || body?.decision === 'approve' ? 'approved' : body?.decision === 'rejected' || body?.decision === 'reject' ? 'rejected' : null;
@@ -342,7 +344,7 @@ export class RequestsService {
       await this.placements.decideClaim(
         claim.placementId,
         id,
-        { decision: decision === 'approved' ? 'accepted' : 'rejected', decisionReason: reason },
+        { decision: decision === 'approved' ? 'accepted' : 'rejected', decisionReason: reason, rejectionCode: body?.rejectionCode },
         actor.id,
         this.clock.now(),
       );
@@ -1206,6 +1208,15 @@ export class RequestsService {
       orderBy: { reportedAt: 'asc' },
       take: 300,
     });
+    // Earlier claims on the same placements, with why each was decided, for the decider.
+    const placementIds = [...new Set(rows.map((r) => r.placementId))];
+    const earlier = placementIds.length
+      ? await this.prisma.replacementClaim.findMany({
+          where: { placementId: { in: placementIds }, decision: { not: null } },
+          select: { id: true, placementId: true, code: true, reportedAt: true, workerLeftOn: true, decision: true, decisionReason: true, rejectionCode: true, decidedByStaffId: true, overruledByStaffId: true },
+          orderBy: { reportedAt: 'desc' },
+        })
+      : [];
     const out: RequestView[] = [];
     for (const claim of rows) {
       const agentId = claim.placement.business.accountAgentId;
@@ -1272,6 +1283,16 @@ export class RequestsService {
           feePaidInFull: claim.feePaidInFull,
           exitCallRecorded: Boolean(claim.exitCallRecordId),
           hoursLeft,
+          previousClaims: earlier
+            .filter((e) => e.placementId === claim.placementId && e.id !== claim.id && e.reportedAt < claim.reportedAt)
+            .map((e) => ({
+              code: e.code,
+              reportedAt: e.reportedAt.toISOString(),
+              workerLeftOn: istDayOf(e.workerLeftOn),
+              decision: e.decision,
+              decisionReason: e.decisionReason,
+              rejectionCode: rejectionCodeOf(e),
+            })),
         },
       });
       view.deciderStaff = view.decider === 'team_lead' ? await this.brief(ctx, leadId) : view.decider === 'manager' ? chain.manager : view.decider === 'ceo' ? chain.ceo : null;

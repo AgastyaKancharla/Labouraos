@@ -70,6 +70,15 @@ export function utrUsed(utr: string, where?: string): ConflictException {
   });
 }
 
+/**
+ * One spelling for a bank UTR / reference: no spaces anywhere, upper case.
+ * "4312 1200 8877" typed from a statement and "431212008877" from the bank's
+ * feed are the same credit.
+ */
+export function normaliseUtr(value: string | null | undefined): string {
+  return (value ?? '').replace(/\s+/g, '').toUpperCase();
+}
+
 /** A unique-index clash on a UTR column (two saves racing) becomes the same 409. */
 export function isUniqueViolation(error: unknown): boolean {
   return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';

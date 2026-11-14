@@ -127,13 +127,13 @@ export class OtpService {
     return verified;
   }
 
-  async isVerified(requestId: string, phone?: string): Promise<boolean> {
-    return this.provider.isVerified ? this.provider.isVerified(requestId, phone) : false;
+  async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {
+    return this.provider.isVerified ? this.provider.isVerified(requestId, phone, purpose) : false;
   }
 
-  async consumeVerified(requestId: string, phone: string): Promise<boolean> {
+  async consumeVerified(requestId: string, phone: string, purpose?: string): Promise<boolean> {
     return this.provider.consumeVerified
-      ? this.provider.consumeVerified(requestId, phone)
+      ? this.provider.consumeVerified(requestId, phone, purpose)
       : false;
   }
 
