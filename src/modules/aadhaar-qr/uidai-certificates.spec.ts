@@ -1,7 +1,7 @@
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { assertUidaiCertificatesPinned, loadUidaiCertificates, UIDAI_CERT_FINGERPRINTS_TEST_SETUP } from './uidai-certificates';
+import { assertUidaiCertificatesPinned, loadUidaiCertificates } from './uidai-certificates';
 
 /** L1: a production process can't start without UIDAI certificates, nor with certificates nobody confirmed. */
 describe('UIDAI certificate boot check (production)', () => {
@@ -39,7 +39,14 @@ describe('UIDAI certificate boot check (production)', () => {
     expect(() => assertUidaiCertificatesPinned(prod({ UIDAI_CERT_FINGERPRINTS: pinned.map((f) => f.replace(/:/g, '').toLowerCase()).join(',') }))).not.toThrow();
   });
 
-  it('the free test setup (made-up data only) is not pinned', () => {
-    expect(() => assertUidaiCertificatesPinned(prod({ UIDAI_CERT_FINGERPRINTS: UIDAI_CERT_FINGERPRINTS_TEST_SETUP }))).not.toThrow();
+  it('the test setup (LABOURA_SETUP=test, made-up data only) is not pinned, but still needs a certificate', () => {
+    expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'test' }))).not.toThrow();
+    expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'live' }))).toThrow(/not set/);
+    const empty = mkdtempSync(join(tmpdir(), 'uidai-empty-'));
+    try {
+      expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'test' }), empty)).toThrow(/no UIDAI certificate loaded/);
+    } finally {
+      rmSync(empty, { recursive: true, force: true });
+    }
   });
 });

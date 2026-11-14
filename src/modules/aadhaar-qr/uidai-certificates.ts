@@ -1,6 +1,7 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TrustedKey, trustedKeyFromPem } from './secure-qr.parser';
+import { isTestSetup } from '../../common/customer-auth/customer-otp-test-mode';
 
 /**
  * UIDAI's public certificates for the Aadhaar Secure QR check, committed in
@@ -51,8 +52,6 @@ export function loadUidaiCertificates(dir: string = UIDAI_CERTIFICATE_DIR): Trus
 /** The production setting with the confirmed certificate fingerprints (render.yaml, DEPLOY.md). */
 export const UIDAI_CERT_FINGERPRINTS_SETTING = 'UIDAI_CERT_FINGERPRINTS';
 
-/** render.free.yaml's value: the free test setup (made-up data only) doesn't pin the certificates. */
-export const UIDAI_CERT_FINGERPRINTS_TEST_SETUP = 'not-pinned-free-test-setup';
 
 function normaliseFingerprint(value: string): string {
   return value.replace(/[^0-9a-f]/gi, '').toUpperCase();
@@ -64,16 +63,16 @@ function normaliseFingerprint(value: string): string {
  * fingerprints the owner confirmed against UIDAI's own page, comma-separated —
  * must list exactly the certificates in ./certs. So a certificate can't be
  * added, swapped or left unconfirmed without someone writing its fingerprint
- * into the live settings. The free test setup sets the value
- * UIDAI_CERT_FINGERPRINTS_TEST_SETUP instead (made-up data only). Does nothing
- * outside production.
+ * into the live settings. The test setup (LABOURA_SETUP=test, made-up data
+ * only — render.free.yaml) doesn't need the setting. Does nothing outside
+ * production.
  */
 export function assertUidaiCertificatesPinned(env: NodeJS.ProcessEnv = process.env, dir: string = UIDAI_CERTIFICATE_DIR): void {
   if (env.NODE_ENV !== 'production') return;
   const keys = loadUidaiCertificates(dir);
   if (!keys.length) throw new Error(`Refusing to start in production: no UIDAI certificate loaded from ${dir} (the Aadhaar QR check would call every card tampered)`);
+  if (isTestSetup(env)) return;
   const setting = (env[UIDAI_CERT_FINGERPRINTS_SETTING] ?? '').trim();
-  if (setting === UIDAI_CERT_FINGERPRINTS_TEST_SETUP) return;
   const loaded = keys.map((k) => k.fingerprint256).filter((f): f is string => Boolean(f)).map(normaliseFingerprint).sort();
   const pinned = [...new Set(setting.split(',').map((f) => normaliseFingerprint(f)).filter(Boolean))].sort();
   if (!pinned.length) {

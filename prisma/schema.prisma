@@ -1476,6 +1476,16 @@ model PricingPolicy {
   registrationLinkValidHours   Int       @default(48)
   /// C-Pricing: the payment-only link (someone else pays the ₹499) works this many minutes (guide: 15).
   paymentOnlyLinkMinutes       Int       @default(15)
+  /// Customer app sign-up tracker timing (proposal 4.2; CEO-editable). Null means the default.
+  signupFirstReminderMinutes       Int?      @default(30) // first push reminder after a sign-up stops (minutes)
+  signupSecondReminderMinutes      Int?      @default(240) // second reminder (minutes)
+  signupBusinessCallMinutes        Int?      @default(240) // a business sign-up gets a call task after (minutes)
+  signupPaymentStopWorkingMinutes  Int?      @default(120) // stopped at payment: call task after (working minutes)
+  signupMaxCallTries               Int?      @default(3) // call tries before closing as no response
+  signupCallTryDays                Int?      @default(3) // days the call tries are spread over
+  signupReengageDays               Int?      @default(30) // re-engagement list after (days)
+  signupAreaClusterMin             Int?      @default(3) // stuck sign-ups in one area that make an area task
+  signupStuckHours                 Int?      @default(24) // a sign-up counts as stuck after (hours)
   /// C-Pricing: a new business's area is filled in from its GPS pin when an area's centre is within this many metres (decided 14 Nov: 1 km); otherwise the agent must pick it.
   areaAutoFillMaxMeters        Int       @default(1000)
   shiftStart                   String    @default("09:30")
@@ -2839,6 +2849,9 @@ model CustomerSession {
   deviceId          String?
   device            CustomerDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   refreshTokenHash  String          @unique
+  /// The refresh token before the last renewal. Seeing it again means it was
+  /// copied: the session is ended.
+  previousRefreshTokenHash String?  @unique
   /// phone, google
   signedInWith      String
   expiresAt         DateTime
@@ -2894,8 +2907,15 @@ model CustomerOtpAttempt {
   phoneHash   String?
   ipHash      String?
   deviceHash  String?
+  /// send rows: the OTP request, what it was sent for (customer_sign_in,
+  /// customer_step_up:<action>) and the account that asked (step-ups). A code is
+  /// accepted only by the same flow, installation and account.
+  requestId   String?
+  purpose     String?
+  accountId   String?
   createdAt   DateTime @default(now())
 
+  @@index([requestId])
   @@index([phoneHash, createdAt])
   @@index([ipHash, createdAt])
   @@index([deviceHash, createdAt])
@@ -3032,6 +3052,11 @@ model CustomerDeletionRequest {
   /// They saw the warning and confirmed it (required when guaranteeRunning).
   refundLossAcknowledged     Boolean         @default(false)
   otpVerifiedAt              DateTime
+  /// How they proved it was them: otp (fresh code to the verified mobile) or google (fresh Google sign-in, Google-only accounts).
+  proof                      String          @default("otp")
+  /// A refund was owed and not yet paid when they asked: it is still paid, and the deletion completes only after it is paid.
+  refundOwedAtRequest        Boolean         @default(false)
+  cancelledAt                DateTime?
   /// The DataRequest (DR-) the back office opened for it, if any.
   dataRequestId              String?
   handledByStaffId           String?

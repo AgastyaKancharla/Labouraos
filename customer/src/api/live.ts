@@ -157,7 +157,7 @@ export function toJobSeekerHome(w: any): JobSeekerHome {
       profile: st(steps.profile, 'profile'),
       consent: st(steps.consent, 'consent'),
       selfie: st(steps.selfie, 'selfie'),
-      idCheck: steps.idCheck ? 'done' : current === 'id_check' || current === 'idCheck' || w.idCheck?.waitingForService ? 'in_progress' : 'not_started',
+      idCheck: steps.idCheck ? 'done' : current === 'id_check' || current === 'idCheck' || w.idCheck?.waitingForTeamLead ? 'in_progress' : 'not_started',
       payment: paymentStep,
     },
     stuckReason: typeof stopped === 'string' ? stopped : typeof stopped?.reason === 'string' ? stopped.reason : null,

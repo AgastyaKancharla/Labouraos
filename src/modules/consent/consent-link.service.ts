@@ -39,6 +39,13 @@ interface ConsentLinkTokenBase {
   expiresAt: Date;
   usedAt?: Date | null;
   createdAt: Date;
+  /** "customer:<accountId>" when the link was issued to the signed-in person in the Laboura app. */
+  issuedTo?: string | null;
+}
+
+/** Consent given on a link opened inside the Laboura app is recorded as in_app, not sms_link. */
+export function consentMethodFor(record: { issuedTo?: string | null }): 'in_app' | 'sms_link' {
+  return typeof record.issuedTo === 'string' && record.issuedTo.startsWith('customer:') ? 'in_app' : 'sms_link';
 }
 
 export type InterviewLinkPurpose = 'candidate_reply' | 'candidate_check' | 'owner_result';
@@ -216,7 +223,11 @@ export class ConsentLinkService {
     return record;
   }
 
-  async createLink(jobSeekerId: string) {
+  /**
+   * `options.sms: false` (customer app): the link is opened by the signed-in
+   * person inside the app, so no SMS is sent; everything else is the same.
+   */
+  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
@@ -226,14 +237,15 @@ export class ConsentLinkService {
 
     const now = this.clock.now();
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl()));
-    await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
+    // A link opened inside the app (revokeOthers: false) leaves the agent's SMS link working.
+    if (options.revokeOthers !== false) await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
     const { token, id } = await this.publicLinks.create({
       purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
-      phone: seeker.phone, expiresAt, metadata: { resumable: true },
+      phone: seeker.phone, expiresAt, metadata: { resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}) },
     });
 
     // Send single-use link via SMS
-    await this.messagingService.send({
+    if (options.sms !== false) await this.messagingService.send({
       channel: 'sms',
       template: 'consent_link',
       subjectType: 'job_seeker',
@@ -253,7 +265,7 @@ export class ConsentLinkService {
     };
   }
 
-  async createAgreementLink(businessId: string, staffId: string, language: string = 'en') {
+  async createAgreementLink(businessId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string } = {}) {
     if (!['kn', 'hi', 'en'].includes(language)) {
       throw new BadRequestException('language must be kn, hi, or en');
     }
@@ -274,8 +286,8 @@ export class ConsentLinkService {
     const expiresAt = new Date(now.getTime() + this.ttlMs);
     const { token } = await this.publicLinks.create({
       purpose: 'business_agreement', subjectType: 'business', subjectId: business.id,
-      phone: business.phone, language, createdByStaffId: staffId, expiresAt,
-      metadata: { agreement: {
+      phone: business.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
+      metadata: { ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), agreement: {
         ...numbers,
         version: BUSINESS_AGREEMENT_VERSION,
         language: agreementLanguage,
@@ -284,7 +296,7 @@ export class ConsentLinkService {
       } },
     });
 
-    await this.messagingService.send({
+    if (options.sms !== false) await this.messagingService.send({
       channel: 'sms',
       template: 'agreement_link',
       subjectType: 'business',
@@ -294,7 +306,7 @@ export class ConsentLinkService {
     return { success: true, token, expiresAt };
   }
 
-  async createReferralTermsLink(referralId: string, staffId: string, language: string = 'en') {
+  async createReferralTermsLink(referralId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string; revokeOthers?: boolean } = {}) {
     if (!['kn', 'hi', 'en'].includes(language)) {
       throw new BadRequestException('language must be kn, hi, or en');
     }
@@ -307,12 +319,12 @@ export class ConsentLinkService {
     const termsHtml = renderReferralTerms(referralPayoutPaise, agreementLanguage);
     const termsHash = createHash('sha256').update(termsHtml, 'utf8').digest('hex');
     const now = this.clock.now();
-    await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
+    if (options.revokeOthers !== false) await this.publicLinks.revokeActive('referral_registration', 'referral', referral.id, now);
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl(false)));
     const { token } = await this.publicLinks.create({
       purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
-      phone: referral.phone, language, createdByStaffId: staffId, expiresAt,
-      metadata: { partnerName: referral.name, ownerName: referral.name, resumable: true, terms: {
+      phone: referral.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
+      metadata: { partnerName: referral.name, ownerName: referral.name, resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), terms: {
         referralPayoutPaise,
         version: REFERRAL_TERMS_VERSION,
         language: agreementLanguage,
@@ -321,7 +333,7 @@ export class ConsentLinkService {
       } },
     });
 
-    await this.messagingService.send({
+    if (options.sms !== false) await this.messagingService.send({
       channel: 'sms',
       template: 'referral_terms_link',
       subjectType: 'referral',
@@ -416,8 +428,11 @@ export class ConsentLinkService {
       }
       throw error;
     }
-    const base = { token, expiresAt: row.expiresAt, usedAt: row.usedAt, createdAt: row.createdAt };
     const metadata = (row.metadata ?? {}) as unknown as Record<string, unknown>;
+    const base = {
+      token, expiresAt: row.expiresAt, usedAt: row.usedAt, createdAt: row.createdAt,
+      issuedTo: typeof metadata.issuedTo === 'string' ? metadata.issuedTo : null,
+    };
     if (row.subjectType === 'interview') {
       const purposeByLink: Record<string, InterviewLinkPurpose> = {
         offer_reply: 'candidate_reply',
@@ -668,7 +683,7 @@ export class ConsentLinkService {
         purpose,
         noticeVersion: DEFAULT_NOTICE_VERSION,
         language,
-        method: 'sms_link',
+        method: consentMethodFor(record),
         otpRequestId: dto.otpRequestId,
       });
     }
@@ -770,7 +785,7 @@ export class ConsentLinkService {
             purpose,
             noticeVersion: record.agreement.version,
             language: record.agreement.language,
-            method: 'sms_link',
+            method: consentMethodFor(record),
             otpRequestId: dto.otpRequestId,
           },
           tx,
@@ -843,7 +858,7 @@ export class ConsentLinkService {
             purpose,
             noticeVersion: record.terms.version,
             language: record.terms.language,
-            method: 'sms_link',
+            method: consentMethodFor(record),
             otpRequestId: dto.otpRequestId,
           },
           tx,

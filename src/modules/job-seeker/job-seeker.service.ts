@@ -203,8 +203,11 @@ export class JobSeekerService {
    * which is the control that makes field-agent candidate capture safe.
    * Do not remove or weaken it, and do not add a bypass for field agents.
    */
-  async create(dto: CreateJobSeekerDto, actorId: string) {
+  async create(dto: CreateJobSeekerDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
     assertNoRawAadhaar(dto);
+    // Customer app self-registration: same checks and OTP, no registering agent.
+    const staffActorId = options.selfRegisteredByAccountId ? null : actorId;
+    const auditActorId = options.selfRegisteredByAccountId ? `customer:${options.selfRegisteredByAccountId}` : actorId;
     const policy = await this.getPolicy();
     const now = this.consentClock?.now();
     if (!now) throw new Error('ConsentClock is not configured');
@@ -323,7 +326,7 @@ export class JobSeekerService {
           jobType: dto.jobType,
           guaranteeFloorPaise,
           referredById: dto.referredById ?? null,
-          registeredByStaffId: actorId ?? null,
+          registeredByStaffId: staffActorId ?? null,
         },
       });
 
@@ -336,7 +339,7 @@ export class JobSeekerService {
             isPrimary: index === 0,
           },
         });
-        await this.tradeService.recordSuggestion(tx, trade.trade, actorId ?? null, 'job_seeker', created.id);
+        await this.tradeService.recordSuggestion(tx, trade.trade, staffActorId ?? null, 'job_seeker', created.id);
       }
       await tx.jobSeekerLanguage.createMany({
         data: form.spokenLanguages.map((language) => ({
@@ -353,7 +356,7 @@ export class JobSeekerService {
         subjectId: created.id,
         fromStatus: null,
         toStatus: status,
-        changedByStaffId: actorId,
+        changedByStaffId: staffActorId,
       });
 
       const createdWithRelations = await tx.jobSeeker.findUniqueOrThrow({
@@ -364,7 +367,7 @@ export class JobSeekerService {
     });
 
     await this.auditService.log({
-      actorId,
+      actorId: auditActorId,
       action: 'job_seeker.create',
       entityType: 'job_seeker',
       entityCode: code,
