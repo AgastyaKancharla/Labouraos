@@ -73,6 +73,17 @@ const PAYMENT_FLAG_KINDS = ['payment_mismatch', ...PAYOUT_FLAG_KINDS];
 const MAX_MANUAL_CREDIT_PAISE = 1_00_00_000_00;
 const MANUAL_CREDIT_EARLIEST = new Date('2000-01-01T00:00:00+05:30');
 
+/**
+ * A payout flag closed as fraud: outcome 'fraud' recorded on it, or (closed
+ * before outcomes existed, or by the CEO from Flags as "Real problem — dealt
+ * with") status 'resolved' without an outcome. Treated as fraud to be safe.
+ */
+function isFraudFinding(flag: { status: string; details: unknown }): boolean {
+  const outcome = flag.details && typeof flag.details === 'object' ? (flag.details as Record<string, unknown>).outcome : undefined;
+  if (outcome === 'fraud') return true;
+  return flag.status === 'resolved' && outcome !== 'genuine';
+}
+
 @Injectable()
 export class PaymentService {
   private readonly logger = new Logger(PaymentService.name);
@@ -473,6 +484,8 @@ export class PaymentService {
     event: { bankUtr: string; amountPaise: number; receivedAt: Date; remark: string | null },
     booking: { at: Date; note: string | null },
     confirmedBy: 'bank_feed' | 'finance_manual',
+    /** Who typed the credit in from the statement (recorded on the payment's confirmation). */
+    enteredByStaffId?: string,
   ): Promise<BankFeedWebhookResult> {
     const credit = { id: creditId };
     const { bankUtr, amountPaise, receivedAt, remark } = event;
@@ -564,21 +577,45 @@ export class PaymentService {
       return { received: true, status: 'unmatched', reason, bankCreditId: credit.id };
     }
 
-    await this.onPaymentSucceeded(matchedPayment.id, {
-      confirmedAt: receivedAt,
-      confirmedBy,
-      bankUtr,
-      bookedAt: booking.at,
-      bookingNote: booking.note,
+    // Claim the credit first (only while still unmatched), then confirm the
+    // payment. If the payment was confirmed by something else meanwhile, the
+    // credit is released and flagged: an overpayment is never hidden.
+    const claimed = await this.prisma.bankCredit.updateMany({
+      where: { id: credit.id, status: 'unmatched' },
+      data: { status: 'matched', matchedPaymentId: matchedPayment.id },
     });
-
-    await this.prisma.bankCredit.update({
-      where: { id: credit.id },
-      data: {
-        status: 'matched',
-        matchedPaymentId: matchedPayment.id,
-      },
-    });
+    if (claimed.count !== 1) {
+      return { received: true, status: 'unmatched', reason: 'credit_changed', bankCreditId: credit.id };
+    }
+    const release = () =>
+      this.prisma.bankCredit.updateMany({
+        where: { id: credit.id, status: 'matched', matchedPaymentId: matchedPayment.id },
+        data: { status: 'unmatched', matchedPaymentId: null },
+      });
+    let confirmed: Awaited<ReturnType<PaymentService['onPaymentSucceeded']>>;
+    try {
+      confirmed = await this.onPaymentSucceeded(matchedPayment.id, {
+        confirmedAt: receivedAt,
+        confirmedBy,
+        ...(enteredByStaffId ? { confirmedByStaffId: enteredByStaffId } : {}),
+        bankUtr,
+        bookedAt: booking.at,
+        bookingNote: booking.note,
+      });
+    } catch (error) {
+      await release();
+      throw error;
+    }
+    if (confirmed && 'alreadyProcessed' in confirmed && confirmed.alreadyProcessed) {
+      await release();
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: matchedPayment.id,
+        details: { bankCreditId: credit.id, bankUtr, amountPaise, reason: 'already_succeeded' },
+      });
+      return { received: true, status: 'unmatched', reason: 'already_succeeded', bankCreditId: credit.id, paymentId: matchedPayment.id };
+    }
 
     return {
       received: true,
@@ -729,7 +766,7 @@ export class PaymentService {
 
     // The same reference matching as the bank's feed: a note carrying a
     // payment reference confirms that payment when the amount agrees.
-    const match = await this.matchNewCredit(credit.id, { bankUtr, amountPaise, receivedAt, remark }, booking, 'finance_manual');
+    const match = await this.matchNewCredit(credit.id, { bankUtr, amountPaise, receivedAt, remark }, booking, 'finance_manual', actorId);
     const fresh = (await this.prisma.bankCredit.findUnique({ where: { id: credit.id } })) ?? credit;
     // A bank day already closed with the statement's balance no longer agrees: say so.
     const day = istDay(booking.at);
@@ -801,8 +838,14 @@ export class PaymentService {
     if (claimed.count !== 1) {
       throw new ConflictException('This credit changed meanwhile (matched, returned or set aside); reload');
     }
+    const releaseCredit = () =>
+      this.prisma.bankCredit.updateMany({
+        where: { id: credit.id, status: 'matched', matchedPaymentId: payment.id },
+        data: { status: 'unmatched', matchedPaymentId: null, bookingNote: credit.bookingNote },
+      });
+    let confirmed: Awaited<ReturnType<PaymentService['onPaymentSucceeded']>>;
     try {
-      await this.onPaymentSucceeded(payment.id, {
+      confirmed = await this.onPaymentSucceeded(payment.id, {
         confirmedAt: credit.receivedAt,
         confirmedBy: 'finance_manual',
         confirmedByStaffId: actorId,
@@ -811,11 +854,15 @@ export class PaymentService {
         bookingNote: booking.note,
       });
     } catch (error) {
-      await this.prisma.bankCredit.updateMany({
-        where: { id: credit.id, status: 'matched', matchedPaymentId: payment.id },
-        data: { status: 'unmatched', matchedPaymentId: null, bookingNote: credit.bookingNote },
-      });
+      await releaseCredit();
       throw error;
+    }
+    // Another credit confirmed this payment at the same moment: this credit
+    // goes back to unmatched (it is an overpayment to sort out), never left
+    // "matched" to a payment that was already paid.
+    if (confirmed && 'alreadyProcessed' in confirmed && confirmed.alreadyProcessed) {
+      await releaseCredit();
+      throw new ConflictException('This payment was confirmed with another credit meanwhile; this credit stays unmatched');
     }
 
     let tdsReceivable: TdsReceivable | null = null;
@@ -1058,6 +1105,13 @@ export class PaymentService {
       after: { status: 'unmatched' },
       reason: why,
     });
+    // Its old flags were closed when it was set aside: a fresh one puts it back on Finance's bell.
+    await this.reviewFlagService.raise({
+      kind: 'payment_mismatch',
+      subjectType: 'bank_credit',
+      subjectId: credit.id,
+      details: { bankUtr: credit.bankUtr, amountPaise: credit.amountPaise, reason: 'set_aside_undone', undoneByStaffId: actorId, note: why },
+    });
     return this.prisma.bankCredit.findUniqueOrThrow({ where: { id: credit.id } });
   }
 
@@ -1107,6 +1161,9 @@ export class PaymentService {
     if (flag.kind === 'payout_matches_staff' && details.matchedStaffId === actorId) {
       throw new ForbiddenException('This flag is about your own number; someone else resolves it');
     }
+    if (flag.kind === 'payout_name_mismatch' && details.flaggedByStaffId === actorId) {
+      throw new ForbiddenException('You recorded the payment that raised this flag; someone else resolves it');
+    }
     const genuine = isPayoutFlag && outcome === 'genuine';
     const status = genuine ? 'dismissed' : 'resolved';
     const text = resolution.trim();
@@ -1114,17 +1171,30 @@ export class PaymentService {
     const { updated, released } = await this.prisma.$transaction(async (tx) => {
       const claimed = await tx.reviewFlag.updateMany({
         where: { id: flagId, status: 'open' },
-        data: { status, resolution: text, resolvedAt: now, resolvedByStaffId: actorId },
+        data: {
+          status,
+          resolution: text,
+          resolvedAt: now,
+          resolvedByStaffId: actorId,
+          // The outcome stays on the flag: a fraud finding blocks any later release.
+          ...(isPayoutFlag ? { details: { ...details, outcome } as Prisma.InputJsonValue } : {}),
+        },
       });
       if (claimed.count !== 1) throw new ConflictException('This flag was closed meanwhile; reload');
       let releasedCount = 0;
-      if (genuine && flag.subjectType && flag.subjectId) {
-        const stillOpen = await tx.reviewFlag.count({
-          where: { kind: { in: PAYOUT_FLAG_KINDS }, status: 'open', subjectType: flag.subjectType, subjectId: flag.subjectId, NOT: { id: flagId } },
+      // Only the payout account this flag is about is released (a name-mismatch
+      // flag names no account: it releases nothing), and never when another
+      // payout flag for the person is still open or was closed as fraud.
+      const accountId = typeof details.payoutAccountId === 'string' ? details.payoutAccountId : null;
+      if (genuine && accountId && flag.subjectType && flag.subjectId) {
+        const others = await tx.reviewFlag.findMany({
+          where: { kind: { in: PAYOUT_FLAG_KINDS }, subjectType: flag.subjectType, subjectId: flag.subjectId, NOT: { id: flagId } },
+          select: { status: true, details: true },
         });
-        if (stillOpen === 0) {
+        const blocked = others.some((o) => o.status === 'open' || isFraudFinding(o));
+        if (!blocked) {
           const back = await tx.payoutAccount.updateMany({
-            where: { ownerType: flag.subjectType, ownerId: flag.subjectId, status: 'flagged' },
+            where: { id: accountId, ownerType: flag.subjectType, ownerId: flag.subjectId, status: 'flagged' },
             data: { status: 'pending_validation' },
           });
           releasedCount = back.count;

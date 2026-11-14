@@ -645,6 +645,15 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
               placement: rootPlacementRecord,
             });
           }),
+          updateMany: jest.fn().mockImplementation(({ where, data }) => {
+            const c = state.claims.find((x) => x.id === where.id && (x.decision ?? null) === (where.decision ?? null));
+            if (c) Object.assign(c, data);
+            return Promise.resolve({ count: c ? 1 : 0 });
+          }),
+          findUniqueOrThrow: jest.fn().mockImplementation(({ where }) => {
+            const c = state.claims.find((x) => x.id === where.id);
+            return Promise.resolve({ ...c, placement: rootPlacementRecord });
+          }),
         },
         vacancy: {
           create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'vc-rep-1', code: 'VC-00002', ...data })),

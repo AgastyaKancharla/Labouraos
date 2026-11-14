@@ -217,8 +217,9 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       expect(response.paymentId).toBe('pay-1');
 
       // Assert bank credit marked matched with payment id
-      expect(prisma.bankCredit.update).toHaveBeenCalledWith({
-        where: { id: 'credit-1' },
+      // claimed only while still unmatched
+      expect(prisma.bankCredit.updateMany).toHaveBeenCalledWith({
+        where: { id: 'credit-1', status: 'unmatched' },
         data: { status: 'matched', matchedPaymentId: 'pay-1' },
       });
 
@@ -669,6 +670,24 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       expect(prisma.payment.updateMany).not.toHaveBeenCalled();
     });
 
+    it('two credits for one payment at once: the second match finds it already paid, releases its credit and answers 409', async () => {
+      prisma.payment.findUnique.mockResolvedValueOnce({ id: 'p-two', code: 'PAY-2', status: 'pending', amount: 49900, expectedAmountPaise: 49900, type: 'activation' });
+      prisma.bankCredit.findUnique.mockResolvedValueOnce({ id: 'c-two', bankUtr: 'R5', status: 'unmatched', amountPaise: 49900, receivedAt: new Date(), bookingNote: null });
+      prisma.payment.findFirst.mockResolvedValue(null);
+      jest.spyOn(service, 'onPaymentSucceeded').mockResolvedValue({ received: true, alreadyProcessed: true, paymentId: 'p-two' } as never);
+      await expect(service.confirmPaymentWithBankCredit('p-two', 'c-two', 'fin-staff-1')).rejects.toMatchObject({ status: 409 });
+      expect(prisma.bankCredit.updateMany).toHaveBeenLastCalledWith({ where: { id: 'c-two', status: 'matched', matchedPaymentId: 'p-two' }, data: { status: 'unmatched', matchedPaymentId: null, bookingNote: null } });
+    });
+
+    it('a credit dated in a closed month but booked in the open month can still be set aside', async () => {
+      const locks = { assertOpenOn: jest.fn(async (at: Date) => { if (at < new Date('2026-11-01T00:00:00+05:30')) throw new BadRequestException('October is closed'); }) };
+      const svc = new PaymentService(prisma as unknown as PrismaService, auditService as unknown as AuditService, { generateCode: jest.fn() } as unknown as IdService, {} as PaymentProvider, provider, {} as PricingService, {} as MessagingService, reviewFlagService as unknown as ReviewFlagService, undefined, locks as never);
+      // receivedAt is where the credit is booked; the bank's own date is in the note
+      prisma.bankCredit.findUnique.mockResolvedValueOnce({ id: 'c-b', bankUtr: 'UB', status: 'unmatched', receivedAt: new Date('2026-11-02T06:00:00Z'), bookingNote: 'Bank date 2026-10-30: October 2026 is closed; booked in November 2026' });
+      await expect(svc.ignoreBankCredit('c-b', 'Not ours', 'fin-staff-1')).resolves.toBeTruthy();
+      expect(locks.assertOpenOn).toHaveBeenCalledWith(new Date('2026-11-02T06:00:00Z'), 'its bank credits');
+    });
+
     it('a returned credit is never matched', async () => {
       prisma.payment.findUnique.mockResolvedValueOnce({ id: 'p-1', code: 'PAY-1', status: 'pending', amount: 49900, type: 'activation' });
       prisma.bankCredit.findUnique.mockResolvedValueOnce({ id: 'c-ret', bankUtr: 'R4', status: 'returned', amountPaise: 49900, receivedAt: new Date() });
@@ -687,6 +706,8 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       expect(auditService.log).toHaveBeenCalledWith(
         expect.objectContaining({ actorId: 'ceo-1', action: 'bank_credit.set_aside_undone', entityCode: 'UA', reason: 'It was a placement fee after all', before: expect.objectContaining({ ignoredReason: 'Personal' }) }),
       );
+      // back on Finance's bell with a fresh flag (the old ones were closed when it was set aside)
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'payment_mismatch', subjectType: 'bank_credit', subjectId: 'c-a', details: expect.objectContaining({ reason: 'set_aside_undone' }) }));
     });
 
     it('needs a reason, only a set-aside credit (409), and loses cleanly to a change at the same moment', async () => {
@@ -760,9 +781,20 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       prisma.payment.findMany.mockResolvedValue([pending]);
       const onSucceeded = jest.spyOn(service, 'onPaymentSucceeded').mockResolvedValue({ received: true, status: 'succeeded', paymentId: 'pay-ref' } as never);
       const res = await service.recordManualBankCredit({ bankUtr: 'U2', amountPaise: 49900, receivedAt: '2026-11-13T09:00:00+05:30', remark: 'upi lb-js77 ravi' }, 'fin-staff-1', now);
-      expect(onSucceeded).toHaveBeenCalledWith('pay-ref', expect.objectContaining({ confirmedBy: 'finance_manual', bankUtr: 'U2' }));
-      expect(prisma.bankCredit.update).toHaveBeenCalledWith({ where: { id: 'c-new' }, data: { status: 'matched', matchedPaymentId: 'pay-ref' } });
+      // the person who typed it in is recorded on the confirmation
+      expect(onSucceeded).toHaveBeenCalledWith('pay-ref', expect.objectContaining({ confirmedBy: 'finance_manual', confirmedByStaffId: 'fin-staff-1', bankUtr: 'U2' }));
+      expect(prisma.bankCredit.updateMany).toHaveBeenCalledWith({ where: { id: 'c-new', status: 'unmatched' }, data: { status: 'matched', matchedPaymentId: 'pay-ref' } });
       expect(res.match).toEqual({ status: 'succeeded', reason: null, paymentId: 'pay-ref' });
+    });
+
+    it('if the payment was confirmed by something else meanwhile, the typed-in credit is released and flagged, never left matched', async () => {
+      const pending = { id: 'pay-ref', code: 'PAY-77', type: 'activation', status: 'pending', method: 'upi_direct', upiReference: 'LB-JS77', amount: 49900, expectedAmountPaise: 49900, jobSeekerId: null };
+      prisma.payment.findMany.mockResolvedValue([pending]);
+      jest.spyOn(service, 'onPaymentSucceeded').mockResolvedValue({ received: true, alreadyProcessed: true, paymentId: 'pay-ref' } as never);
+      const res = await service.recordManualBankCredit({ bankUtr: 'U5', amountPaise: 49900, receivedAt: '2026-11-13T09:00:00+05:30', remark: 'LB-JS77' }, 'fin-staff-1', now);
+      expect(prisma.bankCredit.updateMany).toHaveBeenLastCalledWith({ where: { id: 'c-new', status: 'matched', matchedPaymentId: 'pay-ref' }, data: { status: 'unmatched', matchedPaymentId: null } });
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'payment_mismatch', subjectId: 'pay-ref', details: expect.objectContaining({ reason: 'already_succeeded', bankCreditId: 'c-new' }) }));
+      expect(res.match.status).toBe('unmatched');
     });
 
     it('says when the credit lands on a bank day already closed', async () => {
@@ -773,11 +805,12 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
   });
 
   describe('Finance resolves payment and payout flags', () => {
-    const flagMock = (flag: Record<string, unknown>, otherOpen = 0) => {
+    /** `others`: the person's other payout flags (status, details). */
+    const flagMock = (flag: Record<string, unknown>, others: Array<{ status: string; details: unknown }> = []) => {
       const f = prisma.reviewFlag as Record<string, jest.Mock>;
       f.findUnique = jest.fn().mockResolvedValue(flag);
       f.updateMany = jest.fn().mockResolvedValue({ count: 1 });
-      f.count = jest.fn().mockResolvedValue(otherOpen);
+      f.findMany = jest.fn().mockResolvedValue(others);
       f.findUniqueOrThrow = jest.fn(async () => ({ ...flag, status: (f.updateMany.mock.calls[0]?.[0] as { data: { status: string } })?.data.status, resolution: 'x' }));
       return f;
     };
@@ -798,11 +831,11 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       await expect(service.resolvePaymentMismatchFlag('rf-9', 'Checked', 'fin-staff-1')).rejects.toThrow(/genuine.*fraud/);
     });
 
-    it('"Checked, genuine": dismisses the flag and releases the flagged payout details (the 48-hour wait still applies)', async () => {
-      const flags = flagMock(open('payout_shared_account'));
+    it('"Checked, genuine": dismisses the flag and releases only the payout account the flag is about (the 48-hour wait still applies)', async () => {
+      const flags = flagMock(open('payout_shared_account', { payoutAccountId: 'pa-31' }));
       const res = await service.resolvePaymentMismatchFlag('rf-9', 'Brothers share one account', 'fin-staff-1', 'genuine');
-      expect(flags.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'dismissed' }) }));
-      expect(prisma.payoutAccount.updateMany).toHaveBeenCalledWith({ where: { ownerType: 'referral', ownerId: 'r14', status: 'flagged' }, data: { status: 'pending_validation' } });
+      expect(flags.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'dismissed', details: { payoutAccountId: 'pa-31', outcome: 'genuine' } }) }));
+      expect(prisma.payoutAccount.updateMany).toHaveBeenCalledWith({ where: { id: 'pa-31', ownerType: 'referral', ownerId: 'r14', status: 'flagged' }, data: { status: 'pending_validation' } });
       // activeFrom untouched: only the status changes
       expect(Object.keys((prisma.payoutAccount.updateMany.mock.calls[0][0] as { data: object }).data)).toEqual(['status']);
       expect(res.payoutDetailsReleased).toBe(1);
@@ -810,16 +843,45 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
     });
 
     it('"Checked, genuine" keeps the details blocked while another payout flag for that person is still open', async () => {
-      flagMock(open('payout_shared_account'), 1);
+      flagMock(open('payout_shared_account', { payoutAccountId: 'pa-31' }), [{ status: 'open', details: {} }]);
       const res = await service.resolvePaymentMismatchFlag('rf-9', 'This one is fine', 'fin-staff-1', 'genuine');
       expect(prisma.payoutAccount.updateMany).not.toHaveBeenCalled();
       expect(res.payoutDetailsReleased).toBe(0);
     });
 
+    it('a genuine name-mismatch never releases an account another flag confirmed as fraud (review H-new)', async () => {
+      // Old open name-mismatch flag; a new account flagged as a staff number was closed as fraud.
+      const flags = flagMock(open('payout_name_mismatch', { flaggedByStaffId: 'fin-staff-2', reason: 'name differs' }), [
+        { status: 'resolved', details: { payoutAccountId: 'pa-new', outcome: 'fraud' } },
+      ]);
+      const res = await service.resolvePaymentMismatchFlag('rf-9', 'Name spelt differently, same person', 'fin-staff-1', 'genuine');
+      expect(flags.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'dismissed' }) }));
+      expect(prisma.payoutAccount.updateMany).not.toHaveBeenCalled();
+      expect(res.payoutDetailsReleased).toBe(0);
+    });
+
+    it('a name-mismatch flag names no account, so "genuine" releases nothing even with no other flags', async () => {
+      flagMock(open('payout_name_mismatch', { flaggedByStaffId: 'fin-staff-2' }));
+      const res = await service.resolvePaymentMismatchFlag('rf-9', 'Same person', 'fin-staff-1', 'genuine');
+      expect(prisma.payoutAccount.updateMany).not.toHaveBeenCalled();
+      expect(res.payoutDetailsReleased).toBe(0);
+    });
+
+    it('never releases an account after a fraud finding on the same person, also an older flag closed as "resolved"', async () => {
+      flagMock(open('payout_shared_account', { payoutAccountId: 'pa-31' }), [{ status: 'resolved', details: { payoutAccountId: 'pa-31' } }]);
+      await service.resolvePaymentMismatchFlag('rf-9', 'Fine', 'fin-staff-1', 'genuine');
+      expect(prisma.payoutAccount.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('the Finance person whose payment raised a name-mismatch flag cannot close it', async () => {
+      flagMock(open('payout_name_mismatch', { flaggedByStaffId: 'fin-staff-1' }));
+      await expect(service.resolvePaymentMismatchFlag('rf-9', 'Fine', 'fin-staff-1', 'genuine')).rejects.toThrow(ForbiddenException);
+    });
+
     it('"Fraud confirmed": resolves the flag and the details stay blocked', async () => {
       const flags = flagMock(open('payout_matches_staff', { matchedStaffId: 'ca-3' }));
       await service.resolvePaymentMismatchFlag('rf-9', 'Agent used his own UPI', 'fin-staff-1', 'fraud');
-      expect(flags.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'resolved' }) }));
+      expect(flags.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'resolved', details: expect.objectContaining({ outcome: 'fraud' }) }) }));
       expect(prisma.payoutAccount.updateMany).not.toHaveBeenCalled();
     });
 

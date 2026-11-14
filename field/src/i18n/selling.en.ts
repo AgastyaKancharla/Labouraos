@@ -369,7 +369,7 @@ export const sellingEn = {
   'fa11.left.previous': 'Earlier claims',
   'fa11.left.accepted': 'accepted',
   'fa11.left.rejected': 'rejected',
-  'fa11.left.rejection.reported_late': 'reported after 7 days',
+  'fa11.left.rejection.reported_late': 'reported too late',
   'fa11.left.rejection.fee_unpaid': 'fee not paid in full',
   'fa11.left.rejection.reason_not_covered': 'reason not covered',
   'fa11.left.rejection.wrong_details': 'wrong date or detail',

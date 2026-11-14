@@ -721,8 +721,9 @@ model ReplacementClaim {
   callRecordId           String
   callRecord             CallRecord  @relation("ClaimCallRecord", fields: [callRecordId], references: [id], onDelete: Restrict)
   // Who reported it (never the one who decides it). With the partial unique
-  // index in migration 20261125000000 (SQL only, Prisma cannot express it) a
-  // placement has at most one claim waiting for a decision.
+  // index in migration 20261129000000_claims_and_set_aside (SQL only, Prisma cannot express it) a
+  // placement has at most one claim waiting for a decision, and one owner call
+  // is the evidence of at most one claim.
   reportedByStaffId      String?
   reportedByStaff        Staff?      @relation("ClaimReportedBy", fields: [reportedByStaffId], references: [id], onDelete: SetNull)
   // Why it was rejected (claim-refile.ts): reported_late, fee_unpaid,

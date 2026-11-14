@@ -11,6 +11,7 @@ import { UpiCollectionService } from '../payment/upi-collection.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
+import { rejectionCodeOf } from './claim-refile';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
 
 type MockPrisma = {
@@ -160,6 +161,12 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
         update: jest.fn().mockImplementation(async ({ data }: { data: Record<string, unknown> }) => ({
           id: 'claim-1',
           ...data,
+        })),
+        // decideClaim: a conditional update, then the claim read back
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+        findUniqueOrThrow: jest.fn().mockImplementation(async () => ({
+          id: 'claim-1',
+          ...((prisma.replacementClaim.updateMany.mock.calls.at(-1)?.[0] as { data?: Record<string, unknown> } | undefined)?.data ?? {}),
         })),
       },
       reviewFlag: {
@@ -474,11 +481,13 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       const res = await placementService.decideClaim('pl-100', 'claim-10', overruleDto, mgrStaff.id);
 
       expect(res.decision).toBe('accepted');
-      expect(prisma.replacementClaim.update).toHaveBeenCalledWith(
+      expect(prisma.replacementClaim.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
+          // only if nobody changed it since it was read
+          where: { id: 'claim-10', decision: 'rejected', overruledByStaffId: null },
           data: expect.objectContaining({
             decision: 'accepted',
-            overruledByStaff: { connect: { id: mgrStaff.id } },
+            overruledByStaffId: mgrStaff.id,
             overruleReason: overruleDto.decisionReason,
           }),
         }),
@@ -673,10 +682,68 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       const pendingClaim = { ...past({ decision: null }), id: 'claim-30', placementId: 'pl-100', reason: 'resigned', reportedByStaffId: 'ca-1', placement: basePlacement };
       prisma.replacementClaim.findFirst.mockResolvedValue(pendingClaim);
       await placementService.decideClaim('pl-100', 'claim-30', { decision: 'rejected', decisionReason: 'Wrong date', rejectionCode: 'wrong_details' }, tlStaff.id);
-      expect(prisma.replacementClaim.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'wrong_details' }) }));
+      expect(prisma.replacementClaim.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'wrong_details' }) }));
       await placementService.decideClaim('pl-100', 'claim-30', { decision: 'rejected', decisionReason: 'Not true' }, tlStaff.id);
-      expect(prisma.replacementClaim.update).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'reviewed' }) }));
+      expect(prisma.replacementClaim.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'reviewed' }) }));
       await expect(placementService.decideClaim('pl-100', 'claim-30', { decision: 'rejected', decisionReason: 'x', rejectionCode: 'reported_late' }, tlStaff.id)).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('PR #137 re-check: automatic codes, deciding at the same moment, evidence race, claim list scope', () => {
+    const autoRejected = {
+      id: 'claim-40', code: 'RCL-00040', placementId: 'pl-100', workerLeftOn: new Date('2026-10-01T00:00:00.000Z'), reportedAt: new Date('2026-10-14T00:00:00.000Z'),
+      reason: 'resigned', decision: 'rejected', decisionReason: 'Auto-rejected: Reported 13 days after worker left; deadline is 7 days', rejectionCode: 'reported_late',
+      decidedByStaffId: null, decidedAt: new Date('2026-10-14T00:00:00.000Z'), overruledByStaffId: null, overruleReason: null, reportedByStaffId: 'ca-1', placement: basePlacement,
+    };
+
+    it('a Manager overruling an automatic rejection but keeping it rejected keeps the automatic code (never re-reportable)', async () => {
+      prisma.replacementClaim.findFirst.mockResolvedValue(autoRejected);
+      await placementService.decideClaim('pl-100', 'claim-40', { decision: 'rejected', decisionReason: 'Detail was wrong', rejectionCode: 'wrong_details' }, mgrStaff.id);
+      expect(prisma.replacementClaim.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ rejectionCode: 'reported_late', overruledByStaffId: mgrStaff.id }) }));
+    });
+
+    it('…while overruling it to accepted stays allowed (owner decision 14 Nov)', async () => {
+      prisma.replacementClaim.findFirst.mockResolvedValue(autoRejected);
+      const res = await placementService.decideClaim('pl-100', 'claim-40', { decision: 'accepted', decisionReason: 'Owner told us on day 2; logged late by us' }, mgrStaff.id);
+      expect(res.decision).toBe('accepted');
+      expect(prisma.replacementClaim.updateMany).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ decision: 'accepted', rejectionCode: null }) }));
+    });
+
+    it('an older automatic rejection overruled and kept rejected is still read as automatic', () => {
+      expect(rejectionCodeOf({ ...autoRejected, rejectionCode: null, overruledByStaffId: 'mgr-1' })).toBe('reported_late');
+    });
+
+    it('an accept and a reject at the same moment: the second finds the claim already decided (409) and changes nothing', async () => {
+      const pending = { ...autoRejected, id: 'claim-41', decision: null, decisionReason: null, rejectionCode: null, decidedAt: null };
+      prisma.replacementClaim.findFirst.mockResolvedValue(pending);
+      prisma.replacementClaim.updateMany.mockResolvedValueOnce({ count: 1 }).mockResolvedValueOnce({ count: 0 });
+      // Both read the claim while it was still undecided (findFirst answers "pending" to both).
+      await expect(placementService.decideClaim('pl-100', 'claim-41', { decision: 'accepted', decisionReason: 'Confirmed' }, tlStaff.id)).resolves.toBeTruthy();
+      await expect(placementService.decideClaim('pl-100', 'claim-41', { decision: 'rejected', decisionReason: 'Not true' }, mgrStaff.id)).rejects.toMatchObject({ status: 409 });
+      // both read the claim undecided, so both asked only "if still undecided"
+      for (const call of prisma.replacementClaim.updateMany.mock.calls) {
+        expect((call[0] as { where: unknown }).where).toEqual({ id: 'claim-41', decision: null, overruledByStaffId: null });
+      }
+      expect(prisma.vacancy.create).toHaveBeenCalledTimes(1);
+    });
+
+    it('two claims using the same owner call at the same moment: the second is refused (409)', async () => {
+      const dto: ReportClaimDto = { workerLeftOn: '2026-10-12', reason: 'resigned', callRecordId: validOwnerCall.id };
+      prisma.replacementClaim.create.mockRejectedValueOnce(
+        new Prisma.PrismaClientKnownRequestError('Unique constraint failed', { code: 'P2002', clientVersion: 'test', meta: { target: 'ReplacementClaim_one_claim_per_call' } }),
+      );
+      await expect(placementService.reportClaim('pl-100', dto, caStaff.id, new Date('2026-10-15T12:00:00.000Z'))).rejects.toThrow('already the evidence of another claim');
+    });
+
+    it('the claim list is scoped for agents and Team Leads (404 outside), open to Managers, the CEO and Finance', async () => {
+      prisma.placement.findFirst.mockResolvedValueOnce(basePlacement).mockResolvedValueOnce(null);
+      await expect(placementService.listClaims('pl-100', { id: 'ca-1', role: 'call_agent' })).rejects.toThrow(NotFoundException);
+      prisma.placement.findFirst.mockResolvedValueOnce(basePlacement).mockResolvedValueOnce({ id: 'pl-100' });
+      await expect(placementService.listClaims('pl-100', { id: 'tl-1', role: 'team_lead' })).resolves.toEqual([]);
+      prisma.placement.findFirst.mockResolvedValue(basePlacement);
+      for (const role of ['manager', 'ceo', 'finance']) {
+        await expect(placementService.listClaims('pl-100', { id: 'x', role })).resolves.toEqual([]);
+      }
     });
   });
 

@@ -12,10 +12,10 @@ export const CLAIM_REJECTION_CHOICE = {
 };
 
 export const CLAIM_REJECTION_HELP =
-  'Say why — they see it with the decision. A fixable mistake can be reported once more within the 7 days; otherwise only a Manager or the CEO can report it again.';
+  'Say why — they see it with the decision. A fixable mistake can be reported once more within the reporting window; otherwise only a Manager or the CEO can report it again.';
 
 export const REJECTION_LABEL: Record<string, string> = {
-  reported_late: 'reported after 7 days',
+  reported_late: 'reported too late',
   fee_unpaid: 'fee not paid in full',
   reason_not_covered: 'reason not covered',
   wrong_details: 'wrong date or detail',

@@ -356,7 +356,7 @@ describe('Rejecting a replacement claim says why (owner decision 14 Nov)', () =>
     render(<Requests />, '/manager/requests');
     await userEvent.click(await screen.findByRole('button', { name: 'Reject' }));
     const d = await dialog();
-    expect(within(d).getByText(/A fixable mistake can be reported once more within the 7 days/)).toBeInTheDocument();
+    expect(within(d).getByText(/A fixable mistake can be reported once more within the reporting window/)).toBeInTheDocument();
     await userEvent.selectOptions(within(d).getByRole('combobox', { name: /Why it is rejected/ }), 'wrong_details');
     await userEvent.type(within(d).getByLabelText(/Reason/), 'The worker left on the 10th, not the 3rd');
     await userEvent.click(within(d).getByRole('button', { name: 'Reject' }));
@@ -382,7 +382,7 @@ describe('Rejecting a replacement claim says why (owner decision 14 Nov)', () =>
         { code: 'RC-1', decision: 'rejected', decisionReason: 'Wrong date', rejectionCode: 'wrong_details' },
         { code: 'RC-0', decision: 'rejected', decisionReason: 'Auto-rejected: Reported 9 days after worker left', rejectionCode: 'reported_late' },
       ]),
-    ).toBe('RC-1 rejected (wrong date or detail): “Wrong date” · RC-0 rejected (reported after 7 days): “Auto-rejected: Reported 9 days after worker left”');
+    ).toBe('RC-1 rejected (wrong date or detail): “Wrong date” · RC-0 rejected (reported too late): “Auto-rejected: Reported 9 days after worker left”');
     expect(previousClaimsText([])).toBe('');
   });
 });

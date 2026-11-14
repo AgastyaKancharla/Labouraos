@@ -370,7 +370,7 @@ export const sellingHi: Record<keyof typeof sellingEn, string> = {
   'fa11.left.previous': 'पिछले क्लेम',
   'fa11.left.accepted': 'मंज़ूर',
   'fa11.left.rejected': 'नामंज़ूर',
-  'fa11.left.rejection.reported_late': '7 दिन के बाद बताया गया',
+  'fa11.left.rejection.reported_late': 'देर से बताया गया',
   'fa11.left.rejection.fee_unpaid': 'फ़ीस पूरी नहीं भरी',
   'fa11.left.rejection.reason_not_covered': 'कारण गारंटी में नहीं',
   'fa11.left.rejection.wrong_details': 'गलत तारीख या जानकारी',

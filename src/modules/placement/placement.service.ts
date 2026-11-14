@@ -27,7 +27,7 @@ import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
 import { isValidClaimReason, isRejectClaimReason } from './claim-reasons';
 import { addDays, daysBetween, istDayOf, istDayStart } from './claim-dates';
-import { isReviewRejectionCode, refileRule } from './claim-refile';
+import { isAutoRejectionCode, isReviewRejectionCode, refileRule, rejectionCodeOf } from './claim-refile';
 import { isUniqueViolation } from '../../common/money/utr-registry';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
@@ -1037,7 +1037,7 @@ export class PlacementService {
 
     // One claim waiting per placement: the placement row is locked while we
     // look and create, and a partial unique index (migration
-    // 20261125000000) refuses a second undecided claim even so.
+    // 20261129000000_claims_and_set_aside) refuses a second undecided claim even so.
     const openClaimExists = () => new ConflictException('A claim on this placement is already waiting for a decision');
     let claim;
     try {
@@ -1075,7 +1075,12 @@ export class PlacementService {
         });
       });
     } catch (error) {
-      if (isUniqueViolation(error)) throw openClaimExists();
+      if (isUniqueViolation(error)) {
+        // The other unique index: the same owner call used by a claim made at the same moment.
+        const target = JSON.stringify((error as { meta?: unknown }).meta ?? '');
+        if (/call/i.test(target)) throw new ConflictException('This call is already the evidence of another claim');
+        throw openClaimExists();
+      }
       throw error;
     }
 
@@ -1196,25 +1201,40 @@ export class PlacementService {
       placementStatus: claim.placement.status,
     };
 
+    // An automatic rejection (late, fee unpaid, not covered) that is overruled
+    // but stays rejected keeps its automatic code: it is never reported again.
+    // (Overruling it to accepted stays allowed: owner decision 14 Nov.)
+    const currentCode = rejectionCodeOf(claim);
+    const keepsAutoCode = dto.decision === 'rejected' && currentCode !== null && isAutoRejectionCode(currentCode);
+    const rejectionCode =
+      dto.decision !== 'rejected' ? null : keepsAutoCode ? currentCode : isReviewRejectionCode(dto.rejectionCode) ? dto.rejectionCode : 'reviewed';
+
     const updatedClaim = await this.prisma.$transaction(async (tx) => {
-      const updateData: Prisma.ReplacementClaimUpdateInput = {
+      const updateData: Prisma.ReplacementClaimUncheckedUpdateManyInput = {
         decision: dto.decision,
         decisionReason: dto.decisionReason,
         decidedAt: now,
-        // A person's rejection: fixable (wrong details, no owner call) or reviewed.
-        rejectionCode: dto.decision === 'rejected' ? (isReviewRejectionCode(dto.rejectionCode) ? dto.rejectionCode : 'reviewed') : null,
+        rejectionCode,
       };
 
       if (isOverrule) {
-        updateData.overruledByStaff = { connect: { id: actor.id } };
+        updateData.overruledByStaffId = actor.id;
         updateData.overruleReason = dto.decisionReason;
       } else {
-        updateData.decidedByStaff = { connect: { id: actor.id } };
+        updateData.decidedByStaffId = actor.id;
       }
 
-      const updated = await tx.replacementClaim.update({
-        where: { id: claim.id },
+      // Only if nobody decided or overruled it since we read it: an accept and a
+      // reject at the same moment never both apply (409 for the second).
+      const claimed = await tx.replacementClaim.updateMany({
+        where: { id: claim.id, decision: claim.decision, overruledByStaffId: claim.overruledByStaffId },
         data: updateData,
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException('This claim was decided by someone else meanwhile; reload');
+      }
+      const updated = await tx.replacementClaim.findUniqueOrThrow({
+        where: { id: claim.id },
         include: {
           placement: true,
           decidedByStaff: true,
@@ -1359,11 +1379,17 @@ export class PlacementService {
     return updatedClaim;
   }
 
-  async listClaims(placementIdOrCode: string) {
+  /** A placement's claims. Agents and Team Leads see only placements in their GET /placements scope (404 outside). */
+  async listClaims(placementIdOrCode: string, actor?: { id: string; role: string }) {
     const placement = await this.prisma.placement.findFirst({
       where: { OR: [{ id: placementIdOrCode }, { code: placementIdOrCode }] },
     });
     if (!placement) throw new NotFoundException(`Placement '${placementIdOrCode}' not found`);
+    if (actor && ['call_agent', 'field_agent', 'team_lead'].includes(actor.role)) {
+      const scope = await this.placementListScope(actor);
+      const visible = await this.prisma.placement.findFirst({ where: { AND: [scope, { id: placement.id }] }, select: { id: true } });
+      if (!visible) throw new NotFoundException(`Placement '${placementIdOrCode}' not found`);
+    }
 
     return this.prisma.replacementClaim.findMany({
       where: { placementId: placement.id },

@@ -22,7 +22,8 @@ export interface ChecklistItem {
 
 export interface ReviewAction {
   id: string;
-  subjectType: 'payment' | 'expense' | 'payroll_line' | 'bank_credit';
+  /** bank_credit = money returned; bank_credit_set_aside = credit set aside (separate marks). */
+  subjectType: 'payment' | 'expense' | 'payroll_line' | 'bank_credit' | 'bank_credit_set_aside';
   subjectId: string;
   at: string;
   doneBy: { id: string | null; name: string | null; role: string | null };
@@ -238,8 +239,8 @@ export class MonthEndService {
     }
     for (const c of setAside) {
       out.push({
-        id: `bank_credit:${c.id}`,
-        subjectType: 'bank_credit',
+        id: `bank_credit_set_aside:${c.id}`,
+        subjectType: 'bank_credit_set_aside',
         subjectId: c.id,
         at: (c.ignoredAt ?? c.receivedAt).toISOString(),
         doneBy: person(c.ignoredByStaffId),
@@ -249,7 +250,7 @@ export class MonthEndService {
         record: `Credit ${c.bankUtr}${c.payerName ? ` · ${c.payerName}` : ''}`,
         amountPaise: c.amountPaise,
         proof: c.ignoredReason ? `Why: ${c.ignoredReason}` : null,
-        mark: markBy.get(`bank_credit:${c.id}`) ?? null,
+        mark: markBy.get(`bank_credit_set_aside:${c.id}`) ?? null,
       });
     }
     return out.sort((a, b) => a.at.localeCompare(b.at));
@@ -297,7 +298,7 @@ export class MonthEndService {
     if (actor.role !== 'ceo') throw new ForbiddenException('The CEO reviews the month');
     const subjectType = typeof input.subjectType === 'string' ? input.subjectType : '';
     const subjectId = typeof input.subjectId === 'string' ? input.subjectId : '';
-    if (!['payment', 'expense', 'payroll_line', 'bank_credit'].includes(subjectType) || !subjectId) throw new BadRequestException('Say which action is marked');
+    if (!['payment', 'expense', 'payroll_line', 'bank_credit', 'bank_credit_set_aside'].includes(subjectType) || !subjectId) throw new BadRequestException('Say which action is marked');
     const mark = input.mark === 'ok' || input.mark === 'flagged' ? input.mark : null;
     if (!mark) throw new BadRequestException("mark is 'ok' or 'flagged'");
     const note = typeof input.note === 'string' && input.note.trim() ? input.note.trim().slice(0, 300) : null;

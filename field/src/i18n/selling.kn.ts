@@ -370,7 +370,7 @@ export const sellingKn: Record<keyof typeof sellingEn, string> = {
   'fa11.left.previous': 'ಹಿಂದಿನ ಕ್ಲೇಮ್‌ಗಳು',
   'fa11.left.accepted': 'ಒಪ್ಪಲಾಗಿದೆ',
   'fa11.left.rejected': 'ತಿರಸ್ಕರಿಸಲಾಗಿದೆ',
-  'fa11.left.rejection.reported_late': '7 ದಿನಗಳ ನಂತರ ತಿಳಿಸಲಾಗಿದೆ',
+  'fa11.left.rejection.reported_late': 'ತಡವಾಗಿ ತಿಳಿಸಲಾಗಿದೆ',
   'fa11.left.rejection.fee_unpaid': 'ಶುಲ್ಕ ಪೂರ್ತಿ ಪಾವತಿಯಾಗಿಲ್ಲ',
   'fa11.left.rejection.reason_not_covered': 'ಕಾರಣ ಗ್ಯಾರಂಟಿಯಲ್ಲಿ ಇಲ್ಲ',
   'fa11.left.rejection.wrong_details': 'ತಪ್ಪು ದಿನಾಂಕ ಅಥವಾ ವಿವರ',

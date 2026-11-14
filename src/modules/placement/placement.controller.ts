@@ -111,8 +111,9 @@ export class PlacementController {
   @RequirePermission('placement', 'read')
   async listClaims(
     @Param('id') id: string,
+    @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.placementService.listClaims(id);
+    return this.placementService.listClaims(id, { id: req.user.sub, role: req.user.role });
   }
 
   @Post(':id/claims')
