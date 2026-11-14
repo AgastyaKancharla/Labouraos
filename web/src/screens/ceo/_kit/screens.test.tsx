@@ -216,6 +216,42 @@ describe('Detail pages', () => {
     await waitFor(() => expect(api.calls('POST /job-seeker-hits/h1/reverse')[0].body).toEqual({ reversalReason: 'Calls were outside his window' }));
   });
 
+  it('job seeker: a standing under-18 stop is shown and lifted only with a written reason', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/job-seekers/js2': {
+        id: 'js2', code: 'JS-00290', name: 'Arjun M', phone: '+919845012499', status: 'consented', createdAt: '2026-10-01T05:00:00Z',
+        guarantee: { days: 30, paidAt: '2026-10-14T06:00:00Z', daysLeft: 2, floorPaise: 1600000 },
+        hits: { count: 0, max: 3 }, offersMade: 0, interviews: 0,
+        activation: { amountPaise: 49900, at: '2026-10-14T06:00:00Z', utr: '43210001', confirmedBy: 'bank_feed' },
+        refunds: [],
+        profile: { trades: [{ trade: 'Helper', years: 1, primary: true }], locality: 'JP Nagar', travelDistanceKm: 8, salaryMinPaise: 1600000, salaryMaxPaise: 2000000, salaryPeriod: 'monthly', shiftPreference: 'day', jobType: 'full_time', languages: ['Kannada'], qualification: null, referredBy: null, registeredBy: { id: 's1', name: 'Deepa Nair' }, heardFrom: 'missed_call' },
+        registration: { phoneVerified: true, consentsGranted: 5, consentsAsked: 5, consentAt: '2026-10-01T05:12:00Z', selfieAt: '2026-10-01T05:14:00Z', idCheck: { method: 'aadhaar_qr', last4: '1111', adult: false }, paymentAt: null },
+        hitList: [], activity: [], placements: [], history: [{ at: '2026-10-01T05:00:00Z', kind: 'registered', text: 'registered', by: 'Deepa Nair' }],
+      },
+      'GET /identity/job-seekers/js2/aadhaar-check': {
+        check: {
+          method: 'aadhaar_qr', status: 'failed', verifiedByUidai: true, maskedReference: 'XXXX-XXXX-1111', checkedAt: '2026-11-01T05:20:00Z',
+          nameMatches: true, isAdult: false, phoneLinked: 'linked', nameOnId: null, dateOfBirth: null, gender: null, area: null, pincode: null,
+          under18Stop: true, photo: { kind: null, kept: false, deletedReason: null, deletedAt: null, expiresAt: null },
+        },
+        idPhotoUrl: null, qrPhotoUrl: null, selfieUrl: null,
+      },
+      'POST /identity/job-seekers/js2/under-18/lift': { lifted: 1 },
+    });
+    signInAs('ceo');
+    renderScreen(<JobSeekerDetail />, { portal: 'ceo', path: '/ceo/job-seekers/js2', route: '/ceo/job-seekers/:id', now: NOW });
+    await userEvent.click(await screen.findByRole('button', { name: 'Show the ID check' }));
+    expect(await screen.findByText('Under 18 · registration stopped')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Lift the under-18 stop' }));
+    const dialog = await screen.findByRole('dialog');
+    const confirm = within(dialog).getByRole('button', { name: /Lift the under-18 stop/ });
+    expect(confirm).toBeDisabled();
+    await userEvent.type(within(dialog).getByLabelText(/Why the stop is lifted/), 'Birth certificate shows 19');
+    await userEvent.click(confirm);
+    await waitFor(() => expect(api.calls('POST /identity/job-seekers/js2/under-18/lift')[0].body).toEqual({ reason: 'Birth certificate shows 19' }));
+  });
+
   it('business: pauses with a reason', async () => {
     const api = mockApi({
       ...common,

@@ -10,7 +10,7 @@ import { OtpService } from "../../common/otp/otp.service";
 import { MockOtpProvider } from "../../common/otp/mock-otp.provider";
 import { ConsentClock } from "./consent-clock";
 import { ConsentService } from "./consent.service";
-import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from "./consent.constants";
+import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from "./consent.constants";
 import { CALL_PURPOSES } from "../call/call-outcomes";
 
 class TestConsentClock extends ConsentClock {
@@ -150,7 +150,7 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
       subjectType: "job_seeker",
       subjectId: seeker.id,
       purpose: "call_recording",
-      noticeVersion: "1.0",
+      noticeVersion: DEFAULT_NOTICE_VERSION,
       language: "en",
       method: "sms_link",
     });
@@ -215,7 +215,7 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
         subjectType: "job_seeker",
         subjectId: seeker.id,
         purpose,
-        noticeVersion: "1.0",
+        noticeVersion: DEFAULT_NOTICE_VERSION,
         language: "en",
         method: "sms_link",
         otpRequestId: "initial-otp",

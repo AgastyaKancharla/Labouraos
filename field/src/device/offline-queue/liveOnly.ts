@@ -21,6 +21,8 @@ export const LIVE_ONLY_PATTERNS: readonly RegExp[] = [
   /^\/attendance\/(leave|corrections)$/,
   // "Scan Aadhaar QR": the job seeker is there with his card; the answer is needed at once.
   /\/aadhaar-qr$/,
+  // "Photo of another ID": the job seeker is there with his card; sent at once, never kept on the phone.
+  /\/other-id$/,
 ];
 
 export function isLiveOnlyPath(path: string): boolean {

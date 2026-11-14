@@ -21,6 +21,20 @@ jest.mock('expo-camera', () => {
   return { CameraView, useCameraPermissions: () => [mockPermission, jest.fn()] };
 });
 
+// The live camera for the ID card: a fake that "takes" the photo when pressed.
+jest.mock('@/device/camera', () => {
+  const actual = jest.requireActual('@/device/camera');
+  const { Pressable } = require('react-native');
+  const LiveCamera = (props: { facing?: string; onCapture: (p: object) => void }) => (
+    <Pressable
+      testID="fake-card-camera"
+      accessibilityHint={props.facing}
+      onPress={() => props.onCapture({ uri: 'file:///card.jpg', width: 1280, height: 960, mimeType: 'image/jpeg', source: 'live_camera', stamp: { lines: [] } })}
+    />
+  );
+  return { ...actual, LiveCamera };
+});
+
 const atIdStep = (over: object = {}) =>
   status({
     stage: 'in_progress',
@@ -76,5 +90,38 @@ describe('FA10c "Scan Aadhaar QR" (guide, Aadhaar verification, 14 Nov)', () => 
     await renderWithApp(<SeekerProgress />, { signedInAs: kiran, route });
     await waitFor(() => screen.getByTestId('seeker-banner'));
     expect(screen.queryByTestId('scan-aadhaar')).toBeNull();
+  });
+
+  it('"Photo of another ID": type, number, a live photo of the card (back camera) — sent to the Team Lead, pending', async () => {
+    const { route, calls } = routeTable({
+      '/screens/call-registration/job-seekers/js-uuid': atIdStep(),
+      'POST /field-work/job-seekers/js-uuid/other-id': { verificationId: 'v9', method: 'pan', status: 'pending', idNumberLast4: '234F' },
+    });
+    await renderWithApp(<SeekerProgress />, { signedInAs: kiran, route });
+    await fireEvent.press(await screen.findByTestId('other-id-open'));
+    expect(screen.getByTestId('other-id-photo')).toBeDisabled();
+    await fireEvent.press(screen.getByTestId('other-id-type'));
+    await fireEvent.press(await screen.findByText('PAN card'));
+    await fireEvent.changeText(screen.getByTestId('other-id-number'), 'abcde1234');
+    expect(screen.getByText('Type the number exactly as it is on the card.')).toBeTruthy();
+    await fireEvent.changeText(screen.getByTestId('other-id-number'), 'abcde 1234 f');
+    await fireEvent.press(screen.getByTestId('other-id-photo'));
+    expect(screen.getByTestId('fake-card-camera')).toHaveProp('accessibilityHint', 'back');
+    await fireEvent.press(screen.getByTestId('fake-card-camera'));
+    await waitFor(() => expect(screen.getByTestId('other-id-pending')).toHaveTextContent('PAN card ending 234F sent to the Team Lead'));
+    const sent = calls.find((c: { path: string }) => c.path === '/field-work/job-seekers/js-uuid/other-id') as { body: FormData } | undefined;
+    expect(sent?.body.get('idType')).toBe('pan');
+    expect(sent?.body.get('idNumber')).toBe('ABCDE1234F');
+    expect(sent?.body.get('captureSource')).toBe('live_camera');
+  });
+
+  it('shows "waiting for the Team Lead" on the ID step while another ID is pending', async () => {
+    const { route } = routeTable({
+      '/screens/call-registration/job-seekers/js-uuid': atIdStep({
+        steps: { phone: { state: 'done' }, consent: { state: 'done' }, selfie: { state: 'done' }, idCheck: { state: 'in_progress', reason: 'Waiting for the Team Lead to check the ID card photo' }, payment: { state: 'not_started' } },
+      }),
+    });
+    await renderWithApp(<SeekerProgress />, { signedInAs: kiran, route });
+    await waitFor(() => expect(screen.getByTestId('step-idCheck')).toHaveTextContent(/waiting for the Team Lead's check/));
   });
 });

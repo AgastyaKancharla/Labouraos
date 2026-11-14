@@ -1,5 +1,7 @@
 import type { ApiClient } from '../client';
 import type { Area, Trade } from './registration';
+import type { CapturedPhoto } from '@/device/camera';
+import { appendFile } from '@/device/offline-queue/formFile';
 
 /**
  * Laboura Field selling: src/modules/field-selling (reads under
@@ -357,6 +359,19 @@ export const sellingApi = (api: ApiClient) => ({
   /** "Scan Aadhaar QR": only the QR's text, read live with this phone's camera (guide, 14 Nov). Needs signal. */
   aadhaarQr: (jobSeekerId: string, qrText: string) =>
     api.post<AadhaarQrOutcome>(`/field-work/job-seekers/${enc(jobSeekerId)}/aadhaar-qr`, { qrText, captureSource: 'live_camera' }),
+  /**
+   * "Photo of another ID" (rev 154): a live camera photo of his PAN, driving
+   * licence or voter ID card and the number, for the Team Lead to check by
+   * eye. Pending until then. Only for job seekers this agent registered. Needs signal.
+   */
+  async otherId(jobSeekerId: string, idType: OtherIdType, idNumber: string, photo: CapturedPhoto): Promise<OtherIdOutcome> {
+    const form = new FormData();
+    form.append('captureSource', 'live_camera');
+    form.append('idType', idType);
+    form.append('idNumber', idNumber);
+    await appendFile(form, { field: 'photo', name: 'id-card.jpg', type: photo.mimeType, uri: photo.uri });
+    return api.request<OtherIdOutcome>(`/field-work/job-seekers/${enc(jobSeekerId)}/other-id`, { method: 'POST', form });
+  },
   findReferralPartner: (q: string) =>
     api.get<{ partner: { id: string; code: string; name: string } | null }>('/screens/call-registration/referral-partners', { query: { q } }),
 });
@@ -402,7 +417,7 @@ export interface AadhaarQrOutcome {
   verificationId: string | null;
   method: 'aadhaar_qr';
   status: 'verified' | 'failed';
-  result: 'verified' | 'name_mismatch' | 'under_18' | 'bad_signature' | 'old_qr' | 'unreadable';
+  result: 'verified' | 'name_mismatch' | 'under_18' | 'bad_signature' | 'cert_missing' | 'old_qr' | 'unreadable';
   verifiedByUidai: boolean;
   nameMatches: boolean | null;
   isAdult: boolean | null;
@@ -410,6 +425,16 @@ export interface AadhaarQrOutcome {
   maskedReference: string | null;
   failureReason: string | null;
   offerOtherId: boolean;
+}
+
+export type OtherIdType = 'pan' | 'driving_licence' | 'voter_id';
+
+/** POST /field-work/job-seekers/:id/other-id — always pending: a Team Lead checks the card photo. */
+export interface OtherIdOutcome {
+  verificationId: string;
+  method: OtherIdType;
+  status: 'pending';
+  idNumberLast4: string;
 }
 
 export interface CreatedVacancy {

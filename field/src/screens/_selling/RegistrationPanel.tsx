@@ -14,6 +14,7 @@ import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { ErrorBanner, Note, QueryView, useNow } from './index';
 import { AadhaarQrScan } from './AadhaarQrScan';
+import { OtherIdPhoto } from './OtherIdPhoto';
 
 const STATUS_POLL_MS = 5000;
 const RELATIONS = ['brother', 'sister', 'parent', 'spouse', 'friend', 'other'] as const;
@@ -40,7 +41,9 @@ function mark(step: Step): { icon: string; color: string } {
  * valid 48 hours, that resumes at the first unfinished step; a payment-only
  * link to another number once payment is reached. Sending needs signal.
  * At the ID step, with his consent given on his link, "Scan Aadhaar QR" lets
- * the field agent scan the QR on his Aadhaar card live (guide, 14 Nov).
+ * the field agent scan the QR on his Aadhaar card live (guide, 14 Nov), or
+ * "Photo of another ID" photograph his PAN / driving licence / voter ID card
+ * live for the Team Lead's check (rev 154).
  */
 export function RegistrationPanel({ jobSeekerId, variant }: { jobSeekerId: string; variant: 'saved' | 'progress' }) {
   const { selling } = useEndpoints();
@@ -59,6 +62,7 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
   const queue = useOfflineQueue();
   const [otherOpen, setOtherOpen] = useState(false);
   const [scanOpen, setScanOpen] = useState(false);
+  const [otherIdOpen, setOtherIdOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [payer, setPayer] = useState('');
   const [relation, setRelation] = useState('');
@@ -89,7 +93,13 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
         : '',
     },
     { key: 'selfie', label: t('fa10b.selfie'), step: s.steps.selfie, detail: s.steps.selfie.state === 'done' ? t('fa10b.selfieDone') : '' },
-    { key: 'idCheck', label: t('fa10b.idCheck'), step: s.steps.idCheck, detail: '' },
+    {
+      key: 'idCheck',
+      label: t('fa10b.idCheck'),
+      step: s.steps.idCheck,
+      // Another ID waiting for the Team Lead (rev 154): say so instead of "in progress".
+      detail: s.steps.idCheck.state === 'in_progress' && s.steps.idCheck.reason ? t('fa10b.idWaiting') : '',
+    },
     { key: 'payment', label: t('fa10b.payment'), step: s.steps.payment, detail: s.steps.payment.state === 'confirming' ? t('fa10b.confirming') : '' },
   ];
   const stateText = (step: Step) =>
@@ -126,8 +136,13 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
       {s.stage !== 'active' && s.nextStep === 'id_check' && s.steps.consent.state === 'done' ? (
         scanOpen ? (
           <AadhaarQrScan jobSeekerId={s.id} onFinished={refetch} onClose={() => setScanOpen(false)} />
+        ) : otherIdOpen ? (
+          <OtherIdPhoto jobSeekerId={s.id} onFinished={refetch} onClose={() => setOtherIdOpen(false)} />
         ) : (
-          <Button label={t('fa10b.scanAadhaar')} onPress={() => setScanOpen(true)} testID="scan-aadhaar" />
+          <>
+            <Button label={t('fa10b.scanAadhaar')} onPress={() => setScanOpen(true)} testID="scan-aadhaar" />
+            <Button label={t('fa10b.otherId.open')} variant="secondary" onPress={() => setOtherIdOpen(true)} testID="other-id-open" />
+          </>
         )
       ) : null}
       {s.stage !== 'active' ? (

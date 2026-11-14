@@ -30,7 +30,8 @@ export interface RegistrationOpen {
   jobSeekerCode: string;
   currentStep: RegistrationStep;
   steps: { consent: boolean; selfie: boolean; idCheck: boolean; payment: boolean };
-  idCheck: { serviceDown: boolean; waitingForService: boolean; lastResult: 'none' | 'verified' | 'name_mismatch' | 'under_18' | 'failed' };
+  /** Another ID waits for the Team Lead's check (rev 154): no payment until it is approved. */
+  idCheck: { waitingForTeamLead: boolean; lastResult: IdLastResult };
   stopped: 'under_18' | null;
   waitingForTrade: boolean;
   termsAcceptedAt: string | null;
@@ -60,12 +61,14 @@ export interface RegistrationTerms {
   termsAcceptedAt: string | null;
 }
 
-export interface IdCheckResult {
-  status: string;
-  method: string;
-  nameMatches: boolean | null;
-  isAdult: boolean | null;
-  failureReason: string | null;
+export type IdLastResult = 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'failed';
+
+/** Another ID sent (POST …/other-id): always pending — a Team Lead checks the card photo by eye. */
+export interface OtherIdResult {
+  verificationId: string;
+  method: 'pan' | 'driving_licence' | 'voter_id';
+  status: 'pending';
+  idNumberLast4: string;
 }
 
 /** The Aadhaar Secure QR answer (POST …/aadhaar-qr): the result, never the QR's raw data. */
@@ -73,7 +76,7 @@ export interface AadhaarQrResult {
   verificationId: string | null;
   method: 'aadhaar_qr';
   status: 'verified' | 'failed';
-  result: 'verified' | 'name_mismatch' | 'under_18' | 'bad_signature' | 'old_qr' | 'unreadable';
+  result: 'verified' | 'name_mismatch' | 'under_18' | 'bad_signature' | 'cert_missing' | 'old_qr' | 'unreadable';
   verifiedByUidai: boolean;
   nameMatches: boolean | null;
   isAdult: boolean | null;
@@ -102,11 +105,9 @@ export const registrationApi = {
   /** Only the QR's text: the card's picture and the e-Aadhaar PDF stay on the phone. */
   aadhaarQr: (token: string, requestId: string, qrText: string) =>
     api.post<AadhaarQrResult>(`/registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
-  /** Another government ID: PAN, driving licence or voter ID. */
-  idCheck: (token: string, requestId: string, method: string, documentNumber?: string) =>
-    api.post<IdCheckResult>(`/registration/${enc(token)}/id-check`, { requestId, method, ...(documentNumber ? { documentNumber } : {}) }, PUBLIC),
-  waitForIdService: (token: string, requestId: string) =>
-    api.post<{ waitingForRecovery: boolean }>(`/registration/${enc(token)}/id-check-wait`, { requestId }, PUBLIC),
+  /** Another government ID: a live camera photo of the card and its number (pending until a Team Lead checks it). */
+  otherId: (token: string, requestId: string, idType: string, idNumber: string, photo: Blob) =>
+    postLiveSelfie(`/registration/${enc(token)}/other-id`, { requestId, idType, idNumber }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult>,
   terms: (token: string, requestId: string) =>
     api.get<RegistrationTerms>(`/registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
   acceptTerms: (token: string, requestId: string) =>
@@ -126,11 +127,11 @@ export const registrationApi = {
  * and the given fields). Used by the selfie steps of the public links and the
  * staff photo; `headers` carries the staff login where one is needed.
  */
-export async function postLiveSelfie(path: string, fields: Record<string, string>, photo: Blob, headers: Record<string, string> = {}): Promise<unknown> {
+export async function postLiveSelfie(path: string, fields: Record<string, string>, photo: Blob, headers: Record<string, string> = {}, filename = 'selfie.jpg'): Promise<unknown> {
   const form = new FormData();
   for (const [key, value] of Object.entries(fields)) form.append(key, value);
   form.append('captureSource', 'live_camera');
-  form.append('photo', photo, 'selfie.jpg');
+  form.append('photo', photo, filename);
   let response: Response;
   try {
     response = await fetch(path, { method: 'POST', body: form, headers: { Accept: 'application/json', ...headers } });
@@ -173,7 +174,7 @@ export interface PartnerOpen {
     id: { state: PartnerStepState };
     upi: { state: PartnerStepState };
   };
-  idCheck: { serviceDown: boolean; lastResult: 'none' | 'verified' | 'name_mismatch' | 'under_18' | 'failed' };
+  idCheck: { waitingForTeamLead: boolean; lastResult: IdLastResult };
   stopped: 'under_18' | null;
   /** Masked only (part of the UPI ID, or the last 4 digits of the account). */
   payout: { method: 'upi' | 'bank'; maskedValue: string; status: string; nameMatches: boolean | null } | null;
@@ -205,8 +206,8 @@ export const partnerApi = {
   selfie: (token: string, requestId: string, photo: Blob) => postLiveSelfie(`/referral-registration/${enc(token)}/selfie`, { requestId }, photo),
   aadhaarQr: (token: string, requestId: string, qrText: string) =>
     api.post<AadhaarQrResult & { nextStep: string }>(`/referral-registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
-  idCheck: (token: string, requestId: string, method: string, documentNumber?: string) =>
-    api.post<IdCheckResult & { nextStep: string }>(`/referral-registration/${enc(token)}/id-check`, { requestId, method, ...(documentNumber ? { documentNumber } : {}) }, PUBLIC),
+  otherId: (token: string, requestId: string, idType: string, idNumber: string, photo: Blob) =>
+    postLiveSelfie(`/referral-registration/${enc(token)}/other-id`, { requestId, idType, idNumber }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult & { nextStep: string }>,
   payout: (token: string, requestId: string, details: PartnerPayout) =>
     api.post<{ id: string; maskedValue: string; status: string }>(`/referral-registration/${enc(token)}/upi`, { otpRequestId: requestId, ...details }, PUBLIC),
 };

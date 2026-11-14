@@ -17,6 +17,7 @@ const RESULT_KEYS: Record<AadhaarQrOutcome['result'], MessageKey> = {
   under_18: 'fa10b.scanUnder18',
   old_qr: 'fa10b.scanOldCard',
   bad_signature: 'fa10b.scanBadSignature',
+  cert_missing: 'fa10b.scanCertMissing',
   unreadable: 'fa10b.scanUnreadable',
 };
 

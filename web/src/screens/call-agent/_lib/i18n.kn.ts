@@ -68,7 +68,7 @@ export const callAgentKn: Record<keyof typeof callAgentEn, string> = {
   'ca.stuck.consent': 'ಒಪ್ಪಿಗೆಯಲ್ಲಿ ನಿಂತಿದೆ',
   'ca.stuck.selfie': 'ಸೆಲ್ಫಿಯಲ್ಲಿ ನಿಂತಿದೆ',
   'ca.stuck.id_check': 'ಐಡಿ ಪರಿಶೀಲನೆಗೆ ಕಾಯುತ್ತಿದೆ',
-  'ca.stuck.id_service_down': 'ಐಡಿ ಸೇವೆ ಸ್ಥಗಿತ',
+  'ca.stuck.id_team_lead_check': "ಟೀಮ್ ಲೀಡ್ ಗುರುತು ಪರಿಶೀಲನೆಗೆ ಕಾಯುತ್ತಿದೆ",
   'ca.stuck.trade_pending': 'ಅವರ ವೃತ್ತಿ ಸೇರಿಸಲು ಕಾಯುತ್ತಿದೆ',
   'ca.stuck.payment': 'ಪಾವತಿಯಲ್ಲಿ ನಿಂತಿದೆ',
   'ca.stuck.payment_failed': 'UPI {count}× ವಿಫಲ',

@@ -14,6 +14,14 @@ vi.mock('../shared/aadhaar/AadhaarQrScanner', () => ({
   ),
 }));
 
+vi.mock('../shared/LiveSelfie', () => ({
+  LiveSelfie: ({ onCapture, takeLabel }: { onCapture: (b: Blob) => Promise<string>; takeLabel?: string }) => (
+    <button type="button" onClick={() => void onCapture(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' }))}>
+      {takeLabel ?? 'Take selfie'}
+    </button>
+  ),
+}));
+
 const atId = (extra: Parameters<typeof partnerStatus>[0] = {}) =>
   partnerStatus({ currentStep: 'id_check', steps: { terms: DONE, selfie: DONE, id: { state: 'not_started' }, upi: { state: 'not_started' } }, ...extra });
 const render = () => renderScreen(<PartnerIdCheckPage />, { portal: 'public', path: `/p/partner/${TOKEN}/id-check`, route: '/p/partner/:token/id-check' });
@@ -42,12 +50,16 @@ describe('P-PartnerIDCheck (step 3, the same Aadhaar QR step)', () => {
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
-  it('on a name mismatch offers another government ID with its number', async () => {
+  it('on a name mismatch offers another ID: number and a live photo of the card, then waits for the Team Lead (no UPI yet)', async () => {
     partnerVerifiedInThisTab();
+    let pending = false;
     const api = mockApi({
-      [`GET /referral-registration/${TOKEN}/status`]: atId(),
+      [`GET /referral-registration/${TOKEN}/status`]: () => atId({ idCheck: { waitingForTeamLead: pending, lastResult: pending ? 'pending' : 'none' } }),
       [`POST /referral-registration/${TOKEN}/aadhaar-qr`]: qrAnswer({ status: 'failed', result: 'name_mismatch', nameMatches: false, offerOtherId: true, nextStep: 'id_check' }),
-      [`POST /referral-registration/${TOKEN}/id-check`]: { status: 'verified', method: 'voter_id', nameMatches: true, isAdult: true, failureReason: null, nextStep: 'upi' },
+      [`POST /referral-registration/${TOKEN}/other-id`]: () => {
+        pending = true;
+        return { verificationId: 'v2', method: 'voter_id', status: 'pending', idNumberLast4: '4567', nextStep: 'team_lead_check' };
+      },
     });
     render();
     await userEvent.click(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' }));
@@ -55,26 +67,30 @@ describe('P-PartnerIDCheck (step 3, the same Aadhaar QR step)', () => {
     expect(await screen.findByText(/doesn't match the name you registered with/)).toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Voter ID' }));
     await userEvent.type(screen.getByLabelText(/Voter ID number/), 'abc1234567');
-    await userEvent.click(screen.getByRole('button', { name: 'Check this ID' }));
-    expect(api.calls(`POST /referral-registration/${TOKEN}/id-check`)[0]!.body).toEqual({ requestId: 'req-1', method: 'voter_id', documentNumber: 'ABC1234567' });
-    expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Next: photo of the card' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Take photo of the card' }));
+    expect(await screen.findByTestId('id-pending')).toBeInTheDocument();
+    const sent = api.fetch.mock.calls.find(([url]) => String(url).endsWith(`/referral-registration/${TOKEN}/other-id`));
+    const form = sent![1]!.body as FormData;
+    expect([form.get('idType'), form.get('idNumber'), form.get('captureSource')]).toEqual(['voter_id', 'ABC1234567', 'live_camera']);
+    expect(screen.queryByTestId('navigated-away')).not.toBeInTheDocument();
   });
 
   it('stops under 18', async () => {
     partnerVerifiedInThisTab();
-    mockApi({ [`GET /referral-registration/${TOKEN}/status`]: atId({ stopped: 'under_18', idCheck: { serviceDown: false, lastResult: 'under_18' } }) });
+    mockApi({ [`GET /referral-registration/${TOKEN}/status`]: atId({ stopped: 'under_18', idCheck: { waitingForTeamLead: false, lastResult: 'under_18' } }) });
     render();
     expect(await screen.findByText(/only register referral partners who are 18 or older/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Aadhaar/ })).not.toBeInTheDocument();
   });
 
-  it('when the other-ID check is down the Aadhaar QR still works', async () => {
+  it('another ID is always offered next to the Aadhaar QR (no "busy" state any more)', async () => {
     partnerVerifiedInThisTab();
-    mockApi({ [`GET /referral-registration/${TOKEN}/status`]: atId({ idCheck: { serviceDown: true, lastResult: 'none' } }) });
+    mockApi({ [`GET /referral-registration/${TOKEN}/status`]: atId() });
     render();
     expect(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' })).toBeEnabled();
     await userEvent.click(screen.getByRole('button', { name: 'Another ID' }));
-    expect(screen.getByText(/PAN, driving licence and voter ID checks are busy right now/)).toBeInTheDocument();
+    expect(screen.queryByText(/busy right now/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'PAN card' })).toBeInTheDocument();
   });
 });

@@ -136,6 +136,22 @@
   pointer-events: none;
 }
 
+/* Another ID (rev 154): the back camera, not mirrored, a card-shaped guide. */
+.lb-camera--card {
+  aspect-ratio: 4 / 3;
+}
+.lb-camera--card video {
+  transform: none;
+}
+.lb-camera__card {
+  position: relative;
+  width: 86%;
+  aspect-ratio: 85.6 / 54;
+  border: 3px dashed var(--navacc, #6ec3ff);
+  border-radius: 12px;
+  pointer-events: none;
+}
+
 /* UPI QR (P02, P02s, P05b). */
 .lb-qr {
   display: flex;

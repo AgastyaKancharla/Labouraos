@@ -100,7 +100,7 @@ export function reasonTag(item: WorkItem, t: Translate, now: Date): { text: stri
   }
 }
 
-const STUCK_STEPS = ['consent', 'selfie', 'id_check', 'id_service_down', 'trade_pending', 'payment', 'payment_failed'] as const;
+const STUCK_STEPS = ['consent', 'selfie', 'id_check', 'id_team_lead_check', 'trade_pending', 'payment', 'payment_failed'] as const;
 
 export function stuckLabel(step: string, failures: number, t: Translate): string {
   if (!(STUCK_STEPS as readonly string[]).includes(step)) return step;

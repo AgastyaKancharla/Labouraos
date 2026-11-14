@@ -67,7 +67,7 @@ export const callAgentEn = {
   'ca.stuck.consent': 'stuck at consent',
   'ca.stuck.selfie': 'stuck at the selfie',
   'ca.stuck.id_check': 'waiting for ID check',
-  'ca.stuck.id_service_down': 'ID service is down',
+  'ca.stuck.id_team_lead_check': "Waiting for the Team Lead's ID check",
   'ca.stuck.trade_pending': 'waiting for his trade to be added',
   'ca.stuck.payment': 'stuck at payment',
   'ca.stuck.payment_failed': 'UPI failed {count}×',

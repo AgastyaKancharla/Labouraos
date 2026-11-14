@@ -18,6 +18,8 @@ const WORDS: Record<string, string> = {
   name_check: 'Name check',
   aadhaar_phone_not_linked: 'Phone not linked to Aadhaar',
   aadhaar_qr_tampered: 'Aadhaar QR failed the UIDAI check',
+  aadhaar_cert_missing: 'New UIDAI certificate needed',
+  aadhaar_duplicate_person: 'Same Aadhaar as another person',
 };
 
 export function flagWords(kind: string): string {

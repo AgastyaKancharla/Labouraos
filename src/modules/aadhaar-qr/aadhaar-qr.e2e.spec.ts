@@ -213,7 +213,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     expect(detail.photoPath).toBe(`id-card/job_seeker/${s.id}/${row.id}.jpg`);
 
     const journey = await request(app.getHttpServer()).get(`/registration/${linkToken}/status`).query({ requestId }).expect(200);
-    expect(journey.body).toMatchObject({ currentStep: 'id_check', idCheck: { waitingForTeamLead: true, lastResult: 'pending' } });
+    expect(journey.body).toMatchObject({ steps: { idCheck: false }, idCheck: { waitingForTeamLead: true, lastResult: 'pending' } });
     const terms = await request(app.getHttpServer()).get(`/registration/${linkToken}/terms`).query({ requestId });
     expect(terms.status).toBe(400);
     expect(terms.body.message).toMatch(/Team Lead/);

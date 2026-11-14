@@ -14,6 +14,14 @@ vi.mock('../shared/aadhaar/AadhaarQrScanner', () => ({
     </button>
   ),
 }));
+// The live camera is tested in P01c; here "taking the photo" hands back a JPEG.
+vi.mock('../shared/LiveSelfie', () => ({
+  LiveSelfie: ({ onCapture, takeLabel, facing }: { onCapture: (b: Blob) => Promise<string>; takeLabel?: string; facing?: string }) => (
+    <button type="button" data-facing={facing} onClick={() => void onCapture(new Blob([new Uint8Array([0xff, 0xd8, 0xff, 0xe0])], { type: 'image/jpeg' }))}>
+      {takeLabel ?? 'Take selfie'}
+    </button>
+  ),
+}));
 vi.mock('../shared/aadhaar/EAadhaarPdf', () => ({
   EAadhaarPdf: ({ onText }: { onText: (t: string) => void }) => (
     <button type="button" onClick={() => onText(QR_TEXT)}>
@@ -53,7 +61,8 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     const privacy = screen.getByTestId('id-privacy');
     expect(privacy).toHaveTextContent(/never a picture of the card or your e-Aadhaar PDF/);
     expect(privacy).toHaveTextContent(/name, date of birth, gender, area and pincode/);
-    expect(privacy).toHaveTextContent(/your full Aadhaar number, any picture of the card, the e-Aadhaar PDF or XML, or your full address/);
+    expect(privacy).toHaveTextContent(/your full Aadhaar number, any picture of your Aadhaar card, the e-Aadhaar PDF or XML, your full address, or the full number of another ID/);
+    expect(privacy).toHaveTextContent(/the photo of the card only until a Team Lead checks it/);
     expect(screen.queryByText(/digi\s?locker/i)).not.toBeInTheDocument();
   });
 
@@ -85,25 +94,64 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     expect(await screen.findByText('Aadhaar verified by UIDAI')).toBeInTheDocument();
   });
 
-  it('on a name mismatch offers another government ID (Team Lead review)', async () => {
+  it('on a name mismatch offers another ID: the number, then a live photo of the card (back camera), then "sent to a Team Lead"', async () => {
     verifiedInThisTab();
+    let pending = false;
     const api = mockApi({
-      [`GET /registration/${TOKEN}/status`]: atId(),
+      [`GET /registration/${TOKEN}/status`]: () => atId({ idCheck: { waitingForTeamLead: pending, lastResult: pending ? 'pending' : 'name_mismatch' } }),
       [`POST /registration/${TOKEN}/aadhaar-qr`]: qrAnswer({ status: 'failed', result: 'name_mismatch', nameMatches: false, offerOtherId: true }),
-      [`POST /registration/${TOKEN}/id-check`]: { status: 'pending', method: 'pan', nameMatches: null, isAdult: null, failureReason: null },
+      [`POST /registration/${TOKEN}/other-id`]: () => {
+        pending = true;
+        return { verificationId: 'v2', method: 'pan', status: 'pending', idNumberLast4: '234F' };
+      },
     });
     render();
     await userEvent.click(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' }));
     await userEvent.click(screen.getByRole('button', { name: 'fake camera read' }));
     expect(await screen.findByText(/Team Lead will check it, or you can use another ID now/)).toBeInTheDocument();
-    expect(screen.getByTestId('other-id')).toBeInTheDocument();
+    expect(screen.getByTestId('other-id')).toHaveTextContent(/take a photo of the card with your camera and type its number/);
     await userEvent.click(screen.getByRole('button', { name: 'PAN card' }));
-    const check = screen.getByRole('button', { name: 'Check this ID' });
+    const next = screen.getByRole('button', { name: 'Next: photo of the card' });
     await userEvent.type(screen.getByLabelText(/PAN number/), 'abcde1234');
-    expect(check).toBeDisabled();
+    expect(next).toBeDisabled();
     await userEvent.type(screen.getByLabelText(/PAN number/), 'f');
-    await userEvent.click(check);
-    expect(api.calls(`POST /registration/${TOKEN}/id-check`)[0]!.body).toEqual({ requestId: 'req-1', method: 'pan', documentNumber: 'ABCDE1234F' });
+    await userEvent.click(next);
+    // The card camera: no file input anywhere, the back camera.
+    expect(screen.getByTestId('id-card-camera')).toHaveTextContent('PAN card · ABCDE1234F');
+    expect(document.querySelector('input[type="file"]')).toBeNull();
+    const take = screen.getByRole('button', { name: 'Take photo of the card' });
+    expect(take).toHaveAttribute('data-facing', 'environment');
+    await userEvent.click(take);
+    expect(await screen.findByTestId('id-pending')).toHaveTextContent(/Sent to a Team Lead\..*nothing is charged before the check/);
+    const sent = api.fetch.mock.calls.find(([url]) => String(url).endsWith(`/registration/${TOKEN}/other-id`));
+    const form = sent![1]!.body as FormData;
+    expect(form.get('idType')).toBe('pan');
+    expect(form.get('idNumber')).toBe('ABCDE1234F');
+    expect(form.get('captureSource')).toBe('live_camera');
+    expect(form.get('requestId')).toBe('req-1');
+    expect(form.get('photo')).toBeInstanceOf(Blob);
+  });
+
+  it('while another ID waits for the Team Lead it says so (no payment), and the Aadhaar QR is still offered', async () => {
+    verifiedInThisTab();
+    mockApi({ [`GET /registration/${TOKEN}/status`]: atId({ idCheck: { waitingForTeamLead: true, lastResult: 'pending' } }) });
+    render();
+    expect(await screen.findByTestId('id-pending')).toHaveTextContent(/Open this link again later to pay/);
+    expect(screen.getByRole('button', { name: 'Aadhaar: scan the QR code' })).toBeEnabled();
+    expect(screen.queryByTestId('navigated-away')).not.toBeInTheDocument();
+  });
+
+  it('an Aadhaar newer than our certificate: "please use another ID" (not called fake)', async () => {
+    verifiedInThisTab();
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: atId(),
+      [`POST /registration/${TOKEN}/aadhaar-qr`]: qrAnswer({ status: 'failed', result: 'cert_missing', verifiedByUidai: false, person: null, maskedReference: null, offerOtherId: true }),
+    });
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'fake camera read' }));
+    expect(await screen.findByText('This Aadhaar is newer than our check supports. Please use another ID.')).toBeInTheDocument();
+    expect(screen.queryByText(/failed UIDAI's signature check/)).not.toBeInTheDocument();
   });
 
   it('an old card without a signed QR: download the free e-Aadhaar or use another ID', async () => {
@@ -140,19 +188,13 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     expect(screen.queryByRole('button', { name: /Aadhaar/ })).not.toBeInTheDocument();
   });
 
-  it('when the PAN / driving licence / voter ID check is down, the QR still works and he can wait for an SMS', async () => {
+  it('has no "busy, SMS me when it\'s back" any more (no outside ID company)', async () => {
     verifiedInThisTab();
-    const api = mockApi({
-      [`GET /registration/${TOKEN}/status`]: atId({ idCheck: { serviceDown: true, waitingForService: false, lastResult: 'failed' } }),
-      [`POST /registration/${TOKEN}/id-check-wait`]: { waitingForRecovery: true },
-    });
+    mockApi({ [`GET /registration/${TOKEN}/status`]: atId() });
     render();
-    expect(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' })).toBeEnabled();
-    await userEvent.click(screen.getByRole('button', { name: 'Another ID' }));
-    expect(screen.getByText('PAN, driving licence and voter ID checks are busy right now.')).toBeInTheDocument();
-    await userEvent.click(screen.getByRole('button', { name: "I'll wait — SMS me when it's back" }));
-    expect(api.calls(`POST /registration/${TOKEN}/id-check-wait`)[0]!.body).toEqual({ requestId: 'req-1' });
-    expect(await screen.findByText(/we'll send you an SMS when it's back/)).toBeInTheDocument();
+    await userEvent.click(await screen.findByRole('button', { name: 'Another ID' }));
+    expect(screen.queryByText(/busy right now/)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /SMS me/ })).not.toBeInTheDocument();
   });
 
   it('shows a refused check', async () => {
