@@ -42,6 +42,11 @@ export abstract class OidcIdTokenVerifier {
   protected abstract readonly label: string;
   abstract audiences(): string[];
 
+  /** When true, a sign-in without a nonce is refused. */
+  protected nonceRequired(): boolean {
+    return false;
+  }
+
   configured(): boolean {
     return this.audiences().length > 0;
   }
@@ -63,7 +68,9 @@ export abstract class OidcIdTokenVerifier {
     const now = this.now();
     const expired = now >= this.keysExpireAt;
     const unknown = !this.keys.has(kid);
-    if (expired || (unknown && now - this.lastFetchAt >= UNKNOWN_KID_REFETCH_MS)) {
+    // At most one download a minute, whether the keys expired or the key id is new
+    // (also when the provider is down: a failed download is not retried at once).
+    if ((expired || unknown) && (this.lastFetchAt === 0 || now - this.lastFetchAt >= UNKNOWN_KID_REFETCH_MS)) {
       this.lastFetchAt = now;
       try {
         const { keys, maxAgeMs } = await this.fetchKeys();
@@ -110,6 +117,7 @@ export abstract class OidcIdTokenVerifier {
       throw invalid();
     }
     if (typeof payload.sub !== 'string' || !payload.sub) throw invalid();
+    if ((nonce === undefined || nonce === null || nonce === '') && this.nonceRequired()) throw invalid();
     if (nonce !== undefined && nonce !== null && nonce !== '') {
       // The app may send the raw nonce; the provider may hold it raw or as its SHA-256.
       if (typeof nonce !== 'string' || nonce.length > 200) throw invalid();
@@ -153,6 +161,15 @@ export class GoogleIdTokenVerifier extends OidcIdTokenVerifier {
   audiences(): string[] {
     const ids = googleClientIds();
     return [ids.android, ids.ios, ids.web].filter((id): id is string => Boolean(id));
+  }
+
+  /**
+   * GOOGLE_NONCE_REQUIRED=on refuses Google sign-ins without a nonce. Off by
+   * default because the customer app does not send one yet (customer/src/api/live.ts);
+   * turn it on once it does.
+   */
+  protected nonceRequired(): boolean {
+    return process.env.GOOGLE_NONCE_REQUIRED?.trim().toLowerCase() === 'on';
   }
 }
 

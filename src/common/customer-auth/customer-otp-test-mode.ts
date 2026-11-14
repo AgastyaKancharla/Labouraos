@@ -39,6 +39,24 @@ export function assertCustomerOtpTestModeSafe(env: NodeJS.ProcessEnv = process.e
   }
 }
 
+export function isLiveSetup(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env[LABOURA_SETUP_ENV]?.trim().toLowerCase() === 'live';
+}
+
+/**
+ * The live setup cannot start with the mock human check (its token is public):
+ * a real CAPTCHA or device attestation must be chosen before the public launch
+ * (security re-check N3; DEPLOY.md go-live checklist). The test setup keeps the mock.
+ */
+export function assertHumanCheckSafe(env: NodeJS.ProcessEnv = process.env): void {
+  const mode = env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock';
+  if (isLiveSetup(env) && mode === 'mock') {
+    throw new Error(
+      'HUMAN_CHECK_PROVIDER_MODE=mock is not allowed on the live setup (LABOURA_SETUP=live): choose a real CAPTCHA or device attestation provider before going live.',
+    );
+  }
+}
+
 /** What a customer "send OTP" answer adds: the code only in customer OTP test mode. */
 export function customerTestModeFields(code: string | undefined, env: NodeJS.ProcessEnv = process.env) {
   if (!code || !customerOtpTestModeEnabled(env)) return {};

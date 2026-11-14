@@ -178,6 +178,8 @@ export class MockOtpProvider implements OtpProvider {
   /** Test mode only: the code in the server log, so a tester can read it there too. */
   private logTestModeCode(record: OtpRecord): void {
     if (!otpTestModeEnabled()) return;
+    // Customer app codes never go to the log, not even in test mode (the app shows them only in customer OTP test mode).
+    if (record.purpose.startsWith('customer_')) return;
     this.logger.log(
       `[MOCK OTP] Test mode code for ******${normalizePhone(record.phone).slice(-4)}: ${record.code} (requestId: ${record.requestId})`,
     );

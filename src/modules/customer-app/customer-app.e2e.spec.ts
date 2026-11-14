@@ -590,6 +590,82 @@ describe('Customer app API', () => {
       await auth(http().get(`${API}/me/profiles/${reg.body.profileId}/documents`), session.accessToken).expect(404);
     });
 
+    it('a send the provider refuses does not use up the person\'s codes (N1)', async () => {
+      const phone = newPhone();
+      const { requestId } = await sendCode(phone);
+      // The mock sender refuses a resend within 30 seconds.
+      await json(http().post(`${API}/auth/otp/send`)).send({ phone, requestId, humanCheckToken: HUMAN }).expect(400);
+      const { customerPhoneHash } = await import('../customer-account/customer-otp-limiter.service');
+      expect(await prisma.customerOtpAttempt.count({ where: { kind: 'send', phoneHash: customerPhoneHash(`+91${phone}`) } })).toBe(1);
+    });
+
+    it('Google sign-in and refresh need the installation id (N2)', async () => {
+      const google = await request(app.getHttpServer()).post(`${API}/auth/google`).set('Accept', 'application/json')
+        .send({ idToken: googleToken({ sub: `no-inst-${stamp}-${seq}` }) }).expect(400);
+      expect(google.body.code).toBe('INSTALLATION_REQUIRED');
+      const session = await signIn(newPhone());
+      const refresh = await request(app.getHttpServer()).post(`${API}/auth/refresh`).set('Accept', 'application/json')
+        .send({ refreshToken: session.refreshToken }).expect(400);
+      expect(refresh.body.code).toBe('INSTALLATION_REQUIRED');
+    });
+
+    it('when the daily breaker is open, existing customers still get codes (N3)', async () => {
+      const existing = newPhone();
+      await signIn(existing);
+      const saved = process.env.CUSTOMER_OTP_DAILY_LIMIT;
+      process.env.CUSTOMER_OTP_DAILY_LIMIT = '1';
+      try {
+        const fresh = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone(), humanCheckToken: HUMAN }).expect(503);
+        expect(fresh.body.code).toBe('OTP_PAUSED');
+        await json(http().post(`${API}/auth/otp/send`)).send({ phone: existing, humanCheckToken: HUMAN }).expect(200);
+      } finally {
+        if (saved === undefined) delete process.env.CUSTOMER_OTP_DAILY_LIMIT;
+        else process.env.CUSTOMER_OTP_DAILY_LIMIT = saved;
+      }
+    });
+
+    it('wrong codes from another installation never lock the owner\'s phone (N4)', async () => {
+      const victim = newPhone();
+      const { customerPhoneHash, hashOf } = await import('../customer-account/customer-otp-limiter.service');
+      const attacker = hashOf('device', `attacker-${stamp}-${seq}`);
+      await prisma.customerOtpAttempt.createMany({
+        data: Array.from({ length: 10 }, () => ({ kind: 'verify_failed', phoneHash: customerPhoneHash(`+91${victim}`), deviceHash: attacker })),
+      });
+      const session = await signIn(victim);
+      expect(session.accessToken).toEqual(expect.any(String));
+    });
+
+    it('a Google account cannot add or join a mobile while a deletion is pending', async () => {
+      const sub = `google-pending-${stamp}-${seq}`;
+      const signedIn = await json(http().post(`${API}/auth/google`)).send({ idToken: googleToken({ sub }) }).expect(200);
+      await auth(http().post(`${API}/me/deletion`), signedIn.body.accessToken)
+        .send({ proof: { provider: 'google', idToken: googleToken({ sub }) } }).expect(201);
+      const phone = newPhone();
+      const sent = await auth(http().post(`${API}/auth/phone/send`), signedIn.body.accessToken).send({ phone, humanCheckToken: HUMAN }).expect(200);
+      const res = await auth(http().post(`${API}/auth/phone/verify`), signedIn.body.accessToken)
+        .send({ phone, requestId: sent.body.requestId, code: otp.getCode(sent.body.requestId) }).expect(409);
+      expect(res.body.code).toBe('DELETION_PENDING');
+      await prisma.customerAccount.update({ where: { id: signedIn.body.account.id }, data: { phone: `+91${phone}` } });
+    });
+
+    it('two first sign-ins with the same Google account at once make one account', async () => {
+      const sub = `google-race-${stamp}-${seq}`;
+      const [a, b] = await Promise.all([1, 2].map(() => json(http().post(`${API}/auth/google`)).send({ idToken: googleToken({ sub }) })));
+      expect([a!.status, b!.status]).toEqual([200, 200]);
+      expect(a!.body.account.id).toBe(b!.body.account.id);
+      await prisma.customerAccount.update({ where: { id: a!.body.account.id }, data: { phone: `+91${newPhone()}` } });
+    });
+
+    it('a branch contact with an unknown role is linked as supervisor, never owner', async () => {
+      const phone = newPhone();
+      const business = await prisma.business.create({ data: { code: `BZ-B${stamp % 100000}${seq}`, name: 'Branch Shop', phone: `+91${newPhone()}` } });
+      await prisma.businessBranch.create({ data: { businessId: business.id, name: 'Branch 2', contactPersonName: 'C', contactPersonRole: 'other', contactPersonPhone: `+91${phone}` } });
+      const session = await signIn(phone);
+      expect(session.linked).toEqual([expect.objectContaining({ kind: 'business' })]);
+      const profile = await prisma.customerProfile.findUniqueOrThrow({ where: { id: session.linked[0]!.profileId } });
+      expect(profile).toEqual(expect.objectContaining({ role: 'supervisor', branchId: expect.any(String) }));
+    });
+
     it('Sign in with Apple is refused while it is not configured', async () => {
       const res = await json(http().post(`${API}/auth/apple`)).send({ idToken: 'a.b.c' }).expect(503);
       expect(res.body.code).toBe('APPLE_NOT_CONFIGURED');

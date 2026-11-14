@@ -1,4 +1,4 @@
-import { assertCustomerOtpTestModeSafe, customerOtpTestModeEnabled, customerTestModeFields } from './customer-otp-test-mode';
+import { assertCustomerOtpTestModeSafe, assertHumanCheckSafe, customerOtpTestModeEnabled, customerTestModeFields } from './customer-otp-test-mode';
 
 /** Security review C1: customer OTP codes are shown only with an explicit flag, on the test setup. */
 describe('Customer OTP test mode', () => {
@@ -23,5 +23,13 @@ describe('Customer OTP test mode', () => {
     expect(() => assertCustomerOtpTestModeSafe({ CUSTOMER_OTP_TEST_MODE: 'on' })).toThrow();
     expect(() => assertCustomerOtpTestModeSafe({ CUSTOMER_OTP_TEST_MODE: 'on', LABOURA_SETUP: 'test' })).not.toThrow();
     expect(() => assertCustomerOtpTestModeSafe({ LABOURA_SETUP: 'live' })).not.toThrow();
+  });
+
+  it('the live setup refuses to start with the mock human check (N3)', () => {
+    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live' })).toThrow(/not allowed on the live setup/);
+    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live', HUMAN_CHECK_PROVIDER_MODE: 'mock' })).toThrow();
+    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live', HUMAN_CHECK_PROVIDER_MODE: 'recaptcha' })).not.toThrow();
+    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'test', HUMAN_CHECK_PROVIDER_MODE: 'mock' })).not.toThrow();
+    expect(() => assertHumanCheckSafe({})).not.toThrow();
   });
 });

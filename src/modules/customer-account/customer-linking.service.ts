@@ -97,7 +97,9 @@ export class CustomerLinkingService {
         select: { id: true },
       });
       if (existing) continue;
-      const role = branch.contactPersonRole === 'owner' ? 'manager' : businessRole(branch.contactPersonRole);
+      // A branch contact is never the business owner; with no known role, supervisor.
+      const role = branch.contactPersonRole === 'owner' ? 'manager'
+        : (CUSTOMER_BUSINESS_ROLES as readonly string[]).includes(branch.contactPersonRole ?? '') ? branch.contactPersonRole! : 'supervisor';
       const p = await createOrSkip(() => tx.customerProfile.create({
         data: { accountId, kind: 'business', businessId: branch.businessId, branchId: branch.id, role, linkedVia: 'phone_match' },
       }));

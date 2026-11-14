@@ -247,6 +247,7 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] An uptime monitor watches `/health/ready`.
 - [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
 - [ ] The four buckets exist and are private (Step 3).
+- [ ] **Customer app, before it opens to the public:** `LABOURA_SETUP` is `live` and `HUMAN_CHECK_PROVIDER_MODE` names a real CAPTCHA or device attestation provider. The live setup refuses to start with the mock human check (its token is public), and with `CUSTOMER_OTP_TEST_MODE=on`.
 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
@@ -509,7 +510,8 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `LABOURA_SETUP` | `live` on the live setup, `test` on the test setup (the free tier is always `test`) | Marks which setup this is. The only thing it switches today: the customer OTP test mode is allowed only on `test` |
 | `CUSTOMER_OTP_TEST_MODE` | `off` (paid, fixed); `on` on the free test tier | Shows the customer app's OTP code on screen, for testing with pretend SMS. **The server refuses to start with `on` unless `LABOURA_SETUP=test`**, so the live setup can never show codes. The staff OTP test mode does not turn it on |
 | `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it, sending pauses and an alert goes to `ALERT_WEBHOOK_URL`; check for abuse before raising it |
-| `HUMAN_CHECK_PROVIDER_MODE` | `mock` (fixed) | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. Any other value refuses every check |
+| `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **The server refuses to start with `mock` when `LABOURA_SETUP=live`.** Any value without a provider refuses every check |
+| `GOOGLE_NONCE_REQUIRED` | `off` (empty) until the customer app sends a nonce | `on` refuses Google sign-ins without a nonce (replay protection). The app does not send one yet |
 | `APPLE_CLIENT_ID_IOS`, `APPLE_CLIENT_ID_WEB` | From the Apple developer account (the iPhone app's bundle id; the web Services ID) | Turns on "Sign in with Apple" in the customer app. Empty: Apple sign-in is off and refused |
 | `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | From the Laboura Firebase project (Project settings, then Your apps; for Android the client id appears once the app's SHA-1 fingerprint is added) | Turns on "Continue with Google" in the customer app. Leave all three empty and the app shows mobile + OTP only. Changing them needs no redeploy of the app, only a restart of `laboura-api` |
 | `PUBLIC_APP_URL` | `https://app.laboura.com` (the onrender.com address until the domain is connected) | The public web address of the app. Every link the software sends (invites, password resets, the public `/p/...` pages, receipts) starts with it; required to start. Links are never built from the address a visitor happened to use. |

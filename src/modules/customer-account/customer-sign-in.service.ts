@@ -1,5 +1,5 @@
-import { BadRequestException, HttpStatus, Inject, Injectable } from '@nestjs/common';
-import { createHash } from 'node:crypto';
+import { HttpStatus, Inject, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
@@ -67,7 +67,16 @@ function language(value: unknown): string | null {
 }
 
 function ipHash(ip: string | null | undefined): string | null {
-  return ip ? createHash('sha256').update(`laboura:customer-ip:${ip}`).digest('hex') : null;
+  return hashOf('session-ip', ip);
+}
+
+/** Two first sign-ins for one number or Google/Apple account at once: the loser re-reads. */
+function isUniqueViolation(error: unknown): boolean {
+  return error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002';
+}
+
+function installationRequired(): CustomerApiError {
+  return bad(CUSTOMER_ERROR_CODES.INSTALLATION_REQUIRED, 'The app must send its installation id (X-Laboura-Installation)', HttpStatus.BAD_REQUEST);
 }
 
 /**
@@ -106,9 +115,7 @@ export class CustomerSignInService {
     caller: OtpCaller,
     accountId: string | null,
   ) {
-    if (!caller.installationId) {
-      throw bad(CUSTOMER_ERROR_CODES.INSTALLATION_REQUIRED, 'The app must send its installation id (X-Laboura-Installation)', HttpStatus.BAD_REQUEST);
-    }
+    if (!caller.installationId) throw installationRequired();
     const now = this.clock.now();
     const resendOf = typeof body?.requestId === 'string' && body.requestId ? body.requestId : undefined;
     if (resendOf) {
@@ -124,14 +131,18 @@ export class CustomerSignInService {
         throw bad(CUSTOMER_ERROR_CODES.HUMAN_CHECK_REQUIRED, 'Please confirm you are a person, then ask for the code again', HttpStatus.FORBIDDEN, { provider: this.humanCheck.name });
       }
     }
-    const rowId = await this.limiter.claimSend(caller, now);
+    // A number that already has an account keeps getting sign-in codes even when
+    // the system-wide breaker is open (its own limits still apply), so an attack
+    // cannot lock every existing customer out (security re-check N3).
+    const existingAccount = accountId !== null || Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
+    const rowId = await this.limiter.claimSend(caller, now, { existingAccount });
     let result;
     try {
+      // Codes the person asked for are sent at any hour (the real sender exempts customer_* purposes).
       result = await this.otp.getProvider().sendOtp(phone, { purpose, requestId: resendOf });
     } catch (error) {
-      if (error instanceof BadRequestException && /TRAI|09:00/.test(String((error.getResponse() as { message?: unknown })?.message ?? error.message))) {
-        throw bad(CUSTOMER_ERROR_CODES.OTP_QUIET_HOURS, 'Codes can be sent only between 9 AM and 9 PM. Please try again then.', HttpStatus.SERVICE_UNAVAILABLE);
-      }
+      // A send that failed does not use up the person's hourly and daily codes.
+      await this.limiter.releaseSend(rowId);
       throw error;
     }
     await this.limiter.bindSend(rowId, { requestId: result.requestId, purpose, accountId });
@@ -230,17 +241,24 @@ export class CustomerSignInService {
       await this.prisma.customerIdentity.create({ data: { accountId: byPhone.id, provider: 'phone', subject: phone, verifiedAt: now, lastUsedAt: now } });
       return byPhone.id;
     }
-    const account = await this.prisma.customerAccount.create({
-      data: {
-        phone,
-        phoneVerifiedAt: now,
-        createdVia: 'phone',
-        language: lang ?? 'en',
-        identities: { create: { provider: 'phone', subject: phone, verifiedAt: now, lastUsedAt: now } },
-      },
-      select: { id: true },
-    });
-    return account.id;
+    try {
+      const account = await this.prisma.customerAccount.create({
+        data: {
+          phone,
+          phoneVerifiedAt: now,
+          createdVia: 'phone',
+          language: lang ?? 'en',
+          identities: { create: { provider: 'phone', subject: phone, verifiedAt: now, lastUsedAt: now } },
+        },
+        select: { id: true },
+      });
+      return account.id;
+    } catch (error) {
+      if (!isUniqueViolation(error)) throw error;
+      const winner = await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } });
+      if (!winner) throw error;
+      return winner.id;
+    }
   }
 
   // ─── Google and Apple ──────────────────────────────────────────────────
@@ -262,6 +280,7 @@ export class CustomerSignInService {
     body: { idToken?: unknown; nonce?: unknown; name?: unknown; device?: DeviceInput; language?: unknown },
     ctx: RequestContext,
   ) {
+    if (!ctx.installationId) throw installationRequired();
     const identityInfo: ExternalIdentity = await this.verifierFor(provider).verify(body?.idToken, body?.nonce);
     const now = this.clock.now();
     // Apple sends the name only to the app, the first time: the app passes it on.
@@ -275,17 +294,27 @@ export class CustomerSignInService {
       accountId = identity.accountId;
       await this.prisma.customerIdentity.update({ where: { id: identity.id }, data: { lastUsedAt: now, email: identityInfo.email } });
     } else {
-      const account = await this.prisma.customerAccount.create({
-        data: {
-          createdVia: provider,
-          email: identityInfo.email,
-          displayName: name,
-          language: language(body?.language) ?? 'en',
-          identities: { create: { provider, subject: identityInfo.sub, email: identityInfo.email, verifiedAt: now, lastUsedAt: now } },
-        },
-        select: { id: true },
-      });
-      accountId = account.id;
+      try {
+        const account = await this.prisma.customerAccount.create({
+          data: {
+            createdVia: provider,
+            email: identityInfo.email,
+            displayName: name,
+            language: language(body?.language) ?? 'en',
+            identities: { create: { provider, subject: identityInfo.sub, email: identityInfo.email, verifiedAt: now, lastUsedAt: now } },
+          },
+          select: { id: true },
+        });
+        accountId = account.id;
+      } catch (error) {
+        if (!isUniqueViolation(error)) throw error;
+        const winner = await this.prisma.customerIdentity.findUnique({
+          where: { provider_subject: { provider, subject: identityInfo.sub } },
+          select: { accountId: true },
+        });
+        if (!winner) throw error;
+        accountId = winner.accountId;
+      }
     }
     await this.assertUsable(accountId);
     const account = await this.prisma.customerAccount.findUniqueOrThrow({ where: { id: accountId }, select: { phone: true } });
@@ -331,8 +360,11 @@ export class CustomerSignInService {
     const now = this.clock.now();
     const me = await this.prisma.customerAccount.findUniqueOrThrow({
       where: { id: accountId },
-      select: { id: true, phone: true, _count: { select: { profiles: { where: { status: 'active' } } } } },
+      select: { id: true, phone: true, status: true, _count: { select: { profiles: { where: { status: 'active' } } } } },
     });
+    if (me.status === 'deletion_requested') {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.DELETION_PENDING, 'This account is being deleted. Cancel the deletion first.');
+    }
     if (me.phone === phone) {
       return { account: await this.accounts.me(accountId), linked: [], next: await this.next(accountId) };
     }
@@ -358,6 +390,9 @@ export class CustomerSignInService {
       return { account: await this.accounts.me(accountId), linked, next: await this.next(accountId) };
     }
 
+    if (other.status === 'deletion_requested') {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.DELETION_PENDING, 'The account with this mobile is being deleted. Call Laboura for help.');
+    }
     if (other.status === 'deleted' || other.status === 'blocked' || (me._count.profiles > 0 && other._count.profiles > 0) || me.phone) {
       throw bad(CUSTOMER_ERROR_CODES.PHONE_IN_USE, 'This mobile belongs to another Laboura account. Call Laboura for help.', HttpStatus.CONFLICT);
     }
@@ -410,7 +445,8 @@ export class CustomerSignInService {
 
   private async upsertDevice(accountId: string, device: DeviceInput | undefined, ctx: RequestContext, now: Date): Promise<string | null> {
     // The header is the installation the OTP was bound to; the body may only repeat it.
-    const installationId = optionalText(ctx.installationId, 100) ?? optionalText(device?.installationId, 100);
+    void device?.installationId;
+    const installationId = optionalText(ctx.installationId, 100);
     if (!installationId) return null;
     const account = await this.prisma.customerAccount.findUniqueOrThrow({ where: { id: accountId }, select: { status: true } });
     if (account.status === 'deletion_requested') {
@@ -440,13 +476,13 @@ export class CustomerSignInService {
   ) {
     const now = this.clock.now();
     const deviceId = await this.upsertDevice(accountId, device, ctx, now);
-    if (deviceId) {
-      // One sign-in per phone: an older session on this phone ends.
-      await this.prisma.customerSession.updateMany({
-        where: { accountId, deviceId, revokedAt: null },
-        data: { revokedAt: now, endedReason: 'replaced' },
-      });
-    }
+    // Every session is tied to a phone (refresh binding, "no new phone while deletion is pending").
+    if (!deviceId) throw installationRequired();
+    // One sign-in per phone: an older session on this phone ends.
+    await this.prisma.customerSession.updateMany({
+      where: { accountId, deviceId, revokedAt: null },
+      data: { revokedAt: now, endedReason: 'replaced' },
+    });
     const refreshToken = this.tokens.newRefreshToken();
     const expiresAt = this.sessionEnd(now);
     const session = await this.prisma.customerSession.create({
@@ -494,6 +530,7 @@ export class CustomerSignInService {
   async refresh(body: { refreshToken?: unknown }, ctx: RequestContext) {
     const raw = typeof body?.refreshToken === 'string' ? body.refreshToken : '';
     const invalid = () => customerUnauthorized(CUSTOMER_ERROR_CODES.REFRESH_INVALID, 'Sign in again');
+    if (!ctx.installationId) throw installationRequired();
     if (!raw || raw.length > 200) throw invalid();
     const hash = this.tokens.hashRefreshToken(raw);
     const now = this.clock.now();
@@ -504,7 +541,7 @@ export class CustomerSignInService {
     const session = await this.prisma.customerSession.findUnique({ where: { refreshTokenHash: hash }, select });
     // A refresh token works only on the phone it was given to.
     const samePhone = (row: { device: { installationId: string } | null }) =>
-      !row.device || (Boolean(ctx.installationId) && row.device.installationId === ctx.installationId);
+      Boolean(row.device) && row.device!.installationId === ctx.installationId;
     if (!session) {
       const previous = await this.prisma.customerSession.findUnique({ where: { previousRefreshTokenHash: hash }, select });
       if (previous && !previous.revokedAt && samePhone(previous) && now.getTime() - previous.lastUsedAt.getTime() <= REFRESH_GRACE_MS) {

@@ -1,6 +1,7 @@
 import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
-import { createHash } from 'node:crypto';
+import { createHmac } from 'node:crypto';
+import { getJwtSecret } from '../../common/auth/jwt-secret';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { nationalMobileDigits } from '../../common/phone/indian-mobile';
@@ -21,6 +22,7 @@ export const CUSTOMER_OTP_LIMITS = {
   perPhonePerDay: 10,
   perAddressPerHour: 60,
   perDevicePerHour: 10,
+  /** Wrong codes for one phone from one installation: someone else cannot lock a person's number (N4). */
   wrongCodesPerPhonePerHour: 10,
   wrongCodesPerAddressPerHour: 50,
   wrongCodesPerDevicePerHour: 20,
@@ -38,9 +40,20 @@ export interface OtpCaller {
   installationId?: string | null;
 }
 
+/**
+ * Keyed hashes (HMAC with a key derived from the server's JWT_SECRET), so a
+ * leaked table of phone or address hashes cannot be reversed by trying every
+ * mobile number. Old plain hashes simply age out of the hourly and daily windows.
+ */
+let hashKey: Buffer | null = null;
+function key(): Buffer {
+  if (!hashKey) hashKey = createHmac('sha256', getJwtSecret()).update('laboura:customer-otp-hash:v1').digest();
+  return hashKey;
+}
+
 export function hashOf(kind: string, value: string | null | undefined): string | null {
   if (!value || !String(value).trim()) return null;
-  return createHash('sha256').update(`laboura:customer-otp:${kind}:${String(value).trim()}`).digest('hex');
+  return createHmac('sha256', key()).update(`${kind}:${String(value).trim()}`).digest('hex');
 }
 
 export function customerPhoneHash(phone: string): string {
@@ -91,13 +104,14 @@ export class CustomerOtpLimiter {
    * request id once the provider answers), under a lock per phone. Throws 429
    * OTP_LIMIT, or 503 OTP_PAUSED when the system-wide daily breaker is open.
    */
-  async claimSend(caller: OtpCaller, now: Date): Promise<string> {
+  async claimSend(caller: OtpCaller, now: Date, options: { existingAccount?: boolean } = {}): Promise<string> {
     const phoneHash = customerPhoneHash(caller.phone);
     const ipHash = hashOf('ip', caller.ip);
     const deviceHash = hashOf('device', caller.installationId);
     const dayAgo = new Date(now.getTime() - DAY_MS);
     const total = await this.prisma.customerOtpAttempt.count({ where: { kind: 'send', createdAt: { gt: dayAgo } } });
-    if (total >= this.dailyLimit()) {
+    // An existing customer still gets codes while the breaker is open (their own limits apply).
+    if (total >= this.dailyLimit() && !options.existingAccount) {
       await this.alertOnce(now, total);
       throw new CustomerApiError(HttpStatus.SERVICE_UNAVAILABLE, CUSTOMER_ERROR_CODES.OTP_PAUSED,
         'Sign-in codes are paused for a while. Please try again later or call Laboura.');
@@ -106,7 +120,7 @@ export class CustomerOtpLimiter {
       await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`customer-otp:${phoneHash}`}))`);
       const hourAgo = new Date(now.getTime() - HOUR_MS);
       const wrong = await tx.customerOtpAttempt.findMany({
-        where: { kind: 'verify_failed', phoneHash, createdAt: { gt: hourAgo } },
+        where: { kind: 'verify_failed', phoneHash, deviceHash, createdAt: { gt: hourAgo } },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
       });
@@ -146,6 +160,11 @@ export class CustomerOtpLimiter {
     });
   }
 
+  /** The provider could not send: the attempt does not count against the person's limits. */
+  async releaseSend(rowId: string): Promise<void> {
+    await this.prisma.customerOtpAttempt.deleteMany({ where: { id: rowId, kind: 'send' } });
+  }
+
   /** Binds a recorded send to the request id the provider gave, its purpose and the asking account. */
   async bindSend(rowId: string, binding: { requestId: string; purpose: string; accountId: string | null }): Promise<void> {
     await this.prisma.customerOtpAttempt.update({ where: { id: rowId }, data: binding });
@@ -173,7 +192,7 @@ export class CustomerOtpLimiter {
     });
     if (!phoneHash) return 0;
     const count = await this.prisma.customerOtpAttempt.count({
-      where: { kind: 'verify_failed', phoneHash, createdAt: { gt: new Date(now.getTime() - HOUR_MS) } },
+      where: { kind: 'verify_failed', phoneHash, deviceHash: hashOf('device', caller.installationId), createdAt: { gt: new Date(now.getTime() - HOUR_MS) } },
     });
     return Math.max(0, CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour - count);
   }
@@ -181,14 +200,16 @@ export class CustomerOtpLimiter {
   /** Refuses a verify after too many wrong codes for this phone, address or installation this hour. */
   async assertCanVerify(caller: OtpCaller, now: Date): Promise<void> {
     const hourAgo = new Date(now.getTime() - HOUR_MS);
-    for (const [field, hash, limit] of [
-      ['phoneHash', customerPhoneHash(caller.phone), CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour],
-      ['ipHash', hashOf('ip', caller.ip), CUSTOMER_OTP_LIMITS.wrongCodesPerAddressPerHour],
-      ['deviceHash', hashOf('device', caller.installationId), CUSTOMER_OTP_LIMITS.wrongCodesPerDevicePerHour],
+    const deviceHash = hashOf('device', caller.installationId);
+    for (const [where, limit] of [
+      // Per phone *and* installation: an attacker's wrong codes never lock the owner's phone (N4).
+      [{ phoneHash: customerPhoneHash(caller.phone), deviceHash }, CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour],
+      [{ ipHash: hashOf('ip', caller.ip) }, CUSTOMER_OTP_LIMITS.wrongCodesPerAddressPerHour],
+      [{ deviceHash }, CUSTOMER_OTP_LIMITS.wrongCodesPerDevicePerHour],
     ] as const) {
-      if (!hash) continue;
+      if (Object.values(where).some((value) => !value)) continue;
       const wrong = await this.prisma.customerOtpAttempt.findMany({
-        where: { kind: 'verify_failed', [field]: hash, createdAt: { gt: hourAgo } },
+        where: { kind: 'verify_failed', ...where, createdAt: { gt: hourAgo } },
         orderBy: { createdAt: 'asc' },
         select: { createdAt: true },
         take: limit,

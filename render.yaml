@@ -99,6 +99,8 @@ services:
       # attestation) asked for after repeated tries: mock until a provider is chosen.
       - key: CUSTOMER_OTP_DAILY_LIMIT
         value: "3000"
+      # mock is refused at start-up when LABOURA_SETUP=live: choose a real provider
+      # (CAPTCHA, Play Integrity / App Attest) before the live customer app opens.
       - key: HUMAN_CHECK_PROVIDER_MODE
         value: mock
       # Which setup this is: "live" or "test" (asked once). The customer OTP test

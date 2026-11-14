@@ -97,7 +97,8 @@ export class CustomerOptionsService {
     const profile = await this.scope.profile(accountId, profileId);
     const subjectType = profile.kind;
     const subjectId = profile.jobSeekerId ?? profile.referralId ?? profile.businessId!;
-    const consents = await this.prisma.consent.findMany({
+    // Consents belong to the whole business: a branch manager does not see them.
+    const consents = profile.branchId ? [] : await this.prisma.consent.findMany({
       where: { subjectType, subjectId, granted: true },
       orderBy: { grantedAt: 'asc' },
       select: { purpose: true, noticeVersion: true, language: true, method: true, grantedAt: true, withdrawnAt: true },
@@ -116,9 +117,10 @@ export class CustomerOptionsService {
 
   /** The terms text the partner agreed to: kept on the link they signed with. */
   private async signedReferralTerms(referralId: string): Promise<{ html: string; signedAt: Date | null } | null> {
+    // The terms on the link the partner actually completed, never a newer unused link.
     const link = await this.prisma.publicLink.findFirst({
-      where: { purpose: 'referral_registration', subjectType: 'referral', subjectId: referralId },
-      orderBy: { createdAt: 'desc' },
+      where: { purpose: 'referral_registration', subjectType: 'referral', subjectId: referralId, usedAt: { not: null } },
+      orderBy: { usedAt: 'desc' },
       select: { metadata: true, usedAt: true },
     });
     const signed = await this.prisma.consent.findFirst({

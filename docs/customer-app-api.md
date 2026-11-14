@@ -47,8 +47,9 @@ must change one, they change this file in the same PR and say so.
 Send `X-Laboura-Installation: <installationId>` on every request: a random id
 (UUID) the app makes once per install and keeps. It is used for the OTP limits
 per device and to tie a session to a phone. Never the phone's IMEI or ad id.
-**Required** on every OTP send (`400 INSTALLATION_REQUIRED` without it) and on
-`POST /auth/refresh`. Every customer OTP code is bound to the installation (and,
+**Required** on every OTP send, on `POST /auth/google`, `POST /auth/apple` and
+`POST /auth/refresh` (`400 INSTALLATION_REQUIRED` without it): every session is
+tied to one phone. Every customer OTP code is bound to the installation (and,
 when signed in, the account) that asked for it and to its purpose: it is
 accepted only by the same flow on the same phone. A code from any other flow
 (an agent's registration call, a vacancy confirmation…) never signs anyone in.
@@ -102,7 +103,6 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
 | `OTP_PAUSED` | 503 | System-wide code limit reached (abuse protection): show "Try again later or call Laboura" |
-| `OTP_QUIET_HOURS` | 503 | Codes are sent only 9 AM to 9 PM (SMS rules): show "Try again after 9 AM" |
 | `APPLE_TOKEN_INVALID` | 401 | Apple sign-in token not valid for Laboura |
 | `APPLE_NOT_CONFIGURED` | 503 | Sign in with Apple is not switched on: hide the button (see `GET /config`) |
 | `LIMIT_REACHED` | 409 / 429 | Too many open vacancy drafts (20), or too many links in an hour (10 per profile) |
@@ -174,17 +174,21 @@ rules). Abuse limits (proposal 7.6), each answering `429 OTP_LIMIT` with
 `retryAfterSeconds`: per phone at most 5 codes an hour and 10 a day; per
 internet address at most 60 codes an hour (many phones share a carrier address);
 per installation at most 10 codes an hour; 5 wrong codes on one request end that
-request (`OTP_EXPIRED`); 10 wrong codes for one phone, 50 for one address or 20
-for one installation in an hour block further tries for an hour. A code tried
+request (`OTP_EXPIRED`); 10 wrong codes for one phone from one installation, 50
+for one address or 20 for one installation in an hour block further tries for an
+hour (someone else's wrong codes never lock a person's own phone). A code tried
 with a different phone, flow or installation is refused without counting
 against that phone. From the 4th code in an hour for a phone or installation,
 `403 HUMAN_CHECK_REQUIRED` until the app sends a `humanCheckToken` (only a mock
 provider exists yet: it accepts `mock-human-ok`; a real CAPTCHA or Play
 Integrity / App Attest check must replace it before launch). Above a
 system-wide daily total (`CUSTOMER_OTP_DAILY_LIMIT`, default 3000) sending
-pauses (`503 OTP_PAUSED`) and an alert goes out. Outside 9 AM to 9 PM the real
-SMS sender refuses: `503 OTP_QUIET_HOURS`. `testModeCode` appears only in
-customer OTP test mode (§2).
+pauses for new numbers (`503 OTP_PAUSED`) and an alert goes out; numbers that
+already have an account keep getting codes, within their own limits. A send the
+SMS provider could not make does not count against the limits. Codes the person
+asks for themselves are sent at any hour, including 9 PM to 9 AM (owner rule:
+OTPs are allowed in quiet hours). `testModeCode` appears only in customer OTP
+test mode (§2). The live setup refuses to start with the mock human check.
 
 `POST /auth/otp/verify`
 
@@ -218,9 +222,11 @@ expiry and `email_verified`. It keeps Google's `sub`, the email and the name;
 **never the Google picture**. → `200` session answer. If the Google account has
 no verified mobile yet, `next` is `"add_phone"`.
 
-`nonce` (optional, both Google and Apple): when the app passes a nonce to the
-sign-in SDK, send the same raw nonce here; the token's `nonce` must equal it or
-its SHA-256 (hex).
+`nonce` (both Google and Apple): when the app passes a nonce to the sign-in SDK,
+send the same raw nonce here; the token's `nonce` must equal it or its SHA-256
+(hex). Optional today; with `GOOGLE_NONCE_REQUIRED=on` a Google sign-in without
+one is refused. **The app should start sending one** (it does not yet), then the
+setting is turned on.
 
 ### 3.2b Sign in with Apple (iPhone)
 
@@ -398,8 +404,10 @@ is the lower of their minimum and the top of that range (guide).
 `GET /me/profiles/:profileId/documents` 🔒 (A) — my signed papers:
 `{ "consents": [{ "purpose", "noticeVersion", "language", "method", "grantedAt", "withdrawnAt" }], "documents": [{ "kind": "referral_terms" | "business_agreement", "title", "signedAt", "download": "documents/<kind>" }] }`.
 `GET /me/profiles/:profileId/documents/:kind` returns the signed document as
-HTML (`referral_terms`: the exact terms the partner agreed to; `business_agreement`:
-owner only). `404 PROFILE_NOT_FOUND` when there is none. The ₹499 receipt link
+HTML (`referral_terms`: the exact terms on the partner link that was completed,
+so available once the partner finished their link; `business_agreement`: owner
+only). `404 PROFILE_NOT_FOUND` when there is none. A branch manager's profile
+lists no consents (they belong to the whole business). The ₹499 receipt link
 is on the job seeker's Home in a later version.
 
 `POST /me/signups` — the role picker and "+ Add another" (proposal 3.3). Starts
