@@ -18,7 +18,8 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessClock } from './business-clock';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 
-const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up'] as const;
+// business_signup: a business that signed up in the customer app (proposal 4.2).
+const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
 
 export interface CreateVisitAssignmentDto {
   purpose: string;

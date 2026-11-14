@@ -59,23 +59,19 @@ describe('Phase 10 Task 6: login and approval screens', () => {
     await app.close();
   });
 
-  it('renders the staff-code login on every console, with approver screens only on the admin dashboard', async () => {
-    const admin = await request(app.getHttpServer()).get('/admin').expect(200);
-    const callAgent = await request(app.getHttpServer()).get('/call-agent').expect(200);
-    const fieldAgent = await request(app.getHttpServer()).get('/field-agent').expect(200);
+  it('renders the staff-code login and the approver screens on the old admin dashboard (the only old console left)', async () => {
+    const admin = await request(app.getHttpServer()).get('/console/admin').expect(200);
 
-    for (const page of [admin, callAgent, fieldAgent]) {
-      expect(page.text).toContain('id="login-staff-code"');
-      expect(page.text).toContain('id="login-password"');
-      expect(page.text).toContain('Ask your Team Lead for your code');
-      expect(page.text).toContain('id="login-code"');
-      expect(page.text).toContain('id="login-code-countdown"');
-      expect(page.text).toContain('laboura_device_id');
-      expect(page.text).toContain('localStorage.setItem');
-      expect(page.text).toContain("sessionStorage.setItem('laboura_token'");
-      expect(page.text).toContain('/auth/refresh');
-      expect(page.text).toContain('/auth/logout');
-    }
+    expect(admin.text).toContain('id="login-staff-code"');
+    expect(admin.text).toContain('id="login-password"');
+    expect(admin.text).toContain('Ask your Team Lead for your code');
+    expect(admin.text).toContain('id="login-code"');
+    expect(admin.text).toContain('id="login-code-countdown"');
+    expect(admin.text).toContain('laboura_device_id');
+    expect(admin.text).toContain('localStorage.setItem');
+    expect(admin.text).toContain("sessionStorage.setItem('laboura_token'");
+    expect(admin.text).toContain('/auth/refresh');
+    expect(admin.text).toContain('/auth/logout');
 
     expect(admin.text).toContain('id="view-login-codes"');
     expect(admin.text).toContain('id="view-devices"');
@@ -86,10 +82,6 @@ describe('Phase 10 Task 6: login and approval screens', () => {
     expect(admin.text).toContain('>Unlock<');
     expect(admin.text).toContain('>Lock<');
     expect(admin.text).toContain('10000');
-    expect(callAgent.text).not.toContain('id="view-login-codes"');
-    expect(fieldAgent.text).not.toContain('id="view-login-codes"');
-    expect(callAgent.text).not.toContain('id="view-devices"');
-    expect(fieldAgent.text).not.toContain('id="view-staff"');
   });
 
   it('serves the approval screens to Team Leads, Managers and the CEO, and refuses everyone else', async () => {

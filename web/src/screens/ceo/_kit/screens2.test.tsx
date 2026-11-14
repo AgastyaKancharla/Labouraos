@@ -118,6 +118,43 @@ describe('Team & access', () => {
     await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Kavya R', joinedOn: '2026-11-16' })));
   });
 
+  it('marks an owner account when inviting an agent and later, with the explanation (owner decision 14 Nov)', async () => {
+    const api = mockApi({
+      ...common,
+      'GET /ceo/team': { ...teamResponse, rows: [...teamResponse.rows, { id: 'fa2', code: 'FA-0001', name: 'Owner Field', email: null, role: 'field_agent', team: null, reportsTo: null, state: 'active', authenticator: false, signedIn: false, lockedUntil: null, lockedReason: null, ownerAccount: true }] },
+      'POST /staff': { staff: { code: 'CA-0022', name: 'Owner Calls' }, inviteToken: 'tok-o' },
+      'PUT /staff/ca1/owner-account': { id: 'ca1', isOwnerAccount: true },
+      'PUT /staff/fa2/owner-account': { id: 'fa2', isOwnerAccount: false },
+    });
+    render(<Team />, '/ceo/team');
+    await screen.findByText(/3 call \+ 2 field agents/);
+    // Agents only: a Team Lead has no owner-account switch.
+    const lead = screen.getByText('Ravi Shankar').closest('tr') as HTMLElement;
+    expect(within(lead).queryByRole('button', { name: /owner account/i })).toBeNull();
+    const owner = screen.getByText('Owner Field').closest('tr') as HTMLElement;
+    expect(within(owner).getByText(/owner account/)).toBeInTheDocument();
+    await userEvent.click(within(owner).getByRole('button', { name: 'Owner account · clear' }));
+    let d = await dialog();
+    await userEvent.click(within(d).getByRole('button', { name: 'Clear owner account' }));
+    await waitFor(() => expect(api.calls('PUT /staff/fa2/owner-account')[0]?.body).toEqual({ ownerAccount: false }));
+
+    const row = screen.getByText('Deepa Nair').closest('tr') as HTMLElement;
+    await userEvent.click(within(row).getByRole('button', { name: 'Mark as owner account' }));
+    d = await dialog();
+    expect(within(d).getByText(/their work counts in the lists, but not in targets, leaderboard, attendance or salary/)).toBeInTheDocument();
+    await userEvent.click(within(d).getByRole('button', { name: 'Mark as owner account' }));
+    await waitFor(() => expect(api.calls('PUT /staff/ca1/owner-account')[0]?.body).toEqual({ ownerAccount: true }));
+
+    await userEvent.type(screen.getByLabelText(/Full name/), 'Owner Calls');
+    await userEvent.click(screen.getByRole('checkbox', { name: /Owner account/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Add · send staff code' }));
+    await waitFor(() => expect(api.calls('POST /staff')[0].body).toEqual(expect.objectContaining({ name: 'Owner Calls', role: 'call_agent', ownerAccount: true })));
+    // Not offered for roles that cannot be owner accounts.
+    const form = screen.getByLabelText(/Full name/).closest('form') as HTMLElement;
+    await userEvent.selectOptions(within(form).getByLabelText(/^Role/), 'team_lead');
+    expect(screen.queryByRole('checkbox', { name: /Owner account/ })).toBeNull();
+  });
+
   it('shows the error with a retry', async () => {
     mockApi({ ...common, 'GET /ceo/team': apiError(500, 'Internal server error', 'req-t1') });
     render(<Team />, '/ceo/team');

@@ -7,7 +7,7 @@ import * as request from 'supertest';
 import { CloudflareAccessVerifier } from '../../common/auth/cloudflare-access.verifier';
 import { resolveFieldAppFile } from '../field-app/field-app.files';
 import { fieldHosts, isFieldHost, normaliseHost } from './site-hosts';
-import { routeSiteRequest, SiteRoutingMiddleware, WEB_APP_ROOTS } from './site-routing.middleware';
+import { fieldAppAddress, retiredConsoleRedirect, routeSiteRequest, SiteRoutingMiddleware, WEB_APP_ROOTS } from './site-routing.middleware';
 import { resolveWebAppFile } from './web-app.files';
 
 /** Stand-ins for API routes that share a first segment with the web app's pages. */
@@ -19,8 +19,23 @@ class FakeApiController {
   }
 
   @Get('call-agent')
-  oldConsole() {
-    return { api: 'old call agent console' };
+  callAgentApi() {
+    return { api: 'call-agent segment' };
+  }
+
+  @Get('map/points')
+  mapPoints() {
+    return { api: 'map points' };
+  }
+
+  @Get('field-agent/priority-dashboard')
+  priorityDashboard() {
+    return { api: 'priority dashboard' };
+  }
+
+  @Get('console/admin')
+  oldAdmin() {
+    return { page: 'old admin dashboard' };
   }
 
   @Get('field-work/home')
@@ -158,15 +173,15 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       expect(pricing.status).toBe(200);
       expect(pricing.body).toEqual({ api: 'ceo pricing' });
       expect((await get(RENDER, '/finance/reports/books.csv', '*/*')).body).toEqual({ api: 'books' });
-      expect((await get(RENDER, '/call-agent', 'application/json')).body).toEqual({ api: 'old call agent console' });
+      expect((await get(RENDER, '/call-agent', 'application/json')).body).toEqual({ api: 'call-agent segment' });
       const login = await request(app.getHttpServer()).post('/auth/login').set('Host', APP).set('Accept', 'application/json').send({});
       expect(login.body).toEqual({ api: 'login' });
     });
 
     it('does not take over anything outside the web app', async () => {
       expect((await get(APP, '/application')).status).toBe(404);
-      expect((await get(APP, '/admin')).status).toBe(404);
-      expect((await get(APP, '/field-agent')).status).toBe(404);
+      expect((await get(APP, '/administration')).status).toBe(404);
+      expect((await get(APP, '/field-agents')).status).toBe(404);
       expect((await get(APP, '/fieldx')).status).toBe(404);
     });
 
@@ -232,6 +247,75 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       expect(location).toBe('/evil.example/x');
       expect(location.startsWith('//')).toBe(false);
       expect(location.startsWith('/\\')).toBe(false);
+    });
+  });
+
+  describe('the retired one-page consoles (14 Nov): browsers are sent on, API calls are untouched', () => {
+    it.each([
+      ['/admin', '/login'],
+      ['/admin/', '/login'],
+      ['/map', '/login'],
+      ['/console/map', '/login'],
+      ['/console/call-agent', '/call-agent'],
+      ['/field-agent', `https://${FIELD}/`],
+      ['/console/field-agent', `https://${FIELD}/`],
+    ])('%s → %s (301)', async (from, to) => {
+      for (const host of [APP, RENDER]) {
+        const res = await get(host, from);
+        expect([host, res.status]).toEqual([host, 301]);
+        expect(res.headers.location).toBe(to);
+        expect(res.text).not.toMatch(/Admin Dashboard|Call Agent Console|Field Agent App/);
+      }
+    });
+
+    it('serves the new web app, and nothing old, at /call-agent', async () => {
+      const res = await get(APP, '/call-agent');
+      expect(res.status).toBe(200);
+      expect(res.text).toContain('office');
+      expect(res.text).not.toContain('Call Agent Console');
+    });
+
+    it('sends the old field agent page to /field on this address while FIELD_HOST is not set', async () => {
+      delete process.env.FIELD_HOST;
+      try {
+        const res = await get(RENDER, '/field-agent');
+        expect(res.status).toBe(301);
+        expect(res.headers.location).toBe('/field/');
+      } finally {
+        process.env.FIELD_HOST = FIELD;
+      }
+      expect(fieldAppAddress({})).toBe('/field/');
+      expect(fieldAppAddress({ FIELD_HOST: 'Field.Laboura.com, other.test' })).toBe('https://field.laboura.com/');
+    });
+
+    it('never redirects an API caller, and API routes under the same first segment still answer', async () => {
+      for (const url of ['/admin', '/map', '/field-agent', '/console/call-agent', '/console/field-agent', '/console/map']) {
+        const res = await get(APP, url, 'application/json');
+        expect([url, res.status]).toEqual([url, 404]);
+      }
+      expect((await get(APP, '/map/points?bbox=1,2,3,4', 'application/json')).body).toEqual({ api: 'map points' });
+      expect((await get(APP, '/field-agent/priority-dashboard', 'application/json')).body).toEqual({ api: 'priority dashboard' });
+      // A browser opening an API address under these segments is not redirected either.
+      expect((await get(APP, '/map/points')).body).toEqual({ api: 'map points' });
+      expect((await get(APP, '/field-agent/priority-dashboard')).body).toEqual({ api: 'priority dashboard' });
+    });
+
+    it('leaves /console/admin (the old dashboard, kept for what the new screens lack) to its controller', async () => {
+      expect((await get(APP, '/console/admin')).body).toEqual({ page: 'old admin dashboard' });
+      expect(retiredConsoleRedirect('/console/admin')).toBeNull();
+      expect(retiredConsoleRedirect('/setup')).toBeNull();
+    });
+
+    it('on field.laboura.com sends the old field agent page to the root, and /map stays a Laboura Field page', async () => {
+      for (const url of ['/field-agent', '/console/field-agent']) {
+        const res = await get(FIELD, url);
+        expect(res.status).toBe(301);
+        expect(res.headers.location).toBe('/');
+      }
+      const map = await get(FIELD, '/map');
+      expect(map.status).toBe(200);
+      expect(map.text).toContain('field /');
+      expect((await get(FIELD, '/field-agent/priority-dashboard', 'application/json')).body).toEqual({ api: 'priority dashboard' });
     });
   });
 

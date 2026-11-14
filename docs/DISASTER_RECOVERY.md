@@ -48,7 +48,7 @@ Stop and think before clicking. A restore goes back to the last daily backup; wo
 3. In the new project: create the four private buckets again (`candidate-photos`, `business-photos`, `agreements`, `recordings`, all with **Public bucket** off), turn off the Data API (**Integrations** → **Data API**), and copy the new **Project URL** and **service_role** key (DEPLOY.md Steps 3 and 4).
 4. Copy the new project's two database addresses (DEPLOY.md Step 2: transaction pooler for `DATABASE_URL`, session pooler for `DIRECT_URL`).
 5. Render → `laboura-api` → **Environment**: replace `DATABASE_URL`, `DIRECT_URL`, `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` with the new values. **Save Changes**. Render restarts the web service, and the worker picks up the new values from `laboura-api`; if it does not restart by itself, open `laboura-worker` and click **Manual Deploy** → **Deploy latest commit**.
-6. Check `/health/ready` shows `"status":"ready"` and the worker as alive, and log in to `/admin`.
+6. Check `/health/ready` shows `"status":"ready"` and the worker as alive, and log in at `/login`.
 7. Uploaded files stayed in the old project's buckets. Until they are copied over (ask Claude to do it with the Supabase tools), photos, agreements and recordings uploaded before the switch will not open.
 
 **Faster, but destructive: restore over the live project.** Supabase → **Database** → **Backups** → choose a backup → **Restore**. The live database is replaced, the project is offline while it runs, and everything after that backup is lost. Use this only when the live data is worthless and speed matters.

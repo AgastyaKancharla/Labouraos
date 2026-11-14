@@ -226,37 +226,8 @@ describe('Phase 11 Task 6: Calling screens', () => {
   });
 
   describe('Console screens render for allowed roles', () => {
-    it('GET /call-agent renders call button, closed outcome list, blocked alert, and history headers', async () => {
-      const res = await request(app.getHttpServer()).get('/call-agent').expect(200);
-      expect(res.headers['content-type']).toContain('text/html');
-      const html = res.text;
-
-      expect(html).toContain('Laboura Call Agent Console');
-      expect(html).toContain('btn-trigger-call');
-      expect(html).toContain('call-blocked-alert');
-      expect(html).toContain('answered-outcome-form');
-
-      // Closed list outcomes
-      expect(html).toContain('value="interested"');
-      expect(html).toContain('value="accepted_offer"');
-      expect(html).toContain('value="rejected_offer"');
-      expect(html).toContain('value="callback_requested"');
-      expect(html).toContain('value="not_interested"');
-      expect(html).toContain('value="working_now"');
-      expect(html).toContain('value="other"');
-
-      // History table headers
-      expect(html).toContain('<th>Time</th>');
-      expect(html).toContain('<th>Direction</th>');
-      expect(html).toContain('<th>Purpose</th>');
-      expect(html).toContain('<th>Answered</th>');
-      expect(html).toContain('<th>Duration</th>');
-      expect(html).toContain('<th>Outcome</th>');
-      expect(html).toContain('<th>Recording</th>');
-    });
-
-    it('GET /admin renders Call buttons for profiles, outcome list, Listen button, and history table', async () => {
-      const res = await request(app.getHttpServer()).get('/admin').expect(200);
+    it('GET /console/admin (the old Admin Dashboard) renders Call buttons for profiles, outcome list, Listen button, and history table', async () => {
+      const res = await request(app.getHttpServer()).get('/console/admin').expect(200);
       expect(res.headers['content-type']).toContain('text/html');
       const html = res.text;
 
@@ -279,34 +250,14 @@ describe('Phase 11 Task 6: Calling screens', () => {
       expect(html).toContain('listenRecording');
     });
 
-    it('GET /field-agent renders Call button, outcome list, and blocked alert', async () => {
-      const res = await request(app.getHttpServer()).get('/field-agent').expect(200);
-      expect(res.headers['content-type']).toContain('text/html');
-      const html = res.text;
-
-      expect(html).toContain('Laboura Field Agent App');
-      expect(html).toContain('fa-calling-modal');
-      expect(html).toContain('btn-fa-call');
-      expect(html).toContain('fa-call-blocked-alert');
-      expect(html).toContain('fa-answered-outcome-form');
-    });
   });
 
   describe('Privacy floor: no full phone number appears in any agent page', () => {
-    it('verifies GET /call-agent contains no 10-digit phone number', async () => {
-      const res = await request(app.getHttpServer()).get('/call-agent').expect(200);
+    it('verifies GET /console/admin contains no 10-digit phone number', async () => {
+      const res = await request(app.getHttpServer()).get('/console/admin').expect(200);
       expect(res.text).not.toMatch(/\b[6-9]\d{9}\b/);
     });
 
-    it('verifies GET /admin contains no 10-digit phone number', async () => {
-      const res = await request(app.getHttpServer()).get('/admin').expect(200);
-      expect(res.text).not.toMatch(/\b[6-9]\d{9}\b/);
-    });
-
-    it('verifies GET /field-agent contains no 10-digit phone number', async () => {
-      const res = await request(app.getHttpServer()).get('/field-agent').expect(200);
-      expect(res.text).not.toMatch(/\b[6-9]\d{9}\b/);
-    });
   });
 
   describe('Calling workflow backing the console screens', () => {

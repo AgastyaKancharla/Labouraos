@@ -132,7 +132,7 @@ There is no phone design: these adapt the call agent's CA14e-MyAttendance, CA14f
 
 - FA01: staff code + password + this phone's id (`laboura_device_id`, the same id the old `/field-agent` console used, so an approved phone stays approved). A new phone must first be approved by the Team Lead; FA01 shows the phone's short id to read out.
 - FA02: the 6-digit code the Team Lead reads out (works once, 5 minutes).
-- Management accounts (e.g. the CEO) are asked for their authenticator code on FA01 instead of FA02.
+- Laboura Field is for field agents only (owner decision 14 Nov). Every sign-in sends `app: 'field'`; the server refuses every other role ("This app is for field agents. Please sign in at app.laboura.com.", translated as `fa01.notForThisApp`) before any device or code request is made, and on `field.laboura.com` it accepts only Laboura Field sessions. There is no authenticator step: the CEO uses the office app, and the owners use their own field agent account (an "owner account").
 - The session is kept on the phone (Keychain/Keystore in the phone app, localStorage in the web app), so closing the app does not sign the agent out (guide decision). It still ends after **1 hour without activity** or **2 hours after login** — the server enforces both. The 15-minute access token is refreshed silently: every few minutes while the app is open, and on open when it ran out while the app was closed, with the single-use refresh token from the login (`POST /auth/field/refresh`; a refresh is not activity, so it never keeps an idle session alive). When the server refuses, the sign-in screen says why (idle, 2-hour limit, ended).
 - Log out: tap the gold initials in the header → Log out.
 

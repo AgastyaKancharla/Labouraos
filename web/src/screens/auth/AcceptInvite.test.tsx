@@ -130,6 +130,18 @@ describe('Invite page (accept invite)', () => {
     expect(await screen.findByRole('link', { name: 'Open Laboura Field' })).toHaveAttribute('href', '/field/');
   });
 
+  it('a field agent is sent to Laboura Field at its own address when one is set', async () => {
+    mockApi({
+      'GET /auth/apps': { fieldAppUrl: 'https://field.laboura.com/' },
+      'POST /staff/accept-invite/preview': previewOf({ role: 'field_agent', code: 'FA-00008', signInAt: 'field_app' }),
+      'POST /staff/accept-invite': { success: true, code: 'FA-00008', email: null },
+    });
+    renderInvite();
+    await typePasswords('field agent password');
+    await userEvent.click(await screen.findByRole('button', { name: 'Set password' }));
+    expect(await screen.findByRole('link', { name: 'Open Laboura Field' })).toHaveAttribute('href', 'https://field.laboura.com/');
+  });
+
   it.each([
     [404, 'invalid', 'This invite link is not valid'],
     [410, 'expired', 'This invite has expired'],

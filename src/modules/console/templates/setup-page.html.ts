@@ -96,7 +96,7 @@ export function renderSetupPageHtml(): string {
       if (res.ok) {
         form.reset();
         form.style.display = 'none';
-        show('good', 'Done. Write the staff code down, then go to /admin and log in with it and the password to set up the authenticator app.', data.code || '');
+        show('good', 'Done. Write the staff code down, then go to /login and log in with the staff code and the password. The authenticator app is set up there, on that first login.', data.code || '');
       } else {
         var text = Array.isArray(data.message) ? data.message.join(' ') : (data.message || ('The server answered ' + res.status + '.'));
         show('bad', text);

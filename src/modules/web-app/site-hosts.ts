@@ -42,3 +42,9 @@ export function isFieldHost(req: Pick<Request, 'hostname' | 'headers'>, env: Nod
   const hosts = fieldHosts(env);
   return hosts.length > 0 && hosts.includes(requestHost(req));
 }
+
+/** Laboura Field's address: the root of FIELD_HOST when one is set, otherwise /field on this address. */
+export function fieldAppAddress(env: NodeJS.ProcessEnv = process.env): string {
+  const host = fieldHosts(env)[0];
+  return host ? `https://${host}/` : '/field/';
+}

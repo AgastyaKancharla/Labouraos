@@ -30,6 +30,7 @@ import {
   whereLabel,
 } from './request-routing';
 import { assertPayrollCanCorrect, monthOfDay, monthsBetween } from '../finance/payroll-window';
+import { isOwnerAccount, OWNER_ACCOUNT_NO_ATTENDANCE } from '../staff/owner-account';
 
 /** Statuses a correction may claim: working time a person picks. */
 const CORRECTION_STATUSES = ['available', 'team_meeting', 'training', 'one_to_one'];
@@ -1074,12 +1075,14 @@ export class AttendanceRequestsService {
   private async requireAttendanceStaff(id: string) {
     const staff = await this.prisma.staff.findUnique({
       where: { id },
-      select: { id: true, code: true, role: true, status: true },
+      select: { id: true, code: true, role: true, status: true, isOwnerAccount: true },
     });
     if (!staff) throw new NotFoundException('Staff account not found');
     if (!ATTENDANCE_ROLES.includes(staff.role)) {
       throw new BadRequestException('The CEO does not mark attendance');
     }
+    // No leave or corrections for an owner account: it has no attendance (owner decision 14 Nov).
+    if (isOwnerAccount(staff)) throw new BadRequestException(OWNER_ACCOUNT_NO_ATTENDANCE);
     return staff;
   }
 
