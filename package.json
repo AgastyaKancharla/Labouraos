@@ -102,6 +102,9 @@
     "testTimeout": 30000,
     "setupFiles": [
       "<rootDir>/test-support/jest-setup.ts"
+    ],
+    "setupFilesAfterEnv": [
+      "<rootDir>/test-support/redis-cleanup.ts"
     ]
   }
 }
