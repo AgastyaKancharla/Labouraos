@@ -119,3 +119,36 @@ jobs:
           TELEPHONY_WEBHOOK_SECRET: "ci_telephony_webhook_secret_32_characters"
           MESSAGE_WEBHOOK_SECRET: "ci_message_webhook_secret_32_characters"
         run: npm test
+
+  # The Laboura customer app (customer/, Expo) — its own job, no database needed.
+  customer-app:
+    name: Customer app
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: customer
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'npm'
+          cache-dependency-path: customer/package-lock.json
+
+      - name: Install customer app dependencies
+        run: npm ci --include=dev --no-audit --no-fund
+
+      - name: Lint customer app
+        run: npm run lint
+
+      - name: Typecheck customer app
+        run: npm run typecheck
+
+      - name: Test customer app
+        run: npm test
+
+      - name: Check the Expo config resolves (eas build reads it)
+        run: npm run config:check

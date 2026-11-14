@@ -37,7 +37,7 @@ export class VacancyController {
 
   @Post()
   @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
-  @RequirePermission('vacancy', 'write')
+  @RequirePermission('vacancy', 'write', { kind: 'business', from: 'body:businessId' })
   async createVacancy(
     @Body() body: CreateVacancyDto & { businessId: string },
     @Req() req: Request & { user: JwtPayload },
@@ -134,7 +134,11 @@ export class VacancyController {
 
   @Post(':id/introductions/in-person')
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('vacancy', 'write')
+  // The vacancy, and each candidate shown (a Team Lead: their own team's).
+  @RequirePermission('vacancy', 'write', [
+    { kind: 'vacancy', from: 'param:id' },
+    { kind: 'job_seeker', from: 'body:jobSeekerIds[]' },
+  ])
   async showCandidatesInPerson(
     @Param('id') id: string,
     @Body() body: { jobSeekerIds?: string[] },
@@ -145,7 +149,11 @@ export class VacancyController {
 
   @Post(':id/introductions')
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
-  @RequirePermission('vacancy', 'write')
+  // The vacancy, and each candidate shared (a Team Lead: their own team's).
+  @RequirePermission('vacancy', 'write', [
+    { kind: 'vacancy', from: 'param:id' },
+    { kind: 'job_seeker', from: 'body:jobSeekerIds[]' },
+  ])
   async shareCandidates(
     @Param('id') id: string,
     @Body() body: { jobSeekerIds?: string[]; channel?: 'sms' | 'whatsapp' },

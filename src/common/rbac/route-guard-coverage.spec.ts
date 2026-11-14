@@ -12,6 +12,9 @@ import { RbacGuard } from './rbac.guard';
 import { ROLES_METADATA_KEY } from './roles.decorator';
 import { PERMISSION_METADATA_KEY } from './permissions.decorator';
 import { PUBLIC_ROUTE_KEY } from './public.decorator';
+import { RequiredPermission } from './permissions.decorator';
+import { normaliseRoutePath, targetFor } from './rbac.guard';
+import { ALL_STAFF_ROLES, RBAC_MATRIX, Role } from './rbac.types';
 import { PaymentReceiptGuard } from '../../modules/payment/payment-receipt.guard';
 
 /**
@@ -37,6 +40,8 @@ interface RouteInfo {
   hasRoles: boolean;
   roles: string[];
   publicReason: string | undefined;
+  permission: RequiredPermission | undefined;
+  controllerPath: string;
 }
 
 function moduleClass(entry: unknown): Type<unknown> | undefined {
@@ -107,6 +112,11 @@ function routesOf(controller: Type<unknown>): RouteInfo[] {
       // Only a marker on the route itself counts, so a new route added to a
       // controller of public pages is not public by accident.
       publicReason: Reflect.getMetadata(PUBLIC_ROUTE_KEY, handler) as string | undefined,
+      permission: (methodPermission ?? classPermission) as RequiredPermission | undefined,
+      controllerPath: ((): string => {
+        const p = Reflect.getMetadata(PATH_METADATA, controller) as string | string[] | undefined;
+        return Array.isArray(p) ? p[0] ?? '' : p ?? '';
+      })(),
     });
   }
   return routes;
@@ -135,6 +145,35 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
       })
       .map(describeRoute);
     expect(unguarded).toEqual([]);
+  });
+
+  it('places the record of every scoped route with an id (own team, own account, own lead fail closed)', () => {
+    // A Team Lead (own team), a field agent (own account) or a call agent
+    // (own lead) on a record is checked against the record the route
+    // declares. A route whose id RbacGuard cannot place would refuse those
+    // roles at run time; this finds it before it ships.
+    const scoped = new Set(['own_team', 'own_account', 'own_lead']);
+    const unplaced: string[] = [];
+    // Staff and targets keep their own checks (RbacGuard, by staff id).
+    const recordResources = new Set(['job_seeker', 'referral', 'business', 'vacancy', 'placement']);
+    for (const route of routes) {
+      if (!route.permission || !recordResources.has(route.permission.resource)) continue;
+      const action =
+        route.permission.action ?? (route.method === 'GET' || route.method === 'HEAD' ? 'read' : 'write');
+      const roles = (route.roles.length ? route.roles : ALL_STAFF_ROLES) as Role[];
+      const scopedRoles = roles.filter((role) => {
+        const rule = RBAC_MATRIX[role]?.[route.permission!.resource]?.[action];
+        return rule?.allowed && scoped.has(rule.scope);
+      });
+      if (scopedRoles.length === 0) continue;
+      for (const path of route.paths) {
+        const pattern = normaliseRoutePath(`${route.controllerPath}/${path}`);
+        if (targetFor(route.permission, pattern) === null) {
+          unplaced.push(`${route.method} ${pattern} (${route.controller}.${route.handler}) for ${scopedRoles.join(', ')}`);
+        }
+      }
+    }
+    expect(unplaced).toEqual([]);
   });
 
   it('gives every public route a reason', () => {

@@ -26,9 +26,14 @@ import { Public } from '../../common/rbac/public.decorator';
 export class PayoutAccountController {
   constructor(private readonly payoutAccountService: PayoutAccountService) {}
 
+  /**
+   * Send the "add your UPI or bank details" link by hand: CEO and Finance only
+   * (FN-Payouts is the one screen that does this; the link sent at joining is
+   * sent by the system). Payout details are money, which a Manager never sees.
+   */
   @Post('links')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo', 'finance')
+  @RequireRoles('ceo', 'finance')
   async createPayoutLink(
     @Body() dto: CreatePayoutLinkDto,
     @Req() req: Request & { user: JwtPayload },
@@ -67,9 +72,13 @@ export class PayoutAccountController {
     return this.payoutAccountService.listCoolingAccounts();
   }
 
+  /**
+   * Someone's payout accounts (masked number, IFSC, verified holder name):
+   * CEO and Finance only (Master Guide, Bank and UPI details, 11 Nov).
+   */
   @Get(':ownerType/:ownerId')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo', 'finance')
+  @RequireRoles('ceo', 'finance')
   async listAccountsForOwner(
     @Param('ownerType') ownerType: string,
     @Param('ownerId') ownerId: string,
