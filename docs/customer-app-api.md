@@ -752,3 +752,76 @@ Shared constants: `src/common/customer-auth/customer-app.constants.ts`.
 | `CUSTOMER_JWT_SECRET` | render.yaml (generated) | Key for customer tokens, 32+ characters, different from `JWT_SECRET`. If unset (local, tests), one is derived from `JWT_SECRET` |
 | `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | render.yaml, `sync: false` | OAuth client ids from the Firebase / Google Cloud project. None set: Google sign-in is off |
 | `CUSTOMER_ACCESS_TOKEN_MINUTES` | optional | Access token life, 1 to 60, default 15 |
+
+---
+
+## 14. Back office: the sign-up tracker (Agent D)
+
+Code: `src/modules/signup-tracker/`. The customer app module imports
+`SignupTrackerModule` and calls `SignupTrackerService`. Every method re-reads the
+records, so calling it twice is harmless; without a call the tracker job
+(`src/jobs/signup-tracker.job.ts`, every 5 minutes) finds the sign-up anyway
+(trackers whose `nextActionAt` is null or due).
+
+| Method | Call it when |
+| --- | --- |
+| `onSignupChanged(trackerId)` | After creating a tracker (stage A), after a registration sets its record and stage B, after any step finished in the app |
+| `onSubjectChanged(subjectType, subjectId)` | When only the record is known (a link page step finished) |
+| `onCallbackRequested(requestId)` | After `POST /me/callback-requests`: becomes a `signup_help` call task during an open sign-up (topic `signup`), else `callback`. Stays `open` when no record exists yet or nobody is on shift; the job retries |
+| `requestSeekerVisit(trackerId, note?)` | A job seeker stuck at the ID step asks for an agent to come (question 11). Recorded as a tracker event `visit_request`; the Team Lead sees it |
+
+What D does with each sign-up:
+
+- **Stage** is read from the records (`signup-stage.ts`): job seeker consent → selfie
+  and ID → terms (guarantee floor frozen) → ₹499 received; business agreement →
+  visit booked → visit done (`pending_tl_check`) → `verified`; partner terms →
+  selfie and ID → UPI added → UPI verified. Moving forward resets the reminders
+  and call tries (a new stop).
+- **Timing** (`signup-plan.ts`, `signup-timing.ts`): reminders 30 min and 4 h after
+  stopping (one for a business), outside quiet hours; a call task the next working
+  morning, or after 2 working hours when a job seeker stopped at payment (stage E),
+  or 4 h after a business stopped; 3 tries on 3 working days, then closed
+  (`no_response`, or `gave_up` if reached) and put on the monthly re-engagement
+  list (one reminder every 30 days). Working days skip `weeklyOffDays` and the
+  Holiday table; calls only inside the calling hours, the shift and the person's
+  own window. No call without the contact-me tick (`SignupTracker.contactConsent`
+  or `CustomerAccount.contactMeConsent`) or before a record exists (stage A:
+  reminders only). "Not interested" on any answered call closes it as `gave_up`.
+- **Reminders** go through the token `SIGNUP_REMINDER_SENDER`
+  (`signup-reminder.port.ts`). Agent C: provide and export it from
+  `CustomerNotificationModule` (`{ provide: SIGNUP_REMINDER_SENDER, useExisting: CustomerNotificationService }`)
+  and implement `sendSignupReminder({ accountId, profileId, trackerId, profileKind, stage, reminder: 1 | 2 | 'reengage', missing, dedupeKey })`.
+  Until then each reminder is only recorded as a tracker event.
+- **Assignment** (`signup-assignment.ts`): existing agent (assigned before,
+  registered the record, or last answered call) → on shift (open attendance day;
+  an owner account counts while signed in) → speaks the person's language
+  (`Staff.spokenLanguages`, names or codes) → fewest open `signup_help` tasks, ties to
+  whoever got one least recently. Creates `CallTask { kind: 'signup_help', signupTrackerId }`.
+- **Business visit**: Agent A creates the `business_signup` VisitAssignment. D never
+  creates another: it moves the business `lead → pending_visit` and suggests the
+  nearest available field agent on that row; the suggested agent's Team Lead (any
+  Team Lead when there is no suggestion) confirms with the existing assign route.
+  `business_signup` is treated as the verification visit everywhere (owner OTP,
+  photo, GPS, Team Lead check).
+- **Credit** (question 13): finished without help → `outcome: 'self'`, no agent;
+  with the assigned agent's answered call (or GPS business visit) between assignment
+  and finishing → `assisted`, counted in that call agent's "candidates activated"
+  (`signup-credit.ts`; never for owner accounts).
+
+Office routes (staff realm, `/signup-tracker/...`):
+
+| Route | Roles | What |
+| --- | --- | --- |
+| `GET team-lead?days=` | Team Lead | Own team's open sign-ups, funnel, overdue, unassigned, job seeker visit requests, area tasks, re-engagement list |
+| `GET manager?days=` | Manager | Counts and funnels only (no names, phones or money) |
+| `GET ceo?days=&kind=&stage=&outcome=` | CEO | Funnels by stage, kind, area and source; the list; timing settings in force |
+| `POST :id/reassign { staffId, reason? }` | Team Lead (own team), Manager (own tree), CEO | Moves the sign-up and its open call task |
+| `GET app-labels?type=&ids=` | office roles | `{ [id]: { registeredInApp, hasApp, pushOn } }` for the "Registered in the app" label |
+| `GET staff-languages`, `PUT staff-languages/:staffId { languages }` | CEO | Languages each staff member speaks |
+
+Settings: the timing numbers are read from `PricingPolicy` fields named
+`signupFirstReminderMinutes`, `signupSecondReminderMinutes`, `signupBusinessCallMinutes`,
+`signupPaymentStopWorkingMinutes`, `signupMaxCallTries`, `signupCallTryDays`,
+`signupReengageDays`, `signupAreaClusterMin`, `signupStuckHours` when those columns
+exist, else the confirmed defaults (`signup-settings.ts`). The columns are not in the
+schema yet (prisma/ belongs to Agent A).
