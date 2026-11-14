@@ -1,19 +1,6 @@
 import { InterviewController } from '../vacancy/interview.controller';
-import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
 
 describe('Phase 15 Task 6 screens', () => {
-  it('renders Team Lead interview oversight and placement payment deadlines', () => {
-    const html = renderAdminDashboardHtml();
-    expect(html).toContain('Interview Oversight');
-    expect(html).toContain('OVERDUE RESULT');
-    expect(html).toContain('RESULT MISMATCH');
-    expect(html).toContain('NO RESULT');
-    expect(html).toContain('Payment due');
-    expect(html).toContain('Awaiting payment');
-    expect(html).toContain('Overdue');
-    expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(payload.role)");
-  });
-
   it('opens the new offer page (P03) in a browser and gives API clients only the offer details', async () => {
     process.env.PUBLIC_APP_URL = process.env.PUBLIC_APP_URL || 'https://app.laboura.in';
     const details = { firstName: 'Ramesh', job: 'Electrician', area: 'HSR Layout' };

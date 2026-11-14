@@ -290,23 +290,4 @@ describe('Phase 8 Task 10: First-admin bootstrap and 2FA login UI', () => {
       expect(throttled.status).toBe(429);
     });
   });
-
-  describe('Part B: Console login UI templates contain TOTP 2FA elements', () => {
-    // The call agent and field agent pages are retired (the web app at /login
-    // and Laboura Field replaced them); only the old admin dashboard is left.
-    it('Admin Dashboard template contains TOTP field and inline 2FA enrollment elements', async () => {
-      const res = await request(app.getHttpServer()).get('/console/admin').expect(200);
-      const html = res.text;
-
-      expect(html).toContain('id="login-totp"');
-      expect(html).toContain('id="totp-enroll-section"');
-      expect(html).toContain('id="totp-setup-secret"');
-      expect(html).toContain('id="totp-enroll-code"');
-      expect(html).toContain('id="btn-enable-totp"');
-      expect(html).toContain('/staff/2fa/setup');
-      expect(html).toContain('/staff/2fa/enable');
-      expect(html).toContain('totpEnrollmentRequired');
-    });
-
-  });
 });

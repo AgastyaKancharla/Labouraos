@@ -225,41 +225,6 @@ describe('Phase 11 Task 6: Calling screens', () => {
     await app.close();
   });
 
-  describe('Console screens render for allowed roles', () => {
-    it('GET /console/admin (the old Admin Dashboard) renders Call buttons for profiles, outcome list, Listen button, and history table', async () => {
-      const res = await request(app.getHttpServer()).get('/console/admin').expect(200);
-      expect(res.headers['content-type']).toContain('text/html');
-      const html = res.text;
-
-      expect(html).toContain('Laboura Admin Dashboard');
-      expect(html).toContain('admin-calling-modal');
-      expect(html).toContain('btn-admin-call');
-      expect(html).toContain('admin-call-blocked-alert');
-      expect(html).toContain('admin-answered-outcome-form');
-
-      // Closed list outcomes
-      expect(html).toContain('value="interested"');
-      expect(html).toContain('value="accepted_offer"');
-      expect(html).toContain('value="rejected_offer"');
-      expect(html).toContain('value="callback_requested"');
-      expect(html).toContain('value="not_interested"');
-      expect(html).toContain('value="working_now"');
-      expect(html).toContain('value="other"');
-
-      // Listen capability
-      expect(html).toContain('listenRecording');
-    });
-
-  });
-
-  describe('Privacy floor: no full phone number appears in any agent page', () => {
-    it('verifies GET /console/admin contains no 10-digit phone number', async () => {
-      const res = await request(app.getHttpServer()).get('/console/admin').expect(200);
-      expect(res.text).not.toMatch(/\b[6-9]\d{9}\b/);
-    });
-
-  });
-
   describe('Calling workflow backing the console screens', () => {
     it('places a call from job seeker profile, returns masked phone, and records outcome after answered call', async () => {
       answerOnNextCall = true;

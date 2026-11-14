@@ -28,11 +28,11 @@ describe('H4: first CEO set-up from the app\'s own address, never through a thir
     expect(html).not.toContain('/admin');
   });
 
-  it('is the only page besides the old admin dashboard the console controller still serves', () => {
+  it('is the only page the console controller still serves (the old admin dashboard is gone; /console/admin redirects to /login)', () => {
     const routes = Object.getOwnPropertyNames(ConsoleController.prototype)
       .filter((name) => name !== 'constructor')
       .map((name) => Reflect.getMetadata('path', (ConsoleController.prototype as unknown as Record<string, object>)[name]) as string | string[]);
-    expect(routes).toEqual(['setup', 'console/admin']);
+    expect(routes).toEqual(['setup']);
   });
 
   it('DEPLOY.md bootstraps from /setup (or the console on the app\'s own origin) and never sends secrets or tokens through reqbin', () => {

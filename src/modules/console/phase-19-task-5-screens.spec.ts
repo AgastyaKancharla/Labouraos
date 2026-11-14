@@ -1,4 +1,3 @@
-import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
 import { RetentionController } from '../retention/retention.controller';
 import { RetentionService } from '../retention/retention.service';
 import { EditPolicyController } from '../../common/edit-policy/edit-policy.controller';
@@ -11,66 +10,6 @@ import { Request } from 'express';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 
 describe('Phase 19 Task 5 — Screens (Edit reasons, lock banners, change history, retention)', () => {
-  describe('Console HTML Templates Rendering', () => {
-    describe('Admin Dashboard', () => {
-      const html = renderAdminDashboardHtml();
-
-      it('renders CEO Data Retention tab and view with dry-run controls', () => {
-        expect(html).toContain('id="tab-retention"');
-        expect(html).toContain('Data Retention (CEO)');
-        expect(html).toContain('id="view-retention"');
-        expect(html).toContain('id="retention-summary-card"');
-        expect(html).toContain('id="btn-retention-dry-run"');
-        expect(html).toContain('triggerRetentionDryRun');
-        expect(html).toContain('/retention/dry-run');
-        expect(html).toContain('/retention/summary');
-        expect(html).toContain('Profiles Anonymised');
-        expect(html).toContain('Recordings Deleted / Protected');
-        expect(html).toContain('Access Logs Deleted');
-        expect(html).toContain('Money Records Deleted');
-      });
-
-      it('renders Record Edit Modal with locked notice, Reason box, and change history section', () => {
-        expect(html).toContain('id="record-edit-modal"');
-        expect(html).toContain('id="modal-edit-locked-notice"');
-        expect(html).toContain('Locked — money involved, ask your Team Lead');
-        expect(html).toContain('id="modal-edit-reason-container"');
-        expect(html).toContain('id="modal-edit-reason"');
-        expect(html).toContain('Reason for change (required for modifying saved values):');
-        expect(html).toContain('id="btn-save-record-edit"');
-        expect(html).toContain('id="modal-change-history-section"');
-        expect(html).toContain('id="modal-change-history-tbody"');
-
-        // History table headers
-        expect(html).toContain('<th>Who</th>');
-        expect(html).toContain('<th>When</th>');
-        expect(html).toContain('<th>Which Fields</th>');
-        expect(html).toContain('<th>Reason</th>');
-      });
-
-      it('enforces RBAC UI visibility: CEO sees retention tab; non-CEO roles cannot see it', () => {
-        expect(html).toContain("payload.role === 'ceo'");
-        expect(html).toContain("retentionTab.classList.remove('hidden')");
-        expect(html).toContain("retentionTab.classList.add('hidden')");
-        expect(html).toContain("currentTab === 'retention'");
-      });
-
-      it('enforces RBAC UI visibility: Change history shown to Team Leads and above, hidden for others', () => {
-        expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(currentUser.role)");
-        expect(html).toContain("historySection.classList.remove('hidden')");
-        expect(html).toContain("historySection.classList.add('hidden')");
-      });
-
-      it('includes Edit buttons in Job Seekers, Referrals, Businesses, and Placements tables', () => {
-        expect(html).toContain("openRecordEditModal('job_seeker'");
-        expect(html).toContain("openRecordEditModal('referral'");
-        expect(html).toContain("openRecordEditModal('business'");
-        expect(html).toContain("openRecordEditModal('placement'");
-      });
-    });
-
-  });
-
   describe('Client Logic Contracts', () => {
     describe('Reason Box appears only for changes to existing saved values', () => {
       // Simulate client-side checkEditFieldsChanged rule:

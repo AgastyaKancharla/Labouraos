@@ -251,9 +251,9 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
 >
-> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office web app (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`) and the old admin dashboard (`/console/admin`) are not behind Cloudflare's identity check.
+> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office web app (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`) is not behind Cloudflare's identity check.
 >
-> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, `/call-agent*` and `/console/admin*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com` and `/field*` (field agents use them from their phones).
+> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, and `/call-agent*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com` and `/field*` (field agents use them from their phones).
 > 2. Add a policy that lets in only Laboura's staff email addresses.
 > 3. Copy the application's **Audience (AUD) tag**.
 > 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).

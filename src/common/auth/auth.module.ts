@@ -9,7 +9,6 @@ import { StaffSessionController } from './staff-session.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { TotpService } from './totp.service';
-import { CloudflareAccessGuard } from './cloudflare-access.guard';
 import { CloudflareAccessVerifier } from './cloudflare-access.verifier';
 import {
   AuthThrottlerGuard,
@@ -62,7 +61,6 @@ import { ReportingScopeModule } from '../../modules/staff/reporting-scope.module
     TotpService,
     JwtStrategy,
     JwtAuthGuard,
-    CloudflareAccessGuard,
     CloudflareAccessVerifier,
     AuthThrottlerGuard,
   ],
@@ -72,7 +70,6 @@ import { ReportingScopeModule } from '../../modules/staff/reporting-scope.module
     TotpService,
     JwtModule,
     JwtAuthGuard,
-    CloudflareAccessGuard,
     CloudflareAccessVerifier,
     AuthThrottlerGuard,
   ],

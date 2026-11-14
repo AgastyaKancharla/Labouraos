@@ -94,48 +94,14 @@ describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
     expect(json.text).not.toContain('Laboura Admin Dashboard');
   });
 
-  it('GET /console/admin still serves the old Admin Dashboard, marked as kept only for what the new screens lack', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/console/admin')
-      .expect(200);
-
-    expect(res.headers['content-type']).toContain('text/html');
-    const html = res.text;
-    expect(html).toContain('id="retired-console-notice"');
-    expect(html).toContain('href="/login"');
-    expect(html).not.toContain('href="/map"');
-
-    // Must cover all core entity views
-    expect(html).toContain('Laboura Admin Dashboard');
-    expect(html).toContain('job-seekers');
-    expect(html).toContain('referrals');
-    expect(html).toContain('businesses');
-    expect(html).toContain('business-reviews');
-    expect(html).toContain('business-visit-assignment-queue');
-    expect(html).toContain('business-approval-queue');
-    expect(html).toContain('NO DOCUMENTS — closer check required');
-    expect(html).toContain('Confirm or change agent');
-    expect(html).toContain('Assign verification visit');
-    expect(html).toContain('vacancies');
-    expect(html).toContain('placements');
-    expect(html).toContain('payments');
-    expect(html).toContain('refunds');
-    expect(html).toContain('pricing');
-    expect(html).toContain("j.identityVerifications?.[0]?.status ?? 'pending'");
-    expect(html).toContain('business-introduction-panel');
-    expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(currentUser?.role)");
-    expect(html).toContain('/introductions');
-    expect(html).toContain('shownByName');
-    expect(html).not.toMatch(/candidateFirstName[^\n]{0,200}(?:\.phone|\.address|\.latitude|\.longitude|dateOfBirth|\bdob\b)/i);
-
-    // Contains refund action elements
-    expect(html).toContain('refund-placement-id');
-    expect(html).toContain('refund-seeker-id');
-
-    // Contains pricing control elements
-    expect(html).toContain('policy-activation-fee');
-    expect(html).toContain('policy-referral-payout');
-    expect(html).toContain('tab-pricing');
+  it('sends a browser opening the retired /console/admin to /login, and serves nothing there to anyone else', async () => {
+    const res = await request(app.getHttpServer()).get('/console/admin').set('Accept', 'text/html,application/xhtml+xml').expect(301);
+    expect(res.headers.location).toBe('/login');
+    const json = await request(app.getHttpServer()).get('/console/admin').set('Accept', 'application/json');
+    expect(json.status).toBe(404);
+    expect(json.text).not.toContain('Laboura Admin Dashboard');
+    const bare = await request(app.getHttpServer()).get('/console/admin');
+    expect(bare.text).not.toContain('Laboura Admin Dashboard');
   });
 
   it('verifies pricing controls are CEO-only: API allows CEO and denies Manager server-side', async () => {
