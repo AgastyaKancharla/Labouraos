@@ -6,6 +6,7 @@ import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { Public } from '../rbac/public.decorator';
 import { emailMode, emailProductionWarning } from '../email/email.provider';
+import { pingRedis } from '../redis/redis-connections';
 
 export interface ComponentStatus {
   name: string;
@@ -99,8 +100,8 @@ export class SystemStatusController {
     const redisHost = process.env.REDIS_HOST || 'localhost';
     const redisPort = Number(process.env.REDIS_PORT) || 6379;
     try {
-      // Fast TCP socket ping to Redis port with 1000ms timeout
-      await this.checkTcpConnection(redisHost, redisPort, 1000);
+      // PING over the shared connection (1000ms timeout): opens no new connection.
+      await pingRedis(1000);
       components.push({
         name: 'Redis / BullMQ Queue',
         status: 'healthy',
@@ -181,32 +182,6 @@ export class SystemStatusController {
         heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
       },
     };
-  }
-
-  private checkTcpConnection(host: string, port: number, timeoutMs: number): Promise<void> {
-    return new Promise((resolve, reject) => {
-      // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const net = require('node:net');
-      const socket = new net.Socket();
-      socket.setTimeout(timeoutMs);
-
-      socket.on('connect', () => {
-        socket.destroy();
-        resolve();
-      });
-
-      socket.on('timeout', () => {
-        socket.destroy();
-        reject(new Error(`Connection to ${host}:${port} timed out after ${timeoutMs}ms`));
-      });
-
-      socket.on('error', (err: Error) => {
-        socket.destroy();
-        reject(err);
-      });
-
-      socket.connect(port, host);
-    });
   }
 
   private formatUptime(seconds: number): string {

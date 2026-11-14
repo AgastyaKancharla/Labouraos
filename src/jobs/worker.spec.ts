@@ -8,6 +8,7 @@ import {
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
 import { bootstrapWorker } from '../worker';
+import { JobQueue, jobQueue } from './job-queue';
 import { AppModule } from '../app.module';
 
 describe('Phase 6.5 Task 3: Separate Worker Entrypoint & Worker Lifecycle', () => {
@@ -196,13 +197,17 @@ describe('Phase 6.5 Task 3: Separate Worker Entrypoint & Worker Lifecycle', () =
     });
   });
 
-  describe('3. Graceful Shutdown on Render SIGTERM (BullMQ close(false))', () => {
-    it('close(false) waits for an active job to finish before resolving', async () => {
-      const job = new NoPickupEvaluationJob(
-        mockPrisma as unknown as PrismaService,
-        mockJobSeekerService as unknown as JobSeekerService,
-      );
+  // Every job shares one queue and one Worker now (job-queue.ts), so the
+  // graceful close lives on the shared JobQueue: a job's own close() only stops
+  // handling that job in this process.
+  describe('3. Graceful Shutdown on Render SIGTERM (BullMQ close(false), then close(true))', () => {
+    function queueWithWorker(worker: Partial<Worker>): JobQueue {
+      const queue = new JobQueue();
+      (queue as unknown as { workerInstance: Partial<Worker> }).workerInstance = worker;
+      return queue;
+    }
 
+    it('close() waits for an active job to finish before resolving', async () => {
       let jobFinished = false;
       let resolveJobPromise: () => void = () => {};
       const jobExecutionPromise = new Promise<void>((resolve) => {
@@ -211,44 +216,59 @@ describe('Phase 6.5 Task 3: Separate Worker Entrypoint & Worker Lifecycle', () =
           resolve();
         };
       });
-
-      // Mock BullMQ Worker implementing close(force) behavior:
-      // When force === false, it awaits in-flight jobs.
       const mockWorker = {
         close: jest.fn().mockImplementation(async (force = false) => {
-          if (!force) {
-            await jobExecutionPromise;
-          }
+          if (!force) await jobExecutionPromise;
         }),
-      } as unknown as Worker;
+      };
+      const queue = queueWithWorker(mockWorker);
+      expect(queue.isWorkerRunning()).toBe(true);
 
-      // Assign worker to job
-      (job as unknown as { worker: Worker }).worker = mockWorker;
-      expect(job.hasWorker()).toBe(true);
-
-      // Trigger graceful close
       let closeResolved = false;
-      const closePromise = job.close(false).then(() => {
+      const closePromise = queue.close(5000).then(() => {
         closeResolved = true;
       });
 
-      // Advance event loop slightly; close should NOT have resolved yet because job is still running
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(closeResolved).toBe(false);
       expect(jobFinished).toBe(false);
 
-      // Now complete the active sweep job
       resolveJobPromise();
       await closePromise;
 
-      // Now close has resolved and active job finished
       expect(jobFinished).toBe(true);
       expect(closeResolved).toBe(true);
       expect(mockWorker.close).toHaveBeenCalledWith(false);
-      expect(job.hasWorker()).toBe(false);
+      expect(mockWorker.close).not.toHaveBeenCalledWith(true);
+      expect(queue.isWorkerRunning()).toBe(false);
     });
 
-    it('onModuleDestroy calls close(false) ensuring NestJS shutdown awaits active sweep', async () => {
+    it('stops waiting once the grace period is over (the connections are then closed at shutdown)', async () => {
+      const mockWorker = {
+        close: jest.fn().mockImplementation(async (force = false) => {
+          if (!force) await new Promise(() => undefined); // a job that never ends
+        }),
+      };
+      const queue = queueWithWorker(mockWorker);
+      const started = Date.now();
+      await queue.close(50);
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(mockWorker.close).toHaveBeenCalledWith(false);
+      expect(queue.isWorkerRunning()).toBe(false);
+    });
+
+    it('with Redis down, stops at once (close(true)) instead of waiting for ever', async () => {
+      const mockWorker = { close: jest.fn().mockImplementation(() => new Promise(() => undefined)) };
+      const queue = queueWithWorker(mockWorker);
+      (queue as unknown as { workerClient: { status: string } }).workerClient = { status: 'reconnecting' };
+      const started = Date.now();
+      await queue.close(10_000);
+      expect(Date.now() - started).toBeLessThan(2000);
+      expect(mockWorker.close).toHaveBeenCalledWith(true);
+      expect(mockWorker.close).not.toHaveBeenCalledWith(false);
+    });
+
+    it('onModuleDestroy calls close(false) on the job', async () => {
       const job = new NoPickupEvaluationJob(
         mockPrisma as unknown as PrismaService,
         mockJobSeekerService as unknown as JobSeekerService,
@@ -261,30 +281,24 @@ describe('Phase 6.5 Task 3: Separate Worker Entrypoint & Worker Lifecycle', () =
       expect(closeSpy).toHaveBeenCalledWith(false);
     });
 
-    it('close(true) forces immediate shutdown without waiting for jobs', async () => {
+    it("a job's close() only stops handling that job; the shared worker keeps running for the others", async () => {
+      process.env.PROCESS_ROLE = 'worker';
       const job = new NoPickupEvaluationJob(
         mockPrisma as unknown as PrismaService,
         mockJobSeekerService as unknown as JobSeekerService,
       );
+      const shared = { close: jest.fn().mockResolvedValue(undefined), on: jest.fn() } as unknown as Worker;
+      jest.spyOn(jobQueue, 'start').mockReturnValue(shared);
 
-      let jobFinished = false;
-      const mockWorker = {
-        close: jest.fn().mockImplementation(async (force = false) => {
-          if (!force) {
-            await new Promise((resolve) => setTimeout(resolve, 500));
-            jobFinished = true;
-          }
-          // force=true resolves immediately without waiting
-        }),
-      } as unknown as Worker;
-
-      (job as unknown as { worker: Worker }).worker = mockWorker;
+      expect(job.getWorker()).toBe(shared);
+      expect(job.hasWorker()).toBe(true);
+      expect(jobQueue.hasHandler(NO_PICKUP_EVALUATION_JOB)).toBe(true);
 
       await job.close(true);
 
-      expect(mockWorker.close).toHaveBeenCalledWith(true);
-      expect(jobFinished).toBe(false); // Did not wait for the job
       expect(job.hasWorker()).toBe(false);
+      expect(jobQueue.hasHandler(NO_PICKUP_EVALUATION_JOB)).toBe(false);
+      expect(shared.close).not.toHaveBeenCalled();
     });
   });
 });

@@ -33,11 +33,12 @@ import { WeeklyReportModule } from '../modules/weekly-report/weekly-report.modul
 import { WeeklyReportJob } from './weekly-report.job';
 import { JobScheduleKeeper } from './job-schedule-keeper.service';
 import { JobRunNowController } from './job-run-now.controller';
+import { JobQueueLifecycle } from './job-queue.lifecycle';
 
 @Module({
   imports: [PrismaModule, JobSeekerModule, AuthModule, AuditModule, MessageModule, VacancyModule, PlacementModule, FollowUpModule, ReviewFlagModule, RetentionModule, AttendanceModule, GrowthModule, NotificationModule, RefundPriorityModule, FieldSellingModule, WeeklyReportModule],
   controllers: [JobsController, JobRunNowController],
-  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, ForgottenLogoutJob, WorkerHeartbeatService, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, JobScheduleKeeper],
+  providers: [NoPickupEvaluationJob, SweepMonitoringService, InterviewReplyJob, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, ForgottenLogoutJob, WorkerHeartbeatService, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, JobScheduleKeeper, JobQueueLifecycle],
   exports: [NoPickupEvaluationJob, SweepMonitoringService, PlacementCompletionJob, ClaimOverdueJob, FollowUpJob, PatternFlagsJob, JoiningRewardJob, RetentionCleanupJob, ForgottenLogoutJob, ShortageTasksJob, WinBackJob, NotificationSweepJob, WeeklyReportJob, JobScheduleKeeper],
 })
 export class JobsModule {}

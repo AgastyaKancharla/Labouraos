@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnApplicationBootstrap, OnModuleDestroy } from '@nestjs/common';
-import Redis from 'ioredis';
+import type Redis from 'ioredis';
+import { sharedRedis, whenRedisReady } from '../common/redis/redis-connections';
 import {
   redisClientOptions,
   WORKER_HEARTBEAT_INTERVAL_MS,
@@ -20,18 +21,28 @@ const BEAT_TIMEOUT_MS = 5000;
  * and Render restarts it until Redis answers. A single `all` process keeps
  * serving the site instead (it is the only web service on the free tier);
  * /health/ready then reports the worker and the job schedules as missing.
+ *
+ * Writes over the shared Redis connection; a beat while Redis is down is
+ * skipped (never queued to run late).
  */
 @Injectable()
 export class WorkerHeartbeatService implements OnApplicationBootstrap, OnModuleDestroy {
   private readonly logger = new Logger(WorkerHeartbeatService.name);
-  private client: Redis | null = null;
   private timer: NodeJS.Timeout | null = null;
 
   async onApplicationBootstrap(): Promise<void> {
     if (!runsJobs()) return;
 
+    if (processRole() !== 'worker') {
+      // PROCESS_ROLE=all also serves the site: never hold up its start-up.
+      void this.beat();
+      this.timer = setInterval(() => void this.beat(), WORKER_HEARTBEAT_INTERVAL_MS);
+      this.timer.unref?.();
+      return;
+    }
+
     const ok = await this.beat();
-    if (!ok && process.env.NODE_ENV === 'production' && processRole() === 'worker') {
+    if (!ok && process.env.NODE_ENV === 'production') {
       const { host, port } = redisClientOptions();
       await this.stop();
       throw new Error(
@@ -49,8 +60,10 @@ export class WorkerHeartbeatService implements OnApplicationBootstrap, OnModuleD
     const value: WorkerHeartbeatValue = { at: now.toISOString(), pid: process.pid };
     let timeout: NodeJS.Timeout | undefined;
     try {
+      const client = this.getClient();
+      await whenRedisReady(client, BEAT_TIMEOUT_MS);
       await Promise.race([
-        this.getClient().set(
+        client.set(
           WORKER_HEARTBEAT_KEY,
           JSON.stringify(value),
           'EX',
@@ -73,27 +86,15 @@ export class WorkerHeartbeatService implements OnApplicationBootstrap, OnModuleD
     }
   }
 
+  /** The shared connection (never closed here; JobQueueLifecycle closes it at shutdown). */
   getClient(): Redis {
-    if (!this.client) {
-      this.client = new Redis({
-        ...redisClientOptions(),
-        maxRetriesPerRequest: 1,
-      });
-      // Connection errors surface through beat(); stop ioredis printing each retry.
-      this.client.on('error', () => undefined);
-    }
-    return this.client;
+    return sharedRedis();
   }
 
   async stop(): Promise<void> {
     if (this.timer) {
       clearInterval(this.timer);
       this.timer = null;
-    }
-    if (this.client) {
-      const client = this.client;
-      this.client = null;
-      client.disconnect();
     }
   }
 

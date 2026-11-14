@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { JobHandler, LABOURA_JOBS_QUEUE, jobQueue, startScheduledJob } from './job-queue';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { InterviewService } from '../modules/vacancy/interview.service';
@@ -8,7 +9,8 @@ import { FieldSellingService } from '../modules/field-selling/field-selling.serv
 import { INTERVAL_JOB_MS } from './job-schedules';
 import { runsJobs } from '../common/process/process-role';
 
-export const INTERVIEW_REPLY_QUEUE = 'interview-reply-deadlines';
+/** Every job shares one queue (interview-reply-deadlines was its own queue before; see job-queue.ts). */
+export const INTERVIEW_REPLY_QUEUE = LABOURA_JOBS_QUEUE;
 export const INTERVIEW_REPLY_SWEEP = 'process-due-interview-replies';
 
 @Injectable()
@@ -25,34 +27,16 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly prisma?: PrismaService,
   ) {}
 
-  private get connection() {
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null,
-      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-    };
-  }
-
   getQueue(): Queue {
-    if (!this.queue) {
-      this.queue = new Queue(INTERVIEW_REPLY_QUEUE, { connection: this.connection });
-      this.queue.on('error', (error) => this.logger.warn(`Interview reply queue error: ${error.message}`));
-    }
+    this.queue = jobQueue.queue();
     return this.queue;
   }
 
+  /** What the shared job worker runs for this job (src/jobs/job-queue.ts). */
+  readonly handle: JobHandler = () => recordJobRun(this.prisma, INTERVIEW_REPLY_SWEEP, () => this.process());
+
   getWorker(): Worker {
-    if (!this.worker) {
-      this.worker = new Worker(
-        INTERVIEW_REPLY_QUEUE,
-        async () => recordJobRun(this.prisma, INTERVIEW_REPLY_SWEEP, () => this.process()),
-        { connection: this.connection },
-      );
-      this.worker.on('error', (error) => this.logger.error(`Interview reply worker error: ${error.message}`));
-    }
+    this.worker = jobQueue.worker(INTERVIEW_REPLY_SWEEP, this.handle);
     return this.worker;
   }
 
@@ -80,22 +64,22 @@ export class InterviewReplyJob implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!runsJobs()) return;
-    try {
-      await this.schedule();
-      this.getWorker();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Could not register interview reply deadlines: ${message}`);
-      await this.close();
-    }
+    await startScheduledJob({
+      name: INTERVIEW_REPLY_SWEEP,
+      handler: this.handle,
+      schedule: () => this.schedule(),
+      startWorker: () => this.getWorker(),
+      onError: (message) => this.logger.warn(`Could not register interview reply deadlines: ${message}`),
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.close();
   }
 
+  /** Stops handling this job here. The shared queue and Worker stay up (JobQueueLifecycle stops them at shutdown). */
   async close(): Promise<void> {
-    await Promise.all([this.worker?.close(), this.queue?.close()]);
+    jobQueue.release(INTERVIEW_REPLY_SWEEP);
     this.worker = null;
     this.queue = null;
   }

@@ -11,6 +11,7 @@ import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
 import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
+import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrap() {
   const role = assertKnownProcessRole();
@@ -36,6 +37,10 @@ export async function bootstrap() {
   app.use(securityHeaders());
   const alertService = app.get(AlertService);
   app.useGlobalFilters(new GlobalExceptionFilter(alertService));
+  // SIGTERM (a Render deploy stopping the old instance) runs the shutdown
+  // hooks: the job worker stops and the Redis connections are closed at once.
+  app.enableShutdownHooks();
+  installShutdownDeadline((message) => logger.warn(message, 'Bootstrap'));
 
   const port = process.env.PORT ?? 3000;
   await app.listen(port);

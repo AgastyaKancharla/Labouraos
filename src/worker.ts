@@ -5,6 +5,7 @@ import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
 import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
+import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrapWorker() {
   getPublicAppUrl();
@@ -22,6 +23,7 @@ export async function bootstrapWorker() {
 
   app.useLogger(logger);
   app.enableShutdownHooks();
+  installShutdownDeadline((message) => logger.warn(message, 'WorkerBootstrap'));
 
   logger.log(
     'Worker application context initialized and running (PROCESS_ROLE=worker)',
