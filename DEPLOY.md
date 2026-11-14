@@ -247,19 +247,18 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] An uptime monitor watches `/health/ready`.
 - [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
 - [ ] The four buckets exist and are private (Step 3).
-- [ ] **TODO: the current UIDAI certificate for the Aadhaar QR check is added** (see the box below). Until then every e-Aadhaar made after 16 Feb 2026 is answered "This Aadhaar is newer than our check supports, please use another ID", and the CEO gets an "Add the new UIDAI certificate" flag (once a day).
+- [ ] **The UIDAI certificate for the Aadhaar QR check is confirmed** (see the box below).
 
 > [!IMPORTANT]
-> **Go-live TODO: download the current UIDAI offline certificate, add it to `src/modules/aadhaar-qr/certs/`, and test with a freshly downloaded e-Aadhaar.**
+> **Go-live check: compare the UIDAI certificate in the repo with UIDAI's page, and test with a freshly downloaded e-Aadhaar.**
 >
-> The newest certificate in the repo (`uidai_offline_publickey_17022026.pem`, "DS Unique Identification Authority of India 05") stopped signing on 16 Feb 2026. UIDAI's page (uidai.gov.in, "Aadhaar Paperless Offline e-KYC", certificate downloads) lists a newer one valid until **03 Feb 2029**. It could not be downloaded from the build machine (uidai.gov.in is blocked there), so it is not committed yet.
+> `src/modules/aadhaar-qr/certs/uidai_offline_publickey_2026.pem` ("DS Unique Identification Authority of India 06", serial `624C4F50`, valid until **03 Feb 2029**) checks every e-Aadhaar made since February 2026. UIDAI's certificate page lists an Offline e-KYC certificate valid until 03 Feb 2029, and this file's end date matches it. uidai.gov.in is blocked from the build machine, so the file itself came from public copies that all have the same fingerprint. Confirm it once from a normal computer:
 >
-> 1. On a normal computer open UIDAI's Paperless Offline e-KYC page and download the certificate valid until 03 Feb 2029 (expected file name `uidai_offline_publickey_2026.cer`, subject "DS Unique Identification Authority of India 06").
-> 2. Check it before trusting it: `openssl x509 -in uidai_offline_publickey_2026.cer -inform DER -noout -subject -enddate -fingerprint -sha256` (use `-inform PEM` if it is text). The end date must be 3 Feb 2029. Compare the fingerprint with the one UIDAI's page shows; a third-party listing gives `E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF` — if UIDAI's page and the file disagree, stop.
-> 3. Ask Claude to add it as `src/modules/aadhaar-qr/certs/uidai_offline_publickey_2026.pem` (PEM text) and deploy.
-> 4. Download a fresh e-Aadhaar PDF (or use a new Aadhaar card) and scan its QR on a test registration link: it must say "Aadhaar verified by UIDAI", not "newer than our check supports".
+> 1. Open UIDAI's "UIDAI Certificate Details" page (developer section) and download the Paperless Offline e-KYC certificate valid until 03 Feb 2029 (`uidai_offline_publickey_2026.cer`).
+> 2. Run `openssl x509 -in uidai_offline_publickey_2026.cer -noout -enddate -fingerprint -sha256` (add `-inform DER` if it is binary). The end date must be 3 Feb 2029 and the fingerprint must be `E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF`. **If it is different, stop and ask Claude to replace the file before real data.**
+> 3. Download a fresh e-Aadhaar PDF (or use a new Aadhaar card) and scan its QR on a test registration link: it must say "Aadhaar verified by UIDAI", not "newer than our check supports".
 >
-> When UIDAI publishes the next certificate, do the same; the CEO's "Add the new UIDAI certificate" flag is the reminder.
+> When UIDAI publishes the next certificate (after 03 Feb 2029, or earlier if it changes keys), cards signed with it are answered "This Aadhaar is newer than our check supports, please use another ID" and the CEO gets an "Add the new UIDAI certificate" flag (once a day) — never a fraud flag. Download it the same way, check its fingerprint against UIDAI's page, and ask Claude to add it to `src/modules/aadhaar-qr/certs/` (and pin its fingerprint in `secure-qr.parser.spec.ts`).
 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**

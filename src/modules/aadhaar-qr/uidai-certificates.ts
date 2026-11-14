@@ -15,7 +15,7 @@ import { TrustedKey, trustedKeyFromPem } from './secure-qr.parser';
  *      openssl x509 -inform der -in uidai_offline_publickey_<date>.cer -out uidai_offline_publickey_<date>.pem
  *   3. Check its fingerprint against UIDAI's
  *      (openssl x509 -in <file>.pem -noout -fingerprint -sha256), put it in
- *      ./certs, add it to the table below and to uidai-certificates.spec.ts, deploy.
+ *      ./certs, add it to the table below and pin its fingerprint in secure-qr.parser.spec.ts, deploy.
  * An expired certificate still checks the signatures it made; the dates only
  * say when UIDAI stopped signing new codes with it.
  *
@@ -25,6 +25,16 @@ import { TrustedKey, trustedKeyFromPem } from './secure-qr.parser';
  *     SHA-256 E0:F0:F8:69:D3:2E:FC:7E:80:FA:E2:22:37:17:A5:6D:CF:8B:61:6F:82:0B:54:2A:49:E5:BD:5A:BF:1C:0F:7D
  *   uidai_offline_publickey_17022026.pem  CN "DS Unique Identification Authority of India 05", 2024-02-21 → 2026-02-16
  *     SHA-256 00:57:3C:69:2C:F0:4F:BE:E1:13:AE:5F:D5:2F:2A:65:4D:36:1B:F8:EE:4D:06:C4:60:08:90:6B:36:DF:81:69
+ *   uidai_offline_publickey_2026.pem      CN "DS Unique Identification Authority of India 06", 2026-02-03 → 2029-02-03, serial 624C4F50
+ *     SHA-256 E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF
+ *     Issued by "(n)Code Solutions Sub-CA for DSC 2022", the same issuer as the 2024-2026 certificate.
+ *     Added 14 Nov 2026: UIDAI's page lists an "Offline e-KYC" certificate valid to 03 Feb 2029, and this
+ *     file's end date matches it; uidai.gov.in was blocked from the build machine, so the file came from
+ *     public copies that all have this exact fingerprint (DEPLOY.md, go-live checklist: compare it with
+ *     UIDAI's page and test with a freshly downloaded e-Aadhaar).
+ *
+ * The spec pins each file's SHA-256 (secure-qr.parser.spec.ts): adding a certificate means adding its
+ * fingerprint there too.
  */
 export const UIDAI_CERTIFICATE_DIR = join(__dirname, 'certs');
 

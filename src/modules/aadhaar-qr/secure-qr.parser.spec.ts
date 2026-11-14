@@ -1,10 +1,13 @@
-import { sign } from 'node:crypto';
+import { sign, X509Certificate } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { deflateSync, gzipSync } from 'node:zlib';
 import {
   areaAndPincode,
   isAdultOn,
   maskedAadhaarReference,
   MAX_QR_TEXT_LENGTH,
+  newestCertificateEnd,
   parseQrDateOfBirth,
   parseSecureQr,
   phoneLinkStatus,
@@ -14,7 +17,7 @@ import {
 } from './secure-qr.parser';
 import { checkIdName } from './id-name-check';
 import { jpeg2000ToJpeg } from './qr-photo';
-import { loadUidaiCertificates } from './uidai-certificates';
+import { loadUidaiCertificates, UIDAI_CERTIFICATE_DIR } from './uidai-certificates';
 import { buildSecureQr, bytesToDecimal, secureQrSignedBytes, secureQrText, SYNTHETIC_JP2_PHOTO, testSigner } from './testing/secure-qr.fixtures';
 import { UIDAI_SAMPLE_SECURE_QR } from './testing/uidai-sample-qr';
 
@@ -39,10 +42,29 @@ describe('Aadhaar Secure QR parser (guide: an in-house check, no outside company
       const keys = loadUidaiCertificates();
       expect(keys.map((k) => k.name)).toEqual([
         'uidai_offline_publickey_17022026.pem',
+        'uidai_offline_publickey_2026.pem',
         'uidai_offline_publickey_26022021.pem',
         'uidai_prod_cdup.pem',
       ]);
       expect(verifySecureQrSignature(parsed, keys)?.name).toBe('uidai_prod_cdup.pem');
+    });
+
+    it('trusts exactly the pinned UIDAI certificates (a swapped or extra file fails here)', () => {
+      const pinned: Record<string, { sha256: string; validTo: string }> = {
+        'uidai_offline_publickey_17022026.pem': { sha256: '00:57:3C:69:2C:F0:4F:BE:E1:13:AE:5F:D5:2F:2A:65:4D:36:1B:F8:EE:4D:06:C4:60:08:90:6B:36:DF:81:69', validTo: '2026-02-16T22:27:40.000Z' },
+        'uidai_offline_publickey_2026.pem': { sha256: 'E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF', validTo: '2029-02-03T17:28:36.000Z' },
+        'uidai_offline_publickey_26022021.pem': { sha256: 'E0:F0:F8:69:D3:2E:FC:7E:80:FA:E2:22:37:17:A5:6D:CF:8B:61:6F:82:0B:54:2A:49:E5:BD:5A:BF:1C:0F:7D', validTo: '2024-02-27T00:27:11.000Z' },
+        'uidai_prod_cdup.pem': { sha256: 'FC:F3:1A:3F:89:21:16:15:EB:D5:D4:49:AC:33:D8:D3:81:F6:54:D2:E2:D1:50:37:D5:CC:8D:4A:EB:72:F8:36', validTo: '2020-06-07T10:46:26.000Z' },
+      };
+      const files = readdirSync(UIDAI_CERTIFICATE_DIR).filter((f) => f.endsWith('.pem')).sort();
+      expect(files).toEqual(Object.keys(pinned).sort());
+      for (const file of files) {
+        const cert = new X509Certificate(readFileSync(join(UIDAI_CERTIFICATE_DIR, file)));
+        expect({ file, sha256: cert.fingerprint256, validTo: new Date(cert.validTo).toISOString() }).toEqual({ file, ...pinned[file] });
+        expect(cert.subject).toMatch(/CN=DS UNIQUE IDENTIFICATION AUTHORITY OF INDIA/i);
+      }
+      // The newest one sets when a card is "newer than our check supports" (cert_missing, not tampered).
+      expect(newestCertificateEnd(loadUidaiCertificates())?.toISOString()).toBe('2029-02-03T17:28:36.000Z');
     });
 
     it('reads the fields in UIDAI order (older layout with the hashes before the signature)', () => {
