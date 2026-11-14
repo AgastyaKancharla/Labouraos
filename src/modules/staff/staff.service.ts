@@ -34,6 +34,7 @@ import { ReportingScopeService } from './reporting-scope.service';
 import { publicLink } from '../../common/public-link';
 import { assertPayrollCanCorrect, frozenMonthsWithoutLine, monthOfDay, monthsBetween } from '../finance/payroll-window';
 import { monthLabel } from '../finance/payroll-rules';
+import { OWNER_ACCOUNT_HAS_PAY, OWNER_ACCOUNT_ROLES } from './owner-account';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -176,6 +177,7 @@ const STAFF_VIEW_SELECT = {
   reportsToId: true,
   status: true,
   isIntern: true,
+  isOwnerAccount: true,
   joinedOn: true,
   createdAt: true,
   deactivatedAt: true,
@@ -209,6 +211,14 @@ export interface ReactivateStaffResult {
 
 export interface BootstrapResult {
   staff: StaffView;
+}
+
+/** Only the CEO marks owner accounts, and only call and field agent accounts can be one. */
+function assertMayBeOwnerAccount(role: string, actor: JwtPayload): void {
+  if (actor.role !== 'ceo') throw new ForbiddenException('Only the CEO can mark or clear an owner account');
+  if (!OWNER_ACCOUNT_ROLES.includes(role)) {
+    throw new BadRequestException('Only call agent and field agent accounts can be owner accounts');
+  }
 }
 
 export function constantTimeEquals(a: string, b: string): boolean {
@@ -410,6 +420,11 @@ export class StaffService {
     if (isIntern && !TEAM_MEMBER_ROLES.includes(role)) {
       throw new BadRequestException('Only call agents and field agents can be interns');
     }
+    if (dto.ownerAccount !== undefined && typeof dto.ownerAccount !== 'boolean') {
+      throw new BadRequestException('ownerAccount must be true or false');
+    }
+    const ownerAccount = dto.ownerAccount === true;
+    if (ownerAccount) assertMayBeOwnerAccount(role, actor);
     let joinedOn: Date | null = null;
     if (dto.joinedOn !== undefined && dto.joinedOn !== null && dto.joinedOn !== '') {
       if (typeof dto.joinedOn !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dto.joinedOn)) {
@@ -486,6 +501,7 @@ export class StaffService {
         inviteTokenHash: hashInviteToken(inviteToken),
         inviteExpiresAt,
         isIntern,
+        isOwnerAccount: ownerAccount,
         joinedOn,
       }),
       actor.sub,
@@ -506,6 +522,7 @@ export class StaffService {
         reportsToId: staff.reportsToId,
         status: staff.status,
         isIntern: staff.isIntern,
+        isOwnerAccount: staff.isOwnerAccount,
         joinedOn: staff.joinedOn ? staff.joinedOn.toISOString().slice(0, 10) : null,
         inviteExpiresAt: inviteExpiresAt.toISOString(),
       },
@@ -1087,6 +1104,7 @@ export class StaffService {
       reportsToId: target.reportsToId,
       status: target.status,
       isIntern: target.isIntern,
+      isOwnerAccount: target.isOwnerAccount,
       joinedOn: target.joinedOn,
       createdAt: target.createdAt,
       deactivatedAt: target.deactivatedAt,
@@ -1671,6 +1689,69 @@ export class StaffService {
    * Sets the number the calling system rings. The ciphertext is stored;
    * the response never contains the number.
    */
+  /**
+   * The CEO marks or unmarks an owner account (owner decision 14 Nov): an
+   * owner's own call or field agent account whose work counts in the lists but
+   * not in targets, leaderboards, attendance, salary or incentives. Audited.
+   */
+  async setOwnerAccount(staffId: string, value: unknown, actor: JwtPayload) {
+    if (typeof value !== 'boolean') throw new BadRequestException('ownerAccount must be true or false');
+    const target = await this.prisma.staff.findUnique({
+      where: { id: staffId },
+      select: { id: true, code: true, role: true, isOwnerAccount: true },
+    });
+    if (!target) throw new NotFoundException('Staff account not found');
+    if (value) assertMayBeOwnerAccount(target.role, actor);
+    else if (actor.role !== 'ceo') throw new ForbiddenException('Only the CEO can mark or clear an owner account');
+    if (target.isOwnerAccount === value) {
+      return this.prisma.staff.findUniqueOrThrow({ where: { id: staffId }, select: STAFF_VIEW_SELECT });
+    }
+    await this.assertNoPayRecordsToSplit(staffId);
+    const staff = await this.prisma.staff.update({
+      where: { id: staffId },
+      data: { isOwnerAccount: value },
+      select: STAFF_VIEW_SELECT,
+    });
+    await this.auditService.log({
+      actorId: actor.sub,
+      action: value ? 'staff.owner_account_set' : 'staff.owner_account_cleared',
+      entityType: 'staff',
+      entityCode: target.code,
+      before: { isOwnerAccount: target.isOwnerAccount },
+      after: { isOwnerAccount: value },
+      changedFields: ['isOwnerAccount'],
+    });
+    return staff;
+  }
+
+  /**
+   * Owner accounts are meant to be made as owner accounts from the start.
+   * Marking or clearing one later would split a month between "paid agent"
+   * and "owner account", so it is refused while the account has a salary, a
+   * salary sheet line, or a finished attendance day in a month whose salaries
+   * are not yet approved. After that month is approved (or for an account
+   * that has not worked yet) the change is allowed.
+   */
+  private async assertNoPayRecordsToSplit(staffId: string): Promise<void> {
+    const [salaries, lines, days] = await Promise.all([
+      this.prisma.staffSalary.count({ where: { staffId } }),
+      this.prisma.payrollLine.count({ where: { staffId } }),
+      this.prisma.attendanceDay.findMany({
+        where: { staffId, OR: [{ logoutAt: { not: null } }, { dayType: { not: 'open' } }] },
+        select: { date: true },
+      }),
+    ]);
+    if (salaries > 0 || lines > 0) throw new BadRequestException(OWNER_ACCOUNT_HAS_PAY);
+    const months = [...new Set(days.map((d) => monthOfDay(d.date)))];
+    if (!months.length) return;
+    const frozen = await this.prisma.payrollRun.findMany({
+      where: { month: { in: months }, status: { in: ['approved', 'paid'] } },
+      select: { month: true },
+    });
+    const done = new Set(frozen.map((r) => r.month));
+    if (months.some((m) => !done.has(m))) throw new BadRequestException(OWNER_ACCOUNT_HAS_PAY);
+  }
+
   /** The CEO enters or corrects a joining date (Phase 22 Part B). Pay starts on it. */
   async setJoinedOn(staffId: string, value: unknown, actor: JwtPayload, now: Date = new Date()) {
     if (actor.role !== 'ceo') throw new ForbiddenException('Only the CEO enters the joining date');

@@ -7,6 +7,7 @@ import { CallAgentMetricsService } from '../target/call-agent-metrics.service';
 import { FieldAgentMetricsService } from '../target/field-agent-metrics.service';
 import { TargetService } from '../target/target.service';
 import { istDayKey, istStartOfDay, istStartOfMonth, percent } from './ceo-common';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 /** A session counts as "signed in now" while it is live and was used in the last hour. */
 const SIGNED_IN_WINDOW_MS = 60 * 60 * 1000;
@@ -134,6 +135,7 @@ export class CeoTeamService {
           createdAt: true,
           deactivatedAt: true,
           joinedOn: true,
+          isOwnerAccount: true,
         },
         orderBy: [{ createdAt: 'asc' }],
       }),
@@ -168,6 +170,8 @@ export class CeoTeamService {
         lockedReason: s.lockedReason,
         createdAt: s.createdAt.toISOString(),
         joinedOn: s.joinedOn ? s.joinedOn.toISOString().slice(0, 10) : null,
+        /** Owner account: their work counts in the lists, not in targets, leaderboard, attendance or salary. */
+        ownerAccount: s.isOwnerAccount,
       };
     });
     const leads = live.filter((s) => s.role === 'team_lead');
@@ -207,7 +211,7 @@ export class CeoTeamService {
   async teams(now: Date) {
     const staff = await this.prisma.staff.findMany({
       where: { status: { not: 'deactivated' } },
-      select: { id: true, code: true, name: true, role: true, teamName: true, teamLeadId: true, reportsToId: true },
+      select: { id: true, code: true, name: true, role: true, teamName: true, teamLeadId: true, reportsToId: true, isOwnerAccount: true },
       orderBy: { name: 'asc' },
     });
     const byId = new Map(staff.map((s) => [s.id, s]));
@@ -229,6 +233,8 @@ export class CeoTeamService {
         : [0, 0];
       let behind = 0;
       for (const agent of agents) {
+        // Owner accounts carry no targets, so they are never behind (owner decision 14 Nov).
+        if (agent.isOwnerAccount) continue;
         const t = targets.find((x) => x.staffId === agent.id);
         if (!t) continue;
         const achieved =
@@ -406,7 +412,8 @@ export class CeoTeamService {
    */
   async targetsBoard(m: Month, now: Date) {
     const agents = await this.prisma.staff.findMany({
-      where: { role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
+      // Owner accounts are left out of targets and the leaderboard (owner decision 14 Nov).
+      where: { role: { in: AGENT_ROLES }, status: { not: 'deactivated' }, ...NOT_OWNER_ACCOUNT },
       select: { id: true, code: true, name: true, role: true, teamLeadId: true, reportsToId: true, status: true },
       orderBy: { code: 'asc' },
     });
@@ -482,7 +489,8 @@ export class CeoTeamService {
    */
   async leaderboardRange(range: { from: Date; to: Date }) {
     const agents = await this.prisma.staff.findMany({
-      where: { role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
+      // Owner accounts are left out of the leaderboard (owner decision 14 Nov).
+      where: { role: { in: AGENT_ROLES }, status: { not: 'deactivated' }, ...NOT_OWNER_ACCOUNT },
       select: { id: true, code: true, name: true, role: true, teamLeadId: true, reportsToId: true },
       orderBy: { code: 'asc' },
     });
@@ -536,7 +544,7 @@ export class CeoTeamService {
     const to = parseMonth(body?.toYear, body?.toMonth, now);
     if (from.year === to.year && from.month === to.month) throw new BadRequestException('Pick two different months');
     const [source, existing] = await Promise.all([
-      this.prisma.target.findMany({ where: { year: from.year, month: from.month, staff: { status: { not: 'deactivated' } } } }),
+      this.prisma.target.findMany({ where: { year: from.year, month: from.month, staff: { status: { not: 'deactivated' }, ...NOT_OWNER_ACCOUNT } } }),
       this.prisma.target.findMany({ where: { year: to.year, month: to.month }, select: { staffId: true } }),
     ]);
     const have = new Set(existing.map((t) => t.staffId));

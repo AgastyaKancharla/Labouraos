@@ -11,6 +11,7 @@ import {
   getCalendarPartsInTimezone,
   getPeriodBoundaries,
 } from '../../common/time/period-boundary';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 export interface LeaderboardEntry {
   position: number;
@@ -93,8 +94,10 @@ export class LeaderboardService {
         year: targetYear,
         month: targetMonth,
         placementsClosed: { not: null },
+        // Owner accounts are left out of the leaderboard (owner decision 14 Nov).
         staff: {
           role: 'field_agent',
+          ...NOT_OWNER_ACCOUNT,
         },
       },
       include: {

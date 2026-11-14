@@ -46,8 +46,9 @@ export class ScreensFieldController {
     return this.screens.targets(req.user);
   }
 
+  /** FA08 in Laboura Field: field agents only (owner decision 14 Nov; office screens use /businesses). */
   @Get('businesses/:ref')
-  @RequireRoles('field_agent', 'team_lead', 'manager', 'ceo')
+  @RequireRoles('field_agent')
   business(@Req() req: Authed, @Param('ref') ref: string) {
     return this.screens.business(req.user, ref);
   }

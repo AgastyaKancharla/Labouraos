@@ -49,7 +49,8 @@ export class AttendanceController {
   @Get('today')
   @RequireRoles(...STAFF_ROLES)
   today(@Req() req: Authed) {
-    return this.attendance.today(req.user.sub);
+    // An owner account's day starts by itself here (owner decision 14 Nov).
+    return this.attendance.todayForSelf(req.user.sub);
   }
 
   @Post('system-problem/:segmentId/approve')

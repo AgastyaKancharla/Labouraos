@@ -55,7 +55,7 @@ export class ManagerTargetsService {
         team: lead.team,
         teamLead: lead.name,
         split: valuesOf(splits.find((x) => x.teamLeadId === lead.id)),
-        agents: await this.plans.agentSums(this.tree.teamIds(tree, lead.id), year, month),
+        agents: await this.plans.agentSums(this.tree.trackedTeamIds(tree, lead.id), year, month),
       });
     }
     const others = splits.filter((x) => !leadIds.includes(x.teamLeadId));
@@ -79,13 +79,15 @@ export class ManagerTargetsService {
     const tree = await this.tree.load(actor.id);
     const sel = parseMonth(year, month, now);
     const m = monthOf(sel.year, sel.month, now);
-    const ids = tree.agents.map((a) => a.id);
+    // Owner accounts carry no targets and are not on the leaderboard (owner decision 14 Nov).
+    const targetAgents = this.tree.targetAgents(tree);
+    const ids = targetAgents.map((a) => a.id);
     const rows = ids.length ? await this.prisma.target.findMany({ where: { staffId: { in: ids }, year: m.year, month: m.month } }) : [];
     const prev = previousMonth(m.year, m.month);
     const prevCount = ids.length ? await this.prisma.target.count({ where: { staffId: { in: ids }, year: prev.year, month: prev.month } }) : 0;
     const range = { from: m.from, to: now.getTime() < m.to.getTime() ? now : m.to };
     const agents: AgentTargetRow[] = [];
-    for (const a of tree.agents) {
+    for (const a of targetAgents) {
       const t = rows.find((r) => r.staffId === a.id) ?? null;
       const started = now.getTime() >= m.from.getTime();
       const c = started ? await this.tree.counts([a.id], range) : null;
@@ -166,7 +168,7 @@ export class ManagerTargetsService {
     if (!Array.isArray(body?.rows) || body.rows.length === 0) throw new BadRequestException('rows must list the targets to save');
     if (body.rows.length > 200) throw new BadRequestException('At most 200 rows at a time');
     const tree = await this.tree.load(actor.sub);
-    const agentIds = new Set(tree.agents.map((a) => a.id));
+    const agentIds = new Set(this.tree.targetAgents(tree).map((a) => a.id));
     const parsed = (body.rows as Array<Record<string, unknown>>).map((r) => {
       const staffId = typeof r?.staffId === 'string' ? r.staffId : '';
       if (!agentIds.has(staffId)) throw new ForbiddenException('Every row must be an agent in your teams');
@@ -218,7 +220,7 @@ export class ManagerTargetsService {
     const from = parseMonth(body?.fromYear ?? defaultFrom.year, body?.fromMonth ?? defaultFrom.month, now);
     if (from.year === to.year && from.month === to.month) throw new BadRequestException('Pick two different months');
     const tree = await this.tree.load(actor.sub);
-    const ids = tree.agents.map((a) => a.id);
+    const ids = this.tree.targetAgents(tree).map((a) => a.id);
     if (!ids.length) return { copied: 0, skipped: [], from, to };
     const [source, existing] = await Promise.all([
       this.prisma.target.findMany({ where: { staffId: { in: ids }, year: from.year, month: from.month } }),

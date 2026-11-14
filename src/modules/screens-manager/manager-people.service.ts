@@ -90,9 +90,10 @@ export class ManagerPeopleService {
     for (const lead of tree.leads) {
       const ids = this.tree.teamIds(tree, lead.id);
       const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
+      const tracked = this.tree.trackedTeamIds(tree, lead.id);
       const [counts, targets, att, attWeek, req, flags] = await Promise.all([
         this.tree.counts(ids, range),
-        this.plan.teamTargets(lead.id, ids, m),
+        this.plan.teamTargets(lead.id, tracked, m),
         this.plan.attendanceTotals(ids, m.from, now, now),
         this.plan.attendanceTotals(ids, week.from, week.to, now),
         this.requestStats(lead.id, now),
@@ -148,10 +149,11 @@ export class ManagerPeopleService {
     const { m, range } = this.monthRange(now);
     const week = weekBuckets(now, 1)[0];
     const ids = this.tree.teamIds(tree, lead.id);
-    const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
+    // Members are a target and attendance scorecard: owner accounts left out (owner decision 14 Nov).
+    const agents = this.tree.targetAgents(tree).filter((a) => a.teamLeadId === lead.id);
     const [counts, targets, att, attWeek, req, own, codes, visits, leaveRows, notes] = await Promise.all([
       this.tree.counts(ids, range),
-      this.plan.teamTargets(lead.id, ids, m),
+      this.plan.teamTargets(lead.id, this.tree.trackedTeamIds(tree, lead.id), m),
       this.plan.attendanceTotals(ids, m.from, now, now),
       this.plan.attendanceTotals(ids, week.from, week.to, now),
       this.requestStats(lead.id, now),
@@ -216,11 +218,13 @@ export class ManagerPeopleService {
   async agents(actor: Actor, now: Date) {
     const tree = await this.tree.load(actor.id);
     const { m, range } = this.monthRange(now);
-    const flags = tree.agents.length
-      ? await this.prisma.reviewFlag.groupBy({ by: ['raisedForStaffId'], where: { status: 'open', raisedForStaffId: { in: tree.agents.map((a) => a.id) } }, _count: { _all: true } })
+    // A target, attendance and leave scorecard per agent: owner accounts left out (owner decision 14 Nov).
+    const scored = this.tree.targetAgents(tree);
+    const flags = scored.length
+      ? await this.prisma.reviewFlag.groupBy({ by: ['raisedForStaffId'], where: { status: 'open', raisedForStaffId: { in: scored.map((a) => a.id) } }, _count: { _all: true } })
       : [];
     const rows = [];
-    for (const a of tree.agents) {
+    for (const a of scored) {
       const [main, att, bal] = await Promise.all([this.mainTarget(a, m, range), this.plan.attendanceTotals([a.id], m.from, now, now), this.leave.balance(a.id)]);
       rows.push({
         staff: { id: a.id, code: a.code, name: a.name, role: a.role, isIntern: a.isIntern },
@@ -380,7 +384,9 @@ export class ManagerPeopleService {
     const today = dbDate(now);
     const rows = [];
     let lostToday = 0;
-    for (const p of tree.people) {
+    // Owner accounts have no attendance (owner decision 14 Nov).
+    const tracked = tree.people.filter((p) => !p.isOwnerAccount);
+    for (const p of tracked) {
       const d = await this.days.rowsBetween(p.id, from, to);
       const day = single ? (d[0] ?? null) : null;
       rows.push({
@@ -417,7 +423,7 @@ export class ManagerPeopleService {
       teams: tree.leads.map((l) => ({ id: l.id, team: l.team })),
       rows,
       summary: {
-        people: tree.people.length,
+        people: tracked.length,
         atWork: single ? rows.filter((r) => r.loginAt).length : null,
         lateLogins: rows.reduce((s, r) => s + r.lateDays, 0),
         missing: single ? rows.filter((r) => r.countsAs === 'Not logged in' || r.dayType === 'absent').length : rows.reduce((s, r) => s + r.absentDays, 0),

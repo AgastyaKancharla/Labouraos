@@ -1,6 +1,7 @@
 import {
   Body,
   Controller,
+  Get,
   HttpCode,
   HttpStatus,
   Post,
@@ -19,6 +20,8 @@ import { Public } from '../rbac/public.decorator';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
+import { requestedApp } from './staff-app';
+import { fieldAppAddress } from '../../modules/web-app/site-hosts';
 
 export { LOGIN_CONNECTION_RATE_LIMIT, LOGIN_RATE_LIMIT_PER_CONNECTION, LOGIN_CONNECTION_TTL };
 
@@ -44,7 +47,7 @@ export class AuthController {
   ): Promise<LoginResult> {
     const ip = req.ip || req.socket.remoteAddress;
     const userAgent = req.headers['user-agent'];
-    return this.authService.login(loginDto, { ip, userAgent });
+    return this.authService.login(loginDto, { ip, userAgent, app: requestedApp(loginDto?.app, req) });
   }
 
   @Post('login/verify-code')
@@ -64,9 +67,19 @@ export class AuthController {
     return this.authService.verifyLoginCode(
       body.loginRequestId,
       body.code,
-      { ip, userAgent },
+      { ip, userAgent, app: requestedApp(body?.app, req) },
       { deviceId: body.deviceId, loginRequestProof: body.loginRequestProof },
     );
+  }
+
+  /**
+   * Where each app lives, for links such as "Open Laboura Field" on the office
+   * app (Laboura Field's real address: FIELD_HOST, else /field on this address).
+   */
+  @Get('apps')
+  @Public('addresses of the two apps; holds no data')
+  apps() {
+    return { fieldAppUrl: fieldAppAddress() };
   }
 
   @Post('refresh')

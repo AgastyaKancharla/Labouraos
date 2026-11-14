@@ -72,8 +72,6 @@ export const en = {
   'fa01.password': 'Password',
   'fa01.showPassword': 'Show password',
   'fa01.hidePassword': 'Hide password',
-  'fa01.authenticatorCode': 'Authenticator code',
-  'fa01.authenticatorHelp': 'Your account uses an authenticator app. Enter the 6-digit code from it.',
   'fa01.signIn': 'Sign in',
   'fa01.signingIn': 'Signing in…',
   'fa01.approvedPhoneNote': 'Only on your approved phone. If you lose it, your Manager removes it from the approved list instantly.',
@@ -83,7 +81,7 @@ export const en = {
   'fa01.devicePending': 'This phone is waiting for your Team Lead to approve it. Ask them to approve phone {device}, then sign in again.',
   'fa01.accountInactive': 'This account is not active. Talk to your Team Lead.',
   'fa01.tooManyTries': 'Too many tries. Wait a minute and try again.',
-  'fa01.notFieldAgent': 'Signed in. This app is made for field agents, so some parts may not open for your role.',
+  'fa01.notForThisApp': 'This app is for field agents. Please sign in at app.laboura.com.',
 
   'fa02.title': 'Call your Team Lead for your code',
   'fa02.help': 'Your Team Lead sees your request and reads the code to you over the phone.',

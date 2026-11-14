@@ -6,6 +6,8 @@ import { SESSIONLESS_TEST_TOKENS_ENV, sessionlessTokensAllowed } from './session
  * Security check (12 Nov): a token with no session id skipped every session check
  * (revocation, idle logout, the 2-hour limit). It is now refused.
  */
+const NO_HOST = { hostname: '', headers: {} };
+
 describe('Access tokens must carry a session', () => {
   const prisma = { staffSession: { findUnique: jest.fn(), updateMany: jest.fn() } };
   const clock = { now: () => new Date('2026-11-12T06:00:00.000Z') };
@@ -19,14 +21,14 @@ describe('Access tokens must carry a session', () => {
 
   it('refuses a token with no sid', async () => {
     delete process.env[SESSIONLESS_TEST_TOKENS_ENV];
-    await expect(strategy.validate({ sub: 'staff-1', role: 'ceo', email: null, code: 'CEO-1' } as never)).rejects.toBeInstanceOf(UnauthorizedException);
+    await expect(strategy.validate(NO_HOST as never, { sub: 'staff-1', role: 'ceo', email: null, code: 'CEO-1' } as never)).rejects.toBeInstanceOf(UnauthorizedException);
     expect(prisma.staffSession.findUnique).not.toHaveBeenCalled();
   });
 
   it('checks the session of a token that has one', async () => {
     delete process.env[SESSIONLESS_TEST_TOKENS_ENV];
     prisma.staffSession.findUnique.mockResolvedValueOnce(null);
-    await expect(strategy.validate({ sub: 'staff-1', role: 'ceo', email: null, code: 'CEO-1', sid: 'gone' } as never)).rejects.toThrow('Session not found');
+    await expect(strategy.validate(NO_HOST as never, { sub: 'staff-1', role: 'ceo', email: null, code: 'CEO-1', sid: 'gone' } as never)).rejects.toThrow('Session not found');
   });
 
   it('allows a sessionless token only inside a Jest test run that switched it on', () => {

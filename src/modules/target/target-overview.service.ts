@@ -29,6 +29,7 @@ import {
   getTimezoneForCity,
   isPastPeriod,
 } from '../../common/time/period-boundary';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 export interface AgentOverview {
   staff: {
@@ -316,6 +317,8 @@ export class TargetOverviewService {
       where: {
         teamLeadId: actor.sub,
         role: { in: ['call_agent', 'field_agent'] },
+        // Owner accounts carry no targets and stay out of team progress (owner decision 14 Nov).
+        ...NOT_OWNER_ACCOUNT,
       },
       orderBy: { code: 'asc' },
     });
@@ -405,6 +408,8 @@ export class TargetOverviewService {
     const allAgents = await this.prisma.staff.findMany({
       where: {
         role: { in: ['call_agent', 'field_agent'] },
+        // Owner accounts carry no targets and stay out of the totals (owner decision 14 Nov).
+        ...NOT_OWNER_ACCOUNT,
       },
       orderBy: { code: 'asc' },
     });
@@ -448,8 +453,9 @@ export class TargetOverviewService {
     actor: JwtPayload,
     now: Date,
   ): Promise<AgentOverview> {
-    // 1. Fetch Target for this agent & period
-    const targetRecord = await this.prisma.target.findUnique({
+    // 1. Fetch Target for this agent & period. An owner account has no target
+    // (owner decision 14 Nov), even one set before it was marked.
+    const targetRecord = staff.isOwnerAccount ? null : await this.prisma.target.findUnique({
       where: {
         staffId_year_month: {
           staffId: staff.id,

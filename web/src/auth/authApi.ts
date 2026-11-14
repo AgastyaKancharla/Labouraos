@@ -4,7 +4,7 @@ import { getDeviceId } from './device';
 /**
  * The staff sign-in endpoints (src/common/auth in the API):
  *
- *   POST /auth/login              { staffCode, password, deviceId, totpCode? }
+ *   POST /auth/login              { staffCode, password, deviceId, totpCode?, app: 'office' }
  *        → token                  (management with authenticator, or not yet enrolled → totp_setup token)
  *        → { status: 'awaiting_code', loginRequestId, loginRequestProof, expiresAt }   (Team Lead, agents)
  *        → 401 "TOTP 2FA code is required"   (management: password right, ask for the code)
@@ -47,6 +47,9 @@ export function isAwaitingCode(r: LoginResponse): r is AwaitingCodeResponse {
   return (r as AwaitingCodeResponse).status === 'awaiting_code';
 }
 
+/** Each app accepts only its own roles (owner decision 14 Nov): this is the office app. */
+export const OFFICE_APP = 'office';
+
 /** The API's wording when a management password was right but no code was sent. */
 export const TOTP_REQUIRED_MESSAGE = 'TOTP 2FA code is required';
 
@@ -54,11 +57,12 @@ export const authApi = {
   /** Management forgot password: always the same answer, whether or not the email exists. */
   forgotPassword: (email: string) => api.post<{ message: string; testModeNote?: string }>('/staff/forgot-password', { email }, { auth: false }),
   login: (input: { staffCode: string; password: string; totpCode?: string }) =>
-    api.post<LoginResponse>('/auth/login', { ...input, deviceId: getDeviceId() }, { auth: false }),
+    // This is the office app: the API refuses field agents here (they use Laboura Field).
+    api.post<LoginResponse>('/auth/login', { ...input, deviceId: getDeviceId(), app: OFFICE_APP }, { auth: false }),
   verifyCode: (loginRequestId: string, code: string, loginRequestProof: string) =>
     api.post<TokenResponse>(
       '/auth/login/verify-code',
-      { loginRequestId, code, deviceId: getDeviceId(), loginRequestProof },
+      { loginRequestId, code, deviceId: getDeviceId(), loginRequestProof, app: OFFICE_APP },
       { auth: false },
     ),
   refresh: () => api.post<{ accessToken: string; sessionId: string }>('/auth/refresh'),
