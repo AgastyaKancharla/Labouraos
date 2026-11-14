@@ -42,6 +42,8 @@ export interface TeamRow {
   /** Staff photo (signed link) — initials when none; and whether the CEO asked for a new one. */
   photoUrl?: string | null;
   photoRetakeRequested?: boolean;
+  /** Owner account (owner decision 14 Nov): call or field agent accounts only. */
+  ownerAccount?: boolean;
 }
 interface TeamResponse {
   rows: TeamRow[];
@@ -61,6 +63,11 @@ const STATE: Record<TeamRow['state'], { label: string; tone: StatusTone }> = {
   locked: { label: 'Locked', tone: 'danger' },
   deactivated: { label: 'Deactivated', tone: 'muted' },
 };
+
+/** Shown wherever the CEO marks an owner account (owner decision 14 Nov). */
+export const OWNER_ACCOUNT_EXPLANATION = 'Owner account: their work counts in the lists, but not in targets, leaderboard, attendance or salary';
+
+const isAgentRole = (role: string) => role === 'call_agent' || role === 'field_agent';
 
 const ROLE_OPTIONS = [
   { value: 'call_agent', label: 'Call agent' },
@@ -113,6 +120,7 @@ export default function Team() {
             <div style={{ fontWeight: 600 }}>{r.name}</div>
             <div className="ceo-cell-sub">
               {r.code}
+              {r.ownerAccount ? ' · owner account' : ''}
               {r.signedIn ? ' · signed in now' : ''}
               {r.photoRetakeRequested ? ' · new photo asked' : ''}
             </div>
@@ -168,6 +176,20 @@ export default function Team() {
               confirmLabel="Save title"
               run={({ choice }) => api.post(`/ceo/team/${r.id}/title`, { title: choice })}
               success="Title saved"
+            />
+          )}
+          {isAgentRole(r.role) && r.state !== 'deactivated' && (
+            <ActionButton
+              label={r.ownerAccount ? 'Owner account · clear' : 'Mark as owner account'}
+              title={r.ownerAccount ? `Clear owner account · ${r.name}` : `Mark ${r.name} as an owner account`}
+              description={
+                r.ownerAccount
+                  ? 'They go back to being a normal agent: targets, leaderboard, attendance and salary apply again from now.'
+                  : `${OWNER_ACCOUNT_EXPLANATION}. They sign in like any agent: device approval and a login code each time.`
+              }
+              confirmLabel={r.ownerAccount ? 'Clear owner account' : 'Mark as owner account'}
+              run={() => api.put(`/staff/${r.id}/owner-account`, { ownerAccount: !r.ownerAccount })}
+              success={r.ownerAccount ? `${r.name} is a normal agent again` : `${r.name} is now an owner account`}
             />
           )}
           {r.state === 'invite_pending' && <ResendInvite row={r} />}
@@ -394,6 +416,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
   const [role, setRole] = useState('call_agent');
   const [boss, setBoss] = useState('');
   const [joinedOn, setJoinedOn] = useState('');
+  const [ownerAccount, setOwnerAccount] = useState(false);
   const [shown, setShown] = useState<{ code: string; token: string } | null>(null);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
@@ -410,6 +433,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
         role,
         reportsToId: bossRole ? effectiveBoss || undefined : undefined,
         joinedOn: joinedOn || undefined,
+        ...(ownerAccount && isAgentRole(role) ? { ownerAccount: true } : {}),
       }),
     onSuccess: (res) => {
       setShown({ code: res.staff.code, token: res.inviteToken });
@@ -417,6 +441,7 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
       setName('');
       setEmail('');
       setJoinedOn('');
+      setOwnerAccount(false);
       setError(null);
       void qc.invalidateQueries({ queryKey: ['ceo'] });
     },
@@ -445,6 +470,14 @@ function AddStaff({ options }: { options: TeamResponse['reportsToOptions'] }) {
         )}
         <TextField label={needsEmail ? 'Email (for the authenticator)' : 'Email (optional)'} value={email} onChange={setEmail} required={needsEmail} type="email" />
         <DateField label="Joining date" value={joinedOn} onChange={setJoinedOn} hint="Pay starts on it · empty = first login" name="new-staff-joined" />
+        {isAgentRole(role) && (
+          <label className="ceo-check" title={OWNER_ACCOUNT_EXPLANATION}>
+            <input type="checkbox" name="new-staff-owner" checked={ownerAccount} onChange={(e) => setOwnerAccount(e.target.checked)} /> Owner account
+            <span className="ceo-cell-sub" style={{ display: 'block' }}>
+              {OWNER_ACCOUNT_EXPLANATION}
+            </span>
+          </label>
+        )}
         <div style={{ alignSelf: 'flex-end' }}>
           <Button variant="primary" type="submit" loading={add.isPending} disabled={missing}>
             Add · send staff code

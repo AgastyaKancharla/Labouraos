@@ -31,6 +31,7 @@ import {
   sessionEndMessage,
   sessionLifetimeEnd,
 } from './session-lifetime';
+import { appForRole, appLabel, FIELD_APP_ONLY_MESSAGE, isStaffApp, roleAllowedInApp, StaffApp, UNKNOWN_APP_MESSAGE, wrongAppMessage } from './staff-app';
 
 export interface StaffSessionView {
   id: string;
@@ -54,6 +55,7 @@ const SELF_APPROVING_DEVICE_ROLES = ['ceo'] as const;
 const LOGIN_CODE_ROLES = ['team_lead', 'call_agent', 'field_agent'] as const;
 
 const INVALID_CREDENTIALS = 'Invalid staff code or password';
+export const DEVICE_NO_LONGER_APPROVED = 'This device is no longer approved. Ask your Team Lead to approve it again.';
 
 /**
  * Laboura Field keeps the session on the phone, so closing the app does not
@@ -88,6 +90,11 @@ export interface FieldRefreshResult {
 export interface LoginMetadata {
   ip?: string;
   userAgent?: string;
+  /**
+   * The app the sign-in came from (see staff-app.ts): worked out by the
+   * controller from the body's `app` and the Laboura Field address.
+   */
+  app?: { app: StaffApp | null; fieldHost: boolean; invalid: boolean };
 }
 
 /** An authenticator code that was already accepted once. */
@@ -151,6 +158,12 @@ export class AuthService {
   }
 
   async login(loginDto: LoginDto, metadata?: LoginMetadata): Promise<LoginResult> {
+    if (metadata?.app?.invalid) {
+      await this.auditAttempt('login', 'unknown', 'auth.login.refused', { reason: 'unknown_app' });
+      // On the Laboura Field address only Laboura Field signs in.
+      if (metadata.app.fieldHost) throw new UnauthorizedException(FIELD_APP_ONLY_MESSAGE);
+      throw new BadRequestException(UNKNOWN_APP_MESSAGE);
+    }
     if (loginDto.email && !(typeof loginDto.staffCode === 'string' && loginDto.staffCode.trim())) {
       await this.auditAttempt('login', 'unknown', 'auth.login.refused', {
         reason: 'email_not_identifier',
@@ -207,6 +220,15 @@ export class AuthService {
       throw new UnauthorizedException('Account is not active');
     }
 
+    // Each app accepts only its own roles (owner decision 14 Nov). Checked
+    // before any device request, login code request or session is created, so
+    // a wrong-app attempt never reaches a senior or ends a session elsewhere.
+    const app = this.appFor(staff.role, metadata);
+    if (!roleAllowedInApp(staff.role, app)) {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'wrong_app', app, role: staff.role });
+      throw new UnauthorizedException(wrongAppMessage(app));
+    }
+
     const deviceId = text(loginDto.deviceId).trim();
     if (!deviceId) {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
@@ -222,7 +244,7 @@ export class AuthService {
 
     if (!management) {
       if (!device || device.status !== 'approved') {
-        await this.ensurePendingDevice(staff.id, deviceId);
+        await this.ensurePendingDevice(staff.id, deviceId, app);
         await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
           reason: 'device_pending',
         });
@@ -236,7 +258,7 @@ export class AuthService {
     // code from a senior or the authenticator code, so staff log in from any network.
 
     if (management) {
-      return this.completeManagementLogin(staff, deviceId, device?.status, text(loginDto.totpCode) || undefined, metadata);
+      return this.completeManagementLogin(staff, deviceId, device?.status, text(loginDto.totpCode) || undefined, metadata, app);
     }
 
     if (!(LOGIN_CODE_ROLES as readonly string[]).includes(staff.role)) {
@@ -244,7 +266,7 @@ export class AuthService {
       throw new UnauthorizedException('This account cannot log in');
     }
 
-    const request = await this.loginCodeService.create(staff.id, device!.id, metadata?.ip ?? '');
+    const request = await this.loginCodeService.create(staff.id, device!.id, metadata?.ip ?? '', app);
     await this.auditAttempt(staff.id, staff.code, 'auth.login.awaiting_code', {
       loginRequestId: request.id,
     });
@@ -267,6 +289,7 @@ export class AuthService {
       throw new UnauthorizedException('Login code is not valid');
     }
     await this.assertSameDeviceAndSignIn(loginRequestId, binding);
+    const app = await this.assertCodeAppAndDevice(loginRequestId, metadata);
     let used: { staffId: string; id: string };
     try {
       used = await this.loginCodeService.verify(loginRequestId, code);
@@ -291,7 +314,60 @@ export class AuthService {
       })).staffDeviceId },
     });
     noteRequestDevice({ staffId: staff.id, deviceId: device?.deviceId ?? null });
-    return this.issueSession(staff, device?.deviceId ?? null, metadata, used.id);
+    // The device may have been revoked while the code was being read out.
+    if (!device || device.status !== 'approved') {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'device_not_approved' });
+      throw new UnauthorizedException(DEVICE_NO_LONGER_APPROVED);
+    }
+    const sessionApp = app ?? appForRole(staff.role);
+    if (!roleAllowedInApp(staff.role, sessionApp)) {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'wrong_app', app: sessionApp, role: staff.role });
+      throw new UnauthorizedException(wrongAppMessage(sessionApp));
+    }
+    return this.issueSession(staff, device.deviceId, metadata, used.id, false, sessionApp);
+  }
+
+  /** The app a sign-in is for: the one it named (or the Laboura Field address), else the role's own. */
+  private appFor(role: string, metadata?: LoginMetadata): StaffApp {
+    return metadata?.app?.app ?? appForRole(role);
+  }
+
+  /**
+   * Before a login code is used: the verify call comes from the same app as
+   * the sign-in that asked for the code (an unknown app or another app is
+   * refused without using up a try), and the device is still approved
+   * (a device revoked while the code was read out cannot sign in).
+   * Returns the app the code request was made from (null on older requests).
+   */
+  private async assertCodeAppAndDevice(loginRequestId: string, metadata?: LoginMetadata): Promise<StaffApp | null> {
+    const request = await this.prisma.loginCodeRequest.findUnique({
+      where: { id: loginRequestId },
+      select: { id: true, staffId: true, app: true, staffDevice: { select: { status: true } } },
+    });
+    if (!request) return metadata?.app?.app ?? null; // the code check answers "not found" as before
+    const asked = metadata?.app;
+    const recorded = isStaffApp(request.app) ? request.app : null;
+    if (asked?.invalid || (asked?.app && recorded && asked.app !== recorded)) {
+      await this.auditService.log({
+        actorId: request.staffId,
+        action: 'auth.login.refused',
+        entityType: 'login_code_request',
+        entityCode: request.id,
+        after: { reason: 'login_code_other_app' },
+      });
+      throw new UnauthorizedException('This login code can only be used in the app that asked for it');
+    }
+    if (request.staffDevice?.status !== 'approved') {
+      await this.auditService.log({
+        actorId: request.staffId,
+        action: 'auth.login.refused',
+        entityType: 'login_code_request',
+        entityCode: request.id,
+        after: { reason: 'device_not_approved' },
+      });
+      throw new UnauthorizedException(DEVICE_NO_LONGER_APPROVED);
+    }
+    return recorded ?? asked?.app ?? null;
   }
 
   /**
@@ -404,7 +480,7 @@ export class AuthService {
         } else {
           // Enrolling the authenticator does not approve the device: it is
           // put in front of the CEO, who approves it.
-          await this.ensurePendingDevice(staff.id, session.deviceId);
+          await this.ensurePendingDevice(staff.id, session.deviceId, isStaffApp(session.app) ? session.app : 'office');
         }
       }
     }
@@ -494,7 +570,8 @@ export class AuthService {
       !session.tokenHash ||
       !sameHash(session.tokenHash, presented) ||
       session.deviceId !== deviceId ||
-      !FIELD_SESSION_ROLES.includes(session.staff.role)
+      !FIELD_SESSION_ROLES.includes(session.staff.role) ||
+      (session.app !== null && session.app !== 'field')
     ) {
       throw refuse(FIELD_SESSION_REFUSED, 'unknown');
     }
@@ -539,6 +616,7 @@ export class AuthService {
         email: staff.email,
         code: staff.code,
         teamLeadId: staff.teamLeadId,
+        app: 'field',
       },
       session.id,
     );
@@ -593,11 +671,12 @@ export class AuthService {
     deviceStatus: string | undefined,
     totpCode: string | undefined,
     metadata?: LoginMetadata,
+    app: StaffApp = 'office',
   ): Promise<LoginResponseDto> {
     const enrolled = !!(staff.totpEnabled && staff.totpSecret);
     if (!enrolled) {
       await this.clearFailedLogins(staff.id);
-      return this.issueSession(staff, deviceId, metadata, null, true);
+      return this.issueSession(staff, deviceId, metadata, null, true, app);
     }
     if (!totpCode) {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'totp_required' });
@@ -624,7 +703,7 @@ export class AuthService {
     await this.clearFailedLogins(staff.id);
     if (deviceStatus !== 'approved') {
       if (!this.selfApprovesDevice(staff)) {
-        await this.ensurePendingDevice(staff.id, deviceId);
+        await this.ensurePendingDevice(staff.id, deviceId, app);
         await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
           reason: 'device_pending',
         });
@@ -632,7 +711,7 @@ export class AuthService {
       }
       await this.selfApproveDevice(staff, deviceId);
     }
-    return this.issueSession(staff, deviceId, metadata, null, false);
+    return this.issueSession(staff, deviceId, metadata, null, false, app);
   }
 
   private selfApprovesDevice(staff: Staff): boolean {
@@ -645,6 +724,7 @@ export class AuthService {
     metadata: LoginMetadata | undefined,
     loginCodeRequestId: string | null,
     totpSetup = false,
+    app: StaffApp = appForRole(staff.role),
   ): Promise<LoginResponseDto> {
     const now = this.clock.now();
     const policy = await this.pricingService.current();
@@ -652,13 +732,14 @@ export class AuthService {
     const absoluteExpiresAt = new Date(now.getTime() + minutesToMs(policy.maxSessionMinutes));
     await this.endOpenSessions(staff.id, 'replaced');
     const refreshToken =
-      !totpSetup && deviceId && FIELD_SESSION_ROLES.includes(staff.role)
+      !totpSetup && deviceId && app === 'field' && FIELD_SESSION_ROLES.includes(staff.role)
         ? randomBytes(32).toString('hex')
         : null;
     const session = await this.prisma.staffSession.create({
       data: {
         staffId: staff.id,
         tokenHash: refreshToken ? hashRefreshToken(refreshToken) : null,
+        app,
         deviceId,
         ipAddress: metadata?.ip || null,
         userAgent: metadata?.userAgent || null,
@@ -676,6 +757,7 @@ export class AuthService {
       code: staff.code,
       teamLeadId: staff.teamLeadId,
       sid: session.id,
+      app,
       ...(totpSetup ? { scope: 'totp_setup' as const } : {}),
     };
 
@@ -757,7 +839,7 @@ export class AuthService {
     return row;
   }
 
-  private async ensurePendingDevice(staffId: string, deviceId: string) {
+  private async ensurePendingDevice(staffId: string, deviceId: string, app: StaffApp) {
     const existing = await this.prisma.staffDevice.findUnique({
       where: { staffId_deviceId: { staffId, deviceId } },
     });
@@ -770,6 +852,8 @@ export class AuthService {
         where: { id: existing.id },
         data: {
           status: 'pending',
+          app,
+          label: appLabel(app),
           requestedAt: now,
           approvedAt: null,
           approvedByStaffId: null,
@@ -782,7 +866,8 @@ export class AuthService {
       data: {
         staffId,
         deviceId,
-        label: 'Login device',
+        label: appLabel(app),
+        app,
         platform: 'unknown',
         status: 'pending',
         requestedAt: now,
@@ -821,6 +906,7 @@ export class AuthService {
       code: actor.code,
       teamLeadId: actor.teamLeadId,
       sid: sessionId,
+      ...(actor.app ? { app: actor.app } : {}),
       ...(actor.scope ? { scope: actor.scope } : {}),
     };
     return this.jwtService.signAsync(payload, { expiresIn: '15m' });

@@ -3,8 +3,8 @@ import { AppState } from 'react-native';
 import { sessionStore as defaultStore } from '@/api';
 import { useApi } from '@/api/ApiProvider';
 import type { ApiClient } from '@/api/client';
-import { authApi, isAwaitingCode, type AwaitingCodeResponse } from '@/api/endpoints/auth';
-import { isApiError } from '@/api/errors';
+import { authApi, FIELD_APP_ONLY_MESSAGE, isAwaitingCode, type AwaitingCodeResponse } from '@/api/endpoints/auth';
+import { ApiError, isApiError } from '@/api/errors';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import { getDeviceId } from './device';
 import { reasonFromMessage, SessionStore, tokenNeedsRefresh, type Session, type SignOutReason } from './session';
@@ -30,8 +30,8 @@ interface AuthValue {
   signOutReason: SignOutReason | null;
   pendingLogin: PendingLogin | null;
   deviceId: string | null;
-  /** FA01: staff code + password (+ authenticator code for management accounts). */
-  startLogin: (staffCode: string, password: string, totpCode?: string) => Promise<StartLoginResult>;
+  /** FA01: staff code + password. Laboura Field is for field agents only. */
+  startLogin: (staffCode: string, password: string) => Promise<StartLoginResult>;
   /** FA02: the 6-digit code read out by the Team Lead. */
   verifyCode: (code: string) => Promise<void>;
   cancelPendingLogin: () => void;
@@ -107,9 +107,16 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
     });
     let cancelled = false;
     void (async () => {
-      const [loaded, id] = await Promise.all([store.load(), getDeviceId(storage)]);
+      const [stored, id] = await Promise.all([store.load(), getDeviceId(storage)]);
       if (cancelled) return;
       setDeviceId(id);
+      // A session kept from before Laboura Field became field-agent-only (a CEO
+      // signed in with the authenticator) is dropped: the server refuses it anyway.
+      let loaded = stored;
+      if (loaded && loaded.staff.role !== 'field_agent') {
+        await store.clear('logout');
+        loaded = null;
+      }
       // Reopened after a while: restore the session before any screen asks
       // for data with a token that has run out.
       if (loaded && tokenNeedsRefresh(loaded, now(), REFRESH_WHEN_LEFT_MS)) await refreshNow();
@@ -149,17 +156,21 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
   }, [status, maintain]);
 
   const startLogin = useCallback(
-    async (staffCode: string, password: string, totpCode?: string): Promise<StartLoginResult> => {
+    async (staffCode: string, password: string): Promise<StartLoginResult> => {
       const id = deviceId ?? (await getDeviceId(storage));
       const response = await auth.login({
         staffCode: staffCode.trim(),
         password,
         deviceId: id,
-        ...(totpCode ? { totpCode } : {}),
       });
       if (isAwaitingCode(response)) {
         setPendingLogin({ ...response, staffCode: staffCode.trim(), deviceId: id });
         return { kind: 'awaiting_code' };
+      }
+      // Field agents always get a login code step; a token straight away would be
+      // another role, which Laboura Field never keeps (owner decision 14 Nov).
+      if (response.staff.role !== 'field_agent') {
+        throw new ApiError({ status: 401, messages: [FIELD_APP_ONLY_MESSAGE] });
       }
       setSignOutReason(null);
       await store.start(response.accessToken, response.staff, response.sessionId ?? null, response.refreshToken ?? null);

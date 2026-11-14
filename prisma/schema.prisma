@@ -1198,6 +1198,9 @@ model StaffDevice {
   label             String
   platform          String
   status            String    @default("pending") // pending, approved, revoked
+  /// Which app asked for this device: office (office browser) or field (Laboura Field).
+  /// Null on devices from before 14 Nov.
+  app               String?
   requestedAt       DateTime?
   approvedAt        DateTime?
   revokedAt         DateTime?
@@ -1222,6 +1225,8 @@ model LoginCodeRequest {
   staffDeviceId     String
   staffDevice       StaffDevice @relation(fields: [staffDeviceId], references: [id], onDelete: Cascade)
   ipAddress         String
+  /// Which app the sign-in came from: office or field, shown to the senior giving the code.
+  app               String?
   status            String      @default("pending") // pending, revealed, used, expired, refused
   createdAt         DateTime    @default(now())
   expiresAt         DateTime
@@ -1248,6 +1253,9 @@ model StaffSession {
   /// Laboura Field only: SHA-256 of the refresh token that restores the session
   /// when the app is reopened. Office sessions never get one.
   tokenHash          String?
+  /// The app the session belongs to: office (app.laboura.com) or field (Laboura Field).
+  /// A token works only in its own app. Null on sessions from before 14 Nov (the role's own app).
+  app                String?
   deviceId           String?
   ipAddress          String?
   userAgent          String?

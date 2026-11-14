@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { ROLE_HOME } from './auth/roles';
@@ -52,5 +52,13 @@ describe('the web app at the site root', () => {
     render(<App />);
     expect(await screen.findByRole('link', { name: 'Open Laboura Field' })).toHaveAttribute('href', '/field/');
     expect(window.location.pathname).toBe('/field-app');
+  });
+
+  it('the Laboura Field link uses its real address from the API', async () => {
+    signInAs('field_agent');
+    mockApi({ 'GET /auth/apps': { fieldAppUrl: 'https://field.laboura.com/' } });
+    window.history.pushState({}, '', '/field-app');
+    render(<App />);
+    await waitFor(() => expect(screen.getByRole('link', { name: 'Open Laboura Field' })).toHaveAttribute('href', 'https://field.laboura.com/'));
   });
 });

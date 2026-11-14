@@ -123,7 +123,7 @@ describe('Audit rows record the device (no network label since 14 Nov)', () => {
     const row = await runWithRequestId(
       'req-audit-device',
       async () => {
-        await strategy.validate({ sub: staff.id, role: 'field_agent', email: null, code: staff.code, sid: session.id });
+        await strategy.validate({ hostname: '', headers: {} } as never, { sub: staff.id, role: 'field_agent', email: null, code: staff.code, sid: session.id });
         return audit.log({ actorId: staff.id, action: 'test.audit_device', entityType: 'staff', entityCode: staff.code, after: { status: 'ok' } });
       },
       { ip: '203.0.113.9' },

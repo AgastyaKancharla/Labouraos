@@ -4,6 +4,7 @@ import qrcode from 'qrcode-generator';
 import { useAuth } from '../../auth/AuthProvider';
 import { authApi, isAwaitingCode, TOTP_REQUIRED_MESSAGE, type TokenResponse } from '../../auth/authApi';
 import { landingPath } from '../../auth/RequireRole';
+import { fieldAppUrlFromRefusal, isFieldAgentRefusal } from '../../auth/fieldApp';
 import { isStaffRole } from '../../auth/roles';
 import { Button } from '../../components/Button';
 import { FamilyContext } from '../../components/family';
@@ -75,6 +76,8 @@ export default function StaffSignIn() {
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => clock().getTime());
   const [forgotEmail, setForgotEmail] = useState('');
+  /** Set when the API refused a field agent here: Laboura Field's address (owner decision 14 Nov). */
+  const [fieldAppUrl, setFieldAppUrl] = useState<string | null>(null);
 
   useEffect(() => {
     document.title = `${t('auth.signIn.title')} · ${t('app.name')}`;
@@ -122,6 +125,7 @@ export default function StaffSignIn() {
     e.preventDefault();
     clearSignOutReason();
     setNotice(null);
+    setFieldAppUrl(null);
     void run(async () => {
       try {
         const response = await authApi.login({ staffCode: staffCode.trim(), password });
@@ -141,6 +145,12 @@ export default function StaffSignIn() {
         if (isApiError(err) && err.status === 401 && err.message === TOTP_REQUIRED_MESSAGE) {
           setCode('');
           setStep({ kind: 'totp' });
+          return;
+        }
+        // A field agent is refused here before any device or login code request is made.
+        if (isApiError(err) && err.status === 401 && isFieldAgentRefusal(err.message)) {
+          setPassword('');
+          setFieldAppUrl(fieldAppUrlFromRefusal(err.message));
           return;
         }
         throw err;
@@ -238,6 +248,15 @@ export default function StaffSignIn() {
                 <p className="vno" role="alert">
                   {error}
                 </p>
+              )}
+              {fieldAppUrl && (
+                <div className="lb-notice" role="alert" data-testid="field-agent-refusal">
+                  <strong>{t('auth.fieldAgent.title')}</strong>
+                  <p className="muted">{t('auth.fieldAgent.body')}</p>
+                  <a className="btn bp full" href={fieldAppUrl}>
+                    {t('auth.fieldAgent.open')}
+                  </a>
+                </div>
               )}
               <Button type="submit" variant="primary" fullWidth loading={busy} disabled={!staffCode.trim() || !password}>
                 {busy ? t('auth.signingIn') : t('auth.signIn')}

@@ -1,5 +1,6 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
+import type { Request } from 'express';
 import { ExtractJwt, Strategy } from 'passport-jwt';
 import { JwtPayload } from './jwt-payload.interface';
 import { PrismaService } from '../prisma/prisma.service';
@@ -13,6 +14,11 @@ import {
   sessionLifetimeEnd,
   shouldTouchActivity,
 } from './session-lifetime';
+import { appForRole, isStaffApp, roleAllowedInApp } from './staff-app';
+import { isFieldHost } from '../../modules/web-app/site-hosts';
+
+/** A token used in the other app (or on the other app's address). */
+export const WRONG_APP_TOKEN = 'This sign-in belongs to the other Laboura app: sign in again here';
 
 @Injectable()
 export class JwtStrategy extends PassportStrategy(Strategy) {
@@ -25,12 +31,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
       secretOrKey: getJwtSecret(),
+      passReqToCallback: true,
     });
   }
 
-  async validate(payload: JwtPayload): Promise<JwtPayload> {
+  async validate(req: Request, payload: JwtPayload): Promise<JwtPayload> {
     if (!payload.sub || !payload.role) {
       throw new UnauthorizedException('Malformed token payload');
+    }
+    const fieldHost = isFieldHost(req);
+    // A token without a session (Jest only) still answers to its app on the Laboura Field address.
+    if (!payload.sid && fieldHost && (payload.app ?? appForRole(payload.role)) !== 'field') {
+      throw new UnauthorizedException(WRONG_APP_TOKEN);
     }
 
     // Every real token carries its session; one without is refused (only a Jest
@@ -48,6 +60,18 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
 
       if (!session) {
         throw new UnauthorizedException('Session not found');
+      }
+
+      // A token works only in its own app (owner decision 14 Nov): the session's
+      // app (older sessions: the role's own app) must match the token's, must
+      // allow the role, and on the Laboura Field address it must be Laboura Field.
+      const sessionApp = isStaffApp(session.app) ? session.app : appForRole(payload.role);
+      if (
+        (payload.app && payload.app !== sessionApp) ||
+        !roleAllowedInApp(payload.role, sessionApp) ||
+        (fieldHost && sessionApp !== 'field')
+      ) {
+        throw new UnauthorizedException(WRONG_APP_TOKEN);
       }
 
       if (session.revokedAt) {

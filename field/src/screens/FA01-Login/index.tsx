@@ -13,18 +13,18 @@ import { loginErrorKey, sessionReasonKey } from './messages';
 const logo = require('../../../assets/logo-mark.png');
 
 /**
- * FA01 — Field agent sign in. Staff code + password on the approved phone.
- * Field agents then go to FA02 for the code read out by the Team Lead.
- * Management accounts (Sanket as CEO) are asked for their authenticator code
- * on this same screen instead.
+ * FA01 — Field agent sign in. Staff code + password on the approved phone,
+ * then FA02 for the code read out by the Team Lead. Laboura Field is for field
+ * agents only (owner decision 14 Nov): the server refuses every other role
+ * ("This app is for field agents. Please sign in at app.laboura.com.") before
+ * any device or code request is made. The CEO no longer uses Laboura Field;
+ * the owners use their own field agent account.
  */
 export default function LoginScreen() {
   const { t } = useI18n();
   const { startLogin, signOutReason, deviceId } = useAuth();
   const [staffCode, setStaffCode] = useState('');
   const [password, setPassword] = useState('');
-  const [totpCode, setTotpCode] = useState('');
-  const [needsTotp, setNeedsTotp] = useState(false);
   const [busy, setBusy] = useState(false);
   const [errorKey, setErrorKey] = useState<MessageKey | null>(null);
   const [serverMessage, setServerMessage] = useState<string | null>(null);
@@ -39,15 +39,11 @@ export default function LoginScreen() {
     }
     setBusy(true);
     try {
-      const result = await startLogin(staffCode, password, needsTotp ? totpCode : undefined);
+      const result = await startLogin(staffCode, password);
       if (result.kind === 'awaiting_code') router.push(routes.loginCode);
       else router.replace(routes.home);
     } catch (error) {
       const message = isApiError(error) ? error.message : '';
-      if (/totp/i.test(message) && /required/i.test(message)) {
-        setNeedsTotp(true);
-        return;
-      }
       const key = loginErrorKey(error);
       setErrorKey(key);
       if (key === 'common.error') setServerMessage(message || null);
@@ -95,19 +91,6 @@ export default function LoginScreen() {
             onSubmitEditing={() => void submit()}
             testID="password"
           />
-          {needsTotp ? (
-            <TextField
-              label={t('fa01.authenticatorCode')}
-              hint={t('fa01.authenticatorHelp')}
-              value={totpCode}
-              onChangeText={(v) => setTotpCode(v.replace(/\D/g, '').slice(0, 6))}
-              keyboardType="number-pad"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              textContentType="oneTimeCode"
-              testID="totp-code"
-            />
-          ) : null}
           {errorKey ? (
             <Banner
               tone="error"

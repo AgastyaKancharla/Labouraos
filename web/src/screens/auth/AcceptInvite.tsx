@@ -16,6 +16,7 @@ import { isApiError } from '../../lib/api/errors';
 import { formatDateTimeIST } from '../../lib/format/date';
 import { postLiveSelfie } from '../public/shared/api';
 import { LiveSelfie } from '../public/shared/LiveSelfie';
+import { useFieldAppUrl } from '../../auth/fieldApp';
 
 /**
  * The invite page: /p/invite/:token (the link in `inviteUrl` when the
@@ -58,8 +59,6 @@ type Step =
   | { kind: 'done'; withAuthenticator: boolean };
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}logo-mark.png`;
-/** Laboura Field is served by the same API at /field (outside the web app). */
-export const FIELD_APP_URL = '/field/';
 
 function problemOf(err: unknown): Problem | null {
   if (!isApiError(err)) return null;
@@ -100,6 +99,7 @@ function roleKey(role: string): StaffInviteKey | null {
 
 export default function AcceptInvite() {
   const t = useT();
+  const fieldAppUrl = useFieldAppUrl();
   const { token = '' } = useParams<{ token: string }>();
   const [step, setStep] = useState<Step>({ kind: 'password' });
   const [password, setPassword] = useState('');
@@ -258,7 +258,7 @@ export default function AcceptInvite() {
         {step.withAuthenticator && <p className="muted">{t('invite.doneAuthenticator')}</p>}
         <p className="muted">{field ? t('invite.doneField') : t('invite.doneDevice')}</p>
         {field ? (
-          <a className={buttonClass('primary', 'regular', undefined, true)} href={FIELD_APP_URL}>
+          <a className={buttonClass('primary', 'regular', undefined, true)} href={fieldAppUrl}>
             {t('invite.openField')}
           </a>
         ) : (
