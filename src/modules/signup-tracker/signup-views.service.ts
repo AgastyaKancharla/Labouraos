@@ -11,6 +11,8 @@ import { REENGAGE_OUTCOMES } from './signup-tracker.service';
 import { STAGE_ORDER, scriptHintKey } from './signup-stage';
 import { missingSettingColumns, signupSettingsFrom } from './signup-settings';
 import { DAY_MS } from './signup-timing';
+import { OwnTeam } from '../../common/rbac/own-team';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
 
 /** Languages a staff member can be marked as speaking (the same list as the job seeker form). */
 export const STAFF_LANGUAGES = [
@@ -23,6 +25,10 @@ const ROW_LIMIT = 200;
 const OVERDUE_MS = 60 * 60 * 1000;
 /** The office screens' default period: the last month (a view setting, not a rule). */
 const DEFAULT_VIEW_DAYS = 30;
+/** Finished sign-ups sampled for the typical time to finish. */
+const MEDIAN_SAMPLE = 2000;
+/** Most recent sign-ups read for the area tables. */
+const AREA_SAMPLE = 2000;
 
 export interface Actor {
   id: string;
@@ -81,6 +87,7 @@ export class SignupViewsService {
     private readonly audit: AuditService,
     private readonly facts: SignupFactsService,
     private readonly clock: SignupTrackerClock,
+    private readonly scope: ReportingScopeService,
   ) {}
 
   // ------------------------------------------------------------ rows
@@ -143,45 +150,82 @@ export class SignupViewsService {
     return out;
   }
 
+  // ------------------------------------------------------------ team
+
+  /** The Team Lead's own team (OwnTeam, the shared definition), the Team Lead included. */
+  private teamOf(teamLeadId: string): Promise<string[]> {
+    return new OwnTeam(this.prisma, this.scope).memberIds(teamLeadId);
+  }
+
+  /**
+   * Of these sign-ups, the ones whose record was registered (or is held) by
+   * someone in `teamIds`. A sign-up with no agent and no record owner belongs
+   * to no team.
+   */
+  private async ownedByTeam<T extends Pick<SignupTracker, 'subjectType' | 'subjectId'>>(trackers: T[], teamIds: string[]): Promise<T[]> {
+    const ids = (type: string) => trackers.filter((t) => t.subjectType === type && t.subjectId).map((t) => t.subjectId!);
+    const [seekers, businesses, referrals] = await Promise.all([
+      ids('job_seeker').length
+        ? this.prisma.jobSeeker.findMany({ where: { id: { in: ids('job_seeker') }, registeredByStaffId: { in: teamIds } }, select: { id: true } })
+        : Promise.resolve([]),
+      ids('business').length
+        ? this.prisma.business.findMany({
+            where: { id: { in: ids('business') }, OR: [{ leadCreatedByStaffId: { in: teamIds } }, { accountAgentId: { in: teamIds } }] },
+            select: { id: true },
+          })
+        : Promise.resolve([]),
+      ids('referral').length
+        ? this.prisma.referral.findMany({ where: { id: { in: ids('referral') }, registeredByStaffId: { in: teamIds } }, select: { id: true } })
+        : Promise.resolve([]),
+    ]);
+    const owned = new Set([...seekers, ...businesses, ...referrals].map((r) => r.id));
+    return trackers.filter((t) => t.subjectId && owned.has(t.subjectId));
+  }
+
   // ------------------------------------------------------------ counts
 
+  /** Counts with aggregate queries: nothing loads every tracker. */
   private async counts(where: Prisma.SignupTrackerWhereInput, since: Date) {
-    const all = await this.prisma.signupTracker.findMany({
-      where: { ...where, OR: [{ createdAt: { gte: since } }, { outcome: 'open' }] },
-      select: { profileKind: true, stage: true, outcome: true, createdAt: true, finishedAt: true, source: true, subjectType: true, subjectId: true },
-    });
+    const inWindow: Prisma.SignupTrackerWhereInput = { AND: [where, { OR: [{ createdAt: { gte: since } }, { outcome: 'open' }] }] };
+    const [started, openStages, allStages, outcomesRows, sources, finishedRows] = await Promise.all([
+      this.prisma.signupTracker.count({ where: inWindow }),
+      this.prisma.signupTracker.groupBy({ by: ['profileKind', 'stage'], where: { AND: [where, { outcome: 'open' }] }, _count: { _all: true } }),
+      this.prisma.signupTracker.groupBy({ by: ['profileKind', 'stage'], where: inWindow, _count: { _all: true } }),
+      this.prisma.signupTracker.groupBy({ by: ['profileKind', 'outcome'], where: inWindow, _count: { _all: true } }),
+      this.prisma.signupTracker.groupBy({ by: ['source'], where: inWindow, _count: { _all: true } }),
+      this.prisma.signupTracker.findMany({
+        where: { AND: [where, { outcome: { in: ['self', 'assisted'] }, finishedAt: { gte: since } }] },
+        orderBy: { finishedAt: 'desc' },
+        take: MEDIAN_SAMPLE,
+        select: { createdAt: true, finishedAt: true },
+      }),
+    ]);
+    const kindOf = (k: string) => ((KINDS as readonly string[]).includes(k) ? k : 'job_seeker');
     const funnel = emptyFunnel();
+    for (const g of openStages) funnel[kindOf(g.profileKind)][g.stage] = (funnel[kindOf(g.profileKind)][g.stage] ?? 0) + g._count._all;
     const reached = emptyFunnel();
+    for (const g of allStages) {
+      const idx = STAGE_ORDER.indexOf(g.stage as (typeof STAGE_ORDER)[number]);
+      for (let i = 0; i <= idx; i += 1) reached[kindOf(g.profileKind)][STAGE_ORDER[i]] += g._count._all;
+    }
     const outcomes: Record<string, Record<string, number>> = Object.fromEntries(
       KINDS.map((k) => [k, { open: 0, self: 0, assisted: 0, no_response: 0, gave_up: 0 }]),
     );
-    const finishMinutes: number[] = [];
+    for (const g of outcomesRows) outcomes[kindOf(g.profileKind)][g.outcome] = (outcomes[kindOf(g.profileKind)][g.outcome] ?? 0) + g._count._all;
     const bySource: Record<string, number> = {};
-    for (const t of all) {
-      const kind = (KINDS as readonly string[]).includes(t.profileKind) ? t.profileKind : 'job_seeker';
-      if (t.outcome === 'open') funnel[kind][t.stage] = (funnel[kind][t.stage] ?? 0) + 1;
-      const idx = STAGE_ORDER.indexOf(t.stage as (typeof STAGE_ORDER)[number]);
-      for (let i = 0; i <= idx; i += 1) reached[kind][STAGE_ORDER[i]] += 1;
-      outcomes[kind][t.outcome] = (outcomes[kind][t.outcome] ?? 0) + 1;
-      if (t.finishedAt && (t.outcome === 'self' || t.outcome === 'assisted')) {
-        finishMinutes.push(Math.round((t.finishedAt.getTime() - t.createdAt.getTime()) / 60000));
-      }
-      const source = t.source ?? 'unknown';
-      bySource[source] = (bySource[source] ?? 0) + 1;
-    }
-    finishMinutes.sort((a, b) => a - b);
+    for (const g of sources) bySource[g.source ?? 'unknown'] = (bySource[g.source ?? 'unknown'] ?? 0) + g._count._all;
+    const minutes = finishedRows.map((t) => Math.round((t.finishedAt!.getTime() - t.createdAt.getTime()) / 60000)).sort((a, b) => a - b);
     const finished = KINDS.reduce((n, k) => n + outcomes[k].self + outcomes[k].assisted, 0);
     const self = KINDS.reduce((n, k) => n + outcomes[k].self, 0);
     return {
-      started: all.length,
+      started,
       finished,
       finishedWithoutHelpPercent: finished ? Math.round((self / finished) * 100) : null,
-      medianMinutesToFinish: finishMinutes.length ? finishMinutes[Math.floor(finishMinutes.length / 2)] : null,
+      medianMinutesToFinish: minutes.length ? minutes[Math.floor(minutes.length / 2)] : null,
       openByStage: funnel,
       reachedStage: reached,
       outcomes,
       bySource,
-      trackers: all,
     };
   }
 
@@ -193,30 +237,36 @@ export class SignupViewsService {
 
   // ------------------------------------------------------------ Team Lead
 
+  /**
+   * The Team Lead's own team only (owner rule): sign-ups held by a team
+   * member, and sign-ups with no agent yet whose record a team member
+   * registered. Sign-ups that belong to no team go to Managers and the CEO.
+   */
   async teamLead(actor: Actor, days?: string) {
     if (actor.role !== 'team_lead') throw new ForbiddenException('Team Leads only');
     const now = this.clock.now();
+    const teamIds = await this.teamOf(actor.id);
     const team = await this.prisma.staff.findMany({
-      where: { teamLeadId: actor.id, status: 'active' },
-      select: { id: true, code: true, name: true, role: true, spokenLanguages: true },
+      where: { id: { in: teamIds }, role: 'call_agent', status: 'active' },
+      select: { id: true, code: true, name: true, spokenLanguages: true },
+      orderBy: { code: 'asc' },
     });
-    const callAgents = team.filter((m) => m.role === 'call_agent');
-    const teamIds = team.map((m) => m.id);
     const mine: Prisma.SignupTrackerWhereInput = { assignedStaffId: { in: teamIds } };
     const counts = await this.counts(mine, this.sinceDays(days));
-    const [open, unassigned, closed] = await Promise.all([
+    const [open, unassignedAll, closed] = await Promise.all([
       this.prisma.signupTracker.findMany({ where: { ...mine, outcome: 'open' }, orderBy: { lastActivityAt: 'asc' }, take: ROW_LIMIT }),
       this.prisma.signupTracker.findMany({
         where: { outcome: 'open', assignedStaffId: null, subjectId: { not: null } },
         orderBy: { lastActivityAt: 'asc' },
-        take: 50,
+        take: ROW_LIMIT,
       }),
       this.prisma.signupTracker.findMany({ where: { ...mine, outcome: { in: REENGAGE_OUTCOMES } }, orderBy: { updatedAt: 'desc' }, take: 50 }),
     ]);
+    const unassigned = await this.ownedByTeam(unassignedAll, teamIds);
     const rows = await this.rows(open, now);
     return {
       now: now.toISOString(),
-      team: callAgents.map((m) => ({ id: m.id, code: m.code, name: m.name, spokenLanguages: m.spokenLanguages })),
+      team: team.map((m) => ({ id: m.id, code: m.code, name: m.name, spokenLanguages: m.spokenLanguages })),
       summary: {
         open: rows.length,
         overdue: rows.filter((r) => r.openTask?.overdue).length,
@@ -229,30 +279,37 @@ export class SignupViewsService {
       unassigned: await this.rows(unassigned, now),
       reengage: await this.rows(closed, now),
       seekerVisitRequests: await this.seekerVisitRequests(teamIds, now),
-      areaTasks: await this.areaTasks(now),
+      areaTasks: await this.areaTasks(now, teamIds),
     };
   }
 
-  /** Job seekers stuck at the ID step who asked for an agent to come (question 11). */
+  /** Job seekers stuck at the ID step who asked for an agent to come (question 11). Team Leads: own team only. */
   private async seekerVisitRequests(teamIds: string[] | null, now: Date) {
     const events = await this.prisma.signupTrackerEvent.findMany({
-      where: {
-        kind: 'visit_request',
-        tracker: { profileKind: 'job_seeker', outcome: 'open', ...(teamIds ? { OR: [{ assignedStaffId: { in: teamIds } }, { assignedStaffId: null }] } : {}) },
-      },
+      where: { kind: 'visit_request', tracker: { profileKind: 'job_seeker', outcome: 'open' } },
       orderBy: { createdAt: 'asc' },
-      take: 50,
+      take: ROW_LIMIT,
       include: { tracker: true },
     });
-    const rows = await this.rows(events.map((e) => e.tracker), now);
-    return rows.map((r, i) => ({ ...r, askedAt: events[i].createdAt.toISOString(), note: events[i].note }));
+    let visible = events;
+    if (teamIds) {
+      const unassignedOwned = new Set(
+        (await this.ownedByTeam(events.filter((e) => !e.tracker.assignedStaffId).map((e) => e.tracker), teamIds)).map((t) => t.id),
+      );
+      visible = events.filter((e) => (e.tracker.assignedStaffId ? teamIds.includes(e.tracker.assignedStaffId) : unassignedOwned.has(e.tracker.id)));
+    }
+    const rows = await this.rows(visible.map((e) => e.tracker), now);
+    return rows.map((r, i) => ({ ...r, askedAt: visible[i].createdAt.toISOString(), note: visible[i].note }));
   }
 
-  /** Several stuck job seeker sign-ups in one area: one area task to send an agent there (question 11). */
-  async areaTasks(now: Date) {
+  /**
+   * Several stuck job seeker sign-ups in one area: one area task to send an
+   * agent there (question 11). Team Leads count only their own team's.
+   */
+  async areaTasks(now: Date, teamIds: string[] | null = null) {
     const policy = await this.pricing.current();
     const settings = signupSettingsFrom(policy);
-    const stuck = await this.prisma.signupTracker.findMany({
+    let stuck = await this.prisma.signupTracker.findMany({
       where: {
         profileKind: 'job_seeker',
         outcome: 'open',
@@ -260,9 +317,13 @@ export class SignupViewsService {
         subjectId: { not: null },
         lastActivityAt: { lt: new Date(now.getTime() - settings.stuckHours * 3600_000) },
       },
-      select: { id: true, subjectId: true, stage: true },
-      take: 1000,
+      select: { id: true, subjectType: true, subjectId: true, stage: true, assignedStaffId: true },
+      take: AREA_SAMPLE,
     });
+    if (teamIds) {
+      const owned = new Set((await this.ownedByTeam(stuck.filter((s) => !s.assignedStaffId), teamIds)).map((s) => s.id));
+      stuck = stuck.filter((s) => (s.assignedStaffId ? teamIds.includes(s.assignedStaffId) : owned.has(s.id)));
+    }
     if (stuck.length === 0) return [];
     const seekers = await this.prisma.jobSeeker.findMany({
       where: { id: { in: stuck.map((s) => s.subjectId!) } },
@@ -284,13 +345,14 @@ export class SignupViewsService {
 
   // ------------------------------------------------------------ Manager
 
-  /** Counts and funnels only: no names, no phone numbers, no money. */
+  /** Counts and funnels only: no names, no phone numbers, no money. Includes sign-ups no team holds yet. */
   async manager(actor: Actor, days?: string) {
     if (actor.role !== 'manager') throw new ForbiddenException('Managers only');
-    const counts = await this.counts({}, this.sinceDays(days));
-    const { trackers: _trackers, ...rest } = counts;
-    void _trackers;
-    return { now: this.clock.now().toISOString(), ...rest };
+    const [counts, noTeam] = await Promise.all([
+      this.counts({}, this.sinceDays(days)),
+      this.prisma.signupTracker.count({ where: { outcome: 'open', assignedStaffId: null } }),
+    ]);
+    return { now: this.clock.now().toISOString(), ...counts, unassigned: noTeam };
   }
 
   // ------------------------------------------------------------ CEO
@@ -300,10 +362,15 @@ export class SignupViewsService {
     const now = this.clock.now();
     const since = this.sinceDays(query.days);
     const counts = await this.counts({}, since);
-    const { trackers, ...rest } = counts;
-    const areaOf = await this.areas(trackers);
+    const recent = await this.prisma.signupTracker.findMany({
+      where: { OR: [{ createdAt: { gte: since } }, { outcome: 'open' }] },
+      orderBy: { createdAt: 'desc' },
+      take: AREA_SAMPLE,
+      select: { subjectType: true, subjectId: true, outcome: true },
+    });
+    const areaOf = await this.areas(recent);
     const byArea: Record<string, { started: number; finished: number }> = {};
-    for (const t of trackers) {
+    for (const t of recent) {
       const area = (t.subjectId && areaOf.get(t.subjectId)) || 'Not known yet';
       byArea[area] ??= { started: 0, finished: 0 };
       byArea[area].started += 1;
@@ -319,7 +386,7 @@ export class SignupViewsService {
     const policy = await this.pricing.current();
     return {
       now: now.toISOString(),
-      ...rest,
+      ...counts,
       byArea: Object.entries(byArea)
         .map(([area, v]) => ({ area, ...v }))
         .sort((a, b) => b.started - a.started)
@@ -347,10 +414,16 @@ export class SignupViewsService {
    * "Registered in the app" on the Job Seekers, Businesses and Referrals lists
    * and profiles: which of these records were self-registered in the app,
    * which are linked to an app account at all, and whether a push can reach it.
+   * Answers only for records the caller may see: a Team Lead gets labels only
+   * for their own team's records; the other office roles read these lists in full.
    */
-  async appLabels(type: string, rawIds: string | undefined) {
+  async appLabels(actor: Actor, type: string, rawIds: string | undefined) {
     if (!(KINDS as readonly string[]).includes(type)) throw new BadRequestException('type is job_seeker, business or referral');
-    const ids = [...new Set((rawIds ?? '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 500);
+    let ids = [...new Set((rawIds ?? '').split(',').map((s) => s.trim()).filter(Boolean))].slice(0, 500);
+    if (actor.role === 'team_lead' && ids.length) {
+      const teamIds = await this.teamOf(actor.id);
+      ids = (await this.ownedByTeam(ids.map((id) => ({ subjectType: type, subjectId: id })), teamIds)).map((r) => r.subjectId!);
+    }
     if (ids.length === 0) return {};
     const column = type === 'job_seeker' ? 'jobSeekerId' : type === 'business' ? 'businessId' : 'referralId';
     const profiles = await this.prisma.customerProfile.findMany({

@@ -13,6 +13,7 @@ import { openAvailableDay } from '../../test-support/available-day';
 import { SignupTrackerClock } from './signup-tracker-clock';
 import { SignupTrackerService } from './signup-tracker.service';
 import { assistedActivations } from './signup-credit';
+import { CallFollowThroughService } from '../call/call-follow-through.service';
 
 /** Wednesday 2 Dec 2026, 11:00 IST: a working day, inside calling hours and the shift. */
 const WED_11 = new Date('2026-12-02T05:30:00.000Z');
@@ -149,6 +150,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     manager = await makeStaff('manager');
     lead1 = await makeStaff('team_lead');
     lead2 = await makeStaff('team_lead');
+    await prisma.staff.update({ where: { id: lead1.id }, data: { reportsToId: manager.id } });
     hindiAgent = await makeStaff('call_agent', { teamLeadId: lead1.id, languages: ['Hindi'] });
     kannadaAgent = await makeStaff('call_agent', { teamLeadId: lead1.id, languages: ['Kannada', 'English'] });
     offShiftAgent = await makeStaff('call_agent', { teamLeadId: lead2.id, languages: ['Kannada'] });
@@ -163,6 +165,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     await prisma.callTask.deleteMany({ where: { OR: [{ signupTrackerId: { in: trackerIds } }, { staffId: { in: staffIds } }] } });
     await prisma.customerCallbackRequest.deleteMany({ where: { accountId: { in: accountIds } } });
     await prisma.customerProfile.deleteMany({ where: { accountId: { in: accountIds } } });
+    await prisma.signupTrackerEvent.deleteMany({ where: { trackerId: { in: trackerIds } } });
     await prisma.signupTracker.deleteMany({ where: { id: { in: trackerIds } } });
     await prisma.customerAccount.deleteMany({ where: { id: { in: accountIds } } });
     await prisma.callRecord.deleteMany({ where: { staffId: { in: staffIds } } });
@@ -253,9 +256,13 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     const t = await makeTracker({ stage: 'A', accountId: account.id, remindersSent: 0, stoppedAt: ist('2026-12-02T06:00') });
     await tracker.process(t.id, await tracker.context(WED_11));
     const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
-    expect(after.remindersSent).toBe(2);
-    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder' } })).toBe(2);
+    // The notification service is not connected yet: the reminders are recorded as due, never as sent.
+    expect(after.remindersSent).toBe(0);
+    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder' } })).toBe(0);
+    expect(await prisma.signupTrackerEvent.count({ where: { trackerId: t.id, kind: 'reminder_due' } })).toBe(2);
     expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(0);
+    // Nobody may call: it waits until the tries window ends (a fixed time), never overdue every 5 minutes.
+    expect(after.nextActionAt!.getTime()).toBeGreaterThan(WED_11.getTime());
   });
 
   it('Team Lead sees only their own team, moves a sign-up inside the team, and is refused outside it', async () => {
@@ -327,6 +334,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
         providerStatus: 'completed',
         answered: true,
         answeredAt: new Date(WED_11.getTime() + 10 * 60_000),
+        durationSec: 120,
         staffId: agent.id,
         subjectType: 'job_seeker',
         subjectId: helped.id,
@@ -460,10 +468,200 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     expect(after).toMatchObject({ assignedStaffId: owner.id, assignmentReason: 'language' });
 
     await prisma.signupTracker.update({ where: { id: t.id }, data: { outcome: 'assisted', finishedAt: WED_11 } });
-    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: WED_11, status: 'active' } });
+    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: new Date(WED_11.getTime() + 3600_000), status: 'active' } });
     const month = { from: new Date('2026-11-30T18:30:00.000Z'), to: new Date('2026-12-31T18:29:59.999Z') };
     expect(await assistedActivations(prisma, owner.id, month.from, month.to)).toBe(0);
     await prisma.staff.update({ where: { id: owner.id }, data: { isOwnerAccount: false } });
     expect(await assistedActivations(prisma, owner.id, month.from, month.to)).toBe(1);
+  });
+
+  describe('review fixes (PR #144)', () => {
+    async function seekerTracker(name: string, over: Parameters<typeof makeTracker>[0] = {}, registeredBy: string | null = null) {
+      const seeker = await makeSeeker(name, registeredBy);
+      return { seeker, t: await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id, ...over }) };
+    }
+
+    it('H1: a sign-up nobody may call is closed onto the monthly list when the tries window ends, and is then not due again', async () => {
+      const { t } = await seekerTracker('Window Appsignup', { contactConsent: false });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      const waiting = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
+      expect(waiting.outcome).toBe('open');
+      expect(waiting.nextActionAt!.getTime()).toBeGreaterThan(WED_11.getTime());
+      clock.at = new Date(waiting.nextActionAt!.getTime() + 60_000);
+      await tracker.process(t.id, await tracker.context(clock.at));
+      const closed = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
+      expect(closed.outcome).toBe('no_response');
+      expect(closed.nextActionAt!.getTime()).toBeGreaterThan(clock.at.getTime() + 20 * 24 * 3600_000);
+      const due = await prisma.signupTracker.count({ where: { id: t.id, nextActionAt: { lte: clock.at } } });
+      expect(due).toBe(0);
+    });
+
+    it('H3: withdrawing the contact-me tick takes the queued call off the list; the account’s tick wins over the tracker’s copy', async () => {
+      const account = await makeAccount();
+      const { t } = await seekerTracker('Consent Appsignup', { accountId: account.id, contactConsent: true });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(1);
+      await prisma.customerAccount.update({ where: { id: account.id }, data: { contactMeConsent: false } });
+      await tracker.onSignupChanged(t.id);
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
+    });
+
+    it('H3: an account that asked to be deleted stops everything, with no re-engagement', async () => {
+      const account = await makeAccount();
+      const { t } = await seekerTracker('Deleted Appsignup', { accountId: account.id });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      await prisma.customerAccount.update({ where: { id: account.id }, data: { status: 'deletion_requested' } });
+      await tracker.process(t.id, await tracker.context(WED_11));
+      expect(await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).toMatchObject({ outcome: 'gave_up', nextActionAt: null });
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id, status: 'open' } })).toBe(0);
+    });
+
+    it('M1: runs started together (the app’s call and the job) put exactly one task on the lists', async () => {
+      const { t } = await seekerTracker('Race Appsignup');
+      const ctx = await tracker.context(WED_11);
+      await Promise.all([tracker.process(t.id, ctx), tracker.process(t.id, ctx), tracker.onSignupChanged(t.id)]);
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(1);
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).callTries).toBe(1);
+    });
+
+    it('M2: an unanswered sign-up help call adds no automatic retry on top of the sign-up tries', async () => {
+      const { seeker, t } = await seekerTracker('Noanswer Appsignup');
+      await tracker.process(t.id, await tracker.context(WED_11));
+      const task = await prisma.callTask.findFirstOrThrow({ where: { signupTrackerId: t.id } });
+      const call = await prisma.callRecord.create({
+        data: {
+          code: `CR-SU-NA-${stamp}`,
+          provider: 'mock',
+          providerCallId: `su-na-${stamp}`,
+          providerStatus: 'no_answer',
+          answered: false,
+          staffId: task.staffId,
+          subjectType: 'job_seeker',
+          subjectId: seeker.id,
+          direction: 'outbound',
+          purpose: 'consent_explain',
+        },
+      });
+      await app.get(CallFollowThroughService).onStatusChanged(null, call);
+      expect(await prisma.callTask.count({ where: { subjectId: seeker.id, kind: 'retry' } })).toBe(0);
+      expect(await prisma.messageLog.count({ where: { subjectId: seeker.id } })).toBe(0);
+    });
+
+    it('M3: Team Leads see and move only their own team’s sign-ups; no-team ones go to Managers and the CEO', async () => {
+      const { t: noTeam } = await seekerTracker('Noteam Appsignup');
+      const { t: ours } = await seekerTracker('Ourteam Appsignup', {}, kannadaAgent.id);
+      const page = await request(app.getHttpServer()).get('/signup-tracker/team-lead').set('Authorization', `Bearer ${token(lead1)}`).expect(200);
+      const unassigned = page.body.unassigned.map((r: { id: string }) => r.id);
+      expect(unassigned).toContain(ours.id);
+      expect(unassigned).not.toContain(noTeam.id);
+      await request(app.getHttpServer()).post(`/signup-tracker/${noTeam.id}/reassign`).set('Authorization', `Bearer ${token(lead1)}`).send({ staffId: kannadaAgent.id }).expect(403);
+      await request(app.getHttpServer()).post(`/signup-tracker/${noTeam.id}/reassign`).set('Authorization', `Bearer ${token(manager)}`).send({ staffId: kannadaAgent.id }).expect(201);
+      // Same agent again: refused (it would only reset the assignment time).
+      await request(app.getHttpServer()).post(`/signup-tracker/${noTeam.id}/reassign`).set('Authorization', `Bearer ${token(ceo)}`).send({ staffId: kannadaAgent.id }).expect(400);
+    });
+
+    it('a Team Lead’s move sticks: the next try goes to the chosen agent even when they are not on shift', async () => {
+      const away = await makeStaff('call_agent', { teamLeadId: lead1.id, languages: ['Hindi'] });
+      const { t } = await seekerTracker('Sticky Appsignup', {}, kannadaAgent.id);
+      await request(app.getHttpServer()).post(`/signup-tracker/${t.id}/reassign`).set('Authorization', `Bearer ${token(lead1)}`).send({ staffId: away.id }).expect(201);
+      await tracker.process(t.id, await tracker.context(WED_11));
+      const task = await prisma.callTask.findFirstOrThrow({ where: { signupTrackerId: t.id, status: 'open' } });
+      expect(task.staffId).toBe(away.id);
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).assignmentReason).toBe('manual');
+    });
+
+    it('never hands a call out after office hours, even to an agent whose day is still open', async () => {
+      clock.at = ist('2026-12-02T19:30');
+      const { t } = await seekerTracker('Evening Appsignup');
+      await tracker.process(t.id, await tracker.context(clock.at));
+      expect(await prisma.callTask.count({ where: { signupTrackerId: t.id } })).toBe(0);
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).nextActionAt).toEqual(ist('2026-12-03T09:30'));
+    });
+
+    it('M4: no reminder in quiet hours; the monthly nudge stops after 3 and never reaches "not interested"', async () => {
+      const account = await makeAccount();
+      clock.at = ist('2026-12-02T22:15');
+      const quiet = await makeTracker({ stage: 'A', accountId: account.id, remindersSent: 0, stoppedAt: ist('2026-12-02T20:00') });
+      await tracker.process(quiet.id, await tracker.context(clock.at));
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: quiet.id, kind: { in: ['reminder', 'reminder_due'] } } })).toBe(0);
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: quiet.id } })).nextActionAt).toEqual(ist('2026-12-03T09:00'));
+
+      clock.at = WED_11;
+      const capped = await makeTracker({ accountId: account.id });
+      await prisma.signupTracker.update({ where: { id: capped.id }, data: { outcome: 'no_response', nextActionAt: ist('2026-12-01T10:00') } });
+      await prisma.signupTrackerEvent.createMany({ data: [1, 2, 3].map(() => ({ trackerId: capped.id, kind: 'reengage_due' })) });
+      await tracker.process(capped.id, await tracker.context(WED_11));
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: capped.id } })).nextActionAt).toBeNull();
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: capped.id, kind: { in: ['reengage', 'reengage_due'] } } })).toBe(3);
+
+      const declined = await makeTracker({ accountId: account.id });
+      await prisma.signupTracker.update({ where: { id: declined.id }, data: { outcome: 'gave_up', nextActionAt: ist('2026-12-01T10:00') } });
+      await tracker.sweep(WED_11);
+      expect(await prisma.signupTrackerEvent.count({ where: { trackerId: declined.id, kind: { in: ['reengage', 'reengage_due'] } } })).toBe(0);
+    });
+
+    it('M5: a call shorter than 60 seconds is not help: the sign-up counts as finished alone', async () => {
+      const { seeker, t } = await seekerTracker('Shortcall Appsignup');
+      await tracker.process(t.id, await tracker.context(WED_11));
+      const agentId = (await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).assignedStaffId!;
+      await prisma.callRecord.create({
+        data: {
+          code: `CR-SU-SH-${stamp}`, provider: 'mock', providerCallId: `su-sh-${stamp}`, providerStatus: 'completed', answered: true,
+          answeredAt: new Date(WED_11.getTime() + 5 * 60_000), durationSec: 25, staffId: agentId, subjectType: 'job_seeker', subjectId: seeker.id, direction: 'outbound',
+        },
+      });
+      clock.at = new Date(WED_11.getTime() + 30 * 60_000);
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: clock.at, status: 'active' } });
+      await tracker.process(t.id, await tracker.context(clock.at));
+      expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).outcome).toBe('self');
+    });
+
+    it('H2: business sign-up visits — a Team Lead acts only for their own team’s business; no team means Managers and the CEO', async () => {
+      const otherField = await makeStaff('field_agent', { teamLeadId: lead2.id });
+      const mkBiz = async (n: number, leadCreatedByStaffId: string | null) => {
+        const b = await prisma.business.create({
+          data: { code: `BZ-SU${n}-${stamp}`, name: `Appsignup Shop ${n}`, phone: phone(), latitude: 12.97, longitude: 77.59, verificationStatus: 'pending_visit', leadCreatedByStaffId },
+        });
+        businessIds.push(b.id);
+        return b;
+      };
+      // Team 1's business (lead created by a team 1 agent), suggestion pointing at a team 2 field agent.
+      const owned = await mkBiz(1, kannadaAgent.id);
+      const va1 = await prisma.visitAssignment.create({ data: { businessId: owned.id, purpose: 'business_signup', status: 'pending', suggestedStaffId: otherField.id } });
+      await request(app.getHttpServer()).post(`/signup-tracker/visit-requests/${va1.id}/assign`).set('Authorization', `Bearer ${token(lead2)}`).send({ assignedStaffId: otherField.id }).expect(403);
+      const lead2List = await request(app.getHttpServer()).get('/businesses/visit-assignments').set('Authorization', `Bearer ${token(lead2)}`).expect(200);
+      expect(lead2List.body.map((a: { id: string }) => a.id)).not.toContain(va1.id);
+      await request(app.getHttpServer()).post(`/signup-tracker/visit-requests/${va1.id}/assign`).set('Authorization', `Bearer ${token(lead1)}`).send({ assignedStaffId: otherField.id }).expect(403);
+      await request(app.getHttpServer()).post(`/signup-tracker/visit-requests/${va1.id}/assign`).set('Authorization', `Bearer ${token(lead1)}`).send({ assignedStaffId: fieldAgent.id }).expect(201);
+
+      // No owner and no suggestion: no team. Team Leads neither see nor assign it; the CEO does.
+      const orphan = await mkBiz(2, null);
+      const va2 = await prisma.visitAssignment.create({ data: { businessId: orphan.id, purpose: 'business_signup', status: 'pending' } });
+      const lead1List = await request(app.getHttpServer()).get('/businesses/visit-assignments').set('Authorization', `Bearer ${token(lead1)}`).expect(200);
+      expect(lead1List.body.map((a: { id: string }) => a.id)).not.toContain(va2.id);
+      await request(app.getHttpServer()).post(`/signup-tracker/visit-requests/${va2.id}/assign`).set('Authorization', `Bearer ${token(lead1)}`).send({ assignedStaffId: fieldAgent.id }).expect(403);
+      await request(app.getHttpServer()).post(`/signup-tracker/visit-requests/${va2.id}/assign`).set('Authorization', `Bearer ${token(ceo)}`).send({ assignedStaffId: fieldAgent.id }).expect(201);
+    });
+
+    it('a "Call me back" with no registered profile is closed, not left open forever', async () => {
+      const account = await makeAccount();
+      const cb = await prisma.customerCallbackRequest.create({ data: { accountId: account.id, topic: 'signup' } });
+      await tracker.onCallbackRequested(cb.id);
+      expect((await prisma.customerCallbackRequest.findUniqueOrThrow({ where: { id: cb.id } })).status).toBe('cancelled');
+    });
+
+    it('labels for a Team Lead cover only their own team’s records', async () => {
+      const account = await makeAccount();
+      const mine = await makeSeeker('Label Mine Appsignup', kannadaAgent.id);
+      const loose = await makeSeeker('Label Loose Appsignup');
+      for (const s of [mine, loose]) {
+        await prisma.customerProfile.create({ data: { accountId: account.id, kind: 'job_seeker', jobSeekerId: s.id, linkedVia: 'self_registered' } });
+      }
+      const res = await request(app.getHttpServer())
+        .get(`/signup-tracker/app-labels?type=job_seeker&ids=${mine.id},${loose.id}`)
+        .set('Authorization', `Bearer ${token(lead1)}`)
+        .expect(200);
+      expect(Object.keys(res.body)).toEqual([mine.id]);
+    });
   });
 });

@@ -21,7 +21,7 @@ export default function ManagerAppSignups() {
   const [days, setDays] = useState<(typeof RANGES)[number]>(30);
   const q = useQuery({
     queryKey: ['signup-tracker', 'manager', days],
-    queryFn: () => api.get<SignupCounts>(`/signup-tracker/manager?days=${days}`),
+    queryFn: () => api.get<SignupCounts & { unassigned?: number }>(`/signup-tracker/manager?days=${days}`),
   });
   const d = q.data;
   const outcomeKeys = ['open', 'self', 'assisted', 'no_response', 'gave_up'];
@@ -54,6 +54,7 @@ export default function ManagerAppSignups() {
           loading={q.isPending}
         />
         <StatTile label="Typical time to finish" value={d ? minutesText(d.medianMinutesToFinish) : '—'} tone="navy" loading={q.isPending} />
+        <StatTile label="Open, no team yet" value={d?.unassigned ?? '—'} tone="orange" loading={q.isPending} />
       </StatGrid>
       <Card title="Open sign-ups by stage">
         <FunnelTable funnel={d?.openByStage} caption="Open sign-ups by stage" />

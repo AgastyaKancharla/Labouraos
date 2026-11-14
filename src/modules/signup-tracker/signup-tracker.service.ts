@@ -15,19 +15,30 @@ import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
+import { OwnTeam } from '../../common/rbac/own-team';
 import { SignupTrackerClock } from './signup-tracker-clock';
 import { SignupFactsService } from './signup-facts.service';
 import { SignupSettings, signupSettingsFrom } from './signup-settings';
-import { DAY_MS, WorkCalendar, callWindow, istDateKey, istDayStartMs, nextCallableAt } from './signup-timing';
-import { assistedBy, planNext, reminderCount } from './signup-plan';
+import { DAY_MS, WorkCalendar, callWindow, callingWindow, isCallableNow, istDateKey, istDayStartMs, nextCallableAt } from './signup-timing';
+import { assistedBy, planNext } from './signup-plan';
 import { AssignmentCandidate, pickAgent } from './signup-assignment';
 import { StageResult, stageIndex } from './signup-stage';
 import { ownerAccountIds } from './signup-owner-accounts';
 import { SIGNUP_REMINDER_SENDER, SignupReminderSender } from './signup-reminder.port';
 
-/** Outcomes that mean "closed without finishing": they go on the monthly re-engagement list. */
+/** Outcomes that mean "closed without finishing". Only `no_response` is nudged again (gave_up never is). */
 export const REENGAGE_OUTCOMES = ['no_response', 'gave_up'];
 const SUBJECT_TYPES = ['job_seeker', 'business', 'referral'];
+/** A sign-up that fails to process is looked at again after this long, so it never blocks the sweep. */
+const FAILURE_RETRY_MS = 60 * 60 * 1000;
+/** Nobody on shift to call: look again after this long. */
+const NO_AGENT_RETRY_MS = 30 * 60 * 1000;
+/** Sign-ups looked at in one sweep (the oldest due first). */
+const SWEEP_BATCH = 200;
+/** The monthly re-engagement nudge stops after this many (proposal 4.2, capped by the review of PR #144). */
+export const MAX_REENGAGE_NUDGES = 3;
+/** Each process of one sign-up runs under this Postgres advisory lock, one at a time. */
+const lockKey = (trackerId: string) => `signup-tracker:${trackerId}`;
 
 export interface TrackerRunContext {
   now: Date;
@@ -72,7 +83,11 @@ export class SignupTrackerService {
     private readonly scope: ReportingScopeService,
     private readonly clock: SignupTrackerClock,
     @Optional() @Inject(SIGNUP_REMINDER_SENDER) private readonly reminders?: SignupReminderSender,
-  ) {}
+  ) {
+    this.ownTeam = new OwnTeam(prisma, scope);
+  }
+
+  private readonly ownTeam: OwnTeam;
 
   now(): Date {
     return this.clock.now();
@@ -96,7 +111,7 @@ export class SignupTrackerService {
     };
   }
 
-  // ------------------------------------------------------------ service API
+    // ------------------------------------------------------------ service API
 
   async onSignupChanged(trackerId: string): Promise<void> {
     await this.process(trackerId, await this.context());
@@ -120,18 +135,22 @@ export class SignupTrackerService {
 
   // ------------------------------------------------------------ the job
 
-  /** One pass: every sign-up that is due, then "Call me back" requests. */
+  /**
+   * One pass: the sign-ups that are due (never-looked-at ones first, then the
+   * longest overdue), then "Call me back" requests. Every sign-up processed
+   * gets a later `nextActionAt`, so none is looked at again every 5 minutes.
+   */
   async sweep(now: Date = this.clock.now()) {
     const ctx = await this.context(now);
     const due = await this.prisma.signupTracker.findMany({
       where: {
         OR: [
           { outcome: 'open', OR: [{ nextActionAt: null }, { nextActionAt: { lte: now } }] },
-          { outcome: { in: REENGAGE_OUTCOMES }, nextActionAt: { lte: now } },
+          { outcome: 'no_response', nextActionAt: { lte: now } },
         ],
       },
-      orderBy: [{ nextActionAt: { sort: 'asc', nulls: 'first' } }],
-      take: 500,
+      orderBy: [{ nextActionAt: { sort: 'asc', nulls: 'first' } }, { createdAt: 'asc' }],
+      take: SWEEP_BATCH,
       select: { id: true },
     });
     let processed = 0;
@@ -143,38 +162,62 @@ export class SignupTrackerService {
       } catch (err) {
         failed += 1;
         this.logger.error(`Sign-up ${row.id} failed: ${(err as Error).message}`);
+        await this.prisma.signupTracker
+          .update({ where: { id: row.id }, data: { nextActionAt: new Date(now.getTime() + FAILURE_RETRY_MS) } })
+          .catch(() => undefined);
       }
     }
     const callbacks = await this.takeCallbackRequests(ctx);
     return { processed, failed, callbacks };
   }
 
-  /** Brings one sign-up up to date and does whatever is due. */
+  /**
+   * Brings one sign-up up to date and does whatever is due. One run at a time
+   * per sign-up (Postgres advisory lock): a second run started meanwhile (the
+   * app's call and the job together) returns at once without doing anything.
+   */
   async process(trackerId: string, ctx: TrackerRunContext): Promise<SignupTracker | null> {
+    return this.prisma.$transaction(
+      async (tx) => {
+        const [lock] = await tx.$queryRaw<{ locked: boolean }[]>(
+          Prisma.sql`SELECT pg_try_advisory_xact_lock(hashtext(${lockKey(trackerId)})) AS locked`,
+        );
+        if (!lock?.locked) return null;
+        return this.run(trackerId, ctx);
+      },
+      { maxWait: 10_000, timeout: 120_000 },
+    );
+  }
+
+  private async run(trackerId: string, ctx: TrackerRunContext): Promise<SignupTracker | null> {
     let tracker = await this.prisma.signupTracker.findUnique({ where: { id: trackerId } });
     if (!tracker) return null;
+    if (tracker.outcome === 'self' || tracker.outcome === 'assisted') return tracker;
     const account = tracker.accountId
       ? await this.prisma.customerAccount.findUnique({ where: { id: tracker.accountId }, select: { status: true, contactMeConsent: true } })
       : null;
+    // Deleted, blocked or asked to delete: everything stops and nothing is queued.
+    if (account && account.status !== 'active') {
+      return this.stop(tracker, ctx, `Account ${account.status}`);
+    }
     const result = await this.facts.stageOf(tracker.profileKind, tracker);
     tracker = await this.applyStage(tracker, result, ctx);
-
     if (tracker.stage === 'done') return this.finish(tracker, ctx);
+    if (tracker.outcome === 'gave_up') return this.setNext(tracker, null);
 
     if (tracker.profileKind === 'business' && tracker.subjectId) await this.suggestVisit(tracker);
-    tracker = await this.closeMissedTasks(tracker, ctx);
+    await this.closeMissedTasks(tracker, ctx);
 
-    const subject = await this.subjectInfo(tracker);
-    const declined = await this.declinedCalls(tracker);
-    if (declined && tracker.outcome === 'open') {
-      return this.close(tracker, 'gave_up', ctx, 'Said not interested on a call');
+    if (tracker.outcome === 'open' && (await this.declinedCalls(tracker))) {
+      return this.stop(tracker, ctx, 'Said not interested on a call');
     }
-    if (REENGAGE_OUTCOMES.includes(tracker.outcome)) return this.reengage(tracker, result, ctx);
+    if (tracker.outcome === 'no_response') return this.reengage(tracker, result, ctx);
 
-    const callable =
-      Boolean(tracker.subjectId) &&
-      (tracker.contactConsent || Boolean(account?.contactMeConsent)) &&
-      (!account || account.status === 'active');
+    // The account's own tick is the truth; the tracker's copy only when there is no account.
+    const consent = account ? account.contactMeConsent : tracker.contactConsent;
+    const callable = Boolean(tracker.subjectId) && consent;
+    if (!callable) await this.cancelSignupTasks(tracker, ctx);
+    const subject = await this.subjectInfo(tracker);
     const window = callWindow(ctx.settings, subject.window);
     for (let step = 0; step < 4; step += 1) {
       const lastTask = await this.prisma.callTask.findFirst({
@@ -187,7 +230,7 @@ export class SignupTrackerService {
           profileKind: tracker.profileKind,
           stage: tracker.stage,
           stoppedAt: tracker.lastActivityAt,
-          remindersSent: tracker.remindersSent,
+          remindersDone: await this.reminderSlots(tracker),
           callTries: tracker.callTries,
           callable,
           lastCallDueAt: lastTask?.dueAt ?? null,
@@ -196,27 +239,28 @@ export class SignupTrackerService {
         ctx.settings,
         ctx.calendar,
       );
-      if (plan.at.getTime() > ctx.now.getTime() || plan.action === 'wait') {
-        return this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { nextActionAt: plan.at } });
-      }
+      if (plan.at.getTime() > ctx.now.getTime()) return this.setNext(tracker, plan.at);
       if (plan.action === 'reminder') {
-        tracker = await this.sendReminder(tracker, result, tracker.remindersSent + 1 === 1 ? 1 : 2);
+        const next = await this.remind(tracker, result, ctx);
+        if (next.deferUntil) return this.setNext(next.tracker, next.deferUntil);
+        tracker = next.tracker;
       } else if (plan.action === 'call_task') {
-        const created = await this.createCallTask(tracker, subject, nextCallableAt(ctx.now, ctx.calendar, window), ctx);
-        if (!created) {
-          // Nobody on shift: try again in 30 minutes; the Team Lead sees it as unassigned meanwhile.
-          return this.prisma.signupTracker.update({
-            where: { id: tracker.id },
-            data: { nextActionAt: new Date(ctx.now.getTime() + 30 * 60_000) },
-          });
+        // Never hand a call to anyone outside the working window, even if their day is still open.
+        if (!isCallableNow(ctx.now, ctx.calendar, window)) {
+          return this.setNext(tracker, nextCallableAt(ctx.now, ctx.calendar, window));
         }
+        const created = await this.createCallTask(tracker, subject, ctx.now, ctx);
+        if (!created) return this.setNext(tracker, new Date(ctx.now.getTime() + NO_AGENT_RETRY_MS));
         tracker = created;
       } else {
-        const reached = await this.connectedCallCount(tracker);
-        return this.close(tracker, reached > 0 ? 'gave_up' : 'no_response', ctx, `${tracker.callTries} call tries`);
+        return this.closeNoResponse(tracker, ctx, callable ? `${tracker.callTries} call tries` : 'No call allowed; tries window over');
       }
     }
-    return tracker;
+    return this.setNext(tracker, new Date(ctx.now.getTime() + NO_AGENT_RETRY_MS));
+  }
+
+  private setNext(tracker: SignupTracker, at: Date | null) {
+    return this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { nextActionAt: at } });
   }
 
   // ------------------------------------------------------------ stages
@@ -233,6 +277,8 @@ export class SignupTrackerService {
         // A new stop: the reminders and the call tries start again from here.
         remindersSent: 0,
         callTries: 0,
+        // Moving forward again reopens a closed sign-up.
+        outcome: 'open',
       });
     }
     const updated = await this.prisma.signupTracker.update({ where: { id: tracker.id }, data });
@@ -244,67 +290,69 @@ export class SignupTrackerService {
     return updated;
   }
 
+  /** When the record says it finished: the ₹499 arrived, or the business was verified. */
+  private async completedAt(tracker: SignupTracker, ctx: TrackerRunContext): Promise<Date> {
+    if (tracker.subjectType === 'job_seeker' && tracker.subjectId) {
+      const s = await this.prisma.jobSeeker.findUnique({ where: { id: tracker.subjectId }, select: { paymentReceivedAt: true } });
+      if (s?.paymentReceivedAt) return s.paymentReceivedAt;
+    }
+    if (tracker.subjectType === 'business' && tracker.subjectId) {
+      const b = await this.prisma.business.findUnique({ where: { id: tracker.subjectId }, select: { verifiedAt: true } });
+      if (b?.verifiedAt) return b.verifiedAt;
+    }
+    return ctx.now;
+  }
+
   /** Finished: who gets the credit, and the open tasks are closed. */
   private async finish(tracker: SignupTracker, ctx: TrackerRunContext): Promise<SignupTracker> {
-    if (tracker.outcome === 'self' || tracker.outcome === 'assisted') return tracker;
-    const finishedAt = ctx.now;
+    const finishedAt = await this.completedAt(tracker, ctx);
     const credit = await this.creditFor(tracker, finishedAt);
     const outcome = credit ? 'assisted' : 'self';
     const updated = await this.prisma.signupTracker.update({
       where: { id: tracker.id },
       data: { outcome, finishedAt, nextActionAt: null },
     });
-    await this.prisma.callTask.updateMany({
-      where: { signupTrackerId: tracker.id, status: 'open' },
-      data: { status: 'cancelled', doneAt: finishedAt },
-    });
+    await this.cancelSignupTasks(tracker, ctx);
     await this.event(tracker.id, 'closed', { note: outcome, staffId: credit });
     return updated;
   }
 
-  /** The assigned agent, only with a connected call or a GPS visit on record (question 13). */
-  async creditFor(tracker: SignupTracker, finishedAt: Date): Promise<string | null> {
+  /**
+   * The assigned call agent, only with that agent's answered call of at least
+   * ASSISTED_CALL_MIN_SECONDS after the assignment and before the payment
+   * (question 13). See signup-plan.ts for why GPS visits do not count here.
+   */
+  async creditFor(tracker: SignupTracker, completedAt: Date): Promise<string | null> {
     if (!tracker.assignedStaffId || !tracker.assignedAt || !tracker.subjectType || !tracker.subjectId) return null;
-    const window = { gte: tracker.assignedAt, lte: finishedAt };
-    const [calls, visits] = await Promise.all([
-      this.prisma.callRecord.findMany({
-        where: {
-          staffId: tracker.assignedStaffId,
-          subjectType: tracker.subjectType,
-          subjectId: tracker.subjectId,
-          answered: true,
-          OR: [{ answeredAt: window }, { answeredAt: null, startedAt: window }],
-        },
-        select: { staffId: true, answeredAt: true, startedAt: true, createdAt: true },
-      }),
-      tracker.subjectType === 'business'
-        ? this.prisma.businessVisit.findMany({
-            where: { staffId: tracker.assignedStaffId, businessId: tracker.subjectId, visitedAt: window },
-            select: { staffId: true, visitedAt: true },
-          })
-        : Promise.resolve([]),
-    ]);
+    const window = { gte: tracker.assignedAt, lte: completedAt };
+    const calls = await this.prisma.callRecord.findMany({
+      where: {
+        staffId: tracker.assignedStaffId,
+        subjectType: tracker.subjectType,
+        subjectId: tracker.subjectId,
+        answered: true,
+        OR: [{ answeredAt: window }, { answeredAt: null, startedAt: window }],
+      },
+      select: { staffId: true, answeredAt: true, startedAt: true, createdAt: true, durationSec: true },
+    });
     return assistedBy({
       assignedStaffId: tracker.assignedStaffId,
       assignedAt: tracker.assignedAt,
-      finishedAt,
-      connectedCalls: calls.map((c) => ({ staffId: c.staffId, at: c.answeredAt ?? c.startedAt ?? c.createdAt })),
-      gpsVisits: visits.map((v) => ({ staffId: v.staffId, at: v.visitedAt })),
+      completedAt,
+      connectedCalls: calls.map((c) => ({ staffId: c.staffId, at: c.answeredAt ?? c.startedAt ?? c.createdAt, durationSec: c.durationSec })),
     });
   }
 
-  private async close(tracker: SignupTracker, outcome: 'no_response' | 'gave_up', ctx: TrackerRunContext, note: string) {
+  /** 3 tries with no luck (or the tries window over for someone nobody may call): the monthly list. */
+  private async closeNoResponse(tracker: SignupTracker, ctx: TrackerRunContext, note: string) {
     const updated = await this.prisma.signupTracker.update({
       where: { id: tracker.id },
-      data: { outcome, nextActionAt: new Date(ctx.now.getTime() + ctx.settings.reengageDays * DAY_MS) },
+      data: { outcome: 'no_response', nextActionAt: new Date(ctx.now.getTime() + ctx.settings.reengageDays * DAY_MS) },
     });
-    await this.prisma.callTask.updateMany({
-      where: { signupTrackerId: tracker.id, status: 'open' },
-      data: { status: 'cancelled', doneAt: ctx.now },
-    });
-    await this.event(tracker.id, 'closed', { note: `${outcome}: ${note}` });
+    await this.cancelSignupTasks(tracker, ctx);
+    await this.event(tracker.id, 'closed', { note: `no_response: ${note}` });
     // A business lead that never answers: the Team Lead is told, as for follow-ups after 3 tries.
-    if (tracker.profileKind === 'business' && tracker.subjectId && outcome === 'no_response') {
+    if (tracker.profileKind === 'business' && tracker.subjectId && tracker.callTries > 0) {
       await this.reviewFlags
         .raise({
           kind: 'follow_up_unanswered',
@@ -318,27 +366,95 @@ export class SignupTrackerService {
     return updated;
   }
 
-  /** The monthly re-engagement list: one reminder every few weeks until they finish. */
+  /** Said "not interested", or the account was closed: nothing more, ever (no re-engagement). */
+  private async stop(tracker: SignupTracker, ctx: TrackerRunContext, note: string) {
+    await this.cancelSignupTasks(tracker, ctx);
+    if (tracker.outcome === 'gave_up' && tracker.nextActionAt === null) return tracker;
+    const updated = await this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { outcome: 'gave_up', nextActionAt: null } });
+    await this.event(tracker.id, 'closed', { note: `gave_up: ${note}` });
+    return updated;
+  }
+
+  /**
+   * The monthly re-engagement nudge (push / in-app only, so no contact-me tick
+   * is needed): never in quiet hours, never after "not interested", and at
+   * most MAX_REENGAGE_NUDGES times.
+   */
   private async reengage(tracker: SignupTracker, result: StageResult, ctx: TrackerRunContext) {
-    await this.send(tracker, result, 'reengage', `reengage:${tracker.id}:${istDateKey(ctx.now.getTime()).slice(0, 7)}`);
-    await this.event(tracker.id, 'reminder', { note: 'reengage' });
-    return this.prisma.signupTracker.update({
-      where: { id: tracker.id },
-      data: { nextActionAt: new Date(ctx.now.getTime() + ctx.settings.reengageDays * DAY_MS) },
-    });
+    const nudges = await this.prisma.signupTrackerEvent.count({ where: { trackerId: tracker.id, kind: { in: ['reengage', 'reengage_due'] } } });
+    if (nudges >= MAX_REENGAGE_NUDGES) {
+      await this.event(tracker.id, 'closed', { note: `re-engagement ended after ${nudges} nudges` });
+      return this.setNext(tracker, null);
+    }
+    const quietUntil = this.quietUntil(ctx);
+    if (quietUntil) return this.setNext(tracker, quietUntil);
+    const sent = await this.send(tracker, result, 'reengage', `reengage:${tracker.id}:${istDateKey(ctx.now.getTime()).slice(0, 7)}`);
+    await this.event(tracker.id, sent === 'sent' ? 'reengage' : 'reengage_due', { note: sent === 'sent' ? null : `not sent: ${sent}` });
+    return this.setNext(tracker, new Date(ctx.now.getTime() + ctx.settings.reengageDays * DAY_MS));
   }
 
   // ------------------------------------------------------------ reminders
 
-  private async sendReminder(tracker: SignupTracker, result: StageResult, n: 1 | 2): Promise<SignupTracker> {
-    if (tracker.remindersSent >= reminderCount(tracker.profileKind)) return tracker;
-    await this.send(tracker, result, n, `signup:${tracker.id}:${tracker.stage}:${n}`);
-    await this.event(tracker.id, 'reminder', { note: String(n) });
-    return this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { remindersSent: { increment: 1 } } });
+  /** Reminder slots already passed at this stop: sent ones, and due ones the sender could not send. */
+  private async reminderSlots(tracker: SignupTracker): Promise<number> {
+    const events = await this.prisma.signupTrackerEvent.count({
+      where: { trackerId: tracker.id, kind: { in: ['reminder', 'reminder_due'] }, createdAt: { gte: tracker.stageReachedAt } },
+    });
+    return Math.max(tracker.remindersSent, events);
   }
 
-  private async send(tracker: SignupTracker, result: StageResult, reminder: 1 | 2 | 'reengage', dedupeKey: string) {
-    if (!this.reminders || !tracker.accountId) return;
+  /** Quiet hours (outside the calling hours): when they end, else null. */
+  private quietUntil(ctx: TrackerRunContext): Date | null {
+    const quiet = callingWindow(ctx.settings);
+    const day = istDayStartMs(ctx.now.getTime());
+    const minute = Math.floor((ctx.now.getTime() - day) / 60_000);
+    if (minute < quiet.start) return new Date(day + quiet.start * 60_000);
+    if (minute >= quiet.end) return new Date(day + DAY_MS + quiet.start * 60_000);
+    return null;
+  }
+
+  /**
+   * A reminder that is due. Checked against quiet hours now (not only when it
+   * was planned). Until the notification service is connected it is recorded
+   * as "due, not sent" and `remindersSent` stays as it is, so no screen shows
+   * a reminder that never went out.
+   */
+  private async remind(
+    tracker: SignupTracker,
+    result: StageResult,
+    ctx: TrackerRunContext,
+  ): Promise<{ tracker: SignupTracker; deferUntil?: Date }> {
+    const quietUntil = this.quietUntil(ctx);
+    if (quietUntil) return { tracker, deferUntil: quietUntil };
+    const n = (await this.reminderSlots(tracker)) + 1;
+    if (!this.reminders || !tracker.accountId) {
+      await this.event(tracker.id, 'reminder_due', { note: `${n} · not sent: ${this.reminders ? 'no app account' : 'sender not connected'}` });
+      return { tracker };
+    }
+    // Claim the slot first, so a second run never sends the same reminder twice.
+    const claimed = await this.prisma.signupTracker.updateMany({
+      where: { id: tracker.id, remindersSent: tracker.remindersSent, outcome: 'open' },
+      data: { remindersSent: { increment: 1 } },
+    });
+    if (claimed.count !== 1) return { tracker: (await this.prisma.signupTracker.findUnique({ where: { id: tracker.id } })) ?? tracker };
+    const sent = await this.send(tracker, result, n === 1 ? 1 : 2, `signup:${tracker.id}:${tracker.stage}:${n}`);
+    if (sent === 'sent') {
+      await this.event(tracker.id, 'reminder', { note: String(n) });
+    } else {
+      await this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { remindersSent: { decrement: 1 } } });
+      await this.event(tracker.id, 'reminder_due', { note: `${n} · not sent: ${sent}` });
+    }
+    return { tracker: (await this.prisma.signupTracker.findUnique({ where: { id: tracker.id } })) ?? tracker };
+  }
+
+  private async send(
+    tracker: SignupTracker,
+    result: StageResult,
+    reminder: 1 | 2 | 'reengage',
+    dedupeKey: string,
+  ): Promise<'sent' | 'sender not connected' | 'no app account' | 'failed'> {
+    if (!this.reminders) return 'sender not connected';
+    if (!tracker.accountId) return 'no app account';
     const profile = tracker.subjectId
       ? await this.prisma.customerProfile.findFirst({
           where: {
@@ -359,13 +475,30 @@ export class SignupTrackerService {
         missing: result.missing,
         dedupeKey,
       });
+      return 'sent';
     } catch (err) {
       // A reminder is a nicety; the timing carries on to the call task.
       this.logger.warn(`Reminder for sign-up ${tracker.id} failed: ${(err as Error).message}`);
+      return 'failed';
     }
   }
 
   // ------------------------------------------------------------ calls
+
+  /** The staff who own the record itself (registered it, or hold the business): its team. */
+  async recordOwners(tracker: Pick<SignupTracker, 'subjectType' | 'subjectId'>): Promise<string[]> {
+    if (!tracker.subjectType || !tracker.subjectId) return [];
+    if (tracker.subjectType === 'job_seeker') {
+      const s = await this.prisma.jobSeeker.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true } });
+      return [s?.registeredByStaffId].filter((x): x is string => Boolean(x));
+    }
+    if (tracker.subjectType === 'business') {
+      const b = await this.prisma.business.findUnique({ where: { id: tracker.subjectId }, select: { leadCreatedByStaffId: true, accountAgentId: true } });
+      return [b?.leadCreatedByStaffId, b?.accountAgentId].filter((x): x is string => Boolean(x));
+    }
+    const r = await this.prisma.referral.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true } });
+    return [r?.registeredByStaffId].filter((x): x is string => Boolean(x));
+  }
 
   private async subjectInfo(tracker: SignupTracker): Promise<SubjectInfo> {
     const info: SubjectInfo = { window: { start: null, end: null }, existingAgentIds: [] };
@@ -374,19 +507,11 @@ export class SignupTrackerService {
     if (tracker.subjectType === 'job_seeker') {
       const s = await this.prisma.jobSeeker.findUnique({
         where: { id: tracker.subjectId },
-        select: { registeredByStaffId: true, preferredCallWindowStart: true, preferredCallWindowEnd: true },
+        select: { preferredCallWindowStart: true, preferredCallWindowEnd: true },
       });
-      if (s) {
-        info.window = { start: s.preferredCallWindowStart, end: s.preferredCallWindowEnd };
-        if (s.registeredByStaffId) info.existingAgentIds.push(s.registeredByStaffId);
-      }
-    } else if (tracker.subjectType === 'business') {
-      const b = await this.prisma.business.findUnique({ where: { id: tracker.subjectId }, select: { leadCreatedByStaffId: true } });
-      if (b?.leadCreatedByStaffId) info.existingAgentIds.push(b.leadCreatedByStaffId);
-    } else if (tracker.subjectType === 'referral') {
-      const r = await this.prisma.referral.findUnique({ where: { id: tracker.subjectId }, select: { registeredByStaffId: true } });
-      if (r?.registeredByStaffId) info.existingAgentIds.push(r.registeredByStaffId);
+      if (s) info.window = { start: s.preferredCallWindowStart, end: s.preferredCallWindowEnd };
     }
+    info.existingAgentIds.push(...(await this.recordOwners(tracker)));
     const spoke = await this.prisma.callRecord.findFirst({
       where: { subjectType: tracker.subjectType, subjectId: tracker.subjectId, answered: true, staffId: { not: null } },
       orderBy: { createdAt: 'desc' },
@@ -412,21 +537,23 @@ export class SignupTrackerService {
     return Boolean(row);
   }
 
-  private async connectedCallCount(tracker: SignupTracker): Promise<number> {
-    if (!tracker.subjectType || !tracker.subjectId) return 0;
-    return this.prisma.callRecord.count({
-      where: { subjectType: tracker.subjectType, subjectId: tracker.subjectId, answered: true, createdAt: { gte: tracker.createdAt } },
-    });
-  }
-
   /** A sign-up help task due on an earlier day that is still open was a try that did not reach him. */
-  private async closeMissedTasks(tracker: SignupTracker, ctx: TrackerRunContext): Promise<SignupTracker> {
+  private async closeMissedTasks(tracker: SignupTracker, ctx: TrackerRunContext) {
     const todayStart = new Date(istDayStartMs(ctx.now.getTime()));
     await this.prisma.callTask.updateMany({
       where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, status: 'open', dueAt: { lt: todayStart } },
       data: { status: 'cancelled', doneAt: ctx.now },
     });
-    return tracker;
+  }
+
+  /** Every open sign-up help task for this sign-up or its person comes off the work lists. */
+  private async cancelSignupTasks(tracker: SignupTracker, ctx: TrackerRunContext) {
+    const or: Prisma.CallTaskWhereInput[] = [{ signupTrackerId: tracker.id }];
+    if (tracker.subjectType && tracker.subjectId) or.push({ subjectType: tracker.subjectType, subjectId: tracker.subjectId });
+    await this.prisma.callTask.updateMany({
+      where: { kind: CALL_TASK_KIND_SIGNUP_HELP, status: 'open', OR: or },
+      data: { status: 'cancelled', doneAt: ctx.now },
+    });
   }
 
   /** Everyone who could take a sign-up help call now, with what the assignment rules need. */
@@ -480,6 +607,16 @@ export class SignupTrackerService {
     }));
   }
 
+  /** "Nobody on shift" is written at most once a day per sign-up. */
+  private async noteNoAgent(tracker: SignupTracker, ctx: TrackerRunContext) {
+    const today = new Date(istDayStartMs(ctx.now.getTime()));
+    const already = await this.prisma.signupTrackerEvent.findFirst({
+      where: { trackerId: tracker.id, kind: 'unassigned', createdAt: { gte: today } },
+      select: { id: true },
+    });
+    if (!already) await this.event(tracker.id, 'unassigned', { note: 'No call agent on shift' });
+  }
+
   private async createCallTask(
     tracker: SignupTracker,
     subject: SubjectInfo,
@@ -491,19 +628,37 @@ export class SignupTrackerService {
       where: { signupTrackerId: tracker.id, kind: CALL_TASK_KIND_SIGNUP_HELP, status: 'open' },
     });
     if (open) {
-      // Already on someone's list (e.g. moved there by the Team Lead): that is today's try.
-      return this.prisma.signupTracker.update({ where: { id: tracker.id }, data: { callTries: { increment: 1 } } });
+      // Already on someone's list today (e.g. a "Call me back"): that is today's try.
+      await this.prisma.signupTracker.updateMany({
+        where: { id: tracker.id, callTries: tracker.callTries },
+        data: { callTries: { increment: 1 } },
+      });
+      return this.prisma.signupTracker.findUnique({ where: { id: tracker.id } });
     }
-    const pick = pickAgent({
-      candidates: await this.candidates(ctx.now),
-      existingAgentIds: subject.existingAgentIds,
-      language: tracker.language,
-    });
+    // A Team Lead's move sticks: the next try goes to the same agent, and waits for them if they are away.
+    let pick: { staffId: string; reason: string } | null = null;
+    if (tracker.assignmentReason === 'manual' && tracker.assignedStaffId) {
+      const chosen = await this.prisma.staff.findFirst({
+        where: { id: tracker.assignedStaffId, role: 'call_agent', status: 'active' },
+        select: { id: true },
+      });
+      if (chosen) pick = { staffId: chosen.id, reason: 'manual' };
+    }
+    pick ??= pickAgent({ candidates: await this.candidates(ctx.now), existingAgentIds: subject.existingAgentIds, language: tracker.language });
     if (!pick) {
-      await this.event(tracker.id, 'unassigned', { note: 'No call agent on shift' });
+      await this.noteNoAgent(tracker, ctx);
       return null;
     }
     const sameAgent = tracker.assignedStaffId === pick.staffId;
+    // Claim the try first, so two runs never put two tasks on the lists.
+    const claimed = await this.prisma.signupTracker.updateMany({
+      where: { id: tracker.id, callTries: tracker.callTries, outcome: 'open' },
+      data: {
+        callTries: { increment: 1 },
+        ...(sameAgent ? {} : { assignedStaffId: pick.staffId, assignedAt: ctx.now, assignmentReason: pick.reason }),
+      },
+    });
+    if (claimed.count !== 1) return this.prisma.signupTracker.findUnique({ where: { id: tracker.id } });
     await this.prisma.callTask.create({
       data: {
         staffId: pick.staffId,
@@ -514,13 +669,7 @@ export class SignupTrackerService {
         signupTrackerId: tracker.id,
       },
     });
-    const updated = await this.prisma.signupTracker.update({
-      where: { id: tracker.id },
-      data: {
-        callTries: { increment: 1 },
-        ...(sameAgent ? {} : { assignedStaffId: pick.staffId, assignedAt: ctx.now, assignmentReason: pick.reason }),
-      },
-    });
+    const updated = await this.prisma.signupTracker.findUniqueOrThrow({ where: { id: tracker.id } });
     if (!sameAgent) await this.event(tracker.id, tracker.assignedStaffId ? 'reassigned' : 'assigned', { staffId: pick.staffId, note: pick.reason });
     await this.event(tracker.id, 'call_task', { staffId: pick.staffId, note: `try ${updated.callTries}` });
     return updated;
@@ -548,6 +697,7 @@ export class SignupTrackerService {
       where: { status: 'open' },
       orderBy: { createdAt: 'asc' },
       take: 100,
+      select: { id: true },
     });
     let made = 0;
     for (const request of open) {
@@ -566,31 +716,45 @@ export class SignupTrackerService {
     const profile = request.profileId
       ? await this.prisma.customerProfile.findFirst({ where: { id: request.profileId, accountId: request.accountId, status: 'active' } })
       : await this.prisma.customerProfile.findFirst({ where: { accountId: request.accountId, status: 'active' }, orderBy: { updatedAt: 'desc' } });
-    if (!profile) return false;
+    const subjectId = profile ? profile.jobSeekerId ?? profile.businessId ?? profile.referralId : null;
+    if (!profile || !subjectId || !SUBJECT_TYPES.includes(profile.kind)) {
+      // Nothing an agent can call through the calling system: closed, not left open forever.
+      await this.prisma.customerCallbackRequest.updateMany({ where: { id: request.id, status: 'open' }, data: { status: 'cancelled', doneAt: ctx.now } });
+      this.logger.log(`Call me back ${request.id} closed: no registered profile to call`);
+      return false;
+    }
     const subjectType = profile.kind;
-    const subjectId = profile.jobSeekerId ?? profile.businessId ?? profile.referralId;
-    if (!subjectId || !SUBJECT_TYPES.includes(subjectType)) return false;
     const tracker = await this.prisma.signupTracker.findFirst({
       where: { accountId: request.accountId, subjectType, subjectId, outcome: 'open' },
     });
-    const info = tracker ? await this.subjectInfo(tracker) : { window: { start: request.preferredFrom, end: request.preferredTo }, existingAgentIds: [] };
+    const info = tracker ? await this.subjectInfo(tracker) : { window: { start: null, end: null }, existingAgentIds: [] };
     const window = callWindow(ctx.settings, { start: request.preferredFrom ?? info.window.start, end: request.preferredTo ?? info.window.end });
-    const dueAt = nextCallableAt(ctx.now, ctx.calendar, window);
+    // Only inside office hours on a working day: never handed to someone whose day is merely still open.
+    if (!isCallableNow(ctx.now, ctx.calendar, callWindow(ctx.settings))) return false;
+    // Claim the request first, so two runs never make two tasks for it.
+    const claimed = await this.prisma.customerCallbackRequest.updateMany({ where: { id: request.id, status: 'open' }, data: { status: 'assigned' } });
+    if (claimed.count !== 1) return false;
     const pick = pickAgent({ candidates: await this.candidates(ctx.now), existingAgentIds: info.existingAgentIds, language: tracker?.language ?? null });
-    if (!pick) return false;
+    if (!pick) {
+      await this.prisma.customerCallbackRequest.update({ where: { id: request.id }, data: { status: 'open' } });
+      return false;
+    }
+    const dueAt = nextCallableAt(ctx.now, ctx.calendar, window);
     const kind = tracker && request.topic === 'signup' ? CALL_TASK_KIND_SIGNUP_HELP : 'callback';
     const task = await this.prisma.callTask.create({
       data: { staffId: pick.staffId, subjectType, subjectId, kind, dueAt, signupTrackerId: kind === CALL_TASK_KIND_SIGNUP_HELP ? tracker!.id : null },
     });
     await this.prisma.customerCallbackRequest.update({
       where: { id: request.id },
-      data: { status: 'assigned', callTaskId: task.id, assignedStaffId: pick.staffId },
+      data: { callTaskId: task.id, assignedStaffId: pick.staffId },
     });
     if (tracker && kind === CALL_TASK_KIND_SIGNUP_HELP) {
-      await this.prisma.signupTracker.update({
-        where: { id: tracker.id },
-        data: tracker.assignedStaffId === pick.staffId ? {} : { assignedStaffId: pick.staffId, assignedAt: ctx.now, assignmentReason: pick.reason },
-      });
+      if (tracker.assignedStaffId !== pick.staffId) {
+        await this.prisma.signupTracker.update({
+          where: { id: tracker.id },
+          data: { assignedStaffId: pick.staffId, assignedAt: ctx.now, assignmentReason: pick.reason },
+        });
+      }
       await this.event(tracker.id, 'call_task', { staffId: pick.staffId, note: 'Call me back' });
     }
     return true;
@@ -599,28 +763,32 @@ export class SignupTrackerService {
   // ------------------------------------------------------------ Team Lead / Manager / CEO
 
   /**
-   * Move a sign-up (and its open call task) to another call agent. A Team Lead
-   * only between their own team's agents (or an unassigned one into their
-   * team); a Manager only to people under them; the CEO anyone.
+   * Move a sign-up (and its open call task) to another call agent.
+   * - Team Lead: only sign-ups of their own team (assigned to a team member,
+   *   or with no agent yet but registered by one) and only to their own team.
+   *   A sign-up with no owner belongs to no team: Managers and the CEO.
+   * - Manager: inside their own tree (and no-team sign-ups).
+   * - CEO: anyone.
    */
   async reassign(actor: { id: string; role: string }, trackerId: string, staffId: string, reason?: string | null) {
     if (!staffId) throw new BadRequestException('Pick the agent to move it to');
     const tracker = await this.prisma.signupTracker.findUnique({ where: { id: trackerId } });
     if (!tracker) throw new NotFoundException('Sign-up not found');
     if (tracker.outcome !== 'open') throw new BadRequestException('This sign-up is closed');
-    const target = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, role: true, status: true, teamLeadId: true, code: true } });
+    if (tracker.assignedStaffId === staffId) throw new BadRequestException('It is already with this agent');
+    const target = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, role: true, status: true, code: true } });
     if (!target || target.role !== 'call_agent' || target.status !== 'active') {
       throw new BadRequestException('Sign-up help goes to an active call agent');
     }
+    const owner = tracker.assignedStaffId ?? (await this.recordOwners(tracker))[0] ?? null;
     if (actor.role === 'team_lead') {
-      if (target.teamLeadId !== actor.id) throw new ForbiddenException('Team Leads move sign-ups only to their own team');
-      if (tracker.assignedStaffId) {
-        const current = await this.prisma.staff.findUnique({ where: { id: tracker.assignedStaffId }, select: { teamLeadId: true } });
-        if (current?.teamLeadId !== actor.id) throw new ForbiddenException('This sign-up belongs to another team');
-      }
+      if (!(await this.ownTeam.includes(actor.id, target.id))) throw new ForbiddenException('Team Leads move sign-ups only to their own team');
+      if (!owner) throw new ForbiddenException('This sign-up belongs to no team: a Manager or the CEO gives it out');
+      if (!(await this.ownTeam.includes(actor.id, owner))) throw new ForbiddenException('This sign-up belongs to another team');
     } else if (actor.role === 'manager') {
       const under = await this.peopleUnder(actor.id);
       if (!under.has(target.id)) throw new ForbiddenException('Managers move sign-ups only inside their own teams');
+      if (owner && !under.has(owner)) throw new ForbiddenException('This sign-up belongs to another Manager’s team');
     } else if (actor.role !== 'ceo') {
       throw new ForbiddenException('Only a Team Lead, Manager or CEO moves a sign-up');
     }
@@ -651,7 +819,7 @@ export class SignupTrackerService {
     return { id: tracker.id, assignedStaffId: target.id, assignedTo: target.code };
   }
 
-  /** The Team Lead (own field agents), a Manager or the CEO sends a field agent to a business sign-up. */
+  /** A Team Lead, Manager or the CEO sends a field agent to a business sign-up (team checks in BusinessVerificationService.assign). */
   async assignSignupVisit(actor: { id: string; role: string }, assignmentId: string, staffId: string) {
     const assignment = await this.prisma.visitAssignment.findUnique({ where: { id: assignmentId }, select: { purpose: true, signupTrackerId: true } });
     if (!assignment) throw new NotFoundException('Visit request not found');

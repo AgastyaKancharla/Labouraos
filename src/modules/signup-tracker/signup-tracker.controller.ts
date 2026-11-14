@@ -72,8 +72,8 @@ export class SignupTrackerController {
   /** "Registered in the app" labels for a list of records (ids comma-separated). */
   @Get('app-labels')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
-  appLabels(@Query('type') type: string, @Query('ids') ids?: string) {
-    return this.views.appLabels(type, ids);
+  appLabels(@Req() req: Authed, @Query('type') type: string, @Query('ids') ids?: string) {
+    return this.views.appLabels(this.actor(req), type, ids);
   }
 
   @Get('staff-languages')

@@ -1,6 +1,6 @@
 import { SIGNUP_SETTING_DEFAULTS, missingSettingColumns, signupSettingsFrom } from './signup-settings';
 import { addWorkingMinutes, callWindow, istDateKey, nextCallableAt, nextWorkingMorning, reminderAt, WorkCalendar } from './signup-timing';
-import { assistedBy, firstCallAt, planNext, PlanInput } from './signup-plan';
+import { ASSISTED_CALL_MIN_SECONDS, assistedBy, firstCallAt, planNext, PlanInput, triesWindowEnd } from './signup-plan';
 import { AssignmentCandidate, languageCode, pickAgent } from './signup-assignment';
 import { businessStage, noRecordStage, referralStage, seekerStage } from './signup-stage';
 
@@ -94,7 +94,7 @@ describe('The plan for an unfinished sign-up', () => {
     profileKind: 'job_seeker',
     stage: 'C',
     stoppedAt: ist('2026-11-13T10:00'),
-    remindersSent: 0,
+    remindersDone: 0,
     callTries: 0,
     callable: true,
     lastCallDueAt: null,
@@ -104,37 +104,39 @@ describe('The plan for an unfinished sign-up', () => {
 
   it('job seeker: reminder at 30 minutes, again at 4 hours, call task the next working morning', () => {
     expect(planNext(base({}), settings, plain)).toEqual({ action: 'reminder', at: ist('2026-11-13T10:30') });
-    expect(planNext(base({ remindersSent: 1 }), settings, plain)).toEqual({ action: 'reminder', at: ist('2026-11-13T14:00') });
-    expect(planNext(base({ remindersSent: 2 }), settings, plain)).toEqual({ action: 'call_task', at: ist('2026-11-14T09:30') });
+    expect(planNext(base({ remindersDone: 1 }), settings, plain)).toEqual({ action: 'reminder', at: ist('2026-11-13T14:00') });
+    expect(planNext(base({ remindersDone: 2 }), settings, plain)).toEqual({ action: 'call_task', at: ist('2026-11-14T09:30') });
   });
 
   it('job seeker stopped at payment (stage E): called after 2 working hours, before the 4-hour reminder', () => {
-    expect(planNext(base({ stage: 'E', remindersSent: 1 }), settings, plain)).toEqual({ action: 'call_task', at: ist('2026-11-13T12:00') });
+    expect(planNext(base({ stage: 'E', remindersDone: 1 }), settings, plain)).toEqual({ action: 'call_task', at: ist('2026-11-13T12:00') });
     expect(firstCallAt(base({ stage: 'E', stoppedAt: ist('2026-11-14T17:00') }), settings, withHoliday)).toEqual(ist('2026-11-17T10:00'));
   });
 
   it('business: one reminder, then a call task 4 hours after stopping (inside the call window)', () => {
     expect(planNext(base({ profileKind: 'business' }), settings, plain)).toEqual({ action: 'reminder', at: ist('2026-11-13T10:30') });
-    expect(planNext(base({ profileKind: 'business', remindersSent: 1 }), settings, plain)).toEqual({ action: 'call_task', at: ist('2026-11-13T14:00') });
+    expect(planNext(base({ profileKind: 'business', remindersDone: 1 }), settings, plain)).toEqual({ action: 'call_task', at: ist('2026-11-13T14:00') });
     // 15:00 + 4 h = 19:00, after the shift: Saturday morning.
-    expect(planNext(base({ profileKind: 'business', remindersSent: 1, stoppedAt: ist('2026-11-13T15:00') }), settings, plain)).toEqual({
+    expect(planNext(base({ profileKind: 'business', remindersDone: 1, stoppedAt: ist('2026-11-13T15:00') }), settings, plain)).toEqual({
       action: 'call_task',
       at: ist('2026-11-14T09:30'),
     });
   });
 
   it('3 tries over 3 days, one a working day, then closed', () => {
-    const second = planNext(base({ remindersSent: 2, callTries: 1, lastCallDueAt: ist('2026-11-14T09:30') }), settings, plain);
+    const second = planNext(base({ remindersDone: 2, callTries: 1, lastCallDueAt: ist('2026-11-14T09:30') }), settings, plain);
     expect(second).toEqual({ action: 'call_task', at: ist('2026-11-16T09:30') });
-    const closed = planNext(base({ remindersSent: 2, callTries: 3, lastCallDueAt: ist('2026-11-17T09:30') }), settings, plain);
+    const closed = planNext(base({ remindersDone: 2, callTries: 3, lastCallDueAt: ist('2026-11-17T09:30') }), settings, plain);
     expect(closed.action).toBe('close');
     expect(closed.at).toEqual(ist('2026-11-18T09:30'));
   });
 
-  it('without the contact-me tick (or before a record exists): reminders only, never a call', () => {
+  it('without the contact-me tick (or before a record exists): reminders only, never a call, then closed when the tries window ends', () => {
     expect(planNext(base({ callable: false }), settings, plain).action).toBe('reminder');
-    const waiting = planNext(base({ callable: false, remindersSent: 2 }), settings, plain);
-    expect(waiting.action).toBe('wait');
+    const closing = planNext(base({ callable: false, remindersDone: 2 }), settings, plain);
+    // First call would be Sat 09:30; tries Sat, Mon, Tue; closed Wed 09:30: a fixed time, never "overdue forever".
+    expect(closing).toEqual({ action: 'close', at: ist('2026-11-18T09:30') });
+    expect(triesWindowEnd(base({}), settings, plain)).toEqual(closing.at);
   });
 });
 
@@ -210,7 +212,6 @@ describe('Stages from the records', () => {
     selfie: false,
     idVerified: false,
     idFailed: false,
-    idServiceDown: false,
     termsAgreed: false,
     paymentFailures: 0,
     paid: false,
@@ -242,27 +243,37 @@ describe('Stages from the records', () => {
   });
 });
 
-describe('Target credit: self-finished credits nobody; assisted needs a connected call or GPS visit', () => {
+describe('Target credit: self-finished credits nobody; assisted needs a real answered call before the payment', () => {
   const assignedAt = new Date('2026-11-13T05:00:00Z');
-  const finishedAt = new Date('2026-11-13T09:00:00Z');
-  const base = { assignedStaffId: 'ca1', assignedAt, finishedAt, connectedCalls: [], gpsVisits: [] };
+  const completedAt = new Date('2026-11-13T09:00:00Z');
+  const call = (over: Partial<{ staffId: string; at: Date; durationSec: number | null }> = {}) => ({
+    staffId: 'ca1',
+    at: new Date('2026-11-13T06:00:00Z'),
+    durationSec: ASSISTED_CALL_MIN_SECONDS,
+    ...over,
+  });
+  const base = { assignedStaffId: 'ca1', assignedAt, completedAt, connectedCalls: [] as ReturnType<typeof call>[] };
 
-  it('no assigned agent, or no proof: nobody', () => {
-    expect(assistedBy({ ...base, assignedStaffId: null })).toBeNull();
+  it('no assigned agent, no payment yet, or no call: nobody', () => {
+    expect(assistedBy({ ...base, assignedStaffId: null, connectedCalls: [call()] })).toBeNull();
+    expect(assistedBy({ ...base, completedAt: null, connectedCalls: [call()] })).toBeNull();
     expect(assistedBy(base)).toBeNull();
   });
 
-  it('the assigned agent’s connected call between assignment and finishing: that agent', () => {
-    expect(assistedBy({ ...base, connectedCalls: [{ staffId: 'ca1', at: new Date('2026-11-13T06:00:00Z') }] })).toBe('ca1');
+  it('the assigned agent’s answered call of at least 60 seconds between assignment and payment: that agent', () => {
+    expect(ASSISTED_CALL_MIN_SECONDS).toBe(60);
+    expect(assistedBy({ ...base, connectedCalls: [call()] })).toBe('ca1');
   });
 
-  it('a call before the assignment, after finishing, or by someone else does not count', () => {
-    expect(assistedBy({ ...base, connectedCalls: [{ staffId: 'ca1', at: new Date('2026-11-13T04:00:00Z') }] })).toBeNull();
-    expect(assistedBy({ ...base, connectedCalls: [{ staffId: 'ca1', at: new Date('2026-11-13T10:00:00Z') }] })).toBeNull();
-    expect(assistedBy({ ...base, connectedCalls: [{ staffId: 'ca2', at: new Date('2026-11-13T06:00:00Z') }] })).toBeNull();
+  it('a short call, a call before the assignment, after the payment, or by someone else does not count', () => {
+    expect(assistedBy({ ...base, connectedCalls: [call({ durationSec: 20 })] })).toBeNull();
+    expect(assistedBy({ ...base, connectedCalls: [call({ durationSec: null })] })).toBeNull();
+    expect(assistedBy({ ...base, connectedCalls: [call({ at: new Date('2026-11-13T04:00:00Z') })] })).toBeNull();
+    expect(assistedBy({ ...base, connectedCalls: [call({ at: new Date('2026-11-13T10:00:00Z') })] })).toBeNull();
+    expect(assistedBy({ ...base, connectedCalls: [call({ staffId: 'ca2' })] })).toBeNull();
   });
 
-  it('a GPS visit by the assigned agent counts', () => {
-    expect(assistedBy({ ...base, gpsVisits: [{ staffId: 'ca1', at: new Date('2026-11-13T07:00:00Z') }] })).toBe('ca1');
+  it('assigned only after the person had already paid: nobody', () => {
+    expect(assistedBy({ ...base, assignedAt: new Date('2026-11-13T09:30:00Z'), connectedCalls: [call({ at: new Date('2026-11-13T09:40:00Z') })] })).toBeNull();
   });
 });

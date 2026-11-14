@@ -29,8 +29,6 @@ export interface SeekerFacts {
   idVerified: boolean;
   /** An ID check was tried and failed (name mismatch, not adult, unreadable). */
   idFailed: boolean;
-  /** The ID check service is down right now. */
-  idServiceDown: boolean;
   /** Terms agreed: the guarantee floor is frozen when the terms page is accepted. */
   termsAgreed: boolean;
   paymentFailures: number;
@@ -82,8 +80,7 @@ export function seekerStage(f: SeekerFacts): StageResult {
   else if (f.consentDone && f.selfie && f.idVerified) stage = 'D';
   else if (f.consentDone) stage = 'C';
   let stuckReason: string | null = null;
-  if (!f.idVerified && f.idServiceDown) stuckReason = 'ID check service down';
-  else if (!f.idVerified && f.idFailed) stuckReason = 'ID check did not pass';
+  if (!f.idVerified && f.idFailed) stuckReason = 'ID check did not pass';
   else if (!f.paid && f.paymentFailures >= 2) stuckReason = `UPI failed ${f.paymentFailures} times`;
   else if (!f.paid && f.paymentFailures === 1) stuckReason = 'UPI failed once';
   const step = missing[0] ?? 'complete';

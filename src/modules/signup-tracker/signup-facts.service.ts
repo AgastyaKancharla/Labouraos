@@ -35,7 +35,7 @@ export class SignupFactsService {
   }
 
   private async seeker(id: string): Promise<StageResult> {
-    const [seeker, consents, idv, payments, idService] = await Promise.all([
+    const [seeker, consents, idv, payments] = await Promise.all([
       this.prisma.jobSeeker.findUnique({
         where: { id },
         select: { photoStoragePath: true, guaranteeFloorPaise: true, paymentReceivedAt: true },
@@ -50,7 +50,6 @@ export class SignupFactsService {
         select: { status: true },
       }),
       this.prisma.payment.findMany({ where: { jobSeekerId: id, type: 'activation' }, select: { status: true } }),
-      this.prisma.kycServiceState.findUnique({ where: { id: 'id-check' } }),
     ]);
     if (!seeker) return noRecordStage('job_seeker');
     const given = new Set(consents.map((c) => c.purpose));
@@ -59,7 +58,6 @@ export class SignupFactsService {
       selfie: Boolean(seeker.photoStoragePath),
       idVerified: idv?.status === 'verified',
       idFailed: idv?.status === 'failed',
-      idServiceDown: idService?.status === 'down',
       termsAgreed: seeker.guaranteeFloorPaise !== null,
       paymentFailures: payments.filter((p) => p.status === 'failed').length,
       paid: seeker.paymentReceivedAt !== null,
