@@ -1,10 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
-import * as net from 'node:net';
-import * as tls from 'node:tls';
-import Redis from 'ioredis';
 import { PrismaService } from '../common/prisma/prisma.service';
+import { pingRedis, sharedRedis, whenRedisReady } from '../common/redis/redis-connections';
 import {
-  redisClientOptions,
   WORKER_HEARTBEAT_CHECK_SETTING,
   WORKER_HEARTBEAT_KEY,
   WorkerHeartbeatValue,
@@ -104,18 +101,12 @@ export class HealthService {
    * while the heartbeat still said "alive".
    */
   async checkSchedules(timeoutMs = 2000): Promise<ScheduleCheckStatus> {
-    const client = new Redis({
-      ...redisClientOptions(),
-      connectTimeout: timeoutMs,
-      lazyConnect: true,
-      maxRetriesPerRequest: 0,
-      retryStrategy: () => null,
-    });
-    client.on('error', () => undefined);
     let timer: NodeJS.Timeout | undefined;
     try {
+      // The shared connection: a readiness check opens no connection of its own.
+      const client = sharedRedis();
       const missing = await Promise.race([
-        client.connect().then(() => missingSchedules(client)),
+        whenRedisReady(client, timeoutMs).then(() => missingSchedules(client)),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error(`Redis did not answer within ${timeoutMs}ms`)),
@@ -132,7 +123,6 @@ export class HealthService {
       return { status: 'unreachable', missing: [], error: msg };
     } finally {
       if (timer) clearTimeout(timer);
-      client.disconnect();
     }
   }
 
@@ -141,18 +131,11 @@ export class HealthService {
     timeoutMs = 2000,
     now: Date = new Date(),
   ): Promise<WorkerHeartbeatStatus> {
-    const client = new Redis({
-      ...redisClientOptions(),
-      connectTimeout: timeoutMs,
-      lazyConnect: true,
-      maxRetriesPerRequest: 0,
-      retryStrategy: () => null,
-    });
-    client.on('error', () => undefined);
     let timer: NodeJS.Timeout | undefined;
     try {
+      const client = sharedRedis();
       const raw = await Promise.race([
-        client.connect().then(() => client.get(WORKER_HEARTBEAT_KEY)),
+        whenRedisReady(client, timeoutMs).then(() => client.get(WORKER_HEARTBEAT_KEY)),
         new Promise<never>((_, reject) => {
           timer = setTimeout(
             () => reject(new Error(`Redis did not answer within ${timeoutMs}ms`)),
@@ -181,7 +164,6 @@ export class HealthService {
       return { status: 'unreachable', lastBeatAt: null, secondsAgo: null, error: msg };
     } finally {
       if (timer) clearTimeout(timer);
-      client.disconnect();
     }
   }
 
@@ -236,73 +218,14 @@ export class HealthService {
     }
   }
 
+  /**
+   * PING over the shared connection (no new connection per check, so frequent
+   * health checks never eat into the Key Value's connection limit). While the
+   * connection is down this reports the problem; ioredis keeps reconnecting.
+   */
   async checkRedis(timeoutMs = 2000): Promise<{ healthy: boolean; error?: string }> {
-    let host = process.env.REDIS_HOST || 'localhost';
-    let port = Number(process.env.REDIS_PORT) || 6379;
-    let isTls = process.env.REDIS_TLS === 'true';
-
-    if (process.env.REDIS_URL) {
-      try {
-        const parsed = new URL(process.env.REDIS_URL);
-        host = parsed.hostname;
-        port = Number(parsed.port) || 6379;
-        if (parsed.protocol === 'rediss:') {
-          isTls = true;
-        }
-      } catch {
-        // Fall back to host/port
-      }
-    }
-
     try {
-      await new Promise<void>((resolve, reject) => {
-        let settled = false;
-
-        const socket = isTls
-          ? tls.connect({ host, port, timeout: timeoutMs, servername: host })
-          : net.createConnection({ host, port, timeout: timeoutMs });
-
-        const timer = setTimeout(() => {
-          if (!settled) {
-            settled = true;
-            socket.destroy();
-            reject(new Error(`Redis connection to ${host}:${port} timed out after ${timeoutMs}ms`));
-          }
-        }, timeoutMs);
-
-        const cleanup = () => {
-          settled = true;
-          clearTimeout(timer);
-        };
-
-        const onConnect = () => {
-          if (!settled) {
-            cleanup();
-            socket.destroy();
-            resolve();
-          }
-        };
-
-        socket.on('connect', onConnect);
-        socket.on('secureConnect', onConnect);
-
-        socket.on('error', (err: Error) => {
-          if (!settled) {
-            cleanup();
-            socket.destroy();
-            reject(err);
-          }
-        });
-
-        socket.on('timeout', () => {
-          if (!settled) {
-            cleanup();
-            socket.destroy();
-            reject(new Error(`Redis connection to ${host}:${port} timed out after ${timeoutMs}ms`));
-          }
-        });
-      });
-
+      await pingRedis(timeoutMs);
       return { healthy: true };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
