@@ -15,6 +15,7 @@ import {
   splitPaid,
 } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 export const LEAVE_KINDS = ['casual', 'emergency'] as const;
 export type LeaveKind = (typeof LEAVE_KINDS)[number];
@@ -135,9 +136,9 @@ export class LeaveService {
   async ensureAccrued(staffId: string): Promise<number> {
     const staff = await this.prisma.staff.findUnique({
       where: { id: staffId },
-      select: { id: true, role: true, status: true, createdAt: true, joinedOn: true },
+      select: { id: true, role: true, status: true, createdAt: true, joinedOn: true, isOwnerAccount: true },
     });
-    if (!staff || !ATTENDANCE_ROLES.includes(staff.role) || staff.status !== 'active') return 0;
+    if (!staff || !ATTENDANCE_ROLES.includes(staff.role) || staff.status !== 'active' || staff.isOwnerAccount) return 0;
     const policy = await this.pricing.current();
     let month = firstAccrualMonth(await this.joiningDay(staff), goLiveDayOf(policy));
     const current = monthOf(this.todayIst());
@@ -167,7 +168,8 @@ export class LeaveService {
   /** Nightly: accrues for everyone who marks attendance. */
   async accrueAll(): Promise<{ written: number }> {
     const people = await this.prisma.staff.findMany({
-      where: { role: { in: ATTENDANCE_ROLES }, status: 'active' },
+      // Owner accounts earn no leave: they have no attendance (owner decision 14 Nov).
+      where: { role: { in: ATTENDANCE_ROLES }, status: 'active', ...NOT_OWNER_ACCOUNT },
       select: { id: true },
     });
     let written = 0;

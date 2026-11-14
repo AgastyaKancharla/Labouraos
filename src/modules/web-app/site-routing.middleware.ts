@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { CloudflareAccessVerifier } from '../../common/auth/cloudflare-access.verifier';
 import { wantsHtml } from '../../common/public-pages';
 import { resolveFieldAppFile, resolveFieldDistDir, resolveFieldRootDistDir, type FieldAppFile } from '../field-app/field-app.files';
-import { fieldHosts, isFieldHost } from './site-hosts';
+import { fieldAppAddress, isFieldHost } from './site-hosts';
 import { resolveWebAppFile, resolveWebDistDir, type WebAppFile } from './web-app.files';
 
 /**
@@ -43,11 +43,8 @@ export function retiredConsoleRedirect(pathname: string, env: NodeJS.ProcessEnv 
   }
 }
 
-/** Laboura Field's address: the root of FIELD_HOST when one is set, otherwise /field on this address. */
-export function fieldAppAddress(env: NodeJS.ProcessEnv = process.env): string {
-  const host = fieldHosts(env)[0];
-  return host ? `https://${host}/` : '/field/';
-}
+// Laboura Field's address lives in site-hosts.ts (the sign-in uses it too); re-exported here.
+export { fieldAppAddress } from './site-hosts';
 
 type Outcome =
   | { kind: 'redirect'; status: 301; location: string }

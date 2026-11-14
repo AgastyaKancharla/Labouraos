@@ -5,6 +5,7 @@ import { getCalendarPartsInTimezone, getPeriodBoundaries, getTimezoneForCity } f
 import { NotificationService } from '../notification/notification.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { TargetOverviewService } from './target-overview.service';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 /** The pace check is heavy (every agent's month), so the bell sweep runs it at most this often. */
 export const BEHIND_PACE_CHECK_EVERY_MS = 60 * 60 * 1000;
@@ -45,7 +46,7 @@ export class BehindPaceBellsService implements OnModuleInit {
 
   async sweep(now: Date): Promise<{ behind: number; opened: number; cleared: number }> {
     const dir = await this.sources.directory();
-    const agents = await this.prisma.staff.findMany({ where: { role: { in: ['call_agent', 'field_agent'] }, status: 'active' } });
+    const agents = await this.prisma.staff.findMany({ where: { role: { in: ['call_agent', 'field_agent'] }, status: 'active', ...NOT_OWNER_ACCOUNT } });
     const drafts = [];
     let behind = 0;
     for (const agent of agents) {

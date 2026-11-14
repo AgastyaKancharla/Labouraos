@@ -6,7 +6,7 @@ export interface CreateJobSeekerDto {
   bestTimeToCall: '09-12' | '12-15' | '15-18' | '18-21' | '09-21';
   dateOfBirth: string;
   gender: string;
-  heardFrom: 'toll_free_missed_call' | 'ad' | 'referral_partner' | 'field_visit' | 'social_media' | 'walk_in' | 'other';
+  heardFrom: 'toll_free_missed_call' | 'ad' | 'referral_partner' | 'field_visit' | 'social_media' | 'walk_in' | 'other' | 'laboura_app';
   locality: string;
   pincode: string;
   latitude: number;

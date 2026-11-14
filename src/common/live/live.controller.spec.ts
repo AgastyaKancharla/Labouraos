@@ -150,6 +150,7 @@ describe('Session-ending actions ask open live streams to check at once', () => 
     const tx = {
       staffDevice: { update: jest.fn(async () => ({ ...device, status: 'revoked' })) },
       staffSession: { updateMany: jest.fn(async () => ({ count: 1 })) },
+      loginCodeRequest: { updateMany: jest.fn(async () => ({ count: 0 })) },
     };
     const prisma = {
       staffDevice: { findUnique: jest.fn(async () => device) },

@@ -16,6 +16,7 @@ import { dayResultFor, deductibleShortfall, monthRange } from './day-rules';
 import { dayTally } from './leave-units';
 import { WorkingDaysService } from './working-days.service';
 import { assertPayrollCanCorrect, monthOfDay } from '../finance/payroll-window';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 /** Roles that mark attendance. The CEO does not (Master Guide, Attendance). */
 export const ATTENDANCE_ROLES = ['manager', 'team_lead', 'call_agent', 'field_agent', 'finance'];
@@ -336,6 +337,8 @@ export class AttendanceDaysService {
       where: {
         role: { in: ATTENDANCE_ROLES },
         status: 'active',
+        // Owner accounts are never marked absent: they have no attendance (owner decision 14 Nov).
+        ...NOT_OWNER_ACCOUNT,
         createdAt: { lt: endOfDate },
         OR: [{ joinedOn: null }, { joinedOn: { lte: target } }],
         ...(staffIds ? { id: { in: staffIds } } : {}),
