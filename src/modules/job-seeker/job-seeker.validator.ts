@@ -13,7 +13,7 @@ function isMobileNumberField(key: string, value: string): boolean {
   return (lower.endsWith('phone') || lower === 'mobilenumber') && isIndianMobile(value);
 }
 
-const REGISTRATION_WINDOWS = {
+export const REGISTRATION_WINDOWS = {
   '09-12': ['09:00', '12:00'],
   '12-15': ['12:00', '15:00'],
   '15-18': ['15:00', '18:00'],
@@ -28,8 +28,8 @@ export const HEARD_FROM_VALUES = [
   'laboura_app',
 ] as const;
 
-const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;
-const JOB_TYPES = ['full_time', 'part_time', 'live_in'] as const;
+export const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;
+export const JOB_TYPES = ['full_time', 'part_time', 'live_in'] as const;
 
 export type ValidatedJobSeekerRegistration = {
   name: string;

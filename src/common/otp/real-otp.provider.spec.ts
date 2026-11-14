@@ -133,6 +133,19 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       expect(capturedRequests).toHaveLength(0);
     });
 
+    it('sends a code the person asked for themselves at 22:00 IST (customer app sign-in)', async () => {
+      const provider = new RealOtpProvider({
+        fetchFn: mockFetch,
+        timeProvider: () => new Date('2026-10-25T16:30:00.000Z'), // 22:00 IST
+      });
+      attachSessionStore(provider);
+      await expect(provider.sendOtp('9876543210')).rejects.toThrow(/TRAI compliance/);
+      for (const purpose of ['customer_sign_in', 'customer_add_phone', 'customer_step_up:delete_account']) {
+        await expect(provider.sendOtp('9876543210', { purpose })).resolves.toEqual(expect.objectContaining({ requestId: expect.any(String) }));
+      }
+      expect(capturedRequests).toHaveLength(3);
+    });
+
     it('transmits OTP inside 09:00–21:00 IST with DLT-registered sender ID and templates', async () => {
       const provider = new RealOtpProvider({
         apiKey: 'test_auth_key_123',

@@ -123,9 +123,12 @@ export class MockOtpProvider implements OtpProvider {
     return true;
   }
 
-  async isVerified(requestId: string, phone?: string): Promise<boolean> {
+  async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {
     const record = this.records.get(requestId);
     if (!record) {
+      return false;
+    }
+    if (purpose !== undefined && record.purpose !== purpose) {
       return false;
     }
     if (!record.verified || record.used || this.timeProvider() > record.expiresAt) {
@@ -137,8 +140,8 @@ export class MockOtpProvider implements OtpProvider {
     return true;
   }
 
-  async consumeVerified(requestId: string, phone: string): Promise<boolean> {
-    if (!(await this.isVerified(requestId, phone))) return false;
+  async consumeVerified(requestId: string, phone: string, purpose?: string): Promise<boolean> {
+    if (!(await this.isVerified(requestId, phone, purpose))) return false;
     const record = this.records.get(requestId);
     if (!record || record.used) return false;
     record.used = true;
@@ -148,6 +151,10 @@ export class MockOtpProvider implements OtpProvider {
   async getPhoneLast4(requestId: string): Promise<string | null> {
     const record = this.records.get(requestId);
     return record ? normalizePhone(record.phone).slice(-4) : null;
+  }
+
+  async getPurpose(requestId: string): Promise<string | null> {
+    return this.records.get(requestId)?.purpose ?? null;
   }
 
   getCode(requestId: string): string | undefined {
@@ -171,6 +178,8 @@ export class MockOtpProvider implements OtpProvider {
   /** Test mode only: the code in the server log, so a tester can read it there too. */
   private logTestModeCode(record: OtpRecord): void {
     if (!otpTestModeEnabled()) return;
+    // Customer app codes never go to the log, not even in test mode (the app shows them only in customer OTP test mode).
+    if (record.purpose.startsWith('customer_')) return;
     this.logger.log(
       `[MOCK OTP] Test mode code for ******${normalizePhone(record.phone).slice(-4)}: ${record.code} (requestId: ${record.requestId})`,
     );
