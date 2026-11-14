@@ -36,6 +36,7 @@ export const JOB_CATALOG: readonly JobCatalogEntry[] = [
   { key: 'weeklyReport', queue: 'weekly-report', schedulerId: 'monday-weekly-report-scheduler', runName: 'monday-weekly-report', label: 'Weekly report (Monday 9 AM)' },
   { key: 'interviewReply', queue: 'interview-reply-deadlines', schedulerId: 'interview-reply-deadline-scheduler', runName: 'process-due-interview-replies', label: 'Offer reply and payment deadlines' },
   { key: 'kycRecovery', queue: 'kyc-recovery', schedulerId: 'kyc-recovery-scheduler', runName: 'probe-id-check-recovery', label: 'ID check recovery' },
+  { key: 'signupTracker', queue: 'signup-tracker', schedulerId: 'signup-tracker-scheduler', runName: 'sweep-signup-tracker', label: 'App sign-ups: reminders, call tasks, closing' },
   { key: 'notificationSweep', queue: 'notification-sweep', schedulerId: 'notification-sweep-scheduler', runName: 'sweep-notifications', label: 'Notification bells that change with the clock' },
 ];
 

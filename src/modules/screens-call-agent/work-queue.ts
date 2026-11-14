@@ -15,6 +15,9 @@
  *   5. follow_up  — day-7/30/90 "not selected" checks, joining check-ins
  *   6. retry      — the calling system's automatic retry after no answer
  *   7. stuck_registration — registration link sent but not finished
+ *      signup_help — an unfinished app sign-up (customer app proposal 4.4),
+ *      ranked with the stuck registrations; signup_payment — a job seeker
+ *      who stopped at the ₹499 payment, ranked just under callbacks
  *   8. win_back   — (N5, when built) refunded/deactivated people a new job suits
  * Ties go to whoever has been waiting longest (earliest due time).
  * One row per person: the most urgent reason wins.
@@ -29,12 +32,14 @@ export const WORK_KINDS = [
   'follow_up',
   'retry',
   'stuck_registration',
+  'signup_payment',
+  'signup_help',
   'win_back',
 ] as const;
 export type WorkKind = (typeof WORK_KINDS)[number];
 
-/** The design's filter chips: All · Callbacks · Follow-ups · Offers · New leads. */
-export type WorkCategory = 'callbacks' | 'follow_ups' | 'offers' | 'new_leads' | 'priority';
+/** The design's filter chips: All · Callbacks · Follow-ups · Offers · New leads, plus App sign-ups (customer app). */
+export type WorkCategory = 'callbacks' | 'follow_ups' | 'offers' | 'new_leads' | 'priority' | 'app_signups';
 
 export const KIND_RANK: Record<WorkKind, number> = {
   callback: 1,
@@ -46,6 +51,9 @@ export const KIND_RANK: Record<WorkKind, number> = {
   follow_up: 5,
   retry: 6,
   stuck_registration: 7,
+  // Proposal 4.4: stopped at payment sits just under callbacks; other sign-ups with stuck registrations.
+  signup_payment: 1.5,
+  signup_help: 7,
   win_back: 8,
 };
 
@@ -59,6 +67,8 @@ export const KIND_CATEGORY: Record<WorkKind, WorkCategory> = {
   interview_today: 'offers',
   close_to_refund: 'priority',
   stuck_registration: 'new_leads',
+  signup_payment: 'app_signups',
+  signup_help: 'app_signups',
   win_back: 'new_leads',
 };
 
@@ -127,7 +137,7 @@ export function pickNext(ordered: WorkItem[], skip: ReadonlySet<string> = new Se
 }
 
 export function countByCategory(items: WorkItem[]): Record<'all' | WorkCategory, number> {
-  const counts = { all: items.length, callbacks: 0, follow_ups: 0, offers: 0, new_leads: 0, priority: 0 };
+  const counts = { all: items.length, callbacks: 0, follow_ups: 0, offers: 0, new_leads: 0, priority: 0, app_signups: 0 };
   for (const item of items) counts[item.category] += 1;
   return counts;
 }

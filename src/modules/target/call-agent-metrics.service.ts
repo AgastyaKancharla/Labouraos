@@ -1,4 +1,5 @@
 import { LIVE_REFUND_STATUSES } from '../../common/money/current-guarantee-refund';
+import { assistedActivations } from '../signup-tracker/signup-credit';
 import {
   BadRequestException,
   ForbiddenException,
@@ -54,7 +55,9 @@ export interface CallAgentMetricsResult {
  *
  * 1. Candidates activated:
  *    Job seekers with `registeredByStaffId` = this agent whose ₹499 was received
- *    within the period (paymentReceivedAt in period boundary).
+ *    within the period (paymentReceivedAt in period boundary), plus app sign-ups
+ *    this agent helped finish ("assisted", proven by a connected call or GPS
+ *    visit; customer app question 13).
  *
  * 2. Refund rate on own registrations:
  *    Of job seekers this agent registered whose 30-day deadline has passed, the share
@@ -150,7 +153,7 @@ export class CallAgentMetricsService {
 
     // 4. Metric 1: Candidates Activated
     // Job seekers with registeredByStaffId = this agent whose ₹499 was received within the period
-    const candidatesActivated = await this.prisma.jobSeeker.count({
+    const registeredActivations = await this.prisma.jobSeeker.count({
       where: {
         registeredByStaffId: effectiveStaffId,
         paymentReceivedAt: {
@@ -160,6 +163,9 @@ export class CallAgentMetricsService {
         },
       },
     });
+    // Customer app (question 13): app sign-ups this agent helped finish, with a
+    // connected call or GPS visit on record. Self-finished app sign-ups credit nobody.
+    const candidatesActivated = registeredActivations + (await assistedActivations(this.prisma, effectiveStaffId, startUtc, endUtc));
 
     // 5. Metric 2: Vacancies Captured
     // Vacancies with capturedByStaffId = this agent created within the period

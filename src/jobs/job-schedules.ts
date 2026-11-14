@@ -69,4 +69,6 @@ export const INTERVAL_JOB_MS = {
   kycRecovery: 15 * 60 * 1000,
   /** Phase 21 Task 6: bells that change with the clock (escalation, idle, break overrun). */
   notificationSweep: 5 * 60 * 1000,
+  /** Customer app: unfinished sign-ups (reminders at 30 min and 4 h, call tasks, closing). */
+  signupTracker: 5 * 60 * 1000,
 } as const;

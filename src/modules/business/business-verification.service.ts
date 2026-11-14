@@ -17,6 +17,7 @@ import { recordStatusChange } from '../../common/status-history/status-history.h
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { BusinessClock } from './business-clock';
 import { testModeFields } from '../../common/otp/otp-test-mode';
+import { VERIFICATION_VISIT_PURPOSES } from './business.constants';
 
 // business_signup: a business that signed up in the customer app (proposal 4.2).
 const VISIT_PURPOSES = ['verification', 'revisit', 'interview_attendance', 'follow_up', 'business_signup'] as const;
@@ -52,10 +53,15 @@ export class BusinessVerificationService {
     } else if (role === 'team_lead') {
       const team = await this.prisma.staff.findMany({ where: { teamLeadId: staffId }, select: { id: true } });
       const teamIds = team.map(({ id }) => id);
-      where = { status: 'pending', business: { OR: [
-        { leadCreatedByStaffId: { in: teamIds } },
-        { accountAgentId: { in: teamIds } },
-      ] } };
+      where = { status: 'pending', OR: [
+        { business: { OR: [
+          { leadCreatedByStaffId: { in: teamIds } },
+          { accountAgentId: { in: teamIds } },
+        ] } },
+        // A business that signed up in the app has no agent yet: the Team Lead of the
+        // suggested field agent confirms it; with no suggestion every Team Lead sees it.
+        { purpose: 'business_signup', OR: [{ suggestedStaffId: { in: teamIds } }, { suggestedStaffId: null }] },
+      ] };
     } else {
       where = { status: 'pending' };
     }
@@ -206,11 +212,17 @@ export class BusinessVerificationService {
       include: { business: true },
     });
     if (!assignment) throw new NotFoundException('Visit assignment not found');
-    await this.assertTeamLeadOwnsBusiness(
-      actor,
-      assignment.business.leadCreatedByStaffId,
-      assignment.business.accountAgentId,
-    );
+    if (assignment.purpose === 'business_signup' && actor.role === 'team_lead') {
+      // App sign-up: the Team Lead confirms or changes the suggestion to one of their own field agents.
+      const own = await this.prisma.staff.findFirst({ where: { id: assignedStaffId, teamLeadId: actor.id }, select: { id: true } });
+      if (!own) throw new ForbiddenException('Team Leads may only send their own field agents');
+    } else {
+      await this.assertTeamLeadOwnsBusiness(
+        actor,
+        assignment.business.leadCreatedByStaffId,
+        assignment.business.accountAgentId,
+      );
+    }
     if (assignment.status !== 'pending') {
       throw new BadRequestException('Only pending visit assignments can be assigned');
     }
@@ -239,12 +251,50 @@ export class BusinessVerificationService {
     return updated;
   }
 
+  /**
+   * A business that signed up in the customer app: the visit request the
+   * customer app made (purpose business_signup, no field agent yet) becomes
+   * its verification visit. The business moves to "visit pending" and the
+   * nearest available field agent is suggested; the Team Lead confirms or
+   * changes it with one tap (guide: verification visits). Never creates a
+   * second request. Returns the suggested field agent, if any.
+   */
+  async prepareSignupVisit(assignmentId: string): Promise<string | null> {
+    const assignment = await this.prisma.visitAssignment.findUnique({ where: { id: assignmentId }, include: { business: true } });
+    if (!assignment || assignment.purpose !== 'business_signup' || assignment.status !== 'pending') return null;
+    const business = assignment.business;
+    if (business.verificationStatus === 'lead') {
+      await this.prisma.$transaction(async (tx) => {
+        const moved = await tx.business.updateMany({ where: { id: business.id, verificationStatus: 'lead' }, data: { verificationStatus: 'pending_visit' } });
+        if (moved.count === 1) {
+          await recordStatusChange(tx, {
+            subjectType: 'business',
+            subjectId: business.id,
+            fromStatus: 'lead',
+            toStatus: 'pending_visit',
+            changedByStaffId: null,
+            reason: 'Signed up in the Laboura app: verification visit requested',
+            changedAt: this.clock.now(),
+          });
+        }
+      });
+    }
+    if (assignment.suggestedStaffId) return assignment.suggestedStaffId;
+    const suggestedStaffId = await this.suggestFieldAgent(business);
+    if (!suggestedStaffId) return null;
+    const updated = await this.prisma.visitAssignment.updateMany({
+      where: { id: assignment.id, status: 'pending', suggestedStaffId: null },
+      data: { suggestedStaffId },
+    });
+    return updated.count === 1 ? suggestedStaffId : null;
+  }
+
   async sendOwnerOtp(businessId: string, assignmentId: string, staffId: string) {
     const assignment = await this.prisma.visitAssignment.findFirst({
       where: {
         id: assignmentId,
         businessId,
-        purpose: 'verification',
+        purpose: { in: [...VERIFICATION_VISIT_PURPOSES] },
         assignedStaffId: staffId,
         status: 'assigned',
       },
@@ -265,7 +315,7 @@ export class BusinessVerificationService {
       const verificationVisit = await tx.businessVisit.findFirst({
         where: {
           businessId,
-          purpose: 'verification',
+          purpose: { in: [...VERIFICATION_VISIT_PURPOSES] },
           ownerOtpRequestId: { not: null },
           selfieUrl: { not: null },
           assignmentId: { not: null },
@@ -276,7 +326,7 @@ export class BusinessVerificationService {
       const assignment = await tx.visitAssignment.findFirst({
         where: {
           id: verificationVisit.assignmentId!,
-          purpose: 'verification',
+          purpose: { in: [...VERIFICATION_VISIT_PURPOSES] },
           status: 'done',
           visitId: verificationVisit.id,
         },
@@ -540,7 +590,7 @@ export class BusinessVerificationService {
       const visit = await this.prisma.businessVisit.findFirst({
         where: {
           businessId,
-          purpose: 'verification',
+          purpose: { in: [...VERIFICATION_VISIT_PURPOSES] },
           assignmentId: { not: null },
           ownerOtpRequestId: { not: null },
           selfieUrl: { not: null },
@@ -549,7 +599,7 @@ export class BusinessVerificationService {
       });
       if (!visit?.staffId) throw new BadRequestException('A completed verification visit by a field agent is required');
       const completedAssignment = await this.prisma.visitAssignment.findFirst({
-        where: { id: visit.assignmentId!, status: 'done', visitId: visit.id, purpose: 'verification' },
+        where: { id: visit.assignmentId!, status: 'done', visitId: visit.id, purpose: { in: [...VERIFICATION_VISIT_PURPOSES] } },
       });
       if (!completedAssignment) {
         throw new BadRequestException('A completed verification visit by its assigned field agent is required');

@@ -16,6 +16,9 @@ import { MatchingService } from '../vacancy/matching.service';
 import { InboundCallRouter } from '../telephony/inbound-call-router.service';
 import { TargetOverviewService } from '../target/target-overview.service';
 import { LeaderboardService } from '../target/leaderboard.service';
+import { SignupFactsService } from '../signup-tracker/signup-facts.service';
+import { scriptHintKey } from '../signup-tracker/signup-stage';
+import { CALL_TASK_KIND_SIGNUP_HELP } from '../../common/customer-auth/customer-app.constants';
 import { CallWorkClock, DAY_MS, istDayStart, istMinuteOfDay } from './call-work-clock';
 import {
   countByCategory,
@@ -116,6 +119,7 @@ export class CallWorkService {
     private readonly targetOverview: TargetOverviewService,
     private readonly leaderboard: LeaderboardService,
     private readonly clock: CallWorkClock,
+    private readonly signupFacts: SignupFactsService,
   ) {}
 
   // ---------------------------------------------------------------- context
@@ -324,7 +328,23 @@ export class CallWorkService {
       }),
     ]);
 
+    const signups = await this.signupDetails(tasks);
     for (const t of tasks) {
+      const signup = t.kind === CALL_TASK_KIND_SIGNUP_HELP ? signups.get(t.id) : undefined;
+      if (signup) {
+        raw.push({
+          kind: signup.kind,
+          key: `task:${t.id}`,
+          type: t.subjectType as SubjectType,
+          id: t.subjectId,
+          dueAt: t.dueAt,
+          purpose: signup.purpose,
+          relatedType: null,
+          relatedId: null,
+          detail: { taskId: t.id, ...signup.detail },
+        });
+        continue;
+      }
       raw.push({
         kind: t.kind === 'callback' ? 'callback' : 'retry',
         key: `task:${t.id}`,
@@ -505,6 +525,44 @@ export class CallWorkService {
       });
     }
     return { ctx, items: orderWorkItems(items), stuck };
+  }
+
+  /**
+   * "Sign-up help" tasks (customer app): the stage, the step he is on, what is
+   * still missing, why he is stuck and the script hint key, read fresh from the
+   * records. A job seeker who has not given consent yet is called to explain
+   * it (the only call allowed before the call-recording consent).
+   */
+  private async signupDetails(tasks: Array<{ id: string; kind: string; signupTrackerId: string | null }>) {
+    const out = new Map<string, { kind: WorkKind; purpose: string; detail: Record<string, string | number | null> }>();
+    const wanted = tasks.filter((t) => t.kind === CALL_TASK_KIND_SIGNUP_HELP && t.signupTrackerId);
+    if (wanted.length === 0) return out;
+    const trackers = await this.prisma.signupTracker.findMany({
+      where: { id: { in: wanted.map((t) => t.signupTrackerId!) } },
+    });
+    const byId = new Map(trackers.map((t) => [t.id, t]));
+    for (const task of wanted) {
+      const tracker = byId.get(task.signupTrackerId!);
+      if (!tracker) continue;
+      const stage = await this.signupFacts.stageOf(tracker.profileKind, tracker);
+      const atPayment = tracker.profileKind === 'job_seeker' && stage.stage === 'E';
+      const needsConsent = tracker.profileKind === 'job_seeker' && stage.missing.includes('consent');
+      out.set(task.id, {
+        kind: atPayment ? 'signup_payment' : 'signup_help',
+        purpose: needsConsent ? 'consent_explain' : 'general',
+        detail: {
+          signupTrackerId: tracker.id,
+          signupKind: tracker.profileKind,
+          stage: stage.stage,
+          step: stage.step,
+          missing: stage.missing.join(','),
+          stuckReason: tracker.stuckReason ?? stage.stuckReason,
+          scriptHint: scriptHintKey(tracker.profileKind, stage.step),
+          callTry: tracker.callTries,
+        },
+      });
+    }
+    return out;
   }
 
   /** Registration link sent, not finished: which step he is stuck on. Newest first. */

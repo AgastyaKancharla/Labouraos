@@ -238,6 +238,8 @@ export class ScreensFieldService {
         assignmentId: a.id,
         purpose: a.purpose,
         business: a.business,
+        // business_signup (customer app): the time the owner picked in the app.
+        requestedFor: a.requestedFor?.toISOString() ?? null,
         interview: interview
           ? {
               id: interview.id,

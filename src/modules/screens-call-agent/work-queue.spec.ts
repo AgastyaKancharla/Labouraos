@@ -79,6 +79,18 @@ describe('call agent work queue order', () => {
 
   it('counts rows for the filter chips', () => {
     const counts = countByCategory([item('callback'), item('retry'), item('follow_up'), item('offer_reply'), item('stuck_registration')]);
-    expect(counts).toEqual({ all: 5, callbacks: 2, follow_ups: 1, offers: 1, new_leads: 1, priority: 0 });
+    expect(counts).toEqual({ all: 5, callbacks: 2, follow_ups: 1, offers: 1, new_leads: 1, priority: 0, app_signups: 0 });
+  });
+
+  it('app sign-ups: stopped at payment just under callbacks, other sign-ups with the stuck registrations, own chip', () => {
+    const callback = item('callback');
+    const payment = item('signup_payment');
+    const offer = item('offer_reply');
+    const help = item('signup_help', { dueAt: '2026-11-11T03:00:00.000Z' });
+    const stuck = item('stuck_registration', { dueAt: '2026-11-11T05:00:00.000Z' });
+    const winBack = item('win_back');
+    const ordered = orderWorkItems([winBack, stuck, help, offer, payment, callback]);
+    expect(ordered.map((i) => i.key)).toEqual([callback.key, payment.key, offer.key, help.key, stuck.key, winBack.key]);
+    expect(countByCategory([payment, help]).app_signups).toBe(2);
   });
 });

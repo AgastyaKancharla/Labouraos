@@ -28,6 +28,7 @@ import {
   EMPLOYEE_COUNT_BANDS,
   HIRING_FREQUENCIES,
   YEARS_RUNNING_BANDS,
+  isVerificationVisitPurpose,
 } from './business.constants';
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { mobileLookupValues, optionalIndianMobile, requireIndianMobile } from '../../common/phone/indian-mobile';
@@ -846,7 +847,9 @@ export class BusinessService {
       }
     }
     const purpose = assignment?.purpose ?? dto.purpose ?? 'follow_up';
-    if (purpose === 'verification') {
+    // An app sign-up's visit request (business_signup) is its verification visit.
+    const isVerification = isVerificationVisitPurpose(purpose);
+    if (isVerification) {
       if (!assignment) throw new BadRequestException('A verification visit requires its assigned visit assignment');
       if (!selfieUrl || !selfieHash) {
         throw new BadRequestException('A verification visit requires the visit photo and its hash');
@@ -908,7 +911,7 @@ export class BusinessService {
           selfieHash,
           geofenceFlag,
           purpose,
-          ownerOtpRequestId: purpose === 'verification' ? dto.ownerOtpRequestId : null,
+          ownerOtpRequestId: isVerification ? dto.ownerOtpRequestId : null,
           photoLive: false,
           assignmentId: assignment?.id ?? null,
           visitedAt,
@@ -951,7 +954,7 @@ export class BusinessService {
         businessId: business.id,
         purpose,
         assignmentId: assignment?.id ?? null,
-        ownerOtpRequestId: purpose === 'verification' ? dto.ownerOtpRequestId : null,
+        ownerOtpRequestId: isVerification ? dto.ownerOtpRequestId : null,
         geofenceFlag,
         photoLive: false,
         assignmentStatus: assignment ? 'done' : null,
@@ -961,7 +964,7 @@ export class BusinessService {
       city: business.city,
     });
 
-    if (purpose === 'verification') {
+    if (isVerification) {
       await this.verificationService.advanceToPendingTlCheckIfReady(business.id, staff.id);
     }
 
