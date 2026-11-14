@@ -3,6 +3,7 @@ import { CallAccessGuard, CallPlaceGuard } from './call-access.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ROLES_METADATA_KEY } from '../../common/rbac/roles.decorator';
 import { CallController } from './call.controller';
+import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * /calls/:id, its outcome, notes and recording: Team Leads their own team's
@@ -24,10 +25,9 @@ describe('CallAccessGuard', () => {
     callRecord: { findUnique: jest.fn(async ({ where }) => calls[where.id] ?? null) },
     // OwnTeam reads the team: direct teamLeadId links, then every link.
     staff: {
-      findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => {
-        const rows = Object.entries(staff).map(([id, row]) => ({ id, code: id, name: id, role: 'call_agent', status: 'active', reportsToId: null, ...row }));
-        return args?.where?.teamLeadId ? rows.filter((r) => r.teamLeadId === args.where!.teamLeadId).map(({ id }) => ({ id })) : rows;
-      }),
+      findMany: jest.fn(findManyOver(() => Object.entries(staff).map(([id, row]) => ({
+        id, code: id, name: id, role: id.startsWith('tl-') ? 'team_lead' : 'call_agent', status: 'active', reportsToId: null, ...row,
+      })))),
     },
     jobSeeker: { findFirst: jest.fn(async ({ where }) => ({ 'js-a': { registeredByStaffId: 'agent-a' }, 'js-b': { registeredByStaffId: 'agent-b' } } as Record<string, unknown>)[where.OR[0].id] ?? null) },
     referral: { findFirst: jest.fn(async ({ where }) => ({ 'rf-b': { registeredByStaffId: 'agent-b' } } as Record<string, unknown>)[where.OR[0].id] ?? null) },

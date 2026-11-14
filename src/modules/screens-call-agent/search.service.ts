@@ -1,4 +1,4 @@
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { AgentViewer, agentViewerFor, heldByAgent } from '../business/business-agent-view';
 import { BadRequestException, Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
@@ -207,7 +207,7 @@ export class SearchService {
       AND: [
         match,
         { anonymisedAt: null },
-        ...(team ? [{ OR: [{ accountAgentId: { in: team } }, { leadCreatedByStaffId: { in: team } }] }] : []),
+        ...(team ? [businessesOwnedBy(team)] : []),
       ],
     };
     const [rows, total] = await Promise.all([

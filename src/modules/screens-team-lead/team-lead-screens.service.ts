@@ -52,7 +52,7 @@ export class TeamLeadScreensService {
   async members(actor: Actor): Promise<Member[]> {
     this.assertTeamLead(actor);
     // The shared own-team definition (OwnTeam), the Team Lead left out.
-    const under = (await new OwnTeam(this.prisma, this.scope).memberIds(actor.id)).filter((id) => id !== actor.id);
+    const under = (await new OwnTeam(this.prisma).memberIds(actor.id)).filter((id) => id !== actor.id);
     return this.prisma.staff.findMany({
       where: { id: { in: under }, role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
       select: { id: true, code: true, name: true, role: true, isOwnerAccount: true },

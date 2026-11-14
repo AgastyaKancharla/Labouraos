@@ -21,6 +21,13 @@ export class AuthThrottlerGuard extends ThrottlerGuard {
     const clientIp =
       expressReq.ip || expressReq.socket?.remoteAddress || '127.0.0.1';
 
+    // Signed-in routes (revoking a session) are limited per staff member,
+    // whatever the connection: JwtAuthGuard has already set req.user.
+    const user = (expressReq as unknown as { user?: { sub?: unknown } }).user;
+    if (user && typeof user.sub === 'string' && user.sub) {
+      return `staff:${user.sub}`;
+    }
+
     const body = expressReq.body as Record<string, unknown> | undefined;
     // F2: "Forgot password" is limited per email address only, whatever the
     // IP, so asking for one address from many addresses still hits the limit.

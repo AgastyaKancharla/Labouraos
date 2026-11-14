@@ -5,7 +5,9 @@ import {
   METHOD_METADATA,
   MODULE_METADATA,
   PATH_METADATA,
+  ROUTE_ARGS_METADATA,
 } from '@nestjs/common/constants';
+import { RouteParamtypes } from '@nestjs/common/enums/route-paramtypes.enum';
 import { AppModule } from '../../app.module';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RbacGuard } from './rbac.guard';
@@ -17,7 +19,7 @@ import { normaliseRoutePath, targetFor } from './rbac.guard';
 import { ALL_STAFF_ROLES, RBAC_MATRIX, Role } from './rbac.types';
 import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { SERVICE_SCOPED_ROUTES } from './service-scoped-routes';
+import { SERVICE_SCOPED_INPUTS, SERVICE_SCOPED_ROUTES } from './service-scoped-routes';
 import { PaymentReceiptGuard } from '../../modules/payment/payment-receipt.guard';
 
 /**
@@ -45,6 +47,8 @@ interface RouteInfo {
   publicReason: string | undefined;
   permission: RequiredPermission | undefined;
   controllerPath: string;
+  /** Named @Query('x') / @Body('x') inputs, as 'query:x' / 'body:x'. */
+  inputs: string[];
 }
 
 function moduleClass(entry: unknown): Type<unknown> | undefined {
@@ -116,6 +120,16 @@ function routesOf(controller: Type<unknown>): RouteInfo[] {
       // controller of public pages is not public by accident.
       publicReason: Reflect.getMetadata(PUBLIC_ROUTE_KEY, handler) as string | undefined,
       permission: (methodPermission ?? classPermission) as RequiredPermission | undefined,
+      inputs: ((): string[] => {
+        const args = (Reflect.getMetadata(ROUTE_ARGS_METADATA, controller, name) ?? {}) as Record<string, { data?: unknown }>;
+        return Object.entries(args).flatMap(([key, arg]) => {
+          const type = Number(key.split(':')[0]);
+          if (typeof arg.data !== 'string') return [];
+          if (type === RouteParamtypes.QUERY) return [`query:${arg.data}`];
+          if (type === RouteParamtypes.BODY) return [`body:${arg.data}`];
+          return [];
+        });
+      })(),
       controllerPath: ((): string => {
         const p = Reflect.getMetadata(PATH_METADATA, controller) as string | string[] | undefined;
         return Array.isArray(p) ? p[0] ?? '' : p ?? '';
@@ -123,6 +137,16 @@ function routesOf(controller: Type<unknown>): RouteInfo[] {
     });
   }
   return routes;
+}
+
+/** The proof line is in the spec and a refusal (403/404/thrown) follows within 12 lines. */
+function proofHolds(file: string, proof: string): boolean {
+  if (!existsSync(file)) return false;
+  const lines = readFileSync(file, 'utf8').split('\n');
+  const at = lines.findIndex((line) => line.includes(proof));
+  if (at < 0) return false;
+  // A refusal, or for a list the proof that another team's rows are left out.
+  return lines.slice(at, at + 13).some((line) => /40[34]|toThrow|Forbidden|NotFound|not\.toContain|toEqual\(\[\]\)/.test(line));
 }
 
 function describeRoute(route: RouteInfo): string {
@@ -228,8 +252,52 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
       expect([name, entry.reason.trim().length > 10]).toEqual([name, true]);
       const file = join(__dirname, '..', '..', entry.test);
       expect([name, existsSync(file)]).toEqual([name, true]);
-      // The line that proves it is still in that spec.
-      expect([name, existsSync(file) && readFileSync(file, 'utf8').includes(entry.proof)]).toEqual([name, true]);
+      // The line that proves it is still in that spec, followed within a few
+      // lines by the refusal it describes (a 403/404 or a thrown refusal).
+      expect([name, proofHolds(file, entry.proof)]).toEqual([name, true]);
+    }
+    // Every proof names its own route: no two entries share one.
+    const proofs = Object.values(SERVICE_SCOPED_ROUTES).map((entry) => entry.proof);
+    expect(proofs.filter((proof, i) => proofs.indexOf(proof) !== i)).toEqual([]);
+  });
+
+  it('scopes every staff or record id taken from the query or body (Team Leads and agents)', () => {
+    // An id in ?staffId= or a body field names a record just like a path
+    // parameter. The route must check it through a permission target that
+    // reads that input, or be listed in SERVICE_SCOPED_INPUTS with a reason.
+    const scopedRoles: Role[] = ['team_lead', 'field_agent', 'call_agent'];
+    const idInput = /(Id|Ids|Ref)$/;
+    const unscoped: string[] = [];
+    const used = new Set<string>();
+    for (const route of routes) {
+      if (route.publicReason) continue;
+      const name = `${route.controller}.${route.handler}`;
+      const roles = (route.roles.length ? route.roles : ALL_STAFF_ROLES) as Role[];
+      const action =
+        route.permission?.action ?? (route.method === 'GET' || route.method === 'HEAD' ? 'read' : 'write');
+      const admitted = roles.filter((role) => scopedRoles.includes(role) && (!route.permission || RBAC_MATRIX[role]?.[route.permission.resource]?.[action]?.allowed));
+      if (admitted.length === 0) continue;
+      const target = route.permission?.target;
+      const declared = new Set(
+        (Array.isArray(target) ? target : target && typeof target === 'object' ? [target] : [])
+          .map((t) => t.from.replace(/\[\]$/, '')),
+      );
+      for (const input of route.inputs) {
+        if (!idInput.test(input.split(':')[1] ?? '')) continue;
+        if (declared.has(input)) continue;
+        const key = `${name} ${input}`;
+        if (SERVICE_SCOPED_INPUTS[key]) {
+          used.add(key);
+          continue;
+        }
+        unscoped.push(`${route.method} ${route.paths.join(' | ')} ${input} (${name}) for ${admitted.join(', ')}`);
+      }
+    }
+    expect(unscoped).toEqual([]);
+    expect(Object.keys(SERVICE_SCOPED_INPUTS).filter((key) => !used.has(key))).toEqual([]);
+    for (const [key, entry] of Object.entries(SERVICE_SCOPED_INPUTS)) {
+      expect([key, entry.reason.trim().length > 10]).toEqual([key, true]);
+      expect([key, proofHolds(join(__dirname, '..', '..', entry.test), entry.proof)]).toEqual([key, true]);
     }
   });
 

@@ -9,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { WorkingDaysService } from '../attendance/working-days.service';
 import { BEHIND_PACE_START_DAY, BEHIND_PACE_THRESHOLD, MIN_REFUND_RATE_DENOMINATOR } from './target.constants';
+import { matchesWhere } from '../../test-support/prisma-where';
 
 interface MockStaffRecord {
   id: string;
@@ -217,20 +218,10 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
         findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
           return Promise.resolve(mockStaffRecords[where.id] ?? null);
         }),
-        findMany: jest.fn().mockImplementation((args?: { where?: { id?: { in: string[] }; teamLeadId?: string; role?: { in: string[] } } }) => {
-          const where = args?.where;
-          let list = Object.values(mockStaffRecords);
-          if (where?.id?.in) {
-            list = list.filter((s) => where.id!.in.includes(s.id));
-          }
-          if (where?.teamLeadId) {
-            list = list.filter((s) => s.teamLeadId === where.teamLeadId);
-          }
-          if (where?.role?.in) {
-            list = list.filter((s) => where.role!.in.includes(s.role));
-          }
-          return Promise.resolve(list);
-        }),
+        findMany: jest.fn().mockImplementation(async (args?: { where?: Record<string, unknown> }) =>
+          // Full rows (the service reads names and roles); the shared reading of `where`.
+          Object.values(mockStaffRecords).filter((s) => matchesWhere({ reportsToId: null, isOwnerAccount: false, ...s }, args?.where)),
+        ),
       },
       target: {
         findUnique: jest.fn().mockImplementation(({ where }: { where: { staffId_year_month: { staffId: string; year: number; month: number } } }) => {

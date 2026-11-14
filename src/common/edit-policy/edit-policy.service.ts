@@ -1,3 +1,4 @@
+import { OwnTeam } from '../rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -282,11 +283,8 @@ export class EditPolicyService {
       if (!creatorId || creatorId === actor.id) {
         return { allowed: true, isMoneyInvolved: isMoney };
       }
-      const creator = await this.prisma.staff.findUnique({
-        where: { id: creatorId },
-        select: { teamLeadId: true },
-      });
-      if (creator?.teamLeadId === actor.id) {
+      // The shared own-team definition (OwnTeam), not a raw teamLeadId match.
+      if (await new OwnTeam(this.prisma).includes(actor.id, creatorId)) {
         return { allowed: true, isMoneyInvolved: isMoney };
       }
       return {
@@ -359,11 +357,8 @@ export class EditPolicyService {
     if (!ownerId || ownerId === actor.id) {
       return { allowed: true, isMoneyInvolved: isMoney };
     }
-    const owner = await this.prisma.staff.findUnique({
-      where: { id: ownerId },
-      select: { teamLeadId: true },
-    });
-    if (owner?.teamLeadId === actor.id) {
+    // businessOwners: the account agent, else the lead creator; their team (OwnTeam).
+    if (await new OwnTeam(this.prisma).includes(actor.id, ownerId)) {
       return { allowed: true, isMoneyInvolved: isMoney };
     }
     return {

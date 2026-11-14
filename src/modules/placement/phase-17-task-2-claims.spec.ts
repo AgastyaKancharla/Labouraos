@@ -11,6 +11,7 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
+import { findManyOver } from '../../test-support/prisma-where';
 
 type MockPrisma = {
   staff: Record<string, jest.Mock>;
@@ -124,12 +125,10 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
         }),
         findFirst: jest.fn().mockResolvedValue(mgrStaff),
         // OwnTeam reads a Team Lead's team: direct teamLeadId links, then every link.
-        findMany: jest.fn().mockImplementation(async (args?: { where?: { teamLeadId?: string } }) => {
-          const allStaff = [faStaff, otherFaStaff, caStaff, tlStaff, otherTlStaff, mgrStaff, ceoStaff, financeStaff]
-            .map((s) => ({ reportsToId: null, status: "active", teamLeadId: null as string | null, ...(s as { teamLeadId?: string | null }), ...s }));
-          const teamLeadId = args?.where?.teamLeadId;
-          return teamLeadId ? allStaff.filter((s) => s.teamLeadId === teamLeadId) : allStaff;
-        }),
+        findMany: jest.fn().mockImplementation(findManyOver(() =>
+          [faStaff, otherFaStaff, caStaff, tlStaff, otherTlStaff, mgrStaff, ceoStaff, financeStaff]
+            .map((s) => ({ reportsToId: null, status: 'active', teamLeadId: null as string | null, ...(s as { teamLeadId?: string | null }), ...s })),
+        )),
       },
       placement: {
         findFirst: jest.fn().mockResolvedValue(basePlacement),

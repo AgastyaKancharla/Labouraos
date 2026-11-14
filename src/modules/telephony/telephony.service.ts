@@ -149,7 +149,7 @@ export class TelephonyService {
 
   /** A Team Lead's own team (the one shared definition, OwnTeam). */
   private teamOf(teamLeadId: string): Promise<string[]> {
-    return new OwnTeam(this.prisma, this.scope).memberIds(teamLeadId);
+    return new OwnTeam(this.prisma).memberIds(teamLeadId);
   }
 
   /**

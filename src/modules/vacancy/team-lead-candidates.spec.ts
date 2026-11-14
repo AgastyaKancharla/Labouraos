@@ -1,5 +1,6 @@
 import { MatchingService } from './matching.service';
 import { VacancyService } from './vacancy.service';
+import { findManyOver } from '../../test-support/prisma-where';
 
 /**
  * Owner decision (14 Nov): a Team Lead's candidate lists for a vacancy
@@ -24,10 +25,7 @@ describe('Team Lead candidate lists: own team only', () => {
     { id: 'agent-2', code: 'A2', name: 'A2', role: 'call_agent', status: 'active', teamLeadId: 'tl-2', reportsToId: 'tl-2' },
   ];
   const staff = {
-    findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => {
-      const lead = args?.where?.teamLeadId;
-      return lead ? staffRows.filter((row) => row.teamLeadId === lead).map(({ id }) => ({ id })) : staffRows;
-    }),
+    findMany: jest.fn(findManyOver(staffRows)),
     findUnique: jest.fn(async ({ where }: { where: { id: string } }) => staffRows.find((row) => row.id === where.id) ?? null),
   };
 

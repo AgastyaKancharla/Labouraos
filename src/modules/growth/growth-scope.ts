@@ -18,7 +18,7 @@ export async function staffScopeFor(
   if (actor.role === 'ceo') return null;
   // A Team Lead: the shared own-team definition (OwnTeam), when the caller can supply Prisma.
   if (actor.role === 'team_lead' && prisma) {
-    return new OwnTeam(prisma, reportingScope).memberIds(actor.id);
+    return new OwnTeam(prisma).memberIds(actor.id);
   }
   if (actor.role === 'manager' || actor.role === 'team_lead') {
     return [actor.id, ...(await reportingScope.peopleUnder(actor.id))];

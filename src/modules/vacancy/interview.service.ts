@@ -120,10 +120,7 @@ export class InterviewService {
       throw new ForbiddenException('Field agents may only book interviews for their account businesses');
     }
     if (actor.role === 'team_lead') {
-      const belongsToTeam = await new OwnTeam(this.prisma).includesAny(actor.id, [
-        vacancy.business.accountAgentId,
-        vacancy.business.leadCreatedByStaffId,
-      ]);
+      const belongsToTeam = await new OwnTeam(this.prisma).ownsBusiness(actor.id, vacancy.business);
       if (!belongsToTeam) throw new ForbiddenException('This business is outside your team');
     }
 

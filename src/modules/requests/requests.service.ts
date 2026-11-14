@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { daysLabel } from '../attendance/leave-units';
 import {
   BadRequestException,
@@ -854,7 +855,13 @@ export class RequestsService {
 
   private async context(actor: Actor) {
     const now = this.clock.now();
-    const people = actor.role === 'ceo' ? null : await this.scope.peopleUnder(actor.id);
+    // A Team Lead: the shared own-team definition (OwnTeam), themselves left out;
+    // a Manager: their reporting tree.
+    const people = actor.role === 'ceo'
+      ? null
+      : actor.role === 'team_lead'
+        ? (await new OwnTeam(this.prisma).memberIds(actor.id)).filter((id) => id !== actor.id)
+        : await this.scope.peopleUnder(actor.id);
     return { now, people, since: startOfWeekIst(now), staff: new Map<string, Brief | null>() };
   }
 
@@ -1133,7 +1140,7 @@ export class RequestsService {
       let mine = false;
       if (status === 'pending' && !own) {
         if (actor.role === 'ceo') mine = true;
-        else if (actor.role === 'team_lead') mine = placement.withTeamLead && (device.staff.teamLeadId === actor.id || device.staff.reportsToId === actor.id);
+        else if (actor.role === 'team_lead') mine = placement.withTeamLead && this.inScope(ctx, device.staff.id);
         else if (actor.role === 'manager') mine = placement.withManager && !['manager', 'finance'].includes(device.staff.role);
       }
       const why = this.whyFor(actor, placement, route.routeReason, mine);

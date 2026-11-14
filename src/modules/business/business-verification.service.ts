@@ -1,4 +1,4 @@
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -52,10 +52,7 @@ export class BusinessVerificationService {
       where = { assignedStaffId: staffId, status: 'assigned' };
     } else if (role === 'team_lead') {
       const teamIds = await new OwnTeam(this.prisma).memberIds(staffId);
-      where = { status: 'pending', business: { OR: [
-        { leadCreatedByStaffId: { in: teamIds } },
-        { accountAgentId: { in: teamIds } },
-      ] } };
+      where = { status: 'pending', business: businessesOwnedBy(teamIds) };
     } else {
       where = { status: 'pending' };
     }
@@ -562,6 +559,8 @@ export class BusinessVerificationService {
     const finalAccountAgentId = accountAgentId ?? visitStaffId;
     const accountAgent = await this.prisma.staff.findUnique({ where: { id: finalAccountAgentId } });
     if (!accountAgent) throw new NotFoundException('Account agent not found');
+    // A Team Lead who names a different account agent picks one from their own team (L1).
+    if (accountAgentId) await this.assertTeamLeadPicksOwnAgent(actor, accountAgent.id);
     if (accountAgent.city !== business.city) {
       throw new BadRequestException('The account agent must work in the business city');
     }
@@ -803,9 +802,9 @@ export class BusinessVerificationService {
     accountAgentId: string | null,
   ) {
     if (actor.role !== 'team_lead') return;
-    // The same own team every Team Lead check uses (OwnTeam): a Team Lead who
-    // is the account agent or created the lead counts too.
-    if (!(await new OwnTeam(this.prisma).includesAny(actor.id, [leadCreatedByStaffId, accountAgentId]))) {
+    // The business's team (businessOwners): the account agent's, else the lead
+    // creator's while there is no account agent (owner decision, rev 170).
+    if (!(await new OwnTeam(this.prisma).ownsBusiness(actor.id, { accountAgentId, leadCreatedByStaffId }))) {
       throw new ForbiddenException('Team Leads may only review businesses from their own team');
     }
   }

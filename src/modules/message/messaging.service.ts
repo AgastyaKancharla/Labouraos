@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   ForbiddenException,
   Inject,
@@ -219,11 +220,8 @@ export class MessagingService {
     if (agentId === actor.id) {
       return true;
     }
-    const agent = await this.prisma.staff.findUnique({
-      where: { id: agentId },
-      select: { teamLeadId: true },
-    });
-    return agent?.teamLeadId === actor.id;
+    // The shared own-team definition (OwnTeam).
+    return new OwnTeam(this.prisma).includes(actor.id, agentId);
   }
 
   private async responsibleAgentId(subjectType: string, subjectId: string): Promise<string | null> {

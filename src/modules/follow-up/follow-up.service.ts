@@ -1,4 +1,4 @@
-import { OwnTeam } from '../../common/rbac/own-team';
+import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -49,13 +49,13 @@ export class FollowUpService {
   /** Everyone below a Team Lead or Manager in the reporting line. */
   private async peopleUnder(staffId: string): Promise<string[]> {
     if (this.reportingScope) return this.reportingScope.peopleUnder(staffId);
-    const team = await this.prisma.staff.findMany({ where: { teamLeadId: staffId }, select: { id: true } });
+    const team = await this.prisma.staff.findMany({ where: { OR: [{ teamLeadId: staffId }, { reportsToId: staffId }] }, select: { id: true } });
     return team.map((m) => m.id);
   }
 
   /** A Team Lead's own team, the Team Lead included (the shared definition, OwnTeam). */
   private teamOf(teamLeadId: string): Promise<string[]> {
-    return new OwnTeam(this.prisma, this.reportingScope ?? undefined).memberIds(teamLeadId);
+    return new OwnTeam(this.prisma).memberIds(teamLeadId);
   }
 
   async listTasks(
@@ -531,10 +531,13 @@ export class FollowUpService {
 
         if (!existing) {
           let assignedStaffId = candidate.registeredByStaffId;
-          if (candidate.registeredBy?.teamLeadId) {
+          const lead = candidate.registeredBy ? teamLeadOf(candidate.registeredBy) : null;
+          if (lead) {
+            // A call agent of the same team (OwnTeam: teamLeadId links and the reporting line).
+            const team = await new OwnTeam(this.prisma).memberIds(lead);
             const teamCallAgent = await this.prisma.staff.findFirst({
               where: {
-                teamLeadId: candidate.registeredBy.teamLeadId,
+                id: { in: team },
                 role: 'call_agent',
               },
             });

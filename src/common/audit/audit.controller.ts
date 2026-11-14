@@ -65,7 +65,7 @@ export class AuditController {
     }
     // A Team Lead: the shared own-team definition (OwnTeam); a Manager: their tree.
     if (actor.role === 'team_lead') {
-      return this.auditService.scopeForStaff(await new OwnTeam(this.prisma, this.reportingScope).memberIds(actor.sub));
+      return this.auditService.scopeForStaff(await new OwnTeam(this.prisma).memberIds(actor.sub));
     }
     const under = await this.reportingScope.peopleUnder(actor.sub);
     return this.auditService.scopeForStaff([actor.sub, ...under]);

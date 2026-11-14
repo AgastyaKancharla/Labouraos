@@ -1,6 +1,7 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { OwnTeam } from './own-team';
+import { OwnTeam, businessOwners, businessesOwnedBy } from './own-team';
+import { findManyOver, matchesWhere } from '../../test-support/prisma-where';
 import { RbacGuard } from './rbac.guard';
 import { PERMISSION_METADATA_KEY, RequiredPermission } from './permissions.decorator';
 import { ROLES_METADATA_KEY } from './roles.decorator';
@@ -23,10 +24,7 @@ const rows = [
   { id: 'tl-2', code: 'TL2', name: 'TL2', role: 'team_lead', status: 'active', teamLeadId: null, reportsToId: 'mgr-1' },
 ];
 const staff = {
-  findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => {
-    const lead = args?.where?.teamLeadId;
-    return lead ? rows.filter((row) => row.teamLeadId === lead).map(({ id }) => ({ id })) : rows;
-  }),
+  findMany: jest.fn(findManyOver(rows)),
   findUnique: jest.fn(async ({ where }: { where: { id: string } }) => rows.find((row) => row.id === where.id) ?? null),
 };
 
@@ -44,6 +42,37 @@ describe('OwnTeam', () => {
   });
 });
 
+describe('businessOwners (owner decision, Master Guide rev 170)', () => {
+  it('the account agent\'s team only, else the lead creator\'s team, else no team', () => {
+    expect(businessOwners({ accountAgentId: 'fa-other', leadCreatedByStaffId: 'new-agent' })).toEqual(['fa-other']);
+    expect(businessOwners({ accountAgentId: null, leadCreatedByStaffId: 'new-agent' })).toEqual(['new-agent']);
+    expect(businessOwners({ accountAgentId: null, leadCreatedByStaffId: null })).toEqual([]);
+  });
+
+  it('the database filter says the same as businessOwners', () => {
+    const filter = businessesOwnedBy(['tl-1', 'new-agent']);
+    expect(matchesWhere({ accountAgentId: 'new-agent', leadCreatedByStaffId: 'fa-other' }, filter)).toBe(true);
+    // The lead was ours but the account moved to another team: no longer ours.
+    expect(matchesWhere({ accountAgentId: 'fa-other', leadCreatedByStaffId: 'new-agent' }, filter)).toBe(false);
+    expect(matchesWhere({ accountAgentId: null, leadCreatedByStaffId: 'new-agent' }, filter)).toBe(true);
+    expect(matchesWhere({ accountAgentId: null, leadCreatedByStaffId: null }, filter)).toBe(false);
+  });
+
+  it('an account moved from team A to team B: Team Lead A is refused, Team Lead B is allowed', async () => {
+    const owners = new OwnTeam({ staff } as unknown as PrismaService);
+    const moved = { accountAgentId: 'fa-other', leadCreatedByStaffId: 'new-agent' };
+    expect(await owners.ownsBusiness('tl-1', moved)).toBe(false);
+    expect(await owners.ownsBusiness('tl-2', moved)).toBe(true);
+  });
+
+  it('a lead with no account agent yet: the lead creator\'s Team Lead is allowed, another Team Lead is not', async () => {
+    const owners = new OwnTeam({ staff } as unknown as PrismaService);
+    const lead = { accountAgentId: null, leadCreatedByStaffId: 'new-agent' };
+    expect(await owners.ownsBusiness('tl-1', lead)).toBe(true);
+    expect(await owners.ownsBusiness('tl-2', lead)).toBe(false);
+  });
+});
+
 describe('Business reviews use the same team', () => {
   const service = new BusinessVerificationService({ staff } as never, {} as never, {} as never, {} as never, {} as never) as unknown as {
     assertTeamLeadOwnsBusiness(actor: { id: string; role: string }, lead: string | null, account: string | null): Promise<void>;
@@ -57,8 +86,16 @@ describe('Business reviews use the same team', () => {
     await expect(service.assertTeamLeadOwnsBusiness(tl, 'fa-other', null)).rejects.toThrow(ForbiddenException);
   });
 
+  it('once the account moved to another team, the lead creator\'s Team Lead no longer reviews it (rev 170)', async () => {
+    await expect(service.assertTeamLeadOwnsBusiness(tl, 'new-agent', 'fa-other')).rejects.toThrow(ForbiddenException);
+    await expect(service.assertTeamLeadOwnsBusiness({ id: 'tl-2', role: 'team_lead' }, 'new-agent', 'fa-other')).resolves.toBeUndefined();
+  });
+
   it('a Team Lead gives a visit or an account only to a field agent of their own team (L1)', async () => {
     await expect(service.assertTeamLeadPicksOwnAgent(tl, 'fa-own')).resolves.toBeUndefined();
+    // body:assignedStaffId on POST /businesses/:businessId/visit-assignments/:assignmentId/assign: another team's agent is refused
+    // body:accountAgentId on POST /businesses/:id/verification/approve: another team's agent is refused
+    // body:accountAgentId on POST /businesses/:id/account-agent: another team's agent is refused
     await expect(service.assertTeamLeadPicksOwnAgent(tl, 'fa-other')).rejects.toThrow(/own team/);
     await expect(service.assertTeamLeadPicksOwnAgent(tl, 'tl-1')).rejects.toThrow(ForbiddenException);
     await expect(service.assertTeamLeadPicksOwnAgent({ id: 'mgr-1', role: 'manager' }, 'fa-other')).resolves.toBeUndefined();
@@ -66,13 +103,13 @@ describe('Business reviews use the same team', () => {
 });
 
 describe('RbacGuard staff and target checks (OwnTeam, fail closed)', () => {
-  function run(role: string, sub: string, route: string, params: Record<string, string>, permission: RequiredPermission) {
+  function run(role: string, sub: string, route: string, params: Record<string, string>, permission: RequiredPermission, extra: Record<string, unknown> = {}) {
     const reflector = {
       getAllAndOverride: (key: string) => (key === PERMISSION_METADATA_KEY ? permission : key === ROLES_METADATA_KEY ? undefined : undefined),
     } as unknown as Reflector;
-    const prisma = { staff, target: { findUnique: jest.fn(async () => ({ staffId: 'fa-other' })) } };
+    const prisma = { staff, target: { findUnique: jest.fn(async () => ({ staffId: 'fa-other' })) }, ...extra };
     const guard = new RbacGuard(reflector, prisma as unknown as PrismaService);
-    const request = { method: 'GET', path: route, params, body: {}, query: {}, route: { path: route }, user: { sub, role } };
+    const request = { method: permission.action === 'write' ? 'POST' : 'GET', path: route, params, body: {}, query: {}, route: { path: route }, user: { sub, role } };
     return guard.canActivate({
       getHandler: () => undefined,
       getClass: () => undefined,
@@ -85,6 +122,22 @@ describe('RbacGuard staff and target checks (OwnTeam, fail closed)', () => {
     await expect(run('team_lead', 'tl-1', '/staff/:id', { id: 'new-agent' }, staffRead)).resolves.toBe(true);
     await expect(run('team_lead', 'tl-1', '/staff/:id', { id: 'old-agent' }, staffRead)).resolves.toBe(true);
     await expect(run('team_lead', 'tl-1', '/staff/:id', { id: 'fa-other' }, staffRead)).rejects.toThrow(ForbiddenException);
+  });
+
+  it('a business whose account moved from team A to team B: Team Lead A refused, Team Lead B allowed (rev 170)', async () => {
+    const moved = { id: 'b-1', accountAgentId: 'fa-other', leadCreatedByStaffId: 'new-agent', verificationStatus: 'verified' };
+    const lead = { id: 'b-2', accountAgentId: null, leadCreatedByStaffId: 'new-agent', verificationStatus: 'lead' };
+    const businesses = [moved, lead];
+    const business = { findFirst: jest.fn(async ({ where }: { where: { OR?: Array<{ id?: string; code?: string }>; id?: string } }) => {
+      const ids = [where.id, ...(where.OR ?? []).map((part) => part.id ?? part.code)];
+      return businesses.find((row) => ids.includes(row.id)) ?? null;
+    }) };
+    const write = { resource: 'business' as const, action: 'write' as const };
+    await expect(run('team_lead', 'tl-1', '/businesses/:id/pause', { id: 'b-1' }, write, { business })).rejects.toThrow(ForbiddenException);
+    await expect(run('team_lead', 'tl-2', '/businesses/:id/pause', { id: 'b-1' }, write, { business })).resolves.toBe(true);
+    // No account agent yet: the team of the agent who created the lead.
+    await expect(run('team_lead', 'tl-1', '/businesses/:id/pause', { id: 'b-2' }, write, { business })).resolves.toBe(true);
+    await expect(run('team_lead', 'tl-2', '/businesses/:id/pause', { id: 'b-2' }, write, { business })).rejects.toThrow(ForbiddenException);
   });
 
   it('a target of another team is refused', async () => {

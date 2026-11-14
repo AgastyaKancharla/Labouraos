@@ -49,13 +49,13 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'AttendanceRequestsController.reject': {
     reason: "Same decider rule as approve (AttendanceRequestsService.decide).",
-    test: 'modules/attendance/phase-21-task-4-leave-corrections.spec.ts',
-    proof: "decide(managerB, 'leave', own.body.id, 'approve')).status).toBe(403)",
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: 'TL from another team cannot reject an attendance request (403)',
   },
   'AttendanceRequestsController.forward': {
     reason: "Only the person's own Team Lead forwards (personIsUnder).",
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
-    proof: "another team's Team Lead cannot forward a leave request",
+    proof: '// POST /attendance/requests/:kind/:id/forward: TL from another team is refused (403)',
   },
 
   // ---------------------------------------------------------------- flags and requests
@@ -66,13 +66,13 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'RequestsController.resolveFlag': {
     reason: 'Only the flag owner in the caller\'s team or tree resolves it (FlagEscalationService).',
-    test: 'modules/screens-manager/screens-manager.e2e.spec.ts',
-    proof: '/manager/flags/${flagIds[1]}/resolve`, { resolution: \'checked\' })).status).toBe(403)',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// POST /requests/flags/:id/resolve: TL from another team is refused (404)',
   },
   'RequestsController.escalateFlag': {
     reason: 'Only the flag owner sends it up, one level at a time, inside their team or tree.',
-    test: 'modules/screens-manager/screens-manager.e2e.spec.ts',
-    proof: '/manager/flags/${flagIds[1]}/resolve`, { resolution: \'checked\' })).status).toBe(403)',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// POST /requests/flags/:id/escalate: TL from another team is refused (404)',
   },
   'RequestsController.get': {
     reason: "A request outside the caller's team or tree is not found (RequestsService.one).",
@@ -86,15 +86,15 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'RequestsController.forward': {
     reason: 'Only a Team Lead, for a request waiting with them in their own team.',
-    test: 'modules/requests/requests.e2e.spec.ts',
-    proof: "expect((await get(leadB, `/requests/${ref}`)).status).toBe(404)",
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: 'TL from another team cannot forward a request on the Requests screen (refused)',
   },
 
   // ---------------------------------------------------------------- money and pay
   'PaymentController.resendPayment': {
-    reason: 'Agents reach job seekers city-wide (role table); Team Leads and Managers are not admitted.',
-    test: 'modules/finance/finance.e2e.spec.ts',
-    proof: "/payments/00000000-0000-0000-0000-000000000000/resend').set(as('finance')).expect(404)",
+    reason: 'City-wide (role table): agents work with every job seeker; Team Leads and Managers are not admitted.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// POST /payments/:id/resend: agents (city-wide) and the CEO only; a Team Lead is refused (403)',
   },
   'PayrollSelfController.one': {
     reason: "The parameter is a month: the caller's own payslip only.",
@@ -116,7 +116,7 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   'LoginCodeController.refuse': {
     reason: 'Same rule as reveal (LoginCodeService.assertCanHandle).',
     test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
-    proof: "another team's Team Lead cannot refuse a login code",
+    proof: '// POST /login-codes/:id/refuse: TL from another team is refused (403)',
   },
   'StaffController.setCallRoutingPhone': {
     reason: 'Oneself, management, or the Team Lead of that person (StaffService.setCallRoutingPhone).',
@@ -125,35 +125,35 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'StaffDeviceController.approve': {
     reason: "A Team Lead decides only their own team's devices (StaffDeviceService.assertCanDecide).",
-    test: 'modules/staff/staff-device.spec.ts',
-    proof: '.expect(403)',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// POST /staff/devices/:id/approve: TL from another team is refused (403)',
   },
   'StaffDeviceController.revoke': {
     reason: 'Same rule as approve.',
-    test: 'modules/staff/staff-device.spec.ts',
-    proof: '.expect(403)',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// POST /staff/devices/:id/revoke: TL from another team is refused (403)',
   },
 
   // ---------------------------------------------------------------- calls, missed calls, follow-ups
   'CallController.recording': {
     reason: "CallAccessGuard: a Team Lead hears only their team's calls; agents are not admitted.",
-    test: 'modules/call/call-access.guard.spec.ts',
-    proof: "a Team Lead opens their own and their team\\'s calls",
+    test: 'modules/call/call-scope.e2e.spec.ts',
+    proof: 'get(`/calls/${ids.callB}/recording`, tokens.TLA)',
   },
   'CallController.getOne': {
     reason: 'CallAccessGuard: agents their own calls, Team Leads their team\'s.',
-    test: 'modules/call/call-access.guard.spec.ts',
-    proof: 'a call or field agent opens only calls they made',
+    test: 'modules/call/call-scope.e2e.spec.ts',
+    proof: 'get(`/calls/${ids.callB}`, tokens.CAA)',
   },
   'CallController.outcome': {
     reason: 'CallAccessGuard, and the service records an outcome only for the person who made the call.',
-    test: 'modules/call/call-access.guard.spec.ts',
-    proof: 'guards every /calls/:id route',
+    test: 'modules/call/call-scope.e2e.spec.ts',
+    proof: 'post(`/calls/${ids.callB}/outcome`, tokens.TLA',
   },
   'CallController.updateNotes': {
     reason: 'CallAccessGuard, and the edit rule on call records.',
-    test: 'modules/call/call-access.guard.spec.ts',
-    proof: 'guards every /calls/:id route',
+    test: 'modules/call/call-scope.e2e.spec.ts',
+    proof: '.patch(`/calls/${ids.callB}`)',
   },
   'TelephonyController.assignCallback': {
     reason: 'TelephonyService: agents only unassigned or their own missed calls, Team Leads within their team.',
@@ -167,8 +167,8 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'InterviewController.recordCallReply': {
     reason: "The reply is recorded on the caller's own answered offer call (CallService.recordOutcome: maker only).",
-    test: 'modules/call/click-to-call.spec.ts',
-    proof: "set('Authorization', `Bearer ${tokenFor(otherAgent)}`)",
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: 'another agent cannot record a reply on someone else\'s offer call (POST /interviews/:id/call-reply, 403)',
   },
   'FollowUpController.getIntroducedBusinesses': {
     reason: 'Only introductions by the caller or their team, unless the task is theirs (FollowUpService).',
@@ -188,69 +188,69 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
 
   // ---------------------------------------------------------------- field selling (Laboura Field)
   'FieldSellingController.business': {
-    reason: 'Field agents act only on their own account businesses (FieldSellingService.assertActsOnBusiness).',
+    reason: 'City-wide read (role table): field agents see every business on the map; owner details only for the account agent.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: 'but GET /screens/field-selling/businesses/:id and /candidates/:id are for field agents only (403 to a Manager)',
   },
   'FieldSellingController.matches': {
-    reason: "The vacancy must be at the field agent's own account business (vacancyFor).",
+    reason: 'Only a vacancy at the field agent\'s own account business, open visit or own lead (assertWorksOnBusiness); others 404.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// GET /screens/field-selling/vacancies/:id/matches: another field agent is refused (404)',
   },
   'FieldSellingController.noMore': {
-    reason: "The vacancy must be at the field agent's own account business (vacancyFor).",
+    reason: 'Only a vacancy at the field agent\'s own account business, open visit or own lead (assertWorksOnBusiness); others 404.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// GET /screens/field-selling/vacancies/:id/no-more: another field agent is refused (404)',
   },
   'FieldSellingController.booking': {
-    reason: "The vacancy must be at the field agent's own account business (vacancyFor).",
+    reason: 'Only a vacancy at the field agent\'s own account business, open visit or own lead (assertWorksOnBusiness); others 404.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: "send({ vacancyId: vacancy.id, jobSeekerId: yes.id }).expect(403)",
+    proof: '// GET /screens/field-selling/vacancies/:id/booking: another field agent is refused (404)',
   },
   'FieldSellingController.candidate': {
-    reason: 'Job seekers are city-wide for field agents (role table); the card shows no phone number.',
+    reason: 'City-wide read (role table): job seekers are city-wide for field agents; the card shows no phone number.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: 'await get(`/screens/field-selling/candidates/${seeker.id}?vacancyId=${vacancy.id}`, tokenFor(manager)).expect(403);',
   },
   'FieldSellingController.interview': {
     reason: "Only an interview at the field agent's own business (field-selling-screens).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// GET /screens/field-selling/interviews/:id: another field agent is refused (403)',
   },
   'FieldSellingController.placement': {
     reason: "Only a placement at the field agent's own business (field-selling-screens).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// GET /screens/field-selling/placements/:id: another field agent is refused (403)',
   },
   'FieldSellingController.answer': {
     reason: 'Only the agent who made the call records the answer.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/calls/:id/answer: another field agent is refused (403)',
   },
   'FieldSellingController.handOver': {
     reason: "Only an interview at the field agent's own business (interviewFor).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/interviews/:id/hand-over: another field agent is refused (403)',
   },
   'FieldSellingController.ownerOtp': {
     reason: "Only an interview at the field agent's own business (interviewFor).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/interviews/:id/owner-otp: another field agent is refused (403)',
   },
   'FieldSellingController.decision': {
     reason: "Only an interview at the field agent's own business (interviewFor).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/interviews/:id/decision: another field agent is refused (403)',
   },
   'FieldSellingController.meet': {
     reason: "Only an interview at the field agent's own business (interviewFor).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/interviews/:id/meet: another field agent is refused (403)',
   },
   'FieldSellingController.arrival': {
     reason: "Only an interview at the field agent's own business (interviewFor).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/interviews/:id/arrival: another field agent is refused (403)',
   },
   'FieldSellingController.like': {
     reason: "The vacancy must be at the field agent's own account business (vacancyFor).",
@@ -260,52 +260,52 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   'FieldSellingController.unlike': {
     reason: "The vacancy must be at the field agent's own account business (vacancyFor).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: "favourites/${yes.id}`).set('Authorization', `Bearer ${otherToken}`).expect(403)",
+    proof: '// DELETE /field-selling/vacancies/:id/favourites/:jobSeekerId: another field agent is refused (403)',
   },
   'FieldSellingController.ownerCallOutcome': {
     reason: 'Only the agent who made the call records its outcome.',
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/owner-calls/:id/outcome: another field agent is refused (403)',
   },
   'FieldSellingController.ownerSays': {
     reason: "Only a placement at the field agent's own business (assertActsOnBusiness).",
     test: 'modules/field-selling/field-selling.spec.ts',
-    proof: '.expect(403)',
+    proof: '// POST /field-selling/placements/:id/owner-says: another field agent is refused (403)',
   },
 
   // ---------------------------------------------------------------- field visits
   'FieldVisitController.get': {
-    reason: 'Only the field agent the visit is assigned to.',
+    reason: 'Only the field agent who started the visit (ownVisit); others 404.',
     test: 'modules/field-visit/field-visits.spec.ts',
-    proof: "send(SHOP).expect(403)",
+    proof: '// GET /field-visits/:id: another field agent is refused (404)',
   },
   'FieldVisitController.outcome': {
-    reason: 'Only the field agent the visit is assigned to.',
+    reason: 'Only the field agent who started the visit (ownVisit); others 404.',
     test: 'modules/field-visit/field-visits.spec.ts',
-    proof: "send(SHOP).expect(403)",
+    proof: '// POST /field-visits/:id/outcome: another field agent is refused (404)',
   },
   'FieldVisitController.proof': {
-    reason: 'Only the field agent the visit is assigned to.',
+    reason: 'Only the field agent who started the visit (ownVisit); others 404.',
     test: 'modules/field-visit/field-visits.spec.ts',
-    proof: "send(SHOP).expect(403)",
+    proof: '// POST /field-visits/:id/proof: another field agent is refused (404)',
   },
   'FieldVisitController.verify': {
-    reason: 'Only the field agent the visit is assigned to completes it.',
+    reason: 'Only the field agent who started the visit (ownVisit); others 404.',
     test: 'modules/field-visit/field-visits.spec.ts',
-    proof: "send(SHOP).expect(403)",
+    proof: '// POST /field-visits/:id/verify: another field agent is refused (404)',
   },
   'FieldVisitController.arrived': {
     reason: 'Only the field agent attending that interview marks the candidate arrived.',
     test: 'modules/field-visit/field-visits.spec.ts',
-    proof: "send(SHOP).expect(403)",
+    proof: 'const path = `/field-visits/interviews/${interview.id}/arrived`;',
   },
   'BusinessController.sendVisitOwnerOtp': {
     reason: 'Only the field agent the visit assignment is given to (BusinessVerificationService.sendOwnerOtp).',
-    test: 'modules/business/business-verification.spec.ts',
-    proof: '.expect(403)',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: 'another field agent cannot ask for the owner OTP on a visit given to someone else (403)',
   },
   'ScreensFieldController.business': {
-    reason: 'Field agents see every business on the map (guide); full details only for their own account businesses.',
+    reason: 'City-wide read (role table): field agents see every business on the map (guide); full details only for their own; other roles 403.',
     test: 'common/auth/app-roles.spec.ts',
     proof: "/field-work/businesses/BZ-NONE').set('Authorization', `Bearer ${token}`).expect(403)",
   },
@@ -317,14 +317,14 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
     proof: 'denies a Team Lead a record outside their team',
   },
   'CallWorkController.profile': {
-    reason: 'Call agents reach job seekers city-wide (role table); phone numbers come masked.',
-    test: 'modules/screens-call-agent/call-work.spec.ts',
-    proof: ".expect(403)",
+    reason: 'City-wide read (role table): call agents work with every job seeker; phone numbers come masked; other roles 403.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /call-work/people/:ref: for call agents only (403 to a Team Lead)',
   },
   'CallWorkController.jobs': {
-    reason: 'Matching jobs for a job seeker: call agents work city-wide (role table).',
-    test: 'modules/screens-call-agent/call-work.spec.ts',
-    proof: ".expect(403)",
+    reason: 'City-wide read (role table): matching jobs for any job seeker, for call agents only.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /call-work/people/:ref/jobs: for call agents only (403 to a Team Lead)',
   },
   'CallWorkController.call': {
     reason: 'Only the call agent who made the call.',
@@ -339,7 +339,7 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   'CallWorkController.incoming': {
     reason: 'Only a missed call that rang this call agent.',
     test: 'modules/screens-call-agent/call-work.spec.ts',
-    proof: '.expect(403)',
+    proof: '// GET /call-work/incoming/:callbackTaskId: a call agent it did not ring is refused (403)',
   },
 
   // ---------------------------------------------------------------- Team Lead portal
@@ -360,8 +360,8 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'TeamLeadController.selfie': {
     reason: "Only a registration by the Team Lead's own team.",
-    test: 'modules/screens-team-lead/team-lead.e2e.spec.ts',
-    proof: "post(otherLead, `/team-lead/registrations/${seeker.id}/check`, { verdict: 'ok' })).status).toBe(404)",
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /team-lead/registrations/:id/selfie: TL from another team is refused (404)',
   },
   'TeamLeadController.checkRegistration': {
     reason: "Only a registration by the Team Lead's own team.",
@@ -375,12 +375,110 @@ export const SERVICE_SCOPED_ROUTES: Record<string, ServiceScopedRoute> = {
   },
   'TeamLeadController.checkVisit': {
     reason: "Only a visit by the Team Lead's own team.",
-    test: 'modules/screens-team-lead/team-lead.e2e.spec.ts',
-    proof: "get(otherLead, `/team-lead/visits/${visit.id}/photos`)).status).toBe(404)",
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// POST /team-lead/visits/:id/check: TL from another team is refused (404)',
   },
   'TeamLeadController.score': {
     reason: "Only a call made by the Team Lead's own team.",
     test: 'modules/screens-team-lead/team-lead.e2e.spec.ts',
     proof: "post(lead, `/team-lead/quality/${theirs.id}/score`",
+  },
+};
+
+/**
+ * Staff or record ids taken from the query or the body (not the path) on
+ * routes Team Leads or agents can reach, whose scope the service applies.
+ * Keyed 'Controller.handler query:name' (or 'body:name'); same fields as above.
+ */
+export const SERVICE_SCOPED_INPUTS: Record<string, ServiceScopedRoute> = {
+  'TargetController.getOverview query:staffId': {
+    reason: 'A Team Lead only their own team\'s agents, an agent only themselves (TargetOverviewService).',
+    test: 'modules/target/target-overview.spec.ts',
+    proof: 'team lead attempting to access an agent on another team throws 403 Forbidden',
+  },
+  'TargetController.getDashboard query:staffId': {
+    reason: 'Same service and rule as the overview (TargetOverviewService.getOverview).',
+    test: 'modules/target/target-overview.spec.ts',
+    proof: 'agent attempting to access another staff member throws 403 Forbidden',
+  },
+  'TargetController.getMoneyAtRisk query:staffId': {
+    reason: 'A Team Lead only their own team\'s agents, an agent only themselves (MoneyAtRiskService).',
+    test: 'modules/target/money-at-risk.spec.ts',
+    proof: 'refuses team lead accessing agent outside their team (403 Forbidden)',
+  },
+  'TargetController.findAll query:staffId': {
+    reason: 'A Team Lead only their own team\'s agents, an agent only themselves (TargetService.listTargets).',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /targets?staffId=: TL from another team is refused (403)',
+  },
+  'AttendanceController.month query:staffId': {
+    reason: 'The person, their Team Lead or Manager, Finance or the CEO (AttendanceDaysService).',
+    test: 'modules/attendance/phase-21-task-3-day-rules.spec.ts',
+    proof: 'for (const viewer of [leadB, managerB, agentB]) {',
+  },
+  'AttendanceRequestsController.balance query:staffId': {
+    reason: 'The person, their Team Lead or Manager, Finance or the CEO.',
+    test: 'modules/attendance/phase-21-task-4-leave-corrections.spec.ts',
+    proof: 'expect((await get(leadB, `/attendance/leave/balance?staffId=${mid.id}`)).status).toBe(403);',
+  },
+  'AttendanceReportsController.report query:staffId': {
+    reason: 'Only people in the caller\'s team or tree.',
+    test: 'modules/attendance/phase-21-task-5-attendance-reports.spec.ts',
+    proof: 'expect((await get(leadB, `/attendance/report?staffId=${agentA3.id}&from=2027-06-08&to=2027-06-09`)).status).toBe(403);',
+  },
+  'MessageController.list query:subjectId': {
+    reason: 'A Team Lead reads messages only about their own team\'s job seekers (MessagingService.canRead).',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /messages?subjectId=: TL from another team is refused (403)',
+  },
+  'StaffSessionController.listSessions query:staffId': {
+    reason: 'Ignored below Manager: Team Leads and agents only ever see their own sessions.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /staff/sessions?staffId=: ignored below Manager, a Team Lead sees only their own (not.toContain)',
+  },
+  'CallController.list query:subjectId': {
+    reason: 'The list holds only calls by the caller (agents) or their own team (Team Leads).',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /calls?subjectId=: another team\'s calls are left out (not.toContain)',
+  },
+  'InterviewController.list query:agentId': {
+    reason: 'An agent only their own interviews; a Team Lead only their own team\'s agents.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /interviews?agentId=: TL from another team is refused (403)',
+  },
+  'InterviewController.list query:vacancyId': {
+    reason: 'Only narrows the list, which holds only interviews proposed by the caller or their team.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /interviews?vacancyId=: another team\'s interviews are left out (not.toContain)',
+  },
+  'FieldSellingController.booking query:jobSeekerId': {
+    reason: 'Job seekers are city-wide for field agents (role table); the vacancy\'s business is checked (assertWorksOnBusiness).',
+    test: 'modules/field-selling/field-selling.spec.ts',
+    proof: '// ?jobSeekerId on the booking route may name any job seeker (city-wide); the vacancy\'s business decides (404 below)',
+  },
+  'FieldSellingController.candidate query:vacancyId': {
+    reason: 'City-wide read (role table): the vacancy only adds the fit to the card.',
+    test: 'modules/field-selling/field-selling.spec.ts',
+    proof: '// ?vacancyId on the candidate card only adds the fit to that vacancy; the card is a field-agent-only read (403 to a Manager)',
+  },
+  'BusinessController.assignVisit body:assignedStaffId': {
+    reason: 'A Team Lead gives a visit only to a field agent of their own team (assertTeamLeadPicksOwnAgent).',
+    test: 'common/rbac/own-team.spec.ts',
+    proof: '// body:assignedStaffId on POST /businesses/:businessId/visit-assignments/:assignmentId/assign: another team\'s agent is refused',
+  },
+  'BusinessController.approveVerification body:accountAgentId': {
+    reason: 'A Team Lead who names an account agent picks one from their own team (assertTeamLeadPicksOwnAgent).',
+    test: 'common/rbac/own-team.spec.ts',
+    proof: '// body:accountAgentId on POST /businesses/:id/verification/approve: another team\'s agent is refused',
+  },
+  'BusinessController.reassignAccountAgent body:accountAgentId': {
+    reason: 'A Team Lead moves an account only to a field agent of their own team (assertTeamLeadPicksOwnAgent).',
+    test: 'common/rbac/own-team.spec.ts',
+    proof: '// body:accountAgentId on POST /businesses/:id/account-agent: another team\'s agent is refused',
+  },
+  'StatusHistoryController.getHistory query:subjectId': {
+    reason: 'A Team Lead sees a trail only about or changed by their own team; anything else answers empty.',
+    test: 'common/rbac/service-scoped-routes.e2e.spec.ts',
+    proof: '// GET /status-history?subjectId=: another team\'s history answers empty (toEqual([]))',
   },
 };

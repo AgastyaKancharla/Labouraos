@@ -12,6 +12,9 @@ import { InterviewService, NOT_SELECTED_REASONS } from '../vacancy/interview.ser
 import { businessCandidateAccess } from '../business/business-candidate-access';
 import { SellingActor } from './field-selling.service';
 
+/** The business fields the own-account rule reads. */
+const BUSINESS_OWNER_FIELDS = { accountAgentId: true, leadCreatedByStaffId: true, verificationStatus: true } as const;
+
 const DAY_MS = 24 * 60 * 60 * 1000;
 const IST_OFFSET_MS = 330 * 60 * 1000;
 const SEARCH_LIMIT = 8;
@@ -120,6 +123,27 @@ export class FieldSellingScreensService {
    * FA15/FA19 type-ahead: two letters or more match registered businesses by
    * name or BZ- code; with no query, the agent's own businesses, newest first.
    */
+  /**
+   * A field agent works only on their own account businesses, a business they
+   * have an open visit assignment for, or a lead they created while it is
+   * still a lead (the same rule as RbacGuard's own account). Anything else is
+   * "not found", so a vacancy id is no way into another agent's business.
+   */
+  private async assertWorksOnBusiness(
+    actor: SellingActor,
+    business: { id: string; accountAgentId: string | null; leadCreatedByStaffId: string | null; verificationStatus: string | null },
+  ) {
+    if (actor.role !== 'field_agent') return;
+    if (business.accountAgentId === actor.id) return;
+    if (business.leadCreatedByStaffId === actor.id && ['lead', 'pending_visit'].includes(business.verificationStatus ?? '')) return;
+    const visit = await this.prisma.visitAssignment.findFirst({
+      where: { businessId: business.id, assignedStaffId: actor.id, status: 'assigned' },
+      select: { id: true },
+    });
+    if (visit) return;
+    throw new NotFoundException('Vacancy not found');
+  }
+
   async businesses(actor: SellingActor, q?: string) {
     const query = (q ?? '').trim();
     if (query.length === 0) {
@@ -211,9 +235,10 @@ export class FieldSellingScreensService {
     if (!Number.isInteger(page) || page < 1) throw new BadRequestException('page must be a positive integer');
     const vacancy = await this.prisma.vacancy.findFirst({
       where: vacancyRef.startsWith('VC-') ? { code: vacancyRef } : { id: vacancyRef },
-      include: { business: { select: { id: true, name: true, latitude: true, longitude: true } } },
+      include: { business: { select: { id: true, name: true, latitude: true, longitude: true, ...BUSINESS_OWNER_FIELDS } } },
     });
     if (!vacancy) throw new NotFoundException('Vacancy not found');
+    await this.assertWorksOnBusiness(actor, vacancy.business);
     const result = await this.matching.match(vacancy.id, { page });
     const ids = result.matches.map((m) => m.jobSeekerId);
     const [favourites, seekers] = await Promise.all([
@@ -254,12 +279,13 @@ export class FieldSellingScreensService {
   }
 
   /** FA15x: why there are no more matches. */
-  async noMore(vacancyRef: string) {
+  async noMore(actor: SellingActor, vacancyRef: string) {
     const vacancy = await this.prisma.vacancy.findFirst({
       where: vacancyRef.startsWith('VC-') ? { code: vacancyRef } : { id: vacancyRef },
-      include: { business: { select: { name: true } } },
+      include: { business: { select: { id: true, name: true, ...BUSINESS_OWNER_FIELDS } } },
     });
     if (!vacancy) throw new NotFoundException('Vacancy not found');
+    await this.assertWorksOnBusiness(actor, vacancy.business);
     const [why, firstPage] = await Promise.all([
       this.matching.whyNoMore(vacancy.id),
       this.matching.match(vacancy.id, { page: 1 }),
@@ -494,12 +520,13 @@ export class FieldSellingScreensService {
   }
 
   /** FA15g: whether the agent must attend (first interview with this business, "No documents", or a flag). */
-  async bookingContext(vacancyRef: string, jobSeekerRef: string) {
+  async bookingContext(actor: SellingActor, vacancyRef: string, jobSeekerRef: string) {
     const vacancy = await this.prisma.vacancy.findFirst({
       where: vacancyRef.startsWith('VC-') ? { code: vacancyRef } : { id: vacancyRef },
       include: { business: true },
     });
     if (!vacancy) throw new NotFoundException('Vacancy not found');
+    await this.assertWorksOnBusiness(actor, vacancy.business);
     const seeker = await this.prisma.jobSeeker.findFirst({
       where: jobSeekerRef.startsWith('JS-') ? { code: jobSeekerRef } : { id: jobSeekerRef },
       select: { id: true, name: true },
