@@ -46,3 +46,9 @@ export function isOwnerAccount(staff: { isOwnerAccount?: boolean | null } | null
 /** Message used when an attendance, leave or target action is refused for an owner account. */
 export const OWNER_ACCOUNT_NO_ATTENDANCE = 'Owner accounts have no attendance, leave or salary';
 export const OWNER_ACCOUNT_NO_TARGETS = 'Owner accounts have no targets';
+/**
+ * Marking or clearing an owner account on an account that already has pay or
+ * attendance in a month whose salaries are not approved yet.
+ */
+export const OWNER_ACCOUNT_HAS_PAY =
+  "This account already has a salary, a salary sheet line or attendance in a month whose salaries are not approved yet, so this can't change now. Owner accounts are made as owner accounts when they are invited; change it after this month's salaries are approved, or invite a new account.";

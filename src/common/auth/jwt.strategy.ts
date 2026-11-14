@@ -63,8 +63,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       }
 
       // A token works only in its own app (owner decision 14 Nov): the session's
-      // app (older sessions: the role's own app) must match the token's, must
-      // allow the role, and on the Laboura Field address it must be Laboura Field.
+      // app (older sessions: the role's own app) must match the token's and must
+      // allow the role. On the Laboura Field address it must also be Laboura
+      // Field — the Host header is client-supplied, so that part is defence in
+      // depth only; the role-per-app rule and the route guards protect the data.
       const sessionApp = isStaffApp(session.app) ? session.app : appForRole(payload.role);
       if (
         (payload.app && payload.app !== sessionApp) ||

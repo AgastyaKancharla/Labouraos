@@ -18,7 +18,7 @@ import { TeamLeadScreensService } from '../screens-team-lead/team-lead-screens.s
 import { PayrollService } from '../finance/payroll.service';
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { StaffService } from './staff.service';
-import { OWNER_ACCOUNT_NO_ATTENDANCE, OWNER_ACCOUNT_NO_TARGETS } from './owner-account';
+import { OWNER_ACCOUNT_HAS_PAY, OWNER_ACCOUNT_NO_ATTENDANCE, OWNER_ACCOUNT_NO_TARGETS } from './owner-account';
 
 jest.setTimeout(180000);
 
@@ -131,6 +131,27 @@ describe('Owner accounts', () => {
     });
   });
 
+  it('is not marked or cleared once the account has pay or finished attendance in a month not yet approved', async () => {
+    const c = await company();
+    const staff = app.get(StaffService);
+    // A salary: refused.
+    await prisma.staffSalary.create({ data: { staffId: c.callAgent.id, monthlyPaise: 1800000, effectiveFromMonth: '2026-11', setByStaffId: c.ceo.id } });
+    await expect(staff.setOwnerAccount(c.callAgent.id, true, jwtOf(c.ceo))).rejects.toThrow(OWNER_ACCOUNT_HAS_PAY);
+    // A finished attendance day this month: refused.
+    await prisma.attendanceDay.create({
+      data: { staffId: c.fieldAgent.id, date: new Date('2026-11-09T00:00:00.000Z'), loginAt: new Date('2026-11-09T04:00:00.000Z'), logoutAt: new Date('2026-11-09T12:00:00.000Z'), dayType: 'full' },
+    });
+    await expect(staff.setOwnerAccount(c.fieldAgent.id, true, jwtOf(c.ceo))).rejects.toThrow(OWNER_ACCOUNT_HAS_PAY);
+    // Clearing an owner account that worked a finished day this month: refused too.
+    await prisma.attendanceDay.create({
+      data: { staffId: c.ownerCall.id, date: new Date('2026-11-09T00:00:00.000Z'), loginAt: new Date('2026-11-09T04:00:00.000Z'), logoutAt: new Date('2026-11-09T12:00:00.000Z'), dayType: 'full' },
+    });
+    await expect(staff.setOwnerAccount(c.ownerCall.id, false, jwtOf(c.ceo))).rejects.toThrow(OWNER_ACCOUNT_HAS_PAY);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: c.ownerCall.id } })).isOwnerAccount).toBe(true);
+    // An owner account that has not worked yet can still be cleared.
+    expect((await staff.setOwnerAccount(c.ownerField.id, false, jwtOf(c.ceo))).isOwnerAccount).toBe(false);
+  });
+
   describe('targets and leaderboards', () => {
     it('refuses a target for an owner account and leaves one set earlier out of every target list and leaderboard', async () => {
       const c = await company();
@@ -175,6 +196,13 @@ describe('Owner accounts', () => {
       expect(mg.leaderboard.some((a) => owners.includes(a.staff.id))).toBe(false);
       // The team's target is the sum of its agents' targets, owner accounts left out.
       expect(mg.teams.find((t) => t.teamLeadId === c.lead.id)).toMatchObject({ placementsClosed: 5, candidatesActivated: 20 });
+
+      // An owner account's own overview shows no target, even one set before it was marked.
+      const ownOverview = await app.get(TargetOverviewService).getOverview({ staffId: c.ownerField.id, year: 2026, month: 11 }, jwtOf(c.ceo), now);
+      expect(ownOverview.agent?.target).toBeNull();
+      // C-Teams: owner accounts are never "behind" (both normal agents are, after the 10th).
+      const teams = await ceoTeam.teams(new Date('2026-11-20T06:30:00.000Z'));
+      expect(teams.rows.find((r) => r.id === c.lead.id)?.agentsBehind).toBe(2);
 
       const tl = app.get(TeamLeadScreensService);
       const tlBoard = await tl.targets({ id: c.lead.id, role: 'team_lead' });
@@ -272,6 +300,9 @@ describe('Owner accounts', () => {
       await expect(payroll.setSalary(c.ownerCall.id, { monthlyPaise: 2000000, effectiveFromMonth: '2026-11' }, { id: c.ceo.id, role: 'ceo' })).rejects.toThrow(
         OWNER_ACCOUNT_NO_ATTENDANCE,
       );
+      await expect(
+        payroll.addCorrection({ staffId: c.ownerCall.id, relatesToMonth: '2026-09', amountPaise: 50000, reason: 'Back pay' }, { id: c.ceo.id, role: 'ceo' }, shared.at),
+      ).rejects.toThrow(OWNER_ACCOUNT_NO_ATTENDANCE);
       const salaries = await payroll.staffSalaries(shared.at);
       expect(salaries.rows.map((r) => r.staffId)).toContain(c.callAgent.id);
       expect(salaries.rows.some((r) => r.staffId === c.ownerCall.id || r.staffId === c.ownerField.id)).toBe(false);

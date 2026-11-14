@@ -5,7 +5,7 @@ import * as request from 'supertest';
 import { authenticator } from 'otplib';
 import { AppModule } from '../../app.module';
 import { PrismaService } from '../prisma/prisma.service';
-import { loginCodeFor } from '../../modules/login-code/login-code.crypto';
+import { loginCodeFor, loginRequestProofFor } from '../../modules/login-code/login-code.crypto';
 import { stableTotpCode } from '../../test-support/enrolled-login-spec';
 import { FIELD_HOST_ENV } from '../../modules/web-app/site-hosts';
 import { FIELD_APP_ONLY_MESSAGE } from './staff-app';
@@ -203,6 +203,23 @@ describe('Each app accepts only its own roles', () => {
     expect(await prisma.staffSession.count({ where: { staffId: agent.id } })).toBe(0);
     // The code was not used up by either refusal.
     expect((await prisma.loginCodeRequest.findUniqueOrThrow({ where: { id: body.loginRequestId } })).status).toBe('pending');
+  });
+
+  it('an older code request (no app recorded) is not used from the wrong app, and the code is not spent', async () => {
+    const lead = await makeStaff('team_lead');
+    const agent = await makeStaff('call_agent', { teamLeadId: lead.id });
+    await approvedDevice(agent.id, 'ca-old');
+    const device = await prisma.staffDevice.findUniqueOrThrow({ where: { staffId_deviceId: { staffId: agent.id, deviceId: 'ca-old' } } });
+    const row = await prisma.loginCodeRequest.create({
+      data: { staffId: agent.id, staffDeviceId: device.id, ipAddress: '127.0.0.1', status: 'pending', expiresAt: new Date(Date.now() + 5 * 60_000) },
+    });
+    const res = await request(server())
+      .post('/auth/login/verify-code')
+      .send({ loginRequestId: row.id, code: loginCodeFor(row.id), deviceId: 'ca-old', loginRequestProof: loginRequestProofFor(row.id, 'ca-old'), app: 'field' });
+    expect(res.status).toBe(401);
+    expect(res.body.message).toBe(FIELD_APP_ONLY_MESSAGE);
+    expect((await prisma.loginCodeRequest.findUniqueOrThrow({ where: { id: row.id } })).status).toBe('pending');
+    expect(await prisma.staffSession.count({ where: { staffId: agent.id } })).toBe(0);
   });
 
   it('revoking a device refuses the login codes asked for on it', async () => {

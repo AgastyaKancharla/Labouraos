@@ -453,8 +453,9 @@ export class TargetOverviewService {
     actor: JwtPayload,
     now: Date,
   ): Promise<AgentOverview> {
-    // 1. Fetch Target for this agent & period
-    const targetRecord = await this.prisma.target.findUnique({
+    // 1. Fetch Target for this agent & period. An owner account has no target
+    // (owner decision 14 Nov), even one set before it was marked.
+    const targetRecord = staff.isOwnerAccount ? null : await this.prisma.target.findUnique({
       where: {
         staffId_year_month: {
           staffId: staff.id,

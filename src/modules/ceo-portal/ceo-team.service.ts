@@ -211,7 +211,7 @@ export class CeoTeamService {
   async teams(now: Date) {
     const staff = await this.prisma.staff.findMany({
       where: { status: { not: 'deactivated' } },
-      select: { id: true, code: true, name: true, role: true, teamName: true, teamLeadId: true, reportsToId: true },
+      select: { id: true, code: true, name: true, role: true, teamName: true, teamLeadId: true, reportsToId: true, isOwnerAccount: true },
       orderBy: { name: 'asc' },
     });
     const byId = new Map(staff.map((s) => [s.id, s]));
@@ -233,6 +233,8 @@ export class CeoTeamService {
         : [0, 0];
       let behind = 0;
       for (const agent of agents) {
+        // Owner accounts carry no targets, so they are never behind (owner decision 14 Nov).
+        if (agent.isOwnerAccount) continue;
         const t = targets.find((x) => x.staffId === agent.id);
         if (!t) continue;
         const achieved =

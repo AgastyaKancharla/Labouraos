@@ -342,7 +342,7 @@ export class AuthService {
   private async assertCodeAppAndDevice(loginRequestId: string, metadata?: LoginMetadata): Promise<StaffApp | null> {
     const request = await this.prisma.loginCodeRequest.findUnique({
       where: { id: loginRequestId },
-      select: { id: true, staffId: true, app: true, staffDevice: { select: { status: true } } },
+      select: { id: true, staffId: true, app: true, staff: { select: { role: true } }, staffDevice: { select: { status: true } } },
     });
     if (!request) return metadata?.app?.app ?? null; // the code check answers "not found" as before
     const asked = metadata?.app;
@@ -357,6 +357,19 @@ export class AuthService {
       });
       throw new UnauthorizedException('This login code can only be used in the app that asked for it');
     }
+    // An older code request (no app recorded) used from a named app: the role must belong there,
+    // checked before the code is used so a wrong-app attempt never spends it.
+    const app = recorded ?? asked?.app ?? null;
+    if (app && request.staff && !roleAllowedInApp(request.staff.role, app)) {
+      await this.auditService.log({
+        actorId: request.staffId,
+        action: 'auth.login.refused',
+        entityType: 'login_code_request',
+        entityCode: request.id,
+        after: { reason: 'wrong_app', app, role: request.staff.role },
+      });
+      throw new UnauthorizedException(wrongAppMessage(app));
+    }
     if (request.staffDevice?.status !== 'approved') {
       await this.auditService.log({
         actorId: request.staffId,
@@ -367,7 +380,7 @@ export class AuthService {
       });
       throw new UnauthorizedException(DEVICE_NO_LONGER_APPROVED);
     }
-    return recorded ?? asked?.app ?? null;
+    return app;
   }
 
   /**

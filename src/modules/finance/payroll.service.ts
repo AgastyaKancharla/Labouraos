@@ -314,8 +314,10 @@ export class PayrollService {
     const reason = typeof input.reason === 'string' ? input.reason.trim().slice(0, 300) : '';
     if (!reason) throw new BadRequestException('Write the reason for the correction');
     const staffId = typeof input.staffId === 'string' ? input.staffId : '';
-    const staff = staffId ? await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, name: true, role: true } }) : null;
+    const staff = staffId ? await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, name: true, role: true, isOwnerAccount: true } }) : null;
     if (!staff || !SALARY_ROLES.includes(staff.role)) throw new NotFoundException('No staff member on the salary sheet with that id');
+    // Owner accounts get no salary of any kind (owner decision 14 Nov).
+    if (isOwnerAccount(staff)) throw new BadRequestException(OWNER_ACCOUNT_NO_ATTENDANCE);
     // Only for what payroll can't see by itself (a month beyond the window, or a month whose sheet
     // has no line for the person): anything else the recompute already pays, so it would be paid twice.
     if (await recomputeCovers(this.prisma, staff.id, relatesToMonth)) throw new BadRequestException(MANUAL_NOT_NEEDED);

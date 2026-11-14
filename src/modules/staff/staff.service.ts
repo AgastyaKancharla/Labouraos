@@ -34,7 +34,7 @@ import { ReportingScopeService } from './reporting-scope.service';
 import { publicLink } from '../../common/public-link';
 import { assertPayrollCanCorrect, frozenMonthsWithoutLine, monthOfDay, monthsBetween } from '../finance/payroll-window';
 import { monthLabel } from '../finance/payroll-rules';
-import { OWNER_ACCOUNT_ROLES } from './owner-account';
+import { OWNER_ACCOUNT_HAS_PAY, OWNER_ACCOUNT_ROLES } from './owner-account';
 
 /** How long a one-time invite token stays redeemable. */
 export const INVITE_TTL_MS = 72 * 60 * 60 * 1000;
@@ -1706,6 +1706,7 @@ export class StaffService {
     if (target.isOwnerAccount === value) {
       return this.prisma.staff.findUniqueOrThrow({ where: { id: staffId }, select: STAFF_VIEW_SELECT });
     }
+    await this.assertNoPayRecordsToSplit(staffId);
     const staff = await this.prisma.staff.update({
       where: { id: staffId },
       data: { isOwnerAccount: value },
@@ -1721,6 +1722,34 @@ export class StaffService {
       changedFields: ['isOwnerAccount'],
     });
     return staff;
+  }
+
+  /**
+   * Owner accounts are meant to be made as owner accounts from the start.
+   * Marking or clearing one later would split a month between "paid agent"
+   * and "owner account", so it is refused while the account has a salary, a
+   * salary sheet line, or a finished attendance day in a month whose salaries
+   * are not yet approved. After that month is approved (or for an account
+   * that has not worked yet) the change is allowed.
+   */
+  private async assertNoPayRecordsToSplit(staffId: string): Promise<void> {
+    const [salaries, lines, days] = await Promise.all([
+      this.prisma.staffSalary.count({ where: { staffId } }),
+      this.prisma.payrollLine.count({ where: { staffId } }),
+      this.prisma.attendanceDay.findMany({
+        where: { staffId, OR: [{ logoutAt: { not: null } }, { dayType: { not: 'open' } }] },
+        select: { date: true },
+      }),
+    ]);
+    if (salaries > 0 || lines > 0) throw new BadRequestException(OWNER_ACCOUNT_HAS_PAY);
+    const months = [...new Set(days.map((d) => monthOfDay(d.date)))];
+    if (!months.length) return;
+    const frozen = await this.prisma.payrollRun.findMany({
+      where: { month: { in: months }, status: { in: ['approved', 'paid'] } },
+      select: { month: true },
+    });
+    const done = new Set(frozen.map((r) => r.month));
+    if (months.some((m) => !done.has(m))) throw new BadRequestException(OWNER_ACCOUNT_HAS_PAY);
   }
 
   /** The CEO enters or corrects a joining date (Phase 22 Part B). Pay starts on it. */

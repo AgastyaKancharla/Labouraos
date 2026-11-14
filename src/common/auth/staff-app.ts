@@ -14,8 +14,13 @@ import { fieldAppAddress, isFieldHost } from '../../modules/web-app/site-hosts';
  * /auth/login/verify-code; the office app sends 'office', Laboura Field sends
  * 'field'). The app is stored on the device request, the login code request
  * and the session, and carried in the token; JwtStrategy accepts a token only
- * for its own app, and on the Laboura Field address (FIELD_HOST) only field
- * sessions.
+ * for its own app (the role must belong to the session's app — that is the
+ * rule that protects data, together with each route's role guard).
+ *
+ * The Laboura Field address (FIELD_HOST) is also checked: sign-ins there are
+ * 'field' and only field sessions are accepted there. The Host header comes
+ * from the client, so this is defence in depth only, never a security
+ * boundary on its own.
  *
  * Older clients that do not send `app` yet (a phone still running a cached
  * build): on the Laboura Field address the app is 'field'; anywhere else the

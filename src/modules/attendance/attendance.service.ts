@@ -6,7 +6,7 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
-import { AttendanceDay, AttendanceSegment, PricingPolicy } from '@prisma/client';
+import { AttendanceDay, AttendanceSegment, Prisma, PricingPolicy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
@@ -343,7 +343,15 @@ export class AttendanceService {
         where: { staffId_date: { staffId, date: this.istDate(now) } },
         select: { loginAt: true },
       });
-      if (!day?.loginAt) return this.login(staffId, {});
+      if (!day?.loginAt) {
+        try {
+          return await this.login(staffId, {});
+        } catch (error) {
+          // Two screens asked at the same moment: the other call created the day.
+          if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') return this.today(staffId);
+          throw error;
+        }
+      }
     }
     return this.today(staffId);
   }

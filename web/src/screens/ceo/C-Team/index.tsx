@@ -67,6 +67,10 @@ const STATE: Record<TeamRow['state'], { label: string; tone: StatusTone }> = {
 /** Shown wherever the CEO marks an owner account (owner decision 14 Nov). */
 export const OWNER_ACCOUNT_EXPLANATION = 'Owner account: their work counts in the lists, but not in targets, leaderboard, attendance or salary';
 
+/** Why a change can be refused (the API checks it): a month is never split between paid agent and owner account. */
+const OWNER_ACCOUNT_TIMING =
+  'Best set when inviting them: it can only change while they have no salary and no finished attendance in a month whose salaries are not approved yet.';
+
 const isAgentRole = (role: string) => role === 'call_agent' || role === 'field_agent';
 
 const ROLE_OPTIONS = [
@@ -184,8 +188,8 @@ export default function Team() {
               title={r.ownerAccount ? `Clear owner account · ${r.name}` : `Mark ${r.name} as an owner account`}
               description={
                 r.ownerAccount
-                  ? 'They go back to being a normal agent: targets, leaderboard, attendance and salary apply again from now.'
-                  : `${OWNER_ACCOUNT_EXPLANATION}. They sign in like any agent: device approval and a login code each time.`
+                  ? `They go back to being a normal agent: targets, leaderboard, attendance and salary apply again from now. ${OWNER_ACCOUNT_TIMING}`
+                  : `${OWNER_ACCOUNT_EXPLANATION}. They sign in like any agent: device approval and a login code each time. ${OWNER_ACCOUNT_TIMING}`
               }
               confirmLabel={r.ownerAccount ? 'Clear owner account' : 'Mark as owner account'}
               run={() => api.put(`/staff/${r.id}/owner-account`, { ownerAccount: !r.ownerAccount })}
