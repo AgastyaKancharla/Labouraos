@@ -91,6 +91,9 @@ services:
         generateValue: true
       - key: PAYOUT_ACCOUNT_KEY
         generateValue: true
+      # Customer app sign-in (separate realm): signs customer tokens; never the staff JWT_SECRET.
+      - key: CUSTOMER_JWT_SECRET
+        generateValue: true
       - key: JWT_EXPIRES_IN
         value: "15m"
 
