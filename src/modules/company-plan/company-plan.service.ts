@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { istDayKey } from '../ceo-portal/ceo-common';
 import { teamLabel } from '../ceo-portal/ceo-team.service';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 /**
  * The metrics of the CEO's monthly plan (designs C-Team-Targets, MG-Targets,
@@ -201,7 +202,8 @@ export class CompanyPlanService {
   async agentSums(staffIds: string[], year: number, month: number): Promise<PlanValues> {
     const out = emptyPlan();
     if (!staffIds.length) return out;
-    const rows = await this.prisma.target.findMany({ where: { staffId: { in: staffIds }, year, month } });
+    // Owner accounts carry no targets (owner decision 14 Nov).
+    const rows = await this.prisma.target.findMany({ where: { staffId: { in: staffIds }, year, month, staff: NOT_OWNER_ACCOUNT } });
     for (const key of PLAN_METRICS) {
       const field = AGENT_TARGET_FIELD[key];
       if (field) out[key] = sumOrNull(rows.map((r) => r[field]));

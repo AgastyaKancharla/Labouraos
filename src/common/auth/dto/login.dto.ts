@@ -6,6 +6,11 @@ export class LoginDto {
   /** Management accounts only. */
   totpCode?: string;
   /**
+   * The app signing in: 'office' (app.laboura.com) or 'field' (Laboura Field).
+   * Each app accepts only its own roles; see src/common/auth/staff-app.ts.
+   */
+  app?: string;
+  /**
    * Accepted on the body only so a request that still sends an email can be
    * refused. It is never used to find an account.
    */
@@ -19,6 +24,8 @@ export class VerifyLoginCodeDto {
   deviceId?: string;
   /** From the `awaiting_code` answer: only the sign-in that asked has it. */
   loginRequestProof?: string;
+  /** The same app the login was started from ('office' or 'field'). */
+  app?: string;
 }
 
 export class LoginResponseDto {

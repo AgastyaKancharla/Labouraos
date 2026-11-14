@@ -20,6 +20,8 @@ export interface Member {
   id: string;
   code: string;
   name: string;
+  /** Owner account (owner decision 14 Nov): in the lists, not in targets, rankings or attendance. */
+  isOwnerAccount: boolean;
   role: string;
 }
 
@@ -51,9 +53,14 @@ export class TeamLeadScreensService {
     const under = await this.scope.peopleUnder(actor.id);
     return this.prisma.staff.findMany({
       where: { id: { in: under }, role: { in: AGENT_ROLES }, status: { not: 'deactivated' } },
-      select: { id: true, code: true, name: true, role: true },
+      select: { id: true, code: true, name: true, role: true, isOwnerAccount: true },
       orderBy: [{ role: 'asc' }, { name: 'asc' }],
     });
+  }
+
+  /** The team without owner accounts: who carries targets, is ranked and has attendance (owner decision 14 Nov). */
+  async trackedMembers(actor: Actor): Promise<Member[]> {
+    return (await this.members(actor)).filter((row) => !row.isOwnerAccount);
   }
 
   async requireMember(actor: Actor, staffId: string): Promise<Member> {
@@ -130,7 +137,14 @@ export class TeamLeadScreensService {
    * do, per day, at this speed, will we make it?) and each agent's main target.
    */
   async targets(actor: Actor) {
-    const team = await this.members(actor);
+    const { allAgents, ...board } = await this.targetBoard(actor);
+    // Owner accounts carry no targets and stay out of the team's progress (owner decision 14 Nov).
+    return { ...board, agents: allAgents.filter((row) => !row.staff.isOwnerAccount) };
+  }
+
+  private async targetBoard(actor: Actor) {
+    const all = await this.members(actor);
+    const team = all.filter((row) => !row.isOwnerAccount);
     const now = this.clock.now();
     const today = istDayKey(now);
     const year = Number(today.slice(0, 4));
@@ -145,12 +159,13 @@ export class TeamLeadScreensService {
     let placedDone = 0;
     let placedTarget: number | null = null;
     let paidTarget: number | null = null;
-    for (const member of team) {
-      const target = targets.find((row) => row.staffId === member.id) ?? null;
+    for (const member of all) {
+      const owner = member.isOwnerAccount;
+      const target = owner ? null : (targets.find((row) => row.staffId === member.id) ?? null);
       if (member.role === 'call_agent') {
         const metrics = await this.callMetrics.getCallAgentMetrics(member.id, year, month, undefined, now);
         const t = target?.candidatesActivated ?? null;
-        if (t !== null) paidTarget = (paidTarget ?? 0) + t;
+        if (t !== null && !owner) paidTarget = (paidTarget ?? 0) + t;
         agents.push({
           staff: member,
           mainLabel: 'Paid the ₹499 fee',
@@ -160,8 +175,8 @@ export class TeamLeadScreensService {
       } else {
         const metrics = await this.fieldMetrics.getFieldAgentMetrics(member.id, year, month, undefined, now);
         const t = target?.placementsClosed ?? null;
-        if (t !== null) placedTarget = (placedTarget ?? 0) + t;
-        placedDone += metrics.metrics.placementsClosed;
+        if (t !== null && !owner) placedTarget = (placedTarget ?? 0) + t;
+        if (!owner) placedDone += metrics.metrics.placementsClosed;
         agents.push({
           staff: member,
           mainLabel: 'People placed',
@@ -185,7 +200,7 @@ export class TeamLeadScreensService {
       { key: 'interviews', label: 'Interviews done', hint: 'Job seeker met the owner', ...paceRow(null, interviewsDone, dayOfMonth, daysInMonth) },
       { key: 'registered', label: 'Job seekers registered', hint: 'Profile made by an agent', ...paceRow(null, registeredDone, dayOfMonth, daysInMonth) },
     ];
-    return { year, month, dayOfMonth, daysInMonth, daysLeft: daysInMonth - dayOfMonth, team: teamRows, agents };
+    return { year, month, dayOfMonth, daysInMonth, daysLeft: daysInMonth - dayOfMonth, team: teamRows, allAgents: agents };
   }
 
   // -------------------------------------------------------------- agents
@@ -219,8 +234,8 @@ export class TeamLeadScreensService {
   /** T-Agent: one agent's month. */
   async agent(actor: Actor, staffId: string) {
     const member = await this.requireMember(actor, staffId);
-    const board = await this.targets(actor);
-    const row = board.agents.find((item) => item.staff.id === staffId)!;
+    const { allAgents, ...board } = await this.targetBoard(actor);
+    const row = allAgents.find((item) => item.staff.id === staffId)!;
     const now = this.clock.now();
     const today = istDayKey(now);
     const monthFrom = `${today.slice(0, 8)}01`;
@@ -283,7 +298,8 @@ export class TeamLeadScreensService {
 
   /** T-Attendance: the team's day (today with the live status, or any past day). */
   async attendance(actor: Actor, dateText?: string) {
-    const team = await this.members(actor);
+    // Owner accounts have no attendance (owner decision 14 Nov).
+    const team = await this.trackedMembers(actor);
     const now = this.clock.now();
     const today = istDayKey(now);
     const date = dateText && /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? dateText : today;
@@ -337,7 +353,8 @@ export class TeamLeadScreensService {
 
   /** T-Leave: who is off in the next two weeks, every request and where it is, and balances. */
   async leaveBoard(actor: Actor) {
-    const team = await this.members(actor);
+    // Owner accounts have no leave (owner decision 14 Nov).
+    const team = await this.trackedMembers(actor);
     const now = this.clock.now();
     const today = istDayKey(now);
     const todayDate = new Date(`${today}T00:00:00.000Z`);
@@ -428,8 +445,10 @@ export class TeamLeadScreensService {
     if (from > to) throw new BadRequestException('from is after to');
     const span = (new Date(`${to}T00:00:00Z`).getTime() - new Date(`${from}T00:00:00Z`).getTime()) / DAY_MS;
     if (span > 92) throw new BadRequestException('A report covers at most three months');
-    const ids = team.map((row) => row.id);
-    const people = [...ids, actor.id];
+    // Work counts include owner accounts (they are reports); attendance and the
+    // week's best agent leave them out (owner decision 14 Nov).
+    const ids = team.filter((row) => !row.isOwnerAccount).map((row) => row.id);
+    const people = [...team.map((row) => row.id), actor.id];
     const rows = [];
     for (let t = new Date(`${to}T00:00:00Z`).getTime(); t >= new Date(`${from}T00:00:00Z`).getTime(); t -= DAY_MS) {
       const day = new Date(t).toISOString().slice(0, 10);

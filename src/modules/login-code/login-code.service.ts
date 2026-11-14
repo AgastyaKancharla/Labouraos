@@ -62,6 +62,8 @@ export class LoginCodeService {
     staffId: string,
     staffDeviceId: string,
     ip: string,
+    /** office or field: shown to the senior giving the code. */
+    app: string | null = null,
   ) {
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId } });
     if (!staff) {
@@ -84,6 +86,7 @@ export class LoginCodeService {
         staffId,
         staffDeviceId,
         ipAddress: ip,
+        app,
         status: 'pending',
         createdAt,
         expiresAt,
@@ -105,7 +108,7 @@ export class LoginCodeService {
     const rows = await this.prisma.loginCodeRequest.findMany({
       where: { status: 'pending', ...(await this.scopeWhere(approver)) },
       orderBy: { createdAt: 'asc' },
-      include: { staff: { select: staffBrief }, staffDevice: { select: { id: true, label: true, platform: true } } },
+      include: { staff: { select: staffBrief }, staffDevice: { select: { id: true, label: true, platform: true, app: true } } },
     });
     await this.auditService.log({
       actorId: approver.id,

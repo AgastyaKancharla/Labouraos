@@ -11,6 +11,8 @@ export interface DirectoryRow {
   status: string;
   reportsToId: string | null;
   teamLeadId: string | null;
+  /** Owner account (owner decision 14 Nov): no attendance bells about it. */
+  isOwnerAccount?: boolean;
 }
 
 export interface Chain {
