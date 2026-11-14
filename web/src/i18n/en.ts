@@ -126,7 +126,7 @@ export const en = {
   "pub.id.nameMismatch": "The name on the ID doesn't match. A Laboura Team Lead will check it, or you can use another ID below.",
   "pub.id.failed": "That ID couldn't be checked. Try again or use another ID.",
   "pub.id.under18Title": "Registration stops here.",
-  "pub.id.under18Body": "Laboura can only register people who are 18 or older. No payment is taken.",
+  "pub.id.under18Body": "Laboura can only register people who are 18 or older. No payment is taken. If this was a family member's Aadhaar by mistake, a Laboura Manager can lift this stop.",
   "pub.pay.stepLabel": "Payment",
   "pub.pay.title": "Pay {amount} · Registration",
   "pub.pay.guarantee": "Your guarantee",

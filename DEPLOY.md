@@ -256,9 +256,13 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 >
 > 1. Open UIDAI's "UIDAI Certificate Details" page (developer section) and download the Paperless Offline e-KYC certificate valid until 03 Feb 2029 (`uidai_offline_publickey_2026.cer`).
 > 2. Run `openssl x509 -in uidai_offline_publickey_2026.cer -noout -enddate -fingerprint -sha256` (add `-inform DER` if it is binary). The end date must be 3 Feb 2029 and the fingerprint must be `E0:30:4B:9E:61:EE:36:40:EC:DD:AE:2D:B4:B6:17:F2:E2:67:8F:57:DB:C2:82:6C:2F:86:AC:5C:04:F2:77:DF`. **If it is different, stop and ask Claude to replace the file before real data.**
-> 3. Download a fresh e-Aadhaar PDF (or use a new Aadhaar card) and scan its QR on a test registration link: it must say "Aadhaar verified by UIDAI", not "newer than our check supports".
+> 3. In the Render dashboard set **`UIDAI_CERT_FINGERPRINTS`** on the web service and the worker to the SHA-256 fingerprints of every certificate in `src/modules/aadhaar-qr/certs/`, comma-separated (the four in `secure-qr.parser.spec.ts`, after you checked the new one in step 2). **The live service refuses to start until this matches the certificates in the code**, so this check can't be skipped; `render.free.yaml` (made-up data only) uses `not-pinned-free-test-setup` instead.
+> 4. Download a fresh e-Aadhaar PDF (or use a new Aadhaar card) and scan its QR on a test registration link: it must say "Aadhaar verified by UIDAI", not "newer than our check supports".
 >
-> When UIDAI publishes the next certificate (after 03 Feb 2029, or earlier if it changes keys), cards signed with it are answered "This Aadhaar is newer than our check supports, please use another ID" and the CEO gets an "Add the new UIDAI certificate" flag (once a day) — never a fraud flag. Download it the same way, check its fingerprint against UIDAI's page, and ask Claude to add it to `src/modules/aadhaar-qr/certs/` (and pin its fingerprint in `secure-qr.parser.spec.ts`).
+> When UIDAI publishes the next certificate (after 03 Feb 2029, or earlier if it changes keys), cards signed with it are answered "This Aadhaar is newer than our check supports, please use another ID" and the CEO gets an "Add the new UIDAI certificate" flag (once a day) — never a fraud flag. Download it the same way, check its fingerprint against UIDAI's page, ask Claude to add it to `src/modules/aadhaar-qr/certs/` (and pin its fingerprint in `secure-qr.parser.spec.ts`), and add the fingerprint to `UIDAI_CERT_FINGERPRINTS`. Several failed signatures on new QR codes from different people in one day also raise a CEO alert ("UIDAI key may have changed").
+
+> [!NOTE]
+> **ID checks: what the photo rules do and don't do.** For PAN, driving licence and voter ID the page takes a live camera photo of the card with a one-time token, and the server refuses pictures with camera or editing metadata or a size the capture screen can't make, then re-encodes the photo without any metadata. This raises the bar against a gallery upload; it cannot prove a photo is live. **The real control is the Team Lead's eye**: the card next to the live selfie, the name and the date of birth. Nobody approves the ID of a person they registered (rev 169).
 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
@@ -525,6 +529,7 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Bank UPI details | UPI payment links and QR codes |
 | `CLOUDFLARE_ACCESS_ENFORCED`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Step 9 | Identity check in front of the office consoles |
 | `ALERT_WEBHOOK_URL` | Slack-style webhook | Where error alerts are posted |
+| `UIDAI_CERT_FINGERPRINTS` | The go-live check (Step "Before real data") | SHA-256 fingerprints of the UIDAI certificates in the code, confirmed against UIDAI's page; the live service won't start until they match |
 | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
 | `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages |
 | `WHATSAPP_ACCESS_TOKEN`, `WHATSAPP_PHONE_NUMBER_ID` | From Meta | WhatsApp messages |

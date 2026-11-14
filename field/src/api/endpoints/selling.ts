@@ -364,9 +364,13 @@ export const sellingApi = (api: ApiClient) => ({
    * licence or voter ID card and the number, for the Team Lead to check by
    * eye. Pending until then. Only for job seekers this agent registered. Needs signal.
    */
-  async otherId(jobSeekerId: string, idType: OtherIdType, idNumber: string, photo: CapturedPhoto): Promise<OtherIdOutcome> {
+  /** The camera for the card opened: a one-time token for that photo (2 minutes, one upload, this agent). */
+  otherIdCaptureNonce: (jobSeekerId: string) =>
+    api.request<{ captureNonce: string; expiresInSeconds: number }>(`/field-work/job-seekers/${enc(jobSeekerId)}/other-id/capture-nonce`, { method: 'POST' }),
+  async otherId(jobSeekerId: string, idType: OtherIdType, idNumber: string, photo: CapturedPhoto, captureNonce: string): Promise<OtherIdOutcome> {
     const form = new FormData();
     form.append('captureSource', 'live_camera');
+    form.append('captureNonce', captureNonce);
     form.append('idType', idType);
     form.append('idNumber', idNumber);
     await appendFile(form, { field: 'photo', name: 'id-card.jpg', type: photo.mimeType, uri: photo.uri });

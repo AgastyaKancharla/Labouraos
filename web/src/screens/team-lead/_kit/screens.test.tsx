@@ -379,6 +379,46 @@ describe('Check registrations (T-Verify) and Agents (T-Agents)', () => {
     await waitFor(() => expect(api.calls('POST /team-lead/registrations/rf9/check')[0].body).toEqual({ verdict: 'fake', note: 'Photo of a photocopy', subjectType: 'referral' }));
   });
 
+  it('rev 169: his own registration says another Team Lead checks it (no buttons); a row from another team of the city can be checked', async () => {
+    const pendingPan = { method: 'pan', status: 'pending', nameMatches: null, isAdult: null, verifiedByUidai: false, waitingForTeamLead: true, maskedReference: null, idNumberLast4: '234F', phoneLinked: null, idPhotoKept: true, qrPhotoKept: true };
+    const api = mockApi({
+      ...common,
+      'GET /team-lead/registrations': {
+        summary: { toCheck: 2, idCardsToCheck: 1, needsAnotherTeamLead: 1, possibleDuplicates: 0, checkedThisMonth: 0, fakesThisMonth: 0 },
+        rows: [
+          {
+            subjectType: 'job_seeker', person: { id: 'x1', code: 'JS-00301', name: 'Raju B' }, jobSeeker: { id: 'x1', code: 'JS-00301', name: 'Raju B' },
+            trade: 'Helper', registeredBy: { id: 'tl-other', code: 'TL-009', name: 'Kiran', role: 'team_lead' }, paid: false, hasSelfie: true, idCheck: pendingPan,
+            approval: { canDecide: true, needsAnotherTeamLead: true, fromAnotherTeam: true, reason: null },
+            duplicates: [], signals: ['ID card photo to check'], verdict: 'ID card photo to check',
+          },
+          {
+            subjectType: 'job_seeker', person: { id: 'x2', code: 'JS-00302', name: 'Lakshmi N' }, jobSeeker: { id: 'x2', code: 'JS-00302', name: 'Lakshmi N' },
+            trade: 'Cook', registeredBy: null, paid: false, hasSelfie: true, idCheck: pendingPan,
+            approval: { canDecide: false, needsAnotherTeamLead: true, fromAnotherTeam: false, reason: 'You registered this person, so another Team Lead checks the ID.' },
+            duplicates: [], signals: ['ID card photo to check'], verdict: 'ID card photo to check',
+          },
+        ],
+      },
+      'POST /team-lead/registrations/x1/check': { verdict: 'ok', otherIdDecided: 'verified', idPhotoDeleted: true },
+    });
+    signInAs('team_lead');
+    renderScreen(<TeamLeadVerify />, { portal: 'team-lead', path: '/team-lead/verify', now: NOW });
+    expect(await screen.findByText('JS-00301 · Raju B')).toBeInTheDocument();
+    expect(screen.getByText('Needs another Team Lead · you can check it')).toBeInTheDocument();
+    expect(screen.getByText(/From another team in your city/)).toBeInTheDocument();
+    expect(screen.getByText('Needs another Team Lead')).toBeInTheDocument();
+    expect(screen.getByText('You registered this person, so another Team Lead checks the ID.')).toBeInTheDocument();
+    // Buttons only on the row he may decide.
+    expect(screen.getAllByRole('button', { name: 'Looks right' })).toHaveLength(1);
+    expect(screen.getAllByRole('button', { name: 'Fake · flag it' })).toHaveLength(1);
+    expect(screen.getByText(/Open the photos first/)).toBeInTheDocument();
+    await userEvent.click(screen.getByRole('button', { name: 'Looks right' }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /looks right/i }));
+    await waitFor(() => expect(api.calls('POST /team-lead/registrations/x1/check')).toHaveLength(1));
+    expect(api.calls('POST /team-lead/registrations/x2/check')).toHaveLength(0);
+  });
+
   it('filters agents by role and shows "No rows match" when none fit', async () => {
     mockApi({
       ...common,

@@ -100,6 +100,7 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     const api = mockApi({
       [`GET /registration/${TOKEN}/status`]: () => atId({ idCheck: { waitingForTeamLead: pending, lastResult: pending ? 'pending' : 'name_mismatch' } }),
       [`POST /registration/${TOKEN}/aadhaar-qr`]: qrAnswer({ status: 'failed', result: 'name_mismatch', nameMatches: false, offerOtherId: true }),
+      [`POST /registration/${TOKEN}/other-id/capture-nonce`]: { captureNonce: 'camera-token-1', expiresInSeconds: 120 },
       [`POST /registration/${TOKEN}/other-id`]: () => {
         pending = true;
         return { verificationId: 'v2', method: 'pan', status: 'pending', idNumberLast4: '234F' };
@@ -130,6 +131,32 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     expect(form.get('captureSource')).toBe('live_camera');
     expect(form.get('requestId')).toBe('req-1');
     expect(form.get('photo')).toBeInstanceOf(Blob);
+    // M-1: the token was asked for when the camera opened, and goes with the photo.
+    const asked = api.fetch.mock.calls.findIndex(([url]) => String(url).endsWith(`/registration/${TOKEN}/other-id/capture-nonce`));
+    const uploaded = api.fetch.mock.calls.findIndex(([url]) => String(url).endsWith(`/registration/${TOKEN}/other-id`));
+    expect(asked).toBeGreaterThanOrEqual(0);
+    expect(asked).toBeLessThan(uploaded);
+    expect(form.get('captureNonce')).toBe('camera-token-1');
+  });
+
+  it('a card photo that expired before the check: asks for a new photo (rev 169)', async () => {
+    verifiedInThisTab();
+    mockApi({ [`GET /registration/${TOKEN}/status`]: atId({ idCheck: { waitingForTeamLead: false, lastResult: 'photo_expired' } }) });
+    render();
+    expect(await screen.findByText(/expired before a Team Lead could check it\. Please take a new photo/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Another ID' })).toBeInTheDocument();
+  });
+
+  it('a date of birth the check could not read: stops, and says a Manager can review it', async () => {
+    verifiedInThisTab();
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: atId(),
+      [`POST /registration/${TOKEN}/aadhaar-qr`]: qrAnswer({ status: 'failed', result: 'under_18', isAdult: false, dateOfBirthUnreadable: true }),
+    });
+    render();
+    await userEvent.click(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' }));
+    await userEvent.click(screen.getByRole('button', { name: 'fake camera read' }));
+    expect(await screen.findByText(/date of birth on this Aadhaar could not be read.*A Laboura Manager can review it/)).toBeInTheDocument();
   });
 
   it('while another ID waits for the Team Lead it says so (no payment), and the Aadhaar QR is still offered', async () => {
@@ -177,6 +204,7 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     await userEvent.click(await screen.findByRole('button', { name: 'Aadhaar: scan the QR code' }));
     await userEvent.click(screen.getByRole('button', { name: 'fake camera read' }));
     expect(await screen.findByText('Registration stops here.')).toBeInTheDocument();
+    expect(screen.getByText(/family member's Aadhaar by mistake, a Laboura Manager can lift this stop/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /Aadhaar/ })).not.toBeInTheDocument();
   });
 

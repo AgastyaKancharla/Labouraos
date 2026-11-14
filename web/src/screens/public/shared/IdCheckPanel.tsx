@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useT } from '../../../i18n/I18nProvider';
 import type { MessageKey } from '../../../i18n/en';
 import type { AadhaarQrResult } from './api';
@@ -50,6 +50,7 @@ export function IdCheckPanel({
   otherIdFailed,
   onQr,
   onOtherId,
+  getCaptureNonce,
   onContinue,
   pending,
 }: {
@@ -59,8 +60,10 @@ export function IdCheckPanel({
   /** A failed other-ID try (or the last result from the status). */
   otherIdFailed: MessageKey | null;
   onQr: (qrText: string) => void;
-  /** Sends the type, the number and the live photo of the card; 'retry' opens the camera again. */
-  onOtherId: (method: OtherId, idNumber: string, photo: Blob) => Promise<'done' | 'retry'>;
+  /** Sends the type, the number, the live photo of the card and the camera's one-time token; 'retry' opens the camera again. */
+  onOtherId: (method: OtherId, idNumber: string, photo: Blob, captureNonce: string) => Promise<'done' | 'retry'>;
+  /** Asks for the one-time token when the camera for the card opens (and again after a failed try). */
+  getCaptureNonce?: () => Promise<string>;
   /** After "Aadhaar verified by UIDAI". */
   onContinue: () => void;
   /** Another ID is waiting for the Team Lead's check. */
@@ -73,6 +76,21 @@ export function IdCheckPanel({
   const [number, setNumber] = useState('');
   const otherDef = OTHER_IDS.find((o) => o.id === other);
   const cleanNumber = number.toUpperCase().replace(/\s+/g, '');
+  // The camera's one-time token: asked for when the card camera opens, and again after each try
+  // (it works once, for 2 minutes). The server refuses a card photo without it.
+  const nonce = useRef<Promise<string | null> | null>(null);
+  const freshNonce = useCallback(() => {
+    nonce.current = getCaptureNonce ? getCaptureNonce().catch(() => null) : Promise.resolve(null);
+  }, [getCaptureNonce]);
+  useEffect(() => {
+    if (mode === 'card') freshNonce();
+  }, [mode, freshNonce]);
+  const sendCard = async (method: OtherId, photo: Blob): Promise<'done' | 'retry'> => {
+    const token = (await (nonce.current ?? Promise.resolve(null))) ?? '';
+    const outcome = await onOtherId(method, cleanNumber, photo, token);
+    if (outcome === 'retry') freshNonce();
+    return outcome;
+  };
 
   // A QR that can't be used (or a name that doesn't match) opens "Another ID".
   useEffect(() => {
@@ -124,7 +142,7 @@ export function IdCheckPanel({
         <LiveSelfie
           active
           facing="environment"
-          onCapture={(photo) => onOtherId(otherDef.id, cleanNumber, photo)}
+          onCapture={(photo) => sendCard(otherDef.id, photo)}
           tips={t('pub.id.cardTips')}
           takeLabel={t('pub.id.cardTake')}
           savingLabel={t('pub.id.cardSaving')}

@@ -88,7 +88,8 @@ export function LiveSelfie({
     const video = videoRef.current;
     if (!video || !video.videoWidth) return;
     const canvas = document.createElement('canvas');
-    const scale = Math.min(1, (facing === 'user' ? 960 : 1280) / video.videoWidth);
+    // A selfie: at most 960 wide. A card: its longest side at most 1280 (the server refuses bigger card photos).
+    const scale = facing === 'user' ? Math.min(1, 960 / video.videoWidth) : Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
     canvas.width = Math.round(video.videoWidth * scale);
     canvas.height = Math.round(video.videoHeight * scale);
     const ctx = canvas.getContext('2d');

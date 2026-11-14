@@ -51,6 +51,12 @@ interface Registration {
     idNumberLast4?: string | null;
     idPhotoKept?: boolean;
   } | null;
+  /**
+   * Rev 169: nobody checks a person they registered. needsAnotherTeamLead: a Team Lead registered the
+   * person, or nobody's team did — another Team Lead of the city checks it (fromAnotherTeam: a row
+   * from outside your team that you may check).
+   */
+  approval?: { canDecide: boolean; needsAnotherTeamLead: boolean; fromAnotherTeam: boolean; reason: string | null };
   duplicates: string[];
   signals: string[];
   verdict: string;
@@ -121,6 +127,7 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
   const id = row.idCheck;
   const qr = id?.method === 'aadhaar_qr';
   const card = Boolean(id && !qr && (id.waitingForTeamLead || id.idPhotoKept));
+  const approval = row.approval ?? { canDecide: true, needsAnotherTeamLead: false, fromAnotherTeam: false, reason: null };
   const photoKept = Boolean(id?.idPhotoKept ?? id?.qrPhotoKept);
   const idPhotoUrl = photos?.idPhotoUrl ?? photos?.qrPhotoUrl ?? null;
   const canShow = row.hasSelfie || photoKept;
@@ -129,7 +136,9 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
     <Card
       title={`${person.code} · ${person.name}`}
       aside={
-        id?.waitingForTeamLead ? (
+        approval.needsAnotherTeamLead ? (
+          <StatusPill tone={approval.canDecide ? 'warn' : 'muted'}>{approval.canDecide ? 'Needs another Team Lead · you can check it' : 'Needs another Team Lead'}</StatusPill>
+        ) : id?.waitingForTeamLead ? (
           <StatusPill tone="warn">ID card to check</StatusPill>
         ) : (
           <StatusPill tone={ok ? 'good' : row.duplicates.length ? 'danger' : 'warn'}>{row.verdict}</StatusPill>
@@ -139,7 +148,9 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
       <p className="tl-sub" style={{ marginTop: -6 }}>
         {partner ? 'Referral partner · ' : ''}Registered by {row.registeredBy?.name ?? '—'}
         {row.trade ? ` · ${row.trade}` : ''}
+        {approval.fromAnotherTeam ? ' · From another team in your city: its own Team Lead may not check it' : ''}
       </p>
+      {!approval.canDecide && approval.reason ? <p className="tl-sub">{approval.reason}</p> : null}
       <div className="tl-reg tl-reg--pair">
         <div className="tl-photos">
         <div>
@@ -173,7 +184,7 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
               <StatusPill tone="good">Aadhaar verified by UIDAI</StatusPill> <span className="tl-sub">{id.maskedReference ?? ''}</span>
             </p>
           ) : null}
-          {id?.waitingForTeamLead ? (
+          {id?.waitingForTeamLead && approval.canDecide ? (
             <p style={{ margin: '0 0 8px' }}>
               <StatusPill tone="warn">Waiting for your check</StatusPill>{' '}
               <span className="tl-sub">Compare the card with the selfie: the face, the name and the date of birth (18 or over).</span>
@@ -201,6 +212,10 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
               </Button>
             </div>
           ) : null}
+          {approval.canDecide && id?.waitingForTeamLead && !photos ? (
+            <p className="tl-sub" style={{ marginTop: 8 }}>Open the photos first: "Looks right" needs you to have compared the card with the selfie.</p>
+          ) : null}
+          {approval.canDecide ? (
           <div className="tl-actions" style={{ marginTop: 12 }}>
             <ActionButton
               label="Looks right"
@@ -226,6 +241,7 @@ function RegistrationCard({ row, managerName }: { row: Registration; managerName
               success={`Flagged · ${managerName} will see it`}
             />
           </div>
+          ) : null}
         </div>
       </div>
     </Card>

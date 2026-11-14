@@ -95,6 +95,7 @@ describe('FA10c "Scan Aadhaar QR" (guide, Aadhaar verification, 14 Nov)', () => 
   it('"Photo of another ID": type, number, a live photo of the card (back camera) — sent to the Team Lead, pending', async () => {
     const { route, calls } = routeTable({
       '/screens/call-registration/job-seekers/js-uuid': atIdStep(),
+      'POST /field-work/job-seekers/js-uuid/other-id/capture-nonce': { captureNonce: 'field-camera-token', expiresInSeconds: 120 },
       'POST /field-work/job-seekers/js-uuid/other-id': { verificationId: 'v9', method: 'pan', status: 'pending', idNumberLast4: '234F' },
     });
     await renderWithApp(<SeekerProgress />, { signedInAs: kiran, route });
@@ -113,6 +114,11 @@ describe('FA10c "Scan Aadhaar QR" (guide, Aadhaar verification, 14 Nov)', () => 
     expect(sent?.body.get('idType')).toBe('pan');
     expect(sent?.body.get('idNumber')).toBe('ABCDE1234F');
     expect(sent?.body.get('captureSource')).toBe('live_camera');
+    // The token asked for when the camera opened goes with the photo (M-1).
+    const asked = calls.findIndex((c: { path: string }) => c.path === '/field-work/job-seekers/js-uuid/other-id/capture-nonce');
+    expect(asked).toBeGreaterThanOrEqual(0);
+    expect(asked).toBeLessThan(calls.findIndex((c: { path: string }) => c.path === '/field-work/job-seekers/js-uuid/other-id'));
+    expect(sent?.body.get('captureNonce')).toBe('field-camera-token');
   });
 
   it('shows "waiting for the Team Lead" on the ID step while another ID is pending', async () => {

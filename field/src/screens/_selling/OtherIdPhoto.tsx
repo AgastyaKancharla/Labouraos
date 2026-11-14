@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useMutation } from '@tanstack/react-query';
 import { useEndpoints } from '@/api/ApiProvider';
@@ -24,6 +24,7 @@ const ID_TYPES: { id: OtherIdType; label: MessageKey; numberLabel: MessageKey; p
  * the gallery). It goes to the Team Lead, who checks it by eye next to the
  * selfie in T-Verify; until then the ID step is pending and payment waits.
  * Only for job seekers this agent registered. Needs signal (never queued).
+ * The photo goes with the one-time token issued when the camera opened.
  */
 export function OtherIdPhoto({ jobSeekerId, onFinished, onClose }: { jobSeekerId: string; onFinished: () => void; onClose: () => void }) {
   const { t } = useI18n();
@@ -35,8 +36,18 @@ export function OtherIdPhoto({ jobSeekerId, onFinished, onClose }: { jobSeekerId
   const def = ID_TYPES.find((d) => d.id === idType);
   const clean = number.toUpperCase().replace(/\s+/g, '');
   const valid = Boolean(def && def.pattern.test(clean));
+  // The camera's one-time token (rev 169 review, M-1): asked for when the camera opens; the server
+  // refuses a card photo without it. A new one for every opening of the camera.
+  const nonce = useRef<Promise<string> | null>(null);
+  useEffect(() => {
+    if (!camera) return;
+    nonce.current = selling.otherIdCaptureNonce(jobSeekerId).then((r) => r.captureNonce).catch(() => '');
+  }, [camera, jobSeekerId, selling]);
   const send = useMutation({
-    mutationFn: (photo: CapturedPhoto) => queue.live(() => selling.otherId(jobSeekerId, def!.id, clean, photo)),
+    mutationFn: async (photo: CapturedPhoto) => {
+      const captureNonce = (await nonce.current) ?? '';
+      return queue.live(() => selling.otherId(jobSeekerId, def!.id, clean, photo, captureNonce));
+    },
     onSuccess: () => {
       setCamera(false);
       onFinished();

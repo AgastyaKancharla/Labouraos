@@ -40,7 +40,7 @@ export default function PartnerIdCheckPage() {
         <StepsBar current={3} label={t('pub.id.stepLabel')} />
         <PageTitle>{t('pub.id.title')}</PageTitle>
         <Warn>
-          <strong>{t('partner.id.under18Title')}</strong> {t('partner.id.under18Body')}
+          <strong>{t('partner.id.under18Title')}</strong> {t(qrResult?.dateOfBirthUnreadable ? 'pub.id.dobUnreadable' : 'partner.id.under18Body')}
         </Warn>
       </>
     );
@@ -69,11 +69,12 @@ export default function PartnerIdCheckPage() {
       setQrResult(await partnerApi.aadhaarQr(token, requestId, qrText));
     });
 
-  const sendOtherId = async (method: string, idNumber: string, photo: Blob): Promise<'done' | 'retry'> => {
+  const getCaptureNonce = async () => (await partnerApi.captureNonce(token, requestId)).captureNonce;
+  const sendOtherId = async (method: string, idNumber: string, photo: Blob, captureNonce: string): Promise<'done' | 'retry'> => {
     let ok = false;
     await run(async () => {
       setQrResult(null);
-      setOtherResult(await partnerApi.otherId(token, requestId, method, idNumber, photo));
+      setOtherResult(await partnerApi.otherId(token, requestId, method, idNumber, photo, captureNonce));
       ok = true;
       await refresh();
     });
@@ -83,9 +84,11 @@ export default function PartnerIdCheckPage() {
   const pending = !qrResult && (otherResult?.status === 'pending' || status.idCheck.lastResult === 'pending');
   const otherIdFailed: MessageKey | null = !qrResult && status.idCheck.lastResult === 'name_mismatch'
       ? 'pub.id.nameMismatch'
-      : !qrResult && status.idCheck.lastResult === 'failed'
-        ? 'pub.id.failed'
-        : null;
+      : !qrResult && status.idCheck.lastResult === 'photo_expired'
+        ? 'pub.id.photoExpired'
+        : !qrResult && status.idCheck.lastResult === 'failed'
+          ? 'pub.id.failed'
+          : null;
 
   return (
     <>
@@ -97,6 +100,7 @@ export default function PartnerIdCheckPage() {
         otherIdFailed={otherIdFailed}
         onQr={(text) => void checkQr(text)}
         onOtherId={sendOtherId}
+        getCaptureNonce={getCaptureNonce}
         onContinue={() => void refresh().then(() => navigate(to('P-PartnerUPI', { token })))}
         pending={pending}
       />

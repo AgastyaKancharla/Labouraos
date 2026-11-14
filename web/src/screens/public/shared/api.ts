@@ -61,7 +61,8 @@ export interface RegistrationTerms {
   termsAcceptedAt: string | null;
 }
 
-export type IdLastResult = 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'failed';
+/** photo_expired: the photo of another ID card expired before a Team Lead checked it — take a new one (rev 169). */
+export type IdLastResult = 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'photo_expired' | 'failed';
 
 /** Another ID sent (POST …/other-id): always pending — a Team Lead checks the card photo by eye. */
 export interface OtherIdResult {
@@ -86,6 +87,8 @@ export interface AadhaarQrResult {
   /** Read from his own card, shown back to him on the green result. */
   person: { name: string; dateOfBirth: string; gender: 'M' | 'F' | 'T' | null } | null;
   failureReason: string | null;
+  /** Under 18 only because the date of birth on the card could not be read (a Manager can review it). */
+  dateOfBirthUnreadable?: boolean;
   offerOtherId: boolean;
 }
 
@@ -105,9 +108,12 @@ export const registrationApi = {
   /** Only the QR's text: the card's picture and the e-Aadhaar PDF stay on the phone. */
   aadhaarQr: (token: string, requestId: string, qrText: string) =>
     api.post<AadhaarQrResult>(`/registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
+  /** The camera for the ID card opened: a one-time token for that photo (2 minutes, one upload). */
+  captureNonce: (token: string, requestId: string) =>
+    api.post<{ captureNonce: string; expiresInSeconds: number }>(`/registration/${enc(token)}/other-id/capture-nonce`, { requestId }, PUBLIC),
   /** Another government ID: a live camera photo of the card and its number (pending until a Team Lead checks it). */
-  otherId: (token: string, requestId: string, idType: string, idNumber: string, photo: Blob) =>
-    postLiveSelfie(`/registration/${enc(token)}/other-id`, { requestId, idType, idNumber }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult>,
+  otherId: (token: string, requestId: string, idType: string, idNumber: string, photo: Blob, captureNonce: string) =>
+    postLiveSelfie(`/registration/${enc(token)}/other-id`, { requestId, idType, idNumber, captureNonce }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult>,
   terms: (token: string, requestId: string) =>
     api.get<RegistrationTerms>(`/registration/${enc(token)}/terms`, { ...PUBLIC, query: { requestId } }),
   acceptTerms: (token: string, requestId: string) =>
@@ -206,8 +212,10 @@ export const partnerApi = {
   selfie: (token: string, requestId: string, photo: Blob) => postLiveSelfie(`/referral-registration/${enc(token)}/selfie`, { requestId }, photo),
   aadhaarQr: (token: string, requestId: string, qrText: string) =>
     api.post<AadhaarQrResult & { nextStep: string }>(`/referral-registration/${enc(token)}/aadhaar-qr`, { requestId, qrText }, PUBLIC),
-  otherId: (token: string, requestId: string, idType: string, idNumber: string, photo: Blob) =>
-    postLiveSelfie(`/referral-registration/${enc(token)}/other-id`, { requestId, idType, idNumber }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult & { nextStep: string }>,
+  captureNonce: (token: string, requestId: string) =>
+    api.post<{ captureNonce: string; expiresInSeconds: number }>(`/referral-registration/${enc(token)}/other-id/capture-nonce`, { requestId }, PUBLIC),
+  otherId: (token: string, requestId: string, idType: string, idNumber: string, photo: Blob, captureNonce: string) =>
+    postLiveSelfie(`/referral-registration/${enc(token)}/other-id`, { requestId, idType, idNumber, captureNonce }, photo, {}, 'id-card.jpg') as Promise<OtherIdResult & { nextStep: string }>,
   payout: (token: string, requestId: string, details: PartnerPayout) =>
     api.post<{ id: string; maskedValue: string; status: string }>(`/referral-registration/${enc(token)}/upi`, { otpRequestId: requestId, ...details }, PUBLIC),
 };
