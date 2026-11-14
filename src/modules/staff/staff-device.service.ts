@@ -3,10 +3,12 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { Prisma, StaffDevice } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
+import { LiveEventsService } from '../../common/live/live-events.service';
 import {
   BELOW_MANAGER_ROLES,
   CEO_APPROVED_DEVICE_ROLES,
@@ -34,6 +36,7 @@ export class StaffDeviceService {
     private readonly prisma: PrismaService,
     private readonly auditService: AuditService,
     private readonly reportingScope: ReportingScopeService,
+    @Optional() private readonly live?: LiveEventsService,
   ) {}
 
   async findApproved(staffId: string, deviceId: string): Promise<StaffDevice | null> {
@@ -206,6 +209,8 @@ export class StaffDeviceService {
       });
       return { updated: next, sessionsEnded: ended.count };
     });
+    // Close the live events of the sessions just ended (LiveController).
+    if (sessionsEnded > 0) this.live?.recheckSessions(device.staffId);
 
     if (device.status !== 'revoked' || sessionsEnded > 0) {
       await this.auditDevice(approver.id, updated, 'staff_device.revoked', {

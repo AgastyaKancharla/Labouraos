@@ -48,6 +48,8 @@ export interface LiveMessage {
 export class LiveEventsService implements OnModuleDestroy {
   private readonly logger = new Logger(LiveEventsService.name);
   private readonly bus = new Subject<LiveEvent>();
+  /** "Check this person's sessions again now": a session of theirs was ended. */
+  private readonly sessionRechecks = new Subject<string>();
   private readonly listeners = new Map<string, number>();
   private sequence = 0;
 
@@ -84,6 +86,24 @@ export class LiveEventsService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Called wherever a staff member's sessions are ended (deactivated, locked,
+   * device revoked, invite re-issued, password reset): each open stream of
+   * theirs checks its own session at once and closes if it has ended, instead
+   * of waiting for its next periodic check (LiveController).
+   */
+  recheckSessions(staffId: string): void {
+    if (staffId) this.sessionRechecks.next(staffId);
+  }
+
+  /** Emits each time recheckSessions is called for this staff member. */
+  sessionRechecksFor(staffId: string): Observable<void> {
+    return this.sessionRechecks.pipe(
+      filter((id) => id === staffId),
+      map(() => undefined),
+    );
+  }
+
   /** How many screens a staff member has open on the channel. */
   openScreens(staffId: string): number {
     return this.listeners.get(staffId) ?? 0;
@@ -92,5 +112,6 @@ export class LiveEventsService implements OnModuleDestroy {
   onModuleDestroy() {
     this.logger.log('Closing the live channel');
     this.bus.complete();
+    this.sessionRechecks.complete();
   }
 }
