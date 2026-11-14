@@ -2,6 +2,7 @@ import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
   BadRequestException,
+  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -25,6 +26,9 @@ import { RecordJoinedDto } from './dto/record-joined.dto';
 import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
 import { isValidClaimReason, isRejectClaimReason } from './claim-reasons';
+import { addDays, daysBetween, istDayOf, istDayStart } from './claim-dates';
+import { isAutoRejectionCode, isReviewRejectionCode, refileRule, rejectionCodeOf } from './claim-refile';
+import { isUniqueViolation } from '../../common/money/utr-registry';
 import { ApprovePlacementRefundDto } from './dto/approve-refund.dto';
 import { evaluatePlacementRefundEligibility } from './placement-refund-eligibility';
 import { businessRefundNeedsCeo, ceoApprovalMessage } from '../../common/money/approval-limits';
@@ -833,6 +837,28 @@ export class PlacementService {
     return this.paymentService.createReferralPayout(placementId, actorId);
   }
 
+  /**
+   * Staff whose calls a person may pick as the claim's owner call — the same
+   * people GET /calls shows them: everyone's for the CEO and Managers, their
+   * team's for a Team Lead, their own for agents.
+   */
+  async claimCallStaffIds(actor: { id: string; role: string }): Promise<string[] | null> {
+    if (actor.role === 'ceo' || actor.role === 'manager') return null;
+    if (actor.role === 'team_lead') {
+      const team = await this.prisma.staff.findMany({ where: { OR: [{ id: actor.id }, { teamLeadId: actor.id }] }, select: { id: true } });
+      return team.map((s) => s.id);
+    }
+    return [actor.id];
+  }
+
+  /** Call agents and Team Leads report only on placements they may see (GET /placements scope); outside it → 404. */
+  async assertClaimScope(actor: { id: string; role: string }, placement: { id: string; code: string }): Promise<void> {
+    if (actor.role !== 'call_agent' && actor.role !== 'team_lead') return;
+    const scope = await this.placementListScope(actor);
+    const visible = await this.prisma.placement.findFirst({ where: { AND: [scope, { id: placement.id }] }, select: { id: true } });
+    if (!visible) throw new NotFoundException(`Placement '${placement.code}' not found`);
+  }
+
   async reportClaim(
     placementIdOrCode: string,
     dto: ReportClaimDto,
@@ -868,6 +894,7 @@ export class PlacementService {
     if (actor.role === 'field_agent' && placement.business.accountAgentId !== actor.id) {
       throw new ForbiddenException('Field agents may only report claims for their account businesses');
     }
+    await this.assertClaimScope(actor, placement);
 
     if (placement.status !== 'active') {
       throw new BadRequestException(
@@ -888,31 +915,32 @@ export class PlacementService {
       );
     }
 
-    const workerLeftOn = new Date(dto.workerLeftOn);
-    if (isNaN(workerLeftOn.getTime())) {
+    // Indian calendar days: the guarantee counts from the first worker's joining
+    // day; a replacement worker cannot leave before his own joining day.
+    const leftDay = istDayOf(dto.workerLeftOn ?? '');
+    if (!dto.workerLeftOn || !leftDay) {
       throw new BadRequestException('Invalid workerLeftOn date');
     }
-
+    const workerLeftOn = new Date(dto.workerLeftOn);
     const policy = await this.pricingService.current();
     const windowDays = policy.replacementWindowDays;
-    const rootJoinedDate = rootPlacement.joinedDate;
-    const guaranteeExpiry = new Date(
-      rootJoinedDate.getTime() + windowDays * 24 * 60 * 60 * 1000,
-    );
+    const rootJoinedDay = istDayOf(rootPlacement.joinedDate)!;
+    const ownJoinedDay = istDayOf(placement.joinedDate ?? rootPlacement.joinedDate)!;
+    const today = istDayOf(now)!;
 
-    if (workerLeftOn.getTime() < rootJoinedDate.getTime()) {
+    if (leftDay < ownJoinedDay) {
       throw new BadRequestException(
-        `workerLeftOn cannot be earlier than joinedDate (${rootJoinedDate.toISOString()}); employee cannot leave before they started`,
+        `workerLeftOn cannot be earlier than the joining day (${ownJoinedDay}); employee cannot leave before they started`,
       );
     }
 
-    if (workerLeftOn.getTime() > guaranteeExpiry.getTime()) {
+    if (leftDay > addDays(rootJoinedDay, windowDays)) {
       throw new BadRequestException(
         `Worker left outside the ${windowDays}-day replacement guarantee window`,
       );
     }
 
-    if (workerLeftOn.getTime() > now.getTime()) {
+    if (leftDay > today) {
       throw new BadRequestException('workerLeftOn cannot be in the future');
     }
 
@@ -935,13 +963,40 @@ export class PlacementService {
       );
     }
 
+    // The call is the evidence: made on or after the day the worker left (not
+    // an older call), not in the future, by someone whose calls this person
+    // may use, and not already the evidence of another claim.
+    const callAt = ownerCall.createdAt ?? ownerCall.startedAt;
+    if (!callAt || callAt.getTime() < istDayStart(leftDay).getTime() || callAt.getTime() > now.getTime()) {
+      throw new BadRequestException('The owner call must be made on or after the day the worker left');
+    }
+    const callStaff = await this.claimCallStaffIds(actor);
+    if (callStaff && (!ownerCall.staffId || !callStaff.includes(ownerCall.staffId))) {
+      throw new ForbiddenException('Pick a call made by you or your team');
+    }
+    const usedBy = await this.prisma.replacementClaim.findFirst({ where: { callRecordId: ownerCall.id }, select: { code: true } });
+    if (usedBy) {
+      throw new ConflictException(`This call is already the evidence of claim ${usedBy.code}`);
+    }
+
     if (!isValidClaimReason(dto.reason)) {
       throw new BadRequestException(`Invalid claim reason '${dto.reason}'`);
     }
 
+    // After a rejection: once more for a fixable mistake (within the original
+    // 7 days), never after a late / unpaid / not-covered rejection, and only by
+    // a Manager or the CEO after a person reviewed and rejected it.
+    const pastClaims = (await this.prisma.replacementClaim.findMany({
+      where: { placementId: placement.id, decision: { not: null } },
+      select: { code: true, workerLeftOn: true, reportedAt: true, decision: true, decisionReason: true, rejectionCode: true, decidedByStaffId: true, overruledByStaffId: true },
+    })) ?? [];
+    const refile = refileRule(pastClaims, actor.role, today, policy.claimReportDays);
+    if (!refile.allowed) {
+      throw new ForbiddenException(refile.message ?? 'This claim cannot be reported again');
+    }
+
     const reportedAt = now;
-    const diffMs = reportedAt.getTime() - workerLeftOn.getTime();
-    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+    const diffDays = daysBetween(leftDay, today);
     const reportedWithinDeadline = diffDays <= policy.claimReportDays;
 
     const rootFeePayment = rootPlacement.payments?.find(
@@ -954,19 +1009,23 @@ export class PlacementService {
     let decision: string | null = null;
     let decisionReason: string | null = null;
     let decidedAt: Date | null = null;
+    let rejectionCode: string | null = null;
 
     if (!reportedWithinDeadline) {
       decision = 'rejected';
       decisionReason = `Auto-rejected: Reported ${diffDays} days after worker left; deadline is ${policy.claimReportDays} days`;
       decidedAt = reportedAt;
+      rejectionCode = 'reported_late';
     } else if (!feePaidInFull) {
       decision = 'rejected';
       decisionReason = 'Auto-rejected: Root placement fee is not paid in full';
       decidedAt = reportedAt;
+      rejectionCode = 'fee_unpaid';
     } else if (inRejectList) {
       decision = 'rejected';
       decisionReason = `Auto-rejected: Reason '${dto.reason}' is in the non-eligible rejection list`;
       decidedAt = reportedAt;
+      rejectionCode = 'reason_not_covered';
     }
 
     const decisionDueHours = policy.claimDecisionHours;
@@ -976,32 +1035,54 @@ export class PlacementService {
 
     const code = await this.idService.generateCode('replacement_claim');
 
-    const claim = await this.prisma.replacementClaim.create({
-      data: {
-        code,
-        placementId: placement.id,
-        workerLeftOn,
-        reportedAt,
-        reportedWithinDeadline,
-        feePaidInFull,
-        reason: dto.reason,
-        evidencePaths: dto.evidencePaths ?? [],
-        exitCallRecordId: dto.exitCallRecordId ?? null,
-        callRecordId: dto.callRecordId,
-        decision,
-        decisionReason,
-        decidedByStaffId: null,
-        decidedAt,
-        decisionDueAt,
-      },
-      include: {
-        placement: true,
-        callRecord: true,
-        exitCallRecord: true,
-        decidedByStaff: true,
-        overruledByStaff: true,
-      },
-    });
+    // One claim waiting per placement: the placement row is locked while we
+    // look and create, and a partial unique index (migration
+    // 20261129000000_claims_and_set_aside) refuses a second undecided claim even so.
+    const openClaimExists = () => new ConflictException('A claim on this placement is already waiting for a decision');
+    let claim;
+    try {
+      claim = await this.prisma.$transaction(async (tx) => {
+        await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Placement" WHERE "id" = ${placement.id} FOR UPDATE`);
+        const waiting = await tx.replacementClaim.findFirst({ where: { placementId: placement.id, decision: null }, select: { id: true } });
+        if (waiting) throw openClaimExists();
+        return tx.replacementClaim.create({
+          data: {
+            code,
+            placementId: placement.id,
+            workerLeftOn,
+            reportedAt,
+            reportedWithinDeadline,
+            feePaidInFull,
+            reason: dto.reason,
+            evidencePaths: dto.evidencePaths ?? [],
+            exitCallRecordId: dto.exitCallRecordId ?? null,
+            callRecordId: dto.callRecordId,
+            reportedByStaffId: actor.id,
+            decision,
+            decisionReason,
+            rejectionCode,
+            decidedByStaffId: null,
+            decidedAt,
+            decisionDueAt,
+          },
+          include: {
+            placement: true,
+            callRecord: true,
+            exitCallRecord: true,
+            decidedByStaff: true,
+            overruledByStaff: true,
+          },
+        });
+      });
+    } catch (error) {
+      if (isUniqueViolation(error)) {
+        // The other unique index: the same owner call used by a claim made at the same moment.
+        const target = JSON.stringify((error as { meta?: unknown }).meta ?? '');
+        if (/call/i.test(target)) throw new ConflictException('This call is already the evidence of another claim');
+        throw openClaimExists();
+      }
+      throw error;
+    }
 
     await this.auditService.log({
       action: 'replacement_claim_reported',
@@ -1081,13 +1162,17 @@ export class PlacementService {
     }
 
     if (actor.role === 'team_lead') {
-      const accountAgentId = claim.placement.business.accountAgentId;
-      if (accountAgentId) {
-        const accountAgent = await this.prisma.staff.findUnique({ where: { id: accountAgentId } });
-        if (accountAgent && accountAgent.teamLeadId !== actor.id && accountAgent.id !== actor.id) {
-          throw new ForbiddenException('Team Leads can only decide claims for their own team');
-        }
+      // The business's account agent, or (with none) whoever brought the
+      // business in, must be on this Team Lead's team; with neither, a Manager decides.
+      const ownerId = claim.placement.business.accountAgentId ?? claim.placement.business.leadCreatedByStaffId ?? null;
+      const owner = ownerId ? await this.prisma.staff.findUnique({ where: { id: ownerId } }) : null;
+      if (!owner || (owner.teamLeadId !== actor.id && owner.id !== actor.id)) {
+        throw new ForbiddenException('Team Leads can only decide claims for their own team');
       }
+    }
+
+    if (claim.reportedByStaffId && claim.reportedByStaffId === actor.id) {
+      throw new ForbiddenException('You reported this claim, so someone else decides it');
     }
 
     const isOverrule = claim.decision !== null;
@@ -1102,6 +1187,9 @@ export class PlacementService {
     if (!dto.decisionReason || dto.decisionReason.trim().length === 0) {
       throw new BadRequestException('decisionReason is required');
     }
+    if (dto.rejectionCode !== undefined && dto.rejectionCode !== null && dto.decision === 'rejected' && !isReviewRejectionCode(dto.rejectionCode)) {
+      throw new BadRequestException("rejectionCode is one of 'wrong_details', 'no_owner_call' or 'reviewed'");
+    }
 
     const before = {
       decision: claim.decision,
@@ -1113,23 +1201,40 @@ export class PlacementService {
       placementStatus: claim.placement.status,
     };
 
+    // An automatic rejection (late, fee unpaid, not covered) that is overruled
+    // but stays rejected keeps its automatic code: it is never reported again.
+    // (Overruling it to accepted stays allowed: owner decision 14 Nov.)
+    const currentCode = rejectionCodeOf(claim);
+    const keepsAutoCode = dto.decision === 'rejected' && currentCode !== null && isAutoRejectionCode(currentCode);
+    const rejectionCode =
+      dto.decision !== 'rejected' ? null : keepsAutoCode ? currentCode : isReviewRejectionCode(dto.rejectionCode) ? dto.rejectionCode : 'reviewed';
+
     const updatedClaim = await this.prisma.$transaction(async (tx) => {
-      const updateData: Prisma.ReplacementClaimUpdateInput = {
+      const updateData: Prisma.ReplacementClaimUncheckedUpdateManyInput = {
         decision: dto.decision,
         decisionReason: dto.decisionReason,
         decidedAt: now,
+        rejectionCode,
       };
 
       if (isOverrule) {
-        updateData.overruledByStaff = { connect: { id: actor.id } };
+        updateData.overruledByStaffId = actor.id;
         updateData.overruleReason = dto.decisionReason;
       } else {
-        updateData.decidedByStaff = { connect: { id: actor.id } };
+        updateData.decidedByStaffId = actor.id;
       }
 
-      const updated = await tx.replacementClaim.update({
-        where: { id: claim.id },
+      // Only if nobody decided or overruled it since we read it: an accept and a
+      // reject at the same moment never both apply (409 for the second).
+      const claimed = await tx.replacementClaim.updateMany({
+        where: { id: claim.id, decision: claim.decision, overruledByStaffId: claim.overruledByStaffId },
         data: updateData,
+      });
+      if (claimed.count !== 1) {
+        throw new ConflictException('This claim was decided by someone else meanwhile; reload');
+      }
+      const updated = await tx.replacementClaim.findUniqueOrThrow({
+        where: { id: claim.id },
         include: {
           placement: true,
           decidedByStaff: true,
@@ -1143,22 +1248,28 @@ export class PlacementService {
         const rootPlacement = claim.placement.rootPlacementId
           ? await tx.placement.findUniqueOrThrow({ where: { id: rootId } })
           : claim.placement;
+        const lastReplacement = claim.placement.replacementNumber >= policy.maxFreeReplacements;
 
-        if (claim.placement.replacementNumber >= policy.maxFreeReplacements) {
-          await tx.placement.update({
-            where: { id: rootId },
-            data: {
-              status: 'guarantee_ended',
-              guaranteeEndedReason: 'second_replacement_left',
-            },
-          });
+        // Only an active placement can be accepted: two acceptances (or an
+        // accept after the worker was already replaced) never create a second
+        // replacement vacancy.
+        const moved = await tx.placement.updateMany({
+          where: { id: claim.placementId, status: 'active' },
+          data: lastReplacement
+            ? { status: 'guarantee_ended', guaranteeEndedReason: 'second_replacement_left', dropoutReportedAt: claim.reportedAt }
+            : { status: 'dropped_out', dropoutReportedAt: claim.reportedAt },
+        });
+        if (moved.count !== 1) {
+          throw new ConflictException('This placement is no longer active; the claim cannot be accepted');
+        }
+
+        if (lastReplacement) {
           if (claim.placementId !== rootId) {
             await tx.placement.update({
-              where: { id: claim.placementId },
+              where: { id: rootId },
               data: {
                 status: 'guarantee_ended',
                 guaranteeEndedReason: 'second_replacement_left',
-                dropoutReportedAt: claim.reportedAt,
               },
             });
           }
@@ -1171,14 +1282,6 @@ export class PlacementService {
             reason: 'second_replacement_left',
           });
         } else {
-          await tx.placement.update({
-            where: { id: claim.placementId },
-            data: {
-              status: 'dropped_out',
-              dropoutReportedAt: claim.reportedAt,
-            },
-          });
-
           await recordStatusChange(tx, {
             subjectType: 'placement',
             subjectId: claim.placementId,
@@ -1232,15 +1335,20 @@ export class PlacementService {
             },
           });
         }
-      } else if (dto.decision === 'rejected' && claim.placement.status === 'dropped_out') {
-        await tx.placement.update({
-          where: { id: claim.placementId },
-          data: {
-            status: 'active',
-          },
+      } else if (
+        dto.decision === 'rejected' &&
+        isOverrule &&
+        claim.decision === 'accepted' &&
+        claim.placement.status === 'dropped_out' &&
+        claim.placement.dropoutReportedAt?.getTime() === claim.reportedAt.getTime()
+      ) {
+        // Overruling an acceptance puts the placement back only when this
+        // claim is the one that dropped it out.
+        const back = await tx.placement.updateMany({
+          where: { id: claim.placementId, status: 'dropped_out', dropoutReportedAt: claim.reportedAt },
+          data: { status: 'active', dropoutReportedAt: null },
         });
-
-        await recordStatusChange(tx, {
+        if (back.count === 1) await recordStatusChange(tx, {
           subjectType: 'placement',
           subjectId: claim.placementId,
           fromStatus: 'dropped_out',
@@ -1271,11 +1379,17 @@ export class PlacementService {
     return updatedClaim;
   }
 
-  async listClaims(placementIdOrCode: string) {
+  /** A placement's claims. Agents and Team Leads see only placements in their GET /placements scope (404 outside). */
+  async listClaims(placementIdOrCode: string, actor?: { id: string; role: string }) {
     const placement = await this.prisma.placement.findFirst({
       where: { OR: [{ id: placementIdOrCode }, { code: placementIdOrCode }] },
     });
     if (!placement) throw new NotFoundException(`Placement '${placementIdOrCode}' not found`);
+    if (actor && ['call_agent', 'field_agent', 'team_lead'].includes(actor.role)) {
+      const scope = await this.placementListScope(actor);
+      const visible = await this.prisma.placement.findFirst({ where: { AND: [scope, { id: placement.id }] }, select: { id: true } });
+      if (!visible) throw new NotFoundException(`Placement '${placementIdOrCode}' not found`);
+    }
 
     return this.prisma.replacementClaim.findMany({
       where: { placementId: placement.id },
@@ -1441,7 +1555,8 @@ export class PlacementService {
    * for that vacancy, who proposed the interview, or who created the placement. A Team
    * Lead: the same for anyone on their team (and themselves).
    */
-  private async placementListScope(actor: { id: string; role: string }): Promise<Prisma.PlacementWhereInput> {
+  /** What a person may see of placements (GET /placements; also the "Report worker left" finder). */
+  async placementListScope(actor: { id: string; role: string }): Promise<Prisma.PlacementWhereInput> {
     let staffIds: string[];
     if (actor.role === 'call_agent' || actor.role === 'field_agent') {
       staffIds = [actor.id];

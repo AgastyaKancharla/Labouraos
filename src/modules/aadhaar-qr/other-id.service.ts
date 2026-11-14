@@ -288,10 +288,12 @@ export class OtherIdService {
         after: { status: otherIdDecided, method: pending.method, idNumberLast4: pending.last4, approverRole: actor.role, approvalMode: right.mode },
         changedFields: ['status'],
       });
-      await this.prisma.reviewFlag.updateMany({
-        where: { kind: 'other_id_needs_manager', subjectType, subjectId, status: 'open' },
-        data: { status: 'resolved', resolvedAt: now, resolvedByStaffId: actor.id },
-      });
+      // The "waiting for a Manager" flag is done with; it comes off the bells too.
+      const waitingFlags = await this.prisma.reviewFlag.findMany({ where: { kind: 'other_id_needs_manager', subjectType, subjectId, status: 'open' }, select: { id: true } });
+      for (const flag of waitingFlags) {
+        await this.prisma.reviewFlag.updateMany({ where: { id: flag.id, status: 'open' }, data: { status: 'resolved', resolvedAt: now, resolvedByStaffId: actor.id } });
+        await this.flags?.refreshBell(flag.id);
+      }
     }
     const photosDeleted = await this.idPhotos.deletePhotos(subjectType, subjectId, verdict === 'ok' ? 'team_lead_approved' : 'team_lead_rejected', actor.id, now);
     return { otherIdDecided, photosDeleted };

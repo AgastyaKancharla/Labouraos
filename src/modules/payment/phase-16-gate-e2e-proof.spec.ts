@@ -490,14 +490,15 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     const correctCreditId = manualCreditRes.body.id;
     bankCreditIds.push(correctCreditId);
 
-    // Finance matches credit with pending placement fee payment
-    const confirmRes = await request(app.getHttpServer())
+    // The statement line carries the payment reference and the exact amount, so
+    // it is matched the same way as a bank-feed credit (PR #137 review, M5):
+    // no separate "confirm" step. Confirming it again is refused.
+    expect(manualCreditRes.body.match).toMatchObject({ status: 'succeeded', paymentId: placementPayment!.id });
+    await request(app.getHttpServer())
       .post(`/payments/${placementPayment!.id}/confirm`)
       .set('Authorization', `Bearer ${financeToken}`)
       .send({ bankCreditId: correctCreditId })
-      .expect(201);
-
-    expect(confirmRes.body.success).toBe(true);
+      .expect((res) => expect(res.status).toBeGreaterThanOrEqual(400));
 
     // Verify placement confirmed, candidate placed, joining date sent once, invoice assigned
     const confirmedPlacement = await prisma.placement.findUnique({ where: { id: placement.id } });

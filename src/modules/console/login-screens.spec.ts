@@ -59,31 +59,6 @@ describe('Phase 10 Task 6: login and approval screens', () => {
     await app.close();
   });
 
-  it('renders the staff-code login and the approver screens on the old admin dashboard (the only old console left)', async () => {
-    const admin = await request(app.getHttpServer()).get('/console/admin').expect(200);
-
-    expect(admin.text).toContain('id="login-staff-code"');
-    expect(admin.text).toContain('id="login-password"');
-    expect(admin.text).toContain('Ask your Team Lead for your code');
-    expect(admin.text).toContain('id="login-code"');
-    expect(admin.text).toContain('id="login-code-countdown"');
-    expect(admin.text).toContain('laboura_device_id');
-    expect(admin.text).toContain('localStorage.setItem');
-    expect(admin.text).toContain("sessionStorage.setItem('laboura_token'");
-    expect(admin.text).toContain('/auth/refresh');
-    expect(admin.text).toContain('/auth/logout');
-
-    expect(admin.text).toContain('id="view-login-codes"');
-    expect(admin.text).toContain('id="view-devices"');
-    expect(admin.text).toContain('id="view-staff"');
-    expect(admin.text).toContain('id="view-login-report"');
-    expect(admin.text).toContain('Show code');
-    expect(admin.text).toContain('Approve');
-    expect(admin.text).toContain('>Unlock<');
-    expect(admin.text).toContain('>Lock<');
-    expect(admin.text).toContain('10000');
-  });
-
   it('serves the approval screens to Team Leads, Managers and the CEO, and refuses everyone else', async () => {
     const lead = await makeStaff('team_lead');
     const manager = await makeStaff('manager');

@@ -70,10 +70,20 @@ export class ReviewFlagService {
   }
 
   /**
+   * For flags closed outside resolve() (Finance resolving a payment or payout
+   * flag, a bank credit set aside): takes the flag off the bells too. Also the
+   * bell for a flag raised inside a transaction (raise with options.tx), once
+   * that transaction has committed.
+   */
+  async refreshBell(flagId: string): Promise<void> {
+    await this.syncBell(flagId);
+  }
+
+  /**
    * Raises a flag. With `options.tx` the flag is written on that transaction's
    * connection (e.g. while an advisory lock is held, so a check-then-raise
-   * can't race) and its bell is left to the caller, who calls announce(flag.id)
-   * once the transaction has committed.
+   * can't race) and its bell is left to the caller, who calls
+   * refreshBell(flag.id) once the transaction has committed.
    */
   async raise(params: RaiseReviewFlagParams, options: { tx?: Prisma.TransactionClient } = {}) {
     if (!REVIEW_FLAG_KINDS.includes(params.kind)) {
@@ -101,11 +111,6 @@ export class ReviewFlagService {
     });
     if (!options.tx) await this.syncBell(flag.id);
     return flag;
-  }
-
-  /** The bell for a flag raised inside a transaction (raise with options.tx), after that transaction committed. */
-  async announce(flagId: string): Promise<void> {
-    await this.syncBell(flagId);
   }
 
   async list(actor: { id: string; role: string }, query?: ListReviewFlagsQuery) {

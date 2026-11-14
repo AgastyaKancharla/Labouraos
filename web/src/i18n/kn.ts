@@ -2,6 +2,7 @@
 import { aadhaarQrKn } from './aadhaarQr';
 import { payslipKn } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceKn } from '../attendance/i18n';
+import { workerLeftKn } from '../claims/i18n';
 import type { Messages } from './en';
 import { registrationKn } from './registration';
 import { staffInviteKn } from './staffInvite';
@@ -599,4 +600,5 @@ export const kn: Messages = {
   ...callAgentKn,
   ...payslipKn,
   ...attendanceKn,
+  ...workerLeftKn,
 };

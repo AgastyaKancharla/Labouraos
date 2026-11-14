@@ -175,7 +175,7 @@ export class CeoMoneyService {
           : []),
       ],
     };
-    const [total, payments, totals, unmatched, mismatches, duplicates, unpaid] = await Promise.all([
+    const [total, payments, totals, unmatched, mismatches, duplicates, unpaid, setAside] = await Promise.all([
       this.prisma.payment.count({ where }),
       this.prisma.payment.findMany({
         where,
@@ -195,6 +195,13 @@ export class CeoMoneyService {
       this.prisma.placement.findMany({
         where: { status: 'awaiting_payment' },
         select: { id: true, code: true, paymentDueAt: true, placementFee: true, gstAmount: true, business: { select: { name: true } } },
+      }),
+      // Set aside as not Laboura's money (the CEO can undo one, with a reason).
+      this.prisma.bankCredit.findMany({
+        where: { status: 'ignored' },
+        orderBy: [{ ignoredAt: 'desc' }, { receivedAt: 'desc' }],
+        take: 50,
+        select: { id: true, bankUtr: true, amountPaise: true, receivedAt: true, payerName: true, ignoredReason: true, ignoredAt: true, ignoredByStaff: { select: { name: true } } },
       }),
     ]);
     const now = new Date();
@@ -224,6 +231,16 @@ export class CeoMoneyService {
       },
       byType: totals,
       unmatched: unmatched.map((c) => ({ id: c.id, utr: c.bankUtr, amountPaise: c.amountPaise, at: c.receivedAt.toISOString(), payerName: c.payerName })),
+      setAside: setAside.map((c) => ({
+        id: c.id,
+        utr: c.bankUtr,
+        amountPaise: c.amountPaise,
+        at: c.receivedAt.toISOString(),
+        payerName: c.payerName,
+        reason: c.ignoredReason,
+        setAsideAt: c.ignoredAt?.toISOString() ?? null,
+        setAsideBy: c.ignoredByStaff?.name ?? null,
+      })),
       unpaidFees: {
         withinDue: unpaid.filter((p) => !p.paymentDueAt || p.paymentDueAt >= now).map((p) => ({ id: p.id, code: p.code, business: p.business.name, amountPaise: p.placementFee + p.gstAmount })),
         overdue: unpaid.filter((p) => p.paymentDueAt && p.paymentDueAt < now).map((p) => ({ id: p.id, code: p.code, business: p.business.name, amountPaise: p.placementFee + p.gstAmount })),

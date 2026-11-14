@@ -420,7 +420,7 @@ export class AadhaarQrService {
       },
       { timeout: 15_000 },
     );
-    if (flagId) await this.flags.announce(flagId);
+    if (flagId) await this.flags.refreshBell(flagId);
   }
 
   /**
@@ -466,7 +466,7 @@ export class AadhaarQrService {
       },
       { timeout: 15_000 },
     );
-    if (flagId) await this.flags.announce(flagId);
+    if (flagId) await this.flags.refreshBell(flagId);
   }
 
   /** The same Aadhaar (last 4 + date of birth + name on it) already verified for someone else: a flag for the Manager, never a block. */

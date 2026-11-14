@@ -13,6 +13,9 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { FilterPanel, Kv, PagedTable, SearchField, SelectFilter, rangeQuery, useCeoList, useDebounced } from '../_kit/kit';
 import { PAYMENT_TYPE } from '../_kit/labels';
 import { PaymentTabs } from '../_kit/tabs';
+import { ActionButton } from '../_kit/actions';
+import { UndoSetAside } from '../../finance/_kit/statement';
+import { api } from '../../../lib/api/client';
 
 /** Payments · money in — design C-Payments.dc.html. */
 interface Row {
@@ -42,6 +45,7 @@ interface Totals {
 interface Extra {
   byType: Totals;
   unmatched: { id: string; utr: string; amountPaise: number; at: string; payerName: string | null }[];
+  setAside?: { id: string; utr: string; amountPaise: number; at: string; payerName: string | null; reason: string | null; setAsideAt: string | null; setAsideBy: string | null }[];
   unpaidFees: { withinDue: { id: string; code: string; business: string; amountPaise: number }[]; overdue: { id: string; code: string; business: string; amountPaise: number }[] };
 }
 interface Summary {
@@ -165,8 +169,44 @@ export default function PaymentsIn() {
               ['Unmatched bank credits', d ? (d.unmatched.length ? `${d.unmatched.length} · ${formatINR(sum(d.unmatched))} — Finance matches them` : 'None') : '—'],
             ]}
           />
+          {d && d.unmatched.length > 0 && (
+            <div className="ceo-note" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+              {d.unmatched.slice(0, 5).map((c) => (
+                <div key={c.id} className="ceo-actions" style={{ justifyContent: 'space-between' }}>
+                  <span>
+                    {formatINR(c.amountPaise)} · UTR {c.utr} · {c.payerName ?? 'unknown payer'} · {formatDateTimeIST(c.at)}
+                  </span>
+                  <ActionButton
+                    label="Set aside"
+                    title={`Set ${formatINR(c.amountPaise)} aside`}
+                    description="Only for money that is not Laboura's (a personal transfer, meant for another account). Someone who paid Laboura by mistake gets it back from Finance instead. This can't be undone and is logged with your reason."
+                    reason={{ label: 'Why this is not Laboura’s money', required: true }}
+                    confirmLabel="Set it aside"
+                    run={({ reason }) => api.post(`/payments/bank-credits/${encodeURIComponent(c.id)}/ignore`, { reason })}
+                    success="Set aside — not Laboura's money"
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </Card>
       </div>
+      {d?.setAside && d.setAside.length > 0 && (
+        <Card title={`Set aside, not ours · ${d.setAside.length} · ${formatINR(sum(d.setAside))}`}>
+          <div className="ceo-note" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {d.setAside.map((c) => (
+              <div key={c.id} className="ceo-actions" style={{ justifyContent: 'space-between' }}>
+                <span>
+                  {formatINR(c.amountPaise)} · UTR {c.utr} · {c.payerName ?? 'unknown payer'} · “{c.reason ?? ''}”
+                  {c.setAsideBy ? ` · set aside by ${c.setAsideBy}` : ''}
+                  {c.setAsideAt ? ` on ${formatDateTimeIST(c.setAsideAt)}` : ''}
+                </span>
+                <UndoSetAside id={c.id} amountPaise={c.amountPaise} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

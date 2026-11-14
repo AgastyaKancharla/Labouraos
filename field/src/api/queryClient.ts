@@ -46,6 +46,7 @@ export const queryKeys = {
   sellingCandidate: (id: string, vacancyId: string) => ['selling', 'candidate', id, vacancyId] as const,
   sellingInterview: (id: string) => ['selling', 'interview', id] as const,
   sellingPlacement: (id: string) => ['selling', 'placement', id] as const,
+  workerLeft: (id: string) => ['selling', 'placement', id, 'worker-left'] as const,
   sellingRecent: ['selling', 'recent-vacancies'] as const,
   sellingBooking: (vacancyId: string, jobSeekerId: string) => ['selling', 'booking', vacancyId, jobSeekerId] as const,
   call: (id: string) => ['calls', id] as const,

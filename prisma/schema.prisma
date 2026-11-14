@@ -794,6 +794,15 @@ model ReplacementClaim {
   exitCallRecord         CallRecord? @relation("ExitCallRecord", fields: [exitCallRecordId], references: [id], onDelete: SetNull)
   callRecordId           String
   callRecord             CallRecord  @relation("ClaimCallRecord", fields: [callRecordId], references: [id], onDelete: Restrict)
+  // Who reported it (never the one who decides it). With the partial unique
+  // index in migration 20261129000000_claims_and_set_aside (SQL only, Prisma cannot express it) a
+  // placement has at most one claim waiting for a decision, and one owner call
+  // is the evidence of at most one claim.
+  reportedByStaffId      String?
+  reportedByStaff        Staff?      @relation("ClaimReportedBy", fields: [reportedByStaffId], references: [id], onDelete: SetNull)
+  // Why it was rejected (claim-refile.ts): reported_late, fee_unpaid,
+  // reason_not_covered (automatic), or wrong_details, no_owner_call, reviewed (a person).
+  rejectionCode          String?
   decision               String?
   decisionReason         String?
   decidedByStaffId       String?
@@ -810,6 +819,7 @@ model ReplacementClaim {
   @@index([decision])
   @@index([decisionDueAt])
   @@index([decidedByStaffId])
+  @@index([reportedByStaffId])
   @@index([overruledByStaffId])
   @@index([callRecordId])
   @@index([exitCallRecordId])
@@ -891,6 +901,8 @@ model Staff {
   reversedHits      JobSeekerHit[]   @relation("JobSeekerHitReversedBy")
   claimsDecided     ReplacementClaim[] @relation("ClaimDecidedBy")
   claimsOverruled   ReplacementClaim[] @relation("ClaimOverruledBy")
+  claimsReported    ReplacementClaim[] @relation("ClaimReportedBy")
+  bankCreditsSetAside BankCredit[]     @relation("BankCreditIgnoredBy")
   assignedFollowUpTasks FollowUpTask[]
   attendanceDays    AttendanceDay[]
   notifications     Notification[]   @relation("NotificationRecipient")
@@ -1020,6 +1032,10 @@ model BankCredit {
   matchedPayment    Payment?  @relation(fields: [matchedPaymentId], references: [id], onDelete: SetNull)
   tdsReceivable     TdsReceivable?
   ignoredReason     String?
+  // "Set aside" (not Laboura's money): when and by whom (Month-end review lists them).
+  ignoredAt         DateTime?
+  ignoredByStaffId  String?
+  ignoredByStaff    Staff?    @relation("BankCreditIgnoredBy", fields: [ignoredByStaffId], references: [id], onDelete: SetNull)
   // Phase 22: unclaimed money is returned to the same UPI ID, never kept.
   returnedUtr       String?   @unique
   returnedAt        DateTime?

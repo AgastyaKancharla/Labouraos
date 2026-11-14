@@ -88,7 +88,7 @@ function setup(options: { trusted?: TrustedKey[] } = {}) {
       void owner;
       return prisma.reviewFlag.create({ data: { ...data, status: 'open' } });
     }),
-    announce: jest.fn(async () => undefined),
+    refreshBell: jest.fn(async () => undefined),
   };
   const pricing = { current: jest.fn(async () => ({ adultMinimumAge: 18 })) };
   const storage = new MemoryCandidatePhotoStorage();
@@ -921,7 +921,7 @@ describe('Fable re-check of PR #135 (rev 169 and the review fixes)', () => {
     const call = flags.raise.mock.calls.find((c) => c[0].kind === 'aadhaar_qr_tampered')!;
     expect(call[1]).toEqual({ tx: expect.anything() });
     const flagId = (await flags.raise.mock.results[flags.raise.mock.calls.indexOf(call)]!.value) as { id: string };
-    expect(flags.announce).toHaveBeenCalledWith(flagId.id);
+    expect(flags.refreshBell).toHaveBeenCalledWith(flagId.id);
   });
 
   it('M-4: a verified QR still keeps its last 4, reference and time stamp (the duplicate check uses verified rows only)', async () => {

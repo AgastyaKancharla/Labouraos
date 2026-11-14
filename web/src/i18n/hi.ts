@@ -2,6 +2,7 @@
 import { aadhaarQrHi } from './aadhaarQr';
 import { payslipHi } from '../screens/call-agent/CA14g-Payslip/i18n';
 import { attendanceHi } from '../attendance/i18n';
+import { workerLeftHi } from '../claims/i18n';
 import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffInviteHi } from './staffInvite';
@@ -600,4 +601,5 @@ export const hi: Messages = {
   ...callAgentHi,
   ...payslipHi,
   ...attendanceHi,
+  ...workerLeftHi,
 };

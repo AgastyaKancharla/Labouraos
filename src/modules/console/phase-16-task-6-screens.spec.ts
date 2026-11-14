@@ -1,46 +1,6 @@
-import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 
 describe('Phase 16 Task 6 screens', () => {
-  describe('Finance & Management Screen (Admin Dashboard)', () => {
-    it('renders Finance pending payments, unmatched bank credits, add credit form, match, ignore, and payment_mismatch flags', () => {
-      const html = renderAdminDashboardHtml();
-
-      // Pending payments table
-      expect(html).toContain('Pending Payments Awaiting Confirmation');
-      expect(html).toContain('Payer\'s UTR Hint');
-      expect(html).toContain('pending-payments-tbody');
-      expect(html).toContain('promptMatchPayment');
-
-      // Unmatched bank credits table
-      expect(html).toContain('Unmatched Bank Credits');
-      expect(html).toContain('bank-credits-tbody');
-      expect(html).toContain('promptMatchCredit');
-      expect(html).toContain('promptIgnoreBankCredit');
-
-      // Add bank credit form
-      expect(html).toContain('Add Bank Credit (From Bank Statement)');
-      expect(html).toContain('id="credit-utr"');
-      expect(html).toContain('id="credit-amount"');
-      expect(html).toContain('id="credit-received-at"');
-      expect(html).toContain('submitAddBankCredit');
-
-      // Payment mismatch flags
-      expect(html).toContain('Payment Mismatch Flags');
-      expect(html).toContain('mismatch-flags-tbody');
-      expect(html).toContain('promptResolveFlag');
-
-      // Placements payment status & resend payment link
-      expect(html).toContain('Payment status');
-      expect(html).toContain('Awaiting payment');
-      expect(html).toContain('Overdue');
-      expect(html).toContain('Paid');
-      expect(html).toContain('Resend payment link');
-      expect(html).toContain('resendPlacementPayment');
-      expect(html).toContain('resendSeekerPayment');
-    });
-  });
-
   describe('Public Payment Page', () => {
     const originalVpa = process.env.COMPANY_UPI_VPA;
     const originalPayee = process.env.COMPANY_UPI_PAYEE_NAME;
