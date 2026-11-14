@@ -109,7 +109,15 @@ export class OtherIdService {
       await tx.idCheckDetail.create({ data: { id: detailId, subjectType: subject.type, subjectId: subject.id, verificationId, kind: 'id_card_photo' } });
     });
     const stored = await this.idPhotos.attachPhoto(detailId, IdCheckPhotoService.photoPath('id_card_photo', subject.type, subject.id, verificationId), input.photo.buffer, contentType, now);
-    if (!stored) throw new BadRequestException('The photo could not be saved. Try again.');
+    if (!stored) {
+      // No card photo, nothing for the Team Lead to check: the row must not sit "pending" (and hold
+      // up terms and payment) with nothing behind it. It is closed as failed; he simply tries again.
+      const closed = { status: 'failed', failureReason: 'The photo of the card could not be saved' };
+      if (subject.type === 'job_seeker') await this.prisma.identityVerification.update({ where: { id: verificationId }, data: closed });
+      else await this.prisma.referralIdentityVerification.update({ where: { id: verificationId }, data: closed });
+      await this.prisma.idCheckDetail.delete({ where: { id: detailId } });
+      throw new BadRequestException('The photo could not be saved. Try again.');
+    }
     await this.idPhotos.deletePhotos(subject.type, subject.id, 'replaced', context.staffId ?? 'system', now, verificationId);
     await this.audit.log({
       actorId: context.staffId ?? 'system',

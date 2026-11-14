@@ -137,7 +137,8 @@ export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consen
       locks.push(String(key));
       return 1;
     },
-    async $transaction<T>(fn: (tx: unknown) => Promise<T>): Promise<T> {
+    async $transaction<T>(fn: (tx: unknown) => Promise<T>, ...options: unknown[]): Promise<T> {
+      void options; // timeout etc.: nothing to time out in memory
       return fn(db);
     },
   };

@@ -351,41 +351,57 @@ export class AadhaarQrService {
     await this.prisma.aadhaarQrAttempt.update({ where: { id }, data: { outcome } });
   }
 
-  /** Repeated QR codes that fail UIDAI's signature: someone may be trying an edited card. One flag per person, ever. */
+  /**
+   * Repeated QR codes that fail UIDAI's signature: someone may be trying an edited card. One flag per
+   * person, ever. The count, the "already flagged?" check and the flag itself all happen while this
+   * person's advisory lock is held, so two requests at the same moment can't both raise it.
+   */
   private async flagRepeatedBadSignatures(subject: Subject, context: Context, now: Date): Promise<void> {
-    const shouldFlag = await this.prisma.$transaction(async (tx) => {
-      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`aadhaar-qr-flag:${subject.type}:${subject.id}`}))`);
-      const bad = await tx.aadhaarQrAttempt.count({
-        where: { subjectType: subject.type, subjectId: subject.id, outcome: 'bad_signature', attemptedAt: { gt: new Date(now.getTime() - DAY_MS) } },
-      });
-      if (bad < QR_BAD_SIGNATURES_BEFORE_FLAG) return null;
-      const existing = await tx.reviewFlag.findFirst({ where: { kind: 'aadhaar_qr_tampered', subjectType: subject.type, subjectId: subject.id }, select: { id: true } });
-      return existing ? null : bad;
-    });
-    if (shouldFlag === null) return;
-    await this.flags.raise({
-      kind: 'aadhaar_qr_tampered',
-      subjectType: subject.type,
-      subjectId: subject.id,
-      raisedForStaffId: subject.registeredByStaffId,
-      details: { invalidSignatureAttempts: shouldFlag, lastChannel: context.channel, ...(context.staffId ? { fieldAgentStaffId: context.staffId } : {}) },
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`aadhaar-qr-flag:${subject.type}:${subject.id}`}))`);
+        const bad = await tx.aadhaarQrAttempt.count({
+          where: { subjectType: subject.type, subjectId: subject.id, outcome: 'bad_signature', attemptedAt: { gt: new Date(now.getTime() - DAY_MS) } },
+        });
+        if (bad < QR_BAD_SIGNATURES_BEFORE_FLAG) return;
+        const existing = await tx.reviewFlag.findFirst({ where: { kind: 'aadhaar_qr_tampered', subjectType: subject.type, subjectId: subject.id }, select: { id: true } });
+        if (existing) return;
+        // Raised (and committed) before the lock is released: the next request waits for the lock and then sees it.
+        await this.flags.raise({
+          kind: 'aadhaar_qr_tampered',
+          subjectType: subject.type,
+          subjectId: subject.id,
+          raisedForStaffId: subject.registeredByStaffId,
+          details: { invalidSignatureAttempts: bad, lastChannel: context.channel, ...(context.staffId ? { fieldAgentStaffId: context.staffId } : {}) },
+        });
+      },
+      { timeout: 15_000 },
+    );
   }
 
-  /** A card newer than our newest UIDAI certificate: not fraud — the CEO adds the new certificate. At most once a day. */
+  /**
+   * A card newer than our newest UIDAI certificate: not fraud — the CEO adds the new certificate. At
+   * most once a day, under one advisory lock so parallel scans raise it once.
+   */
   private async flagCertificateMissing(now: Date): Promise<void> {
-    const recent = await this.prisma.reviewFlag.findFirst({
-      where: { kind: 'aadhaar_cert_missing', raisedAt: { gt: new Date(now.getTime() - DAY_MS) } },
-      select: { id: true },
-    });
-    if (recent) return;
-    await this.flags.raise({
-      kind: 'aadhaar_cert_missing',
-      subjectType: 'system',
-      subjectId: 'uidai-certificates',
-      raisedForStaffId: null,
-      details: { newestCertificateValidTo: this.newestCertEnd?.toISOString() ?? null, action: 'Download the current UIDAI offline e-KYC certificate and add it to src/modules/aadhaar-qr/certs' },
-    });
+    await this.prisma.$transaction(
+      async (tx) => {
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'aadhaar-qr-cert-missing'}))`);
+        const recent = await tx.reviewFlag.findFirst({
+          where: { kind: 'aadhaar_cert_missing', raisedAt: { gt: new Date(now.getTime() - DAY_MS) } },
+          select: { id: true },
+        });
+        if (recent) return;
+        await this.flags.raise({
+          kind: 'aadhaar_cert_missing',
+          subjectType: 'system',
+          subjectId: 'uidai-certificates',
+          raisedForStaffId: null,
+          details: { newestCertificateValidTo: this.newestCertEnd?.toISOString() ?? null, action: 'Download the current UIDAI offline e-KYC certificate and add it to src/modules/aadhaar-qr/certs' },
+        });
+      },
+      { timeout: 15_000 },
+    );
   }
 
   /** The same Aadhaar (last 4 + date of birth + name on it) already verified for someone else: a flag for the Manager, never a block. */

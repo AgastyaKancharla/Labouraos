@@ -251,6 +251,33 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
     expect(flagCalls.filter((f) => f.kind === 'aadhaar_qr_tampered')).toHaveLength(1);
   });
 
+  it('raises the tampered flag and the certificate flag while the advisory lock is held (parallel scans raise each once)', async () => {
+    const { service, prisma, flags } = setup({ trusted: [{ ...signer.trusted, notAfter: new Date('2025-12-31T00:00:00Z') }] });
+    let depth = 0;
+    const transaction = prisma.$transaction.bind(prisma);
+    prisma.$transaction = (async (fn: (tx: unknown) => Promise<unknown>, options?: unknown) => {
+      depth += 1;
+      try {
+        return await transaction(fn, options);
+      } finally {
+        depth -= 1;
+      }
+    }) as typeof prisma.$transaction;
+    const seen: { kind: unknown; inTransaction: boolean; lastLock: string | undefined }[] = [];
+    const raise = flags.raise.getMockImplementation()!;
+    flags.raise.mockImplementation(async (params: Record<string, unknown>) => {
+      seen.push({ kind: params.kind, inTransaction: depth > 0, lastLock: prisma.locks[prisma.locks.length - 1] });
+      return raise(params);
+    });
+    const older = buildSecureQr(stranger, { mobile: '9876500001', timestamp: '20251001101530123' });
+    for (let i = 0; i < QR_BAD_SIGNATURES_BEFORE_FLAG; i += 1) await service.checkJobSeeker('js-1', older, { channel: 'link', now: new Date(NOW.getTime() + i * 1000) });
+    await service.checkJobSeeker('js-2', buildSecureQr(stranger, { mobile: '9876500002', timestamp: '20260101101530123' }), { channel: 'link', now: NOW });
+    expect(seen).toEqual([
+      { kind: 'aadhaar_qr_tampered', inTransaction: true, lastLock: 'aadhaar-qr-flag:job_seeker:js-1' },
+      { kind: 'aadhaar_cert_missing', inTransaction: true, lastLock: 'aadhaar-qr-cert-missing' },
+    ]);
+  });
+
   describe('a card newer than our newest UIDAI certificate (H3)', () => {
     // Our certificate ends on 1 Jan 2026 at noon; this QR was made after that and is signed with a key we don't hold.
     const trusted = [{ ...signer.trusted, notAfter: new Date('2025-12-31T00:00:00Z') }];
@@ -423,6 +450,18 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
       prisma.consent.rows.splice(0, 1);
       await expect(go({})).rejects.toThrow(/Consent/);
       expect(prisma.identityVerification.rows).toHaveLength(0);
+    });
+
+    it('a card photo that cannot be stored leaves no pending check behind (nothing for the Team Lead, nothing holding up terms)', async () => {
+      const { otherIds, prisma, storage } = setup();
+      jest.spyOn(storage, 'put').mockRejectedValueOnce(new Error('storage down'));
+      await expect(otherIds.submitForJobSeeker('js-1', pan, { channel: 'link', now: NOW })).rejects.toThrow(/could not be saved/);
+      expect(prisma.identityVerification.rows).toEqual([expect.objectContaining({ status: 'failed', failureReason: 'The photo of the card could not be saved' })]);
+      expect(prisma.idCheckDetail.rows).toHaveLength(0);
+      // He tries again and it works: one pending check, with its photo.
+      await otherIds.submitForJobSeeker('js-1', pan, { channel: 'link', now: NOW });
+      expect(prisma.identityVerification.rows.filter((r) => r.status === 'pending')).toHaveLength(1);
+      expect(prisma.idCheckDetail.rows).toEqual([expect.objectContaining({ kind: 'id_card_photo', photoPath: expect.any(String) })]);
     });
 
     it('"Looks right": verified (name and 18+ confirmed by eye) and the card photo deleted; "Fake": failed and deleted', async () => {
