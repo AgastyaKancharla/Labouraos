@@ -31,6 +31,7 @@ import { Public } from '../../common/rbac/public.decorator';
 import { wantsHtml } from '../../common/public-pages';
 import { isValidInvoiceToken } from './invoice-link';
 import { renderInvoicePage } from './invoice-page';
+import { WorkerLeftService } from './worker-left.service';
 
 /**
  * The business's copy of its GST invoice, opened from the signed link sent
@@ -73,7 +74,26 @@ export class VacancyPlacementController {
 @UseGuards(JwtAuthGuard, RbacGuard)
 @UseInterceptors(PiiMaskingInterceptor)
 export class PlacementController {
-  constructor(private readonly placementService: PlacementService) {}
+  constructor(
+    private readonly placementService: PlacementService,
+    private readonly workerLeft: WorkerLeftService,
+  ) {}
+
+  /** "Report worker left" finder (Manager, Team Lead, call agent, CEO): active placements by code, worker or business. */
+  @Get('worker-left/search')
+  @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'read')
+  async searchWorkerLeft(@Query('q') q: string | undefined, @Req() req: Request & { user: JwtPayload }) {
+    return this.workerLeft.search(req.user.sub, q);
+  }
+
+  /** What the "Report worker left" form needs: guarantee dates, answered owner calls, reasons. The claim itself is POST :id/claims. */
+  @Get(':id/worker-left')
+  @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')
+  @RequirePermission('placement', 'read')
+  async workerLeftForm(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
+    return this.workerLeft.form(id, req.user.sub);
+  }
 
   @Post(':id/joined')
   @RequireRoles('field_agent', 'call_agent', 'team_lead', 'manager', 'ceo')

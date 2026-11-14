@@ -31,6 +31,7 @@ type MockAuditService = {
 type MockReviewFlagService = {
   raise: jest.Mock;
   resolve: jest.Mock;
+  refreshBell: jest.Mock;
 };
 
 describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
@@ -95,6 +96,7 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
     reviewFlagService = {
       raise: jest.fn().mockResolvedValue({ id: 'flag-1', code: 'RF-0001' }),
       resolve: jest.fn().mockResolvedValue({ id: 'flag-1' }),
+      refreshBell: jest.fn().mockResolvedValue(undefined),
     };
 
     service = new PaymentService(
@@ -579,6 +581,28 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       );
     });
 
+    it('setting a credit aside closes its open mismatch flags and takes them off the bells', async () => {
+      const credit = { id: 'credit-aside-1', bankUtr: '998877665544', amountPaise: 50000, status: 'unmatched', receivedAt: new Date() };
+      prisma.bankCredit.findUnique.mockResolvedValue(credit);
+      prisma.bankCredit.update.mockResolvedValue({ ...credit, status: 'ignored' });
+      prisma.reviewFlag.findMany.mockResolvedValueOnce([{ id: 'rf-open-1' }]);
+
+      await service.ignoreBankCredit(credit.id, 'Owner paid rent into the wrong account', 'fin-staff-1');
+
+      expect(prisma.reviewFlag.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ kind: 'payment_mismatch', status: 'open', subjectType: 'bank_credit', subjectId: credit.id }),
+          data: expect.objectContaining({ status: 'dismissed', resolution: 'Owner paid rent into the wrong account', resolvedByStaffId: 'fin-staff-1' }),
+        }),
+      );
+      expect(reviewFlagService.refreshBell).toHaveBeenCalledWith('rf-open-1');
+    });
+
+    it('refuses to set a credit aside without a reason', async () => {
+      await expect(service.ignoreBankCredit('credit-x', '   ', 'fin-staff-1')).rejects.toThrow(BadRequestException);
+      expect(prisma.bankCredit.update).not.toHaveBeenCalled();
+    });
+
     it('a matched bank credit cannot be ignored (never editable after matched)', async () => {
       const credit = {
         id: 'credit-matched',
@@ -593,7 +617,74 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
     });
   });
 
+  describe('Finance resolves payment and payout flags', () => {
+    const flagMock = () => {
+      (prisma.reviewFlag as Record<string, jest.Mock>).findUnique = jest.fn();
+      (prisma.reviewFlag as Record<string, jest.Mock>).update = jest.fn();
+      return prisma.reviewFlag as Record<string, jest.Mock>;
+    };
+
+    it.each(['payment_mismatch', 'payout_shared_account', 'payout_matches_staff', 'payout_name_mismatch'])(
+      'resolves a %s flag with the written resolution, audits it and clears the bell',
+      async (kind) => {
+        const flags = flagMock();
+        flags.findUnique.mockResolvedValue({ id: 'rf-9', code: 'RF-00009', kind, status: 'open', resolution: null });
+        flags.update.mockResolvedValue({ id: 'rf-9', code: 'RF-00009', kind, status: 'resolved', resolution: 'Same family, checked on a call' });
+
+        const updated = await service.resolvePaymentMismatchFlag('rf-9', '  Same family, checked on a call ', 'fin-staff-1');
+
+        expect(updated.status).toBe('resolved');
+        expect(flags.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            where: { id: 'rf-9' },
+            data: expect.objectContaining({ status: 'resolved', resolution: 'Same family, checked on a call', resolvedByStaffId: 'fin-staff-1' }),
+          }),
+        );
+        expect(auditService.log).toHaveBeenCalledWith(
+          expect.objectContaining({ actorId: 'fin-staff-1', action: 'review_flag.resolved', entityCode: 'RF-00009' }),
+        );
+        expect(reviewFlagService.refreshBell).toHaveBeenCalledWith('rf-9');
+      },
+    );
+
+    it('requires a written resolution', async () => {
+      const flags = flagMock();
+      await expect(service.resolvePaymentMismatchFlag('rf-9', ' ', 'fin-staff-1')).rejects.toThrow(BadRequestException);
+      expect(flags.update).not.toHaveBeenCalled();
+    });
+
+    it('never resolves a flag that is not about money (bypass, visits, logins stay with their owners)', async () => {
+      const flags = flagMock();
+      flags.findUnique.mockResolvedValue({ id: 'rf-2', code: 'RF-00002', kind: 'bypass_suspected', status: 'open' });
+      await expect(service.resolvePaymentMismatchFlag('rf-2', 'Looks fine', 'fin-staff-1')).rejects.toThrow('not found');
+      expect(flags.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('RBAC on Finance routes', () => {
+    const contextFor = (handler: (...args: never[]) => unknown, method: string, role: string) =>
+      ({
+        getHandler: () => handler,
+        getClass: () => PaymentController,
+        switchToHttp: () => ({ getRequest: () => ({ method, user: { sub: 'staff-1', role } }) }),
+      }) as unknown as ExecutionContext;
+
+    it('lets only Finance and the CEO see and resolve payment and payout flags', async () => {
+      const guard = new RbacGuard(new Reflector(), prisma as unknown as PrismaService);
+      const routes: Array<[(...args: never[]) => unknown, string]> = [
+        [PaymentController.prototype.listReviewFlags, 'GET'],
+        [PaymentController.prototype.resolveReviewFlag, 'POST'],
+      ];
+      for (const [handler, method] of routes) {
+        for (const role of ['finance', 'ceo']) {
+          await expect(guard.canActivate(contextFor(handler, method, role))).resolves.toBe(true);
+        }
+        for (const role of ['manager', 'team_lead', 'call_agent', 'field_agent']) {
+          await expect(guard.canActivate(contextFor(handler, method, role))).rejects.toThrow(ForbiddenException);
+        }
+      }
+    });
+
     it('refuses manager, team lead, call agent, and field agent on finance routes', async () => {
       const reflector = new Reflector();
       const guard = new RbacGuard(reflector, prisma as unknown as PrismaService);
