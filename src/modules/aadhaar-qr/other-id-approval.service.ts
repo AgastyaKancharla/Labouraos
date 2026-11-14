@@ -4,7 +4,9 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export type OtherIdSubjectType = 'job_seeker' | 'referral';
 
 /**
- * Who approves another ID (PAN, driving licence, voter ID) — Master Guide rev 169:
+ * Who approves another ID (PAN, driving licence, voter ID) — Master Guide rev 169 —
+ * and, by the same rule, who does the general registration check in T-Verify
+ * ("Looks right" / "Fake · flag it"):
  *   - own_team: the person was registered by an agent in a Team Lead's team —
  *     that Team Lead approves it;
  *   - another_team_lead: a Team Lead registered the person, or the person is in
@@ -105,6 +107,41 @@ export class OtherIdApprovalService {
         if (route.mode !== mode) continue;
         if ((await this.rightFor(actor, row, route)).allowed) out.push({ subjectType, id: row.id });
       }
+    }
+    return out;
+  }
+
+  /**
+   * The general registration check (rev 169, same rule): job seekers registered since `since` (not
+   * leads, not yet checked) that this staff member checks outside their own team — for a Team Lead
+   * the "needs another Team Lead" ones of their city, for a Manager (their city) or the CEO (every
+   * city) the ones with no other Team Lead. Never their own registrations. Newest first, at most 100.
+   */
+  async uncheckedRegistrationsFor(actor: { id: string; role: string }, mode: 'another_team_lead' | 'manager_or_ceo', since: Date): Promise<string[]> {
+    const me = await this.prisma.staff.findUnique({ where: { id: actor.id }, select: { city: true, status: true } });
+    if (!me || me.status !== 'active') return [];
+    const seekers = await this.prisma.jobSeeker.findMany({
+      where: {
+        ...(actor.role === 'ceo' ? {} : { city: me.city }),
+        OR: [{ registeredByStaffId: null }, { NOT: { registeredByStaffId: actor.id } }],
+        anonymisedAt: null,
+        status: { notIn: ['lead'] },
+        createdAt: { gte: since },
+      },
+      select: { id: true, city: true, registeredByStaffId: true },
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+    });
+    if (!seekers.length) return [];
+    const checked = new Set(
+      (await this.prisma.teamLeadCheck.findMany({ where: { subjectType: 'job_seeker', subjectId: { in: seekers.map((s) => s.id) } }, select: { subjectId: true } })).map((c) => c.subjectId),
+    );
+    const out: string[] = [];
+    for (const seeker of seekers) {
+      if (checked.has(seeker.id)) continue;
+      const route = await this.routeFor(seeker);
+      if (route.mode !== mode) continue;
+      if ((await this.rightFor(actor, seeker, route)).allowed) out.push(seeker.id);
     }
     return out;
   }

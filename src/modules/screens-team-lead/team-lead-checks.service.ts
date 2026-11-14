@@ -250,9 +250,12 @@ export class TeamLeadChecksService {
     // Rev 169: pending other IDs from outside this team that need ANOTHER Team Lead of the city
     // (a Team Lead registered them, or no team did) — this Team Lead may decide those.
     const crossTeam = this.approvals ? await this.approvals.waitingFor(actor, 'another_team_lead') : [];
+    // ...and, by the same rule, the general check of recent registrations made by a Team Lead or by
+    // nobody's team (never this Team Lead's own).
+    const crossRecent = this.approvals ? await this.approvals.uncheckedRegistrationsFor(actor, 'another_team_lead', new Date(now.getTime() - 7 * DAY_MS)) : [];
     const ownSeekerIds = new Set([...waiting, ...recent].map((s) => s.id));
     const ownReferralIds = new Set(referrals.map((r) => r.id));
-    const crossSeekerIds = crossTeam.filter((c) => c.subjectType === 'job_seeker' && !ownSeekerIds.has(c.id)).map((c) => c.id);
+    const crossSeekerIds = [...new Set([...crossTeam.filter((c) => c.subjectType === 'job_seeker').map((c) => c.id), ...crossRecent])].filter((id) => !ownSeekerIds.has(id));
     const crossReferralIds = crossTeam.filter((c) => c.subjectType === 'referral' && !ownReferralIds.has(c.id)).map((c) => c.id);
     const [crossSeekers, crossReferrals] = await Promise.all([
       crossSeekerIds.length ? this.prisma.jobSeeker.findMany({ where: { id: { in: crossSeekerIds } }, select: seekerSelect }) : Promise.resolve([]),
@@ -283,7 +286,12 @@ export class TeamLeadChecksService {
     const allWaiting = [...waiting, ...crossSeekers];
     const waitingIds = new Set(allWaiting.filter((s) => s.identityVerifications[0]?.status === 'pending').map((s) => s.id));
     // His own registrations show only while their other ID waits (for another Team Lead): he can't check them himself.
-    const seekers = [...allWaiting.filter((s) => waitingIds.has(s.id)), ...recent.filter((s) => !waitingIds.has(s.id) && s.registeredByStaffId !== actor.id)];
+    const crossRecentRows = crossSeekers.filter((s) => !waitingIds.has(s.id));
+    const seekers = [
+      ...allWaiting.filter((s) => waitingIds.has(s.id)),
+      ...recent.filter((s) => !waitingIds.has(s.id) && s.registeredByStaffId !== actor.id),
+      ...crossRecentRows,
+    ];
     const checked = await this.prisma.teamLeadCheck.findMany({ where: { subjectType: 'job_seeker', subjectId: { in: seekers.map((s) => s.id) } }, select: { subjectId: true } });
     const allReferrals = [...referrals, ...crossReferrals];
     const verificationIds = [...seekers, ...allReferrals].flatMap((s) => s.identityVerifications.map((v) => v.id));
@@ -413,9 +421,12 @@ export class TeamLeadChecksService {
       if (inTeam) throw new ForbiddenException(right.reason ?? SELF_APPROVAL_REFUSED);
       throw new NotFoundException('Not a registration from your team');
     }
-    if (!inTeam) throw new NotFoundException('Not a registration from your team');
+    // The general check follows the same rule (rev 169): one's own team's agents, or — for a person
+    // a Team Lead registered or nobody's team did — another Team Lead of the city. Never one's own.
     if (purpose === 'decide' && own) throw new ForbiddenException(SELF_CHECK_REFUSED);
-    return subject;
+    if (inTeam) return subject;
+    if (this.approvals && (await this.approvals.rightFor(actor, subject)).allowed) return subject;
+    throw new NotFoundException('Not a registration from your team');
   }
 
   /** The selfie of a registration from the team, through a short-lived private link (audited). */

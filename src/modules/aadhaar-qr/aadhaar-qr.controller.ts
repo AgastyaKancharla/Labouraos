@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, HttpCode, HttpStatus, Inject, NotFoundException, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
+import { BadRequestException, Body, Controller, ForbiddenException, Get, HttpCode, HttpStatus, Inject, NotFoundException, Param, Post, Req, UploadedFile, UseGuards, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { Request } from 'express';
 import { JwtAuthGuard } from '../../common/auth/jwt-auth.guard';
@@ -18,6 +18,8 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { StopSubjectType, Under18StopService } from './under18-stop.service';
 
 type Authed = Request & { user: JwtPayload };
+
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 const SUBJECT_TYPES: Record<string, StopSubjectType> = { 'job-seekers': 'job_seeker', referrals: 'referral' };
 
@@ -127,24 +129,34 @@ export class AadhaarQrController {
   @RequireRoles('manager', 'ceo')
   async waitingForManager(@Req() req: Authed) {
     const actor = { id: req.user.sub, role: req.user.role };
-    const waiting = await this.approvals.waitingFor(actor, 'manager_or_ceo');
+    // Pending ID cards first, then (same rule) recent registrations made by a Team Lead or by nobody's
+    // team that no other Team Lead of the city can check.
+    const cards = await this.approvals.waitingFor(actor, 'manager_or_ceo');
+    const registrations = (await this.approvals.uncheckedRegistrationsFor(actor, 'manager_or_ceo', new Date(Date.now() - 7 * DAY_MS)))
+      .filter((id) => !cards.some((c) => c.subjectType === 'job_seeker' && c.id === id))
+      .map((id) => ({ subjectType: 'job_seeker' as const, id }));
     const rows = [];
-    for (const item of waiting) {
-      const select = { id: true, code: true, name: true, city: true, photoStoragePath: true, registeredByStaffId: true, createdAt: true } as const;
-      const person = item.subjectType === 'job_seeker' ? await this.prisma.jobSeeker.findUnique({ where: { id: item.id }, select }) : await this.prisma.referral.findUnique({ where: { id: item.id }, select });
-      const check = person ? await this.idPhotos.latestFor(item.subjectType, item.id) : null;
-      if (!person || !check) continue;
-      const registeredBy = person.registeredByStaffId ? await this.prisma.staff.findUnique({ where: { id: person.registeredByStaffId }, select: { name: true, role: true } }) : null;
-      rows.push({
-        subjectType: item.subjectType,
-        person: { id: person.id, code: person.code, name: person.name, city: person.city },
-        registeredBy,
-        hasSelfie: Boolean(person.photoStoragePath),
-        method: check.method,
-        idNumberLast4: check.idNumberLast4,
-        sentAt: check.checkedAt,
-        photoKept: check.photo.kept,
-      });
+    for (const [kind, items] of [['id_card', cards], ['registration', registrations]] as const) {
+      for (const item of items) {
+        const select = { id: true, code: true, name: true, city: true, photoStoragePath: true, registeredByStaffId: true, createdAt: true } as const;
+        const person = item.subjectType === 'job_seeker' ? await this.prisma.jobSeeker.findUnique({ where: { id: item.id }, select }) : await this.prisma.referral.findUnique({ where: { id: item.id }, select });
+        if (!person) continue;
+        const check = await this.idPhotos.latestFor(item.subjectType, item.id);
+        if (kind === 'id_card' && !check) continue;
+        const registeredBy = person.registeredByStaffId ? await this.prisma.staff.findUnique({ where: { id: person.registeredByStaffId }, select: { name: true, role: true } }) : null;
+        rows.push({
+          /** id_card: an ID card photo to approve; registration: the general registration check. */
+          kind,
+          subjectType: item.subjectType,
+          person: { id: person.id, code: person.code, name: person.name, city: person.city },
+          registeredBy,
+          hasSelfie: Boolean(person.photoStoragePath),
+          method: check?.method ?? null,
+          idNumberLast4: check?.idNumberLast4 ?? null,
+          sentAt: kind === 'id_card' ? check!.checkedAt : person.createdAt.toISOString(),
+          photoKept: check?.photo.kept ?? false,
+        });
+      }
     }
     return { rows };
   }
@@ -153,42 +165,73 @@ export class AadhaarQrController {
    * Rev 169, the fallback decision by a Manager or the CEO: "Looks right" or "Fake · flag it" on a
    * pending other ID that no other Team Lead of the city can check. Same rules as T-Verify (never
    * one's own registration, the photo must be kept and opened first, one decision wins, refused
-   * while an under-18 stop stands); "Fake" opens a flag for the Manager.
+   * while an under-18 stop stands); "Fake" opens a flag for the Manager. It is the registration
+   * check too.
    */
   @Post('identity/:subjects/:id/other-id/decision')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('manager', 'ceo')
   async decideOtherId(@Req() req: Authed, @Param('subjects') subjects: string, @Param('id') id: string, @Body() body: { verdict?: unknown; note?: unknown }) {
     const subjectType = subjectTypeOf(subjects);
-    const verdict = body?.verdict === 'ok' ? 'ok' : body?.verdict === 'fake' ? 'fake' : null;
-    if (!verdict) throw new BadRequestException('verdict is ok or fake');
-    const note = typeof body?.note === 'string' ? body.note.trim().slice(0, 500) : '';
-    if (verdict === 'fake' && !note) throw new BadRequestException('Say what looks fake');
-    const actor = { id: req.user.sub, role: req.user.role };
     const pendingWhere = { status: 'pending', vendor: 'team_lead_check' };
     const pending =
       subjectType === 'job_seeker'
         ? await this.prisma.identityVerification.findFirst({ where: { jobSeekerId: id, ...pendingWhere }, select: { id: true } })
         : await this.prisma.referralIdentityVerification.findFirst({ where: { referralId: id, ...pendingWhere }, select: { id: true } });
     if (!pending) throw new NotFoundException('No ID card waiting for a check');
+    return this.decideRegistration(req, subjectType, id, body);
+  }
+
+  /**
+   * Rev 169, the general registration check by a Manager or the CEO, for a registration that a Team
+   * Lead made (or nobody's team did) when no other Team Lead of the city can check it. Never one's
+   * own registration; refused while an under-18 stop stands (for "Looks right"). "Fake" opens a flag.
+   */
+  @Post('identity/:subjects/:id/registration-check')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager', 'ceo')
+  async registrationCheck(@Req() req: Authed, @Param('subjects') subjects: string, @Param('id') id: string, @Body() body: { verdict?: unknown; note?: unknown }) {
+    return this.decideRegistration(req, subjectTypeOf(subjects), id, body);
+  }
+
+  private async decideRegistration(req: Authed, subjectType: StopSubjectType, id: string, body: { verdict?: unknown; note?: unknown }) {
+    const verdict = body?.verdict === 'ok' ? 'ok' : body?.verdict === 'fake' ? 'fake' : null;
+    if (!verdict) throw new BadRequestException('verdict is ok or fake');
+    const note = typeof body?.note === 'string' ? body.note.trim().slice(0, 500) : '';
+    if (verdict === 'fake' && !note) throw new BadRequestException('Say what looks fake');
+    const actor = { id: req.user.sub, role: req.user.role };
+    const select = { code: true, city: true, registeredByStaffId: true, anonymisedAt: true } as const;
+    const person = subjectType === 'job_seeker' ? await this.prisma.jobSeeker.findUnique({ where: { id }, select }) : await this.prisma.referral.findUnique({ where: { id }, select });
+    if (!person || person.anonymisedAt) throw new NotFoundException('Not found');
+    // The same rule as T-Verify: only the fallback (no other Team Lead of the city), never one's own.
+    const right = await this.approvals.rightFor(actor, person);
+    if (!right.allowed) throw new ForbiddenException(right.reason ?? 'Not yours to check');
     const decided = await this.otherIds.recordDecision(subjectType, id, verdict, actor);
     let flagId: string | null = null;
     if (verdict === 'fake') {
-      const person =
-        subjectType === 'job_seeker'
-          ? await this.prisma.jobSeeker.findUnique({ where: { id }, select: { code: true, registeredByStaffId: true } })
-          : await this.prisma.referral.findUnique({ where: { id }, select: { code: true, registeredByStaffId: true } });
       const flag = await this.flags.raise({
         kind: 'registration_suspect',
         subjectType,
         subjectId: id,
-        raisedForStaffId: person?.registeredByStaffId ?? null,
-        details: { [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: person?.code ?? null, note, decidedBy: actor.role },
+        raisedForStaffId: person.registeredByStaffId ?? null,
+        details: { [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: person.code, note, decidedBy: actor.role },
         owner: { role: 'manager' },
       });
       flagId = flag.id;
     }
-    return { verdict, flagId, ...decided };
+    const check = await this.prisma.teamLeadCheck.create({
+      data: { subjectType, subjectId: id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: new Date() },
+    });
+    await this.audit.log({
+      actorId: actor.id,
+      action: `registration_check.${verdict}`,
+      entityType: subjectType,
+      entityCode: person.code,
+      after: { verdict, flagId, otherIdDecided: decided.otherIdDecided, approvalMode: right.mode, role: actor.role },
+      changedFields: [],
+      city: person.city,
+    });
+    return { id: check.id, verdict, flagId, ...decided };
   }
 
   @Get('identity/:subjects/:id/aadhaar-check')
@@ -202,11 +245,12 @@ export class AadhaarQrController {
     if (!subject || subject.anonymisedAt) throw new NotFoundException('Not found');
     const actor = { id: req.user.sub, role: req.user.role };
     const check = await this.idPhotos.latestFor(subjectType, subject.id);
-    // Rev 169: whoever may decide a pending other ID (another Team Lead of the city, or a Manager /
-    // the CEO where there is none) may open it too, besides the usual team scope.
+    // Rev 169: whoever may check this registration (another Team Lead of the city, or a Manager / the
+    // CEO where there is none) may open it too, besides the usual team scope.
     const pendingOtherId = check?.status === 'pending' && check.method !== 'aadhaar_qr';
-    const right = pendingOtherId ? await this.approvals.rightFor(actor, subject) : null;
-    if (!right?.allowed) await this.access.assertCanView(actor, subject.registeredByStaffId);
+    const anyRight = await this.approvals.rightFor(actor, subject);
+    const right = pendingOtherId ? anyRight : null;
+    if (!anyRight.allowed) await this.access.assertCanView(actor, subject.registeredByStaffId);
     const idPhoto = check?.photo.kept ? await this.idPhotos.photoLink(check.verificationId) : null;
     const selfieUrl = subject.photoStoragePath ? await this.photos.signedUrl(subject.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS) : null;
     await this.audit.log({
