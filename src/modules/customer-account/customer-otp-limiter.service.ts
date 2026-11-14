@@ -1,25 +1,36 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { nationalMobileDigits } from '../../common/phone/indian-mobile';
+import { AlertService } from '../../common/observability/alert.service';
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
 /**
- * OTP abuse limits for the public customer sign-in (proposal 7.6: bots can make
- * a public app send thousands of paid SMS). Counted in CustomerOtpAttempt by
- * hashes only, never the number or address itself.
+ * OTP abuse limits for the public customer sign-in (proposal 7.6; security
+ * review M5, H2). Counted in CustomerOtpAttempt by hashes only, never the
+ * number or address itself. The per-address limits are generous because many
+ * phones share one carrier address (carrier NAT); the per-phone and
+ * per-installation limits do the real work.
  */
 export const CUSTOMER_OTP_LIMITS = {
   perPhonePerHour: 5,
   perPhonePerDay: 10,
-  perAddressPerHour: 20,
+  perAddressPerHour: 60,
   perDevicePerHour: 10,
   wrongCodesPerPhonePerHour: 10,
+  wrongCodesPerAddressPerHour: 50,
+  wrongCodesPerDevicePerHour: 20,
+  /** From this many codes in an hour (phone or installation), a human check is asked for. */
+  humanCheckAfter: 3,
 } as const;
+
+/** All customer OTP codes in 24 hours across the system; above it sending pauses and the CEO is alerted. */
+export const CUSTOMER_OTP_DAILY_LIMIT_ENV = 'CUSTOMER_OTP_DAILY_LIMIT';
+const DEFAULT_DAILY_LIMIT = 3000;
 
 export interface OtpCaller {
   phone: string;
@@ -27,7 +38,7 @@ export interface OtpCaller {
   installationId?: string | null;
 }
 
-function hashOf(kind: string, value: string | null | undefined): string | null {
+export function hashOf(kind: string, value: string | null | undefined): string | null {
   if (!value || !String(value).trim()) return null;
   return createHash('sha256').update(`laboura:customer-otp:${kind}:${String(value).trim()}`).digest('hex');
 }
@@ -41,19 +52,59 @@ function limitError(message: string, since: Date, windowMs: number, now: Date): 
   return new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.OTP_LIMIT, message, { retryAfterSeconds });
 }
 
+export interface SendBinding {
+  requestId: string;
+  purpose: string;
+  phoneHash: string | null;
+  deviceHash: string | null;
+  accountId: string | null;
+}
+
 @Injectable()
 export class CustomerOtpLimiter {
-  constructor(private readonly prisma: PrismaService) {}
+  private readonly logger = new Logger(CustomerOtpLimiter.name);
+  private alertedDay: string | null = null;
 
-  /** Checks every limit and records the send, under a lock per phone. Throws 429 OTP_LIMIT. */
-  async claimSend(caller: OtpCaller, now: Date): Promise<void> {
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly alerts: AlertService,
+  ) {}
+
+  private dailyLimit(): number {
+    const raw = Number(process.env.CUSTOMER_OTP_DAILY_LIMIT);
+    return Number.isFinite(raw) && raw > 0 ? Math.floor(raw) : DEFAULT_DAILY_LIMIT;
+  }
+
+  /** True when this phone or installation already had enough codes this hour to need a human check. */
+  async needsHumanCheck(caller: OtpCaller, now: Date): Promise<boolean> {
+    const hourAgo = new Date(now.getTime() - HOUR_MS);
+    const deviceHash = hashOf('device', caller.installationId);
+    const [byPhone, byDevice] = await Promise.all([
+      this.prisma.customerOtpAttempt.count({ where: { kind: 'send', phoneHash: customerPhoneHash(caller.phone), createdAt: { gt: hourAgo } } }),
+      deviceHash ? this.prisma.customerOtpAttempt.count({ where: { kind: 'send', deviceHash, createdAt: { gt: hourAgo } } }) : 0,
+    ]);
+    return Math.max(byPhone, byDevice) >= CUSTOMER_OTP_LIMITS.humanCheckAfter;
+  }
+
+  /**
+   * Checks every limit and records the send (returns its row id, to bind the
+   * request id once the provider answers), under a lock per phone. Throws 429
+   * OTP_LIMIT, or 503 OTP_PAUSED when the system-wide daily breaker is open.
+   */
+  async claimSend(caller: OtpCaller, now: Date): Promise<string> {
     const phoneHash = customerPhoneHash(caller.phone);
     const ipHash = hashOf('ip', caller.ip);
     const deviceHash = hashOf('device', caller.installationId);
-    await this.prisma.$transaction(async (tx) => {
+    const dayAgo = new Date(now.getTime() - DAY_MS);
+    const total = await this.prisma.customerOtpAttempt.count({ where: { kind: 'send', createdAt: { gt: dayAgo } } });
+    if (total >= this.dailyLimit()) {
+      await this.alertOnce(now, total);
+      throw new CustomerApiError(HttpStatus.SERVICE_UNAVAILABLE, CUSTOMER_ERROR_CODES.OTP_PAUSED,
+        'Sign-in codes are paused for a while. Please try again later or call Laboura.');
+    }
+    return this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`customer-otp:${phoneHash}`}))`);
       const hourAgo = new Date(now.getTime() - HOUR_MS);
-      const dayAgo = new Date(now.getTime() - DAY_MS);
       const wrong = await tx.customerOtpAttempt.findMany({
         where: { kind: 'verify_failed', phoneHash, createdAt: { gt: hourAgo } },
         orderBy: { createdAt: 'asc' },
@@ -89,35 +140,79 @@ export class CustomerOtpLimiter {
           throw limitError('Too many codes from this phone or connection. Try again later.', rows[0]!.createdAt, HOUR_MS, now);
         }
       }
-      await tx.customerOtpAttempt.create({ data: { kind: 'send', phoneHash, ipHash, deviceHash, createdAt: now } });
+      const row = await tx.customerOtpAttempt.create({ data: { kind: 'send', phoneHash, ipHash, deviceHash, createdAt: now }, select: { id: true } });
       await tx.customerOtpAttempt.deleteMany({ where: { createdAt: { lt: dayAgo } } });
+      return row.id;
     });
   }
 
-  /** Records a wrong code; returns how many wrong codes this number may still try this hour. */
-  async recordWrongCode(caller: OtpCaller, now: Date): Promise<number> {
-    const phoneHash = customerPhoneHash(caller.phone);
+  /** Binds a recorded send to the request id the provider gave, its purpose and the asking account. */
+  async bindSend(rowId: string, binding: { requestId: string; purpose: string; accountId: string | null }): Promise<void> {
+    await this.prisma.customerOtpAttempt.update({ where: { id: rowId }, data: binding });
+  }
+
+  /** The newest customer send for this request id (null: not a customer code). */
+  async sendFor(requestId: string): Promise<SendBinding | null> {
+    const row = await this.prisma.customerOtpAttempt.findFirst({
+      where: { kind: 'send', requestId },
+      orderBy: { createdAt: 'desc' },
+      select: { requestId: true, purpose: true, phoneHash: true, deviceHash: true, accountId: true },
+    });
+    return row && row.requestId && row.purpose ? (row as SendBinding) : null;
+  }
+
+  /**
+   * Records a wrong code. `countPhone` false (the request was for another phone
+   * or another flow): only the address and installation are charged, so nobody
+   * can lock someone else's number by guessing (H2). Returns tries left this hour.
+   */
+  async recordWrongCode(caller: OtpCaller, now: Date, countPhone = true): Promise<number> {
+    const phoneHash = countPhone ? customerPhoneHash(caller.phone) : null;
     await this.prisma.customerOtpAttempt.create({
       data: { kind: 'verify_failed', phoneHash, ipHash: hashOf('ip', caller.ip), deviceHash: hashOf('device', caller.installationId), createdAt: now },
     });
+    if (!phoneHash) return 0;
     const count = await this.prisma.customerOtpAttempt.count({
       where: { kind: 'verify_failed', phoneHash, createdAt: { gt: new Date(now.getTime() - HOUR_MS) } },
     });
     return Math.max(0, CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour - count);
   }
 
-  /** Refuses a verify when the number has had too many wrong codes this hour. */
+  /** Refuses a verify after too many wrong codes for this phone, address or installation this hour. */
   async assertCanVerify(caller: OtpCaller, now: Date): Promise<void> {
-    const phoneHash = customerPhoneHash(caller.phone);
     const hourAgo = new Date(now.getTime() - HOUR_MS);
-    const wrong = await this.prisma.customerOtpAttempt.findMany({
-      where: { kind: 'verify_failed', phoneHash, createdAt: { gt: hourAgo } },
-      orderBy: { createdAt: 'asc' },
-      select: { createdAt: true },
-      take: CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour,
-    });
-    if (wrong.length >= CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour) {
-      throw limitError('Too many wrong codes for this number. Try again later.', wrong[0]!.createdAt, HOUR_MS, now);
+    for (const [field, hash, limit] of [
+      ['phoneHash', customerPhoneHash(caller.phone), CUSTOMER_OTP_LIMITS.wrongCodesPerPhonePerHour],
+      ['ipHash', hashOf('ip', caller.ip), CUSTOMER_OTP_LIMITS.wrongCodesPerAddressPerHour],
+      ['deviceHash', hashOf('device', caller.installationId), CUSTOMER_OTP_LIMITS.wrongCodesPerDevicePerHour],
+    ] as const) {
+      if (!hash) continue;
+      const wrong = await this.prisma.customerOtpAttempt.findMany({
+        where: { kind: 'verify_failed', [field]: hash, createdAt: { gt: hourAgo } },
+        orderBy: { createdAt: 'asc' },
+        select: { createdAt: true },
+        take: limit,
+      });
+      if (wrong.length >= limit) {
+        throw limitError('Too many wrong codes. Try again later.', wrong[0]!.createdAt, HOUR_MS, now);
+      }
+    }
+  }
+
+  private async alertOnce(now: Date, total: number): Promise<void> {
+    const day = now.toISOString().slice(0, 10);
+    if (this.alertedDay === day) return;
+    this.alertedDay = day;
+    this.logger.error(`Customer OTP circuit breaker open: ${total} codes in 24 hours`);
+    try {
+      await this.alerts.sendAlert({
+        title: 'Customer app sign-in codes paused',
+        message: `More than ${this.dailyLimit()} sign-in codes were asked for in 24 hours (${total}). Sending is paused until the count drops. Check for abuse before raising CUSTOMER_OTP_DAILY_LIMIT.`,
+        severity: 'critical',
+        metadata: { total, limit: this.dailyLimit() },
+      });
+    } catch {
+      // The alert is best effort; the pause itself already protects the SMS budget.
     }
   }
 }

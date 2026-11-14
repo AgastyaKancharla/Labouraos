@@ -254,7 +254,7 @@ export class CustomerRegistrationService {
     await this.linkExisting(accountId, account.phone, 'job_seeker');
     const referral = await this.resolveReferral(body.referralCode, account.phone);
     const otp = await this.signIn.checkRegistrationOtp(accountId, body.otp, ctx);
-    const heardFrom = referral ? 'referral_partner' : this.heardFrom(body.heardFrom);
+    const heardFrom = referral ? 'referral_partner' : HEARD_FROM_LABOURA_APP;
     const dto = {
       ...pick(body, JOB_SEEKER_FIELDS),
       phone: account.phone,
@@ -271,10 +271,6 @@ export class CustomerRegistrationService {
     const profileId = await this.newProfile(accountId, { kind: 'job_seeker', jobSeekerId: created.id, role: 'self' });
     await this.markRegistered(accountId, 'job_seeker', 'job_seeker', created.id);
     return { profileId, kind: 'job_seeker', code: created.code, status: created.status, next: 'registration_link' };
-  }
-
-  private heardFrom(value: unknown): string {
-    return typeof value === 'string' && value.trim() ? value.trim() : HEARD_FROM_LABOURA_APP;
   }
 
   // ─── Business (a lead) ────────────────────────────────────────────────
@@ -303,7 +299,7 @@ export class CustomerRegistrationService {
       ...pick(body, BUSINESS_FIELDS),
       phone: account.phone,
       otpRequestId: otp.requestId,
-      heardFrom: referralCode ? 'referral_partner' : this.heardFrom(body.heardFrom),
+      heardFrom: referralCode ? 'referral_partner' : HEARD_FROM_LABOURA_APP,
       contactLanguage: typeof body.contactLanguage === 'string' ? body.contactLanguage : account.language,
     } as unknown as CreateBusinessDto;
     let created: { id: string; code: string; verificationStatus?: string | null };
@@ -349,7 +345,7 @@ export class CustomerRegistrationService {
       ...pick(body, REFERRAL_FIELDS),
       phone: account.phone,
       otpRequestId: otp.requestId,
-      heardFrom: this.heardFrom(body.heardFrom),
+      heardFrom: HEARD_FROM_LABOURA_APP,
     } as unknown as CreateReferralDto;
     let created: { id: string; code: string };
     try {

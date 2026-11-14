@@ -53,10 +53,12 @@ describe('Customer app API', () => {
   }
 
   const http = () => request(app.getHttpServer());
-  const json = (r: request.Test) => r.set('Accept', 'application/json').set('X-Laboura-Installation', `inst-${stamp}`);
+  let installation = `inst-${stamp}`;
+  const HUMAN = 'mock-human-ok';
+  const json = (r: request.Test) => r.set('Accept', 'application/json').set('X-Laboura-Installation', installation);
 
   async function sendCode(phone: string): Promise<{ requestId: string; code: string }> {
-    const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone }).expect(200);
+    const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone, humanCheckToken: HUMAN }).expect(200);
     return { requestId: res.body.requestId, code: otp.getCode(res.body.requestId)! };
   }
 
@@ -69,7 +71,7 @@ describe('Customer app API', () => {
   }
 
   async function freshOtp(token: string, purpose: string) {
-    const res = await json(http().post(`${API}/auth/step-up/send`)).set('Authorization', `Bearer ${token}`).send({ purpose }).expect(200);
+    const res = await json(http().post(`${API}/auth/step-up/send`)).set('Authorization', `Bearer ${token}`).send({ purpose, humanCheckToken: HUMAN }).expect(200);
     return { requestId: res.body.requestId as string, code: otp.getCode(res.body.requestId)! };
   }
 
@@ -109,8 +111,10 @@ describe('Customer app API', () => {
   });
 
   beforeEach(async () => {
-    // Only this suite sends customer OTPs; every test starts under the limits.
-    await prisma.customerOtpAttempt.deleteMany({});
+    // Only this suite sends customer OTPs; every test starts under the limits, on its own phone.
+    await prisma.customerOtpAttempt.deleteMany({ where: { kind: { in: ['send', 'verify_failed'] } } });
+    seq += 1;
+    installation = `inst-${stamp}-${seq}`;
   });
 
   afterAll(async () => {
@@ -125,7 +129,7 @@ describe('Customer app API', () => {
     await prisma.jobSeeker.updateMany({ where: { referredBy: { phone: { in: phones } } }, data: { referredById: null } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekers.map((s) => s.id) } } });
     await prisma.referral.deleteMany({ where: { phone: { in: phones } } });
-    const businesses = await prisma.business.findMany({ where: { phone: { in: phones } }, select: { id: true } });
+    const businesses = await prisma.business.findMany({ where: { OR: [{ phone: { in: phones } }, { additionalContactPhone: { in: phones } }] }, select: { id: true } });
     const businessIds = businesses.map((b) => b.id);
     await prisma.vacancy.deleteMany({ where: { businessId: { in: businessIds } } });
     await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
@@ -160,11 +164,61 @@ describe('Customer app API', () => {
       expect(['OTP_INVALID', 'OTP_EXPIRED']).toContain(again.body.code);
     });
 
-    it('limits codes per phone (5 an hour)', async () => {
+    it('asks for a human check after 3 codes, then limits codes per phone (5 an hour)', async () => {
       const phone = newPhone();
-      for (let i = 0; i < 5; i += 1) await json(http().post(`${API}/auth/otp/send`)).send({ phone }).expect(200);
-      const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone }).expect(429);
+      for (let i = 0; i < 3; i += 1) await json(http().post(`${API}/auth/otp/send`)).send({ phone }).expect(200);
+      const human = await json(http().post(`${API}/auth/otp/send`)).send({ phone }).expect(403);
+      expect(human.body).toEqual(expect.objectContaining({ code: 'HUMAN_CHECK_REQUIRED', provider: 'mock' }));
+      for (let i = 0; i < 2; i += 1) await json(http().post(`${API}/auth/otp/send`)).send({ phone, humanCheckToken: HUMAN }).expect(200);
+      const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone, humanCheckToken: HUMAN }).expect(429);
       expect(res.body).toEqual(expect.objectContaining({ code: 'OTP_LIMIT', retryAfterSeconds: expect.any(Number) }));
+    });
+
+    it('never returns the code unless the customer OTP test mode is on (C1)', async () => {
+      const res = await json(http().post(`${API}/auth/otp/send`)).send({ phone: newPhone() }).expect(200);
+      expect(res.body.testModeCode).toBeUndefined();
+      const config = await json(http().get(`${API}/config`)).expect(200);
+      expect(config.body.otpTestMode).toBe(false);
+    });
+
+    it('needs the installation id to send a code', async () => {
+      const res = await request(app.getHttpServer()).post(`${API}/auth/otp/send`).set('Accept', 'application/json').send({ phone: newPhone() }).expect(400);
+      expect(res.body.code).toBe('INSTALLATION_REQUIRED');
+    });
+
+    it('a code sent for an agent flow never signs anyone in (H1)', async () => {
+      const phone = newPhone();
+      const agentCode = await otp.sendOtp(`+91${phone}`, { purpose: 'vacancy_confirm' });
+      const res = await json(http().post(`${API}/auth/otp/verify`))
+        .send({ phone, requestId: agentCode.requestId, code: otp.getCode(agentCode.requestId) }).expect(400);
+      expect(res.body.code).toBe('OTP_EXPIRED');
+      expect(await prisma.customerAccount.count({ where: { phone: `+91${phone}` } })).toBe(0);
+    });
+
+    it('a code works only on the installation that asked for it', async () => {
+      const phone = newPhone();
+      const { requestId, code } = await sendCode(phone);
+      installation = `other-${stamp}-${seq}`;
+      const res = await json(http().post(`${API}/auth/otp/verify`)).send({ phone, requestId, code }).expect(400);
+      expect(res.body.code).toBe('OTP_INVALID');
+    });
+
+    it('a code for one number tried with another number does not count against that number (H2)', async () => {
+      const victim = newPhone();
+      const mine = newPhone();
+      const { requestId, code } = await sendCode(mine);
+      const res = await json(http().post(`${API}/auth/otp/verify`)).send({ phone: victim, requestId, code }).expect(400);
+      expect(res.body.code).toBe('OTP_INVALID');
+      const { customerPhoneHash } = await import('../customer-account/customer-otp-limiter.service');
+      expect(await prisma.customerOtpAttempt.count({ where: { kind: 'verify_failed', phoneHash: customerPhoneHash(`+91${victim}`) } })).toBe(0);
+      expect(await prisma.customerOtpAttempt.count({ where: { kind: 'verify_failed', phoneHash: null } })).toBeGreaterThan(0);
+    });
+
+    it('refuses codes that are not 6 digits', async () => {
+      const phone = newPhone();
+      const { requestId } = await sendCode(phone);
+      const res = await json(http().post(`${API}/auth/otp/verify`)).send({ phone, requestId, code: '1234' }).expect(400);
+      expect(res.body.code).toBe('OTP_INVALID');
     });
 
     it('rejects a number that is not a 10-digit Indian mobile', async () => {
@@ -179,6 +233,16 @@ describe('Customer app API', () => {
       const renewed = await json(http().post(`${API}/auth/refresh`)).send({ refreshToken: session.refreshToken }).expect(200);
       expect(renewed.body.refreshToken).not.toBe(session.refreshToken);
       await auth(http().get(`${API}/me`), renewed.body.accessToken).expect(200);
+      // Within 30 seconds on the same phone (two renewals at once): a new access token, no new refresh token.
+      const grace = await json(http().post(`${API}/auth/refresh`)).send({ refreshToken: session.refreshToken }).expect(200);
+      expect(grace.body.refreshToken).toBeNull();
+      // Another phone can never use it.
+      const savedInstallation = installation;
+      installation = `thief-${stamp}-${seq}`;
+      await json(http().post(`${API}/auth/refresh`)).send({ refreshToken: renewed.body.refreshToken }).expect(401);
+      installation = savedInstallation;
+      // Later, the old token again means it was copied: the session ends.
+      await prisma.customerSession.updateMany({ where: { accountId: session.account.id }, data: { lastUsedAt: new Date(Date.now() - 120_000) } });
       const reused = await json(http().post(`${API}/auth/refresh`)).send({ refreshToken: session.refreshToken }).expect(401);
       expect(reused.body.code).toBe('CUSTOMER_REFRESH_INVALID');
       // The copied token ended the session: the latest one no longer works either.
@@ -324,7 +388,7 @@ describe('Customer app API', () => {
       expect(blocked.body.code).toBe('PHONE_NOT_VERIFIED');
       const phone = newPhone();
       await agentJobSeeker(phone);
-      const sent = await auth(http().post(`${API}/auth/phone/send`), res.body.accessToken).send({ phone }).expect(200);
+      const sent = await auth(http().post(`${API}/auth/phone/send`), res.body.accessToken).send({ phone, humanCheckToken: HUMAN }).expect(200);
       const added = await auth(http().post(`${API}/auth/phone/verify`), res.body.accessToken)
         .send({ phone, requestId: sent.body.requestId, code: otp.getCode(sent.body.requestId) })
         .expect(200);
@@ -435,6 +499,102 @@ describe('Customer app API', () => {
       expect(row).toEqual(expect.objectContaining({ guaranteeRunning: true, refundLossAcknowledged: true }));
       const twice = await auth(http().post(`${API}/me/deletion`), session.accessToken).send({ refundLossAcknowledged: true }).expect(409);
       expect(twice.body.code).toBe('DELETION_PENDING');
+    });
+  });
+
+  describe('security review follow-ups', () => {
+    it('a profile is revoked when the agent changes the phone on the record (M1)', async () => {
+      const phone = newPhone();
+      const seeker = await agentJobSeeker(phone);
+      const session = await signIn(phone);
+      const profileId = session.linked[0]!.profileId;
+      await auth(http().get(`${API}/me/profiles/${profileId}/home`), session.accessToken).expect(200);
+      await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { phone: `+91${newPhone()}` } });
+      const res = await auth(http().get(`${API}/me/profiles/${profileId}/home`), session.accessToken).expect(404);
+      expect(res.body.code).toBe('PROFILE_NOT_FOUND');
+      const me = await auth(http().get(`${API}/me`), session.accessToken).expect(200);
+      expect(me.body.profiles).toEqual([]);
+      expect((await prisma.customerProfile.findUniqueOrThrow({ where: { id: profileId } })).status).toBe('revoked');
+    });
+
+    it('an unverified "additional contact" number links no business (M1)', async () => {
+      const phone = newPhone();
+      await prisma.business.create({
+        data: { code: `BZ-T${stamp % 100000}${seq}`, name: 'Other Shop', phone: `+91${newPhone()}`, additionalContactPhone: `+91${phone}` },
+      });
+      const session = await signIn(phone);
+      expect(session.linked).toEqual([]);
+    });
+
+    it('a step-up code for one action cannot be used for another (H1)', async () => {
+      const session = await signIn(newPhone());
+      const code = await freshOtp(session.accessToken, 'delete_account');
+      const res = await auth(http().post(`${API}/auth/step-up/verify`), session.accessToken)
+        .send({ purpose: 'confirm_vacancy', requestId: code.requestId, code: code.code }).expect(400);
+      expect(res.body.code).toBe('OTP_INVALID');
+    });
+
+    it('a deletion can be cancelled; while pending, no links, no drafts and no new phones (M4)', async () => {
+      const phone = newPhone();
+      await agentJobSeeker(phone);
+      const session = await signIn(phone);
+      const profileId = session.linked[0]!.profileId;
+      await stepUp(session.accessToken, 'delete_account');
+      await auth(http().post(`${API}/me/deletion`), session.accessToken).send({}).expect(201);
+      const link = await auth(http().post(`${API}/me/profiles/${profileId}/links`), session.accessToken).send({ purpose: 'registration' }).expect(409);
+      expect(link.body.code).toBe('DELETION_PENDING');
+      const savedInstallation = installation;
+      installation = `new-phone-${stamp}-${seq}`;
+      const { requestId, code } = await sendCode(phone);
+      const newPhoneSignIn = await json(http().post(`${API}/auth/otp/verify`)).send({ phone, requestId, code }).expect(409);
+      expect(newPhoneSignIn.body.code).toBe('DELETION_PENDING');
+      installation = savedInstallation;
+      const cancelled = await auth(http().post(`${API}/me/deletion/cancel`), session.accessToken).expect(200);
+      expect(cancelled.body.status).toBe('cancelled');
+      expect((await prisma.customerAccount.findUniqueOrThrow({ where: { id: session.account.id } })).status).toBe('active');
+      await auth(http().post(`${API}/me/profiles/${profileId}/links`), session.accessToken).send({ purpose: 'registration' }).expect(201);
+    });
+
+    it('a Google-only account deletes with a fresh Google sign-in as proof (M4)', async () => {
+      const sub = `google-del-${stamp}-${seq}`;
+      const signedIn = await json(http().post(`${API}/auth/google`)).send({ idToken: googleToken({ sub, email: `d${seq}@example.com` }) }).expect(200);
+      const info = await auth(http().get(`${API}/me/deletion`), signedIn.body.accessToken).expect(200);
+      expect(info.body).toEqual(expect.objectContaining({ proof: 'google', warningRequired: false }));
+      const noProof = await auth(http().post(`${API}/me/deletion`), signedIn.body.accessToken).send({}).expect(403);
+      expect(noProof.body.code).toBe('STEP_UP_REQUIRED');
+      const otherSub = await auth(http().post(`${API}/me/deletion`), signedIn.body.accessToken)
+        .send({ proof: { provider: 'google', idToken: googleToken({ sub: `${sub}-other` }) } }).expect(403);
+      expect(otherSub.body.code).toBe('STEP_UP_REQUIRED');
+      const done = await auth(http().post(`${API}/me/deletion`), signedIn.body.accessToken)
+        .send({ proof: { provider: 'google', idToken: googleToken({ sub }) } }).expect(201);
+      expect((await prisma.customerDeletionRequest.findUniqueOrThrow({ where: { id: done.body.id } })).proof).toBe('google');
+      await prisma.customerAccount.update({ where: { id: signedIn.body.account.id }, data: { phone: `+91${newPhone()}` } });
+    });
+
+    it('serves the form options and my documents', async () => {
+      const session = await signIn(newPhone());
+      const options = await auth(http().get(`${API}/me/form-options`), session.accessToken).expect(200);
+      expect(options.body).toEqual(expect.objectContaining({
+        areas: expect.any(Array), trades: expect.any(Array), legalMinimumWagePaise: expect.objectContaining({ unskilled: expect.any(Number) }),
+      }));
+      expect(options.body.business.businessTypes).not.toContain('household');
+      const phone = newPhone();
+      const partner = await signIn(phone);
+      const code = await freshOtp(partner.accessToken, 'register');
+      const reg = await auth(http().post(`${API}/me/register/referral`), partner.accessToken)
+        .send({ name: 'Docs Partner', type: 'individual', individualRole: 'other', whatsappPhone: phone, language: 'en', locality: 'Jayanagar', pincode: '560041', otp: code })
+        .expect(201);
+      const docs = await auth(http().get(`${API}/me/profiles/${reg.body.profileId}/documents`), partner.accessToken).expect(200);
+      expect(docs.body).toEqual({ consents: [], documents: [] });
+      await auth(http().get(`${API}/me/profiles/${reg.body.profileId}/documents/referral_terms`), partner.accessToken).expect(404);
+      await auth(http().get(`${API}/me/profiles/${reg.body.profileId}/documents`), session.accessToken).expect(404);
+    });
+
+    it('Sign in with Apple is refused while it is not configured', async () => {
+      const res = await json(http().post(`${API}/auth/apple`)).send({ idToken: 'a.b.c' }).expect(503);
+      expect(res.body.code).toBe('APPLE_NOT_CONFIGURED');
+      const config = await json(http().get(`${API}/config`)).expect(200);
+      expect(config.body.appleSignIn).toBe(false);
     });
   });
 });

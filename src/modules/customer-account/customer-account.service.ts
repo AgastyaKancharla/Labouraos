@@ -4,6 +4,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
 import { CUSTOMER_LANGUAGES } from '../../common/customer-auth/customer-app.constants';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
+import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 
 /** Version of the contact-me tick's wording (C7), kept with the tick. */
 export const CONTACT_ME_NOTICE_VERSION = 'contact-me-2026-11-14';
@@ -19,6 +20,7 @@ export class CustomerAccountService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly clock: CustomerAuthClock,
+    private readonly scope: CustomerScopeService,
   ) {}
 
   /** PATCH /me: language, display name, the contact-me tick. */
@@ -69,6 +71,7 @@ export class CustomerAccountService {
 
   /** GET /customer-api/v1/me: the account and the profiles it may act for. */
   async me(accountId: string) {
+    await this.scope.stillMine(accountId);
     const account = await this.prisma.customerAccount.findUnique({
       where: { id: accountId },
       select: {

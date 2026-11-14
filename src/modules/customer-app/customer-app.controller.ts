@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { CUSTOMER_API_PREFIX } from '../../common/customer-auth/customer-app.constants';
 import { CurrentCustomer, CustomerRoute } from '../../common/customer-auth/customer-auth.decorators';
@@ -7,6 +7,7 @@ import { requestContext } from '../customer-account/customer-request-context';
 import { CustomerHomeService } from './customer-home.service';
 import { CustomerRegistrationService } from './customer-registration.service';
 import { CustomerRequestsService } from './customer-requests.service';
+import { CustomerOptionsService } from './customer-options.service';
 
 type Body_ = Record<string, unknown>;
 
@@ -21,7 +22,28 @@ export class CustomerAppController {
     private readonly registration: CustomerRegistrationService,
     private readonly homes: CustomerHomeService,
     private readonly requests: CustomerRequestsService,
+    private readonly options: CustomerOptionsService,
   ) {}
+
+  @Get('me/form-options')
+  @CustomerRoute()
+  formOptions() {
+    return this.options.formOptions();
+  }
+
+  @Get('me/profiles/:profileId/documents')
+  @CustomerRoute()
+  documents(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string) {
+    return this.options.documents(me.accountId, profileId);
+  }
+
+  @Get('me/profiles/:profileId/documents/:kind')
+  @Header('Content-Type', 'text/html; charset=utf-8')
+  @Header('Cache-Control', 'no-store')
+  @CustomerRoute()
+  document(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Param('kind') kind: string) {
+    return this.options.document(me.accountId, profileId, kind);
+  }
 
   @Post('me/signups')
   @CustomerRoute()
@@ -111,6 +133,13 @@ export class CustomerAppController {
   @CustomerRoute()
   deletionInfo(@CurrentCustomer() me: CustomerPrincipal) {
     return this.requests.deletionInfo(me.accountId);
+  }
+
+  @Post('me/deletion/cancel')
+  @HttpCode(200)
+  @CustomerRoute()
+  cancelDeletion(@CurrentCustomer() me: CustomerPrincipal) {
+    return this.requests.cancelDeletion(me.accountId);
   }
 
   @Post('me/deletion')

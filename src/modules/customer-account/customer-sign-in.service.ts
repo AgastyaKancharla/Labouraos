@@ -1,8 +1,9 @@
-import { HttpStatus, Injectable } from '@nestjs/common';
+import { BadRequestException, HttpStatus, Inject, Injectable } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { OtpService } from '../../common/otp/otp.service';
-import { testModeFields } from '../../common/otp/otp-test-mode';
+import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
+import { customerTestModeFields } from '../../common/customer-auth/customer-otp-test-mode';
 import { parseIndianMobile } from '../../common/phone/indian-mobile';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerTokenService } from '../../common/customer-auth/customer-token.service';
@@ -17,13 +18,21 @@ import { CUSTOMER_ERROR_CODES, CustomerApiError, customerUnauthorized } from '..
 import { AuditService } from '../../common/audit/audit.service';
 import { CustomerAccountService } from './customer-account.service';
 import { CustomerLinkingService, LinkedProfile } from './customer-linking.service';
-import { CustomerOtpLimiter, OtpCaller } from './customer-otp-limiter.service';
-import { GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { customerPhoneHash, CustomerOtpLimiter, hashOf, OtpCaller } from './customer-otp-limiter.service';
+import { AppleIdTokenVerifier, ExternalIdentity, GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { HUMAN_CHECK_PROVIDER, HumanCheckProvider } from './human-check.provider';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** OTP provider purposes for the customer realm (stored on the OTP session; never the staff ones). */
-const OTP_PURPOSE_SIGN_IN = 'customer_sign_in';
-const OTP_PURPOSE_STEP_UP = 'customer_step_up';
+export const OTP_PURPOSE_SIGN_IN = 'customer_sign_in';
+/** Adding a mobile to a Google or Apple account: bound to that account. */
+export const OTP_PURPOSE_ADD_PHONE = 'customer_add_phone';
+/** A fresh code for one sensitive action, bound to the account: customer_step_up:<action>. */
+export function stepUpOtpPurpose(action: string): string {
+  return `customer_step_up:${action}`;
+}
+/** Refresh grace: the token renewed in the last 30 seconds on the same phone (two renewals at once). */
+const REFRESH_GRACE_MS = 30_000;
 
 export interface RequestContext {
   ip?: string | null;
@@ -77,52 +86,117 @@ export class CustomerSignInService {
     private readonly limiter: CustomerOtpLimiter,
     private readonly linking: CustomerLinkingService,
     private readonly google: GoogleIdTokenVerifier,
+    private readonly apple: AppleIdTokenVerifier,
     private readonly accounts: CustomerAccountService,
     private readonly audit: AuditService,
+    @Inject(HUMAN_CHECK_PROVIDER) private readonly humanCheck: HumanCheckProvider,
   ) {}
 
   // ─── OTP ────────────────────────────────────────────────────────────────
 
-  private async send(phone: string, purpose: string, requestId: unknown, caller: OtpCaller) {
-    await this.limiter.claimSend(caller, this.clock.now());
-    const result = await this.otp.getProvider().sendOtp(phone, {
-      purpose,
-      requestId: typeof requestId === 'string' && requestId ? requestId : undefined,
-    });
+  /**
+   * Sends a code for one flow. Every customer code is recorded with its purpose,
+   * the installation that asked and (for signed-in flows) the account, so it is
+   * accepted only by that same flow, phone and account (security review H1).
+   */
+  private async send(
+    phone: string,
+    purpose: string,
+    body: { requestId?: unknown; humanCheckToken?: unknown },
+    caller: OtpCaller,
+    accountId: string | null,
+  ) {
+    if (!caller.installationId) {
+      throw bad(CUSTOMER_ERROR_CODES.INSTALLATION_REQUIRED, 'The app must send its installation id (X-Laboura-Installation)', HttpStatus.BAD_REQUEST);
+    }
+    const now = this.clock.now();
+    const resendOf = typeof body?.requestId === 'string' && body.requestId ? body.requestId : undefined;
+    if (resendOf) {
+      const original = await this.limiter.sendFor(resendOf);
+      if (!original || original.purpose !== purpose || original.phoneHash !== customerPhoneHash(phone)
+        || original.deviceHash !== hashOf('device', caller.installationId) || (original.accountId ?? null) !== accountId) {
+        throw bad(CUSTOMER_ERROR_CODES.OTP_EXPIRED, 'Ask for a new code.');
+      }
+    }
+    if (await this.limiter.needsHumanCheck(caller, now)) {
+      const passed = await this.humanCheck.verify(body?.humanCheckToken, { installationId: caller.installationId ?? null, ip: caller.ip ?? null });
+      if (!passed) {
+        throw bad(CUSTOMER_ERROR_CODES.HUMAN_CHECK_REQUIRED, 'Please confirm you are a person, then ask for the code again', HttpStatus.FORBIDDEN, { provider: this.humanCheck.name });
+      }
+    }
+    const rowId = await this.limiter.claimSend(caller, now);
+    let result;
+    try {
+      result = await this.otp.getProvider().sendOtp(phone, { purpose, requestId: resendOf });
+    } catch (error) {
+      if (error instanceof BadRequestException && /TRAI|09:00/.test(String((error.getResponse() as { message?: unknown })?.message ?? error.message))) {
+        throw bad(CUSTOMER_ERROR_CODES.OTP_QUIET_HOURS, 'Codes can be sent only between 9 AM and 9 PM. Please try again then.', HttpStatus.SERVICE_UNAVAILABLE);
+      }
+      throw error;
+    }
+    await this.limiter.bindSend(rowId, { requestId: result.requestId, purpose, accountId });
+    const provider = this.otp.getProvider();
+    const code = provider instanceof MockOtpProvider ? provider.getCode(result.requestId) : undefined;
     return {
       requestId: result.requestId,
       resendAvailableAt: result.resendAvailableAt,
       resendsLeft: result.resendsLeft,
-      ...testModeFields(result),
+      ...customerTestModeFields(code),
     };
   }
 
-  /** Checks a code for this phone. With `consume`, the code can't be used again. */
-  private async checkCode(phone: string, requestId: unknown, code: unknown, caller: OtpCaller, consume: boolean): Promise<void> {
+  /**
+   * Checks a code for this phone and flow. A request that was not sent by this
+   * flow, to this phone, from this installation (and account) is refused without
+   * charging the claimed phone: only the address and installation pay (H2).
+   * With `consume`, the code can't be used again.
+   */
+  private async checkCode(
+    phone: string,
+    requestId: unknown,
+    code: unknown,
+    caller: OtpCaller,
+    purpose: string,
+    accountId: string | null,
+    consume: boolean,
+  ): Promise<void> {
     const now = this.clock.now();
-    if (typeof requestId !== 'string' || !requestId || typeof code !== 'string' || !/^\d{4,8}$/.test(code)) {
-      throw bad(CUSTOMER_ERROR_CODES.OTP_INVALID, 'Enter the code sent to your mobile', HttpStatus.BAD_REQUEST, { field: 'code' });
+    if (typeof requestId !== 'string' || !requestId || requestId.length > 100 || typeof code !== 'string' || !/^\d{6}$/.test(code)) {
+      throw bad(CUSTOMER_ERROR_CODES.OTP_INVALID, 'Enter the 6-digit code sent to your mobile', HttpStatus.BAD_REQUEST, { field: 'code' });
     }
     await this.limiter.assertCanVerify(caller, now);
+    const binding = await this.limiter.sendFor(requestId);
+    const matches = binding
+      && binding.purpose === purpose
+      && binding.phoneHash === customerPhoneHash(phone)
+      && binding.deviceHash === hashOf('device', caller.installationId)
+      && (accountId === null || binding.accountId === accountId);
+    if (!matches) {
+      await this.limiter.recordWrongCode(caller, now, false);
+      throw bad(binding ? CUSTOMER_ERROR_CODES.OTP_INVALID : CUSTOMER_ERROR_CODES.OTP_EXPIRED,
+        binding ? 'This code is not for this number' : 'This code has expired. Ask for a new one.');
+    }
     // A registration code already checked once (the form was refused and sent
     // again) is still good until the registration uses it up.
-    if (!consume && (await this.otp.isVerified(requestId, phone))) return;
+    if (!consume && (await this.otp.isVerified(requestId, phone, purpose))) return;
     const provider = this.otp.getProvider();
-    const known = await provider.getPhoneLast4?.(requestId);
-    if (known === null) throw bad(CUSTOMER_ERROR_CODES.OTP_EXPIRED, 'This code has expired. Ask for a new one.');
-    const ok = (await provider.verifyOtp(requestId, code)) && (await this.otp.isVerified(requestId, phone));
+    const ok = (await provider.verifyOtp(requestId, code)) && (await this.otp.isVerified(requestId, phone, purpose));
     if (!ok) {
-      const attemptsLeft = await this.limiter.recordWrongCode(caller, now);
+      const attemptsLeft = await this.limiter.recordWrongCode(caller, now, true);
       throw bad(CUSTOMER_ERROR_CODES.OTP_INVALID, 'Wrong code', HttpStatus.BAD_REQUEST, { attemptsLeft });
     }
-    if (consume && !(await this.otp.consumeVerified(requestId, phone))) {
+    if (consume && !(await this.otp.consumeVerified(requestId, phone, purpose))) {
       throw bad(CUSTOMER_ERROR_CODES.OTP_EXPIRED, 'This code has expired. Ask for a new one.');
     }
   }
 
-  sendSignInOtp(body: { phone?: unknown; requestId?: unknown }, ctx: RequestContext) {
+  private caller(phone: string, ctx: RequestContext): OtpCaller {
+    return { phone, ip: ctx.ip, installationId: ctx.installationId };
+  }
+
+  sendSignInOtp(body: { phone?: unknown; requestId?: unknown; humanCheckToken?: unknown }, ctx: RequestContext) {
     const phone = requirePhone(body?.phone);
-    return this.send(phone, OTP_PURPOSE_SIGN_IN, body?.requestId, { phone, ip: ctx.ip, installationId: ctx.installationId });
+    return this.send(phone, OTP_PURPOSE_SIGN_IN, body ?? {}, this.caller(phone, ctx), null);
   }
 
   async verifySignInOtp(
@@ -130,7 +204,7 @@ export class CustomerSignInService {
     ctx: RequestContext,
   ) {
     const phone = requirePhone(body?.phone);
-    await this.checkCode(phone, body?.requestId, body?.code, { phone, ip: ctx.ip, installationId: ctx.installationId }, true);
+    await this.checkCode(phone, body?.requestId, body?.code, this.caller(phone, ctx), OTP_PURPOSE_SIGN_IN, null, true);
     const now = this.clock.now();
     const accountId = await this.accountForPhone(phone, language(body?.language), now);
     await this.assertUsable(accountId);
@@ -169,27 +243,45 @@ export class CustomerSignInService {
     return account.id;
   }
 
-  // ─── Google ─────────────────────────────────────────────────────────────
+  // ─── Google and Apple ──────────────────────────────────────────────────
 
-  async signInWithGoogle(body: { idToken?: unknown; device?: DeviceInput; language?: unknown }, ctx: RequestContext) {
-    const google = await this.google.verify(body?.idToken);
+  signInWithGoogle(body: { idToken?: unknown; nonce?: unknown; device?: DeviceInput; language?: unknown }, ctx: RequestContext) {
+    return this.signInExternal('google', body, ctx);
+  }
+
+  signInWithApple(body: { idToken?: unknown; nonce?: unknown; name?: unknown; device?: DeviceInput; language?: unknown }, ctx: RequestContext) {
+    return this.signInExternal('apple', body, ctx);
+  }
+
+  private verifierFor(provider: 'google' | 'apple') {
+    return provider === 'google' ? this.google : this.apple;
+  }
+
+  private async signInExternal(
+    provider: 'google' | 'apple',
+    body: { idToken?: unknown; nonce?: unknown; name?: unknown; device?: DeviceInput; language?: unknown },
+    ctx: RequestContext,
+  ) {
+    const identityInfo: ExternalIdentity = await this.verifierFor(provider).verify(body?.idToken, body?.nonce);
     const now = this.clock.now();
+    // Apple sends the name only to the app, the first time: the app passes it on.
+    const name = identityInfo.name ?? optionalText(body?.name, 120);
     const identity = await this.prisma.customerIdentity.findUnique({
-      where: { provider_subject: { provider: 'google', subject: google.sub } },
+      where: { provider_subject: { provider, subject: identityInfo.sub } },
       select: { id: true, accountId: true },
     });
     let accountId: string;
     if (identity) {
       accountId = identity.accountId;
-      await this.prisma.customerIdentity.update({ where: { id: identity.id }, data: { lastUsedAt: now, email: google.email } });
+      await this.prisma.customerIdentity.update({ where: { id: identity.id }, data: { lastUsedAt: now, email: identityInfo.email } });
     } else {
       const account = await this.prisma.customerAccount.create({
         data: {
-          createdVia: 'google',
-          email: google.email,
-          displayName: google.name,
+          createdVia: provider,
+          email: identityInfo.email,
+          displayName: name,
           language: language(body?.language) ?? 'en',
-          identities: { create: { provider: 'google', subject: google.sub, email: google.email, verifiedAt: now, lastUsedAt: now } },
+          identities: { create: { provider, subject: identityInfo.sub, email: identityInfo.email, verifiedAt: now, lastUsedAt: now } },
         },
         select: { id: true },
       });
@@ -200,16 +292,32 @@ export class CustomerSignInService {
     const linked = account.phone ? await this.linking.linkByVerifiedPhone(accountId, account.phone) : [];
     await this.audit.log({
       actorId: `customer:${accountId}`, action: 'customer.sign_in', entityType: 'customer_account', entityCode: accountId,
-      after: { method: 'google', linked: linked.length },
+      after: { method: provider, linked: linked.length },
     });
-    return this.sessionAnswer(accountId, 'google', body?.device, ctx, linked);
+    return this.sessionAnswer(accountId, provider, body?.device, ctx, linked);
+  }
+
+  /**
+   * Proof for a Google- or Apple-only account (no mobile) on a sensitive action:
+   * a fresh ID token (issued in the last 10 minutes) for the same identity.
+   */
+  async assertFreshExternalProof(accountId: string, proof: { provider?: unknown; idToken?: unknown; nonce?: unknown }): Promise<'google' | 'apple'> {
+    const provider = proof?.provider === 'apple' ? 'apple' : proof?.provider === 'google' ? 'google' : null;
+    if (!provider) throw bad(CUSTOMER_ERROR_CODES.STEP_UP_REQUIRED, 'Sign in with Google or Apple again to confirm', HttpStatus.FORBIDDEN, { purpose: 'delete_account' });
+    const info = await this.verifierFor(provider).verify(proof.idToken, proof.nonce);
+    const identity = await this.prisma.customerIdentity.findUnique({ where: { provider_subject: { provider, subject: info.sub } }, select: { accountId: true } });
+    const fresh = info.issuedAt !== null && this.clock.now().getTime() / 1000 - info.issuedAt <= 600;
+    if (!identity || identity.accountId !== accountId || !fresh) {
+      throw bad(CUSTOMER_ERROR_CODES.STEP_UP_REQUIRED, 'Sign in again with the same account to confirm', HttpStatus.FORBIDDEN, { purpose: 'delete_account' });
+    }
+    return provider;
   }
 
   // ─── Adding the mobile to a Google account ────────────────────────────
 
-  async sendAddPhoneOtp(accountId: string, body: { phone?: unknown; requestId?: unknown }, ctx: RequestContext) {
+  async sendAddPhoneOtp(accountId: string, body: { phone?: unknown; requestId?: unknown; humanCheckToken?: unknown }, ctx: RequestContext) {
     const phone = requirePhone(body?.phone);
-    return this.send(phone, OTP_PURPOSE_SIGN_IN, body?.requestId, { phone, ip: ctx.ip, installationId: ctx.installationId });
+    return this.send(phone, OTP_PURPOSE_ADD_PHONE, body ?? {}, this.caller(phone, ctx), accountId);
   }
 
   async verifyAddPhone(
@@ -219,7 +327,7 @@ export class CustomerSignInService {
     ctx: RequestContext,
   ) {
     const phone = requirePhone(body?.phone);
-    await this.checkCode(phone, body?.requestId, body?.code, { phone, ip: ctx.ip, installationId: ctx.installationId }, true);
+    await this.checkCode(phone, body?.requestId, body?.code, this.caller(phone, ctx), OTP_PURPOSE_ADD_PHONE, accountId, true);
     const now = this.clock.now();
     const me = await this.prisma.customerAccount.findUniqueOrThrow({
       where: { id: accountId },
@@ -301,8 +409,17 @@ export class CustomerSignInService {
   }
 
   private async upsertDevice(accountId: string, device: DeviceInput | undefined, ctx: RequestContext, now: Date): Promise<string | null> {
-    const installationId = optionalText(device?.installationId, 100) ?? optionalText(ctx.installationId, 100);
+    // The header is the installation the OTP was bound to; the body may only repeat it.
+    const installationId = optionalText(ctx.installationId, 100) ?? optionalText(device?.installationId, 100);
     if (!installationId) return null;
+    const account = await this.prisma.customerAccount.findUniqueOrThrow({ where: { id: accountId }, select: { status: true } });
+    if (account.status === 'deletion_requested') {
+      // An account being deleted cannot be opened on a new phone (security review M4).
+      const known = await this.prisma.customerDevice.findUnique({ where: { accountId_installationId: { accountId, installationId } }, select: { id: true } });
+      if (!known) {
+        throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.DELETION_PENDING, 'This account is being deleted and cannot be opened on a new phone. Cancel the deletion on your old phone, or call Laboura.');
+      }
+    }
     const platform = ['android', 'ios', 'web'].includes(String(device?.platform)) ? String(device?.platform) : 'android';
     const appVersion = optionalText(device?.appVersion, 40);
     const row = await this.prisma.customerDevice.upsert({
@@ -316,7 +433,7 @@ export class CustomerSignInService {
 
   private async sessionAnswer(
     accountId: string,
-    signedInWith: 'phone' | 'google',
+    signedInWith: 'phone' | 'google' | 'apple',
     device: DeviceInput | undefined,
     ctx: RequestContext,
     linked: LinkedProfile[],
@@ -380,19 +497,37 @@ export class CustomerSignInService {
     if (!raw || raw.length > 200) throw invalid();
     const hash = this.tokens.hashRefreshToken(raw);
     const now = this.clock.now();
-    const session = await this.prisma.customerSession.findUnique({
-      where: { refreshTokenHash: hash },
-      select: { id: true, accountId: true, revokedAt: true, expiresAt: true, deviceId: true },
-    });
+    const select = {
+      id: true, accountId: true, revokedAt: true, expiresAt: true, deviceId: true, lastUsedAt: true,
+      device: { select: { installationId: true } },
+    } as const;
+    const session = await this.prisma.customerSession.findUnique({ where: { refreshTokenHash: hash }, select });
+    // A refresh token works only on the phone it was given to.
+    const samePhone = (row: { device: { installationId: string } | null }) =>
+      !row.device || (Boolean(ctx.installationId) && row.device.installationId === ctx.installationId);
     if (!session) {
-      // An old refresh token used again: it was copied. End that session.
-      const reused = await this.prisma.customerSession.findUnique({ where: { previousRefreshTokenHash: hash }, select: { id: true } });
-      if (reused) {
-        await this.prisma.customerSession.updateMany({ where: { id: reused.id, revokedAt: null }, data: { revokedAt: now, endedReason: 'revoked' } });
+      const previous = await this.prisma.customerSession.findUnique({ where: { previousRefreshTokenHash: hash }, select });
+      if (previous && !previous.revokedAt && samePhone(previous) && now.getTime() - previous.lastUsedAt.getTime() <= REFRESH_GRACE_MS) {
+        // Two renewals at once from the same phone: answer with a fresh access
+        // token only; the app keeps the refresh token the other renewal returned.
+        const access = this.tokens.signAccess(previous.accountId, previous.id);
+        return {
+          accessToken: access.accessToken,
+          accessTokenExpiresIn: access.expiresInSeconds,
+          refreshToken: null,
+          refreshTokenExpiresAt: previous.expiresAt,
+          account: await this.accounts.me(previous.accountId),
+          linked: [],
+          next: await this.next(previous.accountId),
+        };
+      }
+      if (previous) {
+        // An old refresh token used again: it was copied. End that session.
+        await this.prisma.customerSession.updateMany({ where: { id: previous.id, revokedAt: null }, data: { revokedAt: now, endedReason: 'revoked' } });
       }
       throw invalid();
     }
-    if (session.revokedAt || session.expiresAt.getTime() <= now.getTime()) throw invalid();
+    if (session.revokedAt || session.expiresAt.getTime() <= now.getTime() || !samePhone(session)) throw invalid();
     await this.assertUsable(session.accountId);
     const refreshToken = this.tokens.newRefreshToken();
     const expiresAt = this.sessionEnd(now);
@@ -448,16 +583,19 @@ export class CustomerSignInService {
     return account.phone;
   }
 
-  async sendStepUp(accountId: string, body: { purpose?: unknown; requestId?: unknown }, ctx: RequestContext) {
-    this.purpose(body?.purpose);
+  async sendStepUp(accountId: string, body: { purpose?: unknown; requestId?: unknown; humanCheckToken?: unknown }, ctx: RequestContext) {
+    const action = this.purpose(body?.purpose);
     const phone = await this.verifiedPhone(accountId);
-    return this.send(phone, OTP_PURPOSE_STEP_UP, body?.requestId, { phone, ip: ctx.ip, installationId: ctx.installationId });
+    return this.send(phone, stepUpOtpPurpose(action), body ?? {}, this.caller(phone, ctx), accountId);
   }
 
   async verifyStepUp(accountId: string, sessionId: string, body: { purpose?: unknown; requestId?: unknown; code?: unknown }, ctx: RequestContext) {
     const purpose = this.purpose(body?.purpose);
     const phone = await this.verifiedPhone(accountId);
-    await this.checkCode(phone, body?.requestId, body?.code, { phone, ip: ctx.ip, installationId: ctx.installationId }, true);
+    if (purpose === 'register') {
+      throw bad(CUSTOMER_ERROR_CODES.VALIDATION, 'A registration code goes in the registration form, not here', HttpStatus.BAD_REQUEST, { field: 'purpose' });
+    }
+    await this.checkCode(phone, body?.requestId, body?.code, this.caller(phone, ctx), stepUpOtpPurpose(purpose), accountId, true);
     const now = this.clock.now();
     await this.prisma.customerSession.update({ where: { id: sessionId }, data: { stepUpAt: now, stepUpPurpose: purpose } });
     return { purpose, validUntil: new Date(now.getTime() + CUSTOMER_STEP_UP_MINUTES * 60_000) };
@@ -483,7 +621,7 @@ export class CustomerSignInService {
   async checkRegistrationOtp(accountId: string, otp: unknown, ctx: RequestContext): Promise<{ phone: string; requestId: string }> {
     const phone = await this.verifiedPhone(accountId);
     const value = (otp ?? {}) as { requestId?: unknown; code?: unknown };
-    await this.checkCode(phone, value.requestId, value.code, { phone, ip: ctx.ip, installationId: ctx.installationId }, false);
+    await this.checkCode(phone, value.requestId, value.code, this.caller(phone, ctx), stepUpOtpPurpose('register'), accountId, false);
     return { phone, requestId: value.requestId as string };
   }
 }

@@ -47,6 +47,12 @@ must change one, they change this file in the same PR and say so.
 Send `X-Laboura-Installation: <installationId>` on every request: a random id
 (UUID) the app makes once per install and keeps. It is used for the OTP limits
 per device and to tie a session to a phone. Never the phone's IMEI or ad id.
+**Required** on every OTP send (`400 INSTALLATION_REQUIRED` without it) and on
+`POST /auth/refresh`. Every customer OTP code is bound to the installation (and,
+when signed in, the account) that asked for it and to its purpose: it is
+accepted only by the same flow on the same phone. A code from any other flow
+(an agent's registration call, a vacancy confirmation…) never signs anyone in.
+Codes are always 6 digits.
 
 ### 1.4 Errors
 
@@ -88,11 +94,18 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `REFERRAL_SELF` | 422 | A partner's own code was used on their own sign-up |
 | `REFERRAL_PAUSED` | 422 | The referral code belongs to a paused partner; the sign-up continues without it if the app resends without `referralCode` |
 | `NOT_ALLOWED` | 403 | The action is not allowed for my role on this profile (e.g. a branch manager opening the agreement) |
-| `GUARANTEE_WARNING_REQUIRED` | 409 | Deleting while the 30-day guarantee runs: show the warning, resend with `refundLossAcknowledged: true` |
+| `GUARANTEE_WARNING_REQUIRED` | 409 | Deleting while the 30-day guarantee runs, or while a refund is still owed: show the warning (`guaranteeRunning`, `refundOwed`), resend with `refundLossAcknowledged: true` |
 | `BELOW_MINIMUM_WAGE_TICK_REQUIRED` | 409 | Vacancy salary below the legal minimum: show the warning and the tick, resend with `ownerToldMinimumWage: true`. `legalMinimumPaise` included |
 | `SERVICE_LOCKED` | 409 | Service notifications cannot be switched off while a guarantee is running |
-| `DELETION_PENDING` | 409 | A deletion request is already open |
+| `DELETION_PENDING` | 409 | A deletion request is open: no new requests, links, drafts or vacancies, and no sign-in on a new phone until it is cancelled |
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
+| `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
+| `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
+| `OTP_PAUSED` | 503 | System-wide code limit reached (abuse protection): show "Try again later or call Laboura" |
+| `OTP_QUIET_HOURS` | 503 | Codes are sent only 9 AM to 9 PM (SMS rules): show "Try again after 9 AM" |
+| `APPLE_TOKEN_INVALID` | 401 | Apple sign-in token not valid for Laboura |
+| `APPLE_NOT_CONFIGURED` | 503 | Sign in with Apple is not switched on: hide the button (see `GET /config`) |
+| `LIMIT_REACHED` | 409 / 429 | Too many open vacancy drafts (20), or too many links in an hour (10 per profile) |
 
 Plain `429` without a code: more than 300 requests a minute from one internet
 address (the server's general limit for routes outside the staff login).
@@ -111,7 +124,10 @@ Response:
 {
   "googleClientIds": { "android": "…apps.googleusercontent.com", "ios": "…", "web": "…" },
   "googleSignIn": true,
-  "otpTestMode": true,
+  "appleClientIds": { "ios": "in.laboura.app", "web": null },
+  "appleSignIn": false,
+  "humanCheckProvider": "mock",
+  "otpTestMode": false,
   "languages": ["kn", "hi", "en"],
   "otpResendSeconds": 30,
   "otpMaxResends": 3,
@@ -120,8 +136,11 @@ Response:
 ```
 
 `googleSignIn` is false (and the ids null) when no Google client id is set on
-the server: the app hides "Continue with Google". `otpTestMode` true means the
-server returns the OTP in `testModeCode` (test setup only, pretend SMS).
+the server: the app hides "Continue with Google"; `appleSignIn` likewise for
+"Sign in with Apple". `otpTestMode` true means the server returns the OTP in
+`testModeCode`: only when `CUSTOMER_OTP_TEST_MODE=on` on a server marked
+`LABOURA_SETUP=test` with pretend SMS (the server refuses to start with it on
+anywhere else). The staff OTP test mode never turns it on.
 
 ---
 
@@ -141,7 +160,7 @@ linked.** Sessions last 90 days per phone, renewed on every refresh (C16).
 `POST /auth/otp/send`
 
 ```json
-{ "phone": "9876543210", "requestId": "otp_… (only for a resend)" }
+{ "phone": "9876543210", "requestId": "otp_… (only for a resend)", "humanCheckToken": "(only when asked)" }
 ```
 
 → `200`
@@ -153,10 +172,19 @@ linked.** Sessions last 90 days per phone, renewed on every refresh (C16).
 Rules: +91 fixed, 10 digits. Resend after 30 seconds, at most 3 resends (Forms
 rules). Abuse limits (proposal 7.6), each answering `429 OTP_LIMIT` with
 `retryAfterSeconds`: per phone at most 5 codes an hour and 10 a day; per
-internet address at most 20 codes an hour; per installation at most 10 codes an
-hour; 5 wrong codes on one request end that request (`OTP_EXPIRED`); 10 wrong
-codes for one phone in an hour block that phone for an hour. `testModeCode`
-appears only in OTP test mode.
+internet address at most 60 codes an hour (many phones share a carrier address);
+per installation at most 10 codes an hour; 5 wrong codes on one request end that
+request (`OTP_EXPIRED`); 10 wrong codes for one phone, 50 for one address or 20
+for one installation in an hour block further tries for an hour. A code tried
+with a different phone, flow or installation is refused without counting
+against that phone. From the 4th code in an hour for a phone or installation,
+`403 HUMAN_CHECK_REQUIRED` until the app sends a `humanCheckToken` (only a mock
+provider exists yet: it accepts `mock-human-ok`; a real CAPTCHA or Play
+Integrity / App Attest check must replace it before launch). Above a
+system-wide daily total (`CUSTOMER_OTP_DAILY_LIMIT`, default 3000) sending
+pauses (`503 OTP_PAUSED`) and an alert goes out. Outside 9 AM to 9 PM the real
+SMS sender refuses: `503 OTP_QUIET_HOURS`. `testModeCode` appears only in
+customer OTP test mode (§2).
 
 `POST /auth/otp/verify`
 
@@ -189,6 +217,27 @@ issuer (`accounts.google.com`), the audience (one of the Google client ids in
 expiry and `email_verified`. It keeps Google's `sub`, the email and the name;
 **never the Google picture**. → `200` session answer. If the Google account has
 no verified mobile yet, `next` is `"add_phone"`.
+
+`nonce` (optional, both Google and Apple): when the app passes a nonce to the
+sign-in SDK, send the same raw nonce here; the token's `nonce` must equal it or
+its SHA-256 (hex).
+
+### 3.2b Sign in with Apple (iPhone)
+
+| Method and path | Auth | Status |
+| --- | --- | --- |
+| `POST /auth/apple` | none | A |
+
+```json
+{ "idToken": "<Apple identity token>", "nonce": "raw nonce", "name": "Name the app got from Apple the first time", "device": { "installationId": "uuid", "platform": "ios" }, "language": "en" }
+```
+
+Checked like Google: Apple's published keys, issuer `https://appleid.apple.com`,
+audience = `APPLE_CLIENT_ID_IOS` (bundle id) or `APPLE_CLIENT_ID_WEB`, expiry,
+nonce. **Off and refused (`503 APPLE_NOT_CONFIGURED`) until an Apple client id
+is set**; `GET /config` says `appleSignIn`. Apple gives the name only once, to
+the app, so the app passes it. As with Google, a mobile must be verified (§3.4)
+before any profile.
 
 ### 3.3 The session answer
 
@@ -245,10 +294,14 @@ Returned by `otp/verify`, `google`, `phone/verify` (when the account changed) an
 | `POST /auth/refresh` | none (refresh token in body) | A |
 | `POST /auth/sign-out` | 🔒 | A |
 
-`POST /auth/refresh` `{ "refreshToken": "…" }` → session answer with a **new**
-refresh token (the old one stops working). Using an old refresh token again
-ends that session (`401 CUSTOMER_REFRESH_INVALID`): it may have been stolen.
-Each refresh moves the session's end to 90 days from now.
+`POST /auth/refresh` `{ "refreshToken": "…" }` (with the same
+`X-Laboura-Installation` as at sign-in: a refresh token works only on its own
+phone) → session answer with a **new** refresh token (the old one stops
+working). If two renewals race, the old token used again within 30 seconds on
+the same phone gets a new access token with `"refreshToken": null` (keep the
+refresh token the other renewal returned). Using an old refresh token later ends
+that session (`401 CUSTOMER_REFRESH_INVALID`): it may have been stolen. Each
+refresh moves the session's end to 90 days from now.
 
 `POST /auth/sign-out` → `204`. Ends this session and removes this phone's push
 token (no more notifications to it).
@@ -271,9 +324,11 @@ of calling `verify`.
 `send` `{ "purpose": "delete_account", "requestId": "(resend only)" }` →
 `{ "requestId", "resendAvailableAt", "resendsLeft", "testModeCode"? }` (same
 limits as sign-in). `verify` `{ "purpose": "delete_account", "requestId": "…", "code": "…" }`
-→ `{ "purpose": "delete_account", "validUntil": "…" }`. The step-up is good
-for **5 minutes and one action** of that purpose on this session. A sensitive
-route without it answers `403 STEP_UP_REQUIRED` with `purpose`.
+→ `{ "purpose": "delete_account", "validUntil": "…" }`. The code is bound to
+the action it was sent for (a `delete_account` code never confirms a vacancy)
+and to this account and installation. The step-up is good for **5 minutes and
+one action** of that purpose on this session. A sensitive route without it
+answers `403 STEP_UP_REQUIRED` with `purpose`. `verify` refuses `register`.
 
 ---
 
@@ -319,6 +374,34 @@ registering" (C7); turning it off stops sign-up help calls.
 `PUT /me/last-profile` `{ "profileId": "uuid" }` → `204`. Remembers the profile
 Home opens next time (proposal 3.3).
 
+`GET /me/form-options` 🔒 (A) — what the registration and vacancy forms show:
+
+```json
+{
+  "languages": { "app": ["kn", "hi", "en"], "spokenSuggestions": ["Kannada", "Hindi", "…"] },
+  "areas": [{ "name": "Jayanagar", "pincode": "560041", "latitude": 12.93, "longitude": 77.58 }],
+  "trades": [{ "name": "Cook", "marketSalaryMinPaise": 1800000, "marketSalaryMaxPaise": 2600000, "minimumWageLevel": "semi_skilled", "legalMinimumPaise": 2571400 }],
+  "legalMinimumWagePaise": { "unskilled": 2337600, "semi_skilled": 2571400, "skilled": 2828600, "highly_skilled": 3111400 },
+  "legalMinimumWageEffectiveFrom": "2026-05-22", "salaryDaysPerMonth": 26, "adultMinimumAge": 18,
+  "jobSeeker": { "bestTimeToCall": ["09-12", "12-15", "15-18", "18-21", "09-21"], "shiftPreferences": ["day", "night", "rotational", "any"], "jobTypes": ["full_time", "part_time", "live_in"], "salaryPeriods": ["monthly", "daily"], "maxTrades": 3 },
+  "business": { "businessTypes": ["…, never household"], "contactRoles": ["owner", "manager", "hr", "supervisor"], "employeeCountBands": ["…"], "yearsRunningBands": ["…"], "hiringFrequencies": ["…"] },
+  "referral": { "types": ["individual", "business"], "individualRoles": ["auto_driver", "…"] },
+  "vacancy": { "extras": ["…"], "interviewTypes": ["walk_in", "scheduled"], "salaryPeriods": ["monthly", "daily"] },
+  "callbackTopics": ["signup", "…"]
+}
+```
+
+An unlisted trade ("Other") is checked against the unskilled minimum. The
+salary hint under a trade is its market range; a job seeker's guarantee floor
+is the lower of their minimum and the top of that range (guide).
+
+`GET /me/profiles/:profileId/documents` 🔒 (A) — my signed papers:
+`{ "consents": [{ "purpose", "noticeVersion", "language", "method", "grantedAt", "withdrawnAt" }], "documents": [{ "kind": "referral_terms" | "business_agreement", "title", "signedAt", "download": "documents/<kind>" }] }`.
+`GET /me/profiles/:profileId/documents/:kind` returns the signed document as
+HTML (`referral_terms`: the exact terms the partner agreed to; `business_agreement`:
+owner only). `404 PROFILE_NOT_FOUND` when there is none. The ₹499 receipt link
+is on the job seeker's Home in a later version.
+
 `POST /me/signups` — the role picker and "+ Add another" (proposal 3.3). Starts
 a sign-up of one kind and creates its tracker row at stage A (proposal 4.1).
 
@@ -339,7 +422,8 @@ of profile: `409 PROFILE_EXISTS` with `profileId`. Needs a verified mobile
 All three call the **existing** job seeker, business and referral services, so
 the same validation, duplicate check, consent, minimum wage and 18+ rules apply
 as on the agent's forms. The mobile is the account's verified mobile (never sent
-in the body). `heardFrom` defaults to `laboura_app` (C3). The record is created
+in the body). `heardFrom` is always `laboura_app` (C3), or `referral_partner`
+when a partner's `referralCode` is used; a `heardFrom` in the body is ignored. The record is created
 with no registering agent (`registeredByStaffId` / `leadCreatedByStaffId` null),
 labelled "Registered in the app" by the back office. Each moves the sign-up to stage B.
 
@@ -491,7 +575,7 @@ a fresh link for the signed-in person; no SMS is sent.
 
 | purpose | Profile | Opens | Notes |
 | --- | --- | --- | --- |
-| `registration` | job seeker | `/p/register/<token>` | consent → selfie → ID check → terms and ₹499. Switches off any older registration link (one live link per person) |
+| `registration` | job seeker | `/p/register/<token>` | consent → selfie → ID check → terms and ₹499. Does **not** switch off a link an agent sent by SMS: both resume the same steps |
 | `referral_registration` | referral | `/p/partner/<token>` | terms and recording consent → selfie → ID check → UPI |
 | `business_agreement` | business, role `owner` | `/p/agreement/<token>` | agreement signed by OTP. A non-owner: `403 NOT_ALLOWED` |
 
@@ -621,7 +705,12 @@ Body: `{ "form": { … the agent's vacancy form: tradeSkill, headcount, salaryMi
 Confirmed by a fresh OTP on the contact person's verified mobile (C8); below the
 legal minimum it needs the tick (`409 BELOW_MINIMUM_WAGE_TICK_REQUIRED` otherwise).
 The vacancy still waits for the verification visit before any candidate is shown.
-A branch manager can only use their own branch.
+A branch manager can only use their own branch. At most 20 open drafts per
+account (`409 LIMIT_REACHED`). `confirm` checks the form, the minimum-wage tick
+and that the caller is the vacancy's contact person **before** using up the
+fresh OTP; if anything fails after that, the half-made vacancy is cancelled and
+the draft stays a draft. Consent given on a link opened from the app is
+recorded with method `in_app`.
 
 ---
 
@@ -700,23 +789,47 @@ turns it into a call task (CallTask kind `callback`, or `signup_help` during a s
 | Method and path | Auth | Status |
 | --- | --- | --- |
 | `GET /me/deletion` | 🔒 | A |
-| `POST /me/deletion` | 🔒 + step-up `delete_account` | A |
+| `POST /me/deletion` | 🔒 + step-up `delete_account` (or a fresh Google / Apple sign-in, see below) | A |
+| `POST /me/deletion/cancel` | 🔒 | A |
 
 `GET /me/deletion` → what to show before confirming:
 
 ```json
-{ "guaranteeRunning": true, "endsRefund": true, "keptByLaw": ["payments", "invoices", "refunds", "payouts"], "openRequest": null }
+{
+  "guaranteeRunning": true, "endsRefund": true,
+  "refundOwed": false, "completesAfterRefund": false,
+  "warningRequired": true,
+  "proof": "otp",
+  "keptByLaw": ["payments", "invoices", "refunds", "payouts"],
+  "openRequest": null
+}
 ```
 
-`POST /me/deletion` `{ "reason": "…", "refundLossAcknowledged": true }` →
-`201 { "id": "uuid", "status": "requested", "createdAt": "…" }`.
+`POST /me/deletion` `{ "reason": "…", "refundLossAcknowledged": true, "proof": { "provider": "google", "idToken": "…", "nonce": "…" } }` →
+`201 { "id": "uuid", "status": "requested", "createdAt": "…", "completesAfterRefund": false }`.
 
-- While a job seeker's 30-day guarantee is running, deleting is the same as
-  withdrawing consent after paying: **it ends the refund** (decided, question 20).
-  Without `refundLossAcknowledged: true` the answer is `409 GUARANTEE_WARNING_REQUIRED`.
-- The account becomes `deletion_requested`. Other sessions are signed out. The
-  back office works it like a data request (erasure), keeping payments and
-  invoices for the years the law requires, and anonymises the profiles.
+- **Proof**: an account with a verified mobile uses a step-up OTP
+  (`delete_account`). A Google- or Apple-only account (`proof` is `google` or
+  `apple` in `GET`) has no mobile: it signs in again with the same Google or
+  Apple account and sends that fresh ID token (issued in the last 10 minutes) as
+  `proof`.
+- **Warning** (`warningRequired`) when a job seeker's 30-day guarantee is
+  running — deleting is the same as withdrawing consent after paying and **ends
+  the refund** (decided, question 20) — or when a refund is owed and not yet
+  paid: **the owed refund is still paid, and the account is deleted only after
+  it is paid** (`completesAfterRefund`; rule for now, the owner may change it).
+  Without `refundLossAcknowledged: true` the answer is `409 GUARANTEE_WARNING_REQUIRED`,
+  before any proof is used up.
+- The account becomes `deletion_requested`. Other phones are signed out and
+  their push tokens removed; this phone stays signed in to see or cancel the
+  request. While it is pending the account cannot issue links, write or confirm
+  vacancy drafts, start sign-ups or be opened on a new phone (`409 DELETION_PENDING`).
+- `POST /me/deletion/cancel` → `200 { "id", "status": "cancelled" }` while the
+  back office has not started (`status` still `requested`).
+- The back office works it like a data request (erasure), keeping payments and
+  invoices for the years the law requires, anonymises the profiles, and **removes
+  the account's phone identity** (`CustomerIdentity` provider `phone`) so the
+  number can sign up again as a new person.
 - A second request while one is open: `409 DELETION_PENDING`.
 
 ---
@@ -753,6 +866,20 @@ Changes to existing tables and values:
 - `MessageLog.channel` values `push` and `in_app` (C17).
 
 Shared constants: `src/common/customer-auth/customer-app.constants.ts`.
+
+**Profiles stay tied to the mobile.** A profile linked by phone, or
+self-registered, is revoked (`CustomerProfile.status = revoked`) as soon as the
+record's mobile no longer equals the account's verified mobile (an agent
+corrected it) or the record is anonymised. Only `Business.phone` (the
+OTP-verified contact) links a business; an "additional contact" number links
+nothing; a branch's contact person links that branch only.
+
+**Edit rights on app sign-ups (for D).** A record self-registered in the app has
+no registering agent. The edit policy (`src/common/edit-policy`) lets only the
+agent in `SignupTracker.assignedStaffId` edit it, plus that agent's Team Lead
+(any Team Lead while nobody is assigned) and management. D's Team Lead
+registration check and stuck-registration lists should use the same field (the
+tracker assignee and their team) for app sign-ups.
 
 ---
 

@@ -2823,8 +2823,15 @@ model CustomerOtpAttempt {
   phoneHash   String?
   ipHash      String?
   deviceHash  String?
+  /// send rows: the OTP request, what it was sent for (customer_sign_in,
+  /// customer_step_up:<action>) and the account that asked (step-ups). A code is
+  /// accepted only by the same flow, installation and account.
+  requestId   String?
+  purpose     String?
+  accountId   String?
   createdAt   DateTime @default(now())
 
+  @@index([requestId])
   @@index([phoneHash, createdAt])
   @@index([ipHash, createdAt])
   @@index([deviceHash, createdAt])
@@ -2961,6 +2968,11 @@ model CustomerDeletionRequest {
   /// They saw the warning and confirmed it (required when guaranteeRunning).
   refundLossAcknowledged     Boolean         @default(false)
   otpVerifiedAt              DateTime
+  /// How they proved it was them: otp (fresh code to the verified mobile) or google (fresh Google sign-in, Google-only accounts).
+  proof                      String          @default("otp")
+  /// A refund was owed and not yet paid when they asked: it is still paid, and the deletion completes only after it is paid.
+  refundOwedAtRequest        Boolean         @default(false)
+  cancelledAt                DateTime?
   /// The DataRequest (DR-) the back office opened for it, if any.
   dataRequestId              String?
   handledByStaffId           String?

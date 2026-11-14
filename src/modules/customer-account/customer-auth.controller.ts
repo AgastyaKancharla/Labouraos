@@ -4,9 +4,9 @@ import { Public } from '../../common/rbac/public.decorator';
 import { CUSTOMER_API_PREFIX, CUSTOMER_LANGUAGES, CUSTOMER_SESSION_DAYS } from '../../common/customer-auth/customer-app.constants';
 import { CurrentCustomer, CustomerRoute } from '../../common/customer-auth/customer-auth.decorators';
 import { CustomerPrincipal } from '../../common/customer-auth/customer-auth.guard';
-import { otpTestModeEnabled } from '../../common/otp/otp-test-mode';
+import { customerOtpTestModeEnabled } from '../../common/customer-auth/customer-otp-test-mode';
 import { CustomerSignInService } from './customer-sign-in.service';
-import { googleClientIds } from './google-id-token.verifier';
+import { appleClientIds, googleClientIds } from './google-id-token.verifier';
 import { requestContext } from './customer-request-context';
 
 type Body_ = Record<string, unknown>;
@@ -25,10 +25,14 @@ export class CustomerAuthController {
   config() {
     const ids = googleClientIds();
     const on = Boolean(ids.android || ids.ios || ids.web);
+    const apple = appleClientIds();
     return {
       googleClientIds: ids,
       googleSignIn: on,
-      otpTestMode: otpTestModeEnabled(),
+      appleClientIds: apple,
+      appleSignIn: Boolean(apple.ios || apple.web),
+      otpTestMode: customerOtpTestModeEnabled(),
+      humanCheckProvider: process.env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock',
       languages: CUSTOMER_LANGUAGES,
       otpResendSeconds: 30,
       otpMaxResends: 3,
@@ -55,6 +59,13 @@ export class CustomerAuthController {
   @Public('Customer sign-in with a Google ID token checked against Google keys and Laboura client ids')
   google(@Body() body: Body_, @Req() req: Request) {
     return this.signIn.signInWithGoogle(body ?? {}, requestContext(req));
+  }
+
+  @Post('auth/apple')
+  @HttpCode(200)
+  @Public('Customer sign-in with an Apple identity token checked against Apple keys and Laboura client ids; off until configured')
+  apple(@Body() body: Body_, @Req() req: Request) {
+    return this.signIn.signInWithApple(body ?? {}, requestContext(req));
   }
 
   @Post('auth/refresh')

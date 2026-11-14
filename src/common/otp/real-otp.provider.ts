@@ -238,11 +238,14 @@ export class RealOtpProvider implements OtpProvider {
     }
   }
 
-  async isVerified(requestId: string, phone?: string): Promise<boolean> {
+  async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {
     const prisma = this.prisma;
     if (!prisma) return false;
     const session = await prisma.otpSession.findUnique({ where: { requestId } });
     if (!session || !session.verified || session.usedAt || session.expiresAt <= this.timeProvider()) {
+      return false;
+    }
+    if (purpose !== undefined && session.purpose !== purpose) {
       return false;
     }
     if (phone) {
@@ -252,7 +255,13 @@ export class RealOtpProvider implements OtpProvider {
     return true;
   }
 
-  async consumeVerified(requestId: string, phone: string): Promise<boolean> {
+  async getPurpose(requestId: string): Promise<string | null> {
+    if (!this.prisma) return null;
+    const session = await this.prisma.otpSession.findUnique({ where: { requestId }, select: { purpose: true } });
+    return session?.purpose ?? null;
+  }
+
+  async consumeVerified(requestId: string, phone: string, purpose?: string): Promise<boolean> {
     const prisma = this.prisma;
     if (!prisma) return false;
     const now = this.timeProvider();
@@ -260,6 +269,7 @@ export class RealOtpProvider implements OtpProvider {
     const result = await prisma.otpSession.updateMany({
       where: {
         requestId,
+        ...(purpose !== undefined ? { purpose } : {}),
         phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
         verified: true,
         usedAt: null,

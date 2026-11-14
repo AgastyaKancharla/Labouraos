@@ -12,6 +12,7 @@ import { CustomerAppController } from './customer-app.controller';
 import { CustomerHomeService } from './customer-home.service';
 import { CustomerRegistrationService } from './customer-registration.service';
 import { CustomerRequestsService } from './customer-requests.service';
+import { CustomerOptionsService } from './customer-options.service';
 
 /**
  * Customer app: self-registration, link issuing, Home status, vacancy drafts,
@@ -22,6 +23,6 @@ import { CustomerRequestsService } from './customer-requests.service';
 @Module({
   imports: [PrismaModule, CustomerAccountModule, JobSeekerModule, BusinessModule, ReferralModule, ConsentModule, PricingModule, VacancyModule],
   controllers: [CustomerAppController],
-  providers: [CustomerRegistrationService, CustomerHomeService, CustomerRequestsService, RegistrationJourneyService],
+  providers: [CustomerRegistrationService, CustomerHomeService, CustomerRequestsService, CustomerOptionsService, RegistrationJourneyService],
 })
 export class CustomerAppModule {}

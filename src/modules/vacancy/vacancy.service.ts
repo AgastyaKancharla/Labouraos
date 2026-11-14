@@ -101,7 +101,12 @@ export class VacancyService {
    * (a business user confirming their own vacancy by a fresh OTP): the same checks
    * and minimum-wage rule, no capturing agent, channel "laboura_app" (proposal C8).
    */
-  async create(businessId: string, dto: CreateVacancyDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
+  /**
+   * The vacancy form's checks, with no database work: create() runs them first,
+   * and the customer app runs them before it uses up a fresh OTP.
+   * Returns the headcount.
+   */
+  validateCreateInput(dto: CreateVacancyDto): number {
     if (!dto.tradeSkill || typeof dto.tradeSkill !== 'string' || !dto.tradeSkill.trim()) {
       throw new BadRequestException('tradeSkill is required');
     }
@@ -155,6 +160,11 @@ export class VacancyService {
     if (typeof headcount !== 'number' || !Number.isInteger(headcount) || headcount < 1) {
       throw new BadRequestException('headcount must be a positive integer');
     }
+    return headcount;
+  }
+
+  async create(businessId: string, dto: CreateVacancyDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
+    const headcount = this.validateCreateInput(dto);
 
     const business = await this.prisma.business.findUnique({
       where: { id: businessId },

@@ -23,8 +23,10 @@ async function createOrSkip<T>(create: () => Promise<T>): Promise<T | null> {
   }
 }
 
+/** The contact's role on the business; "other" is not an owner. */
 function businessRole(role: string | null | undefined): string {
-  return role && (CUSTOMER_BUSINESS_ROLES as readonly string[]).includes(role) ? role : 'owner';
+  if (role && (CUSTOMER_BUSINESS_ROLES as readonly string[]).includes(role)) return role;
+  return role === 'other' ? 'supervisor' : 'owner';
 }
 
 /**
@@ -64,8 +66,11 @@ export class CustomerLinkingService {
       if (p) linked.push({ profileId: p.id, kind: 'referral', code: referral.code, linkedVia: 'phone_match' });
     }
 
+    // Only the business's own OTP-verified contact mobile (Business.phone) links a
+    // business profile. An "additional contact" number was never verified and
+    // links nothing (security review M1).
     const businesses = await tx.business.findMany({
-      where: { anonymisedAt: null, OR: [{ phone: { in: variants } }, { additionalContactPhone: { in: variants } }] },
+      where: { anonymisedAt: null, phone: { in: variants } },
       select: { id: true, code: true, contactRole: true },
     });
     for (const business of businesses) {

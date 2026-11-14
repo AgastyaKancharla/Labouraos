@@ -6,7 +6,8 @@ import { CustomerAuthController } from './customer-auth.controller';
 import { CustomerLinkingService } from './customer-linking.service';
 import { CustomerOtpLimiter } from './customer-otp-limiter.service';
 import { CustomerSignInService } from './customer-sign-in.service';
-import { GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { AppleIdTokenVerifier, GoogleIdTokenVerifier } from './google-id-token.verifier';
+import { HUMAN_CHECK_PROVIDER, humanCheckProviderFactory } from './human-check.provider';
 
 /**
  * Customer app: sign-in (mobile + OTP, Google), sessions, account linking,
@@ -15,7 +16,10 @@ import { GoogleIdTokenVerifier } from './google-id-token.verifier';
 @Module({
   imports: [PrismaModule],
   controllers: [CustomerAuthController, CustomerAccountController],
-  providers: [CustomerAccountService, CustomerSignInService, CustomerLinkingService, CustomerOtpLimiter, GoogleIdTokenVerifier],
+  providers: [
+    CustomerAccountService, CustomerSignInService, CustomerLinkingService, CustomerOtpLimiter, GoogleIdTokenVerifier, AppleIdTokenVerifier,
+    { provide: HUMAN_CHECK_PROVIDER, useFactory: humanCheckProviderFactory },
+  ],
   exports: [CustomerAccountService, CustomerSignInService, CustomerLinkingService],
 })
 export class CustomerAccountModule {}

@@ -13,6 +13,7 @@ import { VacancyService } from '../vacancy/vacancy.service';
 import { VacancyConfirmationService } from '../vacancy/vacancy-confirmation.service';
 import { CreateVacancyDto } from '../vacancy/dto/create-vacancy.dto';
 import { CustomerSignInService } from '../customer-account/customer-sign-in.service';
+import { CustomerHomeService } from './customer-home.service';
 
 type Body = Record<string, unknown>;
 
@@ -26,6 +27,10 @@ const VACANCY_FIELDS = [
   'interviewType', 'walkInDate', 'interviewSlots', 'interviewContactName', 'branchId',
 ] as const;
 const ACTIVE_JOB_SEEKER_STATUSES_ENDED = ['placed', 'closed', 'deactivated', 'refunded'];
+/** Open vacancy drafts one account may keep. */
+export const MAX_OPEN_DRAFTS = 20;
+/** Links issued to the app per profile per hour. */
+export const MAX_LINKS_PER_HOUR = 10;
 
 function validation(message: string, extra: Record<string, unknown> = {}): CustomerApiError {
   return new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, message, extra);
@@ -53,23 +58,40 @@ export class CustomerRequestsService {
     private readonly vacancyConfirmation: VacancyConfirmationService,
     private readonly signIn: CustomerSignInService,
     private readonly audit: AuditService,
+    private readonly homes: CustomerHomeService,
   ) {}
+
+  /** An account being deleted can only look, cancel the deletion or sign out (security review M4). */
+  private async assertNotDeleting(accountId: string): Promise<void> {
+    const account = await this.prisma.customerAccount.findUniqueOrThrow({ where: { id: accountId }, select: { status: true } });
+    if (account.status === 'deletion_requested') {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.DELETION_PENDING, 'This account is being deleted. Cancel the deletion first.');
+    }
+  }
 
   // ─── Links ────────────────────────────────────────────────────────────
 
   async issueLink(accountId: string, profileId: string, body: Body) {
+    await this.assertNotDeleting(accountId);
     const profile = await this.scope.profile(accountId, profileId);
+    const subjectId = profile.jobSeekerId ?? profile.referralId ?? profile.businessId!;
+    const recent = await this.prisma.publicLink.count({
+      where: { subjectId, createdAt: { gt: new Date(this.clock.now().getTime() - 60 * 60 * 1000) }, metadata: { path: ['issuedTo'], equals: `customer:${accountId}` } },
+    });
+    if (recent >= MAX_LINKS_PER_HOUR) {
+      throw new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.LIMIT_REACHED, 'Too many links in an hour. Try again later.');
+    }
     const account = await this.prisma.customerAccount.findUniqueOrThrow({ where: { id: accountId }, select: { language: true } });
     const issuedTo = `customer:${accountId}`;
     const purpose = body?.purpose;
     if (purpose === 'registration') {
       if (profile.kind !== 'job_seeker') throw this.kindMismatch('job_seeker');
-      const link = await this.consentLinks.createLink(profile.jobSeekerId!, { sms: false, issuedTo });
+      const link = await this.consentLinks.createLink(profile.jobSeekerId!, { sms: false, issuedTo, revokeOthers: false });
       return { url: publicPageLink('registration', link.token), purpose, expiresAt: link.expiresAt };
     }
     if (purpose === 'referral_registration') {
       if (profile.kind !== 'referral') throw this.kindMismatch('referral');
-      const link = await this.consentLinks.createReferralTermsLink(profile.referralId!, null, account.language, { sms: false, issuedTo });
+      const link = await this.consentLinks.createReferralTermsLink(profile.referralId!, null, account.language, { sms: false, issuedTo, revokeOthers: false });
       return { url: publicPageLink('referralRegistration', link.token), purpose, expiresAt: link.expiresAt };
     }
     if (purpose === 'business_agreement') {
@@ -147,13 +169,41 @@ export class CustomerRequestsService {
     });
   }
 
-  async deletionInfo(accountId: string) {
-    const running = await this.guaranteeRunning(accountId);
-    const open = await this.prisma.customerDeletionRequest.findFirst({
-      where: { accountId, status: { in: ['requested', 'in_progress'] } },
-      select: { id: true, status: true, createdAt: true },
+  /** A refund owed and not yet paid on one of my job seeker profiles: it is still paid, then the deletion completes. */
+  private async refundOwed(accountId: string): Promise<boolean> {
+    const profiles = await this.prisma.customerProfile.findMany({
+      where: { accountId, status: 'active', kind: 'job_seeker' },
+      select: { id: true, accountId: true, kind: true, role: true, jobSeekerId: true, businessId: true, branchId: true, referralId: true },
     });
-    return { guaranteeRunning: running, endsRefund: running, keptByLaw: ['payments', 'invoices', 'refunds', 'payouts'], openRequest: open };
+    for (const profile of profiles) {
+      const home = await this.homes.jobSeekerHome(profile as Parameters<CustomerHomeService['jobSeekerHome']>[0]);
+      if (home.refund.state === 'due' || home.refund.state === 'with_finance') return true;
+    }
+    return false;
+  }
+
+  async deletionInfo(accountId: string) {
+    const [running, owed, account, open] = await Promise.all([
+      this.guaranteeRunning(accountId),
+      this.refundOwed(accountId),
+      this.prisma.customerAccount.findUniqueOrThrow({ where: { id: accountId }, select: { phone: true, phoneVerifiedAt: true, identities: { select: { provider: true } } } }),
+      this.prisma.customerDeletionRequest.findFirst({
+        where: { accountId, status: { in: ['requested', 'in_progress'] } },
+        select: { id: true, status: true, createdAt: true },
+      }),
+    ]);
+    const proof = account.phone && account.phoneVerifiedAt ? 'otp' : account.identities.some((i) => i.provider === 'apple') && !account.identities.some((i) => i.provider === 'google') ? 'apple' : 'google';
+    return {
+      guaranteeRunning: running,
+      endsRefund: running,
+      refundOwed: owed,
+      // An owed refund is still paid; the account is deleted only after it is paid (rule for now, the owner may change it).
+      completesAfterRefund: owed,
+      warningRequired: running || owed,
+      proof,
+      keptByLaw: ['payments', 'invoices', 'refunds', 'payouts'],
+      openRequest: open,
+    };
   }
 
   async requestDeletion(accountId: string, sessionId: string, body: Body) {
@@ -162,33 +212,67 @@ export class CustomerRequestsService {
       select: { id: true },
     });
     if (open) throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.DELETION_PENDING, 'A deletion request is already open', { id: open.id });
-    const running = await this.guaranteeRunning(accountId);
+    const info = await this.deletionInfo(accountId);
     const acknowledged = body?.refundLossAcknowledged === true;
-    // The warning comes before the code is used up, so a person who changes their mind keeps nothing half done.
-    if (running && !acknowledged) {
-      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.GUARANTEE_WARNING_REQUIRED, 'Deleting your account now ends your ₹499 refund guarantee');
+    // The warning comes before the proof is used up, so a person who changes their mind keeps nothing half done.
+    if (info.warningRequired && !acknowledged) {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.GUARANTEE_WARNING_REQUIRED,
+        info.guaranteeRunning
+          ? 'Deleting your account now ends your ₹499 refund guarantee'
+          : 'Your refund is still owed: it will be paid first, and your account is deleted after it is paid',
+        { guaranteeRunning: info.guaranteeRunning, refundOwed: info.refundOwed });
     }
     const reason = typeof body?.reason === 'string' && body.reason.trim() ? body.reason.trim().slice(0, 300) : null;
-    await this.signIn.consumeStepUp(sessionId, 'delete_account');
+    let proof: string = 'otp';
+    if (info.proof === 'otp') {
+      await this.signIn.consumeStepUp(sessionId, 'delete_account');
+    } else {
+      // A Google- or Apple-only account has no mobile to send a code to: a fresh sign-in is the proof.
+      proof = await this.signIn.assertFreshExternalProof(accountId, (body?.proof ?? {}) as { provider?: unknown; idToken?: unknown; nonce?: unknown });
+    }
     const now = this.clock.now();
     const created = await this.prisma.$transaction(async (tx) => {
       const request = await tx.customerDeletionRequest.create({
-        data: { accountId, reason, guaranteeRunning: running, refundLossAcknowledged: running && acknowledged, otpVerifiedAt: now },
+        data: {
+          accountId, reason, proof,
+          guaranteeRunning: info.guaranteeRunning,
+          refundOwedAtRequest: info.refundOwed,
+          refundLossAcknowledged: info.warningRequired && acknowledged,
+          otpVerifiedAt: now,
+        },
         select: { id: true, status: true, createdAt: true },
       });
       await tx.customerAccount.update({ where: { id: accountId }, data: { status: 'deletion_requested' } });
-      // Other phones are signed out; this one stays so the person can see the request.
-      await tx.customerSession.updateMany({
-        where: { accountId, revokedAt: null, id: { not: sessionId } },
-        data: { revokedAt: now, endedReason: 'deleted' },
-      });
+      // Other phones are signed out and stop getting notifications; this one stays so the person can see or cancel the request.
+      const others = await tx.customerSession.findMany({ where: { accountId, revokedAt: null, id: { not: sessionId } }, select: { deviceId: true } });
+      await tx.customerSession.updateMany({ where: { accountId, revokedAt: null, id: { not: sessionId } }, data: { revokedAt: now, endedReason: 'deleted' } });
+      const deviceIds = others.map((o) => o.deviceId).filter((id): id is string => Boolean(id));
+      if (deviceIds.length) await tx.customerDevice.updateMany({ where: { id: { in: deviceIds } }, data: { pushToken: null, pushTokenUpdatedAt: now } });
       return request;
     });
     await this.audit.log({
       actorId: `customer:${accountId}`, action: 'customer.deletion_requested', entityType: 'customer_account', entityCode: accountId,
-      after: { guaranteeRunning: running, refundLossAcknowledged: running && acknowledged },
+      after: { guaranteeRunning: info.guaranteeRunning, refundOwed: info.refundOwed, proof },
     });
-    return created;
+    return { ...created, completesAfterRefund: info.refundOwed };
+  }
+
+  /** POST /me/deletion/cancel: before the back office has started on it. */
+  async cancelDeletion(accountId: string) {
+    const open = await this.prisma.customerDeletionRequest.findFirst({
+      where: { accountId, status: 'requested' },
+      select: { id: true },
+    });
+    if (!open) {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'There is no deletion request that can still be cancelled');
+    }
+    const now = this.clock.now();
+    await this.prisma.$transaction([
+      this.prisma.customerDeletionRequest.update({ where: { id: open.id }, data: { status: 'cancelled', cancelledAt: now } }),
+      this.prisma.customerAccount.update({ where: { id: accountId }, data: { status: 'active' } }),
+    ]);
+    await this.audit.log({ actorId: `customer:${accountId}`, action: 'customer.deletion_cancelled', entityType: 'customer_account', entityCode: accountId });
+    return { id: open.id, status: 'cancelled' };
   }
 
   // ─── Vacancy drafts (business) ────────────────────────────────────────
@@ -224,7 +308,12 @@ export class CustomerRequestsService {
   }
 
   async createDraft(accountId: string, profileId: string, body: Body) {
+    await this.assertNotDeleting(accountId);
     const profile = await this.businessProfile(accountId, profileId);
+    const open = await this.prisma.customerVacancyDraft.count({ where: { accountId, status: 'draft' } });
+    if (open >= MAX_OPEN_DRAFTS) {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.LIMIT_REACHED, `At most ${MAX_OPEN_DRAFTS} vacancy drafts at a time. Post or delete one first.`);
+    }
     const form = this.draftForm(profile, body?.form);
     await this.assertBranch(profile, form);
     const draft = await this.prisma.customerVacancyDraft.create({
@@ -246,6 +335,7 @@ export class CustomerRequestsService {
   }
 
   async updateDraft(accountId: string, profileId: string, draftId: string, body: Body) {
+    await this.assertNotDeleting(accountId);
     const { profile, draft } = await this.ownDraft(accountId, profileId, draftId);
     const form = this.draftForm(profile, body?.form);
     await this.assertBranch(profile, form);
@@ -263,8 +353,16 @@ export class CustomerRequestsService {
   }
 
   async confirmDraft(accountId: string, sessionId: string, profileId: string, draftId: string, body: Body) {
+    await this.assertNotDeleting(accountId);
     const { draft } = await this.ownDraft(accountId, profileId, draftId);
     const form = draft.form as Record<string, unknown>;
+    const dto = { ...form, ownerToldMinimumWage: body?.ownerToldMinimumWage === true } as unknown as CreateVacancyDto;
+    // Everything that can be checked is checked before the fresh code is used up.
+    try {
+      this.vacancies.validateCreateInput(dto);
+    } catch (error) {
+      throw this.asValidation(error);
+    }
     const warnings = await this.warnings(form);
     if (warnings.belowLegalMinimum && body?.ownerToldMinimumWage !== true) {
       throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.BELOW_MINIMUM_WAGE_TICK_REQUIRED,
@@ -278,25 +376,33 @@ export class CustomerRequestsService {
       // The OTP proof is the contact person's phone (C8): only they confirm.
       throw new CustomerApiError(HttpStatus.FORBIDDEN, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'Only the contact person for this vacancy can post it');
     }
-    await this.signIn.consumeStepUp(sessionId, 'confirm_vacancy');
-    let vacancy: { id: string; code: string };
+    // One confirmation per draft, even with two taps at once.
+    const claimed = await this.prisma.customerVacancyDraft.updateMany({ where: { id: draft.id, status: 'draft' }, data: { status: 'confirming' } });
+    if (claimed.count !== 1) throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.VALIDATION, 'This draft is already being posted');
+    let vacancyId: string | null = null;
     try {
-      vacancy = await this.vacancies.create(
-        draft.businessId,
-        { ...form, ownerToldMinimumWage: body?.ownerToldMinimumWage === true } as unknown as CreateVacancyDto,
-        `customer:${accountId}`,
-        { selfRegisteredByAccountId: accountId },
-      );
+      await this.signIn.consumeStepUp(sessionId, 'confirm_vacancy');
+      const vacancy = await this.vacancies.create(draft.businessId, dto, `customer:${accountId}`, { selfRegisteredByAccountId: accountId });
+      vacancyId = vacancy.id;
+      const confirmed = await this.vacancyConfirmation.confirmInApp(vacancy.id, account.phone, `customer:${accountId}`);
+      await this.prisma.customerVacancyDraft.update({ where: { id: draft.id }, data: { status: 'confirmed', vacancyId: vacancy.id, confirmedAt: this.clock.now() } });
+      return { vacancy: { code: confirmed.code, status: confirmed.status } };
     } catch (error) {
-      if (error instanceof HttpException && error.getStatus() === HttpStatus.BAD_REQUEST) {
-        const response = error.getResponse();
-        const message = typeof response === 'string' ? response : String((response as { message?: unknown }).message ?? error.message);
-        throw validation(message);
+      // Undo: a vacancy that was created but not confirmed is cancelled, and the draft is a draft again.
+      if (vacancyId) {
+        await this.prisma.vacancy.updateMany({ where: { id: vacancyId, status: 'awaiting_confirmation' }, data: { status: 'cancelled' } });
       }
-      throw error;
+      await this.prisma.customerVacancyDraft.updateMany({ where: { id: draft.id, status: 'confirming' }, data: { status: 'draft' } });
+      throw this.asValidation(error);
     }
-    const confirmed = await this.vacancyConfirmation.confirmInApp(vacancy.id, account.phone);
-    await this.prisma.customerVacancyDraft.update({ where: { id: draft.id }, data: { status: 'confirmed', vacancyId: vacancy.id, confirmedAt: this.clock.now() } });
-    return { vacancy: { code: confirmed.code, status: confirmed.status } };
+  }
+
+  private asValidation(error: unknown): unknown {
+    if (error instanceof HttpException && error.getStatus() === HttpStatus.BAD_REQUEST && !(error instanceof CustomerApiError)) {
+      const response = error.getResponse();
+      const message = typeof response === 'string' ? response : String((response as { message?: unknown }).message ?? error.message);
+      return validation(message);
+    }
+    return error;
   }
 }
