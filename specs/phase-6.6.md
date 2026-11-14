@@ -97,7 +97,7 @@
 ### [x] Task 5 — Decide the `/field-agent` console guard
 
 **Acceptance:**
-- `/admin` and `/call-agent` sit behind `CloudflareAccessGuard`; `/field-agent` does not, which `AGENTS.md` §3/§7 records as a deliberate exemption because field agents reach it from phones outside the Cloudflare Access perimeter
+- `/admin` and `/call-agent` sit behind `CloudflareAccessGuard`; `/field-agent` does not, which `AGENTS.md` §3/§7 records as a deliberate exemption because field agents reach it from phones outside the Cloudflare Access perimeter _(Superseded 14 Nov: the old consoles and `CloudflareAccessGuard` are gone; Cloudflare Access is checked by `SiteRoutingMiddleware` on the office web app's staff pages — see AGENTS.md, "Retired consoles".)_
 - That reason disappears once the native app ships. Record the exemption's expiry condition explicitly in `AGENTS.md` next to the exemption itself, so it is revisited rather than inherited
 - No code change to the guard in this phase — this task is a documentation decision, deliberately scoped as such
 - Add it to the go-live checklist in the Playbook §8 as an item to confirm before launch

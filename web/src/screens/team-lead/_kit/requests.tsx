@@ -3,6 +3,7 @@ import { LinkTabs } from '../../../components/Tabs';
 import { api } from '../../../lib/api/client';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
+import { CLAIM_REJECTION_CHOICE, CLAIM_REJECTION_HELP } from '../../ceo/_kit/claims';
 import { roleLabel } from '../../ceo/_kit/format';
 import type { RequestView } from './api';
 import { firstName } from './api';
@@ -81,10 +82,11 @@ export function RequestActions({ request, managerName, compact }: { request: Req
         label="Reject"
         variant="danger"
         title={`Reject: ${request.title.toLowerCase()} · ${who}`}
-        description="Say why — they see it with the decision."
+        description={request.kind === 'claim' ? CLAIM_REJECTION_HELP : 'Say why — they see it with the decision.'}
         reason
+        choice={request.kind === 'claim' ? CLAIM_REJECTION_CHOICE : undefined}
         confirmLabel="Reject"
-        run={({ reason }) => api.post(`/requests/${request.ref}/decide`, { decision: 'rejected', reason })}
+        run={({ reason, choice }) => api.post(`/requests/${request.ref}/decide`, { decision: 'rejected', reason, ...(request.kind === 'claim' ? { rejectionCode: choice } : {}) })}
         success="Rejected"
       />
       {request.canForward && (

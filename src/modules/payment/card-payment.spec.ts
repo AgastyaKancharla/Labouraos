@@ -52,6 +52,7 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
         update: jest.fn(),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn(),
       },
       jobSeeker: {

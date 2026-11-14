@@ -8,6 +8,7 @@ import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { DateFilter, FilterPanel, OpenLink, PagedTable, rangeQuery, useCeoList, humanize, type ListPeriod } from '../_kit/kit';
 import { PlacementTabs } from '../_kit/tabs';
+import { REJECTION_LABEL, previousClaimsText, type PreviousClaim } from '../_kit/claims';
 
 /** Replacement claims — design C-Claims.dc.html. */
 interface Row {
@@ -26,6 +27,8 @@ interface Row {
   rejectedReplacements: number;
   search: { state: string; day?: number; of?: number };
   feePaise: number;
+  rejectionCode?: string | null;
+  previousClaims?: PreviousClaim[];
 }
 interface Summary {
   thisMonth: number;
@@ -78,7 +81,18 @@ export default function Claims() {
       csv: (r) => r.reportedDaysAfterLeaving,
       hideOnPhone: true,
     },
-    { key: 'decision', header: 'Decision (48 h)', cell: decision, csv: (r) => r.decision ?? 'waiting' },
+    {
+      key: 'decision',
+      header: 'Decision (48 h)',
+      cell: (r) => (
+        <>
+          {decision(r)}
+          {r.rejectionCode && <div className="ceo-cell-sub">{REJECTION_LABEL[r.rejectionCode] ?? r.rejectionCode}</div>}
+          {r.previousClaims?.length ? <div className="ceo-cell-sub">Earlier: {previousClaimsText(r.previousClaims)}</div> : null}
+        </>
+      ),
+      csv: (r) => [r.decision ?? 'waiting', r.rejectionCode ?? '', previousClaimsText(r.previousClaims)].filter(Boolean).join(' · '),
+    },
     { key: 'search', header: 'Search', cell: search, csv: (r) => r.search.state },
     { key: 'go', header: '', cell: (r) => <OpenLink to={to('C-Placement', { id: r.placement.id })} /> },
   ];

@@ -431,6 +431,8 @@ describe('Phase 18 Task 1: Payout Accounts', () => {
           kind: 'payout_matches_staff',
           subjectType: 'job_seeker',
           subjectId: 'js-1',
+          // which staff member matched, so that person never resolves the flag
+          details: expect.objectContaining({ matchedStaffId: 'staff-fa', matchedStaffCode: 'FA-00001' }),
         }),
       );
     });

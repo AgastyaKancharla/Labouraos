@@ -5,6 +5,7 @@ import { AuditService } from '../../common/audit/audit.service';
 import { DateRange, RECEIVED_STATUSES, contains, daysSince, sumPaise } from '../ceo-portal/ceo-common';
 import { invoicePath } from '../placement/invoice-link';
 import { receiptToken } from '../payment/receipt-link';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MonthLockService } from '../month-lock/month-lock.service';
 import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
 import { MONEY_IN_NEEDS_YOU, MoneyInStatus, bankDay, istDay, istDayBounds, matchHints, moneyInStatus, parsePaise } from './finance-rules';
@@ -51,6 +52,7 @@ export class FinanceBooksService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     @Optional() private readonly locks?: MonthLockService,
+    @Optional() private readonly flags?: ReviewFlagService,
   ) {}
 
   // ------------------------------------------------------------ money in
@@ -209,8 +211,11 @@ export class FinanceBooksService {
     return {
       rows,
       summary: {
-        receivedPaise: sumPaise(inRange.filter((r) => !['returned'].includes(r.status)).map((r) => r.receivedPaise)),
-        receivedCount: inRange.length,
+        // Money set aside is not Laboura's: never counted as received, shown on its own.
+        receivedPaise: sumPaise(inRange.filter((r) => !['returned', 'ignored'].includes(r.status)).map((r) => r.receivedPaise)),
+        receivedCount: inRange.filter((r) => r.status !== 'ignored').length,
+        setAsidePaise: sumPaise(inRange.filter((r) => r.status === 'ignored').map((r) => r.receivedPaise)),
+        setAsideCount: inRange.filter((r) => r.status === 'ignored').length,
         matchedAutoCount: inRange.filter((r) => r.status === 'matched_auto').length,
         needYouCount: all.filter((r) => MONEY_IN_NEEDS_YOU.includes(r.status)).length,
         tdsThisMonthPaise: sumPaise(tdsMonth.map((t) => t.amountPaise)),
@@ -312,10 +317,14 @@ export class FinanceBooksService {
         throw error;
       });
     if (claimed.count !== 1) throw new BadRequestException('This credit changed meanwhile; reload');
+    const flagWhere = { kind: 'payment_mismatch', status: 'open', subjectType: 'bank_credit', subjectId: credit.id };
+    const openFlags = (await this.prisma.reviewFlag.findMany({ where: flagWhere, select: { id: true } })) ?? [];
     await this.prisma.reviewFlag.updateMany({
-      where: { kind: 'payment_mismatch', status: 'open', subjectType: 'bank_credit', subjectId: credit.id },
+      where: flagWhere,
       data: { status: 'resolved', resolution: `Returned to the payer, UTR ${utr}`, resolvedAt: now, resolvedByStaffId: actorId },
     });
+    // Off the bells too.
+    for (const flag of openFlags) await this.flags?.refreshBell(flag.id);
     await this.audit.log({
       actorId,
       action: 'bank_credit.returned',
@@ -435,7 +444,13 @@ export class FinanceBooksService {
     const rangeStart = istDayBounds(fromDay).from;
     const before = lines.filter((l) => new Date(l.at) < rangeStart);
     let opening = (lastCloseBefore?.bankClosingPaise ?? 0) + sumPaise(before.filter((l) => l.direction === 'credit').map((l) => l.amountPaise)) - sumPaise(before.filter((l) => l.direction === 'debit').map((l) => l.amountPaise));
-    const dayRows: Array<ReturnType<typeof bankDay> & { day: string; unmatched: number; closed: null | { bankClosingPaise: number; differencePaise: number; note: string | null; closedBy: string | null; closedAt: string } }> = [];
+    const dayRows: Array<
+      ReturnType<typeof bankDay> & {
+        day: string;
+        unmatched: number;
+        closed: null | { bankClosingPaise: number; differencePaise: number; note: string | null; closedBy: string | null; closedAt: string; stale: boolean; booksClosingAtClosePaise: number; differenceNowPaise: number };
+      }
+    > = [];
     let cursor = fromDay;
     let guard = 0;
     while (cursor <= toDay && guard < MAX_BANK_DAYS) {
@@ -446,7 +461,21 @@ export class FinanceBooksService {
         ...d,
         day: cursor,
         unmatched: lines.filter((l) => istDay(new Date(l.at)) === cursor && l.status === 'unknown').length,
-        closed: close ? { bankClosingPaise: close.bankClosingPaise, differencePaise: close.differencePaise, note: close.note, closedBy: closerName.get(close.closedByStaffId) ?? null, closedAt: close.closedAt.toISOString() } : null,
+        // A line added to a day after it was closed (e.g. a credit typed in from the
+        // statement later) changes our books' closing: the close is marked stale,
+        // with the difference as it is now.
+        closed: close
+          ? {
+              bankClosingPaise: close.bankClosingPaise,
+              differencePaise: close.differencePaise,
+              note: close.note,
+              closedBy: closerName.get(close.closedByStaffId) ?? null,
+              closedAt: close.closedAt.toISOString(),
+              stale: d.booksClosingPaise !== close.booksClosingPaise,
+              booksClosingAtClosePaise: close.booksClosingPaise,
+              differenceNowPaise: close.bankClosingPaise - d.booksClosingPaise,
+            }
+          : null,
       });
       // A closed day carries the bank's own closing balance forward.
       opening = close ? close.bankClosingPaise : d.booksClosingPaise;
@@ -463,6 +492,7 @@ export class FinanceBooksService {
         booksBalancePaise: booksNow,
         lastClosedDay: lastClosed?.day ?? null,
         lastBankClosingPaise: lastClosed?.bankClosingPaise ?? null,
+        staleClosedDays: dayRows.filter((r) => r.closed?.stale).map((r) => r.day),
         linesToSort: await this.prisma.bankCredit.count({ where: { status: 'unmatched' } }),
       },
     };
