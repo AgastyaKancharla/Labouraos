@@ -25,3 +25,11 @@ WHERE c."decision" IS NULL
 CREATE UNIQUE INDEX "ReplacementClaim_one_open_per_placement"
   ON "ReplacementClaim" ("placementId")
   WHERE "decision" IS NULL;
+
+-- Bank credits set aside (not Laboura's money): when and by whom, for the
+-- Month-end review. Earlier set-asides keep these empty.
+ALTER TABLE "BankCredit" ADD COLUMN "ignoredAt" TIMESTAMP(3);
+ALTER TABLE "BankCredit" ADD COLUMN "ignoredByStaffId" TEXT;
+ALTER TABLE "BankCredit"
+  ADD CONSTRAINT "BankCredit_ignoredByStaffId_fkey"
+  FOREIGN KEY ("ignoredByStaffId") REFERENCES "Staff"("id") ON DELETE SET NULL ON UPDATE CASCADE;

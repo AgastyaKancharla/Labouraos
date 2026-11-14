@@ -188,6 +188,19 @@ export class PaymentController {
     return this.paymentService.ignoreBankCredit(id, body.reason, req.user.sub);
   }
 
+  /** CEO only: put a set-aside credit back to unmatched, with a reason (owner decision 14 Nov). */
+  @Post('bank-credits/:id/undo-set-aside')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('payment', 'write')
+  @RequireRoles('ceo')
+  async undoSetAside(
+    @Param('id') id: string,
+    @Body() body: { reason?: string },
+    @Req() req: Request & { user: JwtPayload },
+  ) {
+    return this.paymentService.undoSetAside(id, body?.reason ?? '', req.user.sub);
+  }
+
   @Get('review-flags')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('payment', 'read')
@@ -202,10 +215,10 @@ export class PaymentController {
   @RequireRoles('ceo', 'finance')
   async resolveReviewFlag(
     @Param('id') id: string,
-    @Body() body: { resolution: string },
+    @Body() body: { resolution: string; outcome?: string },
     @Req() req: Request & { user: JwtPayload },
   ) {
-    return this.paymentService.resolvePaymentMismatchFlag(id, body.resolution, req.user.sub);
+    return this.paymentService.resolvePaymentMismatchFlag(id, body?.resolution, req.user.sub, body?.outcome);
   }
 
   /** TDS businesses deducted from placement fees, with each certificate's status. */

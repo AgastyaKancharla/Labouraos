@@ -811,6 +811,7 @@ model Staff {
   claimsDecided     ReplacementClaim[] @relation("ClaimDecidedBy")
   claimsOverruled   ReplacementClaim[] @relation("ClaimOverruledBy")
   claimsReported    ReplacementClaim[] @relation("ClaimReportedBy")
+  bankCreditsSetAside BankCredit[]     @relation("BankCreditIgnoredBy")
   assignedFollowUpTasks FollowUpTask[]
   attendanceDays    AttendanceDay[]
   notifications     Notification[]   @relation("NotificationRecipient")
@@ -936,6 +937,10 @@ model BankCredit {
   matchedPayment    Payment?  @relation(fields: [matchedPaymentId], references: [id], onDelete: SetNull)
   tdsReceivable     TdsReceivable?
   ignoredReason     String?
+  // "Set aside" (not Laboura's money): when and by whom (Month-end review lists them).
+  ignoredAt         DateTime?
+  ignoredByStaffId  String?
+  ignoredByStaff    Staff?    @relation("BankCreditIgnoredBy", fields: [ignoredByStaffId], references: [id], onDelete: SetNull)
   // Phase 22: unclaimed money is returned to the same UPI ID, never kept.
   returnedUtr       String?   @unique
   returnedAt        DateTime?

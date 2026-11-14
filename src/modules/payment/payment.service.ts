@@ -45,7 +45,8 @@ import { receiptLink } from './receipt-link';
 import { invoiceLink } from '../placement/invoice-link';
 import { mockPaymentToolsAllowed, paymentProviderMode } from './payment-mode';
 import { MonthLockService } from '../month-lock/month-lock.service';
-import { assertUtrUnused, isUniqueViolation, utrUsed } from '../../common/money/utr-registry';
+import { istDay } from '../finance/finance-rules';
+import { assertUtrUnused, isUniqueViolation, normaliseUtr, utrUsed } from '../../common/money/utr-registry';
 import { alreadyExists, isDuplicatePayout, lockSubject } from '../../common/money/one-per-subject';
 import { isRuleBasedRefund, recordRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from '../job-seeker/job-seeker-refunded';
@@ -60,6 +61,17 @@ export interface BankFeedWebhookResult {
   refundPaymentId?: string;
   bankCreditId?: string;
 }
+
+/** Flags Finance may close from the Finance screens (POST /payments/review-flags/:id/resolve). */
+const PAYOUT_FLAG_KINDS = ['payout_shared_account', 'payout_matches_staff', 'payout_name_mismatch'];
+const PAYMENT_FLAG_KINDS = ['payment_mismatch', ...PAYOUT_FLAG_KINDS];
+/**
+ * A credit typed in from the statement: at most ₹1 crore, never in the future,
+ * and not before 2000 (a mistyped year). A credit dated in a closed month is
+ * booked in the open month with a note, so old dates are otherwise allowed.
+ */
+const MAX_MANUAL_CREDIT_PAISE = 1_00_00_000_00;
+const MANUAL_CREDIT_EARLIEST = new Date('2000-01-01T00:00:00+05:30');
 
 @Injectable()
 export class PaymentService {
@@ -419,7 +431,8 @@ export class PaymentService {
       );
     }
 
-    const { bankUtr, amountPaise, receivedAt, payerName, payerVpaMasked, remark } = verification.event;
+    const { amountPaise, receivedAt, payerName, payerVpaMasked, remark } = verification.event;
+    const bankUtr = normaliseUtr(verification.event.bankUtr);
 
     // Idempotent check by bankUtr
     const existing = await this.prisma.bankCredit.findUnique({
@@ -446,6 +459,23 @@ export class PaymentService {
       },
     });
 
+    return this.matchNewCredit(credit.id, { bankUtr, amountPaise, receivedAt, remark: remark ?? null }, booking, 'bank_feed');
+  }
+
+  /**
+   * Matches a credit just put in the books (from the bank's feed, or typed in
+   * by Finance from the statement) by the payment reference in its note:
+   * confirmed when reference and amount agree; otherwise it stays unmatched
+   * with a payment_mismatch flag saying why.
+   */
+  private async matchNewCredit(
+    creditId: string,
+    event: { bankUtr: string; amountPaise: number; receivedAt: Date; remark: string | null },
+    booking: { at: Date; note: string | null },
+    confirmedBy: 'bank_feed' | 'finance_manual',
+  ): Promise<BankFeedWebhookResult> {
+    const credit = { id: creditId };
+    const { bankUtr, amountPaise, receivedAt, remark } = event;
     if (!remark || !remark.trim()) {
       await this.reviewFlagService.raise({
         kind: 'payment_mismatch',
@@ -536,7 +566,7 @@ export class PaymentService {
 
     await this.onPaymentSucceeded(matchedPayment.id, {
       confirmedAt: receivedAt,
-      confirmedBy: 'bank_feed',
+      confirmedBy,
       bankUtr,
       bookedAt: booking.at,
       bookingNote: booking.note,
@@ -628,18 +658,25 @@ export class PaymentService {
       remark?: string;
     },
     actorId: string,
+    now = new Date(),
   ) {
-    const bankUtr = dto.bankUtr?.trim();
+    const bankUtr = normaliseUtr(dto.bankUtr);
     if (!bankUtr) {
       throw new BadRequestException('bankUtr is required');
     }
-    const amountPaise = Number(dto.amountPaise);
-    if (!amountPaise || amountPaise <= 0 || isNaN(amountPaise)) {
-      throw new BadRequestException('amountPaise must be a positive integer');
+    const amountPaise = typeof dto.amountPaise === 'string' && String(dto.amountPaise).trim() !== '' ? Number(dto.amountPaise) : dto.amountPaise;
+    if (typeof amountPaise !== 'number' || !Number.isSafeInteger(amountPaise) || amountPaise <= 0 || amountPaise > MAX_MANUAL_CREDIT_PAISE) {
+      throw new BadRequestException('amountPaise must be a positive whole number of paise, at most ₹1,00,00,000');
     }
     const receivedAt = new Date(dto.receivedAt);
     if (isNaN(receivedAt.getTime())) {
       throw new BadRequestException('receivedAt must be a valid date');
+    }
+    if (receivedAt.getTime() > now.getTime()) {
+      throw new BadRequestException('receivedAt cannot be in the future');
+    }
+    if (receivedAt.getTime() < MANUAL_CREDIT_EARLIEST.getTime()) {
+      throw new BadRequestException('receivedAt is before the year 2000; check the year on the statement');
     }
 
     const existing = await this.prisma.bankCredit.findUnique({
@@ -652,6 +689,7 @@ export class PaymentService {
 
     // A credit dated in a closed month is booked in the open month with a note.
     const booking = await this.bookingFor(receivedAt);
+    const remark = dto.remark?.trim() || null;
     let credit;
     try {
       credit = await this.prisma.bankCredit.create({
@@ -662,7 +700,7 @@ export class PaymentService {
         bookingNote: booking.note,
         payerName: dto.payerName?.trim() || null,
         payerVpaMasked: dto.payerVpaMasked?.trim() || null,
-        remark: dto.remark?.trim() || null,
+        remark,
         source: 'finance_manual',
         enteredByStaffId: actorId,
         status: 'unmatched',
@@ -689,7 +727,14 @@ export class PaymentService {
       },
     });
 
-    return credit;
+    // The same reference matching as the bank's feed: a note carrying a
+    // payment reference confirms that payment when the amount agrees.
+    const match = await this.matchNewCredit(credit.id, { bankUtr, amountPaise, receivedAt, remark }, booking, 'finance_manual');
+    const fresh = (await this.prisma.bankCredit.findUnique({ where: { id: credit.id } })) ?? credit;
+    // A bank day already closed with the statement's balance no longer agrees: say so.
+    const day = istDay(booking.at);
+    const closedDay = this.prisma.bankDayClose ? await this.prisma.bankDayClose.findUnique({ where: { day }, select: { day: true } }) : null;
+    return { ...fresh, match: { status: match.status ?? 'unmatched', reason: match.reason ?? null, paymentId: match.paymentId ?? null }, closedDay: closedDay ? closedDay.day : null };
   }
 
   async confirmPaymentWithBankCredit(
@@ -724,6 +769,9 @@ export class PaymentService {
     if (credit.status === 'ignored') {
       throw new BadRequestException('Cannot match an ignored bank credit');
     }
+    if (credit.status !== 'unmatched') {
+      throw new BadRequestException(`This credit is ${credit.status}; only an unmatched credit is matched`);
+    }
 
     const expectedAmount = payment.expectedAmountPaise ?? payment.amount;
     const tdsRecord = await this.checkTdsShortfall(payment, credit.amountPaise, expectedAmount, tds);
@@ -740,23 +788,35 @@ export class PaymentService {
     // the placement's invoice) land now, with a note; the closed month's money
     // figures never change.
     const booking = await this.bookingFor(credit.receivedAt, now);
-    await this.onPaymentSucceeded(payment.id, {
-      confirmedAt: credit.receivedAt,
-      confirmedBy: 'finance_manual',
-      confirmedByStaffId: actorId,
-      bankUtr: credit.bankUtr,
-      bookedAt: booking.at,
-      bookingNote: booking.note,
-    });
-
-    await this.prisma.bankCredit.update({
-      where: { id: credit.id },
+    // Claim the credit first, only while it is still unmatched: a "set aside"
+    // or a return at the same moment wins or loses cleanly, never both.
+    const claimed = await this.prisma.bankCredit.updateMany({
+      where: { id: credit.id, status: 'unmatched' },
       data: {
         status: 'matched',
         matchedPaymentId: payment.id,
         ...(booking.note ? { bookingNote: booking.note } : {}),
       },
     });
+    if (claimed.count !== 1) {
+      throw new ConflictException('This credit changed meanwhile (matched, returned or set aside); reload');
+    }
+    try {
+      await this.onPaymentSucceeded(payment.id, {
+        confirmedAt: credit.receivedAt,
+        confirmedBy: 'finance_manual',
+        confirmedByStaffId: actorId,
+        bankUtr: credit.bankUtr,
+        bookedAt: booking.at,
+        bookingNote: booking.note,
+      });
+    } catch (error) {
+      await this.prisma.bankCredit.updateMany({
+        where: { id: credit.id, status: 'matched', matchedPaymentId: payment.id },
+        data: { status: 'unmatched', matchedPaymentId: null, bookingNote: credit.bookingNote },
+      });
+      throw error;
+    }
 
     let tdsReceivable: TdsReceivable | null = null;
     if (tdsRecord) {
@@ -900,7 +960,14 @@ export class PaymentService {
     });
   }
 
-  async ignoreBankCredit(bankCreditId: string, reason: string, actorId: string) {
+  /**
+   * "Set aside": the credit is not Laboura's money. Only an unmatched credit
+   * (never a matched, returned or already set-aside one), claimed with a
+   * conditional update so it cannot race a match or a return. Its open
+   * mismatch flags (about the credit, or about a payment naming it) close with
+   * the same reason.
+   */
+  async ignoreBankCredit(bankCreditId: string, reason: string, actorId: string, now = new Date()) {
     if (!reason || !reason.trim()) {
       throw new BadRequestException('reason is required to ignore a bank credit');
     }
@@ -910,35 +977,44 @@ export class PaymentService {
     if (!credit) {
       throw new NotFoundException(`Bank credit '${bankCreditId}' not found`);
     }
-    if (credit.status === 'matched') {
-      throw new BadRequestException('Cannot ignore a matched bank credit');
+    if (credit.status !== 'unmatched') {
+      throw new ConflictException(`This credit is ${credit.status}; only an unmatched credit can be set aside`);
     }
     if (this.monthLocks) await this.monthLocks.assertOpenOn(credit.receivedAt, 'its bank credits');
 
-    const updated = await this.prisma.bankCredit.update({
-      where: { id: credit.id },
+    const claimed = await this.prisma.bankCredit.updateMany({
+      where: { id: credit.id, status: 'unmatched' },
       data: {
         status: 'ignored',
         ignoredReason: reason.trim(),
+        ignoredAt: now,
+        ignoredByStaffId: actorId,
       },
     });
+    if (claimed.count !== 1) {
+      throw new ConflictException('This credit changed meanwhile (matched, returned or set aside); reload');
+    }
 
     const openFlagsWhere: Prisma.ReviewFlagWhereInput = {
       kind: 'payment_mismatch',
       status: 'open',
-      subjectType: 'bank_credit',
-      subjectId: credit.id,
+      OR: [
+        { subjectType: 'bank_credit', subjectId: credit.id },
+        { subjectType: 'payment', details: { path: ['bankCreditId'], equals: credit.id } },
+      ],
     };
     const openFlags = (await this.prisma.reviewFlag.findMany({ where: openFlagsWhere, select: { id: true } })) ?? [];
-    await this.prisma.reviewFlag.updateMany({
-      where: openFlagsWhere,
-      data: {
-        status: 'dismissed',
-        resolution: reason.trim(),
-        resolvedAt: new Date(),
-        resolvedByStaffId: actorId,
-      },
-    });
+    if (openFlags.length) {
+      await this.prisma.reviewFlag.updateMany({
+        where: { id: { in: openFlags.map((f) => f.id) } },
+        data: {
+          status: 'dismissed',
+          resolution: reason.trim(),
+          resolvedAt: now,
+          resolvedByStaffId: actorId,
+        },
+      });
+    }
     for (const flag of openFlags) await this.reviewFlagService.refreshBell(flag.id);
 
     await this.auditService.log({
@@ -950,19 +1026,44 @@ export class PaymentService {
       after: { status: 'ignored', ignoredReason: reason.trim() },
     });
 
-    return updated;
+    return this.prisma.bankCredit.findUniqueOrThrow({ where: { id: credit.id } });
+  }
+
+  /**
+   * The CEO's undo of "Set aside" (owner decision 14 Nov): the credit goes back
+   * to unmatched (counted as received again, out of "Set aside, not ours") with
+   * a written reason, audited. Only a set-aside credit, only in an open month,
+   * claimed atomically. Finance cannot undo (the route allows only the CEO).
+   */
+  async undoSetAside(bankCreditId: string, reason: string, actorId: string) {
+    const why = typeof reason === 'string' ? reason.trim() : '';
+    if (!why) throw new BadRequestException('Write why the set-aside is undone');
+    const credit = await this.prisma.bankCredit.findUnique({ where: { id: bankCreditId } });
+    if (!credit) throw new NotFoundException(`Bank credit '${bankCreditId}' not found`);
+    if (credit.status !== 'ignored') {
+      throw new ConflictException(`This credit is ${credit.status}; only a set-aside credit can be put back`);
+    }
+    if (this.monthLocks) await this.monthLocks.assertOpenOn(credit.receivedAt, 'its bank credits');
+    const back = await this.prisma.bankCredit.updateMany({
+      where: { id: credit.id, status: 'ignored' },
+      data: { status: 'unmatched', ignoredReason: null, ignoredAt: null, ignoredByStaffId: null },
+    });
+    if (back.count !== 1) throw new ConflictException('This credit changed meanwhile; reload');
+    await this.auditService.log({
+      actorId,
+      action: 'bank_credit.set_aside_undone',
+      entityType: 'BankCredit',
+      entityCode: credit.bankUtr,
+      before: { status: 'ignored', ignoredReason: credit.ignoredReason, ignoredAt: credit.ignoredAt, ignoredByStaffId: credit.ignoredByStaffId },
+      after: { status: 'unmatched' },
+      reason: why,
+    });
+    return this.prisma.bankCredit.findUniqueOrThrow({ where: { id: credit.id } });
   }
 
   async listPaymentMismatchFlags(status: string = 'open') {
     const where: Prisma.ReviewFlagWhereInput = {
-      kind: {
-        in: [
-          'payment_mismatch',
-          'payout_shared_account',
-          'payout_matches_staff',
-          'payout_name_mismatch',
-        ],
-      },
+      kind: { in: PAYMENT_FLAG_KINDS },
     };
     if (status) {
       where.status = status;
@@ -977,32 +1078,66 @@ export class PaymentService {
     });
   }
 
-  async resolvePaymentMismatchFlag(flagId: string, resolution: string, actorId: string) {
+  /**
+   * Finance (or the CEO) closes a payment or payout flag with a written
+   * resolution. A payout flag needs an outcome:
+   *  - "genuine" (checked, nothing wrong): the flag is dismissed and, when no
+   *    other payout flag is open for that person, their flagged payout details
+   *    go back to waiting (activeFrom kept, so any 48-hour wait still applies);
+   *  - "fraud" (confirmed): the flag is resolved and the details stay blocked;
+   *    Finance asks for new details.
+   * Only an open flag; never by the staff member a "matches staff" flag is about.
+   */
+  async resolvePaymentMismatchFlag(flagId: string, resolution: string, actorId: string, outcome?: string, now = new Date()) {
     if (!resolution || !resolution.trim()) {
       throw new BadRequestException('A written resolution is required');
     }
     const flag = await this.prisma.reviewFlag.findUnique({ where: { id: flagId } });
-    const allowedKinds = [
-      'payment_mismatch',
-      'payout_shared_account',
-      'payout_matches_staff',
-      'payout_name_mismatch',
-    ];
-    if (!flag || !allowedKinds.includes(flag.kind)) {
+    if (!flag || !PAYMENT_FLAG_KINDS.includes(flag.kind)) {
       throw new NotFoundException(`Payment mismatch flag '${flagId}' not found`);
     }
-    const updated = await this.prisma.reviewFlag.update({
-      where: { id: flagId },
-      data: {
-        status: 'resolved',
-        resolution: resolution.trim(),
-        resolvedAt: new Date(),
-        resolvedByStaffId: actorId,
-      },
-      include: {
-        raisedForStaff: { select: { id: true, code: true, name: true, role: true } },
-        resolvedByStaff: { select: { id: true, code: true, name: true, role: true } },
-      },
+    if (flag.status !== 'open') {
+      throw new ConflictException(`This flag is already ${flag.status}`);
+    }
+    const isPayoutFlag = PAYOUT_FLAG_KINDS.includes(flag.kind);
+    if (isPayoutFlag && outcome !== 'genuine' && outcome !== 'fraud') {
+      throw new BadRequestException("Say what you found: outcome 'genuine' (checked, release the details) or 'fraud' (keep them blocked)");
+    }
+    const details = (flag.details ?? {}) as Record<string, unknown>;
+    if (flag.kind === 'payout_matches_staff' && details.matchedStaffId === actorId) {
+      throw new ForbiddenException('This flag is about your own number; someone else resolves it');
+    }
+    const genuine = isPayoutFlag && outcome === 'genuine';
+    const status = genuine ? 'dismissed' : 'resolved';
+    const text = resolution.trim();
+
+    const { updated, released } = await this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.reviewFlag.updateMany({
+        where: { id: flagId, status: 'open' },
+        data: { status, resolution: text, resolvedAt: now, resolvedByStaffId: actorId },
+      });
+      if (claimed.count !== 1) throw new ConflictException('This flag was closed meanwhile; reload');
+      let releasedCount = 0;
+      if (genuine && flag.subjectType && flag.subjectId) {
+        const stillOpen = await tx.reviewFlag.count({
+          where: { kind: { in: PAYOUT_FLAG_KINDS }, status: 'open', subjectType: flag.subjectType, subjectId: flag.subjectId, NOT: { id: flagId } },
+        });
+        if (stillOpen === 0) {
+          const back = await tx.payoutAccount.updateMany({
+            where: { ownerType: flag.subjectType, ownerId: flag.subjectId, status: 'flagged' },
+            data: { status: 'pending_validation' },
+          });
+          releasedCount = back.count;
+        }
+      }
+      const row = await tx.reviewFlag.findUniqueOrThrow({
+        where: { id: flagId },
+        include: {
+          raisedForStaff: { select: { id: true, code: true, name: true, role: true } },
+          resolvedByStaff: { select: { id: true, code: true, name: true, role: true } },
+        },
+      });
+      return { updated: row, released: releasedCount };
     });
     await this.auditService.log({
       actorId,
@@ -1010,10 +1145,10 @@ export class PaymentService {
       entityType: 'review_flag',
       entityCode: flag.code,
       before: { status: flag.status, resolution: flag.resolution },
-      after: { status: updated.status, resolution: updated.resolution },
+      after: { status: updated.status, resolution: updated.resolution, ...(isPayoutFlag ? { outcome, payoutDetailsReleased: released } : {}) },
     });
     await this.reviewFlagService.refreshBell(flagId);
-    return updated;
+    return { ...updated, outcome: isPayoutFlag ? outcome : null, payoutDetailsReleased: released };
   }
 
   async listBankCredits(query?: { status?: string }) {

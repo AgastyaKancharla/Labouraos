@@ -27,7 +27,7 @@ export interface ReviewAction {
   at: string;
   doneBy: { id: string | null; name: string | null; role: string | null };
   approvedByCeo: boolean;
-  type: 'refund' | 'payout' | 'expense' | 'salary' | 'return';
+  type: 'refund' | 'payout' | 'expense' | 'salary' | 'return' | 'set_aside';
   what: string;
   record: string;
   amountPaise: number;
@@ -136,7 +136,7 @@ export class MonthEndService {
   /** Every money action in the month, with who did it, the proof and the CEO's mark. */
   async actions(month: string): Promise<ReviewAction[]> {
     const { from, to } = monthBounds(month);
-    const [payments, expenses, lines, returns, marks] = await Promise.all([
+    const [payments, expenses, lines, returns, marks, setAside] = await Promise.all([
       this.prisma.payment.findMany({
         where: { type: { in: OUT_TYPES }, status: { in: RECEIVED_STATUSES }, paidAt: { gte: from, lte: to } },
         select: { id: true, code: true, type: true, amount: true, paidAt: true, bankUtr: true, paidByStaffId: true, approvedByStaffId: true, jobSeekerId: true, jobSeeker: { select: { code: true } }, referral: { select: { code: true } }, placement: { select: { code: true } } },
@@ -148,12 +148,19 @@ export class MonthEndService {
       this.prisma.payrollLine.findMany({ where: { status: 'paid', paidAt: { gte: from, lte: to } }, select: { id: true, staffCode: true, name: true, netPaise: true, paidAt: true, paidByStaffId: true, utr: true, run: { select: { month: true, approvedByStaffId: true } } } }),
       this.prisma.bankCredit.findMany({ where: { status: 'returned', returnedAt: { gte: from, lte: to } }, select: { id: true, bankUtr: true, amountPaise: true, returnedAt: true, returnedByStaffId: true, returnedUtr: true } }),
       this.prisma.monthReviewMark.findMany({ where: { month } }),
+      // Credits set aside as not Laboura's money: who, when, why (set aside in this month,
+      // or, for older ones with no date recorded, received in it).
+      this.prisma.bankCredit.findMany({
+        where: { status: 'ignored', OR: [{ ignoredAt: { gte: from, lte: to } }, { ignoredAt: null, receivedAt: { gte: from, lte: to } }] },
+        select: { id: true, bankUtr: true, amountPaise: true, receivedAt: true, ignoredAt: true, ignoredByStaffId: true, ignoredReason: true, payerName: true },
+      }),
     ]);
     const ids = [
       ...payments.flatMap((p) => [p.paidByStaffId, p.approvedByStaffId]),
       ...expenses.flatMap((e) => [e.paidByStaffId, e.approvedByStaffId]),
       ...lines.flatMap((l) => [l.paidByStaffId, l.run.approvedByStaffId]),
       ...returns.map((r) => r.returnedByStaffId),
+      ...setAside.map((c) => c.ignoredByStaffId),
       ...marks.map((m) => m.byStaffId),
     ].filter((id): id is string => Boolean(id));
     const staff = ids.length ? await this.prisma.staff.findMany({ where: { id: { in: [...new Set(ids)] } }, select: { id: true, name: true, role: true } }) : [];
@@ -227,6 +234,22 @@ export class MonthEndService {
         amountPaise: r.amountPaise,
         proof: r.returnedUtr ? `UTR ${r.returnedUtr}` : null,
         mark: markBy.get(`bank_credit:${r.id}`) ?? null,
+      });
+    }
+    for (const c of setAside) {
+      out.push({
+        id: `bank_credit:${c.id}`,
+        subjectType: 'bank_credit',
+        subjectId: c.id,
+        at: (c.ignoredAt ?? c.receivedAt).toISOString(),
+        doneBy: person(c.ignoredByStaffId),
+        approvedByCeo: isCeo(c.ignoredByStaffId),
+        type: 'set_aside',
+        what: "Credit set aside (not Laboura's money)",
+        record: `Credit ${c.bankUtr}${c.payerName ? ` · ${c.payerName}` : ''}`,
+        amountPaise: c.amountPaise,
+        proof: c.ignoredReason ? `Why: ${c.ignoredReason}` : null,
+        mark: markBy.get(`bank_credit:${c.id}`) ?? null,
       });
     }
     return out.sort((a, b) => a.at.localeCompare(b.at));
