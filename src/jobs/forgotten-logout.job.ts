@@ -1,5 +1,6 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { JobHandler, LABOURA_JOBS_QUEUE, jobQueue, startScheduledJob } from './job-queue';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { AttendanceService } from '../modules/attendance/attendance.service';
@@ -8,7 +9,8 @@ import { LeaveService } from '../modules/attendance/leave.service';
 import { dailyInIndia } from './job-schedules';
 import { runsJobs } from '../common/process/process-role';
 
-export const FORGOTTEN_LOGOUT_QUEUE = 'forgotten-logout';
+/** Every job shares one queue (forgotten-logout was its own queue before; see job-queue.ts). */
+export const FORGOTTEN_LOGOUT_QUEUE = LABOURA_JOBS_QUEUE;
 export const FORGOTTEN_LOGOUT_SWEEP = 'close-forgotten-days';
 
 /**
@@ -31,34 +33,16 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly prisma?: PrismaService,
   ) {}
 
-  private get connection() {
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null,
-      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-    };
-  }
-
   getQueue(): Queue {
-    if (!this.queue) {
-      this.queue = new Queue(FORGOTTEN_LOGOUT_QUEUE, { connection: this.connection });
-      this.queue.on('error', (error) => this.logger.warn(`Forgotten logout queue error: ${error.message}`));
-    }
+    this.queue = jobQueue.queue();
     return this.queue;
   }
 
+  /** What the shared job worker runs for this job (src/jobs/job-queue.ts). */
+  readonly handle: JobHandler = () => recordJobRun(this.prisma, FORGOTTEN_LOGOUT_SWEEP, () => this.process());
+
   getWorker(): Worker {
-    if (!this.worker) {
-      this.worker = new Worker(
-        FORGOTTEN_LOGOUT_QUEUE,
-        async () => recordJobRun(this.prisma, FORGOTTEN_LOGOUT_SWEEP, () => this.process()),
-        { connection: this.connection },
-      );
-      this.worker.on('error', (error) => this.logger.error(`Forgotten logout worker error: ${error.message}`));
-    }
+    this.worker = jobQueue.worker(FORGOTTEN_LOGOUT_SWEEP, this.handle);
     return this.worker;
   }
 
@@ -79,22 +63,22 @@ export class ForgottenLogoutJob implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!runsJobs()) return;
-    try {
-      await this.schedule();
-      this.getWorker();
-    } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : String(error);
-      this.logger.warn(`Could not register forgotten logout job: ${message}`);
-      await this.close();
-    }
+    await startScheduledJob({
+      name: FORGOTTEN_LOGOUT_SWEEP,
+      handler: this.handle,
+      schedule: () => this.schedule(),
+      startWorker: () => this.getWorker(),
+      onError: (message) => this.logger.warn(`Could not register forgotten logout job: ${message}`),
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
     await this.close();
   }
 
+  /** Stops handling this job here. The shared queue and Worker stay up (JobQueueLifecycle stops them at shutdown). */
   async close(): Promise<void> {
-    await Promise.all([this.worker?.close(), this.queue?.close()]);
+    jobQueue.release(FORGOTTEN_LOGOUT_SWEEP);
     this.worker = null;
     this.queue = null;
   }

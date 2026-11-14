@@ -183,7 +183,10 @@ services:
       - key: KYC_PROVIDER_MODE
         value: mock
 
-  # Free Key Value: no disk, small connection limit. noeviction is required by
+  # Free Key Value: no disk, small connection limit (about 50). The app holds
+  # 2 connections per running copy (src/common/redis/redis-connections.ts), so
+  # the old and new copy fit side by side during a zero-downtime deploy.
+  # noeviction is required by
   # BullMQ (an evicted key is a lost job). An empty ipAllowList means only
   # Laboura's own Render services can connect, over the private network.
   - type: keyvalue

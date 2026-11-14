@@ -3,6 +3,7 @@ import { AppModule } from './app.module';
 import { StructuredLogger } from './common/observability/structured-logger.service';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
+import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrapWorker() {
   getPublicAppUrl();
@@ -18,6 +19,7 @@ export async function bootstrapWorker() {
 
   app.useLogger(logger);
   app.enableShutdownHooks();
+  installShutdownDeadline((message) => logger.warn(message, 'WorkerBootstrap'));
 
   logger.log(
     'Worker application context initialized and running (PROCESS_ROLE=worker)',
