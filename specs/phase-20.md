@@ -176,7 +176,7 @@ If the spec and the code disagree in a way this spec doesn't answer, **stop and 
   1. **Consent:** each purpose ticked separately, using the existing consent capture.
   2. **Selfie:** live camera only. The page sends a capture taken from the camera stream. The server rejects a file upload marked as coming from the gallery and stores it with the existing candidate photo storage.
   3. **ID check:**
-     - DigiLocker Aadhaar first, the Aadhaar QR fallback next. **PAN, driving licence or voter ID** are offered whenever Aadhaar fails (name mismatch, phone not linked) or the Aadhaar service is down.
+     - Aadhaar by its Secure QR, checked in-house (camera or e-Aadhaar PDF, read on the phone). **PAN, driving licence or voter ID** are always offered, and suggested whenever the QR can't be read or the name doesn't match. (Superseded 14 Nov — Aadhaar is now an in-house check of UIDAI's Secure QR; see AGENTS.md "Identity" and src/modules/aadhaar-qr.)
      - Use the existing `IdentityVerification` (mock provider) and keep only result, last 4 and 18+.
      - **Under 18 stops here**, before payment.
      - A name mismatch that looks like a spelling difference raises a `name_check` review flag (add it to the closed list in `review-flag.constants.ts`) for the agent's Team Lead, and the step waits.

@@ -163,7 +163,7 @@ services:
         sync: false
       - key: TOLL_FREE_NUMBER
         sync: false
-      # Aadhaar e-KYC
+      # ID check for PAN / driving licence / voter ID (Aadhaar is checked in-house from its Secure QR)
       - key: KYC_API_KEY
         sync: false
       - key: KYC_API_URL

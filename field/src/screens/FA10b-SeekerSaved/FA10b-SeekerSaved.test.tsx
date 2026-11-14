@@ -35,7 +35,7 @@ describe('FA10b Saved — send the link', () => {
     expect(card).toHaveTextContent(/1 Consent — each purpose ticked separately/);
     expect(card).toHaveTextContent(/2 Selfie — live camera only/);
     expect(card).toHaveTextContent(/3 ID check — Aadhaar: scan the QR code on the card, or open the e-Aadhaar PDF/);
-    expect(card).not.toHaveTextContent(/DigiLocker/i);
+    expect(card).not.toHaveTextContent(/digi\s?locker/i);
     expect(card).toHaveTextContent(/4 ₹499 payment — their exact terms/);
   });
 });

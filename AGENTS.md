@@ -37,8 +37,12 @@ whether tests pass.
    exception to this rule.
 2. **All access control is enforced server-side**, in the API layer, on every
    request. Never rely on the UI hiding a button.
-3. **Never store a raw Aadhaar number.** Store only the verification result
-   and the vendor's reference ID. This is a legal requirement, not a preference.
+3. **Never store a raw Aadhaar number.** Aadhaar is checked in-house from
+   UIDAI's Secure QR (`src/modules/aadhaar-qr`); store only what the guide
+   lists (the result, the QR's reference = last 4 digits + time stamp, name,
+   date of birth, gender, area, pincode, the checks' results, the consent).
+   Never the full number, a picture of the card, the e-Aadhaar PDF/XML, the
+   full address or the QR's raw text. This is a legal requirement, not a preference.
 4. **Every sensitive write is audit-logged** (see §7) with actor, timestamp,
    before-value and after-value.
 5. **All timestamps are stored in UTC.** Convert to IST (UTC+05:30) only for display.
@@ -75,7 +79,7 @@ Do not leave version ranges like `^11.0.0` in this file.
 
 **Provider switching (mock vs real, from Phase 7 onward):** every external
 integration (OTP/SMS, WhatsApp, telephony, payment collection, payout
-disbursement, Aadhaar e-KYC) is bound through NestJS DI to an interface — `OtpProvider`,
+disbursement, the ID check for PAN / driving licence / voter ID) is bound through NestJS DI to an interface — `OtpProvider`,
 `PaymentProvider`, `WhatsAppProvider`, `TelephonyProvider`, and `KycProvider` —
 with a mock implementation and a real one. Which one gets injected is
 controlled by a per-provider environment variable (`OTP_PROVIDER_MODE`,
@@ -170,7 +174,7 @@ Every number below lives in the `PricingPolicy` table, never as a literal in cod
 - Everything going out — refunds, payouts, rewards — is released by the CEO or Finance.
 
 ### Identity
-- Aadhaar through DigiLocker via a licensed vendor (QR scan or PAN/driving licence/voter ID as fallbacks). Store only: verified yes/no, method, vendor reference, last 4 digits, name match, 18+. **Never** the full number, the XML or PDF, the photo or the address.
+- Aadhaar (decided 14 Nov): an in-house check of UIDAI's Secure QR — scanned with his own phone in his link (or read from his e-Aadhaar PDF in the browser), or live in Laboura Field; only the QR's text reaches the server, which checks UIDAI's signature, 18+, the name and whether his OTP-verified phone is linked (not linked: a flag, not a block). No verification company and no outside ID service. PAN, driving licence or voter ID are always offered too. Store only: verified yes/no, method, time, the QR's reference (last 4 + time stamp), name, DOB, gender, area, pincode, name match, phone linked, 18+, the consent; the QR photo only until the Team Lead's check (30 days at most). **Never** the full number, any image of the card, the XML or PDF or the address.
 
 ### Keeping data (replaces the 25 October "never delete" rule)
 | Data | Kept | Then |

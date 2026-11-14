@@ -250,7 +250,10 @@ Profile completeness is computed on read from the optional fields; not stored.
 | --- | --- | --- |
 | id | uuid | |
 | jobSeekerId | uuid | |
-| method | string | digilocker, aadhaar_qr, pan, driving_licence, voter_id |
+| method | string | aadhaar_qr (UIDAI Secure QR, in-house), pan, driving_licence, voter_id; aadhaar_older_check for checks made before 14 Nov |
+| phoneLinked | string? | Aadhaar QR: linked, not_linked, unknown (a flag for the Team Lead, never a block) |
+| qrIssuedAt | timestamp? | Aadhaar QR: the QR's own time stamp |
+| consentId | string? | the consent record the check ran under |
 | vendor, vendorReference | string | |
 | status | string | pending, verified, failed |
 | last4 | string? | last 4 digits only |

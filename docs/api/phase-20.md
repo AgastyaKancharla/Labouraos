@@ -38,9 +38,11 @@ Call agents, field agents, Team Leads, Managers and the CEO may read the registr
 
 Call agents, field agents, Team Leads, Managers and the CEO may request provider verification after the candidate's identity-check consent is active. Provider-specific fields may be sent in the request, but raw Aadhaar numbers are always refused. The candidate name and date of birth are taken from the stored profile.
 
-**Request example:** `{"method":"digilocker","transactionId":"provider-transaction-id","otp":"123456"}`.
+Since 14 Nov this route is for another government ID only (`pan`, `driving_licence`, `voter_id`); `aadhaar_qr` is refused — Aadhaar is checked in-house from its Secure QR (`POST /registration/:token/aadhaar-qr`, `POST /field-work/job-seekers/:id/aadhaar-qr`).
 
-**Response `201` example:** `{"jobSeekerId":"job-seeker-id","method":"digilocker","vendor":"configured_kyc_provider","status":"verified","last4":"4242","nameMatches":true,"isAdult":true}`.
+**Request example:** `{"method":"pan","documentNumber":"ABCDE1234F"}`.
+
+**Response `201` example:** `{"jobSeekerId":"job-seeker-id","method":"pan","vendor":"configured_kyc_provider","status":"verified","last4":null,"nameMatches":true,"isAdult":true}`.
 
 Provider/network errors persist the ID service as down. Personal verification results such as name mismatch and under-18 persist as the person's result without changing provider health.
 
@@ -54,11 +56,21 @@ Public registration-link endpoint. The link's own registered number must have a 
 
 **Errors:** `400` invalid link, missing registered-number OTP, gallery upload, or missing photo; `413` photo exceeds 5 MiB.
 
+### `POST /registration/:token/aadhaar-qr`
+
+Public registration-link endpoint (guide, "Aadhaar verification", 14 Nov). Requires a verified OTP for the link's registered number and active `aadhaar_verification` consent. The page reads the Aadhaar Secure QR on the phone (camera or e-Aadhaar PDF) and sends only its text; the server checks UIDAI's signature with UIDAI's public key, 18+, the name and whether the phone is linked to that Aadhaar. Rate-limited per person (with Laboura Field); repeated invalid signatures raise a flag for the Team Lead.
+
+**Request example:** `{"requestId":"otp-request-id","qrText":"<the QR's digits>"}`.
+
+**Response `201` example:** `{"verificationId":"…","method":"aadhaar_qr","status":"verified","result":"verified","verifiedByUidai":true,"nameMatches":true,"isAdult":true,"phoneLinked":"linked","maskedReference":"XXXX-XXXX-1234","person":{"name":"…","dateOfBirth":"1998-08-15","gender":"F"},"failureReason":null,"offerOtherId":false}`. `result` is one of `verified`, `name_mismatch`, `under_18`, `bad_signature`, `old_qr`, `unreadable`.
+
+**Errors:** `400` invalid link, missing OTP or consent; `429` too many tries.
+
 ### `POST /registration/:token/id-check`
 
-Public registration-link endpoint. Requires a verified OTP for the link's registered number and active identity-check consent. The request contains the provider's non-sensitive verification parameters and `requestId`; raw Aadhaar data is refused.
+Public registration-link endpoint for another government ID (PAN, driving licence, voter ID). Requires a verified OTP for the link's registered number and active identity-check consent; raw Aadhaar data and `aadhaar_qr` are refused.
 
-**Request example:** `{"requestId":"otp-request-id","method":"digilocker","transactionId":"provider-transaction-id","otp":"123456"}`. **Response `201`:** the persisted verification result.
+**Request example:** `{"requestId":"otp-request-id","method":"pan","documentNumber":"ABCDE1234F"}`. **Response `201`:** the persisted verification result.
 
 **Errors:** `400` invalid link, missing OTP or consent, invalid method, or raw Aadhaar; provider/network failures are recorded as failed verification and mark the ID service down.
 

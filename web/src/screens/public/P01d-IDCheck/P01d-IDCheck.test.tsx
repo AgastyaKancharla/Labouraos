@@ -54,7 +54,7 @@ describe('P01d-IDCheck (Aadhaar Secure QR, guide 14 Nov)', () => {
     expect(privacy).toHaveTextContent(/never a picture of the card or your e-Aadhaar PDF/);
     expect(privacy).toHaveTextContent(/name, date of birth, gender, area and pincode/);
     expect(privacy).toHaveTextContent(/your full Aadhaar number, any picture of the card, the e-Aadhaar PDF or XML, or your full address/);
-    expect(screen.queryByText(/DigiLocker/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/digi\s?locker/i)).not.toBeInTheDocument();
   });
 
   it('scans the QR with the camera, sends only its text, shows the green UIDAI result and moves on', async () => {
