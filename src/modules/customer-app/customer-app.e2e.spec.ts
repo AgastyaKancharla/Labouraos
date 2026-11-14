@@ -119,6 +119,16 @@ describe('Customer app API', () => {
     const ids = accounts.map((a) => a.id);
     await prisma.signupTracker.deleteMany({ where: { accountId: { in: ids } } });
     await prisma.customerAccount.deleteMany({ where: { id: { in: ids } } });
+    // Records made through the real services carry sequential JS-/BZ-/RF-/VC- codes
+    // that the seed script also uses: remove them so later suites can seed.
+    const seekers = await prisma.jobSeeker.findMany({ where: { phone: { in: phones } }, select: { id: true } });
+    await prisma.jobSeeker.updateMany({ where: { referredBy: { phone: { in: phones } } }, data: { referredById: null } });
+    await prisma.jobSeeker.deleteMany({ where: { id: { in: seekers.map((s) => s.id) } } });
+    await prisma.referral.deleteMany({ where: { phone: { in: phones } } });
+    const businesses = await prisma.business.findMany({ where: { phone: { in: phones } }, select: { id: true } });
+    const businessIds = businesses.map((b) => b.id);
+    await prisma.vacancy.deleteMany({ where: { businessId: { in: businessIds } } });
+    await prisma.business.deleteMany({ where: { id: { in: businessIds } } });
     await app.close();
   });
 
