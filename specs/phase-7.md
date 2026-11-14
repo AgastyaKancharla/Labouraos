@@ -1,5 +1,7 @@
 # Phase 7 — Real Telephony, Messaging, Payment & KYC Integration
 
+> **Superseded for ID checks (rev 154, 14 Nov 2026):** the outside Aadhaar e-KYC vendor, `KycProvider`, `KYC_PROVIDER_MODE` and the `KYC_API_*` settings are removed. Aadhaar is checked in-house from UIDAI's signed Secure QR (`src/modules/aadhaar-qr/`), and PAN, driving licence and voter ID by the Team Lead from a live photo of the card. A production process refuses to start if any `KYC_*` setting is still set. Task 1 (for the other providers) and the history below stay as they were.
+
 **Goal:** swap every provider that has been running on a mock since earlier phases
 (OTP/SMS, WhatsApp, telephony, payment collection, referral payout disbursement,
 Aadhaar e-KYC) for a real vendor integration, behind the same provider-interface
