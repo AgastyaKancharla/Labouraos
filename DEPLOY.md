@@ -212,11 +212,11 @@ When the app first starts, no staff accounts exist. A one-time "bootstrap" reque
    }).then((r) => r.json()).then(console.log);
    ```
    The answer includes `"code": "CEO-00001"`. Close the console afterwards.
-3. **Set up the authenticator app on the first login.** Open `https://<your laboura-api address>/admin`.
-   - Log in with the **staff code** (for example `CEO-00001`) and the password. Not the email. Leave the authenticator box empty this first time.
-   - The page shows a secret key. Add it to Google Authenticator, Microsoft Authenticator or Authy.
-   - Type the 6-digit code from the app and click **Verify & Enable 2FA**.
-   - Log in again with the staff code, the password and a fresh 6-digit code. That login also approves this browser as the CEO's device.
+3. **Set up the authenticator app on the first login.** Open `https://<your laboura-api address>/login`.
+   - Log in with the **staff code** (for example `CEO-00001`) and the password. Not the email.
+   - The page shows a QR code and a secret key (shown only this once). Scan it, or type the key, in Google Authenticator, Microsoft Authenticator or Authy.
+   - Type the 6-digit code from the app and click **Turn on**.
+   - Log in again with the staff code, the password and a fresh 6-digit code. That login also approves this browser as the CEO's device, and opens the CEO Command Center (`/ceo`).
 
 Managers and Finance also use an authenticator app. Team Leads and agents instead wait on the "Ask your Team Lead for your code" page until someone reveals their code on the Login codes screen.
 
@@ -228,8 +228,8 @@ Staff log in from any network: there is no office-network rule (owner decision 1
 
 Do this straight after Step 7. If the only CEO phone is lost before a second CEO exists, nobody can get back in through the software.
 
-1. Log in to `/admin` as the first CEO.
-2. In Staff, invite a second CEO account (for example `ceo2@laboura.in`).
+1. Log in at `/login` as the first CEO.
+2. In **Team & access** (`/ceo/team`), click **+ Invite staff** and invite a second CEO-level account (for example `ceo2@laboura.in`).
 3. On a **different phone**, open the invitation link, set the password and add the authenticator code on that phone.
 4. Log in once with the second account to check it works.
 
@@ -251,9 +251,9 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 > [!WARNING]
 > **Cloudflare Access must be on before real data.**
 >
-> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office consoles (`/admin`, `/console/admin`, `/call-agent`, `/console/call-agent`) are not behind Cloudflare's identity check.
+> In `render.yaml`, `CLOUDFLARE_ACCESS_ENFORCED` is `"false"`. That is acceptable **only** while testing with made-up data. **`CLOUDFLARE_ACCESS_ENFORCED` MUST be set to `"true"` before any real candidate, worker or business data is entered into this system.** While it is `false`, the office web app (`/login`, `/ceo`, `/manager`, `/team-lead`, `/finance`, `/call-agent`) and the old admin dashboard (`/console/admin`) are not behind Cloudflare's identity check.
 >
-> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, `/call-agent*`, `/admin*`, `/console/admin*` and `/console/call-agent*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com`, `/field*` and `/field-agent` (field agents use them from their phones).
+> 1. In **Cloudflare Zero Trust** (`one.dash.cloudflare.com`), open **Access**, then **Applications**, and add a self-hosted application for `app.laboura.com` covering `/login*`, `/ceo*`, `/manager*`, `/team-lead*`, `/finance*`, `/call-agent*` and `/console/admin*`. Leave out `/p/*` (job seekers and businesses open those), `field.laboura.com` and `/field*` (field agents use them from their phones).
 > 2. Add a policy that lets in only Laboura's staff email addresses.
 > 3. Copy the application's **Audience (AUD) tag**.
 > 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).
@@ -315,7 +315,7 @@ Only if every CEO login and every authenticator phone is lost at once. Done by *
    DELETE FROM "StaffSession"
    WHERE "staffId" IN (SELECT "id" FROM "Staff" WHERE "email" = 'ceo@laboura.in');
    ```
-4. The CEO logs in at `/admin` with the password and is taken through the authenticator set-up again.
+4. The CEO logs in at `/login` with the staff code and the password and is taken through the authenticator set-up again.
 5. Record what was done and why in the incident log.
 
 ---

@@ -14,7 +14,7 @@ import { createJoiningCallsFixture } from '../../test-support/joining-call-fixtu
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
 
-describe('Phase 6 Task 5: Call Agent Console', () => {
+describe('Phase 6 Task 5: Call Agent API workflow (the old console page is retired; the web app is at /call-agent)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let otpService: OtpService;
@@ -60,55 +60,7 @@ describe('Phase 6 Task 5: Call Agent Console', () => {
     }
   });
 
-  it('GET /call-agent serves the Call Agent console web frontend with all required flows', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/call-agent')
-      .expect(200);
-
-    expect(res.headers['content-type']).toContain('text/html');
-    const html = res.text;
-    expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
-
-    expect(html).toContain('Laboura Call Agent Console');
-    // Onboarding forms
-    expect(html).toContain('js-name');
-    expect(html).toContain('js-phone');
-    expect(html).toContain('rf-name');
-    expect(html).toContain('biz-name');
-    expect(html).toContain('value="household"');
-    expect(html).toContain('biz-owner-name');
-    expect(html).toContain('biz-licence');
-    expect(html).toContain('biz-storefront-photo');
-    expect(html).toContain('biz-billing-address');
-    expect(html).toContain('business-profile-details');
-    expect(html).toContain('Send agreement');
-    expect(html).toContain('view-consent-withdrawal');
-    expect(html).toContain('withdrawal-eligibility');
-    expect(html).toContain('id="withdraw-consent-form" class="hidden"');
-    // OTP verification
-    expect(html).toContain('sendOtp');
-    expect(html).toContain('verifyOtp');
-    // Payment link generation
-    expect(html).toContain('js-payment-link-card');
-    // Vacancy capture
-    expect(html).toContain('vc-biz-id');
-    expect(html).toContain('vc-trade');
-    expect(html).toContain('vc-role-title');
-    expect(html).toContain('vc-gender-reason');
-    expect(html).toContain('vc-slot-start');
-    // Candidate shortlist view
-    expect(html).toContain('shortlist-vc-id');
-    // Calling and hits
-    expect(html).toContain('call-agent-outcome');
-    expect(html).toContain('hit-reason');
-    // Interview booking, eligible call reply, and placement payment status
-    expect(html).toContain('Book interview');
-    expect(html).toContain('interview-list');
-    expect(html).toContain('answeredOfferCallId');
-    expect(html).toContain('agent-placement-list');
-  });
-
-  it('verifies Call Agent end-to-end API workflow from console', async () => {
+  it('verifies the Call Agent end-to-end API workflow', async () => {
     const phone = `94001${String(timestamp).slice(-5)}`;
 
     // 1. OTP send & verify

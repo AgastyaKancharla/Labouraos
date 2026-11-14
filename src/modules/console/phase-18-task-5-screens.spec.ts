@@ -1,6 +1,4 @@
 import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
-import { renderCallAgentConsoleHtml } from './templates/call-agent-console.html';
-import { renderFieldAgentAppHtml } from './templates/field-agent-app.html';
 
 describe('Phase 18 Task 5 screens', () => {
   describe('Admin Dashboard (Finance & CEO Screens)', () => {
@@ -100,70 +98,4 @@ describe('Phase 18 Task 5 screens', () => {
     });
   });
 
-  describe('Call Agent Console', () => {
-    const html = renderCallAgentConsoleHtml();
-
-    it('renders payout details row and send payout link button on calling profile card', () => {
-      expect(html).toContain('profile-payout-details-row');
-      expect(html).toContain('profile-card-payout-status');
-      expect(html).toContain('None on file');
-      expect(html).toContain('btn-send-payout-link');
-      expect(html).toContain('Send payout details link');
-      expect(html).toContain('sendCurrentProfilePayoutLink');
-      expect(html).toContain('/payout-accounts/links');
-    });
-
-    it('renders business payout details and send payout link button on business profile tab', () => {
-      expect(html).toContain('business-payout-row');
-      expect(html).toContain('business-payout-status');
-      expect(html).toContain('btn-business-send-payout-link');
-      expect(html).toContain('sendBusinessPayoutLink');
-    });
-
-    it('strictly forbids full credentials, reveal, or payment recording in Call Agent console', () => {
-      // No reveal or record actions
-      expect(html).not.toContain('reveal-payout');
-      expect(html).not.toContain('record-payout');
-      expect(html).not.toContain('openRevealPayoutModal');
-      expect(html).not.toContain('openRecordPayoutModal');
-
-      // No full details input or display
-      expect(html).not.toContain('modal-reveal-details');
-      expect(html).not.toContain('record-payout-utr');
-    });
-
-    it('enforces privacy floor: contains no full 10-digit phone number in markup or static scripts', () => {
-      expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
-    });
-  });
-
-  describe('Field Agent App', () => {
-    const html = renderFieldAgentAppHtml();
-
-    it('renders payout details status and send payout link button in calling modal', () => {
-      expect(html).toContain('fa-profile-payout-row');
-      expect(html).toContain('fa-profile-payout-status');
-      expect(html).toContain('None on file');
-      expect(html).toContain('fa-btn-send-payout-link');
-      expect(html).toContain('Send payout details link');
-      expect(html).toContain('sendFaProfilePayoutLink');
-      expect(html).toContain('/payout-accounts/links');
-    });
-
-    it('strictly forbids full credentials, reveal, or payment recording in Field Agent app', () => {
-      // No reveal or record actions
-      expect(html).not.toContain('reveal-payout');
-      expect(html).not.toContain('record-payout');
-      expect(html).not.toContain('openRevealPayoutModal');
-      expect(html).not.toContain('openRecordPayoutModal');
-
-      // No full details input or display
-      expect(html).not.toContain('modal-reveal-details');
-      expect(html).not.toContain('record-payout-utr');
-    });
-
-    it('enforces privacy floor: contains no full 10-digit phone number in markup or static scripts', () => {
-      expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
-    });
-  });
 });

@@ -1,12 +1,16 @@
 import { Controller, Get, Header, UseGuards } from '@nestjs/common';
 import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
-import { renderCallAgentConsoleHtml } from './templates/call-agent-console.html';
-import { renderFieldAgentAppHtml } from './templates/field-agent-app.html';
-import { renderMapPageHtml } from './templates/map.html';
 import { renderSetupPageHtml } from './templates/setup-page.html';
 import { CloudflareAccessGuard } from '../../common/auth/cloudflare-access.guard';
 import { Public } from '../../common/rbac/public.decorator';
 
+/**
+ * What is left of the old one-page consoles (retired 14 Nov; AGENTS.md,
+ * "Retired consoles"). The office web app (/login, /ceo, /call-agent …) and
+ * Laboura Field replaced them; a browser opening an old address (/admin,
+ * /map, /field-agent, /console/call-agent …) is redirected by
+ * SiteRoutingMiddleware before it reaches this controller.
+ */
 @Controller()
 export class ConsoleController {
   /**
@@ -25,33 +29,18 @@ export class ConsoleController {
     return renderSetupPageHtml();
   }
 
-  @Get(['map', 'console/map'])
-  @Public('console page shell only; every data call behind it needs a staff login')
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  getMap(): string {
-    return renderMapPageHtml();
-  }
-
-  @Get(['admin', 'console/admin'])
+  /**
+   * The old Admin Dashboard, kept only at this address until the new screens
+   * cover what only it still does: recording a bank credit by hand from the
+   * statement, setting a bank credit aside, Finance resolving payment and
+   * payout flags, and reporting a replacement claim. /admin itself now goes to
+   * /login.
+   */
+  @Get('console/admin')
   @Public('console page shell only; every data call behind it needs a staff login')
   @UseGuards(CloudflareAccessGuard)
   @Header('Content-Type', 'text/html; charset=utf-8')
   getAdminDashboard(): string {
     return renderAdminDashboardHtml();
-  }
-
-  @Get(['call-agent', 'console/call-agent'])
-  @Public('console page shell only; every data call behind it needs a staff login')
-  @UseGuards(CloudflareAccessGuard)
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  getCallAgentConsole(): string {
-    return renderCallAgentConsoleHtml();
-  }
-
-  @Get(['field-agent', 'console/field-agent'])
-  @Public('console page shell only; every data call behind it needs a staff login')
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  getFieldAgentApp(): string {
-    return renderFieldAgentAppHtml();
   }
 }

@@ -482,6 +482,10 @@ export function renderAdminDashboardHtml(): string {
     </div>
   </header>
 
+  <div id="retired-console-notice" role="note" style="margin: 12px 24px 0; padding: 10px 14px; border: 1px solid #f59e0b; border-radius: 8px; background: #fffbeb; color: #78350f; font-size: 0.85rem;">
+    This is the old Admin Dashboard, kept only for what the new screens do not do yet: adding a bank credit by hand from the statement, setting a bank credit aside, Finance resolving payment and payout flags, and reporting a replacement claim. For everything else, sign in at <a href="/login" style="color: inherit; font-weight: 600;">/login</a>.
+  </div>
+
   <nav class="nav-tabs">
     <button class="tab-btn active" data-tab="job-seekers">Job Seekers</button>
     <button class="tab-btn" data-tab="referrals">Referrals</button>
@@ -495,7 +499,6 @@ export function renderAdminDashboardHtml(): string {
     <!-- CEO-only Pricing Tab; Manager tokens cannot see this per AGENTS.md §7 and specs/phase-6.md Task 4 -->
     <button class="tab-btn hidden" id="tab-pricing" data-tab="pricing">Pricing & Policy (CEO)</button>
     <button class="tab-btn hidden" id="tab-retention" data-tab="retention">Data Retention (CEO)</button>
-    <a href="/map" class="map-nav-link" style="align-self:center;color:var(--text-muted);padding:10px 12px;font-weight:600;white-space:nowrap">Map</a>
     ${officeApproverHtml()}
   </nav>
 

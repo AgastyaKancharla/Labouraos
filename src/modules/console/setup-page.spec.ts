@@ -22,6 +22,19 @@ describe('H4: first CEO set-up from the app\'s own address, never through a thir
     expect(html).toContain('name="referrer" content="no-referrer"');
   });
 
+  it('after creating the CEO, sends them to /login (staff code, password, then the authenticator set-up there), not the retired /admin', () => {
+    expect(html).toContain('go to /login and log in with the staff code and the password');
+    expect(html).toContain('The authenticator app is set up there');
+    expect(html).not.toContain('/admin');
+  });
+
+  it('is the only page besides the old admin dashboard the console controller still serves', () => {
+    const routes = Object.getOwnPropertyNames(ConsoleController.prototype)
+      .filter((name) => name !== 'constructor')
+      .map((name) => Reflect.getMetadata('path', (ConsoleController.prototype as unknown as Record<string, object>)[name]) as string | string[]);
+    expect(routes).toEqual(['setup', 'console/admin']);
+  });
+
   it('DEPLOY.md bootstraps from /setup (or the console on the app\'s own origin) and never sends secrets or tokens through reqbin', () => {
     const deploy = fs.readFileSync(path.join(__dirname, '../../../DEPLOY.md'), 'utf8');
     expect(deploy).not.toMatch(/reqbin\.com/i);

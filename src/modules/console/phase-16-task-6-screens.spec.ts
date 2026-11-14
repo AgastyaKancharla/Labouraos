@@ -1,6 +1,4 @@
 import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
-import { renderCallAgentConsoleHtml } from './templates/call-agent-console.html';
-import { renderFieldAgentAppHtml } from './templates/field-agent-app.html';
 import { UpiCollectionService } from '../payment/upi-collection.service';
 
 describe('Phase 16 Task 6 screens', () => {
@@ -40,43 +38,6 @@ describe('Phase 16 Task 6 screens', () => {
       expect(html).toContain('Resend payment link');
       expect(html).toContain('resendPlacementPayment');
       expect(html).toContain('resendSeekerPayment');
-    });
-  });
-
-  describe('Agent Consoles (Call Agent & Field Agent)', () => {
-    it('renders payment status and resend payment link for Call Agents', () => {
-      const html = renderCallAgentConsoleHtml();
-
-      // Placement status view
-      expect(html).toContain('Placement Payment Status');
-      expect(html).toContain('Awaiting payment');
-      expect(html).toContain('Overdue');
-      expect(html).toContain('Paid');
-      expect(html).toContain('Resend payment link');
-
-      // Calling & profile payment status
-      expect(html).toContain('profile-payment-status-row');
-      expect(html).toContain('profile-card-payment-status');
-      expect(html).toContain('btn-resend-profile-payment');
-      expect(html).toContain('resendCurrentProfilePayment');
-
-      // Strictly NO "mark as paid" button
-      expect(html.toLowerCase()).not.toContain('mark as paid');
-      expect(html.toLowerCase()).not.toContain('mark paid');
-    });
-
-    it('renders payment status and resend payment link for Field Agents', () => {
-      const html = renderFieldAgentAppHtml();
-
-      // Placement status view in interviews
-      expect(html).toContain('My Interviews');
-      expect(html).toContain('Awaiting payment');
-      expect(html).toContain('Paid');
-      expect(html).toContain('Resend payment link');
-
-      // Strictly NO "mark as paid" button
-      expect(html.toLowerCase()).not.toContain('mark as paid');
-      expect(html.toLowerCase()).not.toContain('mark paid');
     });
   });
 

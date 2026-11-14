@@ -3,7 +3,7 @@ import type { NextFunction, Request, Response } from 'express';
 import { CloudflareAccessVerifier } from '../../common/auth/cloudflare-access.verifier';
 import { wantsHtml } from '../../common/public-pages';
 import { resolveFieldAppFile, resolveFieldDistDir, resolveFieldRootDistDir, type FieldAppFile } from '../field-app/field-app.files';
-import { isFieldHost } from './site-hosts';
+import { fieldHosts, isFieldHost } from './site-hosts';
 import { resolveWebAppFile, resolveWebDistDir, type WebAppFile } from './web-app.files';
 
 /**
@@ -18,6 +18,36 @@ export const WEB_APP_ROOTS = ['login', 'ceo', 'manager', 'team-lead', 'finance',
 const PUBLIC_WEB_ROOTS = new Set<string>(['p']);
 
 const CF_DENIED = 'Cloudflare Access identity verification required';
+
+/**
+ * The old one-page console addresses, retired once the web app and Laboura
+ * Field replaced them (14 Nov). A browser that opens one (a bookmark, an old
+ * message) is sent on permanently; API callers (JSON) are never redirected.
+ * The old Admin Dashboard itself stays at /console/admin for the few things
+ * the new screens do not do yet (AGENTS.md, "Retired consoles").
+ */
+export function retiredConsoleRedirect(pathname: string, env: NodeJS.ProcessEnv = process.env): string | null {
+  const path = pathname.length > 1 ? pathname.replace(/\/+$/, '') : pathname;
+  switch (path) {
+    case '/admin':
+    case '/map':
+    case '/console/map':
+      return '/login';
+    case '/console/call-agent':
+      return '/call-agent';
+    case '/field-agent':
+    case '/console/field-agent':
+      return fieldAppAddress(env);
+    default:
+      return null;
+  }
+}
+
+/** Laboura Field's address: the root of FIELD_HOST when one is set, otherwise /field on this address. */
+export function fieldAppAddress(env: NodeJS.ProcessEnv = process.env): string {
+  const host = fieldHosts(env)[0];
+  return host ? `https://${host}/` : '/field/';
+}
 
 type Outcome =
   | { kind: 'redirect'; status: 301; location: string }
@@ -57,11 +87,13 @@ function firstSegment(pathname: string): string {
  * On a Laboura Field host (FIELD_HOST): the field app's own files, its
  * index.html at "/" and for every page a browser opens; everything else (API
  * calls, which ask for JSON) goes on to the API on the same address. Old /field/... links
- * there go to the same page at the root.
+ * there go to the same page at the root, and the old /field-agent page to the root.
  *
  * On every other host (app.laboura.com, the Render test address):
  *   - /app and /app/... → permanent redirect to the same page without /app, so
  *     links already sent by SMS or WhatsApp (invites, resets, /app/p/...) work;
+ *   - the retired console addresses (/admin, /map, /field-agent, /console/...)
+ *     → permanent redirect for a browser (retiredConsoleRedirect);
  *   - /field/... → Laboura Field (the /field build);
  *   - /assets/..., /favicon.png … → the office app's files;
  *   - "/" and the office app's pages (WEB_APP_ROOTS) → its index.html, but only
@@ -77,6 +109,8 @@ export function routeSiteRequest(req: Pick<Request, 'method' | 'originalUrl' | '
 
   if (isFieldHost(req, env)) {
     if (under(pathname, '/field')) return { kind: 'redirect', status: 301, location: `${stripPrefix(pathname, '/field')}${search}` };
+    // The old field agent page: Laboura Field is already here, at the root.
+    if (browser && /^\/(?:console\/)?field-agent\/*$/.test(pathname)) return { kind: 'redirect', status: 301, location: '/' };
     const dist = resolveFieldRootDistDir();
     const file = dist ? resolveFieldAppFile(dist, pathname, '') : null;
     if (file?.kind === 'file') return { kind: 'field', file, scope: '/' };
@@ -90,6 +124,9 @@ export function routeSiteRequest(req: Pick<Request, 'method' | 'originalUrl' | '
   }
 
   if (under(pathname, '/app')) return { kind: 'redirect', status: 301, location: `${stripPrefix(pathname, '/app')}${search}` };
+
+  const retired = browser ? retiredConsoleRedirect(pathname, env) : null;
+  if (retired) return { kind: 'redirect', status: 301, location: retired };
 
   if (under(pathname, '/field')) {
     const dist = resolveFieldDistDir();

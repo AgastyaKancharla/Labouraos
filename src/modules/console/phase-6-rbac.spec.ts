@@ -60,9 +60,9 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
   });
 
   describe('Console Availability and Auth Enforcement', () => {
-    it('serves Admin Dashboard at GET /admin with auth modal and role enforcement logic', async () => {
+    it('serves the old Admin Dashboard at GET /console/admin with auth modal and role enforcement logic', async () => {
       const res = await request(app.getHttpServer())
-        .get('/admin')
+        .get('/console/admin')
         .expect(200);
 
       expect(res.headers['content-type']).toContain('text/html');
@@ -75,34 +75,21 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
       expect(res.text).toContain('payload.role === \'ceo\'');
     });
 
-    it('serves Call Agent console at GET /call-agent with auth modal and operations forms', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/call-agent')
-        .expect(200);
-
-      expect(res.headers['content-type']).toContain('text/html');
-      expect(res.text).toContain('Laboura Call Agent Console');
-      expect(res.text).toContain('id="auth-modal"');
-      expect(res.text).toContain('Job Seeker Onboarding');
-      expect(res.text).toContain('Referral Onboarding');
-      expect(res.text).toContain('Business Onboarding');
-      expect(res.text).toContain('Candidate Shortlist');
-      expect(res.text).toContain('Placement Payment Status');
+    it.each([
+      ['/admin', '/login'],
+      ['/console/call-agent', '/call-agent'],
+      ['/map', '/login'],
+      ['/console/map', '/login'],
+    ])('sends a browser opening the retired %s to %s', async (from, to) => {
+      const res = await request(app.getHttpServer()).get(from).set('Accept', 'text/html').expect(301);
+      expect(res.headers.location).toBe(to);
     });
 
-    it('serves Field Agent app at GET /field-agent with auth modal and live Priority Dashboard', async () => {
-      const res = await request(app.getHttpServer())
-        .get('/field-agent')
-        .expect(200);
-
-      expect(res.headers['content-type']).toContain('text/html');
-      expect(res.text).toContain('Laboura Field Agent App');
-      expect(res.text).toContain('id="auth-modal"');
-      expect(res.text).toContain('accept="image/*" capture="user"');
-      expect(res.text).toContain('Priority Dashboard');
-      expect(res.text).toContain('/priority/candidates');
-      expect(res.text).toContain('/priority/vacancies');
-      expect(res.text).toContain('/priority/trades');
+    it('sends a browser opening the retired /field-agent to Laboura Field', async () => {
+      for (const from of ['/field-agent', '/console/field-agent']) {
+        const res = await request(app.getHttpServer()).get(from).set('Accept', 'text/html').expect(301);
+        expect(res.headers.location).toMatch(/^(?:\/field\/|https:\/\/[^/]+\/)$/);
+      }
     });
 
     it('POST /auth/login rejects invalid credentials with 401', async () => {
