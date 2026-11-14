@@ -14,6 +14,7 @@ import { FilterPanel, Kv, PagedTable, SearchField, SelectFilter, rangeQuery, use
 import { PAYMENT_TYPE } from '../_kit/labels';
 import { PaymentTabs } from '../_kit/tabs';
 import { ActionButton } from '../_kit/actions';
+import { UndoSetAside } from '../../finance/_kit/statement';
 import { api } from '../../../lib/api/client';
 
 /** Payments · money in — design C-Payments.dc.html. */
@@ -44,6 +45,7 @@ interface Totals {
 interface Extra {
   byType: Totals;
   unmatched: { id: string; utr: string; amountPaise: number; at: string; payerName: string | null }[];
+  setAside?: { id: string; utr: string; amountPaise: number; at: string; payerName: string | null; reason: string | null; setAsideAt: string | null; setAsideBy: string | null }[];
   unpaidFees: { withinDue: { id: string; code: string; business: string; amountPaise: number }[]; overdue: { id: string; code: string; business: string; amountPaise: number }[] };
 }
 interface Summary {
@@ -189,6 +191,22 @@ export default function PaymentsIn() {
           )}
         </Card>
       </div>
+      {d?.setAside && d.setAside.length > 0 && (
+        <Card title={`Set aside, not ours · ${d.setAside.length} · ${formatINR(sum(d.setAside))}`}>
+          <div className="ceo-note" style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+            {d.setAside.map((c) => (
+              <div key={c.id} className="ceo-actions" style={{ justifyContent: 'space-between' }}>
+                <span>
+                  {formatINR(c.amountPaise)} · UTR {c.utr} · {c.payerName ?? 'unknown payer'} · “{c.reason ?? ''}”
+                  {c.setAsideBy ? ` · set aside by ${c.setAsideBy}` : ''}
+                  {c.setAsideAt ? ` on ${formatDateTimeIST(c.setAsideAt)}` : ''}
+                </span>
+                <UndoSetAside id={c.id} amountPaise={c.amountPaise} />
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
     </div>
   );
 }

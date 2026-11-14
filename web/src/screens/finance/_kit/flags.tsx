@@ -60,7 +60,14 @@ export function useMoneyFlags(kinds: string[]) {
   return { query, rows };
 }
 
+/**
+ * Resolve one flag. A payout flag needs what was found: "Checked, genuine"
+ * (the person's payout details go back to waiting — any 48-hour wait still
+ * applies — once no other payout flag is open for them) or "Fraud confirmed"
+ * (the details stay blocked; ask for new ones).
+ */
 export function ResolveFlag({ flag, label = 'Resolve' }: { flag: MoneyFlag; label?: string }) {
+  const payout = PAYOUT_FLAG_KINDS.includes(flag.kind);
   return (
     <FormAction
       label={label}
@@ -71,13 +78,40 @@ export function ResolveFlag({ flag, label = 'Resolve' }: { flag: MoneyFlag; labe
         <>
           <strong>{KIND[flag.kind] ?? words(flag.kind)}</strong> · {flagEvidence(flag.details)}
           <br />
-          Write what you checked and what was done. It is logged with your name.
+          {payout
+            ? 'Checked and genuine: the payout details go back to waiting (the 48-hour wait still applies) once no other flag is open for this person. Fraud confirmed: the details stay blocked — send a link for new details. It is logged with your name.'
+            : 'Write what you checked and what was done. It is logged with your name.'}
         </>
       }
-      fields={[{ name: 'resolution', kind: 'text', label: 'What you found and did', required: true }]}
+      fields={[
+        ...(payout
+          ? [
+              {
+                name: 'outcome',
+                kind: 'select' as const,
+                label: 'What you found',
+                required: true,
+                // nothing chosen until Finance picks one
+                initial: '',
+                options: [
+                  { value: 'genuine', label: 'Checked, genuine — release the details' },
+                  { value: 'fraud', label: 'Fraud confirmed — keep them blocked' },
+                ],
+              },
+            ]
+          : []),
+        { name: 'resolution', kind: 'text' as const, label: 'What you found and did', required: true },
+      ]}
       confirmLabel="Resolve the flag"
-      run={(v) => api.post(`/payments/review-flags/${encodeURIComponent(flag.id)}/resolve`, { resolution: String(v.resolution).trim() })}
-      success={`${flag.code} resolved`}
+      run={(v) =>
+        api.post(`/payments/review-flags/${encodeURIComponent(flag.id)}/resolve`, { resolution: String(v.resolution).trim(), ...(payout ? { outcome: v.outcome } : {}) })
+      }
+      success={(r) => {
+        const res = r as { outcome?: string | null; payoutDetailsReleased?: number } | undefined;
+        if (res?.outcome === 'genuine') return res.payoutDetailsReleased ? `${flag.code} closed · payout details released (48-hour wait applies)` : `${flag.code} closed · details stay blocked while another flag is open`;
+        if (res?.outcome === 'fraud') return `${flag.code} resolved as fraud · details stay blocked`;
+        return `${flag.code} resolved`;
+      }}
     />
   );
 }

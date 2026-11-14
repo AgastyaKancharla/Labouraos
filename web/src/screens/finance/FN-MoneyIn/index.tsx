@@ -49,7 +49,7 @@ export interface MoneyInRow {
 }
 interface Response {
   rows: MoneyInRow[];
-  summary: { receivedPaise: number; receivedCount: number; matchedAutoCount: number; needYouCount: number; tdsThisMonthPaise: number };
+  summary: { receivedPaise: number; receivedCount: number; matchedAutoCount: number; needYouCount: number; tdsThisMonthPaise: number; setAsidePaise?: number; setAsideCount?: number };
 }
 
 const TYPE: Record<string, string> = { placement_fee: 'Placement fee', bypass_charge: 'No-bypass charge', activation: 'Registration fee', reactivation: 'Registration fee (again)' };
@@ -200,6 +200,11 @@ export default function MoneyIn() {
         <StatTile label="Need you" value={s?.needYouCount ?? '—'} tone="red" loading={loading} />
         <StatTile label="TDS taken by businesses (this month)" value={s ? formatINR(s.tdsThisMonthPaise) : '—'} tone="gold" loading={loading} to={`${to('FN-Invoices')}?status=tds_due`} />
       </StatGrid>
+      {s && (s.setAsideCount ?? 0) > 0 && (
+        <div className="rule" style={{ borderLeftColor: 'var(--line-strong)', fontSize: 12.5 }}>
+          Set aside, not ours: <strong>{formatINR(s.setAsidePaise ?? 0)}</strong> in {s.setAsideCount} credit{s.setAsideCount === 1 ? '' : 's'} — in the bank but not Laboura's money, so not counted as received.
+        </div>
+      )}
       <FilterPanel>
         <SelectFilter
           label="Status"

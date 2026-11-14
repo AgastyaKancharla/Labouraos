@@ -55,6 +55,8 @@ describe('FA11 Confirm joining', () => {
       canReport: true,
       blocked: null,
       openClaim: null,
+      reportAgain: null,
+      previousClaims: [],
       ownerCalls: [{ id: 'call-7', code: 'CL-7', at: new Date().toISOString(), durationSec: 95, by: 'Kiran' }],
       reasons: { covered: ['resigned', 'never_joined'], notCovered: ['business_closed'] },
       ...over,
@@ -121,6 +123,22 @@ describe('FA11 Confirm joining', () => {
       await fireEvent.press(screen.getByTestId(`left-on-day-${day}`));
       expect(screen.getByTestId('left-no-call')).toBeTruthy();
       expect(screen.queryByTestId('left-call')).toBeNull();
+    });
+
+    it('after a reviewed rejection, says only a Manager or the CEO can report again, with the earlier claim', async () => {
+      const { route } = routeTable({
+        '/screens/field-selling/placements/pl-1': joined,
+        '/placements/pl-1/worker-left': leftForm({
+          canReport: false,
+          blocked: 'not_again',
+          reportAgain: { allowed: false, who: 'manager_ceo', message: 'x', until: null },
+          previousClaims: [{ code: 'RC-2', reportedAt: '2026-11-12T06:00:00Z', decision: 'rejected', decisionReason: 'Still working', rejectionCode: 'reviewed' }],
+        }),
+      });
+      await renderWithApp(<JoiningScreen />, { signedInAs: kiran, route, queue: recordingQueue().queue });
+      expect(await screen.findByText('The last claim was rejected. Only a Manager or the CEO can report it again.')).toBeTruthy();
+      expect(screen.getByText(/RC-2 · .* · rejected · reviewed and rejected · “Still working”/)).toBeTruthy();
+      expect(screen.queryByTestId('left-open')).toBeNull();
     });
 
     it('shows a claim already waiting instead of the form, and nothing before joining', async () => {

@@ -170,10 +170,13 @@ function RowActions({ r }: { r: PayoutRow }) {
 /** Details flagged: resolve the flag on this person, or ask for new details (new details replace the flagged ones). */
 function FlaggedActions({ r, sendLink }: { r: PayoutRow; sendLink: ReactNode }) {
   const { rows } = useMoneyFlags(PAYOUT_FLAG_KINDS);
-  const flag = rows.find((f) => f.subjectType === r.owner.ownerType && f.subjectId === r.owner.ownerId);
+  // Every open flag on this person (a payout is released only once all are closed).
+  const flags = rows.filter((f) => f.subjectType === r.owner.ownerType && f.subjectId === r.owner.ownerId);
   return (
     <span className="fin-row-actions">
-      {flag && <ResolveFlag flag={flag} label="Resolve flag" />}
+      {flags.map((f) => (
+        <ResolveFlag key={f.id} flag={f} label={flags.length > 1 ? `Resolve ${f.code}` : 'Resolve flag'} />
+      ))}
       {sendLink}
     </span>
   );

@@ -257,8 +257,11 @@ export interface WorkerLeftForm {
   leftOnEarliest: string | null;
   leftOnLatest: string;
   canReport: boolean;
-  blocked: 'not_active' | 'not_joined' | 'open_claim' | null;
+  blocked: 'not_active' | 'not_joined' | 'open_claim' | 'not_again' | null;
   openClaim: { code: string; reportedAt: string; decisionDueAt: string } | null;
+  /** After a rejection: may it be reported again, by whom, until when (owner decision 14 Nov). */
+  reportAgain: { allowed: boolean; who: 'anyone' | 'manager_ceo' | 'nobody'; message: string; until: string | null } | null;
+  previousClaims: { code: string; reportedAt: string; decision: string; decisionReason: string | null; rejectionCode: string | null }[];
   ownerCalls: { id: string; code: string; at: string; durationSec: number | null; by: string | null }[];
   reasons: { covered: string[]; notCovered: string[] };
 }

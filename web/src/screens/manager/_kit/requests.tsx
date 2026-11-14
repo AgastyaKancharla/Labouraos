@@ -5,6 +5,7 @@ import { LinkTabs } from '../../../components/Tabs';
 import { api } from '../../../lib/api/client';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
+import { CLAIM_REJECTION_CHOICE, CLAIM_REJECTION_HELP } from '../../ceo/_kit/claims';
 import type { RequestDetail, RequestView } from '../../team-lead/_kit/api';
 import { roleTeam } from './kit';
 
@@ -202,10 +203,11 @@ export function RequestActions({ request, tree, open = true }: { request: Reques
             label="Reject"
             variant="danger"
             title={`Reject: ${r.title.toLowerCase()} · ${who}`}
-            description="Say why — they see it with the decision."
+            description={r.kind === 'claim' ? CLAIM_REJECTION_HELP : 'Say why — they see it with the decision.'}
             reason
+            choice={r.kind === 'claim' ? CLAIM_REJECTION_CHOICE : undefined}
             confirmLabel="Reject"
-            run={({ reason }) => api.post(`/requests/${encodeURIComponent(r.ref)}/decide`, { decision: 'rejected', reason })}
+            run={({ reason, choice }) => api.post(`/requests/${encodeURIComponent(r.ref)}/decide`, { decision: 'rejected', reason, ...(r.kind === 'claim' ? { rejectionCode: choice } : {}) })}
             success="Rejected"
           />
         </>

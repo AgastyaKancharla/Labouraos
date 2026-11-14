@@ -7,6 +7,7 @@ import Decided, { mondayOf } from '../MG-Decided';
 import RequestDetail from '../MG-Req-Ravi';
 import { WaitingCard } from '../MG-Home/WaitingCard';
 import type { RequestDetail as Detail, RequestView } from './requests';
+import { previousClaimsText } from '../../ceo/_kit/claims';
 
 const NOW = new Date('2026-11-10T12:30:00Z'); // 18:00 IST, Tue 10 Nov
 const common = {
@@ -346,5 +347,42 @@ describe('Command Center "Waiting for you"', () => {
     expect(screen.getAllByRole('button', { name: 'Approve' })).toHaveLength(2);
     expect(screen.getAllByRole('link', { name: 'Open' })[0]).toHaveAttribute('href', '/manager/requests/leave.l2');
     expect(screen.getByText(/Agents' leave goes to their Team Lead first/)).toBeInTheDocument();
+  });
+});
+
+describe('Rejecting a replacement claim says why (owner decision 14 Nov)', () => {
+  it('asks whether the mistake can be fixed, and sends the rejection code', async () => {
+    const api = mockApi({ ...common, 'GET /requests/waiting': [claim], 'GET /requests/open': [], 'GET /manager/staff': staff, 'POST /requests/claim.c1/decide': claim });
+    render(<Requests />, '/manager/requests');
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    const d = await dialog();
+    expect(within(d).getByText(/A fixable mistake can be reported once more within the 7 days/)).toBeInTheDocument();
+    await userEvent.selectOptions(within(d).getByRole('combobox', { name: /Why it is rejected/ }), 'wrong_details');
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'The worker left on the 10th, not the 3rd');
+    await userEvent.click(within(d).getByRole('button', { name: 'Reject' }));
+    await waitFor(() =>
+      expect(api.calls('POST /requests/claim.c1/decide')[0].body).toEqual({ decision: 'rejected', reason: 'The worker left on the 10th, not the 3rd', rejectionCode: 'wrong_details' }),
+    );
+  });
+
+  it('a leave rejection carries no rejection code', async () => {
+    const api = mockApi({ ...common, 'GET /requests/waiting': [ravi], 'GET /requests/open': [], 'GET /manager/staff': staff, 'POST /requests/leave.l1/decide': ravi });
+    render(<Requests />, '/manager/requests');
+    await userEvent.click(await screen.findByRole('button', { name: 'Reject' }));
+    const d = await dialog();
+    expect(within(d).queryByRole('combobox', { name: /Why it is rejected/ })).not.toBeInTheDocument();
+    await userEvent.type(within(d).getByLabelText(/Reason/), 'Busy week');
+    await userEvent.click(within(d).getByRole('button', { name: 'Reject' }));
+    await waitFor(() => expect(api.calls('POST /requests/leave.l1/decide')[0].body).toEqual({ decision: 'rejected', reason: 'Busy week' }));
+  });
+
+  it('describes earlier claims for the decider', () => {
+    expect(
+      previousClaimsText([
+        { code: 'RC-1', decision: 'rejected', decisionReason: 'Wrong date', rejectionCode: 'wrong_details' },
+        { code: 'RC-0', decision: 'rejected', decisionReason: 'Auto-rejected: Reported 9 days after worker left', rejectionCode: 'reported_late' },
+      ]),
+    ).toBe('RC-1 rejected (wrong date or detail): “Wrong date” · RC-0 rejected (reported after 7 days): “Auto-rejected: Reported 9 days after worker left”');
+    expect(previousClaimsText([])).toBe('');
   });
 });

@@ -29,8 +29,11 @@ export interface WorkerLeftForm {
   leftOnEarliest: string | null;
   leftOnLatest: string;
   canReport: boolean;
-  blocked: 'not_active' | 'not_joined' | 'open_claim' | null;
+  blocked: 'not_active' | 'not_joined' | 'open_claim' | 'not_again' | null;
   openClaim: { code: string; reportedAt: string; decisionDueAt: string } | null;
+  /** After a rejection: may it be reported again, by whom, until when (owner decision 14 Nov). */
+  reportAgain: { allowed: boolean; who: 'anyone' | 'manager_ceo' | 'nobody'; message: string; until: string | null } | null;
+  previousClaims: { code: string; reportedAt: string; workerLeftOn: string; reason: string; decision: string; decisionReason: string | null; rejectionCode: string | null; decidedBy: string | null; decidedAt: string | null }[];
   ownerCalls: { id: string; code: string; at: string; durationSec: number | null; by: string | null }[];
   reasons: { covered: string[]; notCovered: string[] };
 }
@@ -50,6 +53,27 @@ interface ClaimResult {
 }
 
 export const workerLeftKey = (id: string) => ['placements', 'worker-left', id] as const;
+
+/** Earlier claims on this placement and why each was decided. */
+function PreviousClaims({ d }: { d: WorkerLeftForm }) {
+  const t = useT();
+  if (!d.previousClaims?.length) return null;
+  return (
+    <div>
+      <p className="wl-sub" style={{ fontWeight: 600 }}>{t('wl.previous')}</p>
+      <ul className="wl-list">
+        {d.previousClaims.map((c) => (
+          <li key={c.code} className="wl-sub">
+            {t(c.decision === 'accepted' ? 'wl.previous.accepted' : 'wl.previous.rejected', { code: c.code, date: formatDateIST(c.reportedAt) })}
+            {c.rejectionCode ? ` · ${t(`wl.rejection.${c.rejectionCode}` as MessageKey)}` : ''}
+            {c.decisionReason ? ` · “${c.decisionReason}”` : ''}
+            {c.decidedBy ? ` · ${c.decidedBy}` : ''}
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
 
 function duration(sec: number | null): string {
   if (!sec) return '—';
@@ -110,13 +134,17 @@ function ClaimForm({ placementId, onDone, onBack }: { placementId: string; onDon
     const text =
       d.blocked === 'open_claim' && d.openClaim
         ? t('wl.blocked.open_claim', { code: d.openClaim.code, due: formatDateTimeIST(d.openClaim.decisionDueAt) })
-        : t(`wl.blocked.${d.blocked ?? 'not_active'}` as MessageKey);
+        : d.blocked === 'not_again' && d.reportAgain
+          ? t(d.reportAgain.who === 'nobody' ? 'wl.again.never' : 'wl.again.managerOnly')
+          : t(`wl.blocked.${d.blocked ?? 'not_active'}` as MessageKey);
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {header}
         <p className="wl-note" role="status">
           {text}
+          {d.blocked === 'not_again' && d.reportAgain ? <span className="wl-sub" style={{ display: 'block', marginTop: 4 }}>{d.reportAgain.message}</span> : null}
         </p>
+        <PreviousClaims d={d} />
         {back}
       </div>
     );
@@ -144,6 +172,12 @@ function ClaimForm({ placementId, onDone, onBack }: { placementId: string; onDon
     >
       {header}
       <p style={{ margin: 0, fontSize: 13.5 }}>{t('wl.intro', { days: d.guarantee.windowDays, hours: d.guarantee.decisionHours })}</p>
+      {d.reportAgain?.allowed && (
+        <p className="wl-note" role="status">
+          {d.reportAgain.who === 'manager_ceo' ? t('wl.again.asManager') : t('wl.again.once', { date: d.reportAgain.until ? formatDateIST(`${d.reportAgain.until}T12:00:00+05:30`) : '' })}
+        </p>
+      )}
+      <PreviousClaims d={d} />
       <DateField
         label={t('wl.leftOn')}
         value={leftOn}

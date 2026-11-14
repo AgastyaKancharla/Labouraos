@@ -24,6 +24,8 @@ const form = (over: Partial<WorkerLeftForm> = {}): WorkerLeftForm => ({
   canReport: true,
   blocked: null,
   openClaim: null,
+  reportAgain: null,
+  previousClaims: [],
   ownerCalls: [{ id: 'call7', code: 'CL-00007', at: '2026-11-14T05:00:00Z', durationSec: 95, by: 'Deepa Nair' }],
   reasons: {
     covered: ['resigned', 'absconded_3_days', 'never_joined', 'serious_misconduct', 'repeated_absence', 'skill_gap_15_days', 'misrepresentation'],
@@ -133,6 +135,36 @@ describe('Report worker left — CEO placement page (C-Placement)', () => {
     await userEvent.type(await within(dialog).findByLabelText(/Date the worker left/), '2026-11-12');
     expect(within(dialog).queryByLabelText(/Answered call with the owner/)).not.toBeInTheDocument();
     expect(within(dialog).getByText(/No answered call with the owner on or after that day/)).toBeInTheDocument();
+  });
+
+  it('after a reviewed rejection, an agent sees why only a Manager or the CEO can report again, with the earlier claim', async () => {
+    openPlacement({
+      'GET /placements/pl42/worker-left': form({
+        canReport: false,
+        blocked: 'not_again',
+        reportAgain: { allowed: false, who: 'manager_ceo', message: 'Claim RC-00002 was reviewed and rejected; only a Manager or the CEO can report it again.', until: null },
+        previousClaims: [{ code: 'RC-00002', reportedAt: '2026-11-12T06:00:00Z', workerLeftOn: '2026-11-11T00:00:00Z', reason: 'resigned', decision: 'rejected', decisionReason: 'Owner says he still works', rejectionCode: 'reviewed', decidedBy: 'Ravi Shankar', decidedAt: '2026-11-13T06:00:00Z' }],
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Report worker left' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText('The last claim was rejected. Only a Manager or the CEO can report it again.')).toBeInTheDocument();
+    expect(within(dialog).getByText(/RC-00002 · reported 12 Nov 2026 · rejected · reviewed and rejected · “Owner says he still works” · Ravi Shankar/)).toBeInTheDocument();
+    expect(within(dialog).queryByLabelText(/Date the worker left/)).not.toBeInTheDocument();
+  });
+
+  it('after a fixable rejection, the form says it can be reported once more and until when', async () => {
+    openPlacement({
+      'GET /placements/pl42/worker-left': form({
+        reportAgain: { allowed: true, who: 'anyone', message: 'x', until: '2026-11-18' },
+        previousClaims: [{ code: 'RC-00002', reportedAt: '2026-11-12T06:00:00Z', workerLeftOn: '2026-11-11T00:00:00Z', reason: 'resigned', decision: 'rejected', decisionReason: 'Wrong date', rejectionCode: 'wrong_details', decidedBy: 'Ravi Shankar', decidedAt: null }],
+      }),
+    });
+    await userEvent.click(await screen.findByRole('button', { name: 'Report worker left' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(await within(dialog).findByText(/can be reported once more, until 18 Nov 2026/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/wrong date or detail \(can be fixed\)/)).toBeInTheDocument();
+    expect(within(dialog).getByLabelText(/Date the worker left/)).toBeInTheDocument();
   });
 
   it('shows the server’s refusal in the form (e.g. outside the guarantee window)', async () => {

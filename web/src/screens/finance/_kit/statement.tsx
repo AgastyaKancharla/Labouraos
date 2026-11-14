@@ -42,7 +42,7 @@ export function AddFromStatement({ variant = 'primary' }: { variant?: 'primary' 
   };
   const mutation = useMutation({
     mutationFn: () =>
-      api.post('/payments/bank-credits', {
+      api.post<{ match?: { status: string; paymentId: string | null }; closedDay?: string | null }>('/payments/bank-credits', {
         bankUtr: utr.trim(),
         amountPaise,
         // The statement's date and time are Indian time; with no time, midday that day.
@@ -50,13 +50,16 @@ export function AddFromStatement({ variant = 'primary' }: { variant?: 'primary' 
         payerName: payerName.trim() || undefined,
         remark: remark.trim() || undefined,
       }),
-    onSuccess: () => {
-      toast.success(`${formatINR(amountPaise ?? 0)} added from the statement · UTR ${utr.trim()}`);
+    onSuccess: (res) => {
+      const matched = res?.match?.status === 'succeeded';
+      toast.success(`${formatINR(amountPaise ?? 0)} added from the statement · UTR ${utr.replace(/\s+/g, '').toUpperCase()}${matched ? ' · matched by its reference' : ''}`);
+      // The bank day was already closed: its closing no longer agrees with the books.
+      if (res?.closedDay) toast.error(`${res.closedDay} was already closed with the statement's balance. Check that day on Bank: it is marked as changed.`);
       setOpen(false);
       reset();
       void queryClient.invalidateQueries();
     },
-    onError: (e) => setError(e instanceof ApiError ? (e.status === 409 ? `UTR ${utr.trim()} is already in the books. Each statement line is added once.` : e.message) : 'Something went wrong. Try again.'),
+    onError: (e) => setError(e instanceof ApiError ? (e.status === 409 ? `UTR ${utr.replace(/\s+/g, '').toUpperCase()} is already in the books. Each statement line is added once.` : e.message) : 'Something went wrong. Try again.'),
   });
   const future = date > today;
   const missing = !date || !utr.trim() || !amountPaise || amountPaise <= 0 || future;
@@ -92,7 +95,7 @@ export function AddFromStatement({ variant = 'primary' }: { variant?: 'primary' 
             </FieldShell>
           </div>
           <MoneyField label="Amount credited" value={amountPaise} onChange={setAmountPaise} required />
-          <TextField label="UTR / reference" value={utr} onChange={setUtr} required inputMode="numeric" placeholder="12-digit UTR" hint="The bank's reference for this line. The same UTR is never added twice." />
+          <TextField label="UTR / reference" value={utr} onChange={setUtr} required placeholder="12-digit UTR" hint="The bank's reference for this line (spaces are ignored). The same UTR is never added twice." />
           <TextField label="Payer name (if shown)" value={payerName} onChange={setPayerName} />
           <TextField label="Narration / note" value={remark} onChange={setRemark} hint="Copy it as written; a payment reference here matches it automatically" />
           {error && (
@@ -123,6 +126,26 @@ export function SetAside({ id, amountPaise, size = 'compact' }: { id: string; am
       confirmLabel="Set it aside"
       run={(v) => api.post(`/payments/bank-credits/${encodeURIComponent(id)}/ignore`, { reason: String(v.reason).trim() })}
       success="Set aside — not Laboura's money"
+    />
+  );
+}
+
+/**
+ * "Undo set-aside" — the CEO only (owner decision 14 Nov): the credit goes back
+ * to "not matched", counted as received again, with a required reason
+ * (POST /payments/bank-credits/:id/undo-set-aside; refused in a closed month).
+ */
+export function UndoSetAside({ id, amountPaise, size = 'compact' }: { id: string; amountPaise: number; size?: 'compact' | 'regular' }) {
+  return (
+    <FormAction
+      label="Undo set-aside"
+      size={size}
+      title={`Undo the set-aside of ${formatINR(amountPaise)}`}
+      description="The credit goes back to “not matched”: it counts as received again and Finance matches or returns it. It is logged with your name and reason."
+      fields={[{ name: 'reason', kind: 'text', label: 'Why it is undone', required: true }]}
+      confirmLabel="Undo set-aside"
+      run={(v) => api.post(`/payments/bank-credits/${encodeURIComponent(id)}/undo-set-aside`, { reason: String(v.reason).trim() })}
+      success="Set-aside undone · the credit is back with Finance"
     />
   );
 }

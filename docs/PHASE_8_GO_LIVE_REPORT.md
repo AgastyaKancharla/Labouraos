@@ -138,7 +138,7 @@ Audit attribution: webhook-driven changes are logged against the CEO account (th
 `source: razorpayx_webhook` and the event id in the record.
 
 ### B2 — Cloudflare Access guard: fixed to verify the JWT; live verification outstanding
-`CloudflareAccessGuard` no longer trusts header presence. A new `CloudflareAccessVerifier`:
+`CloudflareAccessGuard` no longer trusts header presence. _(Later, 14 Nov: the guard was removed with the last old console; the same verifier is now used by `SiteRoutingMiddleware` for the office web app's staff pages.)_ A new `CloudflareAccessVerifier`:
 
 - reads the `Cf-Access-Jwt-Assertion` token and requires **RS256** (rejects `alg: none` and
   HS256-with-public-key confusion before any network call);

@@ -43,7 +43,7 @@ interface Day {
   bankClosingPaise: number | null;
   differencePaise: number | null;
   unmatched: number;
-  closed: { bankClosingPaise: number; differencePaise: number; note: string | null; closedBy: string | null; closedAt: string } | null;
+  closed: { bankClosingPaise: number; differencePaise: number; note: string | null; closedBy: string | null; closedAt: string; stale?: boolean; differenceNowPaise?: number } | null;
 }
 interface Response {
   lines: Line[];
@@ -164,14 +164,19 @@ export default function Bank() {
       key: 'state',
       header: 'Status',
       cell: (r) =>
-        r.closed ? (
+        r.closed?.stale ? (
+          <>
+            <StatusPill tone="warn">Changed after closing</StatusPill>
+            <span className="fin-sub fin-less">A line was added after the day was closed · difference now {formatINR(r.closed.differenceNowPaise ?? 0)}</span>
+          </>
+        ) : r.closed ? (
           <StatusPill tone="good">Closed{r.closed.closedBy ? ` by ${r.closed.closedBy}` : ''}</StatusPill>
         ) : r.unmatched > 0 ? (
           <StatusPill tone="crit">{r.unmatched} to sort out</StatusPill>
         ) : (
           <CloseDay d={r} />
         ),
-      csv: (r) => (r.closed ? 'closed' : r.unmatched ? 'lines to sort out' : 'open'),
+      csv: (r) => (r.closed?.stale ? 'changed after closing' : r.closed ? 'closed' : r.unmatched ? 'lines to sort out' : 'open'),
     },
   ];
   const nextToClose = [...(d?.days ?? [])].reverse().find((x) => !x.closed && x.unmatched === 0 && (!d?.summary.lastClosedDay || x.day > d.summary.lastClosedDay));

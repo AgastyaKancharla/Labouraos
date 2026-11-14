@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { previousClaimsText, type PreviousClaim } from '../../ceo/_kit/claims';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router-dom';
 import { Button } from '../../../components/Button';
@@ -195,6 +196,9 @@ export default function ManagerRequestDetail() {
     before.push(['Reported in time', d.reportedWithinDeadline ? 'Yes · within 7 days' : 'No']);
     before.push(['Fee paid in full', d.feePaidInFull ? 'Yes' : 'No']);
     before.push(['Exit call', d.exitCallRecorded ? 'Recorded' : 'Not recorded yet']);
+    // Earlier claims on this placement and why each was decided (owner decision 14 Nov).
+    const earlier = previousClaimsText(d.previousClaims as PreviousClaim[] | undefined);
+    before.push(['Earlier claims', earlier || 'None']);
     if (d.hoursLeft !== undefined && d.hoursLeft !== null) before.push(['48-hour limit', `${String(d.hoursLeft)} h left`]);
   }
   if (r.kind === 'target_change') before.push(['Change', `${String(d.metricLabel ?? '')}: ${d.from ?? '—'} → ${String(d.to ?? '—')}`]);

@@ -64,6 +64,25 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
       : <Banner tone="ok" message={t('fa11.left.sent', { hours: d.guarantee.decisionHours })} testID="left-saved" />;
   }
   if (d.blocked === 'open_claim' && d.openClaim) return <Banner tone="info" message={t('fa11.left.waiting', { code: d.openClaim.code })} testID="left-waiting" />;
+  const earlier = d.previousClaims?.length ? (
+    <View style={styles.form} testID="left-previous">
+      <Text variant="label">{t('fa11.left.previous')}</Text>
+      {d.previousClaims.map((c) => (
+        <Text key={c.code} variant="muted">
+          {`${c.code} · ${formatDayIst(c.reportedAt)} · ${c.decision === 'accepted' ? t('fa11.left.accepted') : t('fa11.left.rejected')}${c.rejectionCode ? ` · ${t(`fa11.left.rejection.${c.rejectionCode}` as MessageKey)}` : ''}${c.decisionReason ? ` · “${c.decisionReason}”` : ''}`}
+        </Text>
+      ))}
+    </View>
+  ) : null;
+  // Rejected before and not allowed again for this person: say why (owner decision 14 Nov).
+  if (d.blocked === 'not_again' && d.reportAgain) {
+    return (
+      <Card title={t('fa11.left.title')}>
+        <Banner tone="warn" message={d.reportAgain.who === 'nobody' ? t('fa11.left.againNever') : t('fa11.left.againManager')} testID="left-not-again" />
+        {earlier}
+      </Card>
+    );
+  }
   if (!d.canReport) return null;
 
   const notCovered = d.reasons.notCovered.includes(reason);
@@ -79,6 +98,8 @@ export function WorkerLeft({ placement: p }: { placement: PlacementView }) {
   return (
     <Card title={t('fa11.left.title')}>
       <Text variant="muted">{t('fa11.left.intro', { name: p.candidate.firstName, days: d.guarantee.windowDays, hours: d.guarantee.decisionHours })}</Text>
+      {d.reportAgain?.allowed && d.reportAgain.until ? <Banner tone="info" message={t('fa11.left.againOnce', { date: formatDayIst(`${d.reportAgain.until}T12:00:00+05:30`) })} testID="left-again-once" /> : null}
+      {earlier}
       {!open ? (
         <Button label={t('fa11.left.open')} variant="secondary" loading={form.isRefetching} onPress={() => void openForm()} testID="left-open" />
       ) : (
