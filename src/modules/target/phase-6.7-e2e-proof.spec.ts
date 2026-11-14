@@ -15,6 +15,7 @@ import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-p
 import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Phase 6.7 Gate: End-to-End Proof', () => {
   let app: INestApplication;
@@ -369,6 +370,7 @@ describe('Phase 6.7 Gate: End-to-End Proof', () => {
     console.log(`[Candidate Created] ID: ${candidateId}, code: ${createCandidateRes.body.code}`);
 
     // Candidate payment link creation
+    await giveVerifiedId(prisma, candidateId);
     const paymentRes = await request(app.getHttpServer())
       .post(`/job-seekers/${candidateId}/activation-payment`)
       .set('Authorization', `Bearer ${ca1Token}`)

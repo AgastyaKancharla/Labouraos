@@ -12,6 +12,7 @@ import { MessagingService } from '../message/messaging.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { UIDAI_SAMPLE_SECURE_QR } from '../aadhaar-qr/testing/uidai-sample-qr';
+import { captureNonceFor, LIVE_CARD_JPEG } from '../../test-support/id-card-upload';
 
 jest.setTimeout(120000);
 
@@ -250,13 +251,15 @@ describe('Phase 20 gate end-to-end proof', () => {
       .expect(201);
     expect(aadhaar.body).toMatchObject({ method: 'aadhaar_qr', result: 'name_mismatch', verifiedByUidai: true, nameMatches: false, offerOtherId: true });
     // Another ID (rev 154): a live photo of his PAN card and the number; pending until the Team Lead approves.
+    const captureNonce1 = await captureNonceFor(server(), `/registration/${token}/other-id`, requestId);
     const pan = await request(server())
       .post(`/registration/${token}/other-id`)
       .field('requestId', requestId)
+      .field('captureNonce', captureNonce1)
       .field('idType', 'pan')
       .field('idNumber', 'ABCDE1234F')
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0]), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect(pan.body).toMatchObject({ method: 'pan', status: 'pending', idNumberLast4: '234F' });
     const notYet = await request(server()).post(`/registration/${token}/terms-and-payment`).send({ requestId, acceptTerms: true }).expect(400);
@@ -506,13 +509,15 @@ describe('Phase 20 gate end-to-end proof', () => {
       .attach('photo', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]), Buffer.from('referral-camera')]), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     const idOtp = await verifiedOtp(referralPhone);
+    const captureNonce2 = await captureNonceFor(server(), `/referral-registration/${referralToken}/other-id`, idOtp);
     const idResult = await request(server())
       .post(`/referral-registration/${referralToken}/other-id`)
       .field('requestId', idOtp)
+      .field('captureNonce', captureNonce2)
       .field('idType', 'pan')
       .field('idNumber', 'ABCDE1234F')
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0]), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect(idResult.body).toMatchObject({ status: 'pending', nextStep: 'team_lead_check' });
     await prisma.referralIdentityVerification.update({ where: { id: idResult.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });

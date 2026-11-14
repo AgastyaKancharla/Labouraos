@@ -6,7 +6,7 @@ import { IdCheckAccessService } from './id-check-access.service';
 export type StopSubjectType = 'job_seeker' | 'referral';
 
 export const UNDER_18_STOP_MESSAGE =
-  'Registration stops here: a signed Aadhaar QR shows this person is under 18. Only a Manager or the CEO can lift this stop.';
+  "Registration stops here: a signed Aadhaar QR shows this person is under 18. If it was a family member's card by mistake, a Manager or the CEO can lift this stop.";
 
 /** Lifting the stop needs a real reason, not a tick. */
 export const UNDER_18_LIFT_REASON_MIN = 10;

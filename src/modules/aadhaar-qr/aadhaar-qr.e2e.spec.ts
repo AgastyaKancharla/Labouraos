@@ -10,6 +10,7 @@ import { verifiedOtpFor } from '../../test-support/verified-otp';
 import { UIDAI_SAMPLE_SECURE_QR } from './testing/uidai-sample-qr';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
+import { encode as encodeJpeg } from 'jpeg-js';
 
 jest.setTimeout(180000);
 
@@ -35,21 +36,40 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
   let caller: Person;
   let manager: Person;
   let otherManager: Person;
-  /** A JPEG by its first bytes: a live camera photo of an ID card. */
-  const CARD_PHOTO = Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0, 0, 1, 0, 1, 0, 0]);
-  const otherId = (path: string, fields: Record<string, string>, photo: Buffer | null = CARD_PHOTO, auth?: Person) => {
+  /** A real JPEG the size the capture canvas makes: a live camera photo of an ID card. */
+  const CARD_PHOTO = (() => {
+    const width = 640;
+    const height = 400;
+    const data = Buffer.alloc(width * height * 4, 0x90);
+    return Buffer.from(encodeJpeg({ data, width, height }, 80).data);
+  })();
+  /**
+   * Sends another ID as the page does: first the camera's one-time token (POST …/capture-nonce),
+   * then the photo with it. nonce: a token to use instead (null sends none).
+   */
+  const otherId = async (path: string, fields: Record<string, string>, photo: Buffer | null = CARD_PHOTO, auth?: Person, nonce?: string | null) => {
+    let captureNonce = nonce;
+    if (captureNonce === undefined) {
+      let ask = request(app.getHttpServer()).post(`${path}/capture-nonce`);
+      if (auth) ask = ask.set('Authorization', `Bearer ${token(auth)}`);
+      const issued = await ask.send(fields.requestId ? { requestId: fields.requestId } : {});
+      captureNonce = (issued.body as { captureNonce?: string })?.captureNonce ?? null;
+    }
     let req = request(app.getHttpServer()).post(path);
     if (auth) req = req.set('Authorization', `Bearer ${token(auth)}`);
     for (const [k, v] of Object.entries(fields)) req = req.field(k, v);
+    if (captureNonce) req = req.field('captureNonce', captureNonce);
     return photo ? req.attach('photo', photo, { filename: 'card.jpg', contentType: 'image/jpeg' }) : req;
   };
+  /** The decider opens the photos (GET …/aadhaar-check), as T-Verify's "Show photos" does. */
+  const openPhotos = (p: Person, id: string, subjects = 'job-seekers') => get(p, `/identity/${subjects}/${id}/aadhaar-check`).expect(200);
 
   const token = (p: Person) => jwt.sign({ sub: p.id, email: `${p.id}@laboura.local`, role: p.role, code: p.code });
   const get = (p: Person, path: string) => request(app.getHttpServer()).get(path).set('Authorization', `Bearer ${token(p)}`);
   const post = (p: Person, path: string, body: Record<string, unknown> = {}) =>
     request(app.getHttpServer()).post(path).set('Authorization', `Bearer ${token(p)}`).send(body);
 
-  async function make(role: string, prefix: string, reportsToId?: string): Promise<Person> {
+  async function make(role: string, prefix: string, reportsToId?: string, city = 'Bengaluru'): Promise<Person> {
     const agent = role === 'call_agent' || role === 'field_agent';
     const row = await prisma.staff.create({
       data: {
@@ -58,6 +78,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
         email: `${prefix.toLowerCase()}.qr.${staffIds.length}.${stamp}@laboura.local`,
         passwordHash: 'hash',
         role,
+        city,
         status: 'active',
         teamLeadId: agent ? (reportsToId ?? null) : null,
         reportsToId: reportsToId ?? null,
@@ -67,7 +88,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     return row;
   }
 
-  async function seeker(n: number, name = 'Sumit Kumar') {
+  async function seeker(n: number, name = 'Sumit Kumar', registeredByStaffId?: string | null, city = 'Bengaluru') {
     const phone = `+919${stamp.slice(-7)}${String(n).padStart(2, '0')}`;
     const row = await prisma.jobSeeker.create({
       data: {
@@ -80,7 +101,8 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
         preferredCallWindowStart: '09:00',
         preferredCallWindowEnd: '18:00',
         status: 'consented',
-        registeredByStaffId: fielder.id,
+        city,
+        registeredByStaffId: registeredByStaffId === undefined ? fielder.id : registeredByStaffId,
         photoStoragePath: `job-seekers/qr-${stamp}-${n}/profile-photo`,
         photoTakenAt: new Date(),
       },
@@ -129,6 +151,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     const verifications = await prisma.identityVerification.findMany({ where: { jobSeekerId: { in: seekerIds } }, select: { id: true } });
     await prisma.idCheckDetail.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.aadhaarQrAttempt.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.idCaptureNonce.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.reviewFlag.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.teamLeadCheck.deleteMany({ where: { subjectId: { in: seekerIds } } });
     const seekers = await prisma.jobSeeker.findMany({ where: { id: { in: seekerIds } }, select: { code: true } });
@@ -208,7 +231,10 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     expect((await otherId(path, { requestId, idType: 'pan', idNumber: '12345', captureSource: 'live_camera' })).status).toBe(400);
     expect((await otherId(path, { idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' })).status).toBe(400);
 
-    const sent = await otherId(path, { requestId, idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' }).expect(201);
+    // M-1: no camera token, or one already used, is refused.
+    expect((await otherId(path, { requestId, idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' }, CARD_PHOTO, undefined, null)).status).toBe(400);
+    const sent = await otherId(path, { requestId, idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' });
+    expect(sent.status).toBe(201);
     expect(sent.body).toMatchObject({ method: 'pan', status: 'pending', idNumberLast4: '234F' });
     const row = await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: s.id, method: 'pan' } });
     expect(row).toMatchObject({ vendor: 'team_lead_check', status: 'pending', last4: '234F', vendorReference: null });
@@ -228,8 +254,11 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     const tv = (list.body.rows as Array<{ person: { id: string }; idCheck: Record<string, unknown> }>)[0];
     expect(tv.person.id).toBe(s.id);
     expect(tv.idCheck).toMatchObject({ method: 'pan', status: 'pending', waitingForTeamLead: true, idNumberLast4: '234F', idPhotoKept: true, verifiedByUidai: false });
+    // M-2: approving a card nobody opened is refused.
+    expect((await post(lead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(400);
     const view = await get(lead, `/identity/job-seekers/${s.id}/aadhaar-check`).expect(200);
     expect(view.body.check).toMatchObject({ method: 'pan', idNumberLast4: '234F', photo: { kind: 'id_card_photo', kept: true } });
+    expect(view.body.decision).toMatchObject({ canDecide: true, mode: 'own_team' });
     expect(view.body.idPhotoUrl).toEqual(expect.any(String));
     expect(await prisma.auditLog.count({ where: { action: 'identity.id_check_viewed', entityCode: s.code, actorId: lead.id } })).toBe(1);
 
@@ -244,7 +273,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
   it('"Fake · flag it" rejects a pending other ID and deletes the card photo', async () => {
     const s = await seeker(6, 'Ravi Shankar');
     const { token: linkToken, requestId } = await registrationLink(s);
-    await otherId(`/registration/${linkToken}/other-id`, { requestId, idType: 'voter_id', idNumber: 'ABC1234567', captureSource: 'live_camera' }).expect(201);
+    expect((await otherId(`/registration/${linkToken}/other-id`, { requestId, idType: 'voter_id', idNumber: 'ABC1234567', captureSource: 'live_camera' })).status).toBe(201);
     const res = await post(lead, `/team-lead/registrations/${s.id}/check`, { verdict: 'fake', note: 'The card photo is a printout' }).expect(200);
     expect(res.body).toMatchObject({ otherIdDecided: 'failed', idPhotoDeleted: true });
     const row = await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: s.id, method: 'voter_id' } });
@@ -365,5 +394,94 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     await app.get(AnonymisationService).anonymise('job_seeker', working.id, 'DPDP erasure request', ceo.id);
     expect(await prisma.idCheckDetail.count({ where: { subjectId: working.id } })).toBe(0);
     expect(await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: working.id } })).toMatchObject({ last4: null, vendorReference: null, status: 'verified' });
+  });
+
+  describe('rev 169: nobody approves the other ID of a person they registered', () => {
+    type Row = { person: { id: string }; approval: { canDecide: boolean; needsAnotherTeamLead: boolean; fromAnotherTeam: boolean; reason: string | null } };
+    async function pending(n: number, registeredBy: string | null, city = 'Bengaluru') {
+      const s = await seeker(n, 'Ravi Shankar', registeredBy, city);
+      const { token: linkToken, requestId } = await registrationLink(s);
+      expect((await otherId(`/registration/${linkToken}/other-id`, { requestId, idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' })).status).toBe(201);
+      return s;
+    }
+
+    it('a Team Lead\'s own registration: refused for him (marked on his T-Verify), decided by another Team Lead of the city', async () => {
+      const s = await pending(20, lead.id);
+      const mine = await get(lead, '/team-lead/registrations').expect(200);
+      expect((mine.body.rows as Row[]).find((r) => r.person.id === s.id)?.approval).toMatchObject({ canDecide: false, needsAnotherTeamLead: true, fromAnotherTeam: false });
+      await openPhotos(lead, s.id);
+      for (const verdict of ['ok', 'fake']) {
+        const refused = await post(lead, `/team-lead/registrations/${s.id}/check`, { verdict, note: 'x' });
+        expect(refused.status).toBe(403);
+        expect(refused.body.message).toMatch(/another Team Lead/);
+      }
+      expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id } })).toBe(0);
+
+      const theirs = await get(otherLead, '/team-lead/registrations').expect(200);
+      expect((theirs.body.rows as Row[]).find((r) => r.person.id === s.id)?.approval).toMatchObject({ canDecide: true, needsAnotherTeamLead: true, fromAnotherTeam: true });
+      // The selfie link and the ID check open for him too (audited); the approval needs that first.
+      expect((await post(otherLead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(400);
+      const view = await openPhotos(otherLead, s.id);
+      expect(view.body.decision).toMatchObject({ canDecide: true, mode: 'another_team_lead' });
+      expect((await get(otherLead, `/team-lead/registrations/${s.id}/selfie`)).status).toBe(200);
+      // A Manager is not the fallback while another Team Lead can decide.
+      await openPhotos(manager, s.id);
+      expect((await post(manager, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' })).status).toBe(403);
+      const ok = await post(otherLead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' }).expect(200);
+      expect(ok.body).toMatchObject({ otherIdDecided: 'verified', idPhotoDeleted: true });
+      // A second decision finds nothing pending to approve.
+      expect((await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: s.id, method: 'pan' } })).status).toBe('verified');
+    });
+
+    it('no Team Lead\'s team (registered by a Manager or by nobody): any other Team Lead of the city, never the registrar', async () => {
+      const byManager = await pending(21, manager.id);
+      await openPhotos(manager, byManager.id);
+      expect((await post(manager, `/identity/job-seekers/${byManager.id}/other-id/decision`, { verdict: 'ok' })).status).toBe(403);
+      await openPhotos(lead, byManager.id);
+      expect((await post(lead, `/team-lead/registrations/${byManager.id}/check`, { verdict: 'ok' })).status).toBe(200);
+
+      const byNobody = await pending(22, null);
+      await openPhotos(otherLead, byNobody.id);
+      expect((await post(otherLead, `/team-lead/registrations/${byNobody.id}/check`, { verdict: 'fake', note: 'Not the person on the selfie' })).status).toBe(200);
+      expect((await prisma.identityVerification.findFirstOrThrow({ where: { jobSeekerId: byNobody.id, method: 'pan' } })).status).toBe('failed');
+    });
+
+    it('no other active Team Lead in the city: a Manager of that city or the CEO decides, through the waiting list', async () => {
+      const city = `Testpur${stamp}`;
+      const cityManager = await make('manager', 'MGRT', ceo.id, city);
+      const cityLead = await make('team_lead', 'TLT', cityManager.id, city);
+      const s = await pending(23, cityLead.id, city);
+      expect(await prisma.reviewFlag.count({ where: { kind: 'other_id_needs_manager', subjectId: s.id, status: 'open' } })).toBe(1);
+      await openPhotos(cityLead, s.id);
+      expect((await post(cityLead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(403);
+      // Another city's Team Lead never sees or decides it.
+      expect(((await get(otherLead, '/team-lead/registrations').expect(200)).body.rows as Row[]).some((r) => r.person.id === s.id)).toBe(false);
+      expect((await post(otherLead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(404);
+
+      const waiting = (p: Person) => get(p, '/identity/other-id/waiting').expect(200).then((r) => (r.body.rows as Array<{ person: { id: string } }>).map((row) => row.person.id));
+      expect(await waiting(cityManager)).toContain(s.id);
+      expect(await waiting(ceo)).toContain(s.id);
+      expect(await waiting(manager)).not.toContain(s.id);
+      expect((await get(lead, '/identity/other-id/waiting')).status).toBe(403);
+      expect((await post(cityManager, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' })).status).toBe(400);
+      await openPhotos(cityManager, s.id);
+      expect((await post(manager, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' })).status).toBe(403);
+      const ok = await post(cityManager, `/identity/job-seekers/${s.id}/other-id/decision`, { verdict: 'ok' }).expect(200);
+      expect(ok.body).toMatchObject({ verdict: 'ok', otherIdDecided: 'verified' });
+      expect(await prisma.reviewFlag.count({ where: { kind: 'other_id_needs_manager', subjectId: s.id, status: 'resolved' } })).toBe(1);
+      expect(await waiting(ceo)).not.toContain(s.id);
+    });
+
+    it('Laboura Field: the camera token belongs to the field agent who registered the person, and works once', async () => {
+      const s = await seeker(24, 'Ravi Shankar');
+      expect((await post(otherFielder, `/field-work/job-seekers/${s.id}/other-id/capture-nonce`)).status).toBe(404);
+      const issued = await post(fielder, `/field-work/job-seekers/${s.id}/other-id/capture-nonce`).expect(200);
+      expect(issued.body).toMatchObject({ captureNonce: expect.any(String), expiresInSeconds: 120 });
+      const path = `/field-work/job-seekers/${s.id}/other-id`;
+      const fields = { idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' };
+      expect((await otherId(path, fields, CARD_PHOTO, fielder, issued.body.captureNonce)).status).toBe(200);
+      expect((await otherId(path, fields, CARD_PHOTO, fielder, issued.body.captureNonce)).status).toBe(400);
+      expect(await prisma.idCaptureNonce.count({ where: { subjectId: s.id, usedAt: { not: null } } })).toBe(1);
+    });
   });
 });

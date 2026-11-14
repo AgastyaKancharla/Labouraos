@@ -120,13 +120,28 @@ export class RegistrationController {
   async submitOtherId(
     @Param('token') token: string,
     @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
-    @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown },
+    @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown; captureNonce?: unknown },
   ) {
     const link = await this.requireRegistrationLink(token);
     if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
-    return this.otherIds.submitForJobSeeker(link.subjectId, { idType: body.idType, idNumber: body.idNumber, captureSource: body.captureSource, photo }, { channel: 'link' });
+    return this.otherIds.submitForJobSeeker(
+      link.subjectId,
+      { idType: body.idType, idNumber: body.idNumber, captureSource: body.captureSource, captureNonce: body.captureNonce, photo },
+      { channel: 'link' },
+    );
+  }
+
+  /** The page opens the camera for the photo of the ID card: a one-time token for that photo (2 minutes, one upload). */
+  @Post(':token/other-id/capture-nonce')
+  @Public(TOKEN_PAGE)
+  async otherIdCaptureNonce(@Param('token') token: string, @Body() body: { requestId?: string }) {
+    const link = await this.requireRegistrationLink(token);
+    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    return this.otherIds.issueCaptureNonce('job_seeker', link.subjectId);
   }
 
   @Get(':token/terms')

@@ -198,6 +198,10 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
         paymentReceivedAt: null,
       };
       prisma.jobSeeker.findUnique.mockResolvedValueOnce(candidate);
+      // A verified ID (no under-18 stop): nobody is charged before it (L5).
+      prisma.identityVerification.findFirst.mockImplementation(async (args: { where?: Record<string, unknown> }) =>
+        args?.where && 'under18LiftedAt' in args.where ? null : { status: 'verified', nameMatches: true, isAdult: true },
+      );
       prisma.payment.findFirst.mockResolvedValueOnce(null); // no existing pending payment
       prisma.payment.create.mockResolvedValueOnce({
         id: 'pay-1',

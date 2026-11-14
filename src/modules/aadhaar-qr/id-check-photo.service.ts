@@ -6,6 +6,8 @@ import { maskedAadhaarReference } from './secure-qr.parser';
 
 /** An ID photo is kept until the Team Lead's decision, and never longer than this (guide, 14 Nov). */
 export const ID_PHOTO_MAX_DAYS = 30;
+/** Rev 169: a card photo that expired before anyone decided closes the check; the person is asked for a new photo. */
+export const ID_PHOTO_EXPIRED_REASON = 'The photo of the ID card expired before it was checked: take a new photo';
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 export type IdPhotoKind = 'aadhaar_qr' | 'id_card_photo';
@@ -81,7 +83,13 @@ export class IdCheckPhotoService {
       await this.prisma.idCheckDetail.update({ where: { id: detailId }, data: { photoPath: path, photoExpiresAt: IdCheckPhotoService.expiryFrom(now) } });
       return true;
     } catch (error) {
-      await this.photos.delete(path).catch(() => undefined);
+      // The photo is in storage but not recorded: take it out again. If that fails too, say so loudly
+      // (nothing points at the file any more, so a person has to remove it), then fail the caller.
+      try {
+        await this.photos.delete(path);
+      } catch (deleteError) {
+        this.logger.error(`ID photo ${path} was stored but could not be recorded or deleted (${(deleteError as Error).message}): delete it from the candidate-photos bucket`);
+      }
       throw error;
     }
   }
@@ -100,20 +108,61 @@ export class IdCheckPhotoService {
     return deleted;
   }
 
-  /** Daily: ID photos past their 30 days (or whose earlier delete failed), oldest first. */
+  /**
+   * Daily: ID photos past their 30 days (or whose earlier delete failed), oldest first. A card photo
+   * of another ID whose check is still pending closes that check as failed (rev 169): nobody can
+   * approve a card nobody can see any more, and the person is asked for a new photo.
+   */
   async deleteExpiredPhotos(now = new Date(), dryRun = false): Promise<number> {
     const rows = await this.prisma.idCheckDetail.findMany({
       where: { photoPath: { not: null }, photoExpiresAt: { lte: now } },
-      select: { id: true, photoPath: true, verificationId: true, subjectType: true },
+      select: { id: true, photoPath: true, verificationId: true, subjectType: true, kind: true },
       orderBy: { photoExpiresAt: 'asc' },
       take: 500,
     });
     if (dryRun) return rows.length;
     let deleted = 0;
     for (const row of rows) {
+      if (row.kind === 'id_card_photo') await this.closeExpiredCheck(row.subjectType, row.verificationId, now);
       if (await this.deleteOne(row, 'expired', 'system', row.subjectType, now)) deleted += 1;
     }
     return deleted;
+  }
+
+  private async closeExpiredCheck(subjectType: string, verificationId: string, now: Date): Promise<void> {
+    const where = { id: verificationId, status: 'pending', vendor: 'team_lead_check' };
+    const data = { status: 'failed', failureReason: ID_PHOTO_EXPIRED_REASON };
+    const changed =
+      subjectType === 'referral'
+        ? await this.prisma.referralIdentityVerification.updateMany({ where, data })
+        : await this.prisma.identityVerification.updateMany({ where, data });
+    if (changed.count !== 1) return;
+    await this.audit.log({
+      actorId: 'system',
+      action: 'identity.other_id_expired',
+      entityType: subjectType === 'referral' ? 'referral_identity_verification' : 'identity_verification',
+      entityCode: verificationId,
+      before: { status: 'pending' },
+      after: { status: 'failed', reason: 'photo_expired', at: now.toISOString() },
+      changedFields: ['status'],
+    });
+  }
+
+  /**
+   * Has this staff member opened the photo of this check (an identity.id_check_viewed audit row with
+   * the ID photo link, written since the check was sent)? Approving a card unseen is refused.
+   */
+  async hasViewedPhoto(actorId: string, subjectType: string, subjectCode: string, verificationId: string, since: Date): Promise<boolean> {
+    const rows = await this.prisma.auditLog.findMany({
+      where: { actorId, action: 'identity.id_check_viewed', entityType: subjectType, entityCode: subjectCode, createdAt: { gte: since } },
+      select: { after: true },
+      orderBy: { createdAt: 'desc' },
+      take: 50,
+    });
+    return rows.some((row) => {
+      const after = row.after as Record<string, unknown> | null;
+      return after?.verificationId === verificationId && after?.idPhotoLinkIssued === true;
+    });
   }
 
   private async deleteOne(

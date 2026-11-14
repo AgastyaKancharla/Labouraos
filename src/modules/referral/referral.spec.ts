@@ -11,6 +11,7 @@ import { MessagingService } from '../message/messaging.service';
 import { publicPagePath } from '../../common/public-pages';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { captureNonceFor, LIVE_CARD_JPEG } from '../../test-support/id-card-upload';
 
 /** A live camera JPEG as far as the API can tell (its first bytes). */
 const cameraJpeg = (tag: string) => Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1]), Buffer.from(tag)]);
@@ -21,13 +22,15 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
 
   /** Another ID (rev 154): a live photo of the PAN card and its number, pending; then the Team Lead's "Looks right". */
   async function passPartnerId(token: string, requestId: string) {
+    const captureNonce1 = await captureNonceFor(app.getHttpServer(), `/referral-registration/${token}/other-id`, requestId);
     const sent = await request(app.getHttpServer())
       .post(`/referral-registration/${token}/other-id`)
       .field('requestId', requestId)
+      .field('captureNonce', captureNonce1)
       .field('idType', 'pan')
       .field('idNumber', 'ABCDE1234F')
       .field('captureSource', 'live_camera')
-      .attach('photo', cameraJpeg('pan-card'), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect(sent.body).toMatchObject({ status: 'pending', nextStep: 'team_lead_check' });
     await prisma.referralIdentityVerification.update({ where: { id: sent.body.verificationId }, data: { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: new Date() } });
@@ -557,22 +560,26 @@ describe('Referral Registration (Phase 2 Task 3)', () => {
       .attach('photo', cameraJpeg('camera-image-partner-page'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     // A raw Aadhaar number is refused before it reaches anything.
+    const captureNonce2 = await captureNonceFor(server, `/referral-registration/${token}/other-id`, requestId);
     await request(server)
       .post(`/referral-registration/${token}/other-id`)
       .field('requestId', requestId)
+      .field('captureNonce', captureNonce2)
       .field('idType', 'driving_licence')
       .field('idNumber', '2345 6789 0123')
       .field('captureSource', 'live_camera')
-      .attach('photo', cameraJpeg('card'), { filename: 'card.jpg', contentType: 'image/jpeg' })
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'card.jpg', contentType: 'image/jpeg' })
       .expect(400);
     // While the Team Lead hasn't checked the card, the partner waits (no UPI step).
+    const captureNonce3 = await captureNonceFor(server, `/referral-registration/${token}/other-id`, requestId);
     const sentId = await request(server)
       .post(`/referral-registration/${token}/other-id`)
       .field('requestId', requestId)
+      .field('captureNonce', captureNonce3)
       .field('idType', 'pan')
       .field('idNumber', 'ABCDE1234F')
       .field('captureSource', 'live_camera')
-      .attach('photo', cameraJpeg('pan-card'), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     const waiting = await request(server).get(`/referral-registration/${token}/status`).query({ requestId }).expect(200);
     expect(waiting.body).toMatchObject({ currentStep: 'id_check', idCheck: { lastResult: 'pending', waitingForTeamLead: true } });

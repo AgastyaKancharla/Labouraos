@@ -6,16 +6,19 @@ import { IdCheckPhotoService } from './id-check-photo.service';
 import { OtherIdService } from './other-id.service';
 import { Under18StopService } from './under18-stop.service';
 import { IdCheckAccessService } from './id-check-access.service';
+import { OtherIdApprovalService } from './other-id-approval.service';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 
 /**
  * The parts of the ID check the Team Lead screens and the daily retention run
  * need without the rest: ID photos (storage, deletion, short-lived links),
- * the sticky under-18 stop, and another ID checked by the Team Lead by eye.
+ * the sticky under-18 stop, and another ID checked by the Team Lead by eye
+ * (who approves it: OtherIdApprovalService, rev 169).
  * The candidate-photo storage comes from the global AnonymisationModule.
  */
 @Module({
-  imports: [PrismaModule, AuditModule, ReportingScopeModule],
-  providers: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService],
-  exports: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService],
+  imports: [PrismaModule, AuditModule, ReportingScopeModule, ReviewFlagModule],
+  providers: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService, OtherIdApprovalService],
+  exports: [IdCheckPhotoService, Under18StopService, OtherIdService, IdCheckAccessService, OtherIdApprovalService],
 })
 export class IdCheckPhotoModule {}

@@ -1,3 +1,4 @@
+import { ID_PHOTO_EXPIRED_REASON } from '../aadhaar-qr/id-check-photo.service';
 import {
   BadRequestException,
   Body,
@@ -171,12 +172,25 @@ export class ReferralRegistrationController {
   async submitOtherId(
     @Param('token') token: string,
     @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
-    @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown },
+    @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown; captureNonce?: unknown },
   ) {
     const link = await this.requireVerifiedLink(token, body?.requestId);
     await this.assertReadyForIdCheck(link.subjectId);
-    const outcome = await this.otherIds.submitForReferral(link.subjectId, { idType: body.idType, idNumber: body.idNumber, captureSource: body.captureSource, photo }, { channel: 'link' });
+    const outcome = await this.otherIds.submitForReferral(
+      link.subjectId,
+      { idType: body.idType, idNumber: body.idNumber, captureSource: body.captureSource, captureNonce: body.captureNonce, photo },
+      { channel: 'link' },
+    );
     return { ...outcome, nextStep: 'team_lead_check' };
+  }
+
+  /** The partner's page opens the camera for the photo of the ID card: a one-time token for that photo (2 minutes, one upload). */
+  @Post('referral-registration/:token/other-id/capture-nonce')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async otherIdCaptureNonce(@Param('token') token: string, @Body() body: { requestId?: string }) {
+    const link = await this.requireVerifiedLink(token, body?.requestId);
+    await this.assertReadyForIdCheck(link.subjectId);
+    return this.otherIds.issueCaptureNonce('referral', link.subjectId);
   }
 
   private async assertReadyForIdCheck(referralId: string) {
@@ -293,7 +307,7 @@ export class ReferralRegistrationController {
     const [base, referral, identity, account, stopped] = await Promise.all([
       this.status(link.subjectId, link.expiresAt),
       this.prisma.referral.findUnique({ where: { id: link.subjectId }, select: { code: true, name: true, type: true, language: true } }),
-      this.prisma.referralIdentityVerification.findFirst({ where: { referralId: link.subjectId }, orderBy: { createdAt: 'desc' }, select: { status: true, nameMatches: true, isAdult: true } }),
+      this.prisma.referralIdentityVerification.findFirst({ where: { referralId: link.subjectId }, orderBy: { createdAt: 'desc' }, select: { status: true, nameMatches: true, isAdult: true, failureReason: true } }),
       this.prisma.payoutAccount.findFirst({
         where: { ownerType: 'referral', ownerId: link.subjectId, status: { not: 'superseded' } },
         orderBy: { createdAt: 'desc' },
@@ -313,7 +327,9 @@ export class ReferralRegistrationController {
             ? 'name_mismatch'
             : identity.status === 'verified' && identity.isAdult === true
               ? 'verified'
-              : 'failed';
+              : identity.failureReason === ID_PHOTO_EXPIRED_REASON
+                ? 'photo_expired'
+                : 'failed';
     return {
       ...base,
       otpRequired: false,

@@ -55,6 +55,10 @@ export const REVIEW_FLAG_KINDS = [
   'aadhaar_cert_missing',
   /** Aadhaar QR (rev 154): the same Aadhaar (last 4 + date of birth + name) is already verified for another person — the Manager looks; never a block. */
   'aadhaar_duplicate_person',
+  /** Aadhaar QR: failed signatures on recent QR codes from several different people in a day — UIDAI may have changed its key early (CEO). */
+  'aadhaar_key_rotation_suspected',
+  /** Another ID (rev 169): no other Team Lead in the city can check it, so a Manager or the CEO approves it. */
+  'other_id_needs_manager',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];
@@ -71,4 +75,5 @@ export const CEO_OWNED_FLAG_KINDS: readonly string[] = [
   'payout_matches_staff',
   'bypass_suspected',
   'aadhaar_cert_missing',
+  'aadhaar_key_rotation_suspected',
 ];

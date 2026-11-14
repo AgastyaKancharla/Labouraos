@@ -1,3 +1,4 @@
+import { ID_PHOTO_EXPIRED_REASON } from '../aadhaar-qr/id-check-photo.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 
@@ -93,7 +94,8 @@ export interface JourneyStatus {
   idCheck: {
     /** Another ID is waiting for the Team Lead's check (rev 154): no payment until it is approved. */
     waitingForTeamLead: boolean;
-    lastResult: 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'failed';
+    /** photo_expired: the photo of another ID card expired before anyone checked it — take a new photo (rev 169). */
+    lastResult: 'none' | 'verified' | 'pending' | 'name_mismatch' | 'under_18' | 'photo_expired' | 'failed';
   };
   /** Registration stops before payment when he is under 18. */
   stopped: 'under_18' | null;
@@ -134,7 +136,9 @@ export function buildJourneyStatus(input: JourneyInput): JourneyStatus {
           ? 'name_mismatch'
           : verification.status === 'verified' && verification.isAdult === true
             ? 'verified'
-            : 'failed';
+            : verification.failureReason === ID_PHOTO_EXPIRED_REASON
+              ? 'photo_expired'
+              : 'failed';
 
   let paymentState: RegistrationPaymentState = 'not_started';
   if (paid) paymentState = 'confirmed';

@@ -9,6 +9,8 @@ import { OtpService } from '../../common/otp/otp.service';
 import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { giveVerifiedId } from '../../test-support/verified-id';
+import { captureNonceFor, LIVE_CARD_JPEG } from '../../test-support/id-card-upload';
 
 describe('Phase 20 terms-and-payment step and a second activation payment', () => {
   let app: INestApplication;
@@ -131,13 +133,15 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
 
   /** A live photo of his PAN card (pending), then the Team Lead's "Looks right" (rev 154). */
   async function passId(token: string, requestId: string) {
+    const captureNonce1 = await captureNonceFor(server(), `/registration/${token}/other-id`, requestId);
     const sent = await request(server())
       .post(`/registration/${token}/other-id`)
       .field('requestId', requestId)
+      .field('captureNonce', captureNonce1)
       .field('idType', 'pan')
       .field('idNumber', 'ABCDE1234F')
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0, 0x10, 0x4a, 0x46, 0x49, 0x46, 0, 1, 1, 0]), { filename: 'pan.jpg', contentType: 'image/jpeg' })
+      .attach('photo', LIVE_CARD_JPEG, { filename: 'pan.jpg', contentType: 'image/jpeg' })
       .expect(201);
     expect(sent.body.status).toBe('pending');
     // Pending: no terms, no payment yet.
@@ -272,6 +276,7 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       .expect(201);
     seekerIds.push(created.body.id);
     seekerCodes.push(created.body.code);
+    await giveVerifiedId(prisma, created.body.id);
     const activation = await request(server())
       .post(`/job-seekers/${created.body.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`)

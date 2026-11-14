@@ -9,6 +9,7 @@ import { caseSensitiveHttpAdapter } from './common/http/case-sensitive-routing';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
+import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
 
 export async function bootstrap() {
@@ -16,6 +17,7 @@ export async function bootstrap() {
   getPublicAppUrl();
   assertDurableUploadStorage();
   assertNoMockIdCheck();
+  assertUidaiCertificatesPinned();
   // Case-sensitive routing: /Job-Seekers/… is a 404, not /job-seekers/….
   const app = await NestFactory.create(AppModule, caseSensitiveHttpAdapter(), {
     bufferLogs: true,

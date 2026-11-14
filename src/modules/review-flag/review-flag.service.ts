@@ -69,14 +69,20 @@ export class ReviewFlagService {
     }
   }
 
-  async raise(params: RaiseReviewFlagParams) {
+  /**
+   * Raises a flag. With `options.tx` the flag is written on that transaction's
+   * connection (e.g. while an advisory lock is held, so a check-then-raise
+   * can't race) and its bell is left to the caller, who calls announce(flag.id)
+   * once the transaction has committed.
+   */
+  async raise(params: RaiseReviewFlagParams, options: { tx?: Prisma.TransactionClient } = {}) {
     if (!REVIEW_FLAG_KINDS.includes(params.kind)) {
       throw new BadRequestException(`Invalid review flag kind: '${params.kind}'`);
     }
 
     const code = await this.idService.generateCode('review_flag');
 
-    const flag = await this.prisma.reviewFlag.create({
+    const flag = await (options.tx ?? this.prisma).reviewFlag.create({
       data: {
         code,
         kind: params.kind,
@@ -93,8 +99,13 @@ export class ReviewFlagService {
         escalationNote: params.owner?.note ?? null,
       },
     });
-    await this.syncBell(flag.id);
+    if (!options.tx) await this.syncBell(flag.id);
     return flag;
+  }
+
+  /** The bell for a flag raised inside a transaction (raise with options.tx), after that transaction committed. */
+  async announce(flagId: string): Promise<void> {
+    await this.syncBell(flagId);
   }
 
   async list(actor: { id: string; role: string }, query?: ListReviewFlagsQuery) {

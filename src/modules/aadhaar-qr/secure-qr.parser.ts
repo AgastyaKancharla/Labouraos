@@ -216,6 +216,10 @@ export interface TrustedKey {
   key: KeyObject;
   /** Until when UIDAI signed new codes with it (a certificate's notAfter); null for a bare key. */
   notAfter?: Date | null;
+  /** From when it was valid (a certificate's notBefore); null for a bare key. */
+  notBefore?: Date | null;
+  /** SHA-256 fingerprint of the certificate (colon hex, as openssl prints it); null for a bare key. */
+  fingerprint256?: string | null;
 }
 
 /** A PEM certificate or a PEM public key → the key that checks signatures. */
@@ -223,9 +227,19 @@ export function trustedKeyFromPem(name: string, pem: string): TrustedKey {
   const text = pem.trim();
   if (text.includes('BEGIN CERTIFICATE')) {
     const cert = new X509Certificate(text);
-    return { name, key: cert.publicKey, notAfter: new Date(cert.validTo) };
+    return { name, key: cert.publicKey, notAfter: new Date(cert.validTo), notBefore: new Date(cert.validFrom), fingerprint256: cert.fingerprint256 };
   }
-  return { name, key: createPublicKey(text), notAfter: null };
+  return { name, key: createPublicKey(text), notAfter: null, notBefore: null, fingerprint256: null };
+}
+
+/**
+ * Whether a QR's time stamp falls inside the validity of the certificate whose
+ * key signed it. Outside it is only logged (UIDAI's own dates can be loose; a
+ * genuine signature is a genuine signature), never a refusal.
+ */
+export function issuedWithinValidity(issued: Date | null, key: Pick<TrustedKey, 'notBefore' | 'notAfter'>): boolean | null {
+  if (!issued || !key.notBefore || !key.notAfter) return null;
+  return issued.getTime() >= key.notBefore.getTime() && issued.getTime() <= key.notAfter.getTime();
 }
 
 /** The latest date any trusted certificate was valid to (null when none says). */

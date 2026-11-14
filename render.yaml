@@ -32,6 +32,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Aadhaar QR check: the SHA-256 fingerprints of the UIDAI certificates in
+      # src/modules/aadhaar-qr/certs, comma-separated, AFTER comparing each with
+      # UIDAI's own page (DEPLOY.md, go-live check). The service refuses to start
+      # until this matches the certificates in the code.
+      - key: UIDAI_CERT_FINGERPRINTS
+        sync: false
       - key: PROCESS_ROLE
         value: web
       # 1 = Render's own proxy. Use 2 once Cloudflare sits in front of Render.
@@ -203,6 +209,12 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Aadhaar QR check: the SHA-256 fingerprints of the UIDAI certificates in
+      # src/modules/aadhaar-qr/certs, comma-separated, AFTER comparing each with
+      # UIDAI's own page (DEPLOY.md, go-live check). The service refuses to start
+      # until this matches the certificates in the code.
+      - key: UIDAI_CERT_FINGERPRINTS
+        sync: false
       - key: PROCESS_ROLE
         value: worker
       - key: DATABASE_URL

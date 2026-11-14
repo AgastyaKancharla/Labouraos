@@ -13,6 +13,8 @@ import { IdCheckPhotoService } from './id-check-photo.service';
 import { IdCheckAccessService } from './id-check-access.service';
 import { AadhaarQrService } from './aadhaar-qr.service';
 import { OtherIdService } from './other-id.service';
+import { OtherIdApprovalService } from './other-id-approval.service';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { StopSubjectType, Under18StopService } from './under18-stop.service';
 
 type Authed = Request & { user: JwtPayload };
@@ -34,6 +36,8 @@ export class AadhaarQrController {
     private readonly idPhotos: IdCheckPhotoService,
     private readonly access: IdCheckAccessService,
     private readonly stops: Under18StopService,
+    private readonly approvals: OtherIdApprovalService,
+    private readonly flags: ReviewFlagService,
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photos: CandidatePhotoStorage,
@@ -58,7 +62,8 @@ export class AadhaarQrController {
   @Post('field-work/job-seekers/:id/aadhaar-qr')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('field_agent')
-  // The field agent's own registration (RbacGuard: own account), checked again below.
+  // RbacGuard checks the job seeker named by :id against the field agent's role scope; the rule that
+  // it is a job seeker he registered himself is assertOwnRegistration below.
   @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'param:id' })
   async fieldScan(@Req() req: Authed, @Param('id') id: string, @Body() body: { qrText?: unknown; captureSource?: string }) {
     await this.assertOwnRegistration(req, id);
@@ -74,17 +79,36 @@ export class AadhaarQrController {
   @Post('field-work/job-seekers/:id/other-id')
   @HttpCode(HttpStatus.OK)
   @RequireRoles('field_agent')
-  // The field agent's own registration (RbacGuard: own account), checked again below.
+  // RbacGuard checks the job seeker named by :id against the field agent's role scope; the rule that
+  // it is a job seeker he registered himself is assertOwnRegistration below.
   @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'param:id' })
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: 5 * 1024 * 1024 } }))
   async fieldOtherId(
     @Req() req: Authed,
     @Param('id') id: string,
     @UploadedFile() photo: { buffer: Buffer; mimetype: string } | undefined,
-    @Body() body: { idType?: unknown; idNumber?: unknown; captureSource?: unknown },
+    @Body() body: { idType?: unknown; idNumber?: unknown; captureSource?: unknown; captureNonce?: unknown },
   ) {
     await this.assertOwnRegistration(req, id);
-    return this.otherIds.submitForJobSeeker(id, { idType: body?.idType, idNumber: body?.idNumber, captureSource: body?.captureSource, photo }, { channel: 'field', staffId: req.user.sub });
+    return this.otherIds.submitForJobSeeker(
+      id,
+      { idType: body?.idType, idNumber: body?.idNumber, captureSource: body?.captureSource, captureNonce: body?.captureNonce, photo },
+      { channel: 'field', staffId: req.user.sub },
+    );
+  }
+
+  /**
+   * Laboura Field opens the camera for the photo of another ID card: a one-time token for that
+   * photo (2 minutes, one upload, this job seeker and this field agent).
+   */
+  @Post('field-work/job-seekers/:id/other-id/capture-nonce')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('field_agent')
+  // RbacGuard checks :id against the field agent's role scope; assertOwnRegistration checks it is his registration.
+  @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'param:id' })
+  async fieldCaptureNonce(@Req() req: Authed, @Param('id') id: string) {
+    await this.assertOwnRegistration(req, id);
+    return this.otherIds.issueCaptureNonce('job_seeker', id, { staffId: req.user.sub });
   }
 
   /**
@@ -95,6 +119,78 @@ export class AadhaarQrController {
    * QR, or of the card) next to the live selfie, both through 5-minute signed
    * links. Every view is audited. Agents never get this.
    */
+  /**
+   * Rev 169, the fallback: pending other IDs (PAN, driving licence, voter ID) that no other Team
+   * Lead of the city can check, for a Manager of that city or the CEO. Never their own registrations.
+   */
+  @Get('identity/other-id/waiting')
+  @RequireRoles('manager', 'ceo')
+  async waitingForManager(@Req() req: Authed) {
+    const actor = { id: req.user.sub, role: req.user.role };
+    const waiting = await this.approvals.waitingFor(actor, 'manager_or_ceo');
+    const rows = [];
+    for (const item of waiting) {
+      const select = { id: true, code: true, name: true, city: true, photoStoragePath: true, registeredByStaffId: true, createdAt: true } as const;
+      const person = item.subjectType === 'job_seeker' ? await this.prisma.jobSeeker.findUnique({ where: { id: item.id }, select }) : await this.prisma.referral.findUnique({ where: { id: item.id }, select });
+      const check = person ? await this.idPhotos.latestFor(item.subjectType, item.id) : null;
+      if (!person || !check) continue;
+      const registeredBy = person.registeredByStaffId ? await this.prisma.staff.findUnique({ where: { id: person.registeredByStaffId }, select: { name: true, role: true } }) : null;
+      rows.push({
+        subjectType: item.subjectType,
+        person: { id: person.id, code: person.code, name: person.name, city: person.city },
+        registeredBy,
+        hasSelfie: Boolean(person.photoStoragePath),
+        method: check.method,
+        idNumberLast4: check.idNumberLast4,
+        sentAt: check.checkedAt,
+        photoKept: check.photo.kept,
+      });
+    }
+    return { rows };
+  }
+
+  /**
+   * Rev 169, the fallback decision by a Manager or the CEO: "Looks right" or "Fake · flag it" on a
+   * pending other ID that no other Team Lead of the city can check. Same rules as T-Verify (never
+   * one's own registration, the photo must be kept and opened first, one decision wins, refused
+   * while an under-18 stop stands); "Fake" opens a flag for the Manager.
+   */
+  @Post('identity/:subjects/:id/other-id/decision')
+  @HttpCode(HttpStatus.OK)
+  @RequireRoles('manager', 'ceo')
+  async decideOtherId(@Req() req: Authed, @Param('subjects') subjects: string, @Param('id') id: string, @Body() body: { verdict?: unknown; note?: unknown }) {
+    const subjectType = subjectTypeOf(subjects);
+    const verdict = body?.verdict === 'ok' ? 'ok' : body?.verdict === 'fake' ? 'fake' : null;
+    if (!verdict) throw new BadRequestException('verdict is ok or fake');
+    const note = typeof body?.note === 'string' ? body.note.trim().slice(0, 500) : '';
+    if (verdict === 'fake' && !note) throw new BadRequestException('Say what looks fake');
+    const actor = { id: req.user.sub, role: req.user.role };
+    const pendingWhere = { status: 'pending', vendor: 'team_lead_check' };
+    const pending =
+      subjectType === 'job_seeker'
+        ? await this.prisma.identityVerification.findFirst({ where: { jobSeekerId: id, ...pendingWhere }, select: { id: true } })
+        : await this.prisma.referralIdentityVerification.findFirst({ where: { referralId: id, ...pendingWhere }, select: { id: true } });
+    if (!pending) throw new NotFoundException('No ID card waiting for a check');
+    const decided = await this.otherIds.recordDecision(subjectType, id, verdict, actor);
+    let flagId: string | null = null;
+    if (verdict === 'fake') {
+      const person =
+        subjectType === 'job_seeker'
+          ? await this.prisma.jobSeeker.findUnique({ where: { id }, select: { code: true, registeredByStaffId: true } })
+          : await this.prisma.referral.findUnique({ where: { id }, select: { code: true, registeredByStaffId: true } });
+      const flag = await this.flags.raise({
+        kind: 'registration_suspect',
+        subjectType,
+        subjectId: id,
+        raisedForStaffId: person?.registeredByStaffId ?? null,
+        details: { [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: person?.code ?? null, note, decidedBy: actor.role },
+        owner: { role: 'manager' },
+      });
+      flagId = flag.id;
+    }
+    return { verdict, flagId, ...decided };
+  }
+
   @Get('identity/:subjects/:id/aadhaar-check')
   @RequireRoles('team_lead', 'manager', 'ceo')
   async view(@Req() req: Authed, @Param('subjects') subjects: string, @Param('id') id: string) {
@@ -104,8 +200,13 @@ export class AadhaarQrController {
         ? await this.prisma.jobSeeker.findUnique({ where: { id }, select: { id: true, code: true, city: true, registeredByStaffId: true, photoStoragePath: true, anonymisedAt: true } })
         : await this.prisma.referral.findUnique({ where: { id }, select: { id: true, code: true, city: true, registeredByStaffId: true, photoStoragePath: true, anonymisedAt: true } });
     if (!subject || subject.anonymisedAt) throw new NotFoundException('Not found');
-    await this.access.assertCanView({ id: req.user.sub, role: req.user.role }, subject.registeredByStaffId);
+    const actor = { id: req.user.sub, role: req.user.role };
     const check = await this.idPhotos.latestFor(subjectType, subject.id);
+    // Rev 169: whoever may decide a pending other ID (another Team Lead of the city, or a Manager /
+    // the CEO where there is none) may open it too, besides the usual team scope.
+    const pendingOtherId = check?.status === 'pending' && check.method !== 'aadhaar_qr';
+    const right = pendingOtherId ? await this.approvals.rightFor(actor, subject) : null;
+    if (!right?.allowed) await this.access.assertCanView(actor, subject.registeredByStaffId);
     const idPhoto = check?.photo.kept ? await this.idPhotos.photoLink(check.verificationId) : null;
     const selfieUrl = subject.photoStoragePath ? await this.photos.signedUrl(subject.photoStoragePath, CANDIDATE_PHOTO_LINK_TTL_SECONDS) : null;
     await this.audit.log({
@@ -120,6 +221,8 @@ export class AadhaarQrController {
     });
     return {
       check,
+      /** Whether this viewer may decide the pending other ID, and why not. */
+      decision: right ? { canDecide: right.allowed, mode: right.mode, reason: right.reason } : null,
       idPhotoUrl: idPhoto?.url ?? null,
       /** Kept for older screens: the same link as idPhotoUrl. */
       qrPhotoUrl: idPhoto?.url ?? null,

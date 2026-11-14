@@ -328,9 +328,31 @@ model AadhaarQrAttempt {
   /// started, verified, name_mismatch, under_18, bad_signature, cert_missing, old_qr, unreadable
   outcome     String
   staffId     String?
+  /// A failed signature on a QR made in the last 30 days: several of these from
+  /// different people in a day may mean UIDAI changed its key early (CEO alert).
+  recentQr    Boolean?
   attemptedAt DateTime @default(now())
 
   @@index([subjectType, subjectId, attemptedAt])
+  @@index([outcome, attemptedAt])
+}
+
+/// A one-time "camera opened" token for the live photo of another ID card:
+/// issued when the camera opens, bound to the person (and the field agent in
+/// Laboura Field), used once, valid 2 minutes. Only its SHA-256 is kept. It
+/// raises the bar against a gallery upload; the Team Lead's eye is the real
+/// control.
+model IdCaptureNonce {
+  id          String    @id @default(uuid())
+  subjectType String    // job_seeker, referral
+  subjectId   String
+  staffId     String?
+  nonceHash   String    @unique
+  expiresAt   DateTime
+  usedAt      DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@index([expiresAt])
 }
 
 model Referral {

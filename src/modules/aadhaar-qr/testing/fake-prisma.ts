@@ -26,6 +26,7 @@ function matches(row: Row, where: Row = {}): boolean {
       }
       if ('gt' in c && !(timeOf(value) !== null && timeOf(value)! > (c.gt as Date).getTime())) return false;
       if ('gte' in c && !(timeOf(value) !== null && timeOf(value)! >= (c.gte as Date).getTime())) return false;
+      if ('lt' in c && !(timeOf(value) !== null && timeOf(value)! < (c.lt as Date).getTime())) return false;
       if ('lte' in c && !(timeOf(value) !== null && timeOf(value)! <= (c.lte as Date).getTime())) return false;
       if ('in' in c && !(c.in as unknown[]).includes(value)) return false;
       if ('equals' in c) {
@@ -118,7 +119,7 @@ function table(rows: Row[] = [], defaults: () => Row = () => ({})) {
   };
 }
 
-export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consents?: Row[]; teamLeadChecks?: Row[] } = {}) {
+export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consents?: Row[]; teamLeadChecks?: Row[]; staff?: Row[] } = {}) {
   const locks: string[] = [];
   const db = {
     jobSeeker: table(seed.jobSeekers),
@@ -130,6 +131,9 @@ export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consen
     aadhaarQrAttempt: table(),
     reviewFlag: table([], () => ({ raisedAt: new Date() })),
     teamLeadCheck: table(seed.teamLeadChecks),
+    staff: table(seed.staff),
+    auditLog: table(),
+    idCaptureNonce: table([], () => ({ usedAt: null, staffId: null })),
     /** The advisory-lock keys taken (pg_advisory_xact_lock), in order. */
     locks,
     async $executeRaw(query: { values?: unknown[] } | TemplateStringsArray, ...values: unknown[]) {

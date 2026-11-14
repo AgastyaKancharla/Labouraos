@@ -12,6 +12,7 @@ import {
   areaAndPincode,
   genderFromQr,
   isAdultOn,
+  issuedWithinValidity,
   maskedAadhaarReference,
   newestCertificateEnd,
   parseQrDateOfBirth,
@@ -35,6 +36,17 @@ export const QR_ATTEMPTS_PER_HOUR = 10;
 export const QR_ATTEMPTS_PER_DAY = 30;
 /** Invalid-signature attempts in 24 hours that raise a fraud flag for the Team Lead (once per person). */
 export const QR_BAD_SIGNATURES_BEFORE_FLAG = 3;
+/** A QR made in the last this-many days counts as "recent" for the key-change alert. */
+export const RECENT_QR_DAYS = 30;
+/** Different people with a failed signature on a recent QR in 24 hours before the CEO is alerted (UIDAI may have changed its key). */
+export const KEY_ROTATION_PEOPLE = 3;
+
+/** Under 18 on a signed Aadhaar (the stop is sticky even when the name doesn't match: a minor must not switch to an adult's card). */
+export const UNDER_18_RESULT_MESSAGE =
+  "Registration stops here: this Aadhaar shows the person is under 18. If it was a family member's card by mistake, a Manager can lift this.";
+/** The date of birth can't be read: treated as under 18 (the safe side), and said so. */
+export const DOB_UNREADABLE_MESSAGE =
+  'The date of birth on this Aadhaar could not be read, so registration stops here. A Manager can review it.';
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
 
@@ -59,6 +71,8 @@ export interface AadhaarQrOutcome {
   maskedReference: string | null;
   person: { name: string; dateOfBirth: string; gender: string | null } | null;
   failureReason: string | null;
+  /** Under 18 only because the date of birth on the card could not be read (a Manager can review it). */
+  dateOfBirthUnreadable: boolean;
   /** Another ID is offered whenever the QR can't be used or the name doesn't match. */
   offerOtherId: boolean;
 }
@@ -114,7 +128,11 @@ export class AadhaarQrService {
     }
     this.keys = keys && keys.length ? keys : loadUidaiCertificates();
     this.newestCertEnd = newestCertificateEnd(this.keys);
-    if (!this.keys.length) this.logger.error('No UIDAI certificates found: every Aadhaar QR will fail its signature check');
+    if (!this.keys.length) {
+      // Without a certificate every genuine card would be called tampered: never start like that in production.
+      if (process.env.NODE_ENV === 'production') throw new Error('Refusing to start: no UIDAI certificate loaded for the Aadhaar QR check (src/modules/aadhaar-qr/certs)');
+      this.logger.error('No UIDAI certificates found: every Aadhaar QR will fail its signature check');
+    }
   }
 
   /** The job seeker's own link or Laboura Field. Requires his aadhaar_verification consent and the selfie. */
@@ -175,7 +193,8 @@ export class AadhaarQrService {
       await this.finishAttempt(attemptId, result);
       return this.failed(result, error.message);
     }
-    if (!verifySecureQrSignature(parsed, this.keys)) {
+    const signer = verifySecureQrSignature(parsed, this.keys);
+    if (!signer) {
       // A code made after the newest certificate we hold: UIDAI has a newer key we don't have yet.
       const issued = qrIssuedAt(parsed);
       if (issued && this.newestCertEnd && issued.getTime() > this.newestCertEnd.getTime()) {
@@ -183,9 +202,15 @@ export class AadhaarQrService {
         await this.flagCertificateMissing(now);
         return this.failed('cert_missing', SECURE_QR_MESSAGES.cert_missing);
       }
-      await this.finishAttempt(attemptId, 'bad_signature');
+      const recentQr = Boolean(issued && issued.getTime() <= now.getTime() + DAY_MS && now.getTime() - issued.getTime() <= RECENT_QR_DAYS * DAY_MS);
+      await this.finishAttempt(attemptId, 'bad_signature', { recentQr });
       await this.flagRepeatedBadSignatures(subject, context, now);
+      if (recentQr) await this.flagPossibleKeyRotation(now);
       return this.failed('bad_signature', SECURE_QR_MESSAGES.bad_signature);
+    }
+    // Only a note for us (no personal data): a genuine signature on a QR dated outside its certificate's dates.
+    if (issuedWithinValidity(qrIssuedAt(parsed), signer) === false) {
+      this.logger.warn(`Aadhaar QR signed with ${signer.name} carries a time stamp outside that certificate's validity`);
     }
 
     const policy = await this.pricing.current();
@@ -195,22 +220,29 @@ export class AadhaarQrService {
     const phoneLinked = phoneLinkStatus(parsed, subject.phone);
     const result: QrResult = !isAdult ? 'under_18' : !name.matches ? 'name_mismatch' : 'verified';
     const passed = result === 'verified';
-    const failureReason = result === 'under_18' ? 'Applicant is under 18' : result === 'name_mismatch' ? 'Name on the Aadhaar does not match the registered name' : null;
+    const dateOfBirthUnreadable = result === 'under_18' && !dob;
+    const failureReason =
+      result === 'under_18'
+        ? dateOfBirthUnreadable ? DOB_UNREADABLE_MESSAGE : UNDER_18_RESULT_MESSAGE
+        : result === 'name_mismatch'
+          ? 'Name on the Aadhaar does not match the registered name'
+          : null;
     const verificationId = randomUUID();
     const issuedAt = qrIssuedAt(parsed);
     const row = {
       id: verificationId,
       method: 'aadhaar_qr',
       vendor: 'uidai_secure_qr',
-      vendorReference: parsed.referenceId.slice(0, 4 + 17),
+      // A check that didn't pass keeps only its results (owner rule): no last 4, no QR reference, no QR time stamp.
+      vendorReference: passed ? parsed.referenceId.slice(0, 4 + 17) : null,
       // As for every ID check: "verified" only when all the checks pass. A row with
       // vendor uidai_secure_qr exists only when UIDAI's signature passed.
       status: passed ? 'verified' : 'failed',
-      last4: parsed.referenceLast4,
+      last4: passed ? parsed.referenceLast4 : null,
       nameMatches: name.matches,
       isAdult,
       phoneLinked,
-      qrIssuedAt: issuedAt,
+      qrIssuedAt: passed ? issuedAt : null,
       consentId,
       verifiedAt: passed ? now : null,
       failureReason,
@@ -237,7 +269,12 @@ export class AadhaarQrService {
       const decided = await this.prisma.teamLeadCheck.findFirst({ where: { subjectType: 'job_seeker', subjectId: subject.id }, select: { id: true } });
       const jpeg = decided ? null : jpeg2000ToJpeg(parsed.photo);
       if (jpeg) {
-        photoKept = await this.idPhotos.attachPhoto(detailId, IdCheckPhotoService.photoPath('aadhaar_qr', subject.type, subject.id, verificationId), jpeg, 'image/jpeg', now);
+        try {
+          photoKept = await this.idPhotos.attachPhoto(detailId, IdCheckPhotoService.photoPath('aadhaar_qr', subject.type, subject.id, verificationId), jpeg, 'image/jpeg', now);
+        } catch (error) {
+          // The check itself passed and is committed; only the photo for the Team Lead is missing.
+          this.logger.warn(`Aadhaar QR photo not kept for ${verificationId}: ${(error as Error).message}`);
+        }
         if (photoKept) await this.idPhotos.deletePhotos(subject.type, subject.id, 'replaced', context.staffId ?? 'system', now, verificationId);
       }
     }
@@ -253,7 +290,7 @@ export class AadhaarQrService {
         channel: context.channel,
         result,
         verifiedByUidai: true,
-        maskedReference: maskedAadhaarReference(parsed.referenceLast4),
+        maskedReference: passed ? maskedAadhaarReference(parsed.referenceLast4) : null,
         nameMatches: name.matches,
         isAdult,
         phoneLinked,
@@ -293,9 +330,10 @@ export class AadhaarQrService {
       nameMatches: name.matches,
       isAdult,
       phoneLinked,
-      maskedReference: maskedAadhaarReference(parsed.referenceLast4),
+      maskedReference: passed ? maskedAadhaarReference(parsed.referenceLast4) : null,
       person: passed && context.channel === 'link' ? { name: parsed.name, dateOfBirth: dob?.value ?? '', gender } : null,
       failureReason,
+      dateOfBirthUnreadable,
       offerOtherId: result === 'name_mismatch',
     };
   }
@@ -313,6 +351,7 @@ export class AadhaarQrService {
       maskedReference: null,
       person: null,
       failureReason: message,
+      dateOfBirthUnreadable: false,
       offerOtherId: true,
     };
   }
@@ -347,61 +386,87 @@ export class AadhaarQrService {
     });
   }
 
-  private async finishAttempt(id: string, outcome: QrResult): Promise<void> {
-    await this.prisma.aadhaarQrAttempt.update({ where: { id }, data: { outcome } });
+  private async finishAttempt(id: string, outcome: QrResult, extra: { recentQr?: boolean } = {}): Promise<void> {
+    await this.prisma.aadhaarQrAttempt.update({ where: { id }, data: { outcome, ...extra } });
   }
 
   /**
    * Repeated QR codes that fail UIDAI's signature: someone may be trying an edited card. One flag per
-   * person, ever. The count, the "already flagged?" check and the flag itself all happen while this
-   * person's advisory lock is held, so two requests at the same moment can't both raise it.
+   * person, ever. The count, the "already flagged?" check and the flag itself all run on the
+   * transaction that holds this person's advisory lock (same connection), so two requests at the same
+   * moment can't both raise it. The bell goes out after the commit.
    */
   private async flagRepeatedBadSignatures(subject: Subject, context: Context, now: Date): Promise<void> {
-    await this.prisma.$transaction(
+    const flagId = await this.prisma.$transaction(
       async (tx) => {
         await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`aadhaar-qr-flag:${subject.type}:${subject.id}`}))`);
         const bad = await tx.aadhaarQrAttempt.count({
           where: { subjectType: subject.type, subjectId: subject.id, outcome: 'bad_signature', attemptedAt: { gt: new Date(now.getTime() - DAY_MS) } },
         });
-        if (bad < QR_BAD_SIGNATURES_BEFORE_FLAG) return;
+        if (bad < QR_BAD_SIGNATURES_BEFORE_FLAG) return null;
         const existing = await tx.reviewFlag.findFirst({ where: { kind: 'aadhaar_qr_tampered', subjectType: subject.type, subjectId: subject.id }, select: { id: true } });
-        if (existing) return;
-        // Raised (and committed) before the lock is released: the next request waits for the lock and then sees it.
-        await this.flags.raise({
-          kind: 'aadhaar_qr_tampered',
-          subjectType: subject.type,
-          subjectId: subject.id,
-          raisedForStaffId: subject.registeredByStaffId,
-          details: { invalidSignatureAttempts: bad, lastChannel: context.channel, ...(context.staffId ? { fieldAgentStaffId: context.staffId } : {}) },
-        });
+        if (existing) return null;
+        const flag = await this.flags.raise(
+          {
+            kind: 'aadhaar_qr_tampered',
+            subjectType: subject.type,
+            subjectId: subject.id,
+            raisedForStaffId: subject.registeredByStaffId,
+            details: { invalidSignatureAttempts: bad, lastChannel: context.channel, ...(context.staffId ? { fieldAgentStaffId: context.staffId } : {}) },
+          },
+          { tx },
+        );
+        return flag.id;
       },
       { timeout: 15_000 },
     );
+    if (flagId) await this.flags.announce(flagId);
   }
 
   /**
    * A card newer than our newest UIDAI certificate: not fraud — the CEO adds the new certificate. At
-   * most once a day, under one advisory lock so parallel scans raise it once.
+   * most once a day, raised on the locked transaction so parallel scans raise it once.
    */
   private async flagCertificateMissing(now: Date): Promise<void> {
-    await this.prisma.$transaction(
+    await this.systemFlagOncePerDay('aadhaar_cert_missing', now, {
+      newestCertificateValidTo: this.newestCertEnd?.toISOString() ?? null,
+      action: 'Download the current UIDAI offline e-KYC certificate and add it to src/modules/aadhaar-qr/certs',
+    });
+  }
+
+  /**
+   * Failed signatures on recent QR codes from several different people in a day: more likely UIDAI
+   * started signing with a new key early than many people editing cards. One CEO alert a day.
+   */
+  private async flagPossibleKeyRotation(now: Date): Promise<void> {
+    const since = new Date(now.getTime() - DAY_MS);
+    const rows = await this.prisma.aadhaarQrAttempt.findMany({
+      where: { outcome: 'bad_signature', recentQr: true, attemptedAt: { gt: since } },
+      select: { subjectType: true, subjectId: true },
+      take: 500,
+    });
+    const people = new Set(rows.map((row) => `${row.subjectType}:${row.subjectId}`)).size;
+    if (people < KEY_ROTATION_PEOPLE) return;
+    await this.systemFlagOncePerDay('aadhaar_key_rotation_suspected', now, {
+      differentPeopleToday: people,
+      newestCertificateValidTo: this.newestCertEnd?.toISOString() ?? null,
+      action: "Check UIDAI's certificate page for a new Offline e-KYC certificate; if there is one, add it to src/modules/aadhaar-qr/certs",
+    });
+  }
+
+  /** A flag about the system (not a person), at most once in 24 hours, check and raise under one advisory lock. */
+  private async systemFlagOncePerDay(kind: 'aadhaar_cert_missing' | 'aadhaar_key_rotation_suspected', now: Date, details: Record<string, unknown>): Promise<void> {
+    const flagId = await this.prisma.$transaction(
       async (tx) => {
-        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${'aadhaar-qr-cert-missing'}))`);
-        const recent = await tx.reviewFlag.findFirst({
-          where: { kind: 'aadhaar_cert_missing', raisedAt: { gt: new Date(now.getTime() - DAY_MS) } },
-          select: { id: true },
-        });
-        if (recent) return;
-        await this.flags.raise({
-          kind: 'aadhaar_cert_missing',
-          subjectType: 'system',
-          subjectId: 'uidai-certificates',
-          raisedForStaffId: null,
-          details: { newestCertificateValidTo: this.newestCertEnd?.toISOString() ?? null, action: 'Download the current UIDAI offline e-KYC certificate and add it to src/modules/aadhaar-qr/certs' },
-        });
+        await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`aadhaar-qr-system:${kind}`}))`);
+        const recent = await tx.reviewFlag.findFirst({ where: { kind, raisedAt: { gt: new Date(now.getTime() - DAY_MS) } }, select: { id: true } });
+        if (recent) return null;
+        const flag = await this.flags.raise({ kind, subjectType: 'system', subjectId: 'uidai-certificates', raisedForStaffId: null, details }, { tx });
+        return flag.id;
       },
       { timeout: 15_000 },
     );
+    if (flagId) await this.flags.announce(flagId);
   }
 
   /** The same Aadhaar (last 4 + date of birth + name on it) already verified for someone else: a flag for the Manager, never a block. */

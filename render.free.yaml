@@ -44,6 +44,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # Made-up data only: the UIDAI certificates are not pinned here (the live
+      # render.yaml requires their confirmed fingerprints).
+      - key: UIDAI_CERT_FINGERPRINTS
+        value: not-pinned-free-test-setup
       # One process serves the site AND runs the jobs (src/common/process/process-role.ts).
       - key: PROCESS_ROLE
         value: all

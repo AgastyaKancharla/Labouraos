@@ -10,6 +10,7 @@ import { WHATSAPP_PROVIDER, WhatsAppProvider } from '../../common/whatsapp/whats
 import { PlacementService } from '../placement/placement.service';
 import { PricingService } from '../pricing/pricing.service';
 import { receiptToken } from './receipt-link';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Phase 16 Gate End-to-End Proof', () => {
   let app: INestApplication;
@@ -183,6 +184,7 @@ describe('Phase 16 Gate End-to-End Proof', () => {
     seekerIds.push(seeker.id);
 
     // Call Agent triggers ₹499 activation payment request
+    await giveVerifiedId(prisma, seeker.id);
     const actRes = await request(app.getHttpServer())
       .post(`/job-seekers/${seeker.id}/activation-payment`)
       .set('Authorization', `Bearer ${callAgentToken}`)

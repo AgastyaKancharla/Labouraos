@@ -13,6 +13,7 @@ import { createAwaitingPaymentPlacementFixture } from '../../test-support/paid-p
 import { createJoiningCallsFixture } from '../../test-support/joining-call-fixture';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
 import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
+import { giveVerifiedId } from '../../test-support/verified-id';
 
 describe('Phase 6 Task 5: Call Agent API workflow (the old console page is retired; the web app is at /call-agent)', () => {
   let app: INestApplication;
@@ -96,6 +97,7 @@ describe('Phase 6 Task 5: Call Agent API workflow (the old console page is retir
     const candidateId = seekerRes.body.id;
 
     // 3. Payment link generation
+    await giveVerifiedId(prisma, candidateId);
     const payLinkRes = await request(app.getHttpServer())
       .post(`/job-seekers/${candidateId}/activation-payment`)
       .set('Authorization', `Bearer ${caToken}`)

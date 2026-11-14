@@ -476,6 +476,16 @@ export class JobSeekerService {
 
     const policy = await this.getPolicy();
     await this.assertAdultBeforePayment(jobSeeker, policy.adultMinimumAge);
+    // The same rule as his own link (Fable re-check, L5): nobody is charged before a verified ID —
+    // the Aadhaar QR passed, or another ID approved by the Team Lead (name and 18+ confirmed).
+    const verification = await this.prisma.identityVerification.findFirst({
+      where: { jobSeekerId: jobSeeker.id },
+      orderBy: { createdAt: 'desc' },
+      select: { status: true, nameMatches: true, isAdult: true },
+    });
+    if (!verification || verification.status !== 'verified' || verification.nameMatches !== true || verification.isAdult !== true) {
+      throw new BadRequestException('Finish the ID check first');
+    }
 
     const upiRequest = await this.upiCollectionService.createRequest({
       type: 'activation',
