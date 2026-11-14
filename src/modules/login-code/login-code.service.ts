@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -421,7 +422,7 @@ export class LoginCodeService {
       if (target.role === 'team_lead') {
         throw new ForbiddenException("A Team Lead's code is revealed by a Manager or the CEO");
       }
-      const onTeam = target.teamLeadId === approver.id || target.reportsToId === approver.id;
+      const onTeam = await new OwnTeam(this.prisma, this.reportingScope ?? undefined).includes(approver.id, target.id);
       if (!onTeam) {
         throw new ForbiddenException('A Team Lead can reveal codes only for their own team');
       }

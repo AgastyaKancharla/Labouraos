@@ -21,6 +21,9 @@ import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 import { LiveEventsService } from '../live/live-events.service';
+import { PrismaService } from '../prisma/prisma.service';
+import { Throttle } from '@nestjs/throttler';
+import { AuthThrottlerGuard } from './auth-throttler.guard';
 
 interface AuthenticatedRequest extends Request {
   user: JwtPayload;
@@ -33,6 +36,7 @@ export class StaffSessionController {
   constructor(
     private readonly authService: AuthService,
     @Optional() private readonly live?: LiveEventsService,
+    @Optional() private readonly prisma?: PrismaService,
   ) {}
 
   @Get('sessions')
@@ -46,13 +50,18 @@ export class StaffSessionController {
 
   @Post('sessions/:id/revoke')
   @HttpCode(HttpStatus.OK)
+  // Each revoke makes that person's open live streams check their session, so
+  // it is rate limited like the login routes (per connection).
+  @UseGuards(AuthThrottlerGuard)
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   async revokeSession(
     @Param('id') sessionId: string,
     @Req() req: AuthenticatedRequest,
   ): Promise<{ success: boolean; message: string }> {
     const result = await this.authService.revokeSession(sessionId, req.user);
-    // Whoever's session it was, its live stream closes now (LiveController).
-    this.live?.recheckAllSessions();
+    // Only the revoked session's owner: their open live streams check now (LiveController).
+    const session = await this.prisma?.staffSession.findUnique({ where: { id: sessionId }, select: { staffId: true } });
+    if (session?.staffId) this.live?.recheckSessions(session.staffId);
     return result;
   }
 

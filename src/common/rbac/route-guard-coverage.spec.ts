@@ -15,6 +15,9 @@ import { PUBLIC_ROUTE_KEY } from './public.decorator';
 import { RequiredPermission } from './permissions.decorator';
 import { normaliseRoutePath, targetFor } from './rbac.guard';
 import { ALL_STAFF_ROLES, RBAC_MATRIX, Role } from './rbac.types';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
+import { SERVICE_SCOPED_ROUTES } from './service-scoped-routes';
 import { PaymentReceiptGuard } from '../../modules/payment/payment-receipt.guard';
 
 /**
@@ -174,6 +177,60 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
       }
     }
     expect(unplaced).toEqual([]);
+  });
+
+  it('scopes every route with an id that Team Leads or agents can reach', () => {
+    // A path parameter names a record. For a Team Lead, field agent or call
+    // agent the route must say which record RbacGuard checks (a permission
+    // target, declared or read from the route pattern; a staff or target id),
+    // or be listed in SERVICE_SCOPED_ROUTES with the reason and the test that
+    // proves the service (or its own guard) scopes it. A route declaring
+    // 'none' or 'service' on an id must be listed too.
+    const scopedRoles: Role[] = ['team_lead', 'field_agent', 'call_agent'];
+    const recordResources = new Set(['job_seeker', 'referral', 'business', 'vacancy', 'placement']);
+    const unscoped: string[] = [];
+    const listed = new Set(Object.keys(SERVICE_SCOPED_ROUTES));
+    const used = new Set<string>();
+    for (const route of routes) {
+      if (route.publicReason) continue;
+      const name = `${route.controller}.${route.handler}`;
+      const action =
+        route.permission?.action ?? (route.method === 'GET' || route.method === 'HEAD' ? 'read' : 'write');
+      const roles = (route.roles.length ? route.roles : ALL_STAFF_ROLES) as Role[];
+      const admitted = roles.filter((role) => {
+        if (!scopedRoles.includes(role)) return false;
+        if (!route.permission) return true;
+        return Boolean(RBAC_MATRIX[role]?.[route.permission.resource]?.[action]?.allowed);
+      });
+      if (admitted.length === 0) continue;
+      for (const path of route.paths) {
+        const pattern = normaliseRoutePath(`${route.controllerPath}/${path}`) ?? '';
+        if (!pattern.includes(':')) continue;
+        if (listed.has(name)) {
+          used.add(name);
+          continue;
+        }
+        const permission = route.permission;
+        let covered = false;
+        if (permission && recordResources.has(permission.resource)) {
+          const spec = targetFor(permission, pattern);
+          covered = spec !== null && spec !== 'none' && spec !== 'service';
+        } else if (permission && (permission.resource === 'staff' || permission.resource === 'target')) {
+          covered = !permission.target && /\/:(id|staffId)(\/|$)/.test(pattern);
+        }
+        if (!covered) unscoped.push(`${route.method} ${pattern} (${name}) for ${admitted.join(', ')}`);
+      }
+    }
+    expect(unscoped).toEqual([]);
+    // Every listed route still exists, gives a reason and names a test that exists.
+    expect([...listed].filter((name) => !used.has(name))).toEqual([]);
+    for (const [name, entry] of Object.entries(SERVICE_SCOPED_ROUTES)) {
+      expect([name, entry.reason.trim().length > 10]).toEqual([name, true]);
+      const file = join(__dirname, '..', '..', entry.test);
+      expect([name, existsSync(file)]).toEqual([name, true]);
+      // The line that proves it is still in that spec.
+      expect([name, existsSync(file) && readFileSync(file, 'utf8').includes(entry.proof)]).toEqual([name, true]);
+    }
   });
 
   it('gives every public route a reason', () => {

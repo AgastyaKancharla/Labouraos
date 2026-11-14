@@ -217,8 +217,12 @@ describe('Phase 6.7 Task 6: Target Overview & Behind-Pace Flagging', () => {
         findUnique: jest.fn().mockImplementation(({ where }: { where: { id: string } }) => {
           return Promise.resolve(mockStaffRecords[where.id] ?? null);
         }),
-        findMany: jest.fn().mockImplementation(({ where }: { where?: { teamLeadId?: string; role?: { in: string[] } } }) => {
+        findMany: jest.fn().mockImplementation((args?: { where?: { id?: { in: string[] }; teamLeadId?: string; role?: { in: string[] } } }) => {
+          const where = args?.where;
           let list = Object.values(mockStaffRecords);
+          if (where?.id?.in) {
+            list = list.filter((s) => where.id!.in.includes(s.id));
+          }
           if (where?.teamLeadId) {
             list = list.filter((s) => s.teamLeadId === where.teamLeadId);
           }

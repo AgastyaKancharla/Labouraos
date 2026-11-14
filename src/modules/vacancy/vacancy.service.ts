@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -450,9 +451,12 @@ export class VacancyService {
       return [];
     }
 
+    // A Team Lead sees only their own team's job seekers (owner decision, 14 Nov; OwnTeam).
+    const team = staff.role === 'team_lead' ? await new OwnTeam(this.prisma).memberIds(staff.id) : null;
     return this.prisma.jobSeeker.findMany({
       where: {
         id: { in: consentedJobSeekerIds },
+        ...(team ? { registeredByStaffId: { in: team } } : {}),
         city: vacancy.city,
         status: 'active',
         trades: { some: { trade: { equals: vacancy.tradeSkill, mode: 'insensitive' } } },

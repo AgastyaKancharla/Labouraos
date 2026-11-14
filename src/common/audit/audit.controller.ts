@@ -1,3 +1,5 @@
+import { PrismaService } from '../prisma/prisma.service';
+import { OwnTeam } from '../rbac/own-team';
 import {
   Controller,
   Get,
@@ -28,6 +30,7 @@ export class AuditController {
   constructor(
     private readonly auditService: AuditService,
     private readonly reportingScope: ReportingScopeService,
+    private readonly prisma: PrismaService,
   ) {}
 
   @Get()
@@ -59,6 +62,10 @@ export class AuditController {
   private async scopeFor(actor: JwtPayload): Promise<AuditScope | null> {
     if (actor.role === 'ceo') {
       return null;
+    }
+    // A Team Lead: the shared own-team definition (OwnTeam); a Manager: their tree.
+    if (actor.role === 'team_lead') {
+      return this.auditService.scopeForStaff(await new OwnTeam(this.prisma, this.reportingScope).memberIds(actor.sub));
     }
     const under = await this.reportingScope.peopleUnder(actor.sub);
     return this.auditService.scopeForStaff([actor.sub, ...under]);

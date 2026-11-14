@@ -123,6 +123,13 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
           return allStaff.find((s) => s.id === where.id) ?? null;
         }),
         findFirst: jest.fn().mockResolvedValue(mgrStaff),
+        // OwnTeam reads a Team Lead's team: direct teamLeadId links, then every link.
+        findMany: jest.fn().mockImplementation(async (args?: { where?: { teamLeadId?: string } }) => {
+          const allStaff = [faStaff, otherFaStaff, caStaff, tlStaff, otherTlStaff, mgrStaff, ceoStaff, financeStaff]
+            .map((s) => ({ reportsToId: null, status: "active", teamLeadId: null as string | null, ...(s as { teamLeadId?: string | null }), ...s }));
+          const teamLeadId = args?.where?.teamLeadId;
+          return teamLeadId ? allStaff.filter((s) => s.teamLeadId === teamLeadId) : allStaff;
+        }),
       },
       placement: {
         findFirst: jest.fn().mockResolvedValue(basePlacement),

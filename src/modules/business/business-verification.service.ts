@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -50,8 +51,7 @@ export class BusinessVerificationService {
     if (role === 'field_agent') {
       where = { assignedStaffId: staffId, status: 'assigned' };
     } else if (role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: staffId }, select: { id: true } });
-      const teamIds = team.map(({ id }) => id);
+      const teamIds = await new OwnTeam(this.prisma).memberIds(staffId);
       where = { status: 'pending', business: { OR: [
         { leadCreatedByStaffId: { in: teamIds } },
         { accountAgentId: { in: teamIds } },
@@ -216,6 +216,7 @@ export class BusinessVerificationService {
     }
     const fieldAgent = await this.prisma.staff.findUnique({ where: { id: assignedStaffId } });
     if (!fieldAgent) throw new NotFoundException('Field agent not found');
+    await this.assertTeamLeadPicksOwnAgent(actor, fieldAgent.id);
     if (fieldAgent.city !== assignment.business.city) {
       throw new BadRequestException('The assigned field agent must work in the business city');
     }
@@ -687,6 +688,7 @@ export class BusinessVerificationService {
     }
     const fieldAgent = await this.prisma.staff.findUnique({ where: { id: accountAgentId } });
     if (!fieldAgent) throw new NotFoundException('Account agent not found');
+    await this.assertTeamLeadPicksOwnAgent(actor, fieldAgent.id);
     if (fieldAgent.city !== business.city) {
       throw new BadRequestException('The account agent must work in the business city');
     }
@@ -801,12 +803,23 @@ export class BusinessVerificationService {
     accountAgentId: string | null,
   ) {
     if (actor.role !== 'team_lead') return;
-    const owners = [leadCreatedByStaffId, accountAgentId].filter((id): id is string => id !== null);
-    if (owners.length === 0) throw new ForbiddenException('Team Leads may only review businesses from their own team');
-    const member = await this.prisma.staff.findFirst({
-      where: { id: { in: owners }, teamLeadId: actor.id },
-    });
-    if (!member) throw new ForbiddenException('Team Leads may only review businesses from their own team');
+    // The same own team every Team Lead check uses (OwnTeam): a Team Lead who
+    // is the account agent or created the lead counts too.
+    if (!(await new OwnTeam(this.prisma).includesAny(actor.id, [leadCreatedByStaffId, accountAgentId]))) {
+      throw new ForbiddenException('Team Leads may only review businesses from their own team');
+    }
+  }
+
+  /**
+   * A Team Lead gives a visit or an account only to a field agent of their own
+   * team (OwnTeam), as on /team-lead/businesses/:id/move. Managers and the CEO
+   * pick anyone available.
+   */
+  private async assertTeamLeadPicksOwnAgent(actor: Staff, staffId: string) {
+    if (actor.role !== 'team_lead') return;
+    if (staffId === actor.id || !(await new OwnTeam(this.prisma).includes(actor.id, staffId))) {
+      throw new ForbiddenException('A Team Lead can choose only a field agent from their own team');
+    }
   }
 
   private assertAvailableFieldAgent(staff: Staff, now: Date) {

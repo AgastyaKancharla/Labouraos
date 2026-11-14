@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
@@ -1081,12 +1082,11 @@ export class PlacementService {
     }
 
     if (actor.role === 'team_lead') {
-      const accountAgentId = claim.placement.business.accountAgentId;
-      if (accountAgentId) {
-        const accountAgent = await this.prisma.staff.findUnique({ where: { id: accountAgentId } });
-        if (accountAgent && accountAgent.teamLeadId !== actor.id && accountAgent.id !== actor.id) {
-          throw new ForbiddenException('Team Leads can only decide claims for their own team');
-        }
+      // The business must be the Team Lead's own team's (OwnTeam), as the
+      // route's own check (RbacGuard, placement) already requires.
+      const business = claim.placement.business;
+      if (!(await new OwnTeam(this.prisma).includesAny(actor.id, [business.accountAgentId, business.leadCreatedByStaffId]))) {
+        throw new ForbiddenException('Team Leads can only decide claims for their own team');
       }
     }
 

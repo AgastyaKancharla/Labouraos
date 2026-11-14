@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ConflictException,
@@ -309,7 +310,7 @@ export class TargetService {
 
     // Server-side RBAC scoping
     if (actor.role === 'team_lead') {
-      if (target.staff.teamLeadId !== actor.sub) {
+      if (!(await new OwnTeam(this.prisma).includes(actor.sub, target.staffId))) {
         throw new ForbiddenException(
           `Access denied: staff '${target.staff.code}' is not part of your team`,
         );
@@ -348,14 +349,14 @@ export class TargetService {
         const staff = await this.prisma.staff.findUnique({
           where: { id: query.staffId },
         });
-        if (!staff || staff.teamLeadId !== actor.sub) {
+        if (!staff || !(await new OwnTeam(this.prisma).includes(actor.sub, staff.id))) {
           throw new ForbiddenException(
             `Access denied: staff '${query.staffId}' is not part of your team`,
           );
         }
         where.staffId = query.staffId;
       } else {
-        where.staff = { teamLeadId: actor.sub, ...NOT_OWNER_ACCOUNT };
+        where.staff = { id: { in: await new OwnTeam(this.prisma).memberIds(actor.sub) }, ...NOT_OWNER_ACCOUNT };
       }
     } else if (actor.role === 'finance') {
       throw new ForbiddenException('Access denied: finance cannot access targets');

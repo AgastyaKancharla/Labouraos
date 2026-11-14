@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ConflictException,
@@ -750,11 +751,7 @@ export class BusinessService {
 
     const where: Prisma.BusinessWhereInput = {};
     if (staff.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({
-        where: { teamLeadId: staff.id },
-        select: { id: true },
-      });
-      const teamIds = team.map(({ id }) => id);
+      const teamIds = await new OwnTeam(this.prisma).memberIds(staff.id);
       where.OR = [
         { accountAgentId: { in: teamIds } },
         { leadCreatedByStaffId: { in: teamIds } },

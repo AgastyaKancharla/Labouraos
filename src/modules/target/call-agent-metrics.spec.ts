@@ -11,7 +11,7 @@ import { seededPricingService } from '../../test-support/seeded-pricing';
 
 describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
   type MockPrismaService = {
-    staff: { findUnique: jest.Mock };
+    staff: { findUnique: jest.Mock; findMany: jest.Mock };
     jobSeeker: { count: jest.Mock; findMany: jest.Mock };
     vacancy: { count: jest.Mock };
     payment: { findMany: jest.Mock };
@@ -88,6 +88,15 @@ describe('Phase 6.7 Task 3: Call Agent Metrics', () => {
   beforeEach(() => {
     prismaMock = {
       staff: {
+        // OwnTeam reads a Team Lead's team: direct teamLeadId links, then every link.
+        findMany: jest.fn().mockImplementation((args?: { where?: { teamLeadId?: string } }) => {
+          const rows = [
+            { ...mockAgentStaff, reportsToId: null },
+            { ...mockAgentStaff, id: otherAgentId, code: 'CA-00002', teamLeadId: otherTeamLeadId, reportsToId: null },
+          ];
+          const lead = args?.where?.teamLeadId;
+          return Promise.resolve(lead ? rows.filter((r) => r.teamLeadId === lead) : rows);
+        }),
         findUnique: jest.fn().mockImplementation(({ where }) => {
           if (where.id === mockAgentId) return Promise.resolve(mockAgentStaff);
           if (where.id === otherAgentId) {

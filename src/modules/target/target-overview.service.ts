@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { PricingService } from '../pricing/pricing.service';
 import {
   BadRequestException,
@@ -280,7 +281,7 @@ export class TargetOverviewService {
       const staff = await this.prisma.staff.findUnique({
         where: { id: targetStaffId },
       });
-      if (!staff || staff.teamLeadId !== actor.sub) {
+      if (!staff || staff.id === actor.sub || !(await new OwnTeam(this.prisma).includes(actor.sub, staff.id))) {
         throw new ForbiddenException(
           `Access denied: staff '${targetStaffId}' is not part of your team`,
         );
@@ -315,7 +316,7 @@ export class TargetOverviewService {
     // Fetch all team agents
     const teamAgents = await this.prisma.staff.findMany({
       where: {
-        teamLeadId: actor.sub,
+        id: { in: await new OwnTeam(this.prisma).memberIds(actor.sub) },
         role: { in: ['call_agent', 'field_agent'] },
         // Owner accounts carry no targets and stay out of team progress (owner decision 14 Nov).
         ...NOT_OWNER_ACCOUNT,

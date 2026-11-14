@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ConflictException,
@@ -557,7 +558,11 @@ export class StaffService {
     }
 
     const effectiveTeamLeadId =
-      actor?.role === 'team_lead' ? actor.sub : query.teamLeadId;
+      actor?.role === 'team_lead' ? undefined : query.teamLeadId;
+    // A Team Lead's own team (OwnTeam: teamLeadId links and reporting line).
+    const team = actor?.role === 'team_lead'
+      ? (await new OwnTeam(this.prisma, this.reportingScope).memberIds(actor.sub)).filter((id) => id !== actor.sub)
+      : null;
     // A Manager lists only their own reporting tree (security check L6); a Team Lead
     // only their team (above). The CEO lists everyone.
     const tree = actor?.role === 'manager' ? await this.reportingScope.peopleUnder(actor.sub) : null;
@@ -568,6 +573,7 @@ export class StaffService {
         ...(effectiveTeamLeadId ? { teamLeadId: effectiveTeamLeadId } : {}),
         ...(query.status ? { status: query.status } : {}),
         ...(tree ? { id: { in: [actor!.sub, ...tree] } } : {}),
+        ...(team ? { id: { in: team } } : {}),
       },
       select: STAFF_VIEW_SELECT,
       orderBy: { createdAt: 'asc' },
@@ -584,7 +590,7 @@ export class StaffService {
     }
     // A Manager opens only people in their own tree, a Team Lead only their team.
     if (actor && (actor.role === 'manager' || actor.role === 'team_lead') && staff.id !== actor.sub) {
-      const inTeam = actor.role === 'team_lead' && staff.teamLeadId === actor.sub;
+      const inTeam = actor.role === 'team_lead' && (await new OwnTeam(this.prisma, this.reportingScope).includes(actor.sub, staff.id));
       if (!inTeam && !(await this.reportingScope.personIsUnder(actor.sub, staff.id))) {
         throw new ForbiddenException(
           actor.role === 'manager'
@@ -934,7 +940,7 @@ export class StaffService {
       // Passwords and email). The re-issued invite is how a password is reset.
       const ownAgent =
         TEAM_MEMBER_ROLES.includes(target.role) &&
-        (target.teamLeadId === actor.sub || target.reportsToId === actor.sub);
+        (await new OwnTeam(this.prisma, this.reportingScope).includes(actor.sub, target.id));
       if (!ownAgent) {
         throw new ForbiddenException(
           'A Team Lead can reset passwords only for agents in their own team',
@@ -1040,7 +1046,7 @@ export class StaffService {
     if (actor.role === 'team_lead') {
       const ownAgent =
         TEAM_MEMBER_ROLES.includes(target.role) &&
-        (target.teamLeadId === actor.sub || target.reportsToId === actor.sub);
+        (await new OwnTeam(this.prisma, this.reportingScope).includes(actor.sub, target.id));
       if (!ownAgent) {
         throw new ForbiddenException(
           'A Team Lead can reset passwords only for agents in their own team',
@@ -1343,7 +1349,7 @@ export class StaffService {
     if (!target) {
       throw new NotFoundException('Staff account not found');
     }
-    if (actor.role === 'team_lead' && target.teamLeadId !== actor.sub) {
+    if (actor.role === 'team_lead' && !(await new OwnTeam(this.prisma, this.reportingScope).includes(actor.sub, target.id))) {
       throw new ForbiddenException(
         `Access denied: staff '${staffId}' is not part of your team`,
       );
@@ -1817,7 +1823,7 @@ export class StaffService {
 
     const isSelf = actor.sub === target.id;
     const isManagement = actor.role === 'ceo' || actor.role === 'manager';
-    const isTheirLead = actor.role === 'team_lead' && target.teamLeadId === actor.sub;
+    const isTheirLead = actor.role === 'team_lead' && (await new OwnTeam(this.prisma, this.reportingScope).includes(actor.sub, target.id));
     if (!isSelf && !isManagement && !isTheirLead) {
       throw new ForbiddenException(
         'Only the staff member, their team lead, a manager or the CEO can set this number',

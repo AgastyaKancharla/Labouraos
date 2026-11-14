@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -119,12 +120,10 @@ export class InterviewService {
       throw new ForbiddenException('Field agents may only book interviews for their account businesses');
     }
     if (actor.role === 'team_lead') {
-      const businessStaffIds = [vacancy.business.accountAgentId, vacancy.business.leadCreatedByStaffId]
-        .filter((id): id is string => Boolean(id));
-      const belongsToTeam = businessStaffIds.length > 0 && await this.prisma.staff.findFirst({
-        where: { id: { in: businessStaffIds }, teamLeadId: actor.id },
-        select: { id: true },
-      });
+      const belongsToTeam = await new OwnTeam(this.prisma).includesAny(actor.id, [
+        vacancy.business.accountAgentId,
+        vacancy.business.leadCreatedByStaffId,
+      ]);
       if (!belongsToTeam) throw new ForbiddenException('This business is outside your team');
     }
 
@@ -370,10 +369,7 @@ export class InterviewService {
       if (filters.agentId && filters.agentId !== actor.id) throw new ForbiddenException('You can only view your own interviews');
       where.proposedByStaffId = actor.id;
     } else if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({
-        where: { OR: [{ id: actor.id }, { teamLeadId: actor.id }] }, select: { id: true },
-      });
-      const teamIds = team.map(({ id }) => id);
+      const teamIds = await new OwnTeam(this.prisma).memberIds(actor.id);
       if (filters.agentId && !teamIds.includes(filters.agentId)) throw new ForbiddenException('You can only view interviews proposed by your team');
       where.proposedByStaffId = filters.agentId ?? { in: teamIds };
     } else if (filters.agentId) {

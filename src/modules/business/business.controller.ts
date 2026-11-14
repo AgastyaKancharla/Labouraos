@@ -229,7 +229,12 @@ export class BusinessController {
   }
 
   @Post(':id/visits')
-  @RequireRoles('field_agent', 'call_agent', 'manager', 'ceo', 'team_lead')
+  // Visits are done in person by field agents (guide: call agents work by
+  // phone), so call agents are refused. Field agents keep their own scope
+  // (account businesses, their open visit assignment, their own active lead),
+  // Team Leads their own team's businesses (RbacGuard, :id).
+  @RequireRoles('field_agent', 'manager', 'ceo', 'team_lead')
+  @RequirePermission('business', 'write')
   async recordVisit(
     @Param('id') businessId: string,
     @Body() body: RecordVisitDto,

@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
@@ -137,7 +138,13 @@ export class MatchingService {
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
   ) {}
 
-  async match(vacancyId: string, options: { page: number }) {
+  /**
+   * The ranked candidates for a vacancy. `viewer` narrows the pool for the
+   * person looking: a Team Lead sees only job seekers their own team
+   * registered (owner decision, 14 Nov; OwnTeam). Everyone else, and the
+   * internal callers that pass no viewer, see the city-wide pool.
+   */
+  async match(vacancyId: string, options: { page: number; viewer?: { id: string; role: string } }) {
     if (!Number.isInteger(options.page) || options.page < 1) {
       throw new BadRequestException('page must be a positive integer');
     }
@@ -175,7 +182,11 @@ export class MatchingService {
     const policy = await this.pricingService.current();
     const weights = this.readWeights(policy.matchingWeights);
     const now = this.clock.now();
-    const pool = (await this.loadCandidatePool({ status: 'active' })).filter((seeker) => seeker.status === 'active');
+    const poolWhere: Prisma.JobSeekerWhereInput = { status: 'active' };
+    if (options.viewer?.role === 'team_lead') {
+      poolWhere.registeredByStaffId = { in: await new OwnTeam(this.prisma).memberIds(options.viewer.id) };
+    }
+    const pool = (await this.loadCandidatePool(poolWhere)).filter((seeker) => seeker.status === 'active');
     const { matches, nearMisses, leftOut } = this.evaluate(vacancy, pool, policy, weights, now);
 
     // Close to a refund: a priority candidate goes before others with an equal match.

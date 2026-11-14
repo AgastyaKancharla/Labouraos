@@ -183,8 +183,11 @@ describe('Signing out, revoking a session and a new sign-in ask open streams to 
     expect(live.recheckSessions).toHaveBeenCalledWith('staff-1');
     await authController.login({} as never, { headers: {}, socket: {} } as never);
     expect(live.recheckSessions).toHaveBeenCalledWith('staff-9');
-    const sessions = new StaffSessionController(auth as never, live as never);
+    const prisma = { staffSession: { findUnique: jest.fn(async () => ({ staffId: 'staff-7' })) } };
+    const sessions = new StaffSessionController(auth as never, live as never, prisma as never);
     await sessions.revokeSession('sess-2', { user: { sub: 'ceo-1' } } as never);
-    expect(live.recheckAllSessions).toHaveBeenCalled();
+    // Only the revoked session's owner is nudged, not every open stream.
+    expect(live.recheckSessions).toHaveBeenLastCalledWith('staff-7');
+    expect(live.recheckAllSessions).not.toHaveBeenCalled();
   });
 });
