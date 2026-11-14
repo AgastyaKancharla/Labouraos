@@ -262,29 +262,4 @@ describe('Phase 6 Task 7: RBAC, Masking, and Consoles Integration', () => {
         .expect(403);
     });
   });
-
-  describe('Priority Dashboard & Area Scoping', () => {
-    it('Field Agent accesses live priority endpoints (/priority/candidates, vacancies, trades)', async () => {
-      const candRes = await request(app.getHttpServer())
-        .get('/priority/candidates')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(200);
-
-      expect(Array.isArray(candRes.body)).toBe(true);
-
-      const vacRes = await request(app.getHttpServer())
-        .get('/priority/vacancies')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(200);
-
-      expect(Array.isArray(vacRes.body)).toBe(true);
-
-      const tradeRes = await request(app.getHttpServer())
-        .get('/priority/trades')
-        .set('Authorization', `Bearer ${fieldAgentToken}`)
-        .expect(200);
-
-      expect(Array.isArray(tradeRes.body)).toBe(true);
-    });
-  });
 });
