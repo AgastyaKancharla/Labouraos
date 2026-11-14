@@ -70,6 +70,8 @@ For this first version the verification steps are the **existing link pages** (`
 | `GOOGLE_IOS_URL_SCHEME` | iPhone only, at build time: the iOS client id reversed |
 | `LABOURA_ANDROID_PACKAGE`, `LABOURA_IOS_BUNDLE_ID` | Override the placeholder ids (`com.laboura.app`) |
 | `EXPO_PUBLIC_PRIVACY_URL` | Privacy policy page (default `https://laboura.com/privacy`) |
+| `GOOGLE_SERVICES_JSON` | Path to Firebase's `google-services.json` (Android push). On EAS a "file" environment variable; locally `./google-services.json` if present. Never committed; without it the app still builds, just without Android push |
+| `EAS_PROJECT_ID` | The Expo project id from `eas init`; written to `extra.eas.projectId` (push tokens need it). Set it in the EAS project's environment variables or `eas.json` `env` |
 
 The HTTP client sends `X-Laboura-Installation` (a random id per install) on every request, renews the 15-minute access token with the refresh token on `401 CUSTOMER_TOKEN_EXPIRED` (once, then retries), and signs out on any other 401. Screens never show the server's English `message`: they choose their own words from the error `code` (`src/api/errorText.ts`).
 
@@ -95,7 +97,8 @@ The HTTP client sends `X-Laboura-Installation` (a random id per install) on ever
 ```
 npm install -g eas-cli      # once
 eas login                   # the Laboura Expo account
-eas init                    # once: links this folder to an Expo project (adds extra.eas.projectId)
+eas init                    # once: creates the Expo project; copy the project id it prints into
+                            # EAS_PROJECT_ID (the config is dynamic, so eas init cannot write it itself)
 eas build -p android --profile preview
 ```
 
@@ -110,8 +113,9 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
    - **Android** — package `com.laboura.app` plus the **SHA-1 fingerprint**: after the first `eas build`, run `eas credentials -p android` → the build profile → copy "SHA1 Fingerprint", paste it into the Android client. Put this id on the server as `GOOGLE_CLIENT_ID_ANDROID`. (Later, the Play Store's own "App signing" SHA-1 must be added too.)
    - **iOS** (later, with the Apple account) — bundle id `com.laboura.app`; id → `GOOGLE_CLIENT_ID_IOS`, and its reversed form → `GOOGLE_IOS_URL_SCHEME` for iPhone builds.
    - The OAuth consent screen needs the app name, a support email and the privacy policy link.
-4. **Firebase for notifications** (Agent C): the same project's `google-services.json`, uploaded to Expo with `eas credentials` — never committed (it is in `.gitignore`).
-5. **Apple** (after testing, in the company's name): developer account → Sign in with Apple, iPhone push, TestFlight.
+4. **Firebase for notifications** (Agent C): in the same Firebase project add an Android app with package `com.laboura.app`, download `google-services.json`, and upload it to the Expo project as a **file** environment variable named `GOOGLE_SERVICES_JSON` (expo.dev → project → Environment variables). Never commit it (it is in `.gitignore`). Then give Expo the FCM key: `eas credentials -p android` → Push Notifications → upload the Firebase service-account key.
+5. **EAS project id**: after `eas init`, set `EAS_PROJECT_ID` to the id it prints (Expo environment variables, or `env` in `eas.json`). Without it the app runs but cannot get a push token.
+6. **Apple** (after testing, in the company's name): developer account → Sign in with Apple, iPhone push, TestFlight.
 
 ## Hand-off to Agent C (notifications)
 
@@ -122,3 +126,4 @@ EAS builds in the cloud (free plan: 15 Android builds a month) and gives a downl
 - They may use `useCustomerApi()` / `httpClient` from `@/api`, `useAuth()` from `@/auth/AuthProvider` (account, active profile, `sessionStore` token), `useI18n()` and `routes`. Notification wording lives in Agent C's files; screen wording here.
 - Sign-out already calls `POST /auth/sign-out`, which removes this phone's push token on the server.
 - Notification settings switches belong on Settings: Agent C may add a section there or a route.
+- Done on this branch for Agent C: `expo-notifications` 58.1.7 (the SDK 58 version) in `package.json`; the `expo-notifications` plugin (`color #0055C0`, `defaultChannel: service`) and `android.googleServicesFile` (only when the file exists) in `app.config.js`; `extra.eas.projectId` from `EAS_PROJECT_ID`; Jest mocks for `expo-notifications` and `expo-constants` in `src/test/setup.tsx`.

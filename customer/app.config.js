@@ -11,6 +11,10 @@
  *   EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID      Google OAuth "iOS" client id
  *   GOOGLE_IOS_URL_SCHEME                 the iOS client id reversed (com.googleusercontent.apps.…), used at build time
  *   LABOURA_ANDROID_PACKAGE / LABOURA_IOS_BUNDLE_ID   override the placeholder identifiers below
+ *   GOOGLE_SERVICES_JSON            path to Firebase's google-services.json (Android push). On EAS: a
+ *                                   "file" environment variable. Locally: ./google-services.json if present.
+ *                                   Never committed; when missing, the app still builds (no Android push).
+ *   EAS_PROJECT_ID                  the Expo project id from `eas init` (push tokens need it)
  *
  * The Android package and iOS bundle identifier are PLACEHOLDERS
  * (com.laboura.app) until the owner confirms them. They cannot be changed
@@ -22,6 +26,17 @@ const IOS_BUNDLE_ID = process.env.LABOURA_IOS_BUNDLE_ID || 'com.laboura.app';
 const API_URL = process.env.EXPO_PUBLIC_API_URL || 'https://app.laboura.com';
 // Placeholder scheme so `expo prebuild` works before the real iOS client exists.
 const GOOGLE_IOS_URL_SCHEME = process.env.GOOGLE_IOS_URL_SCHEME || 'com.googleusercontent.apps.replace-with-ios-client-id';
+
+const fs = require('fs');
+const path = require('path');
+
+/** Only point at google-services.json when it exists, so local and CI builds work without it. */
+function googleServicesFile() {
+  const candidate = process.env.GOOGLE_SERVICES_JSON || './google-services.json';
+  return fs.existsSync(path.resolve(__dirname, candidate)) ? candidate : undefined;
+}
+const GOOGLE_SERVICES_FILE = googleServicesFile();
+const EAS_PROJECT_ID = process.env.EAS_PROJECT_ID || '';
 
 const CAMERA_REASON = 'Laboura uses the camera for your live selfie and to scan your ID card during registration.';
 const LOCATION_REASON = 'Laboura uses your location only when you tap "Use my location" to place your shop or area on the map.';
@@ -49,6 +64,7 @@ module.exports = () => ({
   android: {
     package: ANDROID_PACKAGE,
     versionCode: 1,
+    ...(GOOGLE_SERVICES_FILE ? { googleServicesFile: GOOGLE_SERVICES_FILE } : {}),
     adaptiveIcon: {
       foregroundImage: './assets/adaptive-icon.png',
       backgroundColor: '#0055C0',
@@ -75,6 +91,8 @@ module.exports = () => ({
     'expo-apple-authentication',
     ['@react-native-google-signin/google-signin', { iosUrlScheme: GOOGLE_IOS_URL_SCHEME }],
     ['expo-location', { locationWhenInUsePermission: LOCATION_REASON }],
+    // Push (Agent C, customer/src/push/): small icon tint and the default Android channel.
+    ['expo-notifications', { color: '#0055C0', defaultChannel: 'service' }],
   ],
   extra: {
     apiUrl: API_URL,
@@ -82,7 +100,7 @@ module.exports = () => ({
     linkPagesUrl: process.env.EXPO_PUBLIC_LINK_PAGES_URL || API_URL,
     googleWebClientId: process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || '',
     googleIosClientId: process.env.EXPO_PUBLIC_GOOGLE_IOS_CLIENT_ID || '',
-    // Filled by `eas init` once the owner's Expo account exists:
-    // eas: { projectId: '…' },
+    // Set EAS_PROJECT_ID (from `eas init`) — getExpoPushTokenAsync needs it.
+    ...(EAS_PROJECT_ID ? { eas: { projectId: EAS_PROJECT_ID } } : {}),
   },
 });

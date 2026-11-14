@@ -63,3 +63,27 @@ jest.mock('react-native-qrcode-svg', () => {
 });
 
 jest.mock('expo-crypto', () => ({ randomUUID: jest.fn(() => 'install-uuid') }));
+
+// Push (Agent C's customer/src/push/ uses these).
+jest.mock('expo-notifications', () => ({
+  setNotificationHandler: jest.fn(),
+  setNotificationChannelAsync: jest.fn(async () => null),
+  getPermissionsAsync: jest.fn(async () => ({ status: 'undetermined', granted: false, canAskAgain: true })),
+  requestPermissionsAsync: jest.fn(async () => ({ status: 'granted', granted: true, canAskAgain: true })),
+  getExpoPushTokenAsync: jest.fn(async () => ({ type: 'expo', data: 'ExponentPushToken[test]' })),
+  getDevicePushTokenAsync: jest.fn(async () => ({ type: 'android', data: 'device-token' })),
+  addNotificationReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  addNotificationResponseReceivedListener: jest.fn(() => ({ remove: jest.fn() })),
+  addPushTokenListener: jest.fn(() => ({ remove: jest.fn() })),
+  getLastNotificationResponseAsync: jest.fn(async () => null),
+  useLastNotificationResponse: jest.fn(() => null),
+  setBadgeCountAsync: jest.fn(async () => true),
+  dismissAllNotificationsAsync: jest.fn(async () => undefined),
+  AndroidImportance: { DEFAULT: 3, HIGH: 4, MAX: 5, LOW: 2, MIN: 1 },
+  PermissionStatus: { GRANTED: 'granted', DENIED: 'denied', UNDETERMINED: 'undetermined' },
+}));
+
+jest.mock('expo-constants', () => {
+  const constants = { expoConfig: { version: '0.1.0', extra: { eas: { projectId: 'test-project-id' } } }, easConfig: { projectId: 'test-project-id' } };
+  return { __esModule: true, default: constants, ...constants };
+});
