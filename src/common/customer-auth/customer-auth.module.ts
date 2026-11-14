@@ -3,6 +3,7 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { CustomerAuthClock } from './customer-auth.clock';
 import { CustomerAuthGuard } from './customer-auth.guard';
 import { CustomerTokenService } from './customer-token.service';
+import { CustomerScopeService } from './customer-scope.service';
 
 /**
  * The customer sign-in realm (job seekers, businesses, referral partners).
@@ -13,7 +14,7 @@ import { CustomerTokenService } from './customer-token.service';
 @Global()
 @Module({
   imports: [PrismaModule],
-  providers: [CustomerAuthClock, CustomerTokenService, CustomerAuthGuard],
-  exports: [CustomerAuthClock, CustomerTokenService, CustomerAuthGuard],
+  providers: [CustomerAuthClock, CustomerTokenService, CustomerAuthGuard, CustomerScopeService],
+  exports: [CustomerAuthClock, CustomerTokenService, CustomerAuthGuard, CustomerScopeService],
 })
 export class CustomerAuthModule {}

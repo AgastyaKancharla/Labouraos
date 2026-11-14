@@ -81,8 +81,10 @@ export class ReferralService {
     return updated;
   }
 
-  async create(dto: CreateReferralDto, actorId: string) {
+  async create(dto: CreateReferralDto, actorId: string, options: { selfRegisteredByAccountId?: string } = {}) {
     assertNoRawAadhaar(dto);
+    // Customer app self-registration: same checks and OTP, no registering agent.
+    const auditActorId = options.selfRegisteredByAccountId ? `customer:${options.selfRegisteredByAccountId}` : actorId;
 
     const submitted = dto as unknown as Record<string, unknown>;
     if (['upiId', 'accountNumber', 'ifsc', 'bankAccount'].some((field) => field in submitted)) {
@@ -177,12 +179,12 @@ export class ReferralService {
         longitude: dto.longitude ?? null,
         heardFrom: dto.heardFrom,
         // Who registered the partner: a Team Lead reads only their team's partners.
-        registeredByStaffId: this.registeringStaffId(actorId),
+        registeredByStaffId: options.selfRegisteredByAccountId ? null : this.registeringStaffId(actorId),
       },
     });
 
     await this.auditService.log({
-      actorId,
+      actorId: auditActorId,
       action: 'referral.create',
       entityType: 'referral',
       entityCode: code,

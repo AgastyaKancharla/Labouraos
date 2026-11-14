@@ -79,6 +79,15 @@ services:
       # Customer app sign-in (separate realm): signs customer tokens; never the staff JWT_SECRET.
       - key: CUSTOMER_JWT_SECRET
         generateValue: true
+      # Customer app "Continue with Google": the OAuth client ids from the Laboura
+      # Firebase / Google Cloud project (Android, iPhone, web). Not secret, but
+      # asked for once; leave all three empty to keep Google sign-in off.
+      - key: GOOGLE_CLIENT_ID_ANDROID
+        sync: false
+      - key: GOOGLE_CLIENT_ID_IOS
+        sync: false
+      - key: GOOGLE_CLIENT_ID_WEB
+        sync: false
       - key: JWT_EXPIRES_IN
         value: "15m"
 

@@ -391,12 +391,14 @@ checks it again.
   "spokenLanguages": ["Kannada", "Hindi"],
   "heardFrom": "laboura_app",
   "referralCode": "RF-00012",
-  "otp": { "requestId": "otp_…", "code": "123456" },
-  "optional": { "whatsappPhone": "…", "preferredLocalities": ["…"], "qualification": "…", "…": "the agent form's optional fields" }
+  "otp": { "requestId": "otp_…", "code": "123456" }
 }
 ```
 
-`minSalary` / `maxSalary` are paise. → `201`
+`minSalary` / `maxSalary` are paise. The agent form's optional fields (WhatsApp
+number, preferred areas, qualification and so on) are not taken in v1; the
+agent adds them on the first call. A `referralCode` sets `heardFrom` to
+`referral_partner` and the partner as "referred by". → `201`
 
 ```json
 { "profileId": "uuid", "kind": "job_seeker", "code": "JS-01234", "status": "lead", "next": "registration_link" }
@@ -442,7 +444,12 @@ Households are hidden in v1 (C24). → `201`
 { "profileId": "uuid", "kind": "business", "code": "BZ-00456", "verificationStatus": "lead", "next": "agreement" }
 ```
 
-The back office (D) creates the `business_signup` visit request from the sign-up.
+The server (A) creates the verification visit request at once (proposal 4.2):
+a `VisitAssignment` with purpose `business_signup`, status `pending`,
+`requestedFor` = `visitPreferredAt` and `signupTrackerId` set, with no field
+agent yet. **The back office (D) suggests and assigns the field agent on that
+row and never creates a second one.** Branches, a visit, a selfie or a
+household cannot be sent from the app (an agent adds branches; households wait, C24).
 Errors: `409 PROFILE_EXISTS` (mobile, GST or licence already registered: linked
 if it is my mobile; otherwise `409 VALIDATION_FAILED` "Already registered" and
 the app offers "Call me back"); `400 VALIDATION_FAILED`.
@@ -489,6 +496,8 @@ a fresh link for the signed-in person; no SMS is sent.
 | `business_agreement` | business, role `owner` | `/p/agreement/<token>` | agreement signed by OTP. A non-owner: `403 NOT_ALLOWED` |
 
 → `201 { "url": "https://app.laboura.com/p/register/…", "purpose": "registration", "expiresAt": "…" }`.
+No SMS is sent for a link issued to the app (the existing link services are
+called with SMS off); the link records `issuedTo: customer:<accountId>`.
 The page still asks for the OTP to the person's own number, as today. When the
 sheet closes, the app reloads Home.
 
@@ -590,8 +599,9 @@ never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
   invoice. Business referrals are listed without an amount (not decided).
 - `paused`: true when the CEO has paused the partner: new referrals are refused;
   earned money is still paid.
-- `share.link` is where a partner's QR points; the page behind it is out of scope
-  of v1 (Agent B/web may add it). `qrText` is what the app turns into a QR code.
+- `share.link` (`PUBLIC_APP_URL` + `/r/<RF- code>`) is where a partner's QR
+  points. **No page answers `/r/...` yet**: a landing page (store links, the code
+  pre-filled) is still to be built in `web/`. `qrText` is what the app turns into a QR code.
 
 ---
 
@@ -725,6 +735,7 @@ every one with row level security on.
 | `CustomerDevice` | Installation, platform, app version, Expo push token | A (create on sign-in), C (push token) |
 | `CustomerOtpAttempt` | OTP sends and wrong codes, hashed, for abuse limits | A |
 | `SignupTracker` | One app sign-up: stage A to done, source, contact consent, assignee, outcome | A creates it (stage A) and sets the record and stage B on registration; **D owns everything after** (later stages read from the records, assignment, timing, tasks, closing). D's job picks up trackers whose `nextActionAt` is null |
+| `VisitAssignment` (existing) | Business sign-up visit request | A creates the `business_signup` row at registration; D suggests and assigns |
 | `SignupTrackerEvent` | History of a sign-up | A (stage A/B), D (all else) |
 | `CustomerInboxMessage` | Inbox and push copies | C |
 | `CustomerNotificationSetting` | The three switches, quiet hours, cap | C |

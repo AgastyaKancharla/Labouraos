@@ -219,7 +219,11 @@ export class ConsentLinkService {
     return record;
   }
 
-  async createLink(jobSeekerId: string) {
+  /**
+   * `options.sms: false` (customer app): the link is opened by the signed-in
+   * person inside the app, so no SMS is sent; everything else is the same.
+   */
+  async createLink(jobSeekerId: string, options: { sms?: boolean; issuedTo?: string } = {}) {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
     });
@@ -232,11 +236,11 @@ export class ConsentLinkService {
     await this.publicLinks.revokeActive('registration', 'job_seeker', seeker.id, now);
     const { token, id } = await this.publicLinks.create({
       purpose: 'registration', subjectType: 'job_seeker', subjectId: seeker.id,
-      phone: seeker.phone, expiresAt, metadata: { resumable: true },
+      phone: seeker.phone, expiresAt, metadata: { resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}) },
     });
 
     // Send single-use link via SMS
-    await this.messagingService.send({
+    if (options.sms !== false) await this.messagingService.send({
       channel: 'sms',
       template: 'consent_link',
       subjectType: 'job_seeker',
@@ -271,7 +275,7 @@ export class ConsentLinkService {
     return { success: true, waitingForRecovery: true };
   }
 
-  async createAgreementLink(businessId: string, staffId: string, language: string = 'en') {
+  async createAgreementLink(businessId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string } = {}) {
     if (!['kn', 'hi', 'en'].includes(language)) {
       throw new BadRequestException('language must be kn, hi, or en');
     }
@@ -292,8 +296,8 @@ export class ConsentLinkService {
     const expiresAt = new Date(now.getTime() + this.ttlMs);
     const { token } = await this.publicLinks.create({
       purpose: 'business_agreement', subjectType: 'business', subjectId: business.id,
-      phone: business.phone, language, createdByStaffId: staffId, expiresAt,
-      metadata: { agreement: {
+      phone: business.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
+      metadata: { ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), agreement: {
         ...numbers,
         version: BUSINESS_AGREEMENT_VERSION,
         language: agreementLanguage,
@@ -302,7 +306,7 @@ export class ConsentLinkService {
       } },
     });
 
-    await this.messagingService.send({
+    if (options.sms !== false) await this.messagingService.send({
       channel: 'sms',
       template: 'agreement_link',
       subjectType: 'business',
@@ -312,7 +316,7 @@ export class ConsentLinkService {
     return { success: true, token, expiresAt };
   }
 
-  async createReferralTermsLink(referralId: string, staffId: string, language: string = 'en') {
+  async createReferralTermsLink(referralId: string, staffId: string | null, language: string = 'en', options: { sms?: boolean; issuedTo?: string } = {}) {
     if (!['kn', 'hi', 'en'].includes(language)) {
       throw new BadRequestException('language must be kn, hi, or en');
     }
@@ -329,8 +333,8 @@ export class ConsentLinkService {
     const expiresAt = new Date(now.getTime() + (await this.registrationTtl(false)));
     const { token } = await this.publicLinks.create({
       purpose: 'referral_registration', subjectType: 'referral', subjectId: referral.id,
-      phone: referral.phone, language, createdByStaffId: staffId, expiresAt,
-      metadata: { partnerName: referral.name, ownerName: referral.name, resumable: true, terms: {
+      phone: referral.phone, language, createdByStaffId: staffId ?? undefined, expiresAt,
+      metadata: { partnerName: referral.name, ownerName: referral.name, resumable: true, ...(options.issuedTo ? { issuedTo: options.issuedTo } : {}), terms: {
         referralPayoutPaise,
         version: REFERRAL_TERMS_VERSION,
         language: agreementLanguage,
@@ -339,7 +343,7 @@ export class ConsentLinkService {
       } },
     });
 
-    await this.messagingService.send({
+    if (options.sms !== false) await this.messagingService.send({
       channel: 'sms',
       template: 'referral_terms_link',
       subjectType: 'referral',
