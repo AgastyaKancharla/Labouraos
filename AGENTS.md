@@ -253,6 +253,25 @@ Write the test in the same task as the code. Do not batch tests for later.
 
 ---
 
+## 9a. Background jobs (one queue, one worker, a fixed number of Redis connections)
+
+The free Render Key Value accepts about 50 connections and a zero-downtime deploy runs two copies of the app at once, so **a process opens at most 2 Redis connections** (web 1, worker/all 2; budget `REDIS_CONNECTION_BUDGET`, default 12). `src/jobs/redis-connection-budget.spec.ts` boots the app for each `PROCESS_ROLE` and fails if that grows; `src/common/redis/redis-connections.spec.ts` fails if any file other than `src/common/redis/redis-connections.ts`, `src/jobs/job-queue.ts` or `src/jobs/legacy-queues.ts` writes `new Redis(`, `new Queue(`, `new Worker(`, `new QueueEvents(` or `new FlowProducer(`.
+
+- **Redis:** always `sharedRedis()` (and `whenRedisReady` / `pingRedis` for checks) from `src/common/redis/redis-connections.ts`. Never open your own connection, and never close the shared one (shutdown does).
+- **Queues and workers:** every job uses the one queue `laboura-jobs` and the one Worker in `src/jobs/job-queue.ts` (`jobQueue`), which runs the handler registered under the job's **name**. Two runs of the same job never overlap; different jobs run side by side.
+
+**How to add a scheduled job** (copy `src/jobs/win-back.job.ts`):
+1. In `src/jobs/<name>.job.ts`: export `<NAME>_QUEUE = LABOURA_JOBS_QUEUE` and a unique job name `<NAME>_SWEEP`; `getQueue()` returns `jobQueue.queue()`; `readonly handle: JobHandler = () => recordJobRun(this.prisma, <NAME>_SWEEP, () => this.process())`; `getWorker()` returns `jobQueue.worker(<NAME>_SWEEP, this.handle)`; `schedule()` calls `this.getQueue().upsertJobScheduler('<scheduler-id>', <repeat from job-schedules.ts>, { name: <NAME>_SWEEP, opts })`; `onModuleInit()` returns unless `runsJobs()` and then calls `startScheduledJob({ name, handler: this.handle, schedule, startWorker, onError })`; `close()` calls `jobQueue.release(<NAME>_SWEEP)`.
+2. Add the entry to `JOB_CATALOG` in `src/jobs/job-catalog.ts` (`queue: SHARED_JOB_QUEUE`, `jobName`, `schedulerId`, `runName`, `label`; no `legacyQueue`).
+3. Add the job to `JobScheduleKeeper` (constructor and `handles`) and to `JobsModule` providers.
+That is all: it automatically uses the shared queue and worker, the keeper puts its schedule back after a Key Value restart, `/health/ready` checks it, and it adds no connection.
+
+**A one-off job** (queued by code, not on a schedule, like the recording copy): register the handler with `jobQueue.register('<name>', handler)` in `onModuleInit` when `runsJobs()`, and queue runs with `jobQueue.add('<name>', data, opts)` wrapped in a timeout on HTTP paths.
+
+Nothing that starts with the app may wait for Redis: the app must start and answer `/health` with Redis down (`startScheduledJob` gives up after `REDIS_STARTUP_TIMEOUT_MS`, default 2 s, and the keeper catches up when Redis answers).
+
+---
+
 ## 10. Git workflow
 
 - One branch per task: `phase-1/task-3-rbac-guard`
