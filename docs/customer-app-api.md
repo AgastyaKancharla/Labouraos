@@ -800,7 +800,7 @@ What D does with each sign-up:
 - **Business visit**: Agent A creates the `business_signup` VisitAssignment. D never
   creates another: it moves the business `lead → pending_visit` and suggests the
   nearest available field agent on that row; the suggested agent's Team Lead (any
-  Team Lead when there is no suggestion) confirms with the existing assign route.
+  Team Lead when there is no suggestion) confirms it with `POST /signup-tracker/visit-requests/:id/assign`.
   `business_signup` is treated as the verification visit everywhere (owner OTP,
   photo, GPS, Team Lead check).
 - **Credit** (question 13): finished without help → `outcome: 'self'`, no agent;
@@ -816,6 +816,7 @@ Office routes (staff realm, `/signup-tracker/...`):
 | `GET manager?days=` | Manager | Counts and funnels only (no names, phones or money) |
 | `GET ceo?days=&kind=&stage=&outcome=` | CEO | Funnels by stage, kind, area and source; the list; timing settings in force |
 | `POST :id/reassign { staffId, reason? }` | Team Lead (own team), Manager (own tree), CEO | Moves the sign-up and its open call task |
+| `POST visit-requests/:assignmentId/assign { assignedStaffId }` | Team Lead (own field agents), Manager (own tree), CEO | Confirms or changes the field agent on a `business_signup` visit request (the business routes' team check cannot place an app sign-up, which has no agent yet). T-Visits uses it for those rows |
 | `GET app-labels?type=&ids=` | office roles | `{ [id]: { registeredInApp, hasApp, pushOn } }` for the "Registered in the app" label |
 | `GET staff-languages`, `PUT staff-languages/:staffId { languages }` | CEO | Languages each staff member speaks |
 

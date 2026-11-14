@@ -380,12 +380,17 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     const other = await request(app.getHttpServer()).get('/businesses/visit-assignments').set('Authorization', `Bearer ${token(lead2)}`).expect(200);
     expect(other.body.map((a: { id: string }) => a.id)).not.toContain(request0.id);
     await request(app.getHttpServer())
-      .post(`/businesses/${business.id}/visit-assignments/${request0.id}/assign`)
+      .post(`/signup-tracker/visit-requests/${request0.id}/assign`)
       .set('Authorization', `Bearer ${token(lead2)}`)
       .send({ assignedStaffId: fieldAgent.id })
       .expect(403);
     await request(app.getHttpServer())
-      .post(`/businesses/${business.id}/visit-assignments/${request0.id}/assign`)
+      .post(`/signup-tracker/visit-requests/${request0.id}/assign`)
+      .set('Authorization', `Bearer ${token(kannadaAgent)}`)
+      .send({ assignedStaffId: fieldAgent.id })
+      .expect(403);
+    await request(app.getHttpServer())
+      .post(`/signup-tracker/visit-requests/${request0.id}/assign`)
       .set('Authorization', `Bearer ${token(lead1)}`)
       .send({ assignedStaffId: fieldAgent.id })
       .expect(201);

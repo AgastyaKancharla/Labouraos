@@ -5,6 +5,7 @@ import { mockApi, renderScreen, signInAs } from '../../test/utils';
 import TeamLeadAppSignups from '../team-lead/T-AppSignups';
 import ManagerAppSignups from '../manager/MG-AppSignups';
 import CeoAppSignups from '../ceo/C-AppSignups';
+import TeamLeadVisits from '../team-lead/T-Visits';
 import { AppSignupBadgeFor } from './AppSignupBadge';
 import type { SignupRow } from './appSignups';
 
@@ -159,5 +160,30 @@ describe('"Registered in the app" label', () => {
     );
     expect(await screen.findByText(/Registered in the app/)).toBeInTheDocument();
     expect(screen.getByTestId('other')).toBeEmptyDOMElement();
+  });
+});
+
+describe('Team Lead · Visit proof: a business that signed up in the app', () => {
+  it('confirms the suggested field agent through the sign-up route', async () => {
+    signInAs('team_lead');
+    const api = mockApi({
+      'GET /team-lead/team': {
+        lead: { id: 'tl-1', code: 'TL-1', name: 'Ravi Shankar', role: 'team_lead' },
+        teamName: 'Team South',
+        manager: null,
+        members: [{ id: 'fa-1', code: 'FA-1', name: 'Suresh B', role: 'field_agent' }],
+      },
+      'GET /team-lead/visits': { date: '2026-12-02', summary: { visits: 0, toCheck: 0, signedUp: 0 }, rows: [] },
+      'GET /businesses/visit-assignments': [
+        { id: 'va-1', purpose: 'business_signup', createdAt: '2026-12-02T04:00:00Z', business: { id: 'b-1', code: 'BZ-00456', name: 'Sri Sai Bakery', locality: 'Jayanagar' }, suggestedStaff: { id: 'fa-1', name: 'Suresh B' } },
+      ],
+      'POST /signup-tracker/visit-requests/va-1/assign': { id: 'va-1', status: 'assigned' },
+    });
+    renderScreen(<TeamLeadVisits />, { now: NOW, portal: 'team-lead', path: '/team-lead/visits' });
+    expect(await screen.findByText('Signed up in the app · verification visit')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled());
+    await userEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    await waitFor(() => expect(api.calls('POST /signup-tracker/visit-requests/va-1/assign')).toHaveLength(1));
+    expect(api.calls('POST /signup-tracker/visit-requests/va-1/assign')[0].body).toEqual({ assignedStaffId: 'fa-1' });
   });
 });

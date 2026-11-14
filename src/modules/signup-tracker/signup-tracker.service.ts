@@ -651,6 +651,23 @@ export class SignupTrackerService {
     return { id: tracker.id, assignedStaffId: target.id, assignedTo: target.code };
   }
 
+  /** The Team Lead (own field agents), a Manager or the CEO sends a field agent to a business sign-up. */
+  async assignSignupVisit(actor: { id: string; role: string }, assignmentId: string, staffId: string) {
+    const assignment = await this.prisma.visitAssignment.findUnique({ where: { id: assignmentId }, select: { purpose: true, signupTrackerId: true } });
+    if (!assignment) throw new NotFoundException('Visit request not found');
+    if (assignment.purpose !== VISIT_PURPOSE_BUSINESS_SIGNUP) {
+      throw new BadRequestException('Only an app sign-up visit request is assigned here');
+    }
+    if (actor.role === 'manager' && staffId && !(await this.peopleUnder(actor.id)).has(staffId)) {
+      throw new ForbiddenException('Managers send only field agents in their own teams');
+    }
+    const updated = await this.verification.assign(assignmentId, actor.id, staffId);
+    if (assignment.signupTrackerId) {
+      await this.event(assignment.signupTrackerId, 'visit_request', { staffId, byStaffId: actor.id, note: 'Field agent confirmed' });
+    }
+    return updated;
+  }
+
   async peopleUnder(managerId: string): Promise<Set<string>> {
     return new Set(await this.scope.peopleUnder(managerId));
   }

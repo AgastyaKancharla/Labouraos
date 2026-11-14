@@ -57,6 +57,18 @@ export class SignupTrackerController {
     return this.tracker.reassign(this.actor(req), id, body?.staffId ?? '', body?.reason ?? null);
   }
 
+  /**
+   * Confirm or change the field agent for a business sign-up's visit request
+   * (purpose business_signup). An app sign-up has no registering agent, so the
+   * business routes' team check cannot place it; the Team Lead of the field
+   * agent being sent confirms it here (own field agents only).
+   */
+  @Post('visit-requests/:assignmentId/assign')
+  @RequireRoles('team_lead', 'manager', 'ceo')
+  assignVisit(@Req() req: Authed, @Param('assignmentId') assignmentId: string, @Body() body: { assignedStaffId?: string }) {
+    return this.tracker.assignSignupVisit(this.actor(req), assignmentId, body?.assignedStaffId ?? '');
+  }
+
   /** "Registered in the app" labels for a list of records (ids comma-separated). */
   @Get('app-labels')
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')
