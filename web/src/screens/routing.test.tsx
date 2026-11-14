@@ -70,6 +70,17 @@ describe('routes and guards', () => {
     // The Manager lands on their own Command Center (MG-Home, now built), never the CEO's page.
     expect(await screen.findByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeInTheDocument();
     expect(screen.getByRole('link', { name: /Plan vs Actual/ })).toHaveAttribute('href', '/manager/plan');
+    // …and is told why, once (owner rule, 14 Nov: refuse other roles cleanly).
+    expect(await screen.findByText("That page is for the CEO. You're in the Manager portal.")).toBeInTheDocument();
+    expect(screen.getAllByText(/That page is for the CEO/)).toHaveLength(1);
+  });
+
+  it('says nothing about another portal when a role opens its own pages', async () => {
+    signInAs('manager');
+    mockApi({ 'GET /login-codes/pending': [], 'GET /review-flags': [], 'GET /manager/overview': { status: 500, body: { message: 'x' } } });
+    renderAt('/manager');
+    expect(await screen.findByRole('heading', { level: 1, name: /^Good (morning|afternoon|evening)/ })).toBeInTheDocument();
+    expect(screen.queryByText(/That page is for/)).toBeNull();
   });
 
   it('shows the CEO sidebar from Main.dc.html with live badge counts', async () => {
