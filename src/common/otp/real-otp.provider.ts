@@ -40,6 +40,16 @@ export function isWithinTraiWindow(date: Date = new Date()): boolean {
   return istMinutes >= 540 && istMinutes < 1260;
 }
 
+/**
+ * Codes a person asks for themselves, at any hour: the customer app's sign-in,
+ * add-mobile and fresh-OTP codes (customer_*) and any staff sign-in code
+ * (staff_*; staff sign in with login codes today, not SMS). Agent-started
+ * codes during a call keep the 09:00–21:00 window.
+ */
+export function isPersonRequestedOtp(purpose: string | undefined): boolean {
+  return typeof purpose === 'string' && (purpose.startsWith('customer_') || purpose.startsWith('staff_'));
+}
+
 @Injectable()
 export class RealOtpProvider implements OtpProvider {
   private readonly logger = new Logger(RealOtpProvider.name);
@@ -101,8 +111,10 @@ export class RealOtpProvider implements OtpProvider {
   async sendOtp(phone: string, options?: OtpSendOptions): Promise<OtpSendResult> {
     const now = this.timeProvider();
 
-    // Enforce 09:00–21:00 IST window per TRAI regulations and Phase 7 Task 1 acceptance
-    if (!isWithinTraiWindow(now)) {
+    // Enforce 09:00–21:00 IST window per TRAI regulations and Phase 7 Task 1 acceptance,
+    // except for a code the person asked for themselves (owner rule: OTPs and
+    // things the person just did are allowed in quiet hours).
+    if (!isWithinTraiWindow(now) && !isPersonRequestedOtp(options?.purpose)) {
       throw new BadRequestException(
         'TRAI compliance: Commercial/OTP messages cannot be transmitted outside 09:00–21:00 IST',
       );
@@ -238,11 +250,14 @@ export class RealOtpProvider implements OtpProvider {
     }
   }
 
-  async isVerified(requestId: string, phone?: string): Promise<boolean> {
+  async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {
     const prisma = this.prisma;
     if (!prisma) return false;
     const session = await prisma.otpSession.findUnique({ where: { requestId } });
     if (!session || !session.verified || session.usedAt || session.expiresAt <= this.timeProvider()) {
+      return false;
+    }
+    if (purpose !== undefined && session.purpose !== purpose) {
       return false;
     }
     if (phone) {
@@ -252,7 +267,13 @@ export class RealOtpProvider implements OtpProvider {
     return true;
   }
 
-  async consumeVerified(requestId: string, phone: string): Promise<boolean> {
+  async getPurpose(requestId: string): Promise<string | null> {
+    if (!this.prisma) return null;
+    const session = await this.prisma.otpSession.findUnique({ where: { requestId }, select: { purpose: true } });
+    return session?.purpose ?? null;
+  }
+
+  async consumeVerified(requestId: string, phone: string, purpose?: string): Promise<boolean> {
     const prisma = this.prisma;
     if (!prisma) return false;
     const now = this.timeProvider();
@@ -260,6 +281,7 @@ export class RealOtpProvider implements OtpProvider {
     const result = await prisma.otpSession.updateMany({
       where: {
         requestId,
+        ...(purpose !== undefined ? { purpose } : {}),
         phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
         verified: true,
         usedAt: null,
