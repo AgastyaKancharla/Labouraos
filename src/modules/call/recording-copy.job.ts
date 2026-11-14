@@ -1,5 +1,5 @@
-import { Inject, Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
-import { Queue, Worker } from 'bullmq';
+import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/common';
+import { Job } from 'bullmq';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import {
   RECORDING_DOWNLOADER,
@@ -8,40 +8,38 @@ import {
   RecordingStorage,
 } from './recording-storage';
 import { runsJobs } from '../../common/process/process-role';
+import { jobQueue, LABOURA_JOBS_QUEUE } from '../../jobs/job-queue';
 
-export const RECORDING_COPY_QUEUE = 'recording-copy';
+/** Copies go into the shared job queue (they had their own 'recording-copy' queue before; see job-queue.ts). */
+export const RECORDING_COPY_QUEUE = LABOURA_JOBS_QUEUE;
+export const RECORDING_COPY_JOB = 'copy-recording';
 export const RECORDING_QUEUE_TIMEOUT_MS = 5000;
 
 @Injectable()
 export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
-  private readonly logger = new Logger(RecordingCopyJob.name);
-  private worker: Worker | null = null;
-
   constructor(
     private readonly prisma: PrismaService,
     @Inject(RECORDING_STORAGE) private readonly storage: RecordingStorage,
     @Inject(RECORDING_DOWNLOADER) private readonly downloader: RecordingDownloader,
   ) {}
 
+  /** What the shared job worker runs for each queued copy (src/jobs/job-queue.ts). */
+  readonly handle = async (job: Job): Promise<void> => {
+    const data = job.data as { callRecordId: string; recordingUrl: string };
+    await this.run(data.callRecordId, data.recordingUrl);
+  };
+
   async onModuleInit(): Promise<void> {
+    // Only a process that runs jobs handles the copies; the shared worker is
+    // started by JobQueueLifecycle, so this needs no Redis.
     if (!runsJobs()) {
       return;
     }
-    try {
-      this.worker = new Worker(
-        RECORDING_COPY_QUEUE,
-        async (job: { data: { callRecordId: string; recordingUrl: string } }) => {
-          await this.run(job.data.callRecordId, job.data.recordingUrl);
-        },
-        { connection: this.connection() },
-      );
-    } catch (err) {
-      this.logger.warn(`Recording copy worker did not start: ${String(err)}`);
-    }
+    jobQueue.register(RECORDING_COPY_JOB, this.handle);
   }
 
   async onModuleDestroy(): Promise<void> {
-    await this.worker?.close();
+    jobQueue.release(RECORDING_COPY_JOB);
   }
 
   /** Downloads the provider file into Laboura's storage. Throws if the copy fails. */
@@ -64,40 +62,28 @@ export class RecordingCopyJob implements OnModuleInit, OnModuleDestroy {
 
   /** Queues another attempt. A failure here is logged and not shown to agents. */
   async schedule(callRecordId: string, recordingUrl: string): Promise<void> {
-    const queue = new Queue(RECORDING_COPY_QUEUE, { connection: this.connection() });
     let timer: NodeJS.Timeout | undefined;
     try {
       // L14: with Redis down the telephony webhook must not hang; give up after
       // a few seconds (the caller logs it, the recording link stays the vendor's).
+      // Uses the shared connection: queueing a copy opens no new connection.
       await Promise.race([
         new Promise<never>((_, reject) => {
           timer = setTimeout(() => reject(new Error(`Recording copy queue did not answer within ${RECORDING_QUEUE_TIMEOUT_MS}ms`)), RECORDING_QUEUE_TIMEOUT_MS);
         }),
-        queue.add(
-        'copy-recording',
-        { callRecordId, recordingUrl },
-        {
-          jobId: `recording-copy-${callRecordId}`,
-          attempts: 5,
-          backoff: { type: 'exponential', delay: 30000 },
-          removeOnComplete: true,
-        },
-      ),
+        jobQueue.add(
+          RECORDING_COPY_JOB,
+          { callRecordId, recordingUrl },
+          {
+            jobId: `recording-copy-${callRecordId}`,
+            attempts: 5,
+            backoff: { type: 'exponential', delay: 30000 },
+            removeOnComplete: true,
+          },
+        ),
       ]);
     } finally {
       if (timer) clearTimeout(timer);
-      await Promise.race([queue.close(), new Promise((resolve) => setTimeout(resolve, 1000).unref?.())]).catch(() => undefined);
     }
-  }
-
-  private connection() {
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null as null,
-      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-    };
   }
 }

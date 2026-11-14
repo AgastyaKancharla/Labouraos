@@ -1,12 +1,14 @@
 import { Injectable, Logger, OnModuleDestroy, OnModuleInit, Optional } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { JobHandler, LABOURA_JOBS_QUEUE, jobQueue, startScheduledJob } from './job-queue';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { recordJobRun } from './job-run-recorder';
 import { INTERVAL_JOB_MS } from './job-schedules';
 import { runsJobs } from '../common/process/process-role';
 import { SignupTrackerService } from '../modules/signup-tracker/signup-tracker.service';
 
-export const SIGNUP_TRACKER_QUEUE = 'signup-tracker';
+/** Every job shares one queue (src/jobs/job-queue.ts, AGENTS.md §9a). */
+export const SIGNUP_TRACKER_QUEUE = LABOURA_JOBS_QUEUE;
 export const SIGNUP_TRACKER_SWEEP = 'sweep-signup-tracker';
 
 /**
@@ -17,7 +19,9 @@ export const SIGNUP_TRACKER_SWEEP = 'sweep-signup-tracker';
  * payment; 4 hours for a business) for the agent the assignment rules pick,
  * closes a sign-up after 3 tries over 3 days, and turns "Call me back"
  * requests into call tasks. Times are CEO settings (signup-settings.ts);
- * working days skip weekly days off and the Holiday list.
+ * working days skip weekly days off and the Holiday list. Each sign-up is
+ * processed under its own Postgres advisory lock (SignupTrackerService.process),
+ * so a run of this job and the app's own call never work on one sign-up at once.
  */
 @Injectable()
 export class SignupTrackerJob implements OnModuleInit, OnModuleDestroy {
@@ -31,32 +35,16 @@ export class SignupTrackerJob implements OnModuleInit, OnModuleDestroy {
     @Optional() private readonly prisma?: PrismaService,
   ) {}
 
-  private get connection() {
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null,
-      connectTimeout: Number(process.env.REDIS_CONNECT_TIMEOUT_MS) || 5000,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-    };
-  }
-
   getQueue(): Queue {
-    if (!this.queue) {
-      this.queue = new Queue(SIGNUP_TRACKER_QUEUE, { connection: this.connection });
-      this.queue.on('error', (error) => this.logger.warn(`Sign-up tracker queue error: ${error.message}`));
-    }
+    this.queue = jobQueue.queue();
     return this.queue;
   }
 
+  /** What the shared job worker runs for this job (src/jobs/job-queue.ts). */
+  readonly handle: JobHandler = () => recordJobRun(this.prisma, SIGNUP_TRACKER_SWEEP, () => this.process());
+
   getWorker(): Worker {
-    if (!this.worker) {
-      this.worker = new Worker(SIGNUP_TRACKER_QUEUE, async () => recordJobRun(this.prisma, SIGNUP_TRACKER_SWEEP, () => this.process()), {
-        connection: this.connection,
-      });
-      this.worker.on('error', (error) => this.logger.error(`Sign-up tracker worker error: ${error.message}`));
-    }
+    this.worker = jobQueue.worker(SIGNUP_TRACKER_SWEEP, this.handle);
     return this.worker;
   }
 
@@ -74,23 +62,23 @@ export class SignupTrackerJob implements OnModuleInit, OnModuleDestroy {
 
   async onModuleInit(): Promise<void> {
     if (!runsJobs()) return;
-    try {
-      await this.schedule();
-      this.getWorker();
-    } catch (error) {
-      this.logger.warn(`Could not initialize SignupTrackerJob BullMQ worker: ${(error as Error).message}`);
-      await this.onModuleDestroy();
-    }
+    await startScheduledJob({
+      name: SIGNUP_TRACKER_SWEEP,
+      handler: this.handle,
+      schedule: () => this.schedule(),
+      startWorker: () => this.getWorker(),
+      onError: (message) => this.logger.warn(`Could not initialize SignupTrackerJob BullMQ worker: ${message}`),
+    });
   }
 
   async onModuleDestroy(): Promise<void> {
-    if (this.worker) {
-      await this.worker.close();
-      this.worker = null;
-    }
-    if (this.queue) {
-      await this.queue.close();
-      this.queue = null;
-    }
+    await this.close();
+  }
+
+  /** Stops handling this job here. The shared queue and Worker stay up (JobQueueLifecycle stops them at shutdown). */
+  async close(): Promise<void> {
+    jobQueue.release(SIGNUP_TRACKER_SWEEP);
+    this.worker = null;
+    this.queue = null;
   }
 }

@@ -916,7 +916,7 @@ tracker assignee and their team) for app sign-ups.
 Code: `src/modules/signup-tracker/`. The customer app module imports
 `SignupTrackerModule` and calls `SignupTrackerService`. Every method re-reads the
 records, so calling it twice is harmless; without a call the tracker job
-(`src/jobs/signup-tracker.job.ts`, every 5 minutes) finds the sign-up anyway
+(`src/jobs/signup-tracker.job.ts`, every 5 minutes, job name `sweep-signup-tracker` on the shared `laboura-jobs` queue) finds the sign-up anyway
 (trackers whose `nextActionAt` is null or due).
 
 | Method | Call it when |

@@ -7,6 +7,7 @@ import { AppModule } from '../app.module';
 import { JOB_CATALOG } from './job-catalog';
 import { missingSchedules } from './job-schedule-check';
 import { JobScheduleKeeper } from './job-schedule-keeper.service';
+import { LABOURA_JOBS_QUEUE } from './job-queue';
 
 /**
  * B1: Render's free tier has no Background Worker, so the single free web
@@ -60,11 +61,11 @@ describe('B1: one free web service with PROCESS_ROLE=all serves the API and runs
   });
 
   it('started the job workers in the same process (a scheduled run is picked up)', async () => {
-    // interviewReply repeats every minute and its first run is due at once:
-    // a worker in this process picks it up and leaves a JobRun row.
+    // Every job shares one queue with one worker (job-queue.ts): the worker in
+    // this process is listed on it.
     const keeper = app!.get(JobScheduleKeeper);
     expect(keeper.keys()).toHaveLength(JOB_CATALOG.length);
-    const queue = new Queue('interview-reply-deadlines', { connection });
+    const queue = new Queue(LABOURA_JOBS_QUEUE, { connection });
     try {
       const workers = await queue.getWorkers();
       expect(workers.length).toBeGreaterThan(0);

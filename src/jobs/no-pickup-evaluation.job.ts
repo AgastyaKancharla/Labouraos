@@ -7,6 +7,8 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Queue, Worker } from 'bullmq';
+import { JobHandler, LABOURA_JOBS_QUEUE, jobQueue, startScheduledJob } from './job-queue';
+import { redisConnectionOptions } from '../common/redis/redis-connections';
 import { PrismaService } from '../common/prisma/prisma.service';
 import { JobSeekerService } from '../modules/job-seeker/job-seeker.service';
 import {
@@ -24,7 +26,8 @@ import { primaryJobSeekerTrade } from '../modules/job-seeker/job-seeker-legacy-r
 import { cronInIndia, DAILY_JOB_PATTERNS } from './job-schedules';
 import { runsJobs } from '../common/process/process-role';
 
-export const NO_PICKUP_EVALUATION_QUEUE = 'no-pickup-evaluation';
+/** Every job shares one queue (no-pickup-evaluation was its own queue before; see job-queue.ts). */
+export const NO_PICKUP_EVALUATION_QUEUE = LABOURA_JOBS_QUEUE;
 export const NO_PICKUP_EVALUATION_JOB = 'daily-no-pickup-evaluation';
 
 export interface EvaluationResult {
@@ -52,99 +55,50 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     private readonly messaging?: MessagingService,
   ) {}
 
+  /**
+   * Connection settings for test tools that need their own connection (for
+   * example a QueueEvents listener). The app itself never uses these: its
+   * queue and worker share one connection (src/common/redis/redis-connections.ts).
+   */
   get redisConnection() {
-    const connectTimeout = process.env.REDIS_CONNECT_TIMEOUT_MS
-      ? Number(process.env.REDIS_CONNECT_TIMEOUT_MS)
-      : 5000;
-
-    return {
-      host: process.env.REDIS_HOST || 'localhost',
-      port: Number(process.env.REDIS_PORT) || 6379,
-      password: process.env.REDIS_PASSWORD || undefined,
-      maxRetriesPerRequest: null,
-      connectTimeout,
-      tls: process.env.REDIS_TLS === 'true' ? {} : undefined,
-      retryStrategy: (times: number) => {
-        if (
-          process.env.REDIS_MAX_RETRIES !== undefined &&
-          times > Number(process.env.REDIS_MAX_RETRIES)
-        ) {
-          return null;
-        }
-        return Math.min(times * 100, 2000);
-      },
-    };
+    const { host, port, password, tls, connectTimeout } = redisConnectionOptions();
+    return { host, port, password, tls, connectTimeout, maxRetriesPerRequest: null };
   }
 
-  async onModuleInit() {
-    // Only worker process initializes worker and registers scheduler (Phase 6.5 Task 1)
-    if (runsJobs()) {
-      let timer: NodeJS.Timeout | undefined;
-      try {
-        const timeoutMs = Number(process.env.REDIS_STARTUP_TIMEOUT_MS) || 2000;
-        await Promise.race([
-          this.scheduleDailyJob(),
-          new Promise((_, reject) => {
-            timer = setTimeout(
-              () => reject(new Error('Redis connection timed out')),
-              timeoutMs,
-            );
-          }),
-        ]).finally(() => {
-          if (timer) clearTimeout(timer);
-        });
-        this.getWorker();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        this.logger.warn(`Could not connect BullMQ queue to Redis: ${msg}`);
-        await this.close(true);
-      }
+  /** What the shared job worker runs for this job (src/jobs/job-queue.ts). Records its own JobRun rows. */
+  readonly handle: JobHandler = async (job) => {
+    const jobRequestId = (job.data?.requestId as string) || undefined;
+    if (jobRequestId) {
+      return await runWithRequestId(jobRequestId, async () => {
+        this.structuredLogger.log(
+          `BullMQ processing job ${job.name} (id=${job.id})`,
+          NoPickupEvaluationJob.name,
+        );
+        return await this.evaluateNoPickups();
+      });
     }
+    return await this.evaluateNoPickups();
+  };
+
+  async onModuleInit() {
+    // Only a process that runs jobs registers the scheduler and the handler (Phase 6.5 Task 1)
+    if (!runsJobs()) return;
+    await startScheduledJob({
+      name: NO_PICKUP_EVALUATION_JOB,
+      handler: this.handle,
+      schedule: () => this.scheduleDailyJob(),
+      startWorker: () => this.getWorker(),
+      onError: (message) => this.logger.warn(`Could not connect BullMQ queue to Redis: ${message}`),
+    });
   }
 
   getQueue(): Queue {
-    if (!this.queue) {
-      this.queue = new Queue(NO_PICKUP_EVALUATION_QUEUE, {
-        connection: this.redisConnection,
-      });
-      this.queue.on('error', (err) => {
-        this.logger.warn(`BullMQ queue error: ${err.message}`);
-      });
-    }
+    this.queue = jobQueue.queue();
     return this.queue;
   }
 
   getWorker(): Worker {
-    if (!runsJobs()) {
-      throw new Error(
-        'BullMQ Worker can only be constructed in a worker process (PROCESS_ROLE === "worker")',
-      );
-    }
-    if (!this.worker) {
-      this.worker = new Worker(
-        NO_PICKUP_EVALUATION_QUEUE,
-        async (job) => {
-          const jobRequestId = (job.data?.requestId as string) || undefined;
-          if (jobRequestId) {
-            return await runWithRequestId(jobRequestId, async () => {
-              this.structuredLogger.log(
-                `BullMQ processing job ${job.name} (id=${job.id})`,
-                NoPickupEvaluationJob.name,
-              );
-              return await this.evaluateNoPickups();
-            });
-          }
-          return await this.evaluateNoPickups();
-        },
-        {
-          connection: this.redisConnection,
-        },
-      );
-
-      this.worker.on('error', (err) => {
-        this.logger.error(`BullMQ worker error: ${err.message}`);
-      });
-    }
+    this.worker = jobQueue.worker(NO_PICKUP_EVALUATION_JOB, this.handle);
     return this.worker;
   }
 
@@ -386,25 +340,16 @@ export class NoPickupEvaluationJob implements OnModuleInit, OnModuleDestroy {
     return this.queue !== null;
   }
 
+  /**
+   * Stops handling this job here. The shared queue and Worker stay up; they
+   * stop at shutdown (JobQueueLifecycle), waiting for a running sweep first.
+   * `force` is kept for callers; there is nothing of this job's own to force.
+   */
   async close(force = false): Promise<void> {
-    if (this.worker) {
-      try {
-        await this.worker.close(force);
-      } catch {
-        // ignore error on close
-      } finally {
-        this.worker = null;
-      }
-    }
-    if (this.queue) {
-      try {
-        await this.queue.close();
-      } catch {
-        // ignore
-      } finally {
-        this.queue = null;
-      }
-    }
+    void force;
+    jobQueue.release(NO_PICKUP_EVALUATION_JOB);
+    this.worker = null;
+    this.queue = null;
   }
 
   async onModuleDestroy() {
