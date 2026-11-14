@@ -158,7 +158,11 @@ describe('OTP Provider and Mock Implementation', () => {
         jobSeeker: { findFirst: jest.fn().mockResolvedValue({ id: 'seeker-1', code: 'JS-01042', registeredByStaffId: 'other-agent' }) },
         business: { findFirst: jest.fn() },
         referral: { findFirst: jest.fn() },
-        staff: { findUnique: jest.fn().mockResolvedValue({ id: 'lead-1', role: 'team_lead' }), findFirst: jest.fn().mockResolvedValue(null) },
+        staff: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'lead-1', role: 'team_lead' }),
+          // other-agent is on another team (OwnTeam reads lead-1's team).
+          findMany: jest.fn().mockResolvedValue([]),
+        },
       } as unknown as PrismaService;
       const audit = { log: jest.fn().mockResolvedValue(undefined) } as unknown as AuditService;
       const service = new OtpService(provider, audit, prisma);

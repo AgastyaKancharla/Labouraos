@@ -197,7 +197,7 @@ export class ShortageTaskService {
 
   /** Open shortage tasks: a Team Lead sees his own, a Manager his tree's (and unassigned ones), the CEO all. */
   async listOpen(actor: { id: string; role: string }) {
-    const scope = await staffScopeFor(actor, this.reportingScope);
+    const scope = await staffScopeFor(actor, this.reportingScope, this.prisma);
     const where: Prisma.ShortageTaskWhereInput = { status: 'open' };
     if (actor.role === 'team_lead') {
       where.assignedTeamLeadId = actor.id;

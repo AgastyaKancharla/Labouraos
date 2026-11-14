@@ -1,3 +1,4 @@
+import { OwnTeam, businessOwners } from '../rbac/own-team';
 import { BadRequestException, Inject, Injectable } from '@nestjs/common';
 import { AuditService } from '../audit/audit.service';
 import { PrismaService } from '../prisma/prisma.service';
@@ -147,7 +148,7 @@ export class OtpService {
       select: { id: true, code: true, registeredByStaffId: true },
     });
     if (seeker) {
-      return { ...seeker, type: 'job_seeker', resource: 'job_seeker' as const, ownerStaffIds: [seeker.registeredByStaffId] };
+      return { ...seeker, type: 'job_seeker', resource: 'job_seeker' as const, ownerStaffIds: [seeker.registeredByStaffId], teamOwnerIds: [seeker.registeredByStaffId] };
     }
     const business = await this.prisma.business.findFirst({
       where: { OR: [
@@ -162,6 +163,7 @@ export class OtpService {
         type: 'business',
         resource: 'business' as const,
         ownerStaffIds: [business.accountAgentId, business.leadCreatedByStaffId],
+        teamOwnerIds: businessOwners(business),
       };
     }
     const branch = await this.prisma.businessBranch.findFirst({
@@ -174,17 +176,24 @@ export class OtpService {
         type: 'business',
         resource: 'business' as const,
         ownerStaffIds: [branch.business.accountAgentId, branch.business.leadCreatedByStaffId],
+        teamOwnerIds: businessOwners(branch.business),
       };
     }
     const referral = await this.prisma.referral.findFirst({
       where: { phone: { in: variants } },
       select: { id: true, code: true },
     });
-    return referral ? { ...referral, type: 'referral', resource: 'referral' as const, ownerStaffIds: [] } : null;
+    return referral ? { ...referral, type: 'referral', resource: 'referral' as const, ownerStaffIds: [], teamOwnerIds: [] } : null;
   }
 
   private async canSeeRecord(
-    record: { resource: 'job_seeker' | 'business' | 'referral'; id: string; ownerStaffIds: Array<string | null> },
+    record: {
+      resource: 'job_seeker' | 'business' | 'referral';
+      id: string;
+      ownerStaffIds: Array<string | null>;
+      /** Whose team the record belongs to (businessOwners for a business). */
+      teamOwnerIds: Array<string | null>;
+    },
     actorId: string,
     actorRole: string,
   ): Promise<boolean> {
@@ -199,14 +208,10 @@ export class OtpService {
       select: { id: true, role: true, teamLeadId: true },
     });
     if (!actor) return false;
-    if (record.ownerStaffIds.includes(actorId)) return true;
-    if (rule.scope !== 'own_team' || actor.role !== 'team_lead') return false;
-    const ownerIds = record.ownerStaffIds.filter((id): id is string => Boolean(id));
-    if (!ownerIds.length) return false;
-    const inTeam = await this.prisma.staff.findFirst({
-      where: { id: { in: ownerIds }, teamLeadId: actorId },
-      select: { id: true },
-    });
-    return Boolean(inTeam);
+    // A Team Lead: the record's team (businessOwners for a business, rev 170).
+    if (rule.scope === 'own_team' && actor.role === 'team_lead') {
+      return new OwnTeam(this.prisma).includesAny(actorId, record.teamOwnerIds);
+    }
+    return record.ownerStaffIds.includes(actorId);
   }
 }

@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -269,12 +270,10 @@ export class StaffDeviceService {
         staff: { role: { in: [...BELOW_MANAGER_ROLES] } },
       };
     }
+    // A Team Lead: the shared own-team definition (OwnTeam).
     return {
       status: 'pending',
-      ...notSelf,
-      staff: {
-        OR: [{ teamLeadId: approver.id }, { reportsToId: approver.id }],
-      },
+      staffId: { in: (await new OwnTeam(this.prisma).memberIds(approver.id)).filter((id) => id !== approver.id) },
     };
   }
 
@@ -311,7 +310,7 @@ export class StaffDeviceService {
       return;
     }
     if (approver.role === 'team_lead') {
-      const onTeam = target.teamLeadId === approver.id || target.reportsToId === approver.id;
+      const onTeam = await new OwnTeam(this.prisma).includes(approver.id, target.id);
       if (!onTeam) {
         throw new ForbiddenException(
           'A Team Lead can approve devices only for their own team',
@@ -335,10 +334,7 @@ export class StaffDeviceService {
     if (actor.role === 'manager') {
       return this.reportingScope.personIsUnder(actor.id, staff.id);
     }
-    if (
-      actor.role === 'team_lead' &&
-      (staff.teamLeadId === actor.id || staff.reportsToId === actor.id)
-    ) {
+    if (actor.role === 'team_lead' && (await new OwnTeam(this.prisma).includes(actor.id, staff.id))) {
       return true;
     }
     return false;

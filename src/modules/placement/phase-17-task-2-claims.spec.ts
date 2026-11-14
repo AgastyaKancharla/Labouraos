@@ -13,6 +13,7 @@ import { ReportClaimDto } from './dto/report-claim.dto';
 import { DecideClaimDto } from './dto/decide-claim.dto';
 import { rejectionCodeOf } from './claim-refile';
 import { EditPolicyService } from '../../common/edit-policy/edit-policy.service';
+import { findManyOver } from '../../test-support/prisma-where';
 
 type MockPrisma = {
   staff: Record<string, jest.Mock>;
@@ -128,8 +129,11 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
           return allStaff.find((s) => s.id === where.id) ?? null;
         }),
         findFirst: jest.fn().mockResolvedValue(mgrStaff),
-        // tl-1's team (claim call scope)
-        findMany: jest.fn().mockResolvedValue([{ id: 'tl-1' }, { id: 'ca-1' }, { id: 'fa-1' }]),
+        // OwnTeam reads a Team Lead's team (claim decisions and the claim call scope).
+        findMany: jest.fn().mockImplementation(findManyOver(() =>
+          [faStaff, otherFaStaff, caStaff, tlStaff, otherTlStaff, mgrStaff, ceoStaff, financeStaff]
+            .map((s) => ({ reportsToId: null, status: 'active', teamLeadId: null as string | null, ...(s as { teamLeadId?: string | null }), ...s })),
+        )),
       },
       placement: {
         findFirst: jest.fn().mockResolvedValue(basePlacement),

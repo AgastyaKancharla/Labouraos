@@ -92,7 +92,7 @@ export class DaysToFirstInterviewService {
 
   /** Every paid seeker in scope with no interview since paying, longest wait first. */
   private async waiting(actor: { id: string; role: string }, now: Date): Promise<WaitingSeekerRow[]> {
-    const scope = await staffScopeFor(actor, this.reportingScope);
+    const scope = await staffScopeFor(actor, this.reportingScope, this.prisma);
     const policy = await this.pricingService.current();
     const where: Prisma.JobSeekerWhereInput = {
       status: { in: ['active', 'paused'] },

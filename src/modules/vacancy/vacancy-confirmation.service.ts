@@ -1,3 +1,4 @@
+import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma, Vacancy } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -380,11 +381,10 @@ export class VacancyConfirmationService {
     }
     const where: Prisma.VacancyWhereInput = { belowLegalMinimum: true, status: { notIn: ['cancelled'] } };
     if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
-      const teamIds = [actor.id, ...team.map(({ id }) => id)];
+      const teamIds = await new OwnTeam(this.prisma).memberIds(actor.id);
       where.OR = [
         { capturedByStaffId: { in: teamIds } },
-        { business: { accountAgentId: { in: teamIds } } },
+        { business: businessesOwnedBy(teamIds) },
       ];
     }
     const rows = await this.prisma.vacancy.findMany({

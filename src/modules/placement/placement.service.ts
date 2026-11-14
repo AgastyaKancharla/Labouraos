@@ -1,3 +1,4 @@
+import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
@@ -845,8 +846,8 @@ export class PlacementService {
   async claimCallStaffIds(actor: { id: string; role: string }): Promise<string[] | null> {
     if (actor.role === 'ceo' || actor.role === 'manager') return null;
     if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { OR: [{ id: actor.id }, { teamLeadId: actor.id }] }, select: { id: true } });
-      return team.map((s) => s.id);
+      // The shared own-team definition (OwnTeam), the Team Lead included.
+      return new OwnTeam(this.prisma).memberIds(actor.id);
     }
     return [actor.id];
   }
@@ -1162,11 +1163,11 @@ export class PlacementService {
     }
 
     if (actor.role === 'team_lead') {
-      // The business's account agent, or (with none) whoever brought the
-      // business in, must be on this Team Lead's team; with neither, a Manager decides.
-      const ownerId = claim.placement.business.accountAgentId ?? claim.placement.business.leadCreatedByStaffId ?? null;
-      const owner = ownerId ? await this.prisma.staff.findUnique({ where: { id: ownerId } }) : null;
-      if (!owner || (owner.teamLeadId !== actor.id && owner.id !== actor.id)) {
+      // businessOwners (rev 170): the account agent's team, else the lead
+      // creator's team; with neither, a Manager decides. Same check as the
+      // route's own (RbacGuard, placement).
+      const business = claim.placement.business;
+      if (!(await new OwnTeam(this.prisma).ownsBusiness(actor.id, business))) {
         throw new ForbiddenException('Team Leads can only decide claims for their own team');
       }
     }
@@ -1561,8 +1562,7 @@ export class PlacementService {
     if (actor.role === 'call_agent' || actor.role === 'field_agent') {
       staffIds = [actor.id];
     } else if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
-      staffIds = [actor.id, ...team.map(({ id }) => id)];
+      staffIds = await new OwnTeam(this.prisma).memberIds(actor.id);
     } else {
       return {};
     }
@@ -1575,8 +1575,7 @@ export class PlacementService {
     return {
       OR: [
         { createdByStaffId: { in: staffIds } },
-        { business: { accountAgentId: { in: staffIds } } },
-        { business: { leadCreatedByStaffId: { in: staffIds } } },
+        { business: businessesOwnedBy(staffIds) },
         { jobSeeker: { registeredByStaffId: { in: staffIds } } },
         { interview: { proposedByStaffId: { in: staffIds } } },
         ...introductions.map((i) => ({ vacancyId: i.vacancyId, jobSeekerId: i.jobSeekerId })),
@@ -1597,16 +1596,8 @@ export class PlacementService {
     };
 
     if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({ where: { teamLeadId: actor.id }, select: { id: true } });
-      const teamIds = team.map(({ id }) => id);
-      where.placement = {
-        business: {
-          OR: [
-            { accountAgentId: { in: teamIds } },
-            { leadCreatedByStaffId: { in: teamIds } },
-          ],
-        },
-      };
+      // The business's team decides (businessOwners: account agent, else lead creator).
+      where.placement = { business: businessesOwnedBy(await new OwnTeam(this.prisma).memberIds(actor.id)) };
     }
 
     return this.prisma.replacementClaim.findMany({
