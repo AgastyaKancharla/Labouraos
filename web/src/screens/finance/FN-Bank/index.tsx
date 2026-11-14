@@ -14,12 +14,15 @@ import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { FilterPanel, SearchField, SelectFilter, useDebounced } from '../../ceo/_kit/kit';
 import { FormAction, Note } from '../_kit/kit';
+import { AddFromStatement, SetAside } from '../_kit/statement';
 import '../_kit/fin.css';
 
 /**
  * Bank — design FN-Bank.dc.html (guide: our own books, bank matching). The
  * bank account line by line against Laboura's books, and each day closed with
- * the statement's closing balance once every line matches.
+ * the statement's closing balance once every line matches. Until the bank
+ * sends its statement automatically, each credit is typed in from the
+ * statement ("Add from statement").
  */
 interface Line {
   id: string;
@@ -40,7 +43,7 @@ interface Day {
   bankClosingPaise: number | null;
   differencePaise: number | null;
   unmatched: number;
-  closed: { bankClosingPaise: number; differencePaise: number; note: string | null; closedBy: string | null; closedAt: string } | null;
+  closed: { bankClosingPaise: number; differencePaise: number; note: string | null; closedBy: string | null; closedAt: string; stale?: boolean; differenceNowPaise?: number } | null;
 }
 interface Response {
   lines: Line[];
@@ -128,6 +131,7 @@ export default function Bank() {
                 <ButtonLink size="compact" to={`${to('FN-Match')}?credit=${encodeURIComponent(l.id.replace(/^bc-/, ''))}`}>
                   Match
                 </ButtonLink>
+                {l.direction === 'credit' && l.id.startsWith('bc-') && <SetAside id={l.id.replace(/^bc-/, '')} amountPaise={l.amountPaise} />}
               </span>
             )}
           </>
@@ -160,14 +164,19 @@ export default function Bank() {
       key: 'state',
       header: 'Status',
       cell: (r) =>
-        r.closed ? (
+        r.closed?.stale ? (
+          <>
+            <StatusPill tone="warn">Changed after closing</StatusPill>
+            <span className="fin-sub fin-less">A line was added after the day was closed · difference now {formatINR(r.closed.differenceNowPaise ?? 0)}</span>
+          </>
+        ) : r.closed ? (
           <StatusPill tone="good">Closed{r.closed.closedBy ? ` by ${r.closed.closedBy}` : ''}</StatusPill>
         ) : r.unmatched > 0 ? (
           <StatusPill tone="crit">{r.unmatched} to sort out</StatusPill>
         ) : (
           <CloseDay d={r} />
         ),
-      csv: (r) => (r.closed ? 'closed' : r.unmatched ? 'lines to sort out' : 'open'),
+      csv: (r) => (r.closed?.stale ? 'changed after closing' : r.closed ? 'closed' : r.unmatched ? 'lines to sort out' : 'open'),
     },
   ];
   const nextToClose = [...(d?.days ?? [])].reverse().find((x) => !x.closed && x.unmatched === 0 && (!d?.summary.lastClosedDay || x.day > d.summary.lastClosedDay));
@@ -180,6 +189,7 @@ export default function Bank() {
         period={period}
         onPeriodChange={setPeriod}
         showSearch={false}
+        actions={<AddFromStatement />}
       />
       <StatGrid>
         <StatTile label={d?.summary.lastClosedDay ? `Bank balance at close of ${dayLabel(d.summary.lastClosedDay)}` : 'Bank balance (no day closed yet)'} value={d?.summary.lastBankClosingPaise != null ? formatINR(d.summary.lastBankClosingPaise) : '—'} tone="royal" loading={loading} />
@@ -217,9 +227,10 @@ export default function Bank() {
         <DataTable columns={dayColumns} rows={d?.days} rowKey={(r) => r.day} caption="Bank days" loading={loading} pageSize={31} download="bank-days" emptyTitle="No days in this period." />
       </Card>
       <Note>
-        Until the bank sends its statement automatically, every line here is what Laboura recorded (credits from the bank, payouts and refunds with their UTR, bills paid, money returned) · every line must match before the day is closed · type the statement's closing balance to close a day; a gap (such as bank charges) is added as an expense or explained
+        Until the bank sends its statement automatically, every line here is what Laboura recorded (credits added from the statement with “Add from statement”, payouts and refunds with their UTR, bills paid, money returned) · every line must match before the day is closed · type the statement's closing balance to close a day; a gap (such as bank charges) is added as an expense or explained
       </Note>
       <div className="fin-foot">
+        <AddFromStatement variant="secondary" />
         <ButtonLink to={`${to('FN-Expenses')}?prefill=bank-charges`}>Add bank charges as an expense</ButtonLink>
         {nextToClose && <CloseDay d={nextToClose} />}
       </div>

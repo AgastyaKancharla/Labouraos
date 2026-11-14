@@ -15,6 +15,7 @@ import { formatINR } from '../../../lib/format/money';
 import { useNow } from '../../../lib/useNow';
 import { usePortal, useScreenPath } from '../../../portals/PortalContext';
 import { FilterPanel, SearchField, SelectFilter } from '../../ceo/_kit/kit';
+import { UndoSetAside } from '../_kit/statement';
 import { FormAction, Note } from '../_kit/kit';
 import { ServerDownload } from '../_kit/download';
 import { addMonths, istMonthKey, monthName } from '../_kit/payroll';
@@ -65,7 +66,7 @@ interface Review {
   nextMonth: string;
 }
 
-const TYPE_LABEL: Record<string, string> = { refund: 'Refund', payout: 'Payout', expense: 'Expense', salary: 'Salary', return: 'Money returned' };
+const TYPE_LABEL: Record<string, string> = { refund: 'Refund', payout: 'Payout', expense: 'Expense', salary: 'Salary', return: 'Money returned', set_aside: 'Set aside (not ours)' };
 /** Where each checklist item is fixed, in the Finance portal. */
 const FINANCE_LINK: Record<string, string> = { bank_days_closed: 'FN-Bank', credits_matched: 'FN-MoneyIn', payouts_done: 'FN-Payouts', salaries_released: 'FN-Salaries', expenses_with_bills: 'FN-Expenses' };
 /** And in the CEO portal. */
@@ -155,6 +156,11 @@ export default function MonthEndReview() {
               </span>
             )}
             {isCeo && r && !locked && <MarkButtons review={r} a={a} />}
+            {isCeo && r && !locked && a.type === 'set_aside' && (
+              <span className="fin-row-actions">
+                <UndoSetAside id={a.subjectId} amountPaise={a.amountPaise} />
+              </span>
+            )}
           </>
         ),
         csv: (a) => a.proof,

@@ -16,13 +16,18 @@ import { useScreenPath } from '../../../portals/PortalContext';
 import { FilterPanel, SearchField, SelectFilter, useDebounced } from '../../ceo/_kit/kit';
 import { FormAction, Note } from '../_kit/kit';
 import { ReturnMoney } from '../_kit/ReturnMoney';
+import { MoneyFlagsCard, PAYMENT_FLAG_KINDS } from '../_kit/flags';
+import { AddFromStatement, SetAside } from '../_kit/statement';
 import '../_kit/fin.css';
 
 /**
  * Money in — design FN-MoneyIn.dc.html (guide: How money is collected; tax
  * handling). Every payment into the bank, matched to what it was for. A
  * placement fee short by the business's TDS is recorded as TDS, not a
- * mismatch (POST /payments/:id/confirm with tdsDeductedPaise).
+ * mismatch (POST /payments/:id/confirm with tdsDeductedPaise). A credit
+ * from the statement is added by hand ("Add from statement"); one that is not
+ * Laboura's money is set aside with a reason; open payment flags are resolved
+ * here (these three were the old Admin Dashboard's, retired 14 Nov).
  */
 export interface MoneyInRow {
   id: string;
@@ -39,11 +44,12 @@ export interface MoneyInRow {
   shortByPaise: number | null;
   tds: { id: string; amountPaise: number; status: string } | null;
   returnedUtr: string | null;
+  ignoredReason?: string | null;
   duplicateRefund: { paymentId: string; status: string } | null;
 }
 interface Response {
   rows: MoneyInRow[];
-  summary: { receivedPaise: number; receivedCount: number; matchedAutoCount: number; needYouCount: number; tdsThisMonthPaise: number };
+  summary: { receivedPaise: number; receivedCount: number; matchedAutoCount: number; needYouCount: number; tdsThisMonthPaise: number; setAsidePaise?: number; setAsideCount?: number };
 }
 
 const TYPE: Record<string, string> = { placement_fee: 'Placement fee', bypass_charge: 'No-bypass charge', activation: 'Registration fee', reactivation: 'Registration fee (again)' };
@@ -67,7 +73,7 @@ function statusText(r: MoneyInRow): { tone: 'good' | 'warn' | 'crit' | 'info' | 
     case 'returned':
       return { tone: 'muted', text: `Returned · UTR ${r.returnedUtr ?? ''}` };
     default:
-      return { tone: 'muted', text: 'Set aside' };
+      return { tone: 'muted', text: `Set aside${r.ignoredReason ? ` · ${r.ignoredReason}` : ''}` };
   }
 }
 
@@ -120,6 +126,7 @@ function Actions({ r }: { r: MoneyInRow }) {
           Match
         </ButtonLink>
         <ReturnMoney id={r.id} amountPaise={r.receivedPaise} to={r.payerVpaMasked} />
+        {r.kind === 'bank_credit' && <SetAside id={r.id} amountPaise={r.receivedPaise} />}
       </span>
     );
   }
@@ -185,6 +192,7 @@ export default function MoneyIn() {
         period={period}
         onPeriodChange={setPeriod}
         showSearch={false}
+        actions={<AddFromStatement />}
       />
       <StatGrid>
         <StatTile label="Received" value={s ? formatINR(s.receivedPaise) : '—'} tone="good" loading={loading} detail={s ? `${s.receivedCount} payments` : undefined} />
@@ -192,6 +200,11 @@ export default function MoneyIn() {
         <StatTile label="Need you" value={s?.needYouCount ?? '—'} tone="red" loading={loading} />
         <StatTile label="TDS taken by businesses (this month)" value={s ? formatINR(s.tdsThisMonthPaise) : '—'} tone="gold" loading={loading} to={`${to('FN-Invoices')}?status=tds_due`} />
       </StatGrid>
+      {s && (s.setAsideCount ?? 0) > 0 && (
+        <div className="rule" style={{ borderLeftColor: 'var(--line-strong)', fontSize: 12.5 }}>
+          Set aside, not ours: <strong>{formatINR(s.setAsidePaise ?? 0)}</strong> in {s.setAsideCount} credit{s.setAsideCount === 1 ? '' : 's'} — in the bank but not Laboura's money, so not counted as received.
+        </div>
+      )}
       <FilterPanel>
         <SelectFilter
           label="Status"
@@ -206,6 +219,7 @@ export default function MoneyIn() {
             { value: 'not_matched', label: 'Not matched' },
             { value: 'duplicate', label: 'Duplicate' },
             { value: 'returned', label: 'Returned' },
+            { value: 'ignored', label: 'Set aside' },
           ]}
         />
         <SelectFilter
@@ -235,8 +249,9 @@ export default function MoneyIn() {
           emptyTitle="No rows match these filters. Change a filter to see more."
         />
       </Card>
+      <MoneyFlagsCard kinds={PAYMENT_FLAG_KINDS} title="Payment flags to resolve" />
       <Note>
-        The bank tells us about every payment the moment it lands · matching by reference is automatic · money only counts when it is in the bank, never by screenshot · a placement fee that arrives short is offered as TDS, not a mismatch
+        The bank tells us about every payment the moment it lands (until its feed is connected, add each credit with “Add from statement”) · matching by reference is automatic · money only counts when it is in the bank, never by screenshot · a placement fee that arrives short is offered as TDS, not a mismatch
       </Note>
     </div>
   );

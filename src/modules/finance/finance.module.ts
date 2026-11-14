@@ -8,6 +8,7 @@ import { AttendanceModule } from '../attendance/attendance.module';
 import { NotificationModule } from '../notification/notification.module';
 import { RefundModule } from '../refund/refund.module';
 import { MonthLockModule } from '../month-lock/month-lock.module';
+import { ReviewFlagModule } from '../review-flag/review-flag.module';
 import { FinanceController } from './finance.controller';
 import { ExpenseService } from './expense.service';
 import { FinancePayoutsService } from './finance-payouts.service';
@@ -26,7 +27,7 @@ import { FinanceRefundsService } from './finance-refunds.service';
 
 /** Phase 22: the Finance back office, parts A and B (specs/phase-22.md). */
 @Module({
-  imports: [PrismaModule, AuditModule, IdModule, PricingModule, PaymentModule, AttendanceModule, NotificationModule, RefundModule, MonthLockModule],
+  imports: [PrismaModule, AuditModule, IdModule, PricingModule, PaymentModule, AttendanceModule, NotificationModule, RefundModule, MonthLockModule, ReviewFlagModule],
   controllers: [FinanceController, FinanceBController, PayrollSelfController, PayrollCorrectionsController],
   providers: [
     ExpenseService,

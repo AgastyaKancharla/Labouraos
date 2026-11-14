@@ -1,3 +1,4 @@
+import { rejectionCodeOf } from '../placement/claim-refile';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -263,6 +264,15 @@ export class CeoPlacementsService {
         },
       }),
     ]);
+    // Earlier claims on the same placements (why each was rejected), shown with each claim.
+    const placementIds = [...new Set(claims.map((c) => c.placementId))];
+    const earlier = placementIds.length
+      ? await this.prisma.replacementClaim.findMany({
+          where: { placementId: { in: placementIds }, decision: { not: null } },
+          select: { id: true, placementId: true, code: true, reportedAt: true, workerLeftOn: true, decision: true, decisionReason: true, rejectionCode: true, decidedByStaffId: true, overruledByStaffId: true },
+          orderBy: { reportedAt: 'desc' },
+        })
+      : [];
     const rows = claims.map((c) => {
       const p = c.placement;
       const rejected = p.replacementCandidates.filter((r) => r.status === 'rejected').length;
@@ -290,6 +300,10 @@ export class CeoPlacementsService {
         rejectedReplacements: rejected,
         search,
         feePaise: p.placementFee,
+        rejectionCode: rejectionCodeOf(c),
+        previousClaims: earlier
+          .filter((e) => e.placementId === c.placementId && e.id !== c.id && e.reportedAt < c.reportedAt)
+          .map((e) => ({ code: e.code, decision: e.decision, decisionReason: e.decisionReason, rejectionCode: rejectionCodeOf(e) })),
       };
     });
     const monthStart = istStartOfMonth(now);
