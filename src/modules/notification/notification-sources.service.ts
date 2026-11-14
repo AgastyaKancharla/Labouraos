@@ -92,6 +92,7 @@ export class NotificationSourcesService {
         status: true,
         reportsToId: true,
         teamLeadId: true,
+        isOwnerAccount: true,
       },
     });
     return new StaffDirectory(rows);
@@ -577,6 +578,8 @@ export class NotificationSourcesService {
     });
     const drafts = waiting.flatMap((segment) => {
       const person = directory.get(segment.staffId);
+      // No attendance bells about an owner account (owner decision 14 Nov).
+      if (person?.isOwnerAccount) return [];
       return this.drafts([this.leadOf(segment.staffId, directory)], {
         kind: 'system_problem',
         title: `${person ? `${person.name} (${person.code})` : 'A team member'} reported a system problem`,
@@ -603,7 +606,7 @@ export class NotificationSourcesService {
     const dir = await this.directory();
     const person = segment ? dir.get(segment.staffId) : null;
     const drafts =
-      segment && segment.status === 'system_problem' && !segment.approvedAt
+      segment && segment.status === 'system_problem' && !segment.approvedAt && !person?.isOwnerAccount
         ? this.drafts([this.leadOf(segment.staffId, dir)], {
             kind: 'system_problem',
             title: `${person ? `${person.name} (${person.code})` : 'A team member'} reported a system problem`,
@@ -633,7 +636,8 @@ export class NotificationSourcesService {
     });
     const drafts = idle.flatMap((segment) => {
       const person = directory.get(segment.staffId);
-      if (!person || !AGENT_ROLES.includes(person.role)) return [];
+      // No attendance bells about an owner account (owner decision 14 Nov).
+      if (!person || !AGENT_ROLES.includes(person.role) || person.isOwnerAccount) return [];
       const minutes = Math.floor((now.getTime() - segment.startedAt.getTime()) / 60000);
       return this.drafts([directory.chainOf(person.id).teamLead], {
         kind: 'agent_idle',

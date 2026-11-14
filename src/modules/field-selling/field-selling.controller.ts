@@ -10,7 +10,11 @@ import { FieldSellingScreensService } from './field-selling-screens.service';
 
 type Req = Request & { user: JwtPayload };
 const actorOf = (req: Req) => ({ id: req.user.sub, role: req.user.role });
-const SELLERS = ['field_agent', 'team_lead', 'manager', 'ceo'] as const;
+/**
+ * Selling in the shop is Laboura Field's work, and Laboura Field is for field
+ * agents only (owner decision 14 Nov): no office screen calls these routes.
+ */
+const SELLERS = ['field_agent'] as const;
 
 /**
  * Laboura Field: on-the-spot matching and selling (guide, "The field agent
@@ -30,7 +34,7 @@ export class FieldSellingController {
   // ------------------------------------------------------------- reads
 
   @Get('screens/field-selling/settings')
-  @RequireRoles('field_agent', 'team_lead', 'ceo')
+  @RequireRoles(...SELLERS)
   settings() {
     return this.screens.settings();
   }

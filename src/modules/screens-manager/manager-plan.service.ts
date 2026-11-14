@@ -7,6 +7,7 @@ import { paceFor } from '../ceo-portal/ceo-team.service';
 import { Forecast, MonthWindow, forecast, monthWeeks, monthWindow, outOfHundred, outOfTen } from './manager-common';
 import { ManagerTree, ManagerTreeService, WorkCounts } from './manager-tree.service';
 import { CompanyPlanService, PLAN_METRICS, PlanMetricKey, PlanValues, emptyPlan, sumOrNull, valuesOf } from '../company-plan/company-plan.service';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 /** IST calendar day of an instant, as the Date value an @db.Date column holds. */
 export function dbDate(instant: Date): Date {
@@ -149,6 +150,8 @@ export class ManagerPlanService {
   async attendanceTotals(ids: string[], from: Date, to: Date, now: Date): Promise<AttendanceTotals> {
     const today = dbDate(now);
     const end = dbDate(to).getTime() > today.getTime() ? today : dbDate(to);
+    // Owner accounts have no attendance (owner decision 14 Nov).
+    ids = ids.length ? (await this.prisma.staff.findMany({ where: { id: { in: ids }, ...NOT_OWNER_ACCOUNT }, select: { id: true } })).map((s) => s.id) : ids;
     const totals: AttendanceTotals = { people: ids.length, workedDays: 0, expectedDays: 0, percent: null, lateLogins: 0, lateMinutes: 0, lostSeconds: 0, productionSeconds: 0 };
     if (dbDate(from).getTime() > end.getTime()) return totals;
     for (const id of ids) {
@@ -176,7 +179,8 @@ export class ManagerPlanService {
     const m = monthWindow(range.to, now);
     const monthRange = { from: m.from, to: now.getTime() < m.to.getTime() ? now : m.to };
     const [counts, planned, periodCounts] = await Promise.all([
-      this.tree.counts(tree.ids, monthRange),
+      // Progress against the targets: owner accounts left out (owner decision 14 Nov).
+      this.tree.counts(tree.trackedIds, monthRange),
       this.treeTargets(tree, m),
       this.tree.counts(tree.ids, range),
     ]);
@@ -191,7 +195,8 @@ export class ManagerPlanService {
     const liveById = new Map(live.people.map((p) => [p.staff.id, p]));
     for (const lead of tree.leads) {
       const ids = this.tree.teamIds(tree, lead.id);
-      const [c, t] = await Promise.all([this.tree.counts(ids, monthRange), this.teamTargets(lead.id, ids, m)]);
+      const tracked = this.tree.trackedTeamIds(tree, lead.id);
+      const [c, t] = await Promise.all([this.tree.counts(tracked, monthRange), this.teamTargets(lead.id, tracked, m)]);
       const atWork = ids.filter((id) => {
         const s = liveById.get(id)?.status;
         return s && !['not_logged_in', 'logged_out', 'on_leave'].includes(s);
@@ -212,7 +217,7 @@ export class ManagerPlanService {
 
     const byWeek = [];
     for (const w of monthWeeks(m, now)) {
-      const c = await this.tree.counts(tree.ids, { from: w.from, to: w.to });
+      const c = await this.tree.counts(tree.trackedIds, { from: w.from, to: w.to });
       const share = (target: number | null) => (target === null ? null : Math.round((target * (Math.min(7, m.daysInMonth - Math.round((w.from.getTime() - m.from.getTime()) / DAY_MS)))) / m.daysInMonth));
       byWeek.push({
         label: w.label,
@@ -304,11 +309,13 @@ export class ManagerPlanService {
 
   /** Agents whose main target is behind pace (after the 10th, under 80% of pace). */
   async agentsBehind(tree: ManagerTree, m: MonthWindow, now: Date) {
-    if (!tree.agents.length) return [];
-    const targets = await this.prisma.target.findMany({ where: { staffId: { in: tree.agents.map((a) => a.id) }, year: m.year, month: m.month } });
+    // Owner accounts carry no targets (owner decision 14 Nov).
+    const agents = this.tree.targetAgents(tree);
+    if (!agents.length) return [];
+    const targets = await this.prisma.target.findMany({ where: { staffId: { in: agents.map((a) => a.id) }, year: m.year, month: m.month } });
     const out = [];
     const range = { from: m.from, to: now.getTime() < m.to.getTime() ? now : m.to };
-    for (const agent of tree.agents) {
+    for (const agent of agents) {
       const t = targets.find((x) => x.staffId === agent.id);
       const goal = agent.role === 'field_agent' ? (t?.placementsClosed ?? null) : (t?.candidatesActivated ?? null);
       if (!goal) continue;
@@ -348,8 +355,9 @@ export class ManagerPlanService {
     const m = monthWindow(week.to, now);
     for (const lead of tree.leads) {
       const ids = this.tree.teamIds(tree, lead.id);
-      const [c, att, targets] = await Promise.all([this.tree.counts(ids, week), this.attendanceTotals(ids, week.from, week.to, now), this.teamTargets(lead.id, ids, m)]);
-      const agents = tree.agents.filter((a) => a.teamLeadId === lead.id);
+      const [c, att, targets] = await Promise.all([this.tree.counts(ids, week), this.attendanceTotals(ids, week.from, week.to, now), this.teamTargets(lead.id, this.tree.trackedTeamIds(tree, lead.id), m)]);
+      // Best agent / needs help is a ranking: owner accounts left out (owner decision 14 Nov).
+      const agents = this.tree.targetAgents(tree).filter((a) => a.teamLeadId === lead.id);
       const scored = [];
       for (const a of agents) {
         const ac = await this.tree.counts([a.id], week);
