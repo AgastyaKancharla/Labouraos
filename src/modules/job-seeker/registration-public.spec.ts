@@ -18,7 +18,7 @@ describe('Registration link endpoints for the public pages', () => {
     journey = { status: jest.fn().mockResolvedValue({ otpRequired: true }) };
     kyc = { isDown: jest.fn().mockResolvedValue(true), requestRecovery: jest.fn().mockResolvedValue(undefined) };
     controller = new RegistrationController(
-      publicLinks as never, otp as never, {} as never, {} as never, {} as never, journey as never, limiter as never, kyc as never,
+      publicLinks as never, otp as never, {} as never, {} as never, {} as never, journey as never, limiter as never, {} as never, kyc as never,
     );
   });
 
