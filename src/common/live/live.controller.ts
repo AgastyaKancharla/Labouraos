@@ -1,12 +1,14 @@
 import { Controller, Req, Sse, UseGuards } from '@nestjs/common';
 import { Request } from 'express';
-import { Observable, catchError, exhaustMap, filter, from, interval, map, merge, of, take, takeUntil, timer } from 'rxjs';
+import { Observable, catchError, concatMap, filter, from, interval, map, merge, of, take, takeUntil, timer } from 'rxjs';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
 import { PrismaService } from '../prisma/prisma.service';
+import { PricingService } from '../../modules/pricing/pricing.service';
+import { sessionLifetimeEnd } from '../auth/session-lifetime';
 import { LiveEventsService } from './live-events.service';
 
 /** Keeps proxies (Render, Cloudflare) from closing a quiet connection. */
@@ -33,6 +35,7 @@ export class LiveController {
   constructor(
     private readonly live: LiveEventsService,
     private readonly prisma: PrismaService,
+    private readonly pricing: PricingService,
   ) {}
 
   /**
@@ -50,7 +53,9 @@ export class LiveController {
     const staffId = req.user.sub;
     const expiresInMs = req.user.exp ? Math.max(0, req.user.exp * 1000 - Date.now()) : 15 * 60 * 1000;
     const sessionEnded = merge(interval(LIVE_SESSION_CHECK_MS), this.live.sessionRechecksFor(staffId)).pipe(
-      exhaustMap(() => from(this.sessionIsLive(staffId, req.user.sid)).pipe(catchError(() => of(true)))),
+      // One check at a time, in order: a nudge that arrives while a check is
+      // running is checked right after it, never dropped.
+      concatMap(() => from(this.sessionIsLive(staffId, req.user.sid)).pipe(catchError(() => of(true)))),
       filter((live) => !live),
       take(1),
     );
@@ -65,16 +70,24 @@ export class LiveController {
 
   /**
    * The same checks the token guard makes on every request (JwtStrategy):
-   * the session exists and is not revoked, and the account is active. A
-   * database hiccup keeps the stream (the next check decides).
+   * the session exists and is not revoked, the account is active, and the
+   * session is inside its idle and 2-hour limits. A database hiccup keeps the
+   * stream (the next check decides).
    */
   private async sessionIsLive(staffId: string, sessionId: string | undefined): Promise<boolean> {
     if (sessionId) {
       const session = await this.prisma.staffSession.findUnique({
         where: { id: sessionId },
-        select: { revokedAt: true, staff: { select: { status: true } } },
+        select: {
+          revokedAt: true,
+          lastActivityAt: true,
+          absoluteExpiresAt: true,
+          staff: { select: { status: true } },
+        },
       });
-      return Boolean(session && !session.revokedAt && session.staff.status === 'active');
+      if (!session || session.revokedAt || session.staff.status !== 'active') return false;
+      const policy = await this.pricing.current();
+      return sessionLifetimeEnd(session, new Date(), policy.idleLogoutMinutes) === null;
     }
     const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { status: true } });
     return staff?.status === 'active';

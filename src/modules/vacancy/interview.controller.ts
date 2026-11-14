@@ -35,7 +35,7 @@ export class InterviewController {
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   // Scoped like reading the vacancy (RbacGuard): a Team Lead only their own
   // team's vacancies; agents, Managers and the CEO city-wide (role table).
-  @RequirePermission('vacancy', 'read')
+  @RequirePermission('vacancy', 'read', { kind: 'vacancy', from: 'param:vacancyId' })
   slots(@Param('vacancyId') vacancyId: string, @Req() req: AuthenticatedRequest) {
     return this.interviews.listSlots(vacancyId, req.user.sub);
   }
@@ -44,6 +44,8 @@ export class InterviewController {
   @UseGuards(JwtAuthGuard, RbacGuard)
   @UseInterceptors(PiiMaskingInterceptor)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
+  // A Team Lead books only for their own team's job seekers (owner rule, 14 Nov).
+  @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
   book(@Body() body: { vacancyId: string; jobSeekerId: string; slotId: string }, @Req() req: AuthenticatedRequest) {
     return this.interviews.book(body, req.user.sub);
   }

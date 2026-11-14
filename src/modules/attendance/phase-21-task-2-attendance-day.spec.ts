@@ -414,6 +414,8 @@ describe('Phase 21 Task 2: the working day', () => {
     });
     callbackIds.push(task.id);
     const expected = await attendance.nextAvailableAgent(busy.id);
+    // The missed call is unassigned, so an agent may give it to a colleague
+    // (owner decision, 14 Nov); the busy colleague is skipped.
     const assigned = await request(app.getHttpServer())
       .post(`/telephony/callbacks/${task.id}/assign`)
       .set('Authorization', `Bearer ${tokenFor(free)}`)
@@ -422,6 +424,12 @@ describe('Phase 21 Task 2: the working day', () => {
     expect(expected).toBeTruthy();
     expect(assigned.body.assignedToStaffId).toBe(expected);
     expect(assigned.body.assignedToStaffId).not.toBe(busy.id);
+    // Once someone holds it, an agent who does not hold it cannot move it.
+    await request(app.getHttpServer())
+      .post(`/telephony/callbacks/${task.id}/assign`)
+      .set('Authorization', `Bearer ${tokenFor(busy)}`)
+      .send({ staffId: busy.id })
+      .expect(403);
   });
 
   it('alerts the Team Lead when a short break passes 15 minutes and not before', async () => {

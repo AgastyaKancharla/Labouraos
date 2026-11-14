@@ -51,6 +51,12 @@ describe('staff session', () => {
     expect(sessionStore.get()).toBeNull();
   });
 
+  it('gives no session for a token whose expiry is not a number', () => {
+    const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/=+$/, '');
+    const token = `${b64({ alg: 'HS256' })}.${b64({ role: 'ceo', exp: '9999999999' })}.sig`;
+    expect(sessionFromToken(token, TEST_STAFF.ceo)).toBeNull();
+  });
+
   it('a token for another role than the sign-in answer wins', () => {
     const s = sessionFromToken(fakeJwt({ role: 'manager' }), TEST_STAFF.ceo)!;
     expect(s.staff.role).toBe('manager');

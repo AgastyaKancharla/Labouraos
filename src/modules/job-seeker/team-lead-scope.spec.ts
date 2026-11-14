@@ -209,4 +209,31 @@ describe('M3: Team Lead scope on job seekers', () => {
     expect((await call('get', `/referrals/${theirs.id}/registration-status`, tokens.TLA)).status).toBe(404);
     expect((await call('get', `/referrals/${mine.id}/registration-status`, tokens.TLA)).status).toBe(200);
   });
+
+  // Fable review: Express matches routes regardless of letter case (main.ts now
+  // turns that off). Even on a case-insensitive server, RbacGuard checks the
+  // declared route, so a different spelling reaches nothing unchecked.
+  it('a Team Lead is refused another team\'s records whatever the letter case of the address', async () => {
+    const seekerUrls: Array<[string, string]> = [
+      ['get', `/Job-Seekers/${ids.theirs}`],
+      ['post', `/JOB-SEEKERS/${ids.theirs}/status`],
+      ['patch', `/Job-Seekers/${ids.theirs}`],
+      ['post', `/job-Seekers/${ids.theirs}/hits`],
+    ];
+    for (const [method, url] of seekerUrls) {
+      const res = await call(method, url, tokens.TLA).send({ reason: 'x' });
+      expect([403, 404]).toContain(res.status);
+      expect(res.status).not.toBe(200);
+    }
+    const consent = await call('post', '/Consent/links', tokens.TLA).send({ jobSeekerId: ids.theirs });
+    expect(consent.status).toBe(403);
+
+    const suffix = randomUUID().replace(/-/g, '').slice(0, 8).toUpperCase();
+    const digits = String(Math.floor(Math.random() * 1e8)).padStart(8, '0');
+    const partner = await prisma.referral.create({
+      data: { code: `RF-M3C-${suffix}`, name: 'M3 case partner', phone: `+9191${digits}`, registeredByStaffId: ids.CAB },
+    });
+    referralIds.push(partner.id);
+    expect((await call('patch', `/Referrals/${partner.id}`, tokens.TLA).send({ name: 'x', reason: 'y' })).status).toBe(404);
+  });
 });

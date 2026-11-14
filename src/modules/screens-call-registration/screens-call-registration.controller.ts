@@ -31,14 +31,14 @@ export class ScreensCallRegistrationController {
 
   @Get('job-seekers/:id')
   @RequireRoles(...REGISTERING_ROLES)
-  @RequirePermission('job_seeker', 'read')
+  @RequirePermission('job_seeker', 'read', { kind: 'job_seeker', from: 'param:id' })
   jobSeeker(@Param('id') id: string) {
     return this.service.jobSeeker(id);
   }
 
   @Get('job-seekers/:id/signed-consent')
   @RequireRoles(...REGISTERING_ROLES)
-  @RequirePermission('job_seeker', 'read')
+  @RequirePermission('job_seeker', 'read', { kind: 'job_seeker', from: 'param:id' })
   signedConsent(@Param('id') id: string) {
     return this.service.signedConsent(id);
   }
@@ -52,8 +52,8 @@ export class ScreensCallRegistrationController {
   @Get('referral-partners')
   @RequireRoles(...REGISTERING_ROLES)
   @RequirePermission('referral', 'read')
-  async findReferralPartner(@Query('q') q: string) {
-    return { partner: await this.service.findReferralPartner(q) };
+  async findReferralPartner(@Query('q') q: string, @Req() req: Request & { user: JwtPayload }) {
+    return { partner: await this.service.findReferralPartner(q, { id: req.user.sub, role: req.user.role }) };
   }
 
   @Get('businesses')
@@ -65,14 +65,14 @@ export class ScreensCallRegistrationController {
 
   @Get('businesses/:id')
   @RequireRoles(...REGISTERING_ROLES)
-  @RequirePermission('business', 'read')
+  @RequirePermission('business', 'read', { kind: 'business', from: 'param:id' })
   business(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
     return this.service.business(id, req.user);
   }
 
   @Get('referrals/:id')
   @RequireRoles(...REGISTERING_ROLES)
-  @RequirePermission('referral', 'read')
+  @RequirePermission('referral', 'read', { kind: 'referral', from: 'param:id' })
   referral(@Param('id') id: string) {
     return this.service.referral(id);
   }

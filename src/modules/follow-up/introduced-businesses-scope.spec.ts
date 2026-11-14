@@ -25,6 +25,8 @@ const UNDER: Record<string, string[]> = {
 function makeService(task: Record<string, unknown> | null) {
   const prisma = {
     followUpTask: { findUnique: jest.fn().mockResolvedValue(task) },
+    // No one has a teamLeadId link here; the reporting tree (UNDER) is the team.
+    staff: { findMany: jest.fn(async () => []) },
     candidateIntroduction: {
       findMany: jest.fn(async ({ where }: { where: { jobSeekerId: string; shownByStaffId?: { in: string[] } } }) =>
         INTROS.filter((i) => !where.shownByStaffId || where.shownByStaffId.in.includes(i.shownByStaffId)).map((i) => ({ business: i.business })),

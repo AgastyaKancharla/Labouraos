@@ -5,6 +5,7 @@ import {
   Get,
   HttpCode,
   HttpStatus,
+  Optional,
   Param,
   Post,
   Query,
@@ -19,6 +20,7 @@ import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
+import { LiveEventsService } from '../live/live-events.service';
 
 interface AuthenticatedRequest extends Request {
   user: JwtPayload;
@@ -28,7 +30,10 @@ interface AuthenticatedRequest extends Request {
 @UseGuards(JwtAuthGuard, RbacGuard)
 @RequireRoles(...ALL_STAFF_ROLES)
 export class StaffSessionController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    @Optional() private readonly live?: LiveEventsService,
+  ) {}
 
   @Get('sessions')
   async listSessions(
@@ -45,7 +50,10 @@ export class StaffSessionController {
     @Param('id') sessionId: string,
     @Req() req: AuthenticatedRequest,
   ): Promise<{ success: boolean; message: string }> {
-    return this.authService.revokeSession(sessionId, req.user);
+    const result = await this.authService.revokeSession(sessionId, req.user);
+    // Whoever's session it was, its live stream closes now (LiveController).
+    this.live?.recheckAllSessions();
+    return result;
   }
 
   @Post('2fa/setup')

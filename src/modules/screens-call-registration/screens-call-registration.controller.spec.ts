@@ -8,14 +8,22 @@ import { ScreensCallRegistrationController } from './screens-call-registration.c
 
 describe('ScreensCallRegistrationController access', () => {
   const reflector = new Reflector();
-  const guard = new RbacGuard(reflector, {} as PrismaService);
+  // Records "registered by" the signed-in staff member, so a Team Lead's
+  // own-team check on the id routes passes and only the role list decides.
+  const own = { id: 'x', registeredByStaffId: 'staff-1', accountAgentId: 'staff-1', leadCreatedByStaffId: null, verificationStatus: 'verified' };
+  const prisma = {
+    jobSeeker: { findFirst: jest.fn(async () => own) },
+    referral: { findFirst: jest.fn(async () => own) },
+    business: { findFirst: jest.fn(async () => own) },
+  };
+  const guard = new RbacGuard(reflector, prisma as unknown as PrismaService);
   const handlers = [
     'options', 'jobSeeker', 'signedConsent', 'record', 'findReferralPartner', 'searchBusinesses', 'business', 'referral',
   ] as const;
   const contextFor = (handler: (...args: never[]) => unknown, role: string) => ({
     getHandler: () => handler,
     getClass: () => ScreensCallRegistrationController,
-    switchToHttp: () => ({ getRequest: () => ({ method: 'GET', params: {}, path: '/screens/call-registration', user: { role, sub: 'staff-1' } }) }),
+    switchToHttp: () => ({ getRequest: () => ({ method: 'GET', params: { id: 'x' }, path: '/screens/call-registration', route: { path: '/screens/call-registration/search' }, user: { role, sub: 'staff-1' } }) }),
   }) as unknown as ExecutionContext;
 
   it('lets everyone who registers people read every endpoint', async () => {

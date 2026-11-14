@@ -13,20 +13,30 @@ import { JwtPayload } from '../auth/jwt-payload.interface';
 import {
   Action,
   RBAC_MATRIX,
+  Resource,
   Role,
 } from './rbac.types';
 import {
   PERMISSION_METADATA_KEY,
+  PermissionTarget,
+  PermissionTargetSpec,
   RequiredPermission,
+  TargetKind,
+  TargetSource,
 } from './permissions.decorator';
+import { OwnTeam } from './own-team';
 import { ROLES_METADATA_KEY } from './roles.decorator';
 
 @Injectable()
 export class RbacGuard implements CanActivate {
+  private readonly team: OwnTeam;
+
   constructor(
     private readonly reflector: Reflector,
     private readonly prisma: PrismaService,
-  ) {}
+  ) {
+    this.team = new OwnTeam(prisma);
+  }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const requiredPermission =
@@ -76,7 +86,7 @@ export class RbacGuard implements CanActivate {
       requiredPermission.resource === 'business' &&
       action === 'write' &&
       request.method.toUpperCase() === 'POST' &&
-      /^\/?businesses\/?$/.test(request.path)
+      declaredPath(request) === '/businesses'
     ) {
       return true;
     }
@@ -85,7 +95,7 @@ export class RbacGuard implements CanActivate {
       requiredPermission.resource === 'business' &&
       action === 'write' &&
       request.method.toUpperCase() === 'POST' &&
-      /^\/?businesses\/?$/.test(request.path)
+      declaredPath(request) === '/businesses'
     ) {
       return true;
     }
@@ -101,109 +111,18 @@ export class RbacGuard implements CanActivate {
       return true;
     }
 
-    if (roleRule.scope === 'own_account' || roleRule.scope === 'own_lead') {
-      const business = await this.getBusinessForRequest(requiredPermission.resource, request);
-      if (!business) {
-        throw new ForbiddenException('Access denied: business could not be resolved for this write');
-      }
-      if (roleRule.scope === 'own_lead') {
-        if (
-          user.role !== 'call_agent' ||
-          business.leadCreatedByStaffId !== user.sub ||
-          business.verificationStatus !== 'lead'
-        ) {
-          throw new ForbiddenException('Call agents may only edit leads they created while they remain leads');
-        }
-      } else if (business.accountAgentId !== user.sub) {
-        const isBusinessWrite = requiredPermission.resource === 'business';
-        const leadException =
-          isBusinessWrite &&
-          business.leadCreatedByStaffId === user.sub &&
-          ['lead', 'pending_visit'].includes(business.verificationStatus ?? '');
-        const visitException = isBusinessWrite
-          ? await this.prisma.visitAssignment.findFirst({
-              where: {
-                businessId: business.id,
-                assignedStaffId: user.sub,
-                status: 'assigned',
-              },
-              select: { id: true },
-            })
-          : null;
-        if (!leadException && !visitException) {
-          throw new ForbiddenException('Access denied: business is outside your account');
-        }
-      }
+    // Own team / own account / own lead on a record: checked against the
+    // record the route declares (RequirePermission target, or the declared
+    // route pattern), never the raw URL, whose letter case and shape the
+    // caller controls. A route with an id this cannot place is refused.
+    if (
+      ENTITY_RESOURCES.includes(requiredPermission.resource) &&
+      (roleRule.scope === 'own_team' || roleRule.scope === 'own_account' || roleRule.scope === 'own_lead')
+    ) {
+      return this.checkRecordScope(user, requiredPermission, roleRule.scope, action, request);
     }
 
     if (roleRule.scope === 'own_team') {
-      // M3 and the owner rule (Master Guide, 14 Nov): a Team Lead works only
-      // on their own team. For a job seeker that is one registered by the Team
-      // Lead or an agent who reports to them. The check covers every action on
-      // the job seeker, not only reading it: recording hits, changing status,
-      // trades, languages, photos, payment links, identity checks and edits.
-      // Edits still also pass the service's own rule ("only the team lead of
-      // the team that created this record can edit it").
-      if (requiredPermission.resource === 'job_seeker') {
-        const seeker = await this.getJobSeekerForRequest(request);
-        if (seeker) {
-          const registeredBy = seeker.registeredByStaffId;
-          const inTeam =
-            registeredBy === user.sub ||
-            (registeredBy
-              ? await this.prisma.staff.findFirst({
-                  where: { id: registeredBy, teamLeadId: user.sub },
-                  select: { id: true },
-                })
-              : null);
-          if (!inTeam) {
-            throw new ForbiddenException('Access denied: job seeker is outside your own team');
-          }
-          return true;
-        }
-      }
-      // A referral partner: registered by the Team Lead or someone who reports
-      // to them, the same rule the partner list and detail use
-      // (ReferralService.readScope). Those reads answer 404 for a partner
-      // outside the team, so every other action on it does too.
-      if (requiredPermission.resource === 'referral') {
-        const partner = await this.getReferralForRequest(request);
-        if (partner) {
-          const registeredBy = partner.registeredByStaffId;
-          const inTeam =
-            registeredBy === user.sub ||
-            (registeredBy
-              ? await this.prisma.staff.findFirst({
-                  where: {
-                    id: registeredBy,
-                    OR: [{ teamLeadId: user.sub }, { reportsToId: user.sub }],
-                  },
-                  select: { id: true },
-                })
-              : null);
-          if (!inTeam) {
-            throw new NotFoundException(`Referral partner '${partner.ref}' not found`);
-          }
-          return true;
-        }
-      }
-      if (['business', 'vacancy', 'placement'].includes(requiredPermission.resource)) {
-        const business = await this.getBusinessForRequest(requiredPermission.resource, request);
-        if (business) {
-          const staffIds = [business.accountAgentId, business.leadCreatedByStaffId]
-            .filter((id): id is string => Boolean(id));
-          const belongsToTeam = staffIds.length
-            ? await this.prisma.staff.findFirst({
-                where: { id: { in: staffIds }, teamLeadId: user.sub },
-                select: { id: true },
-              })
-            : null;
-          if (!belongsToTeam) {
-            throw new ForbiddenException('Access denied: business is outside your team');
-          }
-          return true;
-        }
-      }
       const targetStaffId =
         (request.params?.staffId as string | undefined) ??
         (request.params?.id as string | undefined);
@@ -277,120 +196,243 @@ export class RbacGuard implements CanActivate {
     return true;
   }
 
-  /**
-   * The job seeker a request acts on, or null: /job-seekers/:id… (by id or
-   * JS- code), /job-seeker-hits/:id… (the hit's job seeker) and
-   * POST /consent/links (the jobSeekerId in the body).
-   */
-  private async getJobSeekerForRequest(
+  /** Applies an own-team, own-account or own-lead rule to the record(s) the route acts on. */
+  private async checkRecordScope(
+    user: JwtPayload,
+    permission: RequiredPermission,
+    scope: 'own_team' | 'own_account' | 'own_lead',
+    action: Action,
     request: Request,
-  ): Promise<{ id: string; registeredByStaffId: string | null } | null> {
-    const id = (request.params as Record<string, string | undefined>)?.id;
-    const select = { id: true, registeredByStaffId: true } as const;
-    if (id && /^\/?job-seekers\//.test(request.path)) {
-      return this.prisma.jobSeeker.findFirst({
-        where: { OR: [{ id }, { code: id }] },
-        select,
-      });
+  ): Promise<boolean> {
+    const spec = targetFor(permission, declaredPath(request));
+    if (spec === null) {
+      throw new ForbiddenException('Access denied: this route has no team or account check for your role');
     }
-    if (id && /^\/?job-seeker-hits\//.test(request.path)) {
-      const hit = await this.prisma.jobSeekerHit.findUnique({
-        where: { id },
-        select: { jobSeeker: { select } },
-      });
-      return hit?.jobSeeker ?? null;
+    if (spec === 'service') {
+      return true;
     }
-    const bodySeekerId = (request.body as Record<string, unknown> | undefined)?.jobSeekerId;
-    if (/^\/?consent\/links\/?$/.test(request.path) && typeof bodySeekerId === 'string' && bodySeekerId) {
-      return this.prisma.jobSeeker.findFirst({
-        where: { OR: [{ id: bodySeekerId }, { code: bodySeekerId }] },
-        select,
-      });
+    if (spec === 'none') {
+      if (scope === 'own_team') return true; // a list the service scopes, or a create
+      throw new ForbiddenException('Access denied: business could not be resolved for this write');
     }
-    return null;
+    for (const target of Array.isArray(spec) ? spec : [spec]) {
+      // A job seeker or partner named on another kind of route (say, the
+      // candidates shown on a vacancy) is checked by the role's own rule for
+      // job seekers or partners: city-wide for agents, own team for a Team Lead.
+      const kindResource = KIND_RESOURCE[target.kind];
+      let targetScope: string = scope;
+      if (kindResource && kindResource !== permission.resource) {
+        const rule = RBAC_MATRIX[user.role as Role]?.[kindResource]?.[action];
+        if (!rule?.allowed) {
+          throw new ForbiddenException(`Role '${user.role}' is not permitted to perform '${action}' on '${kindResource}'`);
+        }
+        if (rule.scope === 'all') continue;
+        targetScope = rule.scope;
+      }
+      if (targetScope !== 'own_team' && targetScope !== 'own_account' && targetScope !== 'own_lead') {
+        throw new ForbiddenException('Access denied: this record is outside your scope');
+      }
+      const { values, many } = readSource(request, target.from);
+      if (values.length === 0) {
+        if (many) continue; // an empty list names nobody; the route validates it
+        throw new ForbiddenException('Access denied: the record this request acts on was not named');
+      }
+      for (const value of values) {
+        await this.checkOneRecord(user, target.kind, value, targetScope, permission.resource);
+      }
+    }
+    return true;
   }
 
-  /** The referral partner a /referrals/:id… request names (by id or code), or null. */
-  private async getReferralForRequest(
-    request: Request,
-  ): Promise<{ id: string; ref: string; registeredByStaffId: string | null } | null> {
-    const id = (request.params as Record<string, string | undefined>)?.id;
-    if (!id || !/^\/?referrals\//.test(request.path)) return null;
-    const partner = await this.prisma.referral.findFirst({
-      where: { OR: [{ id }, { code: id }] },
-      select: { id: true, registeredByStaffId: true },
-    });
-    return partner ? { ...partner, ref: id } : null;
-  }
-
-  private async getBusinessForRequest(
+  private async checkOneRecord(
+    user: JwtPayload,
+    kind: TargetKind,
+    ref: string,
+    scope: 'own_team' | 'own_account' | 'own_lead',
     resource: string,
-    request: Request,
+  ): Promise<void> {
+    if (kind === 'job_seeker' || kind === 'job_seeker_hit') {
+      const seeker = await this.loadJobSeeker(kind, ref);
+      if (!seeker) {
+        throw new NotFoundException(kind === 'job_seeker' ? `Job seeker '${ref}' not found` : `Job seeker hit '${ref}' not found`);
+      }
+      if (scope !== 'own_team' || !(await this.team.includes(user.sub, seeker.registeredByStaffId))) {
+        throw new ForbiddenException('Access denied: job seeker is outside your own team');
+      }
+      return;
+    }
+    if (kind === 'referral') {
+      const partner = await this.prisma.referral.findFirst({
+        where: { OR: [{ id: ref }, { code: ref }] },
+        select: { registeredByStaffId: true },
+      });
+      // The partner read answers 404 for a partner outside the team, so
+      // every other action on it does too.
+      if (!partner || scope !== 'own_team' || !(await this.team.includes(user.sub, partner.registeredByStaffId))) {
+        throw new NotFoundException(`Referral partner '${ref}' not found`);
+      }
+      return;
+    }
+
+    const business = await this.loadBusiness(kind, ref);
+    if (!business) {
+      if (scope === 'own_team') {
+        throw new NotFoundException(`${kind === 'business' ? 'Business' : kind === 'vacancy' ? 'Vacancy' : 'Placement'} '${ref}' not found`);
+      }
+      throw new ForbiddenException('Access denied: business could not be resolved for this write');
+    }
+    if (scope === 'own_team') {
+      if (!(await this.team.includesAny(user.sub, [business.accountAgentId, business.leadCreatedByStaffId]))) {
+        throw new ForbiddenException('Access denied: business is outside your team');
+      }
+      return;
+    }
+    if (scope === 'own_lead') {
+      if (
+        user.role !== 'call_agent' ||
+        business.leadCreatedByStaffId !== user.sub ||
+        business.verificationStatus !== 'lead'
+      ) {
+        throw new ForbiddenException('Call agents may only edit leads they created while they remain leads');
+      }
+      return;
+    }
+    // own_account
+    if (business.accountAgentId === user.sub) return;
+    const isBusinessWrite = resource === 'business';
+    const leadException =
+      isBusinessWrite &&
+      business.leadCreatedByStaffId === user.sub &&
+      ['lead', 'pending_visit'].includes(business.verificationStatus ?? '');
+    const visitException = isBusinessWrite
+      ? await this.prisma.visitAssignment.findFirst({
+          where: { businessId: business.id, assignedStaffId: user.sub, status: 'assigned' },
+          select: { id: true },
+        })
+      : null;
+    if (!leadException && !visitException) {
+      throw new ForbiddenException('Access denied: business is outside your account');
+    }
+  }
+
+  private async loadJobSeeker(
+    kind: 'job_seeker' | 'job_seeker_hit',
+    ref: string,
+  ): Promise<{ id: string; registeredByStaffId: string | null } | null> {
+    const select = { id: true, registeredByStaffId: true } as const;
+    if (kind === 'job_seeker') {
+      return this.prisma.jobSeeker.findFirst({ where: { OR: [{ id: ref }, { code: ref }] }, select });
+    }
+    const hit = await this.prisma.jobSeekerHit.findUnique({ where: { id: ref }, select: { jobSeeker: { select } } });
+    return hit?.jobSeeker ?? null;
+  }
+
+  /** The business a business, vacancy or placement reference belongs to. */
+  private async loadBusiness(
+    kind: 'business' | 'vacancy' | 'placement' | TargetKind,
+    ref: string,
   ): Promise<{
     id: string;
     accountAgentId: string | null;
     leadCreatedByStaffId: string | null;
     verificationStatus: string | null;
   } | null> {
-    const params = request.params as Record<string, string | undefined>;
-    const path = request.path;
     const select = {
       id: true,
       accountAgentId: true,
       leadCreatedByStaffId: true,
       verificationStatus: true,
     } as const;
-    if (resource === 'business') {
-      const id = params.id ?? params.businessId;
-      if (!id) return null;
-      return this.prisma.business.findFirst({
-        where: { OR: [{ id }, { code: id }] },
-        select,
-      });
+    const where = { OR: [{ id: ref }, { code: ref }] };
+    if (kind === 'business') {
+      return this.prisma.business.findFirst({ where, select });
     }
-    if (resource === 'vacancy') {
-      // A request on one vacancy (/vacancies/:id…, or a :vacancyId such as
-      // /interviews/vacancies/:vacancyId/slots) is checked against that
-      // vacancy's own business, never a businessId sent in the body: the body
-      // is the caller's to write, so it could name a business of their own to
-      // pass this check for someone else's vacancy.
-      const vacancyRef =
-        params.vacancyId ?? (/^\/?vacancies\//.test(path) ? params.id : undefined);
-      const businessId = path.startsWith('/businesses/')
-        ? params.id ?? params.businessId
-        : !vacancyRef && typeof request.body?.businessId === 'string'
-          ? request.body.businessId
-          : null;
-      if (businessId) {
-        return this.prisma.business.findFirst({
-          where: { OR: [{ id: businessId }, { code: businessId }] },
-          select,
-        });
-      }
-      const vacancyId = vacancyRef ?? params.id;
-      if (!vacancyId) return null;
-      const vacancy = await this.prisma.vacancy.findFirst({
-        where: { OR: [{ id: vacancyId }, { code: vacancyId }] },
-        select: { business: { select } },
-      });
+    if (kind === 'vacancy') {
+      const vacancy = await this.prisma.vacancy.findFirst({ where, select: { business: { select } } });
       return vacancy?.business ?? null;
     }
-    if (resource === 'placement') {
-      const entityId = params.id;
-      if (!entityId) return null;
-      if (path.includes('/vacancies/')) {
-        const vacancy = await this.prisma.vacancy.findFirst({
-          where: { OR: [{ id: entityId }, { code: entityId }] },
-          select: { business: { select } },
-        });
-        return vacancy?.business ?? null;
-      }
-      const placement = await this.prisma.placement.findFirst({
-        where: { OR: [{ id: entityId }, { code: entityId }] },
-        select: { business: { select } },
-      });
+    if (kind === 'placement') {
+      const placement = await this.prisma.placement.findFirst({ where, select: { business: { select } } });
       return placement?.business ?? null;
     }
     return null;
   }
+}
+
+const ENTITY_RESOURCES: readonly string[] = ['job_seeker', 'referral', 'business', 'vacancy', 'placement'];
+
+/** Kinds checked by their own resource's rule when they appear on another resource's route. */
+const KIND_RESOURCE: Partial<Record<TargetKind, Resource>> = {
+  job_seeker: 'job_seeker',
+  job_seeker_hit: 'job_seeker',
+  referral: 'referral',
+};
+
+/**
+ * Where each declared route pattern's record comes from, for routes that do
+ * not name it on RequirePermission. Matched against the pattern the route was
+ * declared with (request.route.path), which the caller cannot change.
+ */
+const INFERRED_TARGETS: Array<[RegExp, PermissionTarget]> = [
+  [/^\/job-seekers\/:id(\/|$)/, { kind: 'job_seeker', from: 'param:id' }],
+  [/^\/job-seeker-hits\/:id(\/|$)/, { kind: 'job_seeker_hit', from: 'param:id' }],
+  [/^\/referrals\/:id(\/|$)/, { kind: 'referral', from: 'param:id' }],
+  [/^\/businesses\/:id(\/|$)/, { kind: 'business', from: 'param:id' }],
+  [/^\/businesses\/:businessId(\/|$)/, { kind: 'business', from: 'param:businessId' }],
+  [/^\/vacancies\/:id(\/|$)/, { kind: 'vacancy', from: 'param:id' }],
+  [/^\/placements\/:id(\/|$)/, { kind: 'placement', from: 'param:id' }],
+];
+
+/** "/job-seekers/:id/status" from a declared pattern, whatever its slashes. */
+export function normaliseRoutePath(path: string | undefined | null): string | undefined {
+  if (typeof path !== 'string') return undefined;
+  const joined = `/${path}`.replace(/\/+/g, '/');
+  return joined.length > 1 ? joined.replace(/\/$/, '') : joined;
+}
+
+/** The pattern the matched route was declared with, or undefined. */
+function declaredPath(request: Request): string | undefined {
+  const route = (request as Request & { route?: { path?: unknown } }).route;
+  return normaliseRoutePath(typeof route?.path === 'string' ? route.path : undefined);
+}
+
+/**
+ * The record a scoped rule is checked against: the route's own declaration,
+ * else the one its declared pattern implies, else 'none' for a pattern with no
+ * parameter. null means a parameter nobody placed: the guard refuses.
+ */
+export function targetFor(
+  permission: Pick<RequiredPermission, 'target'>,
+  routePath: string | undefined,
+): PermissionTargetSpec | null {
+  if (permission.target) return permission.target;
+  const path = normaliseRoutePath(routePath);
+  if (!path) return null;
+  for (const [pattern, target] of INFERRED_TARGETS) {
+    if (pattern.test(path)) return target;
+  }
+  return path.includes(':') ? null : 'none';
+}
+
+function readSource(request: Request, from: TargetSource): { values: string[]; many: boolean } {
+  const [where, rawName] = from.split(':') as ['param' | 'body' | 'query', string];
+  const many = rawName.endsWith('[]');
+  const name = many ? rawName.slice(0, -2) : rawName;
+  const bag =
+    where === 'param'
+      ? (request.params as Record<string, unknown> | undefined)
+      : where === 'query'
+        ? (request.query as Record<string, unknown> | undefined)
+        : (request.body as Record<string, unknown> | undefined);
+  const raw = bag && typeof bag === 'object' ? bag[name] : undefined;
+  const list = Array.isArray(raw) ? raw : raw === undefined || raw === null || raw === '' ? [] : [raw];
+  if (!many && list.length > 1) {
+    throw new ForbiddenException('Access denied: one record expected');
+  }
+  // Anything that is not a plain id (an object, a number) names no record
+  // the check can place: refused rather than skipped.
+  if (list.some((value) => typeof value !== 'string' || !value)) {
+    throw new ForbiddenException('Access denied: the record this request acts on was not named');
+  }
+  return { values: [...new Set(list as string[])], many };
 }

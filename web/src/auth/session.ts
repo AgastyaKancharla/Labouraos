@@ -66,13 +66,15 @@ function safeSet(key: string, value: string | null): void {
 
 /**
  * A session from a token and the staff details shown in the shell. The role
- * always comes from the token's own claims (which the API signed), never from
- * the stored staff details: editing laboura_staff in sessionStorage must not
- * open another portal's shell. A token without a staff role gives no session.
+ * is read from the token's claims rather than the stored staff details, so
+ * editing laboura_staff in sessionStorage does not switch the shell to another
+ * portal by itself. The browser cannot verify the token, so this only keeps
+ * the screens consistent; the API checks every request and is the real
+ * control. A token without a numeric expiry or a staff role gives no session.
  */
 export function sessionFromToken(token: string, staff: StaffIdentity): Session | null {
   const claims = decodeJwt(token);
-  if (!claims?.exp) return null;
+  if (!claims || typeof claims.exp !== 'number' || !Number.isFinite(claims.exp)) return null;
   if (!isStaffRole(claims.role)) return null;
   return {
     token,

@@ -23,16 +23,6 @@ class FakeApiController {
     return { api: 'call-agent segment' };
   }
 
-  @Get('map/points')
-  mapPoints() {
-    return { api: 'map points' };
-  }
-
-  @Get('field-agent/priority-dashboard')
-  priorityDashboard() {
-    return { api: 'priority dashboard' };
-  }
-
   @Get('console/admin')
   oldAdmin() {
     return { page: 'old admin dashboard' };
@@ -288,16 +278,11 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       expect(fieldAppAddress({ FIELD_HOST: 'Field.Laboura.com, other.test' })).toBe('https://field.laboura.com/');
     });
 
-    it('never redirects an API caller, and API routes under the same first segment still answer', async () => {
+    it('never redirects an API caller (the old /map and priority API routes are gone too, 14 Nov)', async () => {
       for (const url of ['/admin', '/map', '/field-agent', '/console/call-agent', '/console/field-agent', '/console/map']) {
         const res = await get(APP, url, 'application/json');
         expect([url, res.status]).toEqual([url, 404]);
       }
-      expect((await get(APP, '/map/points?bbox=1,2,3,4', 'application/json')).body).toEqual({ api: 'map points' });
-      expect((await get(APP, '/field-agent/priority-dashboard', 'application/json')).body).toEqual({ api: 'priority dashboard' });
-      // A browser opening an API address under these segments is not redirected either.
-      expect((await get(APP, '/map/points')).body).toEqual({ api: 'map points' });
-      expect((await get(APP, '/field-agent/priority-dashboard')).body).toEqual({ api: 'priority dashboard' });
     });
 
     it('leaves /console/admin (the old dashboard, kept for what the new screens lack) to its controller', async () => {
@@ -315,7 +300,6 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       const map = await get(FIELD, '/map');
       expect(map.status).toBe(200);
       expect(map.text).toContain('field /');
-      expect((await get(FIELD, '/field-agent/priority-dashboard', 'application/json')).body).toEqual({ api: 'priority dashboard' });
     });
   });
 

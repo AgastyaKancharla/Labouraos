@@ -62,6 +62,7 @@
 **Acceptance:**
 - Covers: business onboarding with camera-only selfie capture (no gallery picker exposed — this completes what Phase 4 Task 4 left to the client), vacancy capture, candidate shortlist, interview arrangement
 - Area-scoping is enforced server-side already (Phase 4); the app simply shouldn't offer UI for areas the logged-in agent can't act on
+> **Retired 14 Nov 2026:** `/priority/*` and `/field-agent/priority-dashboard` were removed with the old one-page consoles; no current screen used them. The close-to-refund list is the refund-priority module (Phase 21 Task 7). Kept below as history only.
 - **Priority Dashboard screen** — this is a field agent's daily-use screen, not a nice-to-have (per the Playbook, every unplaced candidate and every unfilled replacement vacancy is a clock running down). Three views calling Phase 4's `/priority/*` endpoints directly, with no client-side scoring or re-sorting of what the API returns:
   - Candidate urgency list (city-wide, per Phase 4 Task 5) — shows the urgency band and flags any 2-hit candidate clearly
   - Vacancy priority list (own area) — in-window replacement vacancies visibly distinguished at the top

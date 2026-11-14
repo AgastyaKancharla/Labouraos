@@ -56,7 +56,9 @@ export class TelephonyController {
 
   @Post('callbacks/:id/assign')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequirePermission('job_seeker', 'write')
+  // The id is a missed call, not a job seeker: TelephonyService applies the
+  // Team Lead's own team and the agent's own calls itself.
+  @RequirePermission('job_seeker', 'write', 'service')
   @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
   async assignCallback(
     @Param('id') id: string,
@@ -69,7 +71,9 @@ export class TelephonyController {
 
   @Post('callbacks/:id/complete')
   @UseGuards(JwtAuthGuard, RbacGuard)
-  @RequirePermission('job_seeker', 'write')
+  // The id is a missed call, not a job seeker: TelephonyService applies the
+  // Team Lead's own team and the agent's own calls itself.
+  @RequirePermission('job_seeker', 'write', 'service')
   @RequireRoles('call_agent', 'team_lead', 'manager', 'ceo')
   async completeCallback(@Param('id') id: string, @Req() req: Request & { user: JwtPayload }) {
     return this.telephonyService.completeCallback(id, req.user);

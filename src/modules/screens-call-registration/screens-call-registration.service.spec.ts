@@ -278,7 +278,7 @@ describe('ScreensCallRegistrationService', () => {
     it('denies a Team Lead a record outside their team', async () => {
       const prisma = {
         jobSeeker: { findUnique: jest.fn().mockResolvedValue(seeker) },
-        staff: { findFirst: jest.fn().mockResolvedValue(null) },
+        staff: { findMany: jest.fn().mockResolvedValue([]) },
       };
       await expect(makeService(prisma).record('JS-01042', { id: 'tl-9', role: 'team_lead' })).rejects.toBeInstanceOf(ForbiddenException);
     });
@@ -286,7 +286,8 @@ describe('ScreensCallRegistrationService', () => {
     it('lets a Team Lead open a record registered by their own team', async () => {
       const prisma = {
         jobSeeker: { findUnique: jest.fn().mockResolvedValue(seeker) },
-        staff: { findFirst: jest.fn().mockResolvedValue({ id: 'staff-1' }) },
+        // staff-1, who registered it, reports to tl-1 (OwnTeam reads the team).
+        staff: { findMany: jest.fn().mockResolvedValue([{ id: 'staff-1', code: 'CA-1', name: 'A', role: 'call_agent', status: 'active', teamLeadId: 'tl-1', reportsToId: 'tl-1' }]) },
       };
       await expect(makeService(prisma).record('JS-01042', { id: 'tl-1', role: 'team_lead' })).resolves.toMatchObject({ code: 'JS-01042' });
     });
@@ -308,6 +309,29 @@ describe('ScreensCallRegistrationService', () => {
       expect.objectContaining({ where: { phone: { in: expect.arrayContaining(['9945670011', '+919945670011']) } } }),
     );
     await expect(service.findReferralPartner('Raju')).resolves.toBeNull();
+  });
+
+  it('a Team Lead finds only partners their own team registered; agents find any', async () => {
+    const findFirst = jest.fn().mockResolvedValue(null);
+    const staff = {
+      findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) =>
+        args?.where?.teamLeadId === 'tl-1' ? [{ id: 'ca-1' }] : args?.where ? [] : [],
+      ),
+    };
+    const service = makeService({ referral: { findFirst }, staff });
+    await service.findReferralPartner('rf-00042', { id: 'tl-1', role: 'team_lead' });
+    expect(findFirst).toHaveBeenLastCalledWith(expect.objectContaining({
+      where: { code: 'RF-00042', registeredByStaffId: { in: expect.arrayContaining(['tl-1', 'ca-1']) } },
+    }));
+    await service.findReferralPartner('rf-00042', { id: 'ca-9', role: 'call_agent' });
+    expect(findFirst).toHaveBeenLastCalledWith(expect.objectContaining({ where: { code: 'RF-00042' } }));
+  });
+
+  it('a Team Lead opens a partner record only when their own team registered it', async () => {
+    const referral = { findUnique: jest.fn().mockResolvedValue({ id: 'r1', code: 'RF-00043', name: 'Raju', createdAt: NOW, registeredByStaffId: 'ca-1' }) };
+    const ownTeam = { findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => (args?.where?.teamLeadId === 'tl-1' ? [{ id: 'ca-1' }] : [])) };
+    await expect(makeService({ referral, staff: ownTeam }).record('RF-00043', { id: 'tl-1', role: 'team_lead' })).resolves.toMatchObject({ code: 'RF-00043' });
+    await expect(makeService({ referral, staff: ownTeam }).record('RF-00043', { id: 'tl-2', role: 'team_lead' })).rejects.toBeInstanceOf(ForbiddenException);
   });
 
   it.each(['9945670011', '+919945670011', '+91 99456 70011', '919945670011', '09945670011'])(

@@ -1,5 +1,5 @@
 import { ExecutionContext, ForbiddenException } from '@nestjs/common';
-import { CallAccessGuard } from './call-access.guard';
+import { CallAccessGuard, CallPlaceGuard } from './call-access.guard';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ROLES_METADATA_KEY } from '../../common/rbac/roles.decorator';
 import { CallController } from './call.controller';
@@ -22,7 +22,16 @@ describe('CallAccessGuard', () => {
   };
   const prisma = {
     callRecord: { findUnique: jest.fn(async ({ where }) => calls[where.id] ?? null) },
-    staff: { findUnique: jest.fn(async ({ where }) => staff[where.id] ?? null) },
+    // OwnTeam reads the team: direct teamLeadId links, then every link.
+    staff: {
+      findMany: jest.fn(async (args?: { where?: { teamLeadId?: string } }) => {
+        const rows = Object.entries(staff).map(([id, row]) => ({ id, code: id, name: id, role: 'call_agent', status: 'active', reportsToId: null, ...row }));
+        return args?.where?.teamLeadId ? rows.filter((r) => r.teamLeadId === args.where!.teamLeadId).map(({ id }) => ({ id })) : rows;
+      }),
+    },
+    jobSeeker: { findFirst: jest.fn(async ({ where }) => ({ 'js-a': { registeredByStaffId: 'agent-a' }, 'js-b': { registeredByStaffId: 'agent-b' } } as Record<string, unknown>)[where.OR[0].id] ?? null) },
+    referral: { findFirst: jest.fn(async ({ where }) => ({ 'rf-b': { registeredByStaffId: 'agent-b' } } as Record<string, unknown>)[where.OR[0].id] ?? null) },
+    business: { findFirst: jest.fn(async ({ where }) => ({ 'bz-a': { accountAgentId: 'agent-a', leadCreatedByStaffId: null }, 'bz-b': { accountAgentId: null, leadCreatedByStaffId: 'agent-b' } } as Record<string, unknown>)[where.OR[0].id] ?? null) },
   };
   const guard = new CallAccessGuard(prisma as unknown as PrismaService);
   const check = (role: string, sub: string, id: string) =>
@@ -61,5 +70,32 @@ describe('CallAccessGuard', () => {
       expect(guards).toContain(CallAccessGuard);
       expect(Reflect.getMetadata(ROLES_METADATA_KEY, CallController.prototype[handler])).toBeDefined();
     }
+  });
+
+  describe('placing a call (POST /calls)', () => {
+    const place = new CallPlaceGuard(prisma as unknown as PrismaService);
+    const try_ = (role: string, sub: string, subjectType: string, subjectId: string) =>
+      place.canActivate({
+        switchToHttp: () => ({ getRequest: () => ({ user: { sub, role }, body: { subjectType, subjectId } }) }),
+      } as unknown as ExecutionContext);
+
+    it('a Team Lead calls only their own team\'s job seekers, partners and businesses', async () => {
+      await expect(try_('team_lead', 'tl-a', 'job_seeker', 'js-a')).resolves.toBe(true);
+      await expect(try_('team_lead', 'tl-a', 'business', 'bz-a')).resolves.toBe(true);
+      await expect(try_('team_lead', 'tl-a', 'job_seeker', 'js-b')).rejects.toThrow(ForbiddenException);
+      await expect(try_('team_lead', 'tl-a', 'referral', 'rf-b')).rejects.toThrow(ForbiddenException);
+      await expect(try_('team_lead', 'tl-a', 'business', 'bz-b')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('agents, Managers and the CEO keep their reach; unknown subjects are left to the route', async () => {
+      await expect(try_('call_agent', 'agent-a', 'job_seeker', 'js-b')).resolves.toBe(true);
+      await expect(try_('manager', 'm-1', 'business', 'bz-b')).resolves.toBe(true);
+      await expect(try_('team_lead', 'tl-a', 'job_seeker', 'nope')).resolves.toBe(true);
+    });
+
+    it('guards POST /calls', () => {
+      const guards: unknown[] = Reflect.getMetadata('__guards__', CallController.prototype.place) ?? [];
+      expect(guards).toContain(CallPlaceGuard);
+    });
   });
 });

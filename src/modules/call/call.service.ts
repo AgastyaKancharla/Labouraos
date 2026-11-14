@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -54,7 +55,12 @@ export class CallService {
     private readonly editPolicyService: EditPolicyService,
     private readonly attendance: AttendanceService,
     private readonly followThrough: CallFollowThroughService,
-  ) {}
+  ) {
+    this.team = new OwnTeam(prisma);
+  }
+
+  /** A Team Lead's own team (the one shared definition, OwnTeam). */
+  private readonly team: OwnTeam;
 
   async updateNotes(
     actor: EditActor | string,
@@ -577,14 +583,7 @@ export class CallService {
     if (row.staffId === actor.id) {
       return actor.role === 'call_agent' || actor.role === 'field_agent' || actor.role === 'team_lead';
     }
-    if (actor.role !== 'team_lead') {
-      return false;
-    }
-    const maker = await this.prisma.staff.findUnique({
-      where: { id: row.staffId },
-      select: { teamLeadId: true },
-    });
-    return maker?.teamLeadId === actor.id;
+    return actor.role === 'team_lead' && this.team.includes(actor.id, row.staffId);
   }
 
   private async canListen(actor: CallActor, row: CallRecord): Promise<boolean> {
@@ -594,11 +593,9 @@ export class CallService {
     if (actor.role !== 'team_lead' || !row.staffId) {
       return false;
     }
-    const maker = await this.prisma.staff.findUnique({
-      where: { id: row.staffId },
-      select: { teamLeadId: true },
-    });
-    return maker?.teamLeadId === actor.id;
+    // A Team Lead listens to their team's calls (OwnTeam), not their own.
+    if (row.staffId === actor.id) return false;
+    return this.team.includes(actor.id, row.staffId);
   }
 
   private async loadSubject(subjectType: string, subjectId: string) {
@@ -690,11 +687,7 @@ export class CallService {
       return [actor.id];
     }
     if (actor.role === 'team_lead') {
-      const team = await this.prisma.staff.findMany({
-        where: { OR: [{ id: actor.id }, { teamLeadId: actor.id }] },
-        select: { id: true },
-      });
-      return team.map((member) => member.id);
+      return this.team.memberIds(actor.id);
     }
     return [];
   }

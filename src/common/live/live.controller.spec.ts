@@ -9,7 +9,16 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 describe('LiveController: the stream ends with its session', () => {
   let live: LiveEventsService;
-  let session: { revokedAt: Date | null; staff: { status: string } } | null;
+  type Row = { revokedAt: Date | null; staff: { status: string }; lastActivityAt?: Date; absoluteExpiresAt?: Date };
+  let session: Row | null;
+  /** A live session: active just now, two hours left. */
+  const live_ = (over: Partial<Row> = {}): Row => ({
+    revokedAt: null,
+    staff: { status: 'active' },
+    lastActivityAt: new Date(Date.now()),
+    absoluteExpiresAt: new Date(Date.now() + 2 * 60 * 60 * 1000),
+    ...over,
+  });
   let failLookup: boolean;
   let subscription: Subscription | undefined;
   const prisma = {
@@ -27,7 +36,7 @@ describe('LiveController: the stream ends with its session', () => {
   };
 
   function open(sid: string | undefined = 'sess-1') {
-    const controller = new LiveController(live, prisma as unknown as PrismaService);
+    const controller = new LiveController(live, prisma as unknown as PrismaService, { current: async () => ({ idleLogoutMinutes: 60 }) } as never);
     const exp = Math.floor(Date.now() / 1000) + 15 * 60;
     const received: Array<{ type?: string }> = [];
     let completed = false;
@@ -40,7 +49,7 @@ describe('LiveController: the stream ends with its session', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     live = new LiveEventsService();
-    session = { revokedAt: null, staff: { status: 'active' } };
+    session = live_();
     failLookup = false;
     prisma.staffSession.findUnique.mockClear();
   });
@@ -57,7 +66,7 @@ describe('LiveController: the stream ends with its session', () => {
     live.publish('staff-1', 'notification', { n: 1 });
     expect(stream.received.map((m) => m.type)).toEqual(['ready', 'notification']);
 
-    session = { revokedAt: new Date(), staff: { status: 'active' } };
+    session = live_({ revokedAt: new Date() });
     live.recheckSessions('staff-1');
     await flush();
     expect(stream.isCompleted()).toBe(true);
@@ -68,7 +77,7 @@ describe('LiveController: the stream ends with its session', () => {
 
   it('closes on its periodic check when the account was deactivated elsewhere', async () => {
     const stream = open();
-    session = { revokedAt: null, staff: { status: 'deactivated' } };
+    session = live_({ staff: { status: 'deactivated' } });
     jest.advanceTimersByTime(LIVE_SESSION_CHECK_MS);
     await flush();
     expect(stream.isCompleted()).toBe(true);
@@ -82,6 +91,38 @@ describe('LiveController: the stream ends with its session', () => {
     expect(stream.isCompleted()).toBe(false);
     live.publish('staff-1', 'attendance_status', { status: 'available' });
     expect(stream.received.some((m) => m.type === 'attendance_status')).toBe(true);
+  });
+
+  it('closes when the session passes its idle limit or its 2-hour limit', async () => {
+    const idle = open();
+    session = live_({ lastActivityAt: new Date(Date.now() - 61 * 60 * 1000) });
+    live.recheckSessions('staff-1');
+    await flush();
+    expect(idle.isCompleted()).toBe(true);
+    subscription?.unsubscribe();
+
+    const old = open();
+    session = live_({ absoluteExpiresAt: new Date(Date.now() - 1000) });
+    live.recheckAllSessions();
+    await flush();
+    expect(old.isCompleted()).toBe(true);
+  });
+
+  it('a nudge that arrives while a check is running is not dropped', async () => {
+    const stream = open();
+    let release: () => void = () => undefined;
+    // The first check hangs until released; the session ends meanwhile.
+    prisma.staffSession.findUnique.mockImplementationOnce(
+      () => new Promise((resolve) => { release = () => resolve(live_()); }) as never,
+    );
+    live.recheckSessions('staff-1');
+    await flush();
+    session = live_({ revokedAt: new Date() });
+    live.recheckSessions('staff-1');
+    release();
+    await flush();
+    await flush();
+    expect(stream.isCompleted()).toBe(true);
   });
 
   it('a database hiccup does not end the stream; the next check decides', async () => {
@@ -123,5 +164,26 @@ describe('Session-ending actions ask open live streams to check at once', () => 
     );
     await service.revoke('dev-row-1', { id: 'ceo-1', role: 'ceo' } as never);
     expect(live.recheckSessions).toHaveBeenCalledWith('staff-1');
+  });
+});
+
+describe('Signing out, revoking a session and a new sign-in ask open streams to check', () => {
+  it('logout, session revoke and login nudge the live channel', async () => {
+    const { AuthController } = await import('../auth/auth.controller');
+    const { StaffSessionController } = await import('../auth/staff-session.controller');
+    const live = { recheckSessions: jest.fn(), recheckAllSessions: jest.fn() };
+    const auth = {
+      logout: jest.fn(async () => ({ success: true })),
+      revokeSession: jest.fn(async () => ({ success: true, message: 'ok' })),
+      login: jest.fn(async () => ({ accessToken: 't', staff: { id: 'staff-9' } })),
+    };
+    const authController = new AuthController(auth as never, live as never);
+    await authController.logout({ user: { sub: 'staff-1' } } as never);
+    expect(live.recheckSessions).toHaveBeenCalledWith('staff-1');
+    await authController.login({} as never, { headers: {}, socket: {} } as never);
+    expect(live.recheckSessions).toHaveBeenCalledWith('staff-9');
+    const sessions = new StaffSessionController(auth as never, live as never);
+    await sessions.revokeSession('sess-2', { user: { sub: 'ceo-1' } } as never);
+    expect(live.recheckAllSessions).toHaveBeenCalled();
   });
 });

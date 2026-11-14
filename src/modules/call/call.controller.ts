@@ -17,7 +17,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { RbacGuard } from '../../common/rbac/rbac.guard';
 import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { CallService } from './call.service';
-import { CallAccessGuard } from './call-access.guard';
+import { CallAccessGuard, CallPlaceGuard } from './call-access.guard';
 import { Public } from '../../common/rbac/public.decorator';
 
 type AuthenticatedRequest = Request & { user: JwtPayload; rawBody?: Buffer };
@@ -66,7 +66,7 @@ export class CallController {
   }
 
   @Post('calls')
-  @UseGuards(JwtAuthGuard, RbacGuard)
+  @UseGuards(JwtAuthGuard, RbacGuard, CallPlaceGuard)
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   place(
     @Body()

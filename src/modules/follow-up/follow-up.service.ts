@@ -1,3 +1,4 @@
+import { OwnTeam } from '../../common/rbac/own-team';
 import {
   BadRequestException,
   ForbiddenException,
@@ -52,6 +53,11 @@ export class FollowUpService {
     return team.map((m) => m.id);
   }
 
+  /** A Team Lead's own team, the Team Lead included (the shared definition, OwnTeam). */
+  private teamOf(teamLeadId: string): Promise<string[]> {
+    return new OwnTeam(this.prisma, this.reportingScope ?? undefined).memberIds(teamLeadId);
+  }
+
   async listTasks(
     actor: { id: string; role: string; teamLeadId?: string | null },
     query?: ListFollowUpTasksQuery,
@@ -70,11 +76,7 @@ export class FollowUpService {
         where.assignedStaffId = query.assignedStaffId;
       }
     } else if (actor.role === 'team_lead') {
-      const teamMembers = await this.prisma.staff.findMany({
-        where: { teamLeadId: actor.id },
-        select: { id: true },
-      });
-      const memberIds = [actor.id, ...teamMembers.map((m) => m.id)];
+      const memberIds = await this.teamOf(actor.id);
       where.assignedStaffId = query?.assignedStaffId && memberIds.includes(query.assignedStaffId)
         ? query.assignedStaffId
         : { in: memberIds };
@@ -122,7 +124,9 @@ export class FollowUpService {
     if (actor.role === 'ceo' || task.assignedStaffId === actor.id) {
       shownBy = null;
     } else if (actor.role === 'team_lead' || actor.role === 'manager') {
-      const scope = [actor.id, ...(await this.peopleUnder(actor.id))];
+      const scope = actor.role === 'team_lead'
+        ? await this.teamOf(actor.id)
+        : [actor.id, ...(await this.peopleUnder(actor.id))];
       shownBy = task.assignedStaffId && scope.includes(task.assignedStaffId) ? null : scope;
     } else if (actor.role === 'call_agent' || actor.role === 'field_agent') {
       shownBy = [actor.id];
@@ -171,7 +175,7 @@ export class FollowUpService {
       }
       return;
     }
-    const scope = [actor.id, ...(await this.peopleUnder(actor.id))];
+    const scope = await this.teamOf(actor.id);
     if (!task.assignedStaffId || !scope.includes(task.assignedStaffId)) {
       throw new ForbiddenException('This follow-up is not yours or your team’s');
     }
