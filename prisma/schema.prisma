@@ -121,6 +121,8 @@ model JobSeeker {
   kycRecoveryRequests      KycRecoveryRequest[]
   replacementCandidateOffers ReplacementCandidate[]
   callbackTasks             CallbackTask[]
+  /// Customer app accounts that may act for this job seeker (at most one: one phone, one job seeker).
+  customerProfiles          CustomerProfile[]
   anonymisedAt              DateTime?
   createdAt                 DateTime    @default(now())
   updatedAt                 DateTime    @updatedAt
@@ -311,6 +313,8 @@ model Referral {
   jobSeekers    JobSeeker[]
   payments      Payment[]
   identityVerifications ReferralIdentityVerification[]
+  /// Customer app accounts that may act for this partner.
+  customerProfiles CustomerProfile[]
   /// Paused by the CEO (guide, Referral partners): new referrals naming this
   /// partner are refused; money already earned is still paid. Unpause restores.
   pausedAt      DateTime?
@@ -408,6 +412,8 @@ model Business {
   candidateIntroductions CandidateIntroduction[]
   candidateIntroductionLinks CandidateIntroductionLink[]
   interviews                Interview[]
+  /// Customer app accounts (owner, managers) that may act for this business.
+  customerProfiles          CustomerProfile[]
   referralPartners          Referral[] @relation("ReferralPartnerBusiness")
   followUpAnswerBusinesses  FollowUpTask[] @relation("FollowUpAnswerBusiness")
   anonymisedAt  DateTime?
@@ -438,6 +444,8 @@ model BusinessBranch {
   contactWhatsAppPhone String?
   contactLanguage      String?
   vacancies            Vacancy[]
+  /// Customer app accounts limited to this branch (a branch manager).
+  customerProfiles     CustomerProfile[]
   createdAt            DateTime  @default(now())
   updatedAt            DateTime  @updatedAt
 
@@ -843,6 +851,10 @@ model Staff {
   teamPlans         TeamPlan[]       @relation("TeamPlanTeam")
   teamPlansSet      TeamPlan[]       @relation("TeamPlanSetBy")
   weeklyReports     WeeklyReport[]   @relation("WeeklyReportOwner")
+  /// Languages this person speaks with customers (kn, hi, en, ta, te, ml, mr, bn, or, ur…),
+  /// used to give app sign-up help tasks to someone who speaks the person's language
+  /// (customer app proposal 4.3, C5). Empty until set on the staff record.
+  spokenLanguages   String[]         @default([])
   createdAt         DateTime         @default(now())
   updatedAt         DateTime         @updatedAt
 
@@ -1137,6 +1149,7 @@ model VisitAssignment {
   id                String       @id @default(uuid())
   businessId        String
   business          Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// verification, revisit, interview_attendance, follow_up, business_signup (a business that signed up in the customer app)
   purpose           String
   suggestedStaffId  String?
   suggestedStaff    Staff?       @relation("VisitAssignmentSuggested", fields: [suggestedStaffId], references: [id], onDelete: SetNull)
@@ -1150,11 +1163,16 @@ model VisitAssignment {
   visitId           String?      @unique
   visit             BusinessVisit? @relation("VisitAssignmentVisit", fields: [visitId], references: [id], onDelete: SetNull)
   businessVisits    BusinessVisit[] @relation("VisitAssignmentBusinessVisit")
+  /// business_signup: the time the owner picked in the app ("a Laboura agent will visit; pick a time").
+  requestedFor      DateTime?
+  /// business_signup: the app sign-up this visit is for.
+  signupTrackerId   String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
   @@index([businessId, status])
   @@index([assignedStaffId, status])
+  @@index([signupTrackerId])
 }
 
 model FieldCheckIn {
@@ -1742,7 +1760,7 @@ model CallRecord {
 
 model MessageLog {
   id                String    @id @default(uuid())
-  channel           String // sms, whatsapp
+  channel           String // sms, whatsapp, push, in_app (push and in-app are never counted as contact attempts)
   template          String
   subjectType       String
   subjectId         String
@@ -1965,7 +1983,7 @@ model CallTask {
   staffId            String
   subjectType        String    // job_seeker, business, referral
   subjectId          String
-  kind               String    // callback, retry
+  kind               String    // callback, retry, signup_help (customer app: help finish an app sign-up)
   dueAt              DateTime
   status             String    @default("open") // open, done, cancelled
   /// The call that produced it. One task per call and kind, so a repeated
@@ -1974,10 +1992,13 @@ model CallTask {
   /// The call that closed it.
   doneCallRecordId   String?
   doneAt             DateTime?
+  /// signup_help tasks: the app sign-up this call is about.
+  signupTrackerId    String?
   createdAt          DateTime  @default(now())
   updatedAt          DateTime  @updatedAt
 
   @@unique([sourceCallRecordId, kind])
+  @@index([signupTrackerId])
   @@index([staffId, status, dueAt])
   @@index([subjectType, subjectId, status])
 }
@@ -2634,4 +2655,364 @@ model BypassCharge {
 
   @@index([businessId])
   @@index([jobSeekerId])
+}
+
+// ─── Customer app (job seekers, businesses and referral partners sign in) ───
+// A separate realm from staff: its own accounts, sessions, devices and token
+// (src/common/customer-auth). Nothing here is read by a staff login and a
+// customer token is never accepted by a staff route (proposal 8.1, C1).
+
+/// One person who signed in to the Laboura app. Signing in with Google or with
+/// a mobile number creates it; a verified mobile is required before any profile
+/// is registered or linked (decided 14 Nov). Personal data is removed on deletion.
+model CustomerAccount {
+  id                    String    @id @default(uuid())
+  /// The OTP-verified mobile, +91 and 10 digits. One mobile is one account.
+  phone                 String?   @unique
+  phoneVerifiedAt       DateTime?
+  /// From Google sign-in, if used. The Google picture is never taken.
+  email                 String?
+  displayName           String?
+  /// kn, hi or en: the app and notifications use it.
+  language              String    @default("en")
+  /// "Laboura may call, SMS or WhatsApp me to help me finish registering" (C7).
+  contactMeConsent      Boolean   @default(false)
+  contactMeConsentAt    DateTime?
+  contactMeNoticeVersion String?
+  /// phone or google: how the account was first created.
+  createdVia            String
+  /// active, deletion_requested, deleted, blocked
+  status                String    @default("active")
+  /// The profile Home opened last (CustomerProfile.id).
+  lastProfileId         String?
+  lastSeenAt            DateTime?
+  deletedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  identities            CustomerIdentity[]
+  profiles              CustomerProfile[]
+  sessions              CustomerSession[]
+  devices               CustomerDevice[]
+  inboxMessages         CustomerInboxMessage[]
+  notificationSetting   CustomerNotificationSetting?
+  deletionRequests      CustomerDeletionRequest[]
+  callbackRequests      CustomerCallbackRequest[]
+  vacancyDrafts         CustomerVacancyDraft[]
+
+  @@index([status])
+  @@index([createdAt])
+}
+
+/// A way to sign in to an account: phone (subject = +91 mobile) or google
+/// (subject = Google's "sub"). Apple can be added later as another provider.
+model CustomerIdentity {
+  id          String          @id @default(uuid())
+  accountId   String
+  account     CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// phone, google
+  provider    String
+  subject     String
+  email       String?
+  verifiedAt  DateTime
+  lastUsedAt  DateTime?
+  createdAt   DateTime        @default(now())
+
+  @@unique([provider, subject])
+  @@index([accountId])
+}
+
+/// Which job seeker, referral partner or business (and branch) an account may
+/// act for, and as what. The server decides "my own records" from these rows,
+/// never from an id the app sends (proposal 7.6, 8.1).
+model CustomerProfile {
+  id                String          @id @default(uuid())
+  accountId         String
+  account           CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// job_seeker, business, referral
+  kind              String
+  jobSeekerId       String?         @unique
+  jobSeeker         JobSeeker?      @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
+  referralId        String?         @unique
+  referral          Referral?       @relation(fields: [referralId], references: [id], onDelete: Cascade)
+  businessId        String?
+  business          Business?       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  /// Set for a branch manager: they see only this branch.
+  branchId          String?
+  branch            BusinessBranch? @relation(fields: [branchId], references: [id], onDelete: Cascade)
+  /// Business profiles: owner, manager, hr, supervisor. Others: self.
+  role              String          @default("self")
+  /// self_registered, phone_match (a record an agent made with the same verified mobile), invite
+  linkedVia         String
+  invitedByAccountId String?
+  /// active, revoked
+  status            String          @default("active")
+  revokedAt         DateTime?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([accountId, status])
+  @@index([businessId, status])
+  @@index([branchId])
+}
+
+/// One signed-in app on one phone. 90 days, renewed on use (C16). The refresh
+/// token is stored only as a hash. A sensitive action needs a fresh OTP
+/// (stepUpAt within a few minutes, used once).
+model CustomerSession {
+  id                String          @id @default(uuid())
+  accountId         String
+  account           CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  deviceId          String?
+  device            CustomerDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
+  refreshTokenHash  String          @unique
+  /// phone, google
+  signedInWith      String
+  expiresAt         DateTime
+  lastUsedAt        DateTime        @default(now())
+  /// When a fresh OTP was last verified for a sensitive action, and for which.
+  stepUpAt          DateTime?
+  stepUpPurpose     String?
+  revokedAt         DateTime?
+  /// sign_out, expired, replaced, deleted, blocked, revoked
+  endedReason       String?
+  ipHash            String?
+  userAgent         String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([accountId, revokedAt])
+  @@index([expiresAt])
+}
+
+/// A phone with the app installed: its notification address (Expo push token)
+/// and app version. Push tokens are removed on sign-out or after 90 days unused.
+model CustomerDevice {
+  id                 String          @id @default(uuid())
+  accountId          String
+  account            CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// A random id the app makes once per install.
+  installationId     String
+  /// android, ios, web
+  platform           String
+  appVersion         String?
+  /// ExponentPushToken[...]; one phone's token belongs to one account at a time.
+  pushToken          String?         @unique
+  pushTokenUpdatedAt DateTime?
+  /// The phone's own notification permission, as the app last reported it.
+  pushPermission     String?
+  lastSeenAt         DateTime        @default(now())
+  revokedAt          DateTime?
+  sessions           CustomerSession[]
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  @@unique([accountId, installationId])
+  @@index([lastSeenAt])
+}
+
+/// Every OTP send and wrong code from the customer sign-in, for the abuse limits
+/// per phone, per internet address and per device (proposal 7.6). Only hashes;
+/// rows older than 24 hours are removed.
+model CustomerOtpAttempt {
+  id          String   @id @default(uuid())
+  /// send, verify_failed
+  kind        String
+  phoneHash   String?
+  ipHash      String?
+  deviceHash  String?
+  createdAt   DateTime @default(now())
+
+  @@index([phoneHash, createdAt])
+  @@index([ipHash, createdAt])
+  @@index([deviceHash, createdAt])
+  @@index([createdAt])
+}
+
+/// One app sign-up, from the moment the phone is verified (proposal section 4).
+/// Stages: A phone verified, B details filled, C consent / agreement / terms,
+/// D selfie and ID / visit booked, E payment pending / visit done / UPI, done.
+/// The back office (signup-tracker module) assigns unfinished ones to agents.
+model SignupTracker {
+  id                String    @id @default(uuid())
+  accountId         String?
+  /// job_seeker, business, referral
+  profileKind       String
+  /// The record once it exists: job_seeker, business, referral and its id.
+  subjectType       String?
+  subjectId         String?
+  /// A, B, C, D, E, done
+  stage             String    @default("A")
+  stageReachedAt    DateTime  @default(now())
+  /// Why they are stuck, in a few words ("UPI failed twice", "name didn't match"). No personal data.
+  stuckReason       String?
+  /// Where they came from: store, referral_link, ad, organic, agent_link
+  source            String?
+  sourceDetail      String?
+  /// RF- code from a partner's share link, if any.
+  referralCode      String?
+  language          String?
+  /// The contact-me tick (C7): without it only push and in-app reminders are used.
+  contactConsent    Boolean   @default(false)
+  assignedStaffId   String?
+  assignedAt        DateTime?
+  /// existing_agent, language, fair_share, manual, handover
+  assignmentReason  String?
+  /// When the tracker job looks at it next (reminder, call task, visit request).
+  nextActionAt      DateTime?
+  callTries         Int       @default(0)
+  remindersSent     Int       @default(0)
+  /// open, self (finished without help), assisted, gave_up, no_response
+  outcome           String    @default("open")
+  finishedAt        DateTime?
+  lastActivityAt    DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  events            SignupTrackerEvent[]
+
+  @@index([accountId])
+  @@index([subjectType, subjectId])
+  @@index([outcome, nextActionAt])
+  @@index([assignedStaffId, outcome])
+  @@index([profileKind, stage])
+}
+
+/// History of one sign-up: stage changes, assignments, reminders, tasks, closing.
+model SignupTrackerEvent {
+  id          String        @id @default(uuid())
+  trackerId   String
+  tracker     SignupTracker @relation(fields: [trackerId], references: [id], onDelete: Cascade)
+  /// stage, assigned, reassigned, reminder, call_task, visit_request, closed
+  kind        String
+  fromStage   String?
+  toStage     String?
+  staffId     String?
+  byStaffId   String?
+  note        String?
+  createdAt   DateTime      @default(now())
+
+  @@index([trackerId, createdAt])
+}
+
+/// The customer's inbox: every notification sent to them, read or not.
+/// Push is an extra copy of an inbox message; it is never a contact attempt.
+model CustomerInboxMessage {
+  id            String          @id @default(uuid())
+  accountId     String
+  account       CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// The profile it is about (CustomerProfile.id), if any.
+  profileId     String?
+  /// Template key from the customer-notification module's closed list.
+  kind          String
+  /// service, job_updates, promotions
+  category      String          @default("service")
+  /// normal, urgent
+  priority      String          @default("normal")
+  title         String
+  body          String
+  /// Screen in the app to open, e.g. "/home" or "/inbox/<id>".
+  deepLink      String?
+  data          Json?
+  language      String
+  /// One message per event: a repeated event adds nothing.
+  dedupeKey     String?         @unique
+  messageLogId  String?
+  /// none, queued, sent, failed, held_quiet_hours, held_daily_cap, off
+  pushStatus    String          @default("none")
+  scheduledFor  DateTime?
+  pushedAt      DateTime?
+  readAt        DateTime?
+  createdAt     DateTime        @default(now())
+
+  @@index([accountId, createdAt])
+  @@index([accountId, readAt])
+  @@index([pushStatus, scheduledFor])
+}
+
+/// The three notification switches and quiet hours (proposal 5.4, C18).
+/// Service cannot be switched off while a guarantee is running.
+model CustomerNotificationSetting {
+  accountId         String          @id
+  account           CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  service           Boolean         @default(true)
+  jobUpdates        Boolean         @default(false)
+  promotions        Boolean         @default(false)
+  /// IST "HH:MM"; nothing between quietStart and quietEnd except OTPs and receipts.
+  quietStart        String          @default("21:00")
+  quietEnd          String          @default("09:00")
+  /// Non-urgent notifications a day at most.
+  dailyCap          Int             @default(3)
+  updatedAt         DateTime        @updatedAt
+}
+
+/// "Delete my account" from the app (stores require it; C20). The back office
+/// works it like a data request; payments and invoices are kept as the law requires.
+model CustomerDeletionRequest {
+  id                         String          @id @default(uuid())
+  accountId                  String
+  account                    CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  /// requested, in_progress, done, cancelled
+  status                     String          @default("requested")
+  reason                     String?
+  /// A job seeker guarantee was running when they asked: deleting ends the refund.
+  guaranteeRunning           Boolean         @default(false)
+  /// They saw the warning and confirmed it (required when guaranteeRunning).
+  refundLossAcknowledged     Boolean         @default(false)
+  otpVerifiedAt              DateTime
+  /// The DataRequest (DR-) the back office opened for it, if any.
+  dataRequestId              String?
+  handledByStaffId           String?
+  handledAt                  DateTime?
+  outcomeNote                String?
+  createdAt                  DateTime        @default(now())
+  updatedAt                  DateTime        @updatedAt
+
+  @@index([status, createdAt])
+  @@index([accountId])
+}
+
+/// "Call me back" from the app. The back office turns it into a call task.
+model CustomerCallbackRequest {
+  id               String          @id @default(uuid())
+  accountId        String
+  account          CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profileId        String?
+  /// signup, payment, interview, refund, payout, vacancy, other
+  topic            String
+  note             String?
+  /// IST "HH:MM" window the person prefers, inside 09:00-21:00.
+  preferredFrom    String?
+  preferredTo      String?
+  /// open, assigned, done, cancelled
+  status           String          @default("open")
+  callTaskId       String?
+  assignedStaffId  String?
+  doneAt           DateTime?
+  createdAt        DateTime        @default(now())
+  updatedAt        DateTime        @updatedAt
+
+  @@index([status, createdAt])
+  @@index([accountId])
+}
+
+/// A vacancy a business user is writing in the app. It becomes a real vacancy
+/// only when confirmed by a fresh OTP on the contact person's verified phone,
+/// with the minimum-wage warning ticked when the salary is below it (C8).
+model CustomerVacancyDraft {
+  id           String          @id @default(uuid())
+  accountId    String
+  account      CustomerAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  profileId    String
+  businessId   String
+  branchId     String?
+  /// The vacancy form as typed (same fields as the agent's vacancy form).
+  form         Json
+  /// draft, confirmed, discarded
+  status       String          @default("draft")
+  vacancyId    String?         @unique
+  confirmedAt  DateTime?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  @@index([businessId, status])
+  @@index([accountId, status])
 }

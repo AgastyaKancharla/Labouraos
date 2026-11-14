@@ -24,6 +24,8 @@ const REGISTRATION_WINDOWS = {
 export const HEARD_FROM_VALUES = [
   'toll_free_missed_call', 'ad', 'referral_partner', 'field_visit',
   'social_media', 'walk_in', 'other',
+  // Signed up themselves in the Laboura app (customer app proposal C3).
+  'laboura_app',
 ] as const;
 
 const SHIFT_PREFERENCES = ['day', 'night', 'rotational', 'any'] as const;

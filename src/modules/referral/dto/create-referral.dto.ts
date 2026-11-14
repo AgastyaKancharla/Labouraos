@@ -13,7 +13,7 @@ export interface CreateReferralDto {
   pincode: string;
   latitude?: number;
   longitude?: number;
-  heardFrom: 'toll_free_missed_call' | 'ad' | 'referral_partner' | 'field_visit' | 'social_media' | 'walk_in' | 'other';
+  heardFrom: 'toll_free_missed_call' | 'ad' | 'referral_partner' | 'field_visit' | 'social_media' | 'walk_in' | 'other' | 'laboura_app';
   otpRequestId: string;
   city?: string;
 }
