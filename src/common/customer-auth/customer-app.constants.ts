@@ -57,5 +57,7 @@ export const CUSTOMER_STEP_UP_PURPOSES = [
   'sign_agreement',
   'interview_result',
   'confirm_vacancy',
+  /** Registering a profile: the code goes in the registration body (existing services consume it). */
+  'register',
 ] as const;
 export type CustomerStepUpPurpose = (typeof CUSTOMER_STEP_UP_PURPOSES)[number];

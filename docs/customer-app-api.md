@@ -262,7 +262,11 @@ token (no more notifications to it).
 
 Sensitive actions always need a fresh OTP to the account's verified mobile
 (proposal 3, point 5): `delete_account`, `payout_details`, `sign_agreement`,
-`interview_result`, `confirm_vacancy`.
+`interview_result`, `confirm_vacancy`. Registering a profile (§5) also needs a
+fresh OTP (purpose `register`), because the existing job seeker, business and
+referral services require an OTP-verified mobile for every registration (guide,
+Forms); for `register` the app sends the code in the registration body instead
+of calling `verify`.
 
 `send` `{ "purpose": "delete_account", "requestId": "(resend only)" }` →
 `{ "requestId", "resendAvailableAt", "resendsLeft", "testModeCode"? }` (same
@@ -346,6 +350,13 @@ labelled "Registered in the app" by the back office. Each moves the sign-up to s
 | `POST /me/register/business` | 🔒 | A |
 | `POST /me/register/referral` | 🔒 | A |
 
+**Fresh OTP on every registration.** Before submitting a registration form the
+app calls `POST /auth/step-up/send { "purpose": "register" }` (a code to the
+account's own verified mobile) and sends the result in the form body:
+`"otp": { "requestId": "otp_…", "code": "123456" }`. A wrong code answers
+`400 OTP_INVALID`; an expired or already used one `400 OTP_EXPIRED`. The code is
+used up by the registration (one code, one record), the same as on the agent's form.
+
 ### 5.1 Age first
 
 `POST /me/register/age-check` `{ "dateOfBirth": "2004-05-17" }` → `200 { "adult": true }`
@@ -380,6 +391,7 @@ checks it again.
   "spokenLanguages": ["Kannada", "Hindi"],
   "heardFrom": "laboura_app",
   "referralCode": "RF-00012",
+  "otp": { "requestId": "otp_…", "code": "123456" },
   "optional": { "whatsappPhone": "…", "preferredLocalities": ["…"], "qualification": "…", "…": "the agent form's optional fields" }
 }
 ```
@@ -418,7 +430,8 @@ shown before the visit, the agreement and the Team Lead's approval).
   "heardFrom": "laboura_app",
   "referralCode": "RF-00012",
   "visitPreferredAt": "2026-11-29T05:30:00.000Z",
-  "contactMe": true
+  "contactMe": true,
+  "otp": { "requestId": "otp_…", "code": "123456" }
 }
 ```
 
@@ -445,7 +458,8 @@ the app offers "Call me back"); `400 VALIDATION_FAILED`.
   "whatsappPhone": "9876543210",
   "language": "kn",
   "locality": "Jayanagar", "pincode": "560041", "latitude": 12.93, "longitude": 77.58,
-  "heardFrom": "laboura_app"
+  "heardFrom": "laboura_app",
+  "otp": { "requestId": "otp_…", "code": "123456" }
 }
 ```
 
