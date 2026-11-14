@@ -757,6 +757,11 @@ model Staff {
   teamName          String?
   /// An intern (call or field agent) — carries the same targets as paid agents.
   isIntern          Boolean          @default(false)
+  /// Owner account (owner decision 14 Nov): an owner's own call or field agent
+  /// account, marked by the CEO. Its work counts in every list and report under
+  /// its name, but it is left out of targets, leaderboards, attendance, salary
+  /// and incentives. Only call_agent and field_agent accounts can be one.
+  isOwnerAccount    Boolean          @default(false)
   /// CEO-level accounts only: ceo, founder or co_founder (guide: one top-level role, different titles).
   title             String?
   /// Joining date, entered when the staff member is added (CEO or Manager);

@@ -145,6 +145,18 @@ export class StaffController {
     return this.staffService.setJoinedOn(id, joinedOn, req.user);
   }
 
+  /**
+   * The CEO marks or clears an owner account: their work counts in the lists,
+   * but not in targets, leaderboard, attendance or salary (owner decision 14 Nov).
+   */
+  @Put(':id/owner-account')
+  @UseGuards(JwtAuthGuard, RbacGuard)
+  @RequirePermission('staff', 'write')
+  @RequireRoles('ceo')
+  setOwnerAccount(@Param('id') id: string, @Body('ownerAccount') ownerAccount: unknown, @Req() req: AuthenticatedRequest) {
+    return this.staffService.setOwnerAccount(id, ownerAccount, req.user);
+  }
+
   @Put(':id/call-routing-phone')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles('ceo', 'manager', 'team_lead', 'call_agent', 'field_agent', 'finance')

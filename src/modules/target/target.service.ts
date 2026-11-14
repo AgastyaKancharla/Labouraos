@@ -22,6 +22,7 @@ import {
 } from './target.constants';
 import { isPastPeriod } from '../../common/time/period-boundary';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
+import { isOwnerAccount, NOT_OWNER_ACCOUNT, OWNER_ACCOUNT_NO_TARGETS } from '../staff/owner-account';
 
 @Injectable()
 export class TargetService {
@@ -137,6 +138,7 @@ export class TargetService {
       throw new BadRequestException(`Cannot set target for deactivated staff '${staff.code}'`);
     }
     this.assertEligibleRole(staff.role);
+    if (isOwnerAccount(staff)) throw new BadRequestException(OWNER_ACCOUNT_NO_TARGETS);
     await this.assertManagerTree(actor, staff.id);
 
     // 2. Assert at least one non-null metric (Decision 2)
@@ -226,6 +228,7 @@ export class TargetService {
       throw new NotFoundException(`Target '${id}' not found`);
     }
     await this.assertManagerTree(actor, existing.staffId);
+    if (isOwnerAccount(existing.staff)) throw new BadRequestException(OWNER_ACCOUNT_NO_TARGETS);
 
     // Assert period not in the past (Decision 3)
     this.assertNotPastPeriod(existing.year, existing.month, now, existing.staff.city);
@@ -352,7 +355,7 @@ export class TargetService {
         }
         where.staffId = query.staffId;
       } else {
-        where.staff = { teamLeadId: actor.sub };
+        where.staff = { teamLeadId: actor.sub, ...NOT_OWNER_ACCOUNT };
       }
     } else if (actor.role === 'finance') {
       throw new ForbiddenException('Access denied: finance cannot access targets');
@@ -362,6 +365,9 @@ export class TargetService {
         where.staffId = query.staffId;
       }
     }
+    // Owner accounts have no targets (owner decision 14 Nov): one marked after a
+    // target was set keeps the row, but it is shown nowhere.
+    if (!where.staff) where.staff = NOT_OWNER_ACCOUNT;
 
     const targets = await this.prisma.target.findMany({
       where,

@@ -36,6 +36,7 @@ import {
   staffWorkingDays,
 } from './payroll-rules';
 import { CORRECTION_LOOKBACK_MONTHS, MANUAL_NOT_NEEDED, recomputeCovers } from './payroll-window';
+import { isOwnerAccount, NOT_OWNER_ACCOUNT, OWNER_ACCOUNT_NO_ATTENDANCE } from '../staff/owner-account';
 
 export type PayrollStatus = 'draft' | 'with_ceo' | 'returned' | 'approved' | 'paid';
 
@@ -221,7 +222,8 @@ export class PayrollService {
   async staffSalaries(now = new Date()) {
     const month = istDay(now).slice(0, 7);
     const people = await this.prisma.staff.findMany({
-      where: { role: { in: SALARY_ROLES }, status: { in: ['active', 'pending_invite'] } },
+      // Owner accounts are paid no salary (owner decision 14 Nov).
+      where: { role: { in: SALARY_ROLES }, status: { in: ['active', 'pending_invite'] }, ...NOT_OWNER_ACCOUNT },
       select: { id: true, code: true, name: true, role: true, createdAt: true, joinedOn: true },
       orderBy: { code: 'asc' },
     });
@@ -264,8 +266,9 @@ export class PayrollService {
     }
     if (monthlyPaise % 100 !== 0) throw new BadRequestException('A monthly salary is a whole number of rupees');
     const note = typeof input.note === 'string' && input.note.trim() ? input.note.trim().slice(0, 200) : null;
-    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, role: true } });
+    const staff = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { id: true, code: true, role: true, isOwnerAccount: true } });
     if (!staff || !SALARY_ROLES.includes(staff.role)) throw new NotFoundException('No staff member on the salary sheet with that id');
+    if (isOwnerAccount(staff)) throw new BadRequestException(OWNER_ACCOUNT_NO_ATTENDANCE);
     await this.locks.assertOpen(effectiveFromMonth, 'salaries from that month');
     const frozen = await this.prisma.payrollRun.findFirst({
       where: { month: { gte: effectiveFromMonth }, status: { in: ['approved', 'paid'] }, lines: { some: { staffId } } },
@@ -401,7 +404,8 @@ export class PayrollService {
   private async candidates(month: string): Promise<Person[]> {
     const { to } = monthBounds(month);
     return this.prisma.staff.findMany({
-      where: { role: { in: SALARY_ROLES }, status: { not: 'pending_invite' }, OR: [{ joinedOn: { lte: new Date(`${monthDays(month).last}T00:00:00.000Z`) } }, { joinedOn: null, createdAt: { lte: to } }] },
+      // Owner accounts are never on the salary sheet (owner decision 14 Nov).
+      where: { role: { in: SALARY_ROLES }, status: { not: 'pending_invite' }, ...NOT_OWNER_ACCOUNT, OR: [{ joinedOn: { lte: new Date(`${monthDays(month).last}T00:00:00.000Z`) } }, { joinedOn: null, createdAt: { lte: to } }] },
       select: PERSON_SELECT,
       orderBy: { code: 'asc' },
     });

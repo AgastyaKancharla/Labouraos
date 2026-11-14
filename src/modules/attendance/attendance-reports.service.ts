@@ -9,6 +9,7 @@ import { AttendanceService } from './attendance.service';
 import { ATTENDANCE_ROLES, AttendanceDaysService, DayRow } from './attendance-days.service';
 import { BREAK_STATUSES } from './attendance.constants';
 import { monthRange } from './day-rules';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
 interface Actor {
   id: string;
@@ -81,7 +82,8 @@ export class AttendanceReportsService {
   /** Everyone the caller may see, among people who mark attendance. */
   async peopleInScope(actor: Actor, financeSeesAll: boolean): Promise<Person[]> {
     const select = { id: true, code: true, name: true, role: true };
-    const base = { role: { in: ATTENDANCE_ROLES }, status: 'active' };
+    // Owner accounts have no attendance (owner decision 14 Nov).
+    const base = { role: { in: ATTENDANCE_ROLES }, status: 'active', ...NOT_OWNER_ACCOUNT };
     if (actor.role === 'ceo' || (financeSeesAll && actor.role === 'finance')) {
       return this.prisma.staff.findMany({ where: base, select, orderBy: { code: 'asc' } });
     }
@@ -248,6 +250,8 @@ export class AttendanceReportsService {
     const people = await this.prisma.staff.findMany({
       where: {
         role: { in: ATTENDANCE_ROLES },
+        // Owner accounts have no attendance and no salary (owner decision 14 Nov).
+        ...NOT_OWNER_ACCOUNT,
         OR: [
           { status: 'active' },
           { attendanceDays: { some: { date: { gte: range.from, lte: range.to } } } },

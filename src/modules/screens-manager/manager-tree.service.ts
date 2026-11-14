@@ -12,6 +12,8 @@ export interface TreePerson {
   name: string;
   role: string;
   isIntern: boolean;
+  /** Owner account (owner decision 14 Nov): in the lists, not in targets, leaderboard or attendance. */
+  isOwnerAccount: boolean;
   status: string;
   /** The Team Lead this person's team belongs to (themself for a Team Lead). */
   teamLeadId: string | null;
@@ -32,6 +34,11 @@ export interface ManagerTree {
   people: TreePerson[];
   agents: TreePerson[];
   ids: string[];
+  /**
+   * Everyone except owner accounts (owner decision 14 Nov): the people who
+   * carry targets, appear on leaderboards and have attendance.
+   */
+  trackedIds: string[];
 }
 
 /** The work counts a team (or the whole tree) produced in a period. */
@@ -84,7 +91,7 @@ export class ManagerTreeService {
     const rows = under.length
       ? await this.prisma.staff.findMany({
           where: { id: { in: under }, status: { not: 'deactivated' } },
-          select: { id: true, code: true, name: true, role: true, isIntern: true, status: true, teamLeadId: true, reportsToId: true, teamName: true },
+          select: { id: true, code: true, name: true, role: true, isIntern: true, isOwnerAccount: true, status: true, teamLeadId: true, reportsToId: true, teamName: true },
           orderBy: { name: 'asc' },
         })
       : [];
@@ -100,6 +107,7 @@ export class ManagerTreeService {
         name: r.name,
         role: r.role,
         isIntern: r.isIntern,
+        isOwnerAccount: r.isOwnerAccount,
         status: r.status,
         teamLeadId: lead ? lead.id : null,
         team: lead ? teamLabel(lead) : null,
@@ -111,6 +119,7 @@ export class ManagerTreeService {
       people,
       agents: people.filter((p) => AGENT_ROLES.includes(p.role)),
       ids: people.map((p) => p.id),
+      trackedIds: people.filter((p) => !p.isOwnerAccount).map((p) => p.id),
     };
   }
 
@@ -126,6 +135,16 @@ export class ManagerTreeService {
   /** Ids of a team: the Team Lead and their agents. */
   teamIds(tree: ManagerTree, leadId: string): string[] {
     return tree.people.filter((p) => p.teamLeadId === leadId).map((p) => p.id);
+  }
+
+  /** A team's ids without owner accounts: for targets, progress against them and attendance. */
+  trackedTeamIds(tree: ManagerTree, leadId: string): string[] {
+    return tree.people.filter((p) => p.teamLeadId === leadId && !p.isOwnerAccount).map((p) => p.id);
+  }
+
+  /** Agents who carry targets and appear on leaderboards: owner accounts left out. */
+  targetAgents(tree: ManagerTree): TreePerson[] {
+    return tree.agents.filter((a) => !a.isOwnerAccount);
   }
 
   /** Placements credited to these people: closed by them, or their own registered job seekers. */
