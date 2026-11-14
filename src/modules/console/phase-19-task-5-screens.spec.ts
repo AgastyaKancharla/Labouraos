@@ -1,6 +1,4 @@
 import { renderAdminDashboardHtml } from './templates/admin-dashboard.html';
-import { renderCallAgentConsoleHtml } from './templates/call-agent-console.html';
-import { renderFieldAgentAppHtml } from './templates/field-agent-app.html';
 import { RetentionController } from '../retention/retention.controller';
 import { RetentionService } from '../retention/retention.service';
 import { EditPolicyController } from '../../common/edit-policy/edit-policy.controller';
@@ -71,75 +69,6 @@ describe('Phase 19 Task 5 — Screens (Edit reasons, lock banners, change histor
       });
     });
 
-    describe('Call Agent Console', () => {
-      const html = renderCallAgentConsoleHtml();
-
-      it('renders Profile Edit section with locked banner and Reason box', () => {
-        expect(html).toContain('id="profile-edit-section"');
-        expect(html).toContain('id="profile-edit-locked-notice"');
-        expect(html).toContain('Locked — money involved, ask your Team Lead');
-        expect(html).toContain('id="profile-edit-name"');
-        expect(html).toContain('id="profile-edit-phone"');
-        expect(html).toContain('id="profile-edit-locality"');
-        expect(html).toContain('id="profile-edit-reason-container"');
-        expect(html).toContain('id="profile-edit-reason"');
-        expect(html).toContain('Reason for change (required when changing saved values):');
-        expect(html).toContain('id="btn-save-profile-edit"');
-      });
-
-      it('renders change history section with correct headers and hides it from Call Agents', () => {
-        expect(html).toContain('id="profile-change-history-section"');
-        expect(html).toContain('id="profile-change-history-tbody"');
-        expect(html).toContain('<th>Who</th>');
-        expect(html).toContain('<th>When</th>');
-        expect(html).toContain('<th>Which Fields</th>');
-        expect(html).toContain('<th>Reason</th>');
-
-        // Logic check: only visible to team_lead, manager, ceo; hidden otherwise
-        expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(currentUser.role)");
-        expect(html).toContain("historySection.style.display = 'block'");
-        expect(html).toContain("historySection.style.display = 'none'");
-      });
-
-      it('enforces privacy floor: contains no full 10-digit phone number in markup or static scripts', () => {
-        expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
-      });
-    });
-
-    describe('Field Agent App', () => {
-      const html = renderFieldAgentAppHtml();
-
-      it('renders Profile Edit section with locked banner and Reason box in fa-calling-modal', () => {
-        expect(html).toContain('id="fa-edit-profile-section"');
-        expect(html).toContain('id="fa-edit-locked-notice"');
-        expect(html).toContain('Locked — money involved, ask your Team Lead');
-        expect(html).toContain('id="fa-edit-name"');
-        expect(html).toContain('id="fa-edit-phone"');
-        expect(html).toContain('id="fa-edit-locality"');
-        expect(html).toContain('id="fa-edit-reason-container"');
-        expect(html).toContain('id="fa-edit-reason"');
-        expect(html).toContain('Reason for change (required when changing saved values):');
-        expect(html).toContain('id="fa-btn-save-edit"');
-      });
-
-      it('renders change history section with correct headers and hides it from Field Agents', () => {
-        expect(html).toContain('id="fa-change-history-section"');
-        expect(html).toContain('id="fa-change-history-tbody"');
-        expect(html).toContain('<th>Who</th>');
-        expect(html).toContain('<th>When</th>');
-        expect(html).toContain('<th>Which Fields</th>');
-        expect(html).toContain('<th>Reason</th>');
-
-        // Logic check: only visible to team_lead, manager, ceo; hidden otherwise
-        expect(html).toContain("['team_lead', 'manager', 'ceo'].includes(currentUser.role)");
-        expect(html).toContain("historySection.style.display = 'block'");
-        expect(html).toContain("historySection.style.display = 'none'");
-      });
-
-      it('enforces privacy floor: contains no full 10-digit phone number in markup or static scripts', () => {
-        expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
-      });
-    });
   });
 
   describe('Client Logic Contracts', () => {

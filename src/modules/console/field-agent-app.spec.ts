@@ -9,7 +9,7 @@ import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { PriorityCandidateRow } from '../field-agent/priority.types';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 
-describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
+describe('Phase 6 Task 6: Field Agent API & Priority Dashboard (the old page is retired; Laboura Field replaced it)', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let otpService: OtpService;
@@ -72,58 +72,6 @@ describe('Phase 6 Task 6: Field Agent App & Priority Dashboard', () => {
     if (app) {
       await app.close();
     }
-  });
-
-  it('GET /field-agent serves the Field Agent App web frontend with camera-only selfie capture and priority dashboard views', async () => {
-    const res = await request(app.getHttpServer())
-      .get('/field-agent')
-      .expect(200);
-
-    expect(res.headers['content-type']).toContain('text/html');
-    const html = res.text;
-    expect(html).not.toMatch(/(?:\+91)?[6-9]\d{9}/);
-
-    // Header and core layout
-    expect(html).toContain('Laboura Field Agent App');
-    expect(html).toContain('Priority Dashboard');
-    expect(html).toContain('id="fa-check-in-button"');
-    expect(html).toContain('My verification assignments');
-    expect(html).toContain('Send owner presence OTP');
-    expect(html).toContain('Complete verification visit');
-    expect(html).toContain('/businesses/visit-assignments');
-    expect(html).toContain('value="household"');
-    expect(html).toContain('fa-biz-udyam');
-    expect(html).toContain('fa-vc-role-title');
-    expect(html).toContain('fa-vc-slot-start');
-
-    // Business onboarding with camera-only selfie capture: accept="image/*" capture="user"
-    // No gallery picker exposed
-    expect(html).toContain('accept="image/*"');
-    expect(html).toContain('capture="user"');
-    expect(html).toContain('fa-selfie-input');
-
-    // Priority Dashboard 3 views
-    expect(html).toContain('Candidate Urgency List');
-    expect(html).toContain('Vacancy Priority List');
-    expect(html).toContain('Trade Supply / Demand Board');
-
-    // Live Priority API endpoints called directly
-    expect(html).toContain('/priority/candidates');
-    expect(html).toContain('/priority/vacancies');
-    expect(html).toContain('/priority/trades');
-
-    // Shortlist, interview booking, and interview status
-    expect(html).toContain('fa-shortlist-vc-id');
-    expect(html).toContain('Book interview');
-    expect(html).toContain('fa-interview-list');
-    expect(html).toContain('/shortlist?page=');
-    expect(html).toContain('fa-shortlist-next');
-    expect(html).toContain('Show next 3');
-    expect(html).toContain('showFieldSelectedInPerson');
-    expect(html).toContain('sendFieldSelectedToOwner');
-    expect(html).toContain('Left out — no location:');
-    const cardRenderer = html.slice(html.indexOf('async function loadFieldShortlistPage'), html.indexOf('async function submitFieldIntroductions'));
-    expect(cardRenderer).not.toMatch(/\.phone\b|\.address\b|\.latitude\b|\.longitude\b|dateOfBirth|\bdob\b/i);
   });
 
   it('Priority Dashboard screen reflects live data from /priority/* and updates after re-fetch', async () => {

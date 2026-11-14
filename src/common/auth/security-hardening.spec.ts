@@ -394,7 +394,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       restoreEnv('CLOUDFLARE_ACCESS_AUD', savedEnv.aud);
     });
 
-    it.each(['/admin', '/call-agent'])('serves %s only with a genuinely signed Cloudflare Access JWT', async (route) => {
+    it.each(['/console/admin'])('serves %s only with a genuinely signed Cloudflare Access JWT', async (route) => {
       const denied = await request(app.getHttpServer()).get(route);
       expect(denied.status).toBe(403);
       expect(denied.body.message).toContain('Cloudflare Access identity verification required');
@@ -405,7 +405,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       expect(allowed.status).toBe(200);
     });
 
-    it.each(['/admin', '/call-agent'])('rejects forged, unsigned and header-only identities on %s', async (route) => {
+    it.each(['/console/admin'])('rejects forged, unsigned and header-only identities on %s', async (route) => {
       const forged = signAccessJwt(attacker); // right kid, wrong private key
       const unsigned = unsignedAccessJwt('kid-console');
       const wrongAudience = signAccessJwt(real, { aud: ['another-application'] });
@@ -432,7 +432,7 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
       delete process.env.CLOUDFLARE_ACCESS_AUD;
 
       const res = await request(app.getHttpServer())
-        .get('/admin')
+        .get('/console/admin')
         .set('cf-access-jwt-assertion', signAccessJwt(real));
       expect(res.status).toBe(403);
     });
@@ -440,13 +440,17 @@ describe('Phase 8 Task 6: Security Hardening & Access Control Hardening', () => 
     it('does nothing when enforcement is off (local dev and tests)', async () => {
       process.env.CLOUDFLARE_ACCESS_ENFORCED = 'false';
 
-      expect((await request(app.getHttpServer()).get('/admin')).status).toBe(200);
-      expect((await request(app.getHttpServer()).get('/call-agent')).status).toBe(200);
+      expect((await request(app.getHttpServer()).get('/console/admin')).status).toBe(200);
     });
 
-    it('leaves the Field Agent app and the API reachable without Cloudflare credentials', async () => {
-      const fieldApp = await request(app.getHttpServer()).get('/field-agent');
-      expect(fieldApp.status).toBe(200);
+    it('sends browsers on from the retired console addresses without a Cloudflare check (the target page has its own)', async () => {
+      for (const route of ['/admin', '/console/call-agent', '/field-agent', '/map']) {
+        const res = await request(app.getHttpServer()).get(route).set('Accept', 'text/html');
+        expect([route, res.status]).toEqual([route, 301]);
+      }
+    });
+
+    it('leaves the API reachable without Cloudflare credentials', async () => {
 
       // API routes are never behind Cloudflare Access: an unauthenticated API
       // call must fail on its own auth (401), not on the Cloudflare gate (403).

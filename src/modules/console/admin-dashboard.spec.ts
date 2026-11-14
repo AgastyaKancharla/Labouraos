@@ -80,13 +80,30 @@ describe('Phase 6 Task 4: Admin Dashboard (CEO / Management)', () => {
     }
   });
 
-  it('GET /admin serves the Admin Dashboard web frontend with all required views', async () => {
+  it('sends a browser opening GET /admin to the one staff login page (the old dashboard is retired there)', async () => {
     const res = await request(app.getHttpServer())
       .get('/admin')
+      .set('Accept', 'text/html,application/xhtml+xml')
+      .expect(301);
+
+    expect(res.headers.location).toBe('/login');
+    expect(res.text).not.toContain('Laboura Admin Dashboard');
+    // Nothing old answers an API caller at /admin either.
+    const json = await request(app.getHttpServer()).get('/admin').set('Accept', 'application/json');
+    expect(json.status).toBe(404);
+    expect(json.text).not.toContain('Laboura Admin Dashboard');
+  });
+
+  it('GET /console/admin still serves the old Admin Dashboard, marked as kept only for what the new screens lack', async () => {
+    const res = await request(app.getHttpServer())
+      .get('/console/admin')
       .expect(200);
 
     expect(res.headers['content-type']).toContain('text/html');
     const html = res.text;
+    expect(html).toContain('id="retired-console-notice"');
+    expect(html).toContain('href="/login"');
+    expect(html).not.toContain('href="/map"');
 
     // Must cover all core entity views
     expect(html).toContain('Laboura Admin Dashboard');
