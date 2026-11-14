@@ -539,7 +539,7 @@ export class CallWorkService {
       this.prisma.identityVerification.findMany({
         where: { jobSeekerId: { in: sentIds } },
         orderBy: { createdAt: 'desc' },
-        select: { jobSeekerId: true, status: true },
+        select: { jobSeekerId: true, status: true, method: true },
       }),
       this.prisma.payment.findMany({
         where: { jobSeekerId: { in: sentIds }, type: 'activation' },
@@ -555,7 +555,8 @@ export class CallWorkService {
       let step: string;
       if (!consentDone) step = 'consent';
       else if (!s.photoStoragePath) step = 'selfie';
-      else if (idv?.status !== 'verified') step = idService?.status === 'down' ? 'id_service_down' : 'id_check';
+      // Only a failed try with another ID waits on the provider; the Aadhaar QR check is in-house.
+      else if (idv?.status !== 'verified') step = idService?.status === 'down' && idv && idv.method !== 'aadhaar_qr' ? 'id_service_down' : 'id_check';
       else if (s.guaranteeFloorPaise === null) step = 'trade_pending';
       else step = failures > 0 ? 'payment_failed' : 'payment';
       const latest = links.find((l) => l.subjectId === s.id)!;

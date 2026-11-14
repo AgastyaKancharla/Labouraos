@@ -236,6 +236,26 @@ export class AnonymisationService {
       }
     }
 
+    // Aadhaar QR details (name, date of birth, gender, area, pincode) and any QR photo still kept.
+    if (subjectType === 'job_seeker' || subjectType === 'referral') {
+      const qrDetails = await this.prisma.aadhaarQrDetail.findMany({
+        where: { subjectType, subjectId: id },
+        select: { photoPath: true },
+      });
+      for (const detail of qrDetails) {
+        if (!detail.photoPath) continue;
+        try {
+          await this.photoStorage.delete(detail.photoPath);
+        } catch {
+          // Ignore an already deleted QR photo.
+        }
+      }
+      if (qrDetails.length) {
+        await this.prisma.aadhaarQrDetail.deleteMany({ where: { subjectType, subjectId: id } });
+        changedFields.push('aadhaarQrDetails');
+      }
+    }
+
     // Wipe payout accounts
     await this.prisma.payoutAccount.updateMany({
       where: { ownerType: subjectType, ownerId: id },

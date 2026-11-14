@@ -224,6 +224,8 @@ const FLAG_TITLES: Record<string, string> = {
   registration_suspect: 'Registration may be fake',
   call_flagged: 'Call flagged by the Team Lead',
   visit_flagged: 'Visit flagged by the Team Lead',
+  aadhaar_phone_not_linked: 'Phone not linked to the Aadhaar',
+  aadhaar_qr_tampered: 'Aadhaar QR failed the UIDAI signature check again and again',
 };
 
 export function flagTitle(kind: string): string {

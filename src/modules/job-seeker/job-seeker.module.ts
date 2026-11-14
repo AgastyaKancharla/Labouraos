@@ -12,6 +12,7 @@ import { TradeModule } from '../trade/trade.module';
 import { KycHealthModule } from '../../common/kyc/kyc-health.module';
 import { MessageModule } from '../message/message.module';
 import { OtpModule } from '../../common/otp/otp.module';
+import { AadhaarQrModule } from '../aadhaar-qr/aadhaar-qr.module';
 import {
   CANDIDATE_PHOTO_STORAGE,
   sharedCandidatePhotoStorage,
@@ -19,7 +20,7 @@ import {
 } from './photo-storage';
 
 @Module({
-  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule, KycHealthModule, MessageModule, OtpModule],
+  imports: [PaymentModule, PricingModule, ConsentModule, ReviewFlagModule, TradeModule, KycHealthModule, MessageModule, OtpModule, AadhaarQrModule],
   controllers: [JobSeekerController, JobSeekerHitController, RegistrationController],
   providers: [
     JobSeekerService,

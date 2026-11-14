@@ -4,7 +4,7 @@ import { unzipSync } from 'node:zlib';
 /**
  * Reads UIDAI's Aadhaar Secure QR code, entirely in this process (Master
  * Guide, "Aadhaar verification", 14 Nov: an in-house check, no outside
- * company, no DigiLocker).
+ * company).
  *
  * The QR's text is one big base-10 number. As bytes it is a gzip/zlib stream;
  * inflated, it is a list of fields separated by the byte 255, in UIDAI's order:

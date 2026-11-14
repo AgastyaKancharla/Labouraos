@@ -8,6 +8,14 @@ import { publicPageLink } from '../public-pages';
 const ID_CHECK_STATE_ID = 'id-check';
 const REGISTRATION_LINK_TTL_MS = 48 * 60 * 60 * 1000;
 
+/**
+ * When the ID-check provider is down, and back again. Since the Aadhaar
+ * decision of 14 Nov the provider checks only the other government IDs (PAN,
+ * driving licence, voter ID): Aadhaar is checked in-house from its Secure QR
+ * and never marks the service down. A person whose other-ID check failed
+ * because the provider was down can ask for an SMS when it is back (P01e);
+ * the kyc-recovery job probes the provider every 15 minutes and sends it.
+ */
 @Injectable()
 export class KycRecoveryService {
   constructor(

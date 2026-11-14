@@ -1,5 +1,5 @@
 import { sign } from 'node:crypto';
-import { gzipSync } from 'node:zlib';
+import { deflateSync, gzipSync } from 'node:zlib';
 import {
   areaAndPincode,
   isAdultOn,
@@ -31,7 +31,7 @@ function failure(fn: () => unknown): string {
   throw new Error('expected a SecureQrError');
 }
 
-describe('Aadhaar Secure QR parser (guide: in-house check, no DigiLocker)', () => {
+describe('Aadhaar Secure QR parser (guide: an in-house check, no outside company)', () => {
   describe("UIDAI's own sample QR", () => {
     const parsed = parseSecureQr(UIDAI_SAMPLE_SECURE_QR);
 
@@ -113,7 +113,7 @@ describe('Aadhaar Secure QR parser (guide: in-house check, no DigiLocker)', () =
     it('accepts a zlib stream as well as gzip', () => {
       const signed = secureQrSignedBytes();
       const signature = sign('sha256', signed, signer.privateKey);
-      const zlibText = bytesToDecimal(require('node:zlib').deflateSync(Buffer.concat([signed, signature])));
+      const zlibText = bytesToDecimal(deflateSync(Buffer.concat([signed, signature])));
       expect(parseSecureQr(zlibText).name).toBe('Kavya Ramesh');
     });
   });

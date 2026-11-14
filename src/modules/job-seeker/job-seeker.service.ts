@@ -59,6 +59,7 @@ import {
   CandidatePhotoStorage,
 } from './photo-storage';
 import { KycRecoveryService } from '../../common/kyc/kyc-recovery.service';
+import { AADHAAR_ONLY_BY_QR, AADHAAR_QR_METHOD, isOtherIdMethod, OTHER_ID_METHODS } from '../aadhaar-qr/id-methods';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
 import { publicPageLink } from '../../common/public-pages';
@@ -1555,10 +1556,13 @@ export class JobSeekerService {
       time: seeker.photoTakenAt,
       reason: null,
     };
+    // The Aadhaar QR check is in-house and never down; only the check for the other IDs
+    // (PAN, driving licence, voter ID) can be, and only a failed try with one of them is stuck.
+    const otherIdCheckDown = idService?.status === 'down' && Boolean(latestVerification) && latestVerification!.method !== 'aadhaar_qr' && latestVerification!.status !== 'verified';
     const idCheck = {
-      state: latestVerification?.status === 'verified' ? 'done' : idService?.status === 'down' ? 'stuck' : latestVerification ? 'in_progress' : 'not_started',
+      state: latestVerification?.status === 'verified' ? 'done' : otherIdCheckDown ? 'stuck' : latestVerification ? 'in_progress' : 'not_started',
       time: latestVerification?.verifiedAt ?? latestVerification?.createdAt ?? null,
-      reason: idService?.status === 'down' ? 'ID check service is temporarily unavailable' : latestVerification?.failureReason ?? null,
+      reason: otherIdCheckDown ? 'The PAN / driving licence / voter ID check is down for now; the Aadhaar QR check still works' : latestVerification?.failureReason ?? null,
     };
     const payment = {
       state: latestPayment?.status === 'succeeded' || latestPayment?.status === 'completed'
@@ -2061,11 +2065,12 @@ export class JobSeekerService {
       );
     }
 
-    const method = String(dto.method || 'digilocker');
-    const allowedMethods = ['digilocker', 'aadhaar_qr', 'pan', 'driving_licence', 'voter_id'];
-    if (!allowedMethods.includes(method)) {
+    const method = String(dto.method ?? '');
+    // Aadhaar is verified only by the in-house Secure QR check (guide, 14 Nov), never typed in.
+    if (method === AADHAAR_QR_METHOD) throw new BadRequestException(AADHAAR_ONLY_BY_QR);
+    if (!isOtherIdMethod(method)) {
       throw new BadRequestException(
-        `Invalid identity verification method: ${method}. Allowed: ${allowedMethods.join(', ')}`,
+        `Invalid identity verification method: ${method || '(none)'}. Allowed: ${OTHER_ID_METHODS.join(', ')}`,
       );
     }
 
@@ -2086,7 +2091,7 @@ export class JobSeekerService {
       last4 = last4Str;
     }
 
-    const vendor = String(dto.vendor || 'digilocker');
+    const vendor = String(dto.vendor || 'staff_recorded');
     const vendorReference = String(
       dto.vendorReference ||
         `idv_ref_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
@@ -2141,8 +2146,17 @@ export class JobSeekerService {
     return verification;
   }
 
+  /**
+   * Another government ID (PAN, driving licence, voter ID) through the
+   * ID-check adapter (KycService: mock until a provider is configured). Aadhaar
+   * never comes here: it is checked in-house from its Secure QR (AadhaarQrService).
+   */
   async verifyIdentityWithProvider(jobSeekerId: string, dto: Record<string, unknown>, actorId: string) {
     assertNoRawAadhaar(dto);
+    if (dto.method === AADHAAR_QR_METHOD) throw new BadRequestException(AADHAAR_ONLY_BY_QR);
+    if (!isOtherIdMethod(dto.method)) {
+      throw new BadRequestException(`Choose the ID: ${OTHER_ID_METHODS.join(', ')}`);
+    }
     if (!this.kycRecovery) throw new BadRequestException('KYC provider is not available');
     const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: jobSeekerId } });
     if (!seeker) throw new NotFoundException(`Job seeker not found: ${jobSeekerId}`);
@@ -2156,7 +2170,7 @@ export class JobSeekerService {
       dateOfBirth: seeker.dateOfBirth?.toISOString().slice(0, 10),
     });
     const verification = await this.createIdentityVerification(jobSeekerId, {
-      method: dto.method ?? 'digilocker',
+      method: dto.method,
       vendor: 'configured_kyc_provider',
       vendorReference: result.vendorReference,
       status: result.status,

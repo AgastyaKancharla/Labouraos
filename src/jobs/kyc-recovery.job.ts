@@ -9,6 +9,11 @@ import { runsJobs } from '../common/process/process-role';
 export const KYC_RECOVERY_QUEUE = 'kyc-recovery';
 export const KYC_RECOVERY_SWEEP = 'probe-id-check-recovery';
 
+/**
+ * Every 15 minutes: is the provider for the other government IDs (PAN, driving
+ * licence, voter ID) back? Then SMS everyone who asked to wait (KycRecoveryService).
+ * The Aadhaar QR check is in-house and doesn't need it.
+ */
 @Injectable()
 export class KycRecoveryJob implements OnModuleInit, OnModuleDestroy {
   private readonly logger = new Logger(KycRecoveryJob.name);

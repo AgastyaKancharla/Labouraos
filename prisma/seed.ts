@@ -88,7 +88,7 @@ async function seedIdentityVerification(
   await prisma.identityVerification.create({
     data: {
       jobSeekerId,
-      method: 'digilocker',
+      method: 'aadhaar_qr',
       vendor: 'seed-vendor',
       vendorReference,
       status,

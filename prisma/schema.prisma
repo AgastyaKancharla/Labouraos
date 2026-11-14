@@ -248,13 +248,23 @@ model IdentityVerification {
   id              String    @id @default(uuid())
   jobSeekerId     String
   jobSeeker       JobSeeker @relation(fields: [jobSeekerId], references: [id], onDelete: Cascade)
-  method          String    // digilocker, aadhaar_qr, pan, driving_licence, voter_id
+  /// aadhaar_qr (UIDAI Secure QR, checked in-house), pan, driving_licence, voter_id.
+  method          String
+  /// uidai_secure_qr for the QR; the ID-check adapter for the other IDs.
   vendor          String
+  /// Aadhaar QR: the QR's reference (last 4 digits + its time stamp). Never the full number.
   vendorReference String
   status          String    // pending, verified, failed
   last4           String?   // last 4 digits only
   nameMatches     Boolean?
   isAdult         Boolean?
+  /// Aadhaar QR: is his OTP-verified phone the one linked to that Aadhaar — linked, not_linked, unknown.
+  /// Not linked is a flag for the Team Lead, never a block.
+  phoneLinked     String?
+  /// Aadhaar QR: the QR's own time stamp (from its reference).
+  qrIssuedAt      DateTime?
+  /// The aadhaar_verification consent this check ran under.
+  consentId       String?
   verifiedAt      DateTime?
   failureReason   String?
   createdAt       DateTime  @default(now())
@@ -262,6 +272,52 @@ model IdentityVerification {
 
   @@index([jobSeekerId])
   @@index([status])
+}
+
+/// What an Aadhaar Secure QR check keeps besides the result (Master Guide,
+/// "Aadhaar verification", 14 Nov): name, date of birth, gender, area and
+/// pincode from the QR — never the full Aadhaar number, any image of the card,
+/// the e-Aadhaar PDF or XML, or the full address. The photo from the QR is
+/// kept (private storage, short-lived links to the Team Lead / Manager / CEO
+/// only) until the Team Lead's check, and never longer than 30 days.
+/// One row per verification: IdentityVerification (job_seeker) or
+/// ReferralIdentityVerification (referral).
+model AadhaarQrDetail {
+  id                 String    @id @default(uuid())
+  subjectType        String    // job_seeker, referral
+  subjectId          String
+  verificationId     String    @unique
+  nameOnId           String
+  /// YYYY-MM-DD, or YYYY when the card shows only the year.
+  dateOfBirth        String
+  gender             String?   // M, F, T
+  area               String?
+  pincode            String?
+  photoPath          String?
+  photoExpiresAt     DateTime?
+  photoDeletedAt     DateTime?
+  /// team_lead_approved, team_lead_rejected, expired, replaced, erased
+  photoDeletedReason String?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  @@index([subjectType, subjectId])
+  @@index([photoExpiresAt])
+}
+
+/// Every Aadhaar QR attempt (link or Laboura Field), for the rate limit and the
+/// fraud flag after repeated invalid signatures. No QR data is kept here.
+model AadhaarQrAttempt {
+  id          String   @id @default(uuid())
+  subjectType String   // job_seeker, referral
+  subjectId   String
+  channel     String   // link, field
+  /// verified, name_mismatch, under_18, bad_signature, old_qr, unreadable
+  outcome     String
+  staffId     String?
+  attemptedAt DateTime @default(now())
+
+  @@index([subjectType, subjectId, attemptedAt])
 }
 
 model KycServiceState {
@@ -456,6 +512,10 @@ model ReferralIdentityVerification {
   last4           String?
   nameMatches     Boolean?
   isAdult         Boolean?
+  /// Aadhaar QR: linked, not_linked, unknown (see IdentityVerification.phoneLinked).
+  phoneLinked     String?
+  qrIssuedAt      DateTime?
+  consentId       String?
   verifiedAt      DateTime?
   failureReason   String?
   createdAt       DateTime  @default(now())

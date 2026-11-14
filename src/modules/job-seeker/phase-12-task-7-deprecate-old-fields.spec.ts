@@ -100,7 +100,7 @@ describe('Phase 12 Task 7 — deprecated JobSeeker fields', () => {
     await prisma.identityVerification.create({
       data: {
         jobSeekerId: seeker.id,
-        method: 'digilocker',
+        method: 'aadhaar_qr',
         vendor: 'test-vendor',
         vendorReference: 'current-vendor-reference',
         status: 'failed',

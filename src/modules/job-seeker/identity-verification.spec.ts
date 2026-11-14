@@ -138,7 +138,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         last4: '4321',
         nameMatches: true,
         isAdult: true,
@@ -156,9 +156,9 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
-        vendor: 'digilocker',
-        vendorReference: 'DL-REF-998811',
+        method: 'pan',
+        vendor: 'staff_recorded',
+        vendorReference: 'PAN-REF-998811',
         last4: '7788',
         nameMatches: true,
         isAdult: true,
@@ -167,9 +167,9 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
     expect(res.status).toBe(201);
     expect(res.body.id).toBeDefined();
     expect(res.body.jobSeekerId).toBe(seekerId);
-    expect(res.body.method).toBe('digilocker');
-    expect(res.body.vendor).toBe('digilocker');
-    expect(res.body.vendorReference).toBe('DL-REF-998811');
+    expect(res.body.method).toBe('pan');
+    expect(res.body.vendor).toBe('staff_recorded');
+    expect(res.body.vendorReference).toBe('PAN-REF-998811');
     expect(res.body.status).toBe('verified');
     expect(res.body.last4).toBe('7788');
     expect(res.body.nameMatches).toBe(true);
@@ -196,7 +196,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         aadhaarNumber: '999988887777',
         last4: '7777',
       });
@@ -208,7 +208,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         documentId: '123456789012',
       });
     expect(resConsecutiveDigits.status).toBe(400);
@@ -219,7 +219,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         nationalId: '1234 5678 9012',
       });
     expect(resFormattedDigits.status).toBe(400);
@@ -234,7 +234,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         last4: '123',
       });
     expect(resTooShort.status).toBe(400);
@@ -244,7 +244,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         last4: '12345',
       });
     expect(resTooLong.status).toBe(400);
@@ -259,8 +259,8 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
-        vendor: 'digilocker',
+        method: 'voter_id',
+        vendor: 'staff_recorded',
         vendorReference: 'NEW-VENDOR-REF-99',
         last4: '5566',
         nameMatches: true,
@@ -276,12 +276,11 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
     expect(seekerInDb?.id).toBe(seekerId);
   });
 
-  it('6. Supports all allowed methods (digilocker, aadhaar_qr, pan, driving_licence, voter_id) and rejects invalid', async () => {
+  it('6. Staff may record PAN, driving licence or voter ID only: Aadhaar comes only from its Secure QR (guide, 14 Nov)', async () => {
     const seekerId = await createCandidate();
     await grantAadhaarConsent(seekerId);
 
-    const validMethods = ['digilocker', 'aadhaar_qr', 'pan', 'driving_licence', 'voter_id'];
-    for (const method of validMethods) {
+    for (const method of ['pan', 'driving_licence', 'voter_id']) {
       const res = await request(app.getHttpServer())
         .post(`/job-seekers/${seekerId}/identity-verification`)
         .set('Authorization', `Bearer ${callAgentToken}`)
@@ -295,15 +294,22 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       expect(res.body.method).toBe(method);
     }
 
-    const resInvalid = await request(app.getHttpServer())
+    // Aadhaar can't be typed in by staff: only the in-house QR check records it.
+    const resAadhaar = await request(app.getHttpServer())
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
-      .send({
-        method: 'passport',
-        last4: '1111',
-      });
-    expect(resInvalid.status).toBe(400);
-    expect(resInvalid.body.message).toContain('Invalid identity verification method');
+      .send({ method: 'aadhaar_qr', last4: '1111', nameMatches: true, isAdult: true });
+    expect(resAadhaar.status).toBe(400);
+    expect(resAadhaar.body.message).toContain('Secure QR');
+
+    for (const method of ['passport', 'aadhaar', undefined]) {
+      const resInvalid = await request(app.getHttpServer())
+        .post(`/job-seekers/${seekerId}/identity-verification`)
+        .set('Authorization', `Bearer ${callAgentToken}`)
+        .send({ method, last4: '1111' });
+      expect(resInvalid.status).toBe(400);
+      expect(resInvalid.body.message).toContain('Invalid identity verification method');
+    }
   });
 
   it('7. Handles failed verification and records failureReason', async () => {
@@ -337,7 +343,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .send({
-        method: 'aadhaar_qr',
+        method: 'driving_licence',
         last4: '8899',
         nameMatches: true,
         isAdult: true,
@@ -349,7 +355,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${financeToken}`)
       .send({
-        method: 'aadhaar_qr',
+        method: 'driving_licence',
         last4: '8899',
         nameMatches: true,
         isAdult: true,
@@ -365,7 +371,7 @@ describe('Phase 12 Task 5 — IdentityVerification', () => {
       .post(`/job-seekers/${seekerId}/identity-verification`)
       .set('Authorization', `Bearer ${callAgentToken}`)
       .send({
-        method: 'digilocker',
+        method: 'pan',
         last4: '2233',
         nameMatches: true,
         isAdult: true,

@@ -245,8 +245,9 @@ describe('Phase 12 gate end-to-end proof', () => {
     ).toBe(true);
 
     const identityRequest = {
-      method: 'digilocker',
-      vendor: 'digilocker',
+      // Staff may record another government ID; Aadhaar comes only from its Secure QR.
+      method: 'voter_id',
+      vendor: 'staff_recorded',
       vendorReference: `gate-proof-${suffix}`,
       last4: '4242',
       nameMatches: true,

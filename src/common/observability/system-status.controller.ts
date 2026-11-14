@@ -84,9 +84,12 @@ export class SystemStatusController {
           lastChangedAt: state.lastChangedAt.toISOString(),
         };
         components.push({
+          // The Aadhaar QR check is in-house; only the check for PAN, driving licence and voter ID uses a provider.
           name: 'ID check service',
           status: idCheck.status === 'down' ? 'degraded' : 'healthy',
-          message: idCheck.status === 'down' ? 'ID verification provider is unavailable' : 'ID verification provider is responding',
+          message: idCheck.status === 'down'
+            ? 'The PAN / driving licence / voter ID check is unavailable (the Aadhaar QR check is in-house and still works)'
+            : 'The PAN / driving licence / voter ID check is responding',
         });
       }
     } catch {

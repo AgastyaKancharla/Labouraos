@@ -23,7 +23,7 @@ describe('KycRecoveryService', () => {
       {} as MessagingService,
     );
 
-    await expect(service.verify({ method: 'digilocker' })).rejects.toThrow('connection timeout');
+    await expect(service.verify({ method: 'pan' })).rejects.toThrow('connection timeout');
     expect(kycServiceState.upsert).toHaveBeenCalledWith(expect.objectContaining({
       where: { id: 'id-check' },
       create: expect.objectContaining({ status: 'down' }),
@@ -37,7 +37,7 @@ describe('KycRecoveryService', () => {
       error: 'Name mismatch',
       failureType: 'person',
     });
-    await service.verify({ method: 'digilocker' });
+    await service.verify({ method: 'pan' });
     expect(kycServiceState.upsert).not.toHaveBeenCalled();
   });
 

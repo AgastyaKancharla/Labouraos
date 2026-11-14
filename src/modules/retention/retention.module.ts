@@ -5,10 +5,11 @@ import { CallModule } from '../call/call.module';
 import { ConsentModule } from '../consent/consent.module';
 import { RetentionService } from './retention.service';
 import { RetentionController } from './retention.controller';
+import { AadhaarQrPhotoModule } from '../aadhaar-qr/aadhaar-qr-photo.module';
 import { BUSINESS_PHOTO_STORAGE, MemoryBusinessPhotoStorage, SupabaseBusinessPhotoStorage } from '../business/storefront-photo.storage';
 
 @Module({
-  imports: [PrismaModule, AnonymisationModule, CallModule, ConsentModule],
+  imports: [PrismaModule, AnonymisationModule, CallModule, ConsentModule, AadhaarQrPhotoModule],
   controllers: [RetentionController],
   providers: [
     RetentionService,

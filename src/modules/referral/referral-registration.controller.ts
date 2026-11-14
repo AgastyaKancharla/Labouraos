@@ -31,6 +31,8 @@ import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
 import { PricingService } from '../pricing/pricing.service';
 import { detectSelfieImageType } from '../../common/image-type';
 import { publicLanguage, shortNameOf } from '../job-seeker/registration-journey';
+import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
+import { AADHAAR_ONLY_BY_QR, isOtherIdMethod, OTHER_ID_METHODS } from '../aadhaar-qr/id-methods';
 
 @Controller()
 export class ReferralRegistrationController {
@@ -46,6 +48,7 @@ export class ReferralRegistrationController {
     private readonly flags: ReviewFlagService,
     @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photos: CandidatePhotoStorage,
     private readonly pricing: PricingService,
+    private readonly aadhaarQr: AadhaarQrService,
   ) {}
 
   /**
@@ -142,24 +145,36 @@ export class ReferralRegistrationController {
     return { referralId: updated.id, capturedAt: updated.photoTakenAt };
   }
 
+  /**
+   * Aadhaar, as on the job seeker's link: the page reads the Secure QR on the
+   * partner's phone (camera or e-Aadhaar PDF) and sends only its text. UIDAI's
+   * signature, 18+, the name and the phone link are checked in-house.
+   */
+  @Post('referral-registration/:token/aadhaar-qr')
+  @Public('token page: the job seeker, business or partner proves who they are with the link token')
+  async verifyAadhaarQr(@Param('token') token: string, @Body() body: { requestId?: string; qrText?: unknown }) {
+    const link = await this.requireVerifiedLink(token, body?.requestId);
+    await this.assertReadyForIdCheck(link.subjectId);
+    const outcome = await this.aadhaarQr.checkReferral(link.subjectId, body.qrText, { channel: 'link' });
+    return { ...outcome, nextStep: outcome.result === 'verified' ? 'upi' : 'id_check' };
+  }
+
+  /** Another government ID (PAN, driving licence, voter ID) through the ID-check adapter, exactly as before. */
   @Post('referral-registration/:token/id-check')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async verifyIdentity(@Param('token') token: string, @Body() body: Record<string, unknown> & { requestId?: string }) {
     const link = await this.requireVerifiedLink(token, body.requestId);
     assertNoRawAadhaar(body);
-    if (!(await this.consent.hasConsent('referral', link.subjectId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', link.subjectId, 'call_recording'))) {
-      throw new BadRequestException('Referral terms and call-recording consent are required before ID verification');
-    }
-    const referral = await this.prisma.referral.findUnique({ where: { id: link.subjectId } });
-    if (!referral) throw new BadRequestException('Referral partner not found');
-    if (!referral.photoStoragePath) throw new BadRequestException('Complete the live-camera selfie before the ID check');
+    if (body.method === 'aadhaar_qr') throw new BadRequestException(AADHAAR_ONLY_BY_QR);
+    if (!isOtherIdMethod(body.method)) throw new BadRequestException(`Choose the ID: ${OTHER_ID_METHODS.join(', ')}`);
+    const referral = await this.assertReadyForIdCheck(link.subjectId);
     const providerInput = { ...body, candidateName: referral.name };
     delete providerInput.requestId;
     const result = await this.kyc.verify(providerInput);
     const verification = await this.prisma.referralIdentityVerification.create({
       data: {
         referralId: referral.id,
-        method: typeof body.method === 'string' ? body.method : 'digilocker',
+        method: body.method,
         vendor: 'configured_kyc_provider',
         vendorReference: result.vendorReference,
         status: result.status,
@@ -184,6 +199,16 @@ export class ReferralRegistrationController {
       await this.flags.raise({ kind: 'name_check', subjectType: 'referral', subjectId: referral.id, details: { identityVerificationId: verification.id } });
     }
     return { ...verification, nextStep: result.status === 'verified' && result.isAdult === true && result.nameMatches === true ? 'upi' : 'id_check' };
+  }
+
+  private async assertReadyForIdCheck(referralId: string) {
+    if (!(await this.consent.hasConsent('referral', referralId, 'agreement_terms')) || !(await this.consent.hasConsent('referral', referralId, 'call_recording'))) {
+      throw new BadRequestException('Referral terms and call-recording consent are required before ID verification');
+    }
+    const referral = await this.prisma.referral.findUnique({ where: { id: referralId } });
+    if (!referral) throw new BadRequestException('Referral partner not found');
+    if (!referral.photoStoragePath) throw new BadRequestException('Complete the live-camera selfie before the ID check');
+    return referral;
   }
 
   @Post('referral-registration/:token/upi')
@@ -281,7 +306,7 @@ export class ReferralRegistrationController {
     if (!referral) throw new BadRequestException('Referral partner not found');
     const lastResult = !identity
       ? 'none'
-      : identity.status === 'verified' && identity.isAdult === false
+      : identity.isAdult === false
         ? 'under_18'
         : identity.nameMatches === false
           ? 'name_mismatch'

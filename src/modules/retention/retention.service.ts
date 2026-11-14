@@ -5,6 +5,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from '../business/storefront-photo.storage';
+import { AadhaarQrPhotoService } from '../aadhaar-qr/aadhaar-qr-photo.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import {
@@ -83,6 +84,8 @@ export interface RetentionSummary {
   shopVisitsCleaned: number;
   /** Visit photos whose storage delete failed this run: their paths stay for the next run (T1). */
   shopVisitPhotoDeleteFailures: number;
+  /** Aadhaar QR photos past their 30 days (the Team Lead never completed the check). */
+  aadhaarQrPhotosDeleted: number;
 }
 
 export interface RetentionRunOptions {
@@ -105,6 +108,7 @@ export class RetentionService {
     private readonly agreementStorage: AgreementDocumentStorage,
     @Optional() @Inject(BUSINESS_PHOTO_STORAGE)
     private readonly visitPhotos?: BusinessPhotoStorage,
+    @Optional() private readonly aadhaarQrPhotos?: AadhaarQrPhotoService,
   ) {}
 
   async runRetentionCleanup(options: RetentionRunOptions = {}): Promise<RetentionSummary> {
@@ -140,6 +144,7 @@ export class RetentionService {
       jobRunsDeleted: 0,
       shopVisitsCleaned: 0,
       shopVisitPhotoDeleteFailures: 0,
+      aadhaarQrPhotosDeleted: 0,
     };
 
     try {
@@ -163,6 +168,9 @@ export class RetentionService {
 
       // 7. Visits to shops that never registered (> 23 months after the shop's last visit)
       await this.cleanupUnregisteredShopVisits(now, dryRun, summary);
+
+      // 8. Aadhaar QR photos the Team Lead never checked (> 30 days; guide, 14 Nov)
+      if (this.aadhaarQrPhotos) summary.aadhaarQrPhotosDeleted = await this.aadhaarQrPhotos.deleteExpiredPhotos(now, dryRun);
     } catch (err: unknown) {
       // A run that fails part-way is recorded too (start, finish, error), like every scheduled job.
       try {
@@ -197,7 +205,8 @@ export class RetentionService {
             summary.publicLinksDeleted +
             summary.otpSessionsDeleted +
             summary.jobRunsDeleted +
-            summary.shopVisitsCleaned,
+            summary.shopVisitsCleaned +
+            summary.aadhaarQrPhotosDeleted,
           hitsRecorded: 0,
           details: {
             executedAt: summary.executedAt.toISOString(),
@@ -212,6 +221,7 @@ export class RetentionService {
             jobRunsDeleted: summary.jobRunsDeleted,
             shopVisitsCleaned: summary.shopVisitsCleaned,
             shopVisitPhotoDeleteFailures: summary.shopVisitPhotoDeleteFailures,
+            aadhaarQrPhotosDeleted: summary.aadhaarQrPhotosDeleted,
           },
         },
       });
@@ -247,6 +257,7 @@ export class RetentionService {
       jobRunsDeleted: Number(details.jobRunsDeleted ?? 0),
       shopVisitsCleaned: Number(details.shopVisitsCleaned ?? 0),
       shopVisitPhotoDeleteFailures: Number(details.shopVisitPhotoDeleteFailures ?? 0),
+      aadhaarQrPhotosDeleted: Number(details.aadhaarQrPhotosDeleted ?? 0),
     };
   }
 

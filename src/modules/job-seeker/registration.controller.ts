@@ -27,6 +27,7 @@ import { PublicOtpLimiter } from '../../common/public-otp-limiter.service';
 import { publicLanguage, shortNameOf } from './registration-journey';
 import { testModeFields } from '../../common/otp/otp-test-mode';
 import { CheckLinkBeforeUpload } from '../../common/public-link-upload.guard';
+import { AadhaarQrService } from '../aadhaar-qr/aadhaar-qr.service';
 
 const TOKEN_PAGE = 'token page: the job seeker, business or partner proves who they are with the link token';
 
@@ -45,11 +46,14 @@ export class RegistrationController {
     private readonly upi: UpiCollectionService,
     private readonly journey: RegistrationJourneyService,
     private readonly otpLimiter: PublicOtpLimiter,
+    private readonly aadhaarQr: AadhaarQrService,
     @Optional() private readonly kycRecovery?: KycRecoveryService,
   ) {}
 
   /**
-   * "I'll wait — SMS me when it's back" (P01e): only while the ID service is down.
+   * "I'll wait — SMS me when it's back" (P01e): only while the check for the
+   * other IDs (PAN, driving licence, voter ID) is down. The Aadhaar QR check is
+   * in-house and never waits.
    * He already proved his number on this link, so no second code is asked.
    */
   @Post(':token/id-check-wait')
@@ -107,6 +111,23 @@ export class RegistrationController {
     return this.jobSeekers.uploadPhoto(link.subjectId, photo, 'system');
   }
 
+  /**
+   * Aadhaar (guide, 14 Nov): the page reads the Secure QR on his phone — the
+   * camera, or his e-Aadhaar PDF opened in the browser — and sends only the
+   * QR's text. No image of the card or the PDF ever comes here. UIDAI's
+   * signature, 18+, the name and the phone link are checked here.
+   */
+  @Post(':token/aadhaar-qr')
+  @Public(TOKEN_PAGE)
+  async verifyAadhaarQr(@Param('token') token: string, @Body() body: { requestId?: string; qrText?: unknown }) {
+    const link = await this.requireRegistrationLink(token);
+    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+      throw new BadRequestException('OTP to the registered mobile is required');
+    }
+    return this.aadhaarQr.checkJobSeeker(link.subjectId, body.qrText, { channel: 'link' });
+  }
+
+  /** Another government ID (PAN, driving licence, voter ID) — always offered (UIDAI: nobody may be refused for not using Aadhaar). */
   @Post(':token/id-check')
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async verifyIdentity(

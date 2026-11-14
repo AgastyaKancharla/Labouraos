@@ -11,6 +11,7 @@ import { MockOtpProvider } from '../../common/otp/mock-otp.provider';
 import { MessagingService } from '../message/messaging.service';
 import { enrolledLogin } from '../../test-support/enrolled-login-spec';
 import { completeJobSeekerRegistration } from '../../test-support/job-seeker-registration';
+import { UIDAI_SAMPLE_SECURE_QR } from '../aadhaar-qr/testing/uidai-sample-qr';
 
 jest.setTimeout(120000);
 
@@ -242,11 +243,12 @@ describe('Phase 20 gate end-to-end proof', () => {
       .field('captureSource', 'live_camera')
       .attach('photo', Buffer.from('live-camera-frame'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
+    // UIDAI's own sample Secure QR: a genuine UIDAI signature, but another person's name.
     const aadhaar = await request(server())
-      .post(`/registration/${token}/id-check`)
-      .send({ requestId, method: 'digilocker', simulateFailure: true })
+      .post(`/registration/${token}/aadhaar-qr`)
+      .send({ requestId, qrText: UIDAI_SAMPLE_SECURE_QR })
       .expect(201);
-    expect(aadhaar.body.nameMatches).toBe(false);
+    expect(aadhaar.body).toMatchObject({ method: 'aadhaar_qr', result: 'name_mismatch', verifiedByUidai: true, nameMatches: false, offerOtherId: true });
     const pan = await request(server())
       .post(`/registration/${token}/id-check`)
       .send({ requestId, method: 'pan' })

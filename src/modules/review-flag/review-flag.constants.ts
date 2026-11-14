@@ -47,6 +47,10 @@ export const REVIEW_FLAG_KINDS = [
   'call_flagged',
   /** T-Visits: the Team Lead flagged a shop visit. */
   'visit_flagged',
+  /** Aadhaar QR (guide, 14 Nov): his OTP-verified phone is not the one linked to that Aadhaar — a flag, not a block. */
+  'aadhaar_phone_not_linked',
+  /** Aadhaar QR: repeated QR codes that failed UIDAI's digital signature (possibly an edited card). */
+  'aadhaar_qr_tampered',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

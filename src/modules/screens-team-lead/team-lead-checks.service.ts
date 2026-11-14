@@ -12,6 +12,8 @@ import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { Actor, TeamLeadScreensService } from './team-lead-screens.service';
 import { QUALITY_CHECKLIST, scoreOf } from './quality';
+import { AadhaarQrPhotoService } from '../aadhaar-qr/aadhaar-qr-photo.service';
+import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
 
 const DAY_MS = 24 * 3600 * 1000;
 const HOUR_MS = 3600 * 1000;
@@ -42,6 +44,7 @@ export class TeamLeadChecksService {
     private readonly notifications: NotificationService,
     @Inject(BUSINESS_PHOTO_STORAGE) private readonly photoStore: BusinessPhotoStorage,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly candidatePhotos?: CandidatePhotoStorage,
+    @Optional() private readonly aadhaarQrPhotos?: AadhaarQrPhotoService,
   ) {}
 
   // ---------------------------------------------------------------- work
@@ -175,12 +178,17 @@ export class TeamLeadChecksService {
       select: {
         id: true, code: true, name: true, whatsappPhone: true, dateOfBirth: true, photoStoragePath: true, registeredByStaffId: true, paymentReceivedAt: true, createdAt: true,
         trades: { select: { trade: true }, orderBy: { isPrimary: 'desc' }, take: 1 },
-        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1, select: { method: true, status: true, nameMatches: true, isAdult: true } },
+        identityVerifications: { orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, method: true, status: true, nameMatches: true, isAdult: true, phoneLinked: true, last4: true } },
       },
       orderBy: { createdAt: 'desc' },
       take: 100,
     });
     const checked = await this.prisma.teamLeadCheck.findMany({ where: { subjectType: 'job_seeker', subjectId: { in: seekers.map((s) => s.id) } }, select: { subjectId: true } });
+    const qrDetails = await this.prisma.aadhaarQrDetail.findMany({
+      where: { verificationId: { in: seekers.flatMap((s) => s.identityVerifications.map((v) => v.id)) } },
+      select: { verificationId: true, photoPath: true },
+    });
+    const qrPhotoKept = new Set(qrDetails.filter((d) => d.photoPath).map((d) => d.verificationId));
     const checkedIds = new Set(checked.map((row) => row.subjectId));
     const rows = [];
     for (const seeker of seekers.filter((s) => !checkedIds.has(s.id))) {
@@ -195,6 +203,7 @@ export class TeamLeadChecksService {
       if (duplicates.length) signals.push('Possible duplicate');
       if (idCheck?.status === 'failed') signals.push('ID check failed');
       if (idCheck && idCheck.nameMatches === false) signals.push('Name does not match the ID');
+      if (idCheck?.method === 'aadhaar_qr' && idCheck.phoneLinked === 'not_linked') signals.push('Phone not linked to the Aadhaar');
       if (!idCheck || idCheck.status !== 'verified') signals.push('ID not verified yet');
       rows.push({
         jobSeeker: { id: seeker.id, code: seeker.code, name: seeker.name },
@@ -203,7 +212,19 @@ export class TeamLeadChecksService {
         registeredAt: seeker.createdAt.toISOString(),
         paid: Boolean(seeker.paymentReceivedAt),
         hasSelfie: Boolean(seeker.photoStoragePath),
-        idCheck: idCheck ? { method: idCheck.method, status: idCheck.status, nameMatches: idCheck.nameMatches, isAdult: idCheck.isAdult } : null,
+        idCheck: idCheck
+          ? {
+            method: idCheck.method,
+            status: idCheck.status,
+            nameMatches: idCheck.nameMatches,
+            isAdult: idCheck.isAdult,
+            // Aadhaar QR: a row exists only when UIDAI's digital signature passed.
+            verifiedByUidai: idCheck.method === 'aadhaar_qr',
+            maskedReference: idCheck.method === 'aadhaar_qr' ? maskedAadhaarReference(idCheck.last4) : null,
+            phoneLinked: idCheck.method === 'aadhaar_qr' ? idCheck.phoneLinked : null,
+            qrPhotoKept: qrPhotoKept.has(idCheck.id),
+          }
+          : null,
         duplicates: duplicates.map((row) => row.code),
         signals,
         verdict: duplicates.length ? 'Possible duplicate' : signals.filter((s) => s !== 'ID not verified yet').length ? signals[0] : 'Looks normal',
@@ -252,7 +273,11 @@ export class TeamLeadChecksService {
       data: { subjectType: 'job_seeker', subjectId: seeker.id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: this.clock.now() },
     });
     await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: 'job_seeker', entityCode: seeker.code, after: { verdict, flagId } });
-    return { id: check.id, verdict, flagId };
+    // The Aadhaar QR photo is kept only until the Team Lead's check (guide, 14 Nov): deleted now, audited.
+    const qrPhotosDeleted = this.aadhaarQrPhotos
+      ? await this.aadhaarQrPhotos.deletePhotos('job_seeker', seeker.id, verdict === 'ok' ? 'team_lead_approved' : 'team_lead_rejected', actor.id, this.clock.now())
+      : 0;
+    return { id: check.id, verdict, flagId, qrPhotoDeleted: qrPhotosDeleted > 0 };
   }
 
   // -------------------------------------------------------------- visits

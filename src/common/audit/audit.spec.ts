@@ -197,7 +197,7 @@ describe('Audit Logging', () => {
         email: 'ravi@example.com',
         address: '123 Indiranagar, Bengaluru',
         kycReference: 'KYC-REF-12345',
-        kycDetails: { method: 'digilocker' },
+        kycDetails: { method: 'pan' },
         dateOfBirth: '1995-05-15',
         aadhaarNumber: '123456789012',
         aadhaarLast4: '9012',
