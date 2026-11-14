@@ -12,6 +12,7 @@ import { CallAgentMetricsService } from '../target/call-agent-metrics.service';
 import { openAvailableDay } from '../../test-support/available-day';
 import { SignupTrackerClock } from './signup-tracker-clock';
 import { SignupTrackerService } from './signup-tracker.service';
+import { assistedActivations } from './signup-credit';
 
 /** Wednesday 2 Dec 2026, 11:00 IST: a working day, inside calling hours and the shift. */
 const WED_11 = new Date('2026-12-02T05:30:00.000Z');
@@ -174,6 +175,7 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.holiday.deleteMany({ where: { date: HOLIDAY, name: `Signup test ${stamp}` } });
     await prisma.auditLog.deleteMany({ where: { actorId: { in: staffIds } } });
+    await prisma.staffSession.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.attendanceSegment.deleteMany({ where: { day: { staffId: { in: staffIds } } } });
     await prisma.attendanceDay.deleteMany({ where: { staffId: { in: staffIds } } });
     await prisma.staff.updateMany({ where: { id: { in: staffIds } }, data: { teamLeadId: null, reportsToId: null } });
@@ -433,5 +435,32 @@ describe('App sign-ups in the back office: assignment, call tasks, timing, team 
       .expect(200);
     expect(res.body.spokenLanguages).toEqual(['Hindi', 'Kannada']);
     expect(await prisma.auditLog.count({ where: { actorId: ceo.id, action: 'staff.spoken_languages_changed' } })).toBe(1);
+  });
+
+  it('an owner account has no attendance: it takes sign-ups while signed in, and its help never counts toward targets', async () => {
+    const owner = await makeStaff('call_agent', { teamLeadId: lead1.id, languages: ['Tamil'] });
+    await prisma.staff.update({ where: { id: owner.id }, data: { isOwnerAccount: true } });
+    const seeker = await makeSeeker('Owner Appsignup');
+    const t = await makeTracker({ subjectType: 'job_seeker', subjectId: seeker.id, language: 'Tamil' });
+    // Not signed in: never picked, even though it is the only Tamil speaker.
+    await tracker.process(t.id, await tracker.context(WED_11));
+    expect((await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } })).assignedStaffId).not.toBe(owner.id);
+
+    await prisma.callTask.deleteMany({ where: { signupTrackerId: t.id } });
+    await prisma.signupTracker.update({ where: { id: t.id }, data: { assignedStaffId: null, assignedAt: null, callTries: 0 } });
+    const hour = 60 * 60_000;
+    await prisma.staffSession.create({
+      data: { staffId: owner.id, expiresAt: new Date(WED_11.getTime() + hour), absoluteExpiresAt: new Date(WED_11.getTime() + 2 * hour), lastActivityAt: WED_11 },
+    });
+    await tracker.process(t.id, await tracker.context(WED_11));
+    const after = await prisma.signupTracker.findUniqueOrThrow({ where: { id: t.id } });
+    expect(after).toMatchObject({ assignedStaffId: owner.id, assignmentReason: 'language' });
+
+    await prisma.signupTracker.update({ where: { id: t.id }, data: { outcome: 'assisted', finishedAt: WED_11 } });
+    await prisma.jobSeeker.update({ where: { id: seeker.id }, data: { paymentReceivedAt: WED_11, status: 'active' } });
+    const month = { from: new Date('2026-11-30T18:30:00.000Z'), to: new Date('2026-12-31T18:29:59.999Z') };
+    expect(await assistedActivations(prisma, owner.id, month.from, month.to)).toBe(0);
+    await prisma.staff.update({ where: { id: owner.id }, data: { isOwnerAccount: false } });
+    expect(await assistedActivations(prisma, owner.id, month.from, month.to)).toBe(1);
   });
 });

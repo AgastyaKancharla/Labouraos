@@ -1,6 +1,7 @@
 import { PrismaClient } from '@prisma/client';
+import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
 
-type Reader = Pick<PrismaClient, 'signupTracker' | 'jobSeeker'>;
+type Reader = Pick<PrismaClient, 'signupTracker' | 'jobSeeker' | 'staff'>;
 
 /**
  * "Candidates activated" from app sign-ups (question 13, confirmed 14 Nov):
@@ -9,9 +10,12 @@ type Reader = Pick<PrismaClient, 'signupTracker' | 'jobSeeker'>;
  * tracker recorded the assigned agent's connected call or GPS visit before it
  * finished (SignupTrackerService.creditFor); a self-finished sign-up credits
  * nobody. A record this agent registered is already counted by the normal
- * rule and is not counted twice.
+ * rule and is not counted twice. Owner accounts have no targets (owner
+ * decision 14 Nov): their assisted sign-ups stay in the lists, never here.
  */
 export async function assistedActivations(prisma: Reader, staffId: string, from: Date, to: Date): Promise<number> {
+  const counted = await prisma.staff.findFirst({ where: { id: staffId, ...NOT_OWNER_ACCOUNT }, select: { id: true } });
+  if (!counted) return 0;
   const trackers = await prisma.signupTracker.findMany({
     where: { profileKind: 'job_seeker', subjectType: 'job_seeker', outcome: 'assisted', assignedStaffId: staffId, subjectId: { not: null } },
     select: { subjectId: true },

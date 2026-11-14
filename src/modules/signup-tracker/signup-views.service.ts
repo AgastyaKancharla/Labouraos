@@ -21,6 +21,8 @@ const KINDS = ['job_seeker', 'business', 'referral'] as const;
 const ROW_LIMIT = 200;
 /** A sign-up help task this long past due, still open, is overdue on the Team Lead's page. */
 const OVERDUE_MS = 60 * 60 * 1000;
+/** The office screens' default period: the last month (a view setting, not a rule). */
+const DEFAULT_VIEW_DAYS = 30;
 
 export interface Actor {
   id: string;
@@ -184,8 +186,8 @@ export class SignupViewsService {
   }
 
   private sinceDays(days?: string | number): Date {
-    const n = Number(days ?? 30);
-    const safe = Number.isInteger(n) && n > 0 && n <= 366 ? n : 30;
+    const n = Number(days ?? DEFAULT_VIEW_DAYS);
+    const safe = Number.isInteger(n) && n > 0 && n <= 366 ? n : DEFAULT_VIEW_DAYS;
     return new Date(this.clock.now().getTime() - safe * DAY_MS);
   }
 
