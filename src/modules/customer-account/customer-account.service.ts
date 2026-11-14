@@ -2,6 +2,11 @@ import { Injectable } from '@nestjs/common';
 import { HttpStatus } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
+import { CUSTOMER_LANGUAGES } from '../../common/customer-auth/customer-app.constants';
+import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
+
+/** Version of the contact-me tick's wording (C7), kept with the tick. */
+export const CONTACT_ME_NOTICE_VERSION = 'contact-me-2026-11-14';
 
 /** First word of a name: other people's screens never get a full name. */
 export function firstName(name: string | null | undefined): string | null {
@@ -11,7 +16,56 @@ export function firstName(name: string | null | undefined): string | null {
 
 @Injectable()
 export class CustomerAccountService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly clock: CustomerAuthClock,
+  ) {}
+
+  /** PATCH /me: language, display name, the contact-me tick. */
+  async update(accountId: string, body: Record<string, unknown>) {
+    const data: Record<string, unknown> = {};
+    if (body.language !== undefined) {
+      if (typeof body.language !== 'string' || !(CUSTOMER_LANGUAGES as readonly string[]).includes(body.language)) {
+        throw new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, 'language must be kn, hi or en', { field: 'language' });
+      }
+      data.language = body.language;
+    }
+    if (body.displayName !== undefined) {
+      if (body.displayName !== null && (typeof body.displayName !== 'string' || body.displayName.trim().length > 120)) {
+        throw new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, 'displayName is too long', { field: 'displayName' });
+      }
+      data.displayName = typeof body.displayName === 'string' && body.displayName.trim() ? body.displayName.trim() : null;
+    }
+    if (body.contactMe !== undefined) {
+      if (typeof body.contactMe !== 'boolean') {
+        throw new CustomerApiError(HttpStatus.BAD_REQUEST, CUSTOMER_ERROR_CODES.VALIDATION, 'contactMe must be true or false', { field: 'contactMe' });
+      }
+      await this.setContactMe(accountId, body.contactMe);
+    }
+    if (Object.keys(data).length) await this.prisma.customerAccount.update({ where: { id: accountId }, data });
+    return this.me(accountId);
+  }
+
+  /** The contact-me tick (C7), also copied to the account's open sign-ups. */
+  async setContactMe(accountId: string, value: boolean): Promise<void> {
+    const now = this.clock.now();
+    await this.prisma.customerAccount.update({
+      where: { id: accountId },
+      data: value
+        ? { contactMeConsent: true, contactMeConsentAt: now, contactMeNoticeVersion: CONTACT_ME_NOTICE_VERSION }
+        : { contactMeConsent: false, contactMeConsentAt: now },
+    });
+    await this.prisma.signupTracker.updateMany({ where: { accountId, outcome: 'open' }, data: { contactConsent: value } });
+  }
+
+  /** PUT /me/last-profile: the profile Home opens next time (must be one of mine). */
+  async setLastProfile(accountId: string, profileId: unknown): Promise<void> {
+    const profile = typeof profileId === 'string'
+      ? await this.prisma.customerProfile.findFirst({ where: { id: profileId, accountId, status: 'active' }, select: { id: true } })
+      : null;
+    if (!profile) throw new CustomerApiError(HttpStatus.NOT_FOUND, CUSTOMER_ERROR_CODES.PROFILE_NOT_FOUND, 'Profile not found');
+    await this.prisma.customerAccount.update({ where: { id: accountId }, data: { lastProfileId: profile.id } });
+  }
 
   /** GET /customer-api/v1/me: the account and the profiles it may act for. */
   async me(accountId: string) {

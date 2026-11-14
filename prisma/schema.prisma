@@ -2752,6 +2752,9 @@ model CustomerSession {
   deviceId          String?
   device            CustomerDevice? @relation(fields: [deviceId], references: [id], onDelete: SetNull)
   refreshTokenHash  String          @unique
+  /// The refresh token before the last renewal. Seeing it again means it was
+  /// copied: the session is ended.
+  previousRefreshTokenHash String?  @unique
   /// phone, google
   signedInWith      String
   expiresAt         DateTime
