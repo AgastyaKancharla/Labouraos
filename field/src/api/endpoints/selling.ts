@@ -354,6 +354,9 @@ export const sellingApi = (api: ApiClient) => ({
   sendRegistrationLink: (jobSeekerId: string) => api.post<{ expiresAt: string }>('/consent/links', { jobSeekerId }),
   paymentOnlyLink: (jobSeekerId: string, phone: string, relation?: string) =>
     api.post<{ expiresAt: string }>(`/job-seekers/${enc(jobSeekerId)}/payment-only-link`, { phone, relation }),
+  /** "Scan Aadhaar QR": only the QR's text, read live with this phone's camera (guide, 14 Nov). Needs signal. */
+  aadhaarQr: (jobSeekerId: string, qrText: string) =>
+    api.post<AadhaarQrOutcome>(`/field-work/job-seekers/${enc(jobSeekerId)}/aadhaar-qr`, { qrText, captureSource: 'live_camera' }),
   findReferralPartner: (q: string) =>
     api.get<{ partner: { id: string; code: string; name: string } | null }>('/screens/call-registration/referral-partners', { query: { q } }),
 });
@@ -393,6 +396,21 @@ export interface JobSeekerStatus {
   gender?: string | null;
 }
 
+
+/** POST /field-work/job-seekers/:id/aadhaar-qr — the result only; nothing read from the card. */
+export interface AadhaarQrOutcome {
+  verificationId: string | null;
+  method: 'aadhaar_qr';
+  status: 'verified' | 'failed';
+  result: 'verified' | 'name_mismatch' | 'under_18' | 'bad_signature' | 'old_qr' | 'unreadable';
+  verifiedByUidai: boolean;
+  nameMatches: boolean | null;
+  isAdult: boolean | null;
+  /** XXXX-XXXX-1234 */
+  maskedReference: string | null;
+  failureReason: string | null;
+  offerOtherId: boolean;
+}
 
 export interface CreatedVacancy {
   id: string;

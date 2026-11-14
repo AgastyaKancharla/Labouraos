@@ -19,6 +19,8 @@ export const LIVE_ONLY_PATTERNS: readonly RegExp[] = [
   /\/payment-links?(\/|$)/,
   /\/payouts?(\/|$)/,
   /^\/attendance\/(leave|corrections)$/,
+  // "Scan Aadhaar QR": the job seeker is there with his card; the answer is needed at once.
+  /\/aadhaar-qr$/,
 ];
 
 export function isLiveOnlyPath(path: string): boolean {

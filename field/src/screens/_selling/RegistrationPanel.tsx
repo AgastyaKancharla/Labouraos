@@ -13,6 +13,7 @@ import { formatTimeIst } from '@/lib/format';
 import { routes, sellingRoutes } from '@/navigation/routes';
 import { colors, fonts } from '@/theme';
 import { ErrorBanner, Note, QueryView, useNow } from './index';
+import { AadhaarQrScan } from './AadhaarQrScan';
 
 const STATUS_POLL_MS = 5000;
 const RELATIONS = ['brother', 'sister', 'parent', 'spouse', 'friend', 'other'] as const;
@@ -38,6 +39,8 @@ function mark(step: Step): { icon: string; color: string } {
  * The same endpoints as the call agent's panel (CA08b/c): one SMS link,
  * valid 48 hours, that resumes at the first unfinished step; a payment-only
  * link to another number once payment is reached. Sending needs signal.
+ * At the ID step, with his consent given on his link, "Scan Aadhaar QR" lets
+ * the field agent scan the QR on his Aadhaar card live (guide, 14 Nov).
  */
 export function RegistrationPanel({ jobSeekerId, variant }: { jobSeekerId: string; variant: 'saved' | 'progress' }) {
   const { selling } = useEndpoints();
@@ -55,6 +58,7 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
   const { selling } = useEndpoints();
   const queue = useOfflineQueue();
   const [otherOpen, setOtherOpen] = useState(false);
+  const [scanOpen, setScanOpen] = useState(false);
   const [preview, setPreview] = useState(false);
   const [payer, setPayer] = useState('');
   const [relation, setRelation] = useState('');
@@ -119,6 +123,13 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
           );
         })}
       </Card>
+      {s.stage !== 'active' && s.nextStep === 'id_check' && s.steps.consent.state === 'done' ? (
+        scanOpen ? (
+          <AadhaarQrScan jobSeekerId={s.id} onFinished={refetch} onClose={() => setScanOpen(false)} />
+        ) : (
+          <Button label={t('fa10b.scanAadhaar')} onPress={() => setScanOpen(true)} testID="scan-aadhaar" />
+        )
+      ) : null}
       {s.stage !== 'active' ? (
         <>
           <Button
