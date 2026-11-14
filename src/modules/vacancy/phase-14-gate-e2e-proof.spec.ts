@@ -1,7 +1,6 @@
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { PricingService } from '../pricing/pricing.service';
-import { MapService } from '../map/map.service';
 import { CandidateIntroductionService } from './candidate-introduction.service';
 import { MatchingService } from './matching.service';
 
@@ -64,7 +63,7 @@ function seeker(id: string, daysSincePayment: number, overrides: Record<string, 
 }
 
 describe('Phase 14 gate end-to-end proof', () => {
-  it('ranks suitable candidates, records the owner share, and maps only rounded candidate cells', async () => {
+  it('ranks suitable candidates, and records the owner share (the /map/points page was retired on 14 Nov)', async () => {
     process.env.PUBLIC_APP_URL = 'https://app.laboura.in';
     const candidates = [
       seeker('day-26', 26),
@@ -160,7 +159,6 @@ describe('Phase 14 gate end-to-end proof', () => {
     const matching = new MatchingService(prisma, pricing, clock);
     const messaging = { send: jest.fn().mockResolvedValue({ id: 'message-proof-1', status: 'sent' }) };
     const introductions = new CandidateIntroductionService(prisma, matching, messaging as never, clock);
-    const map = new MapService(prisma);
 
     const shortlist = await matching.match(vacancyId, { page: 1 });
     expect(shortlist.matches.map((match) => match.jobSeekerId)).toEqual(['day-26', 'day-4']);
@@ -177,15 +175,6 @@ describe('Phase 14 gate end-to-end proof', () => {
       expect.objectContaining({ jobSeekerId: 'day-4', messageLogId: 'message-proof-1', channel: 'share_link' }),
     ]));
 
-    const points = await map.points('77.5,12.9,77.7,13.3', 'Electrician');
-    expect(points.businesses).toEqual([expect.objectContaining({ id: businessId, name: business.name, latitude: businessPoint.latitude })]);
-    expect(points.vacancies).toEqual([expect.objectContaining({ id: vacancyId, trade: 'Electrician', salaryMinPaise: 1500000, salaryMaxPaise: 1800000 })]);
-    expect(points.candidateCells).toEqual(expect.arrayContaining([
-      expect.objectContaining({ latitude: 12.97, longitude: 77.59, count: 3, trades: ['Electrician'] }),
-      expect.objectContaining({ latitude: 13.2, longitude: 77.59, count: 1, trades: ['Electrician'] }),
-    ]));
-    expect(JSON.stringify(points.candidateCells)).not.toContain('12.9716');
-
     console.log('PHASE 14 GATE PROOF:', JSON.stringify({
       verifiedBusiness: business.code,
       vacancy: { code: vacancy.code, interviewType: vacancy.interviewType, trade: vacancy.tradeSkill, salaryMinPaise: vacancy.salaryMinPaise, salaryMaxPaise: vacancy.salaryMaxPaise, salaryRangeRupees: '15000–18000/month' },
@@ -193,7 +182,6 @@ describe('Phase 14 gate end-to-end proof', () => {
       excludedCandidates: ['too-far', 'paused-consent', 'night-shift'],
       leftOut: shortlist.leftOut,
       loggedIntroductions: introductionRows,
-      map: { businesses: points.businesses.length, vacancies: points.vacancies.length, candidateCells: points.candidateCells },
     }));
   });
 });

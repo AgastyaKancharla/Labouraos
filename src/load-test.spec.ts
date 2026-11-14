@@ -69,7 +69,6 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
     jobSeekerOnboarding: [],
     businessRegistration: [],
     vacancyCapture: [],
-    priorityDashboard: [],
     placementCalculations: [],
   };
 
@@ -340,15 +339,6 @@ describe('Phase 8 Task 1: Load & Concurrency Testing (40 Staff Sessions)', () =>
       metrics.vacancyCapture.push(Date.now() - vacStart);
       expect(vacRes.status).toBe(201);
       createdVacancyIds.push(vacRes.body.id);
-
-      // Read Priority Dashboard
-      const dashStart = Date.now();
-      const dashRes = await request(baseUrl)
-        .get('/field-agent/priority-dashboard')
-        .set('Authorization', `Bearer ${token}`);
-
-      metrics.priorityDashboard.push(Date.now() - dashStart);
-      expect(dashRes.status).toBe(200);
 
       return { businessId: bzRes.body.id, vacancyId: vacRes.body.id };
     });

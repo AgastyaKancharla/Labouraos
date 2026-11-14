@@ -25,6 +25,8 @@ const UNDER: Record<string, string[]> = {
 function makeService(task: Record<string, unknown> | null) {
   const prisma = {
     followUpTask: { findUnique: jest.fn().mockResolvedValue(task) },
+    // No one has a teamLeadId link here; the reporting tree (UNDER) is the team.
+    staff: { findMany: jest.fn(async () => []) },
     candidateIntroduction: {
       findMany: jest.fn(async ({ where }: { where: { jobSeekerId: string; shownByStaffId?: { in: string[] } } }) =>
         INTROS.filter((i) => !where.shownByStaffId || where.shownByStaffId.in.includes(i.shownByStaffId)).map((i) => ({ business: i.business })),
@@ -77,5 +79,30 @@ describe('FollowUpService.getIntroducedBusinesses: ownership and reporting scope
   it('Finance and unknown tasks are refused', async () => {
     await expect(makeService(task).service.getIntroducedBusinesses('task-1', { id: 'fin-1', role: 'finance' })).rejects.toThrow(ForbiddenException);
     await expect(makeService(null).service.getIntroducedBusinesses('nope', { id: 'ceo-1', role: 'ceo' })).rejects.toThrow(NotFoundException);
+  });
+});
+
+/** Owner rule (Master Guide, 14 Nov): agents complete only their own follow-ups, Team Leads their team's. */
+describe('FollowUpService.assertMayComplete: who completes a follow-up', () => {
+  it('a Team Lead is refused a follow-up assigned outside their team, or to no one', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'tl-1', role: 'team_lead' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService({ ...task, assignedStaffId: null }).service.assertMayComplete('task-1', { id: 'tl-1', role: 'team_lead' })).rejects.toThrow(ForbiddenException);
+  });
+
+  it('a Team Lead may complete their own and their team’s follow-ups', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'tl-2', role: 'team_lead' })).resolves.toBeUndefined();
+    await expect(makeService({ ...task, assignedStaffId: 'tl-2' }).service.assertMayComplete('task-1', { id: 'tl-2', role: 'team_lead' })).resolves.toBeUndefined();
+  });
+
+  it('a call or field agent completes only follow-ups assigned to them', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'agent-a', role: 'call_agent' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService({ ...task, assignedStaffId: null }).service.assertMayComplete('task-1', { id: 'agent-c', role: 'field_agent' })).rejects.toThrow(ForbiddenException);
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'agent-c', role: 'call_agent' })).resolves.toBeUndefined();
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'agent-c', role: 'field_agent' })).resolves.toBeUndefined();
+  });
+
+  it('Managers, the CEO and missing tasks are left to completeTask', async () => {
+    await expect(makeService(task).service.assertMayComplete('task-1', { id: 'manager-1', role: 'manager' })).resolves.toBeUndefined();
+    await expect(makeService(null).service.assertMayComplete('nope', { id: 'tl-1', role: 'team_lead' })).resolves.toBeUndefined();
   });
 });

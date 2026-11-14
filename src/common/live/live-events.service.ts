@@ -23,6 +23,9 @@ import { Observable, Subject, filter, map } from 'rxjs';
  * every webhook that feeds this channel arrives there. Screens also poll as a
  * fallback, so a missed event only costs a few seconds, never data.
  */
+/** recheckAllSessions' marker: never a staff id (those are UUIDs). */
+const ALL_STAFF = '*';
+
 export type LiveEventType =
   | 'incoming_call'
   | 'call_status'
@@ -48,6 +51,8 @@ export interface LiveMessage {
 export class LiveEventsService implements OnModuleDestroy {
   private readonly logger = new Logger(LiveEventsService.name);
   private readonly bus = new Subject<LiveEvent>();
+  /** "Check this person's sessions again now": a session of theirs was ended. */
+  private readonly sessionRechecks = new Subject<string>();
   private readonly listeners = new Map<string, number>();
   private sequence = 0;
 
@@ -84,6 +89,32 @@ export class LiveEventsService implements OnModuleDestroy {
     });
   }
 
+  /**
+   * Called wherever a staff member's sessions are ended (deactivated, locked,
+   * device revoked, invite re-issued, password reset): each open stream of
+   * theirs checks its own session at once and closes if it has ended, instead
+   * of waiting for its next periodic check (LiveController).
+   */
+  recheckSessions(staffId: string): void {
+    if (staffId) this.sessionRechecks.next(staffId);
+  }
+
+  /**
+   * Every open stream checks its own session now. For a session ended where
+   * the staff member is not known at that point (one session revoked by id).
+   */
+  recheckAllSessions(): void {
+    this.sessionRechecks.next(ALL_STAFF);
+  }
+
+  /** Emits each time a check is asked for this staff member (or for everyone). */
+  sessionRechecksFor(staffId: string): Observable<void> {
+    return this.sessionRechecks.pipe(
+      filter((id) => id === staffId || id === ALL_STAFF),
+      map(() => undefined),
+    );
+  }
+
   /** How many screens a staff member has open on the channel. */
   openScreens(staffId: string): number {
     return this.listeners.get(staffId) ?? 0;
@@ -92,5 +123,6 @@ export class LiveEventsService implements OnModuleDestroy {
   onModuleDestroy() {
     this.logger.log('Closing the live channel');
     this.bus.complete();
+    this.sessionRechecks.complete();
   }
 }
