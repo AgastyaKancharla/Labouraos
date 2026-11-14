@@ -179,7 +179,9 @@ describe('Phase 14 Task 2 — candidate cards and photos', () => {
 
     await request(app.getHttpServer())
       .patch(`/job-seekers/${seekerId}/profile`)
-      .set('Authorization', `Bearer ${tokens.call_agent}`)
+      // The agent who registered the job seeker (the edit rule lets only them, their
+      // Team Lead and management edit it); the photo fields must still be ignored.
+      .set('Authorization', `Bearer ${tokens.field_agent}`)
       .send({ photoStoragePath: 'attacker/permanent-url', photoTakenAt: '2000-01-01T00:00:00.000Z' })
       .expect(200);
     const afterProfileUpdate = await prisma.jobSeeker.findUniqueOrThrow({ where: { id: seekerId } });
