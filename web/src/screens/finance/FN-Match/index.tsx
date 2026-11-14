@@ -12,13 +12,15 @@ import { formatINR } from '../../../lib/format/money';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { FormAction } from '../_kit/kit';
 import { ReturnMoney } from '../_kit/ReturnMoney';
+import { SetAside } from '../_kit/statement';
 import '../_kit/fin.css';
 
 /**
  * Match a payment — design FN-Match.dc.html. Finds what an unclaimed bank
  * credit was for: waiting payments of the same amount, best first, with why
  * each might be it. Matching confirms the payment with this credit (POST
- * /payments/:id/confirm); nothing matches → the money goes back.
+ * /payments/:id/confirm); nothing matches → the money goes back, or, when
+ * it is not Laboura's money at all, it is set aside with a reason.
  */
 interface Candidate {
   paymentId: string;
@@ -140,8 +142,11 @@ export default function MatchPayment() {
                 <DataTable columns={columns} rows={d.candidates} rowKey={(c) => c.paymentId} caption="Possible matches" pageSize={10} emptyTitle="No waiting payment has this amount." />
               </Card>
               <Card title="Nothing matches?">
-                <p style={{ marginTop: 0 }}>Return the money to the same UPI ID. Unclaimed money is never kept or matched by guess.</p>
-                <ReturnMoney id={d.credit.id} amountPaise={d.credit.amountPaise} to={d.credit.payerVpaMasked} size="regular" />
+                <p style={{ marginTop: 0 }}>Return the money to the same UPI ID. Unclaimed money is never kept or matched by guess. If it is not Laboura’s money at all (a personal transfer, meant for another account), set it aside with the reason.</p>
+                <span className="fin-row-actions">
+                  <ReturnMoney id={d.credit.id} amountPaise={d.credit.amountPaise} to={d.credit.payerVpaMasked} size="regular" />
+                  <SetAside id={d.credit.id} amountPaise={d.credit.amountPaise} size="regular" />
+                </span>
               </Card>
             </>
           )}

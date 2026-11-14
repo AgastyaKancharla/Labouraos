@@ -1441,7 +1441,8 @@ export class PlacementService {
    * for that vacancy, who proposed the interview, or who created the placement. A Team
    * Lead: the same for anyone on their team (and themselves).
    */
-  private async placementListScope(actor: { id: string; role: string }): Promise<Prisma.PlacementWhereInput> {
+  /** What a person may see of placements (GET /placements; also the "Report worker left" finder). */
+  async placementListScope(actor: { id: string; role: string }): Promise<Prisma.PlacementWhereInput> {
     let staffIds: string[];
     if (actor.role === 'call_agent' || actor.role === 'field_agent') {
       staffIds = [actor.id];

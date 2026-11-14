@@ -5,6 +5,7 @@ import { DataTable, type Column } from '../../../components/DataTable';
 import { SelectField, TextField } from '../../../components/fields';
 import { StatGrid, StatTile } from '../../../components/StatTile';
 import { TopBar } from '../../../components/TopBar';
+import { ReportWorkerLeftFinder } from '../../../claims/WorkerLeft';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { teamShort } from '../_kit/kit';
@@ -90,7 +91,7 @@ export default function ManagerRequests() {
 
   return (
     <div className="lb-page">
-      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Requests" subtitle="Everything waiting for a Manager, and why it is with you." />
+      <TopBar back={{ to: to('MG-Home'), label: 'Command Center' }} title="Requests" subtitle="Everything waiting for a Manager, and why it is with you." actions={<ReportWorkerLeftFinder />} />
       <RequestTabs waiting={waiting.data?.length} />
       <StatGrid>
         <StatTile label="Waiting for you" value={waiting.data ? rows.length : '—'} tone="royal" loading={waiting.isPending} />

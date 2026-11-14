@@ -62,6 +62,15 @@ describe('notification links', () => {
     expect(notificationLink('manager', 'refund_needs_ceo')).toBeNull();
   });
 
+  it("sends a call agent to their home, not the non-existent /call-agent/people, when the person's id is missing", () => {
+    expect(notificationLink('call_agent', 'refund_priority', {})).toBe('/call-agent');
+    expect(notificationLink('call_agent', 'agent_reminder', { id: null })).toBe('/call-agent');
+    expect(notificationLink('call_agent', 'refund_priority', { id: 'JS-00012' })).toBe('/call-agent/people/JS-00012');
+    expect(notificationLink('call_agent', 'agent_reminder', { id: 'JS-00012' })).toBe('/call-agent/people/JS-00012');
+    // other detail links still fall back to their list
+    expect(notificationLink('finance', 'refund_ready_to_pay', {})).toBe('/finance/refunds');
+  });
+
   it('never links a Manager to a money kind', () => {
     for (const kind of MONEY_KINDS) expect(notificationLink('manager', kind, { id: 'x' })).toBeNull();
     expect(NOTIFICATION_KINDS.length).toBeGreaterThan(MONEY_KINDS.length);

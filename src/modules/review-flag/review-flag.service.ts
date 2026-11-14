@@ -69,6 +69,14 @@ export class ReviewFlagService {
     }
   }
 
+  /**
+   * For flags closed outside resolve() (Finance resolving a payment or payout
+   * flag, a bank credit set aside): takes the flag off the bells too.
+   */
+  async refreshBell(flagId: string): Promise<void> {
+    await this.syncBell(flagId);
+  }
+
   async raise(params: RaiseReviewFlagParams) {
     if (!REVIEW_FLAG_KINDS.includes(params.kind)) {
       throw new BadRequestException(`Invalid review flag kind: '${params.kind}'`);

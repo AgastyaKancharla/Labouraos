@@ -923,13 +923,15 @@ export class PaymentService {
       },
     });
 
+    const openFlagsWhere: Prisma.ReviewFlagWhereInput = {
+      kind: 'payment_mismatch',
+      status: 'open',
+      subjectType: 'bank_credit',
+      subjectId: credit.id,
+    };
+    const openFlags = (await this.prisma.reviewFlag.findMany({ where: openFlagsWhere, select: { id: true } })) ?? [];
     await this.prisma.reviewFlag.updateMany({
-      where: {
-        kind: 'payment_mismatch',
-        status: 'open',
-        subjectType: 'bank_credit',
-        subjectId: credit.id,
-      },
+      where: openFlagsWhere,
       data: {
         status: 'dismissed',
         resolution: reason.trim(),
@@ -937,6 +939,7 @@ export class PaymentService {
         resolvedByStaffId: actorId,
       },
     });
+    for (const flag of openFlags) await this.reviewFlagService.refreshBell(flag.id);
 
     await this.auditService.log({
       actorId,
@@ -1009,6 +1012,7 @@ export class PaymentService {
       before: { status: flag.status, resolution: flag.resolution },
       after: { status: updated.status, resolution: updated.resolution },
     });
+    await this.reviewFlagService.refreshBell(flagId);
     return updated;
   }
 

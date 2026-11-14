@@ -33,11 +33,6 @@ class FakeApiController {
     return { api: 'priority dashboard' };
   }
 
-  @Get('console/admin')
-  oldAdmin() {
-    return { page: 'old admin dashboard' };
-  }
-
   @Get('field-work/home')
   fieldHome() {
     return { api: 'field home' };
@@ -254,6 +249,8 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
     it.each([
       ['/admin', '/login'],
       ['/admin/', '/login'],
+      ['/console/admin', '/login'],
+      ['/console/admin/', '/login'],
       ['/map', '/login'],
       ['/console/map', '/login'],
       ['/console/call-agent', '/call-agent'],
@@ -289,7 +286,7 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
     });
 
     it('never redirects an API caller, and API routes under the same first segment still answer', async () => {
-      for (const url of ['/admin', '/map', '/field-agent', '/console/call-agent', '/console/field-agent', '/console/map']) {
+      for (const url of ['/admin', '/console/admin', '/map', '/field-agent', '/console/call-agent', '/console/field-agent', '/console/map']) {
         const res = await get(APP, url, 'application/json');
         expect([url, res.status]).toEqual([url, 404]);
       }
@@ -300,10 +297,12 @@ describe('Web addresses (decided 14 Nov): app.laboura.com, field.laboura.com and
       expect((await get(APP, '/field-agent/priority-dashboard')).body).toEqual({ api: 'priority dashboard' });
     });
 
-    it('leaves /console/admin (the old dashboard, kept for what the new screens lack) to its controller', async () => {
-      expect((await get(APP, '/console/admin')).body).toEqual({ page: 'old admin dashboard' });
-      expect(retiredConsoleRedirect('/console/admin')).toBeNull();
+    it('sends /console/admin (the old Admin Dashboard, retired last) to /login, and leaves /setup alone', async () => {
+      expect(retiredConsoleRedirect('/console/admin')).toBe('/login');
       expect(retiredConsoleRedirect('/setup')).toBeNull();
+      const res = await get(APP, '/console/admin');
+      expect(res.status).toBe(301);
+      expect(res.headers.location).toBe('/login');
     });
 
     it('on field.laboura.com sends the old field agent page to the root, and /map stays a Laboura Field page', async () => {
