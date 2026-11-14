@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.expo/
+expo-env.d.ts
+coverage/
+*.log
+web-build/
+ios/
+android/
+# EAS / Google files the owner downloads: never commit them
+google-services.json
+GoogleService-Info.plist
+*.jks
+*.keystore
+credentials.json
