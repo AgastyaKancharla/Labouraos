@@ -32,7 +32,9 @@ describe('FA01 field agent sign in', () => {
     await waitFor(() => expect(router.push).toHaveBeenCalledWith('/login-code'));
     const [url, init] = fetchImpl.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe('https://api.test/auth/login');
-    expect(body(init)).toMatchObject({ staffCode: 'FA-00017', password: 'secret-pass' });
+    // Laboura Field names itself: the server gives its sessions to field agents only.
+    expect(body(init)).toMatchObject({ staffCode: 'FA-00017', password: 'secret-pass', app: 'field' });
+    expect(body(init).totpCode).toBeUndefined();
     expect(body(init).deviceId).toMatch(/^uuid-/);
   });
 
@@ -57,22 +59,45 @@ describe('FA01 field agent sign in', () => {
     await waitFor(() => expect(screen.getByTestId('login-error')).toHaveTextContent('ಸ್ಟಾಫ್ ಕೋಡ್ ಅಥವಾ ಪಾಸ್‌ವರ್ಡ್ ತಪ್ಪಾಗಿದೆ.'));
   });
 
-  it('asks a management account for its authenticator code and signs straight in', async () => {
-    const { fetchImpl, store } = await renderWithApp(<LoginScreen />, {
-      route: (_url, init) =>
-        body(init).totpCode
-          ? { status: 200, body: { accessToken: fakeToken(), sessionId: 's', staff: { id: 'ceo-1', code: 'CEO-1', name: 'Sanket', role: 'ceo', email: null } } }
-          : { status: 401, body: { message: 'TOTP 2FA code is required' } },
+  it.each([
+    ['en', 'This app is for field agents. Please sign in at app.laboura.com.'],
+    ['kn', 'ಈ ಆಪ್ ಫೀಲ್ಡ್ ಏಜೆಂಟ್‌ಗಳಿಗಾಗಿ ಮಾತ್ರ. ದಯವಿಟ್ಟು app.laboura.com ನಲ್ಲಿ ಸೈನ್ ಇನ್ ಮಾಡಿ.'],
+    ['hi', 'यह ऐप फ़ील्ड एजेंट के लिए है। कृपया app.laboura.com पर साइन इन करें।'],
+  ] as const)('refuses anyone who is not a field agent, in the chosen language (%s)', async (language, text) => {
+    const { store } = await renderWithApp(<LoginScreen />, {
+      language,
+      route: () => ({ status: 401, body: { message: 'This app is for field agents. Please sign in at app.laboura.com.' } }),
     });
     await fireEvent.changeText(screen.getByTestId('staff-code'), 'CEO-1');
     await fireEvent.changeText(screen.getByTestId('password'), 'x');
     await fireEvent.press(screen.getByTestId('sign-in'));
-    await waitFor(() => screen.getByTestId('totp-code'));
-    await fireEvent.changeText(screen.getByTestId('totp-code'), '123456');
+    await waitFor(() => expect(screen.getByTestId('login-error')).toHaveTextContent(text));
+    expect(store.get()).toBeNull();
+    expect(router.push).not.toHaveBeenCalled();
+  });
+
+  it('has no authenticator step: the CEO no longer signs in to Laboura Field', async () => {
+    const { store } = await renderWithApp(<LoginScreen />, {
+      route: () => ({ status: 401, body: { message: 'TOTP 2FA code is required' } }),
+    });
+    await fireEvent.changeText(screen.getByTestId('staff-code'), 'CEO-1');
+    await fireEvent.changeText(screen.getByTestId('password'), 'x');
     await fireEvent.press(screen.getByTestId('sign-in'));
-    await waitFor(() => expect(router.replace).toHaveBeenCalledWith('/'));
-    expect(body((fetchImpl.mock.calls[1] as unknown as [string, RequestInit])[1]).totpCode).toBe('123456');
-    expect(store.get()?.staff.role).toBe('ceo');
+    await waitFor(() => screen.getByTestId('login-error'));
+    expect(screen.queryByTestId('totp-code')).toBeNull();
+    expect(store.get()).toBeNull();
+  });
+
+  it('never keeps a session for another role, even if one came back', async () => {
+    const { store } = await renderWithApp(<LoginScreen />, {
+      route: () => ({ status: 200, body: { accessToken: fakeToken(), sessionId: 's', staff: { id: 'ceo-1', code: 'CEO-1', name: 'Owner', role: 'ceo', email: null } } }),
+    });
+    await fireEvent.changeText(screen.getByTestId('staff-code'), 'CEO-1');
+    await fireEvent.changeText(screen.getByTestId('password'), 'x');
+    await fireEvent.press(screen.getByTestId('sign-in'));
+    await waitFor(() => expect(screen.getByTestId('login-error')).toHaveTextContent(/This app is for field agents\./));
+    expect(store.get()).toBeNull();
+    expect(router.replace).not.toHaveBeenCalled();
   });
 });
 
@@ -115,6 +140,7 @@ describe('FA02 login code', () => {
       code: '720453',
       deviceId: (body(loginInit) as { deviceId: string }).deviceId,
       loginRequestProof: 'proof-1',
+      app: 'field',
     });
     expect((body(init) as { deviceId: string }).deviceId).toBeTruthy();
     expect(store.get()).toMatchObject({ sessionId: 'sess-9', staff: { code: 'FA-00017' } });
