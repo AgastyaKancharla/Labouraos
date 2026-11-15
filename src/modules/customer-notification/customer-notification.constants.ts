@@ -52,6 +52,8 @@ export const CUSTOMER_EVENTS = {
   // --- Payments in (receipts: the person just paid) ---
   payment_confirmed: { category: 'service', priority: 'normal', selfAction: true, audience: ['job_seeker'], deepLink: '/home', vars: ['days'] },
   fee_paid: { category: 'service', priority: 'normal', selfAction: true, businessOwnersOnly: true, audience: ['business'], deepLink: '/home', vars: [] },
+  /** M2 (rev 178): a replacement's salary difference was not paid in time, so the replacement was cancelled. */
+  replacement_cancelled: { category: 'service', priority: 'normal', businessOwnersOnly: true, audience: ['business'], deepLink: '/home', vars: [] },
 
   // --- Job seeker journey ---
   job_match: { category: 'job_updates', priority: 'normal', audience: ['job_seeker'], deepLink: '/home', vars: [] },

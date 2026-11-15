@@ -12,8 +12,9 @@ describe('Placement completion deadline scheduler', () => {
   it('registers a worker scheduler in worker process role', async () => {
     process.env.PROCESS_ROLE = 'worker';
     const completeDay60Placements = jest.fn().mockResolvedValue(1);
+    const cancelUnpaidUpgrades = jest.fn().mockResolvedValue(2);
     const job = new PlacementCompletionJob(
-      { completeDay60Placements } as never,
+      { completeDay60Placements, cancelUnpaidUpgrades } as never,
     );
     const upsertJobScheduler = jest.fn().mockResolvedValue(undefined);
     const mockQueue = { upsertJobScheduler, close: jest.fn().mockResolvedValue(undefined), on: jest.fn() };
@@ -29,8 +30,10 @@ describe('Placement completion deadline scheduler', () => {
       { name: PLACEMENT_COMPLETION_SWEEP },
     );
     expect(getWorker).toHaveBeenCalledTimes(1);
-    await expect(job.process()).resolves.toEqual({ completed: 1 });
+    // M2 / M10 (rev 178): the same daily run cancels unpaid salary differences (one queue, no new job).
+    await expect(job.process()).resolves.toEqual({ completed: 1, upgradesCancelled: 2 });
     expect(completeDay60Placements).toHaveBeenCalledTimes(1);
+    expect(cancelUnpaidUpgrades).toHaveBeenCalledTimes(1);
     await job.close();
   });
 

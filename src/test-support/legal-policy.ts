@@ -19,6 +19,7 @@ export const LEGAL_TEST_POLICY = {
   maxFreeReplacements: 2,
   maxReplacementRejections: 2,
   replacementSearchDays: 15,
+  upgradePaymentCancelDays: 7,
   claimReportDays: 7,
   claimDecisionHours: 48,
   noBypassMonths: 12,

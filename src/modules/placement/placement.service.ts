@@ -1,4 +1,7 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { isBusinessSuspended } from '../business/business-candidate-access';
+import { chainRefundOf } from './chain-refund';
+import { claimClockPaused, claimPausedMs, resumeEndedSuspensions } from './claim-clock';
 import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
@@ -7,6 +10,7 @@ import {
   ForbiddenException,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -58,6 +62,8 @@ import {
 import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/export-placements.dto';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { MessagingService } from '../message/messaging.service';
+import { CustomerNotificationService } from '../customer-notification/customer-notification.service';
 
 export function calculateDaysElapsed(
   startDate: Date,
@@ -89,6 +95,8 @@ export class PlacementService {
     private readonly upiCollectionService: UpiCollectionService,
     private readonly reviewFlags: ReviewFlagService,
     private readonly editPolicyService: EditPolicyService,
+    @Optional() private readonly messaging?: MessagingService,
+    @Optional() private readonly customerNotifications?: CustomerNotificationService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -1128,6 +1136,8 @@ export class PlacementService {
             decidedByStaffId: null,
             decidedAt,
             decisionDueAt,
+            // M10 (rev 178): reported while the business is suspended — its 15-day clock starts paused.
+            clockPausedAt: placement.business && isBusinessSuspended(placement.business, reportedAt) ? reportedAt : null,
           },
           include: {
             placement: true,
@@ -1662,6 +1672,128 @@ export class PlacementService {
     };
   }
 
+  /**
+   * M2 (Master Guide rev 178): a replacement whose salary-difference request
+   * (D3) is not paid within Settings' upgradePaymentCancelDays (7 by default)
+   * of the selection is cancelled by the daily job; a Manager or the CEO can
+   * cancel it at once ("Cancel now", with a reason). Cancelling closes the
+   * payment request, reopens the replacement vacancy, frees the job seeker,
+   * takes the candidate off "accepted" and never counts as a free replacement
+   * (countsAsReplacement false), so the claim's replacement search — and its
+   * 15-day refund check — carry on as if he had not been selected.
+   */
+  async cancelUnpaidUpgrades(now = new Date()): Promise<number> {
+    const policy = await this.getPolicy();
+    const cutoff = new Date(now.getTime() - policy.upgradePaymentCancelDays * 24 * 60 * 60 * 1000);
+    const due = await this.prisma.placement.findMany({
+      where: { status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null }, rootPlacementId: { not: null }, selectedAt: { lte: cutoff } },
+      select: { id: true },
+    });
+    let cancelled = 0;
+    for (const row of due) {
+      if (await this.cancelUpgrade(row.id, null, `Salary difference not paid within ${policy.upgradePaymentCancelDays} days of the selection`, now)) cancelled += 1;
+    }
+    // M10: suspensions that ended on their date resume their claims' replacement clocks.
+    await resumeEndedSuspensions(this.prisma, now);
+    return cancelled;
+  }
+
+  /** "Cancel now" (Manager / CEO, audited). */
+  async cancelUpgradeNow(idOrCode: string, actorId: string, body: { reason?: unknown }, now = new Date()) {
+    const actor = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
+    if (!actor) throw new NotFoundException('Staff not found');
+    if (actor.role !== 'manager' && actor.role !== 'ceo') throw new ForbiddenException('Only a Manager or the CEO cancels a replacement waiting for its salary difference');
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+    if (reason.length < 5) throw new BadRequestException('Write the reason (at least 5 characters)');
+    const placement = await this.prisma.placement.findFirst({ where: { OR: [{ id: idOrCode }, { code: idOrCode }] }, select: { id: true, status: true, salaryUpgradeDifferencePaise: true } });
+    if (!placement) throw new NotFoundException('Placement not found');
+    if (placement.status !== 'awaiting_payment' || placement.salaryUpgradeDifferencePaise === null) {
+      throw new BadRequestException('Only a replacement waiting for its salary-difference payment can be cancelled here');
+    }
+    const done = await this.cancelUpgrade(placement.id, actor.id, reason.slice(0, 500), now);
+    if (!done) throw new ConflictException('This replacement is no longer waiting for its payment');
+    return { cancelled: true, placementId: placement.id };
+  }
+
+  private async cancelUpgrade(placementId: string, actorId: string | null, reason: string, now: Date): Promise<boolean> {
+    const placement = await this.prisma.placement.findUnique({
+      where: { id: placementId },
+      include: { business: { select: { id: true, name: true, phone: true, city: true } }, jobSeeker: { select: { id: true, status: true } } },
+    });
+    if (!placement) return false;
+    const done = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.placement.updateMany({
+        where: { id: placement.id, status: 'awaiting_payment' },
+        data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null },
+      });
+      if (changed.count !== 1) return false;
+      await recordStatusChange(tx, { subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'replacement_upgrade_not_paid', changedAt: now });
+      // The payment request closes: a late payment is not taken as this fee.
+      const open = await tx.payment.findMany({ where: { placementId: placement.id, type: 'replacement_upgrade', status: 'pending' }, select: { id: true } });
+      if (open.length) {
+        await tx.payment.updateMany({ where: { id: { in: open.map((p) => p.id) }, status: 'pending' }, data: { status: 'failed' } });
+        for (const p of open) await recordStatusChange(tx, { subjectType: 'payment', subjectId: p.id, fromStatus: 'pending', toStatus: 'failed', changedByStaffId: actorId, reason: 'replacement_upgrade_cancelled', changedAt: now });
+      }
+      // The replacement search goes on: the vacancy reopens and the candidate is no longer "accepted".
+      await tx.vacancy.updateMany({ where: { id: placement.vacancyId, status: 'filled' }, data: { status: 'open' } });
+      if (placement.interviewId) {
+        await tx.replacementCandidate.updateMany({ where: { interviewId: placement.interviewId, status: 'accepted' }, data: { status: 'cancelled' } });
+      }
+      // He goes back to the available pool (he was never placed by an unpaid upgrade; an older record may say so).
+      if (placement.jobSeeker?.status === 'placed') {
+        await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'active' } });
+        await recordStatusChange(tx, { subjectType: 'job_seeker', subjectId: placement.jobSeekerId, fromStatus: 'placed', toStatus: 'active', changedByStaffId: actorId, reason: 'replacement_upgrade_cancelled', changedAt: now });
+      }
+      return true;
+    });
+    if (!done) return false;
+    const auditActor = actorId ?? (await this.prisma.staff.findFirst({ where: { role: 'ceo' }, select: { id: true } }))?.id ?? null;
+    if (auditActor) {
+      await this.auditService.log({
+        actorId: auditActor,
+        action: 'placement.replacement_upgrade_cancelled',
+        entityType: 'Placement',
+        entityCode: placement.code,
+        city: placement.city,
+        before: { status: 'awaiting_payment', countsAsReplacement: placement.countsAsReplacement },
+        after: { status: 'cancelled', countsAsReplacement: false, automatic: actorId === null },
+        reason,
+      });
+    }
+    // The business hears it in the app and by SMS.
+    await this.customerNotifications?.notify({ businessId: placement.businessId }, 'replacement_cancelled', {}, { dedupeKey: `replacement_cancelled:${placement.id}` }).catch(() => undefined);
+    await this.messaging?.send({
+      channel: 'sms', template: 'replacement_upgrade_cancelled', subjectType: 'business', subjectId: placement.businessId,
+      relatedType: 'placement', relatedId: placement.id, variables: { businessName: placement.business?.name ?? '' },
+    }).catch(() => undefined);
+    return true;
+  }
+
+  /**
+   * M10: claims whose 15-day replacement clock stands still because the
+   * business is suspended for good (Manager / CEO list).
+   */
+  async suspendedBusinessClaims(now = new Date()) {
+    const claims = await this.prisma.replacementClaim.findMany({
+      where: { clockPausedAt: { not: null }, placement: { business: { suspendedAt: { not: null }, suspendedUntil: null } } },
+      select: {
+        id: true, code: true, reportedAt: true, decision: true, clockPausedAt: true, clockPausedSeconds: true,
+        placement: { select: { id: true, code: true, business: { select: { id: true, code: true, name: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true } } } },
+      },
+      orderBy: { clockPausedAt: 'asc' },
+    });
+    return claims.map((c) => ({
+      claimId: c.id,
+      claimCode: c.code,
+      decision: c.decision,
+      reportedAt: c.reportedAt,
+      pausedSince: c.clockPausedAt,
+      pausedDays: Math.floor(claimPausedMs(c, c.placement.business, now) / (24 * 60 * 60 * 1000)),
+      placement: { id: c.placement.id, code: c.placement.code },
+      business: { id: c.placement.business.id, code: c.placement.business.code, name: c.placement.business.name, suspendedAt: c.placement.business.suspendedAt, reason: c.placement.business.suspensionReason },
+    }));
+  }
+
   async listPendingClaims(actorId: string) {
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
@@ -1865,6 +1997,8 @@ export class PlacementService {
     const outsideRules = refundWithCeo ? refundWithCeo.outsideRules : goodwill;
     let refundAmount: number;
     let daysElapsed = 0;
+    // M4 (rev 178): 100% means the first fee and every salary difference paid in the chain.
+    const chainFeePaise = (await chainRefundOf(this.prisma, rootId)).feePaise || rootPlacement.placementFee;
 
     if (outsideRules) {
       // A goodwill refund skips the guarantee rules, so check the basics here: the fee
@@ -1877,10 +2011,10 @@ export class PlacementService {
       }
       refundAmount = refundWithCeo
         ? refundWithCeo.amount
-        : dto?.amountPaise ?? rootPlacement.placementFee;
-      if (!Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > rootPlacement.placementFee) {
+        : dto?.amountPaise ?? chainFeePaise;
+      if (!Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > chainFeePaise) {
         throw new BadRequestException(
-          `amountPaise must be a whole number of paise between 1 and the placement fee (${rootPlacement.placementFee})`,
+          `amountPaise must be a whole number of paise between 1 and the placement fee (${chainFeePaise})`,
         );
       }
     } else {
@@ -1892,10 +2026,13 @@ export class PlacementService {
           hasSelectedReplacement: Boolean(selectedReplacement),
           claimAcceptedAt,
           dropoutReportedAt,
-          placementFee: rootPlacement.placementFee,
+          placementFee: chainFeePaise,
           hasExistingRefund: Boolean(existingRefund) && !refundWithCeo,
           searchDays: policy.replacementSearchDays,
           guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
+          // M10: the clock stands still while the business is suspended.
+          pausedMs: claimPausedMs(claim, placement.business, now),
+          clockPaused: claimClockPaused(claim, placement.business, now),
         },
         now,
       );

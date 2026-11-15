@@ -148,6 +148,15 @@ describe('InterviewService booking', () => {
     expect((await service.respondFromLink('single-use-token', 'no')).status).toBe('declined');
   });
 
+  it('M10 (rev 178): a suspended business interviews no one — no booking (replacement vacancies included) and no accepted offer', async () => {
+    const suspended = { ...vacancy.business, suspendedAt: new Date('2026-11-01T00:00:00Z'), suspendedUntil: null };
+    prisma.vacancy.findFirst.mockResolvedValue({ ...vacancy, replacementForPlacementId: 'placement-id', business: suspended });
+    await expect(service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1')).rejects.toThrow('suspended');
+    expect(tx.interview.create).not.toHaveBeenCalled();
+    prisma.interview.findUnique.mockResolvedValue({ ...liveInterview(), business: { ...liveInterview().business, suspendedAt: new Date('2026-11-01T00:00:00Z'), suspendedUntil: null } });
+    await expect(service.respondFromLink('single-use-token', 'yes')).rejects.toThrow('suspended');
+  });
+
   it('refuses candidates absent from the current Phase 14 matching results', async () => {
     matching.match.mockResolvedValue({ total: 0, pageSize: 10, matches: [] });
     await expect(service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1'))

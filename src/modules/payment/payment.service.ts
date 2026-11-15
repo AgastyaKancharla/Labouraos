@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
+import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
 import { isFeePaymentType } from './fee-payment-types';
 import { Payment, PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -1652,7 +1653,7 @@ export class PaymentService {
         const placementId = payment.placementId || payment.subjectId;
         const placement = await this.prisma.placement.findUnique({
           where: { id: placementId },
-          include: { replacementCandidates: true },
+          include: { replacementCandidates: true, business: { select: { suspendedAt: true, suspendedUntil: true } } },
         });
         if (!placement) {
           throw new NotFoundException(`Placement '${placementId}' not found`);
@@ -1704,6 +1705,9 @@ export class PaymentService {
             hasExistingRefund: false,
             searchDays: policy.replacementSearchDays,
             guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
+            // M10 (rev 178): the clock stands still while the business is suspended.
+            pausedMs: claimPausedMs(claim, placement.business, now),
+            clockPaused: claimClockPaused(claim, placement.business, now),
           },
           now,
         );

@@ -11,7 +11,14 @@ export interface PlacementRefundEligibilityInput {
   hasExistingRefund: boolean;
   searchDays?: number;
   guaranteeEndedReason?: string | null;
+  /** M10 (rev 178): milliseconds the clock stood still while the business was suspended (claim-clock.ts). */
+  pausedMs?: number;
+  /** M10: the business is suspended now, so the clock stands still and no refund falls due. */
+  clockPaused?: boolean;
 }
+
+/** Why a refund is not due while the business is suspended (the clock is paused, M10). */
+export const CLOCK_PAUSED_REASON = 'The replacement clock is paused while the business is suspended';
 
 export interface PlacementRefundEligibilityResult {
   eligible: boolean;
@@ -32,7 +39,8 @@ export interface PlacementRefundEligibilityResult {
  * - At least searchDays (from PricingPolicy, default 15) must have elapsed since the
  *   dropout was REPORTED (guide: "No replacement within 15 days of the dropout report"),
  *   not since the claim was decided — the decision can take up to 48 hours.
- * - Clock does not pause and does not restart.
+ * - The clock does not restart; it pauses only while the business is suspended
+ *   (M10, rev 178) and then continues from where it stopped.
  * - No refund has already been issued.
  * - Flat 100% refund of placement fee when search window passes without a selection.
  */
@@ -81,7 +89,11 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  const diffMs = Math.max(0, now.getTime() - startDate.getTime());
+  if (input.clockPaused) {
+    return { eligible: false, ineligibleReason: CLOCK_PAUSED_REASON, amountPaise: 0, daysOwed: 0, daysElapsed: 0 };
+  }
+
+  const diffMs = Math.max(0, now.getTime() - startDate.getTime() - (input.pausedMs ?? 0));
   const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (input.searchDays === undefined) {

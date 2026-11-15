@@ -164,6 +164,22 @@ export class PlacementController {
     return this.placementService.findAll(req.user.sub);
   }
 
+  /** M10 (rev 178): claims paused because the business is suspended for good. */
+  @Get('claims/suspended-businesses')
+  @RequireRoles('ceo', 'manager')
+  @RequirePermission('placement', 'read')
+  async suspendedBusinessClaims() {
+    return this.placementService.suspendedBusinessClaims();
+  }
+
+  /** M2 (rev 178): "Cancel now" for a replacement waiting for its salary difference (Manager / CEO, audited). */
+  @Post(':id/upgrade/cancel')
+  @RequireRoles('ceo', 'manager')
+  @RequirePermission('placement', 'write')
+  async cancelUpgrade(@Param('id') id: string, @Body() body: { reason?: string }, @Req() req: Request & { user: JwtPayload }) {
+    return this.placementService.cancelUpgradeNow(id, req.user.sub, body ?? {});
+  }
+
   @Get('claims/pending')
   @RequireRoles('ceo', 'manager', 'team_lead')
   @RequirePermission('placement', 'read')

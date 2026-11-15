@@ -30,7 +30,7 @@ import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePho
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PlacementService } from '../placement/placement.service';
-import { businessAccessMessage, businessCandidateAccess } from '../business/business-candidate-access';
+import { BUSINESS_SUSPENDED_MESSAGE, businessAccessMessage, businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 import { sameIndianMobile } from '../../common/phone/indian-mobile';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 
@@ -975,6 +975,8 @@ export class InterviewService {
       throw new BadRequestException('This interview is no longer awaiting a reply');
     }
     if (accepted) await this.assertTermsCurrent(interview.jobSeekerId);
+    // M10 (rev 178): a suspended business interviews no one, replacements included.
+    if (accepted && isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
     const status = accepted ? 'confirmed' : 'declined';
     const changed = await this.prisma.$transaction(async (tx) => {
       const update = await tx.interview.updateMany({

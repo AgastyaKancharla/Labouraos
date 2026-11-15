@@ -1,6 +1,7 @@
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { claimClockPaused, claimPausedMs, SuspensionWindow } from '../placement/claim-clock';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
-import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
+import { CLOCK_PAUSED_REASON, evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { GuaranteeState } from './growth.constants';
 
 /**
@@ -74,7 +75,7 @@ export interface ChainPlacement {
   dropoutReportedAt: Date | null;
   guaranteeEndedReason: string | null;
   /** Claims on this placement, any order. */
-  claims: Array<{ decision: string | null; reportedAt: Date | null; decidedAt: Date | null }>;
+  claims: Array<{ decision: string | null; reportedAt: Date | null; decidedAt: Date | null; clockPausedAt?: Date | null; clockPausedSeconds?: number }>;
   replacementCandidates: Array<{ status: string }>;
 }
 
@@ -85,6 +86,8 @@ export interface PlacementFeeExposureInput {
   chain: ChainPlacement[];
   /** A live refund on any placement of the chain. */
   refunded: boolean;
+  /** M10 (rev 178): the business's suspension, which pauses the 15-day replacement clock. */
+  business?: SuspensionWindow | null;
   windowDays: number;
   searchDays: number;
 }
@@ -125,12 +128,14 @@ export function classifyPlacementFeePayment(input: PlacementFeeExposureInput, no
         hasExistingRefund: false,
         searchDays: input.searchDays,
         guaranteeEndedReason: accepted.guaranteeEndedReason,
+        pausedMs: claimPausedMs(decided, input.business, now),
+        clockPaused: claimClockPaused(decided, input.business, now),
       },
       now,
     );
     if (eligibility.eligible) {
       replacementState = 'refund_due';
-    } else if (eligibility.ineligibleReason?.startsWith('Refund is not payable before')) {
+    } else if (eligibility.ineligibleReason?.startsWith('Refund is not payable before') || eligibility.ineligibleReason === CLOCK_PAUSED_REASON) {
       replacementState = replacementState ?? 'under_guarantee';
     }
   }

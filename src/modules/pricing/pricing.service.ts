@@ -79,6 +79,12 @@ export class PricingService {
       }
     }
 
+    // M2 (rev 178): days an unpaid replacement salary difference may wait (the database allows 1–30).
+    if (updates.upgradePaymentCancelDays !== undefined && updates.upgradePaymentCancelDays !== null) {
+      const days = updates.upgradePaymentCancelDays;
+      if (!Number.isSafeInteger(days) || days < 1 || days > 30) throw new BadRequestException('upgradePaymentCancelDays must be a whole number of days from 1 to 30');
+    }
+
     // Customer app sign-up tracker settings: whole numbers in a sane range, or null for the default.
     for (const [field, [min, max]] of Object.entries(SIGNUP_SETTING_RANGES)) {
       const value = (updates as Record<string, unknown>)[field];
@@ -105,6 +111,7 @@ export class PricingService {
         placementPaymentDueHours: updates.placementPaymentDueHours ?? before.placementPaymentDueHours,
         replacementWindowDays: updates.replacementWindowDays ?? before.replacementWindowDays,
         replacementSearchDays: updates.replacementSearchDays ?? before.replacementSearchDays,
+        upgradePaymentCancelDays: updates.upgradePaymentCancelDays ?? before.upgradePaymentCancelDays,
         maxFreeReplacements: updates.maxFreeReplacements ?? before.maxFreeReplacements,
         maxReplacementRejections: updates.maxReplacementRejections ?? before.maxReplacementRejections,
         claimReportDays: updates.claimReportDays ?? before.claimReportDays,

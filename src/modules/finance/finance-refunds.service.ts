@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
 import { AuditService } from '../../common/audit/audit.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -326,7 +327,7 @@ export class FinanceRefundsService {
         where: { id: placementId },
         select: {
           id: true, code: true, placementFee: true, gstAmount: true, paidAt: true, joinedDate: true, dropoutReportedAt: true, rootPlacementId: true, status: true,
-          business: { select: { id: true, code: true, name: true } },
+          business: { select: { id: true, code: true, name: true, suspendedAt: true, suspendedUntil: true } },
           jobSeeker: { select: { name: true } },
           vacancy: { select: { tradeSkill: true } },
         },
@@ -340,7 +341,10 @@ export class FinanceRefundsService {
         this.prisma.payoutAccount.findFirst({ where: { ownerType: 'business', ownerId: placement.business.id, status: { not: 'superseded' } }, orderBy: { createdAt: 'desc' }, select: { method: true, maskedValue: true, verifiedName: true, status: true } }),
       ]);
       const amount = row?.amountPaise ?? payment?.amount ?? placement.placementFee;
-      const searchEnds = (claim?.reportedAt ?? placement.dropoutReportedAt) ? new Date((claim?.reportedAt ?? placement.dropoutReportedAt)!.getTime() + policy.replacementSearchDays * 86_400_000) : null;
+      // M10 (rev 178): the search does not end while the business is suspended; it continues after.
+      const searchEnds = (claim?.reportedAt ?? placement.dropoutReportedAt) && !claimClockPaused(claim, placement.business, now)
+        ? new Date((claim?.reportedAt ?? placement.dropoutReportedAt)!.getTime() + policy.replacementSearchDays * 86_400_000 + claimPausedMs(claim, placement.business, now))
+        : null;
       const shown = candidates.length;
       const refused = candidates.filter((c) => c.status === 'rejected').length;
       const withinLimit = amount <= limit;

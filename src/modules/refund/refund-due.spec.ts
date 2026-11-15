@@ -447,7 +447,8 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       // Proves no N+1: exactly 1 findMany for candidates, 1 for hits, 1 for placements, and 2 for payments
       expect(mockPrisma.jobSeeker.findMany).toHaveBeenCalledTimes(1);
       expect(mockPrisma.jobSeekerHit.findMany).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.placement.findMany).toHaveBeenCalledTimes(1);
+      // The dropped placements, then the chains' refunds (M4, chain-refund.ts): set-based, never per row.
+      expect(mockPrisma.placement.findMany).toHaveBeenCalledTimes(2);
       expect(mockPrisma.payment.findMany).toHaveBeenCalledTimes(2);
     });
 
@@ -507,12 +508,17 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
     });
   });
 
-  describe('3b. A dropped replacement shows the first placement\'s fee (review M4, display only)', () => {
-    it('lists the root fee, not the replacement row\'s own salary-upgrade difference', async () => {
+  describe('3b. M4 (rev 178): a 100% refund is the first fee plus every salary difference paid in the chain', () => {
+    it('lists the chain total, each part with its own GST, never the replacement row\'s own amount', async () => {
       const dropout = new Date(serverNow.getTime() - 20 * 24 * 60 * 60 * 1000);
       mockPrisma.placement.findMany.mockImplementation(async (args?: unknown) => {
-        const where = (args as { where?: { id?: { in?: string[] } } } | undefined)?.where;
-        if (where?.id?.in) return [{ id: 'pl-root', placementFee: 1000000 }];
+        const where = (args as { where?: { OR?: unknown[] } } | undefined)?.where;
+        if (where?.OR) {
+          return [
+            { id: 'pl-root', rootPlacementId: null, placementFee: 1000000, gstAmount: 180000 },
+            { id: 'pl-up', rootPlacementId: 'pl-root', placementFee: 100000, gstAmount: 18000 },
+          ];
+        }
         return [{
           id: 'pl-rep', code: 'PL-00009', city: 'Bengaluru', status: 'dropped_out', rootPlacementId: 'pl-root',
           dropoutReportedAt: dropout, dropoutDateCallerSupplied: false, joinedDate: new Date('2026-05-20T00:00:00.000Z'),
@@ -522,7 +528,13 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       });
       mockPrisma.payment.findMany.mockResolvedValue([]);
       const rows = await refundService.getRefundsDue('ceo-1', serverNow);
-      expect(rows).toEqual([expect.objectContaining({ code: 'PL-00009', amount: 1000000, amountOwed: 1000000 })]);
+      expect(rows).toEqual([expect.objectContaining({
+        code: 'PL-00009', amount: 1100000, amountOwed: 1100000,
+        refundParts: [
+          { placementId: 'pl-root', kind: 'placement_fee', feePaise: 1000000, gstPaise: 180000 },
+          { placementId: 'pl-up', kind: 'salary_difference', feePaise: 100000, gstPaise: 18000 },
+        ],
+      })]);
     });
   });
 
