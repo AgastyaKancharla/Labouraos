@@ -62,7 +62,7 @@ whether tests pass.
 | --- | --- | --- |
 | Runtime | Node.js 24.21.0 | Pinned in `.nvmrc` |
 | Language | TypeScript 5.7.3, `strict: true` | `strict` is mandatory, never disable it |
-| Framework | NestJS 11.2.7 | Pinned in `package.json` |
+| Framework | NestJS 11.2.10 | Pinned in `package.json` (11.2.10 ships multer 2.5.0, GHSA-q7qp-rjg7-q26m) |
 | Database | PostgreSQL 17+ | Managed (Supabase / Neon / cloud provider) |
 | ORM | Prisma 6.19.3 | `schema.prisma` is the single source of truth for the data model |
 | Tests | Jest 29.7.0 (NestJS default) | Pinned in `package.json` |
@@ -85,7 +85,9 @@ with a mock implementation and a real one. Which one gets injected is
 controlled by a per-provider environment variable (`OTP_PROVIDER_MODE`,
 `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE`),
 each defaulting to `mock` when unset. Never add a second way to pick a
-provider implementation — extend this one. ID checks have no outside provider
+provider implementation — extend this one. On the live setup
+(`LABOURA_SETUP=live`, §9b) the OTP, SMS and payment providers and the human
+check must be real: the web service and the worker refuse to start on `mock`. ID checks have no outside provider
 at all (guide, 14 Nov): Aadhaar is checked in-house from its Secure QR and
 PAN / driving licence / voter ID by the Team Lead from a live photo of the card.
 
@@ -295,6 +297,20 @@ That is all: it automatically uses the shared queue and worker, the keeper puts 
 **A one-off job** (queued by code, not on a schedule, like the recording copy): register the handler with `jobQueue.register('<name>', handler)` in `onModuleInit` when `runsJobs()`, and queue runs with `jobQueue.add('<name>', data, opts)` wrapped in a timeout on HTTP paths.
 
 Nothing that starts with the app may wait for Redis: the app must start and answer `/health` with Redis down (`startScheduledJob` gives up after `REDIS_STARTUP_TIMEOUT_MS`, default 2 s, and the keeper catches up when Redis answers).
+
+---
+
+## 9b. Platform security rules (security fixes, 16 Nov)
+
+- **Setup:** `LABOURA_SETUP` must be exactly `live` or `test` on the web service and the worker (`src/common/process/laboura-setup.ts`, called first in `main.ts` and `worker.ts`). On `live` start-up is refused with `OTP_TEST_MODE=on`, `CUSTOMER_OTP_TEST_MODE=on`, or a mock OTP, SMS or payment provider or human check. A new "test only" switch must be added to `liveSetupProblems`. The tests run as `test` (`src/test-support/jest-setup.ts`).
+- **CSV:** every CSV builder writes cells with `csvCell` / `csvLine` (`src/common/csv/csv-cell.ts`) or `toCsv`; `csv-formula-guard.spec.ts` fails on a hand-rolled escaper. Names, business names and localities that start with `=` `+` `-` `@` are refused on every JSON request by `FormulaTextInterceptor` (400 `TEXT_STARTS_WITH_SYMBOL`, field named); a new name-like body field goes in its `FORMULA_START_FIELDS`. The apps check it in their forms too (en/kn/hi).
+- **Uploads:** the stored content type is always read from the file's first bytes (`detectSelfieImageType`, `detectBillFileType` in `src/common/image-type.ts`), never the client's `mimetype`. A new upload adds its type and size to `scripts/supabase-storage-limits.sql` (`bucket-limits.spec.ts` checks the two agree), and the PR asks the owner to run it again.
+- **Outbound fetches** of an address that came from outside (today: call recordings) go through an allow-list and the public-address check (`src/modules/call/recording-url-policy.ts`): https only, host on a setting, DNS answers checked at connect time, every redirect re-checked, a size cap.
+- **Content-Security-Policy** on the web app and Laboura Field pages (`src/common/http/content-security-policy.ts`): only Laboura's own scripts (`'wasm-unsafe-eval'` for the QR readers). A screen that needs a new outside origin (a font, an image host, an API) adds it there with a test; never `'unsafe-inline'` or `'unsafe-eval'` for scripts. `CONTENT_SECURITY_POLICY=report-only` is the switch if a screen breaks. No `X-Powered-By`.
+- **Public answers** carry no error text: `/health/ready` names components with `ok` / `fail` only; details are CEO-only (`/health/ready/details`).
+- **Hashes of phones** stored for lookups are keyed HMACs (customer OTP limiter, `OtpSession.phoneHash` via `src/common/otp/otp-phone-hash.ts`), never a plain SHA-256. Codes and request ids come from `node:crypto`, never `Math.random`.
+- **Customer OTP abuse (INF-4):** the human check is asked for per phone or installation (from the 4th code an hour), per address (after `CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK` other numbers an hour) and for everyone above `CUSTOMER_OTP_DAILY_LIMIT` (sending never stops); one address may ask 20 codes an hour.
+- **Backups** written by `scripts/backup.sh` are encrypted with `BACKUP_ENCRYPTION_KEY` and need `DB_PASSWORD` (no defaults); `backups/` is never committed.
 
 ---
 

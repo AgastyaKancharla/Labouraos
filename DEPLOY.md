@@ -118,6 +118,17 @@ Uploaded files are kept in Supabase Storage. Laboura needs four buckets, all **p
    - Copy the **Project URL** (like `https://abcdefghijkl.supabase.co`). Save it as **SUPABASE_URL**.
    - Find the **service_role** key (sometimes called the **secret** key). Click **Reveal** and copy it. Save it as **SUPABASE_SERVICE_ROLE_KEY**. Treat it like a bank password: it can read every file. Never paste it into chat or email.
 
+7. **Set the size and file-type limits on the four buckets** (defence in depth: the app already checks every upload, these make Supabase refuse anything else too, even with a leaked key). In the project, click **SQL Editor** in the left menu, then **New query**. Open the file `scripts/supabase-storage-limits.sql` in the code on GitHub, click **Raw**, copy everything, paste it into the query box and click **Run**. The result at the bottom shows four rows, each `public = false`, with these limits:
+
+   | Bucket | Largest file | File types |
+   | --- | --- | --- |
+   | `candidate-photos` | 5 MB | JPEG, PNG, WebP |
+   | `business-photos` | 8 MB | JPEG, PNG, WebP |
+   | `agreements` | 10 MB | HTML (signed agreement copies), PDF, JPEG, PNG, WebP, HEIC (expense bills) |
+   | `recordings` | 50 MB | MP3 (`audio/mpeg`) |
+
+   Running it again is safe. It never deletes a file and never makes a bucket public. If a later version of the code changes an upload limit, the automated tests fail until this file is changed to match, and the PR says to run it again.
+
 The production server refuses to start unless all four `*_STORAGE_MODE` settings are `supabase` and both of these keys are filled in. `render.yaml` already sets the four modes to `supabase` on the web service and the worker; you only paste the two keys.
 
 ---
@@ -157,9 +168,12 @@ Every new table added to the code later must also switch row level security on. 
    | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | Empty until the company current account opens. See [UPI details](#upi-details). |
    | `ALERT_WEBHOOK_URL` | A Slack (or similar) incoming-webhook address for error alerts. Empty is allowed: alerts then only go to the logs. |
    | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Empty for testing. Required before real data (Step 9). |
-   | `LABOURA_SETUP` | `live` (the worker copies it from the web service). |
+   | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE` | `real` (MSG91 or another DLT-registered gateway). **`render.yaml` is the live setup: the server refuses to start with `mock` or an empty box** (INF-3). The worker copies both. |
+   | `PAYMENT_PROVIDER_MODE` | `real` (Razorpay, for card payments). Refused when `mock` or empty. |
+   | `HUMAN_CHECK_PROVIDER_MODE` | The real CAPTCHA or device attestation provider, once it is built. Refused when `mock` or empty: **until a real provider exists, the live setup cannot start** (see [What to set before going live](#what-to-set-before-going-live)). |
+   | `RECORDING_URL_HOSTS` | The calling vendor's recording host(s), comma-separated (for example `recordings.vendor.com`, or `*.vendor-cdn.com` for every sub-domain). Ask the calling vendor which address their recording links start with. Empty: no recording is copied (IN-4). |
    | `UIDAI_CERT_FINGERPRINTS` | The SHA-256 fingerprints of the UIDAI certificates, comma-separated, after the go-live check below (on the web service **and** the worker). **Neither starts until this matches the certificates in the code.** |
-   | Vendor keys (`SMS_*`, `DLT_*`, `WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | Empty until each vendor is signed up. Every vendor runs in mock mode until then. |
+   | Vendor keys (`SMS_*`, `DLT_*`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | **Required on the live setup** for the OTP/SMS gateway and Razorpay. WhatsApp and calling keys (`WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`) may stay empty: those two vendors can stay mock until signed up. |
 
 7. Click **Deploy Blueprint** (some screens say **Apply**).
 8. Render creates the Key Value first, then builds and starts the web service and the worker. The first build takes several minutes.
@@ -167,7 +181,9 @@ Every new table added to the code later must also switch row level security on. 
 Settings that Render creates by itself, and that you never type, are `JWT_SECRET`, `LOGIN_CODE_SECRET`, `STAFF_BOOTSTRAP_SECRET`, `CALL_ROUTING_KEY`, `PAYOUT_ACCOUNT_KEY` and `PERMANENT_BAN_HASH_KEY`. The worker copies the ones it needs from `laboura-api`. Both services must share the same `LOGIN_CODE_SECRET`, or a code shown on the login code screen will not match. `REDIS_HOST` and `REDIS_PORT` are filled in from `laboura-redis` automatically, with `REDIS_TLS` set to `false`: the private address does not use TLS and has no password.
 
 > [!IMPORTANT]
-> **Settings written in `render.yaml` are put back every time Render syncs the Blueprint** (for example `NODE_ENV`, `PROCESS_ROLE`, the `*_STORAGE_MODE` and `*_PROVIDER_MODE` values). Changing one of those in the dashboard lasts only until the next sync. To switch a vendor from `mock` to `real`, ask Claude to change `render.yaml` on both services. The settings you pasted in step 6 are yours: Render never overwrites them.
+> **Settings written in `render.yaml` are put back every time Render syncs the Blueprint** (for example `NODE_ENV`, `PROCESS_ROLE`, `LABOURA_SETUP=live`, the `*_STORAGE_MODE` values and `WHATSAPP_PROVIDER_MODE` / `TELEPHONY_PROVIDER_MODE`). Changing one of those in the dashboard lasts only until the next sync. To switch WhatsApp or calling from `mock` to `real`, ask Claude to change `render.yaml` on both services. The settings you pasted in step 6 are yours (including `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE` and `HUMAN_CHECK_PROVIDER_MODE`, which the worker copies from `laboura-api`): Render never overwrites them.
+>
+> **An existing paid setup created before this change** keeps its old `mock` values, and with `LABOURA_SETUP=live` now written in `render.yaml` it will refuse to start after the next sync until the real vendors are set in **`laboura-api` → Environment**. That is on purpose. For a test copy with made-up data, use `render.free.yaml` instead.
 
 ---
 
@@ -178,7 +194,7 @@ Settings that Render creates by itself, and that you never type, are `JWT_SECRET
    - Pre-Deploy: `npm run migrate:deploy` printing `All migrations have been successfully applied.` (or `No pending migrations to apply.` on later deploys).
    - Start: `Nest application successfully started`.
 2. **The web service is alive.** Open `https://<your laboura-api address>/health` in the browser. It shows `{"status":"ok", ...}`. Render itself watches this address and restarts the web service if it stops answering.
-3. **The database, the queue and the worker are all reachable.** Open `https://<your laboura-api address>/health/ready`. It shows `"status":"ready"`, `"postgres":"ok"`, `"redis":"ok"` and a `"worker"` section with `"status":"alive"`. If any of them fails, the page answers with an error that names which one (`postgres`, `redis` or `worker`). Point an uptime monitor (for example UptimeRobot, free) at this address so someone is told when it fails.
+3. **The database, the queue and the worker are all reachable.** Open `https://<your laboura-api address>/health/ready`. It shows `"status":"ready"`, `"postgres":"ok"`, `"redis":"ok"`, `"worker":"ok"` and `"schedules":"ok"`. If any of them fails, the page answers with an error that names which one (`postgres`, `redis`, `worker` or `schedules`) and shows `"fail"` next to it. This page is public, so it says only the names and `ok` / `fail` (INF-8); the reason (the error text, when the worker was last heard from, which job schedule is missing) is on **System Health** for the CEO, or at `/health/ready/details` while signed in as the CEO. Point an uptime monitor (for example UptimeRobot, free) at `/health/ready` so someone is told when it fails.
 4. **The worker.** Open **`laboura-worker`**, then **Logs**. Near the top:
    ```text
    Starting background worker application context...
@@ -239,6 +255,27 @@ Do this straight after Step 7. If the only CEO phone is lost before a second CEO
 
 ---
 
+### What to set before going live
+
+`render.yaml` is the **live** setup (`LABOURA_SETUP=live`). On live the web service and the worker **refuse to start** with anything that shows codes on screen or pretends a vendor answered (INF-3). Before the first live start, in **`laboura-api` → Environment**:
+
+| Setting | Live value | Refused on live |
+| --- | --- | --- |
+| `LABOURA_SETUP` | `live` (written in `render.yaml`; the worker copies it) | anything but exactly `live` or `test` is refused everywhere |
+| `OTP_PROVIDER_MODE` | `real` (or `msg91` / `dlt`) + `SMS_API_KEY`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID` | `mock`, empty |
+| `SMS_PROVIDER_MODE` | `real` + `SMS_API_URL`, `SMS_DLT_TEMPLATE_IDS` | `mock`, empty |
+| `PAYMENT_PROVIDER_MODE` | `real` (or `razorpay`) + `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | `mock`, empty |
+| `HUMAN_CHECK_PROVIDER_MODE` | the real CAPTCHA / Play Integrity / App Attest provider | `mock`, empty |
+| `OTP_TEST_MODE`, `CUSTOMER_OTP_TEST_MODE` | `off` (written in `render.yaml`) | `on` |
+| `RECORDING_URL_HOSTS` | the calling vendor's recording host(s), before `TELEPHONY_PROVIDER_MODE` goes `real` | (empty is allowed: no recording is copied) |
+| `UIDAI_CERT_FINGERPRINTS` | the checked fingerprints (box below) | missing or not matching |
+| `BANK_FEED_WEBHOOK_SECRET`, `PAYMENT_WEBHOOK_SECRET`, `PAYOUT_WEBHOOK_SECRET`, `MESSAGE_WEBHOOK_SECRET` | 32+ characters each, shared with the vendor | (webhooks are refused without them) |
+
+`WHATSAPP_PROVIDER_MODE` and `TELEPHONY_PROVIDER_MODE` may stay `mock` on live until those vendors are signed up. If the deploy log says **"Refusing to start the live setup"**, it lists exactly which of the settings above is still wrong.
+
+> [!IMPORTANT]
+> **There is no real human check provider in the code yet** (only the mock, whose token is public). Until one is built and `HUMAN_CHECK_PROVIDER_MODE` names it, the live setup does not start. Keep testing on the free tier (`render.free.yaml`, `LABOURA_SETUP=test`) until then.
+
 ### Step 9: Before any real data, the go-live checklist
 
 Up to here the system may hold only made-up test data. Tick every line before a real candidate, worker or business is entered.
@@ -250,7 +287,8 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] `ALERT_WEBHOOK_URL` is set, so errors reach a person and not only the logs.
 - [ ] An uptime monitor watches `/health/ready`.
 - [ ] Supabase **Security Advisor** shows no "RLS disabled" errors, and the Data API is off (Step 4).
-- [ ] The four buckets exist and are private (Step 3).
+- [ ] The four buckets exist and are private, and `scripts/supabase-storage-limits.sql` has been run (Step 3, item 7).
+- [ ] Everything in [What to set before going live](#what-to-set-before-going-live) is set; the deploy log shows no "Refusing to start".
 - [ ] **The UIDAI certificate for the Aadhaar QR check is confirmed** (see the box below).
 - [ ] **Customer app, before it opens to the public:** `LABOURA_SETUP` is `live` and `HUMAN_CHECK_PROVIDER_MODE` names a real CAPTCHA or device attestation provider. The live setup refuses to start with the mock human check (its token is public), and with `CUSTOMER_OTP_TEST_MODE=on`.
 
@@ -387,7 +425,7 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
 
 **F3. Copy the two database addresses.** Do [Step 2](#step-2-copy-the-two-database-addresses) exactly as written, in the `laboura-test` project. The addresses will contain `ap-south-1` instead of `ap-southeast-1`; that is correct. You end with **DATABASE_URL** (Transaction pooler, port 6543, ending `?pgbouncer=true&connection_limit=5&sslmode=require`) and **DIRECT_URL** (Session pooler, port 5432, ending `?sslmode=require`).
 
-**F4. Create the four private buckets and copy the storage keys.** Do [Step 3](#step-3-create-the-four-private-file-buckets-and-copy-the-storage-keys): buckets `candidate-photos`, `business-photos`, `agreements`, `recordings`, each with **Public bucket** off. You end with **SUPABASE_URL** and **SUPABASE_SERVICE_ROLE_KEY**.
+**F4. Create the four private buckets and copy the storage keys.** Do [Step 3](#step-3-create-the-four-private-file-buckets-and-copy-the-storage-keys): buckets `candidate-photos`, `business-photos`, `agreements`, `recordings`, each with **Public bucket** off, and run `scripts/supabase-storage-limits.sql` (Step 3, item 7). You end with **SUPABASE_URL** and **SUPABASE_SERVICE_ROLE_KEY**.
 
 **F5. Turn off the Supabase Data API.** Do [Step 4](#step-4-turn-off-the-supabase-data-api).
 
@@ -398,7 +436,7 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
 2. Pick the repository **Labouraos**, branch **main**.
 3. In **Blueprint Path**, type `render.free.yaml` (instead of the default `render.yaml`).
 4. Render lists two things: `laboura-test` (Web Service, Free, Singapore) and `laboura-test-redis` (Key Value, Free, Singapore). If it shows a price, or a Background Worker, stop: you picked `render.yaml` by mistake.
-5. Render asks for the settings that have no value. Paste `DATABASE_URL`, `DIRECT_URL` (F3), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (F4), and `PUBLIC_APP_URL` = `https://laboura-test.onrender.com`. For `COMPANY_UPI_VPA` and `COMPANY_UPI_PAYEE_NAME` type a made-up UPI id and name (for example `test@upi` and `Laboura Test`). Leave `ALERT_WEBHOOK_URL` empty.
+5. Render asks for the settings that have no value. Paste `DATABASE_URL`, `DIRECT_URL` (F3), `SUPABASE_URL`, `SUPABASE_SERVICE_ROLE_KEY` (F4), and `PUBLIC_APP_URL` = `https://laboura-test.onrender.com`. For `COMPANY_UPI_VPA` and `COMPANY_UPI_PAYEE_NAME` type a made-up UPI id and name (for example `test@upi` and `Laboura Test`). Leave `ALERT_WEBHOOK_URL` and `RECORDING_URL_HOSTS` empty.
 6. Click **Deploy Blueprint**.
 
 *Way B, by hand:*
@@ -428,7 +466,9 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
    | `COMPANY_UPI_VPA`, `COMPANY_UPI_PAYEE_NAME` | A made-up UPI id and name (payment links are refused while empty) |
    | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` |
    | `CLOUDFLARE_ACCESS_ENFORCED` | `false` (testing only) |
-   | `LABOURA_SETUP` | `test` (made-up data only: the UIDAI certificates need no `UIDAI_CERT_FINGERPRINTS` here while every vendor is `mock`) |
+   | `LABOURA_SETUP` | `test`, exactly (made-up data only: the UIDAI certificates need no `UIDAI_CERT_FINGERPRINTS` here while every vendor is `mock`; any other value refuses to start) |
+   | `HUMAN_CHECK_PROVIDER_MODE` | `mock` |
+   | `CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK` | `3` |
 
 4. Click **Deploy Web Service**.
 
@@ -436,7 +476,7 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
 
 **F8. Check it is up.**
 1. Open `https://laboura-test.onrender.com/health`. It shows `"status":"ok"`.
-2. Open `https://laboura-test.onrender.com/health/ready`. It shows `"status":"ready"`, `"postgres":"ok"`, `"redis":"ok"`, a `"worker"` section with `"status":"alive"` and a `"schedules"` section with `"status":"ok"`. Right after the first start, wait one minute and reload if `schedules` is not `ok` yet.
+2. Open `https://laboura-test.onrender.com/health/ready`. It shows `"status":"ready"`, `"postgres":"ok"`, `"redis":"ok"`, `"worker":"ok"` and `"schedules":"ok"` (names and ok/fail only; the CEO sees the details on System Health). Right after the first start, wait one minute and reload if `schedules` is not `ok` yet.
 3. In Supabase, open **Table Editor**: it lists `Staff`, `JobSeeker`, `Payment` and the rest. Then **Advisors**, **Security Advisor**, **Rerun**: there must be no "RLS disabled in public" error.
 
 **F9. Create the first CEO, set up the authenticator and a second CEO.** Do [Step 7](#step-7-create-the-first-ceo-account) and [Step 8](#step-8-create-a-second-ceo-account-on-a-different-phone), using `https://laboura-test.onrender.com` as the address. The first CEO is created on the app's own set-up page; nothing is typed into any other website.
@@ -549,10 +589,12 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `PAYOUT_ACCOUNT_KEY` | Generated by Render, shared with the worker | Encrypts payout UPI and bank details |
 | `PERMANENT_BAN_HASH_KEY` | Generated by Render, shared with the worker | Keys the phone and ID hashes of permanent bans, so the same person cannot register again. **Never change it**: old bans would stop matching |
 | `CUSTOMER_JWT_SECRET` | Generated by Render | Signs sign-ins of the Laboura customer app (job seekers, businesses, referral partners). Separate from `JWT_SECRET`, so a customer can never use a staff door |
-| `LABOURA_SETUP` | `live` on the live setup, `test` on the test setup (the free tier is always `test`); the worker copies it from the web service | Marks which setup this is: the customer OTP test mode is allowed only on `test`, and only `test` with no real vendor may start without `UIDAI_CERT_FINGERPRINTS` |
+| `LABOURA_SETUP` | `live` in `render.yaml` (fixed), `test` in `render.free.yaml` (fixed); the worker copies it from the web service | Required, exactly `live` or `test`: the web service and the worker refuse to start otherwise (INF-3). `live` also refuses the OTP test modes and the mock OTP, SMS and payment vendors and mock human check ([What to set before going live](#what-to-set-before-going-live)). The customer OTP test mode is allowed only on `test`, and only `test` with no real vendor may start without `UIDAI_CERT_FINGERPRINTS` |
+| `OTP_TEST_MODE` | `off` on live (fixed in `render.yaml`) | Staff OTP test mode (codes on screen while the OTP sender is mock). Refused on live |
 | `CUSTOMER_OTP_TEST_MODE` | `off` (paid, fixed); `on` on the free test tier | Shows the customer app's OTP code on screen, for testing with pretend SMS. **The server refuses to start with `on` unless `LABOURA_SETUP=test`**, so the live setup can never show codes. The staff OTP test mode does not turn it on |
-| `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it, sending pauses and an alert goes to `ALERT_WEBHOOK_URL`; check for abuse before raising it |
-| `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **The server refuses to start with `mock` when `LABOURA_SETUP=live`.** Any value without a provider refuses every check |
+| `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it sending does not stop: every code needs the human check (existing customers still get codes) and an alert goes to `ALERT_WEBHOOK_URL` (INF-4); check for abuse before raising it |
+| `CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK` | `3` (fixed) | Different phone numbers one internet address may ask sign-in codes for in an hour before the human check is asked for (INF-4). One address may ask at most 20 codes an hour in all |
+| `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup; asked for on live (`render.yaml`) | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **The server refuses to start with `mock` when `LABOURA_SETUP=live`.** Any value without a provider refuses every check |
 | `GOOGLE_NONCE_REQUIRED` | `off` (empty) until the customer app sends a nonce | `on` refuses Google sign-ins without a nonce (replay protection). The app does not send one yet |
 | `APPLE_CLIENT_ID_IOS`, `APPLE_CLIENT_ID_WEB` | From the Apple developer account (the iPhone app's bundle id; the web Services ID) | Turns on "Sign in with Apple" in the customer app. Empty: Apple sign-in is off and refused |
 | `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | From the Laboura Firebase project (Project settings, then Your apps; for Android the client id appears once the app's SHA-1 fingerprint is added) | Turns on "Continue with Google" in the customer app. Leave all three empty and the app shows mobile + OTP only. Changing them needs no redeploy of the app, only a restart of `laboura-api` |
@@ -565,7 +607,10 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `CLOUDFLARE_ACCESS_ENFORCED`, `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Step 9 | Identity check in front of the office consoles |
 | `ALERT_WEBHOOK_URL` | Slack-style webhook | Where error alerts are posted |
 | `UIDAI_CERT_FINGERPRINTS` | The go-live check (Step "Before real data") | SHA-256 fingerprints of the UIDAI certificates in the code, confirmed against UIDAI's page; the live service won't start until they match |
-| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE`, `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
+| `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE`, `PAYMENT_PROVIDER_MODE` | Live: the real vendor, asked for once (`render.yaml`; the worker copies them). Test: `mock` (fixed in `render.free.yaml`) | Picks the mock or the real vendor; the only switch for each vendor. `mock` is refused on live |
+| `WHATSAPP_PROVIDER_MODE`, `TELEPHONY_PROVIDER_MODE` | `mock` (fixed) until each vendor is signed up | Picks the mock or the real vendor; the only switch for each vendor |
+| `RECORDING_URL_HOSTS` | The calling vendor's recording host(s), comma-separated (`*.example.com` for sub-domains); empty until calling is real. The worker copies it | Call recordings are copied only from these https hosts, never from a private or internal address and never over plain http (IN-4). Empty: nothing is fetched |
+| `CONTENT_SECURITY_POLICY` | not set (= `enforce`) | The web app's and Laboura Field's Content-Security-Policy (IN-6): only Laboura's own scripts run. `report-only`: browsers only report a breach in the console (try this first if a screen ever stops working after a change, then ask Claude to fix the policy); `off` removes it |
 | `CUSTOMER_PUSH_PROVIDER_MODE` | `mock` (fixed) until push is tested on a real phone | Laboura app notifications: `mock` writes them to the log; `real` sends them through Expo's free push service (Google FCM for Android, Apple APNs for iPhone). The inbox inside the app works either way. Before `real`: upload the Firebase server key (FCM V1 service account) to the Expo project, and later the Apple push key |
 | `EXPO_ACCESS_TOKEN` | empty | Only if "enhanced push security" is switched on in the Expo account; the worker copies it from the web service |
 | `SMS_API_KEY`, `SMS_API_URL`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID`, `SMS_DLT_TEMPLATE_IDS` | From the SMS gateway | OTP and SMS messages. Register a DLT template for every SMS template name, including `replacement_upgrade_cancelled` ("your replacement was cancelled because the salary difference was not paid in time", rev 178), `selection_cancelled` (to the job seeker: "the job you were selected for was cancelled", Fable re-check) and `interview_cancelled` (to the job seeker: "your interview is cancelled because the business is suspended"), and add its id to `SMS_DLT_TEMPLATE_IDS` |

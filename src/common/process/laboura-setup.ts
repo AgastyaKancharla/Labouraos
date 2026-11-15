@@ -32,7 +32,7 @@ function mode(env: NodeJS.ProcessEnv, key: string): string {
 /** Why a live process may not start (empty: it may). */
 export function liveSetupProblems(env: NodeJS.ProcessEnv = process.env): string[] {
   const problems: string[] = [];
-  if ((env.OTP_TEST_MODE ?? '').trim().toLowerCase() === 'on') problems.push('OTP_TEST_MODE=on (OTP codes would be shown on screen)');
+  if ((env['OTP_TEST_MODE'] ?? '').trim().toLowerCase() === 'on') problems.push('OTP_TEST_MODE=on (OTP codes would be shown on screen)');
   if ((env.CUSTOMER_OTP_TEST_MODE ?? '').trim().toLowerCase() === 'on') problems.push('CUSTOMER_OTP_TEST_MODE=on (OTP codes would be shown on screen)');
   if (mode(env, 'OTP_PROVIDER_MODE') === 'mock') problems.push('OTP_PROVIDER_MODE is mock (set the real OTP vendor)');
   if (mode(env, 'SMS_PROVIDER_MODE') === 'mock') problems.push('SMS_PROVIDER_MODE is mock (set the real SMS vendor)');

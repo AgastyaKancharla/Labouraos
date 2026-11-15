@@ -112,15 +112,20 @@ services:
         sync: false
       - key: APPLE_CLIENT_ID_WEB
         sync: false
-      # Customer OTP abuse protection: system-wide codes per 24 hours before
-      # sending pauses and an alert goes out; the human check (CAPTCHA /
-      # attestation) asked for after repeated tries: mock until a provider is chosen.
+      # Customer OTP abuse protection (INF-4): system-wide codes per 24 hours
+      # (above it every code needs the human check); different numbers one
+      # address may ask for in an hour before the human check; the human check
+      # itself (mock on the test setup: refused on live).
       - key: CUSTOMER_OTP_DAILY_LIMIT
         value: "3000"
+      - key: CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK
+        value: "3"
       - key: HUMAN_CHECK_PROVIDER_MODE
         value: mock
-      # The free tier is the test setup: customer app OTP codes are shown on
-      # screen (pretend SMS). The server refuses CUSTOMER_OTP_TEST_MODE=on unless LABOURA_SETUP=test.
+      # The free tier is the test setup (made-up data only): customer app OTP
+      # codes are shown on screen (pretend SMS). The server refuses to start
+      # unless LABOURA_SETUP is exactly live or test, and refuses
+      # CUSTOMER_OTP_TEST_MODE=on unless it is test.
       - key: LABOURA_SETUP
         value: test
       - key: CUSTOMER_OTP_TEST_MODE
@@ -154,6 +159,10 @@ services:
       - key: SUPABASE_URL
         sync: false
       - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      # Call recordings are copied only from these hosts (IN-4); empty while
+      # calling is mock (no recording is ever fetched).
+      - key: RECORDING_URL_HOSTS
         sync: false
 
       # --- Company details (made-up UPI id for testing) ---
