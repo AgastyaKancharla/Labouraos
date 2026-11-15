@@ -246,7 +246,7 @@ export class RegistrationController {
     });
     if (!seeker) throw new BadRequestException('Job seeker not found');
     // The payer sees the ₹499 only while the ID gate still holds: getPaymentPage closes it otherwise (L-5).
-    const paymentDetails = await this.upi.getPaymentPage(payment.upiReference);
+    const paymentDetails = await this.upi.paymentPageFor(payment);
     return {
       firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,
       displayName: shortNameOf(seeker.name),

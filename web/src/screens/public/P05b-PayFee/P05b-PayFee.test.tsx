@@ -11,7 +11,6 @@ const pending = {
     gstPercent: 18, gstPaise: 144000, paymentDueAt: '2026-11-12T09:30:00Z',
   },
   pay: { amountPaise: 944000, payeeName: 'LABOURA PRIVATE LIMITED', upiReference: 'PAY-9-ab', upiUri: 'upi://pay?am=9440.00', qrSvg: QR_SVG },
-  receipt: null, invoicePath: null,
 };
 const render = () => renderScreen(<PayFee />, { portal: 'public', path: '/p/fee/PAY-9-ab', route: '/p/fee/:token' });
 
@@ -33,16 +32,16 @@ describe('P05b-PayFee', () => {
     expect(screen.queryByText(/Payment received/)).not.toBeInTheDocument();
   });
 
-  it('shows "received" with the invoice only after the bank confirms', async () => {
+  it('shows "received" only after the bank confirms, and says the invoice went by SMS (INF-1: no invoice link on the page)', async () => {
     mockApi({
       'GET /payments/request/PAY-9-ab/summary': {
-        ...pending, state: 'received', confirmedAt: '2026-11-11T08:00:00Z', pay: null,
-        receipt: { paymentId: 'p', token: 't' }, invoicePath: '/placements/pl/invoice/copy?token=x',
+        ...pending, state: 'received', confirmedAt: '2026-11-11T08:00:00Z', pay: null, sentBySms: 'receipt_and_invoice',
       },
     });
     render();
     expect(await screen.findByText('Payment received · ₹9,440')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'View invoice' })).toHaveAttribute('href', '/placements/pl/invoice/copy?token=x');
+    expect(screen.getByText('Sent to you by SMS and WhatsApp, with the receipt.')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'View invoice' })).not.toBeInTheDocument();
   });
 
   it('also serves the ₹499 registration payment link with its QR', async () => {

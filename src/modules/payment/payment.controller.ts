@@ -127,7 +127,8 @@ export class PaymentController {
     @Headers('accept') accept: string | undefined,
     @Res({ passthrough: true }) res: Response,
   ) {
-    const result = await this.paymentService.payByCard(token);
+    // INF-1: the page token is resolved to its request first (never the UPI reference).
+    const result = await this.upiCollectionService.payByCard(token);
     if (accept?.includes('text/html')) {
       res.redirect(result.paymentLink);
       return;

@@ -11,7 +11,7 @@ const terms = {
 };
 const summary = {
   type: 'activation', state: 'pending', amountPaise: 49900, upiReference: 'PAY-1042-K7Q2', confirmedAt: null, language: null,
-  jobSeeker: { firstName: 'Kavya', code: 'JS-01042' }, placement: null, receipt: null, invoicePath: null,
+  jobSeeker: { firstName: 'Kavya', code: 'JS-01042' }, placement: null,
   pay: { amountPaise: 49900, payeeName: 'LABOURA PRIVATE LIMITED', upiReference: 'PAY-1042-K7Q2', upiUri: 'upi://pay?am=499.00&tr=PAY-1042-K7Q2', qrSvg: QR_SVG },
 };
 const render = () => renderScreen(<Payment />, { portal: 'public', path: `/p/register/${TOKEN}/payment`, route: '/p/register/:token/payment' });
@@ -25,6 +25,8 @@ describe('P02-Payment', () => {
         openStatus({
           currentStep: 'payment', steps,
           termsAcceptedAt: accepted ? '2026-11-11T05:00:00Z' : null,
+          // INF-1: the pay page is opened by its own token, not the UPI reference.
+          payPageToken: accepted ? 'PPT-1042' : null,
           payment: { state: accepted ? 'pending' : 'not_started', amountPaise: 49900, upiReference: accepted ? 'PAY-1042-K7Q2' : null, confirmedAt: null, guaranteeEndsAt: null, paymentId: null },
         }),
       [`GET /registration/${TOKEN}/terms`]: terms,
@@ -32,7 +34,7 @@ describe('P02-Payment', () => {
         accepted = true;
         return { payment: { upiReference: 'PAY-1042-K7Q2', amountPaise: 49900 } };
       },
-      'GET /payments/request/PAY-1042-K7Q2/summary': summary,
+      'GET /payments/request/PPT-1042/summary': summary,
     });
     render();
     expect(await screen.findByRole('heading', { name: 'Pay ₹499 · Registration' })).toBeInTheDocument();
@@ -57,11 +59,11 @@ describe('P02-Payment', () => {
     verifiedInThisTab();
     mockApi({
       [`GET /registration/${TOKEN}/status`]: openStatus({
-        currentStep: 'payment', steps, termsAcceptedAt: '2026-11-11T05:00:00Z',
+        currentStep: 'payment', steps, termsAcceptedAt: '2026-11-11T05:00:00Z', payPageToken: 'PPT-1042',
         payment: { state: 'pending', amountPaise: 49900, upiReference: 'PAY-1042-K7Q2', confirmedAt: null, guaranteeEndsAt: null, paymentId: null },
       }),
       [`GET /registration/${TOKEN}/terms`]: { ...terms, termsAcceptedAt: '2026-11-11T05:00:00Z' },
-      'GET /payments/request/PAY-1042-K7Q2/summary': { ...summary, pay: null, underReview: true },
+      'GET /payments/request/PPT-1042/summary': { ...summary, pay: null, underReview: true },
     });
     render();
     expect(await screen.findByText('Your details are being checked by our team. We will call you soon.')).toBeInTheDocument();
@@ -74,11 +76,11 @@ describe('P02-Payment', () => {
     verifiedInThisTab();
     const api = mockApi({
       [`GET /registration/${TOKEN}/status`]: openStatus({
-        currentStep: 'payment', steps, termsAcceptedAt: '2026-11-11T05:00:00Z',
+        currentStep: 'payment', steps, termsAcceptedAt: '2026-11-11T05:00:00Z', payPageToken: 'PPT-1042',
         payment: { state: 'pending', amountPaise: 49900, upiReference: 'PAY-1042-K7Q2', confirmedAt: null, guaranteeEndsAt: null, paymentId: null },
       }),
       [`GET /registration/${TOKEN}/terms`]: terms,
-      'GET /payments/request/PAY-1042-K7Q2/summary': summary,
+      'GET /payments/request/PPT-1042/summary': summary,
       [`POST /registration/${TOKEN}/payment-only-link`]: { expiresAt: '2026-11-11T06:15:00Z' },
     });
     render();

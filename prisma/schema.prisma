@@ -1013,6 +1013,10 @@ model Payment {
   gatewayReference  String?     @unique
   method            String      @default("upi_direct") // upi_direct, gateway_card
   upiReference      String?     @unique
+  /// Security INF-1: SHA-256 of the pay page's token (/p/pay/<token>). The token is
+  /// 256 bits, worked out from the payment id with a server key (pay-page-token.ts),
+  /// so only its hash is kept. upiReference stays the short UPI tr= / bank reference.
+  pageTokenHash     String?     @unique
   expectedAmountPaise Int?
   bankUtr           String?     @unique
   confirmedBy       String?     // bank_feed, finance_manual, gateway

@@ -1,4 +1,6 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { ensurePayPageToken } from '../payment/pay-page-token';
+import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { queryText } from '../../common/http/plain-query';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { chainRefundOf } from './chain-refund';
@@ -437,6 +439,8 @@ export class PlacementService {
           paymentLink: upgradeRequest.paymentLink,
           gatewayReference: upgradePayment.gatewayReference,
           upiReference: upgradePayment.upiReference,
+          // INF-1: what opens the pay page (P05b); the UPI reference no longer does.
+          payPageToken: await ensurePayPageToken(this.prisma, upgradePayment.id),
         } : null,
       };
     }
@@ -488,6 +492,7 @@ export class PlacementService {
         paymentLink: paymentLink ?? created.paymentLink,
         gatewayReference: effectivePayment.gatewayReference,
         upiReference: effectivePayment.upiReference,
+        payPageToken: await ensurePayPageToken(this.prisma, effectivePayment.id),
       } : null,
     };
   }
@@ -2305,7 +2310,10 @@ export class PlacementService {
    * (invoice-link.ts). Same invoice as staff see; the token was checked by the caller.
    */
   async getInvoiceForBusiness(id: string): Promise<GstInvoiceResponse> {
-    return this.buildInvoice(id, 'system');
+    const invoice = await this.buildInvoice(id, 'system');
+    // INF-1: the copy anyone with the link can open never shows the owner's full number.
+    const phone = invoice.customer.contactPhone;
+    return phone ? { ...invoice, customer: { ...invoice.customer, contactPhone: maskPhoneLast4(phone) } } : invoice;
   }
 
   private async buildInvoice(id: string, actorId: string): Promise<GstInvoiceResponse> {

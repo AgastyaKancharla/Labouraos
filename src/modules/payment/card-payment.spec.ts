@@ -1,4 +1,5 @@
 import { BadRequestException, NotFoundException } from '@nestjs/common';
+import { payPageTokenHash } from './pay-page-token';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { IdService } from '../../common/id/id.service';
@@ -642,7 +643,8 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
         gatewayReference: 'gw_123',
         paymentLink: 'https://gateway.example.com/pay/gw_123',
       };
-      jest.spyOn(service, 'payByCard').mockResolvedValueOnce(mockResult);
+      // INF-1: the controller resolves the page token through UpiCollectionService.
+      jest.spyOn(upiService, 'payByCard').mockResolvedValueOnce(mockResult);
 
       const res = { redirect: jest.fn() } as unknown as Response;
       const response = await controller.payByCard('token-123', 'application/json', res);
@@ -657,7 +659,8 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
         gatewayReference: 'gw_123',
         paymentLink: 'https://gateway.example.com/pay/gw_123',
       };
-      jest.spyOn(service, 'payByCard').mockResolvedValueOnce(mockResult);
+      // INF-1: the controller resolves the page token through UpiCollectionService.
+      jest.spyOn(upiService, 'payByCard').mockResolvedValueOnce(mockResult);
 
       const res = { redirect: jest.fn() } as unknown as Response;
       const response = await controller.payByCard('token-123', 'text/html,application/xhtml+xml', res);
@@ -672,10 +675,14 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
         gatewayReference: 'gw_123',
         paymentLink: 'https://gateway.example.com/pay/gw_123',
       };
-      jest.spyOn(service, 'payByCard').mockResolvedValueOnce(mockResult);
+      const payByCard = jest.spyOn(service, 'payByCard').mockResolvedValueOnce(mockResult);
+      // The page token is looked up by its hash, then the card start uses the UPI reference.
+      prisma.payment.findUnique.mockResolvedValueOnce({ id: 'pay-1', upiReference: 'PAY-1-ab', status: 'pending', pageTokenHash: 'h' });
 
       const res = await upiService.payByCard('token-123');
       expect(res).toEqual(mockResult);
+      expect(payByCard).toHaveBeenCalledWith('PAY-1-ab');
+      expect(prisma.payment.findUnique).toHaveBeenCalledWith({ where: { pageTokenHash: payPageTokenHash('token-123') } });
     });
   });
 });

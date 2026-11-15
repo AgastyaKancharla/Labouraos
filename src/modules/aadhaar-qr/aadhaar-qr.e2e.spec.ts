@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
 import * as request from 'supertest';
@@ -402,7 +403,8 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       const s = await seeker(30, 'Ravi Shankar');
       await giveVerifiedId(prisma, s.id);
       const created = await post(caller, `/job-seekers/${s.id}/activation-payment`).expect(201);
-      const ref = encodeURIComponent(created.body.upiReference);
+      // INF-1: the payer's page opens by its page token.
+      const ref = await payPageTokenByReference(app, created.body.upiReference);
       expect((await pub().get(`/payments/request/${ref}/summary`).expect(200)).body).toMatchObject({ state: 'pending', stopped: false });
 
       await under18(s.id);
@@ -422,14 +424,14 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       await giveVerifiedId(prisma, s.id);
       const first = await post(caller, `/job-seekers/${s.id}/activation-payment`).expect(201);
       await under18(s.id);
-      expect((await pub().post(`/payments/request/${encodeURIComponent(first.body.upiReference)}/card`)).status).toBe(409);
+      expect((await pub().post(`/payments/request/${await payPageTokenByReference(app, first.body.upiReference)}/card`)).status).toBe(409);
       expect((await prisma.payment.findUniqueOrThrow({ where: { id: first.body.paymentId } })).status).toBe('failed');
 
       // A card payment started before the stop, paid after it.
       const s2 = await seeker(32, 'Ravi Shankar');
       await giveVerifiedId(prisma, s2.id);
       const second = await post(caller, `/job-seekers/${s2.id}/activation-payment`).expect(201);
-      await pub().post(`/payments/request/${encodeURIComponent(second.body.upiReference)}/card`).expect(200);
+      await pub().post(`/payments/request/${await payPageTokenByReference(app, second.body.upiReference)}/card`).expect(200);
       const started = await prisma.payment.findUniqueOrThrow({ where: { id: second.body.paymentId } });
       await under18(s2.id);
       expect([200, 201]).toContain((await pub().post('/payments/mock/simulate-webhook').send({ gatewayReference: started.gatewayReference, status: 'succeeded' })).status);

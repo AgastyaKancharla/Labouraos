@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
-import { randomBytes } from 'node:crypto';
-import { Prisma } from '@prisma/client';
+import { randomBytes, randomUUID } from 'node:crypto';
+import { Payment, Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
 import { publicPageLink } from '../../common/public-pages';
 import { PricingService } from '../pricing/pricing.service';
@@ -9,8 +9,7 @@ import { IdService } from '../../common/id/id.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { MessagingService } from '../message/messaging.service';
 import { PaymentService } from './payment.service';
-import { receiptToken } from './receipt-link';
-import { invoicePath } from '../placement/invoice-link';
+import { ensurePayPageToken, payPageExpired, payPageTokenFor, payPageTokenHash } from './pay-page-token';
 import { assertNoOpenBanReview, openBanReview, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, PAYMENT_STOPPED_REASON, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
 
@@ -150,8 +149,12 @@ export class UpiCollectionService {
 
     const code = await this.idService.generateCode('payment');
     const upiReference = `${code}-${randomBytes(4).toString('hex')}`;
+    // INF-1: the pay page has its own token (only its hash is kept); upiReference is for UPI tr= and the bank.
+    const id = randomUUID();
     const created = await tx.payment.create({
       data: {
+        id,
+        pageTokenHash: payPageTokenHash(payPageTokenFor(id)),
         code,
         city: input.city ?? 'Bengaluru',
         type: input.type,
@@ -185,7 +188,7 @@ export class UpiCollectionService {
       upiReference: payment.upiReference!,
       expectedAmountPaise: payment.expectedAmountPaise!,
     });
-    const link = publicPageLink('payment', payment.upiReference!);
+    const link = publicPageLink('payment', await this.payPageToken(payment.id));
     const notifySubjectType = input.notifySubjectType ?? (input.subjectType === 'job_seeker' ? 'job_seeker' : undefined);
     const notifySubjectId = input.notifySubjectId ?? (input.subjectType === 'job_seeker' ? input.subjectId : undefined);
     if (notifySubjectType && notifySubjectId) {
@@ -247,7 +250,7 @@ export class UpiCollectionService {
     const { payeeName } = this.buildUpiUri({
       code: payment.code, upiReference: payment.upiReference, expectedAmountPaise: payment.expectedAmountPaise,
     });
-    const link = publicPageLink('payment', payment.upiReference);
+    const link = publicPageLink('payment', await this.payPageToken(payment.id));
     let subjectType = notifySubjectType;
     let subjectId = notifySubjectId;
     if (!subjectType || !subjectId) {
@@ -310,8 +313,33 @@ export class UpiCollectionService {
     return Boolean(row);
   }
 
+  /**
+   * INF-1: the pay page token of a payment (for its link, a resend, or the person's
+   * own OTP-verified page). Saves its hash on rows made before page tokens existed.
+   */
+  async payPageToken(paymentId: string): Promise<string> {
+    return ensurePayPageToken(this.prisma, paymentId);
+  }
+
+  /**
+   * The payment a pay page token opens. A link sent before page tokens existed
+   * (/p/pay/<upiReference>) still opens its request while it waits for money and
+   * has no page token yet; once paid, or once a new link was sent, only the token works.
+   */
+  private async paymentForPage(token: string) {
+    if (typeof token !== 'string' || !token || token.length > 200) return null;
+    const byToken = await this.prisma.payment.findUnique({ where: { pageTokenHash: payPageTokenHash(token) } });
+    if (byToken) return byToken;
+    const legacy = await this.prisma.payment.findUnique({ where: { upiReference: token } });
+    return legacy && legacy.pageTokenHash === null && legacy.status === 'pending' ? legacy : null;
+  }
+
   async getPaymentPage(token: string) {
-    const payment = await this.prisma.payment.findUnique({ where: { upiReference: token } });
+    return this.paymentPageFor(await this.paymentForPage(token));
+  }
+
+  /** The UPI details for a pending request (also used by the payment-only link page). */
+  async paymentPageFor(payment: Payment | null) {
     if (!payment || payment.method !== 'upi_direct' || payment.status !== 'pending' || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Payment request not found or already used');
     }
@@ -338,9 +366,10 @@ export class UpiCollectionService {
    * and the deadline. It never says "paid" until the money is in Laboura's bank:
    * a payer's UPI reference hint only moves it to "confirming".
    */
-  async getPublicSummary(token: string) {
-    const payment = await this.prisma.payment.findUnique({
-      where: { upiReference: token },
+  async getPublicSummary(token: string, now: Date = new Date()) {
+    const found = await this.paymentForPage(token);
+    const payment = found && await this.prisma.payment.findUnique({
+      where: { id: found.id },
       include: {
         jobSeeker: { select: { name: true, code: true, messageLanguage: true } },
         placement: {
@@ -355,6 +384,10 @@ export class UpiCollectionService {
     });
     if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee', 'replacement_upgrade'].includes(payment.type)) {
       throw new NotFoundException('Payment request not found');
+    }
+    // INF-1: a paid page closes PAY_PAGE_DAYS_AFTER_PAYMENT days after the bank confirmed it.
+    if (['succeeded', 'completed'].includes(payment.status) && payPageExpired(payment.confirmedAt, now)) {
+      throw new NotFoundException('This payment page has expired');
     }
     // Owner rule (under 18 stops before payment): a pending ₹499 the ID gate no longer allows is closed here.
     const stoppedNow = await this.activationStopped(payment);
@@ -397,14 +430,14 @@ export class UpiCollectionService {
           paymentDueAt: placement.paymentDueAt,
         }
         : null,
-      pay: !underReview && (state === 'pending' || state === 'confirming') ? await this.getPaymentPage(token) : null,
+      pay: !underReview && (state === 'pending' || state === 'confirming') ? await this.paymentPageFor(payment) : null,
       underReview,
       underReviewMessage: underReview ? UNDER_REVIEW_MESSAGE : null,
       // The ID gate closed this ₹499: the page shows only "can't go ahead, contact Laboura".
       stopped,
       stoppedMessage: stopped ? PAYMENT_STOPPED_MESSAGE : null,
-      receipt: state === 'received' ? { paymentId: payment.id, token: receiptToken(payment.id) } : null,
-      invoicePath: state === 'received' && placement ? invoicePath(placement.id) : null,
+      // INF-1: no receipt or invoice token on the public page; both go to the payer by SMS / WhatsApp.
+      sentBySms: state === 'received' ? (placement ? 'receipt_and_invoice' : 'receipt') : null,
       // How long a payment-only link for someone else works (Settings, 15 minutes by default).
       paymentOnlyLinkMinutes: payment.type === 'activation' ? await this.paymentOnlyLinkMinutes() : null,
     };
@@ -424,7 +457,7 @@ export class UpiCollectionService {
     if (typeof utr !== 'string' || !/^\d{12}$/.test(utr)) {
       throw new BadRequestException('UPI reference number must contain 12 digits');
     }
-    const payment = await this.prisma.payment.findUnique({ where: { upiReference: token } });
+    const payment = await this.paymentForPage(token);
     if (!payment || payment.status !== 'pending' || payment.method !== 'upi_direct') {
       throw new NotFoundException('Pending UPI payment request not found');
     }
@@ -438,6 +471,8 @@ export class UpiCollectionService {
     if (!this.paymentService) {
       throw new BadRequestException('PaymentService is not injected in UpiCollectionService');
     }
-    return this.paymentService.payByCard(token);
+    const payment = await this.paymentForPage(token);
+    if (!payment?.upiReference) throw new NotFoundException('Payment request not found');
+    return this.paymentService.payByCard(payment.upiReference);
   }
 }

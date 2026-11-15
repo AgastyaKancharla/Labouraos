@@ -90,7 +90,7 @@ export default function InterviewResult() {
         ...(result === 'not_selected' ? { resultReason: reason } : {}),
         ...(result === 'selected' ? { selectedSalaryPaise: salary!, selectedJoiningDate: joining } : {}),
       });
-      const reference = response.placement?.payment?.upiReference;
+      const reference = response.placement?.payment?.payPageToken;
       if (result === 'selected' && reference) navigate(to('P05b-PayFee', { token: reference }));
       else setRecorded(result);
     } catch (e) {

@@ -15,6 +15,7 @@ import { EditPolicyService } from '../../common/edit-policy/edit-policy.service'
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { TradeService } from '../trade/trade.service';
 import { isValidReceiptToken } from './receipt-link';
+import { payPageTokenFor } from './pay-page-token';
 import { isValidInvoiceToken } from '../placement/invoice-link';
 
 type MockPrisma = {
@@ -228,7 +229,9 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(res.amount).toBe(49900);
       expect(res.gatewayReference).toBeNull();
       expect(res.upiReference).toBe('PAY-00001-1234abcd');
-      expect(res.paymentLink).toContain('/p/fee/PAY-00001-1234abcd');
+      // INF-1: the link carries the pay page token, never the UPI reference.
+      expect(res.paymentLink).toContain(`/p/fee/${payPageTokenFor(res.paymentId)}`);
+      expect(res.paymentLink).not.toContain('PAY-00001-1234abcd');
       expect(messagingService.send).toHaveBeenCalledWith(
         expect.objectContaining({
           channel: 'sms',
@@ -407,7 +410,8 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       expect(result.gstAmount).toBe(expectedGst);
       expect(result.payment?.amount).toBe(expectedTotal);
       expect(result.payment?.upiReference).toBe('PAY-00003-plfee1234');
-      expect(result.payment?.paymentLink).toContain('/p/fee/PAY-00003-plfee1234');
+      expect(result.payment?.paymentLink).toContain(`/p/fee/${payPageTokenFor(result.payment!.id)}`);
+      expect(result.payment?.payPageToken).toBe(payPageTokenFor(result.payment!.id));
 
       // Assert sent to business owner via SMS and WhatsApp
       expect(messagingService.send).toHaveBeenCalledWith(
@@ -417,7 +421,7 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
           subjectId: 'biz-1',
           variables: expect.objectContaining({
             amount: '9440.00',
-            link: expect.stringContaining('/p/fee/PAY-00003-plfee1234'),
+            link: expect.stringContaining(`/p/fee/${payPageTokenFor(result.payment!.id)}`),
           }),
         }),
       );

@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
@@ -284,7 +285,7 @@ describe('Phase 12 gate end-to-end proof', () => {
     createdPaymentIds.push(activation.body.paymentId);
     let gatewayReference = activation.body.gatewayReference;
     if (!gatewayReference && activation.body.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(activation.body.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, activation.body.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: activation.body.paymentId } });
       gatewayReference = updated.gatewayReference;
     }

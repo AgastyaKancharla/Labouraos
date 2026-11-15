@@ -1,4 +1,5 @@
 import jsQR from 'jsqr';
+import { PAY_PAGE_DAYS_AFTER_PAYMENT, payPageTokenFor, payPageTokenHash } from './pay-page-token';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -19,6 +20,7 @@ describe('UpiCollectionService', () => {
   const findFirst = jest.fn();
   const findUnique = jest.fn();
   const update = jest.fn();
+  const updateMany = jest.fn().mockResolvedValue({ count: 0 });
   const txUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
   const statusCreate = jest.fn().mockResolvedValue({});
   const statusFindFirst = jest.fn().mockResolvedValue(null);
@@ -33,7 +35,7 @@ describe('UpiCollectionService', () => {
   } as unknown as Prisma.TransactionClient;
   const prisma = {
     $transaction: jest.fn((work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx)),
-    payment: { findUnique, update },
+    payment: { findUnique, update, updateMany },
     jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'seeker-1', dateOfBirth: null }) },
     statusHistory: { findFirst: statusFindFirst },
     identityVerification: { findFirst: identityFindFirst },
@@ -78,14 +80,20 @@ describe('UpiCollectionService', () => {
     expect(params.searchParams.get('tn')).toBe('PAY-00042');
     expect(params.searchParams.get('tr')).toBe(payment.upiReference);
     expect(params.searchParams.get('cu')).toBe('INR');
-    // The SMS and WhatsApp link opens the public phone page (P05b); /payments/request/... redirects there.
-    expect(result.paymentLink).toBe(`https://app.laboura.in/p/fee/${payment.upiReference}`);
+    // The SMS and WhatsApp link opens the public phone page (P05b) by its own page token (INF-1),
+    // never by the UPI reference; only the token's hash is stored.
+    expect(result.paymentLink).toBe(`https://app.laboura.in/p/fee/${payPageTokenFor(payment.id)}`);
+    expect(result.paymentLink).not.toContain(payment.upiReference);
+    expect(Buffer.from(payPageTokenFor(payment.id), 'base64url').length).toBeGreaterThanOrEqual(16);
     expect(create).toHaveBeenCalledWith(expect.objectContaining({
       data: expect.objectContaining({
         method: 'upi_direct', status: 'pending', amount: 49900,
         expectedAmountPaise: 49900, upiReference: expect.stringMatching(/^PAY-00042-[a-f0-9]{8}$/),
+        pageTokenHash: expect.stringMatching(/^[a-f0-9]{64}$/),
       }),
     }));
+    const createdData = create.mock.calls[0][0].data as { id: string; pageTokenHash: string };
+    expect(createdData.pageTokenHash).toBe(payPageTokenHash(payPageTokenFor(createdData.id)));
     expect(findFirst).toHaveBeenCalledWith(expect.objectContaining({
       where: expect.objectContaining({ method: 'upi_direct', gatewayReference: null }),
     }));
@@ -241,7 +249,7 @@ describe('UpiCollectionService', () => {
       findUnique.mockResolvedValue(placementPayment);
       const summary = await service.getPublicSummary(payment.upiReference);
       expect(summary).toMatchObject({
-        type: 'placement_fee', state: 'pending', amountPaise: 944000, language: 'kn', receipt: null, invoicePath: null,
+        type: 'placement_fee', state: 'pending', amountPaise: 944000, language: 'kn',
         placement: {
           candidateFirstName: 'Ramesh', businessName: 'Sri Sai Hotel', agreedSalaryPaise: 1600000,
           feePercent: 50, placementFeePaise: 800000, gstPercent: 18, gstPaise: 144000,
@@ -256,13 +264,23 @@ describe('UpiCollectionService', () => {
       expect((await service.getPublicSummary(payment.upiReference)).state).toBe('confirming');
     });
 
-    it('says "received" only once the bank confirmed it, with a signed receipt and invoice link and no QR', async () => {
+    it('says "received" only once the bank confirmed it, with no QR and no receipt or invoice token (INF-1: they go by SMS)', async () => {
       findUnique.mockResolvedValue({ ...placementPayment, status: 'succeeded', confirmedAt: new Date('2026-11-11T06:00:00Z') });
-      const summary = await service.getPublicSummary(payment.upiReference);
+      const summary = await service.getPublicSummary(payment.upiReference, new Date('2026-11-12T06:00:00Z'));
       expect(summary.state).toBe('received');
       expect(summary.pay).toBeNull();
-      expect(summary.receipt).toEqual({ paymentId: payment.id, token: expect.any(String) });
-      expect(summary.invoicePath).toMatch(/^\/placements\/placement-1\/invoice\/copy\?token=/);
+      expect(summary).not.toHaveProperty('receipt');
+      expect(summary).not.toHaveProperty('invoicePath');
+      expect(JSON.stringify(summary)).not.toMatch(/token|invoice\/copy|receipt\?/);
+      expect(summary.sentBySms).toBe('receipt_and_invoice');
+    });
+
+    it('INF-1: a paid page closes PAY_PAGE_DAYS_AFTER_PAYMENT days after the bank confirmed it', async () => {
+      const confirmedAt = new Date('2026-11-11T06:00:00Z');
+      findUnique.mockResolvedValue({ ...placementPayment, status: 'succeeded', confirmedAt });
+      const day = 24 * 60 * 60 * 1000;
+      await expect(service.getPublicSummary(payment.upiReference, new Date(confirmedAt.getTime() + PAY_PAGE_DAYS_AFTER_PAYMENT * day - 1000))).resolves.toMatchObject({ state: 'received' });
+      await expect(service.getPublicSummary(payment.upiReference, new Date(confirmedAt.getTime() + PAY_PAGE_DAYS_AFTER_PAYMENT * day + 1000))).rejects.toThrow(/expired/);
     });
 
     it('D3 (rev 176): a replacement salary-upgrade request opens on the business fee page, marked as an upgrade', async () => {
@@ -280,6 +298,29 @@ describe('UpiCollectionService', () => {
       await expect(service.getPublicSummary('x')).rejects.toThrow(/not found/);
       findUnique.mockResolvedValue(null);
       await expect(service.getPublicSummary('x')).rejects.toThrow(/not found/);
+    });
+  });
+
+  describe('INF-1: the pay page opens only by its page token', () => {
+    it('finds the request by the hash of its page token; the UPI reference opens nothing once a page token exists', async () => {
+      const withToken = { ...payment, pageTokenHash: payPageTokenHash(payPageTokenFor(payment.id)) };
+      findUnique.mockImplementation(async (args: { where: Record<string, unknown> }) => {
+        if (args.where.pageTokenHash === withToken.pageTokenHash) return withToken;
+        if (args.where.upiReference === payment.upiReference) return withToken;
+        if (args.where.id === payment.id) return withToken;
+        return null;
+      });
+      await expect(service.getPaymentPage(payPageTokenFor(payment.id))).resolves.toMatchObject({ upiReference: payment.upiReference });
+      await expect(service.getPaymentPage(payment.upiReference)).rejects.toThrow(/not found/);
+      await expect(service.saveUtrHint(payment.upiReference, '123456789012')).rejects.toThrow(/not found/);
+    });
+
+    it('a link sent before page tokens (no hash yet) still opens its request while it waits for money, never once paid', async () => {
+      const legacy = { ...payment, pageTokenHash: null };
+      findUnique.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.upiReference === payment.upiReference ? legacy : null));
+      await expect(service.getPaymentPage(payment.upiReference)).resolves.toMatchObject({ amountPaise: 49900 });
+      findUnique.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.upiReference === payment.upiReference ? { ...legacy, status: 'succeeded' } : null));
+      await expect(service.getPublicSummary(payment.upiReference)).rejects.toThrow(/not found/);
     });
   });
 });

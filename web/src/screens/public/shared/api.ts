@@ -47,6 +47,8 @@ export interface RegistrationOpen {
     paymentId: string | null;
   };
   receiptToken: string | null;
+  /** Opens his ₹499 pay page while it waits for money (INF-1); the UPI reference no longer does. */
+  payPageToken?: string | null;
 }
 
 export type RegistrationStatus = RegistrationLocked | RegistrationOpen;
@@ -233,7 +235,7 @@ export const partnerApi = {
     api.post<{ id: string; maskedValue: string; status: string }>(`/referral-registration/${enc(token)}/upi`, { otpRequestId: requestId, ...details }, PUBLIC),
 };
 
-// ---- Payment request by UPI reference (PaymentController) ----
+// ---- Payment request by its pay page token (PaymentController; INF-1) ----
 
 export interface PaymentPage {
   amountPaise: number;
@@ -271,13 +273,13 @@ export interface PaymentSummary {
     paymentDueAt: string | null;
   } | null;
   pay: PaymentPage | null;
-  receipt: { paymentId: string; token: string } | null;
-  invoicePath: string | null;
+  /** Once paid: what went to the payer by SMS / WhatsApp (INF-1: the page itself carries no receipt or invoice link). */
+  sentBySms?: 'receipt' | 'receipt_and_invoice' | null;
 }
 
 export const paymentApi = {
-  summary: (reference: string) => api.get<PaymentSummary>(`/payments/request/${enc(reference)}/summary`, PUBLIC),
-  utrHint: (reference: string, utr: string) => api.post<{ saved: boolean }>(`/payments/request/${enc(reference)}/utr-hint`, { utr }, PUBLIC),
+  summary: (payPageToken: string) => api.get<PaymentSummary>(`/payments/request/${enc(payPageToken)}/summary`, PUBLIC),
+  utrHint: (payPageToken: string, utr: string) => api.post<{ saved: boolean }>(`/payments/request/${enc(payPageToken)}/utr-hint`, { utr }, PUBLIC),
 };
 
 export function receiptHref(receipt: { paymentId: string; token: string }): string {
@@ -357,7 +359,7 @@ export type OwnerResult = 'selected' | 'not_selected' | 'candidate_no_show';
 export interface OwnerResultResponse {
   status: string;
   result: OwnerResult;
-  placement: { payment: { upiReference: string | null } | null } | null;
+  placement: { payment: { upiReference: string | null; payPageToken?: string | null } | null } | null;
 }
 
 export interface OfferCheckDetails {

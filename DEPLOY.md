@@ -619,6 +619,7 @@ Nothing to set on Render. People may notice these, once, right after the deploy:
 
 - **Login and reset codes revealed just before the deploy stop working** (AUTH-1: the 6-digit codes are now uniform, so the same request gives a different code). The senior reveals the code again on the code screen; the request itself still works.
 - **Receipt and invoice links sent before the deploy stop working** (AC-5: links now carry a 90-day expiry). Finance or the CEO send a fresh one if someone asks; staff screens already make fresh links.
+- **Payment links (INF-1):** the deploy adds one column (`Payment.pageTokenHash`, migration `20261201000000_payment_page_token`, run by Pre-Deploy as usual). New payment links carry a long page token instead of the payment reference. A link sent before the deploy keeps working while it is unpaid; once it is paid, or once someone taps "Resend payment link", only the new link works. A paid page closes 30 days after the money arrived, and it no longer shows receipt or invoice links (they go by SMS and WhatsApp as before).
 - **Registration, agreement, partner and payout links:** a code an agent sends (staff "Send OTP") no longer opens or completes a person's own link (AC-3). The person taps "Send code" on their link. Staff screens that send a link no longer show its token.
 
 ---

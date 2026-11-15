@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
@@ -148,7 +149,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     const { paymentId } = paymentRes.body;
     let gatewayReference = paymentRes.body.gatewayReference;
     if (!gatewayReference && paymentRes.body.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, paymentRes.body.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
       gatewayReference = updated.gatewayReference;
     }
@@ -269,7 +270,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     const { paymentId } = paymentRes.body;
     let gatewayReference = paymentRes.body.gatewayReference;
     if (!gatewayReference && paymentRes.body.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, paymentRes.body.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
       gatewayReference = updated.gatewayReference;
     }
@@ -344,7 +345,7 @@ describe('₹499 Activation Payment and Webhook (Phase 2 Task 5)', () => {
     const { paymentId } = paymentRes.body;
     let gatewayReference = paymentRes.body.gatewayReference;
     if (!gatewayReference && paymentRes.body.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(paymentRes.body.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, paymentRes.body.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: paymentId } });
       gatewayReference = updated.gatewayReference;
     }
