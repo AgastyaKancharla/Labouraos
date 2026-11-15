@@ -579,3 +579,8 @@ Format:
 **Symptom:** `worker.close()` (and `close(true)`) never resolve when Redis was unreachable the whole time; Jest does not exit and shutdown hangs.
 **Cause:** The Worker's main loop waits for its blocking connection to become ready; `close(true)` after `close(false)` returns the same pending promise.
 **Fix:** `JobQueue.close()` calls `close(true)` straight away when Redis is down, waits at most the grace period otherwise, and `closeSharedRedis()` then drops every connection the process made, including the Worker's blocking copy.
+
+## Spec clean-up fails with `StaffPasswordReset_issuedByStaffId_fkey`
+**Symptom:** After the temporary-password change (rev 174–175), unrelated specs that reactivate or reset someone fail in `afterAll` on `prisma.staff.deleteMany()` with "Foreign key constraint violated on the constraint: `StaffPasswordReset_issuedByStaffId_fkey`".
+**Cause:** Reactivation, "New temporary password" and "Reset sign-in completely" now write a password reset history row naming the senior, and the issuer link was `ON DELETE RESTRICT`.
+**Fix:** The issuer is optional now (the break-glass command has none), so the link is `ON DELETE SET NULL` (migration `20261130000000_staff_temp_password_and_reset_requests`). Specs that create staff through the API should still clear `tempPasswordIssuedByStaffId`, `teamLeadId` and `reportsToId` before deleting rows.

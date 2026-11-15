@@ -174,6 +174,15 @@ export default function StaffAndAccess() {
         {r.state !== 'locked' && (
           <ActionButton label="Lock" variant="danger" title={`Lock ${r.name}'s account`} description="They are signed out at once and cannot sign in until someone unlocks the account." reason run={({ reason }) => api.post(`/staff/${r.id}/lock`, { reason })} success={`${r.name} is locked`} confirmLabel="Lock" />
         )}
+        <ActionButton
+          label="Deactivate"
+          variant="danger"
+          title={`Deactivate ${r.name}`}
+          description="For someone who has left. Their records stay; they can never sign in again unless reactivated. Anyone who reports to them must be moved first."
+          run={() => api.post(`/staff/${r.id}/deactivate`)}
+          success={`${r.name} is deactivated`}
+          confirmLabel="Deactivate"
+        />
       </div>
     );
   };
