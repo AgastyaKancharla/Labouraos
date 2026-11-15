@@ -326,7 +326,10 @@ export class PaymentService {
       });
 
       let updatedSeeker: Awaited<ReturnType<typeof tx.jobSeeker.update>> | null = null;
-      if (payment.type === 'activation' && payment.jobSeekerId) {
+      // D11 (rev 176): money for a ₹499 that arrives after a permanent ban never reactivates him; the
+      // payment is recorded and flagged for a refund by a person.
+      const bannedActivation = payment.type === 'activation' && payment.jobSeeker?.status === 'banned';
+      if (payment.type === 'activation' && payment.jobSeekerId && !bannedActivation) {
         updatedSeeker = await tx.jobSeeker.update({
           where: { id: payment.jobSeekerId },
           data: {
@@ -395,7 +398,7 @@ export class PaymentService {
           placementTransition = { placement, invoiceCode };
         }
       }
-      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition };
+      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition, bannedActivation };
     });
 
     if ('alreadyProcessed' in transition && transition.alreadyProcessed) {
@@ -403,6 +406,14 @@ export class PaymentService {
     }
     if ('alreadyFailed' in transition && transition.alreadyFailed) {
       return { received: true, alreadyFailed: true, paymentId };
+    }
+    if (transition.bannedActivation && transition.payment.jobSeeker) {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: paymentId,
+        details: { reason: 'paid_while_permanently_banned', jobSeekerCode: transition.payment.jobSeeker.code, reactivated: false },
+      });
     }
     if (transition.updatedSeeker) {
       const actorId = await this.fallbackActorId();

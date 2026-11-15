@@ -1,5 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
+import { assertTermsCurrent } from '../legal/legal-status';
+import { assertNotBanned, otherIdFingerprint } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -55,6 +57,8 @@ interface SubjectRow {
   type: OtherIdSubjectType;
   id: string;
   code: string;
+  /** The profile name (for the permanent-ban ID fingerprint, D11). */
+  name?: string;
   city: string;
   registeredByStaffId: string | null;
 }
@@ -110,9 +114,11 @@ export class OtherIdService {
   async submitForJobSeeker(jobSeekerId: string, input: OtherIdInput, context: Context): Promise<OtherIdOutcome> {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
-      select: { id: true, code: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
+      select: { id: true, code: true, name: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
     });
     if (!seeker || seeker.anonymisedAt) throw new NotFoundException('Job seeker not found');
+    // Review H3: no ID check while he must accept the updated terms (RECONSENT_REQUIRED).
+    await assertTermsCurrent(this.prisma, 'job_seeker', seeker.id);
     const consent = await this.prisma.consent.findFirst({
       where: { subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'aadhaar_verification', granted: true, grantedAt: { not: null }, withdrawnAt: null },
       orderBy: { grantedAt: 'desc' },
@@ -120,21 +126,23 @@ export class OtherIdService {
     });
     if (!consent) throw new BadRequestException('Consent for aadhaar_verification is required before the ID check');
     if (!seeker.photoStoragePath) throw new BadRequestException('Take the selfie first');
-    return this.submit({ type: 'job_seeker', id: seeker.id, code: seeker.code, city: seeker.city, registeredByStaffId: seeker.registeredByStaffId }, consent.id, input, context);
+    return this.submit({ type: 'job_seeker', id: seeker.id, code: seeker.code, name: seeker.name, city: seeker.city, registeredByStaffId: seeker.registeredByStaffId }, consent.id, input, context);
   }
 
   async submitForReferral(referralId: string, input: OtherIdInput, context: { channel: 'link'; now?: Date }): Promise<OtherIdOutcome> {
     const referral = await this.prisma.referral.findUnique({
       where: { id: referralId },
-      select: { id: true, code: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
+      select: { id: true, code: true, name: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
     });
     if (!referral || referral.anonymisedAt) throw new NotFoundException('Referral partner not found');
-    // S2 (rev 176): the partner's separate ID-check consent (legacy signers: their agreed terms).
+    // Review H3 / M6: a partner on the older short terms accepts v1.0 first (RECONSENT_REQUIRED).
+    await assertTermsCurrent(this.prisma, 'referral', referral.id);
+    // S2 (rev 176): the partner's separate ID-check consent.
     const consentId = await partnerIdCheckConsentId(this.prisma, referral.id);
     if (!consentId) throw new BadRequestException('The ID-check consent is required before ID verification');
     const consent = { id: consentId };
     if (!referral.photoStoragePath) throw new BadRequestException('Complete the live-camera selfie before the ID check');
-    return this.submit({ type: 'referral', id: referral.id, code: referral.code, city: referral.city, registeredByStaffId: referral.registeredByStaffId }, consent.id, input, context);
+    return this.submit({ type: 'referral', id: referral.id, code: referral.code, name: referral.name, city: referral.city, registeredByStaffId: referral.registeredByStaffId }, consent.id, input, context);
   }
 
   private async subject(subjectType: OtherIdSubjectType, subjectId: string): Promise<SubjectRow> {
@@ -166,6 +174,11 @@ export class OtherIdService {
     if (input.captureSource !== 'live_camera') throw new BadRequestException('Take the photo of the card with the live camera; gallery or file uploads are refused');
     if (!input.photo?.buffer.length) throw new BadRequestException('A live camera photo of the card is required');
     await this.stops.assertNotStopped(subject.type, subject.id);
+    // D11 (rev 176): the same PAN, driving licence or voter ID as a permanently banned person cannot register again.
+    if (subject.name) {
+      const last4OfCard = number.replace(/[^A-Z0-9]/g, '').slice(-4);
+      await assertNotBanned(this.prisma, { idFingerprints: [otherIdFingerprint(method, last4OfCard, subject.name)] });
+    }
     const now = context.now ?? new Date();
     if (!(await this.consumeNonce(subject, context.channel === 'field' ? (context.staffId ?? null) : null, input.captureNonce, now))) {
       throw new BadRequestException(CAPTURE_NONCE_MESSAGE);

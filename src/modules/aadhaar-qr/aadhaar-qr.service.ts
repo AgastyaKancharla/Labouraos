@@ -1,6 +1,7 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { aadhaarFingerprint, assertNotBanned } from '../conduct/permanent-ban.check';
 import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
+import { assertTermsCurrent } from '../legal/legal-status';
 import { Prisma } from '@prisma/client';
 import { randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -144,6 +145,8 @@ export class AadhaarQrService {
       select: { id: true, code: true, name: true, phone: true, phoneVerified: true, city: true, registeredByStaffId: true, anonymisedAt: true, photoStoragePath: true },
     });
     if (!seeker || seeker.anonymisedAt) throw new NotFoundException('Job seeker not found');
+    // Review H3: no ID check while he must accept the updated terms (RECONSENT_REQUIRED).
+    await assertTermsCurrent(this.prisma, 'job_seeker', seeker.id);
     const consent = await this.prisma.consent.findFirst({
       where: { subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'aadhaar_verification', granted: true, grantedAt: { not: null }, withdrawnAt: null },
       orderBy: { grantedAt: 'desc' },
@@ -167,7 +170,9 @@ export class AadhaarQrService {
       select: { id: true, code: true, name: true, phone: true, phoneVerified: true, city: true, registeredByStaffId: true, anonymisedAt: true },
     });
     if (!referral || referral.anonymisedAt) throw new NotFoundException('Referral partner not found');
-    // S2 (rev 176): the partner's separate ID-check consent (legacy signers: their agreed terms).
+    // Review H3 / M6: a partner on the older short terms accepts v1.0 first (RECONSENT_REQUIRED).
+    await assertTermsCurrent(this.prisma, 'referral', referral.id);
+    // S2 (rev 176): the partner's separate ID-check consent.
     const consentId = await partnerIdCheckConsentId(this.prisma, referral.id);
     if (!consentId) throw new BadRequestException('The ID-check consent is required before ID verification');
     const consent = { id: consentId };

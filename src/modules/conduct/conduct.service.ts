@@ -72,6 +72,9 @@ export class ConductService {
     }
     const business = await this.prisma.business.findUnique({ where: { id: businessId } });
     if (!business) throw new NotFoundException('Business not found');
+    // A permanently banned business stays suspended for good: a time-limited suspension would end the ban.
+    const banned = await this.prisma.permanentBan.findUnique({ where: { subjectType_subjectId: { subjectType: 'business', subjectId: business.id } } });
+    if (banned) throw new ConflictException('This business is permanently banned; it cannot be suspended for a time');
     const now = this.clock.now();
     const suspendedUntil = permanent ? null : new Date(now.getTime() + days * DAY_MS);
     const before = { suspendedAt: business.suspendedAt?.toISOString() ?? null, suspendedUntil: business.suspendedUntil?.toISOString() ?? null };
@@ -183,6 +186,14 @@ export class ConductService {
         const seeker = await tx.jobSeeker.findUniqueOrThrow({ where: { id: subjectId }, select: { status: true } });
         await tx.jobSeeker.update({ where: { id: subjectId }, data: { status: 'banned' } });
         await recordStatusChange(tx, { subjectType: 'job_seeker', subjectId, fromStatus: seeker.status, toStatus: 'banned', changedByStaffId: actor.id, reason: `permanent_ban_${category}`, changedAt: now });
+        // His open ₹499 requests close now: no payment can bring him back.
+        const open = await tx.payment.findMany({ where: { jobSeekerId: subjectId, type: 'activation', status: 'pending' }, select: { id: true } });
+        if (open.length) {
+          await tx.payment.updateMany({ where: { id: { in: open.map((p) => p.id) }, status: 'pending' }, data: { status: 'failed' } });
+          for (const p of open) {
+            await recordStatusChange(tx, { subjectType: 'payment', subjectId: p.id, fromStatus: 'pending', toStatus: 'failed', changedByStaffId: actor.id, reason: 'closed_permanent_ban', changedAt: now });
+          }
+        }
       } else if (subjectType === 'referral') {
         await tx.referral.update({ where: { id: subjectId }, data: { pausedAt: now, pausedByStaffId: actor.id, pauseReason: `Permanent ban (${category}): ${reason}` } });
       } else {

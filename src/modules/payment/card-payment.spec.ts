@@ -295,6 +295,24 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
     });
   });
 
+  describe('D11 (rev 176): money for a ₹499 after a permanent ban', () => {
+    it('records the payment but never reactivates him; Finance and the CEO get a payment_mismatch flag to refund', async () => {
+      const payment = {
+        id: 'pay-1', code: 'PAY-00001', amount: 49900, status: 'pending', method: 'gateway_card', gatewayReference: 'gw_ref_999', type: 'activation', jobSeekerId: 'js-1',
+        jobSeeker: { id: 'js-1', code: 'JS-00001', status: 'banned', hitCount: 0, paymentReceivedAt: null, city: 'Bengaluru' },
+      };
+      prisma.payment.findUnique.mockResolvedValueOnce(payment);
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 1 });
+      await service.onPaymentSucceeded('pay-1', { confirmedAt: new Date(), confirmedBy: 'gateway' });
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'succeeded' }) }));
+      expect(prisma.jobSeeker.update).not.toHaveBeenCalled();
+      expect(reviewFlagService.raise).toHaveBeenCalledWith({
+        kind: 'payment_mismatch', subjectType: 'payment', subjectId: 'pay-1',
+        details: { reason: 'paid_while_permanently_banned', jobSeekerCode: 'JS-00001', reactivated: false },
+      });
+    });
+  });
+
   describe('Later UPI credit after switching to card', () => {
     it('keeps bank credit unmatched and raises payment_mismatch flag if payer pays by UPI after switching to card', async () => {
       const paymentSwitchedToCard = {

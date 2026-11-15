@@ -28,7 +28,8 @@ function setup(overrides: Record<string, unknown> = {}) {
     },
     referral: { findUnique: jest.fn(), update: jest.fn() },
     idCheckDetail: { findMany: jest.fn(async () => [{ verificationId: 'iv-1', dateOfBirth: '1990-01-01', nameOnId: 'Ravi Kumar' }]) },
-    permanentBan: { findUnique: jest.fn(async () => null), create: jest.fn(), findFirst: jest.fn(async () => null) },
+    permanentBan: { findUnique: jest.fn(async (): Promise<unknown> => null), create: jest.fn(), findFirst: jest.fn(async () => null) },
+    payment: { findMany: jest.fn(async () => [{ id: 'pay-open' }]), updateMany: jest.fn() },
     statusHistory: { create: jest.fn() },
     ...overrides,
   };
@@ -102,6 +103,16 @@ describe('D11 permanent ban (Manager or CEO, forged ID / fraud / theft / violenc
     expect(JSON.stringify(created)).not.toContain('9876512345');
     expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-1' }, data: { status: 'banned' } });
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'permanent_ban.created', reason: 'Altered Aadhaar photo' }));
+    // His open ₹499 request is closed.
+    expect(prisma.payment.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['pay-open'] }, status: 'pending' }, data: { status: 'failed' } });
+    expect(prisma.statusHistory.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ subjectType: 'payment', reason: 'closed_permanent_ban' }) }));
+  });
+
+  it('a permanently banned business cannot be given a time-limited suspension (it would end the ban)', async () => {
+    const { service, prisma } = setup();
+    prisma.permanentBan.findUnique.mockResolvedValueOnce({ id: 'ban-1' });
+    await expect(service.suspendBusiness('bz-1', 'ceo', { days: 30, reason: 'Repeated no-shows' })).rejects.toThrow(ConflictException);
+    expect(prisma.business.update).not.toHaveBeenCalled();
   });
 
   it('a business ban suspends it permanently and keeps its GSTIN fingerprint; banning twice is refused', async () => {

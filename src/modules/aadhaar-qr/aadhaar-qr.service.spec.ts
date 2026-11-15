@@ -12,7 +12,7 @@ import { oneRegistrationCheck, REGISTRATION_ALREADY_CHECKED } from './one-regist
 import { MemoryCandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { buildSecureQr, testSigner } from './testing/secure-qr.fixtures';
 import { fakePrisma, FakePrisma } from './testing/fake-prisma';
-import { aadhaarFingerprint, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
+import { aadhaarFingerprint, BANNED_MESSAGE, otherIdFingerprint } from '../conduct/permanent-ban.check';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const signer = testSigner();
@@ -76,7 +76,12 @@ function setup(options: { trusted?: TrustedKey[] } = {}) {
       { id: 'consent-1', subjectType: 'job_seeker', subjectId: 'js-1', purpose: 'aadhaar_verification', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW },
       { id: 'consent-3', subjectType: 'job_seeker', subjectId: 'js-2', purpose: 'aadhaar_verification', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW },
       { id: 'consent-4', subjectType: 'job_seeker', subjectId: 'js-3', purpose: 'aadhaar_verification', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW },
-      { id: 'consent-2', subjectType: 'referral', subjectId: 'rf-1', purpose: 'agreement_terms', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW },
+      // The partner accepted Referral Partner Terms v1.0 with its separate ID-check consent (S2, rev 176).
+      { id: 'consent-2', subjectType: 'referral', subjectId: 'rf-1', purpose: 'aadhaar_verification', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW },
+      { id: 'consent-2t', subjectType: 'referral', subjectId: 'rf-1', purpose: 'agreement_terms', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW },
+    ],
+    legalAcceptances: [
+      { id: 'acc-rf-1', subjectType: 'referral', subjectId: 'rf-1', documentKey: 'referral_terms', version: '1.0', language: 'en', context: 'partner_terms', noticeVersion: null, acceptedAt: NOW },
     ],
   });
   const auditCalls: Record<string, unknown>[] = [];
@@ -427,13 +432,39 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
     expect(prisma.idCheckDetail.rows[0]).toMatchObject({ subjectType: 'referral', photoPath: null });
   });
 
-  it('S2 (rev 176): a partner who accepted the full v1.0 terms needs the separate ID-check consent; the old short-terms tick no longer counts', async () => {
+  it('S2 (rev 176): a partner who accepted the full v1.0 terms needs the separate ID-check consent; the old short-terms tick does not count', async () => {
     const { service, prisma } = setup();
-    prisma.legalAcceptance.rows.push({ id: 'acc-1', subjectType: 'referral', subjectId: 'rf-1', documentKey: 'referral_terms', version: '1.0' });
-    await expect(service.checkReferral('rf-1', qr(), { channel: 'link', now: NOW })).rejects.toThrow();
+    prisma.consent.rows.splice(prisma.consent.rows.findIndex((r) => r.id === 'consent-2'), 1);
+    await expect(service.checkReferral('rf-1', qr(), { channel: 'link', now: NOW })).rejects.toThrow('The ID-check consent is required');
     prisma.consent.rows.push({ id: 'consent-9', subjectType: 'referral', subjectId: 'rf-1', purpose: 'aadhaar_verification', granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW });
     await service.checkReferral('rf-1', qr(), { channel: 'link', now: NOW });
     expect(prisma.referralIdentityVerification.rows[0]).toMatchObject({ referralId: 'rf-1', consentId: 'consent-9' });
+  });
+
+  it('M6 / H3: a partner who signed only the older short terms must accept v1.0 first (RECONSENT_REQUIRED), for the QR and for another ID', async () => {
+    const { service, otherIds, prisma, card } = setup();
+    prisma.legalAcceptance.rows.splice(0, 1);
+    prisma.consent.rows.splice(prisma.consent.rows.findIndex((r) => r.id === 'consent-2'), 1);
+    const refused = await service.checkReferral('rf-1', qr(), { channel: 'link', now: NOW }).catch((e: HttpException) => e);
+    expect((refused as HttpException).getResponse()).toMatchObject({ code: 'RECONSENT_REQUIRED', documentKey: 'referral_terms', currentVersion: '1.0' });
+    await expect(otherIds.submitForReferral('rf-1', await card({}, { type: 'referral', id: 'rf-1' }), { channel: 'link', now: NOW })).rejects.toThrow('accept the updated terms');
+  });
+
+  it('H3: a job seeker who must accept the updated terms (five consents under the old notice, no acceptance yet) gets no ID check', async () => {
+    const { service, prisma } = setup();
+    for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'job_updates']) {
+      prisma.consent.rows.push({ id: `c-${purpose}`, subjectType: 'job_seeker', subjectId: 'js-1', purpose, granted: true, grantedAt: NOW, withdrawnAt: null, createdAt: NOW });
+    }
+    await expect(service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).rejects.toThrow('accept the updated terms');
+    prisma.legalAcceptance.rows.push({ id: 'acc-js', subjectType: 'job_seeker', subjectId: 'js-1', documentKey: 'job_seeker_terms', version: '1.1', context: 'reconsent', noticeVersion: '1.2', acceptedAt: NOW });
+    expect((await service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).result).toBe('verified');
+  });
+
+  it('D11 (rev 176): the same PAN, driving licence or voter ID as a permanently banned person cannot be submitted again', async () => {
+    const { otherIds, prisma, card } = setup();
+    prisma.permanentBan.rows.push({ id: 'ban-2', subjectType: 'job_seeker', subjectId: 'js-old', category: 'forged_id', idFingerprints: [otherIdFingerprint('pan', '234F', 'Kavya Ramesh')] });
+    await expect(otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW })).rejects.toThrow(BANNED_MESSAGE);
+    expect(prisma.identityVerification.rows).toHaveLength(0);
   });
 
   it('D11 (rev 176): the same Aadhaar as a permanently banned person cannot register again', async () => {
