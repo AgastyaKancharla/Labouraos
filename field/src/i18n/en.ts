@@ -96,6 +96,7 @@ export const en = {
   'fa02.expiresIn': 'Expires in {time}',
   'fa02.expired': 'This request has expired. Sign in again to get a new code.',
   'fa02.invalidCode': 'That code is not right, or it was already used. Check it with your Team Lead.',
+  'fa02.invalidCodeCeo': 'That code is not right, or it was already used. Check it with the CEO who read it out.',
   'fa02.startAgain': 'Sign in again',
   'fa02.verifying': 'Checking…',
 

@@ -22,6 +22,12 @@ import type { SelfieImageType } from '../../common/image-type';
 
 /** Every refusal of a ticket says the same thing: start again from the sign-in page. */
 export const SETUP_EXPIRED = 'This set-up has ended. Sign in again with your staff code and temporary password.';
+/** Wrong authenticator codes one set-up ticket takes before it ends. */
+export const SETUP_WRONG_CODES = 5;
+export const SETUP_TOO_MANY_CODES = 'Too many wrong authenticator codes. Sign in again with your staff code and temporary password.';
+const LOCKED_BY_SENIOR = 'Account is locked until a Team Lead, Manager or the CEO unlocks it';
+/** Longest device id accepted anywhere in sign-in (longer is refused with the usual answer). */
+export const MAX_DEVICE_ID_LENGTH = 128;
 
 export interface SetupCompleteInput {
   setupTicket?: unknown;
@@ -62,14 +68,16 @@ export class StaffSetupService {
    * The account a set-up ticket belongs to, checked against the device it was
    * given to. Anything wrong (unknown, other device, ended, temporary password
    * ended or replaced, account deactivated) is the same 401: start again from
-   * the sign-in page. A locked account (by a senior, or by 5 wrong tries)
-   * gets the lock answer and the ticket ends.
+   * the sign-in page. Only a lock a senior placed refuses (and ends) the
+   * ticket: a wrong-password lock from the login page (anyone who knows a
+   * staff code can cause one) never stops a set-up already under way.
+   * Authenticator guessing is stopped on the ticket itself (5 wrong codes).
    */
   async holderOf(rawTicket: unknown, rawDeviceId: unknown): Promise<Staff> {
     const ticket = text(rawTicket).trim();
     const deviceId = text(rawDeviceId).trim();
     const refuse = (reason: string) => new UnauthorizedException({ message: SETUP_EXPIRED, reason });
-    if (!ticket || !deviceId) throw refuse('setup_missing');
+    if (!ticket || !deviceId || ticket.length > 128 || deviceId.length > MAX_DEVICE_ID_LENGTH) throw refuse('setup_missing');
     const staff = await this.prisma.staff.findUnique({ where: { setupTicketHash: hashSetupTicket(ticket) } });
     if (!staff) throw refuse('setup_unknown');
     noteRequestDevice({ staffId: staff.id, deviceId });
@@ -83,34 +91,55 @@ export class StaffSetupService {
       throw refuse('temp_password_ended');
     }
     if (staff.status !== 'active' && staff.status !== 'pending_invite') throw refuse('account_not_active');
-    // Locked (by a senior, or by wrong passwords / authenticator codes): the
-    // ticket ends with the lock, so guessing cannot carry on after it.
-    try {
-      await this.auth.assertNotLocked(staff);
-    } catch (locked) {
-      await this.endTicket(staff, 'account_locked');
-      throw new UnauthorizedException({ message: (locked as Error).message, reason: 'account_locked' });
+    if (staff.lockedByStaffId) {
+      await this.endTicket(staff, 'locked_by_senior');
+      throw new UnauthorizedException({ message: LOCKED_BY_SENIOR, reason: 'account_locked' });
+    }
+    if (staff.setupTicketWrongCodes >= SETUP_WRONG_CODES) {
+      await this.endTicket(staff, 'too_many_wrong_codes');
+      throw refuse('too_many_wrong_codes');
     }
     return staff;
   }
 
-  /** Ends this set-up ticket (the temporary password stays: after a lock ends, sign in with it again). */
+  /** Ends this set-up ticket (the temporary password stays: sign in with it again for a new one). */
   private async endTicket(staff: Staff, reason: string): Promise<void> {
     const ended = await this.prisma.staff.updateMany({
       where: { id: staff.id, setupTicketHash: staff.setupTicketHash },
-      data: { setupTicketHash: null, setupTicketDeviceId: null, setupTicketExpiresAt: null },
+      data: { setupTicketHash: null, setupTicketDeviceId: null, setupTicketExpiresAt: null, setupTicketWrongCodes: 0 },
     });
     if (ended.count === 1) {
       await this.audit.log({ actorId: staff.id, action: 'auth.setup.ended', entityType: 'staff', entityCode: staff.code, after: { reason } });
     }
   }
 
-  /** A wrong authenticator code counts like a wrong password; the one that locks the account ends the ticket. */
+  /**
+   * Takes one of the ticket's 5 authenticator tries BEFORE the code is checked
+   * (never more than 5, however many arrive at once). False when none is left:
+   * the ticket has ended.
+   */
+  private async takeCodeTry(staff: Staff): Promise<boolean> {
+    const taken = await this.prisma.staff.updateMany({
+      where: { id: staff.id, setupTicketHash: staff.setupTicketHash, setupTicketWrongCodes: { lt: SETUP_WRONG_CODES } },
+      data: { setupTicketWrongCodes: { increment: 1 } },
+    });
+    if (taken.count === 1) return true;
+    await this.endTicket(staff, 'too_many_wrong_codes');
+    return false;
+  }
+
+  /**
+   * A wrong authenticator code: the try stays used (the 5th ends the ticket)
+   * and it counts on the account like a wrong password, so after a lock the
+   * temporary password gives no new ticket until the lock ends (a ticket
+   * already given is not stopped by it).
+   */
   private async wrongCode(staff: Staff, reason: 'totp_invalid' | 'totp_reused', message: string): Promise<never> {
-    const lockedUntil = await this.auth.countWrongSecondFactor(staff, reason);
-    if (lockedUntil) {
-      await this.endTicket(staff, 'account_locked');
-      throw new UnauthorizedException({ message: `Account is locked until ${lockedUntil.toISOString()}`, reason: 'account_locked' });
+    await this.auth.countWrongSecondFactor(staff, reason);
+    const after = await this.prisma.staff.findUnique({ where: { id: staff.id }, select: { setupTicketWrongCodes: true, setupTicketHash: true } });
+    if (!after || after.setupTicketHash !== staff.setupTicketHash || after.setupTicketWrongCodes >= SETUP_WRONG_CODES) {
+      await this.endTicket(staff, 'too_many_wrong_codes');
+      throw new UnauthorizedException({ message: SETUP_TOO_MANY_CODES, reason: 'too_many_wrong_codes' });
     }
     throw new BadRequestException({ message, reason });
   }
@@ -178,6 +207,9 @@ export class StaffSetupService {
       if (!totpCode) {
         throw new BadRequestException({ message: 'Type the 6-digit code from your authenticator app.', reason: 'totp_required' });
       }
+      if (!(await this.takeCodeTry(staff))) {
+        throw new UnauthorizedException({ message: SETUP_TOO_MANY_CODES, reason: 'too_many_wrong_codes' });
+      }
       const step = this.totp.verifyStep(totpCode, staff.totpSecret);
       if (step === null) {
         await this.wrongCode(staff, 'totp_invalid', 'The authenticator code is not right. Check the app and try again.');
@@ -185,6 +217,11 @@ export class StaffSetupService {
       if (!(await claimTotpStep(this.prisma, staff.id, step!))) {
         await this.wrongCode(staff, 'totp_reused', TOTP_REUSED);
       }
+      // A right code gives its try back.
+      await this.prisma.staff.updateMany({
+        where: { id: staff.id, setupTicketHash: staff.setupTicketHash, setupTicketWrongCodes: { gt: 0 } },
+        data: { setupTicketWrongCodes: { decrement: 1 } },
+      });
       enableTotp = !enrolled;
     }
 
@@ -213,7 +250,6 @@ export class StaffSetupService {
           tempPasswordExpiresAt: { gt: now },
           status: { in: ['active', 'pending_invite'] },
           lockedByStaffId: null,
-          OR: [{ lockedUntil: null }, { lockedUntil: { lte: now } }],
           ...(enableTotp ? { totpSecret: staff.totpSecret, totpEnabled: false } : {}),
         },
         data: {
@@ -225,6 +261,7 @@ export class StaffSetupService {
           setupTicketHash: null,
           setupTicketDeviceId: null,
           setupTicketExpiresAt: null,
+          setupTicketWrongCodes: 0,
           inviteTokenHash: null,
           inviteExpiresAt: null,
           failedLoginCount: 0,

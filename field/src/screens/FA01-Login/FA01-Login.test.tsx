@@ -167,6 +167,15 @@ describe('FA02 login code', () => {
     await waitFor(() => expect(screen.getByTestId('code-error')).toHaveTextContent(/not right/));
   });
 
+  it('a wrong code names the CEO for an owner account that reports to a CEO', async () => {
+    await toCodeScreen((url) =>
+      url.endsWith('/auth/login') ? { status: 200, body: { ...awaiting, codeFrom: 'ceo' } } : { status: 401, body: { message: 'Login code is not valid' } },
+    );
+    await fireEvent.changeText(screen.getByTestId('login-code'), '111111');
+    await waitFor(() => expect(screen.getByTestId('code-error')).toHaveTextContent(/Check it with the CEO who read it out/));
+    expect(screen.getByTestId('code-error')).not.toHaveTextContent(/Team Lead/);
+  });
+
   it('offers to start again once the 5 minutes are up', async () => {
     await toCodeScreen((url) =>
       url.endsWith('/auth/login')

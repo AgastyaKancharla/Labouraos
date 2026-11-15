@@ -11,6 +11,7 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { AUTHENTICATOR_NOT_SET_UP, TEMP_PASSWORD_EXPIRED } from '../../common/auth/auth.service';
 import { freshTotpWindow } from '../../test-support/enrolled-login-spec';
 import { takeSetupSelfie } from '../../test-support/setup-selfie';
+import { SETUP_REQUESTS_PER_IP_PER_MINUTE } from './staff-setup.controller';
 
 function reasonOf(body: { reason?: string; details?: { reason?: string } }): string | undefined {
   return body.details?.reason ?? body.reason;
@@ -223,7 +224,7 @@ describe('First login with a temporary password', () => {
     expect(await prisma.loginCodeRequest.count({ where: { staffId: made.body.staff.id } })).toBe(0);
   });
 
-  it('authenticator guessing in set-up stops at the account lock: the lock ends the ticket, even the right code is refused after it', async () => {
+  it('authenticator guessing in set-up: 5 wrong codes end the ticket (counted on the ticket), even the right code is refused after it', async () => {
     const made = await create('mgr', { name: 'Guess Lead', role: 'team_lead', reportsToId: staffIds.mgr });
     const device = `dev-g-${ts}`;
     const res = await login(made.body.staff.code, made.body.tempPassword, device).expect(200);
@@ -231,20 +232,19 @@ describe('First login with a temporary password', () => {
     await takeSetupSelfie(app, res.body, device);
     const qr = await post('/auth/setup/authenticator', ticket).expect(200);
     const reasons: (string | undefined)[] = [];
-    for (let i = 0; i < 8 && reasons[reasons.length - 1] !== 'account_locked'; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       const wrong = await post('/auth/setup/complete', { ...ticket, newPassword: 'Guess-Pass-1', totpCode: '000000' });
       reasons.push(reasonOf(wrong.body));
     }
-    // Wrong codes count like wrong passwords: the 5th locks the account and ends the ticket.
-    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'account_locked']);
+    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'too_many_wrong_codes', 'setup_unknown']);
     let row = await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } });
-    expect(row.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
-    expect(row).toMatchObject({ setupTicketHash: null, setupTicketDeviceId: null, status: 'pending_invite', totpEnabled: false });
+    expect(row).toMatchObject({ setupTicketHash: null, setupTicketDeviceId: null, setupTicketWrongCodes: 0, status: 'pending_invite', totpEnabled: false });
     await freshTotpWindow(qr.body.secret);
     const after = await post('/auth/setup/complete', { ...ticket, newPassword: 'Guess-Pass-1', totpCode: authenticator.generate(qr.body.secret) });
     expect(after.status).toBe(401);
     expect(reasonOf(after.body)).toBe('setup_unknown');
-    // While locked, the temporary password gives no new ticket either.
+    // The wrong codes also counted on the account like wrong passwords: no new ticket until that lock ends.
+    expect(row.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
     const again = await login(made.body.staff.code, made.body.tempPassword, device);
     expect(again.status).toBe(401);
     expect(messageOf(again.body)).toContain('locked');
@@ -252,35 +252,65 @@ describe('First login with a temporary password', () => {
     expect(row.setupTicketHash).toBeNull();
   });
 
-  it('a ticket stops working the moment the account is locked (wrong passwords elsewhere), and the lock ends it', async () => {
+  it('a wrong-password lock from the login page does not stop a set-up already under way; a senior\'s lock does, and ends the ticket', async () => {
     const made = await create('mgr', { name: 'Locked Agent', role: 'call_agent', reportsToId: staffIds.tl });
     const device = `dev-k-${ts}`;
     const res = await login(made.body.staff.code, made.body.tempPassword, device).expect(200);
-    await prisma.staff.update({ where: { id: made.body.staff.id }, data: { lockedUntil: new Date(Date.now() + 15 * 60_000), failedLoginCount: 5 } });
-    const photo = await request(app.getHttpServer())
-      .post('/auth/setup/photo')
-      .set('X-Forwarded-For', freshIp())
-      .set('x-setup-ticket', res.body.setupTicket)
-      .set('x-device-id', device)
-      .field('captureSource', 'live_camera')
-      .attach('photo', JPEG, 'me.jpg');
-    expect(photo.status).toBe(401);
-    expect(messageOf(photo.body)).toContain('locked');
-    expect((await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } })).setupTicketHash).toBeNull();
+    // A stranger who knows the staff code types 5 wrong passwords.
+    for (let i = 0; i < 5; i += 1) {
+      expect((await login(made.body.staff.code, 'Wrong-Pass-99', `stranger-${ts}`)).status).toBe(401);
+    }
+    const locked = await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } });
+    expect(locked.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
+    const photo = (ticketValue: string) =>
+      request(app.getHttpServer())
+        .post('/auth/setup/photo')
+        .set('X-Forwarded-For', freshIp())
+        .set('x-setup-ticket', ticketValue)
+        .set('x-device-id', device)
+        .field('captureSource', 'live_camera')
+        .attach('photo', JPEG, 'me.jpg');
+    expect((await photo(res.body.setupTicket)).status).toBe(200);
+    await post('/auth/setup/complete', { setupTicket: res.body.setupTicket, deviceId: device, newPassword: 'Mine-Pass-77' }).expect(200);
+    // Set-up done: the wrong tries and the lock are cleared with it.
+    expect(await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } })).toMatchObject({ status: 'active', lockedUntil: null, failedLoginCount: 0 });
+
+    // A senior's lock stops a set-up and ends the ticket.
+    const other = await create('mgr', { name: 'Senior Locked', role: 'call_agent', reportsToId: staffIds.tl });
+    const start = await login(other.body.staff.code, other.body.tempPassword, device).expect(200);
+    await prisma.staff.update({ where: { id: other.body.staff.id }, data: { lockedByStaffId: staffIds.mgr, lockedReason: 'check' } });
+    const refused = await photo(start.body.setupTicket);
+    expect(refused.status).toBe(401);
+    expect(messageOf(refused.body)).toContain('locked');
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: other.body.staff.id } })).setupTicketHash).toBeNull();
+    await prisma.staff.update({ where: { id: other.body.staff.id }, data: { lockedByStaffId: null, lockedReason: null } });
+  });
+
+  it('signing in with the temporary password does not wipe earlier wrong passwords: only a finished set-up does', async () => {
+    const made = await create('mgr', { name: 'Count Agent', role: 'call_agent', reportsToId: staffIds.tl });
+    for (let i = 0; i < 3; i += 1) {
+      expect((await login(made.body.staff.code, 'Wrong-Pass-99', `dev-c-${ts}`)).status).toBe(401);
+    }
+    const res = await login(made.body.staff.code, made.body.tempPassword, `dev-c-${ts}`).expect(200);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } })).failedLoginCount).toBe(3);
+    await takeSetupSelfie(app, res.body, `dev-c-${ts}`);
+    await post('/auth/setup/complete', { setupTicket: res.body.setupTicket, deviceId: `dev-c-${ts}`, newPassword: 'Count-Pass-1' }).expect(200);
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: made.body.staff.id } })).failedLoginCount).toBe(0);
   });
 
   it('set-up routes are limited per connection only: a different staff code in the body never opens a fresh bucket', async () => {
     const ip = `10.64.${ts % 200}.9`;
     const statuses: number[] = [];
-    for (let i = 0; i < 7; i += 1) {
+    for (let i = 0; i < SETUP_REQUESTS_PER_IP_PER_MINUTE + 2; i += 1) {
       const res = await request(app.getHttpServer())
         .post('/auth/setup/complete')
         .set('X-Forwarded-For', ip)
         .send({ staffCode: `RAND-${i}-${ts}`, resetRequestId: `r-${i}`, setupTicket: `${i}`.repeat(64), deviceId: `d-${i}`, newPassword: 'Whatever-123' });
       statuses.push(res.status);
     }
-    expect(statuses.slice(0, 5).every((st) => st === 401)).toBe(true);
-    expect(statuses.slice(5)).toEqual([429, 429]);
+    expect(SETUP_REQUESTS_PER_IP_PER_MINUTE).toBe(20);
+    expect(statuses.slice(0, 20).every((st) => st === 401)).toBe(true);
+    expect(statuses.slice(20)).toEqual([429, 429]);
   });
 
   it('an existing Team Lead without an authenticator gets no session from a password alone; a fresh temporary password from a senior is the safe way in', async () => {

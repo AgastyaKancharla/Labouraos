@@ -303,7 +303,7 @@ describe('Temporary passwords and Forgot password by a senior reset code', () =>
       expect(r.status).toBe(401);
     }
     const dead = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-a2b-${ts}`, code: right, newPassword });
-    expect(reasonOf(dead.body)).toBe('refused');
+    expect(reasonOf(dead.body)).toBe('code_invalid');
     expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } })).refusedReason).toBe('too_many_wrong_codes');
   });
 
@@ -345,7 +345,7 @@ describe('Temporary passwords and Forgot password by a senior reset code', () =>
     expect(await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } })).toMatchObject({ status: 'refused', refusedReason: 'account_locked' });
     await prisma.staff.update({ where: { id: people.tlA.id }, data: { lockedByStaffId: null, lockedReason: null } });
     const ended = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlA') });
-    expect(reasonOf(ended.body)).toBe('refused');
+    expect(reasonOf(ended.body)).toBe('code_invalid');
     const again = await requestReset(people.tlA.code, `d-tla-${ts}`).expect(200);
     expect(again.body.resetRequestId).not.toBe(asked.body.resetRequestId);
     await as('mgrA', 'post', `/password-resets/${again.body.resetRequestId}/reveal`).expect(200);
@@ -396,24 +396,91 @@ describe('Temporary passwords and Forgot password by a senior reset code', () =>
     await prisma.passwordResetRequest.updateMany({ where: { staffId: people.agentA3.id, status: { in: ['pending', 'revealed'] } }, data: { status: 'expired' } });
   });
 
-  it('authenticator guessing on reset completion stops at the account lock, and the lock ends the request', async () => {
+  it('5 wrong authenticator codes end the request (counted on the request, not the account)', async () => {
     await mk('tlD', 'team_lead', { reportsToId: people.mgrA.id });
     const asked = await requestReset(people.tlD.code, `d-tld-${ts}`).expect(200);
     await as('mgrA', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
     const base = { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-tld-${ts}`, code: resetCodeFor(asked.body.resetRequestId), newPassword };
     const reasons: (string | undefined)[] = [];
-    for (let i = 0; i < 8 && reasons[reasons.length - 1] !== 'locked'; i += 1) {
+    for (let i = 0; i < 6; i += 1) {
       reasons.push(reasonOf((await post('/auth/password-reset/complete', { ...base, totpCode: '000000' })).body));
     }
-    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'locked']);
+    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'code_invalid', 'code_invalid']);
     const row = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } });
-    expect(row).toMatchObject({ status: 'refused', refusedReason: 'account_locked' });
-    // The right reset code never used up a try.
-    expect(row.failedAttempts).toBe(0);
+    expect(row).toMatchObject({ status: 'refused', refusedReason: 'too_many_wrong_codes', failedAttempts: 5 });
+    // The login page is not locked by it.
+    const account = await prisma.staff.findUniqueOrThrow({ where: { id: people.tlD.id } });
+    expect(account).toMatchObject({ lockedUntil: null, failedLoginCount: 0 });
     // Even the right authenticator code is refused now; the password is unchanged.
     const after = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlD') });
     expect(after.status).toBe(401);
     expect(await passwordIs('tlD', oldPassword)).toBe(true);
+  });
+
+  it('a wrong-password lock from the login page (anyone who knows the staff code) does not stop a senior-approved reset', async () => {
+    await mk('agentLock', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    for (let i = 0; i < 5; i += 1) {
+      expect((await login('agentLock', 'Wrong-Password-9', `stranger-${ts}`)).status).toBe(401);
+    }
+    const lockedRow = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentLock.id } });
+    expect(lockedRow.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
+    const asked = await requestReset(people.agentLock.code, `d-lock-${ts}`).expect(200);
+    await as('ceo', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    await post('/auth/password-reset/complete', {
+      resetRequestId: asked.body.resetRequestId,
+      resetRequestProof: asked.body.resetRequestProof,
+      deviceId: `d-lock-${ts}`,
+      code: resetCodeFor(asked.body.resetRequestId),
+      newPassword,
+    }).expect(200);
+    const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentLock.id } });
+    expect(row).toMatchObject({ lockedUntil: null, failedLoginCount: 0 });
+    expect(await passwordIs('agentLock', newPassword)).toBe(true);
+  });
+
+  it('a real request and a stand-in answer alike when the time is up, from the wrong app, and when refused', async () => {
+    const tryIt = (asked: request.Response, deviceId: string, extra: Record<string, unknown> = {}) =>
+      post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId, code: '123456', newPassword, ...extra });
+    await mk('agentTime', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    // Ended by time.
+    const real = await requestReset(people.agentTime.code, `d-time-${ts}`).expect(200);
+    const ghost = await requestReset(`NOBODY-${ts}`, `d-time-${ts}`).expect(200);
+    await prisma.passwordResetRequest.update({ where: { id: real.body.resetRequestId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const realLate = await tryIt(real, `d-time-${ts}`);
+    const ghostLate = await tryIt(ghost, `d-time-${ts}`);
+    expect(reasonOf(realLate.body)).toBe('code_invalid');
+    expect(JSON.stringify(realLate.body)).toBe(JSON.stringify(ghostLate.body));
+    expect(realLate.status).toBe(ghostLate.status);
+    // Asked from the office app, completed from Laboura Field.
+    const realOffice = await post('/auth/password-reset/request', { staffCode: people.agentTime.code, deviceId: `d-app-${ts}`, app: 'office' }).expect(200);
+    const ghostOffice = await post('/auth/password-reset/request', { staffCode: `NOBODY-${ts}`, deviceId: `d-app-${ts}`, app: 'office' }).expect(200);
+    const realField = await tryIt(realOffice, `d-app-${ts}`, { app: 'field' });
+    const ghostField = await tryIt(ghostOffice, `d-app-${ts}`, { app: 'field' });
+    expect(reasonOf(realField.body)).toBe('code_invalid');
+    expect(JSON.stringify(realField.body)).toBe(JSON.stringify(ghostField.body));
+    // Refused by a senior.
+    await as('ceo', 'post', `/password-resets/${realOffice.body.resetRequestId}/refuse`, { reason: 'Not her' }).expect(200);
+    const realRefused = await tryIt(realOffice, `d-app-${ts}`, { app: 'office' });
+    const ghostAgain = await tryIt(ghostOffice, `d-app-${ts}`, { app: 'office' });
+    expect(JSON.stringify(realRefused.body)).toBe(JSON.stringify(ghostAgain.body));
+  });
+
+  it('the stand-in end time is the end of its 15-minute window (nothing kept in memory), and over-long input gets the usual answer', async () => {
+    const before = Date.now();
+    const one = await requestReset(`WINDOW-${ts}`, `d-win-${ts}`).expect(200);
+    const end = new Date(one.body.expiresAt).getTime();
+    expect(end % (15 * 60 * 1000)).toBe(0);
+    expect(end).toBeGreaterThan(before);
+    expect(end - before).toBeLessThanOrEqual(15 * 60 * 1000);
+    const longCode = await requestReset('X'.repeat(33), `d-win-${ts}`).expect(200);
+    const longDevice = await requestReset(people.agentA3.code, 'd'.repeat(129)).expect(200);
+    for (const r of [longCode, longDevice]) {
+      expect(Object.keys(r.body).sort()).toEqual(['expiresAt', 'message', 'resetRequestId', 'resetRequestProof', 'status']);
+      expect(r.body.message).toBe(RESET_REQUESTED_MESSAGE);
+    }
+    expect(await prisma.passwordResetRequest.count({ where: { id: { in: [longCode.body.resetRequestId, longDevice.body.resetRequestId] } } })).toBe(0);
+    const longComplete = await post('/auth/password-reset/complete', { resetRequestId: one.body.resetRequestId, resetRequestProof: one.body.resetRequestProof, deviceId: 'd'.repeat(129), code: '123456', newPassword });
+    expect(reasonOf(longComplete.body)).toBe('code_invalid');
   });
 
   it('wrong reset codes sent all at once still stop at 5 tries', async () => {

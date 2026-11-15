@@ -279,7 +279,7 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 > 3. Copy the application's **Audience (AUD) tag**.
 > 4. Ask Claude to change `CLOUDFLARE_ACCESS_ENFORCED` to `"true"` in `render.yaml` (a value written in that file is put back on every sync, so changing it only in the dashboard does not last).
 > 5. In Render, `laboura-api`, **Environment**: set `CLOUDFLARE_ACCESS_TEAM_DOMAIN` (like `laboura.cloudflareaccess.com`) and `CLOUDFLARE_ACCESS_AUD` (the tag from step 3). Click **Save Changes**. With enforcement on and either value missing, the server refuses to start, so set both.
-> 6. Once Cloudflare sits in front of Render, ask Claude to change `TRUST_PROXY_HOPS` from `1` to `2`.
+> 6. Once Cloudflare sits in front of Render, ask Claude to change `TRUST_PROXY_HOPS` from `1` to `2`, then check `/health/proxy-check` again as in step F11 (it must pass before going live).
 
 #### UPI details
 
@@ -448,10 +448,17 @@ So during a free-tier deploy the two copies hold about **4** of the ~50. (Before
 
 This does three things: the web service never sleeps (it sleeps after 15 minutes without a visitor), so the nightly jobs can run at their times; Supabase sees daily use, so it does not pause the project; and you get an email when the database, the queue, the worker or the job schedules fail. One always-on free web service fits inside Render's 750 free hours a month; a second free web service would not.
 
-**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy.** Rate limits need the real address of each visitor.
-1. Log in as the CEO, open **Team & Access**, then **Devices & logins**, and look at the address shown for your own login.
-2. In another tab, search the web for "what is my IP" and note your public address.
-3. If they match, nothing to do. If the app shows an address starting with `10.` or one that is not yours, open `laboura-test`, **Environment**, change `TRUST_PROXY_HOPS` from `1` to `2`, click **Save Changes**, wait for the restart, log in again and compare. Raise it by one until the addresses match (a Render community report needed `3`). Write the final number down.
+**F11. Check the visitor address (`TRUST_PROXY_HOPS`) — on the first deploy. This is a hard gate: do not go live until it passes.** Rate limits (sign-in, set-up, Forgot password) count per visitor address, so the app must see each visitor's real address, not Render's.
+1. Log in as the CEO on a phone using **mobile data** (not the office Wi-Fi).
+2. In the same browser, open `https://laboura-test.onrender.com/health/proxy-check`. It shows three things and never an address:
+   - `forwardedForEntries`: how many addresses Render passed along;
+   - `trustProxyHops`: the `TRUST_PROXY_HOPS` the app runs with;
+   - `clientAddress`: `public` or `private_or_proxy`.
+3. **Pass:** `clientAddress` is `public` **and** `trustProxyHops` is not bigger than `forwardedForEntries`. Write the number down; on the paid setup (`render.yaml` sets `TRUST_PROXY_HOPS`) tell Claude the number and check this page again there before any real data.
+4. **`clientAddress` is `private_or_proxy`:** the app is taking a Render address as the visitor's. Open `laboura-test`, **Environment**, raise `TRUST_PROXY_HOPS` by one, **Save Changes**, wait for the restart, log in again and reload the page. Repeat until it passes (a Render community report needed `3`).
+5. **`trustProxyHops` is bigger than `forwardedForEntries`:** the value is too high (a visitor could then pick their own address). Lower it by one and check again.
+6. If it never passes, stop and tell Claude before any real data.
+7. Afterwards, **Team & Access**, then **Devices & logins**, shows your own login with the address the app saw: it should be your phone's public address, not one starting with `10.`.
 
 **F12. Test OTP steps with the on-screen test code.** Every vendor is in `mock` mode, so no SMS is sent. Instead, whenever a screen asks for an OTP, a yellow banner **"Test mode code: 123456"** shows the code (and the server log shows it too). This test mode turns off by itself when `OTP_PROVIDER_MODE` is `real`, and is never shown when `NODE_ENV` is `production` with any live vendor.
 

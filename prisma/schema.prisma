@@ -935,6 +935,8 @@ model Staff {
   setupTicketHash   String?          @unique
   setupTicketDeviceId String?
   setupTicketExpiresAt DateTime?
+  /// Wrong authenticator codes typed with the current set-up ticket (5 end it).
+  setupTicketWrongCodes Int @default(0)
   /// Shown once at the next sign-in after a password reset ("Your password was
   /// reset on … approved by …"): { at, byName, byRole, how }. Cleared once shown.
   passwordResetNotice Json?

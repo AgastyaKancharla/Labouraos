@@ -518,7 +518,7 @@ describe('Phase 8 Task 9: Staff account management', () => {
     it('set-up is public (no bearer token) but throttled', async () => {
       const ip = freshIp();
       const statuses: number[] = [];
-      for (let i = 0; i < 8; i++) {
+      for (let i = 0; i < 23; i++) {
         const res = await request(app.getHttpServer())
           .post('/auth/setup/complete')
           .set('X-Forwarded-For', ip)

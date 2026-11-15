@@ -29,6 +29,12 @@ export const SETUP_TICKET_HEADER = 'x-setup-ticket';
 export const SETUP_DEVICE_HEADER = 'x-device-id';
 
 /**
+ * Set-up requests per connection per minute (IP only, whatever the body). An
+ * onboarding day puts many new staff behind one office address.
+ */
+export const SETUP_REQUESTS_PER_IP_PER_MINUTE = 20;
+
+/**
  * Checks the set-up ticket BEFORE the photo is read (as the public selfie
  * pages do, M4), so a wrong or ended ticket never buffers a file.
  */
@@ -47,7 +53,7 @@ export class SetupTicketUploadGuard implements CanActivate {
  * First-login set-up (Master Guide rev 174–175): reached only with the set-up
  * ticket that signing in with the temporary password gave this device. Not a
  * session: no other route accepts the ticket, and these routes accept nothing
- * else. Throttled like login.
+ * else. Throttled per connection (20 a minute).
  */
 @Controller('auth/setup')
 export class StaffSetupController {
@@ -58,7 +64,7 @@ export class StaffSetupController {
   @Public('first-login set-up: the set-up ticket from the temporary password sign-in is the proof; live camera selfie only')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard, SetupTicketUploadGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: SETUP_REQUESTS_PER_IP_PER_MINUTE, ttl: 60000 } })
   @UseInterceptors(FileInterceptor('photo', { limits: { fileSize: STAFF_PHOTO_MAX_BYTES } }))
   async photo(@Req() req: TicketRequest, @UploadedFile() photo: UploadedPhoto, @Body() body: { captureSource?: string }) {
     const holder = await this.setup.holderOf(req.headers[SETUP_TICKET_HEADER], req.headers[SETUP_DEVICE_HEADER]);
@@ -71,7 +77,7 @@ export class StaffSetupController {
   @Public('first-login set-up: the set-up ticket from the temporary password sign-in is the proof')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: SETUP_REQUESTS_PER_IP_PER_MINUTE, ttl: 60000 } })
   authenticator(@Body() body: { setupTicket?: unknown; deviceId?: unknown }) {
     return this.setup.startAuthenticator(body?.setupTicket, body?.deviceId);
   }
@@ -81,7 +87,7 @@ export class StaffSetupController {
   @Public('first-login set-up: the set-up ticket from the temporary password sign-in is the proof')
   @HttpCode(HttpStatus.OK)
   @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @Throttle({ default: { limit: SETUP_REQUESTS_PER_IP_PER_MINUTE, ttl: 60000 } })
   complete(@Body() body: SetupCompleteInput) {
     return this.setup.complete(body);
   }

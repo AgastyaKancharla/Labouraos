@@ -1,3 +1,4 @@
+import { isStaffAccessToken } from './staff-token';
 import {
   BadRequestException,
   ForbiddenException,
@@ -360,8 +361,9 @@ export class AuthService {
         setupTicketHash: hashSetupTicket(ticket),
         setupTicketDeviceId: deviceId,
         setupTicketExpiresAt: expiresAt,
-        failedLoginCount: 0,
-        lockedUntil: null,
+        // A new ticket has all 5 authenticator tries; wrong passwords and
+        // codes on the account are cleared only when set-up completes.
+        setupTicketWrongCodes: 0,
       },
     });
     if (updated.count !== 1) {
@@ -518,12 +520,16 @@ export class AuthService {
     throw new UnauthorizedException('This login code can only be used on the device that asked for it');
   }
 
+  /** A staff access token only: any scoped, customer or otherwise foreign token is refused like a bad one. */
   async verifyToken(token: string): Promise<JwtPayload> {
+    let payload: unknown;
     try {
-      return await this.jwtService.verifyAsync<JwtPayload>(token);
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
+    if (!isStaffAccessToken(payload)) throw new UnauthorizedException('Invalid or expired token');
+    return payload as JwtPayload;
   }
 
   async listSessions(

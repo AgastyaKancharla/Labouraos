@@ -1,3 +1,4 @@
+import { isStaffAccessToken } from './staff-token';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { PassportStrategy } from '@nestjs/passport';
 import type { Request } from 'express';
@@ -38,6 +39,11 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   async validate(req: Request, payload: JwtPayload): Promise<JwtPayload> {
     if (!payload.sub || !payload.role) {
       throw new UnauthorizedException('Malformed token payload');
+    }
+    // Only a staff access token: never a customer-app or other foreign token
+    // (a scoped one is refused by JwtAuthGuard right after this, with 403).
+    if (!isStaffAccessToken(payload, { scopeRefusedLater: true })) {
+      throw new UnauthorizedException('This sign-in has ended. Sign in again.');
     }
     const fieldHost = isFieldHost(req);
     // A token without a session (Jest only) still answers to its app on the Laboura Field address.

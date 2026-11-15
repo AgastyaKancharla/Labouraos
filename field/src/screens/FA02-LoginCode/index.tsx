@@ -85,7 +85,7 @@ export default function LoginCodeScreen({ now = Date.now }: { now?: () => number
               testID="login-code"
             />
           </Card>
-          {errorKey ? <Banner tone="error" message={t(errorKey)} testID="code-error" /> : null}
+          {errorKey ? <Banner tone="error" message={t(fromCeo && errorKey === 'fa02.invalidCode' ? 'fa02.invalidCodeCeo' : errorKey)} testID="code-error" /> : null}
           {expired ? (
             <>
               <Banner tone="warn" message={t('fa02.expired')} testID="code-expired" />
