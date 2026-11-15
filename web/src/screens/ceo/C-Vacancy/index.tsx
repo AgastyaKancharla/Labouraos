@@ -97,7 +97,7 @@ export default function VacancyDetail() {
               title="Close this vacancy"
               description="No more matching or interviews for it. The reason is kept in the history."
               reason
-              run={({ reason }) => api.patch(`/vacancies/${d.id}`, { status: 'cancelled', reason })}
+              run={({ reason }) => api.post(`/vacancies/${d.id}/close`, { reason })}
               success="Vacancy closed"
             />
           ) : undefined

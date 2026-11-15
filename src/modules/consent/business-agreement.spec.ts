@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from 'crypto';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -123,11 +124,11 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     };
     const currentSpy = jest.spyOn(pricingService, 'current').mockResolvedValue(policyAtSend);
 
-    const link = await request(app.getHttpServer())
+    const { res: link, token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/businesses/${businessId}/agreement-links`)
       .set('Authorization', `Bearer ${agentToken}`)
       .send({ language: 'en' })
-      .expect(201);
+      .expect(201));
     expect(currentSpy).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(link.body)).not.toContain(ownerPhone);
     const agreementMessage = await prisma.messageLog.findFirst({
@@ -136,18 +137,18 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     expect(agreementMessage).not.toBeNull();
     expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
       template: 'agreement_link',
-      variables: { token: link.body.token, link: `https://app.laboura.in/p/agreement/${link.body.token}` },
+      variables: { token: linkToken, link: `https://app.laboura.in/p/agreement/${linkToken}` },
     }));
 
     // A browser opening the old link goes to the new phone page (P04); the page reads the
     // frozen numbers as JSON.
     const redirect = await request(app.getHttpServer())
-      .get(`/consent/${link.body.token}`)
+      .get(`/consent/${linkToken}`)
       .set('Accept', 'text/html')
       .expect(302);
-    expect(redirect.headers.location).toBe(`https://app.laboura.in/p/agreement/${link.body.token}`);
+    expect(redirect.headers.location).toBe(`https://app.laboura.in/p/agreement/${linkToken}`);
     const page = await request(app.getHttpServer())
-      .get(`/consent/${link.body.token}`)
+      .get(`/consent/${linkToken}`)
       .set('Accept', 'application/json')
       .expect(200);
     expect(page.body.agreementTermsHtml).toContain(`${policyAtSend.placementFeePercent}%`);
@@ -160,7 +161,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     currentSpy.mockResolvedValue(changedPolicy);
     const otp = await request(app.getHttpServer())
       .post('/consent/send-otp')
-      .send({ token: link.body.token })
+      .send({ token: linkToken })
       .expect(201);
     expect(otp.body.phone).toBe(`******${ownerPhone.replace(/\D/g, '').slice(-4)}`);
     const provider = otpService.getProvider() as MockOtpProvider;
@@ -170,7 +171,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     const signed = await request(app.getHttpServer())
       .post('/consent/submit')
       .send({
-        token: link.body.token,
+        token: linkToken,
         otpRequestId: otp.body.requestId,
         otpCode: code,
         signedName: 'Owner Test',
@@ -223,16 +224,16 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     const acceptance = await prisma.legalAcceptance.findFirstOrThrow({ where: { subjectType: 'business', subjectId: businessId } });
     expect(acceptance).toMatchObject({ documentKey: 'business_agreement', version: '1.1', language: 'en', textHash: agreement.termsHash, otpRequestId: otp.body.requestId, context: 'agreement' });
     expect(acceptance.purposes).toEqual(['agreement_terms', 'agreement_authority', 'call_recording']);
-    await request(app.getHttpServer()).get(`/consent/${link.body.token}`).expect(400);
+    await request(app.getHttpServer()).get(`/consent/${linkToken}`).expect(400);
     currentSpy.mockRestore();
   });
 
   it('refuses an OTP from any phone other than the business owner and exposes no staff signing route', async () => {
-    const link = await request(app.getHttpServer())
+    const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/businesses/${businessId}/agreement-links`)
       .set('Authorization', `Bearer ${agentToken}`)
       .send({ language: 'en' })
-      .expect(201);
+      .expect(201));
     await request(app.getHttpServer())
       .post(`/businesses/${businessId}/agreements`)
       .set('Authorization', `Bearer ${agentToken}`)
@@ -245,7 +246,7 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
     await request(app.getHttpServer())
       .post('/consent/submit')
       .send({
-        token: link.body.token,
+        token: linkToken,
         otpRequestId: otherPhoneOtp.requestId,
         otpCode: code,
         signedName: 'Impostor',
@@ -258,13 +259,13 @@ describe('Phase 13 Task 4 — business agreement owner OTP', () => {
   it('refuses an expired agreement link', async () => {
     const service = app.get(ConsentLinkService);
     service.setTtlMs(1);
-    const link = await request(app.getHttpServer())
+    const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post(`/businesses/${businessId}/agreement-links`)
       .set('Authorization', `Bearer ${agentToken}`)
       .send({ language: 'en' })
-      .expect(201);
+      .expect(201));
     clock.advance(2);
-    await request(app.getHttpServer()).get(`/consent/${link.body.token}`).expect(400);
+    await request(app.getHttpServer()).get(`/consent/${linkToken}`).expect(400);
     service.setTtlMs(24 * 60 * 60 * 1000);
   });
 });

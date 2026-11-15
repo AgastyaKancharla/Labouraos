@@ -237,7 +237,8 @@ export class ConsentLinkService {
   async verifyInterviewOwnerOtp(token: string, requestId: string, code: string): Promise<InterviewActionLinkRecord> {
     const record = await this.validateInterviewActionToken(token, 'owner_result');
     const validCode = await this.otpService.verifyOtp(requestId, code);
-    const belongsToOwner = validCode && await this.otpService.isVerified(requestId, record.phone);
+    // AC-3: only a code sent from this link's own page, used up by this result.
+    const belongsToOwner = validCode && await this.otpService.consumeVerifiedForPage(requestId, record.phone, token);
     if (!belongsToOwner) throw new BadRequestException('Valid owner OTP is required to record an interview result');
     return record;
   }
@@ -275,7 +276,8 @@ export class ConsentLinkService {
       },
     });
 
-    // NOTE: Job seeker's phone number must NEVER appear in this response
+    // NOTE: Job seeker's phone number must NEVER appear in this response. The token
+    // is for the customer app (opened in-app); staff routes strip it (AC-3).
     return {
       success: true,
       token,
@@ -540,7 +542,7 @@ export class ConsentLinkService {
     if (record.subjectType === 'referral') {
       // As for job seekers: nothing about the partner (name, ID, terms, amount)
       // until a code sent to their own number is verified.
-      if (!requestId || !(await this.otpService.isVerified(requestId, record.partnerPhone))) {
+      if (!(await this.otpService.isVerifiedForPage(requestId, record.partnerPhone, token))) {
         return {
           valid: true,
           subjectType: 'referral',
@@ -582,7 +584,7 @@ export class ConsentLinkService {
     const preferredLanguage = ['kn', 'hi', 'en'].includes(candidateLang)
       ? candidateLang
       : 'kn';
-    if (!requestId || !(await this.otpService.isVerified(requestId, seeker.phone))) {
+    if (!(await this.otpService.isVerifiedForPage(requestId, seeker.phone, token))) {
       return {
         valid: true,
         subjectType: 'job_seeker',
@@ -661,7 +663,8 @@ export class ConsentLinkService {
     }
     // Every public "Send code" costs an SMS: limited per link and per phone on the server.
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), phone, this.clock.now());
-    const otp = await this.otpService.sendOtp(phone);
+    // AC-3: a code bound to this link; staff-sent codes are never accepted on it.
+    const otp = await this.otpService.sendPublicPageOtp(phone, token);
     return { success: true, requestId: otp.requestId, phone: maskAgreementPhone(phone), ...testModeFields(otp) };
   }
 
@@ -703,13 +706,14 @@ export class ConsentLinkService {
     }
 
     // Verify OTP: either through otpCode or if already verified — always a code sent to his own phone.
+    // AC-3: only a code sent from this link's own page counts (never one an agent asked for).
     if (dto.otpCode) {
       const ok = await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode);
-      if (!ok || !(await this.otpService.isVerified(dto.otpRequestId, seeker.phone))) {
+      if (!ok || !(await this.otpService.isVerifiedForPage(dto.otpRequestId, seeker.phone, record.token))) {
         throw new BadRequestException('Invalid or expired OTP');
       }
     } else {
-      const verified = await this.otpService.isVerified(dto.otpRequestId, seeker.phone);
+      const verified = await this.otpService.isVerifiedForPage(dto.otpRequestId, seeker.phone, record.token);
       if (!verified) {
         throw new BadRequestException('OTP verification is required before submission');
       }
@@ -729,6 +733,12 @@ export class ConsentLinkService {
     // The exact text he read: the page sends the hash of the terms it showed (required).
     if (!dto.textHash) throw new BadRequestException('textHash is required: send the hash of the terms text the page showed');
     if (dto.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
+    // A one-time link is finished by this submit, so its code is used up here. A resumable
+    // registration link keeps the page's code for the next steps (selfie, ID, terms) until
+    // it expires, 5 minutes after it was sent.
+    if (!record.resumable && !(await this.otpService.consumeVerifiedForPage(dto.otpRequestId, seeker.phone, record.token))) {
+      throw new BadRequestException('This code has already been used. Ask for a new code.');
+    }
 
     // Grant each selected purpose
     for (const purpose of purposes) {
@@ -804,8 +814,9 @@ export class ConsentLinkService {
     const otpValid = dto.otpCode
       ? await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)
       : false;
+    // AC-3: a code sent from this link's page, used up by the signature (one per agreement).
     const otpBelongsToOwner = otpValid
-      ? await this.otpService.isVerified(dto.otpRequestId, record.businessPhone)
+      ? await this.otpService.consumeVerifiedForPage(dto.otpRequestId, record.businessPhone, record.token)
       : false;
     if (!otpBelongsToOwner) {
       throw new BadRequestException('Valid owner OTP is required to sign the agreement');
@@ -928,8 +939,10 @@ export class ConsentLinkService {
     const otpValid = dto.otpCode
       ? await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)
       : Boolean(dto.otpRequestId);
+    // AC-3: a code sent from this link's own page. The partner's link is resumable (ID check
+    // and payout details follow), so the code is used up when the payout details are saved.
     const otpBelongsToPartner = otpValid
-      ? await this.otpService.isVerified(dto.otpRequestId, record.partnerPhone)
+      ? await this.otpService.isVerifiedForPage(dto.otpRequestId, record.partnerPhone, record.token)
       : false;
     if (!otpBelongsToPartner) {
       throw new BadRequestException('Valid owner OTP is required to sign referral terms');
@@ -1004,9 +1017,10 @@ export class ConsentLinkService {
       ? record.partnerPhone
       : (await this.prisma.jobSeeker.findUnique({ where: { id: record.jobSeekerId }, select: { phone: true } }))?.phone;
     if (!phone) throw new NotFoundException('Not found');
+    // AC-3: a code sent from this link's own page (never a staff-sent one).
     const otpOk = dto.otpCode
-      ? (await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)) && (await this.otpService.isVerified(dto.otpRequestId, phone))
-      : await this.otpService.isVerified(dto.otpRequestId, phone);
+      ? (await this.otpService.verifyOtp(dto.otpRequestId, dto.otpCode)) && (await this.otpService.isVerifiedForPage(dto.otpRequestId, phone, record.token))
+      : await this.otpService.isVerifiedForPage(dto.otpRequestId, phone, record.token);
     if (!otpOk) throw new BadRequestException('OTP verification is required before submission');
     const language = (['kn', 'hi', 'en'].includes(dto.language ?? '') ? dto.language : 'en') as AgreementLanguage;
     const subjectId = record.subjectType === 'referral' ? record.referralId : record.jobSeekerId;

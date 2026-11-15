@@ -5,6 +5,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import { RBAC_MATRIX, Role } from '../rbac/rbac.types';
 import { mobileLookupValues, phoneLast4, requireIndianMobile } from '../phone/indian-mobile';
 import { OTP_PROVIDER, OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
+import { publicPageOtpPurpose } from './public-page-otp';
 
 export const OTP_PURPOSES = [
   'job_seeker',
@@ -125,6 +126,29 @@ export class OtpService {
       city: 'Bengaluru',
     });
     return verified;
+  }
+
+  /**
+   * "Send code" on a person's own public page (/p/...): the code goes to the
+   * number the link was issued for, with a purpose bound to that link
+   * (public-page-otp.ts). Only isVerifiedForPage / consumeVerifiedForPage with
+   * the same link accept it, and no staff-sent code is accepted there.
+   */
+  async sendPublicPageOtp(rawPhone: string, linkToken: string): Promise<OtpSendResult> {
+    const phone = requireIndianMobile(rawPhone);
+    return this.provider.sendOtp(phone, { purpose: publicPageOtpPurpose(linkToken) });
+  }
+
+  /** A code sent from this link's own page, verified, unused and for this phone. */
+  async isVerifiedForPage(requestId: string | undefined | null, phone: string | null | undefined, linkToken: string): Promise<boolean> {
+    if (typeof requestId !== 'string' || !requestId || !phone) return false;
+    return this.isVerified(requestId, phone, publicPageOtpPurpose(linkToken));
+  }
+
+  /** Uses up the page's verified code (a submit): it opens nothing after this. */
+  async consumeVerifiedForPage(requestId: string | undefined | null, phone: string | null | undefined, linkToken: string): Promise<boolean> {
+    if (typeof requestId !== 'string' || !requestId || !phone) return false;
+    return this.consumeVerified(requestId, phone, publicPageOtpPurpose(linkToken));
   }
 
   async isVerified(requestId: string, phone?: string, purpose?: string): Promise<boolean> {

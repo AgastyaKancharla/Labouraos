@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { queryText } from '../../common/http/plain-query';
 import { Prisma, ReviewFlag } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -41,8 +42,8 @@ export class FlagEscalationService {
 
   async list(actor: Actor, query: { status?: string; kind?: string }) {
     const where = await this.scopeWhere(actor);
-    if (query?.status) where.status = query.status;
-    if (query?.kind) where.kind = query.kind;
+    if (query?.status) where.status = queryText(query.status, 'status');
+    if (query?.kind) where.kind = queryText(query.kind, 'kind');
     const rows = await this.prisma.reviewFlag.findMany({
       where,
       orderBy: { raisedAt: 'desc' },

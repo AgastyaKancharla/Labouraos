@@ -118,7 +118,7 @@ const ALLOWED_JOB_SEEKER_UPDATE_FIELDS = new Set([
   'keySkills',
   'qualification',
   'currentSalaryPaise',
-  'pausedAt',
+  // Not pausedAt (security AC-1): pausing follows a consent withdrawal, never a plain edit.
 ]);
 
 /** Who pays through a payment-only link (design CA08e "Who is it?"). Never personal data beyond the relation. */
@@ -1459,7 +1459,7 @@ export class JobSeekerService {
 
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
-      if (['dateOfBirth', 'availableFrom', 'lookingSince', 'pausedAt'].includes(key)) {
+      if (['dateOfBirth', 'availableFrom', 'lookingSince'].includes(key)) {
         data[key] = filteredDto[key] ? new Date(filteredDto[key] as string) : null;
       } else {
         data[key] = filteredDto[key];

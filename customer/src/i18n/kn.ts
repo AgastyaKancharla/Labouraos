@@ -486,6 +486,7 @@ export const kn: Messages = {
   'error.otpLimitWait': 'ತುಂಬಾ ಪ್ರಯತ್ನಗಳಾಗಿವೆ. {minutes} ನಿಮಿಷಗಳ ನಂತರ ಪ್ರಯತ್ನಿಸಿ.',
   'error.profileExists': 'ಈ ಪ್ರೊಫೈಲ್ ನಿಮ್ಮ ಬಳಿ ಈಗಾಗಲೇ ಇದೆ. ಅದನ್ನು ತೆರೆದಿದ್ದೇವೆ.',
   'error.notAllowed': 'ಇದನ್ನು ಮಾಲೀಕರು ಮಾತ್ರ ಮಾಡಬಹುದು.',
+  'error.referralUnusable': 'ಈ ಶಿಫಾರಸು ಕೋಡ್ ಬಳಸಲು ಆಗದು. ಅದಿಲ್ಲದೆ ನೋಂದಾಯಿಸಬಹುದು.',
   'error.referralSelf': 'ನಿಮ್ಮದೇ ಶಿಫಾರಸು ಲಿಂಕ್ ಬಳಸಲು ಆಗದು.',
   'error.referralPaused': 'ಈ ಶಿಫಾರಸು ಲಿಂಕ್ ತಡೆಹಿಡಿಯಲಾಗಿದೆ. ಅದಿಲ್ಲದೆ ನೋಂದಾಯಿಸಬಹುದು.',
   'error.deletionPending': 'ನಿಮ್ಮ ಖಾತೆ ಅಳಿಸುವ ವಿನಂತಿ ಈಗಾಗಲೇ ಪ್ರಕ್ರಿಯೆಯಲ್ಲಿದೆ.',

@@ -56,7 +56,7 @@ export default function Paid() {
     );
   }
 
-  const reference = open?.payment.upiReference ?? null;
+  const reference = open?.payPageToken ?? null;
   return (
     <>
       <PaidConfirming onHint={reference ? (utr) => paymentApi.utrHint(reference, utr) : undefined} />

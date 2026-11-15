@@ -1,4 +1,5 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { queryText } from '../../common/http/plain-query';
 import { DataRequest, Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -112,7 +113,7 @@ export class DataRequestService {
     if (filters.status === 'open_or_in_progress' || filters.status === 'not_closed') {
       where.status = { in: ['open', 'in_progress'] };
     } else if (filters.status && (DATA_REQUEST_STATUSES as readonly string[]).includes(filters.status)) {
-      where.status = filters.status;
+      where.status = queryText(filters.status, 'status');
     }
     const rows = await this.prisma.dataRequest.findMany({
       where,

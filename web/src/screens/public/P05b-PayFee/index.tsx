@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
-import { paymentApi, receiptHref } from '../shared/api';
+import { paymentApi } from '../shared/api';
 import { dateTimeLabel, dayLabel, dayTimeLabel, rupees } from '../shared/format';
 import { LinkProblem, Loading, Muted, Ok, PageTitle, PaidConfirming, Row, UpiQr, usePersonLanguage, Warn } from '../shared/ui';
 
@@ -39,18 +39,10 @@ export default function PayFee() {
           {/* D17 (rev 176): after paying — the full name and the joining details, never the phone number. */}
           {p?.candidateFullName && <Row label={t('legal.fee.fullName')}>{p.candidateFullName}</Row>}
           {p?.joiningDate && <Row label={t('legal.fee.joining')}>{dayLabel(p.joiningDate, language)}</Row>}
-          {s.invoicePath && (
-            <Row label={t('pub.fee.invoice')}>
-              <a href={s.invoicePath} target="_blank" rel="noreferrer">
-                {t('pub.fee.viewInvoice')}
-              </a>
-            </Row>
-          )}
-          {s.receipt && !s.invoicePath && (
-            <Row label={t('pub.paid.receipt')}>
-              <a href={receiptHref(s.receipt)} target="_blank" rel="noreferrer">
-                {t('pub.paid.viewReceipt')}
-              </a>
+          {/* INF-1: the receipt and GST invoice links go by SMS / WhatsApp, never on this page. */}
+          {s.sentBySms && (
+            <Row label={s.sentBySms === 'receipt_and_invoice' ? t('pub.fee.invoice') : t('pub.paid.receipt')}>
+              {s.sentBySms === 'receipt_and_invoice' ? t('pub.fee.invoiceSent') : t('pub.paid.receiptSent')}
             </Row>
           )}
         </div>

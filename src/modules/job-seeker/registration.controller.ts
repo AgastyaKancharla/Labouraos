@@ -57,7 +57,7 @@ export class RegistrationController {
   @Public(TOKEN_PAGE)
   async status(@Param('token') token: string, @Query('requestId') requestId?: string) {
     const link = await this.requireRegistrationLink(token);
-    const verified = Boolean(requestId) && (await this.otp.isVerified(requestId!, link.phone!));
+    const verified = await this.otp.isVerifiedForPage(requestId, link.phone, token);
     return this.journey.status(link.subjectId, verified);
   }
 
@@ -66,7 +66,7 @@ export class RegistrationController {
   @Public(TOKEN_PAGE)
   async verifyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
     const link = await this.requireRegistrationLink(token);
-    await this.verifyCode(body, link.phone!);
+    await this.verifyCode(body, link.phone!, token);
     return this.journey.status(link.subjectId, true);
   }
 
@@ -80,7 +80,7 @@ export class RegistrationController {
     @Body() body: { requestId?: string; captureSource?: string },
   ) {
     const link = await this.requireRegistrationLink(token);
-    if (!body.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(body.requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     if (body.captureSource !== 'live_camera') {
@@ -100,7 +100,7 @@ export class RegistrationController {
   @Public(TOKEN_PAGE)
   async verifyAadhaarQr(@Param('token') token: string, @Body() body: { requestId?: string; qrText?: unknown }) {
     const link = await this.requireRegistrationLink(token);
-    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(body?.requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     return this.aadhaarQr.checkJobSeeker(link.subjectId, body.qrText, { channel: 'link' });
@@ -123,7 +123,7 @@ export class RegistrationController {
     @Body() body: { requestId?: string; idType?: unknown; idNumber?: unknown; captureSource?: unknown; captureNonce?: unknown },
   ) {
     const link = await this.requireRegistrationLink(token);
-    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(body?.requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     return this.otherIds.submitForJobSeeker(
@@ -138,7 +138,7 @@ export class RegistrationController {
   @Public(TOKEN_PAGE)
   async otherIdCaptureNonce(@Param('token') token: string, @Body() body: { requestId?: string }) {
     const link = await this.requireRegistrationLink(token);
-    if (!body?.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(body?.requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     return this.otherIds.issueCaptureNonce('job_seeker', link.subjectId);
@@ -148,7 +148,7 @@ export class RegistrationController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getTerms(@Param('token') token: string, @Query('requestId') requestId: string) {
     const link = await this.requireRegistrationLink(token);
-    if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     return this.jobSeekers.registrationTerms(link.subjectId);
@@ -161,7 +161,7 @@ export class RegistrationController {
     @Body() body: { requestId?: string; acceptTerms?: boolean; language?: string },
   ) {
     const link = await this.requireRegistrationLink(token);
-    if (!body.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(body.requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     const issuedTo = (link.metadata as { issuedTo?: unknown } | null)?.issuedTo;
@@ -179,7 +179,7 @@ export class RegistrationController {
     @Body() body: { requestId?: string; phone?: string },
   ) {
     const link = await this.requireRegistrationLink(token);
-    if (!body.requestId || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(body.requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the registered mobile is required');
     }
     if (!body.phone) throw new BadRequestException('A payment contact number is required');
@@ -199,7 +199,8 @@ export class RegistrationController {
   async sendPaymentOnlyOtp(@Param('token') token: string) {
     const link = await this.requirePaymentLink(token);
     await this.otpLimiter.claimSend(this.publicLinks.hashToken(token), link.phone!);
-    const result = await this.otp.sendOtp(link.phone!);
+    // AC-3: a code bound to this payment link; staff-sent codes are never accepted on it.
+    const result = await this.otp.sendPublicPageOtp(link.phone!, token);
     return { success: true, requestId: result.requestId, phone: maskPhone(link.phone!), resendAvailableAt: result.resendAvailableAt, ...testModeFields(result) };
   }
 
@@ -208,7 +209,7 @@ export class RegistrationController {
   @Public(TOKEN_PAGE)
   async verifyPaymentOnlyOtp(@Param('token') token: string, @Body() body: { requestId?: string; code?: string }) {
     const link = await this.requirePaymentLink(token);
-    await this.verifyCode(body, link.phone!);
+    await this.verifyCode(body, link.phone!, token);
     return this.paymentOnlyDetails(link);
   }
 
@@ -226,7 +227,7 @@ export class RegistrationController {
       return;
     }
     const link = await this.requirePaymentLink(token);
-    if (!requestId || !(await this.otp.isVerified(requestId, link.phone!))) {
+    if (!(await this.otp.isVerifiedForPage(requestId, link.phone, token))) {
       throw new BadRequestException('OTP to the payment contact number is required');
     }
     return this.paymentOnlyDetails(link);
@@ -245,7 +246,7 @@ export class RegistrationController {
     });
     if (!seeker) throw new BadRequestException('Job seeker not found');
     // The payer sees the ₹499 only while the ID gate still holds: getPaymentPage closes it otherwise (L-5).
-    const paymentDetails = await this.upi.getPaymentPage(payment.upiReference);
+    const paymentDetails = await this.upi.paymentPageFor(payment);
     return {
       firstName: seeker.name.trim().split(/\s+/)[0] ?? seeker.name,
       displayName: shortNameOf(seeker.name),
@@ -257,12 +258,13 @@ export class RegistrationController {
     };
   }
 
-  private async verifyCode(body: { requestId?: string; code?: string }, phone: string) {
+  /** The code typed on this page: it must have been sent from this link's own page (AC-3). */
+  private async verifyCode(body: { requestId?: string; code?: string }, phone: string, token: string) {
     if (!body?.requestId || !body.code || !/^\d{4,8}$/.test(body.code)) {
       throw new BadRequestException('Type the code from the SMS');
     }
     const ok = await this.otp.verifyOtp(body.requestId, body.code);
-    if (!ok || !(await this.otp.isVerified(body.requestId, phone))) {
+    if (!ok || !(await this.otp.isVerifiedForPage(body.requestId, phone, token))) {
       throw new BadRequestException('Wrong or expired code. Check the SMS or ask for a new code.');
     }
   }

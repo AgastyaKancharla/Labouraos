@@ -3,6 +3,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { ConsentClock } from '../consent/consent-clock';
 import { receiptToken } from '../payment/receipt-link';
+import { ensurePayPageToken } from '../payment/pay-page-token';
 import { calculateAge } from './job-seeker.validator';
 import { buildJourneyStatus, JourneyStatus, maskPublicPhone, publicLanguage, PublicLanguage } from './registration-journey';
 import { LegalDocumentService, LegalStatus } from '../legal/legal-document.service';
@@ -15,7 +16,8 @@ export interface JourneyLocked {
   registrationComplete: boolean;
 }
 
-export type JourneyResponse = JourneyLocked | (JourneyStatus & { receiptToken: string | null; reconsent: LegalStatus | null });
+/** payPageToken (INF-1): opens his ₹499 pay page while it waits for money; the UPI reference no longer does. */
+export type JourneyResponse = JourneyLocked | (JourneyStatus & { receiptToken: string | null; payPageToken: string | null; reconsent: LegalStatus | null });
 
 /** Loads what the public registration pages need (see registration-journey.ts). */
 @Injectable()
@@ -89,6 +91,9 @@ export class RegistrationJourneyService {
     return {
       ...status,
       receiptToken: status.payment.paymentId ? receiptToken(status.payment.paymentId) : null,
+      payPageToken: latestPayment && latestPayment.status === 'pending' && status.payment.upiReference
+        ? await ensurePayPageToken(this.prisma, latestPayment.id)
+        : null,
       reconsent: legalStatus?.needsReconsent ? legalStatus : null,
     };
   }

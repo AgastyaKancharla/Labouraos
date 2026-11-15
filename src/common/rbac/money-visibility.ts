@@ -134,3 +134,24 @@ export function stripMoney<T>(data: T, seen = new WeakSet<object>()): T {
 export function seesMoney(role: string | undefined | null): boolean {
   return !role || !MONEY_BLIND_ROLES.has(role);
 }
+
+/**
+ * Security AC-4: audit rows record before/after values, which can hold money
+ * (fees, payouts, refunds). Only the CEO and Finance see money in them; for
+ * every other viewer (Managers, Team Leads) the money fields are removed from
+ * before/after and rupee amounts in the reason are hidden, like stripMoney.
+ */
+export const AUDIT_MONEY_ROLES: ReadonlySet<string> = new Set(['ceo', 'finance']);
+
+export function auditRowForViewer<T extends { before?: unknown; after?: unknown; reason?: unknown }>(
+  row: T,
+  role: string | undefined | null,
+): T {
+  if (role && AUDIT_MONEY_ROLES.has(role)) return row;
+  return {
+    ...row,
+    before: stripMoney(row.before),
+    after: stripMoney(row.after),
+    ...(typeof row.reason === 'string' ? { reason: stripMoney(row.reason) } : {}),
+  };
+}

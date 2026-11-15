@@ -21,6 +21,7 @@ import { CreateReferralDto } from '../referral/dto/create-referral.dto';
 import { CustomerAccountService } from '../customer-account/customer-account.service';
 import { CustomerLinkingService } from '../customer-account/customer-linking.service';
 import { CustomerSignInService, RequestContext } from '../customer-account/customer-sign-in.service';
+import { hashOf } from '../customer-account/customer-otp-limiter.service';
 
 type Body = Record<string, unknown>;
 
@@ -62,6 +63,30 @@ function validation(message: string, extra: Record<string, unknown> = {}): Custo
  * The existing services answer in English with a 400 (or a 409 for "Already
  * registered"). The app gets the same message with a code it can act on.
  */
+/**
+ * Security INF-14: refused referral codes (unknown, paused, the partner's own)
+ * one account may try in a rolling hour before it is told to wait. Counted in
+ * CustomerOtpAttempt rows of kind `referral_code_refused`.
+ */
+export const REFERRAL_CODE_REFUSALS_PER_HOUR = 5;
+export const REFERRAL_CODE_UNUSABLE_MESSAGE = 'This referral code cannot be used. You can register without it.';
+
+/**
+ * Security AC-6: the app never says that a GST or licence number is already on
+ * another business (that told anyone whose number is registered with Laboura).
+ * The sign-up is noted for the back office, which calls the person.
+ */
+export const BUSINESS_SIGNUP_NEEDS_HELP_MESSAGE = "We couldn't finish this sign-up in the app. Our team will call you to complete it.";
+
+const DOCUMENT_MATCH_TYPES = new Set(['gst_number', 'licence_number', 'shop_establishment_number', 'udyam_number', 'fssai_number', 'pan']);
+
+function isDocumentDuplicate(error: unknown): boolean {
+  if (!(error instanceof HttpException) || error.getStatus() !== HttpStatus.CONFLICT) return false;
+  const response = error.getResponse();
+  const matchedOn = typeof response === 'object' && response ? (response as { matchedOn?: unknown }).matchedOn : undefined;
+  return Array.isArray(matchedOn) && matchedOn.some((type) => DOCUMENT_MATCH_TYPES.has(String(type)));
+}
+
 function asCustomerError(error: unknown): unknown {
   if (error instanceof CustomerApiError || !(error instanceof HttpException)) return error;
   const status = error.getStatus();
@@ -208,19 +233,30 @@ export class CustomerRegistrationService {
     if (linked) throw this.profileExists(linked.id);
   }
 
-  private async resolveReferral(code: unknown, phone: string): Promise<{ id: string; code: string } | null> {
+  /**
+   * INF-14: an unknown, paused or own code gets one and the same answer, and an
+   * account that keeps trying codes is made to wait (no way to list partners).
+   */
+  private async resolveReferral(code: unknown, phone: string, accountId: string, ctx?: RequestContext): Promise<{ id: string; code: string } | null> {
     if (code === undefined || code === null || code === '') return null;
-    if (typeof code !== 'string') throw validation('referralCode is not valid', { field: 'referralCode' });
-    const referral = await this.prisma.referral.findUnique({
-      where: { code: code.trim().toUpperCase() },
-      select: { id: true, code: true, phone: true, pausedAt: true, anonymisedAt: true },
+    const now = this.clock.now();
+    const recentRefusals = await this.prisma.customerOtpAttempt.count({
+      where: { kind: 'referral_code_refused', accountId, createdAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) } },
     });
-    if (!referral || referral.anonymisedAt) throw validation('This referral code is not known', { field: 'referralCode' });
-    if (sameIndianMobile(referral.phone, phone)) {
-      throw new CustomerApiError(HttpStatus.UNPROCESSABLE_ENTITY, CUSTOMER_ERROR_CODES.REFERRAL_SELF, 'A partner cannot refer themselves');
+    if (recentRefusals >= REFERRAL_CODE_REFUSALS_PER_HOUR) {
+      throw new CustomerApiError(HttpStatus.TOO_MANY_REQUESTS, CUSTOMER_ERROR_CODES.LIMIT_REACHED, 'Too many referral codes tried. Register without it, or try again in an hour.', { field: 'referralCode' });
     }
-    if (referral.pausedAt) {
-      throw new CustomerApiError(HttpStatus.UNPROCESSABLE_ENTITY, CUSTOMER_ERROR_CODES.REFERRAL_PAUSED, 'This referral code is paused. Continue without it.');
+    const referral = typeof code === 'string' && code.trim() && code.trim().length <= 40
+      ? await this.prisma.referral.findUnique({
+        where: { code: code.trim().toUpperCase() },
+        select: { id: true, code: true, phone: true, pausedAt: true, anonymisedAt: true },
+      })
+      : null;
+    if (!referral || referral.anonymisedAt || referral.pausedAt || sameIndianMobile(referral.phone, phone)) {
+      await this.prisma.customerOtpAttempt.create({
+        data: { kind: 'referral_code_refused', accountId, ipHash: hashOf('ip', ctx?.ip ?? null), deviceHash: hashOf('device', ctx?.installationId ?? null), createdAt: now },
+      });
+      throw new CustomerApiError(HttpStatus.UNPROCESSABLE_ENTITY, CUSTOMER_ERROR_CODES.REFERRAL_UNUSABLE, REFERRAL_CODE_UNUSABLE_MESSAGE, { field: 'referralCode' });
     }
     return { id: referral.id, code: referral.code };
   }
@@ -252,7 +288,7 @@ export class CustomerRegistrationService {
     const existing = await this.existingProfile(accountId, 'job_seeker');
     if (existing) throw this.profileExists(existing.id);
     await this.linkExisting(accountId, account.phone, 'job_seeker');
-    const referral = await this.resolveReferral(body.referralCode, account.phone);
+    const referral = await this.resolveReferral(body.referralCode, account.phone, accountId, ctx);
     const otp = await this.signIn.checkRegistrationOtp(accountId, body.otp, ctx);
     const heardFrom = referral ? 'referral_partner' : HEARD_FROM_LABOURA_APP;
     const dto = {
@@ -293,7 +329,7 @@ export class CustomerRegistrationService {
       visitPreferredAt = at;
     }
     const referralCode = typeof body.referralCode === 'string' && body.referralCode.trim() ? body.referralCode : null;
-    if (referralCode) await this.resolveReferral(referralCode, account.phone);
+    if (referralCode) await this.resolveReferral(referralCode, account.phone, accountId, ctx);
     const otp = await this.signIn.checkRegistrationOtp(accountId, body.otp, ctx);
     const dto = {
       ...pick(body, BUSINESS_FIELDS),
@@ -306,6 +342,14 @@ export class CustomerRegistrationService {
     try {
       created = await this.businesses.create(dto, `customer:${accountId}`, { selfRegisteredByAccountId: accountId });
     } catch (error) {
+      if (isDocumentDuplicate(error)) {
+        // AC-6: a generic answer; the back office sees why on the sign-up and calls.
+        const { tracker } = await this.ensureTracker(accountId, 'business');
+        await this.prisma.signupTrackerEvent.create({
+          data: { trackerId: tracker.id, kind: 'needs_help', note: 'GST or licence number already on another business: call the person' },
+        });
+        throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.VALIDATION, BUSINESS_SIGNUP_NEEDS_HELP_MESSAGE);
+      }
       throw asCustomerError(error);
     }
     if (typeof body.contactMe === 'boolean') await this.accounts.setContactMe(accountId, body.contactMe);

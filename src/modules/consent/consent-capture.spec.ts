@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -190,15 +191,17 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   it('POST /consent/links generates token and dispatches SMS; response never contains candidate phone', async () => {
     const candidateId = await createLeadCandidate();
 
-    const res = await request(app.getHttpServer())
+    const { res, token: resToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
+      .send({ jobSeekerId: candidateId }));
 
     expect(res.status).toBe(201);
     expect(res.body.success).toBe(true);
-    expect(typeof res.body.token).toBe('string');
-    expect(res.body.token.length).toBeGreaterThan(20);
+    // AC-3: the token goes to the person by SMS, never back to the agent.
+    expect(res.body.token).toBeUndefined();
+    expect(typeof resToken).toBe('string');
+    expect(resToken.length).toBeGreaterThan(20);
 
     // Assert phone number never appears in response to agents
     const rawResponseBody = JSON.stringify(res.body);
@@ -213,7 +216,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     expect(msg?.channel).toBe('sms');
     expect(messagingSend).toHaveBeenCalledWith(expect.objectContaining({
       template: 'consent_link',
-      variables: { token: res.body.token, link: `https://app.laboura.in/p/register/${res.body.token}` },
+      variables: { token: resToken, link: `https://app.laboura.in/p/register/${resToken}` },
     }));
   });
 
@@ -221,11 +224,11 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
     const candidateId = await createLeadCandidate();
 
     // 1. Agent generates link
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
-    const token = linkRes.body.token;
+      .send({ jobSeekerId: candidateId }));
+    const token = linkResToken;
 
     // 2. Candidate opens public consent page / endpoint
     const detailsRes = await request(app.getHttpServer())
@@ -292,11 +295,11 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   it('ticking only 4 of 5 required purposes leaves status at lead', async () => {
     const candidateId = await createLeadCandidate();
 
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
-    const token = linkRes.body.token;
+      .send({ jobSeekerId: candidateId }));
+    const token = linkResToken;
 
     const otpSendRes = await request(app.getHttpServer())
       .post('/consent/send-otp')
@@ -326,11 +329,11 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   it('OTP must match before submit succeeds (wrong OTP rejected with 400)', async () => {
     const candidateId = await createLeadCandidate();
 
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
-    const token = linkRes.body.token;
+      .send({ jobSeekerId: candidateId }));
+    const token = linkResToken;
 
     const otpSendRes = await request(app.getHttpServer())
       .post('/consent/send-otp')
@@ -357,11 +360,11 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   it('an expired token is refused with a 400 (not a 500)', async () => {
     const candidateId = await createLeadCandidate();
 
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
-    const token = linkRes.body.token;
+      .send({ jobSeekerId: candidateId }));
+    const token = linkResToken;
 
     // Registration links remain valid for 48 hours.
     clock.advance(49 * 60 * 60 * 1000);
@@ -386,11 +389,11 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   it('a reused token is refused with a 400 (not a 500)', async () => {
     const candidateId = await createLeadCandidate();
 
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
-    const token = linkRes.body.token;
+      .send({ jobSeekerId: candidateId }));
+    const token = linkResToken;
 
     const otpSendRes = await request(app.getHttpServer())
       .post('/consent/send-otp')
@@ -427,11 +430,11 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
   it('public HTML endpoint returns consent page template', async () => {
     const candidateId = await createLeadCandidate();
 
-    const linkRes = await request(app.getHttpServer())
+    const { token: linkResToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${agentToken}`)
-      .send({ jobSeekerId: candidateId });
-    const token = linkRes.body.token;
+      .send({ jobSeekerId: candidateId }));
+    const token = linkResToken;
 
     // Links already sent keep working: a browser is sent to the new registration page.
     const htmlRes = await request(app.getHttpServer())

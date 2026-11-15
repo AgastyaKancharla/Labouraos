@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { payPageTokenByReference } from '../../test-support/pay-page';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as request from 'supertest';
 import * as bcrypt from 'bcrypt';
@@ -449,7 +450,7 @@ describe('Phase 5 Task 1: Placement Creation', () => {
 
     let payment = await prisma.payment.findUniqueOrThrow({ where: { id: selected.payment.id } });
     if (!payment.gatewayReference && payment.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(payment.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, payment.upiReference)}/card`).expect(200);
       payment = await prisma.payment.findUniqueOrThrow({ where: { id: payment.id } });
     }
     const firstWebhook = await request(app.getHttpServer()).post('/payments/mock/simulate-webhook').send({

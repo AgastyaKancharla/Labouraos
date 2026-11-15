@@ -82,19 +82,24 @@ export class CallService {
       editActor = actor;
     }
 
-    const updates: Record<string, unknown> = {};
-    if (body.agentOutcomeReason !== undefined) {
-      updates.agentOutcomeReason = body.agentOutcomeReason;
+    // Only the agent's note is editable. Any other key is passed on to the edit
+    // policy so it is refused (provider fields: "never editable"; anything else:
+    // unknown field) instead of being silently ignored (security AC-1).
+    const { notes, agentOutcomeReason, ...rest } = (body ?? {}) as Record<string, unknown>;
+    const updates: Record<string, unknown> = { ...rest };
+    delete updates.reason;
+    if (agentOutcomeReason !== undefined) {
+      updates.agentOutcomeReason = agentOutcomeReason;
     }
-    if (body.notes !== undefined) {
-      updates.agentOutcomeReason = body.notes;
+    if (notes !== undefined) {
+      updates.agentOutcomeReason = notes;
     }
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
       entityType: 'call_record',
       entityId: id,
-      updates: body as unknown as Record<string, unknown>,
+      updates,
       reason: body.reason,
     });
 

@@ -52,7 +52,8 @@ export default function Payment() {
     queryFn: () => registrationApi.terms(token, requestId),
     enabled: !blocked,
   });
-  const reference = status?.payment.upiReference ?? null;
+  // INF-1: the pay page token (from his OTP-verified status), not the UPI reference.
+  const reference = status?.payPageToken ?? null;
   const summary = useQuery({
     queryKey: ['payment-summary', reference],
     queryFn: () => paymentApi.summary(reference!),

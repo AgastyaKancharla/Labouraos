@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { queryText } from '../../common/http/plain-query';
 import {
   BadRequestException,
   ConflictException,
@@ -354,7 +355,7 @@ export class TargetService {
             `Access denied: staff '${query.staffId}' is not part of your team`,
           );
         }
-        where.staffId = query.staffId;
+        where.staffId = queryText(query.staffId, 'staffId');
       } else {
         where.staff = { id: { in: await new OwnTeam(this.prisma).memberIds(actor.sub) }, ...NOT_OWNER_ACCOUNT };
       }
@@ -363,7 +364,7 @@ export class TargetService {
     } else {
       // CEO and Manager
       if (query.staffId) {
-        where.staffId = query.staffId;
+        where.staffId = queryText(query.staffId, 'staffId');
       }
     }
     // Owner accounts have no targets (owner decision 14 Nov): one marked after a

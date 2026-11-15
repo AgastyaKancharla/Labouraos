@@ -13,8 +13,49 @@ import { AuditService } from '../../common/audit/audit.service';
 import { OtpService } from '../../common/otp/otp.service';
 import { CreateReferralDto } from './dto/create-referral.dto';
 import { assertNoRawAadhaar, HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
-import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { mobileLookupValues, requireIndianMobile } from '../../common/phone/indian-mobile';
+
+/**
+ * The only columns PATCH /referrals/:id writes (security AC-1). Not here, on
+ * purpose: phoneVerified, type, businessId, city, photo, pause fields,
+ * registeredByStaffId, anonymisedAt and every relation (payments, job seekers,
+ * ID checks, customer profiles). A phone change needs an OTP on the new number.
+ */
+export const ALLOWED_REFERRAL_UPDATE_FIELDS: ReadonlySet<string> = new Set([
+  'name',
+  'phone',
+  'whatsappPhone',
+  'language',
+  'individualRole',
+  'partnerBusinessType',
+  'partnerBusinessName',
+  'locality',
+  'pincode',
+  'latitude',
+  'longitude',
+  'heardFrom',
+]);
+
+const INDIVIDUAL_ROLES = ['auto_driver', 'shop_staff', 'shop_owner', 'security_guard', 'existing_worker', 'other'];
+
+function validateReferralValues(updates: Record<string, unknown>) {
+  if ('name' in updates && (typeof updates.name !== 'string' || !updates.name.trim())) {
+    throw new BadRequestException('Name is required');
+  }
+  if ('language' in updates && !['kn', 'hi', 'en'].includes(updates.language as string)) {
+    throw new BadRequestException('language must be kn, hi, or en');
+  }
+  if ('pincode' in updates && !/^\d{6}$/.test(String(updates.pincode ?? ''))) {
+    throw new BadRequestException('A valid 6-digit pincode is required');
+  }
+  if ('heardFrom' in updates && !(HEARD_FROM_VALUES as readonly string[]).includes(updates.heardFrom as string)) {
+    throw new BadRequestException('heardFrom must be a supported value');
+  }
+  if ('individualRole' in updates && updates.individualRole !== null && !INDIVIDUAL_ROLES.includes(updates.individualRole as string)) {
+    throw new BadRequestException('A valid individualRole is required for individual partners');
+  }
+}
 
 @Injectable()
 export class ReferralService {
@@ -45,15 +86,19 @@ export class ReferralService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+    // Security (AC-1): only the partner's own details; status, pause, payouts,
+    // who registered him and every linked record have their own routes.
+    const updates = pickEditableFields(dto, ALLOWED_REFERRAL_UPDATE_FIELDS, 'referral partner');
     // Saved and compared as +91 and 10 digits, like every other write.
-    if (dto.phone !== undefined) dto.phone = requireIndianMobile(dto.phone, 'phone');
-    if (dto.whatsappPhone !== undefined) dto.whatsappPhone = requireIndianMobile(dto.whatsappPhone, 'whatsappPhone');
+    if (updates.phone !== undefined) updates.phone = requireIndianMobile(updates.phone, 'phone');
+    if (updates.whatsappPhone !== undefined) updates.whatsappPhone = requireIndianMobile(updates.whatsappPhone, 'whatsappPhone');
+    validateReferralValues(updates);
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
       entityType: 'referral',
       entityId: id,
-      updates: dto,
+      updates,
       reason,
     });
 
@@ -61,15 +106,59 @@ export class ReferralService {
       return record;
     }
 
+    // Like a job seeker: a new mobile number is checked by OTP on that number.
+    let phoneChange: { otpRequestId: string; phone: string } | null = null;
+    if (diff.changedFields.includes('phone')) {
+      const newPhone = updates.phone as string;
+      const otpRequestId = typeof dto.phoneOtpRequestId === 'string' ? dto.phoneOtpRequestId
+        : typeof dto.otpRequestId === 'string' ? dto.otpRequestId : null;
+      if (!otpRequestId) {
+        throw new BadRequestException('Changing the mobile number needs an OTP check on the new number: send an OTP to it and pass phoneOtpRequestId');
+      }
+      if (!(await this.otpService.isVerified(otpRequestId, newPhone, 'referral'))) {
+        throw new BadRequestException('The new mobile number must pass OTP verification before it is saved');
+      }
+      const taken = await this.prisma.referral.findFirst({
+        where: { phone: { in: mobileLookupValues(newPhone) }, id: { not: record.id as string } },
+        select: { id: true, code: true },
+      });
+      if (taken) {
+        throw new ConflictException({
+          statusCode: 409,
+          error: 'Conflict',
+          message: 'Already registered — open it. A referral partner with this mobile number already exists',
+          existingReferralCode: taken.code,
+        });
+      }
+      // D11: a permanently banned phone never comes back through an edit either.
+      await assertNotBanned(this.prisma, { phone: newPhone });
+      phoneChange = { otpRequestId, phone: newPhone };
+    }
+    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone, 'referral'))) {
+      throw new BadRequestException('This verified OTP request has already been used or expired');
+    }
+
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
-      data[key] = dto[key];
+      data[key] = updates[key];
     }
 
     const updated = await this.prisma.referral.update({
       where: { id: record.id as string },
-      data,
+      data: phoneChange ? { ...data, phoneVerified: true } : data,
     });
+    if (phoneChange) {
+      await this.auditService.log({
+        actorId: editActor.id,
+        action: 'referral.phone_changed',
+        entityType: 'referral',
+        entityCode: updated.code,
+        after: { phoneVerifiedByOtp: true },
+        changedFields: ['phoneVerified'],
+        reason: reason ?? 'Mobile number changed after OTP on the new number',
+        city: updated.city,
+      });
+    }
 
     await this.editPolicyService.logEdit({
       actorId: editActor.id,
@@ -120,8 +209,7 @@ export class ReferralService {
     if ((dto.latitude === undefined) !== (dto.longitude === undefined)) {
       throw new BadRequestException('latitude and longitude must be provided together');
     }
-    const individualRoles = ['auto_driver', 'shop_staff', 'shop_owner', 'security_guard', 'existing_worker', 'other'];
-    if (type === 'individual' && !individualRoles.includes(dto.individualRole ?? '')) {
+    if (type === 'individual' && !INDIVIDUAL_ROLES.includes(dto.individualRole ?? '')) {
       throw new BadRequestException('A valid individualRole is required for individual partners');
     }
     if (type === 'business') {

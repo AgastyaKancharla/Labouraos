@@ -10,6 +10,8 @@ import { ConsentClock } from '../consent/consent-clock';
 import { tradeNameKey } from '../trade/trade.service';
 import { JOB_SEEKER_CONSENT_PURPOSES, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { phoneSearchTerm } from '../../common/phone/indian-mobile';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
+import { AuditService } from '../../common/audit/audit.service';
 import { readPublicLinkPhone } from '../../common/public-link-store.service';
 import { AreaService } from '../area/area.service';
 import { areaAutoFillMaxMeters } from '../business/area-auto-fill';
@@ -59,6 +61,7 @@ export class ScreensCallRegistrationService {
     private readonly clock: ConsentClock,
     private readonly areas: AreaService,
     @Optional() private readonly legal?: LegalDocumentService,
+    @Optional() private readonly audit?: AuditService,
   ) {
     this.team = new OwnTeam(prisma);
   }
@@ -329,6 +332,7 @@ export class ScreensCallRegistrationService {
         ? { phone: { in: phoneTerm.values } }
         : null;
     if (!where) return null;
+    if (phoneTerm?.kind === 'exact') await this.auditFullNumberSearch(actor, 'find_referral_partner', q);
     const scope = actor?.role === 'team_lead'
       ? { registeredByStaffId: { in: await this.team.memberIds(actor.id) } }
       : {};
@@ -341,6 +345,7 @@ export class ScreensCallRegistrationService {
     const q = (query ?? '').trim();
     if (q.length < 2) return [];
     const phoneTerm = phoneSearchTerm(q);
+    if (phoneTerm?.kind === 'exact') await this.auditFullNumberSearch(actor, 'search_businesses', q);
     // A Team Lead reads only their own team's businesses (People and roles).
     const teamScope = actor?.role === 'team_lead'
       ? await this.teamScope(actor.id)
@@ -351,9 +356,9 @@ export class ScreensCallRegistrationService {
         OR: [
           { name: { contains: q, mode: 'insensitive' } },
           { code: { equals: q.toUpperCase() } },
-          // A full number in any spelling matches exactly; 4 or more bare digits match the end.
+          // A full number in any spelling matches exactly; exactly 4 digits match the last 4 (AC-2).
           ...(phoneTerm?.kind === 'exact' ? [{ phone: { in: phoneTerm.values } }] : []),
-          ...(phoneTerm?.kind === 'suffix' ? [{ phone: { endsWith: phoneTerm.digits } }] : []),
+          ...(phoneTerm?.kind === 'last4' ? [{ phone: { endsWith: phoneTerm.digits } }] : []),
         ],
       },
       orderBy: { name: 'asc' },
@@ -375,6 +380,12 @@ export class ScreensCallRegistrationService {
       contactRole: row.contactRole,
       branches: row.branches,
     }));
+  }
+
+  /** AC-2: a lookup by full number is audited and limited per staff member. */
+  private async auditFullNumberSearch(actor: ScreenActor | undefined, screen: string, phone: string) {
+    if (!actor || !this.audit) return;
+    await recordFullNumberSearch(this.prisma, this.audit, actor, screen, phone);
   }
 
   private async teamScope(teamLeadId: string) {

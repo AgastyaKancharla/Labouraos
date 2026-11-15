@@ -1,6 +1,7 @@
 import { ForbiddenException } from '@nestjs/common';
 import { PlacementInvoiceCopyController } from './placement.controller';
-import { invoiceLink, invoiceToken, isValidInvoiceToken } from './invoice-link';
+import { INVOICE_LINK_VALID_DAYS, invoiceLink, invoiceToken, isValidInvoiceToken } from './invoice-link';
+import { RECEIPT_LINK_VALID_DAYS, isValidReceiptToken, receiptToken } from '../payment/receipt-link';
 import { renderInvoicePage } from './invoice-page';
 import { GstInvoiceResponse } from './dto/gst-invoice.dto';
 
@@ -67,5 +68,39 @@ describe('Business invoice copy by signed link', () => {
     expect(html).toContain('CGST 9%');
     expect(html).toContain('SGST 9%');
     expect(html).toContain('₹8,000');
+  });
+});
+
+describe('AC-5: receipt and invoice links expire', () => {
+  const originalSecret = process.env.JWT_SECRET;
+  beforeAll(() => { process.env.JWT_SECRET = 'test-secret-that-is-at-least-32-characters'; });
+  afterAll(() => { if (originalSecret === undefined) delete process.env.JWT_SECRET; else process.env.JWT_SECRET = originalSecret; });
+  const day = 24 * 60 * 60 * 1000;
+  const issued = new Date('2026-11-16T06:00:00.000Z');
+
+  it.each([
+    ['invoice', invoiceToken, isValidInvoiceToken, INVOICE_LINK_VALID_DAYS],
+    ['receipt', receiptToken, isValidReceiptToken, RECEIPT_LINK_VALID_DAYS],
+  ] as const)('%s: valid until its days are up, refused after', (_name, sign, verify, days) => {
+    const token = sign('id-1', issued);
+    expect(verify('id-1', token, new Date(issued.getTime() + (days * day) - 1000))).toBe(true);
+    expect(verify('id-1', token, new Date(issued.getTime() + (days * day) + 1000))).toBe(false);
+  });
+
+  it.each([
+    ['invoice', invoiceToken, isValidInvoiceToken],
+    ['receipt', receiptToken, isValidReceiptToken],
+  ] as const)('%s: the expiry cannot be pushed out, and old tokens without one are refused', (_name, sign, verify) => {
+    const token = sign('id-1', issued);
+    const [expiry, sig] = token.split('.');
+    const later = (parseInt(expiry, 36) + 365 * 24 * 3600).toString(36);
+    expect(verify('id-1', `${later}.${sig}`, issued)).toBe(false);
+    expect(verify('id-1', sig, issued)).toBe(false);
+    expect(verify('id-1', `${expiry}.${sig}.x`, issued)).toBe(false);
+  });
+
+  it('the days live in named constants', () => {
+    expect(INVOICE_LINK_VALID_DAYS).toBeGreaterThan(0);
+    expect(RECEIPT_LINK_VALID_DAYS).toBeGreaterThan(0);
   });
 });

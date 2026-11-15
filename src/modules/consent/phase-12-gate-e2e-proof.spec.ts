@@ -1,4 +1,6 @@
 import { randomUUID } from 'crypto';
+import { payPageTokenByReference } from '../../test-support/pay-page';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
@@ -183,11 +185,11 @@ describe('Phase 12 gate end-to-end proof', () => {
     expect(callRecord.purpose).toBe('consent_explain');
     expect(callRecord.subjectId).toBe(jobSeekerId);
 
-    const consentLink = await request(app.getHttpServer())
+    const { res: consentLink, token: consentLinkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post('/consent/links')
       .set('Authorization', `Bearer ${fieldAgentToken}`)
       .send({ jobSeekerId })
-      .expect(201);
+      .expect(201));
     expect(JSON.stringify(consentLink.body)).not.toContain(phone);
 
     const sms = await prisma.messageLog.findFirstOrThrow({
@@ -197,12 +199,12 @@ describe('Phase 12 gate end-to-end proof', () => {
 
     // The SMS link opens the new registration page (P00); an old /consent link redirects there.
     const openedPage = await request(app.getHttpServer())
-      .get(`/consent/${consentLink.body.token}`)
+      .get(`/consent/${consentLinkToken}`)
       .set('Accept', 'text/html')
       .expect(302);
-    expect(openedPage.headers.location).toBe(`https://app.laboura.in/p/register/${consentLink.body.token}`);
+    expect(openedPage.headers.location).toBe(`https://app.laboura.in/p/register/${consentLinkToken}`);
     const lockedDetails = await request(app.getHttpServer())
-      .get(`/consent/${consentLink.body.token}`)
+      .get(`/consent/${consentLinkToken}`)
       .set('Accept', 'application/json')
       .expect(200);
     expect(lockedDetails.body).toMatchObject({ otpRequired: true });
@@ -210,7 +212,7 @@ describe('Phase 12 gate end-to-end proof', () => {
 
     const seekerOtp = await request(app.getHttpServer())
       .post('/consent/send-otp')
-      .send({ token: consentLink.body.token })
+      .send({ token: consentLinkToken })
       .expect(201);
     const consentCode = mockOtp.getCode(seekerOtp.body.requestId);
     expect(consentCode).toBeDefined();
@@ -220,7 +222,7 @@ describe('Phase 12 gate end-to-end proof', () => {
     const submitted = await request(app.getHttpServer())
       .post('/consent/submit')
       .send({
-        token: consentLink.body.token,
+        token: consentLinkToken,
         otpRequestId: seekerOtp.body.requestId,
         otpCode: consentCode,
         purposes: requiredPurposes,
@@ -283,7 +285,7 @@ describe('Phase 12 gate end-to-end proof', () => {
     createdPaymentIds.push(activation.body.paymentId);
     let gatewayReference = activation.body.gatewayReference;
     if (!gatewayReference && activation.body.upiReference) {
-      await request(app.getHttpServer()).post(`/payments/request/${encodeURIComponent(activation.body.upiReference)}/card`).expect(200);
+      await request(app.getHttpServer()).post(`/payments/request/${await payPageTokenByReference(app, activation.body.upiReference)}/card`).expect(200);
       const updated = await prisma.payment.findUniqueOrThrow({ where: { id: activation.body.paymentId } });
       gatewayReference = updated.gatewayReference;
     }

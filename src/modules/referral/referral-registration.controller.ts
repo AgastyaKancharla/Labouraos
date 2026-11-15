@@ -64,7 +64,7 @@ export class ReferralRegistrationController {
   @Public('token page: the job seeker, business or partner proves who they are with the link token')
   async getLinkStatus(@Param('token') token: string, @Query('requestId') requestId: string | undefined) {
     const link = await this.requireLink(token);
-    if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) {
+    if (!(await this.otp.isVerifiedForPage(requestId, link.phone, token))) {
       const done = await this.status(link.subjectId);
       return {
         valid: true,
@@ -84,7 +84,7 @@ export class ReferralRegistrationController {
     const link = await this.requireLink(token);
     if (!body?.requestId || !body.code || !/^\d{4,8}$/.test(body.code)) throw new BadRequestException('Type the code from the SMS');
     const ok = await this.otp.verifyOtp(body.requestId, body.code);
-    if (!ok || !(await this.otp.isVerified(body.requestId, link.phone ?? ''))) {
+    if (!ok || !(await this.otp.isVerifiedForPage(body.requestId, link.phone, token))) {
       throw new BadRequestException('Wrong or expired code. Check the SMS or ask for a new code.');
     }
     return this.publicStatus(link);
@@ -239,7 +239,7 @@ export class ReferralRegistrationController {
     // a fresh code works too.
     // A change to details already given always needs a fresh code (and its waiting time).
     const hasDetails = (await this.prisma.payoutAccount.count({ where: { ownerType: 'referral', ownerId: link.subjectId, status: { not: 'superseded' } } })) > 0;
-    const sessionVerified = !body.otpCode && !hasDetails && (await this.otp.isVerified(body.otpRequestId, link.phone ?? ''));
+    const sessionVerified = !body.otpCode && !hasDetails && (await this.otp.isVerifiedForPage(body.otpRequestId, link.phone, token));
     if (!body.otpCode && !sessionVerified) throw new BadRequestException('OTP to the registered mobile is required');
     // Guide, referral partners: UPI ID preferred, bank account as the alternative. Both are
     // kept encrypted, shown masked, and revealed only to the CEO and Finance (logged).
@@ -367,7 +367,8 @@ export class ReferralRegistrationController {
 
   private async requireVerifiedLink(token: string, requestId?: string) {
     const link = await this.requireLink(token);
-    if (!requestId || !(await this.otp.isVerified(requestId, link.phone ?? ''))) throw new BadRequestException('OTP to the registered mobile is required');
+    // AC-3: only a code sent from this link's own page (POST /consent/send-otp with this token).
+    if (!(await this.otp.isVerifiedForPage(requestId, link.phone, token))) throw new BadRequestException('OTP to the registered mobile is required');
     return link;
   }
 

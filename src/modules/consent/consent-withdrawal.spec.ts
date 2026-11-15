@@ -13,6 +13,7 @@ import { ConsentClock } from "./consent-clock";
 import { ConsentService } from "./consent.service";
 import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from "./consent.constants";
 import { CALL_PURPOSES } from "../call/call-outcomes";
+import { withIssuedLinkToken } from "../../test-support/issued-link-token";
 
 class TestConsentClock extends ConsentClock {
   current = new Date("2026-11-05T10:00:00.000Z");
@@ -271,20 +272,20 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
       withdrawnPurposes: ["call_recording"],
     });
 
-    const link = await request(app.getHttpServer())
+    const { token: linkToken } = await withIssuedLinkToken(app, () => request(app.getHttpServer())
       .post("/consent/links")
       .set("Authorization", `Bearer ${token}`)
-      .send({ jobSeekerId: seeker.id });
+      .send({ jobSeekerId: seeker.id }));
     const otpRequest = await request(app.getHttpServer())
       .post("/consent/send-otp")
-      .send({ token: link.body.token });
+      .send({ token: linkToken });
     const otpCode = (otp.getProvider() as MockOtpProvider).getCode(
       otpRequest.body.requestId,
     );
     const submit = await request(app.getHttpServer())
       .post("/consent/submit")
       .send({
-        token: link.body.token,
+        token: linkToken,
         otpRequestId: otpRequest.body.requestId,
         otpCode,
         purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES],

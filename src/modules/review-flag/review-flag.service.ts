@@ -7,6 +7,7 @@ import {
   Optional,
 } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
+import { queryText } from '../../common/http/plain-query';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -117,10 +118,10 @@ export class ReviewFlagService {
     const where: Prisma.ReviewFlagWhereInput = {};
 
     if (query?.status) {
-      where.status = query.status;
+      where.status = queryText(query.status, 'status');
     }
     if (query?.kind) {
-      where.kind = query.kind;
+      where.kind = queryText(query.kind, 'kind');
     }
 
     if (actor.role === 'ceo') {

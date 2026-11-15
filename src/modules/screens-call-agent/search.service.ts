@@ -7,6 +7,8 @@ import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { maskPhoneLast4 } from '../../common/rbac/pii-masking.interceptor';
 import { ALL_STAFF_ROLES } from '../../common/rbac/rbac.types';
 import { parseIndianMobile } from '../../common/phone/indian-mobile';
+import { AuditService } from '../../common/audit/audit.service';
+import { recordFullNumberSearch } from '../../common/phone/full-number-search';
 
 export type SearchType = 'job_seeker' | 'business' | 'referral' | 'vacancy' | 'placement';
 export const SEARCH_TYPES: readonly SearchType[] = ['job_seeker', 'business', 'referral', 'vacancy', 'placement'];
@@ -24,16 +26,19 @@ export interface ParsedQuery {
   /** For an ID: the type it names, and the code text to look for. */
   idType?: SearchType;
   code?: string;
-  /** For a phone: the digits to match at the end of the stored number. */
+  /** For a phone: the last 4 digits, or the 10 digits of a full number. */
   digits?: string;
+  /** A full number (audited and rate-limited per staff member, AC-2). */
+  full?: boolean;
   name?: string;
 }
 
 /**
  * Reads what was typed into the search bar (Master Guide, "Search on every
  * screen"): an ID (JS-, BZ-, RF-, VC-, PL-, with or without the zero
- * padding), a mobile number (full, with or without +91, or the last 4
- * digits), or a name.
+ * padding), a mobile number (full, with or without +91, or exactly the last 4
+ * digits), or a name. Security AC-2: any other run of digits is not a search
+ * (a 5-to-9-digit suffix match rebuilt full numbers from the result counts).
  */
 export function parseSearchQuery(raw: string): ParsedQuery | null {
   const q = raw.trim().replace(/\s+/g, ' ');
@@ -48,11 +53,10 @@ export function parseSearchQuery(raw: string): ParsedQuery | null {
   // A full mobile in any spelling (9876543210, +91 98765 43210, 919876543210,
   // 09876543210) matches the 10 digits of the number saved as +919876543210.
   const mobile = parseIndianMobile(q);
-  if (mobile) return { kind: 'phone', digits: mobile.slice(3) };
+  if (mobile) return { kind: 'phone', digits: mobile.slice(3), full: true };
   const digitsOnly = q.replace(/[\s()+-]/g, '');
   if (/^\d+$/.test(digitsOnly)) {
-    if (digitsOnly.length < 4) return null;
-    return { kind: 'phone', digits: digitsOnly.length > 10 ? digitsOnly.slice(-10) : digitsOnly };
+    return digitsOnly.length === 4 ? { kind: 'phone', digits: digitsOnly } : null;
   }
   if (q.length < 2) return null;
   return { kind: 'name', name: q };
@@ -83,7 +87,10 @@ const ONE_TYPE_LIMIT = 50;
  */
 @Injectable()
 export class SearchService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly audit: AuditService,
+  ) {}
 
   private async teamIds(user: JwtPayload): Promise<string[] | null> {
     if (user.role !== 'team_lead') return null;
@@ -101,6 +108,9 @@ export class SearchService {
     const parsed = parseSearchQuery(raw ?? '');
     const empty = { query: raw ?? '', kind: null, counts: zeroCounts(), results: [] as SearchRow[] };
     if (!parsed) return empty;
+    if (parsed.kind === 'phone' && parsed.full) {
+      await recordFullNumberSearch(this.prisma, this.audit, { id: user.sub, role: user.role }, 'search', parsed.digits!);
+    }
     const team = await this.teamIds(user);
     const viewer = await agentViewerFor(this.prisma, user.sub, user.role);
     const types = (onlyType ? [onlyType] : SEARCH_TYPES) as SearchType[];

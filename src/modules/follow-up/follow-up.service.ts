@@ -1,4 +1,5 @@
 import { OwnTeam, teamLeadOf } from '../../common/rbac/own-team';
+import { queryText } from '../../common/http/plain-query';
 import {
   BadRequestException,
   ForbiddenException,
@@ -65,15 +66,15 @@ export class FollowUpService {
     const where: Prisma.FollowUpTaskWhereInput = {};
 
     if (query?.status) {
-      where.status = query.status;
+      where.status = queryText(query.status, 'status');
     }
     if (query?.kind) {
-      where.kind = query.kind;
+      where.kind = queryText(query.kind, 'kind');
     }
 
     if (['ceo', 'manager', 'finance'].includes(actor.role)) {
       if (query?.assignedStaffId) {
-        where.assignedStaffId = query.assignedStaffId;
+        where.assignedStaffId = queryText(query.assignedStaffId, 'assignedStaffId');
       }
     } else if (actor.role === 'team_lead') {
       const memberIds = await this.teamOf(actor.id);

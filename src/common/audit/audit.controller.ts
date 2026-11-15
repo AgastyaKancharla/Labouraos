@@ -15,6 +15,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { JwtPayload } from '../auth/jwt-payload.interface';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
+import { auditRowForViewer } from '../rbac/money-visibility';
 import { ReportingScopeService } from '../../modules/staff/reporting-scope.service';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
@@ -41,21 +42,21 @@ export class AuditController {
     @Query('entityCode') entityCode?: string,
   ) {
     const scope = await this.scopeFor(req.user);
-    return this.auditService.getLogs({ entityType, entityCode }, scope);
+    const rows = await this.auditService.getLogs({ entityType, entityCode }, scope);
+    // AC-4: money in before/after only for the CEO (and Finance).
+    return rows.map((row) => auditRowForViewer(row, req.user.role));
   }
 
   @Get(':id')
   @RequireRoles('ceo', 'manager', 'team_lead')
   async getAuditLogById(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     const scope = await this.scopeFor(req.user);
-    if (!scope) {
-      return this.auditService.getLogById(id);
-    }
-    const row = await this.auditService.getLogById(id, scope);
+    const row = scope ? await this.auditService.getLogById(id, scope) : await this.auditService.getLogById(id);
     if (!row) {
+      if (!scope) return row;
       throw new NotFoundException('Audit row not found');
     }
-    return row;
+    return auditRowForViewer(row, req.user.role);
   }
 
   /** null means everything (the CEO). */

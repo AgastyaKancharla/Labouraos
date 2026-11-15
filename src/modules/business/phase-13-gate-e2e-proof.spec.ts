@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { withIssuedLinkToken } from '../../test-support/issued-link-token';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -158,13 +159,13 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     expect(visitResponse.body.ownerOtpRequestId).toBe(ownerPresenceOtp.body.requestId);
     expect(visitResponse.body.photoLive).toBe(false);
 
-    const agreementLink = await request(server).post(`/businesses/${businessId}/agreement-links`)
-      .set('Authorization', `Bearer ${lead.token}`).send({ language: 'en' }).expect(201);
+    const { token: agreementLinkToken } = await withIssuedLinkToken(app, () => request(server).post(`/businesses/${businessId}/agreement-links`)
+      .set('Authorization', `Bearer ${lead.token}`).send({ language: 'en' }).expect(201));
     const signingOtp = await request(server).post('/consent/send-otp')
-      .send({ token: agreementLink.body.token }).expect(201);
+      .send({ token: agreementLinkToken }).expect(201);
     const signingCode = provider.getCode(signingOtp.body.requestId)!;
     await request(server).post('/consent/submit').send({
-      token: agreementLink.body.token,
+      token: agreementLinkToken,
       otpRequestId: signingOtp.body.requestId,
       otpCode: signingCode,
       signedName: 'Household Owner',
@@ -284,12 +285,12 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     expect(await prisma.messageLog.count({ where: { subjectId: withdrawalCandidate.id, template: 'consent_withdrawn' } })).toBe(1);
     expect(await prisma.auditLog.count({ where: { actorId: callAgent.staff.id, entityCode: withdrawalCandidate.code, action: 'consent_withdrawn_by_agent_call' } })).toBe(1);
 
-    const regrantLink = await request(server).post('/consent/links').set('Authorization', `Bearer ${callAgent.token}`)
-      .send({ jobSeekerId: withdrawalCandidate.id }).expect(201);
-    const regrantOtp = await request(server).post('/consent/send-otp').send({ token: regrantLink.body.token }).expect(201);
+    const { token: regrantLinkToken } = await withIssuedLinkToken(app, () => request(server).post('/consent/links').set('Authorization', `Bearer ${callAgent.token}`)
+      .send({ jobSeekerId: withdrawalCandidate.id }).expect(201));
+    const regrantOtp = await request(server).post('/consent/send-otp').send({ token: regrantLinkToken }).expect(201);
     const regrantCode = provider.getCode(regrantOtp.body.requestId)!;
     const regrant = await request(server).post('/consent/submit').send({
-      token: regrantLink.body.token, otpRequestId: regrantOtp.body.requestId, otpCode: regrantCode,
+      token: regrantLinkToken, otpRequestId: regrantOtp.body.requestId, otpCode: regrantCode,
       purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES], language: 'en', textHash: await jobSeekerTermsHash(app, 'en'),
     }).expect(201);
     expect(regrant.body.status).toBe('active');

@@ -124,18 +124,21 @@ export function phoneLast4(value: string | null | undefined): string {
 }
 
 /**
- * What a search box typed as a phone means. A full number (any accepted
- * spelling) matches exactly; 4 to 9 bare digits match the end of the number
- * ("last 4 digits"). Anything else is not a phone search.
+ * What a staff search box typed as a phone means (security AC-2). A full
+ * number (any accepted spelling) matches exactly; exactly 4 bare digits match
+ * the last 4. Anything else (5 to 9 digits, partial numbers) is not a phone
+ * search: suffix matches longer than 4 digits let a caller rebuild a full
+ * number digit by digit from the result counts. A full-number search is
+ * audited and rate-limited per staff member (full-number-search.ts).
  */
 export function phoneSearchTerm(
   query: string,
-): { kind: 'exact'; values: string[] } | { kind: 'suffix'; digits: string } | null {
+): { kind: 'exact'; values: string[] } | { kind: 'last4'; digits: string } | null {
   const q = String(query ?? '').trim();
   if (!q) return null;
   if (isIndianMobile(q)) return { kind: 'exact', values: mobileLookupValues(q) };
   const compact = q.replace(SEPARATORS, '');
-  if (/^\d{4,9}$/.test(compact)) return { kind: 'suffix', digits: compact };
+  if (/^\d{4}$/.test(compact)) return { kind: 'last4', digits: compact };
   return null;
 }
 

@@ -5,6 +5,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { AuditService } from '../audit/audit.service';
 
@@ -46,6 +47,104 @@ export const CONFIRMED_PLACEMENT_STATUSES = [
   'completed',
   'guarantee_ended',
 ];
+
+/** The Prisma model behind each editable entity, for the column checks below. */
+const ENTITY_MODEL: Record<EditableEntityType, string> = {
+  job_seeker: 'JobSeeker',
+  business: 'Business',
+  vacancy: 'Vacancy',
+  placement: 'Placement',
+  referral: 'Referral',
+  call_record: 'CallRecord',
+};
+
+/**
+ * Keys a client may send next to the editable fields: the edit reason, the OTP
+ * request for a new phone number, and echoed identifiers. They are never written.
+ */
+export const EDIT_CONTROL_KEYS: ReadonlySet<string> = new Set([
+  'reason',
+  'phoneOtpRequestId',
+  'otpRequestId',
+  'id',
+  'code',
+  'createdAt',
+  'updatedAt',
+]);
+
+/**
+ * Security (AC-1): an edit route writes only the scalar columns on its own
+ * allowlist. Anything else — a status, a verification or money field, a pause
+ * or suspension, a relation (nested create/update/connect) — is refused with
+ * 400 before the permission check, so it can never reach a Prisma write.
+ * Returns the allowed fields only (control keys and undefined values dropped).
+ */
+export function pickEditableFields(
+  dto: Record<string, unknown>,
+  allowed: ReadonlySet<string>,
+  entityLabel: string,
+): Record<string, unknown> {
+  if (!dto || typeof dto !== 'object' || Array.isArray(dto)) {
+    throw new BadRequestException('The request body must be an object of fields to change');
+  }
+  const refused: string[] = [];
+  const picked: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(dto)) {
+    if (EDIT_CONTROL_KEYS.has(key)) continue;
+    if (!allowed.has(key)) {
+      refused.push(key);
+      continue;
+    }
+    if (value !== undefined) picked[key] = value;
+  }
+  if (refused.length) {
+    throw new BadRequestException(
+      `These fields cannot be changed by editing a ${entityLabel}: ${refused.sort().join(', ')}. Use the screen's own action for them.`,
+    );
+  }
+  return picked;
+}
+
+interface ColumnInfo {
+  kind: string;
+  type: string;
+  /** Missing from the compact model description of some Prisma client builds. */
+  isList?: boolean;
+  isRequired?: boolean;
+}
+
+function modelColumns(entityType: EditableEntityType): Map<string, ColumnInfo> | null {
+  const models = (Prisma as unknown as { dmmf?: { datamodel?: { models?: Array<{ name: string; fields: Array<ColumnInfo & { name: string }> }> } } })
+    .dmmf?.datamodel?.models;
+  const model = models?.find((m) => m.name === ENTITY_MODEL[entityType]);
+  if (!model) return null;
+  return new Map(model.fields.map((f) => [f.name, { kind: f.kind, type: f.type, isList: f.isList, isRequired: f.isRequired }]));
+}
+
+function isScalarValueFor(column: ColumnInfo, value: unknown): boolean {
+  if (column.type === 'Json') return true;
+  if (value === null) return !column.isRequired && !column.isList;
+  if (column.isList) {
+    return Array.isArray(value) && value.every((item) => item !== null && isScalarValueFor({ ...column, isList: false }, item));
+  }
+  switch (column.type) {
+    case 'String':
+      return typeof value === 'string';
+    case 'Int':
+    case 'BigInt':
+      return typeof value === 'number' && Number.isSafeInteger(value);
+    case 'Float':
+    case 'Decimal':
+      return typeof value === 'number' && Number.isFinite(value);
+    case 'Boolean':
+      return typeof value === 'boolean';
+    case 'DateTime':
+      return value instanceof Date || (typeof value === 'string' && !isNaN(Date.parse(value)));
+    default:
+      // Enums are sent as their string value.
+      return column.kind === 'enum' ? typeof value === 'string' : false;
+  }
+}
 
 const CALL_PROVIDER_FIELDS = new Set([
   'provider',
@@ -430,10 +529,19 @@ export class EditPolicyService {
     };
   }
 
+  /**
+   * Compares the requested changes with the saved record. Security (AC-1): every
+   * key must be a scalar column of the entity's table (no relation, so no nested
+   * create/update/connect) and every value must fit the column (no object or
+   * array for a plain column; arrays only for list columns, objects only for
+   * JSON columns), otherwise 400. Without an entity type, only keys the saved
+   * record already has are accepted, with plain values (fails closed).
+   */
   diffAndValidateReason(
     existingRecord: Record<string, unknown>,
     updates: Record<string, unknown>,
     reason?: string,
+    entityType?: EditableEntityType,
   ): DiffResult {
     const IGNORED_KEYS = new Set([
       'reason',
@@ -442,6 +550,10 @@ export class EditPolicyService {
       'createdat',
       'updatedat',
     ]);
+    const columns = entityType ? modelColumns(entityType) : null;
+    if (entityType && !columns) {
+      throw new BadRequestException('This record cannot be edited here');
+    }
 
     let requiresReason = false;
     const changedFields: string[] = [];
@@ -459,6 +571,28 @@ export class EditPolicyService {
         throw new BadRequestException(
           'Call provider fields and recordings are never editable',
         );
+      }
+
+      if (columns) {
+        const column = columns.get(rawKey);
+        if (!column) throw new BadRequestException(`Unknown field: ${rawKey}`);
+        if (column.kind === 'object') {
+          throw new BadRequestException(`${rawKey} is a linked record and cannot be changed by an edit`);
+        }
+        // Without list metadata, a list column is one the saved record holds as an array.
+        const known = column.isList === undefined ? { ...column, isList: Array.isArray(existingRecord[rawKey]) } : column;
+        if (!isScalarValueFor(known, newVal)) {
+          throw new BadRequestException(`${rawKey} has a value of the wrong type`);
+        }
+      } else {
+        if (!Object.prototype.hasOwnProperty.call(existingRecord, rawKey)) {
+          throw new BadRequestException(`Unknown field: ${rawKey}`);
+        }
+        const plain = (v: unknown) => v === null || ['string', 'number', 'boolean'].includes(typeof v);
+        const listOk = Array.isArray(existingRecord[rawKey]) && Array.isArray(newVal) && newVal.every(plain);
+        if (!plain(newVal) && !listOk && !(newVal instanceof Date)) {
+          throw new BadRequestException(`${rawKey} has a value of the wrong type`);
+        }
       }
 
       const oldVal = existingRecord[rawKey];
@@ -545,7 +679,7 @@ export class EditPolicyService {
 
     let diff: DiffResult | null = null;
     if (updates) {
-      diff = this.diffAndValidateReason(record, updates, reason);
+      diff = this.diffAndValidateReason(record, updates, reason, entityType);
     }
 
     return { record, isMoneyInvolved: perm.isMoneyInvolved, diff };

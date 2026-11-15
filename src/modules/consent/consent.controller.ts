@@ -22,6 +22,7 @@ import { ConsentWithdrawalService, AgentConsentWithdrawalDto } from './consent-w
 import { renderReferralTermsPageHtml } from './consent-page.template';
 import { publicPageLink, wantsHtml } from '../../common/public-pages';
 import { Public } from '../../common/rbac/public.decorator';
+import { withoutLinkToken } from '../../common/public-link-response';
 
 type AuthenticatedRequest = Request & { user: JwtPayload };
 
@@ -62,7 +63,8 @@ export class ConsentController {
   @RequireRoles('call_agent', 'field_agent', 'team_lead', 'manager', 'ceo')
   @RequirePermission('job_seeker', 'write', { kind: 'job_seeker', from: 'body:jobSeekerId' })
   async createLink(@Body('jobSeekerId') jobSeekerId: string) {
-    return this.consentLinkService.createLink(jobSeekerId);
+    // AC-3: the link goes to the person by SMS; staff never get its token.
+    return withoutLinkToken(await this.consentLinkService.createLink(jobSeekerId));
   }
 
   /**
