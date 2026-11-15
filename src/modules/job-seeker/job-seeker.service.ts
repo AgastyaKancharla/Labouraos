@@ -72,6 +72,7 @@ import { assertIdReadyForPayment } from './id-payment-gate';
 export { ID_WAITING_FOR_TEAM_LEAD } from './id-payment-gate';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { MessagingService } from '../message/messaging.service';
+import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
 import { publicPageLink } from '../../common/public-pages';
 import {
   mobileLookupValues,
@@ -1435,7 +1436,8 @@ export class JobSeekerService {
       if (!otpRequestId) {
         throw new BadRequestException('Changing the mobile number needs an OTP check on the new number: send an OTP to it and pass phoneOtpRequestId');
       }
-      if (!(await this.otpService.isVerified(otpRequestId, newPhone))) {
+      // M3: a code sent for a job seeker's number (purpose job_seeker), not one from another flow.
+      if (!(await this.otpService.isVerified(otpRequestId, newPhone, 'job_seeker'))) {
         throw new BadRequestException('The new mobile number must pass OTP verification before it is saved');
       }
       const taken = await this.prisma.jobSeeker.findFirst({
@@ -1453,7 +1455,7 @@ export class JobSeekerService {
       filteredDto.phone = newPhone;
       phoneChange = { otpRequestId, phone: newPhone };
     }
-    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone))) {
+    if (phoneChange && !(await this.otpService.consumeVerified(phoneChange.otpRequestId, phoneChange.phone, 'job_seeker'))) {
       throw new BadRequestException('This verified OTP request has already been used or expired');
     }
 
@@ -1488,6 +1490,8 @@ export class JobSeekerService {
         reason: reason ?? 'Mobile number changed after OTP on the new number',
         city: updated.city,
       });
+      // M3: the old number is told.
+      await sendPhoneChangedNotice(this.messagingService, { subjectType: 'job_seeker', subjectId: updated.id, code: updated.code, oldPhone: record.phone as string, newPhone: phoneChange.phone });
     }
 
     let guaranteeFloorPaise = updated.guaranteeFloorPaise;

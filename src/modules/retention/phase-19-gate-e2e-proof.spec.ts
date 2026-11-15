@@ -492,6 +492,11 @@ describe('Phase 19 Gate End-to-End Proof', () => {
           createdAt: baseDate,
         },
       });
+      // Messages to him are activity too (the phone change above SMSes his old number, M3).
+      await prisma.messageLog.updateMany({
+        where: { subjectType: 'job_seeker', subjectId: seeker1Id },
+        data: { createdAt: baseDate, sentAt: baseDate },
+      });
 
       // Calculate future clock: 23 months and 1 day after baseDate
       const clock23m1d = new Date(baseDate.getTime());

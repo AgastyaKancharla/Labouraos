@@ -35,6 +35,8 @@ import {
 import { HEARD_FROM_VALUES } from '../job-seeker/job-seeker.validator';
 import { mobileLookupValues, optionalIndianMobile, requireIndianMobile } from '../../common/phone/indian-mobile';
 import { TradeService } from '../trade/trade.service';
+import { sendPhoneChangedNotice } from '../../common/phone/phone-change-notice';
+import { MessagingService } from '../message/messaging.service';
 import { GST_LOOKUP_PROVIDER, GstLookupProvider } from './gst-lookup.provider';
 import { BUSINESS_PHOTO_STORAGE, BusinessPhotoStorage } from './storefront-photo.storage';
 import { PricingService } from '../pricing/pricing.service';
@@ -104,6 +106,7 @@ export class BusinessService {
     private readonly anonymisationService: AnonymisationService,
     private readonly tradeService: TradeService,
     @Optional() private readonly fieldVisits?: FieldVisitService,
+    @Optional() private readonly messaging?: MessagingService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -198,6 +201,8 @@ export class BusinessService {
         reason: reason ?? 'Mobile number changed after OTP on the new number',
         city: updated.city,
       });
+      // M3: the old number is told.
+      await sendPhoneChangedNotice(this.messaging, { subjectType: 'business', subjectId: updated.id, code: updated.code, oldPhone: record.phone as string, newPhone: phoneChange.phone });
     }
 
     await this.editPolicyService.logEdit({

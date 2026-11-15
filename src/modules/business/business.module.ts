@@ -18,6 +18,7 @@ import { TradeModule } from '../trade/trade.module';
 import { ConsentModule } from '../consent/consent.module';
 import { BusinessVerificationModule } from './business-verification.module';
 import { FieldVisitModule } from '../field-visit/field-visit.module';
+import { MessageModule } from '../message/message.module';
 
 @Module({
   imports: [
@@ -32,6 +33,8 @@ import { FieldVisitModule } from '../field-visit/field-visit.module';
     ConsentModule,
     BusinessVerificationModule,
     FieldVisitModule,
+    // M3: the old number is told when the owner's number changes.
+    MessageModule,
   ],
   controllers: [BusinessController],
   providers: [
