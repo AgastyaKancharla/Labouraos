@@ -1,4 +1,7 @@
-import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { MessagingService } from '../message/messaging.service';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { CustomerNotificationService } from '../customer-notification/customer-notification.service';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { mobileLookupValues } from '../../common/phone/indian-mobile';
@@ -14,7 +17,9 @@ import {
   BanCategory,
   businessIdFingerprint,
   otherIdFingerprint,
+  openBanReview,
   phoneHash,
+  POSSIBLE_BAN_FLAG,
 } from './permanent-ban.check';
 
 /** D6: a suspension lasts 30 to 90 days, or is permanent (Business Hiring Agreement 6.4). */
@@ -36,12 +41,24 @@ export interface CoveredProfile {
   subjectId: string;
   code: string | null;
   before: Record<string, unknown>;
+  /** H1: already blocked by this other live ban when this one was made (its "before" was copied from it). */
+  alreadyBannedBy?: string;
+}
+
+/** H2 (rev 181): a profile that matches the banned person only on another ID — a Manager or the CEO decides. */
+export interface PossibleProfile {
+  subjectType: 'job_seeker' | 'referral';
+  subjectId: string;
+  code: string | null;
 }
 
 function coveredOf(ban: { coveredProfiles: Prisma.JsonValue; subjectType: string; subjectId: string; subjectCode: string | null }): CoveredProfile[] {
   const rows = Array.isArray(ban.coveredProfiles) ? (ban.coveredProfiles as unknown as CoveredProfile[]) : [];
   return rows.length ? rows : [{ subjectType: ban.subjectType as BanSubjectType, subjectId: ban.subjectId, code: ban.subjectCode, before: {} }];
 }
+
+/** H1: a lifted ban puts a job seeker back only to one of these; anything else is paused for review. */
+const RESTORABLE_JOB_SEEKER_STATUSES: readonly string[] = ['active', 'paused', 'inactive'];
 
 const dateOrNull = (value: unknown): Date | null => (typeof value === 'string' && value ? new Date(value) : null);
 
@@ -63,6 +80,9 @@ export class ConductService {
     private readonly prisma: PrismaService,
     private readonly audit: AuditService,
     private readonly clock: ConsentClock,
+    @Optional() private readonly messaging?: MessagingService,
+    @Optional() private readonly customerNotifications?: CustomerNotificationService,
+    @Optional() private readonly flags?: ReviewFlagService,
   ) {
     // Fail closed on start: ban hashes need their key (PERMANENT_BAN_HASH_KEY).
     getBanHashKey();
@@ -97,6 +117,7 @@ export class ConductService {
     const now = this.clock.now();
     const suspendedUntil = permanent ? null : new Date(now.getTime() + days * DAY_MS);
     const before = { suspendedAt: business.suspendedAt?.toISOString() ?? null, suspendedUntil: business.suspendedUntil?.toISOString() ?? null };
+    let cancelledInterviews: { id: string; jobSeekerId: string }[] = [];
     const updated = await this.prisma.$transaction(async (tx) => {
       // An earlier suspension that ended on its date: its pause stops at that date first.
       if (business.suspendedUntil && business.suspendedUntil.getTime() <= now.getTime()) await resumeClaimClocks(tx, business.id, business.suspendedUntil);
@@ -106,8 +127,11 @@ export class ConductService {
       });
       // M10 (rev 178): the 15-day replacement clock of its open claims stands still while it is suspended.
       await pauseClaimClocks(tx, business.id, now);
+      // A suspended business interviews no one: its upcoming interviews are cancelled.
+      cancelledInterviews = await this.cancelUpcomingInterviews(tx, business.id, actor.id, now);
       return row;
     });
+    await this.tellInterviewsCancelled(business.id, cancelledInterviews);
     await this.audit.log({
       actorId: actor.id,
       action: 'business.suspended',
@@ -155,6 +179,32 @@ export class ConductService {
     return this.suspensionOf(updated, now);
   }
 
+  /** Upcoming interviews (offered or confirmed, slot still ahead) of a business that may not interview: cancelled. */
+  private async cancelUpcomingInterviews(tx: Prisma.TransactionClient, businessId: string, actorId: string, now: Date) {
+    const upcoming = await tx.interview.findMany({
+      where: { businessId, status: { in: ['offered', 'confirmed'] }, slotStartsAt: { gt: now } },
+      select: { id: true, jobSeekerId: true, status: true },
+    });
+    for (const row of upcoming) {
+      const changed = await tx.interview.updateMany({ where: { id: row.id, status: row.status }, data: { status: 'cancelled', cancelReason: 'business_suspended' } });
+      if (changed.count === 1) {
+        await recordStatusChange(tx, { subjectType: 'interview', subjectId: row.id, fromStatus: row.status, toStatus: 'cancelled', changedByStaffId: actorId, reason: 'business_suspended', changedAt: now });
+      }
+    }
+    return upcoming.map((row) => ({ id: row.id, jobSeekerId: row.jobSeekerId }));
+  }
+
+  /** The job seeker (app + SMS) and the business (app) hear that the interview is off. */
+  private async tellInterviewsCancelled(businessId: string, interviews: { id: string; jobSeekerId: string }[]) {
+    for (const row of interviews) {
+      await this.customerNotifications?.notify({ jobSeekerId: row.jobSeekerId }, 'interview_cancelled', {}, { dedupeKey: `interview_cancelled:${row.id}` }).catch(() => undefined);
+      await this.messaging?.send({ channel: 'sms', template: 'interview_cancelled', subjectType: 'job_seeker', subjectId: row.jobSeekerId, relatedType: 'interview', relatedId: row.id, variables: {} }).catch(() => undefined);
+    }
+    if (interviews.length) {
+      await this.customerNotifications?.notify({ businessId }, 'interview_cancelled', {}, { dedupeKey: `interview_cancelled:business:${businessId}:${interviews[0].id}` }).catch(() => undefined);
+    }
+  }
+
   /** For screens: whether the business is suspended now, until when, and why. */
   suspensionOf(business: { suspendedAt: Date | null; suspendedUntil: Date | null; suspensionReason: string | null }, now: Date = this.clock.now()) {
     const active = isBusinessSuspended(business, now);
@@ -180,10 +230,12 @@ export class ConductService {
 
   /**
    * Every profile of the person (M9, rev 178): the banned one, and any job
-   * seeker, business (as owner) or referral partner on the same phone number
-   * or with one of the same ID fingerprints.
+   * seeker, business (as owner) or referral partner on the same phone number,
+   * the same Aadhaar or the same GSTIN/PAN. A match only on another ID (voter ID,
+   * driving licence, PAN: type + last 4 + name) is never covered by itself
+   * (H2, rev 181): it is returned as `possible`, for a Manager or the CEO to decide.
    */
-  private async personProfiles(phone: string, fingerprints: string[], idLast4s: string[], first: CoveredProfile): Promise<CoveredProfile[]> {
+  private async personProfiles(client: Client, phone: string, fingerprints: string[], idLast4s: string[], first: CoveredProfile, possible: PossibleProfile[] = []): Promise<CoveredProfile[]> {
     const phones = mobileLookupValues(phone);
     const out = new Map<string, CoveredProfile>([[`${first.subjectType}:${first.subjectId}`, first]]);
     const add = (p: CoveredProfile) => {
@@ -193,29 +245,34 @@ export class ConductService {
     const ids = new Set(fingerprints);
     const verified = { where: { status: 'verified' }, select: { id: true, method: true, last4: true } } as const;
     const last4s = [...new Set(idLast4s.filter(Boolean))];
-    const seekers = await this.prisma.jobSeeker.findMany({
+    const seekers = await client.jobSeeker.findMany({
       where: { OR: [{ phone: { in: phones } }, ...(last4s.length ? [{ identityVerifications: { some: { status: 'verified', last4: { in: last4s } } } }] : [])] },
       select: { id: true, code: true, name: true, phone: true, status: true, identityVerifications: verified },
     });
     for (const s of seekers) {
       const samePhone = phones.includes(s.phone);
-      const sameId = !samePhone && (await this.idFingerprints('job_seeker', s.id, s.name, s.identityVerifications)).some((f) => ids.has(f));
-      if (samePhone || sameId) add({ subjectType: 'job_seeker', subjectId: s.id, code: s.code, before: { status: s.status } });
+      const sameAadhaar = !samePhone && (await this.idFingerprints(client, 'job_seeker', s.id, s.name, s.identityVerifications, 'aadhaar')).some((f) => ids.has(f));
+      if (samePhone || sameAadhaar) add({ subjectType: 'job_seeker', subjectId: s.id, code: s.code, before: { status: s.status } });
+      else if ((await this.idFingerprints(client, 'job_seeker', s.id, s.name, s.identityVerifications, 'other')).some((f) => ids.has(f))) possible.push({ subjectType: 'job_seeker', subjectId: s.id, code: s.code });
     }
-    const partners = await this.prisma.referral.findMany({
+    const partners = await client.referral.findMany({
       where: { OR: [{ phone: { in: phones } }, ...(last4s.length ? [{ identityVerifications: { some: { status: 'verified', last4: { in: last4s } } } }] : [])] },
       select: { id: true, code: true, name: true, phone: true, pausedAt: true, pausedByStaffId: true, pauseReason: true, identityVerifications: verified },
     });
     for (const p of partners) {
       const samePhone = phones.includes(p.phone);
-      const sameId = !samePhone && (await this.idFingerprints('referral', p.id, p.name, p.identityVerifications)).some((f) => ids.has(f));
-      if (samePhone || sameId) add({ subjectType: 'referral', subjectId: p.id, code: p.code, before: { pausedAt: p.pausedAt?.toISOString() ?? null, pausedByStaffId: p.pausedByStaffId, pauseReason: p.pauseReason } });
+      const sameAadhaar = !samePhone && (await this.idFingerprints(client, 'referral', p.id, p.name, p.identityVerifications, 'aadhaar')).some((f) => ids.has(f));
+      if (!samePhone && !sameAadhaar) {
+        if ((await this.idFingerprints(client, 'referral', p.id, p.name, p.identityVerifications, 'other')).some((f) => ids.has(f))) possible.push({ subjectType: 'referral', subjectId: p.id, code: p.code });
+        continue;
+      }
+      add({ subjectType: 'referral', subjectId: p.id, code: p.code, before: { pausedAt: p.pausedAt?.toISOString() ?? null, pausedByStaffId: p.pausedByStaffId, pauseReason: p.pauseReason } });
     }
-    const businesses = await this.prisma.business.findMany({
+    const businesses = await client.business.findMany({
       where: { phone: { in: phones } },
       select: { id: true, code: true, suspendedAt: true, suspendedUntil: true, suspendedByStaffId: true, suspensionReason: true },
     });
-    const businessFingerprints = await this.prisma.business.findMany({
+    const businessFingerprints = await client.business.findMany({
       where: { OR: [{ gstNumber: { not: null } }, { pan: { not: null } }], NOT: { phone: { in: phones } } },
       select: { id: true, code: true, gstNumber: true, pan: true, suspendedAt: true, suspendedUntil: true, suspendedByStaffId: true, suspensionReason: true },
     }).then((rows) => rows.filter((b) => (b.gstNumber && ids.has(businessIdFingerprint('gstin', b.gstNumber))) || (b.pan && ids.has(businessIdFingerprint('pan', b.pan)))));
@@ -239,8 +296,7 @@ export class ConductService {
     const subjectId = typeof body.subjectId === 'string' ? body.subjectId : '';
     const now = this.clock.now();
 
-    const existing = await this.liveBanFor(this.prisma, subjectType, subjectId);
-    if (existing) throw new ConflictException('Already permanently banned');
+    if (await this.liveBanFor(this.prisma, subjectType, subjectId)) throw new ConflictException('Already permanently banned');
 
     let code: string | null = null;
     let phone = '';
@@ -256,7 +312,7 @@ export class ConductService {
       });
       if (!seeker) throw new NotFoundException('Job seeker not found');
       code = seeker.code; phone = seeker.phone; city = seeker.city;
-      fingerprints.push(...(await this.idFingerprints('job_seeker', seeker.id, seeker.name, seeker.identityVerifications)));
+      fingerprints.push(...(await this.idFingerprints(this.prisma, 'job_seeker', seeker.id, seeker.name, seeker.identityVerifications)));
       idLast4s = seeker.identityVerifications.map((v) => v.last4 ?? '');
       first = { subjectType, subjectId: seeker.id, code: seeker.code, before: { status: seeker.status } };
     } else if (subjectType === 'referral') {
@@ -266,7 +322,7 @@ export class ConductService {
       });
       if (!partner) throw new NotFoundException('Referral partner not found');
       code = partner.code; phone = partner.phone; city = partner.city;
-      fingerprints.push(...(await this.idFingerprints('referral', partner.id, partner.name, partner.identityVerifications)));
+      fingerprints.push(...(await this.idFingerprints(this.prisma, 'referral', partner.id, partner.name, partner.identityVerifications)));
       idLast4s = partner.identityVerifications.map((v) => v.last4 ?? '');
       first = { subjectType, subjectId: partner.id, code: partner.code, before: { pausedAt: partner.pausedAt?.toISOString() ?? null, pausedByStaffId: partner.pausedByStaffId, pauseReason: partner.pauseReason } };
     } else {
@@ -283,17 +339,39 @@ export class ConductService {
         before: { suspendedAt: business.suspendedAt?.toISOString() ?? null, suspendedUntil: business.suspendedUntil?.toISOString() ?? null, suspendedByStaffId: business.suspendedByStaffId, suspensionReason: business.suspensionReason },
       };
     }
-    const covered = await this.personProfiles(phone, fingerprints, idLast4s, first);
-
+    let covered: CoveredProfile[] = [];
+    const possible: PossibleProfile[] = [];
+    let banId = '';
+    const cancelledByBusiness: { businessId: string; interviews: { id: string; jobSeekerId: string }[] }[] = [];
     await this.prisma.$transaction(async (tx) => {
-      await tx.permanentBan.create({
+      // H1: one ban at a time — the cover lookup and the insert see the same live bans.
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('permanent-ban'))`);
+      if (await this.liveBanFor(tx, subjectType, subjectId)) throw new ConflictException('Already permanently banned');
+      covered = await this.personProfiles(tx, phone, fingerprints, idLast4s, first, possible);
+      // A profile already under another live ban keeps that ban's "before" (what it really was) and is not
+      // blocked again; whichever ban is lifted last restores it.
+      for (const profile of covered) {
+        const other = await this.liveBanFor(tx, profile.subjectType, profile.subjectId);
+        if (!other) continue;
+        profile.before = coveredOf(other).find((p) => p.subjectType === profile.subjectType && p.subjectId === profile.subjectId)?.before ?? {};
+        profile.alreadyBannedBy = other.id;
+      }
+      const created = await tx.permanentBan.create({
         data: {
           subjectType, subjectId, subjectCode: code, category, reason, phoneHash: phoneHash(phone), idFingerprints: fingerprints,
           coveredProfiles: covered as unknown as Prisma.InputJsonValue, bannedByStaffId: actor.id, bannedAt: now,
         },
       });
-      for (const profile of covered) await this.applyBan(tx, profile, actor.id, category, reason, now);
+      banId = created?.id ?? '';
+      for (const profile of covered) {
+        if (profile.alreadyBannedBy) continue;
+        const cancelled = await this.applyBan(tx, profile, actor.id, category, reason, now);
+        if (cancelled.length) cancelledByBusiness.push({ businessId: profile.subjectId, interviews: cancelled });
+      }
     });
+    for (const row of cancelledByBusiness) await this.tellInterviewsCancelled(row.businessId, row.interviews);
+    // H2: profiles matching only on another ID go to a Manager or the CEO — never banned by the match alone.
+    for (const p of possible) await this.raisePossibleMatch(p, banId, code, 'ban');
     await this.audit.log({
       actorId: actor.id,
       action: 'permanent_ban.created',
@@ -309,7 +387,7 @@ export class ConductService {
   }
 
   /** Blocks one profile now: a job seeker is banned (open ₹499 requests close), a partner paused, a business suspended for good. */
-  private async applyBan(tx: Prisma.TransactionClient, profile: CoveredProfile, actorId: string, category: string, reason: string, now: Date) {
+  private async applyBan(tx: Prisma.TransactionClient, profile: CoveredProfile, actorId: string, category: string, reason: string, now: Date): Promise<{ id: string; jobSeekerId: string }[]> {
     const note = `Permanent ban (${category}): ${reason}`;
     if (profile.subjectType === 'job_seeker') {
       await tx.jobSeeker.update({ where: { id: profile.subjectId }, data: { status: 'banned' } });
@@ -325,10 +403,15 @@ export class ConductService {
     } else if (profile.subjectType === 'referral') {
       await tx.referral.update({ where: { id: profile.subjectId }, data: { pausedAt: now, pausedByStaffId: actorId, pauseReason: note } });
     } else {
+      // An earlier suspension that ended on its date: its pause stops at that date first (as suspendBusiness).
+      const endedUntil = dateOrNull(profile.before.suspendedUntil);
+      if (endedUntil && endedUntil.getTime() <= now.getTime()) await resumeClaimClocks(tx, profile.subjectId, endedUntil);
       await tx.business.update({ where: { id: profile.subjectId }, data: { suspendedAt: now, suspendedUntil: null, suspendedByStaffId: actorId, suspensionReason: note } });
-      // M10: a business suspended for good keeps its claims' replacement clocks paused.
+      // M10: a business suspended for good keeps its claims' replacement clocks paused and interviews no one.
       await pauseClaimClocks(tx, profile.subjectId, now);
+      return this.cancelUpcomingInterviews(tx, profile.subjectId, actorId, now);
     }
+    return [];
   }
 
   /**
@@ -365,14 +448,18 @@ export class ConductService {
   }
 
   private async restoreProfile(tx: Prisma.TransactionClient, profile: CoveredProfile, actorId: string, now: Date): Promise<string> {
+    // H1: still covered by another live ban — it stays blocked until that one is lifted too.
+    if (await this.liveBanFor(tx, profile.subjectType, profile.subjectId)) return 'still_banned';
     const before = profile.before ?? {};
     if (profile.subjectType === 'job_seeker') {
       const seeker = await tx.jobSeeker.findUnique({ where: { id: profile.subjectId }, select: { status: true } });
       if (!seeker || seeker.status !== 'banned') return seeker?.status ?? 'missing';
-      // Not kept (an older ban): paused, so a person reviews him before he is matched again.
-      const to = typeof before.status === 'string' && before.status && before.status !== 'banned' ? before.status : 'paused';
+      // Back to active, paused or inactive only; anything else (placed, an unknown or unkept status) is paused
+      // so a person reviews him before he is matched again.
+      const kept = typeof before.status === 'string' ? before.status : null;
+      const to = kept && RESTORABLE_JOB_SEEKER_STATUSES.includes(kept) ? kept : 'paused';
       await tx.jobSeeker.update({ where: { id: profile.subjectId }, data: { status: to } });
-      await recordStatusChange(tx, { subjectType: 'job_seeker', subjectId: profile.subjectId, fromStatus: 'banned', toStatus: to, changedByStaffId: actorId, reason: typeof before.status === 'string' ? 'permanent_ban_lifted' : 'permanent_ban_lifted_needs_review', changedAt: now });
+      await recordStatusChange(tx, { subjectType: 'job_seeker', subjectId: profile.subjectId, fromStatus: 'banned', toStatus: to, changedByStaffId: actorId, reason: to === kept ? 'permanent_ban_lifted' : 'permanent_ban_lifted_needs_review', changedAt: now });
       return to;
     }
     if (profile.subjectType === 'referral') {
@@ -393,6 +480,97 @@ export class ConductService {
     return isBusinessSuspended({ suspendedAt, suspendedUntil }, now) ? 'suspended' : 'active';
   }
 
+  /** H2: one open "possibly the same person as a banned person" item per profile (Manager / CEO). */
+  private async raisePossibleMatch(p: PossibleProfile, banId: string, bannedCode: string | null, matchedAt: 'ban' | 'id_check') {
+    if (!banId || (await openBanReview(this.prisma, p.subjectType, p.subjectId))) return;
+    if (await this.liveBanFor(this.prisma, p.subjectType, p.subjectId)) return;
+    await this.flags?.raise({
+      kind: POSSIBLE_BAN_FLAG,
+      subjectType: p.subjectType,
+      subjectId: p.subjectId,
+      owner: { role: 'manager' },
+      details: { banId, bannedCode, subjectCode: p.code, matchedOn: 'other_id', matchedAt },
+    });
+  }
+
+  private async openPossibleMatch(flagId: string) {
+    const flag = await this.prisma.reviewFlag.findUnique({ where: { id: flagId } });
+    if (!flag || flag.kind !== POSSIBLE_BAN_FLAG) throw new NotFoundException('No such review item');
+    if (flag.status !== 'open') throw new ConflictException('This review item was already decided');
+    const details = (flag.details ?? {}) as { banId?: string };
+    return { flag, banId: details.banId ?? '', details: flag.details as Record<string, unknown> };
+  }
+
+  /**
+   * H2 (rev 181) "Confirm — same person": a Manager or the CEO, with a reason, covers the profile under
+   * the ban (blocked like the others, restored with them on a lift). Audited.
+   */
+  async confirmPossibleMatch(flagId: string, actorId: string, body: { reason?: unknown }) {
+    const actor = await this.actor(actorId);
+    if (actor.role !== 'manager' && actor.role !== 'ceo') throw new ForbiddenException('Only a Manager or the CEO decides this');
+    const reason = this.reasonOf(body.reason);
+    const { flag, banId, details } = await this.openPossibleMatch(flagId);
+    const now = this.clock.now();
+    const subjectType = flag.subjectType as 'job_seeker' | 'referral';
+    const cancelled: { id: string; jobSeekerId: string }[] = [];
+    let ban: { id: string; subjectType: string; subjectId: string; subjectCode: string | null; category: string; reason: string } | null = null;
+    await this.prisma.$transaction(async (tx) => {
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('permanent-ban'))`);
+      const live = await tx.permanentBan.findFirst({ where: { id: banId, liftedAt: null } });
+      if (!live) throw new ConflictException('That ban was lifted meanwhile; close this item as not the same person');
+      ban = live;
+      const profile = await this.profileNow(tx, subjectType, flag.subjectId);
+      const covered = coveredOf(live);
+      const other = await this.liveBanFor(tx, subjectType, flag.subjectId);
+      if (other) profile.alreadyBannedBy = other.id;
+      await tx.permanentBan.update({ where: { id: live.id }, data: { coveredProfiles: [...covered, profile] as unknown as Prisma.InputJsonValue } });
+      if (!other) cancelled.push(...(await this.applyBan(tx, profile, actor.id, live.category, live.reason, now)));
+      await tx.reviewFlag.update({
+        where: { id: flag.id },
+        data: { status: 'resolved', resolvedAt: now, resolvedByStaffId: actor.id, resolution: reason, details: { ...details, decision: 'same_person' } as Prisma.InputJsonValue },
+      });
+    });
+    await this.flags?.refreshBell(flag.id);
+    const b = ban as unknown as { subjectType: string; subjectCode: string | null; subjectId: string };
+    await this.audit.log({
+      actorId: actor.id, action: 'permanent_ban.possible_match_confirmed', entityType: subjectType, entityCode: String(details.subjectCode ?? flag.subjectId),
+      before: { covered: false }, after: { covered: true, banOf: b.subjectCode ?? b.subjectId }, changedFields: ['permanentBan'], reason,
+    });
+    return { decided: 'same_person' };
+  }
+
+  /** H2 "Not the same person": clears the item (audited); the same match is not raised again for this ban. */
+  async rejectPossibleMatch(flagId: string, actorId: string, body: { reason?: unknown }) {
+    const actor = await this.actor(actorId);
+    if (actor.role !== 'manager' && actor.role !== 'ceo') throw new ForbiddenException('Only a Manager or the CEO decides this');
+    const reason = this.reasonOf(body.reason);
+    const { flag, details } = await this.openPossibleMatch(flagId);
+    const now = this.clock.now();
+    const changed = await this.prisma.reviewFlag.updateMany({
+      where: { id: flag.id, status: 'open' },
+      data: { status: 'dismissed', resolvedAt: now, resolvedByStaffId: actor.id, resolution: reason, details: { ...details, decision: 'not_same' } as Prisma.InputJsonValue },
+    });
+    if (changed.count !== 1) throw new ConflictException('This review item was already decided');
+    await this.flags?.refreshBell(flag.id);
+    await this.audit.log({
+      actorId: actor.id, action: 'permanent_ban.possible_match_rejected', entityType: flag.subjectType, entityCode: String(details.subjectCode ?? flag.subjectId),
+      before: { reviewOpen: true }, after: { reviewOpen: false, sameAsBanned: false }, changedFields: ['reviewFlag'], reason,
+    });
+    return { decided: 'not_same' };
+  }
+
+  /** What a profile is right now, for covering it under a ban (and restoring it on a lift). */
+  private async profileNow(client: Client, subjectType: 'job_seeker' | 'referral', subjectId: string): Promise<CoveredProfile> {
+    if (subjectType === 'job_seeker') {
+      const s = await client.jobSeeker.findUnique({ where: { id: subjectId }, select: { id: true, code: true, status: true } });
+      if (!s) throw new NotFoundException('Job seeker not found');
+      return { subjectType, subjectId: s.id, code: s.code, before: { status: s.status } };
+    }
+    const p = await client.referral.findUnique({ where: { id: subjectId }, select: { id: true, code: true, pausedAt: true, pausedByStaffId: true, pauseReason: true } });
+    if (!p) throw new NotFoundException('Referral partner not found');
+    return { subjectType, subjectId: p.id, code: p.code, before: { pausedAt: p.pausedAt?.toISOString() ?? null, pausedByStaffId: p.pausedByStaffId, pauseReason: p.pauseReason } };
+  }
+
   async banOf(subjectType: string, subjectId: string) {
     const ban = await this.liveBanFor(this.prisma, subjectType, subjectId);
     if (!ban) return { banned: false };
@@ -408,8 +586,11 @@ export class ConductService {
     };
   }
 
-  private async idFingerprints(subjectType: 'job_seeker' | 'referral', subjectId: string, name: string, verifications: { id: string; method: string; last4: string | null }[]): Promise<string[]> {
-    const details = await this.prisma.idCheckDetail.findMany({
+  private async idFingerprints(
+    client: Client, subjectType: 'job_seeker' | 'referral', subjectId: string, name: string, verifications: { id: string; method: string; last4: string | null }[],
+    only: 'aadhaar' | 'other' | 'all' = 'all',
+  ): Promise<string[]> {
+    const details = await client.idCheckDetail.findMany({
       where: { subjectType, subjectId, kind: 'aadhaar_qr' },
       select: { verificationId: true, dateOfBirth: true, nameOnId: true },
     });
@@ -417,9 +598,10 @@ export class ConductService {
     for (const v of verifications) {
       if (!v.last4) continue;
       if (v.method === 'aadhaar_qr') {
+        if (only === 'other') continue;
         const d = details.find((x) => x.verificationId === v.id);
         if (d?.dateOfBirth && d.nameOnId) out.push(aadhaarFingerprint(v.last4, d.dateOfBirth, d.nameOnId));
-      } else {
+      } else if (only !== 'aadhaar') {
         out.push(otherIdFingerprint(v.method, v.last4, name));
       }
     }

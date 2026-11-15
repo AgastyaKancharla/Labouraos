@@ -1,4 +1,4 @@
-import { ForbiddenException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { createHmac } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -19,6 +19,9 @@ export const BANNED_MESSAGE = 'This person is permanently banned from Laboura an
  * it on start). Phones and ID numbers are few enough to guess, so their hashes
  * are keyed (HMAC-SHA256): a copy of the table alone reveals nothing.
  */
+/** The placeholder in .env.example (refused in production). */
+export const EXAMPLE_BAN_HASH_KEY = 'dev_permanent_ban_hash_key_change_in_production';
+
 export function getBanHashKey(): string {
   const secret = process.env.PERMANENT_BAN_HASH_KEY?.trim();
   if (!secret) {
@@ -26,6 +29,10 @@ export function getBanHashKey(): string {
   }
   if (secret.length < 32) {
     throw new Error(`PERMANENT_BAN_HASH_KEY must be at least 32 characters long (received ${secret.length} characters).`);
+  }
+  // The example value from .env.example is public: never in production.
+  if (process.env.NODE_ENV === 'production' && secret === EXAMPLE_BAN_HASH_KEY) {
+    throw new Error('PERMANENT_BAN_HASH_KEY is still the example value from .env.example. Set a new random secret.');
   }
   return secret;
 }
@@ -69,4 +76,37 @@ export async function assertNotBanned(prisma: Client, input: { phone?: string | 
   if (!(prisma as { permanentBan?: unknown }).permanentBan) return; // unit-test doubles without the table
   const ban = await findBan(prisma, input);
   if (ban) throw new ForbiddenException(BANNED_MESSAGE);
+}
+
+/** H2 (rev 181): what the person sees while a possible match with a banned person is checked — never the word "ban". */
+export const UNDER_REVIEW_MESSAGE = 'Your details are being checked by our team. We will call you soon.';
+export const POSSIBLE_BAN_FLAG = 'possible_banned_person';
+
+/**
+ * H2: the live ban, if any, whose other-ID fingerprints include this one — unless a Manager or the CEO
+ * already decided this profile is "not the same person" as that ban.
+ */
+export async function otherIdBanMatch(prisma: Client, subject: { type: string; id: string }, fingerprint: string) {
+  if (!(prisma as { permanentBan?: unknown }).permanentBan) return null; // unit-test doubles without the table
+  const ban = await prisma.permanentBan.findFirst({ where: { liftedAt: null, idFingerprints: { hasSome: [fingerprint] } }, select: { id: true, subjectCode: true } });
+  if (!ban) return null;
+  const decided = await prisma.reviewFlag.findMany({ where: { kind: POSSIBLE_BAN_FLAG, subjectType: subject.type, subjectId: subject.id, status: { not: 'open' } }, select: { details: true } });
+  const notSame = decided.some((f) => {
+    const d = (f.details ?? {}) as { banId?: string; decision?: string };
+    return d.banId === ban.id && d.decision === 'not_same';
+  });
+  return notSame ? null : ban;
+}
+
+/** H2: an open "possibly the same person as a banned person" item for this profile. */
+export async function openBanReview(prisma: Client, subjectType: string, subjectId: string) {
+  if (!(prisma as { reviewFlag?: unknown }).reviewFlag) return null;
+  return prisma.reviewFlag.findFirst({ where: { kind: POSSIBLE_BAN_FLAG, subjectType, subjectId, status: 'open' }, select: { id: true } });
+}
+
+/** H2: the ID check and the ₹499 wait while such an item is open (a neutral "under review" message, code UNDER_REVIEW). */
+export async function assertNoOpenBanReview(prisma: Client, subjectType: string, subjectId: string): Promise<void> {
+  if (await openBanReview(prisma, subjectType, subjectId)) {
+    throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: UNDER_REVIEW_MESSAGE });
+  }
 }

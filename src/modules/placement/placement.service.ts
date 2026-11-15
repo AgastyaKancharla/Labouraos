@@ -1,7 +1,7 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { chainRefundOf } from './chain-refund';
-import { claimClockPaused, claimPausedMs, resumeEndedSuspensions } from './claim-clock';
+import { claimPausedMs, claimRefundPause, resumeEndedSuspensions } from './claim-clock';
 import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
@@ -9,6 +9,7 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
   Optional,
 } from '@nestjs/common';
@@ -63,6 +64,7 @@ import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/ex
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { MessagingService } from '../message/messaging.service';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
 import { CustomerNotificationService } from '../customer-notification/customer-notification.service';
 
 export function calculateDaysElapsed(
@@ -85,6 +87,7 @@ export function calculateDaysElapsed(
 
 @Injectable()
 export class PlacementService {
+  private readonly logger = new Logger(PlacementService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly idService: IdService,
@@ -97,6 +100,7 @@ export class PlacementService {
     private readonly editPolicyService: EditPolicyService,
     @Optional() private readonly messaging?: MessagingService,
     @Optional() private readonly customerNotifications?: CustomerNotificationService,
+    @Optional() private readonly reportingScope?: ReportingScopeService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -223,9 +227,16 @@ export class PlacementService {
           );
         }
 
-        // D3 (rev 176): a replacement hired at a higher salary than the person replaced — the
-        // business pays the fee percent of the positive difference plus GST before release.
-        const upgradeDifference = Math.max(0, interview.selectedSalaryPaise - droppedPlacement.agreedSalary);
+        // D3 (rev 181): a replacement hired above the HIGHEST salary the business already paid a fee on in
+        // this chain (the first placement, and any salary difference paid since) pays the fee percent of the
+        // positive difference plus GST before release. ₹25,000 (fee) → ₹20,000 → ₹25,000: nothing more;
+        // ₹12,000 → ₹14,000 (difference paid) → ₹15,000: a fee on ₹1,000.
+        const paidInChain = await tx.placement.findMany({
+          where: { rootPlacementId: rootId, salaryUpgradeDifferencePaise: { not: null }, paidAt: { not: null }, status: { not: 'cancelled' } },
+          select: { agreedSalary: true },
+        });
+        const highestPaidSalary = Math.max(rootPlacement.agreedSalary, ...(paidInChain ?? []).map((p) => p.agreedSalary));
+        const upgradeDifference = Math.max(0, interview.selectedSalaryPaise - highestPaidSalary);
         const upgradeFee = upgradeDifference > 0 ? calculatePlacementFee(upgradeDifference, rootPlacement.feePercentAtCreation ?? agreement.feePercent) : 0;
         const upgradeGst = upgradeFee > 0 ? calculateGst(upgradeFee, rootPlacement.gstPercentAtCreation ?? agreement.gstPercent) : 0;
         const upgradeDue = upgradeFee > 0;
@@ -249,7 +260,8 @@ export class PlacementService {
             rootPlacementId: rootId,
             replacementNumber,
             countsAsReplacement: !neverJoinedSwap,
-            replacedSalaryPaise: droppedPlacement.agreedSalary,
+            // The highest salary already paid a fee on in the chain (the invoice line says "more than" this).
+            replacedSalaryPaise: highestPaidSalary,
             salaryUpgradeDifferencePaise: upgradeDue ? upgradeDifference : null,
             feePercentAtCreation: rootPlacement.feePercentAtCreation,
             gstPercentAtCreation: rootPlacement.gstPercentAtCreation,
@@ -1690,11 +1702,19 @@ export class PlacementService {
       select: { id: true },
     });
     let cancelled = 0;
-    for (const row of due) {
-      if (await this.cancelUpgrade(row.id, null, `Salary difference not paid within ${policy.upgradePaymentCancelDays} days of the selection`, now)) cancelled += 1;
+    try {
+      for (const row of due) {
+        // One bad row never stops the others (logged; the next daily run tries it again).
+        try {
+          if (await this.cancelUpgrade(row.id, null, `Salary difference not paid within ${policy.upgradePaymentCancelDays} days of the selection`, now)) cancelled += 1;
+        } catch (error) {
+          this.logger.error(`Could not cancel the unpaid replacement ${row.id}: ${(error as Error).message}`);
+        }
+      }
+    } finally {
+      // M10: suspensions that ended on their date resume their claims' replacement clocks — always.
+      await resumeEndedSuspensions(this.prisma, now);
     }
-    // M10: suspensions that ended on their date resume their claims' replacement clocks.
-    await resumeEndedSuspensions(this.prisma, now);
     return cancelled;
   }
 
@@ -1705,7 +1725,20 @@ export class PlacementService {
     if (actor.role !== 'manager' && actor.role !== 'ceo') throw new ForbiddenException('Only a Manager or the CEO cancels a replacement waiting for its salary difference');
     const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
     if (reason.length < 5) throw new BadRequestException('Write the reason (at least 5 characters)');
-    const placement = await this.prisma.placement.findFirst({ where: { OR: [{ id: idOrCode }, { code: idOrCode }] }, select: { id: true, status: true, salaryUpgradeDifferencePaise: true } });
+    // The CEO: any placement. A Manager: only placements of their own tree (the people below them).
+    let scope: Prisma.PlacementWhereInput = {};
+    if (actor.role === 'manager') {
+      const tree = [actor.id, ...((await this.reportingScope?.peopleUnder(actor.id)) ?? [])];
+      scope = {
+        OR: [
+          { createdByStaffId: { in: tree } },
+          { business: businessesOwnedBy(tree) },
+          { jobSeeker: { registeredByStaffId: { in: tree } } },
+          { interview: { proposedByStaffId: { in: tree } } },
+        ],
+      };
+    }
+    const placement = await this.prisma.placement.findFirst({ where: { AND: [scope, { OR: [{ id: idOrCode }, { code: idOrCode }] }] }, select: { id: true, status: true, salaryUpgradeDifferencePaise: true } });
     if (!placement) throw new NotFoundException('Placement not found');
     if (placement.status !== 'awaiting_payment' || placement.salaryUpgradeDifferencePaise === null) {
       throw new BadRequestException('Only a replacement waiting for its salary-difference payment can be cancelled here');
@@ -1722,6 +1755,8 @@ export class PlacementService {
     });
     if (!placement) return false;
     const done = await this.prisma.$transaction(async (tx) => {
+      // Lock order (C1): the placement row first, then its payment — as PaymentService.onPaymentSucceeded.
+      if (tx.$queryRaw) await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Placement" WHERE "id" = ${placement.id} FOR UPDATE`);
       const changed = await tx.placement.updateMany({
         where: { id: placement.id, status: 'awaiting_payment' },
         data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null },
@@ -1739,8 +1774,12 @@ export class PlacementService {
       if (placement.interviewId) {
         await tx.replacementCandidate.updateMany({ where: { interviewId: placement.interviewId, status: 'accepted' }, data: { status: 'cancelled' } });
       }
-      // He goes back to the available pool (he was never placed by an unpaid upgrade; an older record may say so).
-      if (placement.jobSeeker?.status === 'placed') {
+      // He goes back to the available pool (he was never placed by an unpaid upgrade; an older record may
+      // say so) — unless another placement of his is confirmed or running (H3).
+      const elsewhere = placement.jobSeeker?.status === 'placed'
+        ? await tx.placement.count({ where: { jobSeekerId: placement.jobSeekerId, id: { not: placement.id }, status: { in: ['confirmed', 'active'] } } })
+        : 0;
+      if (placement.jobSeeker?.status === 'placed' && elsewhere === 0) {
         await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'active' } });
         await recordStatusChange(tx, { subjectType: 'job_seeker', subjectId: placement.jobSeekerId, fromStatus: 'placed', toStatus: 'active', changedByStaffId: actorId, reason: 'replacement_upgrade_cancelled', changedAt: now });
       }
@@ -1760,11 +1799,16 @@ export class PlacementService {
         reason,
       });
     }
-    // The business hears it in the app and by SMS.
+    // The business and the selected job seeker hear it in the app and by SMS.
     await this.customerNotifications?.notify({ businessId: placement.businessId }, 'replacement_cancelled', {}, { dedupeKey: `replacement_cancelled:${placement.id}` }).catch(() => undefined);
+    await this.customerNotifications?.notify({ jobSeekerId: placement.jobSeekerId }, 'selection_cancelled', {}, { dedupeKey: `selection_cancelled:${placement.id}` }).catch(() => undefined);
     await this.messaging?.send({
       channel: 'sms', template: 'replacement_upgrade_cancelled', subjectType: 'business', subjectId: placement.businessId,
       relatedType: 'placement', relatedId: placement.id, variables: { businessName: placement.business?.name ?? '' },
+    }).catch(() => undefined);
+    await this.messaging?.send({
+      channel: 'sms', template: 'selection_cancelled', subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
+      relatedType: 'placement', relatedId: placement.id, variables: {},
     }).catch(() => undefined);
     return true;
   }
@@ -1775,7 +1819,8 @@ export class PlacementService {
    */
   async suspendedBusinessClaims(now = new Date()) {
     const claims = await this.prisma.replacementClaim.findMany({
-      where: { searchPausedAt: { not: null }, placement: { business: { suspendedAt: { not: null }, suspendedUntil: null } } },
+      // Only searches still open: no replacement accepted, guarantee not ended.
+      where: { searchPausedAt: { not: null }, placement: { guaranteeEndedReason: null, replacementCandidates: { none: { status: 'accepted' } }, business: { suspendedAt: { not: null }, suspendedUntil: null } } },
       select: {
         id: true, code: true, reportedAt: true, decision: true, searchPausedAt: true, searchPausedSeconds: true,
         placement: { select: { id: true, code: true, business: { select: { id: true, code: true, name: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true } } } },
@@ -1925,7 +1970,8 @@ export class PlacementService {
       where: {
         rootPlacementId: rootId,
         replacementNumber: { gt: 0 },
-        status: { in: ['confirmed', 'active', 'completed'] },
+        // M6: a replacement waiting for its salary-difference payment is selected too (no refund meanwhile).
+        status: { in: ['awaiting_payment', 'confirmed', 'active', 'completed'] },
       },
     });
     const hasAcceptedReplacement = Boolean(
@@ -1998,7 +2044,10 @@ export class PlacementService {
     let refundAmount: number;
     let daysElapsed = 0;
     // M4 (rev 178): 100% means the first fee and every salary difference paid in the chain.
-    const chainFeePaise = (await chainRefundOf(this.prisma, rootId)).feePaise || rootPlacement.placementFee;
+    const chain = await chainRefundOf(this.prisma, rootId);
+    const chainFeePaise = chain.feePaise || rootPlacement.placementFee;
+    // Saved on the refund (review M1): the credit notes and FN-Refund read the parts, never a single row's fee.
+    const refundParts = (chain.parts.length ? chain.parts : [{ placementId: rootId, kind: 'placement_fee', feePaise: rootPlacement.placementFee, gstPaise: rootPlacement.gstAmount }]) as unknown as Prisma.InputJsonValue;
 
     if (outsideRules) {
       // A goodwill refund skips the guarantee rules, so check the basics here: the fee
@@ -2031,8 +2080,7 @@ export class PlacementService {
           searchDays: policy.replacementSearchDays,
           guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
           // M10: the clock stands still while the business is suspended.
-          pausedMs: claimPausedMs(claim, placement.business, now),
-          searchPaused: claimClockPaused(claim, placement.business, now),
+          ...claimRefundPause(claim, placement.business, now),
         },
         now,
       );
@@ -2091,6 +2139,7 @@ export class PlacementService {
             sentToCeoAt: now,
             outsideRules,
             approvalNote: note,
+            refundParts,
           },
         });
         await recordStatusChange(tx, {
@@ -2173,6 +2222,7 @@ export class PlacementService {
             businessId: placement.businessId,
             outsideRules,
             approvalNote: note,
+            refundParts,
           },
         });
       }

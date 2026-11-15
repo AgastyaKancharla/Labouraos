@@ -1,6 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConductService } from './conduct.service';
-import { aadhaarFingerprint, assertNotBanned, businessIdFingerprint, phoneHash } from './permanent-ban.check';
+import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { aadhaarFingerprint, assertNotBanned, businessIdFingerprint, EXAMPLE_BAN_HASH_KEY, getBanHashKey, phoneHash } from './permanent-ban.check';
 import { businessAccessMessage, businessCandidateAccess, BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
 import { isAcceptClaimReason, isRejectClaimReason, ACCEPT_CLAIM_REASONS } from '../placement/claim-reasons';
 
@@ -30,7 +31,17 @@ function setup(overrides: Record<string, unknown> = {}) {
     },
     referral: { findUnique: jest.fn(), findMany: jest.fn(async (): Promise<unknown[]> => []), update: jest.fn() },
     idCheckDetail: { findMany: jest.fn(async () => [{ verificationId: 'iv-1', dateOfBirth: '1990-01-01', nameOnId: 'Ravi Kumar' }]) },
-    permanentBan: { create: jest.fn(), findFirst: jest.fn(async (): Promise<unknown> => null), updateMany: jest.fn(async () => ({ count: 1 })) },
+    permanentBan: { update: jest.fn(), create: jest.fn(async (args: { data: Record<string, unknown> }): Promise<{ id: string }> => ({ id: args ? 'ban-new' : '' })), findFirst: jest.fn(async (...args: unknown[]): Promise<unknown> => (args.length ? null : null)), updateMany: jest.fn(async (...args: unknown[]) => ({ count: args.length })) },
+    interview: {
+      findMany: jest.fn(async (): Promise<unknown[]> => []),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
+    reviewFlag: {
+      findUnique: jest.fn(async (): Promise<unknown> => null),
+      findFirst: jest.fn(async (): Promise<unknown> => null),
+      update: jest.fn(),
+      updateMany: jest.fn(async () => ({ count: 1 })),
+    },
     replacementClaim: {
       updateMany: jest.fn(async () => ({ count: 1 })),
       findMany: jest.fn(async (): Promise<unknown[]> => []),
@@ -40,10 +51,13 @@ function setup(overrides: Record<string, unknown> = {}) {
     statusHistory: { create: jest.fn() },
     ...overrides,
   };
-  const withTx = Object.assign(prisma, { $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)) });
+  const withTx = Object.assign(prisma, { $executeRaw: jest.fn().mockResolvedValue(1), $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)) });
   const audit = { log: jest.fn() };
-  const service = new ConductService(withTx as never, audit as never, { now: () => NOW } as never);
-  return { service, prisma: withTx, audit, business };
+  const messaging = { send: jest.fn().mockResolvedValue({}) };
+  const notifications = { notify: jest.fn().mockResolvedValue({}) };
+  const flags = { raise: jest.fn().mockResolvedValue({ id: 'flag-1' }), refreshBell: jest.fn() };
+  const service = new ConductService(withTx as never, audit as never, { now: () => NOW } as never, messaging as never, notifications as never, flags as never);
+  return { service, prisma: withTx, audit, business, messaging, notifications, flags };
 }
 
 describe('D6 business suspension (CEO only, 30–90 days or permanent)', () => {
@@ -212,18 +226,21 @@ describe('M7 (rev 178): only the CEO lifts a ban, with a reason; the profiles go
 
   it('marks the ban lifted (never deleted), restores each profile, resumes the business claims and audits it', async () => {
     const { service, prisma, audit } = setup();
-    prisma.permanentBan.findFirst.mockResolvedValue(liveBan());
+    let lifted = false;
+    prisma.permanentBan.findFirst.mockImplementation(async () => (lifted ? null : liveBan()));
+    prisma.permanentBan.updateMany.mockImplementation(async () => { lifted = true; return { count: 1 }; });
     prisma.jobSeeker.findUnique.mockResolvedValue({ status: 'banned' });
     const out = await service.liftBan('job_seeker', 'js-1', 'ceo', { reason: 'Police cleared him; documents genuine' });
     expect(prisma.permanentBan.updateMany).toHaveBeenCalledWith({ where: { id: 'ban-1', liftedAt: null }, data: { liftedAt: NOW, liftedByStaffId: 'ceo', liftReason: 'Police cleared him; documents genuine' } });
-    expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-1' }, data: { status: 'placed' } });
+    // H1: placed is not one he goes back to (active, paused, inactive): paused for review.
+    expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-1' }, data: { status: 'paused' } });
     // Not kept for an older profile: paused for review.
     expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-old' }, data: { status: 'paused' } });
     expect(prisma.statusHistory.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ subjectId: 'js-old', reason: 'permanent_ban_lifted_needs_review' }) }));
     expect(prisma.referral.update).toHaveBeenCalledWith({ where: { id: 'rf-1' }, data: { pausedAt: null, pausedByStaffId: null, pauseReason: null } });
     expect(prisma.business.update).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'bz-1' }, data: expect.objectContaining({ suspendedAt: null }) }));
     expect(prisma.replacementClaim.findMany).toHaveBeenCalled();
-    expect(out.restored.map((r) => r.to)).toEqual(['placed', 'active', 'active', 'paused']);
+    expect(out.restored.map((r) => r.to)).toEqual(['paused', 'active', 'active', 'paused']);
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'permanent_ban.lifted', reason: 'Police cleared him; documents genuine' }));
   });
 
@@ -238,12 +255,133 @@ describe('M10 (rev 178): suspension pauses the 15-day replacement clock of open 
     const { service, prisma } = setup();
     await service.suspendBusiness('bz-1', 'ceo', { days: 30, reason: 'Repeated cancellations' });
     expect(prisma.replacementClaim.updateMany).toHaveBeenCalledWith({
-      where: { OR: [{ decision: null }, { decision: 'accepted' }], placement: { businessId: 'bz-1', guaranteeEndedReason: null }, searchPausedAt: null },
+      where: { OR: [{ decision: null }, { decision: 'accepted' }], placement: { businessId: 'bz-1', guaranteeEndedReason: null, replacementCandidates: { none: { status: 'accepted' } } }, searchPausedAt: null },
       data: { searchPausedAt: NOW },
     });
     const pausedAt = new Date(NOW.getTime() - 3 * DAY);
     prisma.replacementClaim.findMany.mockResolvedValueOnce([{ id: 'cl-1', searchPausedAt: pausedAt, searchPausedSeconds: 3600 }]);
     await service.liftSuspension('bz-1', 'ceo', { reason: 'Owner apologised in person' });
-    expect(prisma.replacementClaim.update).toHaveBeenCalledWith({ where: { id: 'cl-1' }, data: { searchPausedAt: null, searchPausedSeconds: 3600 + 3 * 24 * 3600 } });
+    expect(prisma.replacementClaim.updateMany).toHaveBeenCalledWith({ where: { id: 'cl-1', searchPausedAt: pausedAt, searchPausedSeconds: 3600 }, data: { searchPausedAt: null, searchPausedSeconds: 3600 + 3 * 24 * 3600 } });
+  });
+});
+
+describe('H1: overlapping bans on the same person', () => {
+  const NOW2 = NOW;
+  it('a second ban does not overwrite what a profile was: it copies the earlier ban\'s "before" and does not block it again; the cover lookup runs under the advisory lock', async () => {
+    const { service, prisma } = setup();
+    const earlier = { id: 'ban-1', subjectType: 'job_seeker', subjectId: 'js-1', subjectCode: 'JS-00001', coveredProfiles: [{ subjectType: 'referral', subjectId: 'rf-1', code: 'RF-00001', before: { pausedAt: null, pausedByStaffId: null, pauseReason: 'kept' } }] };
+    prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-2', code: 'JS-00002', phone: '+919000000002', name: 'Ravi Kumar', status: 'active', city: 'Bengaluru', identityVerifications: [] });
+    prisma.jobSeeker.findMany.mockResolvedValue([{ id: 'js-2', code: 'JS-00002', phone: '+919000000002', name: 'Ravi Kumar', status: 'active', identityVerifications: [] }]);
+    prisma.referral.findMany.mockResolvedValueOnce([{ id: 'rf-1', code: 'RF-00001', name: 'Ravi Kumar', phone: '+919000000002', pausedAt: NOW2, pausedByStaffId: 'mgr', pauseReason: 'Permanent ban (fraud)', identityVerifications: [] }]);
+    prisma.permanentBan.findFirst.mockImplementation(async (args?: unknown) =>
+      JSON.stringify((args as { where: { OR: unknown[] } }).where.OR).includes('rf-1') ? earlier : null);
+    await service.ban('ceo', { subjectType: 'job_seeker', subjectId: 'js-2', category: 'fraud', reason: 'Same person again' });
+    expect(prisma.$executeRaw).toHaveBeenCalled();
+    const covered = prisma.permanentBan.create.mock.calls[0][0].data.coveredProfiles as { subjectId: string; before: Record<string, unknown>; alreadyBannedBy?: string }[];
+    expect(covered.find((p) => p.subjectId === 'rf-1')).toMatchObject({ before: { pauseReason: 'kept' }, alreadyBannedBy: 'ban-1' });
+    expect(prisma.referral.update).not.toHaveBeenCalled();
+  });
+
+  it('lifting one of two bans leaves the shared profile blocked; lifting the other restores it (either order)', async () => {
+    for (const order of [['ban-1', 'ban-2'], ['ban-2', 'ban-1']]) {
+      const { service, prisma } = setup();
+      const shared = { subjectType: 'referral', subjectId: 'rf-1', code: 'RF-00001', before: { pausedAt: null, pausedByStaffId: null, pauseReason: null } };
+      const bans: Record<string, { id: string; subjectType: string; subjectId: string; subjectCode: string; category: string; coveredProfiles: unknown[]; lifted?: boolean }> = {
+        'ban-1': { id: 'ban-1', subjectType: 'job_seeker', subjectId: 'js-1', subjectCode: 'JS-00001', category: 'fraud', coveredProfiles: [{ subjectType: 'job_seeker', subjectId: 'js-1', code: 'JS-00001', before: { status: 'active' } }, shared] },
+        'ban-2': { id: 'ban-2', subjectType: 'job_seeker', subjectId: 'js-2', subjectCode: 'JS-00002', category: 'fraud', coveredProfiles: [{ subjectType: 'job_seeker', subjectId: 'js-2', code: 'JS-00002', before: { status: 'active' } }, { ...shared, alreadyBannedBy: 'ban-1' }] },
+      };
+      prisma.permanentBan.findFirst.mockImplementation(async (args?: unknown) => {
+        const text = JSON.stringify((args as { where: { OR: unknown[] } }).where.OR);
+        return Object.values(bans).find((b) => !b.lifted && (text.includes(`"${b.subjectId}"`) || b.coveredProfiles.some((p) => text.includes(`"${(p as { subjectId: string }).subjectId}"`)))) ?? null;
+      });
+      prisma.permanentBan.updateMany.mockImplementation(async (args?: unknown) => { bans[(args as { where: { id: string } }).where.id].lifted = true; return { count: 1 }; });
+      prisma.jobSeeker.findUnique.mockResolvedValue({ status: 'banned' });
+      const first = bans[order[0]];
+      const out1 = await service.liftBan('job_seeker', first.subjectId, 'ceo', { reason: 'First lift reason' });
+      expect(out1.restored.find((r) => r.code === 'RF-00001')?.to).toBe('still_banned');
+      expect(prisma.referral.update).not.toHaveBeenCalled();
+      const second = bans[order[1]];
+      const out2 = await service.liftBan('job_seeker', second.subjectId, 'ceo', { reason: 'Second lift reason' });
+      expect(out2.restored.find((r) => r.code === 'RF-00001')?.to).toBe('active');
+      expect(prisma.referral.update).toHaveBeenCalledWith({ where: { id: 'rf-1' }, data: { pausedAt: null, pausedByStaffId: null, pauseReason: null } });
+    }
+  });
+});
+
+describe('M4 (review): a suspended business interviews no one — its upcoming interviews are cancelled', () => {
+  it('cancels offered and confirmed interviews still ahead, and tells the job seeker (app + SMS) and the business', async () => {
+    const { service, prisma, messaging, notifications } = setup();
+    prisma.interview.findMany.mockResolvedValueOnce([{ id: 'int-1', jobSeekerId: 'js-1', status: 'confirmed' }, { id: 'int-2', jobSeekerId: 'js-2', status: 'offered' }]);
+    await service.suspendBusiness('bz-1', 'ceo', { days: 30, reason: 'Repeated cancellations' });
+    expect(prisma.interview.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { businessId: 'bz-1', status: { in: ['offered', 'confirmed'] }, slotStartsAt: { gt: NOW } } }));
+    expect(prisma.interview.updateMany).toHaveBeenCalledWith({ where: { id: 'int-1', status: 'confirmed' }, data: { status: 'cancelled', cancelReason: 'business_suspended' } });
+    expect(notifications.notify).toHaveBeenCalledWith({ jobSeekerId: 'js-1' }, 'interview_cancelled', {}, expect.anything());
+    expect(notifications.notify).toHaveBeenCalledWith({ businessId: 'bz-1' }, 'interview_cancelled', {}, expect.anything());
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'interview_cancelled', subjectId: 'js-2' }));
+  });
+});
+
+describe('H2 (rev 181): a match only on another ID goes to a Manager or the CEO', () => {
+  it('at ban time a profile matching only on a PAN (type + last 4 + name) is not covered: a review item is raised', async () => {
+    const { service, prisma, flags } = setup();
+    prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-1', code: 'JS-00001', phone: '+919876512345', name: 'Ravi Kumar', status: 'active', city: 'Bengaluru', identityVerifications: [{ id: 'iv-9', method: 'pan', last4: '234F' }] });
+    prisma.jobSeeker.findMany.mockResolvedValue([
+      { id: 'js-1', code: 'JS-00001', phone: '+919876512345', name: 'Ravi Kumar', status: 'active', identityVerifications: [{ id: 'iv-9', method: 'pan', last4: '234F' }] },
+      { id: 'js-7', code: 'JS-00007', phone: '+919000000007', name: 'Ravi Kumar', status: 'active', identityVerifications: [{ id: 'iv-7', method: 'pan', last4: '234F' }] },
+    ]);
+    prisma.permanentBan.create.mockResolvedValue({ id: 'ban-9' });
+    const out = await service.ban('ceo', { subjectType: 'job_seeker', subjectId: 'js-1', category: 'fraud', reason: 'Took money from others' });
+    expect(out.profiles.map((p) => p.code)).toEqual(['JS-00001']);
+    expect(prisma.jobSeeker.update).not.toHaveBeenCalledWith({ where: { id: 'js-7' }, data: { status: 'banned' } });
+    expect(flags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'possible_banned_person', subjectType: 'job_seeker', subjectId: 'js-7', owner: { role: 'manager' }, details: expect.objectContaining({ banId: 'ban-9' }) }));
+  });
+
+  const flag = { id: 'flag-1', kind: 'possible_banned_person', status: 'open', subjectType: 'job_seeker', subjectId: 'js-7', details: { banId: 'ban-9', subjectCode: 'JS-00007' } };
+  const ban = { id: 'ban-9', subjectType: 'job_seeker', subjectId: 'js-1', subjectCode: 'JS-00001', category: 'fraud', reason: 'x', coveredProfiles: [{ subjectType: 'job_seeker', subjectId: 'js-1', code: 'JS-00001', before: { status: 'active' } }] };
+
+  it('"Confirm — same person": Manager or CEO with a reason; the profile is covered and blocked; audited', async () => {
+    const { service, prisma, audit } = setup();
+    await expect(service.confirmPossibleMatch('flag-1', 'tl', { reason: 'Same photo' })).rejects.toThrow(ForbiddenException);
+    prisma.reviewFlag.findUnique.mockResolvedValue(flag);
+    prisma.permanentBan.findFirst.mockImplementation(async (...args: unknown[]) => (JSON.stringify(args).includes('"id":"ban-9"') ? ban : null));
+    prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-7', code: 'JS-00007', status: 'active' });
+    await service.confirmPossibleMatch('flag-1', 'mgr', { reason: 'Same photo and same date of birth' });
+    const update = (prisma.permanentBan as unknown as { update: jest.Mock }).update;
+    expect(update).toHaveBeenCalledWith({ where: { id: 'ban-9' }, data: { coveredProfiles: [...ban.coveredProfiles, { subjectType: 'job_seeker', subjectId: 'js-7', code: 'JS-00007', before: { status: 'active' } }] } });
+    expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-7' }, data: { status: 'banned' } });
+    expect(prisma.reviewFlag.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'resolved', details: expect.objectContaining({ decision: 'same_person' }) }) }));
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'permanent_ban.possible_match_confirmed', reason: 'Same photo and same date of birth' }));
+  });
+
+  it('"Not the same person": clears the item with a reason, audited', async () => {
+    const { service, prisma, audit } = setup();
+    prisma.reviewFlag.findUnique.mockResolvedValue(flag);
+    await service.rejectPossibleMatch('flag-1', 'ceo', { reason: 'Different person, checked on a call' });
+    expect(prisma.reviewFlag.updateMany).toHaveBeenCalledWith({ where: { id: 'flag-1', status: 'open' }, data: expect.objectContaining({ status: 'dismissed', details: expect.objectContaining({ decision: 'not_same' }) }) });
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'permanent_ban.possible_match_rejected' }));
+  });
+
+  it('the generic "Resolve" refuses a possible-match item: only the two decisions close it', async () => {
+    const prisma = { reviewFlag: { findUnique: jest.fn(async () => flag), update: jest.fn() } };
+    const flags = new ReviewFlagService(prisma as never, {} as never, { log: jest.fn() } as never);
+    await expect(flags.resolve('flag-1', { id: 'ceo', role: 'ceo' }, { status: 'dismissed', resolution: 'Looked fine' })).rejects.toThrow(/Confirm — same person/);
+    expect(prisma.reviewFlag.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('PERMANENT_BAN_HASH_KEY', () => {
+  const keep = { key: process.env.PERMANENT_BAN_HASH_KEY, env: process.env.NODE_ENV };
+  afterEach(() => {
+    process.env.PERMANENT_BAN_HASH_KEY = keep.key;
+    process.env.NODE_ENV = keep.env;
+  });
+  it('refuses the .env.example placeholder in production, and a short or missing key anywhere', () => {
+    process.env.PERMANENT_BAN_HASH_KEY = EXAMPLE_BAN_HASH_KEY;
+    process.env.NODE_ENV = 'production';
+    expect(() => getBanHashKey()).toThrow('example value');
+    process.env.NODE_ENV = 'test';
+    expect(getBanHashKey()).toBe(EXAMPLE_BAN_HASH_KEY);
+    process.env.PERMANENT_BAN_HASH_KEY = 'short';
+    expect(() => getBanHashKey()).toThrow('at least 32');
   });
 });

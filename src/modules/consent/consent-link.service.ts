@@ -726,8 +726,9 @@ export class ConsentLinkService {
     const purposes = Array.isArray(dto.purposes) ? dto.purposes : [];
     const legalLanguage = (['kn', 'hi', 'en'].includes(language) ? language : 'en') as AgreementLanguage;
     const rendered = await this.legal.render('job_seeker_terms', legalLanguage);
-    // The exact text he read: the page sends the hash of the terms it showed.
-    if (dto.textHash && dto.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
+    // The exact text he read: the page sends the hash of the terms it showed (required).
+    if (!dto.textHash) throw new BadRequestException('textHash is required: send the hash of the terms text the page showed');
+    if (dto.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
 
     // Grant each selected purpose
     for (const purpose of purposes) {
@@ -1042,7 +1043,8 @@ export class ConsentLinkService {
     }
     const key = subjectType === 'job_seeker' ? 'job_seeker_terms' : 'referral_terms';
     const rendered = await this.legal.render(key, input.language);
-    if (input.textHash && input.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
+    if (!input.textHash) throw new BadRequestException('textHash is required: send the hash of the terms text the page showed');
+    if (input.textHash !== rendered.hash) throw new BadRequestException(TERMS_TEXT_CHANGED_MESSAGE);
     const noticeVersion = subjectType === 'job_seeker' ? DEFAULT_NOTICE_VERSION : rendered.version;
     const acceptedAt = this.clock.now();
     await this.prisma.$transaction(async (tx) => {

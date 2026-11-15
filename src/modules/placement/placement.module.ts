@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { MessageModule } from '../message/message.module';
+import { ReportingScopeModule } from '../staff/reporting-scope.module';
 import { CustomerNotificationModule } from '../customer-notification/customer-notification.module';
 import { PrismaModule } from '../../common/prisma/prisma.module';
 import { IdModule } from '../../common/id/id.module';
@@ -14,7 +15,7 @@ import { WorkerLeftService } from './worker-left.service';
 import { PlacementController, PlacementInvoiceCopyController, VacancyPlacementController } from './placement.controller';
 
 @Module({
-  imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule, PricingModule, ReviewFlagModule, MessageModule, CustomerNotificationModule],
+  imports: [PrismaModule, IdModule, AuditModule, RbacModule, JobSeekerModule, PaymentModule, PricingModule, ReviewFlagModule, MessageModule, CustomerNotificationModule, ReportingScopeModule],
   controllers: [PlacementInvoiceCopyController, VacancyPlacementController, PlacementController],
   providers: [PlacementService, WorkerLeftService],
   exports: [PlacementService],

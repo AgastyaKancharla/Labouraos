@@ -471,6 +471,43 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
       expect(prisma.jobSeeker.update).not.toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'js-up' } }));
     });
 
+    it('D3 (rev 181): only above the HIGHEST salary already paid a fee on — ₹25,000 (fee) → ₹20,000 → ₹25,000 pays nothing; ₹12,000 → ₹14,000 (paid) → ₹15,000 pays on ₹1,000', async () => {
+      const upi = { createRequest: jest.fn().mockResolvedValue({ paymentId: 'pay-up-2', paymentLink: 'upi://pay' }) };
+      (prisma as unknown as { payment: Record<string, jest.Mock> }).payment.findUnique = jest.fn().mockResolvedValue({ id: 'pay-up-2', code: 'PAY-00100', amount: 59000, status: 'pending', gatewayReference: null, upiReference: 'PAY-00100' });
+      (prisma as unknown as { businessBranch: Record<string, jest.Mock> }).businessBranch = { findUnique: jest.fn() };
+      pricingService.current.mockResolvedValue({ maxFreeReplacements: 2, placementPaymentDueHours: 24 });
+      const service = new PlacementService(
+        prisma as unknown as PrismaService, idService, auditService as unknown as AuditService, {} as unknown as JobSeekerService, {} as unknown as PaymentService,
+        pricingService as unknown as PricingService, upi as unknown as UpiCollectionService, reviewFlagService as unknown as ReviewFlagService, {} as unknown as EditPolicyService,
+      );
+      const interview = (salary: number) => ({
+        id: `int-${salary}`, businessId: 'biz-1', jobSeekerId: `js-${salary}`, vacancyId: 'vac-up', proposedByStaffId: 'fa-1',
+        selectedSalaryPaise: salary, selectedJoiningDate: new Date('2026-11-25T00:00:00.000Z'), status: 'completed', result: 'selected',
+        resultRecordedAt: new Date('2026-11-16T14:00:00.000Z'), vacancy: { id: 'vac-up', businessId: 'biz-1', city: 'Bengaluru', replacementForPlacementId: 'pl-drop' },
+      });
+      const now = new Date('2026-11-16T14:00:00.000Z');
+
+      // ₹25,000 first placement (fee paid) → a free ₹20,000 replacement left → a ₹25,000 replacement: nothing to pay.
+      const root25 = { ...rootPlacement, agreedSalary: 2500000, feePercentAtCreation: 50, gstPercentAtCreation: 18 };
+      prisma.interview.findUnique = jest.fn().mockResolvedValue(interview(2500000));
+      prisma.placement.findUniqueOrThrow = jest.fn().mockImplementation(async ({ where }: { where: { id: string } }) =>
+        where.id === 'pl-drop' ? { ...rootPlacement, id: 'pl-drop', agreedSalary: 2000000, rootPlacementId: 'pl-root', replacementNumber: 1 } : root25);
+      prisma.placement.findMany = jest.fn().mockResolvedValue([]); // no salary difference paid yet
+      prisma.placement.count = jest.fn().mockResolvedValue(1);
+      await service.createAwaitingPaymentFromInterview('int-2500000', now);
+      expect(prisma.placement.create).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'confirmed', placementFee: 0, replacedSalaryPaise: 2500000, salaryUpgradeDifferencePaise: null }) }));
+
+      // ₹12,000 → ₹14,000 (difference paid) → ₹15,000: a fee on ₹1,000 (50% = ₹500 + 18% GST ₹90).
+      const root12 = { ...rootPlacement, agreedSalary: 1200000, feePercentAtCreation: 50, gstPercentAtCreation: 18 };
+      prisma.interview.findUnique = jest.fn().mockResolvedValue(interview(1500000));
+      prisma.placement.findUniqueOrThrow = jest.fn().mockImplementation(async ({ where }: { where: { id: string } }) =>
+        where.id === 'pl-drop' ? { ...rootPlacement, id: 'pl-drop', agreedSalary: 1400000, joinedDate: new Date('2026-10-05T00:00:00Z'), rootPlacementId: 'pl-root', replacementNumber: 1 } : root12);
+      prisma.placement.findMany = jest.fn().mockResolvedValue([{ agreedSalary: 1400000 }]);
+      await service.createAwaitingPaymentFromInterview('int-1500000', now);
+      expect(prisma.placement.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { rootPlacementId: 'pl-root', salaryUpgradeDifferencePaise: { not: null }, paidAt: { not: null }, status: { not: 'cancelled' } } }));
+      expect(prisma.placement.create).toHaveBeenLastCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'awaiting_payment', placementFee: 50000, gstAmount: 9000, replacedSalaryPaise: 1400000, salaryUpgradeDifferencePaise: 100000 }) }));
+    });
+
     it('a lower or equal salary pays nothing', async () => {
       prisma.interview.findUnique = jest.fn().mockResolvedValue({
         id: 'interview-low', businessId: 'biz-1', jobSeekerId: 'js-low', vacancyId: 'vac-low', proposedByStaffId: 'fa-1',
@@ -625,6 +662,8 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
       expect(payment).toBeDefined();
       expect(payment.type).toBe('refund');
       expect(payment.amount).toBe(1000000);
+      // Review M1: the refund keeps what it is made of, for the credit notes.
+      expect(prisma.payment.create).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ refundParts: [expect.objectContaining({ placementId: 'pl-root', kind: 'placement_fee' })] }) }));
 
       // Verify root placement marked refunded
       expect(prisma.placement.update).toHaveBeenCalledWith(
@@ -636,6 +675,21 @@ describe('Phase 17 Task 3: Replacements through interviews and guarantee rules',
           }),
         }),
       );
+    });
+  });
+
+  describe('M6: a replacement waiting for its salary-difference payment counts as selected', () => {
+    it('no refund while an awaiting_payment replacement exists', async () => {
+      prisma.replacementClaim.findFirst = jest.fn().mockResolvedValue({ id: 'claim-1', decision: 'accepted', decidedAt: new Date('2026-10-20T10:00:00.000Z') });
+      const original = prisma.placement.findFirst.getMockImplementation();
+      prisma.placement.findFirst = jest.fn().mockImplementation(async (args: { where: { rootPlacementId?: string; status?: { in: string[] } } }) => {
+        if (args.where.rootPlacementId) {
+          expect(args.where.status?.in).toContain('awaiting_payment');
+          return { id: 'pl-up', status: 'awaiting_payment', rootPlacementId: 'pl-root' };
+        }
+        return original ? original(args) : null;
+      });
+      await expect(placementService.approveRefund('pl-root', { asOf: '2026-11-05T10:00:00.000Z' }, 'ceo-1')).rejects.toThrow('replacement candidate has been accepted');
     });
   });
 

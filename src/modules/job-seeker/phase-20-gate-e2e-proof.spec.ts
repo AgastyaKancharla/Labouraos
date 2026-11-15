@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'crypto';
+import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -236,6 +237,7 @@ describe('Phase 20 gate end-to-end proof', () => {
         otpRequestId: requestId,
         purposes: ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'],
         language: 'en',
+        textHash: await jobSeekerTermsHash(app, 'en'),
       })
       .expect(201);
     await request(server())

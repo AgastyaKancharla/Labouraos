@@ -1,5 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { isFeePaymentType } from '../payment/fee-payment-types';
+import { refundBasis } from '../placement/chain-refund';
 
 const bypassLogger = new Logger('BypassChargeTotals');
 import { Prisma } from '@prisma/client';
@@ -339,13 +340,17 @@ export class CeoMoneyService {
       // placement fees refunded in the period comes off what is paid.
       this.prisma.payment.findMany({
         where: { type: 'refund', placementId: { not: null }, status: { in: RECEIVED_STATUSES }, OR: [{ paidAt: { gte: range.from, lte: range.to } }, { paidAt: null, updatedAt: { gte: range.from, lte: range.to } }] },
-        select: { amount: true, placement: { select: { placementFee: true, gstAmount: true } } },
+        select: { amount: true, refundParts: true, placement: { select: { placementFee: true, gstAmount: true } } },
       }),
     ]);
     const collected = sumPaise(all.map((p) => p.gstAmount));
     // GST reversed in proportion to the share of the fee refunded (a full refund reverses all of it).
     const creditNoteGst = sumPaise(
-      refunded.map((r) => (r.placement && r.placement.placementFee > 0 ? Math.round((r.placement.gstAmount * Math.min(r.amount, r.placement.placementFee)) / r.placement.placementFee) : 0)),
+      // Measured against the refund's parts (first fee + paid salary differences, review M1).
+      refunded.map((r) => {
+        const basis = refundBasis(r.refundParts, r.placement);
+        return basis.feePaise > 0 ? Math.round((basis.gstPaise * Math.min(r.amount, basis.feePaise)) / basis.feePaise) : 0;
+      }),
     );
     return {
       rows: placements.map((p) => ({

@@ -38,6 +38,9 @@ describe('Activation charge requires a readable pricing policy', () => {
       {} as unknown as EditPolicyService,
       {} as unknown as AnonymisationService,
       {} as unknown as TradeService,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      // Terms accepted (the re-consent guard is required).
+      { status: jest.fn().mockResolvedValue({ needsReconsent: false }) } as never,
     );
 
     await expect(service.createActivationPayment('js-1')).rejects.toThrow(

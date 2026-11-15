@@ -1,4 +1,6 @@
 import { BadRequestException, Injectable } from '@nestjs/common';
+import { Prisma } from '@prisma/client';
+import { refundBasis } from '../placement/chain-refund';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
 import { RECEIVED_STATUSES, sumPaise } from '../ceo-portal/ceo-common';
@@ -13,9 +15,11 @@ const OUT_TYPES = ['refund', 'duplicate_refund', 'referral_payout', 'joining_rew
  * it stays owed until the CA answers, so it never reduces the GST to pay and
  * no credit note goes into the GST data.
  */
-function refundedFee(amount: number, placement: { placementFee: number } | null): number {
-  if (!placement || placement.placementFee <= 0) return 0;
-  return Math.min(amount, placement.placementFee);
+/** The fee part of a business refund: never more than the fees it returns (the first fee plus paid salary differences, review M1). */
+function refundedFee(amount: number, refundParts: Prisma.JsonValue | null, placement: { placementFee: number; gstAmount: number } | null): number {
+  const basis = refundBasis(refundParts, placement);
+  if (basis.feePaise <= 0) return 0;
+  return Math.min(amount, basis.feePaise);
 }
 
 /**
@@ -90,7 +94,7 @@ export class FinanceTaxService {
     const { from, to } = monthBounds(month);
     return this.prisma.payment.findMany({
       where: { type: 'refund', placementId: { not: null }, status: { in: RECEIVED_STATUSES }, paidAt: { gte: from, lte: to } },
-      select: { id: true, code: true, amount: true, paidAt: true, placement: { select: { code: true, invoiceCode: true, placementFee: true, gstAmount: true, business: { select: { name: true, legalName: true, gstNumber: true, gstLegalName: true } } } } },
+      select: { id: true, code: true, amount: true, paidAt: true, refundParts: true, placement: { select: { code: true, invoiceCode: true, placementFee: true, gstAmount: true, business: { select: { name: true, legalName: true, gstNumber: true, gstLegalName: true } } } } },
       orderBy: { paidAt: 'asc' },
     });
   }
@@ -124,7 +128,7 @@ export class FinanceTaxService {
     const invoiceFee = placementFee + bypassFee;
     const invoiceGst = placementGst + bypassGst;
     const invoiceCount = invoices.length + bypass.length;
-    const refundFee = sumPaise(refunds.map((r) => refundedFee(r.amount, r.placement)));
+    const refundFee = sumPaise(refunds.map((r) => refundedFee(r.amount, r.refundParts, r.placement)));
     const partnerIds = [...new Set([...fyPayouts, ...openPayouts].map((g) => g.referralId).filter((x): x is string => Boolean(x)))];
     const partners = partnerIds.length ? await this.prisma.referral.findMany({ where: { id: { in: partnerIds } }, select: { id: true, code: true, name: true } }) : [];
     const limit = policy.referralTdsYearlyLimitPaise;

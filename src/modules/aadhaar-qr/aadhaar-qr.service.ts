@@ -1,5 +1,5 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
-import { aadhaarFingerprint, assertNotBanned } from '../conduct/permanent-ban.check';
+import { aadhaarFingerprint, assertNoOpenBanReview, assertNotBanned } from '../conduct/permanent-ban.check';
 import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
 import { assertTermsCurrent } from '../legal/legal-status';
 import { Prisma } from '@prisma/client';
@@ -147,6 +147,8 @@ export class AadhaarQrService {
     if (!seeker || seeker.anonymisedAt) throw new NotFoundException('Job seeker not found');
     // Review H3: no ID check while he must accept the updated terms (RECONSENT_REQUIRED).
     await assertTermsCurrent(this.prisma, 'job_seeker', seeker.id);
+    // H2 (rev 181): a possible match with a banned person waits for a Manager or the CEO.
+    await assertNoOpenBanReview(this.prisma, 'job_seeker', seeker.id);
     const consent = await this.prisma.consent.findFirst({
       where: { subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'aadhaar_verification', granted: true, grantedAt: { not: null }, withdrawnAt: null },
       orderBy: { grantedAt: 'desc' },
@@ -172,6 +174,7 @@ export class AadhaarQrService {
     if (!referral || referral.anonymisedAt) throw new NotFoundException('Referral partner not found');
     // Review H3 / M6: a partner on the older short terms accepts v1.0 first (RECONSENT_REQUIRED).
     await assertTermsCurrent(this.prisma, 'referral', referral.id);
+    await assertNoOpenBanReview(this.prisma, 'referral', referral.id);
     // S2 (rev 176): the partner's separate ID-check consent.
     const consentId = await partnerIdCheckConsentId(this.prisma, referral.id);
     if (!consentId) throw new BadRequestException('The ID-check consent is required before ID verification');

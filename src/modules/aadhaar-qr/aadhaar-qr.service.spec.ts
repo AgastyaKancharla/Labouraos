@@ -460,11 +460,20 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
     expect((await service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).result).toBe('verified');
   });
 
-  it('D11 (rev 176): the same PAN, driving licence or voter ID as a permanently banned person cannot be submitted again', async () => {
-    const { otherIds, prisma, card } = setup();
-    prisma.permanentBan.rows.push({ id: 'ban-2', subjectType: 'job_seeker', subjectId: 'js-old', category: 'forged_id', idFingerprints: [otherIdFingerprint('pan', '234F', 'Kavya Ramesh')] });
-    await expect(otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW })).rejects.toThrow(BANNED_MESSAGE);
+  it('H2 (rev 181): the same PAN, driving licence or voter ID as a banned person is never a ban by itself: a review item for a Manager/CEO, and the ID check waits ("under review", never "ban")', async () => {
+    const { otherIds, service, prisma, card, flagCalls } = setup();
+    prisma.permanentBan.rows.push({ id: 'ban-2', subjectType: 'job_seeker', subjectId: 'js-old', subjectCode: 'JS-00099', category: 'forged_id', liftedAt: null, idFingerprints: [otherIdFingerprint('pan', '234F', 'Kavya Ramesh')] });
+    const refused = await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW }).catch((e: HttpException) => e);
+    expect((refused as HttpException).getResponse()).toMatchObject({ code: 'UNDER_REVIEW' });
+    expect(JSON.stringify((refused as HttpException).getResponse()).toLowerCase()).not.toContain('ban');
     expect(prisma.identityVerification.rows).toHaveLength(0);
+    expect(flagCalls).toEqual([expect.objectContaining({ kind: 'possible_banned_person', subjectType: 'job_seeker', subjectId: 'js-1', owner: { role: 'manager' }, details: expect.objectContaining({ banId: 'ban-2', idType: 'pan' }) })]);
+    // While it is open, the Aadhaar QR check waits too.
+    await expect(service.checkJobSeeker('js-1', qr({ last4: '4321' }), { channel: 'link', now: NOW })).rejects.toThrow('being checked');
+    // "Not the same person": the same match is not raised again; the check goes ahead.
+    prisma.reviewFlag.rows[0]!.status = 'dismissed';
+    prisma.reviewFlag.rows[0]!.details = { banId: 'ban-2', decision: 'not_same' };
+    expect((await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW })).status).toBe('pending');
   });
 
   it('D11 (rev 176): the same Aadhaar as a permanently banned person cannot register again', async () => {

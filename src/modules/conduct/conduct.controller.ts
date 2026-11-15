@@ -39,6 +39,19 @@ export class ConductController {
     return this.conduct.liftBan(subjectType, subjectId, req.user.sub, body ?? {});
   }
 
+  /** H2 (rev 181): "possibly the same person as a banned person" — Manager or CEO decides, with a reason. */
+  @Post('permanent-bans/possible-matches/:flagId/confirm')
+  @RequireRoles('manager', 'ceo')
+  confirmPossibleMatch(@Param('flagId') flagId: string, @Body() body: { reason?: string }, @Req() req: AuthedRequest) {
+    return this.conduct.confirmPossibleMatch(flagId, req.user.sub, body ?? {});
+  }
+
+  @Post('permanent-bans/possible-matches/:flagId/not-same')
+  @RequireRoles('manager', 'ceo')
+  rejectPossibleMatch(@Param('flagId') flagId: string, @Body() body: { reason?: string }, @Req() req: AuthedRequest) {
+    return this.conduct.rejectPossibleMatch(flagId, req.user.sub, body ?? {});
+  }
+
   @Get('permanent-bans/:subjectType/:subjectId')
   @RequireRoles('manager', 'ceo', 'finance')
   banOf(@Param('subjectType') subjectType: string, @Param('subjectId') subjectId: string) {

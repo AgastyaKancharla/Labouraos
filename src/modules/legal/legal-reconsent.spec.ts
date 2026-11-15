@@ -30,6 +30,9 @@ function legalWith(rows: {
 }
 
 const REQUIRED = ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'];
+/** The hash of the text a page would show (the server requires it). */
+const shownHash = (key: 'job_seeker_terms' | 'referral_terms', lang: 'kn' | 'hi' | 'en') =>
+  renderLegalDocument(key, lang, legalNumbersFrom(POLICY as never), legalCompanyFrom(POLICY as never)).hash;
 
 describe('Re-consent (rev 176): who must accept the current version', () => {
   it('a job seeker who gave the five consents under 1.1 (no new acceptance yet) is asked once; consents stay valid meanwhile', async () => {
@@ -109,8 +112,8 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
 
   it('needs every required tick, then grants them under notice 1.2 and records the acceptance', async () => {
     const { service, grants, recorded, audit } = linkService({ needsReconsent: true, acceptedVersion: null });
-    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: ['job_matching'], language: 'kn', method: 'sms_link', otpRequestId: 'otp-1' })).rejects.toThrow(BadRequestException);
-    const res = await service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'kn', method: 'sms_link', otpRequestId: 'otp-1' });
+    await expect(service.recordReconsent('job_seeker', 'js-1', { purposes: ['job_matching'], language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'kn') })).rejects.toThrow(BadRequestException);
+    const res = await service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'kn', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'kn') });
     expect(res.version).toBe('1.1');
     expect(grants).toHaveLength(6);
     expect(grants[0]).toMatchObject({ subjectType: 'job_seeker', noticeVersion: '1.2', language: 'kn', otpRequestId: 'otp-1' });
@@ -120,10 +123,10 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
 
   it('never grants the consents from nothing: someone who skipped the first consent step is refused; a second tap is a no-op', async () => {
     const fresh = linkService({ needsReconsent: false, acceptedVersion: null });
-    await expect(fresh.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1' })).rejects.toThrow('first step');
+    await expect(fresh.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'en') })).rejects.toThrow('first step');
     expect(fresh.grants).toHaveLength(0);
     const done = linkService({ needsReconsent: false, acceptedVersion: '1.1' });
-    expect(await done.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1' })).toMatchObject({ success: true, alreadyAccepted: true });
+    expect(await done.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'sms_link', otpRequestId: 'otp-1', textHash: shownHash('job_seeker_terms', 'en') })).toMatchObject({ success: true, alreadyAccepted: true });
     expect(done.grants).toHaveLength(0);
   });
 
@@ -138,20 +141,20 @@ describe('Re-consent on the link (ConsentLinkService.recordReconsent)', () => {
 
   it('promotions left unticked on the new version withdraws the earlier promotions consent; ticked keeps it', async () => {
     const without = linkService({ needsReconsent: true, acceptedVersion: '1.0' });
-    await without.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'in_app', otpRequestId: null });
+    await without.service.recordReconsent('job_seeker', 'js-1', { purposes: REQUIRED, language: 'en', method: 'in_app', otpRequestId: null, textHash: shownHash('job_seeker_terms', 'en') });
     expect(without.tx.consent.updateMany).toHaveBeenCalledWith({
       where: { subjectType: 'job_seeker', subjectId: 'js-1', purpose: 'promotions', granted: true, withdrawnAt: null },
       data: expect.objectContaining({ granted: false, withdrawnMethod: 'in_app' }),
     });
     const withPromos = linkService({ needsReconsent: true, acceptedVersion: '1.0' });
-    await withPromos.service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'en', method: 'in_app', otpRequestId: null });
+    await withPromos.service.recordReconsent('job_seeker', 'js-1', { purposes: [...REQUIRED, 'promotions'], language: 'en', method: 'in_app', otpRequestId: null, textHash: shownHash('job_seeker_terms', 'en') });
     expect(withPromos.tx.consent.updateMany).not.toHaveBeenCalled();
   });
 
   it('a partner accepts the terms, recording and the separate ID-check consent', async () => {
     const { service, grants } = linkService({ needsReconsent: true, acceptedVersion: null });
-    await expect(service.recordReconsent('referral', 'rf-1', { purposes: ['agreement_terms', 'call_recording'], language: 'en', method: 'in_app', otpRequestId: null })).rejects.toThrow('Tick every required permission');
-    await service.recordReconsent('referral', 'rf-1', { purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'en', method: 'in_app', otpRequestId: null });
+    await expect(service.recordReconsent('referral', 'rf-1', { purposes: ['agreement_terms', 'call_recording'], language: 'en', method: 'in_app', otpRequestId: null, textHash: shownHash('referral_terms', 'en') })).rejects.toThrow('Tick every required permission');
+    await service.recordReconsent('referral', 'rf-1', { purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'en', method: 'in_app', otpRequestId: null, textHash: shownHash('referral_terms', 'en') });
     expect(grants.map((g) => (g as { purpose: string }).purpose)).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
   });
 });

@@ -1,5 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
-import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
+import { claimRefundPause } from '../placement/claim-clock';
 import { isFeePaymentType } from './fee-payment-types';
 import { Payment, PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -217,6 +217,9 @@ export class PaymentService {
 
     if (payment.status === 'failed') {
       this.logger.warn(`Payment ${payment.id} already failed. Cannot succeed.`);
+      // The request was closed (cancelled replacement, ban, ID gate) but the gateway took the money:
+      // Finance refunds it — never swallowed.
+      if (status === 'succeeded') await this.flagPaidAfterClosed(payment.id, { confirmedBy: 'gateway', gatewayReference });
       return { received: true, alreadyFailed: true, paymentId: payment.id };
     }
 
@@ -293,15 +296,50 @@ export class PaymentService {
     }
   }
 
+  /**
+   * C1: money arrived for a request that was already closed (a cancelled replacement's salary
+   * difference, a ₹499 closed by a permanent ban or the ID gate) or for a placement no longer waiting
+   * for it. It is never swallowed: Finance and the CEO get a payment_mismatch flag to refund it.
+   */
+  private async flagPaidAfterClosed(paymentId: string, extra: Record<string, unknown> = {}) {
+    const payment = await this.prisma.payment.findUnique({
+      where: { id: paymentId },
+      select: { code: true, type: true, amount: true, placement: { select: { code: true } }, jobSeeker: { select: { code: true, status: true } } },
+    });
+    const banned = payment?.jobSeeker?.status === 'banned';
+    await this.reviewFlagService.raise({
+      kind: 'payment_mismatch',
+      subjectType: 'payment',
+      subjectId: paymentId,
+      details: {
+        reason: banned ? 'paid_while_permanently_banned' : 'paid_after_request_closed',
+        paymentCode: payment?.code ?? null,
+        paymentType: payment?.type ?? null,
+        amountPaise: payment?.amount ?? null,
+        placementCode: payment?.placement?.code ?? null,
+        jobSeekerCode: payment?.jobSeeker?.code ?? null,
+        ...(banned ? { reactivated: false } : {}),
+        ...extra,
+      },
+    });
+  }
+
   async onPaymentSucceeded(
     paymentId: string,
-    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string; bookedAt?: Date; bookingNote?: string | null },
+    confirmation: { confirmedAt: Date; confirmedBy: string; confirmedByStaffId?: string; bankUtr?: string; bookedAt?: Date; bookingNote?: string | null; bankCreditId?: string },
   ) {
     const { confirmedAt, confirmedBy, confirmedByStaffId, bankUtr } = confirmation;
     // The money is booked on bookedAt (the open month, when the bank's month is
     // closed); the job seeker's clock still starts when the money really arrived.
     const bookedAt = confirmation.bookedAt ?? confirmedAt;
     const transition = await this.prisma.$transaction(async (tx) => {
+      // Lock order (C1): the placement (or the job seeker for a ₹499) first, then the payment — the same
+      // order as cancelling an unpaid replacement (PlacementService.cancelUpgrade) and a permanent ban
+      // (ConductService), so a payment and a close at the same moment never deadlock or both win.
+      if (tx.$queryRaw) {
+        await tx.$queryRaw(Prisma.sql`SELECT pl."id" FROM "Placement" pl JOIN "Payment" pay ON pay."placementId" = pl."id" WHERE pay."id" = ${paymentId} FOR UPDATE OF pl`);
+        await tx.$queryRaw(Prisma.sql`SELECT js."id" FROM "JobSeeker" js JOIN "Payment" pay ON pay."jobSeekerId" = js."id" WHERE pay."id" = ${paymentId} AND pay."type" = 'activation' FOR UPDATE OF js`);
+      }
       const payment = await tx.payment.findUnique({
         where: { id: paymentId },
         include: { jobSeeker: true },
@@ -321,7 +359,10 @@ export class PaymentService {
           ...(confirmation.bookingNote ? { bookingNote: confirmation.bookingNote } : {}),
         },
       });
-      if (claimed.count !== 1) return { alreadyProcessed: true as const, payment };
+      if (claimed.count !== 1) {
+        const now = await tx.payment.findUnique({ where: { id: paymentId }, select: { status: true } });
+        return now?.status === 'failed' ? { alreadyFailed: true as const, payment } : { alreadyProcessed: true as const, payment };
+      }
       await recordStatusChange(tx, {
         subjectType: 'payment', subjectId: paymentId, fromStatus: payment.status, toStatus: 'succeeded',
         changedByStaffId: confirmedByStaffId ?? null, reason: `payment_confirmed_${confirmedBy}`, changedAt: confirmedAt,
@@ -358,6 +399,8 @@ export class PaymentService {
         placement: Prisma.PlacementGetPayload<{ include: { jobSeeker: true } }>;
         invoiceCode: string;
       } | null = null;
+      // The money arrived but the placement is no longer waiting for it (cancelled, or already paid).
+      let placementNotWaiting: string | null = null;
       // D3 (rev 176): the salary-upgrade difference of a replacement releases it exactly like a placement fee.
       if ((payment.type === 'placement_fee' || payment.type === 'replacement_upgrade') && payment.placementId) {
         const placement = await tx.placement.findUnique({
@@ -398,16 +441,23 @@ export class PaymentService {
             });
           }
           placementTransition = { placement, invoiceCode };
+        } else {
+          placementNotWaiting = placement.code;
         }
       }
-      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition, bannedActivation };
+      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition, bannedActivation, placementNotWaiting };
     });
 
     if ('alreadyProcessed' in transition && transition.alreadyProcessed) {
       return { received: true, alreadyProcessed: true, paymentId };
     }
     if ('alreadyFailed' in transition && transition.alreadyFailed) {
+      // C1: money for a request already closed is flagged for a refund, never swallowed.
+      await this.flagPaidAfterClosed(paymentId, { confirmedBy, bankUtr: bankUtr ?? null, bankCreditId: confirmation.bankCreditId ?? null });
       return { received: true, alreadyFailed: true, paymentId };
+    }
+    if (transition.placementNotWaiting) {
+      await this.flagPaidAfterClosed(paymentId, { confirmedBy, bankUtr: bankUtr ?? null, placementStatus: 'not_awaiting_payment' });
     }
     if (transition.bannedActivation && transition.payment.jobSeeker) {
       await this.reviewFlagService.raise({
@@ -641,6 +691,7 @@ export class PaymentService {
         bankUtr,
         bookedAt: booking.at,
         bookingNote: booking.note,
+        bankCreditId: credit.id,
       });
     } catch (error) {
       await release();
@@ -655,6 +706,12 @@ export class PaymentService {
         details: { bankCreditId: credit.id, bankUtr, amountPaise, reason: 'already_succeeded' },
       });
       return { received: true, status: 'unmatched', reason: 'already_succeeded', bankCreditId: credit.id, paymentId: matchedPayment.id };
+    }
+    // C1: the request was closed before the money came: the credit goes back to unmatched (flagged by
+    // onPaymentSucceeded as paid_after_request_closed) for Finance to refund.
+    if (confirmed && 'alreadyFailed' in confirmed && confirmed.alreadyFailed) {
+      await release();
+      return { received: true, status: 'unmatched', reason: 'request_closed', bankCreditId: credit.id, paymentId: matchedPayment.id };
     }
 
     return {
@@ -892,6 +949,7 @@ export class PaymentService {
         bankUtr: credit.bankUtr,
         bookedAt: booking.at,
         bookingNote: booking.note,
+        bankCreditId: credit.id,
       });
     } catch (error) {
       await releaseCredit();
@@ -903,6 +961,10 @@ export class PaymentService {
     if (confirmed && 'alreadyProcessed' in confirmed && confirmed.alreadyProcessed) {
       await releaseCredit();
       throw new ConflictException('This payment was confirmed with another credit meanwhile; this credit stays unmatched');
+    }
+    if (confirmed && 'alreadyFailed' in confirmed && confirmed.alreadyFailed) {
+      await releaseCredit();
+      throw new ConflictException('This payment request was closed before the money came; the credit stays unmatched and is flagged for a refund');
     }
 
     let tdsReceivable: TdsReceivable | null = null;
@@ -1671,7 +1733,8 @@ export class PaymentService {
           where: {
             rootPlacementId: rootId,
             replacementNumber: { gt: 0 },
-            status: { in: ['confirmed', 'active', 'completed'] },
+            // M6: a replacement waiting for its salary-difference payment is selected too.
+            status: { in: ['awaiting_payment', 'confirmed', 'active', 'completed'] },
           },
         });
         const hasAcceptedReplacement = Boolean(
@@ -1706,8 +1769,7 @@ export class PaymentService {
             searchDays: policy.replacementSearchDays,
             guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
             // M10 (rev 178): the clock stands still while the business is suspended.
-            pausedMs: claimPausedMs(claim, placement.business, now),
-            searchPaused: claimClockPaused(claim, placement.business, now),
+            ...claimRefundPause(claim, placement.business, now),
           },
           now,
         );
@@ -1897,6 +1959,18 @@ export class PaymentService {
           changedByStaffId: actorId,
           reason: 'refunded',
         });
+      }
+      // M6: the guarantee is over, so an open salary-difference request in the chain closes (a payment
+      // arriving later is flagged for a refund, never taken).
+      const waiting = await tx.placement.findMany({ where: { rootPlacementId: target.rootId, status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null } }, select: { id: true } });
+      for (const row of waiting) {
+        await tx.placement.updateMany({ where: { id: row.id, status: 'awaiting_payment' }, data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null } });
+        await recordStatusChange(tx, { subjectType: 'placement', subjectId: row.id, fromStatus: 'awaiting_payment', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'guarantee_ended_refunded' });
+        const open = await tx.payment.findMany({ where: { placementId: row.id, type: 'replacement_upgrade', status: 'pending' }, select: { id: true } });
+        if (open.length) {
+          await tx.payment.updateMany({ where: { id: { in: open.map((p) => p.id) }, status: 'pending' }, data: { status: 'failed' } });
+          for (const p of open) await recordStatusChange(tx, { subjectType: 'payment', subjectId: p.id, fromStatus: 'pending', toStatus: 'failed', changedByStaffId: actorId, reason: 'guarantee_ended_refunded' });
+        }
       }
     });
   }
@@ -2457,6 +2531,7 @@ export class PaymentService {
       return { received: true, alreadyProcessed: true, paymentId: payment.id };
     }
     if (payment.status === 'failed') {
+      if (status === 'succeeded') await this.flagPaidAfterClosed(payment.id, { confirmedBy: 'gateway', gatewayReference });
       return { received: true, alreadyFailed: true, paymentId: payment.id };
     }
     if (status === 'failed') {

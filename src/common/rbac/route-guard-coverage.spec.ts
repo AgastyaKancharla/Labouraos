@@ -336,6 +336,9 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
     expect(rolesOf('ConductController.ban')).toEqual(['ceo', 'manager']);
     expect(rolesOf('PlacementController.cancelUpgrade')).toEqual(['ceo', 'manager']);
     expect(rolesOf('PlacementController.suspendedBusinessClaims')).toEqual(['ceo', 'manager']);
+    // Rev 181 (H2): a Manager or the CEO decides "possibly the same person as a banned person".
+    expect(rolesOf('ConductController.confirmPossibleMatch')).toEqual(['ceo', 'manager']);
+    expect(rolesOf('ConductController.rejectPossibleMatch')).toEqual(['ceo', 'manager']);
   });
 
   it('keeps the proxy check (GET /health/proxy-check) behind a login, for the CEO only', () => {

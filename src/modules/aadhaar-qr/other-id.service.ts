@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
 import { assertTermsCurrent } from '../legal/legal-status';
-import { assertNotBanned, otherIdFingerprint } from '../conduct/permanent-ban.check';
+import { assertNoOpenBanReview, otherIdBanMatch, otherIdFingerprint, POSSIBLE_BAN_FLAG, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -174,10 +174,22 @@ export class OtherIdService {
     if (input.captureSource !== 'live_camera') throw new BadRequestException('Take the photo of the card with the live camera; gallery or file uploads are refused');
     if (!input.photo?.buffer.length) throw new BadRequestException('A live camera photo of the card is required');
     await this.stops.assertNotStopped(subject.type, subject.id);
-    // D11 (rev 176): the same PAN, driving licence or voter ID as a permanently banned person cannot register again.
+    // H2 (rev 181): the same PAN, driving licence or voter ID (type + last 4 + name) as a permanently banned
+    // person is never a ban by itself: a Manager or the CEO checks it, and the ID check waits ("under review").
+    await assertNoOpenBanReview(this.prisma, subject.type, subject.id);
     if (subject.name) {
       const last4OfCard = number.replace(/[^A-Z0-9]/g, '').slice(-4);
-      await assertNotBanned(this.prisma, { idFingerprints: [otherIdFingerprint(method, last4OfCard, subject.name)] });
+      const match = await otherIdBanMatch(this.prisma, subject, otherIdFingerprint(method, last4OfCard, subject.name));
+      if (match) {
+        await this.flags?.raise({
+          kind: POSSIBLE_BAN_FLAG,
+          subjectType: subject.type,
+          subjectId: subject.id,
+          owner: { role: 'manager' },
+          details: { banId: match.id, bannedCode: match.subjectCode, subjectCode: subject.code, idType: method, matchedOn: 'other_id' },
+        });
+        throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: UNDER_REVIEW_MESSAGE });
+      }
     }
     const now = context.now ?? new Date();
     if (!(await this.consumeNonce(subject, context.channel === 'field' ? (context.staffId ?? null) : null, input.captureNonce, now))) {

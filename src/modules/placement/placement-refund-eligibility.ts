@@ -15,6 +15,9 @@ export interface PlacementRefundEligibilityInput {
   pausedMs?: number;
   /** M10: the business is suspended now, so the clock stands still and no refund falls due. */
   searchPaused?: boolean;
+  /** M3 (rev 181): when the current pause began, and the pauses before it — a refund due before the pause stays due. */
+  pauseStartedAt?: Date | null;
+  pausedBeforeMs?: number;
 }
 
 /** Why a refund is not due while the business is suspended (the clock is paused, M10). */
@@ -89,11 +92,19 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  if (input.searchPaused) {
+  // M3 (rev 181): the 15 days were already complete when the current pause began — the refund stays owed
+  // during and after the suspension; only the pauses before it are taken off.
+  const DAY_MS = 1000 * 60 * 60 * 24;
+  const dueBeforePause = Boolean(
+    input.pauseStartedAt && input.searchDays !== undefined &&
+      input.pauseStartedAt.getTime() - startDate.getTime() - (input.pausedBeforeMs ?? 0) >= input.searchDays * DAY_MS,
+  );
+  if (input.searchPaused && !dueBeforePause) {
     return { eligible: false, ineligibleReason: CLOCK_PAUSED_REASON, amountPaise: 0, daysOwed: 0, daysElapsed: 0 };
   }
 
-  const diffMs = Math.max(0, now.getTime() - startDate.getTime() - (input.pausedMs ?? 0));
+  const pausedMs = dueBeforePause ? (input.pausedBeforeMs ?? 0) : (input.pausedMs ?? 0);
+  const diffMs = Math.max(0, now.getTime() - startDate.getTime() - pausedMs);
   const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (input.searchDays === undefined) {

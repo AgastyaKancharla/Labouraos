@@ -93,12 +93,13 @@ export class InterviewService {
     private readonly placements: PlacementService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
-    @Optional() private readonly legal?: LegalDocumentService,
+    // Required (no @Optional): the re-consent guard never fails open.
+    private readonly legal?: LegalDocumentService,
   ) {}
 
   /** Review H3: no booking or accepted offer while he must accept the updated terms (RECONSENT_REQUIRED). */
   private async assertTermsCurrent(jobSeekerId: string) {
-    if (!this.legal) return;
+    if (!this.legal) throw new Error('LegalDocumentService is required for the re-consent guard');
     const status = await this.legal.status('job_seeker', jobSeekerId);
     if (status.needsReconsent) throw new ReconsentRequiredException(status);
   }
@@ -736,6 +737,8 @@ export class InterviewService {
       throw new BadRequestException('This interview is no longer awaiting an owner result');
     }
     const now = this.clock.now();
+    // M10 (rev 178): a suspended business selects no one (it interviews no one while suspended).
+    if (input.result === 'selected' && isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
     const status = input.result === 'candidate_no_show' ? 'no_show' : 'completed';
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.interview.updateMany({

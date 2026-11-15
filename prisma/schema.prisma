@@ -1045,6 +1045,8 @@ model Payment {
   sentToCeoAt       DateTime?
   outsideRules      Boolean     @default(false)
   approvalNote      String?
+  /// M4 / review M1 (rev 178): a business refund's parts at approval — [{ placementId, kind, feePaise, gstPaise }] — for the credit notes.
+  refundParts       Json?
   // Phase 22: a payout the bank refused (account closed, name mismatch…), recorded by Finance.
   payoutFailureReason String?
   payoutFailedAt    DateTime?

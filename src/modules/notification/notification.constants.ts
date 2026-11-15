@@ -240,6 +240,7 @@ const FLAG_TITLES: Record<string, string> = {
   aadhaar_key_rotation_suspected: 'Several new Aadhaar QR codes failed the signature today: UIDAI may have a new certificate',
   other_id_needs_manager: 'An ID card photo waits for a Manager or the CEO: no other Team Lead in the city',
   aadhaar_duplicate_person: 'The same Aadhaar is already verified for another person',
+  possible_banned_person: 'Possibly the same person as a banned person',
 };
 
 export function flagTitle(kind: string): string {

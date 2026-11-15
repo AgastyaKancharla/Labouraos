@@ -1,5 +1,5 @@
 import { refundGuaranteeDeadline } from '../../common/money/money';
-import { claimClockPaused, claimPausedMs, SuspensionWindow } from '../placement/claim-clock';
+import { claimRefundPause, SuspensionWindow } from '../placement/claim-clock';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
 import { CLOCK_PAUSED_REASON, evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { GuaranteeState } from './growth.constants';
@@ -72,6 +72,8 @@ export interface ChainPlacement {
   code: string;
   status: string;
   placementFee: number;
+  /** D3: a salary difference paid on this replacement (refunded with the first fee, M4). */
+  salaryDifferencePaid?: boolean;
   dropoutReportedAt: Date | null;
   guaranteeEndedReason: string | null;
   /** Claims on this placement, any order. */
@@ -123,13 +125,14 @@ export function classifyPlacementFeePayment(input: PlacementFeeExposureInput, no
         hasAcceptedReplacement: accepted.replacementCandidates.some((candidate) => candidate.status === 'accepted'),
         claimAcceptedAt: decided.decidedAt,
         dropoutReportedAt: decided.reportedAt ?? accepted.dropoutReportedAt,
-        // The root's fee (a replacement's own row is nothing or only a salary-upgrade difference, D3).
-        placementFee: input.chain.find((p) => p.code === input.root.code)?.placementFee ?? accepted.placementFee,
+        // M4: the first fee plus every salary difference paid in the chain (never one row's own amount).
+        placementFee:
+          (input.chain.find((p) => p.code === input.root.code)?.placementFee ?? accepted.placementFee) +
+          input.chain.filter((p) => p.salaryDifferencePaid).reduce((sum, p) => sum + p.placementFee, 0),
         hasExistingRefund: false,
         searchDays: input.searchDays,
         guaranteeEndedReason: accepted.guaranteeEndedReason,
-        pausedMs: claimPausedMs(decided, input.business, now),
-        searchPaused: claimClockPaused(decided, input.business, now),
+        ...claimRefundPause(decided, input.business, now),
       },
       now,
     );

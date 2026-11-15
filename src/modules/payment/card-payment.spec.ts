@@ -313,6 +313,64 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
     });
   });
 
+  describe('C1: money for a request already closed is flagged, never swallowed', () => {
+    it('a card payment after the replacement was cancelled: Finance gets paid_after_request_closed with the placement code', async () => {
+      const closed = { id: 'pay-up', code: 'PAY-00077', amount: 118000, status: 'failed', method: 'gateway_card', gatewayReference: 'gw_up', type: 'replacement_upgrade', placementId: 'pl-up', placement: { code: 'PL-00050' }, jobSeeker: null };
+      provider.verifyWebhook.mockResolvedValueOnce({ isValid: true, gatewayReference: 'gw_up', status: 'succeeded' });
+      prisma.payment.findUnique.mockResolvedValue(closed);
+      expect(await service.handleWebhook({ event: 'payment.captured' })).toMatchObject({ alreadyFailed: true, paymentId: 'pay-up' });
+      expect(reviewFlagService.raise).toHaveBeenCalledWith({
+        kind: 'payment_mismatch', subjectType: 'payment', subjectId: 'pay-up',
+        details: expect.objectContaining({ reason: 'paid_after_request_closed', placementCode: 'PL-00050', paymentCode: 'PAY-00077', confirmedBy: 'gateway' }),
+      });
+    });
+
+    it('a ₹499 after a permanent ban (its request was closed at ban time): paid_while_permanently_banned', async () => {
+      const closed = { id: 'pay-1', code: 'PAY-00001', amount: 49900, status: 'failed', method: 'gateway_card', type: 'activation', jobSeekerId: 'js-1', placement: null, jobSeeker: { id: 'js-1', code: 'JS-00001', status: 'banned' } };
+      prisma.payment.findUnique.mockResolvedValue(closed);
+      expect(await service.onPaymentSucceeded('pay-1', { confirmedAt: new Date(), confirmedBy: 'gateway' })).toMatchObject({ alreadyFailed: true });
+      expect(prisma.jobSeeker.update).not.toHaveBeenCalled();
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({
+        details: expect.objectContaining({ reason: 'paid_while_permanently_banned', jobSeekerCode: 'JS-00001', reactivated: false }),
+      }));
+    });
+
+    it('a payment and a cancel at the same moment: the rows are locked placement first; a cancel that won makes it alreadyFailed and flagged', async () => {
+      const pending = { id: 'pay-up', code: 'PAY-00077', amount: 118000, status: 'pending', method: 'upi_direct', type: 'replacement_upgrade', placementId: 'pl-up', placement: { code: 'PL-00050' }, jobSeeker: null };
+      prisma.payment.findUnique
+        .mockResolvedValueOnce(pending) // read after the locks
+        .mockResolvedValueOnce({ status: 'failed' }) // the claim lost: closed meanwhile
+        .mockResolvedValue({ ...pending, status: 'failed' });
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 0 });
+      expect(await service.onPaymentSucceeded('pay-up', { confirmedAt: new Date(), confirmedBy: 'bank_feed' })).toMatchObject({ alreadyFailed: true });
+      expect(String((prisma.$queryRaw.mock.calls[0][0] as { sql: string }).sql)).toContain('FROM "Placement"');
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ reason: 'paid_after_request_closed' }) }));
+    });
+
+    it('money for a placement no longer waiting for it (0 rows updated) is flagged too', async () => {
+      const pending = { id: 'pay-f', code: 'PAY-00080', amount: 944000, status: 'pending', method: 'upi_direct', type: 'placement_fee', placementId: 'pl-9', placement: { code: 'PL-00009' }, jobSeeker: null };
+      prisma.payment.findUnique.mockResolvedValue(pending);
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.placement.findUnique.mockResolvedValueOnce({ id: 'pl-9', code: 'PL-00009', status: 'cancelled', jobSeeker: { status: 'active' } });
+      (prisma.placement as Record<string, jest.Mock>).updateMany = jest.fn().mockResolvedValue({ count: 0 });
+      await service.onPaymentSucceeded('pay-f', { confirmedAt: new Date(), confirmedBy: 'bank_feed' });
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({ details: expect.objectContaining({ reason: 'paid_after_request_closed', placementStatus: 'not_awaiting_payment' }) }));
+    });
+  });
+
+  describe('M6: when the guarantee ends with a refund, an open salary-difference request closes', () => {
+    it('cancels the waiting replacement (not counted) and closes its payment request', async () => {
+      const placement = prisma.placement as Record<string, jest.Mock>;
+      placement.updateMany = jest.fn().mockResolvedValue({ count: 1 });
+      placement.findMany = jest.fn().mockResolvedValue([{ id: 'pl-up' }]);
+      prisma.payment.findMany = jest.fn().mockResolvedValue([{ id: 'pay-up' }]);
+      await (service as unknown as { endGuaranteeAfterRefund: (t: unknown, a: string) => Promise<void> }).endGuaranteeAfterRefund({ rootId: 'pl-root', placementId: 'pl-drop', rootStatus: 'dropped_out' }, 'ceo-1');
+      expect(placement.findMany).toHaveBeenCalledWith({ where: { rootPlacementId: 'pl-root', status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null } }, select: { id: true } });
+      expect(placement.updateMany).toHaveBeenCalledWith({ where: { id: 'pl-up', status: 'awaiting_payment' }, data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null } });
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['pay-up'] }, status: 'pending' }, data: { status: 'failed' } });
+    });
+  });
+
   describe('Later UPI credit after switching to card', () => {
     it('keeps bank credit unmatched and raises payment_mismatch flag if payer pays by UPI after switching to card', async () => {
       const paymentSwitchedToCard = {

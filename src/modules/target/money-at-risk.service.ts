@@ -1,6 +1,6 @@
 import { OwnTeam } from '../../common/rbac/own-team';
 import { chainRefundsByRoot } from '../placement/chain-refund';
-import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
+import { claimPausedMs, claimRefundPause } from '../placement/claim-clock';
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund } from '../../common/money/current-guarantee-refund';
 import {
   ForbiddenException,
@@ -417,8 +417,7 @@ export class MoneyAtRiskService {
           placementFee: feePaise,
           hasExistingRefund,
           // M10: the clock stands still while the business is suspended.
-          pausedMs: claimPausedMs(claim, pl.business, now),
-          searchPaused: claimClockPaused(claim, pl.business, now),
+          ...claimRefundPause(claim, pl.business, now),
           searchDays: replacementSearchDays,
           guaranteeEndedReason: pl.guaranteeEndedReason,
         },

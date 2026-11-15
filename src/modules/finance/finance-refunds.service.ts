@@ -1,5 +1,6 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
+import { chainRefundOf, refundBasis } from '../placement/chain-refund';
 import { AuditService } from '../../common/audit/audit.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -340,7 +341,11 @@ export class FinanceRefundsService {
         this.prisma.reviewFlag.count({ where: { kind: 'bypass_suspected', status: 'open', subjectType: 'business', subjectId: placement.business.id } }),
         this.prisma.payoutAccount.findFirst({ where: { ownerType: 'business', ownerId: placement.business.id, status: { not: 'superseded' } }, orderBy: { createdAt: 'desc' }, select: { method: true, maskedValue: true, verifiedName: true, status: true } }),
       ]);
-      const amount = row?.amountPaise ?? payment?.amount ?? placement.placementFee;
+      // The refund's basis (review M1): the parts saved at approval, otherwise the chain's first fee plus
+      // paid salary differences — never one row's own fee.
+      const chain = payment?.refundParts ? null : await chainRefundOf(this.prisma, rootId);
+      const basis = payment?.refundParts ? refundBasis(payment.refundParts, placement) : chain && chain.feePaise > 0 ? { feePaise: chain.feePaise, gstPaise: chain.gstPaise } : { feePaise: placement.placementFee, gstPaise: placement.gstAmount };
+      const amount = row?.amountPaise ?? payment?.amount ?? basis.feePaise;
       // M10 (rev 178): the search does not end while the business is suspended; it continues after.
       const searchEnds = (claim?.reportedAt ?? placement.dropoutReportedAt) && !claimClockPaused(claim, placement.business, now)
         ? new Date((claim?.reportedAt ?? placement.dropoutReportedAt)!.getTime() + policy.replacementSearchDays * 86_400_000 + claimPausedMs(claim, placement.business, now))
@@ -362,10 +367,10 @@ export class FinanceRefundsService {
         decided,
         business: placement.business,
         placement: { id: placement.id, code: placement.code, role: placement.vacancy?.tradeSkill ?? null, workerName: placement.jobSeeker?.name ?? null, joinedDate: placement.joinedDate?.toISOString() ?? null, dropoutReportedAt: placement.dropoutReportedAt?.toISOString() ?? null, status: placement.status },
-        fee: { feePaise: placement.placementFee, gstPaise: placement.gstAmount, totalPaise: placement.placementFee + placement.gstAmount },
+        fee: { feePaise: basis.feePaise, gstPaise: basis.gstPaise, totalPaise: basis.feePaise + basis.gstPaise },
         why: claim ? `Claim accepted by ${claim.decidedByStaff?.name ?? 'the Team Lead'} · ${policy.replacementSearchDays}-day replacement search ended with no one accepted` : `${policy.replacementSearchDays}-day replacement search ended with no one accepted`,
         amountPaise: amount,
-        percent: placement.placementFee > 0 ? Math.round((amount * 100) / placement.placementFee) : null,
+        percent: basis.feePaise > 0 ? Math.round((amount * 100) / basis.feePaise) : null,
         checks,
         payTo: account ? { method: account.method, masked: account.maskedValue, verifiedName: account.verifiedName, status: account.status } : null,
         withinLimit,

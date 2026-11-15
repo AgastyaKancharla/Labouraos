@@ -43,10 +43,33 @@ export function claimClockPaused(claim: Partial<ClaimClock> | null | undefined, 
   return Boolean(claim?.searchPausedAt) && pauseEnd(business, now) === null;
 }
 
-/** Claims whose 15-day clock may run: waiting for a decision or accepted, guarantee not ended. */
+/**
+ * The pause inputs of a refund check (evaluatePlacementRefundEligibility). M3 (rev 181): a refund
+ * already due before the current pause began stays due — only a window still running pauses.
+ */
+export function claimRefundPause(claim: Partial<ClaimClock> | null | undefined, business: SuspensionWindow | null | undefined, now: Date) {
+  return {
+    pausedMs: claimPausedMs(claim, business, now),
+    searchPaused: claimClockPaused(claim, business, now),
+    pauseStartedAt: claim?.searchPausedAt ?? null,
+    pausedBeforeMs: (claim?.searchPausedSeconds ?? 0) * 1000,
+  };
+}
+
+/**
+ * Claims whose 15-day clock may run: waiting for a decision or accepted, the guarantee not ended and the
+ * replacement search still open (no replacement candidate accepted yet). Every dropout under the
+ * guarantee has a claim row (claims are how a dropout is reported since Phase 17), so no clock runs
+ * without one.
+ */
+const openSearch = (businessId: string): Prisma.PlacementWhereInput => ({
+  businessId,
+  guaranteeEndedReason: null,
+  replacementCandidates: { none: { status: 'accepted' } },
+});
 const openClaimsOf = (businessId: string): Prisma.ReplacementClaimWhereInput => ({
   OR: [{ decision: null }, { decision: 'accepted' }],
-  placement: { businessId, guaranteeEndedReason: null },
+  placement: openSearch(businessId),
 });
 
 /** The business was suspended (or banned): pause every open claim's clock now. */
@@ -64,14 +87,19 @@ export async function resumeClaimClocks(client: Client, businessId: string, ende
     where: { placement: { businessId }, searchPausedAt: { not: null } },
     select: { id: true, searchPausedAt: true, searchPausedSeconds: true },
   });
+  let resumed = 0;
   for (const claim of paused) {
+    // A pause that began after the end date (a later suspension) is not this one's to fold.
+    if (claim.searchPausedAt!.getTime() > endedAt.getTime()) continue;
     const seconds = Math.max(0, Math.floor((endedAt.getTime() - claim.searchPausedAt!.getTime()) / 1000));
-    await client.replacementClaim.update({
-      where: { id: claim.id },
+    // Only if nothing folded it meanwhile (the same pause start, still on or before the end).
+    const done = await client.replacementClaim.updateMany({
+      where: { id: claim.id, searchPausedAt: claim.searchPausedAt, searchPausedSeconds: claim.searchPausedSeconds },
       data: { searchPausedAt: null, searchPausedSeconds: claim.searchPausedSeconds + seconds },
     });
+    resumed += done.count;
   }
-  return paused.length;
+  return resumed;
 }
 
 /** Daily: suspensions that ended on their date resume their claims' clocks from that date. */

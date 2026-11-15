@@ -58,6 +58,7 @@ describe('Money rules (payment service)', () => {
         findUnique: jest.fn(),
         findUniqueOrThrow: jest.fn(),
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       replacementClaim: { findFirst: jest.fn() },

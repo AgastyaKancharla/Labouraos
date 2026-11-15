@@ -1,5 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
-import { assertNotBanned, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
+import { assertNoOpenBanReview, assertNotBanned, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
@@ -143,7 +143,8 @@ export class JobSeekerService {
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
     @Optional() private readonly publicLinks?: PublicLinkStoreService,
     @Optional() private readonly messagingService?: MessagingService,
-    @Optional() private readonly legalDocuments?: LegalDocumentService,
+    // Required (no @Optional): the re-consent guard never fails open.
+    private readonly legalDocuments?: LegalDocumentService,
   ) {}
 
   private async getPolicy() {
@@ -517,7 +518,9 @@ export class JobSeekerService {
 
   /** Review H3: no ₹499 request while he must accept the updated terms (RECONSENT_REQUIRED). */
   private async assertTermsCurrent(jobSeekerId: string) {
-    if (!this.legalDocuments) return;
+    // H2 (rev 181): a possible match with a banned person — his ₹499 waits for a Manager or the CEO.
+    await assertNoOpenBanReview(this.prisma, 'job_seeker', jobSeekerId);
+    if (!this.legalDocuments) throw new Error('LegalDocumentService is required for the re-consent guard');
     const status = await this.legalDocuments.status('job_seeker', jobSeekerId);
     if (status.needsReconsent) throw new ReconsentRequiredException(status);
   }

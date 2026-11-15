@@ -13,6 +13,7 @@ import { ConsentClock } from '../consent/consent-clock';
 import { JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
 import { getCalendarPartsInTimezone } from '../../common/time/period-boundary';
 import { confirmVacancyForTest } from '../../test-support/confirm-vacancy';
+import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 
 class Phase13GateClock extends BusinessClock {
   nowValue = new Date();
@@ -289,7 +290,7 @@ describe('Phase 13 gate — complete verification and consent journeys', () => {
     const regrantCode = provider.getCode(regrantOtp.body.requestId)!;
     const regrant = await request(server).post('/consent/submit').send({
       token: regrantLink.body.token, otpRequestId: regrantOtp.body.requestId, otpCode: regrantCode,
-      purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES], language: 'en',
+      purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES], language: 'en', textHash: await jobSeekerTermsHash(app, 'en'),
     }).expect(201);
     expect(regrant.body.status).toBe('active');
     expect((await prisma.jobSeeker.findUniqueOrThrow({ where: { id: withdrawalCandidate.id } })).status).toBe('active');

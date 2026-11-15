@@ -1,6 +1,6 @@
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund } from '../../common/money/current-guarantee-refund';
 import { ChainRefund, chainRefundsByRoot } from '../placement/chain-refund';
-import { claimClockPaused, claimPausedMs } from '../placement/claim-clock';
+import { claimPausedMs, claimRefundPause } from '../placement/claim-clock';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -327,8 +327,7 @@ export class RefundService {
           searchDays: replacementSearchDays,
           guaranteeEndedReason: placement.guaranteeEndedReason,
           // M10: the clock stands still while the business is suspended.
-          pausedMs: claimPausedMs(claim, placement.business, now),
-          searchPaused: claimClockPaused(claim, placement.business, now),
+          ...claimRefundPause(claim, placement.business, now),
         },
         now,
       );

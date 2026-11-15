@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -263,6 +264,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
           'promotions',
         ],
         language: 'kn',
+        textHash: await jobSeekerTermsHash(app, 'kn'),
       });
 
     expect(submitRes.status).toBe(201);
@@ -311,6 +313,7 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
         otpCode: code,
         purposes: ['job_matching', 'profile_sharing', 'call_recording', 'job_updates'],
         language: 'kn',
+        textHash: await jobSeekerTermsHash(app, 'kn'),
       });
 
     expect(submitRes.status).toBe(201);
@@ -403,6 +406,8 @@ describe('Phase 12 Task 4 — Consent capture page and OTP', () => {
         otpRequestId: requestId,
         otpCode: code,
         purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES],
+        language: 'en',
+        textHash: await jobSeekerTermsHash(app, 'en'),
       });
     expect(firstSubmit.status).toBe(201);
 

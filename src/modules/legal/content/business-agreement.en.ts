@@ -171,7 +171,7 @@ Anyone you hire after that is a **new placement at the normal fee**, with a new 
 
 10.7 **A selected candidate who never joins.** If a candidate you selected and paid for doesn't join on the joining day, Laboura calls them. If they are not joining, Laboura finds you a replacement at no extra cost. **This does not count toward your {{maxReplacements}} free replacements.**
 
-10.8 **A higher-paid replacement.** If a replacement is hired at a higher salary than the person they replace, you pay **{{feePercent}}% of the salary difference, plus GST**, before the replacement joins. Example: original salary ₹12,000, replacement salary ₹14,000 → you pay {{exUp.diff}} + GST.
+10.8 **A higher-paid replacement.** If a replacement is hired at a higher salary than the highest salary you have already paid a fee on for this vacancy, you pay **{{feePercent}}% of the difference, plus GST**, before the replacement joins. Example: original salary ₹12,000, replacement salary ₹14,000 → you pay {{exUp.diff}} + GST. If a later replacement is paid ₹14,000 or less, there is nothing more to pay.
 
 10.9 **Reporting again after a rejection:**
 - If a claim was rejected for a **mistake that can be fixed** (for example a wrong leaving date, or the owner call didn't confirm it), you may report it **once more within the original {{claimDays}} days**.

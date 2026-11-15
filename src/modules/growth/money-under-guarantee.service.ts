@@ -277,7 +277,7 @@ export class MoneyUnderGuaranteeService {
     const chainRows = await this.prisma.placement.findMany({
       where: { OR: [{ id: { in: rootIds } }, { rootPlacementId: { in: rootIds } }] },
       select: {
-        id: true, code: true, status: true, placementFee: true, joinedDate: true, rootPlacementId: true,
+        id: true, code: true, status: true, placementFee: true, joinedDate: true, rootPlacementId: true, salaryUpgradeDifferencePaise: true, paidAt: true,
         dropoutReportedAt: true, guaranteeEndedReason: true,
         business: { select: { suspendedAt: true, suspendedUntil: true } },
         replacementClaims: { select: { decision: true, reportedAt: true, decidedAt: true, searchPausedAt: true, searchPausedSeconds: true } },
@@ -308,6 +308,7 @@ export class MoneyUnderGuaranteeService {
           code: row.code,
           status: row.status,
           placementFee: row.placementFee,
+          salaryDifferencePaid: row.salaryUpgradeDifferencePaise !== null && row.paidAt !== null && row.status !== 'cancelled',
           dropoutReportedAt: row.dropoutReportedAt,
           guaranteeEndedReason: row.guaranteeEndedReason,
           claims: row.replacementClaims,

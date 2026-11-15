@@ -383,6 +383,12 @@ describe('InterviewService booking', () => {
     expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'joining_confirmed', relatedId: 'placement-free' }));
   });
 
+  it('M10 (review M4): a suspended business cannot record a "selected" result', async () => {
+    prisma.interview.findUnique.mockResolvedValue({ ...confirmedInterview(), business: { ...confirmedInterview().business, suspendedAt: new Date('2026-11-01T00:00:00Z'), suspendedUntil: null } });
+    await expect(service.submitOwnerResult('single-use-token', { otpRequestId: 'otp-request-id', otpCode: '123456', result: 'selected', selectedSalaryPaise: 1600000, selectedJoiningDate: '2026-11-20' })).rejects.toThrow('suspended');
+    expect(placements.createAwaitingPaymentFromInterview).not.toHaveBeenCalled();
+  });
+
   it('does not record an owner result when OTP verification fails', async () => {
     linkService.verifyInterviewOwnerOtp.mockRejectedValue(new BadRequestException('Valid owner OTP is required'));
     await expect(service.submitOwnerResult('single-use-token', {
