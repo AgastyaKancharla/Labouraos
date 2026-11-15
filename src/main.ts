@@ -9,11 +9,13 @@ import { caseSensitiveHttpAdapter } from './common/http/case-sensitive-routing';
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
+import { assertLabouraSetup } from './common/process/laboura-setup';
 import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
 import { assertKnownProcessRole, startupRoleMessage } from './common/process/process-role';
 import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrap() {
+  assertLabouraSetup();
   const role = assertKnownProcessRole();
   getPublicAppUrl();
   assertDurableUploadStorage();

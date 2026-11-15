@@ -5,6 +5,8 @@ import { OtpModule } from './otp.module';
 import { AuthModule } from '../auth/auth.module';
 import { OTP_PROVIDER, OtpProvider } from './otp.interface';
 import { PrismaService } from '../prisma/prisma.service';
+import { createHash } from 'node:crypto';
+import { otpSessionPhoneHash } from './otp-phone-hash';
 
 describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', () => {
   describe('isWithinTraiWindow', () => {
@@ -237,6 +239,25 @@ describe('Phase 7 Task 1: Real OTP/SMS Vendor Provider & TRAI DLT Compliance', (
       expect(capturedRequests[1].url).toContain('/otp/retry?');
       expect(new URL(capturedRequests[1].url).searchParams.get('mobile')).toBe('919876543210');
       expect(sessions.get(initial.requestId)?.resendCount).toBe(1);
+    });
+
+    it('INF-13: stores the phone as a keyed HMAC, never a plain SHA-256, and matches it on later checks', async () => {
+      const provider = new RealOtpProvider({ fetchFn: mockFetch, timeProvider: () => new Date('2026-10-25T05:30:00.000Z') });
+      attachSessionStore(provider);
+      const res = await provider.sendOtp('+919876543210');
+      const row = sessions.get(res.requestId)!;
+      const plain = createHash('sha256').update('9876543210').digest('hex');
+      expect(row.phoneHash).toEqual(expect.stringMatching(/^[0-9a-f]{64}$/));
+      expect(row.phoneHash).not.toBe(plain);
+      expect(row.phoneHash).toBe(otpSessionPhoneHash('9876543210'));
+      // A verified session matches its own phone (any spelling) and no other.
+      sessions.set(res.requestId, { ...row, verified: true, expiresAt: new Date('2026-10-25T05:34:00.000Z') });
+      await expect(provider.isVerified(res.requestId, '9876543210')).resolves.toBe(true);
+      await expect(provider.isVerified(res.requestId, '+91 98765 43210')).resolves.toBe(true);
+      await expect(provider.isVerified(res.requestId, '9876543211')).resolves.toBe(false);
+      // A row cleared by the migration (phoneHash null) never matches.
+      sessions.set(res.requestId, { ...row, phoneHash: null, verified: true, expiresAt: new Date('2026-10-25T05:34:00.000Z') });
+      await expect(provider.isVerified(res.requestId, '9876543210')).resolves.toBe(false);
     });
 
     it('handles vendor HTTP errors cleanly with informative message', async () => {

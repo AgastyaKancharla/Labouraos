@@ -34,6 +34,8 @@ export function anyLiveVendor(env: NodeJS.ProcessEnv = process.env): boolean {
 
 export function otpTestModeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
   if (modeOf(env, 'OTP_PROVIDER_MODE') !== 'mock') return false;
+  // INF-3: never on the live setup (it also refuses to start with OTP test mode or a mock OTP sender).
+  if (env.LABOURA_SETUP === 'live') return false;
   const setting = env.OTP_TEST_MODE?.trim().toLowerCase();
   if (setting === 'off') return false;
   if (env.NODE_ENV === 'production' && anyLiveVendor(env)) return false;

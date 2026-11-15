@@ -1,4 +1,5 @@
 import { anyLiveVendor } from '../otp/otp-test-mode';
+import { labouraSetup } from '../process/laboura-setup';
 
 /**
  * Customer OTP test mode (security review, C1). The customer app's OTP answers
@@ -19,7 +20,7 @@ export function customerOtpTestModeRequested(env: NodeJS.ProcessEnv = process.en
 }
 
 export function isTestSetup(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env[LABOURA_SETUP_ENV]?.trim().toLowerCase() === 'test';
+  return labouraSetup(env) === 'test';
 }
 
 export function customerOtpTestModeEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
@@ -40,7 +41,7 @@ export function assertCustomerOtpTestModeSafe(env: NodeJS.ProcessEnv = process.e
 }
 
 export function isLiveSetup(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env[LABOURA_SETUP_ENV]?.trim().toLowerCase() === 'live';
+  return labouraSetup(env) === 'live';
 }
 
 /**

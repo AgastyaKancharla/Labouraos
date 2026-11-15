@@ -1,7 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { nationalMobileDigits, vendorMobileNumber } from '../phone/indian-mobile';
 import { OtpProvider, OtpSendOptions, OtpSendResult } from './otp.interface';
-import { createHash } from 'node:crypto';
+import { otpSessionPhoneHash } from './otp-phone-hash';
 import { PrismaService } from '../prisma/prisma.service';
 import { decryptCallRoutingPhone, encryptCallRoutingPhone } from '../../modules/staff/call-routing-key';
 
@@ -167,7 +167,7 @@ export class RealOtpProvider implements OtpProvider {
       await this.prisma.otpSession.create({
         data: {
           requestId,
-          phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
+          phoneHash: otpSessionPhoneHash(cleanPhone),
           phoneEncrypted: encryptCallRoutingPhone(cleanPhone),
           purpose: options?.purpose ?? 'job_seeker',
           verified: false,
@@ -262,7 +262,7 @@ export class RealOtpProvider implements OtpProvider {
     }
     if (phone) {
       const cleanPhone = normalizePhone(phone);
-      return session.phoneHash === createHash('sha256').update(cleanPhone).digest('hex');
+      return session.phoneHash === otpSessionPhoneHash(cleanPhone);
     }
     return true;
   }
@@ -282,7 +282,7 @@ export class RealOtpProvider implements OtpProvider {
       where: {
         requestId,
         ...(purpose !== undefined ? { purpose } : {}),
-        phoneHash: createHash('sha256').update(cleanPhone).digest('hex'),
+        phoneHash: otpSessionPhoneHash(cleanPhone),
         verified: true,
         usedAt: null,
         expiresAt: { gt: now },
@@ -312,7 +312,7 @@ export class RealOtpProvider implements OtpProvider {
       throw new BadRequestException('OTP request is no longer active; request a new code');
     }
     if (
-      session.phoneHash !== createHash('sha256').update(cleanPhone).digest('hex') ||
+      session.phoneHash !== otpSessionPhoneHash(cleanPhone) ||
       session.purpose !== purpose
     ) {
       throw new BadRequestException('OTP resend must use the original phone number and purpose');

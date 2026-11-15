@@ -127,3 +127,22 @@ describe('B2: the screen that asked gets the banner (POST /otp/send)', () => {
     expect(res).toEqual({ success: true, requestId: 'r1', resendAvailableAt: 'x', resendsLeft: 3 });
   }));
 });
+
+describe('Mock OTP codes come from a secure random source (INF-9)', () => {
+  it('never uses Math.random for the code or the request id', async () => {
+    const { MockOtpProvider } = await import('./mock-otp.provider');
+    const spy = jest.spyOn(Math, 'random');
+    const provider = new MockOtpProvider();
+    const codes = new Set<string>();
+    for (let i = 0; i < 20; i += 1) {
+      const sent = await provider.sendOtp(`98765432${String(i).padStart(2, '0')}`);
+      expect(sent.requestId).toMatch(/^otp_[0-9a-f]{32}_\d+$/);
+      const code = provider.getCode(sent.requestId)!;
+      expect(code).toMatch(/^[1-9]\d{5}$/);
+      codes.add(code);
+    }
+    expect(spy).not.toHaveBeenCalled();
+    expect(codes.size).toBeGreaterThan(1);
+    spy.mockRestore();
+  });
+});

@@ -36,7 +36,9 @@ export class UnavailableHumanCheckProvider implements HumanCheckProvider {
   }
 }
 
-export function humanCheckProviderFactory(): HumanCheckProvider {
-  const mode = process.env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock';
+export function humanCheckProviderFactory(env: NodeJS.ProcessEnv = process.env): HumanCheckProvider {
+  const mode = env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock';
+  // INF-3: the mock (public token) never answers on the live setup, even if start-up were bypassed.
+  if (mode === 'mock' && env.LABOURA_SETUP === 'live') return new UnavailableHumanCheckProvider();
   return mode === 'mock' ? new MockHumanCheckProvider() : new UnavailableHumanCheckProvider();
 }

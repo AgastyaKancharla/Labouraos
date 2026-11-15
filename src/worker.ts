@@ -4,10 +4,12 @@ import { StructuredLogger } from './common/observability/structured-logger.servi
 import { getPublicAppUrl } from './common/public-link';
 import { assertDurableUploadStorage } from './common/storage/durable-storage';
 import { assertNoMockIdCheck } from './common/process/no-mock-id-check';
+import { assertLabouraSetup } from './common/process/laboura-setup';
 import { assertUidaiCertificatesPinned } from './modules/aadhaar-qr/uidai-certificates';
 import { installShutdownDeadline } from './common/process/shutdown-deadline';
 
 export async function bootstrapWorker() {
+  assertLabouraSetup();
   getPublicAppUrl();
   assertDurableUploadStorage();
   assertNoMockIdCheck();
