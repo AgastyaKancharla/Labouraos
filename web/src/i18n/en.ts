@@ -259,6 +259,7 @@ export const en = {
   "pub.fee.invoice": "GST invoice",
   "pub.fee.viewInvoice": "View invoice",
   "pub.fee.closed": "This payment link has closed. If you still need to pay, ask Laboura for a new link.",
+  "pub.fee.stopped": "This payment can't go ahead. Please contact Laboura.",
   "pub.fee.registrationFor": "Laboura registration for {name} · {code}",
   "pub.check.title": "Quick question, {name}",
   "pub.check.intro": "You had an interview {day} at {business}.",

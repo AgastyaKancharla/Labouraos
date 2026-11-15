@@ -256,6 +256,45 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
     });
   });
 
+  describe('The ID gate on the card start and after the money arrives (under 18 stops before payment)', () => {
+    const under18Stop = () => {
+      const db = prisma as unknown as Record<string, unknown>;
+      db.identityVerification = {
+        findFirst: jest.fn(async (args: { where: Record<string, unknown> }) => ('under18LiftedAt' in args.where ? { id: 'stop-1' } : { id: 'idv-1' })),
+      };
+      (db.jobSeeker as Record<string, unknown>).findUnique = jest.fn().mockResolvedValue({ id: 'js-1', dateOfBirth: null });
+    };
+
+    it('refuses to start a card payment for a ₹499 past an under-18 stop, and closes the request', async () => {
+      under18Stop();
+      prisma.payment.findUnique.mockResolvedValueOnce({
+        id: 'pay-1', code: 'PAY-00001', amount: 49900, expectedAmountPaise: 49900, status: 'pending', method: 'upi_direct',
+        gatewayReference: null, upiReference: 'PAY-00001-abcd1234', type: 'activation', jobSeekerId: 'js-1', subjectType: 'job_seeker', subjectId: 'js-1',
+      });
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 1 });
+      await expect(service.payByCard('PAY-00001-abcd1234')).rejects.toThrow("This payment can't go ahead. Please contact Laboura.");
+      expect(provider.createCharge).not.toHaveBeenCalled();
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith({ where: { id: 'pay-1', status: 'pending' }, data: { status: 'failed' } });
+    });
+
+    it('a ₹499 that already arrived is not reversed: Finance and the CEO get a payment_mismatch flag', async () => {
+      under18Stop();
+      const payment = {
+        id: 'pay-1', code: 'PAY-00001', amount: 49900, status: 'pending', method: 'gateway_card', gatewayReference: 'gw_ref_999', type: 'activation', jobSeekerId: 'js-1',
+        jobSeeker: { id: 'js-1', code: 'JS-00001', status: 'registered', hitCount: 0, paymentReceivedAt: null, city: 'Bengaluru' },
+      };
+      prisma.payment.findUnique.mockResolvedValueOnce(payment);
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 1 });
+      prisma.jobSeeker.update.mockResolvedValueOnce({ ...payment.jobSeeker, status: 'active', paymentReceivedAt: new Date(), dateOfBirth: null });
+      await service.onPaymentSucceeded('pay-1', { confirmedAt: new Date(), confirmedBy: 'gateway' });
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'succeeded' }) }));
+      expect(reviewFlagService.raise).toHaveBeenCalledWith({
+        kind: 'payment_mismatch', subjectType: 'payment', subjectId: 'pay-1',
+        details: expect.objectContaining({ reason: 'paid_past_id_gate', jobSeekerCode: 'JS-00001', reversed: false }),
+      });
+    });
+  });
+
   describe('Later UPI credit after switching to card', () => {
     it('keeps bank credit unmatched and raises payment_mismatch flag if payer pays by UPI after switching to card', async () => {
       const paymentSwitchedToCard = {

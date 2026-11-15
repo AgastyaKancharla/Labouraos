@@ -259,6 +259,7 @@ export const kn: Messages = {
   "pub.fee.invoice": "GST ಇನ್‌ವಾಯ್ಸ್",
   "pub.fee.viewInvoice": "ಇನ್‌ವಾಯ್ಸ್ ನೋಡಿ",
   "pub.fee.closed": "ಈ ಪಾವತಿ ಲಿಂಕ್ ಮುಚ್ಚಿದೆ. ಇನ್ನೂ ಪಾವತಿಸಬೇಕಿದ್ದರೆ ಹೊಸ ಲಿಂಕ್‌ಗಾಗಿ ಲ್ಯಾಬೂರಾವನ್ನು ಕೇಳಿ.",
+  "pub.fee.stopped": "ಈ ಪಾವತಿಯನ್ನು ಮುಂದುವರಿಸಲು ಆಗುವುದಿಲ್ಲ. ದಯವಿಟ್ಟು ಲ್ಯಾಬೂರಾವನ್ನು ಸಂಪರ್ಕಿಸಿ.",
   "pub.fee.registrationFor": "{name} ಅವರ ಲ್ಯಾಬೂರಾ ನೋಂದಣಿ · {code}",
   "pub.check.title": "{name}, ಒಂದು ಸಣ್ಣ ಪ್ರಶ್ನೆ",
   "pub.check.intro": "{business} ನಲ್ಲಿ {day} ನಿಮಗೆ ಸಂದರ್ಶನ ಇತ್ತು.",

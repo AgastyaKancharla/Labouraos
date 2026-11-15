@@ -1,14 +1,4 @@
-import {
-  BadRequestException,
-  ConflictException,
-  ForbiddenException,
-  Inject,
-  Injectable,
-  Logger,
-  NotFoundException,
-  Optional,
-  UnauthorizedException,
-} from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Inject, Injectable, Logger, NotFoundException, Optional, UnauthorizedException } from '@nestjs/common';
 import { Payment, PayoutAccount, Prisma, TdsReceivable } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
@@ -39,6 +29,7 @@ import {
 } from './bank-feed-provider.interface';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 import { receiptLink } from './receipt-link';
@@ -139,6 +130,12 @@ export class PaymentService {
     }
     if (payment.status !== 'pending') {
       throw new BadRequestException(`Payment is already '${payment.status}'`);
+    }
+    // Owner rule (under 18 stops before payment): the card start asks the ID gate again; a ₹499 it no
+    // longer allows is closed so it can't be paid later.
+    const minimumAge = (await this.pricingService.current()).adultMinimumAge;
+    if ((await stopActivationIfIdGateFails(this.prisma, payment, minimumAge, new Date())).stopped) {
+      throw new ConflictException(PAYMENT_STOPPED_MESSAGE);
     }
 
     if (payment.method === 'gateway_card' && payment.gatewayReference) {
@@ -269,6 +266,29 @@ export class PaymentService {
       confirmedAt: new Date(),
       confirmedBy: 'gateway',
     });
+  }
+
+  /**
+   * A ₹499 that arrived although the ID gate no longer allows it (an under-18 stop raised after the link
+   * was opened, or no verified ID): never reversed automatically — Finance and the CEO get a flag.
+   */
+  private async flagPaidPastIdGate(paymentId: string, seeker: { id: string; code: string; dateOfBirth: Date | null }) {
+    try {
+      const minimumAge = (await this.pricingService.current()).adultMinimumAge;
+      await assertIdReadyForPayment(this.prisma, seeker, minimumAge, new Date());
+    } catch (error) {
+      // The money is already booked: a check that can't run is logged, never an error for the bank or gateway.
+      if (!(error instanceof BadRequestException)) {
+        this.logger.warn(`ID gate after payment ${paymentId} could not run: ${(error as Error).message}`);
+        return;
+      }
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: paymentId,
+        details: { reason: 'paid_past_id_gate', jobSeekerCode: seeker.code, idGate: error.message, reversed: false },
+      });
+    }
   }
 
   async onPaymentSucceeded(
@@ -407,7 +427,7 @@ export class PaymentService {
         variables: { link: paymentReceiptLink },
       })));
       // Customer app notification (Agent C): extra to the SMS/WhatsApp above; never a contact attempt.
-      await this.customerNotifications?.jobSeekerPaymentConfirmed(paymentId);
+      await this.customerNotifications?.jobSeekerPaymentConfirmed(paymentId);      await this.flagPaidPastIdGate(paymentId, transition.updatedSeeker);
     }
     if (transition.placementTransition) {
       const { placement, invoiceCode } = transition.placementTransition;

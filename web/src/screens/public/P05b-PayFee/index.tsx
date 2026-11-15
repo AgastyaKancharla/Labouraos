@@ -55,6 +55,14 @@ export default function PayFee() {
       </>
     );
   }
+  if (s.stopped) {
+    return (
+      <>
+        <PageTitle>{t('pub.error.title')}</PageTitle>
+        <Warn>{t('pub.fee.stopped')}</Warn>
+      </>
+    );
+  }
   if (s.state === 'closed' || !s.pay) {
     return (
       <>

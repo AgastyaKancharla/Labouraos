@@ -235,6 +235,8 @@ export interface PaymentSummary {
   paymentOnlyLinkMinutes?: number | null;
   type: 'activation' | 'placement_fee';
   state: 'pending' | 'confirming' | 'received' | 'closed';
+  /** The ID gate closed this ₹499 (under-18 stop, or no verified ID): show only "can't go ahead". */
+  stopped?: boolean;
   amountPaise: number;
   upiReference: string;
   confirmedAt: string | null;

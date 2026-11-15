@@ -19,19 +19,23 @@ describe('UpiCollectionService', () => {
   const findFirst = jest.fn();
   const findUnique = jest.fn();
   const update = jest.fn();
+  const txUpdateMany = jest.fn().mockResolvedValue({ count: 1 });
+  const statusCreate = jest.fn().mockResolvedValue({});
+  const statusFindFirst = jest.fn().mockResolvedValue(null);
   // The ID gate before a ₹499 is sent again (L-5): a verified ID, no under-18 stop, unless a test says otherwise.
   const identityFindFirst = jest.fn();
   const send = jest.fn().mockResolvedValue({ status: 'sent' });
   const tx = {
     $queryRaw: jest.fn().mockResolvedValue([]),
     $executeRaw: jest.fn().mockResolvedValue(1),
-    payment: { findFirst, create },
-    statusHistory: { create: jest.fn().mockResolvedValue({}) },
+    payment: { findFirst, create, updateMany: txUpdateMany },
+    statusHistory: { create: statusCreate },
   } as unknown as Prisma.TransactionClient;
   const prisma = {
     $transaction: jest.fn((work: (client: Prisma.TransactionClient) => Promise<unknown>) => work(tx)),
     payment: { findUnique, update },
     jobSeeker: { findUnique: jest.fn().mockResolvedValue({ id: 'seeker-1', dateOfBirth: null }) },
+    statusHistory: { findFirst: statusFindFirst },
     identityVerification: { findFirst: identityFindFirst },
   } as unknown as PrismaService;
   const idService = { generateCode: jest.fn().mockResolvedValue('PAY-00042') } as unknown as IdService;
@@ -47,6 +51,9 @@ describe('UpiCollectionService', () => {
     create.mockResolvedValue(payment);
     send.mockResolvedValue({ status: 'sent' });
     identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => (args.where.status === 'verified' ? { id: 'idv-1' } : null));
+    txUpdateMany.mockResolvedValue({ count: 1 });
+    statusCreate.mockResolvedValue({});
+    statusFindFirst.mockResolvedValue(null);
   });
 
   afterAll(() => {
@@ -111,6 +118,48 @@ describe('UpiCollectionService', () => {
     // A placement fee isn't an activation: no ID gate.
     findUnique.mockResolvedValue({ ...payment, type: 'placement_fee', jobSeekerId: null, businessId: 'biz-1' });
     await expect(service.resendRequest(payment.id)).resolves.toMatchObject({ paymentId: payment.id });
+  });
+
+  describe('the public payment page asks the ID gate again (owner rule: under 18 stops before payment)', () => {
+    const stoppedForUnder18 = () =>
+      identityFindFirst.mockImplementation(async (args: { where: Record<string, unknown> }) => ('under18LiftedAt' in args.where ? { id: 'stop-1' } : { id: 'idv-1' }));
+
+    it('an under-18 stop raised after the link was sent: the page refuses, and the ₹499 request is closed for good', async () => {
+      findUnique.mockResolvedValue(payment);
+      stoppedForUnder18();
+      await expect(service.getPaymentPage(payment.upiReference)).rejects.toThrow("This payment can't go ahead. Please contact Laboura.");
+      expect(txUpdateMany).toHaveBeenCalledWith({ where: { id: payment.id, status: 'pending' }, data: { status: 'failed' } });
+      expect(statusCreate).toHaveBeenCalledWith(expect.objectContaining({
+        data: expect.objectContaining({ subjectType: 'payment', subjectId: payment.id, fromStatus: 'pending', toStatus: 'failed', reason: 'id_gate_stopped' }),
+      }));
+    });
+
+    it('the summary shows only "stopped" (no UPI link or QR), now and on every later visit', async () => {
+      findUnique.mockResolvedValue(payment);
+      stoppedForUnder18();
+      const now = await service.getPublicSummary(payment.upiReference);
+      expect(now).toMatchObject({ state: 'closed', stopped: true, pay: null, stoppedMessage: "This payment can't go ahead. Please contact Laboura." });
+      // Later: the request is failed, and its history says the ID gate closed it.
+      findUnique.mockResolvedValue({ ...payment, status: 'failed' });
+      statusFindFirst.mockResolvedValue({ id: 'sh-1' });
+      expect(await service.getPublicSummary(payment.upiReference)).toMatchObject({ state: 'closed', stopped: true, pay: null });
+    });
+
+    it('no UPI reference hint either, and without a verified ID the same', async () => {
+      findUnique.mockResolvedValue(payment);
+      identityFindFirst.mockResolvedValue(null);
+      await expect(service.saveUtrHint(payment.upiReference, '123456789012')).rejects.toThrow(/can't go ahead/);
+      expect(update).not.toHaveBeenCalled();
+    });
+
+    it('a verified ID and no stop: the page works; a placement fee is never asked', async () => {
+      findUnique.mockResolvedValue(payment);
+      await expect(service.getPaymentPage(payment.upiReference)).resolves.toMatchObject({ type: 'activation', amountPaise: 49900 });
+      identityFindFirst.mockResolvedValue(null);
+      findUnique.mockResolvedValue({ ...payment, type: 'placement_fee', jobSeekerId: null });
+      await expect(service.getPaymentPage(payment.upiReference)).resolves.toMatchObject({ type: 'placement_fee' });
+      expect(txUpdateMany).not.toHaveBeenCalled();
+    });
   });
 
   it('decodes the generated QR matrix to the exact UPI link', () => {

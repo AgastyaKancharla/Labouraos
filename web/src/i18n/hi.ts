@@ -259,6 +259,7 @@ export const hi: Messages = {
   "pub.fee.invoice": "GST इनवॉइस",
   "pub.fee.viewInvoice": "इनवॉइस देखें",
   "pub.fee.closed": "यह भुगतान लिंक बंद हो गया है। अगर अब भी भुगतान करना है तो लेबूरा से नया लिंक माँगें।",
+  "pub.fee.stopped": "यह भुगतान आगे नहीं बढ़ सकता। कृपया लेबूरा से संपर्क करें।",
   "pub.fee.registrationFor": "{name} का लेबूरा पंजीकरण · {code}",
   "pub.check.title": "{name}, एक छोटा सवाल",
   "pub.check.intro": "{business} में {day} आपका इंटरव्यू था।",

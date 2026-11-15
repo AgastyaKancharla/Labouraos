@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { randomBytes } from 'node:crypto';
 import { Prisma } from '@prisma/client';
 import * as qrcode from 'qrcode-generator';
@@ -11,7 +11,7 @@ import { MessagingService } from '../message/messaging.service';
 import { PaymentService } from './payment.service';
 import { receiptToken } from './receipt-link';
 import { invoicePath } from '../placement/invoice-link';
-import { assertIdReadyForPayment } from '../job-seeker/id-payment-gate';
+import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, PAYMENT_STOPPED_REASON, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
 
 const PUBLIC_LANGUAGES: Record<string, 'kn' | 'hi' | 'en'> = {
   kn: 'kn', kannada: 'kn', hi: 'hi', hindi: 'hi', en: 'en', english: 'en',
@@ -287,11 +287,27 @@ export class UpiCollectionService {
     })));
   }
 
+  /**
+   * A pending ₹499 goes no further once the ID gate fails (under-18 stop, or no verified ID): the
+   * request is closed so it can't be paid later (id-payment-gate.ts). True when it was stopped now.
+   */
+  private async activationStopped(payment: { id: string; type: string; status: string; jobSeekerId: string | null }): Promise<boolean> {
+    const minimumAge = this.pricing ? (await this.pricing.current()).adultMinimumAge : null;
+    return (await stopActivationIfIdGateFails(this.prisma, payment, minimumAge, new Date())).stopped;
+  }
+
+  /** A ₹499 request closed by the ID gate (now or earlier): the page says so plainly. */
+  private async closedByIdGate(paymentId: string): Promise<boolean> {
+    const row = await this.prisma.statusHistory.findFirst({ where: { subjectType: 'payment', subjectId: paymentId, reason: PAYMENT_STOPPED_REASON }, select: { id: true } });
+    return Boolean(row);
+  }
+
   async getPaymentPage(token: string) {
     const payment = await this.prisma.payment.findUnique({ where: { upiReference: token } });
     if (!payment || payment.method !== 'upi_direct' || payment.status !== 'pending' || payment.expectedAmountPaise === null) {
       throw new NotFoundException('Payment request not found or already used');
     }
+    if (await this.activationStopped(payment)) throw new ConflictException(PAYMENT_STOPPED_MESSAGE);
     const { uri, payeeName } = this.buildUpiUri({
       code: payment.code, upiReference: payment.upiReference!, expectedAmountPaise: payment.expectedAmountPaise,
     });
@@ -331,9 +347,13 @@ export class UpiCollectionService {
     if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee'].includes(payment.type)) {
       throw new NotFoundException('Payment request not found');
     }
-    const state: PublicPaymentState = ['succeeded', 'completed'].includes(payment.status)
+    // Owner rule (under 18 stops before payment): a pending ₹499 the ID gate no longer allows is closed here.
+    const stoppedNow = await this.activationStopped(payment);
+    const status = stoppedNow ? 'failed' : payment.status;
+    const stopped = stoppedNow || (payment.type === 'activation' && status === 'failed' && (await this.closedByIdGate(payment.id)));
+    const state: PublicPaymentState = ['succeeded', 'completed'].includes(status)
       ? 'received'
-      : payment.status === 'pending'
+      : status === 'pending'
         ? payment.payerUtrHint ? 'confirming' : 'pending'
         : 'closed';
     const firstName = (name: string | undefined) => name?.trim().split(/\s+/)[0] ?? null;
@@ -361,6 +381,9 @@ export class UpiCollectionService {
         }
         : null,
       pay: state === 'pending' || state === 'confirming' ? await this.getPaymentPage(token) : null,
+      // The ID gate closed this ₹499: the page shows only "can't go ahead, contact Laboura".
+      stopped,
+      stoppedMessage: stopped ? PAYMENT_STOPPED_MESSAGE : null,
       receipt: state === 'received' ? { paymentId: payment.id, token: receiptToken(payment.id) } : null,
       invoicePath: state === 'received' && placement ? invoicePath(placement.id) : null,
       // How long a payment-only link for someone else works (Settings, 15 minutes by default).
@@ -386,6 +409,7 @@ export class UpiCollectionService {
     if (!payment || payment.status !== 'pending' || payment.method !== 'upi_direct') {
       throw new NotFoundException('Pending UPI payment request not found');
     }
+    if (await this.activationStopped(payment)) throw new ConflictException(PAYMENT_STOPPED_MESSAGE);
     await this.prisma.payment.update({ where: { id: payment.id }, data: { payerUtrHint: utr } });
     return { saved: true, status: 'pending' };
   }

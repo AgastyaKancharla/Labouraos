@@ -7,6 +7,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { ConsentService } from '../consent/consent.service';
 import { verifiedOtpFor } from '../../test-support/verified-otp';
+import { giveVerifiedId } from '../../test-support/verified-id';
 import { UIDAI_SAMPLE_SECURE_QR } from './testing/uidai-sample-qr';
 import { AnonymisationService } from '../../common/anonymisation/anonymisation.service';
 import { CANDIDATE_PHOTO_STORAGE, CandidatePhotoStorage } from '../job-seeker/photo-storage';
@@ -157,6 +158,10 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     const seekers = await prisma.jobSeeker.findMany({ where: { id: { in: seekerIds } }, select: { code: true } });
     await prisma.auditLog.deleteMany({ where: { entityCode: { in: [...verifications.map((v) => v.id), ...seekers.map((x) => x.code)] } } });
     await prisma.identityVerification.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
+    const payments = await prisma.payment.findMany({ where: { jobSeekerId: { in: seekerIds } }, select: { id: true } });
+    await prisma.statusHistory.deleteMany({ where: { subjectId: { in: [...payments.map((p) => p.id), ...seekerIds] } } });
+    await prisma.reviewFlag.deleteMany({ where: { subjectId: { in: payments.map((p) => p.id) } } });
+    await prisma.payment.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
     await prisma.consent.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.publicLink.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
@@ -373,6 +378,54 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     expect(await prisma.auditLog.count({ where: { action: 'identity.under18_stop_lifted', entityCode: s.code, actorId: manager.id } })).toBe(1);
     const again = await otherId(`/registration/${linkToken}/other-id`, { requestId, idType: 'pan', idNumber: 'ABCDE1234F', captureSource: 'live_camera' });
     expect(again.status).toBe(201);
+  });
+
+  describe('the public payment page asks the ID gate again (owner rule: under 18 stops before payment)', () => {
+    const under18 = (jobSeekerId: string) =>
+      prisma.identityVerification.create({
+        data: { jobSeekerId, method: 'aadhaar_qr', vendor: 'uidai_secure_qr', status: 'failed', nameMatches: true, isAdult: false, failureReason: 'Applicant is under 18' },
+      });
+    const pub = () => request(app.getHttpServer());
+
+    it('an under-18 stop raised after the link was sent: the page says it can\'t go ahead and the ₹499 request is closed for good', async () => {
+      const s = await seeker(30, 'Ravi Shankar');
+      await giveVerifiedId(prisma, s.id);
+      const created = await post(caller, `/job-seekers/${s.id}/activation-payment`).expect(201);
+      const ref = encodeURIComponent(created.body.upiReference);
+      expect((await pub().get(`/payments/request/${ref}/summary`).expect(200)).body).toMatchObject({ state: 'pending', stopped: false });
+
+      await under18(s.id);
+      const stopped = await pub().get(`/payments/request/${ref}/summary`).expect(200);
+      expect(stopped.body).toMatchObject({ state: 'closed', stopped: true, pay: null, stoppedMessage: "This payment can't go ahead. Please contact Laboura." });
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: created.body.paymentId } })).status).toBe('failed');
+      expect(await prisma.statusHistory.count({ where: { subjectType: 'payment', subjectId: created.body.paymentId, reason: 'id_gate_stopped' } })).toBe(1);
+      // It can't be paid later: no UPI details, no card, no reference hint; a later visit still says why.
+      expect((await pub().get(`/payments/request/${ref}`)).status).toBe(404);
+      expect((await pub().post(`/payments/request/${ref}/card`)).status).toBe(400);
+      expect((await pub().post(`/payments/request/${ref}/utr-hint`).send({ utr: '123456789012' })).status).toBe(404);
+      expect((await pub().get(`/payments/request/${ref}/summary`).expect(200)).body).toMatchObject({ stopped: true, pay: null });
+    });
+
+    it('the card start asks too; a ₹499 that already arrived is not reversed, it is flagged for Finance and the CEO', async () => {
+      const s = await seeker(31, 'Ravi Shankar');
+      await giveVerifiedId(prisma, s.id);
+      const first = await post(caller, `/job-seekers/${s.id}/activation-payment`).expect(201);
+      await under18(s.id);
+      expect((await pub().post(`/payments/request/${encodeURIComponent(first.body.upiReference)}/card`)).status).toBe(409);
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: first.body.paymentId } })).status).toBe('failed');
+
+      // A card payment started before the stop, paid after it.
+      const s2 = await seeker(32, 'Ravi Shankar');
+      await giveVerifiedId(prisma, s2.id);
+      const second = await post(caller, `/job-seekers/${s2.id}/activation-payment`).expect(201);
+      await pub().post(`/payments/request/${encodeURIComponent(second.body.upiReference)}/card`).expect(200);
+      const started = await prisma.payment.findUniqueOrThrow({ where: { id: second.body.paymentId } });
+      await under18(s2.id);
+      expect([200, 201]).toContain((await pub().post('/payments/mock/simulate-webhook').send({ gatewayReference: started.gatewayReference, status: 'succeeded' })).status);
+      expect((await prisma.payment.findUniqueOrThrow({ where: { id: second.body.paymentId } })).status).toBe('succeeded');
+      const flag = await prisma.reviewFlag.findFirstOrThrow({ where: { kind: 'payment_mismatch', subjectType: 'payment', subjectId: second.body.paymentId } });
+      expect(flag.details).toMatchObject({ reason: 'paid_past_id_gate', jobSeekerCode: s2.code, reversed: false });
+    });
   });
 
   it('erasure: ID details go only once the photo is confirmed deleted; the ID number parts are wiped either way', async () => {

@@ -58,6 +58,18 @@ describe('P05b-PayFee', () => {
     expect(screen.getByRole('img', { name: 'UPI QR code' })).toBeInTheDocument();
   });
 
+  it('a ₹499 the ID check no longer allows (under 18): only "can\'t go ahead", no UPI link or QR', async () => {
+    mockApi({
+      'GET /payments/request/PAY-9-ab/summary': {
+        ...pending, type: 'activation', state: 'closed', stopped: true, amountPaise: 49900, placement: null, jobSeeker: { firstName: 'Kavya', code: 'JS-1042' }, pay: null,
+      },
+    });
+    render();
+    expect(await screen.findByText("This payment can't go ahead. Please contact Laboura.")).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /by UPI/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'UPI QR code' })).not.toBeInTheDocument();
+  });
+
   it('explains an unknown reference', async () => {
     mockApi({ 'GET /payments/request/PAY-9-ab/summary': apiError(404, 'Payment request not found') });
     render();
