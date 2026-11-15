@@ -102,7 +102,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `PUSH_TOKEN_IN_USE` | 409 | `PUT /me/device`: that push token belongs to a phone signed in to another account (a different app installation) |
 | `DELETION_PENDING` | 409 | A deletion request is open: no new requests, links, drafts or vacancies, and no sign-in on a new phone until it is cancelled |
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
-| `UNDER_REVIEW` | 409 | The person's details are being checked by Laboura's team: the ID check and the ₹499 wait. Show the message as it comes ("being checked … we will call you"); never a ban |
+| `UNDER_REVIEW` | 409 | The person's details are being checked by Laboura's team: the ID check and the ₹499 wait (including a ₹499 request already sent; its public summary has `underReview: true` and `pay: null`). Show the message as it comes ("being checked … we will call you"); never a ban |
 | `RECONSENT_REQUIRED` | 409 | Accept the updated terms first (§7.4): paying, ID checks, interview bookings and accepting an offer wait until then. `documentKey`, `currentVersion`, `acceptedVersion` included |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |

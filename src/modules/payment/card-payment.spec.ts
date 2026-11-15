@@ -295,6 +295,65 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
     });
   });
 
+  describe('Rev 181 (H2) / Fable final check M-A: an existing ₹499 waits while a possible ban match is reviewed', () => {
+    const openReview = () => {
+      (prisma.reviewFlag as Record<string, jest.Mock>).findFirst = jest.fn(async (args: { where: { kind: string } }) => (args.where.kind === 'possible_banned_person' ? { id: 'rf-ban', raisedAt: new Date() } : null));
+    };
+    const pending = { id: 'pay-1', code: 'PAY-00001', amount: 49900, expectedAmountPaise: 49900, status: 'pending', method: 'upi_direct', gatewayReference: null, upiReference: 'PAY-00001-abcd1234', type: 'activation', jobSeekerId: 'js-1', subjectType: 'job_seeker', subjectId: 'js-1', reactivation: false, payerUtrHint: null };
+
+    it('the card start, the payment page and a re-send answer UNDER_REVIEW with the neutral message', async () => {
+      openReview();
+      (prisma as unknown as Record<string, unknown>).identityVerification = { findFirst: jest.fn(async (args: { where: Record<string, unknown> }) => ('under18LiftedAt' in args.where ? null : { id: 'idv-1' })) };
+      prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-1', dateOfBirth: null });
+      prisma.payment.findUnique.mockResolvedValue(pending);
+      await expect(service.payByCard('PAY-00001-abcd1234')).rejects.toMatchObject({ response: { code: 'UNDER_REVIEW', message: 'Your details are being checked by our team. We will call you soon.' } });
+      expect(provider.createCharge).not.toHaveBeenCalled();
+      await expect(upiService.getPaymentPage('PAY-00001-abcd1234')).rejects.toMatchObject({ response: { code: 'UNDER_REVIEW' } });
+      await expect(upiService.resendRequest('pay-1')).rejects.toMatchObject({ response: { code: 'UNDER_REVIEW' } });
+      expect(messagingService.send).not.toHaveBeenCalled();
+    });
+
+    it('the public page shows "being checked" with no way to pay', async () => {
+      openReview();
+      (prisma as unknown as Record<string, unknown>).identityVerification = { findFirst: jest.fn(async (args: { where: Record<string, unknown> }) => ('under18LiftedAt' in args.where ? null : { id: 'idv-1' })) };
+      prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-1', dateOfBirth: null });
+      prisma.payment.findUnique.mockResolvedValue({ ...pending, jobSeeker: { name: 'Ravi Kumar', code: 'JS-00001', messageLanguage: 'kn' }, placement: null });
+      (upiService as unknown as { paymentOnlyLinkMinutes: () => Promise<number> }).paymentOnlyLinkMinutes = async () => 15;
+      const summary = await upiService.getPublicSummary('PAY-00001-abcd1234');
+      expect(summary).toMatchObject({ state: 'pending', pay: null, underReview: true, underReviewMessage: 'Your details are being checked by our team. We will call you soon.' });
+    });
+
+    it('money that still arrives is recorded but does not activate him; Finance and the CEO get a payment_mismatch flag', async () => {
+      openReview();
+      const payment = { ...pending, method: 'gateway_card', gatewayReference: 'gw_ref_1', jobSeeker: { id: 'js-1', code: 'JS-00001', status: 'registered', hitCount: 0, paymentReceivedAt: null, city: 'Bengaluru' } };
+      prisma.payment.findUnique.mockResolvedValueOnce(payment);
+      prisma.payment.updateMany.mockResolvedValueOnce({ count: 1 });
+      await service.onPaymentSucceeded('pay-1', { confirmedAt: new Date(), confirmedBy: 'gateway' });
+      expect(prisma.payment.updateMany).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'succeeded' }) }));
+      expect(prisma.jobSeeker.update).not.toHaveBeenCalled();
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'payment_mismatch', subjectType: 'payment', subjectId: 'pay-1',
+        details: expect.objectContaining({ reason: 'paid_while_ban_review_open', jobSeekerCode: 'JS-00001', banReviewFlagId: 'rf-ban', activated: false }),
+      }));
+    });
+  });
+
+  describe('Fable final check: money after a request the gateway itself failed', () => {
+    it('gets its own reason, and a retried webhook raises no second flag', async () => {
+      const failed = { id: 'pay-1', code: 'PAY-00001', amount: 49900, status: 'failed', method: 'gateway_card', gatewayReference: 'gw_ref_999', type: 'activation', jobSeekerId: 'js-1' };
+      const flags: string[] = [];
+      (prisma.reviewFlag as Record<string, jest.Mock>).findFirst = jest.fn(async () => (flags.length ? { id: flags[0] } : null));
+      reviewFlagService.raise.mockImplementation(async () => { flags.push('rf-1'); return { id: 'rf-1' }; });
+      (prisma.statusHistory as Record<string, jest.Mock>).findFirst = jest.fn().mockResolvedValue({ reason: 'collection_webhook_failed' });
+      provider.verifyWebhook.mockResolvedValue({ isValid: true, gatewayReference: 'gw_ref_999', status: 'succeeded' });
+      prisma.payment.findUnique.mockImplementation(async (args: { select?: unknown }) => (args.select ? { code: 'PAY-00001', type: 'activation', amount: 49900, placement: null, jobSeeker: { code: 'JS-00001', status: 'registered' } } : failed));
+      await service.handleWebhook({ event: 'payment.captured' });
+      await service.handleWebhook({ event: 'payment.captured' });
+      expect(reviewFlagService.raise).toHaveBeenCalledTimes(1);
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'payment_mismatch', details: expect.objectContaining({ reason: 'paid_after_gateway_failed', paymentCode: 'PAY-00001' }) }));
+    });
+  });
+
   describe('D11 (rev 176): money for a ₹499 after a permanent ban', () => {
     it('records the payment but never reactivates him; Finance and the CEO get a payment_mismatch flag to refund', async () => {
       const payment = {
@@ -359,15 +418,44 @@ describe('Phase 16 Task 4: Card payments, only when payer chooses card', () => {
   });
 
   describe('M6: when the guarantee ends with a refund, an open salary-difference request closes', () => {
-    it('cancels the waiting replacement (not counted) and closes its payment request', async () => {
+    const waitingRow = { id: 'pl-up', code: 'PL-00090', city: 'Bengaluru', vacancyId: 'vac-up', interviewId: 'int-up', jobSeekerId: 'js-up', businessId: 'bz-1', countsAsReplacement: true, business: { name: 'Sri Sai Hotel', suspendedAt: null, suspendedUntil: null } };
+    function arrange(changed: number) {
       const placement = prisma.placement as Record<string, jest.Mock>;
-      placement.updateMany = jest.fn().mockResolvedValue({ count: 1 });
-      placement.findMany = jest.fn().mockResolvedValue([{ id: 'pl-up' }]);
+      placement.updateMany = jest.fn().mockImplementation(async (args: { where: { id: string } }) => ({ count: args.where.id === 'pl-up' ? changed : 1 }));
+      placement.findMany = jest.fn().mockResolvedValue([waitingRow]);
+      placement.count = jest.fn().mockResolvedValue(0);
       prisma.payment.findMany = jest.fn().mockResolvedValue([{ id: 'pay-up' }]);
-      await (service as unknown as { endGuaranteeAfterRefund: (t: unknown, a: string) => Promise<void> }).endGuaranteeAfterRefund({ rootId: 'pl-root', placementId: 'pl-drop', rootStatus: 'dropped_out' }, 'ceo-1');
-      expect(placement.findMany).toHaveBeenCalledWith({ where: { rootPlacementId: 'pl-root', status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null } }, select: { id: true } });
+      prisma.jobSeeker.findUnique = jest.fn().mockResolvedValue({ status: 'placed' });
+      (prisma as unknown as Record<string, unknown>).replacementCandidate = { updateMany: jest.fn().mockResolvedValue({ count: 1 }) };
+      (prisma as unknown as Record<string, unknown>).vacancy = { updateMany: jest.fn() };
+      return placement;
+    }
+    const endGuarantee = () => (service as unknown as { endGuaranteeAfterRefund: (t: unknown, a: string) => Promise<void> }).endGuaranteeAfterRefund({ rootId: 'pl-root', placementId: 'pl-drop', rootStatus: 'dropped_out' }, 'ceo-1');
+
+    it('M-C: closes it the way a cancelled upgrade closes: locked, candidate cancelled, job seeker freed, told, audited', async () => {
+      const placement = arrange(1);
+      await endGuarantee();
+      expect(placement.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { rootPlacementId: 'pl-root', status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null } } }));
+      expect(prisma.$queryRaw).toHaveBeenCalled(); // the placement row is locked first
       expect(placement.updateMany).toHaveBeenCalledWith({ where: { id: 'pl-up', status: 'awaiting_payment' }, data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null } });
       expect(prisma.payment.updateMany).toHaveBeenCalledWith({ where: { id: { in: ['pay-up'] }, status: 'pending' }, data: { status: 'failed' } });
+      const candidates = (prisma as unknown as { replacementCandidate: { updateMany: jest.Mock } }).replacementCandidate;
+      expect(candidates.updateMany).toHaveBeenCalledWith({ where: { interviewId: 'int-up', status: 'accepted' }, data: { status: 'cancelled' } });
+      expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-up' }, data: { status: 'active' } });
+      // The guarantee is over: the search does not reopen.
+      expect((prisma as unknown as { vacancy: { updateMany: jest.Mock } }).vacancy.updateMany).not.toHaveBeenCalled();
+      expect(auditService.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'placement.replacement_upgrade_cancelled', entityCode: 'PL-00090' }));
+      expect(messagingService.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'selection_cancelled', subjectType: 'job_seeker', subjectId: 'js-up' }));
+      expect(messagingService.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'replacement_upgrade_cancelled', subjectType: 'business', subjectId: 'bz-1' }));
+    });
+
+    it('M-C: a row no longer waiting (paid a moment earlier) writes nothing and tells no one', async () => {
+      arrange(0);
+      await endGuarantee();
+      expect(prisma.statusHistory.create).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ subjectId: 'pl-up' }) }));
+      expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+      expect(messagingService.send).not.toHaveBeenCalled();
+      expect(auditService.log).not.toHaveBeenCalledWith(expect.objectContaining({ action: 'placement.replacement_upgrade_cancelled' }));
     });
   });
 

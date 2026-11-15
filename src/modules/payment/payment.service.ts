@@ -32,6 +32,8 @@ import {
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
+import { assertNoOpenBanReview, openBanReview } from '../conduct/permanent-ban.check';
+import { announceUpgradeCancelled, cancelUpgradeInTx, UPGRADE_TO_CANCEL_SELECT, UpgradeToCancel } from '../placement/cancel-upgrade';
 import { MessagingService } from '../message/messaging.service';
 import { publicLink } from '../../common/public-link';
 import { receiptLink } from './receipt-link';
@@ -139,6 +141,8 @@ export class PaymentService {
     if ((await stopActivationIfIdGateFails(this.prisma, payment, minimumAge, new Date())).stopped) {
       throw new ConflictException(PAYMENT_STOPPED_MESSAGE);
     }
+    // Rev 181 (H2, Fable final check M-A): a ₹499 waits while a possible ban match is reviewed.
+    if (payment.type === 'activation' && payment.jobSeekerId) await assertNoOpenBanReview(this.prisma, 'job_seeker', payment.jobSeekerId);
 
     if (payment.method === 'gateway_card' && payment.gatewayReference) {
       return {
@@ -302,17 +306,27 @@ export class PaymentService {
    * for it. It is never swallowed: Finance and the CEO get a payment_mismatch flag to refund it.
    */
   private async flagPaidAfterClosed(paymentId: string, extra: Record<string, unknown> = {}) {
+    // One open flag per payment: a webhook retried by the gateway does not raise a second one.
+    if (this.prisma.reviewFlag?.findFirst) {
+      const already = await this.prisma.reviewFlag.findFirst({ where: { kind: 'payment_mismatch', subjectType: 'payment', subjectId: paymentId, status: 'open' }, select: { id: true } });
+      if (already) return;
+    }
     const payment = await this.prisma.payment.findUnique({
       where: { id: paymentId },
       select: { code: true, type: true, amount: true, placement: { select: { code: true } }, jobSeeker: { select: { code: true, status: true } } },
     });
     const banned = payment?.jobSeeker?.status === 'banned';
+    // Closed by an earlier "failed" from the gateway itself (not by Laboura closing the request): its own reason.
+    const closedBy = this.prisma.statusHistory?.findFirst
+      ? await this.prisma.statusHistory.findFirst({ where: { subjectType: 'payment', subjectId: paymentId, toStatus: 'failed' }, orderBy: { changedAt: 'desc' }, select: { reason: true } })
+      : null;
+    const gatewayFailed = closedBy?.reason === 'collection_webhook_failed';
     await this.reviewFlagService.raise({
       kind: 'payment_mismatch',
       subjectType: 'payment',
       subjectId: paymentId,
       details: {
-        reason: banned ? 'paid_while_permanently_banned' : 'paid_after_request_closed',
+        reason: banned ? 'paid_while_permanently_banned' : gatewayFailed ? 'paid_after_gateway_failed' : 'paid_after_request_closed',
         paymentCode: payment?.code ?? null,
         paymentType: payment?.type ?? null,
         amountPaise: payment?.amount ?? null,
@@ -372,7 +386,12 @@ export class PaymentService {
       // D11 (rev 176): money for a ₹499 that arrives after a permanent ban never reactivates him; the
       // payment is recorded and flagged for a refund by a person.
       const bannedActivation = payment.type === 'activation' && payment.jobSeeker?.status === 'banned';
-      if (payment.type === 'activation' && payment.jobSeekerId && !bannedActivation) {
+      // Rev 181 (H2, Fable final check M-A): while a possible match with a banned person is reviewed,
+      // the money is recorded but does not activate him; Finance and the CEO get a flag.
+      const reviewActivation = payment.type === 'activation' && payment.jobSeekerId && !bannedActivation
+        ? await openBanReview(tx, 'job_seeker', payment.jobSeekerId)
+        : null;
+      if (payment.type === 'activation' && payment.jobSeekerId && !bannedActivation && !reviewActivation) {
         updatedSeeker = await tx.jobSeeker.update({
           where: { id: payment.jobSeekerId },
           data: {
@@ -445,7 +464,7 @@ export class PaymentService {
           placementNotWaiting = placement.code;
         }
       }
-      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition, bannedActivation, placementNotWaiting };
+      return { alreadyProcessed: false as const, payment, updatedSeeker, placementTransition, bannedActivation, placementNotWaiting, reviewFlagId: reviewActivation?.id ?? null };
     });
 
     if ('alreadyProcessed' in transition && transition.alreadyProcessed) {
@@ -465,6 +484,21 @@ export class PaymentService {
         subjectType: 'payment',
         subjectId: paymentId,
         details: { reason: 'paid_while_permanently_banned', jobSeekerCode: transition.payment.jobSeeker.code, reactivated: false },
+      });
+    }
+    if (transition.reviewFlagId && transition.payment.jobSeeker) {
+      await this.reviewFlagService.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: paymentId,
+        details: {
+          reason: 'paid_while_ban_review_open',
+          paymentCode: transition.payment.code,
+          amountPaise: transition.payment.amount,
+          jobSeekerCode: transition.payment.jobSeeker.code,
+          banReviewFlagId: transition.reviewFlagId,
+          activated: false,
+        },
       });
     }
     if (transition.updatedSeeker) {
@@ -1939,6 +1973,8 @@ export class PaymentService {
     target: { rootId: string; placementId: string; rootStatus: string },
     actorId: string,
   ) {
+    const now = new Date();
+    const closedUpgrades: UpgradeToCancel[] = [];
     await this.prisma.$transaction(async (tx) => {
       const ended = await tx.placement.updateMany({
         where: { id: target.rootId, NOT: { status: 'guarantee_ended' } },
@@ -1962,17 +1998,29 @@ export class PaymentService {
       }
       // M6: the guarantee is over, so an open salary-difference request in the chain closes (a payment
       // arriving later is flagged for a refund, never taken).
-      const waiting = await tx.placement.findMany({ where: { rootPlacementId: target.rootId, status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null } }, select: { id: true } });
+      // M-C (Fable final check): the same close as PlacementService.cancelUpgrade (cancel-upgrade.ts) —
+      // placement locked first, only a row still awaiting payment changes, the candidate is cancelled,
+      // the job seeker freed — but the search does not reopen: the guarantee is over.
+      const waiting = await tx.placement.findMany({ where: { rootPlacementId: target.rootId, status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null } }, select: UPGRADE_TO_CANCEL_SELECT });
       for (const row of waiting) {
-        await tx.placement.updateMany({ where: { id: row.id, status: 'awaiting_payment' }, data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null } });
-        await recordStatusChange(tx, { subjectType: 'placement', subjectId: row.id, fromStatus: 'awaiting_payment', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'guarantee_ended_refunded' });
-        const open = await tx.payment.findMany({ where: { placementId: row.id, type: 'replacement_upgrade', status: 'pending' }, select: { id: true } });
-        if (open.length) {
-          await tx.payment.updateMany({ where: { id: { in: open.map((p) => p.id) }, status: 'pending' }, data: { status: 'failed' } });
-          for (const p of open) await recordStatusChange(tx, { subjectType: 'payment', subjectId: p.id, fromStatus: 'pending', toStatus: 'failed', changedByStaffId: actorId, reason: 'guarantee_ended_refunded' });
-        }
+        if (await cancelUpgradeInTx(tx, row, { actorId, now, statusReason: 'guarantee_ended_refunded', reopenSearch: false })) closedUpgrades.push(row);
       }
     });
+    for (const row of closedUpgrades) {
+      await announceUpgradeCancelled(
+        {
+          audit: this.auditService as unknown as { log: (entry: Record<string, unknown>) => Promise<unknown> },
+          notify: this.customerNotifications
+            ? async (to, kind) => {
+                if (kind === 'replacement_cancelled') await this.customerNotifications!.upgradeCancelled(row);
+              }
+            : undefined,
+          sms: (m) => this.messagingService.send({ channel: 'sms', template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables }),
+        },
+        row,
+        { auditActorId: actorId, automatic: false, reason: 'The guarantee ended with a refund' },
+      );
+    }
   }
 
   /** Refunds waiting for the CEO: above Finance's limit, outside the rules, or sent by Finance. */

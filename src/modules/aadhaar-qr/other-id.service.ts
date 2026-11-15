@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
 import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
 import { assertTermsCurrent } from '../legal/legal-status';
-import { assertNoOpenBanReview, otherIdBanMatch, otherIdFingerprint, POSSIBLE_BAN_FLAG, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
+import { assertNoOpenBanReview, openBanReview, otherIdBanMatch, otherIdFingerprint, raisePossibleBanReview, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -181,11 +181,9 @@ export class OtherIdService {
       const last4OfCard = number.replace(/[^A-Z0-9]/g, '').slice(-4);
       const match = await otherIdBanMatch(this.prisma, subject, otherIdFingerprint(method, last4OfCard, subject.name));
       if (match) {
-        await this.flags?.raise({
-          kind: POSSIBLE_BAN_FLAG,
+        await raisePossibleBanReview(this.prisma, this.flags, {
           subjectType: subject.type,
           subjectId: subject.id,
-          owner: { role: 'manager' },
           details: { banId: match.id, bannedCode: match.subjectCode, subjectCode: subject.code, idType: method, matchedOn: 'other_id' },
         });
         throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: UNDER_REVIEW_MESSAGE });
@@ -277,6 +275,29 @@ export class OtherIdService {
    *     opened the photo (audit row identity.id_check_viewed with the photo link);
    *   - a decision someone else made a moment earlier (409).
    */
+  /**
+   * H2 (Fable final check): an ID sent before the ban was made is checked against it when it is approved.
+   * A match (type + last 4 + name) raises the review item, and the approval waits for that decision.
+   */
+  private async assertNoBanMatchOnApproval(subject: SubjectRow, pending: { method: string; last4: string | null }) {
+    const waiting = 'This ID may belong to a permanently banned person: a Manager or the CEO decides that first (Flags)';
+    if (await openBanReview(this.prisma, subject.type, subject.id)) throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: waiting });
+    if (!pending.last4 || !isOtherIdMethod(pending.method)) return;
+    const named =
+      subject.type === 'job_seeker'
+        ? await this.prisma.jobSeeker.findUnique({ where: { id: subject.id }, select: { name: true } })
+        : await this.prisma.referral.findUnique({ where: { id: subject.id }, select: { name: true } });
+    if (!named?.name) return;
+    const match = await otherIdBanMatch(this.prisma, subject, otherIdFingerprint(pending.method, pending.last4, named.name));
+    if (!match) return;
+    await raisePossibleBanReview(this.prisma, this.flags, {
+      subjectType: subject.type,
+      subjectId: subject.id,
+      details: { banId: match.id, bannedCode: match.subjectCode, subjectCode: subject.code, idType: pending.method, matchedOn: 'other_id', matchedAt: 'approval' },
+    });
+    throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: waiting });
+  }
+
   async recordDecision(subjectType: OtherIdSubjectType, subjectId: string, verdict: 'ok' | 'fake', actor: { id: string; role: string }, now = new Date()) {
     const subject = await this.subject(subjectType, subjectId);
     if (verdict === 'ok' && (await this.stops.isStopped(subjectType, subjectId))) throw new BadRequestException(UNDER_18_STOP_MESSAGE);
@@ -289,6 +310,7 @@ export class OtherIdService {
       const right = await this.approvals.rightFor(actor, { ...subject, subjectType: subject.type });
       if (!right.allowed) throw new ForbiddenException(right.reason);
       if (verdict === 'ok') {
+        await this.assertNoBanMatchOnApproval(subject, pending);
         const detail = await this.prisma.idCheckDetail.findUnique({ where: { verificationId: pending.id }, select: { photoPath: true } });
         if (!detail?.photoPath) {
           // Nothing left to compare: the check closes (the person is asked for a new photo) instead of

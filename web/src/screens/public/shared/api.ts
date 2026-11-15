@@ -250,6 +250,8 @@ export interface PaymentSummary {
   state: 'pending' | 'confirming' | 'received' | 'closed';
   /** The ID gate closed this ₹499 (under-18 stop, or no verified ID): show only "can't go ahead". */
   stopped?: boolean;
+  /** Rev 181 (H2): his details are being checked (a possible match with a banned person): no way to pay until then. */
+  underReview?: boolean;
   amountPaise: number;
   upiReference: string;
   confirmedAt: string | null;

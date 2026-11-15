@@ -1,7 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { ConductService } from './conduct.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
-import { aadhaarFingerprint, assertNotBanned, businessIdFingerprint, EXAMPLE_BAN_HASH_KEY, getBanHashKey, phoneHash } from './permanent-ban.check';
+import { aadhaarFingerprint, assertNotBanned, raisePossibleBanReview, businessIdFingerprint, EXAMPLE_BAN_HASH_KEY, getBanHashKey, phoneHash } from './permanent-ban.check';
 import { businessAccessMessage, businessCandidateAccess, BUSINESS_SUSPENDED_MESSAGE, isBusinessSuspended } from '../business/business-candidate-access';
 import { isAcceptClaimReason, isRejectClaimReason, ACCEPT_CLAIM_REASONS } from '../placement/claim-reasons';
 
@@ -39,6 +39,7 @@ function setup(overrides: Record<string, unknown> = {}) {
     reviewFlag: {
       findUnique: jest.fn(async (): Promise<unknown> => null),
       findFirst: jest.fn(async (): Promise<unknown> => null),
+      findMany: jest.fn(async (): Promise<unknown[]> => []),
       update: jest.fn(),
       updateMany: jest.fn(async () => ({ count: 1 })),
     },
@@ -47,7 +48,7 @@ function setup(overrides: Record<string, unknown> = {}) {
       findMany: jest.fn(async (): Promise<unknown[]> => []),
       update: jest.fn(),
     },
-    payment: { findMany: jest.fn(async () => [{ id: 'pay-open' }]), updateMany: jest.fn() },
+    payment: { findMany: jest.fn(async (...args: unknown[]): Promise<unknown[]> => (args.length ? [{ id: 'pay-open' }] : [])), updateMany: jest.fn() },
     statusHistory: { create: jest.fn() },
     ...overrides,
   };
@@ -291,7 +292,9 @@ describe('H1: overlapping bans on the same person', () => {
         'ban-2': { id: 'ban-2', subjectType: 'job_seeker', subjectId: 'js-2', subjectCode: 'JS-00002', category: 'fraud', coveredProfiles: [{ subjectType: 'job_seeker', subjectId: 'js-2', code: 'JS-00002', before: { status: 'active' } }, { ...shared, alreadyBannedBy: 'ban-1' }] },
       };
       prisma.permanentBan.findFirst.mockImplementation(async (args?: unknown) => {
-        const text = JSON.stringify((args as { where: { OR: unknown[] } }).where.OR);
+        const where = (args as { where: { id?: string; OR?: unknown[] } }).where;
+        if (where.id) return bans[where.id] && !bans[where.id].lifted ? bans[where.id] : null;
+        const text = JSON.stringify(where.OR);
         return Object.values(bans).find((b) => !b.lifted && (text.includes(`"${b.subjectId}"`) || b.coveredProfiles.some((p) => text.includes(`"${(p as { subjectId: string }).subjectId}"`)))) ?? null;
       });
       prisma.permanentBan.updateMany.mockImplementation(async (args?: unknown) => { bans[(args as { where: { id: string } }).where.id].lifted = true; return { count: 1 }; });
@@ -349,7 +352,7 @@ describe('H2 (rev 181): a match only on another ID goes to a Manager or the CEO'
     const update = (prisma.permanentBan as unknown as { update: jest.Mock }).update;
     expect(update).toHaveBeenCalledWith({ where: { id: 'ban-9' }, data: { coveredProfiles: [...ban.coveredProfiles, { subjectType: 'job_seeker', subjectId: 'js-7', code: 'JS-00007', before: { status: 'active' } }] } });
     expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-7' }, data: { status: 'banned' } });
-    expect(prisma.reviewFlag.update).toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'resolved', details: expect.objectContaining({ decision: 'same_person' }) }) }));
+    expect(prisma.reviewFlag.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: { id: 'flag-1', status: 'open' }, data: expect.objectContaining({ status: 'resolved', details: expect.objectContaining({ decision: 'same_person' }) }) }));
     expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'permanent_ban.possible_match_confirmed', reason: 'Same photo and same date of birth' }));
   });
 
@@ -366,6 +369,121 @@ describe('H2 (rev 181): a match only on another ID goes to a Manager or the CEO'
     const flags = new ReviewFlagService(prisma as never, {} as never, { log: jest.fn() } as never);
     await expect(flags.resolve('flag-1', { id: 'ceo', role: 'ceo' }, { status: 'dismissed', resolution: 'Looked fine' })).rejects.toThrow(/Confirm — same person/);
     expect(prisma.reviewFlag.update).not.toHaveBeenCalled();
+  });
+});
+
+describe('Fable final check: ban, lift and review decisions under one lock', () => {
+  const ban = { id: 'ban-9', subjectType: 'job_seeker', subjectId: 'js-1', subjectCode: 'JS-00001', category: 'fraud', reason: 'x', coveredProfiles: [{ subjectType: 'job_seeker', subjectId: 'js-1', code: 'JS-00001', before: { status: 'active' } }] };
+  const flag = { id: 'flag-1', kind: 'possible_banned_person', status: 'open', subjectType: 'job_seeker', subjectId: 'js-7', raisedAt: new Date(NOW.getTime() - DAY), details: { banId: 'ban-9', subjectCode: 'JS-00007' } };
+
+  it('M-B: the lift takes the lock first and restores the ban as it is now (a profile confirmed a moment earlier too)', async () => {
+    const { service, prisma } = setup();
+    const order: string[] = [];
+    prisma.$executeRaw.mockImplementation(async () => { order.push('lock'); return 1; });
+    const confirmedMeanwhile = { ...ban, coveredProfiles: [...ban.coveredProfiles, { subjectType: 'job_seeker', subjectId: 'js-7', code: 'JS-00007', before: { status: 'inactive' } }] };
+    prisma.permanentBan.findFirst.mockImplementation(async (args?: unknown) => {
+      const where = (args as { where: { id?: string } }).where;
+      if (where.id) { order.push('read'); return confirmedMeanwhile; }
+      return order.includes('read') ? null : ban; // what the lift saw before the lock; lifted afterwards
+    });
+    prisma.jobSeeker.findUnique.mockResolvedValue({ status: 'banned' });
+    const out = await service.liftBan('job_seeker', 'js-1', 'ceo', { reason: 'Police cleared him' });
+    expect(order.slice(0, 2)).toEqual(['lock', 'read']);
+    expect(out.restored.map((r) => r.code)).toEqual(['JS-00001', 'JS-00007']);
+    expect(prisma.jobSeeker.update).toHaveBeenCalledWith({ where: { id: 'js-7' }, data: { status: 'inactive' } });
+    expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), { maxWait: 10_000, timeout: 60_000 });
+  });
+
+  it('M-B: a ban lifted meanwhile (by another lift) is refused, and nothing is restored', async () => {
+    const { service, prisma } = setup();
+    prisma.permanentBan.findFirst.mockImplementation(async (args?: unknown) => ((args as { where: { id?: string } }).where.id ? null : ban));
+    await expect(service.liftBan('job_seeker', 'js-1', 'ceo', { reason: 'Police cleared him' })).rejects.toThrow('already lifted');
+    expect(prisma.jobSeeker.update).not.toHaveBeenCalled();
+  });
+
+  it('M-B: a new ban and a lift wait for each other on the same lock', async () => {
+    const { service, prisma } = setup();
+    await service.ban('ceo', { subjectType: 'job_seeker', subjectId: 'js-1', category: 'fraud', reason: 'Forged papers' });
+    prisma.permanentBan.findFirst.mockResolvedValue(ban);
+    prisma.jobSeeker.findUnique.mockResolvedValue({ status: 'banned' });
+    await service.liftBan('job_seeker', 'js-1', 'ceo', { reason: 'Police cleared him' });
+    const locks = prisma.$executeRaw.mock.calls.map((c: unknown[]) => JSON.stringify(c[0]));
+    expect(locks.length).toBe(2);
+    expect(locks[0]).toContain('permanent-ban');
+    expect(locks[1]).toEqual(locks[0]);
+  });
+
+  it('the lift dismisses the open "possibly the same person" items about that ban, audited', async () => {
+    const { service, prisma, audit, flags } = setup();
+    prisma.permanentBan.findFirst.mockResolvedValue(ban);
+    prisma.jobSeeker.findUnique.mockResolvedValue({ status: 'banned' });
+    prisma.reviewFlag.findMany.mockResolvedValue([{ id: 'flag-1', details: { banId: 'ban-9', subjectCode: 'JS-00007' } }]);
+    await service.liftBan('job_seeker', 'js-1', 'ceo', { reason: 'Police cleared him' });
+    expect(prisma.reviewFlag.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { kind: 'possible_banned_person', status: 'open', details: { path: ['banId'], equals: 'ban-9' } } }));
+    expect(prisma.reviewFlag.updateMany).toHaveBeenCalledWith({ where: { id: 'flag-1', status: 'open' }, data: expect.objectContaining({ status: 'dismissed', resolution: 'The ban was lifted: Police cleared him' }) });
+    expect(flags.refreshBell).toHaveBeenCalledWith('flag-1');
+    expect(audit.log).toHaveBeenCalledWith(expect.objectContaining({ action: 'permanent_ban.possible_matches_dismissed', after: { openReviews: 0, profiles: ['JS-00007'] } }));
+  });
+
+  it('Confirm racing "Not the same person": the loser changes nothing', async () => {
+    const { service, prisma } = setup();
+    prisma.reviewFlag.findUnique.mockResolvedValue(flag);
+    prisma.permanentBan.findFirst.mockImplementation(async (...args: unknown[]) => (JSON.stringify(args).includes('"id":"ban-9"') ? ban : null));
+    prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-7', code: 'JS-00007', status: 'active' });
+    prisma.reviewFlag.updateMany.mockResolvedValueOnce({ count: 0 });
+    await expect(service.confirmPossibleMatch('flag-1', 'mgr', { reason: 'Same photo' })).rejects.toThrow('already decided');
+    expect((prisma.permanentBan as unknown as { update: jest.Mock }).update).not.toHaveBeenCalled();
+    expect(prisma.jobSeeker.update).not.toHaveBeenCalled();
+  });
+
+  it('Confirm on a profile already under another ban keeps what he was before that ban', async () => {
+    const { service, prisma } = setup();
+    const other = { id: 'ban-3', subjectType: 'job_seeker', subjectId: 'js-3', subjectCode: 'JS-00003', coveredProfiles: [{ subjectType: 'job_seeker', subjectId: 'js-7', code: 'JS-00007', before: { status: 'paused' } }] };
+    prisma.reviewFlag.findUnique.mockResolvedValue(flag);
+    prisma.permanentBan.findFirst.mockImplementation(async (...args: unknown[]) => (JSON.stringify(args).includes('"id":"ban-9"') ? ban : other));
+    prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-7', code: 'JS-00007', status: 'banned' });
+    await service.confirmPossibleMatch('flag-1', 'ceo', { reason: 'Same photo' });
+    const update = (prisma.permanentBan as unknown as { update: jest.Mock }).update;
+    expect(update.mock.calls[0][0].data.coveredProfiles.at(-1)).toEqual({ subjectType: 'job_seeker', subjectId: 'js-7', code: 'JS-00007', before: { status: 'paused' }, alreadyBannedBy: 'ban-3' });
+    expect(prisma.jobSeeker.update).not.toHaveBeenCalled();
+  });
+
+  it('M-A: Confirm raises a refund flag for a ₹499 that came in after the item was raised', async () => {
+    const { service, prisma, flags } = setup();
+    prisma.reviewFlag.findUnique.mockResolvedValue(flag);
+    prisma.permanentBan.findFirst.mockImplementation(async (...args: unknown[]) => (JSON.stringify(args).includes('"id":"ban-9"') ? ban : null));
+    prisma.jobSeeker.findUnique.mockResolvedValue({ id: 'js-7', code: 'JS-00007', status: 'registered' });
+    prisma.payment.findMany.mockImplementation(async (...args: unknown[]) => (JSON.stringify(args).includes('"status":"succeeded"') ? [{ id: 'pay-499', code: 'PAY-00499', amount: 49900 }] : []));
+    await service.confirmPossibleMatch('flag-1', 'mgr', { reason: 'Same photo and address' });
+    expect(prisma.payment.findMany).toHaveBeenCalledWith(expect.objectContaining({ where: { jobSeekerId: 'js-7', type: 'activation', status: 'succeeded', confirmedAt: { gte: flag.raisedAt } } }));
+    expect(flags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'payment_mismatch', subjectType: 'payment', subjectId: 'pay-499', details: expect.objectContaining({ reason: 'paid_while_ban_review_open', refund: true, jobSeekerCode: 'JS-00007' }) }));
+  });
+
+  it('one open review item per profile: raised in a transaction under a lock for that profile', async () => {
+    let open: unknown = null;
+    const tx = {
+      $executeRaw: jest.fn().mockResolvedValue(1),
+      reviewFlag: { findFirst: jest.fn(async () => open) },
+    };
+    const prisma = { $transaction: jest.fn(async (cb: (t: unknown) => unknown) => cb(tx)) };
+    const flags = { raise: jest.fn(async () => { open = { id: 'flag-1' }; return { id: 'flag-1' }; }), refreshBell: jest.fn() };
+    const input = { subjectType: 'job_seeker', subjectId: 'js-7', details: { banId: 'ban-9' } };
+    expect(await raisePossibleBanReview(prisma as never, flags as never, input)).toEqual({ id: 'flag-1' });
+    expect(await raisePossibleBanReview(prisma as never, flags as never, input)).toBeNull();
+    expect(flags.raise).toHaveBeenCalledTimes(1);
+    expect(flags.raise).toHaveBeenCalledWith(expect.objectContaining({ kind: 'possible_banned_person', subjectId: 'js-7', owner: { role: 'manager' } }), { tx });
+    expect(JSON.stringify(tx.$executeRaw.mock.calls[0])).toContain('possible-ban:job_seeker:js-7');
+    expect(flags.refreshBell).toHaveBeenCalledWith('flag-1');
+  });
+
+  it('a suspension tells only about interviews it really cancelled', async () => {
+    const { service, prisma, messaging, notifications } = setup();
+    prisma.interview.findMany.mockResolvedValueOnce([{ id: 'int-1', jobSeekerId: 'js-1', status: 'confirmed' }, { id: 'int-2', jobSeekerId: 'js-2', status: 'offered' }]);
+    prisma.interview.updateMany.mockResolvedValueOnce({ count: 0 }).mockResolvedValueOnce({ count: 1 });
+    await service.suspendBusiness('bz-1', 'ceo', { days: 30, reason: 'Repeated cancellations' });
+    expect(notifications.notify).not.toHaveBeenCalledWith({ jobSeekerId: 'js-1' }, 'interview_cancelled', {}, expect.anything());
+    expect(messaging.send).not.toHaveBeenCalledWith(expect.objectContaining({ subjectId: 'js-1' }));
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'interview_cancelled', subjectId: 'js-2' }));
   });
 });
 

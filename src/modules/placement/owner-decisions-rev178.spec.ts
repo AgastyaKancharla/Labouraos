@@ -97,9 +97,10 @@ describe('M2 (rev 178): an unpaid salary difference cancels the replacement', ()
       payment: { findMany: jest.fn().mockResolvedValue([{ id: 'pay-up' }]), updateMany: jest.fn() },
       vacancy: { updateMany: jest.fn() },
       replacementCandidate: { updateMany: jest.fn() },
-      jobSeeker: { update: jest.fn() },
+      jobSeeker: { update: jest.fn(), findUnique: jest.fn(async () => row.jobSeeker) },
       statusHistory: { create: jest.fn() },
       business: { findMany: jest.fn().mockResolvedValue([]) },
+      replacementClaim: { updateMany: jest.fn().mockResolvedValue({ count: 1 }) },
     };
     Object.assign(prisma, { $transaction: jest.fn(async (cb: (tx: unknown) => unknown): Promise<unknown> => cb(prisma)) });
     const audit = { log: jest.fn() };
@@ -148,6 +149,25 @@ describe('M2 (rev 178): an unpaid salary difference cancels the replacement', ()
     prisma.placement.findUnique.mockRejectedValueOnce(new Error('row locked too long'));
     expect(await service.cancelUnpaidUpgrades(NOW)).toBe(1);
     expect(prisma.business.findMany).toHaveBeenCalled();
+  });
+
+  it('Fable final check: cancelled while the business is suspended, the reopened search is paused at once', async () => {
+    const suspended = build({ business: { id: 'bz-1', name: 'Sri Sai Hotel', suspendedAt: new Date(NOW.getTime() - DAY), suspendedUntil: null } });
+    await suspended.service.cancelUnpaidUpgrades(NOW);
+    expect(suspended.prisma.replacementClaim.updateMany).toHaveBeenCalledWith(expect.objectContaining({ where: expect.objectContaining({ searchPausedAt: null }), data: { searchPausedAt: NOW } }));
+    const open = build();
+    await open.service.cancelUnpaidUpgrades(NOW);
+    expect(open.prisma.replacementClaim.updateMany).not.toHaveBeenCalled();
+  });
+
+  it('nothing else is written when the row was no longer waiting (paid or cancelled a moment earlier)', async () => {
+    const { service, prisma, audit, notifications } = build();
+    prisma.placement.updateMany.mockResolvedValue({ count: 0 });
+    expect(await service.cancelUnpaidUpgrades(NOW)).toBe(0);
+    expect(prisma.statusHistory.create).not.toHaveBeenCalled();
+    expect(prisma.payment.updateMany).not.toHaveBeenCalled();
+    expect(audit.log).not.toHaveBeenCalled();
+    expect(notifications.notify).not.toHaveBeenCalled();
   });
 
   it('tells the selected job seeker too, in the app and by SMS', async () => {

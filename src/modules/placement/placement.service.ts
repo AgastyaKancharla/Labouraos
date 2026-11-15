@@ -2,6 +2,7 @@ import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
 import { isBusinessSuspended } from '../business/business-candidate-access';
 import { chainRefundOf } from './chain-refund';
 import { claimPausedMs, claimRefundPause, resumeEndedSuspensions } from './claim-clock';
+import { announceUpgradeCancelled, cancelUpgradeInTx, UPGRADE_TO_CANCEL_SELECT } from './cancel-upgrade';
 import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
@@ -1749,68 +1750,28 @@ export class PlacementService {
   }
 
   private async cancelUpgrade(placementId: string, actorId: string | null, reason: string, now: Date): Promise<boolean> {
-    const placement = await this.prisma.placement.findUnique({
-      where: { id: placementId },
-      include: { business: { select: { id: true, name: true, phone: true, city: true } }, jobSeeker: { select: { id: true, status: true } } },
-    });
+    const placement = await this.prisma.placement.findUnique({ where: { id: placementId }, select: UPGRADE_TO_CANCEL_SELECT });
     if (!placement) return false;
-    const done = await this.prisma.$transaction(async (tx) => {
-      // Lock order (C1): the placement row first, then its payment — as PaymentService.onPaymentSucceeded.
-      if (tx.$queryRaw) await tx.$queryRaw(Prisma.sql`SELECT "id" FROM "Placement" WHERE "id" = ${placement.id} FOR UPDATE`);
-      const changed = await tx.placement.updateMany({
-        where: { id: placement.id, status: 'awaiting_payment' },
-        data: { status: 'cancelled', countsAsReplacement: false, paymentDueAt: null },
-      });
-      if (changed.count !== 1) return false;
-      await recordStatusChange(tx, { subjectType: 'placement', subjectId: placement.id, fromStatus: 'awaiting_payment', toStatus: 'cancelled', changedByStaffId: actorId, reason: 'replacement_upgrade_not_paid', changedAt: now });
-      // The payment request closes: a late payment is not taken as this fee.
-      const open = await tx.payment.findMany({ where: { placementId: placement.id, type: 'replacement_upgrade', status: 'pending' }, select: { id: true } });
-      if (open.length) {
-        await tx.payment.updateMany({ where: { id: { in: open.map((p) => p.id) }, status: 'pending' }, data: { status: 'failed' } });
-        for (const p of open) await recordStatusChange(tx, { subjectType: 'payment', subjectId: p.id, fromStatus: 'pending', toStatus: 'failed', changedByStaffId: actorId, reason: 'replacement_upgrade_cancelled', changedAt: now });
-      }
-      // The replacement search goes on: the vacancy reopens and the candidate is no longer "accepted".
-      await tx.vacancy.updateMany({ where: { id: placement.vacancyId, status: 'filled' }, data: { status: 'open' } });
-      if (placement.interviewId) {
-        await tx.replacementCandidate.updateMany({ where: { interviewId: placement.interviewId, status: 'accepted' }, data: { status: 'cancelled' } });
-      }
-      // He goes back to the available pool (he was never placed by an unpaid upgrade; an older record may
-      // say so) — unless another placement of his is confirmed or running (H3).
-      const elsewhere = placement.jobSeeker?.status === 'placed'
-        ? await tx.placement.count({ where: { jobSeekerId: placement.jobSeekerId, id: { not: placement.id }, status: { in: ['confirmed', 'active'] } } })
-        : 0;
-      if (placement.jobSeeker?.status === 'placed' && elsewhere === 0) {
-        await tx.jobSeeker.update({ where: { id: placement.jobSeekerId }, data: { status: 'active' } });
-        await recordStatusChange(tx, { subjectType: 'job_seeker', subjectId: placement.jobSeekerId, fromStatus: 'placed', toStatus: 'active', changedByStaffId: actorId, reason: 'replacement_upgrade_cancelled', changedAt: now });
-      }
-      return true;
-    });
+    // One path for every close of an unpaid replacement (cancel-upgrade.ts): the search goes on, so the
+    // vacancy reopens (and its clock pauses at once if the business is suspended now).
+    const done = await this.prisma.$transaction((tx) => cancelUpgradeInTx(tx, placement, { actorId, now, statusReason: 'replacement_upgrade_not_paid', reopenSearch: true }));
     if (!done) return false;
-    const auditActor = actorId ?? (await this.prisma.staff.findFirst({ where: { role: 'ceo' }, select: { id: true } }))?.id ?? null;
-    if (auditActor) {
-      await this.auditService.log({
-        actorId: auditActor,
-        action: 'placement.replacement_upgrade_cancelled',
-        entityType: 'Placement',
-        entityCode: placement.code,
-        city: placement.city,
-        before: { status: 'awaiting_payment', countsAsReplacement: placement.countsAsReplacement },
-        after: { status: 'cancelled', countsAsReplacement: false, automatic: actorId === null },
-        reason,
-      });
-    }
-    // The business and the selected job seeker hear it in the app and by SMS.
-    await this.customerNotifications?.notify({ businessId: placement.businessId }, 'replacement_cancelled', {}, { dedupeKey: `replacement_cancelled:${placement.id}` }).catch(() => undefined);
-    await this.customerNotifications?.notify({ jobSeekerId: placement.jobSeekerId }, 'selection_cancelled', {}, { dedupeKey: `selection_cancelled:${placement.id}` }).catch(() => undefined);
-    await this.messaging?.send({
-      channel: 'sms', template: 'replacement_upgrade_cancelled', subjectType: 'business', subjectId: placement.businessId,
-      relatedType: 'placement', relatedId: placement.id, variables: { businessName: placement.business?.name ?? '' },
-    }).catch(() => undefined);
-    await this.messaging?.send({
-      channel: 'sms', template: 'selection_cancelled', subjectType: 'job_seeker', subjectId: placement.jobSeekerId,
-      relatedType: 'placement', relatedId: placement.id, variables: {},
-    }).catch(() => undefined);
+    const auditActorId = actorId ?? (await this.prisma.staff.findFirst({ where: { role: 'ceo' }, select: { id: true } }))?.id ?? null;
+    await announceUpgradeCancelled(this.upgradeAnnouncer(), placement, { auditActorId, automatic: actorId === null, reason });
     return true;
+  }
+
+  private upgradeAnnouncer() {
+    return {
+      audit: this.auditService as unknown as { log: (entry: Record<string, unknown>) => Promise<unknown> },
+      notify: this.customerNotifications
+        ? (to: { businessId: string } | { jobSeekerId: string }, kind: string, dedupeKey: string) => this.customerNotifications!.notify(to, kind as never, {}, { dedupeKey })
+        : undefined,
+      sms: this.messaging
+        ? (m: { template: string; subjectType: 'business' | 'job_seeker'; subjectId: string; relatedId: string; variables: Record<string, string> }) =>
+            this.messaging!.send({ channel: 'sms', template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables })
+        : undefined,
+    };
   }
 
   /**

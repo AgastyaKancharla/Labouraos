@@ -54,6 +54,7 @@ export const en = {
   "pub.error.title": "This link can't be used",
   "pub.error.expired": "This link has expired. Ask your Laboura agent to send a new one — anything you already finished is saved.",
   "pub.error.used": "This link has already been used. If you need anything, call Laboura.",
+  "pub.error.underReview": "Your details are being checked by our team. We will call you soon.",
   "pub.error.replaced": "A newer link was sent to you. Please open the latest SMS from Laboura.",
   "pub.error.invalid": "This link isn't valid. Check you opened the whole link from the SMS.",
   "pub.error.offline": "No internet right now. Check your connection and try again.",

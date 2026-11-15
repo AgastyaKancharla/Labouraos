@@ -133,6 +133,15 @@ export default function Payment() {
     .join(' · ');
   const pay = summary.data?.pay ?? null;
 
+  if (summary.data?.underReview) {
+    return (
+      <>
+        {header}
+        <Warn>{t('pub.error.underReview')}</Warn>
+      </>
+    );
+  }
+
   return (
     <>
       {header}

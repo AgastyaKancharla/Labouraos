@@ -142,6 +142,8 @@ export function problemKey(error: unknown): MessageKey {
   if (error.isNetworkError) return 'pub.error.offline';
   if (error.status === 429) return 'pub.error.tooMany';
   const message = error.message.toLowerCase();
+  // Rev 181 (H2): a possible match with a banned person is being checked — a neutral message, never "ban".
+  if (error.status === 409 && message.includes('being checked by our team')) return 'pub.error.underReview';
   if (/\b(otp|code)\b/.test(message)) return 'pub.error.code';
   if (message.includes('expired')) return 'pub.error.expired';
   if (message.includes('already been used') || message.includes('no longer awaiting') || message.includes('no longer valid')) return 'pub.error.used';

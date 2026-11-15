@@ -476,6 +476,34 @@ describe('AadhaarQrService (guide: Aadhaar verification, 14 Nov)', () => {
     expect((await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW })).status).toBe('pending');
   });
 
+  it('Fable final check: "not the same" for one ban never hides a second ban on the same ID', async () => {
+    const { otherIds, prisma, card, flagCalls } = setup();
+    const fp = otherIdFingerprint('pan', '234F', 'Kavya Ramesh');
+    prisma.permanentBan.rows.push({ id: 'ban-2', subjectType: 'job_seeker', subjectId: 'js-old', subjectCode: 'JS-00099', category: 'forged_id', liftedAt: null, idFingerprints: [fp], createdAt: new Date(NOW.getTime() - 2000) });
+    prisma.permanentBan.rows.push({ id: 'ban-3', subjectType: 'job_seeker', subjectId: 'js-older', subjectCode: 'JS-00098', category: 'fraud', liftedAt: null, idFingerprints: [fp], createdAt: new Date(NOW.getTime() - 1000) });
+    prisma.reviewFlag.rows.push({ id: 'rf-decided', kind: 'possible_banned_person', subjectType: 'job_seeker', subjectId: 'js-1', status: 'dismissed', details: { banId: 'ban-2', decision: 'not_same' } });
+    const refused = await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW }).catch((e: HttpException) => e);
+    expect((refused as HttpException).getResponse()).toMatchObject({ code: 'UNDER_REVIEW' });
+    expect(flagCalls).toEqual([expect.objectContaining({ kind: 'possible_banned_person', details: expect.objectContaining({ banId: 'ban-3' }) })]);
+  });
+
+  it('Fable final check: an ID sent before the ban was made is checked against it when it is approved', async () => {
+    const { otherIds, prisma, card, viewPhoto, flagCalls } = setup();
+    await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW });
+    // The ban arrives after he sent the card and before the Team Lead looked at it.
+    prisma.permanentBan.rows.push({ id: 'ban-4', subjectType: 'job_seeker', subjectId: 'js-old', subjectCode: 'JS-00097', category: 'forged_id', liftedAt: null, idFingerprints: [otherIdFingerprint('pan', '234F', 'Kavya Ramesh')] });
+    await viewPhoto('tl-1');
+    const refused = await otherIds.recordDecision('job_seeker', 'js-1', 'ok', { id: 'tl-1', role: 'team_lead' }, NOW).catch((e: HttpException) => e);
+    expect((refused as HttpException).getResponse()).toMatchObject({ code: 'UNDER_REVIEW' });
+    expect(prisma.identityVerification.rows[0]).toMatchObject({ status: 'pending' });
+    expect(flagCalls).toEqual([expect.objectContaining({ kind: 'possible_banned_person', subjectId: 'js-1', details: expect.objectContaining({ banId: 'ban-4', matchedAt: 'approval' }) })]);
+    // Still open: a second try waits too, and no second item is raised.
+    await expect(otherIds.recordDecision('job_seeker', 'js-1', 'ok', { id: 'tl-1', role: 'team_lead' }, NOW)).rejects.toThrow(/Manager or the CEO decides/);
+    expect(flagCalls).toHaveLength(1);
+    // "Fake" is never held up.
+    expect((await otherIds.recordDecision('job_seeker', 'js-1', 'fake', { id: 'tl-1', role: 'team_lead' }, NOW)).otherIdDecided).toBe('failed');
+  });
+
   it('D11 (rev 176): the same Aadhaar as a permanently banned person cannot register again', async () => {
     const { service, prisma } = setup();
     prisma.permanentBan.rows.push({ id: 'ban-1', subjectType: 'job_seeker', subjectId: 'js-old', category: 'fraud', idFingerprints: [aadhaarFingerprint('4321', '1998-08-15', 'Kavya Ramesh')] });

@@ -2,6 +2,7 @@ import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { createHmac } from 'crypto';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import type { ReviewFlagService } from '../review-flag/review-flag.service';
 
 /**
  * D11 (Master Guide rev 176): a permanent ban (forged ID, fraud, theft or
@@ -88,20 +89,24 @@ export const POSSIBLE_BAN_FLAG = 'possible_banned_person';
  */
 export async function otherIdBanMatch(prisma: Client, subject: { type: string; id: string }, fingerprint: string) {
   if (!(prisma as { permanentBan?: unknown }).permanentBan) return null; // unit-test doubles without the table
-  const ban = await prisma.permanentBan.findFirst({ where: { liftedAt: null, idFingerprints: { hasSome: [fingerprint] } }, select: { id: true, subjectCode: true } });
-  if (!ban) return null;
+  // Every live ban with this fingerprint (Fable final check): one already decided "not the same" must
+  // not hide another ban on the same ID.
+  const bans = await prisma.permanentBan.findMany({ where: { liftedAt: null, idFingerprints: { hasSome: [fingerprint] } }, select: { id: true, subjectCode: true }, orderBy: { createdAt: 'asc' } });
+  if (!bans.length) return null;
   const decided = await prisma.reviewFlag.findMany({ where: { kind: POSSIBLE_BAN_FLAG, subjectType: subject.type, subjectId: subject.id, status: { not: 'open' } }, select: { details: true } });
-  const notSame = decided.some((f) => {
-    const d = (f.details ?? {}) as { banId?: string; decision?: string };
-    return d.banId === ban.id && d.decision === 'not_same';
-  });
-  return notSame ? null : ban;
+  const notSame = new Set(
+    decided
+      .map((f) => (f.details ?? {}) as { banId?: string; decision?: string })
+      .filter((d) => d.decision === 'not_same' && d.banId)
+      .map((d) => d.banId as string),
+  );
+  return bans.find((ban) => !notSame.has(ban.id)) ?? null;
 }
 
 /** H2: an open "possibly the same person as a banned person" item for this profile. */
 export async function openBanReview(prisma: Client, subjectType: string, subjectId: string) {
-  if (!(prisma as { reviewFlag?: unknown }).reviewFlag) return null;
-  return prisma.reviewFlag.findFirst({ where: { kind: POSSIBLE_BAN_FLAG, subjectType, subjectId, status: 'open' }, select: { id: true } });
+  if (typeof (prisma as { reviewFlag?: { findFirst?: unknown } }).reviewFlag?.findFirst !== 'function') return null; // unit-test doubles
+  return prisma.reviewFlag.findFirst({ where: { kind: POSSIBLE_BAN_FLAG, subjectType, subjectId, status: 'open' }, select: { id: true, raisedAt: true } });
 }
 
 /** H2: the ID check and the ₹499 wait while such an item is open (a neutral "under review" message, code UNDER_REVIEW). */
@@ -109,4 +114,29 @@ export async function assertNoOpenBanReview(prisma: Client, subjectType: string,
   if (await openBanReview(prisma, subjectType, subjectId)) {
     throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: UNDER_REVIEW_MESSAGE });
   }
+}
+
+/**
+ * H2: raises the "possibly the same person as a banned person" item for a profile — at most one open
+ * per profile (Fable final check): the check and the insert run in one transaction under a lock for
+ * that profile, so two ID checks at the same moment never raise two items. Null when one is already open.
+ */
+export async function raisePossibleBanReview(
+  prisma: PrismaService,
+  flags: Pick<ReviewFlagService, 'raise' | 'refreshBell'> | undefined,
+  input: { subjectType: string; subjectId: string; details: Record<string, unknown> },
+): Promise<{ id: string } | null> {
+  if (!flags) return null;
+  const raise = async (tx: Client) => {
+    if (await openBanReview(tx, input.subjectType, input.subjectId)) return null;
+    const params = { kind: 'possible_banned_person' as const, subjectType: input.subjectType, subjectId: input.subjectId, owner: { role: 'manager' as const }, details: input.details };
+    return tx === prisma ? flags.raise(params) : flags.raise(params, { tx: tx as Prisma.TransactionClient });
+  };
+  if (typeof (prisma as { $transaction?: unknown }).$transaction !== 'function') return raise(prisma); // unit-test doubles
+  const flag = await prisma.$transaction(async (tx) => {
+    if (tx.$executeRaw) await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`possible-ban:${input.subjectType}:${input.subjectId}`}))`);
+    return raise(tx);
+  });
+  if (flag) await flags.refreshBell(flag.id);
+  return flag;
 }

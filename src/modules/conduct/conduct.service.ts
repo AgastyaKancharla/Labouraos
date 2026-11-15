@@ -17,9 +17,9 @@ import {
   BanCategory,
   businessIdFingerprint,
   otherIdFingerprint,
-  openBanReview,
   phoneHash,
   POSSIBLE_BAN_FLAG,
+  raisePossibleBanReview,
 } from './permanent-ban.check';
 
 /** D6: a suspension lasts 30 to 90 days, or is permanent (Business Hiring Agreement 6.4). */
@@ -61,6 +61,14 @@ function coveredOf(ban: { coveredProfiles: Prisma.JsonValue; subjectType: string
 const RESTORABLE_JOB_SEEKER_STATUSES: readonly string[] = ['active', 'paused', 'inactive'];
 
 const dateOrNull = (value: unknown): Date | null => (typeof value === 'string' && value ? new Date(value) : null);
+
+/**
+ * A ban, its lift and "Confirm — same person" scan every profile on the same phone or ID: the
+ * interactive transaction gets enough time for that scan (Prisma's default is 5 seconds).
+ */
+const BAN_TRANSACTION = { maxWait: 10_000, timeout: 60_000 };
+
+const profileCode = (details: Record<string, unknown>, fallback: string): string => (typeof details.subjectCode === 'string' ? details.subjectCode : fallback);
 
 /**
  * Conduct actions decided by the owner (Master Guide rev 176):
@@ -185,13 +193,15 @@ export class ConductService {
       where: { businessId, status: { in: ['offered', 'confirmed'] }, slotStartsAt: { gt: now } },
       select: { id: true, jobSeekerId: true, status: true },
     });
+    // Only interviews this call really cancelled are returned, so no one hears about one that had changed meanwhile.
+    const cancelled: { id: string; jobSeekerId: string }[] = [];
     for (const row of upcoming) {
       const changed = await tx.interview.updateMany({ where: { id: row.id, status: row.status }, data: { status: 'cancelled', cancelReason: 'business_suspended' } });
-      if (changed.count === 1) {
-        await recordStatusChange(tx, { subjectType: 'interview', subjectId: row.id, fromStatus: row.status, toStatus: 'cancelled', changedByStaffId: actorId, reason: 'business_suspended', changedAt: now });
-      }
+      if (changed.count !== 1) continue;
+      await recordStatusChange(tx, { subjectType: 'interview', subjectId: row.id, fromStatus: row.status, toStatus: 'cancelled', changedByStaffId: actorId, reason: 'business_suspended', changedAt: now });
+      cancelled.push({ id: row.id, jobSeekerId: row.jobSeekerId });
     }
-    return upcoming.map((row) => ({ id: row.id, jobSeekerId: row.jobSeekerId }));
+    return cancelled;
   }
 
   /** The job seeker (app + SMS) and the business (app) hear that the interview is off. */
@@ -368,7 +378,7 @@ export class ConductService {
         const cancelled = await this.applyBan(tx, profile, actor.id, category, reason, now);
         if (cancelled.length) cancelledByBusiness.push({ businessId: profile.subjectId, interviews: cancelled });
       }
-    });
+    }, BAN_TRANSACTION);
     for (const row of cancelledByBusiness) await this.tellInterviewsCancelled(row.businessId, row.interviews);
     // H2: profiles matching only on another ID go to a Manager or the CEO — never banned by the match alone.
     for (const p of possible) await this.raisePossibleMatch(p, banId, code, 'ban');
@@ -427,13 +437,37 @@ export class ConductService {
     const ban = await this.liveBanFor(this.prisma, subjectType, subjectId);
     if (!ban) throw new NotFoundException('No permanent ban to lift');
     const now = this.clock.now();
-    const covered = coveredOf(ban);
     const restored: { code: string | null; to: string }[] = [];
+    const dismissed: { id: string; subjectCode: string | null }[] = [];
     await this.prisma.$transaction(async (tx) => {
+      // M-B (Fable final check): the same lock as a new ban and "Confirm — same person", then the ban as it is
+      // now — a profile confirmed under it a moment ago is restored too.
+      await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('permanent-ban'))`);
+      const fresh = await tx.permanentBan.findFirst({ where: { id: ban.id, liftedAt: null } });
+      if (!fresh) throw new ConflictException('This ban was already lifted');
       const lifted = await tx.permanentBan.updateMany({ where: { id: ban.id, liftedAt: null }, data: { liftedAt: now, liftedByStaffId: actor.id, liftReason: reason } });
       if (lifted.count !== 1) throw new ConflictException('This ban was already lifted');
-      for (const profile of covered) restored.push({ code: profile.code, to: await this.restoreProfile(tx, profile, actor.id, now) });
-    });
+      for (const profile of coveredOf(fresh)) restored.push({ code: profile.code, to: await this.restoreProfile(tx, profile, actor.id, now) });
+      // Open "possibly the same person" items about this ban have nothing left to decide.
+      const open = await tx.reviewFlag.findMany({ where: { kind: POSSIBLE_BAN_FLAG, status: 'open', details: { path: ['banId'], equals: ban.id } }, select: { id: true, details: true } });
+      for (const flag of open) {
+        const changed = await tx.reviewFlag.updateMany({ where: { id: flag.id, status: 'open' }, data: { status: 'dismissed', resolvedAt: now, resolvedByStaffId: actor.id, resolution: `The ban was lifted: ${reason}` } });
+        if (changed.count === 1) dismissed.push({ id: flag.id, subjectCode: String(((flag.details ?? {}) as { subjectCode?: string }).subjectCode ?? '') || null });
+      }
+    }, BAN_TRANSACTION);
+    for (const flag of dismissed) await this.flags?.refreshBell(flag.id);
+    if (dismissed.length) {
+      await this.audit.log({
+        actorId: actor.id,
+        action: 'permanent_ban.possible_matches_dismissed',
+        entityType: ban.subjectType,
+        entityCode: ban.subjectCode ?? ban.subjectId,
+        before: { openReviews: dismissed.length },
+        after: { openReviews: 0, profiles: dismissed.map((f) => f.subjectCode) },
+        changedFields: ['reviewFlag'],
+        reason,
+      });
+    }
     await this.audit.log({
       actorId: actor.id,
       action: 'permanent_ban.lifted',
@@ -482,13 +516,11 @@ export class ConductService {
 
   /** H2: one open "possibly the same person as a banned person" item per profile (Manager / CEO). */
   private async raisePossibleMatch(p: PossibleProfile, banId: string, bannedCode: string | null, matchedAt: 'ban' | 'id_check') {
-    if (!banId || (await openBanReview(this.prisma, p.subjectType, p.subjectId))) return;
+    if (!banId) return;
     if (await this.liveBanFor(this.prisma, p.subjectType, p.subjectId)) return;
-    await this.flags?.raise({
-      kind: POSSIBLE_BAN_FLAG,
+    await raisePossibleBanReview(this.prisma, this.flags, {
       subjectType: p.subjectType,
       subjectId: p.subjectId,
-      owner: { role: 'manager' },
       details: { banId, bannedCode, subjectCode: p.code, matchedOn: 'other_id', matchedAt },
     });
   }
@@ -513,6 +545,7 @@ export class ConductService {
     const now = this.clock.now();
     const subjectType = flag.subjectType as 'job_seeker' | 'referral';
     const cancelled: { id: string; jobSeekerId: string }[] = [];
+    const paidWhileOpen: { id: string; code: string; amount: number }[] = [];
     let ban: { id: string; subjectType: string; subjectId: string; subjectCode: string | null; category: string; reason: string } | null = null;
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext('permanent-ban'))`);
@@ -521,15 +554,36 @@ export class ConductService {
       ban = live;
       const profile = await this.profileNow(tx, subjectType, flag.subjectId);
       const covered = coveredOf(live);
-      const other = await this.liveBanFor(tx, subjectType, flag.subjectId);
-      if (other) profile.alreadyBannedBy = other.id;
-      await tx.permanentBan.update({ where: { id: live.id }, data: { coveredProfiles: [...covered, profile] as unknown as Prisma.InputJsonValue } });
-      if (!other) cancelled.push(...(await this.applyBan(tx, profile, actor.id, live.category, live.reason, now)));
-      await tx.reviewFlag.update({
-        where: { id: flag.id },
+      // "Not the same person" at the same moment: only one decision wins (the other changes nothing).
+      const decided = await tx.reviewFlag.updateMany({
+        where: { id: flag.id, status: 'open' },
         data: { status: 'resolved', resolvedAt: now, resolvedByStaffId: actor.id, resolution: reason, details: { ...details, decision: 'same_person' } as Prisma.InputJsonValue },
       });
-    });
+      if (decided.count !== 1) throw new ConflictException('This review item was already decided');
+      const other = await this.liveBanFor(tx, subjectType, flag.subjectId);
+      if (other) {
+        // Already under another ban: keep what he really was before that ban (as ban() does), not "banned".
+        profile.before = coveredOf(other).find((p) => p.subjectType === profile.subjectType && p.subjectId === profile.subjectId)?.before ?? {};
+        profile.alreadyBannedBy = other.id;
+      }
+      await tx.permanentBan.update({ where: { id: live.id }, data: { coveredProfiles: [...covered, profile] as unknown as Prisma.InputJsonValue } });
+      if (!other) cancelled.push(...(await this.applyBan(tx, profile, actor.id, live.category, live.reason, now)));
+      // M-A: a ₹499 that came in while the item was open is refunded by Finance (it never activated him).
+      if (subjectType === 'job_seeker') {
+        paidWhileOpen.push(...(await tx.payment.findMany({
+          where: { jobSeekerId: flag.subjectId, type: 'activation', status: 'succeeded', confirmedAt: { gte: flag.raisedAt } },
+          select: { id: true, code: true, amount: true },
+        })));
+      }
+    }, BAN_TRANSACTION);
+    for (const payment of paidWhileOpen) {
+      await this.flags?.raise({
+        kind: 'payment_mismatch',
+        subjectType: 'payment',
+        subjectId: payment.id,
+        details: { reason: 'paid_while_ban_review_open', decision: 'same_person', refund: true, paymentCode: payment.code, amountPaise: payment.amount, jobSeekerCode: profileCode(details, flag.subjectId), activated: false },
+      });
+    }
     await this.flags?.refreshBell(flag.id);
     const b = ban as unknown as { subjectType: string; subjectCode: string | null; subjectId: string };
     await this.audit.log({
