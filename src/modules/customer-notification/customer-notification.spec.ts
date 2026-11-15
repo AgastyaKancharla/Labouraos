@@ -219,7 +219,7 @@ describe('Customer notifications: notify and send', () => {
   });
 });
 
-describe('Customer notifications: quiet hours 9 PM to 9 AM (non-urgent held until 9 AM)', () => {
+describe('Customer notifications: quiet hours 9 PM to 9 AM (everything but receipts held until 9 AM)', () => {
   it('holds a non-urgent push at night and sends it at 9 AM', async () => {
     const t = setup(ist('22:15'));
     await t.account({ jobSeekerId: 'js-1' });
@@ -247,14 +247,38 @@ describe('Customer notifications: quiet hours 9 PM to 9 AM (non-urgent held unti
     expect(t.prisma.tables.customerInboxMessage[0].pushStatus).toBe('held_quiet_hours');
   });
 
-  it('sends urgent ones (an offer) and receipts for what the person just did at night', async () => {
+  it('sends a receipt for what the person just did at once at night, but holds an urgent offer until 9 AM', async () => {
     const t = setup(ist('23:00'));
     await t.account({ jobSeekerId: 'js-1' });
-    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true });
+    const offer = await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true });
+    expect(offer).toMatchObject({ inbox: 1, queued: 0, held: 1 });
     await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 });
-    const result = await t.sender.sendDue();
-    expect(result.sent).toBe(2);
-    expect(t.provider.sent.map((m) => m.priority)).toEqual(['high', 'normal']);
+    const held = t.prisma.tables.customerInboxMessage.find((r) => r.kind === 'interview_booked')!;
+    expect(held).toMatchObject({ pushStatus: 'held_quiet_hours', priority: 'urgent' });
+    expect((held.scheduledFor as Date).toISOString()).toBe(ist('09:00', 21).toISOString());
+
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 1 });
+    expect(t.provider.sent.map((m) => m.priority)).toEqual(['normal']);
+    t.clock.at = ist('04:00', 21);
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 0 });
+
+    t.clock.at = ist('09:01', 21);
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 1 });
+    expect(t.provider.sent.map((m) => m.priority)).toEqual(['normal', 'high']);
+  });
+
+  it('an urgent offer sent at 9 AM is still outside the daily cap', async () => {
+    const t = setup(ist('22:00'));
+    await t.account({ jobSeekerId: 'js-1' });
+    for (let i = 0; i < 3; i += 1) await t.notifications.notify({ jobSeekerId: 'js-1' }, 'guarantee_countdown', { daysLeft: i });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true });
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 0 });
+    expect(t.prisma.tables.customerInboxMessage.every((r) => r.pushStatus === 'held_quiet_hours')).toBe(true);
+
+    t.clock.at = ist('09:01', 21);
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 4, heldDailyCap: 0 });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check');
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 0, heldDailyCap: 1 });
   });
 });
 

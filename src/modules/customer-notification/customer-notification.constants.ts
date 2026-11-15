@@ -17,7 +17,7 @@ export type CustomerAudience = 'job_seeker' | 'business' | 'referral';
 export interface CustomerEventDefinition {
   /** service, job_updates or promotions: the three switches (proposal 5.4). */
   category: CustomerNotificationCategory;
-  /** urgent: sent during quiet hours and never held by the daily cap. */
+  /** urgent: never held by the daily cap; still waits for 9 AM in quiet hours (Q21). */
   priority: CustomerNotificationPriority;
   /**
    * The person just did this themselves (a payment receipt): sent at once,
@@ -93,7 +93,11 @@ export function eventDefinition(kind: CustomerEventKind): CustomerEventDefinitio
   return CUSTOMER_EVENTS[kind];
 }
 
-/** Quiet hours, IST (Q21, C18): nothing non-urgent between 21:00 and 09:00. */
+/**
+ * Quiet hours, IST (Q21, C18): "nothing between 9 PM and 9 AM except OTPs and
+ * things the person just did themselves (e.g. a payment receipt); reminders due
+ * overnight wait until 9 AM". Urgent pushes wait until 9 AM too.
+ */
 export const QUIET_START = '21:00';
 export const QUIET_END = '09:00';
 /** At most this many non-urgent pushes a day per account (Q21). */

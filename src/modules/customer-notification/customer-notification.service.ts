@@ -30,7 +30,7 @@ export type NotifyTarget =
   | { referralId: string };
 
 export interface NotifyOptions {
-  /** Sent in quiet hours and never held by the daily cap (an offer, "pay within 24 hours"). */
+  /** Never held by the daily cap (an offer, "pay within 24 hours"). Still waits for 9 AM in quiet hours (Q21). */
   urgent?: boolean;
   /** Goes out only with the promotions consent (Q22), whatever the event. */
   promotional?: boolean;
@@ -240,11 +240,14 @@ export class CustomerNotificationService {
       pushStatus = PUSH_STATUS.off;
     } else if (pushable === 0) {
       pushStatus = PUSH_STATUS.none;
-    } else if (priority === 'urgent' || selfAction) {
+    } else if (selfAction) {
+      // Something the person just did themselves (a payment receipt): at once, even at night.
       pushStatus = PUSH_STATUS.queued;
       scheduledFor = now;
     } else if (isQuietTime(now, settings.quietStart, settings.quietEnd)) {
-      // Reminders due overnight wait until 9 AM (proposal 5.4).
+      // Q21 (proposal 5.4): "nothing between 9 PM and 9 AM except OTPs and things
+      // the person just did themselves (e.g. a payment receipt); reminders due
+      // overnight wait until 9 AM". Urgent ones (an offer) wait too.
       pushStatus = PUSH_STATUS.heldQuietHours;
       scheduledFor = quietEndsAt(now, settings.quietEnd);
     } else {

@@ -51,9 +51,12 @@ function isSelfAction(data: unknown): boolean {
  * The background worker's half (src/jobs/customer-push.job.ts): every minute,
  * and whenever a notification is queued, it sends the pushes that are due
  * through the push provider (Expo; mock on the test setup), applying quiet
- * hours (9 PM to 9 AM IST, non-urgent held until 9 AM) and the cap (3
- * non-urgent pushes a day per account; over the cap the message stays in the
- * inbox without a push). Tokens Expo reports as DeviceNotRegistered (the app
+ * hours and the cap. Quiet hours (Q21, proposal 5.4): "nothing between 9 PM
+ * and 9 AM except OTPs and things the person just did themselves (e.g. a
+ * payment receipt); reminders due overnight wait until 9 AM". Urgent pushes (an
+ * offer) wait too; OTPs never come through here (they go by SMS). The cap: 3
+ * non-urgent pushes a day per account; urgent ones and receipts never count,
+ * and over the cap the message stays in the inbox without a push. Tokens Expo reports as DeviceNotRegistered (the app
  * was uninstalled) are removed at once and after the receipt check.
  */
 @Injectable()
@@ -103,8 +106,12 @@ export class CustomerPushSenderService {
         .map((d) => d.pushToken)
         .filter((t): t is string => Boolean(t));
       for (const row of accountRows) {
-        const nonUrgent = row.priority !== 'urgent' && !isSelfAction(row.data);
-        if (nonUrgent && isQuietTime(now, settings.quietStart, settings.quietEnd)) {
+        const selfAction = isSelfAction(row.data);
+        // Only what the person just did goes out between 9 PM and 9 AM; urgent ones wait too.
+        const waitsOvernight = !selfAction;
+        // The daily cap counts neither urgent pushes nor receipts.
+        const nonUrgent = row.priority !== 'urgent' && !selfAction;
+        if (waitsOvernight && isQuietTime(now, settings.quietStart, settings.quietEnd)) {
           await this.prisma.customerInboxMessage.updateMany({
             where: { id: row.id, pushStatus: row.pushStatus },
             data: { pushStatus: PUSH_STATUS.heldQuietHours, scheduledFor: quietEndsAt(now, settings.quietEnd) },
