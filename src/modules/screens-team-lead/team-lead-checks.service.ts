@@ -19,6 +19,7 @@ import { OtherIdApprovalService, SELF_APPROVAL_REFUSED } from '../aadhaar-qr/oth
 /** Nobody checks a registration they made themselves (rev 169). */
 export const SELF_CHECK_REFUSED = "You registered this person, so you can't check this registration yourself.";
 import { maskedAadhaarReference } from '../aadhaar-qr/secure-qr.parser';
+import { oneRegistrationCheck } from '../aadhaar-qr/one-registration-check';
 
 const DAY_MS = 24 * 3600 * 1000;
 const HOUR_MS = 3600 * 1000;
@@ -487,30 +488,33 @@ export class TeamLeadChecksService {
     if (verdict === 'fake' && !note) throw new BadRequestException('Say what looks fake');
     const subjectType = body?.subjectType === 'referral' ? 'referral' : 'job_seeker';
     const subject = await this.requireTeamSubject(actor, subjectType, id, 'decide');
-    // The ID decision first: anything it refuses (under-18 stop, not this Team Lead's to decide, photo
-    // gone or not opened, decided a moment ago) leaves everything as it was — no check row, no flag,
-    // no photo deleted. Then the ID photos (QR or card) go, as they are kept only until this check.
-    let otherIdDecided: 'verified' | 'failed' | null = null;
-    let photosDeleted = 0;
-    if (this.otherIds) {
-      const decided = await this.otherIds.recordDecision(subjectType, subject.id, verdict, actor, this.clock.now());
-      otherIdDecided = decided.otherIdDecided;
-      photosDeleted = decided.photosDeleted;
-    } else if (this.idPhotos) {
-      photosDeleted = await this.idPhotos.deletePhotos(subjectType, subject.id, verdict === 'ok' ? 'team_lead_approved' : 'team_lead_rejected', actor.id, this.clock.now());
-    }
-    let flagId: string | null = null;
-    if (verdict === 'fake') {
-      flagId = await this.raiseForManager(actor, 'registration_suspect', subjectType, subject.id, subject.registeredByStaffId, {
-        [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: subject.code,
-        note,
+    // One general check per person (L-8): a second tap, or the Manager's fallback at the same moment, gets 409.
+    return oneRegistrationCheck(this.prisma, subjectType, subject.id, async () => {
+      // The ID decision first: anything it refuses (under-18 stop, not this Team Lead's to decide, photo
+      // gone or not opened, decided a moment ago) leaves everything as it was — no check row, no flag,
+      // no photo deleted. Then the ID photos (QR or card) go, as they are kept only until this check.
+      let otherIdDecided: 'verified' | 'failed' | null = null;
+      let photosDeleted = 0;
+      if (this.otherIds) {
+        const decided = await this.otherIds.recordDecision(subjectType, subject.id, verdict, actor, this.clock.now());
+        otherIdDecided = decided.otherIdDecided;
+        photosDeleted = decided.photosDeleted;
+      } else if (this.idPhotos) {
+        photosDeleted = await this.idPhotos.deletePhotos(subjectType, subject.id, verdict === 'ok' ? 'team_lead_approved' : 'team_lead_rejected', actor.id, this.clock.now());
+      }
+      let flagId: string | null = null;
+      if (verdict === 'fake') {
+        flagId = await this.raiseForManager(actor, 'registration_suspect', subjectType, subject.id, subject.registeredByStaffId, {
+          [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: subject.code,
+          note,
+        });
+      }
+      const check = await this.prisma.teamLeadCheck.create({
+        data: { subjectType, subjectId: subject.id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: this.clock.now() },
       });
-    }
-    const check = await this.prisma.teamLeadCheck.create({
-      data: { subjectType, subjectId: subject.id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: this.clock.now() },
+      await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: subjectType, entityCode: subject.code, after: { verdict, flagId, otherIdDecided } });
+      return { id: check.id, verdict, flagId, otherIdDecided, idPhotoDeleted: photosDeleted > 0, qrPhotoDeleted: photosDeleted > 0 };
     });
-    await this.audit.log({ actorId: actor.id, action: `team_lead.registration_${verdict}`, entityType: subjectType, entityCode: subject.code, after: { verdict, flagId, otherIdDecided } });
-    return { id: check.id, verdict, flagId, otherIdDecided, idPhotoDeleted: photosDeleted > 0, qrPhotoDeleted: photosDeleted > 0 };
   }
 
   // -------------------------------------------------------------- visits

@@ -8,6 +8,8 @@ export type StopSubjectType = 'job_seeker' | 'referral';
 export const UNDER_18_STOP_MESSAGE =
   "Registration stops here: a signed Aadhaar QR shows this person is under 18. If it was a family member's card by mistake, a Manager or the CEO can lift this stop.";
 
+export const UNDER_18_SELF_LIFT_REFUSED = 'You registered this person yourself: another Manager or the CEO lifts this stop';
+
 /** Lifting the stop needs a real reason, not a tick. */
 export const UNDER_18_LIFT_REASON_MIN = 10;
 
@@ -50,6 +52,9 @@ export class Under18StopService {
         ? await this.prisma.jobSeeker.findUnique({ where: { id: subjectId }, select: { code: true, city: true, registeredByStaffId: true } })
         : await this.prisma.referral.findUnique({ where: { id: subjectId }, select: { code: true, city: true, registeredByStaffId: true } });
     if (!subject) throw new NotFoundException('Not found');
+    // Nobody lifts the stop on a person they registered themselves (Fable final re-check, L-8):
+    // another Manager of the city or the CEO does.
+    if (subject.registeredByStaffId && subject.registeredByStaffId === actor.id) throw new ForbiddenException(UNDER_18_SELF_LIFT_REFUSED);
     await this.access.assertCanView(actor, subject.registeredByStaffId);
     const now = new Date();
     const data = { under18LiftedAt: now, under18LiftedByStaffId: actor.id, under18LiftReason: reason };

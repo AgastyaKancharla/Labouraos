@@ -7,7 +7,8 @@ import { IdCheckAccessService } from './id-check-access.service';
 import { ALREADY_DECIDED_MESSAGE, CAPTURE_NONCE_MESSAGE, OPEN_PHOTO_FIRST_MESSAGE, OtherIdInput, OtherIdService, PHOTO_GONE_MESSAGE } from './other-id.service';
 import { OtherIdApprovalService, SELF_APPROVAL_REFUSED } from './other-id-approval.service';
 import { ID_PHOTO_EXPIRED_REASON } from './id-check-photo.service';
-import { Under18StopService } from './under18-stop.service';
+import { UNDER_18_SELF_LIFT_REFUSED, Under18StopService } from './under18-stop.service';
+import { oneRegistrationCheck, REGISTRATION_ALREADY_CHECKED } from './one-registration-check';
 import { MemoryCandidatePhotoStorage } from '../job-seeker/photo-storage';
 import { buildSecureQr, testSigner } from './testing/secure-qr.fixtures';
 import { fakePrisma, FakePrisma } from './testing/fake-prisma';
@@ -988,6 +989,46 @@ describe('Fable re-check of PR #135 (rev 169 and the review fixes)', () => {
 describe('Fable final re-check (round 6)', () => {
   const tl = (id: string) => ({ id, role: 'team_lead' });
   const since = new Date(NOW.getTime() - 7 * DAY_MS);
+
+  describe('L-8: nobody lifts a stop on their own registration; one general check per person', () => {
+    it('a Manager who registered the person cannot lift the under-18 stop; the CEO can', async () => {
+      const ctx = setup();
+      ctx.prisma.jobSeeker.rows.find((r) => r.id === 'js-1')!.registeredByStaffId = 'manager-1';
+      await ctx.service.checkJobSeeker('js-1', qr({ dob: '15-11-2008' }), { channel: 'link', now: NOW });
+      expect(await ctx.stops.isStopped('job_seeker', 'js-1')).toBe(true);
+      const own = ctx.stops.lift({ id: 'manager-1', role: 'manager' }, 'job_seeker', 'js-1', 'Birth certificate shows he is 19');
+      await expect(own).rejects.toBeInstanceOf(ForbiddenException);
+      await expect(ctx.stops.lift({ id: 'manager-1', role: 'manager' }, 'job_seeker', 'js-1', 'Birth certificate shows he is 19')).rejects.toThrow(UNDER_18_SELF_LIFT_REFUSED);
+      expect(await ctx.stops.isStopped('job_seeker', 'js-1')).toBe(true);
+      expect(await ctx.stops.lift({ id: 'ceo-1', role: 'ceo' }, 'job_seeker', 'js-1', 'Birth certificate shows he is 19')).toEqual({ lifted: 1 });
+    });
+
+    it('a second general check of the same person is refused (409) under his lock, unless another ID waits', async () => {
+      const { prisma } = setup();
+      const work = jest.fn(async () => 'checked');
+      expect(await oneRegistrationCheck(prisma as never, 'job_seeker', 'js-1', work)).toBe('checked');
+      expect(prisma.locks.at(-1)).toBe('registration-check:job_seeker:js-1');
+      prisma.teamLeadCheck.rows.push({ id: 'tlc-1', subjectType: 'job_seeker', subjectId: 'js-1', verdict: 'ok', createdAt: NOW });
+      await expect(oneRegistrationCheck(prisma as never, 'job_seeker', 'js-1', work)).rejects.toBeInstanceOf(ConflictException);
+      await expect(oneRegistrationCheck(prisma as never, 'job_seeker', 'js-1', work)).rejects.toThrow(REGISTRATION_ALREADY_CHECKED);
+      expect(work).toHaveBeenCalledTimes(1);
+      // A new other ID waiting for the Team Lead: that check decides it.
+      prisma.identityVerification.rows.push({ id: 'idv-9', jobSeekerId: 'js-1', status: 'pending', vendor: 'team_lead_check', method: 'pan', createdAt: NOW });
+      expect(await oneRegistrationCheck(prisma as never, 'job_seeker', 'js-1', work)).toBe('checked');
+      // Another person is not held up.
+      expect(await oneRegistrationCheck(prisma as never, 'referral', 'rf-1', work)).toBe('checked');
+    });
+  });
+
+  describe('L-5: a later name mismatch does not un-verify', () => {
+    it('the name check for the Team Lead says the person is still verified', async () => {
+      const { service, flagCalls } = setup();
+      expect((await service.checkJobSeeker('js-1', qr(), { channel: 'link', now: NOW })).result).toBe('verified');
+      const later = await service.checkJobSeeker('js-1', qr({ name: 'Kaavya Ramesh' }), { channel: 'link', now: new Date(NOW.getTime() + 60_000) });
+      expect(later.result).toBe('name_mismatch');
+      expect(flagCalls.find((f) => f.kind === 'name_check')).toMatchObject({ details: expect.objectContaining({ stillVerified: true, afterVerifiedId: expect.any(String) }) });
+    });
+  });
 
   describe('M-A: a locked Team Lead counts for nothing', () => {
     it('the city\'s only other Team Lead locked by a Manager: the Manager fallback works, and he can\'t decide', async () => {

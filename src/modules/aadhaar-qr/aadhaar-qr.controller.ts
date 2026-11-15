@@ -16,6 +16,7 @@ import { OtherIdService } from './other-id.service';
 import { OtherIdApprovalService } from './other-id-approval.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { StopSubjectType, Under18StopService } from './under18-stop.service';
+import { oneRegistrationCheck } from './one-registration-check';
 
 type Authed = Request & { user: JwtPayload };
 
@@ -206,32 +207,35 @@ export class AadhaarQrController {
     // The same rule as T-Verify: only the fallback (no other Team Lead of the city), never one's own.
     const right = await this.approvals.rightFor(actor, { ...person, id, subjectType });
     if (!right.allowed) throw new ForbiddenException(right.reason ?? 'Not yours to check');
-    const decided = await this.otherIds.recordDecision(subjectType, id, verdict, actor);
-    let flagId: string | null = null;
-    if (verdict === 'fake') {
-      const flag = await this.flags.raise({
-        kind: 'registration_suspect',
-        subjectType,
-        subjectId: id,
-        raisedForStaffId: person.registeredByStaffId ?? null,
-        details: { [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: person.code, note, decidedBy: actor.role },
-        owner: { role: 'manager' },
+    // One general check per person (L-8): the Team Lead's T-Verify at the same moment can't record a second.
+    return oneRegistrationCheck(this.prisma, subjectType, id, async () => {
+      const decided = await this.otherIds.recordDecision(subjectType, id, verdict, actor);
+      let flagId: string | null = null;
+      if (verdict === 'fake') {
+        const flag = await this.flags.raise({
+          kind: 'registration_suspect',
+          subjectType,
+          subjectId: id,
+          raisedForStaffId: person.registeredByStaffId ?? null,
+          details: { [subjectType === 'referral' ? 'referralCode' : 'jobSeekerCode']: person.code, note, decidedBy: actor.role },
+          owner: { role: 'manager' },
+        });
+        flagId = flag.id;
+      }
+      const check = await this.prisma.teamLeadCheck.create({
+        data: { subjectType, subjectId: id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: new Date() },
       });
-      flagId = flag.id;
-    }
-    const check = await this.prisma.teamLeadCheck.create({
-      data: { subjectType, subjectId: id, verdict, note: note || null, flagId, checkedByStaffId: actor.id, createdAt: new Date() },
+      await this.audit.log({
+        actorId: actor.id,
+        action: `registration_check.${verdict}`,
+        entityType: subjectType,
+        entityCode: person.code,
+        after: { verdict, flagId, otherIdDecided: decided.otherIdDecided, approvalMode: right.mode, role: actor.role },
+        changedFields: [],
+        city: person.city,
+      });
+      return { id: check.id, verdict, flagId, ...decided };
     });
-    await this.audit.log({
-      actorId: actor.id,
-      action: `registration_check.${verdict}`,
-      entityType: subjectType,
-      entityCode: person.code,
-      after: { verdict, flagId, otherIdDecided: decided.otherIdDecided, approvalMode: right.mode, role: actor.role },
-      changedFields: [],
-      city: person.city,
-    });
-    return { id: check.id, verdict, flagId, ...decided };
   }
 
   @Get('identity/:subjects/:id/aadhaar-check')

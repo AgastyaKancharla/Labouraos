@@ -316,6 +316,10 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
 
     const done = await post(lead, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' }).expect(200);
     expect(done.body.qrPhotoDeleted).toBe(true);
+    // L-8: one general check per person — a second tap records nothing.
+    const again = await post(lead, `/team-lead/registrations/${s.id}/check`, { verdict: 'fake', note: 'Second tap' });
+    expect(again.status).toBe(409);
+    expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id } })).toBe(1);
     const after = await get(lead, `/identity/job-seekers/${s.id}/aadhaar-check`).expect(200);
     expect(after.body.check.photo).toMatchObject({ kept: false, deletedReason: 'team_lead_approved' });
     expect(after.body.qrPhotoUrl).toBeNull();
@@ -497,6 +501,12 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       expect(((await get(leadB, '/team-lead/registrations').expect(200)).body.rows as Row[]).some((r) => r.person.id === s.id)).toBe(false);
       // A Manager is not the fallback while another Team Lead can check it.
       expect((await post(cityManager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'ok' })).status).toBe(403);
+      // M-B: the right to open another team's registration lasts only while it waits — once checked, he is refused.
+      expect((await get(leadB, `/identity/job-seekers/${s.id}/aadhaar-check`)).status).toBe(404);
+      expect((await get(leadB, `/team-lead/registrations/${s.id}/selfie`)).status).toBe(404);
+      expect((await post(leadB, `/team-lead/registrations/${s.id}/check`, { verdict: 'ok' })).status).toBe(404);
+      // ...while leadA's own Team Lead line (the Manager over the team) still sees it.
+      expect((await get(cityManager, `/identity/job-seekers/${s.id}/aadhaar-check`)).status).toBe(200);
     });
 
     it('the general registration check: no other Team Lead in the city, so a Manager of that city or the CEO checks it from the waiting list', async () => {
@@ -515,6 +525,10 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
       const fake = await post(cityManager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'fake', note: 'Not the person in the selfie' }).expect(200);
       expect(fake.body).toMatchObject({ verdict: 'fake', flagId: expect.any(String) });
       expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id, checkedByStaffId: cityManager.id, verdict: 'fake' } })).toBe(1);
+      // L-8: one general check per person — the Manager again, or the CEO, records nothing more.
+      expect((await post(cityManager, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'ok' })).status).toBe(409);
+      expect((await post(ceo, `/identity/job-seekers/${s.id}/registration-check`, { verdict: 'ok' })).status).toBe(409);
+      expect(await prisma.teamLeadCheck.count({ where: { subjectId: s.id } })).toBe(1);
       expect((await rows(cityManager)).some((r) => r.person.id === s.id)).toBe(false);
     });
 
