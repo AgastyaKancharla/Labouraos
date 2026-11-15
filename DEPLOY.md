@@ -619,8 +619,24 @@ Nothing to set on Render. People may notice these, once, right after the deploy:
 
 - **Login and reset codes revealed just before the deploy stop working** (AUTH-1: the 6-digit codes are now uniform, so the same request gives a different code). The senior reveals the code again on the code screen; the request itself still works.
 - **Receipt and invoice links sent before the deploy stop working** (AC-5: links now carry a 90-day expiry). Finance or the CEO send a fresh one if someone asks; staff screens already make fresh links.
-- **Payment links (INF-1):** the deploy adds one column (`Payment.pageTokenHash`, migration `20261201000000_payment_page_token`, run by Pre-Deploy as usual). New payment links carry a long page token instead of the payment reference. A link sent before the deploy keeps working while it is unpaid; once it is paid, or once someone taps "Resend payment link", only the new link works. A paid page closes 30 days after the money arrived, and it no longer shows receipt or invoice links (they go by SMS and WhatsApp as before).
+- **Payment links (INF-1):** the deploy adds one column (`Payment.pageTokenHash`, migration `20261201000000_payment_page_token`, run by Pre-Deploy as usual). New payment links carry a long page token instead of the payment reference. A link sent before the deploy keeps working while it is unpaid, until PR #154 is deployed (see its backfill step below); once it is paid, or once someone taps "Resend payment link", only the new link works. A paid page closes 30 days after the money arrived, and it no longer shows receipt or invoice links (they go by SMS and WhatsApp as before).
 - **Registration, agreement, partner and payout links:** a code an agent sends (staff "Send OTP") no longer opens or completes a person's own link (AC-3). The person taps "Send code" on their link. Staff screens that send a link no longer show its token.
+
+---
+
+## Security follow-ups (PR #154): one step after the deploy
+
+### Pay page tokens: one-off backfill (L3)
+
+Payment links sent before PR #152 opened by the payment reference. PR #152 kept those working while unpaid; this update removes that, so an unpaid request made before PR #152 needs its new link. Once, right after this update is live:
+
+1. Open **`laboura-api`**, then **Shell**.
+2. Run `npm run backfill:pay-page-tokens -- --resend`.
+3. It prints how many waiting requests got a page token and "Sent a new link: PAY-…" for each (by SMS / WhatsApp, to the person the request was for). A line "Not sent (PAY-…)" names one to re-send by hand from its screen ("Resend payment link"); the reason is printed with it (for example, a ₹499 whose ID check is not finished).
+
+Without `--resend` it only saves the tokens and lists the payment codes. Running it again does nothing to a request that already has its token. Until it runs, an old unpaid link answers "Payment request not found".
+
+Before the deploy: register the DLT template `phone_number_changed` and add its id to `SMS_DLT_TEMPLATE_IDS` (All settings, the SMS row). It goes to the OLD number when a record's mobile number is changed (M3).
 
 ---
 

@@ -6,7 +6,8 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
 import { UpiCollectionService } from './upi-collection.service';
-import { PAY_PAGE_DAYS_AFTER_PAYMENT, payPageTokenFor } from './pay-page-token';
+import { PAY_PAGE_DAYS_AFTER_PAYMENT, payPageTokenFor, payPageTokenHash } from './pay-page-token';
+import { backfillPayPageTokens } from '../../scripts/backfill-pay-page-tokens';
 import { PlacementService } from '../placement/placement.service';
 import { GstInvoiceResponse } from '../placement/dto/gst-invoice.dto';
 
@@ -80,7 +81,7 @@ describe('Security INF-1: the pay page has its own token, expires after payment 
     expect((await summary(token)).status).toBe(404);
   });
 
-  it('a link sent before page tokens keeps working while unpaid, until a new link is sent', async () => {
+  it('L3: a request made before page tokens never opens by its UPI reference; the backfill gives it a page token', async () => {
     const id = randomUUID();
     const code = await app.get(IdService).generateCode('payment');
     const legacy = await prisma.payment.create({
@@ -90,11 +91,30 @@ describe('Security INF-1: the pay page has its own token, expires after payment 
       },
     });
     created.push(legacy.id);
-    expect((await summary(legacy.upiReference!)).status).toBe(200);
-    const resent = await upi.resendRequest(legacy.id);
-    expect(resent.paymentLink).toContain(payPageTokenFor(legacy.id));
     expect((await summary(legacy.upiReference!)).status).toBe(404);
+    expect((await summary(payPageTokenFor(legacy.id))).status).toBe(404);
+
+    const { backfilled } = await backfillPayPageTokens(prisma);
+    expect(backfilled.map((r) => r.id)).toContain(legacy.id);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id } })).pageTokenHash).toBe(payPageTokenHash(payPageTokenFor(id)));
     expect((await summary(payPageTokenFor(legacy.id))).status).toBe(200);
+    expect((await summary(legacy.upiReference!)).status).toBe(404);
+    // Run again: nothing left to do for it.
+    expect((await backfillPayPageTokens(prisma)).backfilled.map((r) => r.id)).not.toContain(legacy.id);
+  });
+
+  it('L3: the backfill leaves paid requests alone', async () => {
+    const id = randomUUID();
+    const code = await app.get(IdService).generateCode('payment');
+    await prisma.payment.create({
+      data: {
+        id, code, type: 'placement_fee', amount: 1000, expectedAmountPaise: 1000, status: 'succeeded', method: 'upi_direct',
+        upiReference: `${code}-abcd5678`, subjectType: 'placement', subjectId: randomUUID(), confirmedAt: new Date(),
+      },
+    });
+    created.push(id);
+    await backfillPayPageTokens(prisma);
+    expect((await prisma.payment.findUniqueOrThrow({ where: { id } })).pageTokenHash).toBeNull();
   });
 
   it('the invoice copy opened from a public link masks the owner phone', async () => {
