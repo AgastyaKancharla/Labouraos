@@ -128,7 +128,7 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
       .post(`/registration/${token}/selfie`)
       .field('requestId', requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('camera-frame'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('camera-frame')]), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
   }
 

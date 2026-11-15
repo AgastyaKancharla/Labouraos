@@ -244,7 +244,7 @@ describe('Phase 20 gate end-to-end proof', () => {
       .post(`/registration/${token}/selfie`)
       .field('requestId', requestId)
       .field('captureSource', 'live_camera')
-      .attach('photo', Buffer.from('live-camera-frame'), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .attach('photo', Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('live-camera-frame')]), { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(201);
     // UIDAI's own sample Secure QR: a genuine UIDAI signature, but another person's name.
     const aadhaar = await request(server())
