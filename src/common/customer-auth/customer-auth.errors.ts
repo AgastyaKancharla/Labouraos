@@ -44,6 +44,8 @@ export const CUSTOMER_ERROR_CODES = {
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
   /** Legal documents (rev 176): accept the updated terms first ("We've updated our terms"). */
   RECONSENT_REQUIRED: 'RECONSENT_REQUIRED',
+  /** INF-6: a name or locality starting with = + - @ (refused on every route by FormulaTextInterceptor). */
+  TEXT_STARTS_WITH_SYMBOL: 'TEXT_STARTS_WITH_SYMBOL',
 } as const;
 
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[keyof typeof CUSTOMER_ERROR_CODES];

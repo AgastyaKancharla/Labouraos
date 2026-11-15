@@ -1,6 +1,6 @@
 import type { Area, HeardFrom, JobSeekerForm, Language, Pin, SalaryPeriod, Shift, Trade } from '@/api/types';
 import type { MessageKey } from '@/i18n';
-import { ageOn, isPincode } from '@/lib/validate';
+import { ageOn, isPincode, startsWithSymbol } from '@/lib/validate';
 
 export const OTHER_TRADE = '__other__';
 export const MAX_TRADES = 3;
@@ -72,6 +72,7 @@ export type JobSeekerErrors = Partial<Record<string, MessageKey>>;
 export function validateJobSeeker(d: JobSeekerDraft): JobSeekerErrors {
   const e: JobSeekerErrors = {};
   if (d.fullName.trim().length < 2) e.fullName = 'form.required';
+  else if (startsWithSymbol(d.fullName)) e.fullName = 'form.noLeadingSymbol';
   if (!d.gender) e.gender = 'form.required';
   if (!d.bestTimeToCall) e.bestTimeToCall = 'form.required';
   if (!d.area) e.area = 'form.required';

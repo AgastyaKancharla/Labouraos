@@ -10,6 +10,7 @@ import { ATTENDANCE_ROLES, AttendanceDaysService, DayRow } from './attendance-da
 import { BREAK_STATUSES } from './attendance.constants';
 import { monthRange } from './day-rules';
 import { NOT_OWNER_ACCOUNT } from '../staff/owner-account';
+import { csvLine } from '../../common/csv/csv-cell';
 
 interface Actor {
   id: string;
@@ -305,7 +306,7 @@ export class AttendanceReportsService {
       'Unpaid days',
       'Deductible shortfall (minutes)',
     ];
-    const lines = [header.map((cell) => this.csvCell(cell)).join(',')];
+    const lines = [csvLine(header)];
     const body = rows.map((row) => [
           row.staffCode,
           row.name,
@@ -322,17 +323,9 @@ export class AttendanceReportsService {
           row.deductibleShortfallMinutes,
         ]);
     for (const cells of maskCsvPhoneColumns(header, body, viewerRole)) {
-      lines.push(cells.map((cell) => this.csvCell(cell)).join(','));
+      lines.push(csvLine(cells));
     }
     return `${lines.join('\n')}\n`;
-  }
-
-  private csvCell(value: string | number): string {
-    let text = String(value);
-    // A cell that starts like a formula is opened as text by spreadsheets.
-    if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text)) text = `'${text}`;
-    if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-    return text;
   }
 
   private totals(rows: DayRow[]) {

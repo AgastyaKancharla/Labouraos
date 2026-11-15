@@ -1,20 +1,12 @@
 import { maskCsvPhoneColumns } from '../../common/csv/csv-phone-mask';
+import { csvCell, type CsvValue } from '../../common/csv/csv-cell';
 
 /**
- * CSV files for the CA (they open in Excel). A cell that starts like a formula
- * is written as text, so a name like "=SUM(…)" can never run in a spreadsheet.
+ * CSV files for the CA (they open in Excel). Cells go through the shared
+ * csvCell (src/common/csv/csv-cell.ts): a cell that starts like a formula is
+ * written as text, so a name like "=SUM(…)" can never run in a spreadsheet.
  */
-export type CsvValue = string | number | null | undefined;
-
-export function csvCell(value: CsvValue): string {
-  if (value === null || value === undefined) return '';
-  let text = String(value);
-  // A cell that starts like a formula is written as text — except a plain
-  // number (a negative amount like -8000.00 must stay a number).
-  if (typeof value === 'string' && /^[=+\-@\t\r]/.test(text) && !/^-?\d+(\.\d+)?$/.test(text)) text = `'${text}`;
-  if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
-  return text;
-}
+export { csvCell, type CsvValue };
 
 /**
  * `viewerRole`: who downloads it. A phone column is masked for everyone but the CEO

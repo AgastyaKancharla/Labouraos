@@ -1,6 +1,6 @@
 import type { Area, BusinessType, Language, Pin, ReferralForm } from '@/api/types';
 import type { MessageKey } from '@/i18n';
-import { isMobile, isPincode } from '@/lib/validate';
+import { isMobile, isPincode, startsWithSymbol } from '@/lib/validate';
 
 export interface ReferralDraft {
   name: string;
@@ -36,11 +36,13 @@ export type ReferralErrors = Partial<Record<keyof ReferralDraft, MessageKey>>;
 export function validateReferral(d: ReferralDraft): ReferralErrors {
   const e: ReferralErrors = {};
   if (d.name.trim().length < 2) e.name = 'form.required';
+  else if (startsWithSymbol(d.name)) e.name = 'form.noLeadingSymbol';
   if (!d.partnerType) e.partnerType = 'form.required';
   if (d.partnerType === 'individual' && !d.individualKind) e.individualKind = 'form.required';
   if (d.partnerType === 'business') {
     if (!d.businessType) e.businessType = 'form.required';
     if (d.businessName.trim().length < 2) e.businessName = 'form.required';
+    else if (startsWithSymbol(d.businessName)) e.businessName = 'form.noLeadingSymbol';
   }
   if (!d.area) e.area = 'form.required';
   if (!isPincode(d.pincode)) e.pincode = 'form.pincodeInvalid';

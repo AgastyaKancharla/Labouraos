@@ -104,6 +104,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
 | `UNDER_REVIEW` | 409 | The person's details are being checked by Laboura's team: the ID check and the ₹499 wait (including a ₹499 request already sent; its public summary has `underReview: true` and `pay: null`). Show the message as it comes ("being checked … we will call you"); never a ban |
 | `RECONSENT_REQUIRED` | 409 | Accept the updated terms first (§7.4): paying, ID checks, interview bookings and accepting an offer wait until then. `documentKey`, `currentVersion`, `acceptedVersion` included |
+| `TEXT_STARTS_WITH_SYMBOL` | 400 | A name, business name or locality starts with `=`, `+`, `-` or `@` (it would run as a spreadsheet formula in a CSV download). `field` names the field; the app shows its own words (`error.textStartsWithSymbol`). Every route, staff and customer |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
 | `OTP_PAUSED` | 503 | System-wide code limit reached (abuse protection): show "Try again later or call Laboura" |

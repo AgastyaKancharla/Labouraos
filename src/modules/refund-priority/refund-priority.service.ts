@@ -10,6 +10,7 @@ import { NotificationDraft, NotificationService } from '../notification/notifica
 import { NotificationSourcesService } from '../notification/notification-sources.service';
 import { DirectoryRow } from '../notification/staff-directory';
 import { formatINR } from '../../common/money/money';
+import { csvLine } from '../../common/csv/csv-cell';
 import {
   DAY_MS,
   OFFER_STATUSES,
@@ -345,13 +346,7 @@ export class RefundPriorityService {
       lines.push(line);
     }
     const [head, ...body] = lines;
-    return [head, ...maskCsvPhoneColumns(head, body, actor.role)].map((cells) => cells.map((cell) => this.csvCell(cell)).join(',')).join('\n') + '\n';
-  }
-
-  private csvCell(value: string): string {
-    // A leading =, +, - or @ would run as a formula in Excel.
-    const safe = /^[=+\-@]/.test(value) ? `'${value}` : value;
-    return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
+    return [head, ...maskCsvPhoneColumns(head, body, actor.role)].map((cells) => csvLine(cells)).join('\n') + '\n';
   }
 
   private shape(row: PriorityRow, scope: Scope): PriorityRow {

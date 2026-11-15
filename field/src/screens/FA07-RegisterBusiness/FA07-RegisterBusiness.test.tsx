@@ -143,5 +143,10 @@ describe('FA07 Register a business', () => {
     expect(body).not.toHaveProperty('fieldVisitId');
     expect(formErrors(form, () => undefined)).toEqual([]);
     expect(formErrors({ ...form, familyName: '' }, () => undefined)).toContain('familyName');
+    // INF-6: a name that starts like a spreadsheet formula is refused, with its own message.
+    expect(formErrors({ ...form, boardName: '=HYPERLINK("x")' }, () => undefined)).toEqual(expect.arrayContaining(['boardName', 'boardNameSymbol']));
+    expect(formErrors({ ...form, contactName: '@Lakshmi' }, () => undefined)).toContain('contactNameSymbol');
+    expect(formErrors({ ...form, familyName: '+Rao' }, () => undefined)).toContain('familyNameSymbol');
+    expect(formErrors({ ...form, boardName: 'A+ Tailors' }, () => undefined)).toEqual([]);
   });
 });

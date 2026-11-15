@@ -8,6 +8,14 @@ export function isMobile(digits: string): boolean {
   return /^[6-9]\d{9}$/.test(digits);
 }
 
+/**
+ * Names and localities may not start with = + - or @: in a spreadsheet such a
+ * value runs as a formula (the server refuses it too: TEXT_STARTS_WITH_SYMBOL).
+ */
+export function startsWithSymbol(value: string): boolean {
+  return /^[=+\-@]/.test(value.trimStart());
+}
+
 export function isPincode(value: string): boolean {
   return /^[1-9]\d{5}$/.test(value.trim());
 }
