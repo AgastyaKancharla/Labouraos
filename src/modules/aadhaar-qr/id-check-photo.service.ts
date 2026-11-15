@@ -100,12 +100,25 @@ export class IdCheckPhotoService {
       where: { subjectType, subjectId, photoPath: { not: null } },
       select: { id: true, photoPath: true, verificationId: true },
     });
+    // A newer check never takes the photo of one still waiting for its decision (L-3): that photo
+    // stays until the decision or the 30 days.
+    const keep = reason === 'replaced' ? await this.pendingVerificationIds(subjectType, rows.map((r) => r.verificationId)) : new Set<string>();
     let deleted = 0;
     for (const row of rows) {
-      if (row.verificationId === exceptVerificationId) continue;
+      if (row.verificationId === exceptVerificationId || keep.has(row.verificationId)) continue;
       if (await this.deleteOne(row, reason, actorId, subjectType, now)) deleted += 1;
     }
     return deleted;
+  }
+
+  private async pendingVerificationIds(subjectType: string, ids: string[]): Promise<Set<string>> {
+    if (!ids.length) return new Set();
+    const where = { id: { in: ids }, status: 'pending' };
+    const rows =
+      subjectType === 'referral'
+        ? await this.prisma.referralIdentityVerification.findMany({ where, select: { id: true } })
+        : await this.prisma.identityVerification.findMany({ where, select: { id: true } });
+    return new Set(rows.map((r) => r.id));
   }
 
   /**
@@ -126,12 +139,23 @@ export class IdCheckPhotoService {
       if (row.kind === 'id_card_photo') await this.closeExpiredCheck(row.subjectType, row.verificationId, now);
       if (await this.deleteOne(row, 'expired', 'system', row.subjectType, now)) deleted += 1;
     }
+    // Pending other IDs whose card photo is already gone (nothing to compare): closed too.
+    for (const [subjectType, pending] of [
+      ['job_seeker', await this.prisma.identityVerification.findMany({ where: { status: 'pending', vendor: 'team_lead_check' }, select: { id: true }, take: 500 })],
+      ['referral', await this.prisma.referralIdentityVerification.findMany({ where: { status: 'pending', vendor: 'team_lead_check' }, select: { id: true }, take: 500 })],
+    ] as const) {
+      if (!pending.length) continue;
+      const withPhoto = new Set(
+        (await this.prisma.idCheckDetail.findMany({ where: { verificationId: { in: pending.map((p) => p.id) }, photoPath: { not: null } }, select: { verificationId: true } })).map((d) => d.verificationId),
+      );
+      for (const row of pending) if (!withPhoto.has(row.id)) await this.closeExpiredCheck(subjectType, row.id, now);
+    }
     return deleted;
   }
 
   private async closeExpiredCheck(subjectType: string, verificationId: string, now: Date): Promise<void> {
     const where = { id: verificationId, status: 'pending', vendor: 'team_lead_check' };
-    const data = { status: 'failed', failureReason: ID_PHOTO_EXPIRED_REASON };
+    const data = { status: 'failed', failureReason: ID_PHOTO_EXPIRED_REASON, last4: null };
     const changed =
       subjectType === 'referral'
         ? await this.prisma.referralIdentityVerification.updateMany({ where, data })

@@ -119,7 +119,7 @@ function table(rows: Row[] = [], defaults: () => Row = () => ({})) {
   };
 }
 
-export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consents?: Row[]; teamLeadChecks?: Row[]; staff?: Row[] } = {}) {
+export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consents?: Row[]; teamLeadChecks?: Row[]; staff?: Row[]; signupTrackers?: Row[] } = {}) {
   const locks: string[] = [];
   const db = {
     jobSeeker: table(seed.jobSeekers),
@@ -132,6 +132,7 @@ export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consen
     reviewFlag: table([], () => ({ raisedAt: new Date() })),
     teamLeadCheck: table(seed.teamLeadChecks),
     staff: table(seed.staff),
+    signupTracker: table(seed.signupTrackers),
     auditLog: table(),
     idCaptureNonce: table([], () => ({ usedAt: null, staffId: null })),
     /** The advisory-lock keys taken (pg_advisory_xact_lock), in order. */

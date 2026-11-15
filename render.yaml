@@ -248,6 +248,13 @@ services:
         sync: false
       - key: PROCESS_ROLE
         value: worker
+      # Which setup this is ("live" or "test"), the same as on the web service: the worker
+      # checks the UIDAI certificates at start-up too (UIDAI_CERT_FINGERPRINTS above).
+      - key: LABOURA_SETUP
+        fromService:
+          type: web
+          name: laboura-api
+          envVarKey: LABOURA_SETUP
       - key: DATABASE_URL
         fromService:
           type: web

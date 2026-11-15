@@ -2,6 +2,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { TrustedKey, trustedKeyFromPem } from './secure-qr.parser';
 import { isTestSetup } from '../../common/customer-auth/customer-otp-test-mode';
+import { anyLiveVendor } from '../../common/otp/otp-test-mode';
 
 /**
  * UIDAI's public certificates for the Aadhaar Secure QR check, committed in
@@ -64,14 +65,19 @@ function normaliseFingerprint(value: string): string {
  * must list exactly the certificates in ./certs. So a certificate can't be
  * added, swapped or left unconfirmed without someone writing its fingerprint
  * into the live settings. The test setup (LABOURA_SETUP=test, made-up data
- * only — render.free.yaml) doesn't need the setting. Does nothing outside
- * production.
+ * only — render.free.yaml) doesn't need the setting, unless a real vendor is
+ * configured (then it is not a test setup). Every loaded key must be a
+ * certificate with a fingerprint. Does nothing outside production.
  */
 export function assertUidaiCertificatesPinned(env: NodeJS.ProcessEnv = process.env, dir: string = UIDAI_CERTIFICATE_DIR): void {
   if (env.NODE_ENV !== 'production') return;
   const keys = loadUidaiCertificates(dir);
   if (!keys.length) throw new Error(`Refusing to start in production: no UIDAI certificate loaded from ${dir} (the Aadhaar QR check would call every card tampered)`);
-  if (isTestSetup(env)) return;
+  // Only X.509 certificates (each has a fingerprint to confirm); a bare public key can't be pinned.
+  const unpinnable = keys.filter((k) => !k.fingerprint256).map((k) => k.name);
+  if (unpinnable.length) throw new Error(`Refusing to start in production: ${unpinnable.join(', ')} in ${dir} is not an X.509 certificate with a fingerprint`);
+  // The test setup (made-up data) doesn't pin — but never once a real vendor is configured.
+  if (isTestSetup(env) && !anyLiveVendor(env)) return;
   const setting = (env[UIDAI_CERT_FINGERPRINTS_SETTING] ?? '').trim();
   const loaded = keys.map((k) => k.fingerprint256).filter((f): f is string => Boolean(f)).map(normaliseFingerprint).sort();
   const pinned = [...new Set(setting.split(',').map((f) => normaliseFingerprint(f)).filter(Boolean))].sort();

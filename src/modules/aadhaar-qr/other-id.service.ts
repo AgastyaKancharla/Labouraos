@@ -5,7 +5,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 import { AuditService } from '../../common/audit/audit.service';
 import { assertNoRawAadhaar } from '../job-seeker/job-seeker.validator';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
-import { IdCheckPhotoService } from './id-check-photo.service';
+import { ID_PHOTO_EXPIRED_REASON, IdCheckPhotoService } from './id-check-photo.service';
 import { CARD_PHOTO_MESSAGES, checkCardPhoto } from './id-card-image';
 import { AADHAAR_ONLY_BY_QR, isOtherIdMethod, OTHER_ID_METHODS, OtherIdMethod } from './id-methods';
 import { OtherIdApprovalService, OtherIdSubjectType } from './other-id-approval.service';
@@ -23,7 +23,7 @@ export const CAPTURE_NONCE_TTL_SECONDS = 120;
 export const CAPTURE_NONCE_MESSAGE = 'The camera was open too long, or this photo was already sent. Take the photo of the card again.';
 export const ID_REPLACED_REASON = 'Replaced by a newer photo of the card';
 export const PHOTO_NOT_SAVED_REASON = 'The photo of the card could not be saved';
-export const PHOTO_GONE_MESSAGE = 'The photo of the card is no longer kept (it expired or was deleted), so it cannot be approved. The person is asked for a new photo.';
+export const PHOTO_GONE_MESSAGE = 'The photo of the card is no longer kept (it expired or was deleted), so it cannot be approved. The check is closed and the person is asked for a new photo.';
 export const OPEN_PHOTO_FIRST_MESSAGE = 'Open the photos first: compare the card with the live selfie before approving it.';
 export const ALREADY_DECIDED_MESSAGE = 'Someone has just decided this ID. Reload the page.';
 
@@ -181,7 +181,8 @@ export class OtherIdService {
     // One submission at a time per person; a newer photo closes any older pending one.
     await this.prisma.$transaction(async (tx) => {
       await tx.$executeRaw(Prisma.sql`SELECT pg_advisory_xact_lock(hashtext(${`other-id:${subject.type}:${subject.id}`}))`);
-      const replaced = { status: 'failed', failureReason: ID_REPLACED_REASON };
+      // A failed check keeps only its result (owner rule): no last 4.
+      const replaced = { status: 'failed', failureReason: ID_REPLACED_REASON, last4: null };
       if (subject.type === 'job_seeker') {
         await tx.identityVerification.updateMany({ where: { jobSeekerId: subject.id, status: 'pending', vendor: 'team_lead_check' }, data: replaced });
         await tx.identityVerification.create({ data: { ...row, jobSeekerId: subject.id } });
@@ -231,7 +232,7 @@ export class OtherIdService {
   }
 
   private async closeAsFailed(subjectType: OtherIdSubjectType, verificationId: string, reason: string): Promise<void> {
-    const data = { status: 'failed', failureReason: reason };
+    const data = { status: 'failed', failureReason: reason, last4: null };
     const where = { id: verificationId, status: 'pending' };
     if (subjectType === 'job_seeker') await this.prisma.identityVerification.updateMany({ where, data });
     else await this.prisma.referralIdentityVerification.updateMany({ where, data });
@@ -265,12 +266,26 @@ export class OtherIdService {
       if (!right.allowed) throw new ForbiddenException(right.reason);
       if (verdict === 'ok') {
         const detail = await this.prisma.idCheckDetail.findUnique({ where: { verificationId: pending.id }, select: { photoPath: true } });
-        if (!detail?.photoPath) throw new ConflictException(PHOTO_GONE_MESSAGE);
+        if (!detail?.photoPath) {
+          // Nothing left to compare: the check closes (the person is asked for a new photo) instead of
+          // staying pending, unapprovable, until the 30 days run out.
+          await this.closeAsFailed(subjectType, pending.id, ID_PHOTO_EXPIRED_REASON);
+          await this.audit.log({
+            actorId: actor.id,
+            action: 'identity.other_id_expired',
+            entityType: subjectType === 'referral' ? 'referral_identity_verification' : 'identity_verification',
+            entityCode: pending.id,
+            before: { status: 'pending' },
+            after: { status: 'failed', reason: 'photo_gone' },
+            changedFields: ['status'],
+          });
+          throw new ConflictException(PHOTO_GONE_MESSAGE);
+        }
         if (!(await this.idPhotos.hasViewedPhoto(actor.id, subjectType, subject.code, pending.id, pending.createdAt))) throw new BadRequestException(OPEN_PHOTO_FIRST_MESSAGE);
       }
       const data = verdict === 'ok'
         ? { status: 'verified', nameMatches: true, isAdult: true, verifiedAt: now, failureReason: null }
-        : { status: 'failed', nameMatches: null, isAdult: null, verifiedAt: null, failureReason: 'Rejected by the Team Lead' };
+        : { status: 'failed', nameMatches: null, isAdult: null, verifiedAt: null, failureReason: 'Rejected by the Team Lead', last4: null };
       // Only a row still pending changes: two decisions at once can't both win.
       const where = { id: pending.id, status: 'pending' };
       const changed =
@@ -285,7 +300,8 @@ export class OtherIdService {
         entityType: subjectType === 'referral' ? 'referral_identity_verification' : 'identity_verification',
         entityCode: pending.id,
         before: { status: 'pending' },
-        after: { status: otherIdDecided, method: pending.method, idNumberLast4: pending.last4, approverRole: actor.role, approvalMode: right.mode },
+        // A rejected ID keeps only its result: its last 4 isn't written here either.
+        after: { status: otherIdDecided, method: pending.method, ...(verdict === 'ok' ? { idNumberLast4: pending.last4 } : {}), approverRole: actor.role, approvalMode: right.mode },
         changedFields: ['status'],
       });
       // The "waiting for a Manager" flag is done with; it comes off the bells too.

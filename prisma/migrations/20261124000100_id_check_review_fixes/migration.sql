@@ -7,6 +7,11 @@ UPDATE "IdentityVerification" SET "last4" = NULL, "vendorReference" = NULL, "qrI
 UPDATE "ReferralIdentityVerification" SET "last4" = NULL, "vendorReference" = NULL, "qrIssuedAt" = NULL
   WHERE "method" = 'aadhaar_qr' AND "vendor" = 'uidai_secure_qr' AND "status" <> 'verified';
 
+-- The same for another ID (PAN, driving licence, voter ID) that was rejected, replaced or expired:
+-- a failed check keeps no part of the number.
+UPDATE "IdentityVerification" SET "last4" = NULL WHERE "vendor" = 'team_lead_check' AND "status" = 'failed';
+UPDATE "ReferralIdentityVerification" SET "last4" = NULL WHERE "vendor" = 'team_lead_check' AND "status" = 'failed';
+
 -- Failed signatures on recent QR codes (an early UIDAI key change shows up across many people).
 ALTER TABLE "AadhaarQrAttempt" ADD COLUMN "recentQr" BOOLEAN;
 CREATE INDEX "AadhaarQrAttempt_outcome_attemptedAt_idx" ON "AadhaarQrAttempt"("outcome", "attemptedAt");

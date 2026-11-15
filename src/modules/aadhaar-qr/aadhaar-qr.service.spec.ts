@@ -797,14 +797,16 @@ describe('Fable re-check of PR #135 (rev 169 and the review fixes)', () => {
       expect((await otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-1'), NOW)).otherIdDecided).toBe('verified');
     });
 
-    it('a pending check whose photo is gone cannot be approved (409); it can still be rejected', async () => {
+    it('L-3: a pending check whose photo is gone cannot be approved (409) and is closed at once: the person is asked for a new photo', async () => {
       const { otherIds, card, viewPhoto, prisma } = setup();
       await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW });
       await viewPhoto('tl-1');
       prisma.idCheckDetail.rows[0]!.photoPath = null;
-      await expect(otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-1'), NOW)).rejects.toThrow(PHOTO_GONE_MESSAGE);
       await expect(otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-1'), NOW)).rejects.toBeInstanceOf(ConflictException);
-      expect((await otherIds.recordDecision('job_seeker', 'js-1', 'fake', tl('tl-1'), NOW)).otherIdDecided).toBe('failed');
+      expect(prisma.identityVerification.rows[0]).toMatchObject({ status: 'failed', failureReason: ID_PHOTO_EXPIRED_REASON, last4: null });
+      // Not pending forever: nothing is left to decide.
+      expect((await otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-1'), NOW)).otherIdDecided).toBeNull();
+      expect(PHOTO_GONE_MESSAGE).toMatch(/closed and the person is asked for a new photo/);
     });
 
     it('a card photo that expires before a decision closes the check as failed; the person is asked for a new photo', async () => {
@@ -980,5 +982,113 @@ describe('Fable re-check of PR #135 (rev 169 and the review fixes)', () => {
     const { service, otherIds } = setup();
     await service.checkJobSeeker('js-1', qr({ dob: '15-11-2008' }), { channel: 'link', now: NOW });
     await expect(otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-1'), NOW)).rejects.toBeInstanceOf(BadRequestException);
+  });
+});
+
+describe('Fable final re-check (round 6)', () => {
+  const tl = (id: string) => ({ id, role: 'team_lead' });
+  const since = new Date(NOW.getTime() - 7 * DAY_MS);
+
+  describe('M-A: a locked Team Lead counts for nothing', () => {
+    it('the city\'s only other Team Lead locked by a Manager: the Manager fallback works, and he can\'t decide', async () => {
+      const ctx = setup();
+      const seeker = ctx.prisma.jobSeeker.rows.find((r) => r.id === 'js-1')!;
+      seeker.registeredByStaffId = 'tl-1';
+      ctx.prisma.staff.rows.find((r) => r.id === 'tl-2')!.lockedByStaffId = 'manager-2';
+      await ctx.otherIds.submitForJobSeeker('js-1', await ctx.card(), { channel: 'link', now: NOW });
+      expect((await ctx.approvals.routeFor({ registeredByStaffId: 'tl-1', city: 'Bengaluru' })).mode).toBe('manager_or_ceo');
+      expect(ctx.flagCalls.some((f) => f.kind === 'other_id_needs_manager')).toBe(true);
+      expect(await ctx.approvals.waitingFor({ id: 'manager-1', role: 'manager' }, 'manager_or_ceo')).toEqual([{ subjectType: 'job_seeker', id: 'js-1' }]);
+      await ctx.viewPhoto('tl-2');
+      await expect(ctx.otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-2'), NOW)).rejects.toBeInstanceOf(ForbiddenException);
+      await ctx.viewPhoto('manager-1');
+      expect((await ctx.otherIds.recordDecision('job_seeker', 'js-1', 'ok', { id: 'manager-1', role: 'manager' }, NOW)).otherIdDecided).toBe('verified');
+    });
+
+    it('a lock that has run out (lockedUntil in the past) counts as unlocked; one still running does not', async () => {
+      const { approvals, prisma } = setup();
+      const tl2 = prisma.staff.rows.find((r) => r.id === 'tl-2')!;
+      tl2.lockedUntil = new Date(Date.now() + 3600_000);
+      expect((await approvals.routeFor({ registeredByStaffId: 'tl-1', city: 'Bengaluru' })).mode).toBe('manager_or_ceo');
+      tl2.lockedUntil = new Date(Date.now() - 3600_000);
+      expect((await approvals.routeFor({ registeredByStaffId: 'tl-1', city: 'Bengaluru' })).mode).toBe('another_team_lead');
+    });
+
+    it('the own Team Lead locked: his team\'s registrations go to another Team Lead of the city', async () => {
+      const { approvals, prisma } = setup();
+      prisma.staff.rows.find((r) => r.id === 'tl-1')!.lockedByStaffId = 'manager-1';
+      expect((await approvals.routeFor({ registeredByStaffId: 'agent-1', city: 'Bengaluru' })).mode).toBe('another_team_lead');
+      expect((await approvals.rightFor(tl('tl-1'), { registeredByStaffId: 'agent-1', city: 'Bengaluru' })).allowed).toBe(false);
+    });
+  });
+
+  describe('app self-registrations (#144 + rev 169)', () => {
+    it('assigned to an agent: that agent\'s Team Lead (own team); nobody else of the city', async () => {
+      const ctx = setup();
+      const seeker = ctx.prisma.jobSeeker.rows.find((r) => r.id === 'js-1')!;
+      seeker.registeredByStaffId = null;
+      ctx.prisma.signupTracker.rows.push({ id: 'st-1', subjectType: 'job_seeker', subjectId: 'js-1', assignedStaffId: 'agent-2', updatedAt: NOW });
+      const subject = { registeredByStaffId: null, city: 'Bengaluru', id: 'js-1', subjectType: 'job_seeker' as const };
+      expect(await ctx.approvals.routeFor(subject)).toMatchObject({ mode: 'own_team', ownTeamLead: 'tl-2', ownerStaffId: 'agent-2' });
+      expect((await ctx.approvals.rightFor(tl('tl-2'), subject)).allowed).toBe(true);
+      expect((await ctx.approvals.rightFor(tl('tl-1'), subject)).allowed).toBe(false);
+      expect(await ctx.approvals.uncheckedRegistrationsFor(tl('tl-1'), 'another_team_lead', since)).toEqual([]);
+      // Its other ID is decided by tl-2 only.
+      await ctx.otherIds.submitForJobSeeker('js-1', await ctx.card(), { channel: 'link', now: NOW });
+      await ctx.viewPhoto('tl-1');
+      await expect(ctx.otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-1'), NOW)).rejects.toBeInstanceOf(ForbiddenException);
+      await ctx.viewPhoto('tl-2');
+      expect((await ctx.otherIds.recordDecision('job_seeker', 'js-1', 'ok', tl('tl-2'), NOW)).otherIdDecided).toBe('verified');
+    });
+
+    it('unassigned: no team — another active Team Lead of the city, else that city\'s Manager or the CEO', async () => {
+      const ctx = setup();
+      ctx.prisma.jobSeeker.rows.find((r) => r.id === 'js-1')!.registeredByStaffId = null;
+      const subject = { registeredByStaffId: null, city: 'Bengaluru', id: 'js-1', subjectType: 'job_seeker' as const };
+      expect((await ctx.approvals.routeFor(subject)).mode).toBe('another_team_lead');
+      expect(await ctx.approvals.uncheckedRegistrationsFor(tl('tl-1'), 'another_team_lead', since)).toContain('js-1');
+      expect(await ctx.approvals.uncheckedRegistrationsFor(tl('tl-2'), 'another_team_lead', since)).toContain('js-1');
+      for (const id of ['tl-1', 'tl-2']) ctx.prisma.staff.rows.find((r) => r.id === id)!.status = 'deactivated';
+      expect((await ctx.approvals.routeFor(subject)).mode).toBe('manager_or_ceo');
+      expect(await ctx.approvals.uncheckedRegistrationsFor({ id: 'manager-1', role: 'manager' }, 'manager_or_ceo', since)).toContain('js-1');
+    });
+  });
+
+  describe('L-3 / L-4: pending photos and failed other IDs', () => {
+    it('a verified Aadhaar QR never deletes the card photo of an other ID still waiting for its decision', async () => {
+      const { otherIds, service, card, prisma, storage } = setup();
+      await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW });
+      const cardPath = prisma.idCheckDetail.rows[0]!.photoPath as string;
+      expect((await service.checkJobSeeker('js-1', qr(), { channel: 'link', now: NOW })).result).toBe('verified');
+      expect(storage.has(cardPath)).toBe(true);
+      expect(prisma.idCheckDetail.rows[0]).toMatchObject({ photoPath: cardPath, photoDeletedAt: null });
+    });
+
+    it('the daily run closes a pending other ID that has no photo left', async () => {
+      const { otherIds, card, photos, prisma } = setup();
+      await otherIds.submitForJobSeeker('js-1', await card(), { channel: 'link', now: NOW });
+      prisma.idCheckDetail.rows[0]!.photoPath = null;
+      await photos.deleteExpiredPhotos(NOW);
+      expect(prisma.identityVerification.rows[0]).toMatchObject({ status: 'failed', failureReason: ID_PHOTO_EXPIRED_REASON, last4: null });
+    });
+
+    it('a rejected, replaced or expired other ID keeps no last 4 (and the rejection audit doesn\'t carry it)', async () => {
+      const rejected = setup();
+      await rejected.otherIds.submitForJobSeeker('js-1', await rejected.card(), { channel: 'link', now: NOW });
+      await rejected.otherIds.recordDecision('job_seeker', 'js-1', 'fake', tl('tl-1'), NOW);
+      expect(rejected.prisma.identityVerification.rows[0]).toMatchObject({ status: 'failed', last4: null });
+      expect(JSON.stringify(rejected.auditCalls.find((a) => a.action === 'identity.other_id_rejected'))).not.toContain('234F');
+
+      const replaced = setup();
+      await replaced.otherIds.submitForJobSeeker('js-1', await replaced.card(), { channel: 'link', now: NOW });
+      await replaced.otherIds.submitForJobSeeker('js-1', await replaced.card({ idType: 'voter_id', idNumber: 'ABC1234567' }), { channel: 'link', now: NOW });
+      expect(replaced.prisma.identityVerification.rows[0]).toMatchObject({ status: 'failed', failureReason: 'Replaced by a newer photo of the card', last4: null });
+      expect(replaced.prisma.identityVerification.rows[1]).toMatchObject({ status: 'pending', last4: '4567' });
+
+      const expired = setup();
+      await expired.otherIds.submitForJobSeeker('js-1', await expired.card(), { channel: 'link', now: NOW });
+      await expired.photos.deleteExpiredPhotos(new Date(NOW.getTime() + 30 * DAY_MS));
+      expect(expired.prisma.identityVerification.rows[0]).toMatchObject({ status: 'failed', last4: null });
+    });
   });
 });

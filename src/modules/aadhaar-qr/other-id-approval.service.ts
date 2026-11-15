@@ -183,8 +183,8 @@ export class OtherIdApprovalService {
       this.prisma.referral.findMany({ where: { ...cityWhere, ...notMine, anonymisedAt: null, identityVerifications: { some: pendingWhere } }, select }),
     ]);
     const candidates: Candidate[] = [
-      ...seekers.map((r) => ({ subjectType: 'job_seeker' as const, id: r.id, city: r.city, registeredByStaffId: r.registeredByStaffId, waitingSince: r.identityVerifications[0]?.createdAt ?? new Date(0) })),
-      ...referrals.map((r) => ({ subjectType: 'referral' as const, id: r.id, city: r.city, registeredByStaffId: r.registeredByStaffId, waitingSince: r.identityVerifications[0]?.createdAt ?? new Date(0) })),
+      ...seekers.map((r) => ({ subjectType: 'job_seeker' as const, id: r.id, city: r.city, registeredByStaffId: r.registeredByStaffId, waitingSince: r.identityVerifications?.[0]?.createdAt ?? new Date(0) })),
+      ...referrals.map((r) => ({ subjectType: 'referral' as const, id: r.id, city: r.city, registeredByStaffId: r.registeredByStaffId, waitingSince: r.identityVerifications?.[0]?.createdAt ?? new Date(0) })),
     ];
     return (await this.pick(actor, mode, candidates, 50)).map((c) => ({ subjectType: c.subjectType, id: c.id }));
   }

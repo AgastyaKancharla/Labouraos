@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync } from 'node:fs';
+import { generateKeyPairSync } from 'node:crypto';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { assertUidaiCertificatesPinned, loadUidaiCertificates } from './uidai-certificates';
@@ -37,6 +38,23 @@ describe('UIDAI certificate boot check (production)', () => {
   it('starts when the confirmed fingerprints match (any order, case or separators)', () => {
     expect(() => assertUidaiCertificatesPinned(prod({ UIDAI_CERT_FINGERPRINTS: [...pinned].reverse().join(', ') }))).not.toThrow();
     expect(() => assertUidaiCertificatesPinned(prod({ UIDAI_CERT_FINGERPRINTS: pinned.map((f) => f.replace(/:/g, '').toLowerCase()).join(',') }))).not.toThrow();
+  });
+
+  it('L-2: the test-setup exemption ends as soon as a real vendor is configured', () => {
+    expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'test', OTP_PROVIDER_MODE: 'real' }))).toThrow(/not set/);
+    expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'test', PAYMENT_PROVIDER_MODE: 'real' }))).toThrow(/not set/);
+    expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'test', OTP_PROVIDER_MODE: 'real', UIDAI_CERT_FINGERPRINTS: pinned.join(',') }))).not.toThrow();
+  });
+
+  it('L-1: refuses a key that is not a certificate with a fingerprint (a bare public key can\'t be pinned)', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'uidai-bare-'));
+    try {
+      const { publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+      writeFileSync(join(dir, 'bare.pem'), publicKey.export({ type: 'spki', format: 'pem' }) as string);
+      expect(() => assertUidaiCertificatesPinned(prod({ LABOURA_SETUP: 'test' }), dir)).toThrow(/bare\.pem .* not an X\.509 certificate/);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('the test setup (LABOURA_SETUP=test, made-up data only) is not pinned, but still needs a certificate', () => {
