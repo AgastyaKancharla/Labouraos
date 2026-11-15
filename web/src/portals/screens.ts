@@ -16,6 +16,8 @@ export const ceoScreens: readonly ScreenDef[] = [
   { id: 'C-Referrals', path: 'referrals', title: 'screen.C-Referrals' },
   { id: 'C-Partner', path: 'referrals/:id', title: 'screen.C-Partner' },
   { id: 'C-Businesses', path: 'businesses', title: 'screen.C-Businesses' },
+  // Customer app (proposal 4.4): every app sign-up, funnels by stage, kind and area.
+  { id: 'C-AppSignups', path: 'app-signups', title: 'screen.C-AppSignups' },
   { id: 'C-Biz-Pending', path: 'businesses/waiting', title: 'screen.C-Biz-Pending' },
   { id: 'C-Business', path: 'businesses/:id', title: 'screen.C-Business' },
   { id: 'C-Vacancies', path: 'vacancies', title: 'screen.C-Vacancies' },
@@ -81,6 +83,8 @@ export const managerScreens: readonly ScreenDef[] = [
   { id: 'C-Att-Person', path: 'attendance/person/:staffId', title: 'screen.C-Att-Person' },
   { id: 'MG-Targets', path: 'targets', title: 'screen.MG-Targets' },
   { id: 'MG-Pipeline', path: 'pipeline', title: 'screen.MG-Pipeline' },
+  // Customer app (proposal 4.4): app sign-ups as counts (no names, no money).
+  { id: 'MG-AppSignups', path: 'app-signups', title: 'screen.MG-AppSignups' },
   { id: 'MG-CallCenter', path: 'call-center', title: 'screen.MG-CallCenter' },
   { id: 'MG-FieldOps', path: 'field-ops', title: 'screen.MG-FieldOps' },
   { id: 'MG-Flags', path: 'flags', title: 'screen.MG-Flags' },
@@ -113,6 +117,8 @@ export const teamLeadScreens: readonly ScreenDef[] = [
   { id: 'T-Verify', path: 'verify', title: 'screen.T-Verify' },
   { id: 'T-Visits', path: 'visits', title: 'screen.T-Visits' },
   { id: 'T-Work', path: 'work', title: 'screen.T-Work' },
+  // Customer app (proposal 4.4): the team's app sign-ups, move one to another agent.
+  { id: 'T-AppSignups', path: 'app-signups', title: 'screen.T-AppSignups' },
   { id: 'T-LoginCodes', path: 'login-codes', title: 'screen.T-LoginCodes' },
   { id: 'T-Flags', path: 'flags', title: 'screen.T-Flags' },
   { id: 'T-Notifications', path: 'notifications', title: 'screen.T-Notifications' },

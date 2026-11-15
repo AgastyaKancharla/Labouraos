@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AppSignupBadgeFor } from '../../shared/AppSignupBadge';
 import { Link } from 'react-router-dom';
 import { Skeleton } from '../../../components/Skeleton';
 import { ErrorState } from '../../../components/ErrorState';
@@ -47,6 +48,7 @@ export function ProfileHeader({ profile }: { profile: Profile }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <h2 className="h1" style={{ margin: 0 }}>
           {profile.name}
+          <AppSignupBadgeFor type={profile.type} id={profile.id} />
         </h2>
         <div className="sub">{line.join(' · ')}</div>
       </div>

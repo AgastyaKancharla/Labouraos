@@ -14,8 +14,8 @@ import { formatDateKey, minutesOf } from '../_visits/format';
 import { outcomeKey } from '../_visits/labels';
 
 /**
- * FA05 — My visits: planned visits (verification visits and interviews to
- * attend), revisits that are due, and every visit done today with its proof
+ * FA05 — My visits: planned visits (verification visits, app sign-up visits
+ * for businesses that signed up in the Laboura app, and interviews to attend), revisits that are due, and every visit done today with its proof
  * (📷 board photo, + selfie), time and outcome. A visit still missing its
  * outcome or proof opens the step that is left. Data: GET /field-work/visits.
  */
@@ -42,30 +42,43 @@ export default function VisitsScreen() {
           <>
             <Card title={t('fa05.planned')} testID="fa05-planned">
               {q.data.planned.length === 0 ? <EmptyState compact message={t('fa05.noPlanned')} /> : null}
-              {q.data.planned.map((p, i) => (
-                <ListRow
-                  key={p.assignmentId}
-                  title={p.business.name}
-                  subtitle={
-                    p.interview
-                      ? `${formatDayIst(p.interview.startsAt)} ${formatTimeIst(p.interview.startsAt)} · ${p.interview.candidateName}`
-                      : [p.business.locality, p.business.code].filter(Boolean).join(' · ')
-                  }
-                  trailing={
-                    <StatusChip
-                      tone={p.purpose === 'verification' ? 'blue' : 'cyan'}
-                      label={p.purpose === 'verification' ? t('fa05.verification') : t('fa05.attendInterview')}
-                    />
-                  }
-                  onPress={() =>
-                    p.purpose === 'verification'
-                      ? router.push({ pathname: routes.visitVerify, params: { businessId: p.business.id, assignmentId: p.assignmentId } })
-                      : router.push(`${routes.business}/${p.business.id}`)
-                  }
-                  last={i === q.data.planned.length - 1}
-                  testID={`fa05-planned-${p.assignmentId}`}
-                />
-              ))}
+              {q.data.planned.map((p, i) => {
+                // An app sign-up's visit (business_signup) is its verification visit: the same steps.
+                const verify = p.purpose === 'verification' || p.purpose === 'business_signup';
+                const signup = p.purpose === 'business_signup';
+                return (
+                  <ListRow
+                    key={p.assignmentId}
+                    title={p.business.name}
+                    subtitle={
+                      p.interview
+                        ? `${formatDayIst(p.interview.startsAt)} ${formatTimeIst(p.interview.startsAt)} · ${p.interview.candidateName}`
+                        : [
+                            signup && p.requestedFor
+                              ? t('fa05.ownerPicked', { when: `${formatDayIst(p.requestedFor)} ${formatTimeIst(p.requestedFor)}` })
+                              : null,
+                            p.business.locality,
+                            p.business.code,
+                          ]
+                            .filter(Boolean)
+                            .join(' · ')
+                    }
+                    trailing={
+                      <StatusChip
+                        tone={signup ? 'green' : verify ? 'blue' : 'cyan'}
+                        label={signup ? t('fa05.signupVisit') : verify ? t('fa05.verification') : t('fa05.attendInterview')}
+                      />
+                    }
+                    onPress={() =>
+                      verify
+                        ? router.push({ pathname: routes.visitVerify, params: { businessId: p.business.id, assignmentId: p.assignmentId } })
+                        : router.push(`${routes.business}/${p.business.id}`)
+                    }
+                    last={i === q.data.planned.length - 1}
+                    testID={`fa05-planned-${p.assignmentId}`}
+                  />
+                );
+              })}
             </Card>
 
             <Card title={t('fa05.revisits')} testID="fa05-revisits">

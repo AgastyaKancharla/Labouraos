@@ -76,7 +76,7 @@ export function homeData(over: Partial<HomeData> = {}): HomeData {
       interviewsBooked: 1,
       teamAverage: { agents: 10, callsAnswered: 21, talkSeconds: 5400, registrations: 2, interviewsBooked: 1 },
     },
-    work: { items, counts: { all: 3, callbacks: 1, follow_ups: 0, offers: 1, new_leads: 0, priority: 1 } },
+    work: { items, counts: { all: 3, callbacks: 1, follow_ups: 0, offers: 1, new_leads: 0, priority: 1, app_signups: 0 } },
     month: {
       year: 2026,
       month: 11,

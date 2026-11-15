@@ -10,6 +10,7 @@ const FILTERS: Array<{ key: 'all' | Exclude<WorkCategory, 'priority'>; label: Me
   { key: 'follow_ups', label: 'ca.filter.followUps' },
   { key: 'offers', label: 'ca.filter.offers' },
   { key: 'new_leads', label: 'ca.filter.newLeads' },
+  { key: 'app_signups', label: 'ca.filter.appSignups' },
 ];
 
 /** "My work today" beside a profile or call (CA04, CA05 designs). Hidden on phones. */

@@ -8,6 +8,7 @@ import { staffInviteKn } from './staffInvite';
 import { referralTermsKn } from './referralTerms';
 import { referralPartnerKn } from './referralPartner';
 import { staffPhotoKn } from './staffPhoto';
+import { appSignupsKn } from './appSignups';
 import { callAgentKn } from '../screens/call-agent/_lib/i18n.kn';
 
 export const kn: Messages = {
@@ -605,6 +606,7 @@ export const kn: Messages = {
   ...referralTermsKn,
   ...referralPartnerKn,
   ...staffPhotoKn,
+  ...appSignupsKn,
   ...callAgentKn,
   ...payslipKn,
   ...attendanceKn,

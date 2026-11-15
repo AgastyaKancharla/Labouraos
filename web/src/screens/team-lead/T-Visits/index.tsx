@@ -49,7 +49,7 @@ const FLAG_TEXT: Record<string, string> = {
   visit_flagged: 'Flagged',
 };
 const OUTCOME: Record<string, string> = { onboarded: 'Signed up', interested_later: 'Call back', not_interested: 'Not interested', owner_not_there: 'Owner not there' };
-const PURPOSE: Record<string, string> = { verification: 'Owner asked for a visit (call)', follow_up: 'Follow-up · no vacancy yet' };
+const PURPOSE: Record<string, string> = { verification: 'Owner asked for a visit (call)', follow_up: 'Follow-up · no vacancy yet', business_signup: 'Signed up in the app · verification visit' };
 
 export default function TeamLeadVisits() {
   const to = useScreenPath();
@@ -116,7 +116,11 @@ function Assign({ assignment, agents }: { assignment: Assignment; agents: Brief[
   const toast = useToast();
   const qc = useQueryClient();
   const assign = useMutation({
-    mutationFn: () => api.post(`/businesses/${assignment.business.id}/visit-assignments/${assignment.id}/assign`, { assignedStaffId: agent }),
+    mutationFn: () =>
+      // A business that signed up in the Laboura app has no agent yet: its visit is confirmed through the sign-up route.
+      assignment.purpose === 'business_signup'
+        ? api.post(`/signup-tracker/visit-requests/${assignment.id}/assign`, { assignedStaffId: agent })
+        : api.post(`/businesses/${assignment.business.id}/visit-assignments/${assignment.id}/assign`, { assignedStaffId: agent }),
     onSuccess: () => {
       toast.success('Visit assigned');
       void qc.invalidateQueries({ queryKey: ['businesses', 'visit-assignments'] });

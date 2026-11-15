@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { SpokenLanguagesButton, useStaffLanguages } from './SpokenLanguages';
 import { StaffAvatar } from '../../../components/StaffAvatar';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
@@ -107,6 +108,7 @@ export default function Team() {
   const team = useTeam();
   const d = team.data;
   const options = d?.reportsToOptions ?? [];
+  const languages = useStaffLanguages();
 
   const bossChoices = (r: TeamRow) => {
     const role = bossRoleFor(r.role);
@@ -125,6 +127,7 @@ export default function Team() {
             <div className="ceo-cell-sub">
               {r.code}
               {r.ownerAccount ? ' · owner account' : ''}
+              {languages.byId.get(r.id)?.length ? ` · speaks ${languages.byId.get(r.id)!.join(', ')}` : ''}
               {r.signedIn ? ' · signed in now' : ''}
               {r.photoRetakeRequested ? ' · new photo asked' : ''}
             </div>
@@ -195,6 +198,9 @@ export default function Team() {
               run={() => api.put(`/staff/${r.id}/owner-account`, { ownerAccount: !r.ownerAccount })}
               success={r.ownerAccount ? `${r.name} is a normal agent again` : `${r.name} is now an owner account`}
             />
+          )}
+          {languages.loaded && r.state !== 'deactivated' && (
+            <SpokenLanguagesButton key={(languages.byId.get(r.id) ?? []).join(',')} id={r.id} name={r.name} current={languages.byId.get(r.id) ?? []} options={languages.options} />
           )}
           {r.state === 'invite_pending' && <ResendInvite row={r} />}
           {(r.state === 'active' || r.state === 'locked') && <PasswordResetButton id={r.id} name={r.name} />}

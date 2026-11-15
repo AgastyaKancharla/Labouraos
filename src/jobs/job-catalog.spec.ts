@@ -16,6 +16,7 @@ import { LABOURA_JOBS_QUEUE } from './job-queue';
 import { SHORTAGE_TASKS_QUEUE, SHORTAGE_TASKS_SWEEP } from './shortage-tasks.job';
 import { WEEKLY_REPORT_QUEUE, WEEKLY_REPORT_RUN } from './weekly-report.job';
 import { WIN_BACK_QUEUE, WIN_BACK_SWEEP } from './win-back.job';
+import { SIGNUP_TRACKER_QUEUE, SIGNUP_TRACKER_SWEEP } from './signup-tracker.job';
 import { RETENTION_JOB_NAME } from '../modules/retention/retention.service';
 
 describe('Job catalog: every repeating job, as plain data for the schedule keeper and /health/ready', () => {
@@ -38,6 +39,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       shortageTasks: [SHORTAGE_TASKS_QUEUE, SHORTAGE_TASKS_SWEEP],
       weeklyReport: [WEEKLY_REPORT_QUEUE, WEEKLY_REPORT_RUN],
       winBack: [WIN_BACK_QUEUE, WIN_BACK_SWEEP],
+      signupTracker: [SIGNUP_TRACKER_QUEUE, SIGNUP_TRACKER_SWEEP],
     };
     expect(Object.keys(byKey).sort()).toEqual(Object.keys(expected).sort());
     for (const [key, [queue, runName]] of Object.entries(expected)) {
@@ -61,6 +63,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       shortageTasks: SHORTAGE_TASKS_SWEEP,
       weeklyReport: WEEKLY_REPORT_RUN,
       winBack: WIN_BACK_SWEEP,
+      signupTracker: SIGNUP_TRACKER_SWEEP,
     };
     for (const entry of JOB_CATALOG) {
       expect({ key: entry.key, queue: entry.queue }).toEqual({ key: entry.key, queue: LABOURA_JOBS_QUEUE });
@@ -79,7 +82,7 @@ describe('Job catalog: every repeating job, as plain data for the schedule keepe
       .filter((f) => f.endsWith('.ts') && !f.endsWith('.spec.ts'))
       .map((f) => fs.readFileSync(path.join(dir, f), 'utf8'))
       .flatMap((src) => [...src.matchAll(/upsertJobScheduler\(\s*'([^']+)'/g)].map((m) => m[1]));
-    expect(ids.length).toBeGreaterThanOrEqual(14);
+    expect(ids.length).toBeGreaterThanOrEqual(15);
     expect(ids.sort()).toEqual(JOB_CATALOG.map((e) => e.schedulerId).sort());
   });
 
