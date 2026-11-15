@@ -323,7 +323,7 @@ token (no more notifications to it).
 
 Sensitive actions always need a fresh OTP to the account's verified mobile
 (proposal 3, point 5): `delete_account`, `payout_details`, `sign_agreement`,
-`interview_result`, `confirm_vacancy`. Registering a profile (§5) also needs a
+`interview_result`, `confirm_vacancy`, `accept_terms` (re-consent, §7.4). Registering a profile (§5) also needs a
 fresh OTP (purpose `register`), because the existing job seeker, business and
 referral services require an OTP-verified mobile for every registration (guide,
 Forms); for `register` the app sends the code in the registration body instead
@@ -701,6 +701,38 @@ never a phone number. `nextAction`: `sign_agreement`, `wait_for_visit`,
 - `share.link` (`PUBLIC_APP_URL` + `/r/<RF- code>`) is where a partner's QR
   points. **No page answers `/r/...` yet**: a landing page (store links, the code
   pre-filled) is still to be built in `web/`. `qrText` is what the app turns into a QR code.
+
+### 7.4 Terms, re-consent and suspension (legal documents, Master Guide rev 176)
+
+| Method and path | Auth | Status |
+| --- | --- | --- |
+| `GET /me/profiles/:profileId/legal?lang=kn` | 🔒 | A |
+| `POST /me/profiles/:profileId/legal/accept` | 🔒 + step-up `accept_terms` | A |
+
+Every home answer (§7.1–7.3) carries
+`"legal": { "documentKey": "job_seeker_terms", "currentVersion": "1.1", "acceptedVersion": "1.1" | null, "needsReconsent": false }`.
+When `needsReconsent` is true the app shows the blocking "We've updated our
+terms" screen before anything else. A business's branch manager is never
+blocked (only the owner signs); a business owner signs the new agreement on
+its `business_agreement` link (§6), so `accept` answers `409 NOT_ALLOWED` for a
+business.
+
+`GET …/legal` → `{ "status": { …as above, "noticeVersion", "currentNoticeVersion" }, "document": { "key", "version", "language", "title", "summary": ["…"], "summaryHtml", "bodyHtml", "hash", "noticeVersion", "consents": [{ "purpose", "required", "title", "description", "withdrawal" }] } }`.
+Show the "In short" (`summary`) first and the full text behind "Read the full
+terms"; the ticks are itemised and never pre-ticked.
+
+`POST …/legal/accept` `{ "purposes": ["job_matching", …], "language": "kn" }`
+after a step-up for `accept_terms` → `{ "success": true, "version": "1.1" }`.
+Every required purpose must be ticked (`400` otherwise). The server records the
+acceptance (version, language, the exact text's hash) and grants the consents
+under notice 1.2.
+
+A suspended business (D6) also gets
+`"suspension": { "until": "…" | null, "permanent": false, "reason": "…" }` on
+its home: show the banner; no new vacancies, candidates or interviews while it
+lasts. `GET /me` carries `grievanceContact` (the Grievance Officer line for
+the Privacy screen, in the account's language; "to be added after
+registration" until the CEO fills it in Settings).
 
 ---
 
