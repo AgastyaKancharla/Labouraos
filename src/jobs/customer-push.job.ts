@@ -7,6 +7,7 @@ import {
   CUSTOMER_PUSH_QUEUE,
   CUSTOMER_PUSH_SEND_NOW,
   RECEIPT_CHECK_DELAY_MS,
+  RECEIPT_CHECK_MAX_RETRIES,
 } from '../modules/customer-notification/customer-notification.constants';
 import { CustomerPushSenderService, PushTicketRef } from '../modules/customer-notification/customer-push-sender.service';
 import { JobHandler, jobQueue, startScheduledJob } from './job-queue';
@@ -17,6 +18,11 @@ import { INTERVAL_JOB_MS } from './job-schedules';
 export { CUSTOMER_PUSH_QUEUE };
 /** The scheduled round's job name (and its JobRun name). */
 export const CUSTOMER_PUSH_ROUND = 'send-due-customer-pushes';
+/** The CEO's "run now" goes into the queue under the round's name with this id (one waiting at a time). */
+export const CUSTOMER_PUSH_RUN_NOW_ID = 'customer-push-run-now';
+const RUN_NOW_TIMEOUT_MS = 3000;
+
+const RECEIPT_JOB_OPTS = { delay: RECEIPT_CHECK_DELAY_MS, attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: true, removeOnFail: 100 } as const;
 
 /**
  * Customer app pushes (Agent C). Every minute, and whenever a notification
@@ -67,8 +73,23 @@ export class CustomerPushJob implements OnModuleInit, OnModuleDestroy {
   /** The two one-off kinds of job: a "send now" kick and a receipt check. */
   async handleJob(job: Pick<Job, 'name' | 'data'>) {
     if (job.name === CUSTOMER_PUSH_CHECK_RECEIPTS) {
-      const tickets = Array.isArray((job.data as { tickets?: unknown })?.tickets) ? (job.data as { tickets: PushTicketRef[] }).tickets : [];
-      return this.sender.checkReceipts(tickets);
+      const data = (job.data ?? {}) as { tickets?: unknown; retry?: unknown };
+      // Only refs naming a phone row: never a raw token in the queue (privacy review L3).
+      const tickets = Array.isArray(data.tickets)
+        ? (data.tickets as PushTicketRef[]).filter((t) => t && typeof t.ticketId === 'string' && typeof t.deviceId === 'string')
+        : [];
+      const retry = typeof data.retry === 'number' ? data.retry : 0;
+      const outcome = await this.sender.checkReceipts(tickets);
+      // Receipts Expo has not produced yet: ask again later, a bounded number of times.
+      if (outcome.pending.length > 0 && retry < RECEIPT_CHECK_MAX_RETRIES) {
+        try {
+          await this.getQueue().add(CUSTOMER_PUSH_CHECK_RECEIPTS, { tickets: outcome.pending, retry: retry + 1 }, RECEIPT_JOB_OPTS);
+        } catch (error) {
+          this.logger.warn(`Could not book the next push receipt check: ${(error as Error).name}`);
+        }
+      }
+      const { pending, ...counts } = outcome;
+      return { ...counts, pending: pending.length };
     }
     if (job.name === CUSTOMER_PUSH_SEND_NOW) return this.process();
     return null;
@@ -93,17 +114,34 @@ export class CustomerPushJob implements OnModuleInit, OnModuleDestroy {
     const result = await this.sender.sendDue(now);
     if (result.tickets.length > 0) {
       try {
-        await this.getQueue().add(
-          CUSTOMER_PUSH_CHECK_RECEIPTS,
-          { tickets: result.tickets },
-          { delay: RECEIPT_CHECK_DELAY_MS, attempts: 3, backoff: { type: 'exponential', delay: 60_000 }, removeOnComplete: true, removeOnFail: 100 },
-        );
+        await this.getQueue().add(CUSTOMER_PUSH_CHECK_RECEIPTS, { tickets: result.tickets, retry: 0 }, RECEIPT_JOB_OPTS);
       } catch (error) {
         this.logger.warn(`Could not book the push receipt check: ${(error as Error).message}`);
       }
     }
     const { tickets, ...counts } = result;
     return { ...counts, tickets: tickets.length };
+  }
+
+  /**
+   * The CEO's "run now" (JobScheduleKeeper.run): queues one round for the
+   * worker instead of sending from the web process, so the daily cap is
+   * counted by the worker alone (privacy review M1). The round leaves its
+   * JobRun row as usual. Fails, without sending anything, if Redis does not answer.
+   */
+  async queueRunNow(): Promise<{ queued: true }> {
+    let timer: NodeJS.Timeout | undefined;
+    try {
+      await Promise.race([
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => reject(new Error('The job queue did not answer; try again in a minute')), RUN_NOW_TIMEOUT_MS);
+        }),
+        jobQueue.add(CUSTOMER_PUSH_ROUND, {}, { jobId: CUSTOMER_PUSH_RUN_NOW_ID, removeOnComplete: true, removeOnFail: true }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+    return { queued: true };
   }
 
   async onModuleInit(): Promise<void> {

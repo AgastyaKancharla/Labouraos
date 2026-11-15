@@ -1,6 +1,7 @@
 import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
+import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import {
   CUSTOMER_EVENTS,
   CUSTOMER_MESSAGE_SUBJECT,
@@ -21,7 +22,10 @@ import { CustomerPushKick } from './customer-push-kick';
  * this module finds the app accounts linked to it (CustomerProfile). A record
  * with no app account gets nothing and nothing fails.
  * - `businessId` without `branchId`: the business's owner-level people only.
- *   With `branchId`: those plus the managers of that branch.
+ *   With `branchId`: those plus the managers of that branch. Money events
+ *   (`businessOwnersOnly` in CUSTOMER_EVENTS) reach owners with no branch limit only.
+ * Every profile is checked with CustomerScopeService.stillMine first: one whose
+ * mobile was corrected, or that was anonymised, gets nothing (privacy review H1).
  */
 export type NotifyTarget =
   | { accountId: string; profileId?: string | null }
@@ -34,7 +38,13 @@ export interface NotifyOptions {
   urgent?: boolean;
   /** Goes out only with the promotions consent (Q22), whatever the event. */
   promotional?: boolean;
-  /** The person just did this (a receipt): sent at once, not counted in the cap. */
+  /**
+   * The person just did this themselves (a receipt), e.g. a card payment the
+   * gateway confirmed. Only for events that can be receipts, and only when the
+   * event reaches exactly one account (the payer; privacy review M3): sent at
+   * once even at night, not counted in the cap. A payment Finance or the bank
+   * feed confirmed is not the person's own action and waits for 9 AM.
+   */
   selfAction?: boolean;
   /**
    * One message per event: the same key (per account) never makes a second
@@ -94,6 +104,7 @@ export class CustomerNotificationService {
     private readonly prisma: PrismaService,
     private readonly settings: CustomerNotificationSettingsService,
     private readonly clock: CustomerNotificationClock,
+    private readonly scope: CustomerScopeService,
     @Optional() private readonly kicker?: CustomerPushKick,
   ) {}
 
@@ -102,13 +113,17 @@ export class CustomerNotificationService {
     if (!definition) throw new Error(`Unknown customer notification ${String(kind)}`);
     const category: CustomerNotificationCategory = options.promotional ? 'promotions' : definition.category;
     const priority: CustomerNotificationPriority = options.urgent ? 'urgent' : definition.priority;
-    const selfAction = options.selfAction ?? ('selfAction' in definition && definition.selfAction === true);
     // Fail before writing anything when a placeholder is missing.
     renderWording(kind, 'en', vars);
 
     const result: NotifyResult = { inbox: 0, queued: 0, held: 0, skipped: [] };
     const now = this.clock.now();
-    for (const recipient of await this.recipients(target)) {
+    const ownersOnly = 'businessOwnersOnly' in definition && definition.businessOwnersOnly === true;
+    const recipients = await this.recipients(target, ownersOnly);
+    // A receipt goes out at night only to the one person who did it. With
+    // several recipients the payer is not known, so nobody skips quiet hours.
+    const selfAction = options.selfAction === true && 'selfAction' in definition && definition.selfAction === true && recipients.length === 1;
+    for (const recipient of recipients) {
       const outcome = await this.deliverOne(recipient, kind, vars, { category, priority, selfAction, options, now });
       if (outcome === 'queued') {
         result.inbox += 1;
@@ -139,7 +154,7 @@ export class CustomerNotificationService {
     }
   }
 
-  private async recipients(target: NotifyTarget): Promise<Recipient[]> {
+  private async recipients(target: NotifyTarget, ownersOnly: boolean): Promise<Recipient[]> {
     const activeAccount = { status: 'active' } as const;
     let profiles: Prisma.CustomerProfileGetPayload<{ select: typeof PROFILE_SELECT }>[] = [];
     if ('accountId' in target) {
@@ -148,14 +163,14 @@ export class CustomerNotificationService {
         select: { id: true, language: true },
       });
       if (!account) return [];
-      if (target.profileId) {
-        const profile = await this.prisma.customerProfile.findFirst({
-          where: { id: target.profileId, accountId: account.id, status: 'active' },
-          select: PROFILE_SELECT,
-        });
-        if (profile) return [this.toRecipient(profile)];
-      }
-      return [{ accountId: account.id, language: account.language, profileId: null, subject: null }];
+      if (!target.profileId) return [{ accountId: account.id, language: account.language, profileId: null, subject: null }];
+      // A message about one profile goes only while that profile is still the account's.
+      const profile = await this.prisma.customerProfile.findFirst({
+        where: { id: target.profileId, accountId: account.id, status: 'active' },
+        select: PROFILE_SELECT,
+      });
+      if (!profile || !(await this.scope.stillMine(account.id, [profile.id])).has(profile.id)) return [];
+      return [this.toRecipient(profile)];
     }
     if ('jobSeekerId' in target) {
       profiles = await this.prisma.customerProfile.findMany({
@@ -169,17 +184,27 @@ export class CustomerNotificationService {
       });
     } else if ('businessId' in target) {
       profiles = await this.prisma.customerProfile.findMany({
-        where: {
-          businessId: target.businessId,
-          status: 'active',
-          account: activeAccount,
-          OR: target.branchId ? [{ branchId: null }, { branchId: target.branchId }] : [{ branchId: null }],
-        },
+        where: ownersOnly
+          ? { businessId: target.businessId, status: 'active', account: activeAccount, role: 'owner', branchId: null }
+          : {
+              businessId: target.businessId,
+              status: 'active',
+              account: activeAccount,
+              OR: target.branchId ? [{ branchId: null }, { branchId: target.branchId }] : [{ branchId: null }],
+            },
         select: PROFILE_SELECT,
       });
     }
+    // Still the account's? (number corrected or record anonymised: revoked, nothing sent.)
+    const byAccount = new Map<string, string[]>();
+    for (const p of profiles) byAccount.set(p.accountId, [...(byAccount.get(p.accountId) ?? []), p.id]);
+    const valid = new Set<string>();
+    for (const [accountId, ids] of byAccount) {
+      for (const id of await this.scope.stillMine(accountId, ids)) valid.add(id);
+    }
     const seen = new Set<string>();
     return profiles
+      .filter((p) => valid.has(p.id))
       .filter((p) => (seen.has(p.accountId) ? false : (seen.add(p.accountId), true)))
       .map((p) => this.toRecipient(p));
   }
@@ -210,17 +235,13 @@ export class CustomerNotificationService {
     const { category, priority, selfAction, options, now } = ctx;
     const settings = await this.settings.getOrCreate(recipient.accountId);
 
-    // Job updates and promotions are sent only with the switch on AND, for a
-    // job seeker, the matching consent still given (Q22).
+    // Job updates and promotions are sent only with the switch on AND the
+    // matching consent still given for every record it is about, whatever its
+    // kind (Q22; privacy review H4). The worker checks the consent again.
     if (category === 'promotions' || category === 'job_updates') {
       const switchOn = category === 'promotions' ? settings.promotions : settings.jobUpdates;
       if (!switchOn) return 'switched_off';
-      const purpose = category;
-      const subjects = recipient.subject ? [recipient.subject] : await this.settings.subjectsOf(recipient.accountId);
-      for (const subject of subjects.filter((s) => s.subjectType === 'job_seeker')) {
-        const live = await this.settings.liveConsents(subject);
-        if (!live.has(purpose)) return 'no_consent';
-      }
+      if (!(await this.settings.consentGiven(recipient.accountId, recipient.subject, category))) return 'no_consent';
     }
 
     const dedupeKey = options.dedupeKey ? `${options.dedupeKey}:${recipient.accountId}` : null;
@@ -231,12 +252,13 @@ export class CustomerNotificationService {
 
     const wording = renderWording(kind, recipient.language, vars);
     const pushable = await this.prisma.customerDevice.count({
-      where: pushableDevices(recipient.accountId),
+      where: pushableDevices(recipient.accountId, now),
     });
 
     let pushStatus: string;
     let scheduledFor: Date | null = null;
-    if (category === 'service' && !settings.service) {
+    // Service is on while a guarantee runs, even if switched off before it started (H3).
+    if (category === 'service' && !(await this.settings.serviceOn(recipient.accountId, settings, now))) {
       pushStatus = PUSH_STATUS.off;
     } else if (pushable === 0) {
       pushStatus = PUSH_STATUS.none;

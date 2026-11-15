@@ -21,9 +21,15 @@ export interface PushMessage {
   sound: 'default' | null;
 }
 
+/**
+ * One per message. `unsent`: the batch it was in never reached Expo (Expo down,
+ * timeout, batch refused), so it can be sent again; `error`: Expo took it and
+ * refused it (e.g. DeviceNotRegistered).
+ */
 export type PushTicket =
   | { status: 'ok'; id: string }
-  | { status: 'error'; message: string; error?: string };
+  | { status: 'error'; message: string; error?: string }
+  | { status: 'unsent'; reason: string };
 
 export type PushReceipt =
   | { status: 'ok' }
@@ -31,7 +37,11 @@ export type PushReceipt =
 
 export interface CustomerPushProvider {
   readonly mode: 'mock' | 'real';
-  /** One ticket per message, in the same order. Throws only when the whole request failed. */
+  /**
+   * One ticket per message, in the same order. A batch that fails gives
+   * `unsent` tickets for its messages only; the batches Expo accepted keep their
+   * tickets, so nothing Expo already took is sent twice (privacy review M2).
+   */
   send(messages: PushMessage[]): Promise<PushTicket[]>;
   /** Receipts for ticket ids; ids Expo has not processed yet are absent. */
   getReceipts(ids: string[]): Promise<Record<string, PushReceipt>>;
@@ -137,21 +147,31 @@ export class ExpoCustomerPushProvider implements CustomerPushProvider {
   async send(messages: PushMessage[]): Promise<PushTicket[]> {
     const tickets: PushTicket[] = [];
     for (const batch of chunk(messages, EXPO_SEND_BATCH)) {
-      const json = (await this.post(
-        EXPO_SEND_URL,
-        batch.map((m) => ({
-          to: m.to,
-          title: m.title,
-          body: m.body,
-          data: m.data,
-          channelId: m.channelId,
-          priority: m.priority,
-          sound: m.sound ?? undefined,
-        })),
-      )) as { data?: ExpoTicketJson[]; errors?: { message?: string }[] };
+      let json: { data?: ExpoTicketJson[]; errors?: { code?: string }[] };
+      try {
+        json = (await this.post(
+          EXPO_SEND_URL,
+          batch.map((m) => ({
+            to: m.to,
+            title: m.title,
+            body: m.body,
+            data: m.data,
+            channelId: m.channelId,
+            priority: m.priority,
+            sound: m.sound ?? undefined,
+          })),
+        )) as typeof json;
+      } catch (error) {
+        // Only this batch is unsent; the ones before it were accepted.
+        const reason = (error as Error).name === 'AbortError' ? 'timeout' : (error as Error).message;
+        for (let i = 0; i < batch.length; i += 1) tickets.push({ status: 'unsent', reason });
+        continue;
+      }
       if (!Array.isArray(json?.data) || json.data.length !== batch.length) {
-        const reason = json?.errors?.[0]?.message ?? 'unexpected answer';
-        throw new Error(`Expo push service refused the batch: ${reason}`);
+        // Expo's error code only: its messages can quote the tokens (privacy review L6).
+        const reason = `batch refused (${json?.errors?.[0]?.code ?? 'unexpected answer'})`;
+        for (let i = 0; i < batch.length; i += 1) tickets.push({ status: 'unsent', reason });
+        continue;
       }
       for (const ticket of json.data) {
         if (ticket.status === 'ok' && typeof ticket.id === 'string') {

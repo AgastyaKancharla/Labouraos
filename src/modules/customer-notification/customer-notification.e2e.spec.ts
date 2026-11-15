@@ -23,7 +23,7 @@ describe('Customer app notifications (API and database)', () => {
   let prisma: PrismaService;
   let tokens: CustomerTokenService;
   const stamp = `${Date.now()}`;
-  const accounts: { id: string; session: string }[] = [];
+  const accounts: { id: string; session: string; device: string }[] = [];
   let ceoId: string;
   // 11:00 IST: outside quiet hours whatever day CI runs.
   const at = new Date('2026-11-20T05:30:00.000Z');
@@ -41,15 +41,20 @@ describe('Customer app notifications (API and database)', () => {
       const account = await prisma.customerAccount.create({
         data: { phone: `+9197${stamp.slice(-7)}${n}`, phoneVerifiedAt: new Date(), createdVia: 'phone', language: n === 1 ? 'kn' : 'en' },
       });
+      // Every sign-in is tied to a phone; PUT /me/device works on that phone only.
+      const device = await prisma.customerDevice.create({
+        data: { accountId: account.id, installationId: `inst-${stamp}-${n === 1 ? 'a' : 'b'}`, platform: 'android' },
+      });
       const session = await prisma.customerSession.create({
         data: {
           accountId: account.id,
+          deviceId: device.id,
           refreshTokenHash: tokens.hashRefreshToken(`notify-${stamp}-${n}`),
           signedInWith: 'phone',
           expiresAt: new Date(Date.now() + 90 * 86_400_000),
         },
       });
-      accounts.push({ id: account.id, session: session.id });
+      accounts.push({ id: account.id, session: session.id, device: device.id });
     }
     const ceo = await prisma.staff.create({
       data: { code: `CEO-NTF-${stamp}`, name: 'Notify check CEO', email: `notify.${stamp}@laboura.local`, passwordHash: 'hash', role: 'ceo', status: 'active' },
@@ -82,6 +87,23 @@ describe('Customer app notifications (API and database)', () => {
       .send({ installationId: `inst-${stamp}-a`, platform: 'android', pushToken: 'not-a-token' })
       .expect(400);
     expect(bad.body).toMatchObject({ code: 'VALIDATION_FAILED', field: 'pushToken' });
+  });
+
+  it('never puts a token on another phone, and refuses a token held by another account\'s signed-in phone', async () => {
+    const otherPhone = await api()
+      .put('/customer-api/v1/me/device')
+      .set('Authorization', bearer(1))
+      .send({ installationId: `inst-${stamp}-a`, platform: 'android', pushToken: `ExponentPushToken[e2e-${stamp}-bbbb]` })
+      .expect(400);
+    expect(otherPhone.body).toMatchObject({ code: 'VALIDATION_FAILED', field: 'installationId' });
+    const taken = await api()
+      .put('/customer-api/v1/me/device')
+      .set('Authorization', bearer(1))
+      .send({ platform: 'android', pushToken: `ExponentPushToken[e2e-${stamp}-aaaa]` })
+      .expect(409);
+    expect(taken.body.code).toBe('PUSH_TOKEN_IN_USE');
+    const first = await prisma.customerDevice.findUniqueOrThrow({ where: { id: accounts[0].device } });
+    expect(first.pushToken).toBe(`ExponentPushToken[e2e-${stamp}-aaaa]`);
   });
 
   it('a notification lands in my inbox in my language, and goes out through the mock push service', async () => {

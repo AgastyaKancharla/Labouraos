@@ -41,17 +41,27 @@ export class CustomerNotificationHooks {
     return policy?.jobSeekerGuaranteeDays ?? null;
   }
 
-  /** PaymentService.onPaymentSucceeded: a job seeker's ₹499 is confirmed (the 30 days start). */
+  /**
+   * PaymentService.onPaymentSucceeded: a job seeker's ₹499 is confirmed (the 30 days start).
+   * A receipt goes out at night only when the person just paid by card (the
+   * gateway confirmed it); a UPI credit Finance or the bank feed matched later
+   * is not their action of the moment and waits for 9 AM (privacy review M3).
+   */
   async jobSeekerPaymentConfirmed(paymentId: string): Promise<void> {
     await this.safely('payment_confirmed', async () => {
       const payment = await this.prisma.payment.findUnique({
         where: { id: paymentId },
-        select: { type: true, status: true, jobSeekerId: true, jobSeeker: { select: { name: true, referredById: true } } },
+        select: { type: true, status: true, confirmedBy: true, jobSeekerId: true, jobSeeker: { select: { name: true, referredById: true } } },
       });
       if (!payment || payment.type !== 'activation' || payment.status !== 'succeeded' || !payment.jobSeekerId) return;
       const days = await this.guaranteeDays();
       if (days !== null) {
-        await this.notifications.notify({ jobSeekerId: payment.jobSeekerId }, 'payment_confirmed', { days }, { dedupeKey: `payment_confirmed:${paymentId}` });
+        await this.notifications.notify(
+          { jobSeekerId: payment.jobSeekerId },
+          'payment_confirmed',
+          { days },
+          { dedupeKey: `payment_confirmed:${paymentId}`, selfAction: payment.confirmedBy === 'gateway' },
+        );
       }
       const referredBy = payment.jobSeeker?.referredById;
       const name = firstName(payment.jobSeeker?.name);
@@ -61,7 +71,11 @@ export class CustomerNotificationHooks {
     });
   }
 
-  /** PaymentService.onPaymentSucceeded: a business paid the placement fee (invoice ready, joining confirmed). */
+  /**
+   * PaymentService.onPaymentSucceeded: a business paid the placement fee (invoice ready, joining confirmed).
+   * The receipt goes to the owners only (no branch limit; M4) and skips quiet
+   * hours only for a card payment the gateway confirmed, reaching one owner (M3).
+   */
   async placementFeePaid(paymentId: string): Promise<void> {
     await this.safely('fee_paid', async () => {
       const payment = await this.prisma.payment.findUnique({
@@ -69,16 +83,17 @@ export class CustomerNotificationHooks {
         select: {
           type: true,
           status: true,
+          confirmedBy: true,
           placement: { select: { id: true, businessId: true, jobSeekerId: true, joiningDate: true, vacancy: { select: { branchId: true } } } },
         },
       });
       const placement = payment?.placement;
       if (!payment || payment.type !== 'placement_fee' || payment.status !== 'succeeded' || !placement) return;
       await this.notifications.notify(
-        { businessId: placement.businessId, branchId: placement.vacancy?.branchId ?? null },
+        { businessId: placement.businessId },
         'fee_paid',
         {},
-        { dedupeKey: `fee_paid:${paymentId}` },
+        { dedupeKey: `fee_paid:${paymentId}`, selfAction: payment.confirmedBy === 'gateway' },
       );
       if (placement.joiningDate) {
         await this.notifications.notify({ jobSeekerId: placement.jobSeekerId }, 'joining_confirmed', {}, { dedupeKey: `joining_confirmed:${placement.id}` });

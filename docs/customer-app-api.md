@@ -99,6 +99,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `BELOW_MINIMUM_WAGE_TICK_REQUIRED` | 409 | Vacancy salary below the legal minimum: show the warning and the tick, resend with `ownerToldMinimumWage: true`. `legalMinimumPaise` included |
 | `SERVICE_LOCKED` | 409 | Service notifications cannot be switched off while a guarantee is running |
 | `MESSAGE_NOT_FOUND` | 404 | Not one of my inbox messages (or no such message) |
+| `PUSH_TOKEN_IN_USE` | 409 | `PUT /me/device`: that push token belongs to a phone signed in to another account (a different app installation) |
 | `DELETION_PENDING` | 409 | A deletion request is open: no new requests, links, drafts or vacancies, and no sign-in on a new phone until it is cancelled |
 | `NOT_IMPLEMENTED` | 501 | Route exists but not built yet on this server |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
@@ -736,6 +737,9 @@ recorded with method `in_app`.
 | `PUT /me/notification-settings` | 🔒 | C (built) |
 
 `GET /me/inbox` → `{ "items": [Message], "nextCursor": "…" | null, "unreadCount": 3 }`, newest first, `limit` 1 to 50 (default 20). `cursor` is the `nextCursor` of the previous page (opaque).
+The inbox holds account-level messages and messages about profiles that are
+still mine: a profile revoked (number corrected, record anonymised, link
+removed) takes its messages with it, and `unreadCount` counts only what is listed.
 
 ```json
 {
@@ -757,17 +761,27 @@ permission changes:
 { "installationId": "uuid", "platform": "android", "appVersion": "1.0.0", "pushToken": "ExponentPushToken[…]", "pushPermission": "granted" }
 ```
 
-→ `204`. `platform`: `android`, `ios`, `web`. `pushPermission`: `granted`,
+→ `204`. It always saves onto the phone this sign-in belongs to: `installationId`
+may be left out, and if sent it must be that phone's (else `400 VALIDATION_FAILED`,
+`field: "installationId"`); a session with no phone answers `400 INSTALLATION_REQUIRED`.
+`platform`: `android`, `ios`, `web`. `pushPermission`: `granted`,
 `denied`, `undetermined`. `pushToken` must be an Expo push token
 (`ExponentPushToken[…]` or `ExpoPushToken[…]`) or null; anything else is
 `400 VALIDATION_FAILED` with `field`. One push token belongs to one account at a
-time (moving it to this account removes it elsewhere). `pushToken: null` or
+time: it moves here from another account only when that was this same app
+installation or that phone is no longer signed in; a token on another account's
+signed-in phone answers `409 PUSH_TOKEN_IN_USE`. An account keeps push tokens on at
+most 5 phones (saving a 6th drops the one seen longest ago). Pushes go only to
+phones with a live sign-in, and never to an account being deleted or blocked (its
+phones' tokens are dropped, the requesting phone's too). `pushToken: null` or
 `DELETE /me/device/push-token` stops push to this phone (the session's phone, or
 the `X-Laboura-Installation` one). Tokens Expo reports as `DeviceNotRegistered`
 (app uninstalled) are removed by the server.
 
 **What a push carries** (`data` of the notification): `messageId`, `kind`,
-`category`, `deepLink`, `profileId`. The app opens `deepLink` (only `/home`,
+`category`, `deepLink`, `profileId` (never the server's internal keys). A referral
+push says "Someone you referred …" on the lock screen; the first name is only in
+the inbox copy. The app opens `deepLink` (only `/home`,
 `/inbox`, `/settings`, `/help`; anything else opens the inbox), switches to
 `profileId` if it is one of mine, and marks `messageId` read. Android channels:
 `service`, `job-updates`, `promotions`.
@@ -800,7 +814,11 @@ notifySafely(...)   // same, never throws (for calls from other services)
 
 - `target`: `{ accountId, profileId? }`, `{ jobSeekerId }`, `{ referralId }` or
   `{ businessId, branchId? }` (without `branchId`: owner-level people only; with
-  it: those plus that branch's managers). A record with no app account gets nothing.
+  it: those plus that branch's managers). Money events (`fee_paid`,
+  `refund_approved`, `refund_paid`) reach business owners with no branch limit
+  only. A record with no app account gets nothing, and neither does a profile
+  that is no longer the account's (`CustomerScopeService.stillMine`: number
+  corrected or record anonymised).
 - `kind`: one of the events below; `vars` fills its placeholders (a missing one throws).
 - It writes the `CustomerInboxMessage` (in the account's language), a `MessageLog`
   row (channel `push`, or `in_app` when there is no push; `subjectType`
@@ -812,10 +830,20 @@ notifySafely(...)   // same, never throws (for calls from other services)
 - Rules: quiet hours 9 PM to 9 AM IST: everything waits until 9 AM, urgent
   pushes included, except sign-in codes (SMS, never through here) and
   `selfAction` receipts for something the person just did, which go at once
-  (Q21); at most 3 non-urgent pushes a day per account (urgent ones and receipts
-  never count, also when they go out at 9 AM) (over the cap the message stays in the inbox without a push); Service
-  off = inbox only; `job_updates` and `promotions` events (or `promotional: true`)
-  only with the switch on **and** the job seeker's matching consent.
+  (Q21). `selfAction: true` is honoured only for receipt events and only when the
+  event reaches exactly one account; the payment hooks pass it only for a card
+  payment the gateway confirmed (a credit matched by the bank feed or Finance
+  waits for 9 AM). At most 3 non-urgent pushes a day per account (urgent ones and
+  receipts never count, also when they go out at 9 AM; counted under a
+  per-account database lock, so two rounds at once cannot exceed it); over the
+  cap the message stays in the inbox without a push. Service off = inbox only,
+  except while a guarantee runs (Service is on then, even if it was switched off
+  before). `job_updates` and `promotions` events (or `promotional: true`) only with
+  the switch on **and** the matching consent for every record the message is
+  about, whatever its kind (an account with no record gets none). The worker
+  checks the account, the profile, the switch and the consent again before
+  sending; a message whose profile or consent is gone is cancelled (not pushed,
+  not listed).
 - `CustomerNotificationHooks` turns existing events into notifications (payment
   confirmed, fee paid, refund/payout/reward approved and paid, offer, visit
   booked, business approved, vacancy confirmed).
@@ -826,8 +854,8 @@ Events (`kind`, placeholders, category; all `service` unless said):
 | --- | --- | --- | --- |
 | `signup_reminder` | all | `stepsLeft` | sent by the sign-up tracker (D) |
 | `id_check_approved`, `id_check_retry` | job seeker, partner | | |
-| `payment_confirmed` | job seeker | `days` | receipt: sent at once, not capped |
-| `fee_paid` | business | | receipt |
+| `payment_confirmed` | job seeker | `days` | receipt (card payment: at once, not capped) |
+| `fee_paid` | business | | receipt; owners only |
 | `job_match` | job seeker | | `job_updates` |
 | `interview_booked` | job seeker | `hours` | urgent |
 | `interview_reminder_tomorrow`, `interview_reminder_soon` | job seeker, business | | |
@@ -835,7 +863,7 @@ Events (`kind`, placeholders, category; all `service` unless said):
 | `joining_confirmed`, `joining_moved`, `joining_day_check` | job seeker, business | | |
 | `hit_recorded` | job seeker | | |
 | `guarantee_countdown` | job seeker, business | `daysLeft` | |
-| `refund_approved`, `refund_paid` | job seeker, business | | |
+| `refund_approved`, `refund_paid` | job seeker, business | | business: owners only |
 | `reward_approved`, `reward_paid` | job seeker | | ₹200 joining reward |
 | `visit_booked` | business | `agentFirstName`, `when` | |
 | `business_approved` | business | | |
@@ -844,7 +872,7 @@ Events (`kind`, placeholders, category; all `service` unless said):
 | `interview_result_due` | business | | |
 | `selected_pay_fee` | business | `hours` | urgent |
 | `claim_decided`, `replacement_found` | business | | |
-| `referral_registered`, `referral_paid`, `referral_joined` | partner | `firstName` | first name only |
+| `referral_registered`, `referral_paid`, `referral_joined` | partner | `firstName` | first name in the inbox only; the push says "Someone you referred" |
 | `payout_approved`, `payout_paid` | partner | | |
 | `promotion` | all | | `promotions` |
 

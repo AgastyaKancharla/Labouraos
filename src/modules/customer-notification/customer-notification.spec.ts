@@ -1,4 +1,5 @@
 import { HttpException } from '@nestjs/common';
+import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import { CustomerNotificationService } from './customer-notification.service';
 import { CustomerNotificationSettingsService } from './customer-notification-settings.service';
 import { CustomerPushSenderService } from './customer-push-sender.service';
@@ -74,15 +75,18 @@ function setup(at: Date = ist('10:00')) {
   const clock = new FixedClock(at);
   const settings = new CustomerNotificationSettingsService(prisma as never, clock);
   const kicker = { kick: jest.fn().mockResolvedValue(undefined) };
-  const notifications = new CustomerNotificationService(prisma as never, settings, clock, kicker as never);
+  const scope = new CustomerScopeService(prisma as never);
+  const notifications = new CustomerNotificationService(prisma as never, settings, clock, scope, kicker as never);
   const provider = new StubProvider();
-  const sender = new CustomerPushSenderService(prisma as never, settings, clock, provider);
-  const inbox = new CustomerInboxService(prisma as never, clock);
+  const sender = new CustomerPushSenderService(prisma as never, settings, clock, provider, scope);
+  const inbox = new CustomerInboxService(prisma as never, clock, scope);
 
   let n = 0;
-  async function account(opts: { language?: string; token?: string | null; jobSeekerId?: string; businessId?: string; referralId?: string } = {}) {
+  async function account(
+    opts: { language?: string; token?: string | null; jobSeekerId?: string; businessId?: string; referralId?: string; role?: string; phone?: string; linkedVia?: string } = {},
+  ) {
     n += 1;
-    const acc = await prisma.customerAccount.create({ data: { id: `acc-${n}`, language: opts.language ?? 'en', status: 'active', createdVia: 'phone' } });
+    const acc = await prisma.customerAccount.create({ data: { id: `acc-${n}`, language: opts.language ?? 'en', status: 'active', createdVia: 'phone', phone: opts.phone ?? null } });
     if (opts.jobSeekerId || opts.businessId || opts.referralId) {
       await prisma.customerProfile.create({
         data: {
@@ -93,19 +97,30 @@ function setup(at: Date = ist('10:00')) {
           businessId: opts.businessId ?? null,
           referralId: opts.referralId ?? null,
           branchId: null,
+          role: opts.role ?? (opts.businessId ? 'owner' : 'self'),
+          linkedVia: opts.linkedVia ?? 'invite',
           status: 'active',
         },
       });
     }
-    if (opts.token !== null) {
-      await prisma.customerDevice.create({
-        data: { accountId: acc.id, installationId: `inst-${n}`, platform: 'android', pushToken: opts.token ?? `ExponentPushToken[device-${n}-abcdefgh]`, pushPermission: 'granted' },
-      });
-    }
+    // Every phone gets a signed-in session (only phones with a live sign-in get pushes).
+    const device = await prisma.customerDevice.create({
+      data: {
+        id: `dev-${n}`, accountId: acc.id, installationId: `inst-${n}`, platform: 'android', pushPermission: 'granted',
+        pushToken: opts.token === null ? null : (opts.token ?? `ExponentPushToken[device-${n}-abcdefgh]`),
+      },
+    });
+    await prisma.customerSession.create({ data: { id: `sess-${n}`, accountId: acc.id, deviceId: device.id } });
     return acc.id as string;
   }
 
-  return { prisma, clock, settings, notifications, provider, sender, inbox, kicker, account };
+  /** The principal the customer guard would give this account's phone. */
+  const me = (accountId: string) => {
+    const s = prisma.tables.customerSession.find((r) => r.accountId === accountId)!;
+    return { accountId, sessionId: s.id as string, deviceId: s.deviceId as string };
+  };
+
+  return { prisma, clock, settings, notifications, provider, sender, inbox, kicker, account, me };
 }
 
 describe('Customer notifications: wording in three languages', () => {
@@ -252,7 +267,7 @@ describe('Customer notifications: quiet hours 9 PM to 9 AM (everything but recei
     await t.account({ jobSeekerId: 'js-1' });
     const offer = await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true });
     expect(offer).toMatchObject({ inbox: 1, queued: 0, held: 1 });
-    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 }, { selfAction: true });
     const held = t.prisma.tables.customerInboxMessage.find((r) => r.kind === 'interview_booked')!;
     expect(held).toMatchObject({ pushStatus: 'held_quiet_hours', priority: 'urgent' });
     expect((held.scheduledFor as Date).toISOString()).toBe(ist('09:00', 21).toISOString());
@@ -305,7 +320,7 @@ describe('Customer notifications: at most 3 non-urgent pushes a day', () => {
     await t.sender.sendDue();
     t.clock.at = ist('15:00');
     await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true });
-    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 }, { selfAction: true });
     await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check');
     expect(await t.sender.sendDue()).toMatchObject({ sent: 2, heldDailyCap: 1 });
     t.clock.at = ist('10:00', 21);
@@ -424,7 +439,8 @@ describe('Customer notifications: dead tokens and receipts', () => {
   it('removes a token after the receipt check, and marks the log delivered when another phone got it', async () => {
     const t = setup();
     const accountId = await t.account({ jobSeekerId: 'js-1', token: 'ExponentPushToken[phone-one-123456]' });
-    await t.prisma.customerDevice.create({ data: { accountId, installationId: 'inst-b', platform: 'ios', pushToken: 'ExponentPushToken[phone-two-123456]' } });
+    await t.prisma.customerDevice.create({ data: { id: 'dev-b', accountId, installationId: 'inst-b', platform: 'ios', pushToken: 'ExponentPushToken[phone-two-123456]' } });
+    await t.prisma.customerSession.create({ data: { accountId, deviceId: 'dev-b' } });
     await t.notifications.notify({ jobSeekerId: 'js-1' }, 'refund_paid');
     const { tickets } = await t.sender.sendDue();
     expect(tickets).toHaveLength(2);
@@ -432,8 +448,9 @@ describe('Customer notifications: dead tokens and receipts', () => {
       [tickets[0].ticketId]: { status: 'ok' },
       [tickets[1].ticketId]: { status: 'error', message: 'gone', error: 'DeviceNotRegistered' },
     };
+    expect(tickets.every((ticket) => !('token' in ticket) && typeof ticket.deviceId === 'string')).toBe(true);
     const outcome = await t.sender.checkReceipts(tickets);
-    expect(outcome).toEqual({ ok: 1, errors: 1, deadTokensRemoved: 1 });
+    expect(outcome).toEqual({ ok: 1, errors: 1, deadTokensRemoved: 1, pending: [] });
     expect(t.prisma.tables.customerDevice.map((d) => d.pushToken)).toEqual(['ExponentPushToken[phone-one-123456]', null]);
     expect(t.prisma.tables.messageLog[0].status).toBe('delivered');
   });
@@ -503,7 +520,7 @@ describe('Customer notifications: the mock and Expo providers', () => {
     expect(tickets[1]).toEqual({ status: 'ok', id: 'id-1' });
   });
 
-  it('Expo: reads receipts, and throws on an HTTP error so the worker retries', async () => {
+  it('Expo: reads receipts, and an HTTP error marks that batch unsent so the worker retries it', async () => {
     const ok = new ExpoCustomerPushProvider(undefined, async () => ({
       ok: true,
       status: 200,
@@ -514,7 +531,9 @@ describe('Customer notifications: the mock and Expo providers', () => {
       b: { status: 'error', message: 'gone', error: 'DeviceNotRegistered' },
     });
     const down = new ExpoCustomerPushProvider(undefined, async () => ({ ok: false, status: 503, json: async () => ({}) }));
-    await expect(down.send([{ to: 'x', title: 't', body: 'b', data: {}, channelId: 'service', priority: 'normal', sound: null }])).rejects.toThrow(/503/);
+    await expect(down.send([{ to: 'x', title: 't', body: 'b', data: {}, channelId: 'service', priority: 'normal', sound: null }])).resolves.toEqual([
+      { status: 'unsent', reason: 'Expo push service answered HTTP 503' },
+    ]);
   });
 });
 
@@ -555,27 +574,264 @@ describe('Customer notifications: my own inbox and my own phone only', () => {
     expect(theirMessage.readAt).toBeNull();
   });
 
-  it('saves my push token and moves it away from another account that had this phone', async () => {
+  it('saves my push token on my signed-in phone, and moves it from another account that used this same app installation', async () => {
     const t = setup();
     const before = await t.account({ token: 'ExponentPushToken[shared-phone-1234]' });
-    const me = await t.account({ token: null });
-    await t.inbox.putDevice(
-      { accountId: me, sessionId: 's', deviceId: null },
-      { installationId: 'inst-new-0001', platform: 'android', appVersion: '1.0.0', pushToken: 'ExponentPushToken[shared-phone-1234]', pushPermission: 'granted' },
-    );
+    const mine = await t.account({ token: null });
+    // The same installation (someone else used the app on this phone before).
+    t.prisma.tables.customerDevice.find((d) => d.accountId === mine)!.installationId = 'inst-1';
+    await t.inbox.putDevice(t.me(mine), { platform: 'android', appVersion: '1.0.0', pushToken: 'ExponentPushToken[shared-phone-1234]', pushPermission: 'granted' });
     const devices = t.prisma.tables.customerDevice;
     expect(devices.find((d) => d.accountId === before)!.pushToken).toBeNull();
-    expect(devices.find((d) => d.accountId === me)).toMatchObject({ pushToken: 'ExponentPushToken[shared-phone-1234]', pushPermission: 'granted' });
-    await t.inbox.removePushToken({ accountId: me, sessionId: 's', deviceId: null }, 'inst-new-0001');
-    expect(devices.find((d) => d.accountId === me)!.pushToken).toBeNull();
+    expect(devices.find((d) => d.accountId === mine)).toMatchObject({ pushToken: 'ExponentPushToken[shared-phone-1234]', pushPermission: 'granted' });
+    await t.inbox.removePushToken(t.me(mine), undefined);
+    expect(devices.find((d) => d.accountId === mine)!.pushToken).toBeNull();
   });
 
   it('refuses a token that is not an Expo push token', async () => {
     const t = setup();
-    const me = await t.account({ token: null });
-    await expectCode(
-      t.inbox.putDevice({ accountId: me, sessionId: 's', deviceId: null }, { installationId: 'inst-new-0001', platform: 'android', pushToken: 'fcm:abc' }),
-      'VALIDATION_FAILED',
-    );
+    const mine = await t.account({ token: null });
+    await expectCode(t.inbox.putDevice(t.me(mine), { platform: 'android', pushToken: 'fcm:abc' }), 'VALIDATION_FAILED');
+  });
+});
+
+describe('Customer notifications: privacy review fixes', () => {
+  it('H1: a corrected number cuts the old phone\'s account off at once (no inbox row, queued pushes cancelled)', async () => {
+    const t = setup();
+    const old = await t.account({ jobSeekerId: 'js-1', phone: '+919812345678', linkedVia: 'phone_match' });
+    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'active', phone: '9812345678', anonymisedAt: null } });
+    expect((await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check')).inbox).toBe(1);
+    // An agent corrects the job seeker's number before the worker's round.
+    t.prisma.tables.jobSeeker[0].phone = '9800000000';
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 0, cancelled: 1 });
+    expect(t.provider.sent).toHaveLength(0);
+    expect(t.prisma.tables.customerProfile[0]).toMatchObject({ status: 'revoked' });
+    expect((await t.inbox.list(old, {})).items).toHaveLength(0);
+    // Later events reach nobody.
+    expect(await t.notifications.notify({ jobSeekerId: 'js-1' }, 'hit_recorded')).toMatchObject({ inbox: 0 });
+    expect(await t.notifications.notify({ accountId: old, profileId: 'prof-1' }, 'hit_recorded')).toMatchObject({ inbox: 0 });
+  });
+
+  it('H1: an anonymised record gets nothing', async () => {
+    const t = setup();
+    await t.account({ jobSeekerId: 'js-1' });
+    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'inactive', phone: null, anonymisedAt: new Date() } });
+    expect(await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check')).toMatchObject({ inbox: 0 });
+  });
+
+  it('H2: an account being deleted or blocked gets no push, and its phones lose their tokens', async () => {
+    for (const status of ['deletion_requested', 'blocked']) {
+      const t = setup();
+      const accountId = await t.account({ jobSeekerId: 'js-1' });
+      await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check');
+      t.prisma.tables.customerAccount[0].status = status;
+      expect(await t.sender.sendDue()).toMatchObject({ sent: 0 });
+      expect(t.provider.sent).toHaveLength(0);
+      expect(t.prisma.tables.customerDevice.find((d) => d.accountId === accountId)!.pushToken).toBeNull();
+      expect(t.prisma.tables.customerInboxMessage[0].pushStatus).toBe('none');
+    }
+  });
+
+  it('H3: Service switched off before a guarantee started is on while it runs', async () => {
+    const t = setup();
+    const accountId = await t.account({ jobSeekerId: 'js-1' });
+    await t.settings.update(accountId, { service: false });
+    await t.prisma.pricingPolicy.create({ data: { jobSeekerGuaranteeDays: 30, effectiveFrom: new Date('2026-01-01') } });
+    await t.prisma.jobSeeker.create({ data: { id: 'js-1', status: 'active', paymentReceivedAt: t.clock.at } });
+    expect(await t.notifications.notify({ jobSeekerId: 'js-1' }, 'interview_booked', { hours: 48 }, { urgent: true })).toMatchObject({ queued: 1 });
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 1, off: 0 });
+    // A row queued before, with the switch off and the guarantee running, is sent by the worker too.
+    t.prisma.tables.customerInboxMessage[0].pushStatus = 'queued';
+    t.prisma.tables.customerInboxMessage[0].scheduledFor = t.clock.at;
+    expect(await t.sender.sendDue()).toMatchObject({ off: 0 });
+  });
+
+  it('H4: a consent withdrawn after the message was written stops the push and hides the message', async () => {
+    const t = setup();
+    const accountId = await t.account({ jobSeekerId: 'js-1' });
+    await t.prisma.consent.create({
+      data: { subjectType: 'job_seeker', subjectId: 'js-1', purpose: 'job_updates', granted: true, grantedAt: new Date(), noticeVersion: '1.0', language: 'en', method: 'sms_link' },
+    });
+    expect((await t.notifications.notify({ jobSeekerId: 'js-1' }, 'job_match')).inbox).toBe(1);
+    await t.prisma.consent.updateMany({ where: { purpose: 'job_updates' }, data: { granted: false, withdrawnAt: new Date() } });
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 0, cancelled: 1 });
+    expect((await t.inbox.list(accountId, {})).items).toHaveLength(0);
+  });
+
+  it('H4: promotions need the consent for a business, a partner and an account with no record too', async () => {
+    const t = setup();
+    const owner = await t.account({ businessId: 'bz-1' });
+    const partner = await t.account({ referralId: 'rf-1' });
+    const bare = await t.account();
+    for (const id of [owner, partner, bare]) {
+      t.prisma.tables.customerNotificationSetting.push({ id: `set-${id}`, accountId: id, service: true, jobUpdates: false, promotions: true, quietStart: '21:00', quietEnd: '09:00', dailyCap: 3 });
+    }
+    expect((await t.notifications.notify({ businessId: 'bz-1' }, 'promotion')).skipped).toEqual([{ accountId: owner, reason: 'no_consent' }]);
+    expect((await t.notifications.notify({ referralId: 'rf-1' }, 'promotion')).skipped).toEqual([{ accountId: partner, reason: 'no_consent' }]);
+    expect((await t.notifications.notify({ accountId: bare }, 'promotion')).skipped).toEqual([{ accountId: bare, reason: 'no_consent' }]);
+    await t.prisma.consent.create({
+      data: { subjectType: 'business', subjectId: 'bz-1', purpose: 'promotions', granted: true, grantedAt: new Date(), noticeVersion: '1.0', language: 'en', method: 'in_app' },
+    });
+    expect((await t.notifications.notify({ businessId: 'bz-1' }, 'promotion')).inbox).toBe(1);
+  });
+
+  it('M1: two rounds at once (worker and a second process) still push at most 3 non-urgent a day', async () => {
+    const t = setup();
+    const accountId = await t.account({ jobSeekerId: 'js-1' });
+    for (let i = 0; i < 5; i += 1) await t.notifications.notify({ jobSeekerId: 'js-1' }, 'guarantee_countdown', { daysLeft: i });
+    const [a, b] = await Promise.all([t.sender.sendDue(), t.sender.sendDue()]);
+    expect(a.sent + b.sent).toBe(3);
+    expect(t.provider.sent).toHaveLength(3);
+    expect(t.prisma.tables.customerInboxMessage.filter((r) => r.pushStatus === 'held_daily_cap')).toHaveLength(2);
+    expect(t.prisma.advisoryLocks).toContain(`customer-push:${accountId}`);
+  });
+
+  it('M2: when one batch fails, only messages Expo never took are sent again', async () => {
+    const t = setup();
+    const accountId = await t.account({ jobSeekerId: 'js-1', token: 'ExponentPushToken[phone-ok-12345678]' });
+    await t.prisma.customerDevice.create({ data: { id: 'dev-x', accountId, installationId: 'inst-x', platform: 'ios', pushToken: 'ExponentPushToken[phone-down-1234567]' } });
+    await t.prisma.customerSession.create({ data: { accountId, deviceId: 'dev-x' } });
+    await t.account({ jobSeekerId: 'js-2', token: 'ExponentPushToken[other-down-1234567]' });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'refund_paid');
+    await t.notifications.notify({ jobSeekerId: 'js-2' }, 'refund_paid');
+    for (const row of t.prisma.tables.customerInboxMessage) row.createdAt = t.clock.at;
+    t.provider.answer = (m) => (m.to.includes('down') ? { status: 'unsent', reason: 'timeout' } : { status: 'ok', id: `t-${m.to}` });
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 1, retried: 1, failed: 0 });
+    const [first, second] = t.prisma.tables.customerInboxMessage;
+    expect(first.pushStatus).toBe('sent'); // one phone got it: never repeated
+    expect(second.pushStatus).toBe('queued');
+  });
+
+  it('M3: a receipt skips quiet hours only for the one person who did it', async () => {
+    const t = setup(ist('23:00'));
+    await t.account({ jobSeekerId: 'js-1' });
+    // Matched by Finance overnight: not the person's own action, waits for 9 AM.
+    expect(await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 })).toMatchObject({ held: 1 });
+    // Two owners: the payer is not known, so nobody skips quiet hours.
+    await t.account({ businessId: 'bz-1' });
+    await t.account({ businessId: 'bz-1' });
+    expect(await t.notifications.notify({ businessId: 'bz-1' }, 'fee_paid', {}, { selfAction: true })).toMatchObject({ held: 2, queued: 0 });
+    // A card payment by the one owner of another business goes at once.
+    await t.account({ businessId: 'bz-2' });
+    expect(await t.notifications.notify({ businessId: 'bz-2' }, 'fee_paid', {}, { selfAction: true })).toMatchObject({ queued: 1 });
+  });
+
+  it('M4: money events reach business owners with no branch limit only, never HR, supervisors or branch managers', async () => {
+    const t = setup();
+    const owner = await t.account({ businessId: 'bz-1' });
+    await t.account({ businessId: 'bz-1', role: 'hr' });
+    const manager = await t.account();
+    await t.prisma.customerProfile.create({ data: { id: 'prof-br', accountId: manager, kind: 'business', businessId: 'bz-1', branchId: 'br-1', role: 'manager', status: 'active' } });
+    for (const kind of ['fee_paid', 'refund_approved', 'refund_paid'] as const) {
+      await t.notifications.notify({ businessId: 'bz-1', branchId: 'br-1' }, kind);
+    }
+    expect(new Set(t.prisma.tables.customerInboxMessage.map((r) => r.accountId))).toEqual(new Set([owner]));
+    // Other business events still reach the owner-level people and the branch.
+    expect((await t.notifications.notify({ businessId: 'bz-1', branchId: 'br-1' }, 'vacancy_confirmed', { vacancyCode: 'VC-00001' })).inbox).toBe(3);
+  });
+
+  it('M5: a phone with no live sign-in gets no push', async () => {
+    const t = setup();
+    await t.account({ jobSeekerId: 'js-1' });
+    t.prisma.tables.customerSession[0].expiresAt = new Date(t.clock.at.getTime() - 1000);
+    expect(await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check')).toMatchObject({ queued: 0, inbox: 1 });
+    expect(t.prisma.tables.customerInboxMessage[0].pushStatus).toBe('none');
+  });
+
+  it('M5: the token is saved on the session\'s own phone only, and at most 5 phones keep one', async () => {
+    const t = setup();
+    const mine = await t.account({ token: null });
+    await expectCode(t.inbox.putDevice(t.me(mine), { installationId: 'someone-elses-phone', platform: 'android', pushToken: 'ExponentPushToken[abc-123456789]' }), 'VALIDATION_FAILED');
+    await expectCode(t.inbox.putDevice({ accountId: mine, sessionId: 's', deviceId: null }, { platform: 'android' }), 'INSTALLATION_REQUIRED');
+    for (let i = 0; i < 5; i += 1) {
+      await t.prisma.customerDevice.create({
+        data: { id: `old-${i}`, accountId: mine, installationId: `old-${i}`, platform: 'android', pushToken: `ExponentPushToken[old-${i}-123456789]`, lastSeenAt: new Date(2026, 0, i + 1) },
+      });
+    }
+    await t.inbox.putDevice(t.me(mine), { installationId: 'inst-1', platform: 'android', pushToken: 'ExponentPushToken[new-phone-12345678]' });
+    const withTokens = t.prisma.tables.customerDevice.filter((d) => d.accountId === mine && d.pushToken);
+    expect(withTokens).toHaveLength(5);
+    expect(withTokens.map((d) => d.id)).not.toContain('old-0');
+    expect(withTokens.map((d) => d.id)).toContain('dev-1');
+  });
+
+  it('L1: a referral push says "Someone you referred"; the first name is in the inbox only', async () => {
+    const t = setup();
+    const partner = await t.account({ referralId: 'rf-1' });
+    await t.notifications.notify({ referralId: 'rf-1' }, 'referral_joined', { firstName: 'Ravi' });
+    await t.sender.sendDue();
+    expect(t.provider.sent[0].body).toContain('Someone you referred');
+    expect(`${t.provider.sent[0].title} ${t.provider.sent[0].body}`).not.toContain('Ravi');
+    expect((await t.inbox.list(partner, {})).items[0].body).toContain('Ravi');
+  });
+
+  it('L2: a token on another account\'s signed-in phone is refused (409), never moved; a race answers without a 500', async () => {
+    const t = setup();
+    await t.account({ token: 'ExponentPushToken[their-phone-1234567]' });
+    const mine = await t.account({ token: null });
+    await expectCode(t.inbox.putDevice(t.me(mine), { platform: 'android', pushToken: 'ExponentPushToken[their-phone-1234567]' }), 'PUSH_TOKEN_IN_USE');
+    expect(t.prisma.tables.customerDevice[0].pushToken).toBe('ExponentPushToken[their-phone-1234567]');
+    // Their phone signed out: the token can move.
+    t.prisma.tables.customerSession[0].revokedAt = new Date();
+    await t.inbox.putDevice(t.me(mine), { platform: 'android', pushToken: 'ExponentPushToken[their-phone-1234567]' });
+    expect(t.prisma.tables.customerDevice.find((d) => d.accountId === mine)!.pushToken).toBe('ExponentPushToken[their-phone-1234567]');
+    // Two saves at the same moment: the unique index answers P2002, which is read again, not a 500.
+    const original = t.prisma.$transaction.bind(t.prisma);
+    let first = true;
+    jest.spyOn(t.prisma, '$transaction').mockImplementation(async (work: (tx: FakePrisma) => Promise<unknown>) => {
+      if (first) {
+        first = false;
+        throw Object.assign(new Error('Unique constraint failed'), { code: 'P2002' });
+      }
+      return original(work);
+    });
+    await expect(t.inbox.putDevice(t.me(mine), { platform: 'android', pushToken: 'ExponentPushToken[their-phone-1234567]' })).resolves.toBeUndefined();
+  });
+
+  it('L4: messages about a profile that was revoked are cancelled and leave the inbox', async () => {
+    const t = setup();
+    const accountId = await t.account({ jobSeekerId: 'js-1' });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'offer_check');
+    await t.notifications.notify({ accountId }, 'refund_paid');
+    t.prisma.tables.customerProfile[0].status = 'revoked';
+    expect(await t.sender.sendDue()).toMatchObject({ sent: 1, cancelled: 1 });
+    const listed = await t.inbox.list(accountId, {});
+    expect(listed.items.map((m) => m.kind)).toEqual(['refund_paid']);
+    expect(listed.unreadCount).toBe(1);
+  });
+
+  it('L5: internal fields never go out in the push data', async () => {
+    const t = setup();
+    await t.account({ jobSeekerId: 'js-1' });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 }, { selfAction: true });
+    expect(t.prisma.tables.customerInboxMessage[0].data).toMatchObject({ trigger: 'self' });
+    await t.sender.sendDue();
+    expect(t.provider.sent[0].data).not.toHaveProperty('trigger');
+  });
+
+  it('L6: a receipt error is logged by its code only, never Expo\'s message', async () => {
+    const t = setup();
+    await t.account({ jobSeekerId: 'js-1' });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'refund_paid');
+    const { tickets } = await t.sender.sendDue();
+    t.provider.receipts = { [tickets[0].ticketId]: { status: 'error', message: 'Token ExponentPushToken[device-1-abcdefgh] is bad', error: 'MessageRateExceeded' } };
+    const warn = jest.spyOn((t.sender as unknown as { logger: { warn: (m: string) => void } }).logger, 'warn').mockImplementation(() => undefined);
+    await t.sender.checkReceipts(tickets);
+    expect(warn).toHaveBeenCalledWith('Push receipt error MessageRateExceeded');
+    expect(warn.mock.calls.flat().join(' ')).not.toContain('ExponentPushToken');
+  });
+
+  it('L3: a receipt Expo has not produced yet comes back pending; a phone that saved a new token since keeps it', async () => {
+    const t = setup();
+    await t.account({ jobSeekerId: 'js-1' });
+    await t.notifications.notify({ jobSeekerId: 'js-1' }, 'refund_paid');
+    const { tickets } = await t.sender.sendDue();
+    expect(await t.sender.checkReceipts(tickets)).toMatchObject({ pending: tickets });
+    // The phone saved a new token after the push; an old ticket's DeviceNotRegistered must not remove it.
+    t.prisma.tables.customerDevice[0].pushToken = 'ExponentPushToken[fresh-token-1234567]';
+    t.prisma.tables.customerDevice[0].pushTokenUpdatedAt = new Date(t.clock.at.getTime() + 60_000);
+    t.provider.receipts = { [tickets[0].ticketId]: { status: 'error', message: 'gone', error: 'DeviceNotRegistered' } };
+    expect(await t.sender.checkReceipts(tickets)).toMatchObject({ deadTokensRemoved: 0 });
+    expect(t.prisma.tables.customerDevice[0].pushToken).toBe('ExponentPushToken[fresh-token-1234567]');
   });
 });

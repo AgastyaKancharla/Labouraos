@@ -3,8 +3,10 @@
  * module's unit tests to run without a database (the database-backed checks
  * are in customer-notification.e2e.spec.ts, run by CI). It understands the
  * filters this module uses: equality, in, not (SQL semantics: a null never
- * matches `not: x`), gt/gte/lt/lte, OR, NOT, and the `account` relation of
- * CustomerProfile.
+ * matches `not: x`), gt/gte/lt/lte, OR, AND, NOT, the one-to-one relations
+ * below, `some` on a device's sessions, and pg_advisory_xact_lock inside an
+ * interactive transaction (a real per-key lock held until the transaction ends,
+ * so concurrent rounds behave as they do on Postgres).
  */
 import { randomUUID } from 'crypto';
 
@@ -62,13 +64,36 @@ export class FakePrisma {
     pricingPolicy: [],
     jobSeeker: [],
     placement: [],
+    customerSession: [],
+    referral: [],
+    business: [],
+    businessBranch: [],
+  };
+
+  /** Lock keys taken with pg_advisory_xact_lock (tests read it). */
+  readonly advisoryLocks: string[] = [];
+  private locks = new Map<string, Promise<void>>();
+
+  private static readonly ONE: Record<string, Record<string, [string, string]>> = {
+    customerProfile: {
+      account: ['customerAccount', 'accountId'],
+      jobSeeker: ['jobSeeker', 'jobSeekerId'],
+      referral: ['referral', 'referralId'],
+      business: ['business', 'businessId'],
+      branch: ['businessBranch', 'branchId'],
+    },
+    customerDevice: { account: ['customerAccount', 'accountId'] },
+  };
+
+  private static readonly MANY: Record<string, Record<string, [string, string]>> = {
+    customerDevice: { sessions: ['customerSession', 'deviceId'] },
   };
 
   private relation(model: string, row: Row, key: string): Row | undefined {
-    if (model === 'customerProfile' && key === 'account') {
-      return this.tables.customerAccount.find((a) => a.id === row.accountId);
-    }
-    return undefined;
+    const one = FakePrisma.ONE[model]?.[key];
+    if (!one) return undefined;
+    const [target, fk] = one;
+    return row[fk] == null ? undefined : this.tables[target].find((r) => r.id === row[fk]);
   }
 
   matches(model: string, row: Row, where: Where | undefined): boolean {
@@ -88,9 +113,20 @@ export class FakePrisma {
         if (list.some((w) => this.matches(model, row, w))) return false;
         continue;
       }
-      const related = this.relation(model, row, key);
-      if (related !== undefined || (model === 'customerProfile' && key === 'account')) {
-        if (!related || !this.matches('customerAccount', related, cond as Where)) return false;
+      const one = FakePrisma.ONE[model]?.[key];
+      if (one) {
+        const related = this.relation(model, row, key);
+        if (!related || !this.matches(one[0], related, cond as Where)) return false;
+        continue;
+      }
+      const many = FakePrisma.MANY[model]?.[key];
+      if (many) {
+        const [target, fk] = many;
+        const children = this.tables[target].filter((r) => r[fk] === row.id);
+        const c = cond as { some?: Where; none?: Where; every?: Where };
+        if (c.some && !children.some((r) => this.matches(target, r, c.some))) return false;
+        if (c.none && children.some((r) => this.matches(target, r, c.none))) return false;
+        if (c.every && !children.every((r) => this.matches(target, r, c.every))) return false;
         continue;
       }
       if (isPlainObject(cond) && Object.keys(cond).every((k) => OPS.has(k))) {
@@ -103,8 +139,9 @@ export class FakePrisma {
   }
 
   private withRelations(model: string, row: Row): Row {
-    if (model === 'customerProfile') return { ...row, account: this.relation(model, row, 'account') };
-    return { ...row };
+    const out: Row = { ...row };
+    for (const key of Object.keys(FakePrisma.ONE[model] ?? {})) out[key] = this.relation(model, row, key) ?? null;
+    return out;
   }
 
   private order(rows: Row[], orderBy: unknown): Row[] {
@@ -142,7 +179,10 @@ export class FakePrisma {
       const base: Row = { id: randomUUID(), createdAt: now, updatedAt: now };
       if (model === 'customerInboxMessage') Object.assign(base, { readAt: null, pushedAt: null, scheduledFor: null, profileId: null, messageLogId: null, dedupeKey: null, data: null });
       if (model === 'customerNotificationSetting') Object.assign(base, { service: true, jobUpdates: false, promotions: false, quietStart: '21:00', quietEnd: '09:00', dailyCap: 3 });
-      if (model === 'customerDevice') Object.assign(base, { pushToken: null, pushPermission: null, revokedAt: null, lastSeenAt: now });
+      if (model === 'customerDevice') Object.assign(base, { pushToken: null, pushTokenUpdatedAt: null, pushPermission: null, revokedAt: null, lastSeenAt: now });
+      if (model === 'customerSession') Object.assign(base, { revokedAt: null, expiresAt: new Date(now.getTime() + 90 * 86_400_000), deviceId: null });
+      if (model === 'customerProfile') Object.assign(base, { role: 'self', branchId: null, linkedVia: 'invite', revokedAt: null });
+      if (model === 'customerAccount') Object.assign(base, { phone: null });
       if (model === 'messageLog') Object.assign(base, { providerMessageId: null, sentAt: null, deliveredAt: null, failedAt: null, relatedType: null, relatedId: null });
       if (model === 'consent') Object.assign(base, { withdrawnAt: null, withdrawnByStaffId: null, withdrawnMethod: null, grantedAt: null });
       return { ...base, ...data };
@@ -219,8 +259,33 @@ export class FakePrisma {
   get pricingPolicy() { return this.delegate('pricingPolicy'); }
   get jobSeeker() { return this.delegate('jobSeeker'); }
   get placement() { return this.delegate('placement'); }
+  get customerSession() { return this.delegate('customerSession'); }
+
+  /** Outside a transaction an advisory lock is released at once (as in Postgres's xact form). */
+  async $executeRaw(...args: [TemplateStringsArray, ...unknown[]]): Promise<number> {
+    void args;
+    return 1;
+  }
 
   async $transaction<T>(work: (tx: this) => Promise<T>): Promise<T> {
-    return work(this);
+    const releases: (() => void)[] = [];
+    const tx = Object.create(this) as this & { $executeRaw: (sql: TemplateStringsArray, ...values: unknown[]) => Promise<number> };
+    tx.$executeRaw = async (sql: TemplateStringsArray, ...values: unknown[]) => {
+      if (!sql.join('?').includes('pg_advisory_xact_lock')) return 1;
+      const key = String(values[0]);
+      const before = this.locks.get(key) ?? Promise.resolve();
+      let release!: () => void;
+      const mine = new Promise<void>((resolve) => (release = resolve));
+      this.locks.set(key, before.then(() => mine));
+      await before;
+      this.advisoryLocks.push(key);
+      releases.push(release);
+      return 1;
+    };
+    try {
+      return await work(tx);
+    } finally {
+      for (const release of releases) release();
+    }
   }
 }

@@ -233,3 +233,33 @@ export function renderWording(kind: CustomerEventKind, language: string, vars: W
   const wording = CUSTOMER_NOTIFICATION_WORDING[kind][lang];
   return { title: fill(wording.title, vars, lang), body: fill(wording.body, vars, lang), language: lang };
 }
+
+/**
+ * Lock-screen text for events whose inbox copy names another person (privacy
+ * review L1): the push says "Someone you referred …"; the first name is shown
+ * only in the app's inbox, after sign-in. No placeholders.
+ */
+export const LOCK_SCREEN_WORDING: Partial<Record<CustomerEventKind, Record<CustomerLanguage, Wording>>> = {
+  referral_registered: {
+    en: { title: 'New referral', body: 'Someone you referred registered with your link. Open Laboura.' },
+    kn: { title: 'ಹೊಸ ರೆಫರಲ್', body: 'ನೀವು ರೆಫರ್ ಮಾಡಿದವರೊಬ್ಬರು ನಿಮ್ಮ ಲಿಂಕ್ ಮೂಲಕ ನೋಂದಾಯಿಸಿದ್ದಾರೆ. Laboura ತೆರೆಯಿರಿ.' },
+    hi: { title: 'नया रेफ़रल', body: 'आपके रेफ़र किए गए किसी व्यक्ति ने आपके लिंक से पंजीकरण किया है। Laboura खोलें।' },
+  },
+  referral_paid: {
+    en: { title: 'Referral update', body: 'Someone you referred has paid and is now looking for a job with Laboura.' },
+    kn: { title: 'ರೆಫರಲ್ ಅಪ್‌ಡೇಟ್', body: 'ನೀವು ರೆಫರ್ ಮಾಡಿದವರೊಬ್ಬರು ಪಾವತಿಸಿದ್ದಾರೆ ಮತ್ತು ಈಗ Laboura ಮೂಲಕ ಕೆಲಸ ಹುಡುಕುತ್ತಿದ್ದಾರೆ.' },
+    hi: { title: 'रेफ़रल अपडेट', body: 'आपके रेफ़र किए गए किसी व्यक्ति ने भुगतान कर दिया है और अब Laboura से नौकरी ढूँढ रहे हैं।' },
+  },
+  referral_joined: {
+    en: { title: 'Your referral joined a job', body: 'Someone you referred joined a job. Your reward is now due. Open Laboura.' },
+    kn: { title: 'ನಿಮ್ಮ ರೆಫರಲ್ ಕೆಲಸಕ್ಕೆ ಸೇರಿದ್ದಾರೆ', body: 'ನೀವು ರೆಫರ್ ಮಾಡಿದವರೊಬ್ಬರು ಕೆಲಸಕ್ಕೆ ಸೇರಿದ್ದಾರೆ. ನಿಮ್ಮ ಬಹುಮಾನ ಈಗ ಬಾಕಿ ಇದೆ. Laboura ತೆರೆಯಿರಿ.' },
+    hi: { title: 'आपका रेफ़रल नौकरी पर लग गया', body: 'आपके रेफ़र किए गए किसी व्यक्ति ने नौकरी जॉइन कर ली है। आपका इनाम अब देय है। Laboura खोलें।' },
+  },
+};
+
+/** The push's title and body: the lock-screen text when the event has one, else the inbox copy. */
+export function pushWording(kind: string, language: string, inbox: Wording): Wording {
+  const table = LOCK_SCREEN_WORDING[kind as CustomerEventKind];
+  if (!table) return inbox;
+  return table[isCustomerLanguage(language) ? language : 'en'];
+}

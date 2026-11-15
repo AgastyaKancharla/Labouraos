@@ -20,10 +20,19 @@ export interface CustomerEventDefinition {
   /** urgent: never held by the daily cap; still waits for 9 AM in quiet hours (Q21). */
   priority: CustomerNotificationPriority;
   /**
-   * The person just did this themselves (a payment receipt): sent at once,
-   * even in quiet hours, and not counted in the daily cap (proposal 5.4).
+   * Can be a receipt for something the person just did themselves (a payment):
+   * such a receipt is sent at once, even in quiet hours, and not counted in the
+   * daily cap (proposal 5.4). Only when the caller says the person did it
+   * (NotifyOptions.selfAction, e.g. a card payment confirmed by the gateway) and
+   * the event reaches exactly one account (privacy review M3).
    */
   selfAction?: boolean;
+  /**
+   * Business recipients: only owner profiles with no branch limit (the people
+   * who may see money; same rule as CustomerScopeService.assertBusinessOwner).
+   * Never HR, supervisors or branch managers (privacy review M4).
+   */
+  businessOwnersOnly?: boolean;
   /** Who it is for (documentation and tests; recipients come from the caller). */
   audience: readonly CustomerAudience[];
   /** Screen the app opens on tap (customer/src/push/deepLinks.ts maps it). */
@@ -42,7 +51,7 @@ export const CUSTOMER_EVENTS = {
 
   // --- Payments in (receipts: the person just paid) ---
   payment_confirmed: { category: 'service', priority: 'normal', selfAction: true, audience: ['job_seeker'], deepLink: '/home', vars: ['days'] },
-  fee_paid: { category: 'service', priority: 'normal', selfAction: true, audience: ['business'], deepLink: '/home', vars: [] },
+  fee_paid: { category: 'service', priority: 'normal', selfAction: true, businessOwnersOnly: true, audience: ['business'], deepLink: '/home', vars: [] },
 
   // --- Job seeker journey ---
   job_match: { category: 'job_updates', priority: 'normal', audience: ['job_seeker'], deepLink: '/home', vars: [] },
@@ -55,8 +64,8 @@ export const CUSTOMER_EVENTS = {
   joining_day_check: { category: 'service', priority: 'normal', audience: ['job_seeker', 'business'], deepLink: '/home', vars: [] },
   hit_recorded: { category: 'service', priority: 'normal', audience: ['job_seeker'], deepLink: '/home', vars: [] },
   guarantee_countdown: { category: 'service', priority: 'normal', audience: ['job_seeker', 'business'], deepLink: '/home', vars: ['daysLeft'] },
-  refund_approved: { category: 'service', priority: 'normal', audience: ['job_seeker', 'business'], deepLink: '/home', vars: [] },
-  refund_paid: { category: 'service', priority: 'normal', audience: ['job_seeker', 'business'], deepLink: '/home', vars: [] },
+  refund_approved: { category: 'service', priority: 'normal', businessOwnersOnly: true, audience: ['job_seeker', 'business'], deepLink: '/home', vars: [] },
+  refund_paid: { category: 'service', priority: 'normal', businessOwnersOnly: true, audience: ['job_seeker', 'business'], deepLink: '/home', vars: [] },
   reward_approved: { category: 'service', priority: 'normal', audience: ['job_seeker'], deepLink: '/home', vars: [] },
   reward_paid: { category: 'service', priority: 'normal', audience: ['job_seeker'], deepLink: '/home', vars: [] },
 
@@ -122,13 +131,35 @@ export const PUSH_STATUS = {
   heldQuietHours: 'held_quiet_hours',
   heldDailyCap: 'held_daily_cap',
   off: 'off',
+  /**
+   * Never pushed and not shown in the inbox: the profile it is about is no
+   * longer the account's (number corrected, anonymised, revoked), or the consent
+   * a job update or promotion needs was withdrawn before it went out.
+   */
+  cancelled: 'cancelled',
 } as const;
+
+/** Internal keys the server keeps in a message's `data`; never sent to the app (inbox or push). */
+const INTERNAL_DATA_KEYS = ['trigger'] as const;
+
+/** A message's `data` as the app may see it (inbox answers and push payloads). */
+export function publicMessageData(data: unknown): Record<string, unknown> {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {};
+  const rest = { ...(data as Record<string, unknown>) };
+  for (const key of INTERNAL_DATA_KEYS) delete rest[key];
+  return rest;
+}
+
+/** Phones per account that keep a push token; saving a token on a 6th drops the oldest (privacy review M5). */
+export const MAX_PUSH_DEVICES_PER_ACCOUNT = 5;
 
 /** Expo push token shape: ExponentPushToken[...] (or the newer ExpoPushToken[...]). */
 export const EXPO_PUSH_TOKEN_PATTERN = /^Expo(nent)?PushToken\[[A-Za-z0-9_\-:.]{10,200}\]$/;
 
 /** How long after sending Expo's receipts are checked (Expo suggests about 15 minutes). */
 export const RECEIPT_CHECK_DELAY_MS = 15 * 60 * 1000;
+/** Receipts Expo has not produced yet are asked for again, at most this many more times. */
+export const RECEIPT_CHECK_MAX_RETRIES = 3;
 
 /**
  * The push jobs use the one shared BullMQ queue every job uses (LABOURA_JOBS_QUEUE
@@ -140,15 +171,19 @@ export const CUSTOMER_PUSH_SEND_NOW = 'send-customer-push-now';
 export const CUSTOMER_PUSH_CHECK_RECEIPTS = 'check-customer-push-receipts';
 
 /**
- * Phones of an account that can get a push: a token, not signed out, and the
- * phone's permission not refused. (A null permission is allowed: SQL's NOT
+ * Phones of an account that can get a push: the account is active (never one
+ * being deleted or blocked), the phone has a token, is not signed out, has a
+ * live sign-in (a session not ended and not expired, privacy review M5), and
+ * its permission is not refused. (A null permission is allowed: SQL's NOT
  * would drop nulls, hence the OR.)
  */
-export function pushableDevices(accountId: string) {
+export function pushableDevices(accountId: string, now: Date) {
   return {
     accountId,
+    account: { status: 'active' },
     pushToken: { not: null },
     revokedAt: null,
+    sessions: { some: { revokedAt: null, expiresAt: { gt: now } } },
     OR: [{ pushPermission: null }, { pushPermission: { not: 'denied' } }],
   };
 }

@@ -1,8 +1,8 @@
 import { CustomerNotificationHooks } from './customer-notification-hooks.service';
-import { CustomerPushJob, CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND } from '../../jobs/customer-push.job';
+import { CustomerPushJob, CUSTOMER_PUSH_QUEUE, CUSTOMER_PUSH_ROUND, CUSTOMER_PUSH_RUN_NOW_ID } from '../../jobs/customer-push.job';
 import { jobQueue, LABOURA_JOBS_QUEUE } from '../../jobs/job-queue';
 import { CustomerPushKick } from './customer-push-kick';
-import { CUSTOMER_PUSH_CHECK_RECEIPTS, CUSTOMER_PUSH_SEND_NOW, RECEIPT_CHECK_DELAY_MS } from './customer-notification.constants';
+import { CUSTOMER_PUSH_CHECK_RECEIPTS, CUSTOMER_PUSH_SEND_NOW, RECEIPT_CHECK_DELAY_MS, RECEIPT_CHECK_MAX_RETRIES } from './customer-notification.constants';
 
 /**
  * The existing events, turned into app notifications: each hook looks up its
@@ -29,21 +29,32 @@ describe('Customer app notification hooks on existing events', () => {
       payment: { type: 'activation', status: 'succeeded', jobSeekerId: 'js-1', jobSeeker: { name: 'Ravi Kumar', referredById: 'rf-1' } },
     });
     await hooks.jobSeekerPaymentConfirmed('pay-1');
-    expect(notify).toHaveBeenCalledWith({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 }, { dedupeKey: 'payment_confirmed:pay-1' });
+    // Matched from the bank feed or by Finance: not the person's own action of the moment (waits for 9 AM at night).
+    expect(notify).toHaveBeenCalledWith({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 }, { dedupeKey: 'payment_confirmed:pay-1', selfAction: false });
     expect(notify).toHaveBeenCalledWith({ referralId: 'rf-1' }, 'referral_paid', { firstName: 'Ravi' }, { dedupeKey: 'referral_paid:pay-1' });
   });
 
-  it('fee paid: the business (owner and that branch) gets the receipt; both sides hear the joining is confirmed', async () => {
+  it('a receipt counts as the person\'s own action only when they just paid by card (gateway), never for bank feed or Finance', async () => {
+    for (const [confirmedBy, selfAction] of [['gateway', true], ['bank_feed', false], ['finance_manual', false]] as const) {
+      const { hooks, notify } = build({ payment: { type: 'activation', status: 'succeeded', confirmedBy, jobSeekerId: 'js-1', jobSeeker: { name: 'Ravi', referredById: null } } });
+      await hooks.jobSeekerPaymentConfirmed('pay-1');
+      expect(notify).toHaveBeenCalledWith({ jobSeekerId: 'js-1' }, 'payment_confirmed', { days: 30 }, expect.objectContaining({ selfAction }));
+    }
+  });
+
+  it('fee paid: the business owners get the receipt (never a branch manager); both sides hear the joining is confirmed', async () => {
     const { hooks, notify } = build({
       payment: {
         type: 'placement_fee',
         status: 'succeeded',
+        confirmedBy: 'gateway',
         placement: { id: 'pl-1', businessId: 'bz-1', jobSeekerId: 'js-1', joiningDate: new Date(), vacancy: { branchId: 'br-1' } },
       },
     });
     await hooks.placementFeePaid('pay-2');
+    expect(notify.mock.calls[0][3]).toEqual({ dedupeKey: 'fee_paid:pay-2', selfAction: true });
     expect(notify.mock.calls.map((c) => [c[0], c[1]])).toEqual([
-      [{ businessId: 'bz-1', branchId: 'br-1' }, 'fee_paid'],
+      [{ businessId: 'bz-1' }, 'fee_paid'],
       [{ jobSeekerId: 'js-1' }, 'joining_confirmed'],
       [{ businessId: 'bz-1', branchId: 'br-1' }, 'joining_confirmed'],
     ]);
@@ -106,22 +117,55 @@ describe('CustomerPushJob', () => {
   const result = { sent: 1, failed: 0, heldQuietHours: 0, heldDailyCap: 0, off: 0, noDevice: 0, retried: 0, deadTokensRemoved: 0 };
 
   it('sends what is due and books the receipt check about 15 minutes later', async () => {
-    const tickets = [{ ticketId: 't1', token: 'ExponentPushToken[a-123456789]', inboxId: 'm1', messageLogId: 'l1' }];
+    const tickets = [{ ticketId: 't1', deviceId: 'dev-1', inboxId: 'm1', messageLogId: 'l1', sentAt: new Date().toISOString() }];
     const sender = { now: () => new Date(), sendDue: jest.fn().mockResolvedValue({ ...result, tickets }), checkReceipts: jest.fn() };
     const job = new CustomerPushJob(sender as never);
     const queue = { add: jest.fn().mockResolvedValue({}) };
     jest.spyOn(job, 'getQueue').mockReturnValue(queue as never);
     await expect(job.process()).resolves.toEqual({ ...result, tickets: 1 });
-    expect(queue.add).toHaveBeenCalledWith(CUSTOMER_PUSH_CHECK_RECEIPTS, { tickets }, expect.objectContaining({ delay: RECEIPT_CHECK_DELAY_MS }));
+    expect(queue.add).toHaveBeenCalledWith(CUSTOMER_PUSH_CHECK_RECEIPTS, { tickets, retry: 0 }, expect.objectContaining({ delay: RECEIPT_CHECK_DELAY_MS }));
+    // The queue holds phone row ids, never a raw push token (privacy review L3).
+    expect(JSON.stringify(queue.add.mock.calls[0][1])).not.toContain('ExponentPushToken');
+  });
+
+  it('asks again for receipts Expo has not produced yet, a bounded number of times', async () => {
+    const pending = [{ ticketId: 't2', deviceId: 'dev-1', inboxId: 'm1', messageLogId: null, sentAt: new Date().toISOString() }];
+    const sender = { now: () => new Date(), sendDue: jest.fn(), checkReceipts: jest.fn().mockResolvedValue({ ok: 0, errors: 0, deadTokensRemoved: 0, pending }) };
+    const job = new CustomerPushJob(sender as never);
+    const queue = { add: jest.fn().mockResolvedValue({}) };
+    jest.spyOn(job, 'getQueue').mockReturnValue(queue as never);
+    await expect(job.handleJob({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: pending, retry: 0 } })).resolves.toMatchObject({ pending: 1 });
+    expect(queue.add).toHaveBeenCalledWith(CUSTOMER_PUSH_CHECK_RECEIPTS, { tickets: pending, retry: 1 }, expect.objectContaining({ delay: RECEIPT_CHECK_DELAY_MS }));
+    queue.add.mockClear();
+    await job.handleJob({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: pending, retry: RECEIPT_CHECK_MAX_RETRIES } });
+    expect(queue.add).not.toHaveBeenCalled();
+    // An old-style ref carrying a token and no phone id is ignored.
+    sender.checkReceipts.mockClear();
+    await job.handleJob({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: [{ ticketId: 't3', token: 'ExponentPushToken[x-123456789]' }] } });
+    expect(sender.checkReceipts).toHaveBeenCalledWith([]);
+  });
+
+  it('the CEO\'s "run now" queues a round for the worker instead of sending from the web process', async () => {
+    const sender = { now: () => new Date(), sendDue: jest.fn(), checkReceipts: jest.fn() };
+    const job = new CustomerPushJob(sender as never);
+    const add = jest.spyOn(jobQueue, 'add').mockResolvedValueOnce({} as never);
+    await expect(job.queueRunNow()).resolves.toEqual({ queued: true });
+    expect(add).toHaveBeenCalledWith(CUSTOMER_PUSH_ROUND, {}, expect.objectContaining({ jobId: CUSTOMER_PUSH_RUN_NOW_ID }));
+    expect(sender.sendDue).not.toHaveBeenCalled();
+    add.mockRestore();
   });
 
   it('routes a kick to a send round and a receipt job to the receipt check', async () => {
-    const sender = { now: () => new Date(), sendDue: jest.fn().mockResolvedValue({ ...result, tickets: [] }), checkReceipts: jest.fn().mockResolvedValue({ ok: 1 }) };
+    const sender = {
+      now: () => new Date(),
+      sendDue: jest.fn().mockResolvedValue({ ...result, tickets: [] }),
+      checkReceipts: jest.fn().mockResolvedValue({ ok: 1, errors: 0, deadTokensRemoved: 0, pending: [] }),
+    };
     const job = new CustomerPushJob(sender as never);
     await job.handleJob({ name: CUSTOMER_PUSH_SEND_NOW, data: {} });
     expect(sender.sendDue).toHaveBeenCalledTimes(1);
-    await job.handleJob({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: [{ ticketId: 't' }] } });
-    expect(sender.checkReceipts).toHaveBeenCalledWith([{ ticketId: 't' }]);
+    await job.handleJob({ name: CUSTOMER_PUSH_CHECK_RECEIPTS, data: { tickets: [{ ticketId: 't', deviceId: 'd' }] } });
+    expect(sender.checkReceipts).toHaveBeenCalledWith([{ ticketId: 't', deviceId: 'd' }]);
     expect(CUSTOMER_PUSH_ROUND).toBe('send-due-customer-pushes');
   });
 

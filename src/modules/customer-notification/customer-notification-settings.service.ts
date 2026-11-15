@@ -77,6 +77,30 @@ export class CustomerNotificationSettingsService {
     return new Set(rows.map((r) => r.purpose));
   }
 
+  /**
+   * Job updates and promotions need the matching consent, still given, for
+   * EVERY record the message is about: the one profile it names, or else every
+   * record the account acts for, whatever its kind (job seeker, business,
+   * partner). An account with no record has no consent (privacy review H4).
+   */
+  async consentGiven(accountId: string, subject: ProfileSubject | null, purpose: 'job_updates' | 'promotions'): Promise<boolean> {
+    const subjects = subject ? [subject] : await this.subjectsOf(accountId);
+    if (subjects.length === 0) return false;
+    for (const s of subjects) {
+      if (!(await this.liveConsents(s)).has(purpose)) return false;
+    }
+    return true;
+  }
+
+  /**
+   * Whether Service pushes go out: the switch is on, or a guarantee is running
+   * (the switch cannot be off then, even if it was turned off before the
+   * guarantee started; privacy review H3).
+   */
+  async serviceOn(accountId: string, settings: Pick<CustomerNotificationSetting, 'service'>, now: Date = this.clock.now()): Promise<boolean> {
+    return settings.service || this.serviceLocked(accountId, now);
+  }
+
   /** The account's switches, made on first use from the consents already given. */
   async getOrCreate(accountId: string): Promise<CustomerNotificationSetting> {
     const existing = await this.prisma.customerNotificationSetting.findUnique({ where: { accountId } });
