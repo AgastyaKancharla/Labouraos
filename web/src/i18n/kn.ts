@@ -5,7 +5,7 @@ import { attendanceKn } from '../attendance/i18n';
 import { workerLeftKn } from '../claims/i18n';
 import type { Messages } from './en';
 import { registrationKn } from './registration';
-import { staffInviteKn } from './staffInvite';
+import { staffAccessKn } from './staffAccess';
 import { referralTermsKn } from './referralTerms';
 import { legalKn } from './legal';
 import { referralPartnerKn } from './referralPartner';
@@ -327,20 +327,15 @@ export const kn: Messages = {
   "auth.totp.body": "ನಿಮ್ಮ ಫೋನ್‌ನಲ್ಲಿ ಅಥೆಂಟಿಕೇಟರ್ ಆ್ಯಪ್ ತೆರೆದು Laboura ದ 6 ಅಂಕಿಯ ಕೋಡ್ ನಮೂದಿಸಿ.",
   "auth.code.title": "ನಿಮ್ಮ ಲಾಗಿನ್ ಕೋಡ್ ಕೇಳಿ",
   "auth.code.titleTeamLead": "ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್ ಬಳಿ ಕೋಡ್ ಕೇಳಿ",
-  "auth.code.titleManager": "ಮ್ಯಾನೇಜರ್ ಬಳಿ ಕೋಡ್ ಕೇಳಿ",
   "auth.code.body": "ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್, ಮ್ಯಾನೇಜರ್ ಅಥವಾ CEO ನಿಮ್ಮ ವಿನಂತಿ ನೋಡಿ ಕೋಡ್ ಹೇಳುತ್ತಾರೆ.",
   "auth.code.bodyTeamLead": "ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್‌ಗೆ ಈಗ ಅವರ ಪರದೆಯಲ್ಲಿ ನಿಮ್ಮ ವಿನಂತಿ ಕಾಣುತ್ತದೆ. ಅವರು Show code ಒತ್ತಿ ನಿಮಗೆ ಕೋಡ್ ಹೇಳುತ್ತಾರೆ.",
-  "auth.code.bodyManager": "ಮ್ಯಾನೇಜರ್ ಅಥವಾ CEO ನಿಮ್ಮ ವಿನಂತಿ ನೋಡಿ ಕೋಡ್ ಹೇಳುತ್ತಾರೆ.",
+  "auth.code.titleCeo": "CEO ಬಳಿ ನಿಮ್ಮ ಕೋಡ್ ಕೇಳಿ",
+  "auth.code.bodyCeo": "CEO ಗೆ ಈಗ ಅವರ ಪರದೆಯಲ್ಲಿ ನಿಮ್ಮ ವಿನಂತಿ ಕಾಣುತ್ತದೆ. ಅವರು Show code ಒತ್ತಿ ನಿಮಗೆ ಕೋಡ್ ಹೇಳುತ್ತಾರೆ.",
   "auth.code.note": "ಕೋಡ್ ಒಮ್ಮೆ ಮಾತ್ರ, 5 ನಿಮಿಷ ಕೆಲಸ ಮಾಡುತ್ತದೆ. ಯಾರೂ ತಮ್ಮ ಕೋಡ್ ತಾವೇ ನೋಡಲು ಆಗುವುದಿಲ್ಲ. ಕೆಲಸ ಮಾಡುವಾಗ ನೀವು ಲಾಗ್ ಇನ್ ಆಗಿರುತ್ತೀರಿ; 60 ನಿಮಿಷ ಏನೂ ಮಾಡದಿದ್ದರೆ ಅಥವಾ ಒಟ್ಟು 2 ಗಂಟೆಯ ನಂತರ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.",
   "auth.code.expiresIn": "ಕೋಡ್ ವಿನಂತಿ {time} ನಲ್ಲಿ ಮುಗಿಯುತ್ತದೆ",
   "auth.code.expired": "ಈ ಕೋಡ್ ವಿನಂತಿ ಮುಗಿದಿದೆ. ಹೊಸ ಕೋಡ್‌ಗಾಗಿ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.",
   "auth.code.label": "ಲಾಗಿನ್ ಕೋಡ್",
   "auth.startAgain": "ಮತ್ತೆ ಆರಂಭಿಸಿ",
-  "auth.enrol.title": "ನಿಮ್ಮ ಅಥೆಂಟಿಕೇಟರ್ ಹೊಂದಿಸಿ",
-  "auth.enrol.body": "ನಿಮ್ಮ ಫೋನ್‌ನ ಅಥೆಂಟಿಕೇಟರ್ ಆ್ಯಪ್‌ನಿಂದ ಇದನ್ನು ಸ್ಕ್ಯಾನ್ ಮಾಡಿ, ನಂತರ ಆ್ಯಪ್ ತೋರಿಸುವ 6 ಅಂಕಿಯ ಕೋಡ್ ನಮೂದಿಸಿ.",
-  "auth.enrol.secret": "ಅಥವಾ ಆ್ಯಪ್‌ನಲ್ಲಿ ಈ ಕೀ ನಮೂದಿಸಿ: {secret}",
-  "auth.enrol.turnOn": "ಆನ್ ಮಾಡಿ",
-  "auth.enrol.done": "ಅಥೆಂಟಿಕೇಟರ್ ಆನ್ ಆಗಿದೆ. ಆ್ಯಪ್‌ನ ಕೋಡ್‌ನೊಂದಿಗೆ ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.",
   "auth.signedOut.idle": "60 ನಿಮಿಷ ಯಾವುದೇ ಚಟುವಟಿಕೆ ಇಲ್ಲದ ಕಾರಣ ನೀವು ಸೈನ್ ಔಟ್ ಆಗಿದ್ದೀರಿ.",
   "auth.signedOut.max_length": "ಪ್ರತಿ ಸೈನ್ ಇನ್ ಗರಿಷ್ಠ 2 ಗಂಟೆ ಇರುತ್ತದೆ. ಮತ್ತೆ ಸೈನ್ ಇನ್ ಮಾಡಿ.",
   "auth.signedOut.revoked": "ನಿಮ್ಮ ಸೆಷನ್ ಮುಗಿಸಲಾಗಿದೆ — ನೀವು ಬೇರೆಡೆ ಸೈನ್ ಇನ್ ಮಾಡಿದ್ದೀರಿ, ಅಥವಾ ಖಾತೆ ಲಾಕ್ ಆಗಿದೆ.",
@@ -363,13 +358,6 @@ export const kn: Messages = {
   "auth.fieldAgent.title": "Laboura Field ಆ್ಯಪ್ ಬಳಸಿ",
   "auth.fieldAgent.body": "ಫೀಲ್ಡ್ ಏಜೆಂಟ್‌ಗಳು ತಮ್ಮ ಅನುಮೋದಿತ ಫೋನ್‌ನ Laboura Field ಆ್ಯಪ್‌ನಿಂದ ಕೆಲಸ ಮಾಡುತ್ತಾರೆ.",
   "auth.fieldAgent.open": "Laboura Field ತೆರೆಯಿರಿ",
-  "auth.forgot.link": "ಪಾಸ್‌ವರ್ಡ್ ಮರೆತಿರಾ?",
-  "auth.forgot.title": "ಪಾಸ್‌ವರ್ಡ್ ಮರೆತಿದೆ",
-  "auth.forgot.body": "CEO, ಮ್ಯಾನೇಜರ್‌ಗಳು ಮತ್ತು ಫೈನಾನ್ಸ್: ನಿಮ್ಮ ಕಂಪನಿ ಇಮೇಲ್ ಬರೆಯಿರಿ, ಹೊಸ ಪಾಸ್‌ವರ್ಡ್ ಹೊಂದಿಸಲು ನಾವು ಒಂದು ಲಿಂಕ್ ಕಳುಹಿಸುತ್ತೇವೆ. ಅದು ಒಂದೇ ಬಾರಿ, 1 ಗಂಟೆಯವರೆಗೆ ಕೆಲಸ ಮಾಡುತ್ತದೆ. ಸೈನ್ ಇನ್ ಮಾಡಲು ನಿಮ್ಮ ಆಥೆಂಟಿಕೇಟರ್ ಕೋಡ್ ಇನ್ನೂ ಬೇಕು.",
-  "auth.forgot.agents": "ಏಜೆಂಟ್‌ಗಳು ಮತ್ತು ಟೀಮ್ ಲೀಡ್‌ಗಳು: ನಿಮ್ಮ ಟೀಮ್ ಲೀಡ್, ಮ್ಯಾನೇಜರ್ ಅಥವಾ CEO ಅವರಿಗೆ Reset ಒತ್ತಲು ಹೇಳಿ.",
-  "auth.forgot.email": "ಕಂಪನಿ ಇಮೇಲ್",
-  "auth.forgot.send": "ಲಿಂಕ್ ಕಳುಹಿಸಿ",
-  "auth.forgot.back": "ಸೈನ್ ಇನ್‌ಗೆ ಹಿಂದಿರುಗಿ",
   "placeholder.body": "ಈ ಪರದೆಯನ್ನು ಅನುಮೋದಿತ ವಿನ್ಯಾಸದಿಂದ ನಿರ್ಮಿಸಲಾಗುತ್ತಿದೆ.",
   "placeholder.design": "ವಿನ್ಯಾಸ: {id}",
   "placeholder.variants": "ಇದರಲ್ಲಿ ಇವೂ ಸೇರಿವೆ: {ids}",
@@ -595,7 +583,7 @@ export const kn: Messages = {
   "screen.P05b-PayFee": "ಶುಲ್ಕ ಪಾವತಿಸಿ",
   "screen.P06-DidTheyOffer": "ಅವರು ನಿಮಗೆ ಕೆಲಸದ ಆಫರ್ ಕೊಟ್ಟರೇ?",
   ...registrationKn,
-  ...staffInviteKn,
+  ...staffAccessKn,
   ...referralTermsKn,
   ...legalKn,
   ...referralPartnerKn,

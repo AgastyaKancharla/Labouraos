@@ -693,6 +693,7 @@ export class FieldSellingService {
     if (body.outcome === 'complaint') {
       await this.reviewFlags.raise({
         kind: 'owner_complaint', subjectType: 'business', subjectId: call.subjectId,
+        // Owner accounts under a CEO: the flag goes to the CEO (teamLeadOf gives the CEO's id here on purpose).
         raisedForStaffId: teamLeadOf(staff),
         details: { callRecordId: call.id, raisedByStaffId: actor.id, note },
       });

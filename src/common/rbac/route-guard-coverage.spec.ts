@@ -338,6 +338,14 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
     expect(rolesOf('PlacementController.suspendedBusinessClaims')).toEqual(['ceo', 'manager']);
   });
 
+  it('keeps the proxy check (GET /health/proxy-check) behind a login, for the CEO only', () => {
+    const route = routes.find((r) => r.controller === 'HealthController' && r.handler === 'proxyCheck');
+    expect(route).toBeDefined();
+    expect(route!.publicReason).toBeUndefined();
+    expect(route!.guards).toEqual(expect.arrayContaining([JwtAuthGuard, RbacGuard]));
+    expect(route!.roles).toEqual(['ceo']);
+  });
+
   it('keeps money, audit and staff routes behind a login', () => {
     const publicPaths = routes
       .filter((route) => route.publicReason)
@@ -348,6 +356,7 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
       'AuditController.getAuditLogs',
       'EditPolicyController.checkEditPermission',
       'SystemStatusController.getSystemStatus',
+      'HealthController.proxyCheck',
     ]) {
       expect(publicPaths).not.toContain(forbidden);
     }

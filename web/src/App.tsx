@@ -6,10 +6,10 @@ import { RequireRole } from './auth/RequireRole';
 import { ROLE_HOME } from './auth/roles';
 import { ToastProvider } from './components/Toast';
 import { TestModeBanner } from './components/TestModeBanner';
+import { ResetNoticeBanner } from './components/ResetNoticeBanner';
 import { I18nProvider } from './i18n/I18nProvider';
 import { isApiError } from './lib/api/errors';
 import { PORTALS } from './portals';
-import AcceptInvite from './screens/auth/AcceptInvite';
 import StaffSignIn from './screens/auth/StaffSignIn';
 import { FieldAgentNotice } from './screens/shared/FieldAgentNotice';
 import { NotFound } from './screens/shared/NotFound';
@@ -44,6 +44,7 @@ export function AppProviders({ children, queryClient }: { children: ReactNode; q
           <ToastProvider>
             {children}
             <TestModeBanner />
+            <ResetNoticeBanner />
           </ToastProvider>
         </AuthProvider>
       </I18nProvider>
@@ -61,8 +62,8 @@ export function AppRoutes() {
     <Routes>
       <Route path="/" element={<HomeRedirect />} />
       <Route path="/login" element={<StaffSignIn />} />
-      {/* Public (outside Cloudflare Access, like every /p page): field agents open their invite on their phone. */}
-      <Route path="/p/invite/:token" element={<AcceptInvite />} />
+      {/* Invite links were replaced by temporary passwords (Master Guide rev 174–175): an old link goes to sign-in. */}
+      <Route path="/p/invite/*" element={<Navigate to="/login" replace />} />
       {/* Not /field-agent: that address is still the old field agent console on the server. */}
       <Route
         path="/field-app"

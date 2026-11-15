@@ -1,6 +1,6 @@
+import { isStaffAccessToken } from './staff-token';
 import {
   BadRequestException,
-  ConflictException,
   ForbiddenException,
   Injectable,
   NotFoundException,
@@ -9,7 +9,7 @@ import {
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
-import { Staff } from '@prisma/client';
+import { Prisma, Staff } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { noteRequestDevice } from '../observability/request-context';
 import { AuditService } from '../audit/audit.service';
@@ -19,7 +19,13 @@ import {
   LoginDto,
   LoginResponseDto,
   LoginResult,
+  PasswordResetNotice,
+  SetupRequiredResponseDto,
 } from './dto/login.dto';
+import { AUTHENTICATOR_ROLES, LOGIN_CODE_ROLES } from './sign-in-roles';
+import { normaliseTemporaryPassword, SETUP_TICKET_TTL_MS } from './temporary-password';
+import { PASSWORD_RULES } from './password-rules';
+import { staffPhotoNeeded } from '../../modules/staff/staff-photo.service';
 import { JwtPayload } from './jwt-payload.interface';
 import { LoginCodeService } from '../../modules/login-code/login-code.service';
 import { isOddHourIst, loginCodesMatch, loginRequestProofFor } from '../../modules/login-code/login-code.crypto';
@@ -46,15 +52,24 @@ export interface StaffSessionView {
 /** Matches the access-token lifetime on JwtModule until Task 5 owns session length. */
 const ACCESS_SESSION_MS = 15 * 60 * 1000;
 
-const MANAGEMENT_ROLES = ['ceo', 'manager', 'finance'] as const;
 /**
  * Only the CEO approves his own new device with his authenticator code. A
  * Manager's or Finance's new device waits for the CEO (decided 11 Nov).
  */
 const SELF_APPROVING_DEVICE_ROLES = ['ceo'] as const;
-const LOGIN_CODE_ROLES = ['team_lead', 'call_agent', 'field_agent'] as const;
-
 const INVALID_CREDENTIALS = 'Invalid staff code or password';
+export const TEMP_PASSWORD_EXPIRED = 'This temporary password has expired. Ask your senior for a new one.';
+/**
+ * An authenticator role (CEO, Manager, Finance, Team Lead) with a password but
+ * no authenticator yet: a password alone never opens a session. They set the
+ * authenticator up with a fresh temporary password from a senior.
+ */
+export const AUTHENTICATOR_NOT_SET_UP =
+  'Your authenticator is not set up yet. Ask a senior for a temporary password: you set up the authenticator when you sign in with it.';
+
+export function hashSetupTicket(ticket: string): string {
+  return createHash('sha256').update(ticket).digest('hex');
+}
 export const DEVICE_NO_LONGER_APPROVED = 'This device is no longer approved. Ask your Team Lead to approve it again.';
 
 /**
@@ -189,6 +204,12 @@ export class AuthService {
     const passwordOk = staff
       ? await this.verifyPassword(password, staff.passwordHash)
       : false;
+    // First sign-in (or a senior's new temporary password): the temporary
+    // password is recognised automatically, in any case, with or without the dash.
+    const tempOk = staff && !passwordOk ? await this.temporaryPasswordMatches(staff, password) : false;
+    if (staff && tempOk) {
+      return this.startSetup(staff, text(loginDto.deviceId).trim(), metadata);
+    }
     if (!staff || !passwordOk) {
       if (staff) {
         await this.rejectIfLocked(staff);
@@ -207,11 +228,11 @@ export class AuthService {
     }
 
     await this.rejectIfLocked(staff);
-    const management = (MANAGEMENT_ROLES as readonly string[]).includes(staff.role);
-    // Management has a second factor still to come (authenticator code): the
-    // wrong-try count is cleared only once that is right too, so wrong codes
-    // lock the account exactly like wrong passwords (5 tries, 15 minutes).
-    if (!management) await this.clearFailedLogins(staff.id);
+    const authenticator = AUTHENTICATOR_ROLES.includes(staff.role);
+    // Authenticator roles have a second factor still to come: the wrong-try
+    // count is cleared only once that is right too, so wrong codes lock the
+    // account exactly like wrong passwords (5 tries, 15 minutes).
+    if (!authenticator) await this.clearFailedLogins(staff.id);
 
     if (staff.status !== 'active') {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
@@ -242,31 +263,27 @@ export class AuthService {
       where: { staffId_deviceId: { staffId: staff.id, deviceId } },
     });
 
-    if (!management) {
-      if (!device || device.status !== 'approved') {
-        await this.ensurePendingDevice(staff.id, deviceId, app);
-        await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
-          reason: 'device_pending',
-        });
-        throw new UnauthorizedException(
-          'This device is waiting for approval by your Team Lead',
-        );
-      }
-    }
-
     // No office-network rule (owner decision 14 Nov): every login already needs a one-time
     // code from a senior or the authenticator code, so staff log in from any network.
 
-    if (management) {
-      return this.completeManagementLogin(staff, deviceId, device?.status, text(loginDto.totpCode) || undefined, metadata, app);
+    if (authenticator) {
+      return this.completeAuthenticatorLogin(staff, deviceId, device?.status, text(loginDto.totpCode) || undefined, metadata, app);
     }
 
-    if (!(LOGIN_CODE_ROLES as readonly string[]).includes(staff.role)) {
+    if (!LOGIN_CODE_ROLES.includes(staff.role)) {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'role_not_allowed' });
       throw new UnauthorizedException('This account cannot log in');
     }
 
-    const request = await this.loginCodeService.create(staff.id, device!.id, metadata?.ip ?? '', app);
+    if (!device || device.status !== 'approved') {
+      await this.ensurePendingDevice(staff.id, deviceId, app);
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
+        reason: 'device_pending',
+      });
+      throw new UnauthorizedException(await this.devicePendingMessage(staff));
+    }
+
+    const request = await this.loginCodeService.create(staff.id, device.id, metadata?.ip ?? '', app);
     await this.auditAttempt(staff.id, staff.code, 'auth.login.awaiting_code', {
       loginRequestId: request.id,
     });
@@ -275,8 +292,97 @@ export class AuthService {
       loginRequestId: request.id,
       loginRequestProof: loginRequestProofFor(request.id, deviceId),
       expiresAt: request.expiresAt,
+      codeFrom: await this.agentSenior(staff),
     };
     return awaiting;
+  }
+
+  /**
+   * Whose approval a new device waits for: an agent's Team Lead; an owner
+   * agent account that reports straight to a CEO, the CEO (rev 174–175).
+   */
+  private async devicePendingMessage(staff: Staff): Promise<string> {
+    if ((await this.agentSenior(staff)) === 'ceo') return 'This device is waiting for approval by the CEO';
+    return 'This device is waiting for approval by your Team Lead';
+  }
+
+  /** Who an agent asks for device approval and login codes: their Team Lead, or a CEO for an owner account under a CEO. */
+  private async agentSenior(staff: Staff): Promise<'team_lead' | 'ceo'> {
+    if (staff.reportsToId && !staff.teamLeadId) {
+      const boss = await this.prisma.staff.findUnique({ where: { id: staff.reportsToId }, select: { role: true } });
+      if (boss?.role === 'ceo') return 'ceo';
+    }
+    return 'team_lead';
+  }
+
+  /** True when the password is this account's temporary password (expired or not). */
+  private async temporaryPasswordMatches(staff: Staff, password: string): Promise<boolean> {
+    if (!staff.tempPasswordHash) return false;
+    const normalised = normaliseTemporaryPassword(password);
+    if (!normalised) return false;
+    return this.verifyPassword(normalised, staff.tempPasswordHash);
+  }
+
+  /**
+   * Staff code + temporary password (rev 174–175, rule 3): no session. A
+   * 10–15 minute set-up ticket bound to this device opens the set-up steps
+   * (selfie, new password twice, authenticator for authenticator roles).
+   * A lock a senior placed stays; an expired temporary password is refused;
+   * each app still accepts only its own roles.
+   */
+  private async startSetup(staff: Staff, deviceId: string, metadata?: LoginMetadata): Promise<SetupRequiredResponseDto> {
+    await this.rejectIfLocked(staff);
+    const now = this.clock.now();
+    if (!staff.tempPasswordExpiresAt || staff.tempPasswordExpiresAt.getTime() <= now.getTime()) {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'temp_password_expired' });
+      throw new UnauthorizedException(TEMP_PASSWORD_EXPIRED);
+    }
+    if (staff.status !== 'active' && staff.status !== 'pending_invite') {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'account_not_active' });
+      throw new UnauthorizedException('Account is not active');
+    }
+    const app = this.appFor(staff.role, metadata);
+    if (!roleAllowedInApp(staff.role, app)) {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'wrong_app', app, role: staff.role });
+      throw new UnauthorizedException(wrongAppMessage(app));
+    }
+    if (!deviceId) {
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'device_required' });
+      throw new UnauthorizedException('A device id is required');
+    }
+    noteRequestDevice({ staffId: staff.id, deviceId });
+    const ticket = randomBytes(32).toString('hex');
+    const expiresAt = new Date(now.getTime() + SETUP_TICKET_TTL_MS);
+    // Conditional on the temporary password still being the one checked, so a
+    // senior's newer temporary password in between wins.
+    const updated = await this.prisma.staff.updateMany({
+      where: { id: staff.id, tempPasswordHash: staff.tempPasswordHash },
+      data: {
+        setupTicketHash: hashSetupTicket(ticket),
+        setupTicketDeviceId: deviceId,
+        setupTicketExpiresAt: expiresAt,
+        // A new ticket has all 5 authenticator tries; wrong passwords and
+        // codes on the account are cleared only when set-up completes.
+        setupTicketWrongCodes: 0,
+      },
+    });
+    if (updated.count !== 1) {
+      throw new UnauthorizedException(INVALID_CREDENTIALS);
+    }
+    await this.auditAttempt(staff.id, staff.code, 'auth.login.setup_started', { app, setupExpiresAt: expiresAt.toISOString() });
+    const authenticatorRole = AUTHENTICATOR_ROLES.includes(staff.role);
+    const enrolled = Boolean(staff.totpEnabled && staff.totpSecret);
+    return {
+      status: 'setup_required',
+      setupTicket: ticket,
+      expiresAt,
+      staff: { code: staff.code, name: staff.name, role: staff.role },
+      photoRequired: staffPhotoNeeded(staff) !== null,
+      authenticatorSetupRequired: authenticatorRole && !enrolled,
+      authenticatorCodeRequired: authenticatorRole && enrolled,
+      passwordRules: { ...PASSWORD_RULES },
+      signInAt: staff.role === 'field_agent' ? 'field_app' : 'web',
+    };
   }
 
   async verifyLoginCode(
@@ -324,7 +430,7 @@ export class AuthService {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'wrong_app', app: sessionApp, role: staff.role });
       throw new UnauthorizedException(wrongAppMessage(sessionApp));
     }
-    return this.issueSession(staff, device.deviceId, metadata, used.id, false, sessionApp);
+    return this.issueSession(staff, device.deviceId, metadata, used.id, sessionApp);
   }
 
   /** The app a sign-in is for: the one it named (or the Laboura Field address), else the role's own. */
@@ -414,100 +520,16 @@ export class AuthService {
     throw new UnauthorizedException('This login code can only be used on the device that asked for it');
   }
 
+  /** A staff access token only: any scoped, customer or otherwise foreign token is refused like a bad one. */
   async verifyToken(token: string): Promise<JwtPayload> {
+    let payload: unknown;
     try {
-      return await this.jwtService.verifyAsync<JwtPayload>(token);
+      payload = await this.jwtService.verifyAsync<JwtPayload>(token);
     } catch {
       throw new UnauthorizedException('Invalid or expired token');
     }
-  }
-
-  async setupTotp(staffId: string): Promise<{ secret: string; otpauthUrl: string }> {
-    const staff = await this.prisma.staff.findUnique({
-      where: { id: staffId },
-    });
-    if (!staff) {
-      throw new NotFoundException('Staff account not found');
-    }
-    if (!(MANAGEMENT_ROLES as readonly string[]).includes(staff.role)) {
-      throw new ForbiddenException(
-        'TOTP enrolment is only for the CEO, Managers and Finance',
-      );
-    }
-    if (staff.totpEnabled) {
-      throw new ConflictException('TOTP is already enabled for this account');
-    }
-
-    const { secret, otpauthUrl } = this.totpService.generateSetup(staff.email ?? staff.code);
-
-    await this.prisma.staff.update({
-      where: { id: staffId },
-      data: {
-        totpSecret: secret,
-        totpEnabled: false,
-      },
-    });
-
-    return { secret, otpauthUrl };
-  }
-
-  async enableTotp(
-    staffId: string,
-    totpCode: string,
-    sessionId?: string,
-  ): Promise<{ success: boolean; message: string }> {
-    const staff = await this.prisma.staff.findUnique({
-      where: { id: staffId },
-    });
-    if (!staff) {
-      throw new NotFoundException('Staff account not found');
-    }
-    if (!(MANAGEMENT_ROLES as readonly string[]).includes(staff.role)) {
-      throw new ForbiddenException(
-        'TOTP enrolment is only for the CEO, Managers and Finance',
-      );
-    }
-    if (!staff.totpSecret) {
-      throw new BadRequestException('TOTP setup has not been initiated');
-    }
-
-    const step = this.totpService.verifyStep(totpCode, staff.totpSecret);
-    if (step === null) {
-      throw new UnauthorizedException('Invalid TOTP verification code');
-    }
-    // A code works once: the same code can't also be used to log in.
-    if (!(await claimTotpStep(this.prisma, staffId, step))) {
-      throw new UnauthorizedException(TOTP_REUSED);
-    }
-
-    await this.prisma.staff.update({
-      where: { id: staffId },
-      data: { totpEnabled: true },
-    });
-
-    if (sessionId) {
-      const session = await this.prisma.staffSession.findUnique({ where: { id: sessionId } });
-      if (session && session.staffId === staffId && session.deviceId) {
-        if (this.selfApprovesDevice(staff)) {
-          await this.selfApproveDevice(staff, session.deviceId);
-        } else {
-          // Enrolling the authenticator does not approve the device: it is
-          // put in front of the CEO, who approves it.
-          await this.ensurePendingDevice(staff.id, session.deviceId, isStaffApp(session.app) ? session.app : 'office');
-        }
-      }
-    }
-
-    await this.auditService.log({
-      actorId: staff.id,
-      action: 'staff.2fa_enabled',
-      entityType: 'staff',
-      entityCode: staff.code,
-      before: { totpEnabled: false },
-      after: { totpEnabled: true },
-    });
-
-    return { success: true, message: 'TOTP 2FA enabled successfully' };
+    if (!isStaffAccessToken(payload)) throw new UnauthorizedException('Invalid or expired token');
+    return payload as JwtPayload;
   }
 
   async listSessions(
@@ -678,7 +700,7 @@ export class AuthService {
     return { success: true, message: 'Session revoked successfully' };
   }
 
-  private async completeManagementLogin(
+  private async completeAuthenticatorLogin(
     staff: Staff,
     deviceId: string,
     deviceStatus: string | undefined,
@@ -688,8 +710,10 @@ export class AuthService {
   ): Promise<LoginResponseDto> {
     const enrolled = !!(staff.totpEnabled && staff.totpSecret);
     if (!enrolled) {
-      await this.clearFailedLogins(staff.id);
-      return this.issueSession(staff, deviceId, metadata, null, true, app);
+      // A password alone never opens a session: the authenticator is set up
+      // inside the first-login set-up, with a temporary password (rev 174–175).
+      await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'authenticator_not_set_up' });
+      throw new UnauthorizedException({ message: AUTHENTICATOR_NOT_SET_UP, reason: 'authenticator_not_set_up' });
     }
     if (!totpCode) {
       await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', { reason: 'totp_required' });
@@ -720,11 +744,31 @@ export class AuthService {
         await this.auditAttempt(staff.id, staff.code, 'auth.login.refused', {
           reason: 'device_pending',
         });
-        throw new UnauthorizedException('This device is waiting for approval by the CEO');
+        // A Team Lead's device is approved by a Manager or the CEO; a Manager's
+        // or Finance's by the CEO (StaffDeviceService.assertCanDecide).
+        throw new UnauthorizedException(
+          staff.role === 'team_lead'
+            ? 'This device is waiting for approval by a Manager or the CEO'
+            : 'This device is waiting for approval by the CEO',
+        );
       }
       await this.selfApproveDevice(staff, deviceId);
     }
-    return this.issueSession(staff, deviceId, metadata, null, false, app);
+    return this.issueSession(staff, deviceId, metadata, null, app);
+  }
+
+  /**
+   * A wrong authenticator code outside the sign-in itself (first-login set-up,
+   * password reset): counted on the account like a wrong password. Returns
+   * the lock end when it locked the account.
+   */
+  async countWrongSecondFactor(staff: Staff, reason: 'totp_invalid' | 'totp_reused'): Promise<Date | null> {
+    return this.recordFailedPassword(staff, reason);
+  }
+
+  /** Refuses (401) while the account is locked; an expired wrong-try lock is cleared first. */
+  async assertNotLocked(staff: Staff): Promise<void> {
+    await this.rejectIfLocked(staff);
   }
 
   private selfApprovesDevice(staff: Staff): boolean {
@@ -736,7 +780,6 @@ export class AuthService {
     deviceId: string | null,
     metadata: LoginMetadata | undefined,
     loginCodeRequestId: string | null,
-    totpSetup = false,
     app: StaffApp = appForRole(staff.role),
   ): Promise<LoginResponseDto> {
     const now = this.clock.now();
@@ -745,7 +788,7 @@ export class AuthService {
     const absoluteExpiresAt = new Date(now.getTime() + minutesToMs(policy.maxSessionMinutes));
     await this.endOpenSessions(staff.id, 'replaced');
     const refreshToken =
-      !totpSetup && deviceId && app === 'field' && FIELD_SESSION_ROLES.includes(staff.role)
+      deviceId && app === 'field' && FIELD_SESSION_ROLES.includes(staff.role)
         ? randomBytes(32).toString('hex')
         : null;
     const session = await this.prisma.staffSession.create({
@@ -771,26 +814,22 @@ export class AuthService {
       teamLeadId: staff.teamLeadId,
       sid: session.id,
       app,
-      ...(totpSetup ? { scope: 'totp_setup' as const } : {}),
     };
 
     const accessToken = await this.jwtService.signAsync(payload, { expiresIn: '15m' });
 
-    if (!totpSetup) {
-      await this.raiseOddHourFlag(staff);
-      await this.auditAttempt(staff.id, staff.code, 'auth.login.succeeded', {
-        role: staff.role,
-        ...(loginCodeRequestId ? { loginRequestId: loginCodeRequestId } : {}),
-      });
-    } else {
-      await this.auditAttempt(staff.id, staff.code, 'auth.login.totp_setup', { role: staff.role });
-    }
+    await this.raiseOddHourFlag(staff);
+    await this.auditAttempt(staff.id, staff.code, 'auth.login.succeeded', {
+      role: staff.role,
+      ...(loginCodeRequestId ? { loginRequestId: loginCodeRequestId } : {}),
+    });
+    const passwordResetNotice = await this.takePasswordResetNotice(staff);
 
     return {
       accessToken,
       sessionId: session.id,
       ...(refreshToken ? { refreshToken } : {}),
-      ...(totpSetup ? { totpEnrollmentRequired: true } : {}),
+      ...(passwordResetNotice ? { passwordResetNotice } : {}),
       staff: {
         id: staff.id,
         code: staff.code,
@@ -798,6 +837,27 @@ export class AuthService {
         email: staff.email,
         role: staff.role,
       },
+    };
+  }
+
+  /**
+   * The notice shown once at the first sign-in after a password reset
+   * ("Your password was reset on … approved by …"), then cleared.
+   */
+  private async takePasswordResetNotice(staff: Staff): Promise<PasswordResetNotice | null> {
+    const raw = staff.passwordResetNotice as unknown;
+    if (!raw || typeof raw !== 'object') return null;
+    const taken = await this.prisma.staff.updateMany({
+      where: { id: staff.id, passwordResetNotice: { not: Prisma.AnyNull } },
+      data: { passwordResetNotice: Prisma.DbNull },
+    });
+    if (taken.count !== 1) return null;
+    const notice = raw as Partial<PasswordResetNotice>;
+    return {
+      at: typeof notice.at === 'string' ? notice.at : '',
+      byName: typeof notice.byName === 'string' ? notice.byName : null,
+      byRole: typeof notice.byRole === 'string' ? notice.byRole : null,
+      how: typeof notice.how === 'string' ? notice.how : 'temp_password',
     };
   }
 
@@ -920,7 +980,6 @@ export class AuthService {
       teamLeadId: actor.teamLeadId,
       sid: sessionId,
       ...(actor.app ? { app: actor.app } : {}),
-      ...(actor.scope ? { scope: actor.scope } : {}),
     };
     return this.jwtService.signAsync(payload, { expiresIn: '15m' });
   }

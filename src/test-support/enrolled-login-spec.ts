@@ -5,13 +5,14 @@ import { loginCodeFor } from '../modules/login-code/login-code.crypto';
 
 /**
  * Test-only. Staff log in with a staff code and an approved device.
- * Management also presents a TOTP code. Everyone else receives a login code
- * and this helper submits it, so existing specs still get an access token.
+ * CEO, Manager, Finance and Team Lead also present a TOTP code (their own
+ * authenticator, rev 174–175). Call and field agents receive a login code and
+ * this helper submits it, so existing specs still get an access token.
  */
 
 const TOTP_STEP_MS = 30_000;
 const TOTP_SAFE_MARGIN_MS = 5_000;
-const MANAGEMENT_ROLES = ['ceo', 'manager', 'finance'];
+const MANAGEMENT_ROLES = ['ceo', 'manager', 'finance', 'team_lead'];
 
 let prisma: PrismaClient | undefined;
 const db = () => (prisma ??= new PrismaClient());
@@ -54,7 +55,7 @@ export async function freshTotpWindow(secret: string): Promise<void> {
   await db().staff.updateMany({ where: { totpSecret: secret }, data: { totpLastStep: null } });
 }
 
-/** Enrols a management account in TOTP if it is not already, and returns its secret. */
+/** Enrols an authenticator account (CEO, Manager, Finance, Team Lead) in TOTP if it is not already, and returns its secret. */
 export async function ensureStaffEnrolled(
   email: string,
 ): Promise<{ secret: string | null; role?: string; code?: string; id?: string }> {

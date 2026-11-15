@@ -4,14 +4,14 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
 import { Card } from '../../../components/Card';
 import { DataTable, type Column } from '../../../components/DataTable';
-import { Modal } from '../../../components/Modal';
 import { StatusPill, type StatusTone } from '../../../components/Badge';
 import { DateField, SelectField, TextField } from '../../../components/fields';
-import { useToast } from '../../../components/Toast';
 import { TopBar } from '../../../components/TopBar';
 import { api } from '../../../lib/api/client';
 import { ApiError } from '../../../lib/api/errors';
 import { formatDateTimeIST, istDateKey } from '../../../lib/format/date';
+import { useT } from '../../../i18n/I18nProvider';
+import { NewTempPasswordButton, ResetSignInButton, TempPasswordModal, type TempPasswordResult } from '../../shared/staffAccess';
 import { useNow } from '../../../lib/useNow';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../../ceo/_kit/actions';
@@ -38,25 +38,16 @@ export interface StaffRow {
 interface StaffResponse {
   manager: { id: string; name: string };
   rows: StaffRow[];
-  reportsToOptions: { id: string; name: string; role: string; team: string | null }[];
+  /** Team Leads (active or not signed in yet) and the Manager themself. */
+  reportsToOptions: { id: string; name: string; role: string; team: string | null; notSignedInYet?: boolean }[];
   creatableRoles: string[];
-}
-
-/** One-time link returned by create, re-invite and reset (shown once; only its hash is stored). */
-interface LinkResult {
-  title: string;
-  name: string;
-  code: string;
-  url: string;
-  expiresAt: string;
-  note: string;
 }
 
 function statusOf(r: StaffRow): { text: string; tone: StatusTone } {
   if (r.state === 'locked' && r.locked) {
     return { text: r.locked.byManager ? `Locked${r.locked.reason ? ` · ${r.locked.reason}` : ''}` : `Locked · ${r.locked.reason ?? 'wrong passwords'}`, tone: 'danger' };
   }
-  if (r.state === 'invite_pending') return { text: 'Invite not accepted', tone: 'info' };
+  if (r.state === 'invite_pending') return { text: 'Not signed in yet', tone: 'info' };
   if (r.pendingDevice) return { text: 'New device waiting', tone: 'warn' };
   return { text: 'Active', tone: 'good' };
 }
@@ -71,20 +62,20 @@ const ROLE_OPTIONS = [
 
 /**
  * Staff & access — design MG-Staff.dc.html, on GET /manager/staff plus the
- * staff endpoints: reset password (a new one-time link to the invite page —
- * the old password works until it is used), lock and unlock with a reason,
+ * staff endpoints: "New temporary password" and "Reset sign-in completely"
+ * (Master Guide rev 174–175), lock and unlock with a reason,
  * approve a new device, change Team Lead, remove a lost phone, and "Add a
  * staff member" (Team Lead, call agent, field agent or intern, inside the
  * Manager's own teams). No salaries; a Manager cannot create a Manager or CEO.
  */
 export default function StaffAndAccess() {
+  const t = useT();
   const to = useScreenPath();
   const now = useNow();
-  const toast = useToast();
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['manager', 'staff'], queryFn: () => api.get<StaffResponse>('/manager/staff') });
   const d = q.data;
-  const [link, setLink] = useState<LinkResult | null>(null);
+  const [shown, setShown] = useState<TempPasswordResult | null>(null);
 
   // Add a staff member
   const [name, setName] = useState('');
@@ -96,12 +87,15 @@ export default function StaffAndAccess() {
   const forLead = baseRole === 'team_lead';
   const reportOptions = (d?.reportsToOptions ?? [])
     .filter((o) => (forLead ? o.role === 'manager' : o.role === 'team_lead'))
-    .map((o) => ({ value: o.id, label: o.role === 'manager' ? `${o.name} · you (for a new Team Lead)` : `${o.name} · Team Lead · ${teamShort(o.team)}` }));
+    .map((o) => ({
+      value: o.id,
+      label: o.role === 'manager' ? `${o.name} · you (for a new Team Lead)` : `${o.name} · Team Lead · ${teamShort(o.team)}${o.notSignedInYet ? ` ${t('access.boss.notSignedIn')}` : ''}`,
+    }));
   const chosenReport = reportOptions.some((o) => o.value === reportsTo) ? reportsTo : (reportOptions[0]?.value ?? '');
 
   const create = useMutation({
     mutationFn: () =>
-      api.post<{ staff: { code: string; name: string }; inviteUrl: string; inviteExpiresAt: string }>('/staff', {
+      api.post<TempPasswordResult>('/staff', {
         name: name.trim(),
         role: baseRole,
         ...(forLead ? { reportsToId: chosenReport } : { teamLeadId: chosenReport }),
@@ -111,14 +105,7 @@ export default function StaffAndAccess() {
     onSuccess: (res) => {
       setName('');
       setFormError(null);
-      setLink({
-        title: 'Staff member added',
-        name: res.staff.name,
-        code: res.staff.code,
-        url: res.inviteUrl,
-        expiresAt: res.inviteExpiresAt,
-        note: 'Send this link to them. They set their own password on it and sign in with their staff code. The link works once, for 72 hours.',
-      });
+      setShown(res);
       void qc.invalidateQueries();
     },
     onError: (e) => setFormError(e instanceof ApiError ? e.message : 'Could not add the staff member. Try again.'),
@@ -154,35 +141,12 @@ export default function StaffAndAccess() {
             confirmLabel="Approve"
           />
         )}
-        {r.state === 'locked' ? (
+        {r.state === 'locked' && (
           <ActionButton label="Unlock" variant="success" title={`Unlock ${r.name}`} reason run={({ reason }) => api.post(`/staff/${r.id}/unlock`, { reason })} success={`${r.name} can sign in again`} confirmLabel="Unlock" />
-        ) : r.state === 'invite_pending' ? (
-          <ActionButton
-            label="Send new invite"
-            title={`New invite for ${r.name}`}
-            description="The old invite link stops working."
-            run={async () => {
-              const res = await api.post<{ inviteUrl: string; inviteExpiresAt: string }>(`/staff/${r.id}/reissue-invite`);
-              setLink({ title: 'New invite link', name: r.name, code: r.code, url: res.inviteUrl, expiresAt: res.inviteExpiresAt, note: 'Send this link to them. It works once, for 72 hours.' });
-              return res;
-            }}
-            success="New invite ready"
-            confirmLabel="Make a new link"
-          />
-        ) : (
-          <ActionButton
-            label="Reset password"
-            title={`Reset ${r.name}'s password`}
-            description="You get a one-time link to send them. They choose a new password on it; their old password keeps working until they use the link, then stops."
-            run={async () => {
-              const res = await api.post<{ resetUrl: string; expiresAt: string }>(`/staff/${r.id}/reset-password`);
-              setLink({ title: 'Password reset link', name: r.name, code: r.code, url: res.resetUrl, expiresAt: res.expiresAt, note: 'Send this link to them (in person or on WhatsApp). It works once, for 72 hours. Their old password stops working once they set the new one.' });
-              return res;
-            }}
-            success="Reset link ready"
-            confirmLabel="Make the link"
-          />
         )}
+        {/* Rev 174–175: "New temporary password" replaces the invite and reset links; a Manager can do it for people below Manager in their teams. */}
+        <NewTempPasswordButton id={r.id} name={r.name} />
+        {r.state !== 'invite_pending' && <ResetSignInButton id={r.id} name={r.name} />}
         {isAgent && leads.length > 1 && (
           <ActionButton
             label="Change Team Lead"
@@ -210,6 +174,15 @@ export default function StaffAndAccess() {
         {r.state !== 'locked' && (
           <ActionButton label="Lock" variant="danger" title={`Lock ${r.name}'s account`} description="They are signed out at once and cannot sign in until someone unlocks the account." reason run={({ reason }) => api.post(`/staff/${r.id}/lock`, { reason })} success={`${r.name} is locked`} confirmLabel="Lock" />
         )}
+        <ActionButton
+          label="Deactivate"
+          variant="danger"
+          title={`Deactivate ${r.name}`}
+          description="For someone who has left. Their records stay; they can never sign in again unless reactivated. Anyone who reports to them must be moved first."
+          run={() => api.post(`/staff/${r.id}/deactivate`)}
+          success={`${r.name} is deactivated`}
+          confirmLabel="Deactivate"
+        />
       </div>
     );
   };
@@ -222,16 +195,6 @@ export default function StaffAndAccess() {
     { key: 'status', header: 'Status', cell: (r) => { const s = statusOf(r); return <StatusPill tone={s.tone}>{s.text}</StatusPill>; }, filter: 'select', filterValue: (r) => statusOf(r).text, csv: (r) => statusOf(r).text },
     { key: 'actions', header: 'Actions', cell: actions },
   ];
-
-  const copy = async () => {
-    if (!link) return;
-    try {
-      await navigator.clipboard.writeText(link.url);
-      toast.success('Link copied');
-    } catch {
-      toast.error('Copy did not work — select the link and copy it');
-    }
-  };
 
   return (
     <div className="lb-page">
@@ -251,7 +214,7 @@ export default function StaffAndAccess() {
             <DateField label="Start date" value={joinedOn} onChange={setJoinedOn} />
             <div>
               <Button type="submit" variant="primary" loading={create.isPending}>
-                Add · send staff code
+                Add · get temporary password
               </Button>
             </div>
           </div>
@@ -263,33 +226,7 @@ export default function StaffAndAccess() {
           <div className="ceo-note">Every agent must have a Team Lead and every Team Lead a Manager. Leave, corrections, login codes, targets and reports follow this line automatically.</div>
         </form>
       </Card>
-      <Modal
-        open={Boolean(link)}
-        onClose={() => setLink(null)}
-        title={link?.title ?? ''}
-        footer={
-          <>
-            <Button onClick={() => void copy()}>Copy link</Button>
-            <Button variant="primary" onClick={() => setLink(null)}>
-              Done
-            </Button>
-          </>
-        }
-      >
-        {link && (
-          <div className="lb-stack">
-            <p style={{ marginTop: 0 }}>
-              <b>{link.name}</b> · staff code <span className="mono">{link.code}</span>
-            </p>
-            <p className="lb-break mono" style={{ wordBreak: 'break-all', background: 'var(--bg, #eef3fb)', padding: 10, borderRadius: 8 }}>
-              {link.url}
-            </p>
-            <p className="ceo-sub">
-              {link.note} Expires {formatDateTimeIST(link.expiresAt)}. This link is shown only once.
-            </p>
-          </div>
-        )}
-      </Modal>
+      <TempPasswordModal result={shown} onClose={() => setShown(null)} />
     </div>
   );
 }

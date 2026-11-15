@@ -2,49 +2,61 @@ import { INestApplication } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { Test, TestingModule } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
+import { authenticator } from 'otplib';
 import * as request from 'supertest';
 import { AppModule } from '../../app.module';
 import { applyTrustProxy } from '../../common/http/trust-proxy';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
-import { INVITE_TTL_MS, StaffService, hashInviteToken, passwordResetState } from './staff.service';
+import { normaliseTemporaryPassword } from '../../common/auth/temporary-password';
+import { loginCodeFor } from '../login-code/login-code.crypto';
+import { resetCodeFor, resetRequestProofFor } from '../password-reset/password-reset.crypto';
+import { RESET_CODE_INVALID, RESET_REQUESTED_MESSAGE } from '../password-reset/password-reset.service';
+import { freshTotpWindow } from '../../test-support/enrolled-login-spec';
+import { passwordResetState, resetRequestState } from './staff.service';
 
 /** The reason a refusal gives: in `details` behind main.ts's GlobalExceptionFilter, at the top level in tests. */
 function reasonOf(body: { reason?: string; details?: { reason?: string } }): string | undefined {
   return body.details?.reason ?? body.reason;
 }
 
+const TEMP_FORMAT = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$/;
+
 /**
- * Reset password (Master Guide, Passwords and email; Manager portal MG-Staff):
- * a Manager (own tree), a Team Lead (own agents) or the CEO issues a reset
- * that works like a new invite link on /p/invite/:token. The old password
- * works until the link is used; then it stops and every session ends. Each
- * reset is stored with who issued it and audit-logged.
+ * Temporary passwords and password resets (Master Guide rev 174–175):
+ *   - "New temporary password" / "Reset sign-in completely" / reactivation:
+ *     who may, what happens, what is kept (rules 2, 8, 9);
+ *   - Forgot password: the request answers the same for every staff code; the
+ *     senior's reset code works once, 15 minutes, on the asking device only,
+ *     never as a login code; who approves whose (rules 7, 8, 10);
+ *   - the password reset history (S7).
  */
-describe('Password reset: issue, use on the invite page, scope, audit', () => {
+describe('Temporary passwords and Forgot password by a senior reset code', () => {
   let app: INestApplication;
   let prisma: PrismaService;
   let jwt: JwtService;
-  let staffService: StaffService;
 
   const ts = Date.now();
-  const oldPassword = 'Old-Password-Horse-1';
-  const newPassword = 'New-Password-Battery-2';
+  const oldPassword = 'Old-Password-1';
+  const newPassword = 'New-Password-2';
   const ids: string[] = [];
   let ip = 0;
-  const freshIp = () => `10.61.${Math.floor(ip / 250)}.${(ip++ % 250) + 1}`;
+  const freshIp = () => `10.62.${Math.floor(ip / 250)}.${(ip++ % 250) + 1}`;
+  const secrets: Record<string, string> = {};
 
   const people: Record<string, { id: string; code: string; token: string }> = {};
 
   async function mk(key: string, role: string, extra: Record<string, unknown> = {}) {
+    const authenticatorRole = ['ceo', 'manager', 'finance', 'team_lead'].includes(role);
+    if (authenticatorRole && extra.totpEnabled !== false) secrets[key] = authenticator.generateSecret();
     const staff = await prisma.staff.create({
       data: {
         code: `PWR-${key}-${ts}`,
         name: `Reset ${key}`,
-        email: `pwr_${key}_${ts}@laboura.local`,
         role,
         passwordHash: await bcrypt.hash(oldPassword, 4),
         status: 'active',
+        ...(secrets[key] ? { totpEnabled: true, totpSecret: secrets[key] } : {}),
         ...extra,
       },
     });
@@ -57,31 +69,27 @@ describe('Password reset: issue, use on the invite page, scope, audit', () => {
         lastActivityAt: new Date(),
       },
     });
-    const payload: JwtPayload = {
-      sub: staff.id,
-      role,
-      email: staff.email,
-      code: staff.code,
-      teamLeadId: staff.teamLeadId,
-      sid: session.id,
-    };
+    const payload: JwtPayload = { sub: staff.id, role, email: staff.email, code: staff.code, teamLeadId: staff.teamLeadId, sid: session.id };
     people[key] = { id: staff.id, code: staff.code, token: jwt.sign(payload, { expiresIn: '15m' }) };
     return staff;
   }
 
-  const issue = (by: string, target: string) =>
-    request(app.getHttpServer())
-      .post(`/staff/${people[target].id}/reset-password`)
-      .set('Authorization', `Bearer ${people[by].token}`)
-      .set('X-Forwarded-For', freshIp())
-      .send({});
-  const post = (path: string, body: Record<string, unknown>) =>
-    request(app.getHttpServer()).post(path).set('X-Forwarded-For', freshIp()).send(body);
-  const tokenOf = (url: string) => decodeURIComponent(url.split('/p/invite/')[1]);
+  const as = (by: string, method: 'get' | 'post', path: string, body: Record<string, unknown> = {}) => {
+    const r = request(app.getHttpServer())[method](path).set('Authorization', `Bearer ${people[by].token}`).set('X-Forwarded-For', freshIp());
+    return method === 'post' ? r.send(body) : r;
+  };
+  const post = (path: string, body: Record<string, unknown>) => request(app.getHttpServer()).post(path).set('X-Forwarded-For', freshIp()).send(body);
+  const login = (key: string, password: string, deviceId: string, extra: Record<string, unknown> = {}) =>
+    post('/auth/login', { staffCode: people[key].code, password, deviceId, ...extra });
   const passwordIs = async (key: string, password: string) => {
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: people[key].id } });
     return bcrypt.compare(password, row.passwordHash);
   };
+  const totpFor = async (key: string) => {
+    await freshTotpWindow(secrets[key]);
+    return authenticator.generate(secrets[key]);
+  };
+  const openSessions = (key: string) => prisma.staffSession.count({ where: { staffId: people[key].id, revokedAt: null } });
 
   beforeAll(async () => {
     const moduleRef: TestingModule = await Test.createTestingModule({ imports: [AppModule] }).compile();
@@ -90,169 +98,505 @@ describe('Password reset: issue, use on the invite page, scope, audit', () => {
     await app.init();
     prisma = app.get(PrismaService);
     jwt = app.get(JwtService);
-    staffService = app.get(StaffService);
 
     const ceo = await mk('ceo', 'ceo');
+    await mk('ceo2', 'ceo');
     const mgrA = await mk('mgrA', 'manager', { reportsToId: ceo.id });
-    const mgrB = await mk('mgrB', 'manager', { reportsToId: ceo.id, totpEnabled: true, totpSecret: 'JBSWY3DPEHPK3PXP' });
+    const mgrB = await mk('mgrB', 'manager', { reportsToId: ceo.id });
     const tlA = await mk('tlA', 'team_lead', { reportsToId: mgrA.id });
     const tlB = await mk('tlB', 'team_lead', { reportsToId: mgrB.id });
+    // Another team's Team Lead whose sign-in is never reset in this spec.
+    await mk('tlC', 'team_lead', { reportsToId: mgrB.id });
     await mk('agentA', 'call_agent', { teamLeadId: tlA.id, reportsToId: tlA.id });
     await mk('agentA2', 'field_agent', { teamLeadId: tlA.id, reportsToId: tlA.id });
+    await mk('agentA3', 'call_agent', { teamLeadId: tlA.id, reportsToId: tlA.id });
     await mk('agentB', 'call_agent', { teamLeadId: tlB.id, reportsToId: tlB.id });
     await mk('fin', 'finance', { reportsToId: ceo.id });
     await mk('pending', 'call_agent', { teamLeadId: tlA.id, reportsToId: tlA.id, status: 'pending_invite' });
+    await mk('gone', 'call_agent', { teamLeadId: tlA.id, reportsToId: tlA.id, status: 'deactivated', deactivatedAt: new Date() });
+    await prisma.staffDevice.create({ data: { staffId: people.agentA.id, deviceId: `usual-${ts}`, label: 'Phone', platform: 'web', status: 'approved', approvedAt: new Date() } });
   });
 
   afterAll(async () => {
     const codes = (await prisma.staff.findMany({ where: { id: { in: ids } }, select: { code: true } })).map((s) => s.code);
+    await prisma.passwordResetRequest.deleteMany({ where: { staffId: { in: ids } } });
     await prisma.staffPasswordReset.deleteMany({ where: { OR: [{ staffId: { in: ids } }, { issuedByStaffId: { in: ids } }] } });
+    await prisma.notification.deleteMany({ where: { recipientStaffId: { in: ids } } });
+    await prisma.loginCodeRequest.deleteMany({ where: { staffId: { in: ids } } });
+    await prisma.staffDevice.deleteMany({ where: { staffId: { in: ids } } });
     await prisma.staffSession.deleteMany({ where: { staffId: { in: ids } } });
-    await prisma.auditLog.deleteMany({
-      where: { OR: [{ actorId: { in: ids } }, { entityType: 'staff', entityCode: { in: codes } }] },
-    });
-    await prisma.staff.updateMany({ where: { id: { in: ids } }, data: { teamLeadId: null, reportsToId: null } });
+    await prisma.auditLog.deleteMany({ where: { OR: [{ actorId: { in: ids } }, { entityType: 'staff', entityCode: { in: codes } }] } });
+    await prisma.staff.updateMany({ where: { id: { in: ids } }, data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
     await prisma.staff.deleteMany({ where: { id: { in: ids } } });
     await app.close();
   });
 
-  it('a Manager resets an agent in their tree: link on the invite page, record stored, audit-logged', async () => {
-    const res = await issue('mgrA', 'agentA');
-    expect(res.status).toBe(200);
-    expect(res.body.resetUrl).toMatch(/\/\/[^/]+\/p\/invite\/[0-9a-f]{64}$/);
-    expect(res.body.resetToken).toHaveLength(64);
-    expect(JSON.stringify(res.body)).not.toContain('passwordHash');
+  // ------------------------------------------------------------------ New temporary password
 
-    const token = tokenOf(res.body.resetUrl);
-    const stored = await prisma.staffPasswordReset.findUniqueOrThrow({ where: { tokenHash: hashInviteToken(token) } });
-    expect(stored).toMatchObject({ staffId: people.agentA.id, issuedByStaffId: people.mgrA.id, usedAt: null, cancelledAt: null });
-    expect(stored.expiresAt.getTime() - stored.createdAt.getTime()).toBe(INVITE_TTL_MS);
+  it('New temporary password: shown once (no-store), bcrypt only, never in the audit log; the old password keeps working until set-up', async () => {
+    const res = await as('tlA', 'post', `/staff/${people.agentA3.id}/temp-password`).expect(200);
+    expect(res.headers['cache-control']).toContain('no-store');
+    expect(res.body.tempPassword).toMatch(TEMP_FORMAT);
+    expect(new Date(res.body.tempPasswordExpiresAt).getTime() - Date.now()).toBeGreaterThan(23.9 * 3600_000);
+    const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentA3.id } });
+    expect(row.tempPasswordHash).not.toContain(res.body.tempPassword);
+    expect(await bcrypt.compare(normaliseTemporaryPassword(res.body.tempPassword)!, row.tempPasswordHash!)).toBe(true);
+    expect(row.tempPasswordIssuedByStaffId).toBe(people.tlA.id);
+    const audits = await prisma.auditLog.findMany({ where: { entityCode: people.agentA3.code } });
+    expect(JSON.stringify(audits)).not.toContain(res.body.tempPassword);
+    expect(JSON.stringify(audits)).not.toContain(normaliseTemporaryPassword(res.body.tempPassword));
+    expect(audits.map((a) => a.action)).toContain('staff.temp_password_issued');
+    // Old password still opens a normal sign-in (a login code request for the agent).
+    await prisma.staffDevice.create({ data: { staffId: people.agentA3.id, deviceId: `d-a3-${ts}`, label: 'x', platform: 'web', status: 'approved', approvedAt: new Date() } });
+    const ok = await login('agentA3', oldPassword, `d-a3-${ts}`).expect(200);
+    expect(ok.body.status).toBe('awaiting_code');
+    expect(await passwordIs('agentA3', oldPassword)).toBe(true);
+  });
 
-    const audit = await prisma.auditLog.findFirst({
-      where: { action: 'staff.password_reset_issued', entityCode: people.agentA.code, actorId: people.mgrA.id },
+  it('a newer temporary password kills the earlier one at once', async () => {
+    const first = await as('mgrA', 'post', `/staff/${people.pending.id}/temp-password`).expect(200);
+    const second = await as('mgrA', 'post', `/staff/${people.pending.id}/temp-password`).expect(200);
+    expect(second.body.tempPassword).not.toBe(first.body.tempPassword);
+    const dead = await login('pending', first.body.tempPassword, `d-p-${ts}`);
+    expect(dead.status).toBe(401);
+    const live = await login('pending', second.body.tempPassword, `d-p-${ts}`).expect(200);
+    expect(live.body.status).toBe('setup_required');
+  });
+
+  it('who may give one: never oneself; a Team Lead only their own agents; a Manager below Manager in their tree; Finance and Managers only by a CEO; a CEO only by the other CEO', async () => {
+    expect((await as('tlA', 'post', `/staff/${people.agentB.id}/temp-password`)).status).toBe(403);
+    expect((await as('tlA', 'post', `/staff/${people.tlB.id}/temp-password`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/staff/${people.agentB.id}/temp-password`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/staff/${people.fin.id}/temp-password`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/staff/${people.mgrB.id}/temp-password`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/staff/${people.mgrA.id}/temp-password`)).status).toBe(403);
+    expect((await as('ceo', 'post', `/staff/${people.ceo.id}/temp-password`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/staff/${people.ceo2.id}/temp-password`)).status).toBe(403);
+    expect((await as('agentA', 'post', `/staff/${people.agentA2.id}/temp-password`)).status).toBe(403);
+    expect((await as('ceo', 'post', `/staff/${people.gone.id}/temp-password`)).status).toBe(400);
+    expect((await as('ceo', 'post', `/staff/${people.fin.id}/temp-password`)).status).toBe(200);
+    expect((await as('ceo2', 'post', `/staff/${people.ceo.id}/temp-password`)).status).toBe(200);
+  });
+
+  it('Reset sign-in completely: authenticator removed, every session ends, back to "Not signed in yet", approved devices stay; Manager or CEO for a Team Lead', async () => {
+    await prisma.staffDevice.create({ data: { staffId: people.tlB.id, deviceId: `d-tlb-${ts}`, label: 'x', platform: 'web', status: 'approved', approvedAt: new Date() } });
+    expect((await as('tlA', 'post', `/staff/${people.tlB.id}/reset-sign-in`)).status).toBe(403);
+    const res = await as('mgrB', 'post', `/staff/${people.tlB.id}/reset-sign-in`).expect(200);
+    expect(res.headers['cache-control']).toContain('no-store');
+    expect(res.body.tempPassword).toMatch(TEMP_FORMAT);
+    const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.tlB.id } });
+    expect(row).toMatchObject({ status: 'pending_invite', totpEnabled: false, totpSecret: null });
+    expect(await openSessions('tlB')).toBe(0);
+    expect(await prisma.staffDevice.count({ where: { staffId: people.tlB.id, status: 'approved' } })).toBe(1);
+    expect(await passwordIs('tlB', oldPassword)).toBe(false);
+  });
+
+  // ------------------------------------------------------------------ Forgot password
+
+  const requestReset = (staffCode: string, deviceId: string) => post('/auth/password-reset/request', { staffCode, deviceId });
+
+  it('the request answers the same whether the staff code exists or not (and for a deactivated account)', async () => {
+    const real = await requestReset(people.agentA2.code, `d-a2-${ts}`).expect(200);
+    const ghost = await requestReset(`NOPE-${ts}`, `d-a2-${ts}`).expect(200);
+    const gone = await requestReset(people.gone.code, `d-a2-${ts}`).expect(200);
+    for (const r of [real, ghost, gone]) {
+      expect(Object.keys(r.body).sort()).toEqual(['expiresAt', 'message', 'resetRequestId', 'resetRequestProof', 'status']);
+      expect(r.body.message).toBe(RESET_REQUESTED_MESSAGE);
+      expect(r.body.status).toBe('requested');
+    }
+    expect(await prisma.passwordResetRequest.count({ where: { staffId: people.gone.id } })).toBe(0);
+    // The ghost id leads nowhere: the same "not valid" as a wrong code.
+    const nowhere = await post('/auth/password-reset/complete', {
+      resetRequestId: ghost.body.resetRequestId,
+      resetRequestProof: ghost.body.resetRequestProof,
+      deviceId: `d-a2-${ts}`,
+      code: '123456',
+      newPassword,
     });
-    expect(audit).not.toBeNull();
-    expect(JSON.stringify(audit)).not.toContain(token);
-
-    const preview = await post('/staff/accept-invite/preview', { token });
-    expect(preview.status).toBe(200);
-    expect(preview.body).toMatchObject({ purpose: 'reset', code: people.agentA.code, authenticatorRequired: false });
+    expect(nowhere.status).toBe(401);
+    expect(reasonOf(nowhere.body)).toBe('code_invalid');
   });
 
-  it('the old password keeps working until the link is used; then it stops and sessions end', async () => {
-    const res = await issue('mgrA', 'agentA2');
-    const token = tokenOf(res.body.resetUrl);
-    expect(await passwordIs('agentA2', oldPassword)).toBe(true);
-    const account = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentA2.id } });
-    expect(account.status).toBe('active');
+  it('one open request per account (the same device gets the same one back); 3 an hour per staff code', async () => {
+    const a = await requestReset(people.agentA2.code, `d-a2-${ts}`).expect(200);
+    const b = await requestReset(people.agentA2.code, `d-a2-${ts}`).expect(200);
+    expect(b.body.resetRequestId).toBe(a.body.resetRequestId);
+    const other = await requestReset(people.agentA2.code, `other-${ts}`).expect(200);
+    expect(other.body.resetRequestId).not.toBe(a.body.resetRequestId);
+    expect(await prisma.passwordResetRequest.count({ where: { staffId: people.agentA2.id } })).toBe(1);
+    // Two more (after the open one ends) reach the hourly limit; a fourth makes nothing.
+    for (let i = 0; i < 3; i += 1) {
+      await prisma.passwordResetRequest.updateMany({ where: { staffId: people.agentA2.id, status: 'pending' }, data: { status: 'expired' } });
+      await requestReset(people.agentA2.code, `d-a2-${ts}`).expect(200);
+    }
+    expect(await prisma.passwordResetRequest.count({ where: { staffId: people.agentA2.id } })).toBe(3);
+    await prisma.passwordResetRequest.deleteMany({ where: { staffId: people.agentA2.id } });
+  });
 
-    await prisma.staff.update({ where: { id: people.agentA2.id }, data: { failedLoginCount: 5, lockedUntil: new Date(Date.now() + 600_000) } });
-    const accepted = await post('/staff/accept-invite', { token, password: newPassword });
-    expect(accepted.status).toBe(200);
-    expect(accepted.body).toMatchObject({ success: true, code: people.agentA2.code });
+  it('the red card: their Team Lead sees it (usual vs NEW phone); the code is revealed once recorded; works once, on that device only; never as a login code; old password works until done; sessions end; bell and notice', async () => {
+    const asked = await requestReset(people.agentA.code, `usual-${ts}`).expect(200);
+    const cards = await as('tlA', 'get', '/password-resets/pending').expect(200);
+    const card = cards.body.find((c: { id: string }) => c.id === asked.body.resetRequestId);
+    expect(card).toMatchObject({ kind: 'password_reset', knownDevice: true, staff: { code: people.agentA.code } });
+    // Another team's Team Lead does not see it and cannot reveal it.
+    const other = await as('tlC', 'get', '/password-resets/pending').expect(200);
+    expect(other.body.map((c: { id: string }) => c.id)).not.toContain(asked.body.resetRequestId);
+    // POST /password-resets/:id/reveal: another team's Team Lead is refused (403)
+    expect((await as('tlC', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`)).status).toBe(403);
+    // Before the reveal nothing works, even the right code.
+    const early = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `usual-${ts}`, code: resetCodeFor(asked.body.resetRequestId), newPassword });
+    // The same answer as a wrong code or an unknown request: it never says whether a senior has the card yet.
+    expect(early.status).toBe(401);
+    expect(reasonOf(early.body)).toBe('code_invalid');
+    expect(early.body.message ?? early.body.details?.message).toBe(RESET_CODE_INVALID);
 
-    expect(await passwordIs('agentA2', oldPassword)).toBe(false);
-    expect(await passwordIs('agentA2', newPassword)).toBe(true);
-    const after = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentA2.id } });
-    expect(after).toMatchObject({ status: 'active', failedLoginCount: 0, lockedUntil: null });
-    const open = await prisma.staffSession.count({ where: { staffId: people.agentA2.id, revokedAt: null } });
-    expect(open).toBe(0);
-    const record = await prisma.staffPasswordReset.findUniqueOrThrow({ where: { tokenHash: hashInviteToken(token) } });
-    expect(record.usedAt).not.toBeNull();
-    expect(await prisma.auditLog.count({ where: { action: 'staff.password_reset_completed', entityCode: people.agentA2.code } })).toBe(1);
-
-    const again = await post('/staff/accept-invite', { token, password: 'Another-Password-3x' });
-    expect(again.status).toBe(400);
+    const revealed = await as('tlA', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    expect(revealed.body.code).toBe(resetCodeFor(asked.body.resetRequestId));
+    const code = revealed.body.code as string;
+    // The reset code is never a login code: verify-code does not know the id, and the login code of that id differs.
+    expect(code).not.toBe(loginCodeFor(asked.body.resetRequestId));
+    const asLogin = await post('/auth/login/verify-code', { loginRequestId: asked.body.resetRequestId, code, deviceId: `usual-${ts}`, loginRequestProof: asked.body.resetRequestProof });
+    expect(asLogin.status).toBeGreaterThanOrEqual(400);
+    expect(asLogin.body.accessToken).toBeUndefined();
+    // Another device (or the right device without this sign-in's proof) is refused without using up a try.
+    const elsewhere = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `thief-${ts}`, code, newPassword });
+    expect(elsewhere.status).toBe(401);
+    expect(reasonOf(elsewhere.body)).toBe('other_device');
+    const noProof = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: resetRequestProofFor(asked.body.resetRequestId, `thief-${ts}`), deviceId: `usual-${ts}`, code, newPassword });
+    expect(reasonOf(noProof.body)).toBe('other_device');
+    expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } })).failedAttempts).toBe(0);
+    // Old password still works up to now.
+    expect(await passwordIs('agentA', oldPassword)).toBe(true);
+    const done = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `usual-${ts}`, code, newPassword, confirmPassword: newPassword }).expect(200);
+    expect(done.body).toMatchObject({ success: true, code: people.agentA.code });
+    expect(await passwordIs('agentA', newPassword)).toBe(true);
+    expect(await openSessions('agentA')).toBe(0);
+    // Single use.
+    const again = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `usual-${ts}`, code, newPassword: 'Another-Pass-3' });
     expect(reasonOf(again.body)).toBe('used');
-    expect((await post('/staff/accept-invite/preview', { token })).status).toBe(410);
+    // A bell to their boss (the Team Lead) and every CEO; the notice waits for the next sign-in.
+    const bells = await prisma.notification.findMany({ where: { kind: 'password_reset', subjectId: asked.body.resetRequestId } });
+    const recipients = bells.map((b) => b.recipientStaffId);
+    expect(recipients).toEqual(expect.arrayContaining([people.tlA.id, people.ceo.id, people.ceo2.id]));
+    expect(recipients).not.toContain(people.agentA.id);
+    // Nobody else but the boss and the CEOs.
+    const roles = await prisma.staff.findMany({ where: { id: { in: recipients } }, select: { id: true, role: true } });
+    expect(roles.every((r) => r.role === 'ceo' || r.id === people.tlA.id)).toBe(true);
+    const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentA.id } });
+    expect(row.passwordResetNotice).toMatchObject({ byName: 'Reset tlA', how: 'senior_code' });
+    const audits = await prisma.auditLog.findMany({ where: { OR: [{ entityCode: asked.body.resetRequestId }, { entityCode: people.agentA.code, action: 'staff.password_reset_completed' }] } });
+    expect(audits.map((a) => a.action)).toEqual(expect.arrayContaining(['password_reset.requested', 'password_reset.revealed', 'staff.password_reset_completed']));
+    // The notice shows once at the next sign-in, then is gone.
+    const code2 = await login('agentA', newPassword, `usual-${ts}`).expect(200);
+    const signedIn = await post('/auth/login/verify-code', { loginRequestId: code2.body.loginRequestId, code: loginCodeFor(code2.body.loginRequestId), deviceId: `usual-${ts}`, loginRequestProof: code2.body.loginRequestProof }).expect(200);
+    expect(signedIn.body.passwordResetNotice).toMatchObject({ byName: 'Reset tlA', how: 'senior_code' });
+    expect((await prisma.staff.findUniqueOrThrow({ where: { id: people.agentA.id } })).passwordResetNotice).toBeNull();
   });
 
-  it('a newer reset replaces the older unused one', async () => {
-    const first = tokenOf((await issue('mgrA', 'tlA')).body.resetUrl);
-    const second = tokenOf((await issue('ceo', 'tlA')).body.resetUrl);
-    const old = await post('/staff/accept-invite/preview', { token: first });
-    expect(old.status).toBe(404);
-    expect(reasonOf(old.body)).toBe('invalid');
-    expect((await post('/staff/accept-invite/preview', { token: second })).status).toBe(200);
+  it('5 wrong reset codes end the request', async () => {
+    const asked = await requestReset(people.agentA2.code, `d-a2b-${ts}`).expect(200);
+    await as('tlA', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    const right = resetCodeFor(asked.body.resetRequestId);
+    const wrong = right === '000000' ? '111111' : '000000';
+    for (let i = 0; i < 5; i += 1) {
+      const r = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-a2b-${ts}`, code: wrong, newPassword });
+      expect(r.status).toBe(401);
+    }
+    const dead = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-a2b-${ts}`, code: right, newPassword });
+    expect(reasonOf(dead.body)).toBe('code_invalid');
+    expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } })).refusedReason).toBe('too_many_wrong_codes');
   });
 
-  it('an expired reset link is refused and the old password stays', async () => {
-    const token = tokenOf((await issue('ceo', 'agentB')).body.resetUrl);
+  it('a refused request (with a reason) ends; refusing needs a reason', async () => {
+    const asked = await requestReset(people.agentA2.code, `d-a2c-${ts}`).expect(200);
+    expect((await as('tlA', 'post', `/password-resets/${asked.body.resetRequestId}/refuse`, {})).status).toBe(400);
+    // POST /password-resets/:id/refuse: another team's Team Lead is refused (403)
+    expect((await as('tlC', 'post', `/password-resets/${asked.body.resetRequestId}/refuse`, { reason: 'no' })).status).toBe(403);
+    await as('tlA', 'post', `/password-resets/${asked.body.resetRequestId}/refuse`, { reason: 'Could not reach her' }).expect(200);
+    const row = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } });
+    expect(row).toMatchObject({ status: 'refused', refusedByStaffId: people.tlA.id, refusedReason: 'Could not reach her' });
+  });
+
+  it('approvers: nobody their own; a CEO\'s reset only by the other CEO; Finance only by a CEO; a Manager below Manager in their tree', async () => {
+    const ceoAsk = await requestReset(people.ceo.code, `d-ceo-${ts}`).expect(200);
+    expect((await as('ceo', 'post', `/password-resets/${ceoAsk.body.resetRequestId}/reveal`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/password-resets/${ceoAsk.body.resetRequestId}/reveal`)).status).toBe(403);
+    expect((await as('ceo2', 'post', `/password-resets/${ceoAsk.body.resetRequestId}/reveal`)).status).toBe(200);
+    const finAsk = await requestReset(people.fin.code, `d-fin-${ts}`).expect(200);
+    expect((await as('mgrA', 'post', `/password-resets/${finAsk.body.resetRequestId}/reveal`)).status).toBe(403);
+    const mgrAsk = await requestReset(people.mgrA.code, `d-mgr-${ts}`).expect(200);
+    expect((await as('mgrB', 'post', `/password-resets/${mgrAsk.body.resetRequestId}/reveal`)).status).toBe(403);
+    const tlAsk = await requestReset(people.tlA.code, `d-tla-${ts}`).expect(200);
+    expect((await as('mgrB', 'post', `/password-resets/${tlAsk.body.resetRequestId}/reveal`)).status).toBe(403);
+    expect((await as('mgrA', 'post', `/password-resets/${tlAsk.body.resetRequestId}/reveal`)).status).toBe(200);
+    expect((await as('agentA2', 'get', '/password-resets/pending')).status).toBe(403);
+  });
+
+  it('authenticator roles also type a code from the authenticator they keep; a lock a senior placed stays', async () => {
+    const asked = await requestReset(people.tlA.code, `d-tla-${ts}`).expect(200);
+    const code = resetCodeFor(asked.body.resetRequestId);
+    const base = { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-tla-${ts}`, code, newPassword };
+    const missing = await post('/auth/password-reset/complete', base);
+    expect(reasonOf(missing.body)).toBe('totp_required');
+    await prisma.staff.update({ where: { id: people.tlA.id }, data: { lockedByStaffId: people.mgrA.id, lockedReason: 'check' } });
+    const locked = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlA') });
+    expect(reasonOf(locked.body)).toBe('locked');
+    // The lock ends the request: after the unlock they ask again.
+    expect(await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } })).toMatchObject({ status: 'refused', refusedReason: 'account_locked' });
+    await prisma.staff.update({ where: { id: people.tlA.id }, data: { lockedByStaffId: null, lockedReason: null } });
+    const ended = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlA') });
+    expect(reasonOf(ended.body)).toBe('code_invalid');
+    const again = await requestReset(people.tlA.code, `d-tla-${ts}`).expect(200);
+    expect(again.body.resetRequestId).not.toBe(asked.body.resetRequestId);
+    await as('mgrA', 'post', `/password-resets/${again.body.resetRequestId}/reveal`).expect(200);
+    await post('/auth/password-reset/complete', {
+      ...base,
+      resetRequestId: again.body.resetRequestId,
+      resetRequestProof: again.body.resetRequestProof,
+      code: resetCodeFor(again.body.resetRequestId),
+      totpCode: await totpFor('tlA'),
+    }).expect(200);
+    const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.tlA.id } });
+    expect(row.totpEnabled).toBe(true);
+    expect(row.totpSecret).toBe(secrets.tlA);
+    expect(await passwordIs('tlA', newPassword)).toBe(true);
+  });
+
+  // ------------------------------------------------------------------ Fable review fixes
+
+  it('an unknown staff code gets a stand-in id that repeats like a real open request (same id and end time), and looks like one', async () => {
+    const one = await requestReset(`GHOST-${ts}`, `d-gh-${ts}`).expect(200);
+    const two = await requestReset(`ghost-${ts}`, `d-gh-${ts}`).expect(200);
+    expect(two.body.resetRequestId).toBe(one.body.resetRequestId);
+    expect(two.body.expiresAt).toBe(one.body.expiresAt);
+    expect(one.body.resetRequestId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+    const otherDevice = await requestReset(`GHOST-${ts}`, `d-gh2-${ts}`).expect(200);
+    expect(otherDevice.body.resetRequestId).not.toBe(one.body.resetRequestId);
+    // A real account asked twice from one device: the same pattern.
+    const real1 = await requestReset(people.agentA3.code, `d-a3-${ts}`).expect(200);
+    const real2 = await requestReset(people.agentA3.code, `d-a3-${ts}`).expect(200);
+    expect(real2.body).toEqual(real1.body);
+    // Completing: an unknown request, one a senior has not revealed yet and a wrong code all get the same answer.
+    const tryIt = (asked: request.Response, deviceId: string, code: string) =>
+      post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId, code, newPassword });
+    const ghost = await tryIt(one, `d-gh-${ts}`, '123456');
+    const notYet = await tryIt(real1, `d-a3-${ts}`, resetCodeFor(real1.body.resetRequestId));
+    await as('ceo', 'post', `/password-resets/${real1.body.resetRequestId}/reveal`).expect(200);
+    const right = resetCodeFor(real1.body.resetRequestId);
+    const wrong = await tryIt(real1, `d-a3-${ts}`, right === '000000' ? '111111' : '000000');
+    for (const r of [ghost, notYet, wrong]) {
+      expect(r.status).toBe(401);
+      expect(reasonOf(r.body)).toBe('code_invalid');
+    }
+    expect(JSON.stringify(notYet.body)).toBe(JSON.stringify(ghost.body));
+    expect(JSON.stringify(wrong.body)).toBe(JSON.stringify(ghost.body));
+    // A stand-in's proof only fits the device that asked, like a real one.
+    const ghostElsewhere = await tryIt(one, `thief-${ts}`, '123456');
+    expect(reasonOf(ghostElsewhere.body)).toBe('other_device');
+    await prisma.passwordResetRequest.updateMany({ where: { staffId: people.agentA3.id, status: { in: ['pending', 'revealed'] } }, data: { status: 'expired' } });
+  });
+
+  it('5 wrong authenticator codes end the request (counted on the request, not the account)', async () => {
+    await mk('tlD', 'team_lead', { reportsToId: people.mgrA.id });
+    const asked = await requestReset(people.tlD.code, `d-tld-${ts}`).expect(200);
+    await as('mgrA', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    const base = { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-tld-${ts}`, code: resetCodeFor(asked.body.resetRequestId), newPassword };
+    const reasons: (string | undefined)[] = [];
+    for (let i = 0; i < 6; i += 1) {
+      reasons.push(reasonOf((await post('/auth/password-reset/complete', { ...base, totpCode: '000000' })).body));
+    }
+    expect(reasons).toEqual(['totp_invalid', 'totp_invalid', 'totp_invalid', 'totp_invalid', 'code_invalid', 'code_invalid']);
+    const row = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } });
+    expect(row).toMatchObject({ status: 'refused', refusedReason: 'too_many_wrong_codes', failedAttempts: 5 });
+    // The login page is not locked by it.
+    const account = await prisma.staff.findUniqueOrThrow({ where: { id: people.tlD.id } });
+    expect(account).toMatchObject({ lockedUntil: null, failedLoginCount: 0 });
+    // Even the right authenticator code is refused now; the password is unchanged.
+    const after = await post('/auth/password-reset/complete', { ...base, totpCode: await totpFor('tlD') });
+    expect(after.status).toBe(401);
+    expect(await passwordIs('tlD', oldPassword)).toBe(true);
+  });
+
+  it('a wrong-password lock from the login page (anyone who knows the staff code) does not stop a senior-approved reset', async () => {
+    await mk('agentLock', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    for (let i = 0; i < 5; i += 1) {
+      expect((await login('agentLock', 'Wrong-Password-9', `stranger-${ts}`)).status).toBe(401);
+    }
+    const lockedRow = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentLock.id } });
+    expect(lockedRow.lockedUntil?.getTime()).toBeGreaterThan(Date.now());
+    const asked = await requestReset(people.agentLock.code, `d-lock-${ts}`).expect(200);
+    await as('ceo', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    await post('/auth/password-reset/complete', {
+      resetRequestId: asked.body.resetRequestId,
+      resetRequestProof: asked.body.resetRequestProof,
+      deviceId: `d-lock-${ts}`,
+      code: resetCodeFor(asked.body.resetRequestId),
+      newPassword,
+    }).expect(200);
+    const row = await prisma.staff.findUniqueOrThrow({ where: { id: people.agentLock.id } });
+    expect(row).toMatchObject({ lockedUntil: null, failedLoginCount: 0 });
+    expect(await passwordIs('agentLock', newPassword)).toBe(true);
+  });
+
+  it('a real request and a stand-in answer alike when the time is up, from the wrong app, and when refused', async () => {
+    const tryIt = (asked: request.Response, deviceId: string, extra: Record<string, unknown> = {}) =>
+      post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId, code: '123456', newPassword, ...extra });
+    await mk('agentTime', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    // Ended by time.
+    const real = await requestReset(people.agentTime.code, `d-time-${ts}`).expect(200);
+    const ghost = await requestReset(`NOBODY-${ts}`, `d-time-${ts}`).expect(200);
+    await prisma.passwordResetRequest.update({ where: { id: real.body.resetRequestId }, data: { expiresAt: new Date(Date.now() - 1000) } });
+    const realLate = await tryIt(real, `d-time-${ts}`);
+    const ghostLate = await tryIt(ghost, `d-time-${ts}`);
+    expect(reasonOf(realLate.body)).toBe('code_invalid');
+    expect(JSON.stringify(realLate.body)).toBe(JSON.stringify(ghostLate.body));
+    expect(realLate.status).toBe(ghostLate.status);
+    // Asked from the office app, completed from Laboura Field.
+    const realOffice = await post('/auth/password-reset/request', { staffCode: people.agentTime.code, deviceId: `d-app-${ts}`, app: 'office' }).expect(200);
+    const ghostOffice = await post('/auth/password-reset/request', { staffCode: `NOBODY-${ts}`, deviceId: `d-app-${ts}`, app: 'office' }).expect(200);
+    const realField = await tryIt(realOffice, `d-app-${ts}`, { app: 'field' });
+    const ghostField = await tryIt(ghostOffice, `d-app-${ts}`, { app: 'field' });
+    expect(reasonOf(realField.body)).toBe('code_invalid');
+    expect(JSON.stringify(realField.body)).toBe(JSON.stringify(ghostField.body));
+    // Refused by a senior.
+    await as('ceo', 'post', `/password-resets/${realOffice.body.resetRequestId}/refuse`, { reason: 'Not her' }).expect(200);
+    const realRefused = await tryIt(realOffice, `d-app-${ts}`, { app: 'office' });
+    const ghostAgain = await tryIt(ghostOffice, `d-app-${ts}`, { app: 'office' });
+    expect(JSON.stringify(realRefused.body)).toBe(JSON.stringify(ghostAgain.body));
+  });
+
+  it('the stand-in end time is the end of its 15-minute window (nothing kept in memory), and over-long input gets the usual answer', async () => {
+    const before = Date.now();
+    const one = await requestReset(`WINDOW-${ts}`, `d-win-${ts}`).expect(200);
+    const end = new Date(one.body.expiresAt).getTime();
+    expect(end % (15 * 60 * 1000)).toBe(0);
+    expect(end).toBeGreaterThan(before);
+    expect(end - before).toBeLessThanOrEqual(15 * 60 * 1000);
+    const longCode = await requestReset('X'.repeat(33), `d-win-${ts}`).expect(200);
+    const longDevice = await requestReset(people.agentA3.code, 'd'.repeat(129)).expect(200);
+    for (const r of [longCode, longDevice]) {
+      expect(Object.keys(r.body).sort()).toEqual(['expiresAt', 'message', 'resetRequestId', 'resetRequestProof', 'status']);
+      expect(r.body.message).toBe(RESET_REQUESTED_MESSAGE);
+    }
+    expect(await prisma.passwordResetRequest.count({ where: { id: { in: [longCode.body.resetRequestId, longDevice.body.resetRequestId] } } })).toBe(0);
+    const longComplete = await post('/auth/password-reset/complete', { resetRequestId: one.body.resetRequestId, resetRequestProof: one.body.resetRequestProof, deviceId: 'd'.repeat(129), code: '123456', newPassword });
+    expect(reasonOf(longComplete.body)).toBe('code_invalid');
+  });
+
+  it('wrong reset codes sent all at once still stop at 5 tries', async () => {
+    await mk('agentRace', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    const asked = await requestReset(people.agentRace.code, `d-race-${ts}`).expect(200);
+    await as('ceo', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    const right = resetCodeFor(asked.body.resetRequestId);
+    const wrong = right === '000000' ? '111111' : '000000';
+    const results = await Promise.all(
+      Array.from({ length: 12 }, () =>
+        post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-race-${ts}`, code: wrong, newPassword }),
+      ),
+    );
+    expect(results.every((r) => r.status === 401)).toBe(true);
+    const row = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: asked.body.resetRequestId } });
+    expect(row.failedAttempts).toBeLessThanOrEqual(5);
+    expect(row).toMatchObject({ status: 'refused', refusedReason: 'too_many_wrong_codes' });
+    const late = await post('/auth/password-reset/complete', { resetRequestId: asked.body.resetRequestId, resetRequestProof: asked.body.resetRequestProof, deviceId: `d-race-${ts}`, code: right, newPassword });
+    expect(late.status).toBe(401);
+  });
+
+  it('one open request per account is kept by the database too, even when requests arrive at the same moment', async () => {
+    await mk('agentTwin', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    await Promise.all(Array.from({ length: 6 }, (_, i) => requestReset(people.agentTwin.code, `d-twin-${i}-${ts}`).expect(200)));
+    expect(await prisma.passwordResetRequest.count({ where: { staffId: people.agentTwin.id, status: { in: ['pending', 'revealed'] } } })).toBe(1);
     await expect(
-      staffService.previewInvite({ token }, new Date(Date.now() + INVITE_TTL_MS + 60_000)),
-    ).rejects.toMatchObject({ status: 410, response: { reason: 'expired' } });
-    await expect(
-      staffService.acceptInvite({ token, password: newPassword }, new Date(Date.now() + INVITE_TTL_MS + 60_000)),
-    ).rejects.toMatchObject({ status: 400 });
-    expect(await passwordIs('agentB', oldPassword)).toBe(true);
+      prisma.passwordResetRequest.create({ data: { staffId: people.agentTwin.id, deviceId: 'x', status: 'pending', expiresAt: new Date(Date.now() + 60_000) } }),
+    ).rejects.toMatchObject({ code: 'P2002' });
   });
 
-  it('the CEO resets a Manager: the authenticator is kept and not set up again', async () => {
-    const token = tokenOf((await issue('ceo', 'mgrB')).body.resetUrl);
-    const preview = await post('/staff/accept-invite/preview', { token });
-    expect(preview.body).toMatchObject({ purpose: 'reset', role: 'manager', authenticatorRequired: false });
-    expect((await post('/staff/accept-invite/authenticator', { token })).status).toBe(400);
-    expect((await post('/staff/accept-invite', { token, password: newPassword })).status).toBe(200);
-    const mgr = await prisma.staff.findUniqueOrThrow({ where: { id: people.mgrB.id } });
-    expect(mgr).toMatchObject({ totpEnabled: true, totpSecret: 'JBSWY3DPEHPK3PXP' });
+  it('the person\'s own approved device replaces a request from an unknown device; unknown devices never use up its hourly tries', async () => {
+    await mk('agentOwn', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
+    await prisma.staffDevice.create({ data: { staffId: people.agentOwn.id, deviceId: `own-${ts}`, label: 'Phone', platform: 'web', status: 'approved', approvedAt: new Date() } });
+    // A stranger asks 3 times in an hour from unknown devices (each ends before the next).
+    let stranger: request.Response | null = null;
+    for (let i = 0; i < 3; i += 1) {
+      await prisma.passwordResetRequest.updateMany({ where: { staffId: people.agentOwn.id, status: 'pending' }, data: { status: 'expired' } });
+      stranger = await requestReset(people.agentOwn.code, `stranger-${i}-${ts}`).expect(200);
+    }
+    const strangerRow = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: stranger!.body.resetRequestId } });
+    expect(strangerRow).toMatchObject({ status: 'pending', knownDevice: false });
+    // Another unknown device cannot replace it.
+    const other = await requestReset(people.agentOwn.code, `stranger-x-${ts}`).expect(200);
+    expect(await prisma.passwordResetRequest.count({ where: { id: other.body.resetRequestId } })).toBe(0);
+    // The real person, from their approved phone: a new request replaces the stranger's, despite the 3 in the last hour.
+    const mine = await requestReset(people.agentOwn.code, `own-${ts}`).expect(200);
+    const mineRow = await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: mine.body.resetRequestId } });
+    expect(mineRow).toMatchObject({ status: 'pending', knownDevice: true, deviceId: `own-${ts}` });
+    expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: strangerRow.id } })).status).toBe('cancelled');
+    expect(await prisma.auditLog.count({ where: { action: 'password_reset.replaced', entityCode: strangerRow.id } })).toBe(1);
+    // An unknown device cannot replace the approved device's request.
+    await requestReset(people.agentOwn.code, `stranger-y-${ts}`).expect(200);
+    expect((await prisma.passwordResetRequest.findUniqueOrThrow({ where: { id: mineRow.id } })).status).toBe('pending');
   });
 
-  it('a Manager is refused outside their tree, for a Manager, for Finance and for themself', async () => {
-    expect((await issue('mgrA', 'agentB')).status).toBe(403);
-    expect((await issue('mgrA', 'tlB')).status).toBe(403);
-    expect((await issue('mgrA', 'mgrB')).status).toBe(403);
-    expect((await issue('mgrA', 'fin')).status).toBe(403);
-    expect((await issue('mgrA', 'mgrA')).status).toBe(400);
+  it('a founder may approve for his own owner agent account; the audit says "own owner account"; the reveal is never cached', async () => {
+    await mk('owner', 'call_agent', { reportsToId: people.ceo.id, teamLeadId: null, isOwnerAccount: true });
+    const asked = await requestReset(people.owner.code, `d-own-${ts}`).expect(200);
+    const revealed = await as('ceo', 'post', `/password-resets/${asked.body.resetRequestId}/reveal`).expect(200);
+    expect(revealed.headers['cache-control']).toContain('no-store');
+    const log = await prisma.auditLog.findFirstOrThrow({ where: { action: 'password_reset.revealed', entityCode: asked.body.resetRequestId } });
+    expect(log.after).toMatchObject({ ownOwnerAccount: true });
+    const temp = await as('ceo', 'post', `/staff/${people.owner.id}/temp-password`).expect(200);
+    expect(temp.body.tempPassword).toMatch(TEMP_FORMAT);
+    const tempLog = await prisma.auditLog.findFirstOrThrow({ where: { action: 'staff.temp_password_issued', entityCode: people.owner.code }, orderBy: { createdAt: 'desc' } });
+    expect(tempLog.after).toMatchObject({ ownOwnerAccount: true });
+    // The other CEO approving is not "own".
+    const other = await requestReset(people.agentB.code, `d-b-${ts}`).expect(200);
+    await as('ceo2', 'post', `/password-resets/${other.body.resetRequestId}/reveal`).expect(200);
+    const otherLog = await prisma.auditLog.findFirstOrThrow({ where: { action: 'password_reset.revealed', entityCode: other.body.resetRequestId } });
+    expect(otherLog.after).not.toHaveProperty('ownOwnerAccount');
   });
 
-  it('a Team Lead resets only their own agents; agents and Finance cannot reset', async () => {
-    expect((await issue('tlA', 'agentA')).status).toBe(200);
-    expect((await issue('tlA', 'agentB')).status).toBe(403);
-    expect((await issue('tlA', 'mgrA')).status).toBe(403);
-    expect((await issue('agentA', 'agentA2')).status).toBe(403);
-    expect((await issue('fin', 'agentA')).status).toBe(403);
+  it('"Forgot password" routes are limited per connection only: rotating the staff code in the body never opens a fresh bucket', async () => {
+    for (const path of ['/auth/password-reset/request', '/auth/password-reset/complete']) {
+      const ip = `10.66.${path.length}.${ts % 200}`;
+      const statuses: number[] = [];
+      for (let i = 0; i < 7; i += 1) {
+        const res = await request(app.getHttpServer())
+          .post(path)
+          .set('X-Forwarded-For', ip)
+          .send({ staffCode: `ROT-${i}-${ts}`, deviceId: `rot-${i}`, resetRequestId: `00000000-0000-4000-8000-00000000000${i}`, code: '123456', newPassword });
+        statuses.push(res.status);
+      }
+      expect({ path, first: statuses.slice(0, 5).includes(429), last: statuses.slice(5) }).toEqual({ path, first: false, last: [429, 429] });
+    }
   });
 
-  it('an account still waiting for its first password is told to send a new invite', async () => {
-    const res = await issue('mgrA', 'pending');
-    expect(res.status).toBe(400);
-    expect(res.body.message).toMatch(/new invite/);
+  // ------------------------------------------------------------------ history
+
+  it('GET /staff/password-resets: requests, refusals and temporary passwords; the CEO sees all, a Manager their tree; others are refused', async () => {
+    const all = await as('ceo', 'get', '/staff/password-resets').expect(200);
+    const kinds = new Set(all.body.map((r: { kind: string }) => r.kind));
+    expect(kinds.has('senior_code')).toBe(true);
+    expect(kinds.has('full_reset')).toBe(true);
+    const refused = all.body.find((r: { state: string; refusedReason: string | null }) => r.state === 'refused' && r.refusedReason === 'Could not reach her');
+    expect(refused).toMatchObject({ kind: 'senior_code', refusedBy: { id: people.tlA.id } });
+    const mine = await as('mgrA', 'get', '/staff/password-resets').expect(200);
+    const staffIds = new Set(mine.body.map((r: { staff: { id: string } }) => r.staff.id));
+    expect(staffIds.has(people.tlB.id)).toBe(false);
+    expect(staffIds.has(people.agentA.id)).toBe(true);
+    expect((await as('tlC', 'get', '/staff/password-resets')).status).toBe(403);
   });
 
-  it('deactivating the account voids an unused reset link', async () => {
-    const victim = await mk('gone', 'call_agent', { teamLeadId: people.tlA.id, reportsToId: people.tlA.id });
-    const token = tokenOf((await issue('mgrA', 'gone')).body.resetUrl);
-    const off = await request(app.getHttpServer())
-      .post(`/staff/${victim.id}/deactivate`)
-      .set('Authorization', `Bearer ${people.mgrA.token}`)
-      .send({});
-    expect(off.status).toBe(200);
-    expect((await post('/staff/accept-invite/preview', { token })).status).toBe(404);
-  });
-
-  it('GET /staff/password-resets: the CEO sees who reset whom; a Manager only their tree', async () => {
-    const ceo = await request(app.getHttpServer()).get('/staff/password-resets').set('Authorization', `Bearer ${people.ceo.token}`);
-    expect(ceo.status).toBe(200);
-    const mine = (ceo.body as { staff: { id: string }; issuedBy: { id: string }; state: string }[]).filter((r) => ids.includes(r.staff.id));
-    expect(mine.some((r) => r.staff.id === people.agentA.id && r.issuedBy.id === people.mgrA.id)).toBe(true);
-    expect(mine.some((r) => r.staff.id === people.agentB.id)).toBe(true);
-    expect(JSON.stringify(ceo.body)).not.toContain('tokenHash');
-
-    const mgr = await request(app.getHttpServer()).get('/staff/password-resets').set('Authorization', `Bearer ${people.mgrA.token}`);
-    expect(mgr.status).toBe(200);
-    expect((mgr.body as { staff: { id: string } }[]).some((r) => r.staff.id === people.agentB.id)).toBe(false);
-
-    const tl = await request(app.getHttpServer()).get('/staff/password-resets').set('Authorization', `Bearer ${people.tlA.token}`);
-    expect(tl.status).toBe(403);
-  });
-
-  it('passwordResetState: used, replaced, expired, waiting', () => {
-    const now = new Date('2026-11-16T10:00:00Z');
-    const later = new Date('2026-11-17T10:00:00Z');
-    const earlier = new Date('2026-11-15T10:00:00Z');
-    expect(passwordResetState({ usedAt: earlier, cancelledAt: null, expiresAt: later }, now)).toBe('used');
-    expect(passwordResetState({ usedAt: null, cancelledAt: earlier, expiresAt: later }, now)).toBe('replaced');
-    expect(passwordResetState({ usedAt: null, cancelledAt: null, expiresAt: earlier }, now)).toBe('expired');
+  it('passwordResetState and resetRequestState', () => {
+    const now = new Date('2026-11-15T10:00:00Z');
+    const later = new Date('2026-11-16T10:00:00Z');
+    const before = new Date('2026-11-14T10:00:00Z');
+    expect(passwordResetState({ usedAt: now, cancelledAt: null, expiresAt: later }, now)).toBe('used');
+    expect(passwordResetState({ usedAt: null, cancelledAt: now, expiresAt: later }, now)).toBe('replaced');
+    expect(passwordResetState({ usedAt: null, cancelledAt: null, expiresAt: before }, now)).toBe('expired');
     expect(passwordResetState({ usedAt: null, cancelledAt: null, expiresAt: later }, now)).toBe('waiting');
+    expect(resetRequestState({ status: 'pending', expiresAt: later }, now)).toBe('asked');
+    expect(resetRequestState({ status: 'revealed', expiresAt: later }, now)).toBe('code_given');
+    expect(resetRequestState({ status: 'revealed', expiresAt: before }, now)).toBe('expired');
+    expect(resetRequestState({ status: 'refused', expiresAt: later }, now)).toBe('refused');
+    expect(resetRequestState({ status: 'used', expiresAt: before }, now)).toBe('used');
   });
 });

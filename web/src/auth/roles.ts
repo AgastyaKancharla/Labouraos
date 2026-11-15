@@ -6,8 +6,15 @@ export function isStaffRole(value: unknown): value is StaffRole {
   return typeof value === 'string' && (STAFF_ROLES as readonly string[]).includes(value);
 }
 
-/** CEO, Managers and Finance sign in with an authenticator app (TOTP). */
+/** CEO, Managers and Finance: management (the app shell uses this for more than sign-in). */
 export const MANAGEMENT_ROLES: readonly StaffRole[] = ['ceo', 'manager', 'finance'];
+
+/**
+ * Who signs in with their own authenticator app (TOTP) instead of a login
+ * code (Master Guide rev 174–175): CEO, Manager, Finance and Team Lead. Kept
+ * apart from MANAGEMENT_ROLES on purpose: a Team Lead is not management.
+ */
+export const AUTHENTICATOR_ROLES: readonly StaffRole[] = ['ceo', 'manager', 'finance', 'team_lead'];
 
 /** Where each role lands after signing in. */
 export const ROLE_HOME: Record<StaffRole, string> = {

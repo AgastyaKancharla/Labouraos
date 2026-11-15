@@ -3,7 +3,15 @@ import { AppState } from 'react-native';
 import { sessionStore as defaultStore } from '@/api';
 import { useApi } from '@/api/ApiProvider';
 import type { ApiClient } from '@/api/client';
-import { authApi, FIELD_APP_ONLY_MESSAGE, isAwaitingCode, type AwaitingCodeResponse } from '@/api/endpoints/auth';
+import {
+  authApi,
+  FIELD_APP_ONLY_MESSAGE,
+  isAwaitingCode,
+  isSetupRequired,
+  type AwaitingCodeResponse,
+  type PasswordResetNotice,
+  type SetupRequiredResponse,
+} from '@/api/endpoints/auth';
 import { ApiError, isApiError } from '@/api/errors';
 import { secureStorage, type KeyValueStore } from '@/lib/storage';
 import { getDeviceId } from './device';
@@ -21,7 +29,14 @@ export interface PendingLogin extends AwaitingCodeResponse {
   deviceId: string;
 }
 
-export type StartLoginResult = { kind: 'awaiting_code' } | { kind: 'signed_in' };
+export type StartLoginResult = { kind: 'awaiting_code' } | { kind: 'signed_in' } | { kind: 'setup_required' };
+
+/** First login with a temporary password: the set-up steps on this phone (no session). */
+export interface PendingSetup extends SetupRequiredResponse {
+  deviceId: string;
+  /** What was typed at sign-in, so the new password can be checked against it before sending. */
+  temporary: string;
+}
 
 interface AuthValue {
   status: AuthStatus;
@@ -29,6 +44,12 @@ interface AuthValue {
   /** Why the last session ended (shown on the sign-in screen). Cleared on the next login. */
   signOutReason: SignOutReason | null;
   pendingLogin: PendingLogin | null;
+  /** First login: set by startLogin when the temporary password was recognised. */
+  pendingSetup: PendingSetup | null;
+  cancelSetup: () => void;
+  /** Shown once on Home after the first sign-in following a password reset. */
+  resetNotice: PasswordResetNotice | null;
+  dismissResetNotice: () => void;
   deviceId: string | null;
   /** FA01: staff code + password. Laboura Field is for field agents only. */
   startLogin: (staffCode: string, password: string) => Promise<StartLoginResult>;
@@ -59,6 +80,8 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
   const [session, setSession] = useState<Session | null>(null);
   const [signOutReason, setSignOutReason] = useState<SignOutReason | null>(null);
   const [pendingLogin, setPendingLogin] = useState<PendingLogin | null>(null);
+  const [pendingSetup, setPendingSetup] = useState<PendingSetup | null>(null);
+  const [resetNotice, setResetNotice] = useState<PasswordResetNotice | null>(null);
   const [deviceId, setDeviceId] = useState<string | null>(null);
   const refreshing = useRef(false);
 
@@ -163,6 +186,10 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
         password,
         deviceId: id,
       });
+      if (isSetupRequired(response)) {
+        setPendingSetup({ ...response, deviceId: id, temporary: password });
+        return { kind: 'setup_required' };
+      }
       if (isAwaitingCode(response)) {
         setPendingLogin({ ...response, staffCode: staffCode.trim(), deviceId: id });
         return { kind: 'awaiting_code' };
@@ -191,6 +218,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       );
       setSignOutReason(null);
       setPendingLogin(null);
+      setResetNotice(response.passwordResetNotice ?? null);
       await store.start(response.accessToken, response.staff, response.sessionId ?? null, response.refreshToken ?? null);
     },
     [auth, pendingLogin, store],
@@ -212,6 +240,10 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       session,
       signOutReason,
       pendingLogin,
+      pendingSetup,
+      cancelSetup: () => setPendingSetup(null),
+      resetNotice: session ? resetNotice : null,
+      dismissResetNotice: () => setResetNotice(null),
       deviceId,
       startLogin,
       verifyCode,
@@ -219,7 +251,7 @@ export function AuthProvider({ children, api: injectedApi, store = defaultStore,
       logout,
       touch: () => store.touch(),
     }),
-    [status, session, signOutReason, pendingLogin, deviceId, startLogin, verifyCode, logout, store],
+    [status, session, signOutReason, pendingLogin, pendingSetup, resetNotice, deviceId, startLogin, verifyCode, logout, store],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

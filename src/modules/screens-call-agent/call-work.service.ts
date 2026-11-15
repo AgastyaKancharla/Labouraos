@@ -715,7 +715,8 @@ export class CallWorkService {
 
   /** Average over the call agents in the same team (or every call agent when there is no team). */
   private async teamAverages(staffId: string, ctx: QueueContext) {
-    const me = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true, reportsToId: true } });
+    const me = await this.prisma.staff.findUnique({ where: { id: staffId }, select: { role: true, teamLeadId: true, reportsToId: true, reportsTo: { select: { role: true } } } });
+    // An owner account under a CEO has no team: compared with every call agent.
     const lead = me ? teamLeadOf(me) : null;
     // The same team as OwnTeam (teamLeadId links and the reporting line).
     const members = lead ? await new OwnTeam(this.prisma).memberIds(lead) : null;

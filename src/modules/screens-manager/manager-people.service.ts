@@ -367,9 +367,10 @@ export class ManagerPeopleService {
         };
       }),
       /** Who a new person can report to: a Team Lead (for agents) or the Manager (for a new Team Lead). */
+      // A Team Lead who has not signed in yet can already be chosen (labelled "(not signed in yet)").
       reportsToOptions: [
-        ...tree.leads.map((l) => ({ id: l.id, name: l.name, role: 'team_lead', team: l.team })),
-        { id: tree.manager.id, name: tree.manager.name, role: 'manager', team: null },
+        ...tree.leads.map((l) => ({ id: l.id, name: l.name, role: 'team_lead', team: l.team, notSignedInYet: tree.people.find((p) => p.id === l.id)?.status === 'pending_invite' })),
+        { id: tree.manager.id, name: tree.manager.name, role: 'manager', team: null, notSignedInYet: false },
       ],
       creatableRoles: ['team_lead', 'call_agent', 'field_agent'],
     };

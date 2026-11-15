@@ -15,7 +15,6 @@ import { AuthService } from './auth.service';
 import { FieldRefreshDto, LoginDto, LoginResult, VerifyLoginCodeDto } from './dto/login.dto';
 import { AuthThrottlerGuard, LOGIN_CONNECTION_RATE_LIMIT, LOGIN_CONNECTION_TTL, LOGIN_RATE_LIMIT_PER_CONNECTION } from './auth-throttler.guard';
 import { JwtAuthGuard } from './jwt-auth.guard';
-import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
 import { JwtPayload } from './jwt-payload.interface';
 import { Public } from '../rbac/public.decorator';
 import { RbacGuard } from '../rbac/rbac.guard';
@@ -103,7 +102,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles(...ALL_STAFF_ROLES)
-  @AllowTotpSetupScope()
   refresh(@Req() req: AuthenticatedRequest) {
     return this.authService.refresh(req.user);
   }
@@ -127,7 +125,6 @@ export class AuthController {
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequireRoles(...ALL_STAFF_ROLES)
-  @AllowTotpSetupScope()
   async logout(@Req() req: AuthenticatedRequest) {
     const result = await this.authService.logout(req.user);
     // The signed-out session's live stream closes now (LiveController).

@@ -1,8 +1,8 @@
-import { ForgotPasswordService } from './forgot-password.service';
 import {
   Body,
   Controller,
   Get,
+  Header,
   Headers,
   HttpCode,
   HttpStatus,
@@ -25,7 +25,6 @@ import { RequireRoles } from '../../common/rbac/roles.decorator';
 import { PiiMaskingInterceptor } from '../../common/rbac/pii-masking.interceptor';
 import { StaffService } from './staff.service';
 import { CreateStaffDto } from './dto/create-staff.dto';
-import { AcceptInviteDto, InviteTokenDto } from './dto/accept-invite.dto';
 import { QueryStaffDto } from './dto/query-staff.dto';
 import { BootstrapStaffDto } from './dto/bootstrap-staff.dto';
 import { Public } from '../../common/rbac/public.decorator';
@@ -35,12 +34,11 @@ type AuthenticatedRequest = Request & { user: JwtPayload };
 @Controller('staff')
 @UseInterceptors(PiiMaskingInterceptor)
 export class StaffController {
-  constructor(
-    private readonly staffService: StaffService,
-    private readonly forgotPasswords: ForgotPasswordService,
-  ) {}
+  constructor(private readonly staffService: StaffService) {}
 
+  /** Adds a staff member; the answer carries their temporary password, shown once (never cached). */
   @Post()
+  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'write')
   @RequireRoles('ceo', 'manager')
@@ -63,14 +61,15 @@ export class StaffController {
    * 1. Requires STAFF_BOOTSTRAP_SECRET supplied either in the `x-bootstrap-secret`
    *    header or the request body (`secret` / `bootstrapSecret`), compared in
    *    constant-time against the environment variable.
-   * 2. 2FA moves to first-login enrolment: bootstrap creates the CEO with
-   *    `totpEnabled: false` and issues no TOTP secret. The CEO logs in with
-   *    their password, receives the restricted `totp_setup` scope, and enrols
-   *    their authenticator device before accessing any operational endpoints.
+   * 2. Like every new account (rev 174–175), the first CEO gets a temporary
+   *    password shown once in this answer (never cached) and sets their own
+   *    password, selfie and authenticator at the first login. No password or
+   *    authenticator secret travels here.
    * 3. Table lock, conditional insert, staff.count() === 0, rate limiting, and
    *    audit logging with the sentinel 'bootstrap' actor remain intact.
    */
   @Post('bootstrap')
+  @Header('Cache-Control', 'no-store')
   @Public('first CEO account on an empty database; needs STAFF_BOOTSTRAP_SECRET')
   @UseGuards(AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
@@ -106,7 +105,7 @@ export class StaffController {
     return this.staffService.reportingTree(req.user);
   }
 
-  /** Who reset whose password. CEO: everyone. Manager: their own tree. */
+  /** Password reset history: temporary passwords given and Forgot password requests. CEO: everyone. Manager: their own tree. */
   @Get('password-resets')
   @UseGuards(JwtAuthGuard, RbacGuard)
   @RequirePermission('staff', 'read')
@@ -168,52 +167,6 @@ export class StaffController {
     return this.staffService.setCallRoutingPhone(id, phone, req.user);
   }
 
-  /**
-   * Public by design: the new hire has no password or session yet and proves
-   * identity with the one-time invite token. Throttled like login.
-   */
-  /**
-   * "Forgot password" for the CEO, Managers and Finance: a one-time link to
-   * their company email. Public (they cannot sign in); the same answer for
-   * every address; throttled per address and email, and at most 3 links an
-   * hour per account.
-   */
-  @Post('forgot-password')
-  @Public('management forgot password: always the same answer, never says whether the email exists')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  forgotPassword(@Body() body: { email?: unknown }) {
-    return this.forgotPasswords.request(body?.email).answer;
-  }
-
-  @Post('accept-invite/preview')
-  @Public('invite page: shows whose invite the one-time token is, before a password exists')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 10, ttl: 60000 } })
-  previewInvite(@Body() dto: InviteTokenDto) {
-    return this.staffService.previewInvite(dto);
-  }
-
-  @Post('accept-invite/authenticator')
-  @Public('invite page: management sets up the authenticator with the one-time invite token')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  setupInviteAuthenticator(@Body() dto: InviteTokenDto) {
-    return this.staffService.setupInviteAuthenticator(dto);
-  }
-
-  @Post('accept-invite')
-  @Public('new hire sets a password with the one-time invite token')
-  @HttpCode(HttpStatus.OK)
-  @UseGuards(AuthThrottlerGuard)
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
-  acceptInvite(@Body() dto: AcceptInviteDto) {
-    return this.staffService.acceptInvite(dto);
-  }
-
   @Post(':id/deactivate')
   @HttpCode(HttpStatus.OK)
   @UseGuards(JwtAuthGuard, RbacGuard)
@@ -224,38 +177,42 @@ export class StaffController {
   }
 
   /**
-   * Reset: issues a fresh one-time invite so the person sets a new password.
-   * The CEO for anyone, a Manager inside their own tree, a Team Lead for
-   * their own agents (Master Guide, Passwords and email).
+   * "New temporary password" (rev 174–175): replaces "Resend invite" and the
+   * reset link; ends any earlier temporary password. Never oneself; a Team
+   * Lead for their own agents, a Manager below Manager in their own teams,
+   * the CEO for anyone else. Shown once (never cached).
    */
-  @Post(':id/reissue-invite')
+  @Post(':id/temp-password')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @RequirePermission('staff', 'write')
   @RequireRoles('ceo', 'manager', 'team_lead')
-  reissueInvite(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.staffService.reissueInvite(id, req.user);
+  issueTempPassword(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.issueTempPassword(id, req.user);
   }
 
   /**
-   * Reset password: a new one-time link to the invite page where the person
-   * sets a new password. The old password works until the link is used. A
-   * Team Lead for their own agents, a Manager inside their own tree, the CEO
-   * for anyone (Master Guide, Passwords and email).
+   * "Reset sign-in completely" (lost phone or authenticator): removes the
+   * authenticator, ends every session, back to "Not signed in yet", and gives
+   * a temporary password (shown once, never cached). Same people as above.
    */
-  @Post(':id/reset-password')
+  @Post(':id/reset-sign-in')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @RequirePermission('staff', 'write')
   @RequireRoles('ceo', 'manager', 'team_lead')
-  resetPassword(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    return this.staffService.issuePasswordReset(id, req.user);
+  resetSignIn(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.staffService.resetSignIn(id, req.user);
   }
 
+  /** Reactivation gives a temporary password (shown once, never cached). */
   @Post(':id/reactivate')
   @HttpCode(HttpStatus.OK)
+  @Header('Cache-Control', 'no-store')
   @UseGuards(JwtAuthGuard, RbacGuard, AuthThrottlerGuard)
   @Throttle({ default: { limit: 5, ttl: 60000 } })
   @RequirePermission('staff', 'write')

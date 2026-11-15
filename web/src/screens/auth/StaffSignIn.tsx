@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { Navigate, useLocation, useNavigate } from 'react-router-dom';
-import qrcode from 'qrcode-generator';
 import { useAuth } from '../../auth/AuthProvider';
-import { authApi, isAwaitingCode, TOTP_REQUIRED_MESSAGE, type TokenResponse } from '../../auth/authApi';
+import { authApi, isAwaitingCode, isSetupRequired, TOTP_REQUIRED_MESSAGE, type SetupRequiredResponse, type TokenResponse } from '../../auth/authApi';
 import { landingPath } from '../../auth/RequireRole';
 import { fieldAppUrlFromRefusal, isFieldAgentRefusal } from '../../auth/fieldApp';
 import { isStaffRole } from '../../auth/roles';
@@ -14,25 +13,29 @@ import { TextField } from '../../components/fields/TextField';
 import { useT } from '../../i18n/I18nProvider';
 import { isApiError } from '../../lib/api/errors';
 import { useClock } from '../../lib/useNow';
+import { FirstLoginSetup } from './FirstLoginSetup';
+import { ForgotPassword } from './ForgotPassword';
 
 /**
  * Staff sign-in for every role, built from the approved designs:
  *
  *   step 1  Staff code + password ............ M01 / MG01 / F01 / TL01 / CA01
- *   step 2a Authenticator code (CEO, Manager, Finance) ...... M02 / MG02 / F02
- *   step 2b Login code read out by a Team Lead / Manager ......... TL02 / CA02
- *   (first sign-in of a management account) authenticator set-up
+ *   step 2a Authenticator code (CEO, Manager, Finance, Team Lead) . M02 / MG02 / F02 / TL02
+ *   step 2b Login code read out by a Team Lead / Manager / CEO ............ CA02
+ *   (first login) the temporary password → "Set your password" (S4)
+ *   (forgot password) staff code → reset code from a senior (S5)
  *
- * The API decides which second step applies: a management password that is
- * right but has no code gets "TOTP 2FA code is required"; everyone else gets
- * { status: 'awaiting_code' }.
+ * The API decides which step applies: an authenticator role's password that
+ * is right but has no code gets "TOTP 2FA code is required"; call agents get
+ * { status: 'awaiting_code' }; the temporary password gets
+ * { status: 'setup_required' } (Master Guide rev 174–175).
  */
 type Step =
   | { kind: 'password' }
-  | { kind: 'forgot'; sent: { message: string; testModeNote?: string } | null }
+  | { kind: 'forgot' }
   | { kind: 'totp' }
-  | { kind: 'code'; loginRequestId: string; loginRequestProof: string; expiresAt: number }
-  | { kind: 'enrol'; token: string; secret: string; otpauthUrl: string };
+  | { kind: 'code'; loginRequestId: string; loginRequestProof: string; expiresAt: number; codeFrom?: 'team_lead' | 'ceo' }
+  | { kind: 'setup'; setup: SetupRequiredResponse; temporary: string };
 
 const LOGO_SRC = `${import.meta.env.BASE_URL}logo-mark.png`;
 
@@ -41,22 +44,11 @@ function messageOf(err: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Team Leads get their code from a Manager; agents from their Team Lead (staff code prefixes TL-, CA-, FA-). */
-function codeAudience(staffCode: string): 'manager' | 'teamLead' | 'any' {
+/** Agents get their code from their Team Lead (staff code prefixes CA-, FA-). */
+function codeAudience(staffCode: string): 'teamLead' | 'any' {
   const prefix = staffCode.trim().toUpperCase().split('-')[0];
-  if (prefix === 'TL') return 'manager';
   if (prefix === 'CA' || prefix === 'FA') return 'teamLead';
   return 'any';
-}
-
-function QrImage({ text }: { text: string }) {
-  const src = useMemo(() => {
-    const qr = qrcode(0, 'M');
-    qr.addData(text);
-    qr.make();
-    return qr.createDataURL(5, 2);
-  }, [text]);
-  return <img src={src} alt="" width={180} height={180} className="lb-qr" />;
 }
 
 export default function StaffSignIn() {
@@ -75,7 +67,6 @@ export default function StaffSignIn() {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [now, setNow] = useState(() => clock().getTime());
-  const [forgotEmail, setForgotEmail] = useState('');
   /** Set when the API refused a field agent here: Laboura Field's address (owner decision 14 Nov). */
   const [fieldAppUrl, setFieldAppUrl] = useState<string | null>(null);
 
@@ -95,12 +86,6 @@ export default function StaffSignIn() {
   }
 
   const finish = async (response: TokenResponse) => {
-    if (response.totpEnrollmentRequired) {
-      const setup = await authApi.setupTotp(response.accessToken);
-      setStep({ kind: 'enrol', token: response.accessToken, secret: setup.secret, otpauthUrl: setup.otpauthUrl });
-      setCode('');
-      return;
-    }
     const next = acceptLogin(response);
     if (!next || !isStaffRole(next.staff.role)) {
       setError(t('auth.signedOut.unauthorized'));
@@ -129,6 +114,12 @@ export default function StaffSignIn() {
     void run(async () => {
       try {
         const response = await authApi.login({ staffCode: staffCode.trim(), password });
+        if (isSetupRequired(response)) {
+          // First login: the temporary password was recognised (S4).
+          setStep({ kind: 'setup', setup: response, temporary: password });
+          setPassword('');
+          return;
+        }
         if (isAwaitingCode(response)) {
           setCode('');
           setNow(clock().getTime());
@@ -137,6 +128,7 @@ export default function StaffSignIn() {
             loginRequestId: response.loginRequestId,
             loginRequestProof: response.loginRequestProof,
             expiresAt: new Date(response.expiresAt).getTime(),
+            codeFrom: response.codeFrom,
           });
           return;
         }
@@ -165,7 +157,7 @@ export default function StaffSignIn() {
     }
     void run(async () => {
       const response = await authApi.login({ staffCode: staffCode.trim(), password, totpCode: value });
-      if (isAwaitingCode(response)) throw new Error('unexpected awaiting_code');
+      if (isAwaitingCode(response) || isSetupRequired(response)) throw new Error('unexpected sign-in step');
       await finish(response);
     });
   };
@@ -179,26 +171,6 @@ export default function StaffSignIn() {
     void run(async () => finish(await authApi.verifyCode(step.loginRequestId, value, step.loginRequestProof)));
   };
 
-  const submitEnrol = (value = code) => {
-    if (step.kind !== 'enrol') return;
-    if (value.length !== 6) {
-      setError(t('form.otp.incomplete'));
-      return;
-    }
-    void run(async () => {
-      await authApi.enableTotp(step.token, value);
-      try {
-        await authApi.logout(step.token);
-      } catch {
-        /* the set-up session expires by itself */
-      }
-      setPassword('');
-      setCode('');
-      setNotice(t('auth.enrol.done'));
-      setStep({ kind: 'password' });
-    });
-  };
-
   const startAgain = () => {
     setStep({ kind: 'password' });
     setCode('');
@@ -207,7 +179,8 @@ export default function StaffSignIn() {
   };
 
   const reasonText = signOutReason ? t(`auth.signedOut.${signOutReason}`) : null;
-  const audience = codeAudience(staffCode);
+  // An owner account under a CEO asks a CEO; other agents their Team Lead.
+  const audience = step.kind === 'code' && step.codeFrom === 'ceo' ? 'ceo' : codeAudience(staffCode);
   const codeExpired = step.kind === 'code' && now >= step.expiresAt;
   const secondsLeft = step.kind === 'code' ? Math.max(0, Math.ceil((step.expiresAt - now) / 1000)) : 0;
   const countdown = `${Math.floor(secondsLeft / 60)}:${String(secondsLeft % 60).padStart(2, '0')}`;
@@ -265,61 +238,17 @@ export default function StaffSignIn() {
               <Button
                 onClick={() => {
                   setError(null);
-                  setStep({ kind: 'forgot', sent: null });
+                  setStep({ kind: 'forgot' });
                 }}
               >
-                {t('auth.forgot.link')}
+                {t('access.forgot.link')}
               </Button>
             </form>
           )}
 
-          {step.kind === 'forgot' && (
-            <form
-              className="lb-stack"
-              noValidate
-              onSubmit={(e) => {
-                e.preventDefault();
-                if (!forgotEmail.trim()) return;
-                setBusy(true);
-                setError(null);
-                authApi
-                  .forgotPassword(forgotEmail.trim())
-                  .then((sent) => setStep({ kind: 'forgot', sent }))
-                  .catch((err: unknown) => setError(messageOf(err, t('error.network'))))
-                  .finally(() => setBusy(false));
-              }}
-            >
-              <div className="lb-auth-card__brand">
-                <img src={LOGO_SRC} alt="Laboura" width={36} height={36} />
-                <h1 className="h1">{t('auth.forgot.title')}</h1>
-              </div>
-              {step.sent ? (
-                <>
-                  <p className="lb-notice" role="status">
-                    {step.sent.message}
-                  </p>
-                  {step.sent.testModeNote && <p className="muted">{step.sent.testModeNote}</p>}
-                </>
-              ) : (
-                <>
-                  <p className="muted">{t('auth.forgot.body')}</p>
-                  <TextField label={t('auth.forgot.email')} type="email" value={forgotEmail} onChange={setForgotEmail} autoComplete="email" spellCheck={false} required />
-                  {error && (
-                    <p className="vno" role="alert">
-                      {error}
-                    </p>
-                  )}
-                  <Button type="submit" variant="primary" fullWidth loading={busy} disabled={!forgotEmail.trim()}>
-                    {t('auth.forgot.send')}
-                  </Button>
-                </>
-              )}
-              <p className="muted">{t('auth.forgot.agents')}</p>
-              <Button fullWidth onClick={() => setStep({ kind: 'password' })}>
-                {t('auth.forgot.back')}
-              </Button>
-            </form>
-          )}
+          {step.kind === 'forgot' && <ForgotPassword initialStaffCode={staffCode} onBack={() => setStep({ kind: 'password' })} />}
+
+          {step.kind === 'setup' && <FirstLoginSetup setup={step.setup} temporaryPassword={step.temporary} onBack={startAgain} />}
 
           {step.kind === 'totp' && (
             <form
@@ -363,18 +292,10 @@ export default function StaffSignIn() {
               }}
             >
               <h1 className="h1">
-                {audience === 'manager'
-                  ? t('auth.code.titleManager')
-                  : audience === 'teamLead'
-                    ? t('auth.code.titleTeamLead')
-                    : t('auth.code.title')}
+                {audience === 'ceo' ? t('auth.code.titleCeo') : audience === 'teamLead' ? t('auth.code.titleTeamLead') : t('auth.code.title')}
               </h1>
               <p className="muted">
-                {audience === 'manager'
-                  ? t('auth.code.bodyManager')
-                  : audience === 'teamLead'
-                    ? t('auth.code.bodyTeamLead')
-                    : t('auth.code.body')}
+                {audience === 'ceo' ? t('auth.code.bodyCeo') : audience === 'teamLead' ? t('auth.code.bodyTeamLead') : t('auth.code.body')}
               </p>
               {codeExpired ? (
                 <p className="lb-notice" role="alert">
@@ -408,39 +329,6 @@ export default function StaffSignIn() {
             </form>
           )}
 
-          {step.kind === 'enrol' && (
-            <form
-              className="lb-stack"
-              onSubmit={(e) => {
-                e.preventDefault();
-                submitEnrol();
-              }}
-            >
-              <h1 className="h1">{t('auth.enrol.title')}</h1>
-              <p className="muted">{t('auth.enrol.body')}</p>
-              <QrImage text={step.otpauthUrl} />
-              <p className="sub lb-break">{t('auth.enrol.secret', { secret: step.secret })}</p>
-              <FieldShell label={t('auth.totp.title')} error={error ?? undefined}>
-                {({ describedBy, invalid }) => (
-                  <OtpInput
-                    value={code}
-                    onChange={setCode}
-                    label={t('auth.totp.title')}
-                    autoFocus
-                    invalid={invalid}
-                    describedBy={describedBy}
-                    disabled={busy}
-                  />
-                )}
-              </FieldShell>
-              <Button type="submit" variant="primary" fullWidth loading={busy}>
-                {t('auth.enrol.turnOn')}
-              </Button>
-              <Button onClick={startAgain} fullWidth>
-                {t('auth.startAgain')}
-              </Button>
-            </form>
-          )}
         </main>
       </div>
     </FamilyContext.Provider>

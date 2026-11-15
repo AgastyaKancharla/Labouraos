@@ -6,6 +6,8 @@
 export const routes = {
   login: '/login', // FA01
   loginCode: '/login-code', // FA02
+  setup: '/setup', // FA01b: set your password (first login, temporary password)
+  forgotPassword: '/forgot-password', // FA01c: forgot password (reset code from a senior)
   home: '/', // FA03
   attendance: '/attendance', // FA04
   visits: '/visits', // FA05

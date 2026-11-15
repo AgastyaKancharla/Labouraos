@@ -1,6 +1,4 @@
 import {
-  BadRequestException,
-  Body,
   Controller,
   Get,
   HttpCode,
@@ -16,7 +14,6 @@ import { Request } from 'express';
 import { AuthService, StaffSessionView } from './auth.service';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { JwtPayload } from './jwt-payload.interface';
-import { AllowTotpSetupScope } from './totp-setup-scope.decorator';
 import { RbacGuard } from '../rbac/rbac.guard';
 import { RequireRoles } from '../rbac/roles.decorator';
 import { ALL_STAFF_ROLES } from '../rbac/rbac.types';
@@ -63,27 +60,5 @@ export class StaffSessionController {
     const session = await this.prisma.staffSession.findUnique({ where: { id: sessionId }, select: { staffId: true } });
     if (session?.staffId) this.live?.recheckSessions(session.staffId);
     return result;
-  }
-
-  @Post('2fa/setup')
-  @AllowTotpSetupScope()
-  @HttpCode(HttpStatus.OK)
-  async setup2fa(
-    @Req() req: AuthenticatedRequest,
-  ): Promise<{ secret: string; otpauthUrl: string }> {
-    return this.authService.setupTotp(req.user.sub);
-  }
-
-  @Post('2fa/enable')
-  @AllowTotpSetupScope()
-  @HttpCode(HttpStatus.OK)
-  async enable2fa(
-    @Req() req: AuthenticatedRequest,
-    @Body('totpCode') totpCode: string,
-  ): Promise<{ success: boolean; message: string }> {
-    if (!totpCode || typeof totpCode !== 'string') {
-      throw new BadRequestException('totpCode is required');
-    }
-    return this.authService.enableTotp(req.user.sub, totpCode, req.user.sid);
   }
 }

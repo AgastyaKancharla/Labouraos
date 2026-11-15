@@ -1,3 +1,4 @@
+import { AUTHENTICATOR_ROLES } from '../../common/auth/sign-in-roles';
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { JwtPayload } from '../../common/auth/jwt-payload.interface';
 import { AuditService } from '../../common/audit/audit.service';
@@ -184,7 +185,8 @@ export class CeoTeamService {
         signedInNow: live.filter((s) => online.has(s.id)).length,
         invitesPending: live.filter((s) => s.status === 'pending_invite').length,
         locked: live.filter((s) => staffState(s, now) === 'locked').length,
-        withoutAuthenticator: live.filter((s) => ['ceo', 'manager', 'finance'].includes(s.role) && !s.totpEnabled).length,
+        // CEO, Manager, Finance and Team Lead sign in with their own authenticator (rev 174–175).
+        withoutAuthenticator: live.filter((s) => AUTHENTICATOR_ROLES.includes(s.role) && s.status === 'active' && !s.totpEnabled).length,
       },
       organisation: {
         ceos: live.filter((s) => s.role === 'ceo').map((s) => ({ id: s.id, name: s.name })),
@@ -201,9 +203,18 @@ export class CeoTeamService {
         })),
         finance: live.filter((s) => s.role === 'finance').map((s) => ({ id: s.id, name: s.name })),
       },
+      // A boss can be active or created but not signed in yet ("(not signed in
+      // yet)"), never deactivated (rev 174–175). CEOs are offered for Managers,
+      // Finance and owner agent accounts.
       reportsToOptions: live
-        .filter((s) => ['ceo', 'manager', 'team_lead'].includes(s.role) && s.status === 'active')
-        .map((s) => ({ id: s.id, name: s.name, role: s.role, team: s.role === 'team_lead' ? teamLabel(s) : null })),
+        .filter((s) => ['ceo', 'manager', 'team_lead'].includes(s.role) && (s.status === 'active' || s.status === 'pending_invite'))
+        .map((s) => ({
+          id: s.id,
+          name: s.name,
+          role: s.role,
+          team: s.role === 'team_lead' ? teamLabel(s) : null,
+          notSignedInYet: s.status === 'pending_invite',
+        })),
     };
   }
 
@@ -350,7 +361,7 @@ export class CeoTeamService {
     }));
   }
 
-  /** C-LoginCodes: tiles, locked accounts, invites not accepted and every code given in the period. */
+  /** C-LoginCodes: tiles, locked accounts, people not signed in yet and every code given in the period. */
   async access(now: Date, from?: Date, to?: Date) {
     const dayStart = istStartOfDay(istDayKey(now));
     const [waiting, locked, invites, codes, codesTodayCount] = await Promise.all([
@@ -362,7 +373,7 @@ export class CeoTeamService {
       }),
       this.prisma.staff.findMany({
         where: { status: 'pending_invite' },
-        select: { id: true, code: true, name: true, role: true, inviteExpiresAt: true, createdAt: true },
+        select: { id: true, code: true, name: true, role: true, tempPasswordExpiresAt: true, createdAt: true },
         orderBy: { createdAt: 'desc' },
       }),
       this.codesGiven(from ?? dayStart, to ?? now),
@@ -390,7 +401,8 @@ export class CeoTeamService {
         name: s.name,
         role: s.role,
         invitedAt: s.createdAt.toISOString(),
-        expired: s.inviteExpiresAt ? s.inviteExpiresAt.getTime() <= now.getTime() : true,
+        // Not signed in yet: their temporary password ran out (they need a new one).
+        expired: s.tempPasswordExpiresAt ? s.tempPasswordExpiresAt.getTime() <= now.getTime() : true,
       })),
       codes,
     };

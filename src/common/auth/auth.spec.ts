@@ -120,6 +120,24 @@ describe('Staff Authentication', () => {
     ).rejects.toThrow(UnauthorizedException);
   });
 
+  it('verifyToken takes a staff access token only: a scoped, customer-shaped or role-less token is refused', async () => {
+    const good = await jwtService.signAsync({ sub: testStaffId, role: 'call_agent', code: 'X', email: null });
+    await expect(authService.verifyToken(good)).resolves.toMatchObject({ sub: testStaffId, role: 'call_agent' });
+    for (const claims of [
+      { sub: testStaffId, role: 'ceo', scope: 'totp_setup' },
+      { sub: testStaffId, role: 'ceo', scope: 'anything' },
+      { sub: testStaffId, sid: 's', realm: 'customer' },
+      { sub: testStaffId, role: 'customer_owner' },
+      { sub: testStaffId },
+      { role: 'ceo' },
+    ]) {
+      const token = await jwtService.signAsync(claims);
+      await expect(authService.verifyToken(token)).rejects.toThrow(UnauthorizedException);
+    }
+    const withAudience = await jwtService.signAsync({ sub: testStaffId, role: 'ceo' }, { audience: 'laboura-customer-app' });
+    await expect(authService.verifyToken(withAudience)).rejects.toThrow(UnauthorizedException);
+  });
+
   it('expired token is rejected', async () => {
     // Generate an already expired token (-1 second)
     const expiredToken = await jwtService.signAsync(

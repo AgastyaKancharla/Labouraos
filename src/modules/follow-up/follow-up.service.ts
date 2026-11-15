@@ -508,7 +508,8 @@ export class FollowUpService {
             supersededAt: null,
           },
         },
-        registeredBy: true,
+        // The boss's role: an owner account under a CEO has no team (teamLeadOf gives null).
+        registeredBy: { include: { reportsTo: { select: { role: true } } } },
       },
     });
 

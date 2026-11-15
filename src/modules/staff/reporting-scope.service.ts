@@ -25,6 +25,8 @@ interface LinkRow {
 }
 
 const AGENT_ROLES = ['call_agent', 'field_agent'];
+/** A boss may be active or created but not signed in yet (rev 174–175, rule 15); never deactivated. */
+const BOSS_STATUSES = ['active', 'pending_invite'];
 
 /**
  * The one place that walks the reporting line.
@@ -81,33 +83,47 @@ export class ReportingScopeService {
 
   /**
    * The line required on create and on a move.
-   * A call or field agent reports to an active Team Lead.
-   * A Team Lead reports to an active Manager.
+   * A call or field agent reports to a Team Lead; an owner agent account
+   * (isOwnerAccount) may instead report straight to a CEO (rev 174–175).
+   * A Team Lead reports to a Manager.
    * A Manager or Finance reports to the CEO.
    * The CEO reports to nobody.
+   * The boss may be active or created but not signed in yet (pending);
+   * never deactivated.
    */
   async assertReportingLine(
     role: string,
     reportsToId: string | null | undefined,
+    options: { ownerAccount?: boolean } = {},
   ): Promise<string | null> {
+    return (await this.reportingLine(role, reportsToId, options)).id;
+  }
+
+  /** assertReportingLine, also saying which role the boss has. */
+  async reportingLine(
+    role: string,
+    reportsToId: string | null | undefined,
+    options: { ownerAccount?: boolean } = {},
+  ): Promise<{ id: string | null; bossRole: string | null }> {
     if (role === 'ceo') {
       if (reportsToId) {
         throw new BadRequestException('The CEO reports to nobody');
       }
-      return null;
+      return { id: null, bossRole: null };
     }
+    const owner = Boolean(options.ownerAccount) && AGENT_ROLES.includes(role);
     if (!reportsToId) {
-      throw new BadRequestException(this.missingLineMessage(role));
+      throw new BadRequestException(this.missingLineMessage(role, owner));
     }
     const target = await this.prisma.staff.findUnique({
       where: { id: reportsToId },
       select: { role: true, status: true },
     });
-    const expected = this.expectedRole(role);
-    if (!target || target.role !== expected || target.status !== 'active') {
-      throw new BadRequestException(this.missingLineMessage(role));
+    const expected = [this.expectedRole(role), ...(owner ? ['ceo'] : [])];
+    if (!target || !expected.includes(target.role) || !BOSS_STATUSES.includes(target.status)) {
+      throw new BadRequestException(this.missingLineMessage(role, owner));
     }
-    return reportsToId;
+    return { id: reportsToId, bossRole: target.role };
   }
 
   private expectedRole(role: string): string {
@@ -120,12 +136,14 @@ export class ReportingScopeService {
     return 'ceo';
   }
 
-  private missingLineMessage(role: string): string {
+  private missingLineMessage(role: string, ownerAccount = false): string {
     if (AGENT_ROLES.includes(role)) {
-      return 'A call agent or field agent must report to an active Team Lead';
+      return ownerAccount
+        ? 'An owner account must report to a Team Lead or a CEO (active or not signed in yet)'
+        : 'A call agent or field agent must report to a Team Lead (active or not signed in yet)';
     }
     if (role === 'team_lead') {
-      return 'A Team Lead must report to an active Manager';
+      return 'A Team Lead must report to a Manager (active or not signed in yet)';
     }
     return 'A Manager or Finance must report to the CEO';
   }

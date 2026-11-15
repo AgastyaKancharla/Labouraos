@@ -1,8 +1,10 @@
 /**
  * GET /setup — the one-time page that creates the first CEO account, served
- * by the app itself. The bootstrap secret and the first CEO password go
- * straight from this page to POST /staff/bootstrap on the same address; they
- * never pass through another website (DEPLOY.md, Step 7).
+ * by the app itself. The bootstrap secret goes straight from this page to
+ * POST /staff/bootstrap on the same address; it never passes through another
+ * website (DEPLOY.md, Step 7). Like every new account (rev 174–175), the
+ * first CEO gets a staff code and a temporary password, shown once here, and
+ * sets their own password, selfie and authenticator at the first sign-in.
  *
  * No outside scripts, fonts or images; nothing is stored in the browser. The
  * request only works while no staff account exists, so after the first CEO the
@@ -43,13 +45,8 @@ export function renderSetupPageHtml(): string {
   <form id="setup" autocomplete="off" novalidate>
     <label for="name">CEO name</label>
     <input id="name" name="name" required maxlength="100">
-    <label for="email">CEO email</label>
-    <input id="email" name="email" type="email" required maxlength="200">
-    <label for="password">Password</label>
-    <input id="password" name="password" type="password" required minlength="12" autocomplete="new-password">
-    <small>At least 12 characters. Keep it in a password manager.</small>
-    <label for="password2">Password again</label>
-    <input id="password2" name="password2" type="password" required autocomplete="new-password">
+    <label for="email">CEO email (optional)</label>
+    <input id="email" name="email" type="email" maxlength="200">
     <label for="secret">Bootstrap secret</label>
     <input id="secret" name="secret" type="password" required autocomplete="off">
     <small>From Render: the web service, Environment, STAFF_BOOTSTRAP_SECRET (click the eye icon, copy).</small>
@@ -62,41 +59,44 @@ export function renderSetupPageHtml(): string {
   var form = document.getElementById('setup');
   var msg = document.getElementById('msg');
   var button = document.getElementById('submit');
-  function show(kind, text, code) {
+  function line(label, value) {
+    var div = document.createElement('div');
+    div.appendChild(document.createTextNode(label));
+    var c = document.createElement('code');
+    c.textContent = value;
+    div.appendChild(c);
+    msg.appendChild(div);
+  }
+  function show(kind, text, code, temp, until) {
     msg.className = 'msg ' + kind;
     msg.textContent = text;
-    if (code) {
-      var line = document.createElement('div');
-      line.appendChild(document.createTextNode('Staff code: '));
-      var c = document.createElement('code');
-      c.textContent = code;
-      line.appendChild(c);
-      msg.appendChild(line);
-    }
+    if (code) line('Staff code: ', code);
+    if (temp) line('Temporary password: ', temp);
+    if (until) line('Valid until: ', until);
   }
   form.addEventListener('submit', async function (event) {
     event.preventDefault();
     var value = function (id) { return document.getElementById(id).value; };
-    if (!value('name').trim() || !value('email').trim() || !value('password') || !value('secret')) {
-      show('bad', 'Fill in every box.');
+    if (!value('name').trim() || !value('secret')) {
+      show('bad', 'Fill in the name and the bootstrap secret.');
       return;
     }
-    if (value('password').length < 12) { show('bad', 'The password needs at least 12 characters.'); return; }
-    if (value('password') !== value('password2')) { show('bad', 'The two passwords are not the same.'); return; }
     button.disabled = true;
     try {
       var res = await fetch('/staff/bootstrap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         credentials: 'omit',
-        body: JSON.stringify({ name: value('name').trim(), email: value('email').trim(), password: value('password'), secret: value('secret') })
+        body: JSON.stringify({ name: value('name').trim(), email: value('email').trim(), secret: value('secret') })
       });
       var data = {};
       try { data = await res.json(); } catch (e) { data = {}; }
       if (res.ok) {
         form.reset();
         form.style.display = 'none';
-        show('good', 'Done. Write the staff code down, then go to /login and log in with the staff code and the password. The authenticator app is set up there, on that first login.', data.code || '');
+        var staff = data.staff || {};
+        var until = data.tempPasswordExpiresAt ? new Date(data.tempPasswordExpiresAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) + ' IST' : '';
+        show('good', 'Done. Write these down now: they are shown only once. Within 24 hours go to /login and sign in with the staff code and the temporary password. You then take a selfie, choose your own password and set up the authenticator app.', staff.code || '', data.tempPassword || '', until);
       } else {
         var text = Array.isArray(data.message) ? data.message.join(' ') : (data.message || ('The server answered ' + res.status + '.'));
         show('bad', text);

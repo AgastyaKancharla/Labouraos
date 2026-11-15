@@ -39,7 +39,7 @@ describe('Staff photo rules', () => {
 
 /**
  * Staff photo (guide, "The login code screen", 14 Nov): a live camera selfie
- * at account setup from the invite link, asked again at login when missing or
+ * in the first-login set-up (rev 174–175), asked again at login when missing or
  * when the CEO asks for a new one; shown on login code requests, staff lists
  * and profiles; private storage, signed links only.
  */
@@ -96,36 +96,55 @@ describe('Staff photo API', () => {
     await prisma.staffSession.deleteMany({ where: { staffId: { in: ids } } });
     await prisma.staffPasswordReset.deleteMany({ where: { OR: [{ staffId: { in: ids } }, { issuedByStaffId: { in: ids } }] } });
     await prisma.auditLog.deleteMany({ where: { OR: [{ actorId: { in: ids } }, { entityType: 'staff', entityCode: { in: codes } }] } });
+    await prisma.statusHistory.deleteMany({ where: { subjectType: 'staff', subjectId: { in: ids } } });
+    await prisma.staff.updateMany({ where: { id: { in: ids } }, data: { teamLeadId: null, reportsToId: null, tempPasswordIssuedByStaffId: null } });
     await prisma.staff.deleteMany({ where: { id: { in: ids } } });
     await app.close();
   });
 
-  it('the invite page takes a live camera selfie with the invite token (checked before the file is read); the preview says when one is needed', async () => {
+  /** Signs in with the temporary password and returns the set-up ticket headers for this device. */
+  async function setupHeaders(code: string, tempPassword: string, deviceId: string) {
+    const start = await request(server()).post('/auth/login').set('X-Forwarded-For', freshIp()).send({ staffCode: code, password: tempPassword, deviceId }).expect(200);
+    expect(start.body.status).toBe('setup_required');
+    return { start, headers: { 'x-setup-ticket': start.body.setupTicket as string, 'x-device-id': deviceId } };
+  }
+
+  it('the first-login set-up takes a live camera selfie with the set-up ticket (checked before the file is read); the set-up answer says when one is needed', async () => {
     const hired = await request(server())
       .post('/staff')
       .set(as(ceoId))
-      .send({ name: 'Photo Hire', email: `pho_hire_${ts}@laboura.local`, role: 'call_agent', teamLeadId })
+      .send({ name: 'Photo Hire', role: 'call_agent', teamLeadId })
       .expect(201);
     ids.push(hired.body.staff.id);
-    const token = hired.body.inviteToken as string;
-    const preview = await request(server()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token }).expect(200);
-    expect(preview.body.photoRequired).toBe(true);
+    const { start, headers } = await setupHeaders(hired.body.staff.code, hired.body.tempPassword, `pho-dev-${ts}`);
+    expect(start.body.photoRequired).toBe(true);
 
     await request(server())
-      .post('/staff/accept-invite/not-a-real-token/photo')
+      .post('/auth/setup/photo')
       .set('X-Forwarded-For', freshIp())
+      .set({ 'x-setup-ticket': 'not-a-real-ticket', 'x-device-id': `pho-dev-${ts}` })
       .field('captureSource', 'live_camera')
       .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
-      .expect((res) => expect([400, 404]).toContain(res.status));
+      .expect(401);
+    // The right ticket from another device is refused too.
     await request(server())
-      .post(`/staff/accept-invite/${token}/photo`)
+      .post('/auth/setup/photo')
       .set('X-Forwarded-For', freshIp())
+      .set({ ...headers, 'x-device-id': 'someone-else' })
+      .field('captureSource', 'live_camera')
+      .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
+      .expect(401);
+    await request(server())
+      .post('/auth/setup/photo')
+      .set('X-Forwarded-For', freshIp())
+      .set(headers)
       .field('captureSource', 'gallery')
       .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(400);
     await request(server())
-      .post(`/staff/accept-invite/${token}/photo`)
+      .post('/auth/setup/photo')
       .set('X-Forwarded-For', freshIp())
+      .set(headers)
       .field('captureSource', 'live_camera')
       .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(200);
@@ -133,17 +152,17 @@ describe('Staff photo API', () => {
     const row = await prisma.staff.findUniqueOrThrow({ where: { id: hired.body.staff.id } });
     expect(row.photoStoragePath).toMatch(new RegExp(`^staff/${row.id}/profile-photo-\\d+$`));
     expect(row.photoTakenAt).toBeTruthy();
-    const after = await request(server()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token }).expect(200);
-    expect(after.body.photoRequired).toBe(false);
-    // The same invite link cannot put another face on the account once one is on file.
+    // The same set-up cannot put another face on the account once one is on file.
     await request(server())
-      .post(`/staff/accept-invite/${token}/photo`)
+      .post('/auth/setup/photo')
       .set('X-Forwarded-For', freshIp())
+      .set(headers)
       .field('captureSource', 'live_camera')
       .attach('photo', PNG, { filename: 'other.png', contentType: 'image/png' })
       .expect(403);
     expect((await prisma.staff.findUniqueOrThrow({ where: { id: row.id } })).photoStoragePath).toBe(row.photoStoragePath);
-    expect(after.body).not.toHaveProperty('photoStoragePath');
+    const again = await setupHeaders(hired.body.staff.code, hired.body.tempPassword, `pho-dev-${ts}`);
+    expect(again.start.body.photoRequired).toBe(false);
     const audit = await prisma.auditLog.findFirst({ where: { action: 'staff.photo_taken', entityCode: row.code } });
     expect(audit).toBeTruthy();
     // The storage path never leaves the API in the staff answers.
@@ -169,24 +188,27 @@ describe('Staff photo API', () => {
     expect((await prisma.staff.findUniqueOrThrow({ where: { id: agent.id } })).photoStoragePath).toBe(before2);
   });
 
-  it('a password reset link cannot replace a photo on file; it can add one only while none is on file', async () => {
+  it('a new temporary password cannot replace a photo on file; set-up can add one only while none is on file', async () => {
     const withPhoto = await mkStaff('call_agent', { teamLeadId, photoStoragePath: 'staff/r/profile-photo-1', photoTakenAt: new Date() });
-    const reset = await request(server()).post(`/staff/${withPhoto.id}/reset-password`).set(as(ceoId)).set('X-Forwarded-For', freshIp()).expect(200);
-    const preview = await request(server()).post('/staff/accept-invite/preview').set('X-Forwarded-For', freshIp()).send({ token: reset.body.resetToken }).expect(200);
-    expect(preview.body.photoRequired).toBe(false);
+    const temp = await request(server()).post(`/staff/${withPhoto.id}/temp-password`).set(as(ceoId)).set('X-Forwarded-For', freshIp()).expect(200);
+    const first = await setupHeaders(withPhoto.code, temp.body.tempPassword, `pho-r1-${ts}`);
+    expect(first.start.body.photoRequired).toBe(false);
     await request(server())
-      .post(`/staff/accept-invite/${reset.body.resetToken}/photo`)
+      .post('/auth/setup/photo')
       .set('X-Forwarded-For', freshIp())
+      .set(first.headers)
       .field('captureSource', 'live_camera')
       .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(403);
     expect((await prisma.staff.findUniqueOrThrow({ where: { id: withPhoto.id } })).photoStoragePath).toBe('staff/r/profile-photo-1');
 
     const noPhoto = await mkStaff('call_agent', { teamLeadId });
-    const reset2 = await request(server()).post(`/staff/${noPhoto.id}/reset-password`).set(as(ceoId)).set('X-Forwarded-For', freshIp()).expect(200);
+    const temp2 = await request(server()).post(`/staff/${noPhoto.id}/temp-password`).set(as(ceoId)).set('X-Forwarded-For', freshIp()).expect(200);
+    const second = await setupHeaders(noPhoto.code, temp2.body.tempPassword, `pho-r2-${ts}`);
     await request(server())
-      .post(`/staff/accept-invite/${reset2.body.resetToken}/photo`)
+      .post('/auth/setup/photo')
       .set('X-Forwarded-For', freshIp())
+      .set(second.headers)
       .field('captureSource', 'live_camera')
       .attach('photo', JPEG, { filename: 'selfie.jpg', contentType: 'image/jpeg' })
       .expect(200);

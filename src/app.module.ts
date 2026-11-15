@@ -9,7 +9,6 @@ import { EditPolicyModule } from './common/edit-policy/edit-policy.module';
 import { AnonymisationModule } from './common/anonymisation/anonymisation.module';
 import { OtpModule } from './common/otp/otp.module';
 import { BypassChargeModule } from './modules/bypass-charge/bypass-charge.module';
-import { EmailModule } from './common/email/email.module';
 import { JobSeekerModule } from './modules/job-seeker/job-seeker.module';
 import { ReferralModule } from './modules/referral/referral.module';
 import { PaymentModule } from './modules/payment/payment.module';
@@ -29,6 +28,7 @@ import { TargetModule } from './modules/target/target.module';
 import { StatusHistoryModule } from './modules/status-history/status-history.module';
 import { ReviewFlagModule } from './modules/review-flag/review-flag.module';
 import { LoginCodeModule } from './modules/login-code/login-code.module';
+import { PasswordResetModule } from './modules/password-reset/password-reset.module';
 import { RefundModule } from './modules/refund/refund.module';
 import { ObservabilityModule } from './common/observability/observability.module';
 import { ConsentModule } from './modules/consent/consent.module';
@@ -82,7 +82,6 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     AnonymisationModule,
     RetentionModule,
     OtpModule,
-    EmailModule,
     WhatsAppModule,
     JobSeekerModule,
     ReferralModule,
@@ -102,6 +101,7 @@ import { PublicRateLimitGuard } from './common/http/public-rate-limit.guard';
     StatusHistoryModule,
     ReviewFlagModule,
     LoginCodeModule,
+    PasswordResetModule,
     TargetModule,
     ConsentModule,
     LegalModule,

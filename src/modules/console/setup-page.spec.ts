@@ -22,9 +22,11 @@ describe('H4: first CEO set-up from the app\'s own address, never through a thir
     expect(html).toContain('name="referrer" content="no-referrer"');
   });
 
-  it('after creating the CEO, sends them to /login (staff code, password, then the authenticator set-up there), not the retired /admin', () => {
-    expect(html).toContain('go to /login and log in with the staff code and the password');
-    expect(html).toContain('The authenticator app is set up there');
+  it('after creating the CEO, shows the staff code and temporary password once and sends them to /login to set up, not the retired /admin', () => {
+    expect(html).toContain('go to /login and sign in with the staff code and the temporary password');
+    expect(html).toContain('set up the authenticator app');
+    expect(html).toContain('Temporary password: ');
+    expect(html).not.toMatch(/id="password"/);
     expect(html).not.toContain('/admin');
   });
 
@@ -39,7 +41,7 @@ describe('H4: first CEO set-up from the app\'s own address, never through a thir
     const deploy = fs.readFileSync(path.join(__dirname, '../../../DEPLOY.md'), 'utf8');
     expect(deploy).not.toMatch(/reqbin\.com/i);
     expect(deploy).toContain('/setup');
-    expect(deploy).toMatch(/Never type the bootstrap secret, the CEO password or a login token into any other website/);
+    expect(deploy).toMatch(/Never type the bootstrap secret, the temporary password or a login token into any other website/);
     // Office networks are added from the Devices & logins screen.
     expect(deploy).toMatch(/Devices & logins/);
   });

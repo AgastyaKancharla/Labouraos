@@ -65,10 +65,23 @@ export class OwnTeam {
 /**
  * The Team Lead a call or field agent belongs to (teamLeadId, else the
  * reporting line). Anyone else has no Team Lead here.
+ *
+ * An owner agent account may report straight to a CEO (rev 174–175): it then
+ * has no teamLeadId and its reporting line is the CEO. Callers that pass the
+ * boss's role (`reportsTo`) get null for it, as for anyone with no Team Lead;
+ * callers that do not (review flags raised for the person's senior) get the
+ * CEO's id on purpose, so those flags go to the CEO.
  */
-export function teamLeadOf(staff: { role: string; teamLeadId?: string | null; reportsToId?: string | null }): string | null {
+export function teamLeadOf(staff: {
+  role: string;
+  teamLeadId?: string | null;
+  reportsToId?: string | null;
+  reportsTo?: { role: string } | null;
+}): string | null {
   if (!TEAM_AGENT_ROLES.includes(staff.role)) return null;
-  return staff.teamLeadId ?? staff.reportsToId ?? null;
+  if (staff.teamLeadId) return staff.teamLeadId;
+  if (staff.reportsTo && staff.reportsTo.role !== 'team_lead') return null;
+  return staff.reportsToId ?? null;
 }
 
 export interface BusinessOwnerFields {
