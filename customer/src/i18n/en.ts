@@ -488,6 +488,7 @@ export const en = {
   'error.otpLimitWait': 'Too many tries. Please try again in {minutes} minutes.',
   'error.profileExists': 'You already have this profile. We opened it for you.',
   'error.notAllowed': 'Only the owner can do this.',
+  'error.referralUnusable': 'This referral code cannot be used. You can register without it.',
   'error.referralSelf': 'You cannot use your own referral link.',
   'error.referralPaused': 'This referral link is paused. You can register without it.',
   'error.deletionPending': 'Your request to delete your account is already being handled.',
