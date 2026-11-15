@@ -40,14 +40,24 @@ class ProbeController {
 class ProbeModule {}
 
 describe('Names and localities may not start like a spreadsheet formula (INF-6)', () => {
-  it('spots = + - @ at the start of a name-like field, at any depth', () => {
+  it('spots a leading "=" in a name-like field the way a spreadsheet reads it, at any depth and in lists', () => {
     expect(startsLikeFormula('=HYPERLINK("x")')).toBe(true);
-    expect(startsLikeFormula('  @SUM(A1)')).toBe(true);
-    expect(startsLikeFormula('A+ Tailors')).toBe(false);
+    expect(startsLikeFormula('  =SUM(A1)')).toBe(true);
+    expect(startsLikeFormula('\u200b=1')).toBe(true);
+    expect(startsLikeFormula('\ufeff=1')).toBe(true);
+    expect(startsLikeFormula('\uff1d1+1')).toBe(true);
+    // L2: + - @ are allowed at input (the CSV sink makes them safe).
+    for (const ok of ['-', '@Home Tiffins', '+91 shop', 'A+ Tailors', 'Ravi-Kumar']) expect(startsLikeFormula(ok)).toBe(false);
     expect(findFormulaStart({ name: 'Sri Lakshmi Hotel', locality: 'BTM Layout' })).toBeNull();
-    expect(findFormulaStart({ businessName: '+cmd' })).toEqual({ field: 'businessName', label: 'Business name' });
-    expect(findFormulaStart({ branches: [{ name: 'Main' }, { contactName: '-1+1' }] })).toEqual({ field: 'branches.1.contactName', label: 'Contact name' });
-    expect(findFormulaStart({ locality: '=1+1' })?.label).toBe('Locality');
+    expect(findFormulaStart({ businessName: '=cmd' })).toEqual({ field: 'businessName', label: 'Business name' });
+    expect(findFormulaStart({ branches: [{ name: 'Main' }, { contactName: '=1+1' }] })).toEqual({ field: 'branches.1.contactName', label: 'Contact name' });
+    expect(findFormulaStart({ locality: '\uff1d1+1' })?.label).toBe('Locality');
+    // Arrays of strings under a name-like key.
+    expect(findFormulaStart({ name: ['Ravi', '=HYPERLINK("x")'] })).toEqual({ field: 'name.1', label: 'Name' });
+    // Deep bodies are still checked (no 5-level limit any more).
+    let deep: Record<string, unknown> = { ownerName: '=x' };
+    for (let i = 0; i < 20; i += 1) deep = { nested: deep };
+    expect(findFormulaStart(deep)?.label).toBe("Owner's name");
     // Only names and localities: notes, phone numbers and amounts are not names.
     expect(findFormulaStart({ notes: '=not a name', phone: '+919876543210', amount: '-100' })).toBeNull();
   });
@@ -65,16 +75,20 @@ describe('Names and localities may not start like a spreadsheet formula (INF-6)'
       await app.close();
     });
 
-    it.each(['=HYPERLINK("https://evil.example","x")', '+1+1', '-2+3', '@SUM(A1)'])('refuses a business name %j with a clear 400', async (value) => {
+    it.each(['=HYPERLINK("https://evil.example","x")', ' =1+1', '\uff1d1+1', '\u200b=1'])('refuses a business name %j with a clear 400', async (value) => {
       const res = await request(app.getHttpServer()).post('/t/business').send({ name: value, locality: 'BTM' }).expect(400);
       expect(res.body).toMatchObject({ statusCode: 400, code: FORMULA_START_CODE, field: 'name' });
-      expect(res.body.message).toMatch(/can't start with =, \+, - or @/);
+      expect(res.body.message).toMatch(/can't start with "="/);
+    });
+
+    it('lets "-" placeholders and names starting with + or @ through (the CSV sink neutralises them)', async () => {
+      await request(app.getHttpServer()).post('/t/business').send({ name: '@Home Tiffins', additionalContactName: '-', locality: '+ Extension' }).expect(201);
     });
 
     it('refuses it on edits too, and for localities and person names', async () => {
       await request(app.getHttpServer()).patch('/t/business').send({ locality: '=1+1' }).expect(400);
-      await request(app.getHttpServer()).post('/t/business').send({ ownerName: '@Ravi' }).expect(400);
-      await request(app.getHttpServer()).post('/t/business').send({ contactPersonName: '-Ravi' }).expect(400);
+      await request(app.getHttpServer()).post('/t/business').send({ ownerName: '=Ravi' }).expect(400);
+      await request(app.getHttpServer()).post('/t/business').send({ contactPersonName: ['Ravi', '=x'] }).expect(400);
     });
 
     it('lets ordinary names through unchanged', async () => {

@@ -77,9 +77,10 @@ export function staffTrade(row: StaffRow): string {
 }
 
 /** Keys of the fields still missing or wrong ("required now" fields only). */
-/** Names may not start with = + - @ (a spreadsheet would run them; the server refuses them too). */
+/** Names may not start with "=" (a spreadsheet would run it; the server refuses it too). + - @ are fine. */
 export function startsWithSymbol(value: string): boolean {
-  return /^[=+\-@]/.test(value.trimStart());
+  const lead = value.normalize('NFKC').replace(/^[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\ufeff\u00ad\u180e]+/u, '');
+  return lead.startsWith('=');
 }
 
 export function formErrors(form: FormState, findTrade: (row: StaffRow) => Trade | undefined): string[] {

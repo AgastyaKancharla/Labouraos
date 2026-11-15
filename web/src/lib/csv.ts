@@ -18,11 +18,25 @@ export interface CsvColumn<Row> {
   value: (row: Row) => string | number | null | undefined;
 }
 
-/** Cells starting with = + - @ are prefixed with ' so Excel never runs them as formulas. */
-function escapeCell(raw: string | number | null | undefined): string {
+/** Zero-width characters and the byte-order mark, which spreadsheets skip before a formula. */
+const INVISIBLE_LEAD = /^[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\ufeff\u00ad\u180e]+/u;
+
+/**
+ * How a spreadsheet reads the start of a cell (L1): NFKC-normalised (full-width
+ * ＝ ＋ ＠ become = + @), leading spaces, zero-width characters and the BOM
+ * removed; a tab or carriage return at the very start is kept.
+ */
+export function formulaLead(value: string): string {
+  const normalised = value.normalize('NFKC');
+  if (/^[\t\r]/.test(normalised)) return normalised;
+  return normalised.replace(INVISIBLE_LEAD, '');
+}
+
+/** Cells that start like a formula (= + - @ tab CR, after formulaLead) get a ' so Excel never runs them. */
+export function escapeCell(raw: string | number | null | undefined): string {
   if (raw === null || raw === undefined) return '';
   let s = String(raw);
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
+  if (/^[=+\-@\t\r]/.test(formulaLead(s))) s = `'${s}`;
   if (/[",\n\r]/.test(s)) s = `"${s.replace(/"/g, '""')}"`;
   return s;
 }

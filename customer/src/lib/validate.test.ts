@@ -33,17 +33,17 @@ describe('form checks', () => {
 });
 
 describe('names may not start like a spreadsheet formula (INF-6)', () => {
-  it('flags = + - @ at the start, also after spaces', () => {
-    for (const bad of ['=HYPERLINK("x")', '+91', '-1+1', '@SUM(A1)', '  =1']) expect(startsWithSymbol(bad)).toBe(true);
-    for (const ok of ['Ravi Kumar', "Sri Lakshmi Hotel", 'Ravi-Kumar', 'A+ Tailors']) expect(startsWithSymbol(ok)).toBe(false);
+  it('flags a leading "=", also after spaces, zero-width characters or written full-width', () => {
+    for (const bad of ['=HYPERLINK("x")', '  =1', '\u200b=1', '\ufeff=1', '\uff1d1+1']) expect(startsWithSymbol(bad)).toBe(true);
+    for (const ok of ['Ravi Kumar', 'Sri Lakshmi Hotel', 'Ravi-Kumar', 'A+ Tailors', '-', '@Home Tiffins', '+91 Stores']) expect(startsWithSymbol(ok)).toBe(false);
   });
 
   it('the registration forms refuse such a name, with their own message', () => {
     const business = validateBusiness({ ...emptyBusiness(), contactName: 'Ravi', boardName: '=HYPERLINK("x")', legalName: '' });
     expect(business.boardName).toBe('form.noLeadingSymbol');
     expect(business.contactName).toBeUndefined();
-    expect(validateJobSeeker({ ...emptyJobSeeker('en'), fullName: '@cmd' }).fullName).toBe('form.noLeadingSymbol');
-    expect(validateReferral({ ...emptyReferral('en'), name: '+Ravi' }).name).toBe('form.noLeadingSymbol');
+    expect(validateJobSeeker({ ...emptyJobSeeker('en'), fullName: '\uff1dcmd' }).fullName).toBe('form.noLeadingSymbol');
+    expect(validateReferral({ ...emptyReferral('en'), name: ' =Ravi' }).name).toBe('form.noLeadingSymbol');
   });
 
   it('the server refusal shows in the person\'s language', () => {

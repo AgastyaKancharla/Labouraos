@@ -11,15 +11,30 @@
  */
 export type CsvValue = string | number | null | undefined;
 
-/** Starts like a spreadsheet formula. */
+/** Starts like a spreadsheet formula (tested on formulaLead's result). */
 export const CSV_FORMULA_START = /^[=+\-@\t\r]/;
 
 const PLAIN_NUMBER = /^-?\d+(\.\d+)?$/;
 
+/** Zero-width characters and the byte-order mark, which spreadsheets skip before a formula. */
+const INVISIBLE_LEAD = /^[\s\u200b-\u200f\u2028-\u202f\u205f-\u206f\ufeff\u00ad\u180e]+/u;
+
+/**
+ * L1: the text as a spreadsheet reads its start: NFKC-normalised (full-width
+ * ＝ ＋ ＠ become = + @), with leading spaces, zero-width characters and the
+ * byte-order mark removed. A tab or carriage return at the very start is kept
+ * (it is itself a formula lead).
+ */
+export function formulaLead(value: string): string {
+  const normalised = value.normalize('NFKC');
+  if (/^[\t\r]/.test(normalised)) return normalised;
+  return normalised.replace(INVISIBLE_LEAD, '');
+}
+
 export function csvCell(value: CsvValue): string {
   if (value === null || value === undefined) return '';
   let text = String(value);
-  if (CSV_FORMULA_START.test(text) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
+  if (CSV_FORMULA_START.test(formulaLead(text)) && !PLAIN_NUMBER.test(text)) text = `'${text}`;
   if (/[",\n\r]/.test(text)) return `"${text.replace(/"/g, '""')}"`;
   return text;
 }

