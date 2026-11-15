@@ -344,6 +344,24 @@ export function mockCustomerApi({ latencyMs = 250 }: { latencyMs?: number } = {}
         kept: ['payments', 'invoices'],
         openRequest: false,
       })),
+    legalDocument: () =>
+      wait(() => ({
+        version: '1.1',
+        title: 'Job Seeker Terms, Consent and Privacy Notice',
+        summary: ['You pay <strong>₹499</strong> once to register.'],
+        bodyHtml: '<section><h3>1. What Laboura does</h3><p>Full terms.</p></section>',
+        consents: [
+          { purpose: 'job_matching', required: true, title: '1. Job matching', description: 'I consent to Laboura matching my profile.' },
+          { purpose: 'promotions', required: false, title: '6. Promotions (optional)', description: 'Offers and news.' },
+        ],
+      })),
+    acceptTerms: (profileId, { otp }) =>
+      wait(() => {
+        checkOtp(otp);
+        const home = state.homes[profileId] as ProfileHome | undefined;
+        if (home?.legal) home.legal = { ...home.legal, acceptedVersion: home.legal.currentVersion, needsReconsent: false };
+        return { version: '1.1' };
+      }),
     requestDeletion: ({ otp, acceptGuaranteeLoss }) =>
       wait(() => {
         checkOtp(otp);

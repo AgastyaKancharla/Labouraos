@@ -54,6 +54,18 @@ export function BusinessHomeView({ profileId, home, hero }: { profileId: string;
 
   return (
     <View style={styles.gap} testID="biz-home">
+      {home.suspension ? (
+        // D6 (rev 176): suspended by the CEO.
+        <Banner
+          tone="error"
+          testID="biz-home-suspended"
+          message={
+            home.suspension.permanent || !home.suspension.until
+              ? t('bizHome.suspendedForever', { reason: home.suspension.reason ?? '—' })
+              : t('bizHome.suspended', { until: formatDayIst(home.suspension.until), reason: home.suspension.reason ?? '—' })
+          }
+        />
+      ) : null}
       <HeroCard eyebrow={hero.eyebrow} title={hero.title} emoji={verified ? '✅' : '🏪'} testID="biz-home-hero">
         <View style={styles.chips}>
           {heroChips.map((c) => (

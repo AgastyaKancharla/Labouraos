@@ -87,7 +87,7 @@ export interface OtpProof {
   code: string;
 }
 
-export type StepUpPurpose = 'register' | 'confirm_vacancy' | 'delete_account';
+export type StepUpPurpose = 'register' | 'confirm_vacancy' | 'delete_account' | 'accept_terms';
 
 export interface OtpSent {
   requestId: string;
@@ -314,6 +314,8 @@ export interface BusinessHome {
   };
   vacancies: VacancySummary[];
   counts: { interviewsUpcoming: number; placements: number };
+  /** D6 (rev 176): suspended by the CEO — no new vacancies, candidates or interviews while it lasts. */
+  suspension?: { until: string | null; permanent: boolean; reason: string | null } | null;
 }
 
 export interface ReferralPerson {
@@ -355,7 +357,25 @@ export interface ReferralHome {
   documents: SignedDocument[];
 }
 
-export type ProfileHome = JobSeekerHome | BusinessHome | ReferralHome;
+/** Which terms version this person accepted (rev 176); needsReconsent shows the blocking "We've updated our terms". */
+export interface LegalHomeStatus {
+  documentKey: 'job_seeker_terms' | 'business_agreement' | 'referral_terms';
+  currentVersion: string;
+  acceptedVersion: string | null;
+  needsReconsent: boolean;
+}
+
+export type ProfileHome = (JobSeekerHome | BusinessHome | ReferralHome) & { legal?: LegalHomeStatus | null };
+
+/** The current terms for a profile (GET /me/profiles/:id/legal): text from the server, never written in the app. */
+export interface LegalDocumentView {
+  version: string;
+  title: string;
+  /** "In short", as inline HTML lines (<strong> only). */
+  summary: string[];
+  bodyHtml: string;
+  consents: { purpose: string; required: boolean; title: string; description: string }[];
+}
 
 // ---------------------------------------------------------------- vacancies
 

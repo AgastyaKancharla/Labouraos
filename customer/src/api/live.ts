@@ -24,6 +24,7 @@ import type {
   StepState,
   VacancyStatus,
   VacancySummary,
+  LegalDocumentView,
 } from './types';
 
 /**
@@ -282,9 +283,8 @@ export function toReferralHome(w: any): ReferralHome {
 }
 
 export function toHome(w: any): ProfileHome {
-  if (w.kind === 'business') return toBusinessHome(w);
-  if (w.kind === 'referral' || w.kind === 'referral_partner') return toReferralHome(w);
-  return toJobSeekerHome(w);
+  const base = w.kind === 'business' ? { ...toBusinessHome(w), suspension: w.suspension ?? null } : w.kind === 'referral' || w.kind === 'referral_partner' ? toReferralHome(w) : toJobSeekerHome(w);
+  return { ...base, legal: w.legal ?? null };
 }
 
 const TOPIC: Record<CallbackTopic, string> = {
@@ -507,6 +507,14 @@ export function liveCustomerApi(api: ApiClient, options: Options = {}): Customer
     sheetLink: (profileId, purpose, documentId) => api.post<SheetLink>(`${profilePath(profileId)}/links`, { purpose, ...(documentId ? { documentId } : {}) }),
 
     home: async (profileId) => toHome(await api.get<unknown>(`${profilePath(profileId)}/home`)),
+    legalDocument: async (profileId, language) => {
+      const r = await api.get<{ document: LegalDocumentView }>(`${profilePath(profileId)}/legal`, { query: { lang: language } });
+      return r.document;
+    },
+    acceptTerms: async (profileId, { purposes, language, otp }) => {
+      await verifyStepUp('accept_terms', otp.requestId, otp.code);
+      return api.post<{ version: string }>(`${profilePath(profileId)}/legal/accept`, { purposes, language });
+    },
 
     createVacancy: async (profileId, d) => {
       const r = await api.post<{ id: string; warnings?: { belowLegalMinimum?: boolean; legalMinimumPaise?: number } }>(`${profilePath(profileId)}/vacancy-drafts`, {
