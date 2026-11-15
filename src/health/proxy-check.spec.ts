@@ -82,4 +82,19 @@ describe('GET /health/proxy-check', () => {
     expect((await request(app.getHttpServer()).get('/health/proxy-check')).status).toBe(401);
     expect((await request(app.getHttpServer()).get('/health/proxy-check').set('Authorization', `Bearer ${tokens.manager}`)).status).toBe(403);
   });
+
+  it('INF-8: readiness details (error texts, heartbeat times) are for the CEO only; the public answer is names and ok/fail', async () => {
+    expect((await request(app.getHttpServer()).get('/health/ready/details')).status).toBe(401);
+    expect((await request(app.getHttpServer()).get('/health/ready/details').set('Authorization', `Bearer ${tokens.manager}`)).status).toBe(403);
+    const details = await request(app.getHttpServer()).get('/health/ready/details').set('Authorization', `Bearer ${tokens.ceo}`).expect(200);
+    expect(details.headers['cache-control']).toContain('no-store');
+    expect(details.body).toEqual(expect.objectContaining({ ready: expect.any(Boolean), errors: expect.any(Object), postgres: expect.stringMatching(/^(ok|fail)$/) }));
+    const pub = await request(app.getHttpServer()).get('/health/ready');
+    for (const [key, value] of Object.entries(pub.body as Record<string, unknown>)) {
+      if (key === 'status') expect(['ready', 'unavailable']).toContain(value);
+      else if (key === 'failed') expect(Array.isArray(value)).toBe(true);
+      else if (key === 'message') expect(String(value)).toMatch(/^Readiness check failed for: [a-z, ]+$/);
+      else expect(['ok', 'fail']).toContain(value);
+    }
+  });
 });

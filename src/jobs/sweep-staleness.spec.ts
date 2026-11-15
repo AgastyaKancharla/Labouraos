@@ -490,9 +490,12 @@ describe('Phase 6.5 Task 6: Sweep Staleness Detection & Alerting', () => {
       expect(res.status).toBe('ready');
       expect(res.postgres).toBe('ok');
       expect(res.redis).toBe('ok');
-      expect(res.sweep).toBeDefined();
-      expect(res.sweep?.status).toBe('stale');
-      expect(res.sweep?.hoursElapsed).toBe(42);
+      // INF-8: the public answer says only that the sweep failed; the age is CEO-only.
+      expect(res.sweep).toBe('fail');
+      expect(JSON.stringify(res)).not.toContain('42');
+      const details = await controller.getReadinessDetails();
+      expect(details.sweep?.status).toBe('stale');
+      expect(details.sweep?.hoursElapsed).toBe(42);
     });
   });
 });
