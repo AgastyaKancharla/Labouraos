@@ -14,12 +14,52 @@ import { CreateVacancyDto } from './dto/create-vacancy.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { VACANCY_EXTRAS } from './vacancy.constants';
-import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
+import { EditPolicyService, EditActor, pickEditableFields } from '../../common/edit-policy/edit-policy.service';
 import { normalizeTradeName, TradeService } from '../trade/trade.service';
 import { VacancyConfirmationService } from './vacancy-confirmation.service';
 import { BUSINESS_SUSPENDED_MESSAGE, businessAccessMessage, businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 
 const IST_OFFSET_MINUTES = 330;
+
+/**
+ * The only columns PATCH /vacancies/:id writes (security AC-1). Not here, on
+ * purpose: status (closing has POST /vacancies/:id/close), the business,
+ * branch, capturing agent and channel, the replacement link, the owner's
+ * confirmation fields and the legal-minimum-wage check (set by the
+ * confirmation flow), city, and every relation.
+ */
+export const ALLOWED_VACANCY_UPDATE_FIELDS: ReadonlySet<string> = new Set([
+  'tradeSkill',
+  'roleTitle',
+  'headcount',
+  'description',
+  'salaryMinPaise',
+  'salaryMaxPaise',
+  'salaryPeriod',
+  'extras',
+  'workingHours',
+  'shift',
+  'weeklyOff',
+  'locality',
+  'latitude',
+  'longitude',
+  'experienceRequiredYears',
+  'educationRequired',
+  'languagesRequired',
+  'licencesRequired',
+  'ageMin',
+  'ageMax',
+  'genderRequirement',
+  'genderReason',
+  'startDate',
+  'urgency',
+  'probationDays',
+  'interviewType',
+  'interviewContactName',
+]);
+
+/** Statuses a vacancy can be closed from (POST /vacancies/:id/close). */
+export const CLOSABLE_VACANCY_STATUSES = ['open', 'draft', 'awaiting_confirmation'];
 
 @Injectable()
 export class VacancyService {
@@ -51,12 +91,22 @@ export class VacancyService {
     }
 
     const reason = typeof dto.reason === 'string' ? dto.reason : undefined;
+    // Security (AC-1): job details only; status, confirmation and links have their own routes.
+    const updates = pickEditableFields(dto, ALLOWED_VACANCY_UPDATE_FIELDS, 'vacancy');
+    if ('headcount' in updates && (!Number.isInteger(updates.headcount) || (updates.headcount as number) < 1)) {
+      throw new BadRequestException('headcount must be a whole number of at least 1');
+    }
+    for (const key of ['salaryMinPaise', 'salaryMaxPaise'] as const) {
+      if (key in updates && updates[key] !== null && (!Number.isInteger(updates[key]) || (updates[key] as number) < 0)) {
+        throw new BadRequestException(`${key} must be a whole number of paise`);
+      }
+    }
 
     const { record, diff } = await this.editPolicyService.assertCanEdit({
       actor: editActor,
       entityType: 'vacancy',
       entityId: id,
-      updates: dto,
+      updates,
       reason,
     });
 
@@ -66,9 +116,13 @@ export class VacancyService {
 
     const data: Record<string, unknown> = {};
     for (const key of diff.changedFields) {
-      data[key] = key === 'tradeSkill' && typeof dto[key] === 'string'
-        ? normalizeTradeName(dto[key] as string)
-        : dto[key];
+      if (key === 'tradeSkill' && typeof updates[key] === 'string') {
+        data[key] = normalizeTradeName(updates[key] as string);
+      } else if (key === 'startDate') {
+        data[key] = updates[key] ? new Date(updates[key] as string) : null;
+      } else {
+        data[key] = updates[key];
+      }
     }
 
     const updated = await this.prisma.vacancy.update({
@@ -95,6 +149,54 @@ export class VacancyService {
     });
 
     return updated;
+  }
+
+  /**
+   * Close a vacancy (C-Vacancy "Close vacancy"): no more matching or interviews.
+   * Was PATCH { status: 'cancelled' } before security AC-1 took status off the
+   * edit route. Team Lead (own team, through the edit policy), Manager or CEO;
+   * a reason is required; open, draft or waiting-for-owner vacancies only.
+   */
+  async close(id: string, actor: EditActor, reasonInput: unknown) {
+    const reason = typeof reasonInput === 'string' ? reasonInput.trim() : '';
+    if (!reason) throw new BadRequestException('A reason is required to close a vacancy');
+    if (!['team_lead', 'manager', 'ceo'].includes(actor.role)) {
+      throw new ForbiddenException('Only a Team Lead, a Manager or the CEO can close a vacancy');
+    }
+    const { record } = await this.editPolicyService.assertCanEdit({ actor, entityType: 'vacancy', entityId: id });
+    const vacancyId = record.id as string;
+    const fromStatus = record.status as string;
+    const closed = await this.prisma.$transaction(async (tx) => {
+      const changed = await tx.vacancy.updateMany({
+        where: { id: vacancyId, status: { in: CLOSABLE_VACANCY_STATUSES } },
+        data: { status: 'cancelled' },
+      });
+      if (changed.count === 0) return false;
+      await recordStatusChange(tx, {
+        subjectType: 'vacancy',
+        subjectId: vacancyId,
+        fromStatus,
+        toStatus: 'cancelled',
+        changedByStaffId: actor.id,
+        reason,
+      });
+      return true;
+    });
+    if (!closed) {
+      throw new BadRequestException('Only an open, draft or waiting-for-owner vacancy can be closed');
+    }
+    await this.auditService.log({
+      actorId: actor.id,
+      action: 'vacancy.closed',
+      entityType: 'vacancy',
+      entityCode: record.code as string,
+      before: { status: fromStatus },
+      after: { status: 'cancelled' },
+      changedFields: ['status'],
+      reason,
+      city: (record.city as string | undefined) ?? 'Bengaluru',
+    });
+    return this.prisma.vacancy.findUniqueOrThrow({ where: { id: vacancyId } });
   }
 
   /**
