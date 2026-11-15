@@ -130,10 +130,17 @@ export class LegalDocumentService {
   /**
    * Renders a document. `numbers` can carry figures frozen earlier (the
    * business agreement keeps the fee and no-bypass numbers of the day its
-   * link was sent); everything else comes from today's Settings.
+   * link was sent); everything else comes from today's Settings. A caller
+   * that has already read Settings passes that policy, so one link is built
+   * from one reading of Settings.
    */
-  async render(key: LegalDocumentKey, language: LegalLanguage, numbers: Partial<LegalNumbers> = {}): Promise<RenderedLegalDocument> {
-    const policy = await this.pricing.current();
+  async render(
+    key: LegalDocumentKey,
+    language: LegalLanguage,
+    numbers: Partial<LegalNumbers> = {},
+    policyRead?: Parameters<typeof legalNumbersFrom>[0] & Parameters<typeof legalCompanyFrom>[0],
+  ): Promise<RenderedLegalDocument> {
+    const policy = policyRead ?? (await this.pricing.current());
     return renderLegalDocument(key, language, { ...legalNumbersFrom(policy), ...numbers }, legalCompanyFrom(policy));
   }
 

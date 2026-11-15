@@ -69,3 +69,8 @@ CREATE TABLE "PermanentBan" (
 CREATE UNIQUE INDEX "PermanentBan_subjectType_subjectId_key" ON "PermanentBan"("subjectType", "subjectId");
 CREATE INDEX "PermanentBan_phoneHash_idx" ON "PermanentBan"("phoneHash");
 ALTER TABLE "PermanentBan" ADD CONSTRAINT "PermanentBan_category_check" CHECK ("category" IN ('forged_id', 'fraud', 'theft', 'violence'));
+
+-- Supabase's Data API must expose nothing: row level security on, no policies (the API connects as the owner).
+ALTER TABLE "LegalDocumentText" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "LegalAcceptance" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "PermanentBan" ENABLE ROW LEVEL SECURITY;

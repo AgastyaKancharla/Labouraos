@@ -300,7 +300,7 @@ export class ConsentLinkService {
       gstPercent: numbers.gstPercent,
       noBypassMonths: numbers.noBypassMonths,
       noBypassPenaltyPercent: numbers.noBypassPenaltyPercent,
-    });
+    }, policy);
     const termsHtml = rendered.html;
     const termsHash = rendered.hash;
     const now = this.clock.now();
@@ -340,7 +340,7 @@ export class ConsentLinkService {
     const referralPayoutPaise = policy.referralPayoutPaise;
     const agreementLanguage = language as AgreementLanguage;
     // Referral Partner Terms v1.0, the full text (rev 176), with today's reward.
-    const rendered = await this.legal.render('referral_terms', agreementLanguage, { referralPayoutPaise });
+    const rendered = await this.legal.render('referral_terms', agreementLanguage, { referralPayoutPaise }, policy);
     const termsHtml = rendered.html;
     const termsHash = rendered.hash;
     const now = this.clock.now();

@@ -45,6 +45,8 @@ type MockPrismaService = {
   };
   payment: { findUnique: jest.Mock; update: jest.Mock };
   statusHistory: { create: jest.Mock };
+  legalAcceptance: { findFirst: jest.Mock; create: jest.Mock };
+  legalDocumentText: { upsert: jest.Mock };
   $transaction: jest.Mock;
 };
 
@@ -112,6 +114,12 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       statusHistory: {
         create: jest.fn().mockResolvedValue({ id: 'sh-1' }),
       },
+      // Legal documents (rev 176): the signed copy of the exact terms text, stored once per hash.
+      legalAcceptance: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'acc-1', ...data })),
+      },
+      legalDocumentText: { upsert: jest.fn().mockResolvedValue({}) },
       $transaction: jest.fn().mockImplementation(async (cb) => {
         if (typeof cb === 'function') {
           return cb(mockPrisma);
@@ -430,7 +438,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         });
 
       expect(res.status).toBe(400);
-      expect(res.body.message).toContain('Agreement terms and call recording consent are both required');
+      expect(res.body.message).toContain('The terms, call recording consent and ID-check consent are all required');
     });
 
     it('signs both consents and keeps the link resumable for the later registration steps', async () => {
@@ -449,8 +457,8 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(res.body.success).toBe(true);
       expect(res.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
 
-      // Assert two Consent rows created sharing the same otpRequestId
-      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(2);
+      // Three Consent rows (terms, recording, the separate ID-check consent S2) sharing the same otpRequestId
+      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(3);
 
       const calls = mockPrisma.consent.upsert.mock.calls;
       const firstCreate = calls[0][0].create;
@@ -467,6 +475,13 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
       expect(secondCreate.purpose).toBe('call_recording');
       expect(secondCreate.method).toBe('sms_link');
       expect(secondCreate.otpRequestId).toBe('otp-req-999');
+      expect(calls[2][0].create.purpose).toBe('aadhaar_verification');
+
+      // The signed copy: the exact text shown on the link, version 1.0, with the OTP.
+      expect(mockPrisma.legalAcceptance.create).toHaveBeenCalledWith({
+        data: expect.objectContaining({ subjectType: 'referral', subjectId: referralId, documentKey: 'referral_terms', version: '1.0', otpRequestId: 'otp-req-999' }),
+      });
+      expect(mockPrisma.legalDocumentText.upsert).toHaveBeenCalledWith(expect.objectContaining({ where: { hash: expect.stringMatching(/^[0-9a-f]{64}$/) } }));
 
       // The registration link remains valid after consent so the partner can resume at selfie, ID, and UPI.
       const repeatRes = await request(app.getHttpServer())
@@ -479,7 +494,7 @@ describe('Phase 18 Task 2: Referral partners sign their terms', () => {
         });
       expect(repeatRes.status).toBe(201);
       expect(repeatRes.body.grantedPurposes).toEqual(['agreement_terms', 'call_recording', 'aadhaar_verification']);
-      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(4);
+      expect(mockPrisma.consent.upsert).toHaveBeenCalledTimes(6);
     });
   });
 
