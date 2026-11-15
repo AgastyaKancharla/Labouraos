@@ -23,10 +23,10 @@ type GatePrisma = Pick<PrismaService, 'identityVerification'>;
 export async function assertIdReadyForPayment(
   prisma: GatePrisma,
   jobSeeker: { id: string; dateOfBirth: Date | null },
-  adultMinimumAge: number,
+  adultMinimumAge: number | null,
   now: Date,
 ): Promise<void> {
-  if (jobSeeker.dateOfBirth && calculateAge(jobSeeker.dateOfBirth, now) < adultMinimumAge) {
+  if (adultMinimumAge !== null && jobSeeker.dateOfBirth && calculateAge(jobSeeker.dateOfBirth, now) < adultMinimumAge) {
     throw new BadRequestException(UNDER_18_BY_DATE_OF_BIRTH);
   }
   const stop = await prisma.identityVerification.findFirst({

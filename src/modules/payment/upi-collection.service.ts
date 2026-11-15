@@ -236,7 +236,8 @@ export class UpiCollectionService {
     if (payment.type === 'activation' && payment.jobSeekerId) {
       const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: payment.jobSeekerId }, select: { id: true, dateOfBirth: true } });
       if (seeker) {
-        const minimumAge = (await this.pricing?.current())?.adultMinimumAge ?? 18;
+        // The age from Pricing (no number here); without Pricing the date-of-birth check is left to the stop and the verified ID.
+        const minimumAge = this.pricing ? (await this.pricing.current()).adultMinimumAge : null;
         await assertIdReadyForPayment(this.prisma, seeker, minimumAge, new Date());
       }
     }
