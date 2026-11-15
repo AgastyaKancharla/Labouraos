@@ -108,7 +108,7 @@ also carry `code: "VALIDATION_FAILED"` and, when known, `field`.
 | `TEXT_STARTS_WITH_SYMBOL` | 400 | A name, business name or locality starts with `=`, `+`, `-` or `@` (it would run as a spreadsheet formula in a CSV download). `field` names the field; the app shows its own words (`error.textStartsWithSymbol`). Every route, staff and customer |
 | `INSTALLATION_REQUIRED` | 400 | The `X-Laboura-Installation` header is missing |
 | `HUMAN_CHECK_REQUIRED` | 403 | Show the human check (`provider` says which; `mock` on the test setup), then resend with `humanCheckToken` |
-| `OTP_PAUSED` | 503 | Not sent any more (INF-4: above the daily limit everyone gets the human check instead); the app still shows "Try again later or call Laboura" if it ever comes |
+| `OTP_PAUSED` | 503 | New sign-ups paused: a number with no account above the system-wide hard ceiling (M2). Show "Try again later or call Laboura". Existing customers never get it |
 | `APPLE_TOKEN_INVALID` | 401 | Apple sign-in token not valid for Laboura |
 | `APPLE_NOT_CONFIGURED` | 503 | Sign in with Apple is not switched on: hide the button (see `GET /config`) |
 | `LIMIT_REACHED` | 409 / 429 | Too many open vacancy drafts (20), or too many links in an hour (10 per profile) |
@@ -191,13 +191,16 @@ from one internet address once it asked codes for 3 other numbers in the hour
 yet: it accepts `mock-human-ok`; a real CAPTCHA or Play Integrity / App Attest
 check must replace it before launch. Above a system-wide daily total
 (`CUSTOMER_OTP_DAILY_LIMIT`, default 3000) the service degrades instead of
-stopping (INF-4): every code needs the human check, for new numbers and existing
-customers alike, and an alert goes out. (`503 OTP_PAUSED` is no longer sent by
-the sign-in; the app keeps handling it.) A send the
+stopping (INF-4, M2): a number that already has an account keeps getting codes
+(its own limits apply), a number with no account needs the human check, and an
+alert goes out. Above a hard ceiling (`CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING`,
+default 3x the daily limit) a number with no account gets `503 OTP_PAUSED` even
+with the human check passed. Address limits count an IPv6 address as its /64,
+and are taken under a lock, so parallel requests cannot pass them together (M1). A send the
 SMS provider could not make does not count against the limits. Codes the person
 asks for themselves are sent at any hour, including 9 PM to 9 AM (owner rule:
 OTPs are allowed in quiet hours). `testModeCode` appears only in customer OTP
-test mode (§2). The live setup refuses to start with the mock human check.
+test mode (§2). The live setup refuses to start unless the human check is a provider built in the code (none is yet).
 
 `POST /auth/otp/verify`
 

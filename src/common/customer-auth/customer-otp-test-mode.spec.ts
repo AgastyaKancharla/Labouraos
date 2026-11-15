@@ -28,7 +28,9 @@ describe('Customer OTP test mode', () => {
   it('the live setup refuses to start with the mock human check (N3)', () => {
     expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live' })).toThrow(/not allowed on the live setup/);
     expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live', HUMAN_CHECK_PROVIDER_MODE: 'mock' })).toThrow();
-    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live', HUMAN_CHECK_PROVIDER_MODE: 'recaptcha' })).not.toThrow();
+    // M2: only an implemented provider counts; none is built yet, so live refuses any value.
+    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live', HUMAN_CHECK_PROVIDER_MODE: 'recaptcha' })).toThrow(/not an implemented human check/);
+    expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'live', HUMAN_CHECK_PROVIDER_MODE: 'turnstile' }, ['turnstile'])).not.toThrow();
     expect(() => assertHumanCheckSafe({ LABOURA_SETUP: 'test', HUMAN_CHECK_PROVIDER_MODE: 'mock' })).not.toThrow();
     expect(() => assertHumanCheckSafe({})).not.toThrow();
   });

@@ -8,12 +8,16 @@
  *   - OTP test mode (OTP_TEST_MODE=on) or customer OTP test mode;
  *   - the mock OTP, SMS or payment provider (each *_PROVIDER_MODE must name the
  *     real vendor; unset means mock);
- *   - the mock human check (HUMAN_CHECK_PROVIDER_MODE unset or `mock`).
+ *   - a human check that is not an implemented real provider
+ *     (IMPLEMENTED_HUMAN_CHECK_PROVIDERS; none is built yet, so live does not
+ *     start until one is, M2).
  * WhatsApp and telephony may stay mock on live until those vendors are signed
  * (nothing secret or paid depends on them answering).
  *
  * The automated tests set LABOURA_SETUP=test in src/test-support/jest-setup.ts.
  */
+import { IMPLEMENTED_HUMAN_CHECK_PROVIDERS } from '../../modules/customer-account/human-check.provider';
+
 export const LABOURA_SETUP_SETTING = 'LABOURA_SETUP';
 
 export type LabouraSetup = 'live' | 'test';
@@ -30,7 +34,7 @@ function mode(env: NodeJS.ProcessEnv, key: string): string {
 }
 
 /** Why a live process may not start (empty: it may). */
-export function liveSetupProblems(env: NodeJS.ProcessEnv = process.env): string[] {
+export function liveSetupProblems(env: NodeJS.ProcessEnv = process.env, implementedHumanChecks: readonly string[] = IMPLEMENTED_HUMAN_CHECK_PROVIDERS): string[] {
   const problems: string[] = [];
   if ((env['OTP_TEST_MODE'] ?? '').trim().toLowerCase() === 'on') problems.push('OTP_TEST_MODE=on (OTP codes would be shown on screen)');
   if ((env.CUSTOMER_OTP_TEST_MODE ?? '').trim().toLowerCase() === 'on') problems.push('CUSTOMER_OTP_TEST_MODE=on (OTP codes would be shown on screen)');
@@ -38,7 +42,12 @@ export function liveSetupProblems(env: NodeJS.ProcessEnv = process.env): string[
   if (mode(env, 'SMS_PROVIDER_MODE') === 'mock') problems.push('SMS_PROVIDER_MODE is mock (set the real SMS vendor)');
   const payment = (env.PAYMENT_PROVIDER_MODE || env.PAYMENT_PROVIDER || '').trim().toLowerCase();
   if (!payment || payment === 'mock' || payment === 'undefined') problems.push('PAYMENT_PROVIDER_MODE is mock (set the real payment vendor)');
-  if (mode(env, 'HUMAN_CHECK_PROVIDER_MODE') === 'mock') problems.push('HUMAN_CHECK_PROVIDER_MODE is mock (choose a real CAPTCHA or device attestation provider)');
+  const humanCheck = mode(env, 'HUMAN_CHECK_PROVIDER_MODE');
+  if (humanCheck === 'mock') problems.push('HUMAN_CHECK_PROVIDER_MODE is mock (choose a real CAPTCHA or device attestation provider)');
+  else if (!implementedHumanChecks.includes(humanCheck)) {
+    const built = implementedHumanChecks.length ? implementedHumanChecks.join(', ') : 'none is built yet';
+    problems.push(`HUMAN_CHECK_PROVIDER_MODE=${humanCheck} is not an implemented human check (implemented: ${built})`);
+  }
   return problems;
 }
 
@@ -47,7 +56,7 @@ export function liveSetupProblems(env: NodeJS.ProcessEnv = process.env): string[
  * exits and Render shows the deploy as failed) when LABOURA_SETUP is not
  * exactly live or test, or when a live process has a mock or test setting.
  */
-export function assertLabouraSetup(env: NodeJS.ProcessEnv = process.env): LabouraSetup {
+export function assertLabouraSetup(env: NodeJS.ProcessEnv = process.env, implementedHumanChecks: readonly string[] = IMPLEMENTED_HUMAN_CHECK_PROVIDERS): LabouraSetup {
   const setup = labouraSetup(env);
   if (!setup) {
     const shown = env[LABOURA_SETUP_SETTING] === undefined ? 'not set' : `"${env[LABOURA_SETUP_SETTING]}"`;
@@ -56,7 +65,7 @@ export function assertLabouraSetup(env: NodeJS.ProcessEnv = process.env): Labour
     );
   }
   if (setup === 'live') {
-    const problems = liveSetupProblems(env);
+    const problems = liveSetupProblems(env, implementedHumanChecks);
     if (problems.length) {
       throw new Error(
         `Refusing to start the live setup (LABOURA_SETUP=live): ${problems.join('; ')}. See DEPLOY.md, "What to set before going live".`,

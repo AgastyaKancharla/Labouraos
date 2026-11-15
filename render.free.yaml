@@ -113,11 +113,14 @@ services:
       - key: APPLE_CLIENT_ID_WEB
         sync: false
       # Customer OTP abuse protection (INF-4): system-wide codes per 24 hours
-      # (above it every code needs the human check); different numbers one
+      # (above it a number with no account needs the human check; above the
+      # ceiling it gets no code); different numbers one
       # address may ask for in an hour before the human check; the human check
       # itself (mock on the test setup: refused on live).
       - key: CUSTOMER_OTP_DAILY_LIMIT
         value: "3000"
+      - key: CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING
+        value: "9000"
       - key: CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK
         value: "3"
       - key: HUMAN_CHECK_PROVIDER_MODE

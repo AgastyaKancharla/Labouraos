@@ -110,16 +110,21 @@ services:
         sync: false
       - key: APPLE_CLIENT_ID_WEB
         sync: false
-      # Customer OTP abuse protection (INF-4): system-wide codes per 24 hours;
-      # above it every code needs the human check and an alert goes out.
+      # Customer OTP abuse protection (INF-4, M2): system-wide codes per 24 hours;
+      # above it a number with no account needs the human check (customers with an
+      # account still get codes) and an alert goes out. Above the ceiling below,
+      # numbers with no account get no code at all (bounds the SMS spend).
       - key: CUSTOMER_OTP_DAILY_LIMIT
         value: "3000"
+      - key: CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING
+        value: "9000"
       # Different numbers one internet address may ask codes for in an hour
       # before the human check is asked for.
       - key: CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK
         value: "3"
       # The human check (CAPTCHA, Play Integrity / App Attest). Asked once: it must
-      # name the real provider; `mock` (or empty) is refused at start-up on live.
+      # name a provider that is BUILT in the code (none is yet; Cloudflare Turnstile
+      # is suggested). Anything else is refused at start-up on live (M2).
       - key: HUMAN_CHECK_PROVIDER_MODE
         sync: false
       # This blueprint is the live setup. The server refuses to start unless

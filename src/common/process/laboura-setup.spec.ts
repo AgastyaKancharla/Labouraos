@@ -10,8 +10,10 @@ const LIVE_READY = {
   OTP_PROVIDER_MODE: 'real',
   SMS_PROVIDER_MODE: 'real',
   PAYMENT_PROVIDER_MODE: 'razorpay',
-  HUMAN_CHECK_PROVIDER_MODE: 'recaptcha',
+  HUMAN_CHECK_PROVIDER_MODE: 'turnstile',
 } as NodeJS.ProcessEnv;
+/** As if Turnstile were built (it is not yet: IMPLEMENTED_HUMAN_CHECK_PROVIDERS is empty). */
+const BUILT = ['turnstile'];
 
 describe('LABOURA_SETUP must be exactly live or test (INF-3)', () => {
   it.each([undefined, '', 'LIVE', ' live', 'Test', 'prod', 'production', 'staging'])('refuses to start with %j', (value) => {
@@ -26,11 +28,18 @@ describe('LABOURA_SETUP must be exactly live or test (INF-3)', () => {
     expect(assertLabouraSetup({ LABOURA_SETUP: 'test', OTP_TEST_MODE: 'on', CUSTOMER_OTP_TEST_MODE: 'on', HUMAN_CHECK_PROVIDER_MODE: 'mock' } as NodeJS.ProcessEnv)).toBe('test');
   });
 
-  it('starts the live setup only with every real vendor set', () => {
-    expect(liveSetupProblems(LIVE_READY)).toEqual([]);
-    expect(assertLabouraSetup(LIVE_READY)).toBe('live');
+  it('starts the live setup only with every real vendor set and an implemented human check', () => {
+    expect(liveSetupProblems(LIVE_READY, BUILT)).toEqual([]);
+    expect(assertLabouraSetup(LIVE_READY, BUILT)).toBe('live');
     // WhatsApp and telephony may still be mock on live.
-    expect(assertLabouraSetup({ ...LIVE_READY, WHATSAPP_PROVIDER_MODE: 'mock', TELEPHONY_PROVIDER_MODE: 'mock' })).toBe('live');
+    expect(assertLabouraSetup({ ...LIVE_READY, WHATSAPP_PROVIDER_MODE: 'mock', TELEPHONY_PROVIDER_MODE: 'mock' }, BUILT)).toBe('live');
+  });
+
+  it('M2: today no human check is built, so the live setup refuses to start whatever the value', () => {
+    for (const value of ['turnstile', 'recaptcha', 'hcaptcha', 'real', 'play_integrity']) {
+      expect(() => assertLabouraSetup({ ...LIVE_READY, HUMAN_CHECK_PROVIDER_MODE: value })).toThrow(/not an implemented human check \(implemented: none is built yet\)/);
+    }
+    expect(() => assertLabouraSetup({ ...LIVE_READY, HUMAN_CHECK_PROVIDER_MODE: 'recaptcha' }, BUILT)).toThrow(/recaptcha is not an implemented human check \(implemented: turnstile\)/);
   });
 
   describe('on live, refuses each mock or test setting', () => {
@@ -48,8 +57,8 @@ describe('LABOURA_SETUP must be exactly live or test (INF-3)', () => {
     ])('%s', (_label, change, reason) => {
       const env = { ...LIVE_READY, ...change } as NodeJS.ProcessEnv;
       for (const [k, v] of Object.entries(change)) if (v === undefined) delete env[k];
-      expect(() => assertLabouraSetup(env)).toThrow(reason);
-      expect(() => assertLabouraSetup(env)).toThrow(/Refusing to start the live setup/);
+      expect(() => assertLabouraSetup(env, BUILT)).toThrow(reason);
+      expect(() => assertLabouraSetup(env, BUILT)).toThrow(/Refusing to start the live setup/);
     });
   });
 

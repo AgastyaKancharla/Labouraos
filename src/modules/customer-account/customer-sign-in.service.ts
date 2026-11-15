@@ -125,16 +125,16 @@ export class CustomerSignInService {
         throw bad(CUSTOMER_ERROR_CODES.OTP_EXPIRED, 'Ask for a new code.');
       }
     }
-    if (await this.limiter.needsHumanCheck(caller, now)) {
-      const passed = await this.humanCheck.verify(body?.humanCheckToken, { installationId: caller.installationId ?? null, ip: caller.ip ?? null });
-      if (!passed) {
-        throw bad(CUSTOMER_ERROR_CODES.HUMAN_CHECK_REQUIRED, 'Please confirm you are a person, then ask for the code again', HttpStatus.FORBIDDEN, { provider: this.humanCheck.name });
-      }
-    }
-    // Above the system-wide daily limit everyone is asked for the human check
-    // (needsHumanCheck) instead of sending stopping, so an attack can neither
-    // lock existing customers out nor shut sign-ups (security re-check N3, INF-4).
-    const rowId = await this.limiter.claimSend(caller, now);
+    // The human check token is checked once, before the limits are taken under
+    // their locks; claimSend decides whether a check was needed (M1, M2).
+    const token = body?.humanCheckToken;
+    const humanCheckPassed = token !== undefined && token !== null && token !== ''
+      ? await this.humanCheck.verify(token, { installationId: caller.installationId ?? null, ip: caller.ip ?? null })
+      : false;
+    // A number that already has an account keeps getting codes above the daily
+    // limit; only a number with no account then needs the human check (M2).
+    const existingAccount = accountId !== null || Boolean(await this.prisma.customerAccount.findUnique({ where: { phone }, select: { id: true } }));
+    const rowId = await this.limiter.claimSend(caller, now, { existingAccount, humanCheckPassed, humanCheckProvider: this.humanCheck.name });
     let result;
     try {
       // Codes the person asked for are sent at any hour (the real sender exempts customer_* purposes).

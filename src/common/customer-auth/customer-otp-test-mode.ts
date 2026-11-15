@@ -1,5 +1,6 @@
 import { anyLiveVendor } from '../otp/otp-test-mode';
 import { labouraSetup } from '../process/laboura-setup';
+import { IMPLEMENTED_HUMAN_CHECK_PROVIDERS } from '../../modules/customer-account/human-check.provider';
 
 /**
  * Customer OTP test mode (security review, C1). The customer app's OTP answers
@@ -49,11 +50,17 @@ export function isLiveSetup(env: NodeJS.ProcessEnv = process.env): boolean {
  * a real CAPTCHA or device attestation must be chosen before the public launch
  * (security re-check N3; DEPLOY.md go-live checklist). The test setup keeps the mock.
  */
-export function assertHumanCheckSafe(env: NodeJS.ProcessEnv = process.env): void {
+export function assertHumanCheckSafe(env: NodeJS.ProcessEnv = process.env, implemented: readonly string[] = IMPLEMENTED_HUMAN_CHECK_PROVIDERS): void {
   const mode = env.HUMAN_CHECK_PROVIDER_MODE?.trim().toLowerCase() || 'mock';
   if (isLiveSetup(env) && mode === 'mock') {
     throw new Error(
       'HUMAN_CHECK_PROVIDER_MODE=mock is not allowed on the live setup (LABOURA_SETUP=live): choose a real CAPTCHA or device attestation provider before going live.',
+    );
+  }
+  // M2: only a provider that is actually built (none yet) counts on live.
+  if (isLiveSetup(env) && !implemented.includes(mode)) {
+    throw new Error(
+      `HUMAN_CHECK_PROVIDER_MODE=${mode} is not an implemented human check, so the live setup cannot start (LABOURA_SETUP=live). Build the provider (Cloudflare Turnstile is suggested) first.`,
     );
   }
 }

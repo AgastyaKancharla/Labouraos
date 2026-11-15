@@ -170,7 +170,7 @@ Every new table added to the code later must also switch row level security on. 
    | `CLOUDFLARE_ACCESS_TEAM_DOMAIN`, `CLOUDFLARE_ACCESS_AUD` | Empty for testing. Required before real data (Step 9). |
    | `OTP_PROVIDER_MODE`, `SMS_PROVIDER_MODE` | `real` (MSG91 or another DLT-registered gateway). **`render.yaml` is the live setup: the server refuses to start with `mock` or an empty box** (INF-3). The worker copies both. |
    | `PAYMENT_PROVIDER_MODE` | `real` (Razorpay, for card payments). Refused when `mock` or empty. |
-   | `HUMAN_CHECK_PROVIDER_MODE` | The real CAPTCHA or device attestation provider, once it is built. Refused when `mock` or empty: **until a real provider exists, the live setup cannot start** (see [What to set before going live](#what-to-set-before-going-live)). |
+   | `HUMAN_CHECK_PROVIDER_MODE` | The real CAPTCHA or device attestation provider, once it is built in the code. Refused when `mock`, empty or a name the code does not implement: **no real provider exists yet, so the live setup cannot start** (see [What to set before going live](#what-to-set-before-going-live)). |
    | `RECORDING_URL_HOSTS` | The calling vendor's recording host(s), comma-separated (for example `recordings.vendor.com`, or `*.vendor-cdn.com` for every sub-domain). Ask the calling vendor which address their recording links start with. Empty: no recording is copied (IN-4). |
    | `UIDAI_CERT_FINGERPRINTS` | The SHA-256 fingerprints of the UIDAI certificates, comma-separated, after the go-live check below (on the web service **and** the worker). **Neither starts until this matches the certificates in the code.** |
    | Vendor keys (`SMS_*`, `DLT_*`, `RAZORPAY*`) and webhook secrets (`*_WEBHOOK_SECRET`) | **Required on the live setup** for the OTP/SMS gateway and Razorpay. WhatsApp and calling keys (`WHATSAPP_*`, `TELEPHONY_VENDOR`, `TOLL_FREE_NUMBER`) may stay empty: those two vendors can stay mock until signed up. |
@@ -265,7 +265,7 @@ Do this straight after Step 7. If the only CEO phone is lost before a second CEO
 | `OTP_PROVIDER_MODE` | `real` (or `msg91` / `dlt`) + `SMS_API_KEY`, `DLT_SENDER_ID`, `DLT_TEMPLATE_ID`, `DLT_ENTITY_ID` | `mock`, empty |
 | `SMS_PROVIDER_MODE` | `real` + `SMS_API_URL`, `SMS_DLT_TEMPLATE_IDS` | `mock`, empty |
 | `PAYMENT_PROVIDER_MODE` | `real` (or `razorpay`) + `RAZORPAY_KEY_ID`, `RAZORPAY_KEY_SECRET`, `RAZORPAY_WEBHOOK_SECRET` | `mock`, empty |
-| `HUMAN_CHECK_PROVIDER_MODE` | the real CAPTCHA / Play Integrity / App Attest provider | `mock`, empty |
+| `HUMAN_CHECK_PROVIDER_MODE` | a provider that is **built in the code** (none is yet; Cloudflare Turnstile is the suggestion) | `mock`, empty, and any name the code does not implement |
 | `OTP_TEST_MODE`, `CUSTOMER_OTP_TEST_MODE` | `off` (written in `render.yaml`) | `on` |
 | `RECORDING_URL_HOSTS` | the calling vendor's recording host(s), before `TELEPHONY_PROVIDER_MODE` goes `real` | (empty is allowed: no recording is copied) |
 | `UIDAI_CERT_FINGERPRINTS` | the checked fingerprints (box below) | missing or not matching |
@@ -274,7 +274,7 @@ Do this straight after Step 7. If the only CEO phone is lost before a second CEO
 `WHATSAPP_PROVIDER_MODE` and `TELEPHONY_PROVIDER_MODE` may stay `mock` on live until those vendors are signed up. If the deploy log says **"Refusing to start the live setup"**, it lists exactly which of the settings above is still wrong.
 
 > [!IMPORTANT]
-> **There is no real human check provider in the code yet** (only the mock, whose token is public). Until one is built and `HUMAN_CHECK_PROVIDER_MODE` names it, the live setup does not start. Keep testing on the free tier (`render.free.yaml`, `LABOURA_SETUP=test`) until then.
+> **There is no real human check provider in the code yet** (only the mock, whose token is public). The live setup accepts only a provider listed in the code as built (`IMPLEMENTED_HUMAN_CHECK_PROVIDERS`, empty today), so typing any name such as `recaptcha` or `turnstile` still refuses to start. Until one is built (Cloudflare Turnstile is suggested), the live setup does not start. Keep testing on the free tier (`render.free.yaml`, `LABOURA_SETUP=test`) until then.
 
 ### Step 9: Before any real data, the go-live checklist
 
@@ -290,7 +290,7 @@ Up to here the system may hold only made-up test data. Tick every line before a 
 - [ ] The four buckets exist and are private, and `scripts/supabase-storage-limits.sql` has been run (Step 3, item 7).
 - [ ] Everything in [What to set before going live](#what-to-set-before-going-live) is set; the deploy log shows no "Refusing to start".
 - [ ] **The UIDAI certificate for the Aadhaar QR check is confirmed** (see the box below).
-- [ ] **Customer app, before it opens to the public:** `LABOURA_SETUP` is `live` and `HUMAN_CHECK_PROVIDER_MODE` names a real CAPTCHA or device attestation provider. The live setup refuses to start with the mock human check (its token is public), and with `CUSTOMER_OTP_TEST_MODE=on`.
+- [ ] **Customer app, before it opens to the public:** `LABOURA_SETUP` is `live` and `HUMAN_CHECK_PROVIDER_MODE` names a real CAPTCHA or device attestation provider that is built in the code. The live setup refuses to start with the mock human check (its token is public), and with `CUSTOMER_OTP_TEST_MODE=on`.
 
 > [!IMPORTANT]
 > **Go-live check: compare the UIDAI certificate in the repo with UIDAI's page, and test with a freshly downloaded e-Aadhaar.**
@@ -592,9 +592,10 @@ If something does not open: wait an hour (the Hostinger change may still be spre
 | `LABOURA_SETUP` | `live` in `render.yaml` (fixed), `test` in `render.free.yaml` (fixed); the worker copies it from the web service | Required, exactly `live` or `test`: the web service and the worker refuse to start otherwise (INF-3). `live` also refuses the OTP test modes and the mock OTP, SMS and payment vendors and mock human check ([What to set before going live](#what-to-set-before-going-live)). The customer OTP test mode is allowed only on `test`, and only `test` with no real vendor may start without `UIDAI_CERT_FINGERPRINTS` |
 | `OTP_TEST_MODE` | `off` on live (fixed in `render.yaml`) | Staff OTP test mode (codes on screen while the OTP sender is mock). Refused on live |
 | `CUSTOMER_OTP_TEST_MODE` | `off` (paid, fixed); `on` on the free test tier | Shows the customer app's OTP code on screen, for testing with pretend SMS. **The server refuses to start with `on` unless `LABOURA_SETUP=test`**, so the live setup can never show codes. The staff OTP test mode does not turn it on |
-| `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it sending does not stop: every code needs the human check (existing customers still get codes) and an alert goes to `ALERT_WEBHOOK_URL` (INF-4); check for abuse before raising it |
-| `CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK` | `3` (fixed) | Different phone numbers one internet address may ask sign-in codes for in an hour before the human check is asked for (INF-4). One address may ask at most 20 codes an hour in all |
-| `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup; asked for on live (`render.yaml`) | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **The server refuses to start with `mock` when `LABOURA_SETUP=live`.** Any value without a provider refuses every check |
+| `CUSTOMER_OTP_DAILY_LIMIT` | `3000` (fixed) | Customer sign-in codes across the whole system in 24 hours. Above it sending does not stop: customers who already have an account keep getting codes, a number with no account needs the human check, and an alert goes to `ALERT_WEBHOOK_URL` (INF-4, M2); check for abuse before raising it |
+| `CUSTOMER_OTP_NEW_NUMBER_DAILY_CEILING` | `9000` (fixed; default 3x the daily limit) | Above this many codes in 24 hours a number with no account gets no code at all, even with the human check passed, so the SMS bill stays bounded (M2). Existing customers are not affected |
+| `CUSTOMER_OTP_ADDRESS_PHONES_BEFORE_CHECK` | `3` (fixed) | Different phone numbers one internet address may ask sign-in codes for in an hour before the human check is asked for (INF-4). One address may ask at most 20 codes an hour in all. An IPv6 address counts as its whole /64 (M1) |
+| `HUMAN_CHECK_PROVIDER_MODE` | `mock` on the test setup; asked for on live (`render.yaml`) | The "are you a person" check asked for after repeated code requests. Only a mock exists (it accepts the token `mock-human-ok` and proves nothing); a CAPTCHA or Play Integrity / App Attest provider must replace it before the public launch. **On `LABOURA_SETUP=live` the server refuses to start unless it names a provider built in the code (none yet), so `mock` or any other name is refused.** Any value without a provider refuses every check |
 | `GOOGLE_NONCE_REQUIRED` | `off` (empty) until the customer app sends a nonce | `on` refuses Google sign-ins without a nonce (replay protection). The app does not send one yet |
 | `APPLE_CLIENT_ID_IOS`, `APPLE_CLIENT_ID_WEB` | From the Apple developer account (the iPhone app's bundle id; the web Services ID) | Turns on "Sign in with Apple" in the customer app. Empty: Apple sign-in is off and refused |
 | `GOOGLE_CLIENT_ID_ANDROID`, `GOOGLE_CLIENT_ID_IOS`, `GOOGLE_CLIENT_ID_WEB` | From the Laboura Firebase project (Project settings, then Your apps; for Android the client id appears once the app's SHA-1 fingerprint is added) | Turns on "Continue with Google" in the customer app. Leave all three empty and the app shows mobile + OTP only. Changing them needs no redeploy of the app, only a restart of `laboura-api` |
