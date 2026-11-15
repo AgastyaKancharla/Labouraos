@@ -12,6 +12,7 @@ import { colors, fonts, radius, touch } from '@/theme';
 import { BusinessHomeView } from './BusinessHome';
 import { JobSeekerHomeView } from './JobSeekerHome';
 import { ReferralHomeView } from './ReferralHome';
+import { UpdatedTerms } from '../UpdatedTerms';
 
 /**
  * Home for the profile picked on "My profiles" (remembered on the phone).
@@ -53,9 +54,11 @@ export default function Home() {
         </Pressable>
         {home.isLoading ? <LoadingState /> : null}
         {home.isError ? <ErrorState error={home.error} onRetry={() => void refetch()} /> : null}
-        {home.data?.kind === 'job_seeker' ? <JobSeekerHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
-        {home.data?.kind === 'business' ? <BusinessHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
-        {home.data?.kind === 'referral_partner' ? <ReferralHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
+        {/* Legal documents v1.1 (rev 176): an older version accepted → this blocks Home until accepted. */}
+        {home.data?.legal?.needsReconsent ? <UpdatedTerms profileId={profileId} legal={home.data.legal} /> : null}
+        {!home.data?.legal?.needsReconsent && home.data?.kind === 'job_seeker' ? <JobSeekerHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
+        {!home.data?.legal?.needsReconsent && home.data?.kind === 'business' ? <BusinessHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
+        {!home.data?.legal?.needsReconsent && home.data?.kind === 'referral_partner' ? <ReferralHomeView profileId={profileId} home={home.data} hero={hero} /> : null}
         <View style={styles.links}>
           {(
             [

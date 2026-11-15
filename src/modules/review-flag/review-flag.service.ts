@@ -218,6 +218,11 @@ export class ReviewFlagService {
       throw new NotFoundException(`Review flag '${id}' not found`);
     }
 
+    // Rev 181 (H2): a "possibly the same person as a banned person" item is closed only by its own
+    // decision ("Confirm — same person" / "Not the same person"), so the ID check never just reopens.
+    if (flag.kind === 'possible_banned_person' && !opts.closedByOwnWork) {
+      throw new BadRequestException('Decide this one with "Confirm — same person" or "Not the same person"');
+    }
     if (!opts.closedByOwnWork) await this.assertCanResolve(flag, actor);
 
     const updated = await this.prisma.reviewFlag.update({

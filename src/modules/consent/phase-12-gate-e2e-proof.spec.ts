@@ -1,4 +1,5 @@
 import { randomUUID } from 'crypto';
+import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test, TestingModule } from '@nestjs/testing';
 import { JwtService } from '@nestjs/jwt';
@@ -224,6 +225,7 @@ describe('Phase 12 gate end-to-end proof', () => {
         otpCode: consentCode,
         purposes: requiredPurposes,
         language: 'en',
+        textHash: await jobSeekerTermsHash(app, 'en'),
       })
       .expect(201);
     expect(submitted.body.status).toBe('consented');

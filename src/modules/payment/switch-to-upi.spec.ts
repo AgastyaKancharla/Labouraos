@@ -170,6 +170,9 @@ describe('Phase 16 Task 5: Switch Activation and Placement Fees to UPI', () => {
       {} as unknown as EditPolicyService,
       {} as unknown as AnonymisationService,
       {} as unknown as TradeService,
+      undefined, undefined, undefined, undefined, undefined, undefined,
+      // Terms accepted (the re-consent guard is required).
+      { status: jest.fn().mockResolvedValue({ needsReconsent: false }) } as never,
     );
 
     placementService = new PlacementService(

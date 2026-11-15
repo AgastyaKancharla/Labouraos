@@ -130,6 +130,9 @@ function Matches({ business, initialView }: { business: BusinessDetail; initialV
         <Banner tone="warn" title={t('fa15.signFirst')} message={t('fa15b.signFirstBody')} testID="sign-first" />
       ) : business.paused ? (
         <Banner tone="error" message={t('fa15b.paused')} testID="paused" />
+      ) : business.suspended ? (
+        // D6 (rev 176): suspended by the CEO — no candidates, no bookings, no new vacancies.
+        <Banner tone="error" message={t('legal.suspended')} testID="suspended" />
       ) : !business.canShowCandidates ? (
         <Banner tone="warn" message={t('fa15b.notVerified')} testID="not-verified" />
       ) : open.length === 0 ? (

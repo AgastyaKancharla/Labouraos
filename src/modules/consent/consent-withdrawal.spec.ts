@@ -1,4 +1,5 @@
 import { randomUUID } from "crypto";
+import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from "@nestjs/common";
 import { Test, TestingModule } from "@nestjs/testing";
 import { JwtService } from "@nestjs/jwt";
@@ -288,6 +289,7 @@ describe("Phase 13 Task 1 — agent consent withdrawal", () => {
         otpCode,
         purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES],
         language: "en",
+        textHash: await jobSeekerTermsHash(app, "en"),
       });
     expect(submit.status).toBe(201);
     expect(submit.body.status).toBe("active");

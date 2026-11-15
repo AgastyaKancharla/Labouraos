@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { assertNoOpenBanReview, assertNotBanned, BANNED_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import {
   BadRequestException,
@@ -9,6 +10,8 @@ import {
   NotFoundException,
   Optional,
 } from '@nestjs/common';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { LEGAL_DOCUMENT_VERSIONS } from '../legal/legal-documents';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { decisionTime } from '../../common/time/decision-time';
 import { IdService } from '../../common/id/id.service';
@@ -35,6 +38,7 @@ import { ConsentService } from '../consent/consent.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { ApproveJobSeekerRefundDto } from './dto/approve-refund.dto';
 import { recordStatusChange } from '../../common/status-history/status-history.helper';
+import { ReconsentRequiredException } from '../legal/legal-status';
 import { REACTIVATABLE_STATUSES, isJobSeekerStatus } from './job-seeker.status';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import { markJobSeekerRefunded } from './job-seeker-refunded';
@@ -139,6 +143,8 @@ export class JobSeekerService {
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
     @Optional() private readonly publicLinks?: PublicLinkStoreService,
     @Optional() private readonly messagingService?: MessagingService,
+    // Required (no @Optional): the re-consent guard never fails open.
+    private readonly legalDocuments?: LegalDocumentService,
   ) {}
 
   private async getPolicy() {
@@ -291,6 +297,8 @@ export class JobSeekerService {
      * They are NOT for pay: agents are salaried, there is no commission.
      */
     const status = 'lead';
+    // D11 (rev 176): a permanently banned phone cannot register again.
+    await assertNotBanned(this.prisma, { phone });
 
     const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
     if (!otpConsumed) {
@@ -466,10 +474,13 @@ export class JobSeekerService {
     if (!jobSeeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
+    // D11 (rev 176): a permanently banned job seeker never pays to come back.
+    if (jobSeeker.status === 'banned') throw new ForbiddenException(BANNED_MESSAGE);
 
     if (jobSeeker.status === 'active') {
       throw new BadRequestException('Job seeker is already active');
     }
+    await this.assertTermsCurrent(jobSeeker.id);
 
     if (jobSeeker.status === 'deactivated' || jobSeeker.status === 'refunded') {
       throw new BadRequestException(
@@ -503,6 +514,15 @@ export class JobSeekerService {
       amountPaise: upiRequest.amountPaise,
       status: upiRequest.status,
     };
+  }
+
+  /** Review H3: no ₹499 request while he must accept the updated terms (RECONSENT_REQUIRED). */
+  private async assertTermsCurrent(jobSeekerId: string) {
+    // H2 (rev 181): a possible match with a banned person — his ₹499 waits for a Manager or the CEO.
+    await assertNoOpenBanReview(this.prisma, 'job_seeker', jobSeekerId);
+    if (!this.legalDocuments) throw new Error('LegalDocumentService is required for the re-consent guard');
+    const status = await this.legalDocuments.status('job_seeker', jobSeekerId);
+    if (status.needsReconsent) throw new ReconsentRequiredException(status);
   }
 
   /** The one ID gate before any ₹499 activation request (Fable final re-check, L-5; see id-payment-gate.ts). */
@@ -543,26 +563,53 @@ export class JobSeekerService {
       guaranteeDays: policy.jobSeekerGuaranteeDays,
       amountPaise: policy.activationFeePaise,
       termsAcceptedAt: seeker.termsAcceptedAt,
+      /** Job seeker terms version shown with these numbers (rev 176) and the one he accepted, if any. */
+      termsVersion: LEGAL_DOCUMENT_VERSIONS.job_seeker_terms,
+      termsAcceptedVersion: seeker.termsAcceptedVersion ?? null,
     };
   }
 
   /** He ticks to agree to the terms shown; the ₹499 payment request is then created (or the open one returned). */
-  async acceptTermsAndCreatePayment(jobSeekerId: string, acceptTerms: unknown) {
+  async acceptTermsAndCreatePayment(
+    jobSeekerId: string,
+    acceptTerms: unknown,
+    options: { language?: string; otpRequestId?: string | null; method?: string } = {},
+  ) {
     if (acceptTerms !== true) throw new BadRequestException('Tick to agree to the terms before paying');
+    await this.assertTermsCurrent(jobSeekerId);
     const terms = await this.registrationTerms(jobSeekerId);
     const now = this.consentClock?.now() ?? new Date();
-    await this.prisma.jobSeeker.updateMany({
-      where: { id: jobSeekerId, paymentReceivedAt: null },
-      data: { termsAcceptedAt: now, termsAcceptedFloorPaise: terms.guaranteeFloorPaise },
+    // Terms versioning (rev 176): the version, language and sha256 of the exact text shown. A guarantee
+    // already paid keeps the version it was paid under, so nothing changes once the ₹499 is in; coming
+    // back after deactivation, closing or a refund is a fresh guarantee, so the current version is recorded.
+    const language = (['kn', 'hi', 'en'].includes(options.language ?? '') ? options.language : 'en') as 'kn' | 'hi' | 'en';
+    const rendered = this.legalDocuments ? await this.legalDocuments.render('job_seeker_terms', language) : null;
+    const changed = await this.prisma.jobSeeker.updateMany({
+      where: { id: jobSeekerId, OR: [{ paymentReceivedAt: null }, { status: { in: [...REACTIVATABLE_STATUSES] } }] },
+      data: {
+        termsAcceptedAt: now,
+        termsAcceptedFloorPaise: terms.guaranteeFloorPaise,
+        ...(rendered ? { termsAcceptedVersion: rendered.version, termsAcceptedLanguage: language, termsAcceptedHash: rendered.hash } : {}),
+      },
     });
     const seeker = await this.prisma.jobSeeker.findUniqueOrThrow({ where: { id: jobSeekerId } });
+    if (rendered && changed.count === 1 && this.legalDocuments) {
+      await this.legalDocuments.recordAcceptance({
+        subjectType: 'job_seeker', subjectId: jobSeekerId, rendered, context: 'payment_terms',
+        method: options.method ?? 'sms_link', otpRequestId: options.otpRequestId ?? null,
+        purposes: ['guarantee_terms'], acceptedAt: now,
+      });
+    }
     await this.auditService.log({
       actorId: 'system',
       action: 'job_seeker.terms_accepted',
       entityType: 'job_seeker',
       entityCode: seeker.code,
-      after: { termsAcceptedAt: now.toISOString(), guaranteeFloorPaise: terms.guaranteeFloorPaise },
-      changedFields: ['termsAcceptedAt', 'termsAcceptedFloorPaise'],
+      after: {
+        termsAcceptedAt: now.toISOString(), guaranteeFloorPaise: terms.guaranteeFloorPaise,
+        termsVersion: rendered?.version ?? null, termsLanguage: rendered ? language : null, termsHash: rendered?.hash ?? null,
+      },
+      changedFields: ['termsAcceptedAt', 'termsAcceptedFloorPaise', 'termsAcceptedVersion', 'termsAcceptedLanguage', 'termsAcceptedHash'],
       city: seeker.city,
     });
     const payment = await this.createActivationPayment(jobSeekerId);
@@ -576,6 +623,8 @@ export class JobSeekerService {
     if (!jobSeeker) {
       throw new NotFoundException(`Job seeker '${jobSeekerId}' not found`);
     }
+    // D11 (rev 176): a permanently banned job seeker never pays to come back.
+    if (jobSeeker.status === 'banned') throw new ForbiddenException(BANNED_MESSAGE);
 
     // Deactivated after 3 hits, closed after finding a job on his own, or refunded: he
     // comes back by paying ₹499 again, which resets the hits and starts a fresh 30-day
@@ -586,6 +635,7 @@ export class JobSeekerService {
       );
     }
 
+    await this.assertTermsCurrent(jobSeeker.id);
     const policy = await this.getPolicy();
     // Coming back is another ₹499 payment: the same ID gate as the first one (Fable final re-check, L-5).
     await this.assertIdReadyForPayment(jobSeeker, policy.adultMinimumAge);
@@ -1613,6 +1663,7 @@ export class JobSeekerService {
     });
     if (!payment) throw new BadRequestException('A pending activation payment is required before sending a payment-only link');
     await this.assertIdReadyForPayment(seeker);
+    await this.assertTermsCurrent(seeker.id);
 
     const now = this.consentClock?.now() ?? new Date();
     await this.publicLinks.revokeActive('payment_only', 'job_seeker', seeker.id, now);

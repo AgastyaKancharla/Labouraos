@@ -196,6 +196,8 @@ export const publicScreens: readonly ScreenDef[] = [
   { id: 'P01d-IDCheck', path: 'register/:token/id-check', title: 'screen.P01d-IDCheck' },
   { id: 'P02-Payment', path: 'register/:token/payment', title: 'screen.P02-Payment' },
   { id: 'P02b-Paid', path: 'register/:token/paid', title: 'screen.P02b-Paid' },
+  // No design file: "We've updated our terms" (legal documents v1.1, rev 176).
+  { id: 'P-Reconsent', path: 'register/:token/updated-terms', title: 'screen.P-Reconsent' },
   { id: 'P02s-OtherPayer', path: 'pay/:token', title: 'screen.P02s-OtherPayer' },
   { id: 'P03-OfferReply', path: 'offer/:token', title: 'screen.P03-OfferReply', variants: ["P03b-OfferYes"] },
   { id: 'P04-Agreement', path: 'agreement/:token', title: 'screen.P04-Agreement', variants: ["P04b-Signed"] },
@@ -212,5 +214,6 @@ export const publicScreens: readonly ScreenDef[] = [
   { id: 'P-PartnerIDCheck', path: 'partner/:token/id-check', title: 'screen.P-PartnerIDCheck' },
   { id: 'P-PartnerUPI', path: 'partner/:token/upi', title: 'screen.P-PartnerUPI' },
   { id: 'P-PartnerDone', path: 'partner/:token/done', title: 'screen.P-PartnerDone' },
+  { id: 'P-PartnerReconsent', path: 'partner/:token/updated-terms', title: 'screen.P-PartnerReconsent' },
 ];
 

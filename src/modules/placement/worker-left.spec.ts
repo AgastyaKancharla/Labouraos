@@ -21,7 +21,7 @@ describe('Report worker left: form and finder', () => {
     placement: { findFirst: jest.Mock; findUnique: jest.Mock; findMany: jest.Mock };
     callRecord: { findMany: jest.Mock };
   };
-  let placements: { placementListScope: jest.Mock; claimCallStaffIds: jest.Mock; assertClaimScope: jest.Mock };
+  let placements: { placementListScope: jest.Mock; claimCallStaffIds: jest.Mock; assertClaimScope: jest.Mock; firstJoinedInChain: jest.Mock };
   let service: WorkerLeftService;
 
   const staff: Record<string, { id: string; role: string }> = {
@@ -71,6 +71,7 @@ describe('Report worker left: form and finder', () => {
         a.role === 'ceo' || a.role === 'manager' ? null : a.role === 'team_lead' ? ['tl-1', 'ca-7'] : [a.id],
       ),
       assertClaimScope: jest.fn().mockResolvedValue(undefined),
+      firstJoinedInChain: jest.fn().mockResolvedValue(null),
     };
     const pricing = { current: jest.fn().mockResolvedValue({ replacementWindowDays: 60, claimReportDays: 7, claimDecisionHours: 48 }) };
     service = new WorkerLeftService(prisma as unknown as PrismaService, pricing as unknown as PricingService, placements as unknown as PlacementService);
@@ -209,6 +210,16 @@ describe('Report worker left: form and finder', () => {
       expect(form.leftOnLatest).toBe('2026-09-30'); // 1 Aug + 60 days
     });
 
+    it('D2: when the first candidate never joined, the 60 days run from the first worker in the chain who did', async () => {
+      const firstJoined = new Date('2026-08-10T04:30:00.000Z');
+      prisma.placement.findFirst.mockResolvedValueOnce(placement({ rootPlacementId: 'pl-root', joinedDate: new Date('2026-09-20T00:00:00Z') }));
+      prisma.placement.findUnique.mockResolvedValueOnce({ joinedDate: null });
+      placements.firstJoinedInChain.mockResolvedValueOnce(firstJoined);
+      const form = await service.form('pl-1', 'ceo-1', NOW);
+      expect(placements.firstJoinedInChain).toHaveBeenCalledWith('pl-root');
+      expect(form.leftOnLatest).toBe('2026-10-09'); // 10 Aug + 60 days
+    });
+
     it('outside a call agent’s or Team Lead’s placement scope it is a 404', async () => {
       placements.assertClaimScope.mockRejectedValueOnce(new NotFoundException('Placement not found'));
       await expect(service.form('pl-1', 'ca-1', NOW)).rejects.toThrow(NotFoundException);
@@ -228,7 +239,8 @@ describe('Report worker left: form and finder', () => {
       expect(placements.placementListScope).toHaveBeenCalledWith({ id: 'tl-1', role: 'team_lead' });
       const where = prisma.placement.findMany.mock.calls[0][0].where;
       expect(where.AND[0]).toEqual({ OR: [{ createdByStaffId: { in: ['x'] } }] });
-      expect(where.AND[2]).toEqual({ status: 'active' });
+      // Confirmed too: a selected candidate who never joined is reported here (D2, rev 176).
+      expect(where.AND[2]).toEqual({ status: { in: ['active', 'confirmed'] } });
       expect(JSON.stringify(where.AND[1])).toContain('"contains":"ravi"');
     });
 

@@ -31,6 +31,8 @@ export interface RefundDueRow {
   daysOwed: number; // days elapsed since the refund became owed (longest-owed first)
   daysElapsed: number; // total days elapsed from payment / dropout report
   dueSince: string; // ISO date string when refund obligation began
+  /** M4 (rev 178): a business refund's parts — the first placement fee and each paid salary difference, each with its GST. */
+  refundParts?: { placementId: string; kind: 'placement_fee' | 'salary_difference'; feePaise: number; gstPaise: number }[];
   // Top-level convenience properties
   name?: string;
   phone?: string;

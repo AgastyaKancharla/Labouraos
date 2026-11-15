@@ -15,6 +15,8 @@ import { formatINR } from '../../../lib/format/money';
 import { formatMobile } from '../../../lib/format/phone';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { ActionButton } from '../_kit/actions';
+import { useAuth } from '../../../auth/AuthProvider';
+import { BanButton, LegalAcceptanceCard } from '../_kit/legal';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { SEEKER_STATUS, guaranteePill } from '../_kit/labels';
 import { AadhaarCheckCard } from '../_kit/AadhaarCheck';
@@ -83,6 +85,8 @@ const ACTIVITY: Record<string, string> = {
   cancelled: 'Booking cancelled',
   no_pickup: 'No pickup (calls + message)',
   offer_declined: 'Offer declined',
+  // S10: the legacy code is the same thing as offer_declined.
+  offer_rejected: 'Offer declined',
   offer_no_reply: 'No reply to the offer',
   interview_no_show: "Didn't turn up",
   reversed: 'Hit reversed',
@@ -117,6 +121,7 @@ export default function JobSeekerDetail() {
   const to = useScreenPath();
   const query = useQuery({ queryKey: ['ceo', 'job-seeker', id], queryFn: () => api.get<Detail>(`/ceo/job-seekers/${id}`) });
   const d = query.data;
+  const role = useAuth().session?.staff.role;
   const back = { to: to('JobSeekers'), label: 'Job Seekers' };
 
   if (query.isPending) {
@@ -182,10 +187,12 @@ export default function JobSeekerDetail() {
               run={({ reason }) => api.post(`/job-seekers/${d.id}/refund`, reason ? { reason } : {})}
               success="Refund approved — Finance pays it and records the UTR"
             />
+            {(role === 'ceo' || role === 'manager') && <BanButton subjectType="job_seeker" subjectId={d.id} name={d.name} />}
           </div>
         }
       />
 
+      <LegalAcceptanceCard subjectType="job_seeker" subjectId={d.id} />
       <StatGrid>
         <StatTile
           label={g.daysLeft !== null ? `${g.days}-day guarantee · ${g.daysLeft} days left` : `${g.days}-day guarantee`}

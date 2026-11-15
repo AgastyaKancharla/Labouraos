@@ -1,4 +1,8 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { LEGAL_DOCUMENT_FOR_SUBJECT } from '../legal/legal-documents';
+import { isLegalLanguage } from '../legal/legal-document.types';
+import { CustomerSignInService } from '../customer-account/customer-sign-in.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CustomerScopeService } from '../../common/customer-auth/customer-scope.service';
 import { CUSTOMER_ERROR_CODES, CustomerApiError } from '../../common/customer-auth/customer-auth.errors';
@@ -34,7 +38,39 @@ export class CustomerOptionsService {
     private readonly pricing: PricingService,
     private readonly scope: CustomerScopeService,
     private readonly consentLinks: ConsentLinkService,
+    private readonly legal: LegalDocumentService,
+    private readonly signIn: CustomerSignInService,
   ) {}
+
+  /** GET /me/profiles/:profileId/legal: the current terms for this profile, "In short" + full text + ticks. */
+  async legalDocument(accountId: string, profileId: string, lang: unknown) {
+    const profile = await this.scope.profile(accountId, profileId);
+    const subjectType = profile.kind as 'job_seeker' | 'business' | 'referral';
+    const subjectId = (profile.jobSeekerId ?? profile.referralId ?? profile.businessId)!;
+    const key = LEGAL_DOCUMENT_FOR_SUBJECT[subjectType];
+    const language = isLegalLanguage(lang) ? lang : 'en';
+    const [status, document] = await Promise.all([this.legal.status(subjectType, subjectId), this.legal.publicDocument(key, language)]);
+    return { status, document };
+  }
+
+  /**
+   * POST /me/profiles/:profileId/legal/accept: re-consent in the app, proved
+   * by a fresh OTP (step-up 'accept_terms'). A business signs the new
+   * agreement on its business_agreement link instead.
+   */
+  async acceptLegal(accountId: string, sessionId: string, profileId: string, body: Record<string, unknown>) {
+    const profile = await this.scope.profile(accountId, profileId);
+    if (profile.kind === 'business') {
+      throw new CustomerApiError(HttpStatus.CONFLICT, CUSTOMER_ERROR_CODES.NOT_ALLOWED, 'Sign the updated business agreement on its link');
+    }
+    const language = isLegalLanguage(body.language) ? body.language : 'en';
+    const purposes = Array.isArray(body.purposes) ? body.purposes.filter((p): p is string => typeof p === 'string') : [];
+    await this.signIn.consumeStepUp(sessionId, 'accept_terms');
+    const subjectType = profile.kind === 'job_seeker' ? 'job_seeker' : 'referral';
+    const subjectId = (profile.jobSeekerId ?? profile.referralId)!;
+    const textHash = typeof body.textHash === 'string' ? body.textHash : null;
+    return this.consentLinks.recordReconsent(subjectType, subjectId, { purposes, language, method: 'in_app', otpRequestId: `customer-step-up:${sessionId}`, textHash });
+  }
 
   async formOptions() {
     const [policy, areas, trades] = await Promise.all([
@@ -117,6 +153,13 @@ export class CustomerOptionsService {
 
   /** The terms text the partner agreed to: kept on the link they signed with. */
   private async signedReferralTerms(referralId: string): Promise<{ html: string; signedAt: Date | null } | null> {
+    // Signed under the v1.0 full text (rev 176): the exact text kept with the acceptance.
+    const accepted = await this.prisma.legalAcceptance.findFirst({
+      where: { subjectType: 'referral', subjectId: referralId, documentKey: 'referral_terms' },
+      orderBy: { acceptedAt: 'desc' },
+      select: { acceptedAt: true, text: { select: { html: true } } },
+    });
+    if (accepted) return { html: accepted.text.html, signedAt: accepted.acceptedAt };
     // The terms on the link the partner actually completed, never a newer unused link.
     const link = await this.prisma.publicLink.findFirst({
       where: { purpose: 'referral_registration', subjectType: 'referral', subjectId: referralId, usedAt: { not: null } },

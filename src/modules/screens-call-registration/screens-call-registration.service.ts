@@ -1,5 +1,5 @@
 import { agentSeesFullBusiness, agentViewerFor, businessForViewer } from '../business/business-agent-view';
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { refundGuaranteeDeadline } from '../../common/money/money';
 import { RBAC_MATRIX, Role } from '../../common/rbac/rbac.types';
@@ -13,6 +13,7 @@ import { phoneSearchTerm } from '../../common/phone/indian-mobile';
 import { readPublicLinkPhone } from '../../common/public-link-store.service';
 import { AreaService } from '../area/area.service';
 import { areaAutoFillMaxMeters } from '../business/area-auto-fill';
+import { LegalDocumentService } from '../legal/legal-document.service';
 
 /**
  * Read endpoints for the call agent console's registration screens
@@ -57,6 +58,7 @@ export class ScreensCallRegistrationService {
     private readonly pricing: PricingService,
     private readonly clock: ConsentClock,
     private readonly areas: AreaService,
+    @Optional() private readonly legal?: LegalDocumentService,
   ) {
     this.team = new OwnTeam(prisma);
   }
@@ -108,7 +110,7 @@ export class ScreensCallRegistrationService {
   async jobSeeker(ref: string) {
     const seeker = await this.findSeeker(ref);
     const now = this.clock.now();
-    const [registration, payment, paymentLinks, consents, listedTrades, policy] = await Promise.all([
+    const [registration, payment, paymentLinks, consents, listedTrades, policy, terms] = await Promise.all([
       this.jobSeekers.getRegistrationStatus(seeker.id),
       this.prisma.payment.findFirst({
         where: { jobSeekerId: seeker.id, type: 'activation' },
@@ -127,6 +129,8 @@ export class ScreensCallRegistrationService {
       }),
       this.prisma.trade.findMany({ where: { active: true }, select: { nameKey: true } }),
       this.pricing.current(),
+      // Which terms version he accepted (legal documents v1.1, rev 176), on the scoped status screen.
+      this.legal ? this.legal.status('job_seeker', seeker.id) : Promise.resolve(null),
     ]);
     const listed = new Set(listedTrades.map((trade) => trade.nameKey));
     const given = new Set(consents.map((consent) => consent.purpose));
@@ -180,6 +184,9 @@ export class ScreensCallRegistrationService {
         requiredTotal: JOB_SEEKER_REQUIRED_CONSENT_PURPOSES.length,
         promotions: given.has('promotions'),
       },
+      terms: terms
+        ? { currentVersion: terms.currentVersion, acceptedVersion: terms.acceptedVersion, needsReconsent: terms.needsReconsent }
+        : null,
       registrationLinkExpiresAt: registration.registrationLinkExpiresAt,
       // How long a payment-only link works (Settings, 15 minutes by default).
       paymentOnlyLinkMinutes: registration.paymentOnlyLink.validMinutes,

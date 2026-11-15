@@ -414,14 +414,14 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
     }
   });
 
-  it('5. RBAC: Finance reads invoice with PII phone numbers masked; CEO/Manager have full access', async () => {
+  it('5. RBAC: Finance reads invoice with PII phone numbers masked; the candidate phone is never on an invoice (D17)', async () => {
     const finRes = await request(app.getHttpServer())
       .get(`/placements/${confirmedPlacementId}/invoice`)
       .set('Authorization', `Bearer ${financeToken}`);
 
     expect(finRes.status).toBe(200);
     // PII masking check for finance
-    expect(finRes.body.placement.candidatePhone).toBe('********');
+    expect(finRes.body.placement.candidatePhone).toBeUndefined();
     expect(finRes.body.customer.contactPhone).toBe('********');
 
     // CEO has full access (not masked)
@@ -429,7 +429,9 @@ describe('Phase 8 Task 2: GST Invoice Generation', () => {
       .get(`/placements/${confirmedPlacementId}/invoice`)
       .set('Authorization', `Bearer ${ceoToken}`);
     expect(ceoRes.status).toBe(200);
-    expect(ceoRes.body.placement.candidatePhone).not.toBe('********');
+    // D17 (rev 176): the business's invoice never carries the candidate's phone, for anyone.
+    expect(ceoRes.body.placement.candidatePhone).toBeUndefined();
+    expect(ceoRes.body.placement.candidateName).toBeTruthy();
   });
 
   it('6. RBAC: Manager, Call Agent and Field Agent are DENIED access (403 Forbidden)', async () => {

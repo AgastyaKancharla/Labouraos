@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MobileField } from '../../../components/fields/MobileField';
 import { useI18n } from '../../../i18n/I18nProvider';
+import { LegalSummary, useLegalDocument } from '../shared/legal';
 import type { MessageKey } from '../../../i18n/en';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { paymentApi, registrationApi } from '../shared/api';
@@ -30,8 +31,10 @@ const JOB_TYPE: Record<string, MessageKey> = {
 };
 
 export default function Payment() {
-  const { t } = useI18n();
+  const { t, language } = useI18n();
   const { token, requestId, status, query, backToStart } = useStepGuard('payment');
+  // Job Seeker Terms v1.1 (rev 176): the "In short" and the full terms he agrees to with the box.
+  const legal = useLegalDocument('job_seeker_terms', Boolean(status));
   const navigate = useNavigate();
   const to = useScreenPath();
   const queryClient = useQueryClient();
@@ -90,7 +93,7 @@ export default function Payment() {
     setAccepting(true);
     setError(null);
     try {
-      await registrationApi.acceptTerms(token, requestId);
+      await registrationApi.acceptTerms(token, requestId, language);
       await queryClient.invalidateQueries({ queryKey: ['registration', token] });
     } catch (e) {
       if (isOtpExpired(e)) backToStart();
@@ -130,6 +133,15 @@ export default function Payment() {
     .join(' · ');
   const pay = summary.data?.pay ?? null;
 
+  if (summary.data?.underReview) {
+    return (
+      <>
+        {header}
+        <Warn>{t('pub.error.underReview')}</Warn>
+      </>
+    );
+  }
+
   return (
     <>
       {header}
@@ -146,6 +158,7 @@ export default function Payment() {
           <span>{t('pub.pay.rules')}</span>
         </div>
       </div>
+      {legal.data && <LegalSummary summaryHtml={legal.data.summaryHtml} bodyHtml={legal.data.bodyHtml} version={legal.data.version} />}
       <Choice
         checked={accepted}
         disabled={accepting}

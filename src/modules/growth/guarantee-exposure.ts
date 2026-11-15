@@ -1,6 +1,7 @@
 import { refundGuaranteeDeadline } from '../../common/money/money';
+import { claimRefundPause, SuspensionWindow } from '../placement/claim-clock';
 import { evaluateJobSeekerRefundEligibility } from '../job-seeker/job-seeker-refund-eligibility';
-import { evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
+import { CLOCK_PAUSED_REASON, evaluatePlacementRefundEligibility } from '../placement/placement-refund-eligibility';
 import { GuaranteeState } from './growth.constants';
 
 /**
@@ -71,10 +72,12 @@ export interface ChainPlacement {
   code: string;
   status: string;
   placementFee: number;
+  /** D3: a salary difference paid on this replacement (refunded with the first fee, M4). */
+  salaryDifferencePaid?: boolean;
   dropoutReportedAt: Date | null;
   guaranteeEndedReason: string | null;
   /** Claims on this placement, any order. */
-  claims: Array<{ decision: string | null; reportedAt: Date | null; decidedAt: Date | null }>;
+  claims: Array<{ decision: string | null; reportedAt: Date | null; decidedAt: Date | null; searchPausedAt?: Date | null; searchPausedSeconds?: number }>;
   replacementCandidates: Array<{ status: string }>;
 }
 
@@ -85,6 +88,8 @@ export interface PlacementFeeExposureInput {
   chain: ChainPlacement[];
   /** A live refund on any placement of the chain. */
   refunded: boolean;
+  /** M10 (rev 178): the business's suspension, which pauses the 15-day replacement clock. */
+  business?: SuspensionWindow | null;
   windowDays: number;
   searchDays: number;
 }
@@ -120,16 +125,20 @@ export function classifyPlacementFeePayment(input: PlacementFeeExposureInput, no
         hasAcceptedReplacement: accepted.replacementCandidates.some((candidate) => candidate.status === 'accepted'),
         claimAcceptedAt: decided.decidedAt,
         dropoutReportedAt: decided.reportedAt ?? accepted.dropoutReportedAt,
-        placementFee: accepted.placementFee,
+        // M4: the first fee plus every salary difference paid in the chain (never one row's own amount).
+        placementFee:
+          (input.chain.find((p) => p.code === input.root.code)?.placementFee ?? accepted.placementFee) +
+          input.chain.filter((p) => p.salaryDifferencePaid).reduce((sum, p) => sum + p.placementFee, 0),
         hasExistingRefund: false,
         searchDays: input.searchDays,
         guaranteeEndedReason: accepted.guaranteeEndedReason,
+        ...claimRefundPause(decided, input.business, now),
       },
       now,
     );
     if (eligibility.eligible) {
       replacementState = 'refund_due';
-    } else if (eligibility.ineligibleReason?.startsWith('Refund is not payable before')) {
+    } else if (eligibility.ineligibleReason?.startsWith('Refund is not payable before') || eligibility.ineligibleReason === CLOCK_PAUSED_REASON) {
       replacementState = replacementState ?? 'under_guarantee';
     }
   }

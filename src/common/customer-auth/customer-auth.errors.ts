@@ -42,6 +42,8 @@ export const CUSTOMER_ERROR_CODES = {
   APPLE_NOT_CONFIGURED: 'APPLE_NOT_CONFIGURED',
   LIMIT_REACHED: 'LIMIT_REACHED',
   NOT_IMPLEMENTED: 'NOT_IMPLEMENTED',
+  /** Legal documents (rev 176): accept the updated terms first ("We've updated our terms"). */
+  RECONSENT_REQUIRED: 'RECONSENT_REQUIRED',
 } as const;
 
 export type CustomerErrorCode = (typeof CUSTOMER_ERROR_CODES)[keyof typeof CUSTOMER_ERROR_CODES];

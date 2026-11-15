@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Req, Res } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Header, HttpCode, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import { Request, Response } from 'express';
 import { CUSTOMER_API_PREFIX } from '../../common/customer-auth/customer-app.constants';
 import { CurrentCustomer, CustomerRoute } from '../../common/customer-auth/customer-auth.decorators';
@@ -43,6 +43,21 @@ export class CustomerAppController {
   @CustomerRoute()
   document(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Param('kind') kind: string) {
     return this.options.document(me.accountId, profileId, kind);
+  }
+
+  /** The current terms for this profile and whether this person accepted them (rev 176). */
+  @Get('me/profiles/:profileId/legal')
+  @CustomerRoute()
+  legal(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Query('lang') lang?: string) {
+    return this.options.legalDocument(me.accountId, profileId, lang);
+  }
+
+  /** "We've updated our terms" → Accept by OTP (step-up 'accept_terms'). */
+  @Post('me/profiles/:profileId/legal/accept')
+  @HttpCode(200)
+  @CustomerRoute()
+  acceptLegal(@CurrentCustomer() me: CustomerPrincipal, @Param('profileId') profileId: string, @Body() body: Body_) {
+    return this.options.acceptLegal(me.accountId, me.sessionId, profileId, body ?? {});
   }
 
   @Post('me/signups')

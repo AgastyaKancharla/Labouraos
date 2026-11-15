@@ -7,6 +7,7 @@ import type { Messages } from './en';
 import { registrationHi } from './registration';
 import { staffAccessHi } from './staffAccess';
 import { referralTermsHi } from './referralTerms';
+import { legalHi } from './legal';
 import { referralPartnerHi } from './referralPartner';
 import { staffPhotoHi } from './staffPhoto';
 import { appSignupsHi } from './appSignups';
@@ -53,6 +54,7 @@ export const hi: Messages = {
   "pub.error.title": "यह लिंक इस्तेमाल नहीं हो सकता",
   "pub.error.expired": "इस लिंक की अवधि खत्म हो गई है। अपने लेबूरा एजेंट से नया लिंक भेजने को कहें — जो आपने पूरा किया है वह सेव है।",
   "pub.error.used": "यह लिंक पहले ही इस्तेमाल हो चुका है। कुछ चाहिए तो लेबूरा को कॉल करें।",
+  "pub.error.underReview": "हमारी टीम आपकी जानकारी जाँच रही है। हम जल्द ही आपको कॉल करेंगे।",
   "pub.error.replaced": "आपको नया लिंक भेजा गया है। कृपया लेबूरा का सबसे नया SMS खोलें।",
   "pub.error.invalid": "यह लिंक सही नहीं है। देखें कि आपने SMS का पूरा लिंक खोला है।",
   "pub.error.offline": "अभी इंटरनेट नहीं है। कनेक्शन देखें और फिर कोशिश करें।",
@@ -253,9 +255,9 @@ export const hi: Messages = {
   "pub.fee.total": "कुल",
   "pub.fee.payBy": "भुगतान की आख़िरी तारीख़",
   "pub.fee.payUpi": "UPI से {amount} भुगतान करें",
-  "pub.fee.note": "आपका भुगतान हमारे बैंक में पहुँचते ही हम {name} को जॉइनिंग की तारीख़ बताएँगे और उनकी पूरी जानकारी आपको देंगे। आपका GST इनवॉइस अपने-आप बन जाएगा।",
+  "pub.fee.note": "आपका भुगतान हमारे बैंक में पहुँचते ही हम {name} को जॉइनिंग की तारीख़ बताएँगे और उनका पूरा नाम व जॉइनिंग की जानकारी आपको देंगे। जॉइनिंग के दिन तक उनका फ़ोन नंबर छिपा रहता है। आपका GST इनवॉइस अपने-आप बन जाएगा।",
   "pub.fee.received": "भुगतान मिल गया · {amount}",
-  "pub.fee.receivedNote": "हमने {name} को जॉइनिंग की तारीख़ बता दी है और उनकी जानकारी आपको भेज दी है।",
+  "pub.fee.receivedNote": "हमने {name} को जॉइनिंग की तारीख़ बता दी है और उनका पूरा नाम व जॉइनिंग की जानकारी आपको भेज दी है। जॉइनिंग के दिन तक उनका फ़ोन नंबर छिपा रहता है।",
   "pub.fee.invoice": "GST इनवॉइस",
   "pub.fee.viewInvoice": "इनवॉइस देखें",
   "pub.fee.closed": "यह भुगतान लिंक बंद हो गया है। अगर अब भी भुगतान करना है तो लेबूरा से नया लिंक माँगें।",
@@ -584,6 +586,7 @@ export const hi: Messages = {
   ...registrationHi,
   ...staffAccessHi,
   ...referralTermsHi,
+  ...legalHi,
   ...referralPartnerHi,
   ...aadhaarQrHi,
   ...staffPhotoHi,

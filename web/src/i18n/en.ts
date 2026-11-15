@@ -7,6 +7,7 @@ import { workerLeftEn } from '../claims/i18n';
 import { registrationEn } from './registration';
 import { staffAccessEn } from './staffAccess';
 import { referralTermsEn } from './referralTerms';
+import { legalEn } from './legal';
 import { referralPartnerEn } from './referralPartner';
 import { staffPhotoEn } from './staffPhoto';
 import { appSignupsEn } from './appSignups';
@@ -53,6 +54,7 @@ export const en = {
   "pub.error.title": "This link can't be used",
   "pub.error.expired": "This link has expired. Ask your Laboura agent to send a new one — anything you already finished is saved.",
   "pub.error.used": "This link has already been used. If you need anything, call Laboura.",
+  "pub.error.underReview": "Your details are being checked by our team. We will call you soon.",
   "pub.error.replaced": "A newer link was sent to you. Please open the latest SMS from Laboura.",
   "pub.error.invalid": "This link isn't valid. Check you opened the whole link from the SMS.",
   "pub.error.offline": "No internet right now. Check your connection and try again.",
@@ -253,9 +255,9 @@ export const en = {
   "pub.fee.total": "Total",
   "pub.fee.payBy": "Pay by",
   "pub.fee.payUpi": "Pay {amount} by UPI",
-  "pub.fee.note": "We confirm the joining date to {name}, and share their full details with you, as soon as your payment reaches our bank. Your GST invoice is created automatically.",
+  "pub.fee.note": "We confirm the joining date to {name}, and share their full name and joining details with you, as soon as your payment reaches our bank. Their phone number stays hidden until the joining day. Your GST invoice is created automatically.",
   "pub.fee.received": "Payment received · {amount}",
-  "pub.fee.receivedNote": "We've confirmed the joining date to {name} and sent you their details.",
+  "pub.fee.receivedNote": "We've confirmed the joining date to {name} and sent you their full name and joining details. Their phone number stays hidden until the joining day.",
   "pub.fee.invoice": "GST invoice",
   "pub.fee.viewInvoice": "View invoice",
   "pub.fee.closed": "This payment link has closed. If you still need to pay, ask Laboura for a new link.",
@@ -584,6 +586,7 @@ export const en = {
   ...registrationEn,
   ...staffAccessEn,
   ...referralTermsEn,
+  ...legalEn,
   ...referralPartnerEn,
   ...aadhaarQrEn,
   ...staffPhotoEn,

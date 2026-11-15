@@ -1,4 +1,6 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { chainRefundsByRoot } from '../placement/chain-refund';
+import { claimPausedMs, claimRefundPause } from '../placement/claim-clock';
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund } from '../../common/money/current-guarantee-refund';
 import {
   ForbiddenException,
@@ -348,7 +350,7 @@ export class MoneyAtRiskService {
               select: { status: true },
             },
             business: {
-              select: { name: true },
+              select: { name: true, suspendedAt: true, suspendedUntil: true },
             },
             jobSeeker: {
               select: { name: true, phone: true },
@@ -371,6 +373,9 @@ export class MoneyAtRiskService {
     const allPlacementIds = Array.from(new Set([...placementIds, ...rootPlacementIds]));
 
     let refundedPlacementIdSet = new Set<string>();
+    // M4 (rev 178): the amount at risk is the chain's refund — the first placement's fee plus every
+    // salary difference paid (chain-refund.ts), never a replacement row's own amount.
+    const chainRefunds = await chainRefundsByRoot(this.prisma, acceptedClaims.map((c) => c.placement?.rootPlacementId ?? c.placement?.id ?? '').filter(Boolean));
 
     if (allPlacementIds.length > 0) {
       const existingPlacementRefunds = await this.prisma.payment.findMany({
@@ -393,6 +398,7 @@ export class MoneyAtRiskService {
       seenPlacementIds.add(pl.id);
 
       const rootId = pl.rootPlacementId ?? pl.id;
+      const feePaise = chainRefunds.get(rootId)?.feePaise ?? pl.placementFee;
       const hasAcceptedReplacement = pl.replacementCandidates.some(
         (rc) => rc.status === 'accepted',
       );
@@ -408,8 +414,10 @@ export class MoneyAtRiskService {
           claimAcceptedAt: claim.decidedAt,
           // The 15-day clock starts at the dropout report, not the claim decision.
           dropoutReportedAt: claim.reportedAt ?? pl.dropoutReportedAt,
-          placementFee: pl.placementFee,
+          placementFee: feePaise,
           hasExistingRefund,
+          // M10: the clock stands still while the business is suspended.
+          ...claimRefundPause(claim, pl.business, now),
           searchDays: replacementSearchDays,
           guaranteeEndedReason: pl.guaranteeEndedReason,
         },
@@ -439,7 +447,7 @@ export class MoneyAtRiskService {
       if (daysRemaining <= windowDays) {
         const clockStart = (claim.reportedAt ?? pl.dropoutReportedAt ?? claim.decidedAt)!;
         const deadlineDate = new Date(
-          clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
+          clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000 + claimPausedMs(claim, pl.business, now),
         );
 
         placementRows.push({
@@ -447,8 +455,8 @@ export class MoneyAtRiskService {
           id: pl.id,
           code: pl.code,
           city: pl.city,
-          amountPaise: pl.placementFee,
-          amountRupees: pl.placementFee / 100,
+          amountPaise: feePaise,
+          amountRupees: feePaise / 100,
           daysRemaining,
           deadline: deadlineDate.toISOString(),
           staffId: pl.createdByStaffId,
@@ -457,7 +465,7 @@ export class MoneyAtRiskService {
           details: {
             businessName: pl.business.name,
             dropoutReportedAt: pl.dropoutReportedAt ? pl.dropoutReportedAt.toISOString() : undefined,
-            placementFee: pl.placementFee,
+            placementFee: feePaise,
             claimDecidedAt: claim.decidedAt!.toISOString(),
           },
         });

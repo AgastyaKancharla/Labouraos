@@ -279,6 +279,27 @@ describe('Phase 17 Task 2: Replacement Claims', () => {
       ).rejects.toThrow(BadRequestException);
     });
 
+    it('D2 (rev 176): a selected, paid candidate who never joined is reported as never_joined on a confirmed placement', async () => {
+      const confirmed = { ...basePlacement, status: 'confirmed', joinedDate: null, joiningDate: new Date('2026-10-10T00:00:00.000Z') };
+      prisma.placement.findFirst.mockResolvedValueOnce(confirmed).mockResolvedValueOnce(null);
+      const claim = await placementService.reportClaim(
+        'pl-100',
+        { ...validDto, reason: 'never_joined', workerLeftOn: '2026-10-12T00:00:00.000Z' },
+        ceoStaff.id,
+        new Date('2026-10-15T12:00:00.000Z'),
+      );
+      expect(claim.reason).toBe('never_joined');
+      expect(claim.decision).toBeNull();
+      // Any other reason on a placement that never joined is still refused.
+      prisma.placement.findFirst.mockResolvedValueOnce(confirmed);
+      await expect(placementService.reportClaim('pl-100', validDto, ceoStaff.id, new Date('2026-10-15T12:00:00.000Z'))).rejects.toThrow(BadRequestException);
+      // Before the joining day it cannot be reported.
+      prisma.placement.findFirst.mockResolvedValueOnce(confirmed).mockResolvedValueOnce(null);
+      await expect(
+        placementService.reportClaim('pl-100', { ...validDto, reason: 'never_joined', workerLeftOn: '2026-10-08T00:00:00.000Z' }, ceoStaff.id, new Date('2026-10-15T12:00:00.000Z')),
+      ).rejects.toThrow(/on or after the joining day/);
+    });
+
     it('refuses if worker left outside the 60-day replacement guarantee window', async () => {
       const wayLaterDto: ReportClaimDto = {
         ...validDto,

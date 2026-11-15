@@ -426,7 +426,8 @@ describe('Customer app API', () => {
 
       const home = await auth(http().get(`${API}/me/profiles/${res.body.profileId}/home`), session.accessToken).expect(200);
       expect(home.body).toEqual(expect.objectContaining({ kind: 'business', nextAction: 'sign_agreement', vacancies: [] }));
-      expect(JSON.stringify(home.body)).not.toMatch(/\+91|\d{10}/);
+      // No phone number anywhere (ids are random UUIDs, whose last group can hold 10+ digits by chance: left out).
+      expect(JSON.stringify(home.body).replace(/[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g, '<id>')).not.toMatch(/\+91|\d{10}/);
       const agreement = await auth(http().post(`${API}/me/profiles/${res.body.profileId}/links`), session.accessToken).send({ purpose: 'business_agreement' }).expect(201);
       expect(agreement.body.url).toMatch(/\/p\/agreement\//);
 

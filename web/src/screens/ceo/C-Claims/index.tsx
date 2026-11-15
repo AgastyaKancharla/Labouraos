@@ -1,4 +1,8 @@
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
+import { Card } from '../../../components/Card';
+import { api } from '../../../lib/api/client';
+import { formatDateTimeIST } from '../../../lib/format/date';
 import { useNavigate } from 'react-router-dom';
 import type { Column } from '../../../components/DataTable';
 import { StatGrid, StatTile } from '../../../components/StatTile';
@@ -59,6 +63,35 @@ function search(r: Row) {
   }
 }
 
+interface PausedClaim {
+  claimId: string;
+  claimCode: string;
+  pausedSince: string;
+  pausedDays: number;
+  placement: { id: string; code: string };
+  business: { id: string; code: string; name: string; reason: string | null };
+}
+
+/** M10 (rev 178): claims whose 15-day replacement clock stands still because the business is suspended for good. */
+function PausedBySuspension() {
+  const to = useScreenPath();
+  const q = useQuery({ queryKey: ['ceo', 'claims', 'suspended-businesses'], queryFn: () => api.get<PausedClaim[]>('/placements/claims/suspended-businesses'), retry: false });
+  if (!q.data?.length) return null;
+  return (
+    <Card title="Paused — business suspended for good" aria-label="Claims paused by a permanent suspension">
+      <p className="ceo-note">The 15-day replacement clock of these claims stays paused while the business is suspended. Decide what happens to each.</p>
+      <ul className="ceo-list" data-testid="paused-claims">
+        {q.data.map((c) => (
+          <li key={c.claimId}>
+            <OpenLink to={to('C-Placement', { id: c.placement.id })} /> <span className="code">{c.placement.code}</span> · {c.business.name} · paused since {formatDateTimeIST(c.pausedSince)} ({c.pausedDays} days)
+            {c.business.reason ? ` · ${c.business.reason}` : ''}
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
 export default function Claims() {
   const to = useScreenPath();
   const navigate = useNavigate();
@@ -106,6 +139,7 @@ export default function Claims() {
         <StatTile label="Replacement searches running" value={s?.searchesRunning ?? '—'} tone="orange" loading={loading} />
         <StatTile label={`Refundable from day ${s?.searchDays ?? 15}`} value={s ? formatINR(s.refundableFromSearchPaise) : '—'} tone="red" loading={loading} to={to('C-NearRefund')} />
       </StatGrid>
+      <PausedBySuspension />
       <FilterPanel>
         <DateFilter label="Reported" value={period} onChange={setPeriod} />
       </FilterPanel>

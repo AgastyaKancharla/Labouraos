@@ -2,25 +2,19 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
-import type { MessageKey } from '../../../i18n/en';
 import { useScreenPath } from '../../../portals/PortalContext';
 import { registrationApi } from '../shared/api';
+import { LegalSummary, useLegalDocument } from '../shared/legal';
 import { useStepGuard } from '../shared/registration';
 import { ActionError, Choice, isOtpExpired, LinkProblem, Loading, Muted, PageTitle, StepsBar } from '../shared/ui';
 
 /**
- * P01-Consent: one box per purpose in plain words; the five required ones are
- * never pre-ticked — she ticks each herself. Call recording is one of them.
+ * P01-Consent: Job Seeker Terms v1.1 (rev 176) — "In short" first, the full
+ * terms behind "Read the full terms", then the six itemised ticks word for
+ * word from Part B (notice 1.2, served by the server). The five required ones
+ * are never pre-ticked — she ticks each herself; promotions is optional.
  * Saved the moment she taps "I agree — continue".
  */
-const PURPOSES: { id: string; title: MessageKey; text: MessageKey; required: boolean }[] = [
-  { id: 'job_matching', title: 'pub.consent.match', text: 'pub.consent.matchText', required: true },
-  { id: 'profile_sharing', title: 'pub.consent.share', text: 'pub.consent.shareText', required: true },
-  { id: 'call_recording', title: 'pub.consent.record', text: 'pub.consent.recordText', required: true },
-  { id: 'aadhaar_verification', title: 'pub.consent.id', text: 'pub.consent.idText', required: true },
-  { id: 'job_updates', title: 'pub.consent.updates', text: 'pub.consent.updatesText', required: true },
-  { id: 'promotions', title: 'pub.consent.offers', text: 'pub.consent.offersText', required: false },
-];
 
 export default function Consent() {
   const { t, language } = useI18n();
@@ -31,9 +25,12 @@ export default function Consent() {
   const [ticked, setTicked] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<unknown>(null);
+  const doc = useLegalDocument('job_seeker_terms', Boolean(status));
 
   if (query.error) return <LinkProblem error={query.error} onRetry={() => void query.refetch()} />;
-  if (!status) return <Loading />;
+  if (doc.error) return <LinkProblem error={doc.error} onRetry={() => void doc.refetch()} />;
+  if (!status || !doc.data) return <Loading />;
+  const PURPOSES = doc.data.consents.map((c) => ({ id: c.purpose, title: c.title, text: c.description, required: c.required }));
 
   const allRequired = PURPOSES.filter((p) => p.required).every((p) => ticked[p.id]);
 
@@ -41,7 +38,7 @@ export default function Consent() {
     setSaving(true);
     setError(null);
     try {
-      await registrationApi.consent(token, requestId, PURPOSES.filter((p) => ticked[p.id]).map((p) => p.id), language);
+      await registrationApi.consent(token, requestId, PURPOSES.filter((p) => ticked[p.id]).map((p) => p.id), language, doc.data?.hash);
       await queryClient.invalidateQueries({ queryKey: ['registration', token] });
       navigate(to('P01c-Selfie', { token }));
     } catch (e) {
@@ -57,13 +54,14 @@ export default function Consent() {
       <StepsBar current={1} label={t('pub.consent.stepLabel')} />
       <PageTitle emoji="🤝">{t('pub.consent.title')}</PageTitle>
       <Muted>{t('pub.consent.intro')}</Muted>
+      <LegalSummary summaryHtml={doc.data.summaryHtml} bodyHtml={doc.data.bodyHtml} version={doc.data.version} />
       {PURPOSES.map((p) => (
         <Choice
           key={p.id}
           checked={Boolean(ticked[p.id])}
           onChange={(checked) => setTicked((prev) => ({ ...prev, [p.id]: checked }))}
-          title={t(p.title)}
-          description={t(p.text)}
+          title={p.title}
+          description={p.text}
         />
       ))}
       {!allRequired && <span className="sub">{t('pub.consent.needFive')}</span>}

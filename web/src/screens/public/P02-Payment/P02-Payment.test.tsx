@@ -46,11 +46,28 @@ describe('P02-Payment', () => {
     expect(screen.queryByRole('button', { name: /Someone else will pay/ })).not.toBeInTheDocument();
 
     await userEvent.click(tick);
-    expect(api.calls(`POST /registration/${TOKEN}/terms-and-payment`)[0]!.body).toEqual({ requestId: 'req-1', acceptTerms: true });
+    expect(api.calls(`POST /registration/${TOKEN}/terms-and-payment`)[0]!.body).toEqual({ requestId: 'req-1', acceptTerms: true, language: 'en' });
     expect(await screen.findByRole('img', { name: 'UPI QR code' })).toBeInTheDocument();
     expect(screen.getByText('To: LABOURA PRIVATE LIMITED · ref PAY-1042-K7Q2')).toBeInTheDocument();
     expect(screen.getByRole('link', { name: 'Pay with a UPI app' })).toHaveAttribute('href', summary.pay.upiUri);
     expect(screen.getByText(/A screenshot is not proof of payment/)).toBeInTheDocument();
+  });
+
+  it('rev 181 (H2): while his details are checked there is no QR or pay button, only a neutral "being checked"', async () => {
+    verifiedInThisTab();
+    mockApi({
+      [`GET /registration/${TOKEN}/status`]: openStatus({
+        currentStep: 'payment', steps, termsAcceptedAt: '2026-11-11T05:00:00Z',
+        payment: { state: 'pending', amountPaise: 49900, upiReference: 'PAY-1042-K7Q2', confirmedAt: null, guaranteeEndsAt: null, paymentId: null },
+      }),
+      [`GET /registration/${TOKEN}/terms`]: { ...terms, termsAcceptedAt: '2026-11-11T05:00:00Z' },
+      'GET /payments/request/PAY-1042-K7Q2/summary': { ...summary, pay: null, underReview: true },
+    });
+    render();
+    expect(await screen.findByText('Your details are being checked by our team. We will call you soon.')).toBeInTheDocument();
+    expect(screen.queryByRole('img', { name: 'UPI QR code' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: 'Pay with a UPI app' })).not.toBeInTheDocument();
+    expect(screen.queryByText(/ban/i)).not.toBeInTheDocument();
   });
 
   it('sends a payment-only link to another number', async () => {

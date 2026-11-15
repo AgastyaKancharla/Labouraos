@@ -96,7 +96,7 @@ export class FinanceBooksService {
         where: {
           confirmedBy: 'gateway',
           status: { in: RECEIVED_STATUSES },
-          type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
+          type: { in: ['activation', 'reactivation', 'placement_fee', 'replacement_upgrade', 'bypass_charge'] },
           confirmedAt: { gte: range.from, lte: range.to },
           ...(filters.search ? { OR: [{ code: contains(filters.search) }, { gatewayReference: contains(filters.search) }, { jobSeeker: { name: contains(filters.search) } }, { business: { name: contains(filters.search) } }] } : {}),
         },
@@ -232,7 +232,7 @@ export class FinanceBooksService {
       ? await this.prisma.payment.findMany({
           where: {
             status: 'pending',
-            type: { in: ['activation', 'reactivation', 'placement_fee', 'bypass_charge'] },
+            type: { in: ['activation', 'reactivation', 'placement_fee', 'replacement_upgrade', 'bypass_charge'] },
             createdAt: { gte: since, lte: new Date(credit.receivedAt.getTime() + 60_000) },
             OR: [{ amount: { gte: credit.amountPaise } }, { expectedAmountPaise: { gte: credit.amountPaise } }],
           },
@@ -585,7 +585,7 @@ export class FinanceBooksService {
             },
             orderBy: { paidAt: 'desc' },
             take: 2000,
-            include: { business: { select: { id: true, code: true, name: true } }, vacancy: { select: { id: true } }, tdsReceivables: true, payments: { where: { type: 'placement_fee' }, select: { id: true, amount: true, status: true } } },
+            include: { business: { select: { id: true, code: true, name: true } }, vacancy: { select: { id: true } }, tdsReceivables: true, payments: { where: { type: { in: ['placement_fee', 'replacement_upgrade'] } }, select: { id: true, amount: true, status: true } } },
           }),
       filters.type === 'activation'
         ? Promise.resolve([])
@@ -593,7 +593,7 @@ export class FinanceBooksService {
             where: { status: 'awaiting_payment', ...(s ? { OR: [{ code: contains(s) }, { business: { name: contains(s) } }] } : {}) },
             orderBy: { selectedAt: 'asc' },
             take: 2000,
-            include: { business: { select: { id: true, code: true, name: true } }, payments: { where: { type: 'placement_fee' }, orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, amount: true, status: true } } },
+            include: { business: { select: { id: true, code: true, name: true } }, payments: { where: { type: { in: ['placement_fee', 'replacement_upgrade'] } }, orderBy: { createdAt: 'desc' }, take: 1, select: { id: true, amount: true, status: true } } },
           }),
       filters.type === 'placement_fee'
         ? Promise.resolve([])

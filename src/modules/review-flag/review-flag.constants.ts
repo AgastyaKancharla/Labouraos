@@ -59,6 +59,12 @@ export const REVIEW_FLAG_KINDS = [
   'aadhaar_key_rotation_suspected',
   /** Another ID (rev 169): no other Team Lead in the city can check it, so a Manager or the CEO approves it. */
   'other_id_needs_manager',
+  /**
+   * H2 (rev 181): another ID (voter ID, driving licence, PAN: type + last 4 + name) matches a permanently
+   * banned person. Never a ban by itself: a Manager or the CEO decides "same person" (covered by the ban)
+   * or "not the same person"; meanwhile his ID check and ₹499 wait.
+   */
+  'possible_banned_person',
 ] as const;
 
 export type ReviewFlagKind = (typeof REVIEW_FLAG_KINDS)[number];

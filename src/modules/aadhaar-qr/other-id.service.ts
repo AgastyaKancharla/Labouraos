@@ -1,4 +1,7 @@
 import { BadRequestException, ConflictException, ForbiddenException, Injectable, Logger, NotFoundException, Optional } from '@nestjs/common';
+import { partnerIdCheckConsentId } from '../consent/partner-id-consent';
+import { assertTermsCurrent } from '../legal/legal-status';
+import { assertNoOpenBanReview, openBanReview, otherIdBanMatch, otherIdFingerprint, raisePossibleBanReview, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { Prisma } from '@prisma/client';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -54,6 +57,8 @@ interface SubjectRow {
   type: OtherIdSubjectType;
   id: string;
   code: string;
+  /** The profile name (for the permanent-ban ID fingerprint, D11). */
+  name?: string;
   city: string;
   registeredByStaffId: string | null;
 }
@@ -109,9 +114,11 @@ export class OtherIdService {
   async submitForJobSeeker(jobSeekerId: string, input: OtherIdInput, context: Context): Promise<OtherIdOutcome> {
     const seeker = await this.prisma.jobSeeker.findUnique({
       where: { id: jobSeekerId },
-      select: { id: true, code: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
+      select: { id: true, code: true, name: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
     });
     if (!seeker || seeker.anonymisedAt) throw new NotFoundException('Job seeker not found');
+    // Review H3: no ID check while he must accept the updated terms (RECONSENT_REQUIRED).
+    await assertTermsCurrent(this.prisma, 'job_seeker', seeker.id);
     const consent = await this.prisma.consent.findFirst({
       where: { subjectType: 'job_seeker', subjectId: seeker.id, purpose: 'aadhaar_verification', granted: true, grantedAt: { not: null }, withdrawnAt: null },
       orderBy: { grantedAt: 'desc' },
@@ -119,23 +126,23 @@ export class OtherIdService {
     });
     if (!consent) throw new BadRequestException('Consent for aadhaar_verification is required before the ID check');
     if (!seeker.photoStoragePath) throw new BadRequestException('Take the selfie first');
-    return this.submit({ type: 'job_seeker', id: seeker.id, code: seeker.code, city: seeker.city, registeredByStaffId: seeker.registeredByStaffId }, consent.id, input, context);
+    return this.submit({ type: 'job_seeker', id: seeker.id, code: seeker.code, name: seeker.name, city: seeker.city, registeredByStaffId: seeker.registeredByStaffId }, consent.id, input, context);
   }
 
   async submitForReferral(referralId: string, input: OtherIdInput, context: { channel: 'link'; now?: Date }): Promise<OtherIdOutcome> {
     const referral = await this.prisma.referral.findUnique({
       where: { id: referralId },
-      select: { id: true, code: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
+      select: { id: true, code: true, name: true, city: true, photoStoragePath: true, anonymisedAt: true, registeredByStaffId: true },
     });
     if (!referral || referral.anonymisedAt) throw new NotFoundException('Referral partner not found');
-    const consent = await this.prisma.consent.findFirst({
-      where: { subjectType: 'referral', subjectId: referral.id, purpose: 'agreement_terms', granted: true, grantedAt: { not: null }, withdrawnAt: null },
-      orderBy: { grantedAt: 'desc' },
-      select: { id: true },
-    });
-    if (!consent) throw new BadRequestException('Referral terms and call-recording consent are required before ID verification');
+    // Review H3 / M6: a partner on the older short terms accepts v1.0 first (RECONSENT_REQUIRED).
+    await assertTermsCurrent(this.prisma, 'referral', referral.id);
+    // S2 (rev 176): the partner's separate ID-check consent.
+    const consentId = await partnerIdCheckConsentId(this.prisma, referral.id);
+    if (!consentId) throw new BadRequestException('The ID-check consent is required before ID verification');
+    const consent = { id: consentId };
     if (!referral.photoStoragePath) throw new BadRequestException('Complete the live-camera selfie before the ID check');
-    return this.submit({ type: 'referral', id: referral.id, code: referral.code, city: referral.city, registeredByStaffId: referral.registeredByStaffId }, consent.id, input, context);
+    return this.submit({ type: 'referral', id: referral.id, code: referral.code, name: referral.name, city: referral.city, registeredByStaffId: referral.registeredByStaffId }, consent.id, input, context);
   }
 
   private async subject(subjectType: OtherIdSubjectType, subjectId: string): Promise<SubjectRow> {
@@ -167,6 +174,21 @@ export class OtherIdService {
     if (input.captureSource !== 'live_camera') throw new BadRequestException('Take the photo of the card with the live camera; gallery or file uploads are refused');
     if (!input.photo?.buffer.length) throw new BadRequestException('A live camera photo of the card is required');
     await this.stops.assertNotStopped(subject.type, subject.id);
+    // H2 (rev 181): the same PAN, driving licence or voter ID (type + last 4 + name) as a permanently banned
+    // person is never a ban by itself: a Manager or the CEO checks it, and the ID check waits ("under review").
+    await assertNoOpenBanReview(this.prisma, subject.type, subject.id);
+    if (subject.name) {
+      const last4OfCard = number.replace(/[^A-Z0-9]/g, '').slice(-4);
+      const match = await otherIdBanMatch(this.prisma, subject, otherIdFingerprint(method, last4OfCard, subject.name));
+      if (match) {
+        await raisePossibleBanReview(this.prisma, this.flags, {
+          subjectType: subject.type,
+          subjectId: subject.id,
+          details: { banId: match.id, bannedCode: match.subjectCode, subjectCode: subject.code, idType: method, matchedOn: 'other_id' },
+        });
+        throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: UNDER_REVIEW_MESSAGE });
+      }
+    }
     const now = context.now ?? new Date();
     if (!(await this.consumeNonce(subject, context.channel === 'field' ? (context.staffId ?? null) : null, input.captureNonce, now))) {
       throw new BadRequestException(CAPTURE_NONCE_MESSAGE);
@@ -253,6 +275,29 @@ export class OtherIdService {
    *     opened the photo (audit row identity.id_check_viewed with the photo link);
    *   - a decision someone else made a moment earlier (409).
    */
+  /**
+   * H2 (Fable final check): an ID sent before the ban was made is checked against it when it is approved.
+   * A match (type + last 4 + name) raises the review item, and the approval waits for that decision.
+   */
+  private async assertNoBanMatchOnApproval(subject: SubjectRow, pending: { method: string; last4: string | null }) {
+    const waiting = 'This ID may belong to a permanently banned person: a Manager or the CEO decides that first (Flags)';
+    if (await openBanReview(this.prisma, subject.type, subject.id)) throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: waiting });
+    if (!pending.last4 || !isOtherIdMethod(pending.method)) return;
+    const named =
+      subject.type === 'job_seeker'
+        ? await this.prisma.jobSeeker.findUnique({ where: { id: subject.id }, select: { name: true } })
+        : await this.prisma.referral.findUnique({ where: { id: subject.id }, select: { name: true } });
+    if (!named?.name) return;
+    const match = await otherIdBanMatch(this.prisma, subject, otherIdFingerprint(pending.method, pending.last4, named.name));
+    if (!match) return;
+    await raisePossibleBanReview(this.prisma, this.flags, {
+      subjectType: subject.type,
+      subjectId: subject.id,
+      details: { banId: match.id, bannedCode: match.subjectCode, subjectCode: subject.code, idType: pending.method, matchedOn: 'other_id', matchedAt: 'approval' },
+    });
+    throw new ConflictException({ statusCode: 409, code: 'UNDER_REVIEW', message: waiting });
+  }
+
   async recordDecision(subjectType: OtherIdSubjectType, subjectId: string, verdict: 'ok' | 'fake', actor: { id: string; role: string }, now = new Date()) {
     const subject = await this.subject(subjectType, subjectId);
     if (verdict === 'ok' && (await this.stops.isStopped(subjectType, subjectId))) throw new BadRequestException(UNDER_18_STOP_MESSAGE);
@@ -265,6 +310,7 @@ export class OtherIdService {
       const right = await this.approvals.rightFor(actor, { ...subject, subjectType: subject.type });
       if (!right.allowed) throw new ForbiddenException(right.reason);
       if (verdict === 'ok') {
+        await this.assertNoBanMatchOnApproval(subject, pending);
         const detail = await this.prisma.idCheckDetail.findUnique({ where: { verificationId: pending.id }, select: { photoPath: true } });
         if (!detail?.photoPath) {
           // Nothing left to compare: the check closes (the person is asked for a new photo) instead of

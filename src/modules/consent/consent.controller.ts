@@ -145,4 +145,11 @@ export class ConsentController {
   async submitConsent(@Body() body: SubmitConsentDto) {
     return this.consentLinkService.submitConsent(body);
   }
+
+  /** "We've updated our terms": accept the current version on the job seeker's or partner's link (rev 176). */
+  @Post('reconsent')
+  @Public('token page: the job seeker or partner accepts the updated terms with the link token and their OTP')
+  async submitReconsent(@Body() body: SubmitConsentDto) {
+    return this.consentLinkService.submitReconsent(body);
+  }
 }

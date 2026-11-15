@@ -43,6 +43,8 @@ function jobSeekerService(prisma: Record<string, unknown>, extra: { publicLinks?
     prisma as never, {} as never, audit as never, otp as never, {} as never, pricing as never, {} as never, {} as never,
     {} as never, {} as never, undefined, undefined, { now: () => NOW } as never, undefined,
     extra.publicLinks as never, extra.messaging as never,
+    // Terms accepted (the re-consent guard is required).
+    { status: jest.fn().mockResolvedValue({ needsReconsent: false }) } as never,
   );
   return { service, otp };
 }

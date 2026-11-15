@@ -46,7 +46,10 @@ export class PlacementCompletionJob implements OnModuleInit, OnModuleDestroy {
 
   async process(now = new Date()) {
     const completed = await this.placements.completeDay60Placements(now);
-    return { completed };
+    // M2 / M10 (rev 178): unpaid salary differences past their days are cancelled, and claim clocks of
+    // suspensions that ended on their date continue — on the same daily run (one queue, no new job).
+    const upgradesCancelled = await this.placements.cancelUnpaidUpgrades(now);
+    return { completed, upgradesCancelled };
   }
 
   async onModuleInit(): Promise<void> {

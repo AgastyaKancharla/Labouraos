@@ -70,6 +70,11 @@ export function useStepGuard(step: RegistrationStep): {
       navigate(to('P00-Open', { token }), { replace: true });
       return;
     }
+    // An older version of the terms accepted: "We've updated our terms" first (rev 176).
+    if (data.reconsent?.needsReconsent) {
+      navigate(to('P-Reconsent', { token }), { replace: true });
+      return;
+    }
     if (data.currentStep !== step && !(step === 'id_check' && data.stopped === 'under_18')) {
       navigate(to(STEP_SCREEN[data.currentStep], { token }), { replace: true });
     }
@@ -80,7 +85,7 @@ export function useStepGuard(step: RegistrationStep): {
     navigate(to('P00-Open', { token }), { replace: true });
   }, [navigate, to, token]);
 
-  const open = data && !data.otpRequired && data.currentStep === step ? data : data && !data.otpRequired && step === 'id_check' && data.stopped ? data : undefined;
+  const open = data && !data.otpRequired && data.reconsent?.needsReconsent ? undefined : data && !data.otpRequired && data.currentStep === step ? data : data && !data.otpRequired && step === 'id_check' && data.stopped ? data : undefined;
   return {
     token,
     requestId: query.requestId ?? '',

@@ -246,6 +246,29 @@ describe('Phase 16 Task 3: Bank Feed & Finance Confirmation', () => {
       });
     });
 
+    it('C1: money for a cancelled replacement\'s salary difference is released and flagged for a refund, never swallowed', async () => {
+      const receivedAt = new Date('2026-11-20T10:15:00.000Z');
+      const payload = JSON.stringify({ bankUtr: '431201928399', amountPaise: 118000, receivedAt: receivedAt.toISOString(), remark: 'UPI/431201928399/PAY-00077-abcd1234' });
+      prisma.bankCredit.findUnique.mockResolvedValue(null);
+      prisma.bankCredit.create.mockResolvedValue({ id: 'credit-9', bankUtr: '431201928399', amountPaise: 118000, receivedAt, status: 'unmatched' });
+      const closed = {
+        id: 'pay-up', code: 'PAY-00077', status: 'failed', method: 'upi_direct', upiReference: 'PAY-00077-abcd1234', expectedAmountPaise: 118000, amount: 118000,
+        type: 'replacement_upgrade', placementId: 'pl-up', jobSeekerId: null, jobSeeker: null, placement: { code: 'PL-00050' },
+      };
+      prisma.payment.findMany.mockResolvedValue([closed]);
+      prisma.payment.findUnique.mockResolvedValue(closed);
+      prisma.bankCredit.updateMany.mockResolvedValue({ count: 1 });
+      const response = await service.handleBankFeedWebhook(payload, sign(payload));
+      expect(response).toMatchObject({ status: 'unmatched', reason: 'request_closed', bankCreditId: 'credit-9', paymentId: 'pay-up' });
+      // The credit goes back to unmatched.
+      expect(prisma.bankCredit.updateMany).toHaveBeenCalledWith({ where: { id: 'credit-9', status: 'matched', matchedPaymentId: 'pay-up' }, data: { status: 'unmatched', matchedPaymentId: null } });
+      expect(reviewFlagService.raise).toHaveBeenCalledWith(expect.objectContaining({
+        kind: 'payment_mismatch', subjectId: 'pay-up',
+        details: expect.objectContaining({ reason: 'paid_after_request_closed', placementCode: 'PL-00050', bankCreditId: 'credit-9', bankUtr: '431201928399' }),
+      }));
+      expect(prisma.payment.updateMany).not.toHaveBeenCalledWith(expect.objectContaining({ data: expect.objectContaining({ status: 'succeeded' }) }));
+    });
+
     it('is idempotent: same bank notice twice changes nothing', async () => {
       const payload = JSON.stringify({
         bankUtr: '431201928374',

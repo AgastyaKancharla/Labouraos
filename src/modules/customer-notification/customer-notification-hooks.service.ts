@@ -32,6 +32,15 @@ export class CustomerNotificationHooks {
     }
   }
 
+  /**
+   * A replacement waiting for its salary difference was closed (placement/cancel-upgrade.ts): the
+   * business hears replacement_cancelled, the selected job seeker selection_cancelled.
+   */
+  async upgradeCancelled(placement: { id: string; businessId: string; jobSeekerId: string }): Promise<void> {
+    await this.safely('replacement_cancelled', () => this.notifications.notify({ businessId: placement.businessId }, 'replacement_cancelled', {}, { dedupeKey: `replacement_cancelled:${placement.id}` }));
+    await this.safely('selection_cancelled', () => this.notifications.notify({ jobSeekerId: placement.jobSeekerId }, 'selection_cancelled', {}, { dedupeKey: `selection_cancelled:${placement.id}` }));
+  }
+
   private async guaranteeDays(): Promise<number | null> {
     const policy = await this.prisma.pricingPolicy.findFirst({
       where: { effectiveFrom: { lte: new Date() } },
@@ -88,7 +97,8 @@ export class CustomerNotificationHooks {
         },
       });
       const placement = payment?.placement;
-      if (!payment || payment.type !== 'placement_fee' || payment.status !== 'succeeded' || !placement) return;
+      // A replacement's salary-upgrade difference (D3) releases the joining like a placement fee.
+      if (!payment || !['placement_fee', 'replacement_upgrade'].includes(payment.type) || payment.status !== 'succeeded' || !placement) return;
       await this.notifications.notify(
         { businessId: placement.businessId },
         'fee_paid',

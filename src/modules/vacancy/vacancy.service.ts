@@ -17,7 +17,7 @@ import { VACANCY_EXTRAS } from './vacancy.constants';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { normalizeTradeName, TradeService } from '../trade/trade.service';
 import { VacancyConfirmationService } from './vacancy-confirmation.service';
-import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
+import { BUSINESS_SUSPENDED_MESSAGE, businessAccessMessage, businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 
 const IST_OFFSET_MINUTES = 330;
 
@@ -173,6 +173,8 @@ export class VacancyService {
     if (!business) {
       throw new NotFoundException(`Business '${businessId}' not found`);
     }
+    // D6 (rev 176): a suspended business adds no new vacancies while the suspension lasts.
+    if (isBusinessSuspended(business)) throw new ForbiddenException(BUSINESS_SUSPENDED_MESSAGE);
 
     const selfAccountId = options.selfRegisteredByAccountId;
     const staff = selfAccountId ? null : await this.prisma.staff.findUnique({
@@ -444,9 +446,7 @@ export class VacancyService {
 
     const businessAccess = businessCandidateAccess(vacancy.business);
     if (!businessAccess.allowed) {
-      throw new ForbiddenException(businessAccess.reason === 'paused'
-        ? BUSINESS_PAUSED_MESSAGE
-        : 'Candidates are hidden until the business is verified');
+      throw new ForbiddenException(businessAccessMessage(businessAccess, 'Candidates are hidden until the business is verified'));
     }
 
     const matchingConsents = await this.prisma.consent.findMany({

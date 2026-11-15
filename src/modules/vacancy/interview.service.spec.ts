@@ -28,6 +28,7 @@ describe('InterviewService booking', () => {
   let prisma: PrismaMock;
   let tx: TxMock;
   let messaging: { send: jest.Mock };
+  let legal: { status: jest.Mock };
   let matching: { match: jest.Mock };
   let hits: { recordHit: jest.Mock };
   let calls: { recordOutcome: jest.Mock };
@@ -107,6 +108,7 @@ describe('InterviewService booking', () => {
       verifyInterviewOwnerOtp: jest.fn().mockResolvedValue({ interviewId: 'interview-id', phone: '+911234567890' }),
     };
     reviewFlags = { raise: jest.fn().mockResolvedValue({ id: 'flag-id' }) };
+    legal = { status: jest.fn().mockResolvedValue({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: '1.1', needsReconsent: false }) };
     placements = { createAwaitingPaymentFromInterview: jest.fn().mockResolvedValue({ id: 'placement-id', status: 'awaiting_payment' }) };
     service = new InterviewService(
       prisma as never,
@@ -125,12 +127,34 @@ describe('InterviewService booking', () => {
       { createInterviewAttendanceAssignment: attendance.createInterviewAttendanceAssignment } as never,
       reviewFlags as never,
       placements as never,
+      undefined,
+      undefined,
+      legal as never,
     );
   });
 
   afterAll(() => {
     if (previousPublicAppUrl === undefined) delete process.env.PUBLIC_APP_URL;
     else process.env.PUBLIC_APP_URL = previousPublicAppUrl;
+  });
+
+  it('H3 (rev 176): no booking and no accepted offer while he must accept the updated terms (RECONSENT_REQUIRED); declining still works', async () => {
+    legal.status.mockResolvedValue({ documentKey: 'job_seeker_terms', currentVersion: '1.1', acceptedVersion: '1.0', needsReconsent: true });
+    await expect(service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1')).rejects.toThrow('accept the updated terms');
+    expect(tx.interview.create).not.toHaveBeenCalled();
+    prisma.interview.findUnique.mockResolvedValue(liveInterview());
+    await expect(service.respondFromLink('single-use-token', 'yes')).rejects.toThrow('accept the updated terms');
+    prisma.interview.findUnique.mockResolvedValue(liveInterview());
+    expect((await service.respondFromLink('single-use-token', 'no')).status).toBe('declined');
+  });
+
+  it('M10 (rev 178): a suspended business interviews no one — no booking (replacement vacancies included) and no accepted offer', async () => {
+    const suspended = { ...vacancy.business, suspendedAt: new Date('2026-11-01T00:00:00Z'), suspendedUntil: null };
+    prisma.vacancy.findFirst.mockResolvedValue({ ...vacancy, replacementForPlacementId: 'placement-id', business: suspended });
+    await expect(service.book({ vacancyId: 'vacancy-id', jobSeekerId: 'seeker-id', slotId: 'slot-id' }, 'call-1')).rejects.toThrow('suspended');
+    expect(tx.interview.create).not.toHaveBeenCalled();
+    prisma.interview.findUnique.mockResolvedValue({ ...liveInterview(), business: { ...liveInterview().business, suspendedAt: new Date('2026-11-01T00:00:00Z'), suspendedUntil: null } });
+    await expect(service.respondFromLink('single-use-token', 'yes')).rejects.toThrow('suspended');
   });
 
   it('refuses candidates absent from the current Phase 14 matching results', async () => {
@@ -343,6 +367,26 @@ describe('InterviewService booking', () => {
     }));
     expect(messaging.send).not.toHaveBeenCalled();
     expect(linkService.consumeInterviewActionToken).toHaveBeenCalledWith('single-use-token', 'owner_result');
+  });
+
+  it('a replacement awaiting its salary-upgrade payment (D3) gets no "joining confirmed" yet; a free replacement does', async () => {
+    const replacement = () => ({ ...confirmedInterview(), vacancy: { ...vacancy, replacementForPlacementId: 'root-placement' } });
+    const answer = { otpRequestId: 'otp-request-id', otpCode: '123456', result: 'selected' as const, selectedSalaryPaise: 1800000, selectedJoiningDate: '2026-11-20' };
+    prisma.interview.findUnique.mockResolvedValue(replacement());
+    placements.createAwaitingPaymentFromInterview.mockResolvedValueOnce({ id: 'placement-up', status: 'awaiting_payment' });
+    await service.submitOwnerResult('single-use-token', answer);
+    expect(messaging.send).not.toHaveBeenCalledWith(expect.objectContaining({ template: 'joining_confirmed' }));
+
+    prisma.interview.findUnique.mockResolvedValue(replacement());
+    placements.createAwaitingPaymentFromInterview.mockResolvedValueOnce({ id: 'placement-free', status: 'confirmed' });
+    await service.submitOwnerResult('single-use-token', answer);
+    expect(messaging.send).toHaveBeenCalledWith(expect.objectContaining({ template: 'joining_confirmed', relatedId: 'placement-free' }));
+  });
+
+  it('M10 (review M4): a suspended business cannot record a "selected" result', async () => {
+    prisma.interview.findUnique.mockResolvedValue({ ...confirmedInterview(), business: { ...confirmedInterview().business, suspendedAt: new Date('2026-11-01T00:00:00Z'), suspendedUntil: null } });
+    await expect(service.submitOwnerResult('single-use-token', { otpRequestId: 'otp-request-id', otpCode: '123456', result: 'selected', selectedSalaryPaise: 1600000, selectedJoiningDate: '2026-11-20' })).rejects.toThrow('suspended');
+    expect(placements.createAwaitingPaymentFromInterview).not.toHaveBeenCalled();
   });
 
   it('does not record an owner result when OTP verification fails', async () => {

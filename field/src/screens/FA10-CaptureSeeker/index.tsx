@@ -16,6 +16,7 @@ import { AppHeader } from '../_shared/AppHeader';
 import { ErrorBanner, formatRupees, Script, UserFacingError } from '../_selling';
 import { OtpStep } from '../_selling/OtpStep';
 import { JOB_SEEKER_CONSENT_SCRIPT, SCRIPT_LANGUAGES, type ScriptLanguage } from '../_selling/scripts';
+import { inShortText } from '@/api/endpoints/legal';
 import {
   BEST_TIME, createBody, EMPTY_FORM, GENDERS, HEARD_FROM, JOB_TYPES, LICENCES, MESSAGE_LANGUAGES, OTHER_TRADE, profileBody,
   QUALIFICATIONS, SHIFT_PREFERENCES, SPOKEN_LANGUAGES, tradeName, TRAVEL_KM, validate, YEARS, type FieldError, type JobSeekerForm,
@@ -63,7 +64,7 @@ export function clearSeekerDraft() {
  */
 export default function CaptureSeekerScreen() {
   const { t } = useI18n();
-  const { selling } = useEndpoints();
+  const { selling, legal } = useEndpoints();
   const queue = useOfflineQueue();
   const location = useLocation();
   const options = useQuery({ queryKey: queryKeys.formOptions, queryFn: () => selling.formOptions(), staleTime: 60 * 60_000 });
@@ -73,6 +74,12 @@ export default function CaptureSeekerScreen() {
   const [duplicate, setDuplicate] = useState<{ code?: string } | null>(null);
   const [tried, setTried] = useState(false);
   const [scriptLang, setScriptLang] = useState<ScriptLanguage>('kn');
+  const inShort = useQuery({
+    queryKey: ['legal-document', 'job_seeker_terms', scriptLang],
+    queryFn: () => legal.document('job_seeker_terms', scriptLang),
+    staleTime: 10 * 60_000,
+    retry: false,
+  });
   useEffect(() => {
     draft = form;
   }, [form]);
@@ -326,7 +333,8 @@ export default function CaptureSeekerScreen() {
 
         <Section n={7} title={t('fa10.s7')}>
           <Segmented value={scriptLang} options={SCRIPT_LANGUAGES} onChange={setScriptLang} testID="script-language" />
-          <Script testID="consent-script">{JOB_SEEKER_CONSENT_SCRIPT[scriptLang]}</Script>
+          {/* Job Seeker Terms v1.1 "In short" in their language (rev 176); the older script until it loads. */}
+          <Script testID="consent-script">{inShort.data ? inShortText(inShort.data) : JOB_SEEKER_CONSENT_SCRIPT[scriptLang]}</Script>
           <Text variant="muted">{t('fa10.ownOtp')}</Text>
         </Section>
 

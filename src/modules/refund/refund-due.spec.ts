@@ -447,7 +447,8 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
       // Proves no N+1: exactly 1 findMany for candidates, 1 for hits, 1 for placements, and 2 for payments
       expect(mockPrisma.jobSeeker.findMany).toHaveBeenCalledTimes(1);
       expect(mockPrisma.jobSeekerHit.findMany).toHaveBeenCalledTimes(1);
-      expect(mockPrisma.placement.findMany).toHaveBeenCalledTimes(1);
+      // The dropped placements, then the chains' refunds (M4, chain-refund.ts): set-based, never per row.
+      expect(mockPrisma.placement.findMany).toHaveBeenCalledTimes(2);
       expect(mockPrisma.payment.findMany).toHaveBeenCalledTimes(2);
     });
 
@@ -504,6 +505,36 @@ describe('Phase 6.5 Task 9: Refund-Due Listing & Shared Eligibility', () => {
 
       const rows = await refundService.getRefundsDue('ceo-1', serverNow);
       expect(rows).toHaveLength(0);
+    });
+  });
+
+  describe('3b. M4 (rev 178): a 100% refund is the first fee plus every salary difference paid in the chain', () => {
+    it('lists the chain total, each part with its own GST, never the replacement row\'s own amount', async () => {
+      const dropout = new Date(serverNow.getTime() - 20 * 24 * 60 * 60 * 1000);
+      mockPrisma.placement.findMany.mockImplementation(async (args?: unknown) => {
+        const where = (args as { where?: { OR?: unknown[] } } | undefined)?.where;
+        if (where?.OR) {
+          return [
+            { id: 'pl-root', rootPlacementId: null, placementFee: 1000000, gstAmount: 180000 },
+            { id: 'pl-up', rootPlacementId: 'pl-root', placementFee: 100000, gstAmount: 18000 },
+          ];
+        }
+        return [{
+          id: 'pl-rep', code: 'PL-00009', city: 'Bengaluru', status: 'dropped_out', rootPlacementId: 'pl-root',
+          dropoutReportedAt: dropout, dropoutDateCallerSupplied: false, joinedDate: new Date('2026-05-20T00:00:00.000Z'),
+          placementFee: 100000, business: { name: 'Acme Hotels', area: 'Koramangala' }, jobSeeker: { name: 'Worker Nine', phone: '9123456789' },
+          replacementCandidates: [],
+        }];
+      });
+      mockPrisma.payment.findMany.mockResolvedValue([]);
+      const rows = await refundService.getRefundsDue('ceo-1', serverNow);
+      expect(rows).toEqual([expect.objectContaining({
+        code: 'PL-00009', amount: 1100000, amountOwed: 1100000,
+        refundParts: [
+          { placementId: 'pl-root', kind: 'placement_fee', feePaise: 1000000, gstPaise: 180000 },
+          { placementId: 'pl-up', kind: 'salary_difference', feePaise: 100000, gstPaise: 18000 },
+        ],
+      })]);
     });
   });
 

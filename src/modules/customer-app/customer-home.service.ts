@@ -1,4 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
+import { isBusinessSuspended } from '../business/business-candidate-access';
+import { Optional } from '@nestjs/common';
+import { LegalDocumentService } from '../legal/legal-document.service';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { CustomerAuthClock } from '../../common/customer-auth/customer-auth.clock';
 import { CustomerScopeService, ScopedProfile } from '../../common/customer-auth/customer-scope.service';
@@ -10,7 +14,8 @@ import { firstName } from '../customer-account/customer-account.service';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 /** Hits that end the refund (guide, Hits): declining, not replying, not turning up. */
-const REFUND_ENDING_HITS = ['offer_declined', 'offer_no_reply', 'interview_no_show'];
+// S10 (rev 176): the legacy offer_rejected is offer_declined everywhere.
+const REFUND_ENDING_HITS = [...REFUND_FORFEITING_HIT_REASONS];
 const PAID_STATUSES = ['succeeded', 'completed'];
 const DONE_REFUND_STATUSES = ['rejected', 'cancelled', 'reversed'];
 /** Withdrawing any of these after paying ends the refund (decided 7 Nov). */
@@ -31,13 +36,34 @@ export class CustomerHomeService {
     private readonly scope: CustomerScopeService,
     private readonly pricing: PricingService,
     private readonly journey: RegistrationJourneyService,
+    @Optional() private readonly legal?: LegalDocumentService,
   ) {}
 
   async home(accountId: string, profileId: string) {
     const profile = await this.scope.profile(accountId, profileId);
-    if (profile.kind === 'job_seeker') return this.jobSeekerHome(profile);
-    if (profile.kind === 'business') return this.businessHome(profile);
-    return this.referralHome(profile);
+    const body =
+      profile.kind === 'job_seeker' ? await this.jobSeekerHome(profile) : profile.kind === 'business' ? await this.businessHome(profile) : await this.referralHome(profile);
+    return { ...body, legal: await this.legalFor(profile) };
+  }
+
+  /**
+   * Which terms version this profile accepted (rev 176). `needsReconsent`
+   * makes the app show the blocking "We've updated our terms" screen first.
+   * For a business only the owner signs; a branch manager is never blocked.
+   */
+  private async legalFor(profile: ScopedProfile) {
+    if (!this.legal) return null;
+    const subjectType = profile.kind as 'job_seeker' | 'business' | 'referral';
+    const subjectId = profile.jobSeekerId ?? profile.referralId ?? profile.businessId;
+    if (!subjectId) return null;
+    const status = await this.legal.status(subjectType, subjectId);
+    const canAccept = subjectType !== 'business' || (profile.role === 'owner' && !profile.branchId);
+    return {
+      documentKey: status.documentKey,
+      currentVersion: status.currentVersion,
+      acceptedVersion: status.acceptedVersion,
+      needsReconsent: status.needsReconsent && canAccept,
+    };
   }
 
   // ─── Job seeker ───────────────────────────────────────────────────────
@@ -180,7 +206,7 @@ export class CustomerHomeService {
     const [business, branch, agreement, visit, doneVisit, vacancies, drafts] = await Promise.all([
       this.prisma.business.findUniqueOrThrow({
         where: { id: businessId },
-        select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true },
+        select: { code: true, name: true, verificationStatus: true, verifiedAt: true, inPersonOnboardedAt: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true },
       }),
       branchId ? this.prisma.businessBranch.findUnique({ where: { id: branchId }, select: { name: true } }) : null,
       this.prisma.businessAgreement.findFirst({ where: { businessId }, select: { signedAt: true } }),
@@ -224,12 +250,17 @@ export class CustomerHomeService {
         : !verified
           ? 'wait_for_approval'
           : vacancyRows.length === 0 ? 'add_vacancy' : 'none';
+    // D6 (rev 176): the suspension banner — no new vacancies, candidates or interviews while it lasts.
+    const suspended = isBusinessSuspended(business, now);
     return {
       kind: 'business',
       profileId: profile.id,
       code: business.code,
       name: business.name,
       role: profile.role,
+      suspension: suspended
+        ? { until: business.suspendedUntil, permanent: !business.suspendedUntil, reason: business.suspensionReason }
+        : null,
       branch: branch ? { name: branch.name } : null,
       verificationStatus: business.verificationStatus ?? 'lead',
       tracker: {

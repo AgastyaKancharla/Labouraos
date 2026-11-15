@@ -22,6 +22,7 @@ const WORDS: Record<string, string> = {
   aadhaar_key_rotation_suspected: 'UIDAI key may have changed',
   other_id_needs_manager: 'ID card to check (no other Team Lead)',
   aadhaar_duplicate_person: 'Same Aadhaar as another person',
+  possible_banned_person: 'Possibly a banned person',
 };
 
 export function flagWords(kind: string): string {

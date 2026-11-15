@@ -1,4 +1,8 @@
 import { OwnTeam, businessesOwnedBy } from '../../common/rbac/own-team';
+import { isBusinessSuspended } from '../business/business-candidate-access';
+import { chainRefundOf } from './chain-refund';
+import { claimPausedMs, claimRefundPause, resumeEndedSuspensions } from './claim-clock';
+import { announceUpgradeCancelled, cancelUpgradeInTx, UPGRADE_TO_CANCEL_SELECT } from './cancel-upgrade';
 import { invoiceGstSplit } from './invoice-gst-split';
 import { assertRejectionOverride, findRefundRejection, refundLockKey } from '../refund/refund-rejection';
 import {
@@ -6,7 +10,9 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { IdService } from '../../common/id/id.service';
@@ -58,6 +64,9 @@ import {
 import { ExportPlacementsQueryDto, RegulatoryPlacementExportRow } from './dto/export-placements.dto';
 import { EditPolicyService, EditActor } from '../../common/edit-policy/edit-policy.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
+import { MessagingService } from '../message/messaging.service';
+import { ReportingScopeService } from '../staff/reporting-scope.service';
+import { CustomerNotificationService } from '../customer-notification/customer-notification.service';
 
 export function calculateDaysElapsed(
   startDate: Date,
@@ -79,6 +88,7 @@ export function calculateDaysElapsed(
 
 @Injectable()
 export class PlacementService {
+  private readonly logger = new Logger(PlacementService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly idService: IdService,
@@ -89,6 +99,9 @@ export class PlacementService {
     private readonly upiCollectionService: UpiCollectionService,
     private readonly reviewFlags: ReviewFlagService,
     private readonly editPolicyService: EditPolicyService,
+    @Optional() private readonly messaging?: MessagingService,
+    @Optional() private readonly customerNotifications?: CustomerNotificationService,
+    @Optional() private readonly reportingScope?: ReportingScopeService,
   ) {}
 
   async update(id: string, dto: Record<string, unknown>, actor: EditActor | string) {
@@ -201,16 +214,33 @@ export class PlacementService {
           );
         }
 
+        // D2 (rev 176): replacing a selected candidate who never joined does not use up a free
+        // replacement — it takes the same place in the chain and is not counted.
+        const neverJoinedSwap = !droppedPlacement.joinedDate;
         const previousReplacements = await tx.placement.count({
-          where: { rootPlacementId: rootId, replacementNumber: { gt: 0 } },
+          where: { rootPlacementId: rootId, replacementNumber: { gt: 0 }, countsAsReplacement: true },
         });
-        const replacementNumber = previousReplacements + 1;
+        const replacementNumber = neverJoinedSwap ? droppedPlacement.replacementNumber : previousReplacements + 1;
         const policy = await this.getPolicy();
-        if (replacementNumber > policy.maxFreeReplacements) {
+        if (!neverJoinedSwap && replacementNumber > policy.maxFreeReplacements) {
           throw new BadRequestException(
             `A third replacement is refused; maximum free replacements is ${policy.maxFreeReplacements}`,
           );
         }
+
+        // D3 (rev 181): a replacement hired above the HIGHEST salary the business already paid a fee on in
+        // this chain (the first placement, and any salary difference paid since) pays the fee percent of the
+        // positive difference plus GST before release. ₹25,000 (fee) → ₹20,000 → ₹25,000: nothing more;
+        // ₹12,000 → ₹14,000 (difference paid) → ₹15,000: a fee on ₹1,000.
+        const paidInChain = await tx.placement.findMany({
+          where: { rootPlacementId: rootId, salaryUpgradeDifferencePaise: { not: null }, paidAt: { not: null }, status: { not: 'cancelled' } },
+          select: { agreedSalary: true },
+        });
+        const highestPaidSalary = Math.max(rootPlacement.agreedSalary, ...(paidInChain ?? []).map((p) => p.agreedSalary));
+        const upgradeDifference = Math.max(0, interview.selectedSalaryPaise - highestPaidSalary);
+        const upgradeFee = upgradeDifference > 0 ? calculatePlacementFee(upgradeDifference, rootPlacement.feePercentAtCreation ?? agreement.feePercent) : 0;
+        const upgradeGst = upgradeFee > 0 ? calculateGst(upgradeFee, rootPlacement.gstPercentAtCreation ?? agreement.gstPercent) : 0;
+        const upgradeDue = upgradeFee > 0;
 
         const id = randomUUID();
         const code = await this.idService.generateCode('placement');
@@ -225,17 +255,22 @@ export class PlacementService {
             createdByStaffId: interview.proposedByStaffId,
             interviewId: interview.id,
             selectedAt: now,
-            paymentDueAt: null,
-            paidAt: now,
+            paymentDueAt: upgradeDue ? new Date(now.getTime() + policy.placementPaymentDueHours * 60 * 60 * 1000) : null,
+            paidAt: upgradeDue ? null : now,
             joiningDate: interview.selectedJoiningDate,
             rootPlacementId: rootId,
             replacementNumber,
+            countsAsReplacement: !neverJoinedSwap,
+            // The highest salary already paid a fee on in the chain (the invoice line says "more than" this).
+            replacedSalaryPaise: highestPaidSalary,
+            salaryUpgradeDifferencePaise: upgradeDue ? upgradeDifference : null,
             feePercentAtCreation: rootPlacement.feePercentAtCreation,
             gstPercentAtCreation: rootPlacement.gstPercentAtCreation,
             agreedSalary: interview.selectedSalaryPaise,
-            placementFee: 0,
-            gstAmount: 0,
-            status: 'confirmed',
+            placementFee: upgradeFee,
+            gstAmount: upgradeGst,
+            // Released (joining date confirmed) only once the difference is paid.
+            status: upgradeDue ? 'awaiting_payment' : 'confirmed',
           },
           include: { business: true, jobSeeker: true, vacancy: true, payments: true },
         });
@@ -244,26 +279,29 @@ export class PlacementService {
           subjectType: 'placement',
           subjectId: placement.id,
           fromStatus: null,
-          toStatus: 'confirmed',
+          toStatus: upgradeDue ? 'awaiting_payment' : 'confirmed',
           changedByStaffId: interview.proposedByStaffId,
           changedAt: now,
-          reason: 'free_replacement_selected',
+          reason: upgradeDue ? 'replacement_salary_upgrade_payment_due' : neverJoinedSwap ? 'never_joined_replacement_selected' : 'free_replacement_selected',
         });
 
-        // Job seeker becomes placed at selection
-        await tx.jobSeeker.update({
-          where: { id: interview.jobSeekerId },
-          data: { status: 'placed' },
-        });
-        await recordStatusChange(tx, {
-          subjectType: 'job_seeker',
-          subjectId: interview.jobSeekerId,
-          fromStatus: 'active',
-          toStatus: 'placed',
-          changedByStaffId: interview.proposedByStaffId,
-          changedAt: now,
-          reason: 'placed_via_replacement',
-        });
+        // Job seeker becomes placed at selection — unless a salary-upgrade payment (D3) is due:
+        // then the payment confirms the placement and places him (PaymentService.onPaymentSucceeded).
+        if (!upgradeDue) {
+          await tx.jobSeeker.update({
+            where: { id: interview.jobSeekerId },
+            data: { status: 'placed' },
+          });
+          await recordStatusChange(tx, {
+            subjectType: 'job_seeker',
+            subjectId: interview.jobSeekerId,
+            fromStatus: 'active',
+            toStatus: 'placed',
+            changedByStaffId: interview.proposedByStaffId,
+            changedAt: now,
+            reason: 'placed_via_replacement',
+          });
+        }
 
         // Update replacement candidate row
         await tx.replacementCandidate.updateMany({
@@ -282,9 +320,10 @@ export class PlacementService {
 
         return {
           placement,
-          totalAmount: 0,
+          totalAmount: upgradeFee + upgradeGst,
           existing: false,
           isReplacement: true,
+          upgradeDue,
           actorId: interview.proposedByStaffId,
         };
       }
@@ -332,22 +371,55 @@ export class PlacementService {
 
     if (created.isReplacement) {
       await this.auditService.log({
-        action: 'placement.replacement_confirmed',
+        action: created.upgradeDue ? 'placement.replacement_upgrade_payment_requested' : 'placement.replacement_confirmed',
         entityType: 'Placement',
         entityCode: created.placement.code,
         actorId: created.actorId,
         city: created.placement.city,
         after: {
-          status: 'confirmed',
+          status: created.placement.status,
           rootPlacementId: created.placement.rootPlacementId,
           replacementNumber: created.placement.replacementNumber,
-          placementFee: 0,
-          gstAmount: 0,
+          countsAsReplacement: created.placement.countsAsReplacement,
+          salaryUpgradeDifferencePaise: created.placement.salaryUpgradeDifferencePaise ?? null,
+          placementFee: created.placement.placementFee,
+          gstAmount: created.placement.gstAmount,
         },
       });
+      if (!created.upgradeDue) {
+        return {
+          ...created.placement,
+          payment: null,
+        };
+      }
+      // D3: the salary-upgrade difference is collected like a placement fee (UPI request, Finance sees it).
+      const upgradeBranch = created.placement.vacancy?.branchId
+        ? await this.prisma.businessBranch.findUnique({ where: { id: created.placement.vacancy.branchId } })
+        : null;
+      const upgradeRequest = await this.upiCollectionService.createRequest({
+        type: 'replacement_upgrade',
+        subjectType: 'placement',
+        subjectId: created.placement.id,
+        amountPaise: created.totalAmount,
+        city: created.placement.city,
+        businessId: created.placement.businessId,
+        placementId: created.placement.id,
+        notifySubjectType: 'business',
+        notifySubjectId: created.placement.businessId,
+        notifyRecipientPhone: upgradeBranch?.contactPersonPhone,
+      });
+      const upgradePayment = await this.prisma.payment.findUnique({ where: { id: upgradeRequest.paymentId } });
       return {
         ...created.placement,
-        payment: null,
+        payment: upgradePayment ? {
+          id: upgradePayment.id,
+          code: upgradePayment.code,
+          amount: upgradePayment.amount,
+          status: upgradePayment.status,
+          paymentLink: upgradeRequest.paymentLink,
+          gatewayReference: upgradePayment.gatewayReference,
+          upiReference: upgradePayment.upiReference,
+        } : null,
       };
     }
 
@@ -669,8 +741,10 @@ export class PlacementService {
         if (root?.guaranteeEndedReason || root?.status === 'guarantee_ended') {
           continue;
         }
-        if (root?.joinedDate) {
-          rootJoinedDate = root.joinedDate;
+        // D2: a root who never joined — the guarantee runs from the first worker who did.
+        const chainStart = root?.joinedDate ?? (root ? await this.firstJoinedInChain(placement.rootPlacementId) : null);
+        if (chainStart) {
+          rootJoinedDate = chainStart;
         }
       }
 
@@ -897,7 +971,10 @@ export class PlacementService {
     }
     await this.assertClaimScope(actor, placement);
 
-    if (placement.status !== 'active') {
+    // D2 (rev 176): a selected, paid candidate who never joined (confirmed, no joining recorded) is
+    // reported with "never_joined" on or after the joining day; the replacement does not count.
+    const neverJoined = dto.reason === 'never_joined' && placement.status === 'confirmed' && !placement.joinedDate && Boolean(placement.joiningDate);
+    if (placement.status !== 'active' && !neverJoined) {
       throw new BadRequestException(
         `Cannot report claim on placement in status '${placement.status}'; placement must be active`,
       );
@@ -910,7 +987,12 @@ export class PlacementService {
         })
       : placement;
 
-    if (!rootPlacement || !rootPlacement.joinedDate) {
+    // The 60 days run from the first employee's joining day: the root's, or — when the root never
+    // joined and was swapped (D2) — the first joining recorded in the chain.
+    const guaranteeStart = rootPlacement
+      ? rootPlacement.joinedDate ?? (await this.firstJoinedInChain(rootPlacement.id))
+      : null;
+    if (!rootPlacement || (!guaranteeStart && !neverJoined)) {
       throw new BadRequestException(
         'Placement has no recorded joinedDate; cannot evaluate replacement claim',
       );
@@ -925,17 +1007,19 @@ export class PlacementService {
     const workerLeftOn = new Date(dto.workerLeftOn);
     const policy = await this.pricingService.current();
     const windowDays = policy.replacementWindowDays;
-    const rootJoinedDay = istDayOf(rootPlacement.joinedDate)!;
-    const ownJoinedDay = istDayOf(placement.joinedDate ?? rootPlacement.joinedDate)!;
+    const rootJoinedDay = guaranteeStart ? istDayOf(guaranteeStart)! : null;
+    const ownJoinedDay = istDayOf(placement.joinedDate ?? (neverJoined ? placement.joiningDate! : guaranteeStart!))!;
     const today = istDayOf(now)!;
 
     if (leftDay < ownJoinedDay) {
       throw new BadRequestException(
-        `workerLeftOn cannot be earlier than the joining day (${ownJoinedDay}); employee cannot leave before they started`,
+        neverJoined
+          ? `A candidate who never joined is reported on or after the joining day (${ownJoinedDay})`
+          : `workerLeftOn cannot be earlier than the joining day (${ownJoinedDay}); employee cannot leave before they started`,
       );
     }
 
-    if (leftDay > addDays(rootJoinedDay, windowDays)) {
+    if (rootJoinedDay && leftDay > addDays(rootJoinedDay, windowDays)) {
       throw new BadRequestException(
         `Worker left outside the ${windowDays}-day replacement guarantee window`,
       );
@@ -1065,6 +1149,8 @@ export class PlacementService {
             decidedByStaffId: null,
             decidedAt,
             decisionDueAt,
+            // M10 (rev 178): reported while the business is suspended — its 15-day clock starts paused.
+            searchPausedAt: placement.business && isBusinessSuspended(placement.business, reportedAt) ? reportedAt : null,
           },
           include: {
             placement: true,
@@ -1119,6 +1205,20 @@ export class PlacementService {
     }
 
     return claim;
+  }
+
+  /** The first joining day recorded among a root placement's chain (the root itself never joined). */
+  /**
+   * D2: when the first selected candidate never joined, the 60 days count from the
+   * first worker in the chain who did join (a never-joined swap takes his place).
+   */
+  async firstJoinedInChain(rootId: string): Promise<Date | null> {
+    const first = await this.prisma.placement.findFirst({
+      where: { rootPlacementId: rootId, joinedDate: { not: null } },
+      orderBy: { joinedDate: 'asc' },
+      select: { joinedDate: true },
+    });
+    return first?.joinedDate ?? null;
   }
 
   async decideClaim(
@@ -1249,13 +1349,15 @@ export class PlacementService {
         const rootPlacement = claim.placement.rootPlacementId
           ? await tx.placement.findUniqueOrThrow({ where: { id: rootId } })
           : claim.placement;
-        const lastReplacement = claim.placement.replacementNumber >= policy.maxFreeReplacements;
+        // D2: a candidate who never joined is replaced without using a free replacement.
+        const neverJoined = claim.reason === 'never_joined' && claim.placement.status === 'confirmed' && !claim.placement.joinedDate;
+        const lastReplacement = !neverJoined && claim.placement.replacementNumber >= policy.maxFreeReplacements;
 
         // Only an active placement can be accepted: two acceptances (or an
         // accept after the worker was already replaced) never create a second
         // replacement vacancy.
         const moved = await tx.placement.updateMany({
-          where: { id: claim.placementId, status: 'active' },
+          where: { id: claim.placementId, status: neverJoined ? 'confirmed' : 'active' },
           data: lastReplacement
             ? { status: 'guarantee_ended', guaranteeEndedReason: 'second_replacement_left', dropoutReportedAt: claim.reportedAt }
             : { status: 'dropped_out', dropoutReportedAt: claim.reportedAt },
@@ -1583,6 +1685,121 @@ export class PlacementService {
     };
   }
 
+  /**
+   * M2 (Master Guide rev 178): a replacement whose salary-difference request
+   * (D3) is not paid within Settings' upgradePaymentCancelDays (7 by default)
+   * of the selection is cancelled by the daily job; a Manager or the CEO can
+   * cancel it at once ("Cancel now", with a reason). Cancelling closes the
+   * payment request, reopens the replacement vacancy, frees the job seeker,
+   * takes the candidate off "accepted" and never counts as a free replacement
+   * (countsAsReplacement false), so the claim's replacement search — and its
+   * 15-day refund check — carry on as if he had not been selected.
+   */
+  async cancelUnpaidUpgrades(now = new Date()): Promise<number> {
+    const policy = await this.getPolicy();
+    const cutoff = new Date(now.getTime() - policy.upgradePaymentCancelDays * 24 * 60 * 60 * 1000);
+    const due = await this.prisma.placement.findMany({
+      where: { status: 'awaiting_payment', salaryUpgradeDifferencePaise: { not: null }, rootPlacementId: { not: null }, selectedAt: { lte: cutoff } },
+      select: { id: true },
+    });
+    let cancelled = 0;
+    try {
+      for (const row of due) {
+        // One bad row never stops the others (logged; the next daily run tries it again).
+        try {
+          if (await this.cancelUpgrade(row.id, null, `Salary difference not paid within ${policy.upgradePaymentCancelDays} days of the selection`, now)) cancelled += 1;
+        } catch (error) {
+          this.logger.error(`Could not cancel the unpaid replacement ${row.id}: ${(error as Error).message}`);
+        }
+      }
+    } finally {
+      // M10: suspensions that ended on their date resume their claims' replacement clocks — always.
+      await resumeEndedSuspensions(this.prisma, now);
+    }
+    return cancelled;
+  }
+
+  /** "Cancel now" (Manager / CEO, audited). */
+  async cancelUpgradeNow(idOrCode: string, actorId: string, body: { reason?: unknown }, now = new Date()) {
+    const actor = await this.prisma.staff.findUnique({ where: { id: actorId }, select: { id: true, role: true } });
+    if (!actor) throw new NotFoundException('Staff not found');
+    if (actor.role !== 'manager' && actor.role !== 'ceo') throw new ForbiddenException('Only a Manager or the CEO cancels a replacement waiting for its salary difference');
+    const reason = typeof body?.reason === 'string' ? body.reason.trim() : '';
+    if (reason.length < 5) throw new BadRequestException('Write the reason (at least 5 characters)');
+    // The CEO: any placement. A Manager: only placements of their own tree (the people below them).
+    let scope: Prisma.PlacementWhereInput = {};
+    if (actor.role === 'manager') {
+      const tree = [actor.id, ...((await this.reportingScope?.peopleUnder(actor.id)) ?? [])];
+      scope = {
+        OR: [
+          { createdByStaffId: { in: tree } },
+          { business: businessesOwnedBy(tree) },
+          { jobSeeker: { registeredByStaffId: { in: tree } } },
+          { interview: { proposedByStaffId: { in: tree } } },
+        ],
+      };
+    }
+    const placement = await this.prisma.placement.findFirst({ where: { AND: [scope, { OR: [{ id: idOrCode }, { code: idOrCode }] }] }, select: { id: true, status: true, salaryUpgradeDifferencePaise: true } });
+    if (!placement) throw new NotFoundException('Placement not found');
+    if (placement.status !== 'awaiting_payment' || placement.salaryUpgradeDifferencePaise === null) {
+      throw new BadRequestException('Only a replacement waiting for its salary-difference payment can be cancelled here');
+    }
+    const done = await this.cancelUpgrade(placement.id, actor.id, reason.slice(0, 500), now);
+    if (!done) throw new ConflictException('This replacement is no longer waiting for its payment');
+    return { cancelled: true, placementId: placement.id };
+  }
+
+  private async cancelUpgrade(placementId: string, actorId: string | null, reason: string, now: Date): Promise<boolean> {
+    const placement = await this.prisma.placement.findUnique({ where: { id: placementId }, select: UPGRADE_TO_CANCEL_SELECT });
+    if (!placement) return false;
+    // One path for every close of an unpaid replacement (cancel-upgrade.ts): the search goes on, so the
+    // vacancy reopens (and its clock pauses at once if the business is suspended now).
+    const done = await this.prisma.$transaction((tx) => cancelUpgradeInTx(tx, placement, { actorId, now, statusReason: 'replacement_upgrade_not_paid', reopenSearch: true }));
+    if (!done) return false;
+    const auditActorId = actorId ?? (await this.prisma.staff.findFirst({ where: { role: 'ceo' }, select: { id: true } }))?.id ?? null;
+    await announceUpgradeCancelled(this.upgradeAnnouncer(), placement, { auditActorId, automatic: actorId === null, reason });
+    return true;
+  }
+
+  private upgradeAnnouncer() {
+    return {
+      audit: this.auditService as unknown as { log: (entry: Record<string, unknown>) => Promise<unknown> },
+      notify: this.customerNotifications
+        ? (to: { businessId: string } | { jobSeekerId: string }, kind: string, dedupeKey: string) => this.customerNotifications!.notify(to, kind as never, {}, { dedupeKey })
+        : undefined,
+      sms: this.messaging
+        ? (m: { template: string; subjectType: 'business' | 'job_seeker'; subjectId: string; relatedId: string; variables: Record<string, string> }) =>
+            this.messaging!.send({ channel: 'sms', template: m.template, subjectType: m.subjectType, subjectId: m.subjectId, relatedType: 'placement', relatedId: m.relatedId, variables: m.variables })
+        : undefined,
+    };
+  }
+
+  /**
+   * M10: claims whose 15-day replacement clock stands still because the
+   * business is suspended for good (Manager / CEO list).
+   */
+  async suspendedBusinessClaims(now = new Date()) {
+    const claims = await this.prisma.replacementClaim.findMany({
+      // Only searches still open: no replacement accepted, guarantee not ended.
+      where: { searchPausedAt: { not: null }, placement: { guaranteeEndedReason: null, replacementCandidates: { none: { status: 'accepted' } }, business: { suspendedAt: { not: null }, suspendedUntil: null } } },
+      select: {
+        id: true, code: true, reportedAt: true, decision: true, searchPausedAt: true, searchPausedSeconds: true,
+        placement: { select: { id: true, code: true, business: { select: { id: true, code: true, name: true, suspendedAt: true, suspendedUntil: true, suspensionReason: true } } } },
+      },
+      orderBy: { searchPausedAt: 'asc' },
+    });
+    return claims.map((c) => ({
+      claimId: c.id,
+      claimCode: c.code,
+      decision: c.decision,
+      reportedAt: c.reportedAt,
+      pausedSince: c.searchPausedAt,
+      pausedDays: Math.floor(claimPausedMs(c, c.placement.business, now) / (24 * 60 * 60 * 1000)),
+      placement: { id: c.placement.id, code: c.placement.code },
+      business: { id: c.placement.business.id, code: c.placement.business.code, name: c.placement.business.name, suspendedAt: c.placement.business.suspendedAt, reason: c.placement.business.suspensionReason },
+    }));
+  }
+
   async listPendingClaims(actorId: string) {
     const actor = await this.prisma.staff.findUnique({
       where: { id: actorId },
@@ -1714,7 +1931,8 @@ export class PlacementService {
       where: {
         rootPlacementId: rootId,
         replacementNumber: { gt: 0 },
-        status: { in: ['confirmed', 'active', 'completed'] },
+        // M6: a replacement waiting for its salary-difference payment is selected too (no refund meanwhile).
+        status: { in: ['awaiting_payment', 'confirmed', 'active', 'completed'] },
       },
     });
     const hasAcceptedReplacement = Boolean(
@@ -1786,6 +2004,11 @@ export class PlacementService {
     const outsideRules = refundWithCeo ? refundWithCeo.outsideRules : goodwill;
     let refundAmount: number;
     let daysElapsed = 0;
+    // M4 (rev 178): 100% means the first fee and every salary difference paid in the chain.
+    const chain = await chainRefundOf(this.prisma, rootId);
+    const chainFeePaise = chain.feePaise || rootPlacement.placementFee;
+    // Saved on the refund (review M1): the credit notes and FN-Refund read the parts, never a single row's fee.
+    const refundParts = (chain.parts.length ? chain.parts : [{ placementId: rootId, kind: 'placement_fee', feePaise: rootPlacement.placementFee, gstPaise: rootPlacement.gstAmount }]) as unknown as Prisma.InputJsonValue;
 
     if (outsideRules) {
       // A goodwill refund skips the guarantee rules, so check the basics here: the fee
@@ -1798,10 +2021,10 @@ export class PlacementService {
       }
       refundAmount = refundWithCeo
         ? refundWithCeo.amount
-        : dto?.amountPaise ?? rootPlacement.placementFee;
-      if (!Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > rootPlacement.placementFee) {
+        : dto?.amountPaise ?? chainFeePaise;
+      if (!Number.isSafeInteger(refundAmount) || refundAmount <= 0 || refundAmount > chainFeePaise) {
         throw new BadRequestException(
-          `amountPaise must be a whole number of paise between 1 and the placement fee (${rootPlacement.placementFee})`,
+          `amountPaise must be a whole number of paise between 1 and the placement fee (${chainFeePaise})`,
         );
       }
     } else {
@@ -1813,10 +2036,12 @@ export class PlacementService {
           hasSelectedReplacement: Boolean(selectedReplacement),
           claimAcceptedAt,
           dropoutReportedAt,
-          placementFee: rootPlacement.placementFee,
+          placementFee: chainFeePaise,
           hasExistingRefund: Boolean(existingRefund) && !refundWithCeo,
           searchDays: policy.replacementSearchDays,
           guaranteeEndedReason: rootPlacement.guaranteeEndedReason,
+          // M10: the clock stands still while the business is suspended.
+          ...claimRefundPause(claim, placement.business, now),
         },
         now,
       );
@@ -1875,6 +2100,7 @@ export class PlacementService {
             sentToCeoAt: now,
             outsideRules,
             approvalNote: note,
+            refundParts,
           },
         });
         await recordStatusChange(tx, {
@@ -1957,6 +2183,7 @@ export class PlacementService {
             businessId: placement.businessId,
             outsideRules,
             approvalNote: note,
+            refundParts,
           },
         });
       }
@@ -2146,7 +2373,7 @@ export class PlacementService {
       placementCode: placement.code,
       candidateCode: placement.jobSeeker.code,
       candidateName: placement.jobSeeker.name,
-      candidatePhone: placement.jobSeeker.phone,
+      // D17 (rev 176): the candidate's phone is never on the business's invoice (masked until the joining day).
       tradeSkill: placement.vacancy.tradeSkill,
       monthlySalaryPaise: placement.agreedSalary,
       joinedDate: placement.joinedDate ? placement.joinedDate.toISOString() : null,
@@ -2168,7 +2395,10 @@ export class PlacementService {
       lineItems: [
         {
           itemNumber: 1,
-          description: `Placement fee for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of monthly salary)`,
+          // D3: a replacement hired at a higher salary is invoiced for the fee on the difference only.
+          description: placement.salaryUpgradeDifferencePaise
+            ? `Replacement salary difference for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of ${formatINR(placement.salaryUpgradeDifferencePaise)} a month more than ${formatINR(placement.replacedSalaryPaise ?? 0)})`
+            : `Placement fee for trade: ${placement.vacancy.tradeSkill} (${feePercent}% of monthly salary)`,
           sacCode: '9985',
           baseAmountPaise,
           taxRatePercent: gstPercent,

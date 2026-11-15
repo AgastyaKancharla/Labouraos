@@ -6,6 +6,8 @@ import { AppModule } from '../../app.module';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PublicLinkStoreService } from '../../common/public-link-store.service';
 import { ConsentService } from '../consent/consent.service';
+import { DEFAULT_NOTICE_VERSION, JOB_SEEKER_REQUIRED_CONSENT_PURPOSES } from '../consent/consent.constants';
+import { LegalDocumentService } from '../legal/legal-document.service';
 import { verifiedOtpFor } from '../../test-support/verified-otp';
 import { giveVerifiedId } from '../../test-support/verified-id';
 import { UIDAI_SAMPLE_SECURE_QR } from './testing/uidai-sample-qr';
@@ -163,6 +165,7 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     await prisma.reviewFlag.deleteMany({ where: { subjectId: { in: payments.map((p) => p.id) } } });
     await prisma.payment.deleteMany({ where: { jobSeekerId: { in: seekerIds } } });
     await prisma.consent.deleteMany({ where: { subjectId: { in: seekerIds } } });
+    await prisma.legalAcceptance.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.publicLink.deleteMany({ where: { subjectId: { in: seekerIds } } });
     await prisma.jobSeeker.deleteMany({ where: { id: { in: seekerIds } } });
     await prisma.staff.deleteMany({ where: { id: { in: staffIds } } });
@@ -225,8 +228,14 @@ describe('Aadhaar Secure QR — link, Laboura Field, Team Lead check', () => {
     const s = await seeker(5, 'Ravi Shankar');
     // Every required consent, so the terms step is held back only by the pending ID.
     for (const purpose of ['job_matching', 'profile_sharing', 'call_recording', 'job_updates']) {
-      await app.get(ConsentService).grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: '1.1', language: 'en', method: 'sms_link' });
+      await app.get(ConsentService).grant({ subjectType: 'job_seeker', subjectId: s.id, purpose, noticeVersion: DEFAULT_NOTICE_VERSION, language: 'en', method: 'sms_link' });
     }
+    // As the consent step records it (legal documents v1.1): the current terms, so no re-consent is due.
+    const legal = app.get(LegalDocumentService);
+    await legal.recordAcceptance({
+      subjectType: 'job_seeker', subjectId: s.id, rendered: await legal.render('job_seeker_terms', 'en'), context: 'registration',
+      method: 'sms_link', noticeVersion: DEFAULT_NOTICE_VERSION, purposes: [...JOB_SEEKER_REQUIRED_CONSENT_PURPOSES], acceptedAt: new Date(),
+    });
     const { token: linkToken, requestId } = await registrationLink(s);
     const path = `/registration/${linkToken}/other-id`;
     // Adversarial: gallery, no photo, a non-image, a wrong number.

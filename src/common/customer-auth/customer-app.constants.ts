@@ -57,6 +57,8 @@ export const CUSTOMER_STEP_UP_PURPOSES = [
   'sign_agreement',
   'interview_result',
   'confirm_vacancy',
+  /** Accepting an updated version of the terms (rev 176, re-consent). */
+  'accept_terms',
   /** Registering a profile: the code goes in the registration body (existing services consume it). */
   'register',
 ] as const;

@@ -35,7 +35,7 @@ export class FinanceInvoiceActionsService {
         business: { select: { id: true, code: true, name: true, accountAgentId: true } },
       },
     });
-    if (!payment || !['placement_fee', 'bypass_charge'].includes(payment.type)) throw new NotFoundException('Placement fee not found');
+    if (!payment || !['placement_fee', 'replacement_upgrade', 'bypass_charge'].includes(payment.type)) throw new NotFoundException('Placement fee not found');
     if (!UNPAID.includes(payment.status)) throw new BadRequestException('This fee is not waiting for payment');
     const business = payment.placement?.business ?? payment.business;
     if (!business) throw new BadRequestException('This fee is not linked to a business');

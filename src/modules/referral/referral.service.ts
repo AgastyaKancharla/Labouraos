@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { assertNotBanned } from '../conduct/permanent-ban.check';
 import {
   BadRequestException,
   ConflictException,
@@ -153,6 +154,8 @@ export class ReferralService {
       });
     }
 
+    // D11 (rev 176): a permanently banned phone cannot register again.
+    await assertNotBanned(this.prisma, { phone });
     const otpConsumed = await this.otpService.consumeVerified(dto.otpRequestId, phone);
     if (!otpConsumed) {
       throw new BadRequestException('This verified OTP request has already been used or expired');

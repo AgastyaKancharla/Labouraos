@@ -1,4 +1,6 @@
 import { LIVE_REFUND_STATUSES, isCurrentGuaranteeRefund } from '../../common/money/current-guarantee-refund';
+import { ChainRefund, chainRefundsByRoot } from '../placement/chain-refund';
+import { claimPausedMs, claimRefundPause } from '../placement/claim-clock';
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { PricingService } from '../pricing/pricing.service';
@@ -244,7 +246,7 @@ export class RefundService {
           select: { status: true },
         },
         business: {
-          select: { name: true },
+          select: { name: true, suspendedAt: true, suspendedUntil: true },
         },
         jobSeeker: {
           select: { name: true, phone: true },
@@ -253,7 +255,10 @@ export class RefundService {
     });
 
     let refundedPlacementIdSet = new Set<string>();
-    const claimByPlacementId = new Map<string, { decidedAt: Date | null; reportedAt: Date | null }>();
+    const claimByPlacementId = new Map<string, { decidedAt: Date | null; reportedAt: Date | null; searchPausedAt: Date | null; searchPausedSeconds: number }>();
+    // M4 (rev 178): the refund is the first placement's fee plus every salary difference paid in the
+    // chain (chain-refund.ts) — never a replacement row's own amount.
+    let chainRefunds = new Map<string, ChainRefund>();
 
     if (placements.length > 0) {
       const placementIds = placements.map((p) => p.id);
@@ -272,6 +277,7 @@ export class RefundService {
         select: { placementId: true },
       });
       refundedPlacementIdSet = new Set(existingPlacementRefunds.map((p) => p.placementId!));
+      chainRefunds = await chainRefundsByRoot(this.prisma, placements.map((p) => p.rootPlacementId ?? p.id));
       // Business refunds decided "not owed" (FN-Refund "Reject") stay off the list.
       const rejectedPlacements = this.prisma.refundRejection
         ? await this.prisma.refundRejection.findMany({ where: { kind: 'business', placementId: { in: allPlacementIds } }, select: { placementId: true } })
@@ -286,7 +292,7 @@ export class RefundService {
               decision: 'accepted',
             },
             orderBy: { decidedAt: 'desc' },
-            select: { placementId: true, decidedAt: true, reportedAt: true },
+            select: { placementId: true, decidedAt: true, reportedAt: true, searchPausedAt: true, searchPausedSeconds: true },
           })
         : [];
       for (const claim of acceptedClaims) {
@@ -315,11 +321,13 @@ export class RefundService {
           hasAcceptedReplacement,
           claimAcceptedAt,
           dropoutReportedAt,
-          placementFee: placement.placementFee,
+          placementFee: chainRefunds.get(rootId)?.feePaise ?? placement.placementFee,
           hasExistingRefund:
             refundedPlacementIdSet.has(placement.id) || refundedPlacementIdSet.has(rootId),
           searchDays: replacementSearchDays,
           guaranteeEndedReason: placement.guaranteeEndedReason,
+          // M10: the clock stands still while the business is suspended.
+          ...claimRefundPause(claim, placement.business, now),
         },
         now,
       );
@@ -328,7 +336,7 @@ export class RefundService {
         // Obligation begins replacementSearchDays after the dropout report
         const clockStart = (dropoutReportedAt ?? claimAcceptedAt)!;
         const dueSince = new Date(
-          clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000,
+          clockStart.getTime() + replacementSearchDays * 24 * 60 * 60 * 1000 + claimPausedMs(claim, placement.business, now),
         ).toISOString();
 
         placementRows.push({
@@ -358,6 +366,8 @@ export class RefundService {
             candidatePhone: placement.jobSeeker.phone,
             placementFee: placement.placementFee,
           },
+          // M4: what the refund is made of — the first fee and each paid salary difference, with its GST.
+          refundParts: chainRefunds.get(rootId)?.parts ?? [],
         });
       }
     }

@@ -55,12 +55,13 @@ Stop and think before clicking. A restore goes back to the last daily backup; wo
 
 ## 4. Secrets that must be kept outside Render
 
-Two of the secrets Render generated encrypt data stored in the database. If they are lost, that data can never be read again, even from a backup:
+Three of the secrets Render generated protect data stored in the database. If they are lost, that data can never be read (or matched) again, even from a backup:
 
 - `CALL_ROUTING_KEY`: staff phone numbers used to route calls.
 - `PAYOUT_ACCOUNT_KEY`: payout UPI and bank details for candidates, referral partners and businesses.
+- `PERMANENT_BAN_HASH_KEY`: the phone and ID hashes of permanent bans; with a new key a banned person could register again.
 
-After the first deploy, open Render → `laboura-api` → **Environment**, reveal both, and store them in the company password manager. Store `LOGIN_CODE_SECRET` and `JWT_SECRET` there too; losing those only logs everyone out.
+After the first deploy, open Render → `laboura-api` → **Environment**, reveal all three, and store them in the company password manager. Store `LOGIN_CODE_SECRET` and `JWT_SECRET` there too; losing those only logs everyone out.
 
 ## 5. Uploaded files are not in the database backups
 

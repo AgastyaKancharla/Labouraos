@@ -1,4 +1,6 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { LegalDocumentService } from '../legal/legal-document.service';
+import { ReconsentRequiredException } from '../legal/legal-status';
 import {
   BadRequestException,
   ForbiddenException,
@@ -28,7 +30,7 @@ import { CANDIDATE_PHOTO_LINK_TTL_SECONDS, CANDIDATE_PHOTO_STORAGE, CandidatePho
 import { BusinessVerificationService } from '../business/business-verification.service';
 import { ReviewFlagService } from '../review-flag/review-flag.service';
 import { PlacementService } from '../placement/placement.service';
-import { BUSINESS_PAUSED_MESSAGE, businessCandidateAccess } from '../business/business-candidate-access';
+import { BUSINESS_SUSPENDED_MESSAGE, businessAccessMessage, businessCandidateAccess, isBusinessSuspended } from '../business/business-candidate-access';
 import { sameIndianMobile } from '../../common/phone/indian-mobile';
 import { CustomerNotificationHooks } from '../customer-notification/customer-notification-hooks.service';
 
@@ -91,7 +93,16 @@ export class InterviewService {
     private readonly placements: PlacementService,
     @Optional() @Inject(CANDIDATE_PHOTO_STORAGE) private readonly photoStorage?: CandidatePhotoStorage,
     @Optional() private readonly customerNotifications?: CustomerNotificationHooks,
+    // Required (no @Optional): the re-consent guard never fails open.
+    private readonly legal?: LegalDocumentService,
   ) {}
+
+  /** Review H3: no booking or accepted offer while he must accept the updated terms (RECONSENT_REQUIRED). */
+  private async assertTermsCurrent(jobSeekerId: string) {
+    if (!this.legal) throw new Error('LegalDocumentService is required for the re-consent guard');
+    const status = await this.legal.status('job_seeker', jobSeekerId);
+    if (status.needsReconsent) throw new ReconsentRequiredException(status);
+  }
 
   async book(dto: BookInterviewDto, staffId: string) {
     if (!dto?.vacancyId || !dto?.jobSeekerId || !dto?.slotId) {
@@ -114,9 +125,7 @@ export class InterviewService {
     }
     const businessAccess = businessCandidateAccess(vacancy.business);
     if (!businessAccess.allowed) {
-      throw new BadRequestException(businessAccess.reason === 'paused'
-        ? BUSINESS_PAUSED_MESSAGE
-        : 'The business must be verified before an interview can be booked');
+      throw new BadRequestException(businessAccessMessage(businessAccess, 'The business must be verified before an interview can be booked'));
     }
     if (actor.role === 'field_agent' && vacancy.business.accountAgentId !== actor.id) {
       throw new ForbiddenException('Field agents may only book interviews for their account businesses');
@@ -132,6 +141,7 @@ export class InterviewService {
         : { id: dto.jobSeekerId },
     });
     if (!seeker) throw new NotFoundException(`Job seeker '${dto.jobSeekerId}' not found`);
+    await this.assertTermsCurrent(seeker.id);
 
     const slot = await this.prisma.vacancyInterviewSlot.findUnique({ where: { id: dto.slotId } });
     if (!slot || slot.vacancyId !== vacancy.id) {
@@ -727,6 +737,8 @@ export class InterviewService {
       throw new BadRequestException('This interview is no longer awaiting an owner result');
     }
     const now = this.clock.now();
+    // M10 (rev 178): a suspended business selects no one (it interviews no one while suspended).
+    if (input.result === 'selected' && isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
     const status = input.result === 'candidate_no_show' ? 'no_show' : 'completed';
     await this.prisma.$transaction(async (tx) => {
       const updated = await tx.interview.updateMany({
@@ -826,7 +838,8 @@ export class InterviewService {
     const placement = input.result === 'selected'
       ? await this.placements.createAwaitingPaymentFromInterview(interview.id, now)
       : null;
-    if (interview.vacancy.replacementForPlacementId && placement && joiningDate) {
+    // A replacement awaiting its salary-upgrade payment (D3) gets "joining confirmed" from the payment, not here.
+    if (interview.vacancy.replacementForPlacementId && placement && joiningDate && placement.status !== 'awaiting_payment') {
       const joiningText = new Intl.DateTimeFormat('en-IN', {
         timeZone: 'Asia/Kolkata',
         dateStyle: 'medium',
@@ -964,6 +977,9 @@ export class InterviewService {
     if (interview.status !== 'offered' || interview.candidateRespondedAt || now.getTime() > interview.replyDueAt.getTime()) {
       throw new BadRequestException('This interview is no longer awaiting a reply');
     }
+    if (accepted) await this.assertTermsCurrent(interview.jobSeekerId);
+    // M10 (rev 178): a suspended business interviews no one, replacements included.
+    if (accepted && isBusinessSuspended(interview.business, now)) throw new BadRequestException(BUSINESS_SUSPENDED_MESSAGE);
     const status = accepted ? 'confirmed' : 'declined';
     const changed = await this.prisma.$transaction(async (tx) => {
       const update = await tx.interview.updateMany({

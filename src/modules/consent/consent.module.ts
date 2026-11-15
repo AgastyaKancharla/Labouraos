@@ -16,9 +16,10 @@ import {
   sharedMemoryAgreementDocumentStorage,
 } from './agreement-document.storage';
 import { BusinessVerificationModule } from '../business/business-verification.module';
+import { LegalModule } from '../legal/legal.module';
 
 @Module({
-  imports: [PrismaModule, PublicLinkStoreModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule],
+  imports: [PrismaModule, PublicLinkStoreModule, MessageModule, OtpModule, PricingModule, AuditModule, BusinessVerificationModule, LegalModule],
   controllers: [ConsentController],
   providers: [
     ConsentService,

@@ -1,7 +1,7 @@
 import { screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { apiError, mockApi, renderScreen } from '../../../test/utils';
-import { openStatus, TOKEN, verifiedInThisTab } from '../shared/testData';
+import { legalDocument, openStatus, TOKEN, verifiedInThisTab } from '../shared/testData';
 import Consent from './index';
 
 const render = () => renderScreen(<Consent />, { portal: 'public', path: `/p/register/${TOKEN}/consent`, route: '/p/register/:token/consent' });
@@ -11,10 +11,15 @@ describe('P01-Consent', () => {
     verifiedInThisTab();
     const api = mockApi({
       [`GET /registration/${TOKEN}/status`]: openStatus(),
+      'GET /legal/documents/job_seeker_terms': legalDocument(),
       'POST /consent/submit': { success: true },
     });
     render();
     expect(await screen.findByRole('heading', { name: 'Your permission' })).toBeInTheDocument();
+    // Job Seeker Terms v1.1: "In short" first, the full text behind "Read the full terms" (rev 176).
+    expect(screen.getByTestId('legal-in-short')).toHaveTextContent('₹499');
+    expect(screen.getByText('Read the full terms')).toBeInTheDocument();
+    expect(api.calls('GET /legal/documents/job_seeker_terms')[0]!.query.get('lang')).toBe('en');
     expect(screen.getByText('Step 1 of 4 · Consent')).toBeInTheDocument();
     const boxes = screen.getAllByRole('checkbox');
     expect(boxes).toHaveLength(6);
@@ -34,6 +39,8 @@ describe('P01-Consent', () => {
       otpRequestId: 'req-1',
       purposes: ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'],
       language: 'en',
+      // The hash of the terms text the page showed (the server refuses a text that changed meanwhile).
+      textHash: 'abc',
     });
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
@@ -50,6 +57,7 @@ describe('P01-Consent', () => {
     verifiedInThisTab();
     mockApi({
       [`GET /registration/${TOKEN}/status`]: openStatus(),
+      'GET /legal/documents/job_seeker_terms': legalDocument(),
       'POST /consent/submit': apiError(500, 'Internal server error'),
     });
     render();

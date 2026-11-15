@@ -70,6 +70,11 @@ export function usePartnerStepGuard(step: PartnerStep) {
       navigate(to('P-PartnerOpen', { token }), { replace: true });
       return;
     }
+    // An older version of the terms accepted: "We've updated our terms" first (rev 176).
+    if (data.reconsent?.needsReconsent) {
+      navigate(to('P-PartnerReconsent', { token }), { replace: true });
+      return;
+    }
     if (data.currentStep !== step && !stoppedAtId) {
       navigate(to(PARTNER_STEP_SCREEN[data.currentStep], { token }), { replace: true });
     }
@@ -80,6 +85,6 @@ export function usePartnerStepGuard(step: PartnerStep) {
     navigate(to('P-PartnerOpen', { token }), { replace: true });
   }, [navigate, to, token]);
 
-  const open = data && !data.otpRequired && (data.currentStep === step || stoppedAtId) ? data : undefined;
+  const open = data && !data.otpRequired && !data.reconsent?.needsReconsent && (data.currentStep === step || stoppedAtId) ? data : undefined;
   return { token, requestId: query.requestId ?? '', status: open, query, backToStart };
 }

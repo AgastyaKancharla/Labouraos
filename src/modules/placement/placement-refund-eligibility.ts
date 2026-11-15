@@ -11,7 +11,17 @@ export interface PlacementRefundEligibilityInput {
   hasExistingRefund: boolean;
   searchDays?: number;
   guaranteeEndedReason?: string | null;
+  /** M10 (rev 178): milliseconds the clock stood still while the business was suspended (claim-clock.ts). */
+  pausedMs?: number;
+  /** M10: the business is suspended now, so the clock stands still and no refund falls due. */
+  searchPaused?: boolean;
+  /** M3 (rev 181): when the current pause began, and the pauses before it — a refund due before the pause stays due. */
+  pauseStartedAt?: Date | null;
+  pausedBeforeMs?: number;
 }
+
+/** Why a refund is not due while the business is suspended (the clock is paused, M10). */
+export const CLOCK_PAUSED_REASON = 'The replacement clock is paused while the business is suspended';
 
 export interface PlacementRefundEligibilityResult {
   eligible: boolean;
@@ -32,7 +42,8 @@ export interface PlacementRefundEligibilityResult {
  * - At least searchDays (from PricingPolicy, default 15) must have elapsed since the
  *   dropout was REPORTED (guide: "No replacement within 15 days of the dropout report"),
  *   not since the claim was decided — the decision can take up to 48 hours.
- * - Clock does not pause and does not restart.
+ * - The clock does not restart; it pauses only while the business is suspended
+ *   (M10, rev 178) and then continues from where it stopped.
  * - No refund has already been issued.
  * - Flat 100% refund of placement fee when search window passes without a selection.
  */
@@ -81,7 +92,19 @@ export function evaluatePlacementRefundEligibility(
     };
   }
 
-  const diffMs = Math.max(0, now.getTime() - startDate.getTime());
+  // M3 (rev 181): the 15 days were already complete when the current pause began — the refund stays owed
+  // during and after the suspension; only the pauses before it are taken off.
+  const DAY_MS = 1000 * 60 * 60 * 24;
+  const dueBeforePause = Boolean(
+    input.pauseStartedAt && input.searchDays !== undefined &&
+      input.pauseStartedAt.getTime() - startDate.getTime() - (input.pausedBeforeMs ?? 0) >= input.searchDays * DAY_MS,
+  );
+  if (input.searchPaused && !dueBeforePause) {
+    return { eligible: false, ineligibleReason: CLOCK_PAUSED_REASON, amountPaise: 0, daysOwed: 0, daysElapsed: 0 };
+  }
+
+  const pausedMs = dueBeforePause ? (input.pausedBeforeMs ?? 0) : (input.pausedMs ?? 0);
+  const diffMs = Math.max(0, now.getTime() - startDate.getTime() - pausedMs);
   const daysElapsed = Math.floor(diffMs / (1000 * 60 * 60 * 24));
 
   if (input.searchDays === undefined) {

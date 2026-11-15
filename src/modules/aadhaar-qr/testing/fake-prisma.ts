@@ -2,7 +2,7 @@
  * A tiny in-memory stand-in for the Prisma tables the ID-check services use,
  * so their rules are tested without a database. Supports the filters those
  * services use: equality, { not: null }, { not: value }, { gt }, { gte },
- * { lte }, { in }, { equals, mode: 'insensitive' }, NOT, orderBy, take, and a
+ * { lte }, { in }, { hasSome }, { equals, mode: 'insensitive' }, NOT, orderBy, take, and a
  * no-op $executeRaw for the advisory locks.
  */
 type Row = Record<string, unknown>;
@@ -29,6 +29,7 @@ function matches(row: Row, where: Row = {}): boolean {
       if ('lt' in c && !(timeOf(value) !== null && timeOf(value)! < (c.lt as Date).getTime())) return false;
       if ('lte' in c && !(timeOf(value) !== null && timeOf(value)! <= (c.lte as Date).getTime())) return false;
       if ('in' in c && !(c.in as unknown[]).includes(value)) return false;
+      if ('hasSome' in c && !(Array.isArray(value) && (c.hasSome as unknown[]).some((v) => value.includes(v)))) return false;
       if ('equals' in c) {
         if (c.mode === 'insensitive') {
           if (typeof value !== 'string' || value.toLowerCase() !== String(c.equals).toLowerCase()) return false;
@@ -119,7 +120,7 @@ function table(rows: Row[] = [], defaults: () => Row = () => ({})) {
   };
 }
 
-export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consents?: Row[]; teamLeadChecks?: Row[]; staff?: Row[]; signupTrackers?: Row[] } = {}) {
+export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consents?: Row[]; teamLeadChecks?: Row[]; staff?: Row[]; signupTrackers?: Row[]; legalAcceptances?: Row[]; permanentBans?: Row[] } = {}) {
   const locks: string[] = [];
   const db = {
     jobSeeker: table(seed.jobSeekers),
@@ -135,6 +136,9 @@ export function fakePrisma(seed: { jobSeekers?: Row[]; referrals?: Row[]; consen
     signupTracker: table(seed.signupTrackers),
     auditLog: table(),
     idCaptureNonce: table([], () => ({ usedAt: null, staffId: null })),
+    /** Legal documents (rev 176): a partner's acceptance of the full terms, and permanent bans (D11). */
+    legalAcceptance: table(seed.legalAcceptances),
+    permanentBan: table(seed.permanentBans),
     /** The advisory-lock keys taken (pg_advisory_xact_lock), in order. */
     locks,
     async $executeRaw(query: { values?: unknown[] } | TemplateStringsArray, ...values: unknown[]) {

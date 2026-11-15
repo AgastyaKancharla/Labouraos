@@ -90,7 +90,8 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
       label: t('fa10b.consent'),
       step: s.steps.consent,
       detail: s.steps.consent.state === 'done'
-        ? t('fa10b.consentDone', { given: s.consent.requiredGiven, total: s.consent.requiredTotal, promotions: s.consent.promotions ? t('fa10.yes') : t('fa10.no') })
+        ? t('fa10b.consentDone', { given: s.consent.requiredGiven, total: s.consent.requiredTotal, promotions: s.consent.promotions ? t('fa10.yes') : t('fa10.no') }) +
+          (s.terms?.acceptedVersion ? ` · ${t('legal.termsVersion', { version: s.terms.acceptedVersion })}` : '')
         : '',
     },
     { key: 'selfie', label: t('fa10b.selfie'), step: s.steps.selfie, detail: s.steps.selfie.state === 'done' ? t('fa10b.selfieDone') : '' },
@@ -118,6 +119,9 @@ function Panel({ status: s, variant, refetch }: { status: JobSeekerStatus; varia
         title={variant === 'saved' && !linkLive ? t('fa10b.saved', { code: s.code }) : s.stage === 'active' ? t('fa10b.active', { code: s.code }) : t('fa10b.linkSent')}
         testID="seeker-banner"
       />
+      {s.terms?.needsReconsent ? (
+        <Banner tone="warn" message={t('legal.needsReconsent', { version: s.terms.currentVersion })} testID="reconsent-banner" />
+      ) : null}
       <Card stripe accent="royal">
         <View style={styles.head}>
           <IconTile icon="id-card" accent="royal" size={34} />

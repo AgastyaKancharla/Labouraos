@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useInShortScripts } from '../../public/shared/legal';
 import { useNavigate } from 'react-router-dom';
 import { useMutation } from '@tanstack/react-query';
 import { Button } from '../../../components/Button';
@@ -81,6 +82,7 @@ const ERROR_TEXT: Record<FieldError, MessageKey> = {
 export default function RegisterJobSeeker() {
   const t = useT();
   const scriptTerms = useScriptTerms();
+  const inShort = useInShortScripts('job_seeker_terms');
   const to = useScreenPath();
   const navigate = useNavigate();
   const toast = useToast();
@@ -407,7 +409,8 @@ export default function RegisterJobSeeker() {
         <ExplainScript
           n={7}
           title={t(`reg.js.explain.${pronoun}`)}
-          scripts={scriptTerms ? jobSeekerConsentScript(scriptTerms) : null}
+          // Job Seeker Terms v1.1 "In short", read aloud in their language (rev 176); the older script until it loads.
+          scripts={inShort ?? (scriptTerms ? jobSeekerConsentScript(scriptTerms) : null)}
           language={form.messageLanguage}
           note={t('reg.js.explainNote')}
         />

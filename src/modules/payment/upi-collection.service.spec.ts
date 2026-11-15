@@ -265,6 +265,16 @@ describe('UpiCollectionService', () => {
       expect(summary.invoicePath).toMatch(/^\/placements\/placement-1\/invoice\/copy\?token=/);
     });
 
+    it('D3 (rev 176): a replacement salary-upgrade request opens on the business fee page, marked as an upgrade', async () => {
+      findUnique.mockResolvedValue({
+        ...placementPayment, type: 'replacement_upgrade', expectedAmountPaise: 118000, amount: 118000,
+        placement: { ...placementPayment.placement, placementFee: 100000, gstAmount: 18000 },
+      });
+      const summary = await service.getPublicSummary(payment.upiReference);
+      expect(summary).toMatchObject({ type: 'placement_fee', upgrade: true, state: 'pending', amountPaise: 118000, placement: { placementFeePaise: 100000, gstPaise: 18000 } });
+      expect(summary.pay?.upiUri).toContain('am=1180.00');
+    });
+
     it('refuses references that are not UPI collection requests', async () => {
       findUnique.mockResolvedValue({ ...placementPayment, type: 'refund' });
       await expect(service.getPublicSummary('x')).rejects.toThrow(/not found/);

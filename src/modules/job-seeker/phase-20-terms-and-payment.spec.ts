@@ -1,4 +1,5 @@
 import { createHmac, randomUUID } from 'crypto';
+import { jobSeekerTermsHash } from '../../test-support/terms-hash';
 import { INestApplication } from '@nestjs/common';
 import { Test } from '@nestjs/testing';
 import * as bcrypt from 'bcrypt';
@@ -118,7 +119,7 @@ describe('Phase 20 terms-and-payment step and a second activation payment', () =
   async function giveConsent(token: string, requestId: string) {
     await request(server())
       .post('/consent/submit')
-      .send({ token, otpRequestId: requestId, purposes, language: 'en' })
+      .send({ token, otpRequestId: requestId, purposes, language: 'en', textHash: await jobSeekerTermsHash(app, 'en') })
       .expect(201);
   }
 

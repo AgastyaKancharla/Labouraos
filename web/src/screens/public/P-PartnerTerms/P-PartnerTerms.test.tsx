@@ -7,8 +7,8 @@ import PartnerTermsPage from './index';
 const terms = { referralPayoutPaise: 20000, activationFeePaise: 49900, version: 'v1', language: 'en', termsHtml: '<h1>Laboura Referral Partner Terms</h1><p>₹200 when they join.</p>', payoutDetailsCoolingHours: 48 };
 const render = () => renderScreen(<PartnerTermsPage />, { portal: 'public', path: `/p/partner/${TOKEN}/terms`, route: '/p/partner/:token/terms' });
 
-describe('P-PartnerTerms (step 1: referral terms and call-recording consent)', () => {
-  it('shows the frozen amounts, needs both boxes ticked by the partner, and saves with the code from the first page', async () => {
+describe('P-PartnerTerms (step 1: referral terms, call recording and ID-check consent)', () => {
+  it('shows the frozen amounts, needs all three boxes ticked by the partner (S2), and saves with the code from the first page', async () => {
     partnerVerifiedInThisTab();
     const api = mockApi({
       [`GET /referral-registration/${TOKEN}/status`]: partnerStatus(),
@@ -24,14 +24,16 @@ describe('P-PartnerTerms (step 1: referral terms and call-recording consent)', (
     expect(api.calls(`GET /referral-registration/${TOKEN}/terms`)[0]!.query.get('requestId')).toBe('req-1');
     const agree = screen.getByRole('button', { name: 'I agree — continue' });
     const boxes = screen.getAllByRole('checkbox');
-    expect(boxes).toHaveLength(2);
+    expect(boxes).toHaveLength(3);
     boxes.forEach((b) => expect(b).not.toBeChecked());
     expect(agree).toBeDisabled();
     await userEvent.click(screen.getByRole('checkbox', { name: /referral partner terms/ }));
     expect(agree).toBeDisabled();
     await userEvent.click(screen.getByRole('checkbox', { name: /calls with Laboura are recorded/ }));
+    expect(agree).toBeDisabled();
+    await userEvent.click(screen.getByRole('checkbox', { name: /checking my ID/ }));
     await userEvent.click(agree);
-    expect(api.calls('POST /consent/submit')[0]!.body).toEqual({ token: TOKEN, otpRequestId: 'req-1', purposes: ['agreement_terms', 'call_recording'], language: 'en' });
+    expect(api.calls('POST /consent/submit')[0]!.body).toEqual({ token: TOKEN, otpRequestId: 'req-1', purposes: ['agreement_terms', 'call_recording', 'aadhaar_verification'], language: 'en' });
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
 
@@ -51,6 +53,7 @@ describe('P-PartnerTerms (step 1: referral terms and call-recording consent)', (
     render();
     await userEvent.click(await screen.findByRole('checkbox', { name: /referral partner terms/ }));
     await userEvent.click(screen.getByRole('checkbox', { name: /calls with Laboura are recorded/ }));
+    await userEvent.click(screen.getByRole('checkbox', { name: /checking my ID/ }));
     await userEvent.click(screen.getByRole('button', { name: 'I agree — continue' }));
     expect(await screen.findByRole('alert')).toHaveTextContent('Something went wrong on our side');
   });

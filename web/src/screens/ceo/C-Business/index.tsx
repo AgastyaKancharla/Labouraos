@@ -18,6 +18,8 @@ import { ActionButton } from '../_kit/actions';
 import { Kv, Timeline, dateOrDash, humanize } from '../_kit/kit';
 import { BUSINESS_STATUS, VACANCY_STATUS } from '../_kit/labels';
 import { BypassChargesCard } from './BypassCharges';
+import { useAuth } from '../../../auth/AuthProvider';
+import { BanButton, LegalAcceptanceCard, SuspendButtons, SuspensionBanner } from '../_kit/legal';
 
 /** CEO business page — design C-Business.dc.html. */
 interface Detail {
@@ -40,6 +42,8 @@ interface Detail {
   leadChannel: string | null;
   status: string;
   pauseReason: string | null;
+  /** D6 (rev 176): CEO suspension. */
+  suspension?: { since: string | null; until: string | null; permanent: boolean; reason: string | null } | null;
   noDocuments: boolean;
   createdAt: string;
   tiles: { openVacancies: number; openPositions: number; candidatesShown: number; noBypassMonths: number; interviews: number; placements: number; feesPaidPaise: number; replacementsUsed: number };
@@ -80,6 +84,7 @@ export default function BusinessDetail() {
     },
   });
   const d = query.data;
+  const role = useAuth().session?.staff.role;
   const back = { to: to('C-Businesses'), label: 'Businesses' };
   if (query.isPending)
     return (
@@ -145,6 +150,8 @@ export default function BusinessDetail() {
                 success="Business paused"
               />
             )}
+            {role === 'ceo' && <SuspendButtons businessId={d.id} suspended={Boolean(d.suspension)} />}
+            {(role === 'ceo' || role === 'manager') && <BanButton subjectType="business" subjectId={d.id} name={d.name} />}
             <ActionButton
               label="Call contact"
               variant="primary"
@@ -157,6 +164,7 @@ export default function BusinessDetail() {
           </div>
         }
       />
+      <SuspensionBanner suspension={d.suspension} />
       <StatGrid>
         <StatTile label={`Open vacancies · ${d.tiles.openPositions} positions`} value={d.tiles.openVacancies} tone="gold" />
         <StatTile label={`Candidates shown (${d.tiles.noBypassMonths}-month no-bypass)`} value={d.tiles.candidatesShown} tone="cyan" />
@@ -180,6 +188,7 @@ export default function BusinessDetail() {
             ]}
           />
         </Card>
+        <LegalAcceptanceCard subjectType="business" subjectId={d.id} />
         <Card title="Agreement">
           {d.agreement ? (
             <Kv

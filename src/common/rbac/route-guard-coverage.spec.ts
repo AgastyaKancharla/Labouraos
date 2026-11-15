@@ -328,6 +328,19 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
     expect(leaks).toEqual([]);
   });
 
+  it('lets only the CEO lift a permanent ban or a suspension (M7, rev 178); Manager or CEO ban and cancel an unpaid replacement', () => {
+    const rolesOf = (name: string) => routes.find((route) => `${route.controller}.${route.handler}` === name)?.roles.slice().sort();
+    expect(rolesOf('ConductController.liftBan')).toEqual(['ceo']);
+    expect(rolesOf('ConductController.lift')).toEqual(['ceo']);
+    expect(rolesOf('ConductController.suspend')).toEqual(['ceo']);
+    expect(rolesOf('ConductController.ban')).toEqual(['ceo', 'manager']);
+    expect(rolesOf('PlacementController.cancelUpgrade')).toEqual(['ceo', 'manager']);
+    expect(rolesOf('PlacementController.suspendedBusinessClaims')).toEqual(['ceo', 'manager']);
+    // Rev 181 (H2): a Manager or the CEO decides "possibly the same person as a banned person".
+    expect(rolesOf('ConductController.confirmPossibleMatch')).toEqual(['ceo', 'manager']);
+    expect(rolesOf('ConductController.rejectPossibleMatch')).toEqual(['ceo', 'manager']);
+  });
+
   it('keeps the proxy check (GET /health/proxy-check) behind a login, for the CEO only', () => {
     const route = routes.find((r) => r.controller === 'HealthController' && r.handler === 'proxyCheck');
     expect(route).toBeDefined();

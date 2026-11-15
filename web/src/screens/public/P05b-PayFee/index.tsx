@@ -3,7 +3,7 @@ import { useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { useI18n } from '../../../i18n/I18nProvider';
 import { paymentApi, receiptHref } from '../shared/api';
-import { dateTimeLabel, dayTimeLabel, rupees } from '../shared/format';
+import { dateTimeLabel, dayLabel, dayTimeLabel, rupees } from '../shared/format';
 import { LinkProblem, Loading, Muted, Ok, PageTitle, PaidConfirming, Row, UpiQr, usePersonLanguage, Warn } from '../shared/ui';
 
 /**
@@ -36,6 +36,9 @@ export default function PayFee() {
         <Ok>{t('pub.fee.received', { amount: rupees(s.amountPaise) })}</Ok>
         <div className="card">
           {s.confirmedAt && <Row label={t('pub.paid.confirmedBy')}>{dateTimeLabel(s.confirmedAt, language)}</Row>}
+          {/* D17 (rev 176): after paying — the full name and the joining details, never the phone number. */}
+          {p?.candidateFullName && <Row label={t('legal.fee.fullName')}>{p.candidateFullName}</Row>}
+          {p?.joiningDate && <Row label={t('legal.fee.joining')}>{dayLabel(p.joiningDate, language)}</Row>}
           {s.invoicePath && (
             <Row label={t('pub.fee.invoice')}>
               <a href={s.invoicePath} target="_blank" rel="noreferrer">

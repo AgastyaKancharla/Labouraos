@@ -6,6 +6,8 @@ export const ACCEPT_CLAIM_REASONS = [
   'repeated_absence',
   'skill_gap_15_days',
   'misrepresentation',
+  // D1 (Master Guide rev 176): became medically unfit to work, or moved out of the city — covered.
+  'medically_unfit_or_relocated',
 ] as const;
 
 export type AcceptClaimReason = (typeof ACCEPT_CLAIM_REASONS)[number];

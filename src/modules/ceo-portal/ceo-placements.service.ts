@@ -193,6 +193,8 @@ export class CeoPlacementsService {
       salaryPaise: p.agreedSalary,
       feePaise: p.placementFee,
       gstPaise: p.gstAmount,
+      /** D3 / M2 (rev 178): a replacement waiting for its salary difference (Manager / CEO may cancel it). */
+      salaryDifferencePaise: p.salaryUpgradeDifferencePaise ?? null,
       paidAt: p.paidAt?.toISOString() ?? null,
       invoiceCode: p.invoiceCode,
       feePayment: fee ? { code: fee.code, status: fee.status, amountPaise: fee.amount } : null,

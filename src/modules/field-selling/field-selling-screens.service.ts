@@ -1,4 +1,5 @@
 import { agentViewerFor, businessForViewer, heldByAgent } from '../business/business-agent-view';
+import { isBusinessSuspended } from '../business/business-candidate-access';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../common/prisma/prisma.service';
@@ -199,6 +200,9 @@ export class FieldSellingScreensService {
       signedToday: signedAt ? istDateKey(signedAt) === istDateKey(now) : false,
       canShowCandidates: businessCandidateAccess(business).allowed,
       paused: Boolean(business.pausedAt),
+      // D6 (rev 176): suspended by the CEO — the banner on FA12.
+      suspended: isBusinessSuspended(found),
+      suspendedUntil: isBusinessSuspended(found) ? found.suspendedUntil : null,
       isMine: business.accountAgentId === actor.id,
       latitude: business.latitude,
       longitude: business.longitude,

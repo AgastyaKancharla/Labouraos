@@ -25,7 +25,6 @@ export interface InvoicePlacementInfo {
   placementCode: string;
   candidateCode: string;
   candidateName: string;
-  candidatePhone?: string;
   tradeSkill: string;
   monthlySalaryPaise: number;
   joinedDate: string | null;

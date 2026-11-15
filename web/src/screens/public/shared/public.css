@@ -341,3 +341,48 @@
   font-size: 20px;
   line-height: 1.1;
 }
+
+/* Legal documents v1.1 (rev 176): the "In short" box, the full text and the footer. */
+.lb-legal-short {
+  font-size: 14px;
+  line-height: 1.55;
+  border-left: 4px solid var(--blue);
+}
+.lb-legal-short h2 {
+  font-size: 15px;
+  margin: 0 0 6px;
+}
+.lb-legal-short ul {
+  margin: 0;
+  padding-left: 18px;
+}
+.lb-legal-short li + li {
+  margin-top: 6px;
+}
+.lb-pub-terms table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+.lb-pub-terms th,
+.lb-pub-terms td {
+  border: 1px solid var(--line, #dde3ee);
+  padding: 4px 6px;
+  text-align: left;
+  vertical-align: top;
+}
+.lb-pub-terms h2,
+.lb-pub-terms h3,
+.lb-pub-terms h4 {
+  font-size: 14px;
+  margin: 14px 0 4px;
+}
+.lb-legal-footer {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 12px 16px 18px;
+  font-size: 12px;
+  color: var(--muted, #5b6478);
+  text-align: center;
+}

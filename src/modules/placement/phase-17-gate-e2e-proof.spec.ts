@@ -163,6 +163,8 @@ describe('Phase 17 Gate: Comprehensive End-to-End Proof & Rule Verification', ()
             return Promise.resolve(null);
           }),
           update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'pl-root', ...data })),
+          // The chain's refund (M4, rev 178): the first fee only here — no salary difference was paid.
+          findMany: jest.fn().mockResolvedValue([{ id: 'pl-root', rootPlacementId: null, placementFee: 100000, gstAmount: 18000 }]),
         },
         replacementClaim: {
           findFirst: jest.fn().mockResolvedValue({

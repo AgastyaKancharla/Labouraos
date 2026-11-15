@@ -265,7 +265,8 @@ export class MoneyUnderGuaranteeService {
   private async placementFeeItems(now: Date): Promise<ClassifiedPayment[]> {
     const policy = await this.pricingService.current();
     const payments = await this.prisma.payment.findMany({
-      where: { type: 'placement_fee', status: { in: [...RECEIVED_PAYMENT_STATUSES] }, placementId: { not: null } },
+      // M4 (rev 178): a paid salary difference (D3) is refunded with the fee, so it is exposed with its chain too.
+      where: { type: { in: ['placement_fee', 'replacement_upgrade'] }, status: { in: [...RECEIVED_PAYMENT_STATUSES] }, placementId: { not: null } },
       select: {
         code: true, amount: true, confirmedAt: true, paidAt: true, createdAt: true, placementId: true,
         placement: { select: { id: true, code: true, rootPlacementId: true } },
@@ -276,9 +277,10 @@ export class MoneyUnderGuaranteeService {
     const chainRows = await this.prisma.placement.findMany({
       where: { OR: [{ id: { in: rootIds } }, { rootPlacementId: { in: rootIds } }] },
       select: {
-        id: true, code: true, status: true, placementFee: true, joinedDate: true, rootPlacementId: true,
+        id: true, code: true, status: true, placementFee: true, joinedDate: true, rootPlacementId: true, salaryUpgradeDifferencePaise: true, paidAt: true,
         dropoutReportedAt: true, guaranteeEndedReason: true,
-        replacementClaims: { select: { decision: true, reportedAt: true, decidedAt: true } },
+        business: { select: { suspendedAt: true, suspendedUntil: true } },
+        replacementClaims: { select: { decision: true, reportedAt: true, decidedAt: true, searchPausedAt: true, searchPausedSeconds: true } },
         replacementCandidates: { select: { status: true } },
       },
     });
@@ -306,6 +308,7 @@ export class MoneyUnderGuaranteeService {
           code: row.code,
           status: row.status,
           placementFee: row.placementFee,
+          salaryDifferencePaid: row.salaryUpgradeDifferencePaise !== null && row.paidAt !== null && row.status !== 'cancelled',
           dropoutReportedAt: row.dropoutReportedAt,
           guaranteeEndedReason: row.guaranteeEndedReason,
           claims: row.replacementClaims,
@@ -321,6 +324,7 @@ export class MoneyUnderGuaranteeService {
             },
             chain,
             refunded: chainRaw.some((row) => refundedPlacements.has(row.id)),
+            business: root.business,
             windowDays: policy.replacementWindowDays,
             searchDays: policy.replacementSearchDays,
           },

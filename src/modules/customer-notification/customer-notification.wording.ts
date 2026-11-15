@@ -49,6 +49,21 @@ export const CUSTOMER_NOTIFICATION_WORDING: Record<CustomerEventKind, Record<Cus
     kn: { title: 'ಪಾವತಿ ಸ್ವೀಕರಿಸಲಾಗಿದೆ', body: 'ಧನ್ಯವಾದಗಳು. ನಿಮ್ಮ ಇನ್‌ವಾಯ್ಸ್ ಮತ್ತು ಅಭ್ಯರ್ಥಿಯ ವಿವರಗಳು Laboura ನಲ್ಲಿ ಇವೆ.' },
     hi: { title: 'भुगतान मिल गया', body: 'धन्यवाद। आपका इनवॉइस और उम्मीदवार का विवरण Laboura में है।' },
   },
+  replacement_cancelled: {
+    en: { title: 'Replacement cancelled', body: 'The salary difference was not paid in time, so this replacement was cancelled. We keep looking for another.' },
+    kn: { title: 'ಬದಲಿ ರದ್ದಾಗಿದೆ', body: 'ಸಂಬಳದ ವ್ಯತ್ಯಾಸವನ್ನು ಸಮಯಕ್ಕೆ ಪಾವತಿಸದ ಕಾರಣ ಈ ಬದಲಿಯನ್ನು ರದ್ದುಮಾಡಲಾಗಿದೆ. ನಾವು ಇನ್ನೊಬ್ಬರನ್ನು ಹುಡುಕುತ್ತಿದ್ದೇವೆ.' },
+    hi: { title: 'रिप्लेसमेंट रद्द हुआ', body: 'वेतन का अंतर समय पर नहीं चुकाया गया, इसलिए यह रिप्लेसमेंट रद्द कर दिया गया। हम दूसरे की तलाश जारी रखते हैं।' },
+  },
+  interview_cancelled: {
+    en: { title: 'Interview cancelled', body: 'This interview is cancelled: the business cannot hold interviews for now. Open Laboura for details.' },
+    kn: { title: 'ಸಂದರ್ಶನ ರದ್ದಾಗಿದೆ', body: 'ಈ ಸಂದರ್ಶನ ರದ್ದಾಗಿದೆ: ವ್ಯಾಪಾರವು ಸದ್ಯ ಸಂದರ್ಶನ ನಡೆಸುವಂತಿಲ್ಲ. ವಿವರಗಳಿಗೆ Laboura ತೆರೆಯಿರಿ.' },
+    hi: { title: 'इंटरव्यू रद्द हुआ', body: 'यह इंटरव्यू रद्द है: व्यवसाय अभी इंटरव्यू नहीं ले सकता। जानकारी के लिए Laboura खोलें।' },
+  },
+  selection_cancelled: {
+    en: { title: 'Selection cancelled', body: 'The business did not complete its payment, so this job is cancelled. You are back on the list for new jobs.' },
+    kn: { title: 'ಆಯ್ಕೆ ರದ್ದಾಗಿದೆ', body: 'ವ್ಯಾಪಾರವು ತನ್ನ ಪಾವತಿಯನ್ನು ಪೂರ್ಣಗೊಳಿಸಲಿಲ್ಲ, ಆದ್ದರಿಂದ ಈ ಕೆಲಸ ರದ್ದಾಗಿದೆ. ಹೊಸ ಕೆಲಸಗಳಿಗೆ ನೀವು ಮತ್ತೆ ಪಟ್ಟಿಯಲ್ಲಿದ್ದೀರಿ.' },
+    hi: { title: 'चयन रद्द हुआ', body: 'व्यवसाय ने अपना भुगतान पूरा नहीं किया, इसलिए यह नौकरी रद्द हो गई है। आप नई नौकरियों की सूची में फिर से हैं।' },
+  },
   job_match: {
     en: { title: 'A new job that suits you', body: 'Open Laboura to see it and tap "I\'m interested".' },
     kn: { title: 'ನಿಮಗೆ ಸರಿಹೊಂದುವ ಹೊಸ ಕೆಲಸ', body: 'ನೋಡಲು Laboura ತೆರೆಯಿರಿ ಮತ್ತು "ನನಗೆ ಆಸಕ್ತಿ ಇದೆ" ಒತ್ತಿರಿ.' },

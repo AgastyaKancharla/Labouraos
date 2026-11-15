@@ -1,4 +1,5 @@
 import { OwnTeam } from '../../common/rbac/own-team';
+import { REFUND_FORFEITING_HIT_REASONS } from '../job-seeker/job-seeker-refund-guards';
 import { BadRequestException, ForbiddenException, Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { refundGuaranteeDeadline } from '../../common/money/money';
@@ -649,7 +650,7 @@ export class MatchingService {
   private refundStillOwed(seeker: MatchCandidate): boolean {
     const hasPaidActivation = seeker.paymentReceivedAt !== null || seeker.payments.some((payment) => payment.type === 'activation' && ['succeeded', 'completed'].includes(payment.status));
     const alreadyRefunded = seeker.payments.some((payment) => payment.type === 'refund' && ['succeeded', 'completed'].includes(payment.status));
-    const refundForfeitingHit = seeker.hits.some((hit) => !hit.reversedAt && ['offer_declined', 'offer_no_reply', 'interview_no_show'].includes(hit.reason));
+    const refundForfeitingHit = seeker.hits.some((hit) => !hit.reversedAt && (REFUND_FORFEITING_HIT_REASONS as readonly string[]).includes(hit.reason));
     return hasPaidActivation && !alreadyRefunded && !refundForfeitingHit;
   }
 

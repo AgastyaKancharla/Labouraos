@@ -12,7 +12,7 @@ const details = {
 const render = () => renderScreen(<Agreement />, { portal: 'public', path: '/p/agreement/atok', route: '/p/agreement/:token' });
 
 describe('P04-Agreement / P04b-Signed', () => {
-  it('shows the frozen terms, needs both ticks, the name and the owner OTP, then shows it signed', async () => {
+  it('shows the frozen terms, needs the three ticks (terms, authority, recording), the name and the owner OTP, then shows it signed', async () => {
     const api = mockApi({
       'GET /consent/atok': details,
       'POST /consent/send-otp': { requestId: 'areq', phone: '******4321' },
@@ -27,18 +27,21 @@ describe('P04-Agreement / P04b-Signed', () => {
     expect(screen.getByRole('textbox', { name: /Your full name/ })).toHaveValue('Shankar Rao');
     const terms = screen.getByRole('checkbox', { name: 'I agree to these terms' });
     const recording = screen.getByRole('checkbox', { name: 'I agree my calls with Laboura are recorded' });
+    const authority = screen.getByRole('checkbox', { name: /I have authority to agree/ });
     expect(terms).not.toBeChecked();
     expect(recording).not.toBeChecked();
+    expect(authority).not.toBeChecked();
     const sign = screen.getByRole('button', { name: 'Sign agreement' });
     await userEvent.click(terms);
     await userEvent.click(recording);
+    await userEvent.click(authority);
     await userEvent.click(screen.getByRole('button', { name: 'Send code to ******4321' }));
     expect(sign).toBeDisabled();
     await userEvent.click(screen.getAllByRole('textbox').find((el) => el.getAttribute('inputmode') === 'numeric')!);
     await userEvent.paste('802291');
     await userEvent.click(sign);
     expect(api.calls('POST /consent/submit')[0]!.body).toEqual({
-      token: 'atok', otpRequestId: 'areq', otpCode: '802291', signedName: 'Shankar Rao', purposes: ['agreement_terms', 'call_recording'],
+      token: 'atok', otpRequestId: 'areq', otpCode: '802291', signedName: 'Shankar Rao', purposes: ['agreement_terms', 'agreement_authority', 'call_recording'],
     });
     expect(await screen.findByText('Agreement signed, Shankar Rao')).toBeInTheDocument();
     expect(screen.getByText('9 Nov, 12:40 PM')).toBeInTheDocument();

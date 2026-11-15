@@ -11,6 +11,7 @@ import { MessagingService } from '../message/messaging.service';
 import { PaymentService } from './payment.service';
 import { receiptToken } from './receipt-link';
 import { invoicePath } from '../placement/invoice-link';
+import { assertNoOpenBanReview, openBanReview, UNDER_REVIEW_MESSAGE } from '../conduct/permanent-ban.check';
 import { assertIdReadyForPayment, PAYMENT_STOPPED_MESSAGE, PAYMENT_STOPPED_REASON, stopActivationIfIdGateFails } from '../job-seeker/id-payment-gate';
 
 const PUBLIC_LANGUAGES: Record<string, 'kn' | 'hi' | 'en'> = {
@@ -234,6 +235,8 @@ export class UpiCollectionService {
     // A ₹499 request sent again asks the same ID gate as when it was made (Fable final re-check, L-5):
     // an under-18 stop raised since, or no verified ID, and the link is not sent.
     if (payment.type === 'activation' && payment.jobSeekerId) {
+      // Rev 181 (H2, Fable final check M-A): an existing ₹499 waits while a possible ban match is reviewed.
+      await assertNoOpenBanReview(this.prisma, 'job_seeker', payment.jobSeekerId);
       const seeker = await this.prisma.jobSeeker.findUnique({ where: { id: payment.jobSeekerId }, select: { id: true, dateOfBirth: true } });
       if (seeker) {
         // The age from Pricing (no number here); without Pricing the date-of-birth check is left to the stop and the verified ID.
@@ -296,6 +299,11 @@ export class UpiCollectionService {
     return (await stopActivationIfIdGateFails(this.prisma, payment, minimumAge, new Date())).stopped;
   }
 
+  /** Rev 181 (H2, M-A): a ₹499 is not paid while a possible match with a banned person is open (neutral 409 UNDER_REVIEW). */
+  private async assertActivationNotUnderReview(payment: { type: string; jobSeekerId: string | null }): Promise<void> {
+    if (payment.type === 'activation' && payment.jobSeekerId) await assertNoOpenBanReview(this.prisma, 'job_seeker', payment.jobSeekerId);
+  }
+
   /** A ₹499 request closed by the ID gate (now or earlier): the page says so plainly. */
   private async closedByIdGate(paymentId: string): Promise<boolean> {
     const row = await this.prisma.statusHistory.findFirst({ where: { subjectType: 'payment', subjectId: paymentId, reason: PAYMENT_STOPPED_REASON }, select: { id: true } });
@@ -308,12 +316,13 @@ export class UpiCollectionService {
       throw new NotFoundException('Payment request not found or already used');
     }
     if (await this.activationStopped(payment)) throw new ConflictException(PAYMENT_STOPPED_MESSAGE);
+    await this.assertActivationNotUnderReview(payment);
     const { uri, payeeName } = this.buildUpiUri({
       code: payment.code, upiReference: payment.upiReference!, expectedAmountPaise: payment.expectedAmountPaise,
     });
     return {
       type: payment.type,
-      description: payment.type === 'activation' ? 'Job seeker registration' : payment.type === 'bypass_charge' ? 'No-bypass charge (agreement)' : 'Placement fee',
+      description: payment.type === 'activation' ? 'Job seeker registration' : payment.type === 'bypass_charge' ? 'No-bypass charge (agreement)' : payment.type === 'replacement_upgrade' ? 'Replacement salary difference' : 'Placement fee',
       amountPaise: payment.expectedAmountPaise,
       amount: amountInRupees(payment.expectedAmountPaise),
       payeeName,
@@ -337,20 +346,22 @@ export class UpiCollectionService {
         placement: {
           select: {
             id: true, agreedSalary: true, placementFee: true, gstAmount: true, feePercentAtCreation: true,
-            gstPercentAtCreation: true, paymentDueAt: true,
+            gstPercentAtCreation: true, paymentDueAt: true, joiningDate: true,
             jobSeeker: { select: { name: true } },
             business: { select: { name: true, contactLanguage: true } },
           },
         },
       },
     });
-    if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee'].includes(payment.type)) {
+    if (!payment || payment.method !== 'upi_direct' || payment.expectedAmountPaise === null || !['activation', 'placement_fee', 'replacement_upgrade'].includes(payment.type)) {
       throw new NotFoundException('Payment request not found');
     }
     // Owner rule (under 18 stops before payment): a pending ₹499 the ID gate no longer allows is closed here.
     const stoppedNow = await this.activationStopped(payment);
     const status = stoppedNow ? 'failed' : payment.status;
     const stopped = stoppedNow || (payment.type === 'activation' && status === 'failed' && (await this.closedByIdGate(payment.id)));
+    // Rev 181 (H2, M-A): while a possible ban match is reviewed the ₹499 page shows only "being checked".
+    const underReview = payment.type === 'activation' && status === 'pending' && payment.jobSeekerId !== null && Boolean(await openBanReview(this.prisma, 'job_seeker', payment.jobSeekerId));
     const state: PublicPaymentState = ['succeeded', 'completed'].includes(status)
       ? 'received'
       : status === 'pending'
@@ -359,7 +370,9 @@ export class UpiCollectionService {
     const firstName = (name: string | undefined) => name?.trim().split(/\s+/)[0] ?? null;
     const placement = payment.placement;
     return {
-      type: payment.type as 'activation' | 'placement_fee',
+      // A replacement's salary-upgrade difference (D3) uses the business fee page.
+      type: (payment.type === 'replacement_upgrade' ? 'placement_fee' : payment.type) as 'activation' | 'placement_fee',
+      upgrade: payment.type === 'replacement_upgrade',
       state,
       amountPaise: payment.expectedAmountPaise,
       upiReference: payment.upiReference,
@@ -371,6 +384,10 @@ export class UpiCollectionService {
       placement: placement
         ? {
           candidateFirstName: firstName(placement.jobSeeker.name),
+          // D17 (rev 176): once the fee is in the bank the business gets the full name and the
+          // joining details; the candidate's phone stays masked (never sent) until the joining day.
+          candidateFullName: state === 'received' ? placement.jobSeeker.name : null,
+          joiningDate: state === 'received' ? (placement.joiningDate ?? null) : null,
           businessName: placement.business.name,
           agreedSalaryPaise: placement.agreedSalary,
           feePercent: placement.feePercentAtCreation,
@@ -380,7 +397,9 @@ export class UpiCollectionService {
           paymentDueAt: placement.paymentDueAt,
         }
         : null,
-      pay: state === 'pending' || state === 'confirming' ? await this.getPaymentPage(token) : null,
+      pay: !underReview && (state === 'pending' || state === 'confirming') ? await this.getPaymentPage(token) : null,
+      underReview,
+      underReviewMessage: underReview ? UNDER_REVIEW_MESSAGE : null,
       // The ID gate closed this ₹499: the page shows only "can't go ahead, contact Laboura".
       stopped,
       stoppedMessage: stopped ? PAYMENT_STOPPED_MESSAGE : null,
@@ -415,6 +434,7 @@ export class UpiCollectionService {
   }
 
   async payByCard(token: string) {
+    // The card start checks the ban review in PaymentService.payByCard (rev 181, M-A).
     if (!this.paymentService) {
       throw new BadRequestException('PaymentService is not injected in UpiCollectionService');
     }
