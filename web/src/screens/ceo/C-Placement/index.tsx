@@ -24,6 +24,8 @@ interface Detail {
   id: string;
   code: string;
   status: string;
+  /** D3: a replacement's monthly salary difference; with status awaiting_payment, its fee is not paid yet. */
+  salaryDifferencePaise?: number | null;
   stage: string;
   jobSeeker: { id: string; code: string; name: string };
   business: { id: string; code: string; name: string };
@@ -115,6 +117,18 @@ export default function PlacementDetail() {
         actions={
           <div className="ceo-actions">
             {canReportLeft && <ReportWorkerLeft placementId={d.id} workerName={d.jobSeeker.name} />}
+            {d.status === 'awaiting_payment' && d.salaryDifferencePaise != null && (
+              <ActionButton
+                label="Cancel now"
+                variant="danger"
+                title="Cancel this replacement?"
+                description="The salary difference is not paid. Cancelling closes the payment request, reopens the vacancy and frees the candidate; it does not use up a free replacement, and the search for another replacement goes on. It is cancelled automatically after the days set in Settings."
+                reason={{ label: 'Reason (kept in the audit log)', required: true }}
+                confirmLabel="Cancel replacement"
+                run={({ reason }) => api.post(`/placements/${d.id}/upgrade/cancel`, { reason })}
+                success="Replacement cancelled"
+              />
+            )}
             {d.refund?.withCeo && (
               <>
                 <ActionButton

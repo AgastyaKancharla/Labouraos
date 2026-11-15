@@ -328,6 +328,16 @@ describe('every route has a role guard or an explicit @Public() marker', () => {
     expect(leaks).toEqual([]);
   });
 
+  it('lets only the CEO lift a permanent ban or a suspension (M7, rev 178); Manager or CEO ban and cancel an unpaid replacement', () => {
+    const rolesOf = (name: string) => routes.find((route) => `${route.controller}.${route.handler}` === name)?.roles.slice().sort();
+    expect(rolesOf('ConductController.liftBan')).toEqual(['ceo']);
+    expect(rolesOf('ConductController.lift')).toEqual(['ceo']);
+    expect(rolesOf('ConductController.suspend')).toEqual(['ceo']);
+    expect(rolesOf('ConductController.ban')).toEqual(['ceo', 'manager']);
+    expect(rolesOf('PlacementController.cancelUpgrade')).toEqual(['ceo', 'manager']);
+    expect(rolesOf('PlacementController.suspendedBusinessClaims')).toEqual(['ceo', 'manager']);
+  });
+
   it('keeps money, audit and staff routes behind a login', () => {
     const publicPaths = routes
       .filter((route) => route.publicReason)

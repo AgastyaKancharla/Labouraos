@@ -6,6 +6,7 @@ import { formatDateTimeIST } from '../../../lib/format/date';
 import { ApiError } from '../../../lib/api/errors';
 import { useToast } from '../../../components/Toast';
 import { openWithToken } from '../../finance/_kit/upload';
+import { useAuth } from '../../../auth/AuthProvider';
 import { ActionButton } from './actions';
 
 /**
@@ -96,21 +97,49 @@ const BAN_CATEGORIES = [
   { value: 'violence', label: 'Violence' },
 ];
 
-/** D11: Manager / CEO only. The same phone or ID can never register again. */
+/**
+ * D11: Manager / CEO ban. The ban covers every profile of the person on the same
+ * phone or ID (M9, rev 178). Only the CEO lifts it, with a reason (M7); the
+ * profiles go back to what they were before.
+ */
 export function BanButton({ subjectType, subjectId, name }: { subjectType: LegalSubject; subjectId: string; name: string }) {
+  const role = useAuth().session?.staff.role;
   const ban = useQuery({
     queryKey: ['permanent-ban', subjectType, subjectId],
-    queryFn: () => api.get<{ banned: boolean; category?: string; reason?: string; bannedAt?: string }>(`/permanent-bans/${subjectType}/${subjectId}`),
+    queryFn: () =>
+      api.get<{ banned: boolean; category?: string; reason?: string; bannedAt?: string; viaProfile?: { subjectType: string; code: string | null } | null; profiles?: { subjectType: string; code: string | null }[] }>(
+        `/permanent-bans/${subjectType}/${subjectId}`,
+      ),
     enabled: Boolean(subjectId),
     retry: false,
   });
-  if (ban.data?.banned) return <StatusPill tone="danger">Permanently banned</StatusPill>;
+  if (ban.data?.banned) {
+    const others = (ban.data.profiles ?? []).map((p) => p.code).filter(Boolean);
+    return (
+      <>
+        <StatusPill tone="danger">Permanently banned</StatusPill>
+        {ban.data.viaProfile && <span className="ceo-note">Through {ban.data.viaProfile.code ?? 'another profile'} (same phone or ID)</span>}
+        {others.length > 1 && <span className="ceo-note">Covers {others.join(', ')}</span>}
+        {role === 'ceo' && (
+          <ActionButton
+            label="Lift ban"
+            title={`Lift the permanent ban on ${name}?`}
+            description="Only the CEO lifts a ban. Every profile it covered goes back to what it was before the ban. The ban stays in the record, marked lifted with your reason."
+            reason={{ label: 'Why it is lifted (kept in the audit log)', required: true }}
+            confirmLabel="Lift ban"
+            run={({ reason }) => api.post(`/permanent-bans/${subjectType}/${subjectId}/lift`, { reason })}
+            success="Ban lifted"
+          />
+        )}
+      </>
+    );
+  }
   return (
     <ActionButton
       label="Ban permanently"
       variant="danger"
       title={`Ban ${name} permanently?`}
-      description="Only for a forged ID, fraud, theft or violence (Master Guide). No refund; the same phone number or ID can never register again. The police get records only on a lawful request."
+      description="Only for a forged ID, fraud, theft or violence (Master Guide). No refund; the ban covers every profile of this person on the same phone number or ID, and none of them can register again. Only the CEO can lift it. The police get records only on a lawful request."
       choice={{ label: 'Why', options: BAN_CATEGORIES }}
       reason={{ label: 'What happened (kept in the audit log)', required: true }}
       confirmLabel="Ban permanently"
