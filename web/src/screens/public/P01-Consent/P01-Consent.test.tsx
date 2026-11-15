@@ -39,6 +39,8 @@ describe('P01-Consent', () => {
       otpRequestId: 'req-1',
       purposes: ['job_matching', 'profile_sharing', 'call_recording', 'aadhaar_verification', 'job_updates'],
       language: 'en',
+      // The hash of the terms text the page showed (the server refuses a text that changed meanwhile).
+      textHash: 'abc',
     });
     expect(await screen.findByTestId('navigated-away')).toBeInTheDocument();
   });
